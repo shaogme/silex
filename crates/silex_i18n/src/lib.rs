@@ -86,15 +86,35 @@ mod tests {
     struct InputBackend {
         inputs: silex_core::RuntimeInputs,
         value: Rc<RefCell<Option<String>>>,
+        get_calls: Rc<Cell<usize>>,
+        set_calls: Rc<Cell<usize>>,
+        subscribe_calls: Rc<Cell<usize>>,
+        active_subscriptions: Rc<Cell<usize>>,
+    }
+
+    #[cfg(feature = "persist")]
+    impl InputBackend {
+        fn new(inputs: silex_core::RuntimeInputs) -> Self {
+            Self {
+                inputs,
+                value: Rc::new(RefCell::new(None)),
+                get_calls: Rc::new(Cell::new(0)),
+                set_calls: Rc::new(Cell::new(0)),
+                subscribe_calls: Rc::new(Cell::new(0)),
+                active_subscriptions: Rc::new(Cell::new(0)),
+            }
+        }
     }
 
     #[cfg(feature = "persist")]
     impl<'scope> PersistenceBackend<'scope> for InputBackend {
         fn get(&self, _key: &str) -> Result<Option<String>, PersistenceError> {
+            self.get_calls.set(self.get_calls.get() + 1);
             Ok(self.value.borrow().clone())
         }
 
         fn set(&self, _key: &str, value: &str) -> Result<(), PersistenceError> {
+            self.set_calls.set(self.set_calls.get() + 1);
             *self.value.borrow_mut() = Some(value.to_string());
             Ok(())
         }
@@ -114,7 +134,13 @@ mod tests {
             _key: impl Into<ref_str::LocalStaticRefStr>,
             _sink: BackendEventSink,
         ) -> Result<BackendSubscription<'scope>, BackendSubscribeError<'scope>> {
-            Ok(BackendSubscription::new(|| {}))
+            self.subscribe_calls.set(self.subscribe_calls.get() + 1);
+            self.active_subscriptions
+                .set(self.active_subscriptions.get() + 1);
+            let active_subscriptions = self.active_subscriptions.clone();
+            Ok(BackendSubscription::new(move || {
+                active_subscriptions.set(active_subscriptions.get() - 1);
+            }))
         }
     }
 
@@ -359,10 +385,7 @@ mod tests {
         let mut runtime = Runtime::new();
         runtime.child(|scope| {
             let binding = Persistent::builder(scope, "silex-memory-locale")
-                .backend(InputBackend {
-                    inputs: silex_core::RuntimeInputs::new(),
-                    value: Rc::new(RefCell::new(None)),
-                })
+                .backend(InputBackend::new(silex_core::RuntimeInputs::new()))
                 .parse::<Locale>()
                 .default(Locale::new("en-US"))
                 .build();
@@ -382,6 +405,80 @@ mod tests {
 
     #[cfg(feature = "persist")]
     #[test]
+    fn locale_binding_supports_root_and_child_scopes_in_one_runtime() {
+        let mut runtime = Runtime::new();
+        let root = runtime.run();
+        let root_backend = InputBackend::new(silex_core::RuntimeInputs::new());
+        let child_backend = InputBackend::new(silex_core::RuntimeInputs::new());
+
+        root.with_scope(|scope| {
+            let root_binding = Persistent::builder(scope, "root-locale")
+                .backend(root_backend.clone())
+                .parse::<Locale>()
+                .default(Locale::new("en-US"))
+                .build();
+            let root_store = I18nBuilder::new(scope)
+                .locale_binding(root_binding)
+                .build()
+                .expect("root binding should build");
+
+            root_binding.set(Locale::new("ja-JP"));
+            assert_eq!(root_store.locale().get_untracked(), Locale::new("ja-JP"));
+
+            scope.child(|child_scope| {
+                let child_binding = Persistent::builder(child_scope, "child-locale")
+                    .backend(child_backend.clone())
+                    .parse::<Locale>()
+                    .default(Locale::new("en-US"))
+                    .build();
+                let child_store = I18nBuilder::new(child_scope)
+                    .locale(Locale::new("zh-CN"))
+                    .locale_binding(child_binding)
+                    .build()
+                    .expect("child binding should build");
+
+                child_store.set_locale(Locale::new("ko-KR"));
+                assert_eq!(child_binding.get_untracked(), Locale::new("ko-KR"));
+                assert_eq!(child_backend.subscribe_calls.get(), 1);
+            });
+
+            assert_eq!(root_backend.subscribe_calls.get(), 1);
+            assert_eq!(root_backend.active_subscriptions.get(), 1);
+            assert_eq!(child_backend.active_subscriptions.get(), 0);
+        });
+
+        root.dispose().expect("root cleanup");
+        assert_eq!(root_backend.active_subscriptions.get(), 0);
+    }
+
+    #[cfg(feature = "persist")]
+    #[test]
+    fn locale_binding_suppresses_equal_bidirectional_writes() {
+        let mut runtime = Runtime::new();
+        runtime.child(|scope| {
+            let backend = InputBackend::new(silex_core::RuntimeInputs::new());
+            let binding = Persistent::builder(scope, "equal-locale")
+                .backend(backend.clone())
+                .parse::<Locale>()
+                .default(Locale::new("en-US"))
+                .build();
+            let store = I18nBuilder::new(scope)
+                .locale(Locale::new("en-US"))
+                .locale_binding(binding)
+                .build()
+                .expect("valid i18n store");
+            let writes_after_build = backend.set_calls.get();
+
+            binding.set(Locale::new("en-US"));
+            store.set_locale(Locale::new("en-US"));
+
+            assert_eq!(backend.set_calls.get(), writes_after_build);
+            assert_eq!(backend.subscribe_calls.get(), 1);
+        });
+    }
+
+    #[cfg(feature = "persist")]
+    #[test]
     fn foreign_runtime_binding_fails_before_i18n_node_creation() {
         let mut foreign_runtime = Runtime::new();
         let foreign_root = foreign_runtime.run();
@@ -389,14 +486,18 @@ mod tests {
         let target_root = target_runtime.run();
 
         foreign_root.with_scope(|foreign_scope| {
+            let backend = InputBackend::new(silex_core::RuntimeInputs::new());
             let binding = Persistent::builder(foreign_scope, "foreign-i18n-locale")
-                .backend(InputBackend {
-                    inputs: silex_core::RuntimeInputs::new(),
-                    value: Rc::new(RefCell::new(None)),
-                })
+                .backend(backend.clone())
                 .parse::<Locale>()
                 .default(Locale::new("en-US"))
                 .build();
+            let before_backend = (
+                backend.get_calls.get(),
+                backend.set_calls.get(),
+                backend.subscribe_calls.get(),
+                backend.active_subscriptions.get(),
+            );
 
             target_root.with_scope(|target_scope| {
                 let before = target_scope.runtime_snapshot();
@@ -411,7 +512,18 @@ mod tests {
                     ))
                 ));
                 assert_eq!(target_scope.runtime_snapshot(), before);
+                assert_eq!(
+                    (
+                        backend.get_calls.get(),
+                        backend.set_calls.get(),
+                        backend.subscribe_calls.get(),
+                        backend.active_subscriptions.get(),
+                    ),
+                    before_backend
+                );
             });
+
+            assert_eq!(backend.active_subscriptions.get(), 1);
         });
 
         target_root.dispose().expect("target root cleanup");
