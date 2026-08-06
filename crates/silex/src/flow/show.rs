@@ -1,4 +1,4 @@
-use silex_core::traits::{IntoRx, RxGet};
+use silex_core::{Scope, reactivity::ReactiveSource};
 use silex_dom::prelude::*;
 use silex_macros::component;
 
@@ -6,50 +6,47 @@ use silex_macros::component;
 ///
 /// 使用方式：
 /// ```rust,ignore
-/// Show(condition).children(view).fallback(fallback_view)
+/// Show(scope, condition).children(view).fallback(fallback_view)
 /// ```
 #[component]
-pub fn Show<C>(
+pub fn Show<'scope, C>(
+    scope: Scope<'scope>,
     when: C,
     #[prop(render)]
     #[chain]
-    children: AnyView,
+    children: AnyView<'scope>,
     #[prop(render)]
     #[chain(default = AnyView::Empty)]
-    fallback: AnyView,
-) -> impl View
+    fallback: AnyView<'scope>,
+) -> impl View<'scope>
 where
-    C: RxGet<Value = bool> + Clone + 'static,
+    C: ReactiveSource<'scope, Value = bool> + Clone + 'scope,
 {
-    silex_core::rx! {
-        if when.get() {
+    let condition = scope.promote(when);
+    silex_core::rx!(scope; if *$condition {
             children.clone()
         } else {
             fallback.clone()
-        }
-    }
+        })
 }
 
 // --- Signal 扩展 ---
 
 /// Signal 扩展特质，提供 .when() 语法糖
-pub trait SignalShowExt: IntoRx<Value = bool> {
-    fn when<V>(self, view: V) -> ShowComponent<Self::RxType>
+pub trait SignalShowExt<'scope>: ReactiveSource<'scope, Value = bool> + Clone + Sized {
+    fn when<V>(self, scope: Scope<'scope>, view: V) -> ShowComponent<'scope, Self>
     where
-        Self::RxType: RxGet<Value = bool> + Clone + 'static,
-        V: View + 'static;
+        V: View<'scope> + 'scope;
 }
 
-// 为所有 IntoRx<Value = bool> 的类型实现扩展
-impl<S> SignalShowExt for S
+impl<'scope, S> SignalShowExt<'scope> for S
 where
-    S: IntoRx<Value = bool>,
+    S: ReactiveSource<'scope, Value = bool> + Clone,
 {
-    fn when<V>(self, view: V) -> ShowComponent<Self::RxType>
+    fn when<V>(self, scope: Scope<'scope>, view: V) -> ShowComponent<'scope, Self>
     where
-        Self::RxType: RxGet<Value = bool> + Clone + 'static,
-        V: View + 'static,
+        V: View<'scope> + 'scope,
     {
-        Show(self.into_rx()).children(view)
+        Show(scope, self).children(view)
     }
 }

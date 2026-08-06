@@ -1,8 +1,7 @@
-use silex_core::reactivity::{Signal, SuspenseContext};
-use silex_core::traits::{RxGet, RxWrite};
+use silex_core::{Scope, reactivity::SuspenseContext};
 use silex_dom::prelude::*;
 use silex_html::div;
-use silex_macros::{component, render};
+use silex_macros::component;
 use std::rc::Rc;
 
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
@@ -19,91 +18,84 @@ pub enum SuspenseMode {
 ///
 /// # 示例
 /// ```rust,ignore
-/// Suspense(move || {
-///     let res = Resource::new(id, fetch_user);
+/// Suspense(scope, move |ctx| {
+///     let res = Resource::new(scope, id, fetch_user, Some(ctx));
 ///     div![
 ///         "User: ",
-///         rx!(res.get().map(|u| u.name))
+///         rx!(scope; res.get_data().unwrap_or_default())
 ///     ]
 /// })
 /// .fallback(div("Loading..."))
 /// ```
 #[component]
-pub fn Suspense<CH, R>(
+pub fn Suspense<'scope, CH, R>(
+    scope: Scope<'scope>,
     children: CH,
-    #[chain(default = AnyView::Empty)] fallback: AnyView,
+    #[chain(default = AnyView::Empty)] fallback: AnyView<'scope>,
     #[chain(default)] mode: SuspenseMode,
-) -> impl View
+) -> impl View<'scope>
 where
-    CH: Fn(SuspenseContext) -> R + Clone + 'static,
-    R: View + 'static,
+    CH: Fn(SuspenseContext<'scope>) -> R + Clone + 'scope,
+    R: View<'scope> + 'scope,
 {
-    let children = Rc::new(move |cx: SuspenseContext| children(cx).into_any());
+    let children = Rc::new(move |cx: SuspenseContext<'scope>| children(cx).into_any());
 
     // 创建属于此 Suspense 边界的上下文
-    let ctx = SuspenseContext::new();
+    let ctx = SuspenseContext::new(scope);
 
     // 在组件初始化时（稳定作用域）执行一次工厂闭包。
     // 确保 Resource 实例绑定到稳定的组件作用域。
-    let initial_view = {
-        ctx.reset_index();
-        children(ctx)
-    };
+    let initial_view = children(ctx);
 
-    render! {
-        use scope;
-
-        match mode {
-            SuspenseMode::KeepAlive => {
-                let count = ctx.count;
-                view_chain!(
-                    div(initial_view.clone())
-                        .class("suspense-content")
-                        .style(silex_core::rx! {
-                            if count.get() > 0 { "display: none" } else { "display: block" }
-                    }),
-                    div(fallback.clone())
-                        .class("suspense-fallback")
-                        .style(silex_core::rx! {
-                            if count.get() > 0 { "display: block" } else { "display: none" }
-                    })
-                )
-                .into_any()
-            }
-            SuspenseMode::Unmount => {
-                let count = ctx.count;
-                let (is_first, set_is_first) = Signal::pair(true);
-                let initial_view = initial_view.clone();
-                let children = children.clone();
-                let fallback = fallback.clone();
-
-                view_chain!(
-                    silex_core::rx! {
-                        if count.get() == 0 {
-                            if is_first.get() {
-                                set_is_first.set(false);
-                                initial_view.clone()
-                            } else {
-                                let children = children.clone();
-                                ctx.reset_index();
-                                (render! {
-                                    children(ctx)
-                                }).into_any()
-                            }
-                        } else {
-                            AnyView::Empty
-                        }
-                    },
-                    silex_core::rx! {
-                        if count.get() > 0 {
-                            fallback.clone()
-                        } else {
-                            AnyView::Empty
-                        }
+    match mode {
+        SuspenseMode::KeepAlive => {
+            let count = ctx.count;
+            let content_display = silex_core::rx!(scope; if *$count > 0 {
+                "display: none".to_string()
+            } else {
+                "display: block".to_string()
+            });
+            let fallback_display = silex_core::rx!(scope; if *$count > 0 {
+                "display: block".to_string()
+            } else {
+                "display: none".to_string()
+            });
+            view_chain!(
+                div(initial_view.clone())
+                    .class("suspense-content")
+                    .style(content_display),
+                div(fallback.clone())
+                    .class("suspense-fallback")
+                    .style(fallback_display)
+            )
+            .into_any()
+        }
+        SuspenseMode::Unmount => {
+            let count = ctx.count;
+            let (is_first, set_is_first) = scope.signal(true);
+            let initial_view = initial_view.clone();
+            let children = children.clone();
+            let fallback = fallback.clone();
+            let content = silex_core::rx!(scope; {
+                if *$count == 0 {
+                    if *$is_first {
+                        set_is_first.set(false);
+                        initial_view.clone()
+                    } else {
+                        children(ctx)
                     }
-                )
-                .into_any()
-            }
+                } else {
+                    AnyView::Empty
+                }
+            });
+            let fallback_view = silex_core::rx!(scope; {
+                if *$count > 0 {
+                    fallback.clone()
+                } else {
+                    AnyView::Empty
+                }
+            });
+            view_chain!(content, fallback_view).into_any()
         }
     }
 }

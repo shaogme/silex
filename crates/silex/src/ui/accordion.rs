@@ -4,15 +4,16 @@ use silex_html::{button, div, path, svg};
 use silex_macros::{component, tw};
 
 #[component]
-pub fn Accordion(
-    children: AnyView,
+pub fn Accordion<'scope>(
+    scope: Scope<'scope>,
+    children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<String>,
-) -> impl View {
-    let root_cls = rx!(move || {
+    class: Signal<'scope, String>,
+) -> impl View<'scope> {
+    let root_cls = rx!(scope; {
         let base = tw!("w-full");
-        let extra = class.get();
+        let extra = $class;
         if extra.is_empty() {
             base.to_string()
         } else {
@@ -24,16 +25,17 @@ pub fn Accordion(
 }
 
 #[component]
-pub fn AccordionItem(
-    children: AnyView,
+pub fn AccordionItem<'scope>(
+    scope: Scope<'scope>,
+    children: AnyView<'scope>,
     value: &'static str,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<String>,
-) -> impl View {
-    let item_cls = rx!(move || {
+    class: Signal<'scope, String>,
+) -> impl View<'scope> {
+    let item_cls = rx!(scope; {
         let base = tw!("border-b border-slate-200 dark:border-slate-800 last:border-b-0");
-        let extra = class.get();
+        let extra = $class;
         if extra.is_empty() {
             base.to_string()
         } else {
@@ -48,23 +50,24 @@ pub fn AccordionItem(
 }
 
 #[component]
-pub fn AccordionTrigger(
-    children: AnyView,
+pub fn AccordionTrigger<'scope>(
+    scope: Scope<'scope>,
+    children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
-    open: Signal<bool>,
+    open: Signal<'scope, bool>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<String>,
+    class: Signal<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    on_click: Callback<()>,
-) -> impl View {
-    let trigger_cls = rx!(move || {
+    on_click: Callback<'scope, ()>,
+) -> impl View<'scope> {
+    let trigger_cls = rx!(scope; {
         let base = tw!(
             "flex flex-1 w-full items-center justify-between gap-4 py-4 text-left text-sm font-medium transition-all hover:underline cursor-pointer border-0 bg-transparent text-slate-900 dark:text-slate-100 [&[data-state=open]>svg]:rotate-180"
         );
-        let extra = class.get();
+        let extra = $class;
         if extra.is_empty() {
             base.to_string()
         } else {
@@ -72,9 +75,9 @@ pub fn AccordionTrigger(
         }
     });
 
-    let state_attr = rx!(move || if open.get() { "open" } else { "closed" });
-    let icon_cls = rx!(move || {
-        let is_open = open.get();
+    let state_attr = rx!(scope; if *$open { "open" } else { "closed" });
+    let icon_cls = rx!(scope; {
+        let is_open = *$open;
         tw!(
             "pointer-events-none size-4 shrink-0 translate-y-0.5 text-slate-500 dark:text-slate-400 transition-transform duration-200",
             (is_open, "rotate-180")
@@ -104,20 +107,21 @@ pub fn AccordionTrigger(
 }
 
 #[component]
-pub fn AccordionContent(
-    children: AnyView,
+pub fn AccordionContent<'scope>(
+    scope: Scope<'scope>,
+    children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
-    open: Signal<bool>,
+    open: Signal<'scope, bool>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<String>,
-) -> impl View {
-    let content_cls = rx!(move || {
+    class: Signal<'scope, String>,
+) -> impl View<'scope> {
+    let content_cls = rx!(scope; {
         let base = tw!(
             "overflow-hidden text-sm pb-4 pt-0 text-slate-600 dark:text-slate-400 transition-all"
         );
-        let extra = class.get();
+        let extra = $class;
         if extra.is_empty() {
             base.to_string()
         } else {
@@ -125,14 +129,14 @@ pub fn AccordionContent(
         }
     });
 
-    let stored = StoredValue::new(children);
+    let stored = scope.stored(children);
 
-    rx!(move || {
-        if open.get() {
-            div(stored.get())
+    rx!(scope; {
+        if *$open {
+            div(stored.with(|children| children.clone()))
                 .attr("data-slot", "accordion-content")
                 .attr("data-state", "open")
-                .class(content_cls)
+                .class($content_cls)
                 .into_any()
         } else {
             ().into_any()

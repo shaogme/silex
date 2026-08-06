@@ -1,4 +1,4 @@
-use silex_core::traits::RxGet;
+use silex_core::{Scope, reactivity::ReactiveSource};
 use silex_dom::prelude::*;
 use silex_macros::component;
 use std::collections::HashMap;
@@ -11,45 +11,47 @@ use std::rc::Rc;
 /// # Example
 /// ```rust
 /// use silex::prelude::*;
-/// let (count, set_count) = Signal::pair(0);
+/// let (count, set_count) = scope.signal(0);
 ///
-/// Switch(count)
+/// Switch(scope, count)
 ///     .fallback("Default View")
 ///     .case(0, "Zero")
 ///     .case(1, "One");
 /// ```
 #[component]
-pub fn Switch<Source, T>(
+pub fn Switch<'scope, Source, T>(
+    scope: Scope<'scope>,
     source: Source,
-    #[chain(default)] cases: HashMap<T, AnyView>,
+    #[chain(default)] cases: HashMap<T, AnyView<'scope>>,
     #[prop(render)]
     #[chain(default = AnyView::Empty)]
-    fallback: AnyView,
-) -> impl View
+    fallback: AnyView<'scope>,
+) -> impl View<'scope>
 where
-    Source: RxGet<Value = T> + Clone + 'static,
-    T: Eq + Hash + Clone + 'static,
+    Source: ReactiveSource<'scope, Value = T> + Clone + 'scope,
+    T: Eq + Hash + Clone + 'scope,
 {
+    let source = scope.promote(source);
     let cases = Rc::new(cases);
-    silex_core::rx! {
-        let val = source.get();
+    silex_core::rx!(scope; {
+        let val = (*$source).clone();
         if let Some(view) = cases.get(&val) {
             view.clone()
         } else {
             fallback.clone()
         }
-    }
+    })
 }
 
-impl<Source, T> SwitchComponent<Source, T>
+impl<'scope, Source, T> SwitchComponent<'scope, Source, T>
 where
-    Source: RxGet<Value = T> + Clone + 'static,
-    T: Eq + Hash + Clone + 'static,
+    Source: ReactiveSource<'scope, Value = T> + Clone + 'scope,
+    T: Eq + Hash + Clone + 'scope,
 {
     /// 添加一个匹配分支
     pub fn case<V>(mut self, value: T, view: V) -> Self
     where
-        V: View + 'static,
+        V: View<'scope> + 'scope,
     {
         match self.cases.entry(value) {
             Entry::Vacant(entry) => {

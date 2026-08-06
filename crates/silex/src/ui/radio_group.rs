@@ -4,31 +4,32 @@ use silex_html::{DataAttributes, FormAttributes, button, div, input, span};
 use silex_macros::{component, tw};
 
 #[component]
-pub fn RadioGroup(
-    children: AnyView,
+pub fn RadioGroup<'scope>(
+    scope: Scope<'scope>,
+    children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
-    orientation: Signal<String>,
+    orientation: Signal<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    disabled: Signal<bool>,
+    disabled: Signal<'scope, bool>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<String>,
-) -> impl View {
-    let orient = rx!(move || {
-        if orientation.get() == "horizontal" {
+    class: Signal<'scope, String>,
+) -> impl View<'scope> {
+    let orient = rx!(scope; {
+        if $orientation.as_str() == "horizontal" {
             "horizontal"
         } else {
             "vertical"
         }
     });
 
-    let group_cls = rx!(move || {
+    let group_cls = rx!(scope; {
         let base = tw!(
             "grid gap-3 data-[orientation=horizontal]:flex data-[orientation=horizontal]:flex-row data-[orientation=horizontal]:items-center data-[disabled]:opacity-50 data-[disabled]:pointer-events-none"
         );
-        let extra = class.get();
+        let extra = $class;
         if extra.is_empty() {
             base.to_string()
         } else {
@@ -39,42 +40,43 @@ pub fn RadioGroup(
     div(children)
         .data_slot("radio-group")
         .data_orientation(orient)
-        .data_disabled(rx!(move || if disabled.get() { Some("") } else { None }))
+        .data_disabled(rx!(scope; if *$disabled { Some("") } else { None }))
         .class(group_cls)
 }
 
 #[component]
-pub fn RadioGroupItem(
+pub fn RadioGroupItem<'scope>(
+    scope: Scope<'scope>,
     value: &'static str,
     #[prop(into)]
     #[chain(default)]
-    selected_value: Signal<String>,
+    selected_value: Signal<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    name: Signal<String>,
+    name: Signal<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    disabled: Signal<bool>,
+    disabled: Signal<'scope, bool>,
     #[prop(into)]
     #[chain(default)]
-    required: Signal<bool>,
+    required: Signal<'scope, bool>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<String>,
+    class: Signal<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    on_select: Callback<&'static str>,
+    on_select: Callback<'scope, &'static str>,
     #[prop(into)]
     #[chain(default)]
-    on_change: Callback<String>,
-) -> impl View {
-    let is_checked = rx!(move || selected_value.get() == value);
+    on_change: Callback<'scope, String>,
+) -> impl View<'scope> {
+    let is_checked = rx!(scope; $selected_value.as_str() == value);
 
-    let item_cls = rx!(move || {
+    let item_cls = rx!(scope; {
         let base = tw!(
             "relative aspect-square size-4 shrink-0 rounded-full border border-slate-300 dark:border-slate-700 text-primary shadow-xs transition-all outline-none cursor-pointer flex items-center justify-center bg-white dark:bg-slate-950 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:border-primary data-[state=checked]:text-primary"
         );
-        let extra = class.get();
+        let extra = $class;
         if extra.is_empty() {
             base.to_string()
         } else {
@@ -82,8 +84,8 @@ pub fn RadioGroupItem(
         }
     });
 
-    let indicator_cls = rx!(move || {
-        if is_checked.get() {
+    let indicator_cls = rx!(scope; {
+        if *$is_checked {
             tw!("size-2 rounded-full bg-primary transition-transform duration-150 scale-100")
         } else {
             tw!(
@@ -116,16 +118,16 @@ pub fn RadioGroupItem(
     ))
     .data_slot("radio-group-item")
     .data_value(value)
-    .data_state(rx!(move || if is_checked.get() {
+    .data_state(rx!(scope; if *$is_checked {
         "checked"
     } else {
         "unchecked"
     }))
-    .data_disabled(rx!(move || if disabled.get() { Some("") } else { None }))
-    .aria_checked(rx!(move || if is_checked.get() { "true" } else { "false" }))
+    .data_disabled(rx!(scope; if *$disabled { Some("") } else { None }))
+    .aria_checked(rx!(scope; if *$is_checked { "true" } else { "false" }))
     .attr(
         "disabled",
-        rx!(move || if disabled.get() {
+        rx!(scope; if *$disabled {
             Some("disabled")
         } else {
             None

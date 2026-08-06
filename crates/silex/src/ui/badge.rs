@@ -4,15 +4,16 @@ use silex_html::span;
 use silex_macros::{component, tw_variants};
 
 #[component]
-pub fn Badge(
-    children: AnyView,
+pub fn Badge<'scope>(
+    scope: Scope<'scope>,
+    children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
-    variant: Signal<String>,
+    variant: Signal<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<String>,
-) -> impl View {
+    class: Signal<'scope, String>,
+) -> impl View<'scope> {
     let badge_variants = tw_variants! {
         base: "inline-flex w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-full border border-solid border-transparent px-2.5 py-0.5 text-xs font-medium whitespace-nowrap transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&>svg]:pointer-events-none [&>svg]:size-3",
         variants: {
@@ -30,9 +31,9 @@ pub fn Badge(
         }
     };
 
-    let cls = rx!(move || {
-        let base_cls = badge_variants.get(variant.get());
-        let extra = class.get();
+    let cls = rx!(scope; {
+        let base_cls = badge_variants.get($variant);
+        let extra = $class;
         if extra.is_empty() {
             base_cls
         } else {

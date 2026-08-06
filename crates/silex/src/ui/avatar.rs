@@ -4,15 +4,16 @@ use silex_html::{MediaAttributes, div, img, span};
 use silex_macros::{component, tw, tw_variants};
 
 #[component]
-pub fn Avatar(
-    children: AnyView,
+pub fn Avatar<'scope>(
+    scope: Scope<'scope>,
+    children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
-    size: Signal<String>,
+    size: Signal<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<String>,
-) -> impl View {
+    class: Signal<'scope, String>,
+) -> impl View<'scope> {
     let avatar_variants = tw_variants! {
         base: "group/avatar relative flex shrink-0 overflow-hidden rounded-full select-none",
         variants: {
@@ -27,9 +28,9 @@ pub fn Avatar(
         }
     };
 
-    let cls = rx!(move || {
-        let base_cls = avatar_variants.get(size.get());
-        let extra = class.get();
+    let cls = rx!(scope; {
+        let base_cls = avatar_variants.get($size);
+        let extra = $class;
         if extra.is_empty() {
             base_cls
         } else {
@@ -37,12 +38,12 @@ pub fn Avatar(
         }
     });
 
-    let data_sz = rx!(move || {
-        let sz = size.get();
+    let data_sz = rx!(scope; {
+        let sz = $size;
         if sz.is_empty() {
             "default".to_string()
         } else {
-            sz
+            sz.clone()
         }
     });
 
@@ -53,20 +54,21 @@ pub fn Avatar(
 }
 
 #[component]
-pub fn AvatarImage(
+pub fn AvatarImage<'scope>(
+    scope: Scope<'scope>,
     #[prop(into)]
     #[chain(default)]
-    src: Signal<String>,
+    src: Signal<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    alt: Signal<String>,
+    alt: Signal<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<String>,
-) -> impl View {
-    let cls = rx!(move || {
+    class: Signal<'scope, String>,
+) -> impl View<'scope> {
+    let cls = rx!(scope; {
         let base_cls = tw!("aspect-square size-full object-cover");
-        let extra = class.get();
+        let extra = $class;
         if extra.is_empty() {
             base_cls.to_string()
         } else {
@@ -82,15 +84,16 @@ pub fn AvatarImage(
 }
 
 #[component]
-pub fn AvatarFallback(
-    children: AnyView,
+pub fn AvatarFallback<'scope>(
+    scope: Scope<'scope>,
+    children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
-    variant: Signal<String>,
+    variant: Signal<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<String>,
-) -> impl View {
+    class: Signal<'scope, String>,
+) -> impl View<'scope> {
     let avatar_fallback_variants = tw_variants! {
         base: "flex size-full items-center justify-center rounded-full text-sm group-data-[size=sm]/avatar:text-xs",
         variants: {
@@ -105,9 +108,9 @@ pub fn AvatarFallback(
         }
     };
 
-    let cls = rx!(move || {
-        let base_cls = avatar_fallback_variants.get(variant.get());
-        let extra = class.get();
+    let cls = rx!(scope; {
+        let base_cls = avatar_fallback_variants.get($variant);
+        let extra = $class;
         if extra.is_empty() {
             base_cls
         } else {
@@ -121,17 +124,18 @@ pub fn AvatarFallback(
 }
 
 #[component]
-pub fn AvatarBadge(
-    children: AnyView,
+pub fn AvatarBadge<'scope>(
+    scope: Scope<'scope>,
+    children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<String>,
-) -> impl View {
-    let cls = rx!(move || {
+    class: Signal<'scope, String>,
+) -> impl View<'scope> {
+    let cls = rx!(scope; {
         let base_cls = tw!(
             "absolute right-0 bottom-0 z-10 inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground ring-2 ring-background select-none group-data-[size=sm]/avatar:size-2 group-data-[size=default]/avatar:size-2.5 group-data-[size=lg]/avatar:size-3"
         );
-        let extra = class.get();
+        let extra = $class;
         if extra.is_empty() {
             base_cls.to_string()
         } else {
@@ -143,17 +147,18 @@ pub fn AvatarBadge(
 }
 
 #[component]
-pub fn AvatarGroup(
-    children: AnyView,
+pub fn AvatarGroup<'scope>(
+    scope: Scope<'scope>,
+    children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<String>,
-) -> impl View {
-    let cls = rx!(move || {
+    class: Signal<'scope, String>,
+) -> impl View<'scope> {
+    let cls = rx!(scope; {
         let base_cls = tw!(
             "group/avatar-group flex -space-x-2 *:data-[slot=avatar]:ring-2 *:data-[slot=avatar]:ring-background"
         );
-        let extra = class.get();
+        let extra = $class;
         if extra.is_empty() {
             base_cls.to_string()
         } else {
@@ -165,17 +170,18 @@ pub fn AvatarGroup(
 }
 
 #[component]
-pub fn AvatarGroupCount(
-    children: AnyView,
+pub fn AvatarGroupCount<'scope>(
+    scope: Scope<'scope>,
+    children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<String>,
-) -> impl View {
-    let cls = rx!(move || {
+    class: Signal<'scope, String>,
+) -> impl View<'scope> {
+    let cls = rx!(scope; {
         let base_cls = tw!(
             "relative flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-sm text-muted-foreground ring-2 ring-background group-has-data-[size=lg]/avatar-group:size-10 group-has-data-[size=sm]/avatar-group:size-6"
         );
-        let extra = class.get();
+        let extra = $class;
         if extra.is_empty() {
             base_cls.to_string()
         } else {

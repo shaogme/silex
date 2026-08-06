@@ -2,33 +2,34 @@ use crate::prelude::*;
 
 styled! {
     /// 弹性布局容器 (Flexbox)
-    pub Stack <div> (
-        children: AnyView,
+    pub Stack<'scope> <div> (
+        scope: Scope<'scope>,
+        children: AnyView<'scope>,
         #[prop(into)] #[chain(default = FlexDirectionKeyword::Column)]
-        direction: Signal<FlexDirectionKeyword>,
+        direction: Signal<'scope, FlexDirectionKeyword>,
         #[prop(into)] #[chain(default = AlignItemsKeyword::Stretch)]
-        align: Signal<AlignItemsKeyword>,
+        align: Signal<'scope, AlignItemsKeyword>,
         #[prop(into)] #[chain(default = JustifyContentKeyword::FlexStart)]
-        justify: Signal<JustifyContentKeyword>,
+        justify: Signal<'scope, JustifyContentKeyword>,
         #[prop(into)] #[chain(default)]
-        gap: Signal<i32>,
+        gap: Signal<'scope, i32>,
         #[prop(into)] #[chain(default)]
-        style: Signal<Style>,
+        style: Signal<'scope, Style>,
     ) {
         display: flex;
         flex-direction: $(direction);
         align-items: $(align);
         justify-content: $(justify);
-        gap: $(gap.map_fn(|g| px(*g)));
+        gap: $(gap.map_fn(scope, |g| px(*g)));
     }
 }
 
 styled! {
     /// 居中容器
-    pub Center <div> (
-        children: AnyView,
+    pub Center<'scope> <div> (
+        children: AnyView<'scope>,
         #[prop(into)] #[chain(default)]
-        style: Signal<Style>,
+        style: Signal<'scope, Style>,
     ) {
         display: flex;
         align-items: center;
@@ -38,17 +39,18 @@ styled! {
 
 styled! {
     /// 网格布局容器 (Grid)
-    pub Grid <div> (
-        children: AnyView,
+    pub Grid<'scope> <div> (
+        scope: Scope<'scope>,
+        children: AnyView<'scope>,
         #[prop(into)] #[chain(default = 1)]
-        columns: Signal<i32>,
+        columns: Signal<'scope, i32>,
         #[prop(into)] #[chain(default)]
-        gap: Signal<i32>,
+        gap: Signal<'scope, i32>,
         #[prop(into)] #[chain(default)]
-        style: Signal<Style>,
+        style: Signal<'scope, Style>,
     ) {
         display: grid;
         grid-template-columns: repeat($(columns), minmax(0, 1fr));
-        gap: $(gap.map_fn(|g| px(*g)));
+        gap: $(gap.map_fn(scope, |g| px(*g)));
     }
 }

@@ -4,24 +4,25 @@ use silex_html::button;
 use silex_macros::{component, tw_variants};
 
 #[component]
-pub fn Toggle(
-    children: AnyView,
+pub fn Toggle<'scope>(
+    scope: Scope<'scope>,
+    children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
-    pressed: Signal<bool>,
+    pressed: Signal<'scope, bool>,
     #[prop(into)]
     #[chain(default)]
-    variant: Signal<String>,
+    variant: Signal<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    size: Signal<String>,
+    size: Signal<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<String>,
+    class: Signal<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    on_change: Callback<bool>,
-) -> impl View {
+    on_change: Callback<'scope, bool>,
+) -> impl View<'scope> {
     let toggle_variants = tw_variants! {
         base: "inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all outline-none hover:bg-muted hover:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 cursor-pointer border-0 data-[state=on]:bg-accent data-[state=on]:text-accent-foreground dark:data-[state=on]:bg-slate-800 dark:data-[state=on]:text-slate-50",
         variants: {
@@ -41,9 +42,9 @@ pub fn Toggle(
         }
     };
 
-    let cls = rx!(move || {
-        let base_cls = toggle_variants.get(variant.get(), size.get());
-        let extra = class.get();
+    let cls = rx!(scope; {
+        let base_cls = toggle_variants.get($variant, $size);
+        let extra = $class;
         if extra.is_empty() {
             base_cls
         } else {
@@ -51,11 +52,11 @@ pub fn Toggle(
         }
     });
 
-    let state_attr = rx!(move || if pressed.get() { "on" } else { "off" });
+    let state_attr = rx!(scope; if *$pressed { "on" } else { "off" });
 
     button(children)
         .attr("data-slot", "toggle")
-        .attr("aria-pressed", rx!(move || pressed.get().to_string()))
+        .attr("aria-pressed", rx!(scope; $pressed.to_string()))
         .attr("data-state", state_attr)
         .class(cls)
         .on_click(move |_| {

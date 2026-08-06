@@ -1,4 +1,4 @@
-use silex_core::traits::RxRead;
+use silex_core::{Scope, reactivity::ReactiveSource};
 use silex_dom::prelude::*;
 use silex_macros::component;
 
@@ -11,24 +11,23 @@ use silex_macros::component;
 /// ```rust
 /// use silex::prelude::*;
 ///
-/// let (component_name, set_component_name) = Signal::pair("A");
+/// let (component_name, set_component_name) = scope.signal("A");
 ///
-/// Dynamic(rx! {
+/// Dynamic(scope, rx!(scope; {
 ///     let name = component_name.get();
 ///     if name == "A" {
 ///         "Component A"
 ///     } else {
 ///         "Component B"
 ///     }
-/// });
+/// }));
 /// ```
 #[component]
-pub fn Dynamic<V, FView>(view_fn: FView) -> impl View
+pub fn Dynamic<'scope, V, FView>(scope: Scope<'scope>, view_fn: FView) -> impl View<'scope>
 where
-    V: View + Clone + 'static,
-    FView: RxRead<Value = V> + Clone + 'static,
+    V: View<'scope> + Clone + 'scope,
+    FView: ReactiveSource<'scope, Value = V> + Clone + 'scope,
 {
-    silex_core::rx! {
-        view_fn.with(|view| view.clone().into_any())
-    }
+    let view_fn = scope.promote(view_fn);
+    silex_core::rx!(scope; (*$view_fn).clone().into_any())
 }

@@ -7,7 +7,9 @@ pub mod ui;
 
 pub use components::*;
 pub use silex_core::error::{SilexError, SilexResult};
-pub use silex_core::{ReactiveError, ReactiveResult};
+pub use silex_core::{
+    Callback, NodeRef, OwnedScope, ReactiveError, ReactiveResult, RootHandle, Runtime, Rx, Scope,
+};
 
 pub mod reexports {
     pub use js_sys;

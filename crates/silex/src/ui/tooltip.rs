@@ -1,7 +1,9 @@
 use silex_core::prelude::*;
 use silex_dom::prelude::*;
+use silex_dom::view::ViewOwnerToken;
 use silex_html::div;
 use silex_macros::{component, tw};
+use std::time::Duration;
 use wasm_bindgen::JsCast;
 
 /// Helper to extract bounding rectangle (top, left, width, height) from a MouseEvent target.
@@ -23,49 +25,54 @@ fn get_element_anchor(el: &web_sys::Element) -> (f64, f64, f64, f64) {
 }
 
 /// Explicit Tooltip Context holding reactive state for visibility, anchor positioning, and hover timers.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct TooltipContext {
-    pub open: RwSignal<bool>,
-    pub anchor: RwSignal<(f64, f64, f64, f64)>,
-    pub timer_id: StoredValue<i32>,
+#[derive(Clone, Copy)]
+pub struct TooltipContext<'scope> {
+    pub open: RwSignal<'scope, bool>,
+    pub anchor: RwSignal<'scope, (f64, f64, f64, f64)>,
+    timer: StoredValue<'scope, Option<HostResourceHandle<'scope>>>,
+    owner: StoredValue<'scope, Option<ViewOwnerToken<'scope>>>,
 }
 
-impl TooltipContext {
-    pub fn new() -> Self {
+impl<'scope> TooltipContext<'scope> {
+    pub fn new(scope: Scope<'scope>) -> Self {
         Self {
-            open: RwSignal::new(false),
-            anchor: RwSignal::new((0.0, 0.0, 0.0, 0.0)),
-            timer_id: StoredValue::new(0i32),
+            open: scope.rw_signal(false),
+            anchor: scope.rw_signal((0.0, 0.0, 0.0, 0.0)),
+            timer: scope.stored(None),
+            owner: scope.stored(None),
         }
+    }
+
+    fn set_owner(&self, owner: ViewOwnerToken<'scope>) {
+        self.owner.set(Some(owner));
     }
 
     /// Cancels any pending close timeout.
     pub fn cancel_close_timer(&self) {
-        let handle = self.timer_id.get_untracked();
-        if handle != 0 {
-            if let Some(w) = web_sys::window() {
-                w.clear_timeout_with_handle(handle);
+        let _ = self.timer.try_update(|timer| {
+            if let Some(handle) = timer.take() {
+                handle.cancel();
             }
-            self.timer_id.set(0);
-        }
+        });
     }
 
     /// Schedules a close timeout after `delay_ms` milliseconds (default 150ms grace period).
     pub fn schedule_close_timer(&self, delay_ms: i32) {
         self.cancel_close_timer();
-        let open_sig = self.open;
-        let timer_id = self.timer_id;
-        let cb = wasm_bindgen::closure::Closure::once_into_js(move || {
-            timer_id.set(0);
-            open_sig.set(false);
-        });
-        if let Some(w) = web_sys::window()
-            && let Ok(handle) = w.set_timeout_with_callback_and_timeout_and_arguments_0(
-                cb.as_ref().unchecked_ref(),
-                delay_ms,
-            )
-        {
-            self.timer_id.set(handle);
+        let Some(owner) = self.owner.try_with(Clone::clone).ok().flatten() else {
+            return;
+        };
+        let open = self.open;
+        let timer = self.timer;
+        if let Ok(handle) = set_timeout_owned(
+            &owner,
+            move || {
+                let _ = timer.try_update(|slot| *slot = None);
+                open.set(false);
+            },
+            Duration::from_millis(delay_ms.max(0) as u64),
+        ) {
+            self.timer.set(Some(handle));
         }
     }
 
@@ -95,25 +102,26 @@ impl TooltipContext {
     }
 }
 
-impl Default for TooltipContext {
-    fn default() -> Self {
-        Self::new()
-    }
+fn owner_binding<'scope>(ctx: TooltipContext<'scope>) -> AttrOp<'scope> {
+    AttrOp::custom_with_inputs(RuntimeInputs::new(), move |_, owner| {
+        ctx.set_owner(owner.clone());
+    })
 }
 
 #[component]
-pub fn TooltipProvider(
-    children: AnyView,
+pub fn TooltipProvider<'scope>(
+    scope: Scope<'scope>,
+    children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
-    delay_duration: Signal<f64>,
+    delay_duration: Signal<'scope, f64>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<String>,
-) -> impl View {
-    let provider_cls = rx!(move || {
+    class: Signal<'scope, String>,
+) -> impl View<'scope> {
+    let provider_cls = rx!(scope; {
         let base = tw!("relative");
-        let extra = class.get();
+        let extra = $class;
         if extra.is_empty() {
             base.to_string()
         } else {
@@ -121,8 +129,8 @@ pub fn TooltipProvider(
         }
     });
 
-    let delay_attr = rx!(move || {
-        let d = delay_duration.get();
+    let delay_attr = rx!(scope; {
+        let d = *$delay_duration;
         if d > 0.0 {
             format!("{:.0}ms", d)
         } else {
@@ -137,20 +145,21 @@ pub fn TooltipProvider(
 }
 
 #[component]
-pub fn Tooltip<C, V>(
+pub fn Tooltip<'scope, C, V>(
+    scope: Scope<'scope>,
     children: C,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<String>,
-) -> impl View
+    class: Signal<'scope, String>,
+) -> impl View<'scope>
 where
-    C: Fn(TooltipContext) -> V + 'static,
-    V: View + 'static,
+    C: Fn(TooltipContext<'scope>) -> V + Clone + 'scope,
+    V: View<'scope> + 'scope,
 {
-    let ctx = TooltipContext::new();
-    let root_cls = rx!(move || {
+    let ctx = TooltipContext::new(scope);
+    let root_cls = rx!(scope; {
         let base = tw!("relative inline-block");
-        let extra = class.get();
+        let extra = $class;
         if extra.is_empty() {
             base.to_string()
         } else {
@@ -164,28 +173,29 @@ where
 }
 
 #[component]
-pub fn TooltipTrigger(
-    children: AnyView,
-    #[chain] ctx: TooltipContext,
+pub fn TooltipTrigger<'scope>(
+    scope: Scope<'scope>,
+    children: AnyView<'scope>,
+    #[chain] ctx: TooltipContext<'scope>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<String>,
+    class: Signal<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    on_mouse_enter: Callback<web_sys::MouseEvent>,
+    on_mouse_enter: Callback<'scope, web_sys::MouseEvent>,
     #[prop(into)]
     #[chain(default)]
-    on_mouse_leave: Callback<web_sys::MouseEvent>,
+    on_mouse_leave: Callback<'scope, web_sys::MouseEvent>,
     #[prop(into)]
     #[chain(default)]
-    on_focus: Callback<web_sys::FocusEvent>,
+    on_focus: Callback<'scope, web_sys::FocusEvent>,
     #[prop(into)]
     #[chain(default)]
-    on_blur: Callback<web_sys::FocusEvent>,
-) -> impl View {
-    let trigger_cls = rx!(move || {
+    on_blur: Callback<'scope, web_sys::FocusEvent>,
+) -> impl View<'scope> {
+    let trigger_cls = rx!(scope; {
         let base = tw!("inline-block cursor-pointer");
-        let extra = class.get();
+        let extra = $class;
         if extra.is_empty() {
             base.to_string()
         } else {
@@ -194,6 +204,7 @@ pub fn TooltipTrigger(
     });
 
     div(children)
+        .apply(owner_binding(ctx))
         .attr("data-slot", "tooltip-trigger")
         .class(trigger_cls)
         .on(event::mouseenter, move |e: web_sys::MouseEvent| {
@@ -222,41 +233,43 @@ pub fn TooltipTrigger(
 }
 
 #[component]
-pub fn TooltipContent(
-    children: AnyView,
-    #[chain] ctx: TooltipContext,
+pub fn TooltipContent<'scope>(
+    scope: Scope<'scope>,
+    children: AnyView<'scope>,
+    #[chain] ctx: TooltipContext<'scope>,
     #[prop(into)]
     #[chain(default)]
-    side: Signal<String>, // top | bottom | left | right
+    side: Signal<'scope, String>, // top | bottom | left | right
     #[prop(into)]
     #[chain(default)]
-    side_offset: Signal<f64>, // offset from trigger element in px
+    side_offset: Signal<'scope, f64>, // offset from trigger element in px
     #[prop(into)]
     #[chain(default)]
-    hide_arrow: Signal<bool>, // set true to hide the arrow
+    hide_arrow: Signal<'scope, bool>, // set true to hide the arrow
     #[prop(into)]
     #[chain(default)]
-    class: Signal<String>,
-) -> impl View {
-    let stored_children = StoredValue::new(children);
+    class: Signal<'scope, String>,
+) -> impl View<'scope> {
+    let stored_children = scope.stored(children);
 
-    let side_val = rx!(move || {
-        let s = side.get();
+    let side_val = rx!(scope; {
+        let s = (*$side).clone();
         if s.is_empty() { "top".to_string() } else { s }
     });
 
-    let offset_val = rx!(move || {
-        let o = side_offset.get();
+    let offset_val = rx!(scope; {
+        let o = *$side_offset;
         if o == 0.0 { 4.0 } else { o }
     });
 
     let wrapper_cls =
         tw!("fixed left-0 top-0 z-50 min-w-max will-change-transform pointer-events-none");
 
-    let wrapper_style = rx!(move || {
-        let (t, l, w, h) = ctx.anchor.get();
-        let s = side_val.get();
-        let offset = offset_val.get();
+    let anchor = ctx.anchor;
+    let wrapper_style = rx!(scope; {
+        let (t, l, w, h) = *$anchor;
+        let s = (*$side_val).clone();
+        let offset = *$offset_val;
 
         let (x, y) = match s.as_str() {
             "bottom" => (l + w / 2.0, t + h + offset),
@@ -270,8 +283,8 @@ pub fn TooltipContent(
         )
     });
 
-    let content_cls = rx!(move || {
-        let s = side_val.get();
+    let content_cls = rx!(scope; {
+        let s = (*$side_val).clone();
         let pos_cls = match s.as_str() {
             "bottom" => tw!("slide-in-from-top-2 -translate-x-1/2"),
             "left" => tw!("slide-in-from-right-2 -translate-x-full -translate-y-1/2"),
@@ -282,7 +295,7 @@ pub fn TooltipContent(
         let base = tw!(
             "relative z-50 w-fit rounded-md bg-slate-900 px-3 py-1.5 text-xs text-slate-50 shadow-md animate-in fade-in-0 zoom-in-95 whitespace-nowrap dark:bg-slate-50 dark:text-slate-900 pointer-events-auto"
         );
-        let extra = class.get();
+        let extra = $class;
         if extra.is_empty() {
             format!("{} {}", base, pos_cls)
         } else {
@@ -290,8 +303,8 @@ pub fn TooltipContent(
         }
     });
 
-    let arrow_cls = rx!(move || {
-        let s = side_val.get();
+    let arrow_cls = rx!(scope; {
+        let s = (*$side_val).clone();
         match s.as_str() {
             "bottom" => tw!(
                 "absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 size-2 rotate-45 bg-slate-900 dark:bg-slate-50 pointer-events-none"
@@ -308,10 +321,11 @@ pub fn TooltipContent(
         }
     });
 
-    rx!(move || {
-        if ctx.open.get() {
-            let children_view = stored_children.get();
-            let arrow_view = if !hide_arrow.get() {
+    let ctx_open = ctx.open;
+    rx!(scope; {
+        if *$ctx_open {
+            let children_view = stored_children.with(|children| children.clone());
+            let arrow_view = if !*$hide_arrow {
                 div(()).class(arrow_cls).into_any()
             } else {
                 ().into_any()
@@ -320,7 +334,7 @@ pub fn TooltipContent(
             crate::components::Portal(
                 div(div(view_chain!(children_view, arrow_view))
                     .attr("data-slot", "tooltip-content")
-                    .attr("data-side", rx!(move || side_val.get()))
+                    .attr("data-side", side_val)
                     .attr("data-align", "center")
                     .attr("data-state", "delayed-open")
                     .attr("role", "tooltip")
@@ -333,7 +347,8 @@ pub fn TooltipContent(
                     }))
                 .attr("data-radix-popper-content-wrapper", "")
                 .class(wrapper_cls)
-                .attr("style", wrapper_style),
+                .attr("style", wrapper_style)
+                .apply(owner_binding(ctx)),
             )
             .into_any()
         } else {

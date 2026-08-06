@@ -4,19 +4,20 @@ use silex_html::{button, path, svg};
 use silex_macros::{component, tw};
 
 #[component]
-pub fn Checkbox(
+pub fn Checkbox<'scope>(
+    scope: Scope<'scope>,
     #[prop(into)]
     #[chain(default)]
-    checked: Signal<bool>,
+    checked: Signal<'scope, bool>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<String>,
+    class: Signal<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    on_change: Callback<bool>,
-) -> impl View {
-    let cls = rx!(move || {
-        let is_checked = checked.get();
+    on_change: Callback<'scope, bool>,
+) -> impl View<'scope> {
+    let cls = rx!(scope; {
+        let is_checked = *$checked;
         let base = tw!(
             "peer size-4 shrink-0 rounded-[4px] border border-solid shadow-xs transition-all duration-150 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 inline-flex items-center justify-center cursor-pointer",
             (
@@ -25,7 +26,7 @@ pub fn Checkbox(
                 "border-slate-300 bg-white dark:border-slate-800 dark:bg-slate-900/30"
             )
         ).get();
-        let extra = class.get();
+        let extra = $class;
         if extra.is_empty() {
             base
         } else {
@@ -33,8 +34,8 @@ pub fn Checkbox(
         }
     });
 
-    let check_icon = rx!(move || {
-        let is_checked = checked.get();
+    let check_icon = rx!(scope; {
+        let is_checked = *$checked;
         let icon_cls = tw!(
             "size-3.5 transition-all duration-150 ease-in-out",
             (is_checked, "opacity-100 scale-100", "opacity-0 scale-50")

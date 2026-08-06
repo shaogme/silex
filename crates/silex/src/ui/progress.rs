@@ -4,18 +4,19 @@ use silex_html::div;
 use silex_macros::{component, tw};
 
 #[component]
-pub fn Progress(
+pub fn Progress<'scope>(
+    scope: Scope<'scope>,
     #[prop(into)]
     #[chain(default)]
-    value: Signal<u32>,
+    value: Signal<'scope, u32>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<String>,
-) -> impl View {
-    let container_cls = rx!(move || {
+    class: Signal<'scope, String>,
+) -> impl View<'scope> {
+    let container_cls = rx!(scope; {
         let base =
             tw!("relative h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800");
-        let extra = class.get();
+        let extra = $class;
         if extra.is_empty() {
             base.to_string()
         } else {
@@ -23,8 +24,8 @@ pub fn Progress(
         }
     });
 
-    let indicator_style = rx!(move || {
-        let pct = value.get().min(100);
+    let indicator_style = rx!(scope; {
+        let pct = (*$value).min(100);
         format!("width: {}%;", pct)
     });
 

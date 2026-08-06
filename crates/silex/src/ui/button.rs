@@ -4,18 +4,19 @@ use silex_html::button;
 use silex_macros::{component, tw_variants};
 
 #[component]
-pub fn Button(
-    children: AnyView,
+pub fn Button<'scope>(
+    scope: Scope<'scope>,
+    children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
-    variant: Signal<String>,
+    variant: Signal<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    size: Signal<String>,
+    size: Signal<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<String>,
-) -> impl View {
+    class: Signal<'scope, String>,
+) -> impl View<'scope> {
     let button_variants = tw_variants! {
         base: "inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 cursor-pointer border-0 [&_svg]:pointer-events-none [&_svg]:shrink-0",
         variants: {
@@ -44,9 +45,9 @@ pub fn Button(
         }
     };
 
-    let cls = rx!(move || {
-        let base_cls = button_variants.get(variant.get(), size.get());
-        let extra = class.get();
+    let cls = rx!(scope; {
+        let base_cls = button_variants.get($variant, $size);
+        let extra = $class;
         if extra.is_empty() {
             base_cls
         } else {

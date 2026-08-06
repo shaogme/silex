@@ -44,37 +44,38 @@ fn calculate_slider_value(
 }
 
 #[component]
-pub fn Slider(
+pub fn Slider<'scope>(
+    scope: Scope<'scope>,
     #[prop(into)]
     #[chain(default)]
-    value: Signal<f64>,
+    value: Signal<'scope, f64>,
     #[prop(into)]
     #[chain(default)]
-    min: Signal<f64>,
+    min: Signal<'scope, f64>,
     #[prop(into)]
     #[chain(default)]
-    max: Signal<f64>,
+    max: Signal<'scope, f64>,
     #[prop(into)]
     #[chain(default)]
-    step: Signal<f64>,
+    step: Signal<'scope, f64>,
     #[prop(into)]
     #[chain(default)]
-    orientation: Signal<String>,
+    orientation: Signal<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    disabled: Signal<bool>,
+    disabled: Signal<'scope, bool>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<String>,
+    class: Signal<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    on_change: Callback<f64>,
-) -> impl View {
-    let min_val = rx!(move || min.get());
+    on_change: Callback<'scope, f64>,
+) -> impl View<'scope> {
+    let min_val = rx!(scope; *$min);
 
-    let max_val = rx!(move || {
-        let mn = min.get();
-        let mx = max.get();
+    let max_val = rx!(scope; {
+        let mn = *$min;
+        let mx = *$max;
         if mx <= mn {
             if mn == 0.0 && mx == 0.0 {
                 100.0
@@ -86,23 +87,23 @@ pub fn Slider(
         }
     });
 
-    let step_val = rx!(move || {
-        let s = step.get();
+    let step_val = rx!(scope; {
+        let s = *$step;
         if s <= 0.0 { 1.0 } else { s }
     });
 
-    let is_vertical = rx!(move || orientation.get() == "vertical");
-    let orient = rx!(move || if is_vertical.get() {
+    let is_vertical = rx!(scope; $orientation.as_str() == "vertical");
+    let orient = rx!(scope; if *$is_vertical {
         "vertical"
     } else {
         "horizontal"
     });
 
-    let root_cls = rx!(move || {
+    let root_cls = rx!(scope; {
         let base = tw!(
             "relative flex w-full touch-none items-center select-none data-[disabled]:opacity-50 data-[orientation=vertical]:h-full data-[orientation=vertical]:min-h-44 data-[orientation=vertical]:w-auto data-[orientation=vertical]:flex-col"
         );
-        let extra = class.get();
+        let extra = $class;
         if extra.is_empty() {
             base.to_string()
         } else {
@@ -110,10 +111,10 @@ pub fn Slider(
         }
     });
 
-    let pct = rx!(move || {
-        let v = value.get();
-        let mn = min_val.get();
-        let mx = max_val.get();
+    let pct = rx!(scope; {
+        let v = *$value;
+        let mn = *$min_val;
+        let mx = *$max_val;
         if mx <= mn {
             0.0
         } else {
@@ -121,25 +122,25 @@ pub fn Slider(
         }
     });
 
-    let range_style = rx!(move || {
-        let p = pct.get();
-        if is_vertical.get() {
+    let range_style = rx!(scope; {
+        let p = *$pct;
+        if *$is_vertical {
             format!("height: {}%;", p)
         } else {
             format!("width: {}%;", p)
         }
     });
 
-    let thumb_style = rx!(move || {
-        let p = pct.get();
-        if is_vertical.get() {
+    let thumb_style = rx!(scope; {
+        let p = *$pct;
+        if *$is_vertical {
             format!("bottom: {}%;", p)
         } else {
             format!("left: {}%;", p)
         }
     });
 
-    let input_val_str = rx!(move || value.get().to_string());
+    let input_val_str = rx!(scope; $value.to_string());
     let is_dragging = Rc::new(Cell::new(false));
 
     let handle_down = {
@@ -239,7 +240,7 @@ pub fn Slider(
     ))
     .attr("data-slot", "slider")
     .attr("data-orientation", orient)
-    .attr("data-disabled", rx!(move || if disabled.get() { Some("") } else { None }))
+    .attr("data-disabled", rx!(scope; if *$disabled { Some("") } else { None }))
     .class(root_cls)
     .on_pointer_down(handle_down)
     .on_pointer_move(handle_move)

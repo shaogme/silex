@@ -1,34 +1,95 @@
-use silex_core::reactivity::on_cleanup;
 use silex_dom::prelude::*;
+use silex_dom::view::ViewOwner;
 use silex_macros::component;
+use std::{cell::Cell, panic::{AssertUnwindSafe, catch_unwind, resume_unwind}, rc::Rc};
 use web_sys::Node;
+
+#[derive(Clone)]
+struct PortalView<'scope> {
+    children: AnyView<'scope>,
+    mount_to: Option<Node>,
+}
+
+impl<'scope> PortalView<'scope> {
+    fn mount_inner(
+        self,
+        owner: &dyn ViewOwner<'scope>,
+        _parent: &Node,
+        attrs: Vec<PendingAttribute<'scope>>,
+    ) {
+        let document = silex_dom::document();
+        let target = self.mount_to.unwrap_or_else(|| {
+            document
+                .body()
+                .expect("Portal requires document.body when no target is supplied")
+                .into()
+        });
+        let container = match document.create_element("div") {
+            Ok(container) => container,
+            Err(error) => {
+                silex_core::error::handle_error(error.into());
+                return;
+            }
+        };
+        let _ = container.set_attribute("style", "display: contents");
+        let container: Node = container.into();
+        if let Err(error) = target.append_child(&container).map_err(Into::into) {
+            silex_core::error::handle_error(error);
+            return;
+        }
+
+        let active = Rc::new(Cell::new(true));
+        let cleanup_active = active.clone();
+        let cleanup_target = target.clone();
+        let cleanup_container = container.clone();
+        owner.on_cleanup(Box::new(move || {
+            if cleanup_active.replace(false) {
+                let _ = cleanup_target.remove_child(&cleanup_container);
+            }
+        }));
+
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            self.children.mount_owned(owner, &container, attrs);
+        }));
+        if let Err(panic) = result {
+            if active.replace(false) {
+                let _ = target.remove_child(&container);
+            }
+            resume_unwind(panic);
+        }
+    }
+}
+
+impl<'scope> View<'scope> for PortalView<'scope> {
+    fn mount(
+        &self,
+        owner: &dyn ViewOwner<'scope>,
+        parent: &Node,
+        attrs: Vec<PendingAttribute<'scope>>,
+    ) {
+        self.clone().mount_inner(owner, parent, attrs);
+    }
+
+    fn mount_owned(
+        self,
+        owner: &dyn ViewOwner<'scope>,
+        parent: &Node,
+        attrs: Vec<PendingAttribute<'scope>>,
+    ) where
+        Self: Sized,
+    {
+        self.mount_inner(owner, parent, attrs);
+    }
+}
+
+impl<'scope> ApplyAttributes<'scope> for PortalView<'scope> {}
 
 /// Portal 组件：将子视图渲染到当前 DOM 树之外的节点（默认是 document.body）。
 /// 但保持响应式上下文（Context）的连通性。
 #[component]
-pub fn Portal(
-    #[prop(into)] children: AnyView,
+pub fn Portal<'scope>(
+    #[prop(into)] children: AnyView<'scope>,
     #[chain(default)] mount_to: Option<Node>,
-) -> impl View {
-    let document = silex_dom::document();
-    let target = mount_to
-        .clone()
-        .unwrap_or_else(|| document.body().expect("Body not found").into());
-
-    let container = document
-        .create_element("div")
-        .expect("Failed to create portal container");
-    let _ = container.set_attribute("style", "display: contents");
-    let container_node: Node = container.into();
-
-    let _ = target.append_child(&container_node);
-
-    let container_clone = container_node.clone();
-    on_cleanup(move || {
-        let _ = target.remove_child(&container_clone);
-    });
-
-    children.mount_owned(&container_node, Vec::new());
-
-    // 返回空视图，因为 Portal 在原位置不渲染内容
+) -> impl View<'scope> {
+    PortalView { children, mount_to }
 }

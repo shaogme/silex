@@ -4,24 +4,24 @@ use silex_html::{button, span};
 use silex_macros::{component, tw};
 
 #[component]
-pub fn Switch(
+pub fn Switch<'scope>(
+    scope: Scope<'scope>,
     #[prop(into)]
     #[chain(default)]
-    checked: Signal<bool>,
+    checked: Signal<'scope, bool>,
     #[prop(into)]
     #[chain(default)]
-    size: Signal<String>,
+    size: Signal<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<String>,
+    class: Signal<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    on_change: Callback<bool>,
-) -> impl View {
-    let track_cls = rx!(move || {
-        let is_checked = checked.get();
-        let s = size.get();
-        let is_sm = s == "sm";
+    on_change: Callback<'scope, bool>,
+) -> impl View<'scope> {
+    let track_cls = rx!(scope; {
+        let is_checked = *$checked;
+        let is_sm = $size.as_str() == "sm";
 
         let base_cls = if is_sm {
             tw!(
@@ -43,7 +43,7 @@ pub fn Switch(
             ).get()
         };
 
-        let extra = class.get();
+        let extra = $class;
         if extra.is_empty() {
             base_cls
         } else {
@@ -51,10 +51,9 @@ pub fn Switch(
         }
     });
 
-    let thumb_cls = rx!(move || {
-        let is_checked = checked.get();
-        let s = size.get();
-        let is_sm = s == "sm";
+    let thumb_cls = rx!(scope; {
+        let is_checked = *$checked;
+        let is_sm = $size.as_str() == "sm";
 
         if is_sm {
             tw!(
