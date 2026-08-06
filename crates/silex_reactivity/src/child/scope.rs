@@ -8,7 +8,8 @@ use std::{
 };
 
 use super::node::{
-    Callback, Derived, Effect, Memo, NodeRef, ReadSignal, RwSignal, StoredValue, WriteSignal,
+    Callback, Derived, Effect, Memo, NodeRef, ReadSignal, RwSignal, StoredValue, WatchOptions,
+    WriteSignal,
 };
 use crate::{
     ReactiveError, ReactiveResult,
@@ -137,7 +138,8 @@ impl<'scope> Scope<'scope> {
         let raw = state
             .try_borrow_mut()
             .expect("scope 在用户代码执行期间不应持有运行时借用")
-            .create_callback(thunk);
+            .create_callback(thunk)
+            .unwrap_or_else(|error| panic!("创建 scoped callback 失败: {error}"));
         Callback {
             handle: Handle::new(self.storage, raw),
             marker: PhantomData,
@@ -170,23 +172,87 @@ impl<'scope> Scope<'scope> {
     {
         let state = self.state();
         let raw = runtime::create_effect(&state, inputs, f)?;
-        #[cfg(test)]
         let handle = Handle::new(self.storage, raw);
-        #[cfg(not(test))]
-        let _ = raw;
-        Ok(Effect {
-            #[cfg(test)]
-            handle,
-            marker: PhantomData,
-        })
+        Ok(Effect { handle })
     }
 
-    /// Register an effect and intentionally discard its returned handle.
-    pub fn watch<F>(&self, f: F)
+    /// Create an effect that receives the value returned by its previous run.
+    pub fn effect_with_previous<T, F>(&self, f: F) -> Effect<'scope>
     where
-        F: FnMut() + 'scope,
+        T: 'scope,
+        F: FnMut(Option<T>) -> T + 'scope,
     {
-        let _ = self.effect(f);
+        self.effect_with_previous_from(RuntimeInputs::new(), f)
+    }
+
+    #[doc(hidden)]
+    pub fn effect_with_previous_from<T, F>(&self, inputs: RuntimeInputs, f: F) -> Effect<'scope>
+    where
+        T: 'scope,
+        F: FnMut(Option<T>) -> T + 'scope,
+    {
+        self.try_effect_with_previous_from(inputs, f)
+            .unwrap_or_else(|error| panic!("创建 scoped previous effect 失败: {error}"))
+    }
+
+    #[doc(hidden)]
+    pub fn try_effect_with_previous_from<T, F>(
+        &self,
+        inputs: RuntimeInputs,
+        f: F,
+    ) -> ReactiveResult<Effect<'scope>>
+    where
+        T: 'scope,
+        F: FnMut(Option<T>) -> T + 'scope,
+    {
+        let state = self.state();
+        let raw = runtime::create_previous(&state, inputs, f)?;
+        let handle = Handle::new(self.storage, raw);
+        Ok(Effect { handle })
+    }
+
+    /// Create a getter-based watcher.
+    pub fn watch_getter<T, G, C>(&self, getter: G, callback: C) -> Effect<'scope>
+    where
+        T: PartialEq + 'scope,
+        G: FnMut() -> T + 'scope,
+        C: FnMut(&T, Option<&T>) + 'scope,
+    {
+        self.watch_getter_with_options(getter, callback, WatchOptions::default())
+    }
+
+    pub fn watch_getter_with_options<T, G, C>(
+        &self,
+        getter: G,
+        callback: C,
+        options: WatchOptions,
+    ) -> Effect<'scope>
+    where
+        T: PartialEq + 'scope,
+        G: FnMut() -> T + 'scope,
+        C: FnMut(&T, Option<&T>) + 'scope,
+    {
+        self.try_watch_getter_from(RuntimeInputs::new(), getter, callback, options)
+            .unwrap_or_else(|error| panic!("创建 scoped watcher 失败: {error}"))
+    }
+
+    #[doc(hidden)]
+    pub fn try_watch_getter_from<T, G, C>(
+        &self,
+        inputs: RuntimeInputs,
+        getter: G,
+        callback: C,
+        options: WatchOptions,
+    ) -> ReactiveResult<Effect<'scope>>
+    where
+        T: PartialEq + 'scope,
+        G: FnMut() -> T + 'scope,
+        C: FnMut(&T, Option<&T>) + 'scope,
+    {
+        let state = self.state();
+        let raw = runtime::create_watch(&state, inputs, getter, callback, options)?;
+        let handle = Handle::new(self.storage, raw);
+        Ok(Effect { handle })
     }
 
     /// Create a lazy memo whose dependents are notified only when its value
@@ -274,7 +340,8 @@ impl<'scope> Scope<'scope> {
         let raw = state
             .try_borrow_mut()
             .expect("scope 在 node_ref 创建期间被借用")
-            .create_node_ref(AnyValue::new(Option::<T>::None));
+            .create_node_ref(AnyValue::new(Option::<T>::None))
+            .unwrap_or_else(|error| panic!("创建 scoped node_ref 失败: {error}"));
         NodeRef {
             handle: Handle::new(self.storage, raw),
             marker: PhantomData,
@@ -287,7 +354,8 @@ impl<'scope> Scope<'scope> {
         let raw = state
             .try_borrow_mut()
             .expect("scope 在 signal 创建期间被借用")
-            .create_signal(AnyValue::new(value));
+            .create_signal(AnyValue::new(value))
+            .unwrap_or_else(|error| panic!("创建 scoped signal 失败: {error}"));
         let handle = Handle::new(self.storage, raw);
         (
             ReadSignal {
@@ -314,7 +382,8 @@ impl<'scope> Scope<'scope> {
         let raw = state
             .try_borrow_mut()
             .expect("scope 在 stored value 创建期间被借用")
-            .create_stored(AnyValue::new(value));
+            .create_stored(AnyValue::new(value))
+            .unwrap_or_else(|error| panic!("创建 scoped stored value 失败: {error}"));
         StoredValue {
             handle: Handle::new(self.storage, raw),
             marker: PhantomData,
@@ -423,15 +492,55 @@ impl<'scope> OwnedScope<'scope> {
         }
         let state = self.state();
         let raw = runtime::create_effect(&state, inputs, f)?;
-        #[cfg(test)]
         let handle = Handle::new(&self.storage, raw);
-        #[cfg(not(test))]
-        let _ = raw;
-        Ok(Effect {
-            #[cfg(test)]
-            handle,
-            marker: PhantomData,
-        })
+        Ok(Effect { handle })
+    }
+
+    /// Create a getter-based watcher owned by this persistent scope.
+    pub fn watch_getter<T, G, C>(&self, getter: G, callback: C) -> Effect<'_>
+    where
+        T: PartialEq + 'scope,
+        G: FnMut() -> T + 'scope,
+        C: FnMut(&T, Option<&T>) + 'scope,
+    {
+        self.watch_getter_with_options(getter, callback, WatchOptions::default())
+    }
+
+    pub fn watch_getter_with_options<T, G, C>(
+        &self,
+        getter: G,
+        callback: C,
+        options: WatchOptions,
+    ) -> Effect<'_>
+    where
+        T: PartialEq + 'scope,
+        G: FnMut() -> T + 'scope,
+        C: FnMut(&T, Option<&T>) + 'scope,
+    {
+        self.try_watch_getter_from(RuntimeInputs::new(), getter, callback, options)
+            .unwrap_or_else(|error| panic!("创建 owned watcher 失败: {error}"))
+    }
+
+    #[doc(hidden)]
+    pub fn try_watch_getter_from<T, G, C>(
+        &self,
+        inputs: RuntimeInputs,
+        getter: G,
+        callback: C,
+        options: WatchOptions,
+    ) -> ReactiveResult<Effect<'_>>
+    where
+        T: PartialEq + 'scope,
+        G: FnMut() -> T + 'scope,
+        C: FnMut(&T, Option<&T>) + 'scope,
+    {
+        if !self.active.get() {
+            return Err(ReactiveError::NoSuchNode);
+        }
+        let state = self.state();
+        let raw = runtime::create_watch(&state, inputs, getter, callback, options)?;
+        let handle = Handle::new(&self.storage, raw);
+        Ok(Effect { handle })
     }
 
     pub fn on_cleanup<F>(&self, f: F)

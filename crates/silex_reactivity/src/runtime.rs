@@ -18,11 +18,13 @@ mod storage;
 pub(crate) use dispose::{dispose_all, dispose_nodes};
 pub(crate) use eval::{run_global_queue, run_initial};
 pub use input::{RuntimeInput, RuntimeInputs};
-pub(crate) use input::{create_derived, create_effect, create_memo, validate_inputs};
+pub(crate) use input::{
+    create_derived, create_effect, create_memo, create_previous, create_watch, validate_inputs,
+};
 pub(crate) use model::ScopeState;
 pub(crate) use ops::{
-    invoke_callback, node_ref_clear, node_ref_get, node_ref_set, notify, track, track_many,
-    update_signal, update_stored, with_batch, with_signal, with_stored, with_untracked,
+    invoke_callback, node_ref_clear, node_ref_get, node_ref_set, notify, stop_effect, track,
+    track_many, update_signal, update_stored, with_batch, with_signal, with_stored, with_untracked,
 };
 pub(crate) use scheduler::{GlobalScheduler, ObserverFrame, ScopeId};
 

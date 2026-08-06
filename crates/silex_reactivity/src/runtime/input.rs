@@ -3,13 +3,18 @@
 use super::{model::ScopeState, scheduler::GlobalScheduler};
 use crate::{
     ReactiveError, ReactiveResult,
+    child::WatchOptions,
     internal::{
         RawId,
-        value::{Computation, EffectThunk, MemoThunk},
+        value::{Computation, EffectThunk, MemoThunk, PreviousThunk, WatchThunk},
     },
 };
 use smallvec::SmallVec;
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    cell::RefCell,
+    panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
+    rc::Rc,
+};
 
 const INLINE_INPUTS: usize = 4;
 
@@ -91,6 +96,8 @@ impl RuntimeInputs {
 #[derive(Clone, Copy)]
 pub(crate) enum ComputationKind {
     Effect,
+    Previous,
+    Watch,
     Memo,
     Derived,
 }
@@ -146,19 +153,29 @@ pub(crate) fn create_computation<'scope>(
             .map_err(|_| ReactiveError::Reentrant)?;
         match (kind, computation) {
             (ComputationKind::Effect, Computation::Effect(callback)) => {
-                state.register_effect(callback)
+                state.register_effect(callback)?
+            }
+            (ComputationKind::Previous, Computation::Previous(callback)) => {
+                state.register_previous(callback)?
+            }
+            (ComputationKind::Watch, Computation::Watch(callback)) => {
+                state.register_watch(callback)?
             }
             (ComputationKind::Memo, Computation::Memo(callback)) => {
-                state.register_memo(callback, false)
+                state.register_memo(callback, false)?
             }
             (ComputationKind::Derived, Computation::Memo(callback)) => {
-                state.register_memo(callback, true)
+                state.register_memo(callback, true)?
             }
             _ => return Err(ReactiveError::WrongKind),
         }
     };
 
-    super::run_initial(state, raw);
+    let result = catch_unwind(AssertUnwindSafe(|| super::run_initial(state, raw)));
+    if let Err(panic) = result {
+        let _ = catch_unwind(AssertUnwindSafe(|| super::dispose_nodes(state, vec![raw])));
+        resume_unwind(panic);
+    }
     Ok(raw)
 }
 
@@ -176,6 +193,52 @@ where
             kind: ComputationKind::Effect,
             inputs,
             computation: Computation::Effect(EffectThunk::new(callback)),
+        },
+    )
+}
+
+pub(crate) fn create_previous<'scope, T, F>(
+    state: &Rc<RefCell<ScopeState<'scope>>>,
+    inputs: RuntimeInputs,
+    callback: F,
+) -> ReactiveResult<RawId>
+where
+    T: 'scope,
+    F: FnMut(Option<T>) -> T + 'scope,
+{
+    create_computation(
+        state,
+        ComputationSpec {
+            kind: ComputationKind::Previous,
+            inputs,
+            computation: Computation::Previous(PreviousThunk::new::<T, F>(callback)),
+        },
+    )
+}
+
+pub(crate) fn create_watch<'scope, T, G, C>(
+    state: &Rc<RefCell<ScopeState<'scope>>>,
+    inputs: RuntimeInputs,
+    getter: G,
+    callback: C,
+    options: WatchOptions,
+) -> ReactiveResult<RawId>
+where
+    T: PartialEq + 'scope,
+    G: FnMut() -> T + 'scope,
+    C: FnMut(&T, Option<&T>) + 'scope,
+{
+    create_computation(
+        state,
+        ComputationSpec {
+            kind: ComputationKind::Watch,
+            inputs,
+            computation: Computation::Watch(WatchThunk::new(
+                getter,
+                callback,
+                options.immediate,
+                options.once,
+            )),
         },
     )
 }
@@ -250,7 +313,8 @@ mod tests {
         let source_state = unsafe { source.typed_state() };
         source_state
             .borrow_mut()
-            .create_signal(AnyValue::new(1_i32));
+            .create_signal(AnyValue::new(1_i32))
+            .expect("test scope should be active");
         let input = RuntimeInput::from_scheduler(source.scheduler());
         let target_state = unsafe { target.typed_state() };
         let before = snapshot(&target);

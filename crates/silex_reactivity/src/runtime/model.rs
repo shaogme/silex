@@ -9,7 +9,10 @@ use crate::{
     handle::NodeKindTag,
     internal::{
         RawId,
-        value::{AnyValue, CallbackThunk, Computation, EffectThunk, MemoThunk, OnceThunk},
+        value::{
+            AnyValue, CallbackThunk, Computation, EffectThunk, MemoThunk, OnceThunk, PreviousThunk,
+            WatchThunk,
+        },
     },
 };
 use slotmap::{SecondaryMap, SlotMap};
@@ -261,12 +264,17 @@ impl<'scope> ScopeState<'scope> {
         }
     }
 
-    pub(crate) fn register(&mut self, node: NodeCore, data: NodeData<'scope>) -> RawId {
+    pub(crate) fn register(
+        &mut self,
+        node: NodeCore,
+        data: NodeData<'scope>,
+    ) -> ReactiveResult<RawId> {
+        self.ensure_active()?;
         let parent = node.parent;
         let id = self.nodes.insert(node);
         self.data.insert(id, data);
         self.link_child(parent, id);
-        id
+        Ok(id)
     }
 
     pub(crate) fn node_exists(&self, id: RawId) -> bool {
@@ -290,7 +298,7 @@ impl<'scope> ScopeState<'scope> {
         self.current_owner = owner;
     }
 
-    pub(crate) fn create_signal(&mut self, value: AnyValue<'scope>) -> RawId {
+    pub(crate) fn create_signal(&mut self, value: AnyValue<'scope>) -> ReactiveResult<RawId> {
         let parent = self.parent_for_new_node();
         let epoch = self.scheduler.borrow().current_epoch();
         let mut node = NodeCore::new(NodeKindTag::Signal, parent, NodeState::Clean);
@@ -302,7 +310,10 @@ impl<'scope> ScopeState<'scope> {
         )
     }
 
-    pub(super) fn register_effect(&mut self, callback: EffectThunk<'scope>) -> RawId {
+    pub(super) fn register_effect(
+        &mut self,
+        callback: EffectThunk<'scope>,
+    ) -> ReactiveResult<RawId> {
         let parent = self.parent_for_new_node();
         self.register(
             NodeCore::new(NodeKindTag::Effect, parent, NodeState::Dirty),
@@ -312,7 +323,34 @@ impl<'scope> ScopeState<'scope> {
         )
     }
 
-    pub(super) fn register_memo(&mut self, callback: MemoThunk<'scope>, derived: bool) -> RawId {
+    pub(super) fn register_previous(
+        &mut self,
+        callback: PreviousThunk<'scope>,
+    ) -> ReactiveResult<RawId> {
+        let parent = self.parent_for_new_node();
+        self.register(
+            NodeCore::new(NodeKindTag::Effect, parent, NodeState::Dirty),
+            NodeData::new(Rc::new(NodeStorage::Computation(ComputationStorage::new(
+                Computation::Previous(callback),
+            )))),
+        )
+    }
+
+    pub(super) fn register_watch(&mut self, callback: WatchThunk<'scope>) -> ReactiveResult<RawId> {
+        let parent = self.parent_for_new_node();
+        self.register(
+            NodeCore::new(NodeKindTag::Effect, parent, NodeState::Dirty),
+            NodeData::new(Rc::new(NodeStorage::Computation(ComputationStorage::new(
+                Computation::Watch(callback),
+            )))),
+        )
+    }
+
+    pub(super) fn register_memo(
+        &mut self,
+        callback: MemoThunk<'scope>,
+        derived: bool,
+    ) -> ReactiveResult<RawId> {
         let parent = self.parent_for_new_node();
         let kind = if derived {
             NodeKindTag::Derived
@@ -327,7 +365,7 @@ impl<'scope> ScopeState<'scope> {
         )
     }
 
-    pub(crate) fn create_stored(&mut self, value: AnyValue<'scope>) -> RawId {
+    pub(crate) fn create_stored(&mut self, value: AnyValue<'scope>) -> ReactiveResult<RawId> {
         let parent = self.parent_for_new_node();
         self.register(
             NodeCore::new(NodeKindTag::Stored, parent, NodeState::Clean),
@@ -335,7 +373,10 @@ impl<'scope> ScopeState<'scope> {
         )
     }
 
-    pub(crate) fn create_callback(&mut self, callback: CallbackThunk<'scope>) -> RawId {
+    pub(crate) fn create_callback(
+        &mut self,
+        callback: CallbackThunk<'scope>,
+    ) -> ReactiveResult<RawId> {
         let parent = self.parent_for_new_node();
         self.register(
             NodeCore::new(NodeKindTag::Callback, parent, NodeState::Clean),
@@ -343,7 +384,7 @@ impl<'scope> ScopeState<'scope> {
         )
     }
 
-    pub(crate) fn create_node_ref(&mut self, value: AnyValue<'scope>) -> RawId {
+    pub(crate) fn create_node_ref(&mut self, value: AnyValue<'scope>) -> ReactiveResult<RawId> {
         let parent = self.parent_for_new_node();
         self.register(
             NodeCore::new(NodeKindTag::NodeRef, parent, NodeState::Clean),

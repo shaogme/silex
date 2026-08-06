@@ -122,6 +122,7 @@ pub(crate) fn dispose_nodes<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, roo
                         .map(|(edge_id, edge)| (edge_id, edge.target))
                         .collect();
                     let scheduler = state_ref.scheduler.clone();
+                    scheduler.borrow_mut().cancel_effect(source_target);
                     for (_, subscriber) in &subscriber_edges {
                         if subscriber.scope_id == state_ref.scope_id {
                             continue;
@@ -154,6 +155,9 @@ pub(crate) fn dispose_nodes<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, roo
                         state_ref.children_of_head(node.first_child).collect();
                     let data = state_ref.data.remove(id);
                     state_ref.nodes.remove(id);
+                    if state_ref.current_owner == Some(id) {
+                        state_ref.current_owner = None;
+                    }
                     state_ref.unlink_child(node.parent, id, node.next_sibling);
                     (children, data)
                 } else {

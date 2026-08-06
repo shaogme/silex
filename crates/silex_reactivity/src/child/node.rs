@@ -1,15 +1,33 @@
 //! Reactive node primitives owned by an execution scope.
 
-use std::{cell::RefCell, marker::PhantomData, rc::Rc};
+use std::{cell::RefCell, fmt, marker::PhantomData, rc::Rc};
 
-#[cfg(test)]
-use crate::handle::EffectId;
 use crate::{
     ReactiveError, ReactiveResult,
-    handle::{CallbackId, DerivedId, MemoId, NodeRefId, SignalId, StoredId},
+    handle::{CallbackId, DerivedId, EffectId, MemoId, NodeRefId, SignalId, StoredId},
     internal::{RawId, value::AnyValue},
     runtime::{self, RuntimeInput, ScopeState},
 };
+
+/// Options controlling the initial callback and one-shot behavior of a watcher.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct WatchOptions {
+    pub immediate: bool,
+    pub once: bool,
+}
+
+impl WatchOptions {
+    pub const fn immediate(self) -> Self {
+        Self {
+            immediate: true,
+            ..self
+        }
+    }
+
+    pub const fn once(self) -> Self {
+        Self { once: true, ..self }
+    }
+}
 
 // =============================================================================
 // Callback
@@ -41,9 +59,7 @@ impl<'scope, T: 'scope> Callback<'scope, T> {
 
 /// Scoped effects.
 pub struct Effect<'scope> {
-    #[cfg(test)]
     pub(crate) handle: EffectId<'scope>,
-    pub(crate) marker: PhantomData<fn(&'scope ()) -> &'scope ()>,
 }
 
 impl Copy for Effect<'_> {}
@@ -51,6 +67,23 @@ impl Copy for Effect<'_> {}
 impl Clone for Effect<'_> {
     fn clone(&self) -> Self {
         *self
+    }
+}
+
+impl fmt::Debug for Effect<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Effect").finish_non_exhaustive()
+    }
+}
+
+impl<'scope> Effect<'scope> {
+    pub fn try_stop(&self) -> ReactiveResult<bool> {
+        runtime::stop_effect(&self.handle.state(), self.handle.raw())
+    }
+
+    pub fn stop(&self) {
+        self.try_stop()
+            .unwrap_or_else(|error| panic!("停止 scoped effect 失败: {error}"));
     }
 }
 

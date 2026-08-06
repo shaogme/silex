@@ -1,13 +1,15 @@
 //! Operations on values, callbacks, and runtime execution scoping.
 
 use super::{
+    dispose::dispose_nodes,
     eval::{flush_if_idle, prepare_read},
     model::ScopeState,
-    scheduler::GlobalScheduler,
+    scheduler::{GlobalScheduler, TargetNode},
     storage::NodeStorage,
 };
 use crate::{
     ReactiveError, ReactiveResult,
+    handle::NodeKindTag,
     internal::{RawId, value::AnyValue},
 };
 use std::{
@@ -175,6 +177,44 @@ pub(crate) fn invoke_callback<'scope>(
     Ok(())
 }
 
+pub(crate) fn stop_effect<'scope>(
+    state: &Rc<RefCell<ScopeState<'scope>>>,
+    id: RawId,
+) -> ReactiveResult<bool> {
+    let (scheduler, target) = {
+        let state_ref = state
+            .try_borrow()
+            .map_err(|_| ReactiveError::BorrowConflict)?;
+        let scheduler = state_ref.scheduler.clone();
+        if !scheduler.borrow().is_scope_active(state_ref.scope_id) {
+            return Ok(false);
+        }
+        let Some(node) = state_ref.nodes.get(id) else {
+            return Ok(false);
+        };
+        if node.kind != NodeKindTag::Effect {
+            return Err(ReactiveError::WrongKind);
+        }
+        (
+            scheduler,
+            TargetNode {
+                scope_id: state_ref.scope_id,
+                node: id,
+            },
+        )
+    };
+
+    scheduler.borrow_mut().cancel_effect(target);
+    let dispose_result = catch_unwind(AssertUnwindSafe(|| dispose_nodes(state, vec![id])));
+    let flush_result = catch_unwind(AssertUnwindSafe(|| flush_if_idle(state)));
+    match (dispose_result, flush_result) {
+        (Err(panic), _) => resume_unwind(panic),
+        (Ok(()), Err(panic)) => resume_unwind(panic),
+        (Ok(()), Ok(())) => {}
+    }
+    Ok(true)
+}
+
 pub(crate) fn node_ref_get<'scope, T: Clone>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     id: RawId,
@@ -283,7 +323,10 @@ mod tests {
     fn disposing_a_node_during_a_read_does_not_require_put_back() {
         let storage = ScopeStorage::new(GlobalScheduler::new());
         let state = unsafe { storage.typed_state() };
-        let raw = state.borrow_mut().create_signal(AnyValue::new(7_i32));
+        let raw = state
+            .borrow_mut()
+            .create_signal(AnyValue::new(7_i32))
+            .expect("test scope should be active");
 
         let result = with_signal(&state, raw, false, |value| {
             assert_eq!(unsafe { value.downcast_ref::<i32>() }, Some(&7));

@@ -1,8 +1,9 @@
-use std::{fmt, marker::PhantomData};
+use crate::{SilexError, SilexResult};
+use std::fmt;
 
 /// High-level effect handle.
 pub struct Effect<'scope> {
-    marker: PhantomData<fn(&'scope ()) -> &'scope ()>,
+    pub(crate) inner: silex_reactivity::Effect<'scope>,
 }
 
 impl Copy for Effect<'_> {}
@@ -21,9 +22,17 @@ impl fmt::Debug for Effect<'_> {
 
 impl<'scope> Effect<'scope> {
     pub(crate) fn from_inner(inner: silex_reactivity::Effect<'scope>) -> Self {
-        let _ = inner;
-        Self {
-            marker: PhantomData,
-        }
+        Self { inner }
+    }
+
+    pub fn try_stop(&self) -> SilexResult<bool> {
+        self.inner
+            .try_stop()
+            .map_err(|error| SilexError::Reactivity(error.to_string()))
+    }
+
+    pub fn stop(&self) {
+        self.try_stop()
+            .unwrap_or_else(|error| panic!("停止 effect 失败: {error}"));
     }
 }

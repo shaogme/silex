@@ -232,7 +232,9 @@ where
         let mut state_ref = state
             .try_borrow_mut()
             .expect("scope state borrowed while creating completion destination");
-        state_ref.create_callback(thunk)
+        state_ref
+            .create_callback(thunk)
+            .expect("scope active check must precede completion callback registration")
     };
     let weak = Rc::downgrade(&state);
     // SAFETY: the destination stores only a weak reference to the scope state;

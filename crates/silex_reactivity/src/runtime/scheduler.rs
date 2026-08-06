@@ -296,6 +296,11 @@ impl GlobalScheduler {
         }
     }
 
+    pub(crate) fn cancel_effect(&mut self, target: TargetNode) {
+        self.global_queue
+            .retain(|task| task.scope_id != target.scope_id || task.node != target.node);
+    }
+
     pub(crate) fn is_idle(&self) -> bool {
         self.batch_depth == 0 && self.evaluating == 0 && self.executing == 0 && !self.running_queue
     }

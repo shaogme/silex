@@ -308,6 +308,8 @@ impl Drop for AnyValue<'_> {
 
 pub(crate) enum Computation<'scope> {
     Effect(EffectThunk<'scope>),
+    Previous(PreviousThunk<'scope>),
+    Watch(WatchThunk<'scope>),
     Memo(MemoThunk<'scope>),
 }
 
@@ -327,6 +329,97 @@ impl<'scope> EffectThunk<'scope> {
 
     pub(crate) fn call(&mut self) {
         (self.callback)();
+    }
+}
+
+pub(crate) struct PreviousThunk<'scope> {
+    callback: PreviousCallback<'scope>,
+}
+
+type PreviousCallback<'scope> =
+    Box<dyn FnMut(Option<AnyValue<'scope>>) -> AnyValue<'scope> + 'scope>;
+
+impl<'scope> PreviousThunk<'scope> {
+    pub(crate) fn new<T, F>(callback: F) -> Self
+    where
+        T: 'scope,
+        F: FnMut(Option<T>) -> T + 'scope,
+    {
+        let mut callback = callback;
+        Self {
+            callback: Box::new(move |old| {
+                let old = old.map(|value| {
+                    unsafe { value.downcast::<T>() }
+                        .expect("previous computation value type must match")
+                });
+                AnyValue::new(callback(old))
+            }),
+        }
+    }
+
+    pub(crate) fn compute(&mut self, old: Option<AnyValue<'scope>>) -> AnyValue<'scope> {
+        (self.callback)(old)
+    }
+}
+
+pub(crate) struct WatchThunk<'scope> {
+    getter: Box<dyn FnMut() -> AnyValue<'scope> + 'scope>,
+    callback: WatchCallback<'scope>,
+    initialized: bool,
+    immediate: bool,
+    once: bool,
+}
+
+type WatchCallback<'scope> = Box<dyn FnMut(&AnyValue<'scope>, Option<&AnyValue<'scope>>) + 'scope>;
+
+impl<'scope> WatchThunk<'scope> {
+    pub(crate) fn new<T, G, C>(getter: G, callback: C, immediate: bool, once: bool) -> Self
+    where
+        T: PartialEq + 'scope,
+        G: FnMut() -> T + 'scope,
+        C: FnMut(&T, Option<&T>) + 'scope,
+    {
+        let mut getter = getter;
+        let mut callback = callback;
+        Self {
+            getter: Box::new(move || AnyValue::new_reactive(getter())),
+            callback: Box::new(move |new, old| {
+                let new = unsafe { new.downcast_ref::<T>() }
+                    .expect("watch getter and callback value types must match");
+                let old = old.map(|value| {
+                    unsafe { value.downcast_ref::<T>() }
+                        .expect("watch getter and callback value types must match")
+                });
+                callback(new, old);
+            }),
+            initialized: false,
+            immediate,
+            once,
+        }
+    }
+
+    pub(crate) fn get(&mut self) -> AnyValue<'scope> {
+        (self.getter)()
+    }
+
+    pub(crate) fn call(&mut self, new: &AnyValue<'scope>, old: Option<&AnyValue<'scope>>) {
+        (self.callback)(new, old);
+    }
+
+    pub(crate) fn initialized(&self) -> bool {
+        self.initialized
+    }
+
+    pub(crate) fn mark_initialized(&mut self) {
+        self.initialized = true;
+    }
+
+    pub(crate) fn immediate(&self) -> bool {
+        self.immediate
+    }
+
+    pub(crate) fn once(&self) -> bool {
+        self.once
     }
 }
 

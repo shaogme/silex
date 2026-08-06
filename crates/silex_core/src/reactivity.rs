@@ -16,5 +16,6 @@ pub use promotion::{PromotionPlan, ReactiveSource, runtime_inputs_of};
 pub use resource::{Resource, ResourceFetcher, ResourceState, SuspenseContext};
 pub use signal::{Constant, ReadSignal, RwSignal, Signal, WriteSignal};
 pub use silex_reactivity::RuntimeInputs;
+pub use silex_reactivity::WatchOptions;
 pub use slice::SignalSlice;
 pub use stored_value::StoredValue;
