@@ -13,13 +13,12 @@ fn owned_scope_keeps_effects_until_explicit_dispose() {
         let owner = scope.owned_scope();
 
         let runs_for_effect = runs.clone();
-        let effect = owner.effect(move || {
+        let _effect = owner.effect(move || {
             read.with(|value| {
                 assert!(*value >= 1);
             });
             runs_for_effect.set(runs_for_effect.get() + 1);
         });
-        assert!(effect.is_alive());
         let cleanups_for_owner = cleanups.clone();
         owner.on_cleanup(move || {
             cleanups_for_owner.set(cleanups_for_owner.get() + 1);
@@ -31,7 +30,6 @@ fn owned_scope_keeps_effects_until_explicit_dispose() {
 
         owner.dispose();
         assert!(!owner.is_active());
-        assert!(!effect.is_alive());
         assert_eq!(cleanups.get(), 1);
         write.set(3);
         assert_eq!(runs.get(), 2);

@@ -23,6 +23,7 @@ pub enum PersistenceError {
     DecodeFailed { raw: String, message: String },
     EncodeFailed(String),
     InvalidConfiguration(String),
+    Reactivity(silex_core::ReactiveError),
 }
 
 impl PersistenceError {
@@ -35,7 +36,14 @@ impl PersistenceError {
             | Self::EncodeFailed(message)
             | Self::InvalidConfiguration(message) => message.clone(),
             Self::DecodeFailed { message, .. } => message.clone(),
+            Self::Reactivity(error) => error.to_string(),
         }
+    }
+}
+
+impl From<silex_core::ReactiveError> for PersistenceError {
+    fn from(error: silex_core::ReactiveError) -> Self {
+        Self::Reactivity(error)
     }
 }
 

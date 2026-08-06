@@ -1,5 +1,5 @@
 use ref_str::LocalStaticRefStr;
-use silex_core::{Runtime, RuntimeInputs, RxGet, Scope};
+use silex_core::{ReactiveError, Runtime, RuntimeInputs, RxGet, Scope};
 use silex_persist::{
     BackendEvent, BackendEventSink, BackendSubscribeError, BackendSubscription, DecodePolicy,
     NoDefault, ParseCodec, PersistCodec, PersistMode, PersistenceBackend, PersistenceError,
@@ -861,6 +861,52 @@ fn subscription_is_removed_when_scope_is_disposed() {
         assert_eq!(backend.subscriptions.borrow().len(), 1);
     });
     assert!(backend.subscriptions.borrow().is_empty());
+}
+
+#[test]
+fn stale_persistent_operations_return_no_such_node_during_root_cleanup() {
+    let backend = MockBackend::default();
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    let errors = Rc::new(RefCell::new(Vec::new()));
+
+    root.with_scope(|scope| {
+        let value = parse_builder(scope, backend.clone(), "stale-cleanup")
+            .default(1)
+            .build();
+        let errors_for_cleanup = errors.clone();
+        scope.on_cleanup(move || {
+            errors_for_cleanup
+                .borrow_mut()
+                .push(value.remove().expect_err("stale remove must fail"));
+            errors_for_cleanup
+                .borrow_mut()
+                .push(value.reload().expect_err("stale reload must fail"));
+            errors_for_cleanup
+                .borrow_mut()
+                .push(value.flush().expect_err("stale flush must fail"));
+            assert_eq!(
+                value.try_set(2),
+                Err(PersistenceError::Reactivity(ReactiveError::NoSuchNode))
+            );
+            value.reset();
+        });
+    });
+
+    let writes_before_dispose = backend.writes.borrow().len();
+    let removes_before_dispose = backend.removed.borrow().len();
+    root.dispose().expect("root cleanup should succeed");
+
+    assert_eq!(
+        errors.borrow().as_slice(),
+        &[
+            PersistenceError::Reactivity(ReactiveError::NoSuchNode),
+            PersistenceError::Reactivity(ReactiveError::NoSuchNode),
+            PersistenceError::Reactivity(ReactiveError::NoSuchNode),
+        ]
+    );
+    assert_eq!(backend.writes.borrow().len(), writes_before_dispose);
+    assert_eq!(backend.removed.borrow().len(), removes_before_dispose);
 }
 
 #[test]

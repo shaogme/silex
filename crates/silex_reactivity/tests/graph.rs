@@ -413,8 +413,7 @@ fn cyclic_memo_dependency_panics_without_poisoning_the_scheduler() {
         assert!(panic.is_err());
 
         set_source.set(2);
-        assert!(first.is_alive());
-        assert!(second.is_alive());
+        assert_eq!(source.try_get(), Ok(2));
     });
 }
 
@@ -468,7 +467,6 @@ fn cyclic_effect_queue_failure_does_not_poison_unrelated_effects() {
         });
         set_independent.set(1);
         assert_eq!(independent_runs.get(), 1);
-        assert!(first.is_alive());
-        assert!(second.is_alive());
+        assert_eq!(source.try_get(), Ok(1));
     });
 }

@@ -1,4 +1,5 @@
 use crate::{Rx, RxValueKind, Scope};
+use silex_reactivity::ReactiveResult;
 use std::fmt;
 
 /// A non-reactive value owned by a scope.
@@ -33,12 +34,16 @@ impl<'scope, T: 'scope> StoredValue<'scope, T> {
         self.inner.with(f)
     }
 
+    pub fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
+        self.inner.try_with(f)
+    }
+
     pub fn update<U>(&self, f: impl FnOnce(&mut T) -> U) -> U {
         self.inner.update(f)
     }
 
-    pub fn is_alive(&self) -> bool {
-        self.inner.is_alive()
+    pub fn try_update<U>(&self, f: impl FnOnce(&mut T) -> U) -> ReactiveResult<U> {
+        self.inner.try_update(f)
     }
 
     pub fn set(&self, value: T) {

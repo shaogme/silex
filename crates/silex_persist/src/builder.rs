@@ -15,7 +15,7 @@ use crate::{
 };
 use ref_str::LocalStaticRefStr;
 use silex_core::{
-    RxBase, RxRead, Scope,
+    RxRead, Scope,
     traits::{RxGet, RxWrite},
 };
 use silex_dom::helpers::set_timeout_with_handle;
@@ -543,9 +543,7 @@ where
         if matches!(self.config.sync, SyncStrategy::CrossContext) {
             let token = self.scope.completion_sender({
                 move |event| {
-                    if value.is_alive() {
-                        apply_backend_event(controller, value, state, event);
-                    }
+                    apply_backend_event(controller, value, state, event);
                 }
             });
             let sink: BackendEventSink = Rc::new(move |event| {
@@ -567,9 +565,7 @@ where
                     let debounce_for_completion = debounce_state.clone();
                     let completion = self.scope.completion_sender({
                         move |generation| {
-                            if debounce_for_completion.borrow_mut().take_ready(generation)
-                                && value.is_alive()
-                            {
+                            if debounce_for_completion.borrow_mut().take_ready(generation) {
                                 let _ = flush_persistent_value(controller, value, state);
                             }
                         }
@@ -668,6 +664,7 @@ where
         }
 
         Ok(Persistent {
+            scope: self.scope,
             value,
             state,
             controller,

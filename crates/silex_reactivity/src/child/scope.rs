@@ -170,11 +170,18 @@ impl<'scope> Scope<'scope> {
     {
         let state = self.state();
         let raw = runtime::create_effect(&state, inputs, f)?;
+        #[cfg(test)]
         let handle = Handle::new(self.storage, raw);
-        Ok(Effect { handle })
+        #[cfg(not(test))]
+        let _ = raw;
+        Ok(Effect {
+            #[cfg(test)]
+            handle,
+            marker: PhantomData,
+        })
     }
 
-    /// Register an effect and intentionally discard its diagnostic handle.
+    /// Register an effect and intentionally discard its returned handle.
     pub fn watch<F>(&self, f: F)
     where
         F: FnMut() + 'scope,
@@ -386,7 +393,7 @@ impl<'scope> OwnedScope<'scope> {
 
     /// Register and immediately run an effect owned by this frame.
     ///
-    /// The returned diagnostic handle borrows this owner and cannot outlive
+    /// The returned effect handle borrows this owner and cannot outlive
     /// that borrow. The effect itself remains owned by `OwnedScope` until
     /// [`OwnedScope::dispose`] or `Drop`.
     pub fn effect<F>(&self, f: F) -> Effect<'_>
@@ -416,8 +423,14 @@ impl<'scope> OwnedScope<'scope> {
         }
         let state = self.state();
         let raw = runtime::create_effect(&state, inputs, f)?;
+        #[cfg(test)]
+        let handle = Handle::new(&self.storage, raw);
+        #[cfg(not(test))]
+        let _ = raw;
         Ok(Effect {
-            handle: Handle::new(&self.storage, raw),
+            #[cfg(test)]
+            handle,
+            marker: PhantomData,
         })
     }
 

@@ -103,14 +103,6 @@ impl<'scope, K: NodeKind> Handle<'scope, K> {
     pub(crate) fn runtime_input(&self) -> RuntimeInput {
         RuntimeInput::from_scheduler(self.storage.scheduler())
     }
-
-    /// Returns whether the owning scope still contains this node.
-    pub fn is_alive(&self) -> bool {
-        self.state()
-            .try_borrow()
-            .ok()
-            .is_some_and(|state| state.node_kind(self.raw) == Some(K::TAG))
-    }
 }
 
 impl<K: NodeKind> Copy for Handle<'_, K> {}
@@ -139,16 +131,5 @@ impl<K: NodeKind> Hash for Handle<'_, K> {
 impl<K: NodeKind> fmt::Debug for Handle<'_, K> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}{:?}", K::NAME, self.raw)
-    }
-}
-
-/// A common diagnostic capability shared by all typed handles.
-pub trait AnyHandle {
-    fn is_alive(&self) -> bool;
-}
-
-impl<K: NodeKind> AnyHandle for Handle<'_, K> {
-    fn is_alive(&self) -> bool {
-        Self::is_alive(self)
     }
 }

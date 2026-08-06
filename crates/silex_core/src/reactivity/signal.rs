@@ -162,10 +162,6 @@ impl<'scope, T: 'scope> ReadSignal<'scope, T> {
             .expect("读取 scoped signal 失败")
     }
 
-    pub fn is_alive(&self) -> bool {
-        self.inner.is_alive()
-    }
-
     pub fn into_rx(self) -> Rx<'scope, T> {
         Rx::from_signal(self)
     }
@@ -202,10 +198,6 @@ impl<'scope, T: 'scope> WriteSignal<'scope, T> {
 
     pub fn update(&self, f: impl FnOnce(&mut T)) {
         self.inner.update(f)
-    }
-
-    pub fn is_alive(&self) -> bool {
-        self.inner.is_alive()
     }
 
     /// Return opaque runtime provenance for owner-bound validation.
@@ -292,10 +284,6 @@ impl<'scope, T: 'scope> Signal<'scope, T> {
 
     pub fn is_constant(&self) -> bool {
         self.rx.is_constant()
-    }
-
-    pub fn is_alive(&self) -> bool {
-        self.rx.is_alive()
     }
 
     pub fn into_rx(self) -> Rx<'scope, T> {

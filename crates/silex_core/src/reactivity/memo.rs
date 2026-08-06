@@ -44,10 +44,6 @@ impl<'scope, T: 'scope> Memo<'scope, T> {
         self.inner.with_untracked(f).expect("读取 scoped memo 失败")
     }
 
-    pub fn is_alive(&self) -> bool {
-        self.inner.is_alive()
-    }
-
     pub fn map<U, F>(self, f: F) -> Rx<'scope, U>
     where
         U: 'scope,

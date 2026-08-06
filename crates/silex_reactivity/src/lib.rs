@@ -30,8 +30,8 @@ pub use crate::{
     completion::{CompletionOnce, CompletionSender},
     error::{ReactiveError, ReactiveResult},
     handle::{
-        AnyHandle, CallbackId, DerivedId, EffectId, Handle, MemoId, NodeKind, NodeKindTag,
-        NodeRefId, SignalId, StoredId, kind,
+        CallbackId, DerivedId, EffectId, Handle, MemoId, NodeKind, NodeKindTag, NodeRefId,
+        SignalId, StoredId, kind,
     },
     root::*,
     runtime::{Runtime, RuntimeInput, RuntimeInputs},

@@ -1,8 +1,8 @@
-use std::fmt;
+use std::{fmt, marker::PhantomData};
 
 /// High-level effect handle.
 pub struct Effect<'scope> {
-    pub(crate) inner: silex_reactivity::Effect<'scope>,
+    marker: PhantomData<fn(&'scope ()) -> &'scope ()>,
 }
 
 impl Copy for Effect<'_> {}
@@ -21,10 +21,9 @@ impl fmt::Debug for Effect<'_> {
 
 impl<'scope> Effect<'scope> {
     pub(crate) fn from_inner(inner: silex_reactivity::Effect<'scope>) -> Self {
-        Self { inner }
-    }
-
-    pub fn is_alive(&self) -> bool {
-        self.inner.is_alive()
+        let _ = inner;
+        Self {
+            marker: PhantomData,
+        }
     }
 }

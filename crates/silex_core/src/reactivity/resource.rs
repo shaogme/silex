@@ -234,10 +234,6 @@ impl<'scope, T: RxData + 'scope, E: RxError + 'scope> RxBase for Resource<'scope
     fn track(&self) {
         self.state.track();
     }
-
-    fn is_alive(&self) -> bool {
-        self.state.is_alive()
-    }
 }
 
 impl<'scope, T: RxCloneData + 'scope, E: RxError + 'scope> RxRead for Resource<'scope, T, E> {

@@ -31,6 +31,7 @@ pub use task::TaskHandle;
 pub use traits::{RxBase, RxData, RxGet, RxRead, RxValue};
 
 pub use silex_reactivity::CleanupError;
+pub use silex_reactivity::{ReactiveError, ReactiveResult};
 
 /// Marker for value-producing reactive nodes.
 pub struct RxValueKind;
@@ -149,10 +150,6 @@ impl<'scope, T: 'scope> Rx<'scope, T, RxValueKind> {
 
     pub fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> U {
         RxRead::with_untracked(self, f)
-    }
-
-    pub fn is_alive(&self) -> bool {
-        RxBase::is_alive(self)
     }
 
     pub fn into_signal(self) -> crate::reactivity::Signal<'scope, T> {

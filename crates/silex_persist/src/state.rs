@@ -2,9 +2,8 @@ use crate::backend::BackendEvent;
 use crate::builder::PersistentBuilder;
 use crate::{DecodePolicy, NoBackend, NoCodec, PersistenceError, RemovePolicy};
 use ref_str::LocalStaticRefStr;
-use silex_core::RxGet;
 use silex_core::{
-    Rx, Scope,
+    ReactiveError, ReactiveResult, Rx, RxGet, Scope,
     reactivity::{PromotionPlan, ReactiveSource, ReadSignal, RwSignal, StoredValue},
     traits::{RxBase, RxCloneData, RxData, RxRead, RxValue, RxWrite},
 };
@@ -108,6 +107,7 @@ pub(crate) struct PersistenceController<'scope, T: 'scope> {
 }
 
 pub struct Persistent<'scope, T> {
+    pub(crate) scope: Scope<'scope>,
     pub(crate) value: RwSignal<'scope, T>,
     pub(crate) state: RwSignal<'scope, PersistenceState>,
     pub(crate) controller: StoredValue<'scope, PersistenceController<'scope, T>>,
@@ -157,13 +157,29 @@ where
         self.write_value(f);
     }
 
+    pub fn try_set(&self, value: T) -> Result<(), PersistenceError> {
+        self.try_update(|current| *current = value)
+    }
+
+    pub fn try_update<U>(&self, f: impl FnOnce(&mut T) -> U) -> Result<U, PersistenceError> {
+        mark_local_value_write(self.controller)?;
+        self.value
+            .write_signal()
+            .try_update(f)
+            .map_err(PersistenceError::from)
+    }
+
     fn write_value(&self, f: impl FnOnce(&mut T)) {
-        if !self.value.is_alive() {
-            return;
+        if let Err(error) = self.try_update(f) {
+            panic!("更新 persistent value 失败: {error:?}");
         }
-        mark_local_value_write(self.controller);
-        if self.value.rx_try_update_untracked(f).is_some() {
-            self.value.rx_notify();
+    }
+
+    fn validate_owner(&self) -> Result<(), PersistenceError> {
+        if self.scope.is_active() {
+            Ok(())
+        } else {
+            Err(PersistenceError::Reactivity(ReactiveError::NoSuchNode))
         }
     }
 
@@ -186,21 +202,26 @@ where
     }
 
     pub fn reset(&self) {
-        if !self.value.is_alive() {
-            return;
-        }
-        let default = self
+        let default = match self
             .controller
-            .with_untracked(|controller| controller.default.clone());
-        self.set(default());
+            .try_with(|controller| controller.default.clone())
+        {
+            Ok(default) => default,
+            Err(ReactiveError::NoSuchNode) => return,
+            Err(error) => panic!("读取 persistent default 失败: {error}"),
+        };
+        if let Err(error) = self.try_set(default())
+            && !matches!(
+                error,
+                PersistenceError::Reactivity(ReactiveError::NoSuchNode)
+            )
+        {
+            panic!("重置 persistent value 失败: {error:?}");
+        }
     }
 
     pub fn remove(&self) -> Result<(), PersistenceError> {
-        if !self.value.is_alive() {
-            return Err(PersistenceError::InvalidConfiguration(
-                "persistent scope is inactive".to_string(),
-            ));
-        }
+        self.validate_owner()?;
         invalidate_debounce(self.controller);
         let key = self.key();
         let remove_backend = self
@@ -224,11 +245,7 @@ where
     }
 
     pub fn reload(&self) -> Result<(), PersistenceError> {
-        if !self.value.is_alive() {
-            return Err(PersistenceError::InvalidConfiguration(
-                "persistent scope is inactive".to_string(),
-            ));
-        }
+        self.validate_owner()?;
         let result = reload_persistent(self.controller, self.value, self.state);
         if let Err(error) = &result {
             set_error_state(self.state, error);
@@ -237,11 +254,7 @@ where
     }
 
     pub fn flush(&self) -> Result<(), PersistenceError> {
-        if !self.value.is_alive() {
-            return Err(PersistenceError::InvalidConfiguration(
-                "persistent scope is inactive".to_string(),
-            ));
-        }
+        self.validate_owner()?;
         flush_persistent_value(self.controller, self.value, self.state)
     }
 }
@@ -253,10 +266,6 @@ impl<'scope, T: RxData> RxValue for Persistent<'scope, T> {
 impl<'scope, T: RxData> RxBase for Persistent<'scope, T> {
     fn track(&self) {
         self.value.track();
-    }
-
-    fn is_alive(&self) -> bool {
-        self.value.is_alive()
     }
 }
 
@@ -272,8 +281,8 @@ impl<'scope, T: RxData> RxRead for Persistent<'scope, T> {
 
 impl<'scope, T: RxData> RxWrite for Persistent<'scope, T> {
     fn rx_try_update_untracked<U>(&self, f: impl FnOnce(&mut Self::Value) -> U) -> Option<U> {
-        mark_local_value_write(self.controller);
-        self.value.rx_try_update_untracked(f)
+        mark_local_value_write(self.controller).ok()?;
+        self.value.write_signal().try_update(f).ok()
     }
 
     fn rx_notify(&self) {
@@ -343,7 +352,10 @@ where
 {
     invalidate_debounce(controller);
     clear_external_value_markers_on_controller(controller);
-    let current = value.get_untracked();
+    let current = value
+        .read_signal()
+        .try_get_untracked()
+        .map_err(PersistenceError::from)?;
     let (key, last_raw, set_backend, remove_backend, should_remove, encode) = controller
         .with_untracked(|controller| {
             (
@@ -578,10 +590,12 @@ fn invalidate_debounce<'scope, T>(
 
 pub(crate) fn mark_local_value_write<'scope, T>(
     controller: StoredValue<'scope, PersistenceController<'scope, T>>,
-) {
-    let _ = controller.try_update_untracked(|controller| {
-        controller.value_generation = controller.value_generation.wrapping_add(1);
-    });
+) -> ReactiveResult<()> {
+    controller
+        .try_update(|controller| {
+            controller.value_generation = controller.value_generation.wrapping_add(1);
+        })
+        .map(|_| ())
 }
 
 pub(crate) fn take_skip_next_auto_flush<'scope, T>(
@@ -633,17 +647,16 @@ fn clear_external_value_markers<T>(controller: &mut PersistenceController<'_, T>
 }
 
 fn set_error_state(state: RwSignal<'_, PersistenceState>, error: &PersistenceError) {
-    match error {
-        PersistenceError::ReadFailed(message) => {
-            state.set(PersistenceState::ReadError(message.clone()))
-        }
+    let next = match error {
+        PersistenceError::ReadFailed(message) => PersistenceState::ReadError(message.clone()),
         PersistenceError::DecodeFailed { raw, message } => {
-            state.set(PersistenceState::DecodeError(DecodeErrorInfo {
+            PersistenceState::DecodeError(DecodeErrorInfo {
                 raw: raw.clone(),
                 message: message.clone(),
-            }))
+            })
         }
-        PersistenceError::BackendUnavailable => state.set(PersistenceState::Unavailable),
-        _ => state.set(PersistenceState::WriteError(error.message())),
-    }
+        PersistenceError::BackendUnavailable => PersistenceState::Unavailable,
+        _ => PersistenceState::WriteError(error.message()),
+    };
+    let _ = state.write_signal().try_set(next);
 }

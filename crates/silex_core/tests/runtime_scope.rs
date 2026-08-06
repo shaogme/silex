@@ -50,16 +50,16 @@ fn owned_scope_exposes_an_owner_bound_effect_only() {
         let runs = Rc::new(Cell::new(0));
         let runs_for_effect = runs.clone();
         let owner = scope.owned_scope();
-        let effect = owner.effect(move || {
+        let _effect = owner.effect(move || {
             let _ = source.get();
             runs_for_effect.set(runs_for_effect.get() + 1);
         });
 
-        assert!(effect.is_alive());
         set_source.set(2);
         assert_eq!(runs.get(), 2);
         owner.dispose();
-        assert!(!effect.is_alive());
+        set_source.set(3);
+        assert_eq!(runs.get(), 2);
     });
 }
 
@@ -71,9 +71,8 @@ fn lexical_effect_is_direct_and_tracks_dependencies() {
         let seen = Rc::new(Cell::new(0));
         let seen_for_effect = seen.clone();
 
-        let effect = scope.effect(move || seen_for_effect.set(value.get()));
+        let _effect = scope.effect(move || seen_for_effect.set(value.get()));
 
-        assert!(effect.is_alive());
         assert_eq!(seen.get(), 1);
         set_value.set(4);
         assert_eq!(seen.get(), 4);

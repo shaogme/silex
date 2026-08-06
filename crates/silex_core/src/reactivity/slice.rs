@@ -33,10 +33,6 @@ where
     fn track(&self) {
         self.source.track();
     }
-
-    fn is_alive(&self) -> bool {
-        self.source.is_alive()
-    }
 }
 
 impl<S, F, O> RxRead for SignalSlice<S, F, O>

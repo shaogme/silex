@@ -5,7 +5,8 @@ use wasm_bindgen::{JsCast, closure::Closure};
 use web_sys::{Event, EventSource as JsEventSource, MessageEvent};
 
 use silex_core::{
-    CompletionSender, Memo, ReadSignal, RuntimeInputs, RwSignal, Scope, StoredValue, WriteSignal,
+    CompletionSender, Memo, ReactiveError, ReadSignal, RuntimeInputs, RwSignal, Scope, StoredValue,
+    WriteSignal,
 };
 
 use crate::{
@@ -181,6 +182,13 @@ struct EventStreamInner<'scope> {
     completion: CompletionSender<EventStreamEvent>,
     registration: Option<HostRegistration>,
     generation: u64,
+}
+
+fn cleanup_stored_inner<'scope>(inner: StoredValue<'scope, EventStreamInner<'scope>>) {
+    match inner.try_update(EventStreamInner::cleanup) {
+        Ok(()) | Err(ReactiveError::NoSuchNode) => {}
+        Err(error) => panic!("EventStream cleanup failed: {error}"),
+    }
 }
 
 impl Drop for EventStreamInner<'_> {
@@ -525,11 +533,7 @@ impl<'scope> EventStreamBuilder<'scope> {
             generation: 0,
         });
         inner_slot.set(Some(inner));
-        scope.on_cleanup(move || {
-            if inner.is_alive() {
-                inner.update(EventStreamInner::cleanup);
-            }
-        });
+        scope.on_cleanup(move || cleanup_stored_inner(inner));
 
         let connection = EventStreamConnection {
             scope,
@@ -545,7 +549,7 @@ impl<'scope> EventStreamBuilder<'scope> {
                 callback();
             }
             if let Err(error) = result {
-                inner.update(EventStreamInner::cleanup);
+                cleanup_stored_inner(inner);
                 return Err(error);
             }
         }

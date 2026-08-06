@@ -2,9 +2,11 @@
 
 use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 
+#[cfg(test)]
+use crate::handle::EffectId;
 use crate::{
     ReactiveError, ReactiveResult,
-    handle::{CallbackId, DerivedId, EffectId, MemoId, NodeRefId, SignalId, StoredId},
+    handle::{CallbackId, DerivedId, MemoId, NodeRefId, SignalId, StoredId},
     internal::{RawId, value::AnyValue},
     runtime::{self, RuntimeInput, ScopeState},
 };
@@ -31,10 +33,6 @@ impl<'scope, T: 'scope> Callback<'scope, T> {
     pub fn invoke(&self, arg: T) -> ReactiveResult<()> {
         runtime::invoke_callback(&self.handle.state(), self.handle.raw(), AnyValue::new(arg))
     }
-
-    pub fn is_alive(&self) -> bool {
-        self.handle.is_alive()
-    }
 }
 
 // =============================================================================
@@ -43,7 +41,9 @@ impl<'scope, T: 'scope> Callback<'scope, T> {
 
 /// Scoped effects.
 pub struct Effect<'scope> {
+    #[cfg(test)]
     pub(crate) handle: EffectId<'scope>,
+    pub(crate) marker: PhantomData<fn(&'scope ()) -> &'scope ()>,
 }
 
 impl Copy for Effect<'_> {}
@@ -51,12 +51,6 @@ impl Copy for Effect<'_> {}
 impl Clone for Effect<'_> {
     fn clone(&self) -> Self {
         *self
-    }
-}
-
-impl Effect<'_> {
-    pub fn is_alive(&self) -> bool {
-        self.handle.is_alive()
     }
 }
 
@@ -149,10 +143,6 @@ impl<'scope, T: 'scope> Memo<'scope, T> {
         self.try_with_untracked(f)
     }
 
-    pub fn is_alive(&self) -> bool {
-        self.handle.is_alive()
-    }
-
     #[doc(hidden)]
     pub fn runtime_input(&self) -> RuntimeInput {
         self.handle.runtime_input()
@@ -213,10 +203,6 @@ impl<'scope, T: 'scope> Derived<'scope, T> {
         self.try_with_untracked(f)
     }
 
-    pub fn is_alive(&self) -> bool {
-        self.handle.is_alive()
-    }
-
     #[doc(hidden)]
     pub fn runtime_input(&self) -> RuntimeInput {
         self.handle.runtime_input()
@@ -258,10 +244,6 @@ impl<'scope, T: 'scope> NodeRef<'scope, T> {
 
     pub fn clear(&self) -> ReactiveResult<()> {
         runtime::node_ref_clear::<T>(&self.handle.state(), self.handle.raw())
-    }
-
-    pub fn is_alive(&self) -> bool {
-        self.handle.is_alive()
     }
 }
 
@@ -368,10 +350,6 @@ impl<'scope, T: 'scope> ReadSignal<'scope, T> {
         })?
     }
 
-    pub fn is_alive(&self) -> bool {
-        self.handle.is_alive()
-    }
-
     #[doc(hidden)]
     pub fn runtime_input(&self) -> RuntimeInput {
         self.handle.runtime_input()
@@ -436,10 +414,6 @@ impl<'scope, T: 'scope> WriteSignal<'scope, T> {
     {
         self.try_set_if_changed(value)
             .unwrap_or_else(|error| panic!("写入 scoped signal 失败: {error}"));
-    }
-
-    pub fn is_alive(&self) -> bool {
-        self.handle.is_alive()
     }
 
     #[doc(hidden)]
@@ -599,10 +573,6 @@ impl<'scope, T: 'scope> StoredValue<'scope, T> {
 
     pub fn update<R>(&self, f: impl FnOnce(&mut T) -> R) -> R {
         self.try_update(f).expect("更新 scoped stored value 失败")
-    }
-
-    pub fn is_alive(&self) -> bool {
-        self.handle.is_alive()
     }
 
     #[doc(hidden)]

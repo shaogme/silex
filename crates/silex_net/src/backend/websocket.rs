@@ -6,7 +6,8 @@ use wasm_bindgen::{JsCast, closure::Closure};
 use web_sys::{Event, MessageEvent, WebSocket as JsWebSocket};
 
 use silex_core::{
-    CompletionSender, Memo, ReadSignal, RuntimeInputs, Scope, StoredValue, TaskHandle, WriteSignal,
+    CompletionSender, Memo, ReactiveError, ReadSignal, RuntimeInputs, Scope, StoredValue,
+    TaskHandle, WriteSignal,
 };
 
 use crate::{
@@ -184,6 +185,13 @@ struct WebSocketInner<'scope> {
     retry_task: Option<TaskHandle>,
     retry_attempt: u32,
     retry_started_at: Option<f64>,
+}
+
+fn cleanup_stored_inner<'scope>(inner: StoredValue<'scope, WebSocketInner<'scope>>) {
+    match inner.try_update(WebSocketInner::cleanup) {
+        Ok(()) | Err(ReactiveError::NoSuchNode) => {}
+        Err(error) => panic!("WebSocket cleanup failed: {error}"),
+    }
 }
 
 impl Drop for WebSocketInner<'_> {
@@ -610,11 +618,7 @@ impl<'scope> WebSocketBuilder<'scope> {
             retry_started_at: None,
         });
         inner_slot.set(Some(inner));
-        scope.on_cleanup(move || {
-            if inner.is_alive() {
-                inner.update(WebSocketInner::cleanup);
-            }
-        });
+        scope.on_cleanup(move || cleanup_stored_inner(inner));
 
         let connection = WebSocketConnection {
             scope,
@@ -630,7 +634,7 @@ impl<'scope> WebSocketBuilder<'scope> {
                 callback();
             }
             if let Err(error) = result {
-                inner.update(WebSocketInner::cleanup);
+                cleanup_stored_inner(inner);
                 return Err(error);
             }
         }

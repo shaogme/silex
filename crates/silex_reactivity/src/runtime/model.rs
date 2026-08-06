@@ -176,10 +176,6 @@ impl<'scope> ScopeState<'scope> {
         }
     }
 
-    pub(crate) fn node_kind(&self, id: RawId) -> Option<NodeKindTag> {
-        self.nodes.get(id).map(|node| node.kind)
-    }
-
     pub(crate) fn parent_for_new_node(&self) -> Option<RawId> {
         self.current_owner
     }

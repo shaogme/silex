@@ -4,8 +4,6 @@ use crate::{
     codec::TextCodec,
     state::{CachePolicy, HttpMethod, HttpResponse, RequestBody, RequestSpec, RetryPolicy},
 };
-#[cfg(feature = "persist")]
-use silex_core::RxBase;
 use silex_core::{RuntimeInputs, Scope};
 use std::{marker::PhantomData, rc::Rc, time::Duration};
 
@@ -30,7 +28,13 @@ use std::{
 };
 
 #[cfg(feature = "persist")]
-type CacheStores<'scope, T> = Rc<RefCell<Vec<(String, Persistent<'scope, T>)>>>;
+struct CacheEntry<'scope, T> {
+    store: Persistent<'scope, T>,
+    valid: Rc<Cell<bool>>,
+}
+
+#[cfg(feature = "persist")]
+type CacheStores<'scope, T> = Rc<RefCell<Vec<(String, CacheEntry<'scope, T>)>>>;
 
 pub type BeforeSendHook = Rc<dyn Fn(&mut RequestSpec)>;
 pub type AfterResponseHook = Rc<dyn Fn(&RequestSpec, &HttpResponse)>;
@@ -542,8 +546,8 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
             .stores
             .borrow()
             .iter()
-            .find(|(stored_key, store)| stored_key == key && store.is_alive())
-            .map(|(_, store)| *store)
+            .find(|(stored_key, entry)| stored_key == key && entry.valid.get())
+            .map(|(_, entry)| entry.store)
         {
             return Some(store);
         }
@@ -551,9 +555,15 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
         cache
             .stores
             .borrow_mut()
-            .retain(|(_, store)| store.is_alive());
+            .retain(|(_, entry)| entry.valid.get());
         let store = C::build_cache(self.scope, key.to_string(), cache.default.clone());
-        cache.stores.borrow_mut().push((key.to_string(), store));
+        let valid = Rc::new(Cell::new(true));
+        let valid_for_cleanup = valid.clone();
+        self.scope.on_cleanup(move || valid_for_cleanup.set(false));
+        cache
+            .stores
+            .borrow_mut()
+            .push((key.to_string(), CacheEntry { store, valid }));
         Some(store)
     }
 

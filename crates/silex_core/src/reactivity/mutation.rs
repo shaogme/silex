@@ -237,10 +237,6 @@ where
     fn track(&self) {
         self.state.track();
     }
-
-    fn is_alive(&self) -> bool {
-        self.state.is_alive()
-    }
 }
 
 impl<'scope, Arg, T, E> RxRead for Mutation<'scope, Arg, T, E>

@@ -44,8 +44,4 @@ impl<'scope, T: 'scope> Callback<'scope, T> {
     pub fn call(&self, value: T) -> SilexResult<()> {
         self.invoke(value)
     }
-
-    pub fn is_alive(&self) -> bool {
-        self.inner.is_alive()
-    }
 }

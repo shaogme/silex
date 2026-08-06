@@ -26,14 +26,6 @@ pub trait RxValue {
 pub trait RxBase: RxValue {
     fn track(&self);
 
-    fn is_alive(&self) -> bool {
-        true
-    }
-
-    fn is_disposed(&self) -> bool {
-        !self.is_alive()
-    }
-
     fn debug_name(&self) -> Option<String> {
         None
     }
@@ -160,10 +152,6 @@ impl<'scope, T: 'scope> RxBase for ReadSignal<'scope, T> {
     fn track(&self) {
         self.inner.with(|_| ());
     }
-
-    fn is_alive(&self) -> bool {
-        self.inner.is_alive()
-    }
 }
 
 impl<'scope, T: 'scope> RxRead for ReadSignal<'scope, T> {
@@ -182,10 +170,6 @@ impl<'scope, T: 'scope> RxValue for WriteSignal<'scope, T> {
 
 impl<'scope, T: 'scope> RxBase for WriteSignal<'scope, T> {
     fn track(&self) {}
-
-    fn is_alive(&self) -> bool {
-        self.inner.is_alive()
-    }
 }
 
 impl<'scope, T: 'scope> RxWrite for WriteSignal<'scope, T> {
@@ -203,10 +187,6 @@ impl<'scope, T: 'scope> RxValue for RwSignal<'scope, T> {
 impl<'scope, T: 'scope> RxBase for RwSignal<'scope, T> {
     fn track(&self) {
         self.read.track();
-    }
-
-    fn is_alive(&self) -> bool {
-        self.read.is_alive() && self.write.is_alive()
     }
 }
 
@@ -238,10 +218,6 @@ impl<'scope, T: 'scope> RxBase for Signal<'scope, T> {
     fn track(&self) {
         self.rx.track();
     }
-
-    fn is_alive(&self) -> bool {
-        self.rx.is_alive()
-    }
 }
 
 impl<'scope, T: 'scope> RxRead for Signal<'scope, T> {
@@ -265,15 +241,6 @@ impl<'scope, T: 'scope> RxBase for Rx<'scope, T, RxValueKind> {
             RxInner::Memo(memo) => memo.with(|_| ()),
             RxInner::Derived(derived) => derived.with(|_| ()),
             RxInner::Stored(_) => {}
-        }
-    }
-
-    fn is_alive(&self) -> bool {
-        match &self.inner {
-            RxInner::Signal(signal) => signal.is_alive(),
-            RxInner::Memo(memo) => memo.is_alive(),
-            RxInner::Derived(derived) => derived.is_alive(),
-            RxInner::Stored(stored) => stored.is_alive(),
         }
     }
 }
@@ -304,10 +271,6 @@ impl<'scope, T: 'scope> RxValue for StoredValue<'scope, T> {
 
 impl<'scope, T: 'scope> RxBase for StoredValue<'scope, T> {
     fn track(&self) {}
-
-    fn is_alive(&self) -> bool {
-        self.inner.is_alive()
-    }
 }
 
 impl<'scope, T: 'scope> RxRead for StoredValue<'scope, T> {
@@ -370,10 +333,6 @@ impl RxValue for &str {
 impl<'scope, T: 'scope> RxBase for Memo<'scope, T> {
     fn track(&self) {
         self.inner.with(|_| ());
-    }
-
-    fn is_alive(&self) -> bool {
-        self.inner.is_alive()
     }
 }
 

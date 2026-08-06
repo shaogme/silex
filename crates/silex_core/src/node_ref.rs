@@ -38,8 +38,4 @@ impl<'scope, T: 'scope> NodeRef<'scope, T> {
     pub fn clear(&self) -> bool {
         self.inner.clear().is_ok()
     }
-
-    pub fn is_alive(&self) -> bool {
-        self.inner.is_alive()
-    }
 }

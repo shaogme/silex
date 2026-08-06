@@ -480,20 +480,20 @@ fn handles_are_invalid_after_their_scope_and_runtimes_are_isolated() {
     let mut second = Runtime::new();
     first.child(|scope| {
         let (signal, _) = scope.signal(1i32);
-        assert!(signal.is_alive());
+        assert_eq!(signal.try_get(), Ok(1));
         second.child(|other| {
             let (other_signal, _) = other.signal(2i32);
             assert_eq!(other_signal.get(), 2);
             assert_eq!(signal.get(), 1);
         });
-        assert!(signal.is_alive());
+        assert_eq!(signal.try_get(), Ok(1));
     });
 
     let mut gone = Runtime::new();
     let token = gone.child(|scope| {
         scope.child(|child| {
             let (signal, _) = child.signal(1i32);
-            assert!(signal.is_alive());
+            assert_eq!(signal.try_get(), Ok(1));
         });
         scope.completion_once(|_: i32| {})
     });
