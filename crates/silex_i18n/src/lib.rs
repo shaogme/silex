@@ -19,9 +19,10 @@ pub use plural::{PluralCategory, plural_category};
 pub use runtime::I18nVariant;
 pub use runtime::{Argument, I18nBuilder, I18nStore, MissingArgumentPolicy, MissingKeyPolicy};
 pub use silex_core::reactivity::{
-    Memo, ReadSignal, Resource, ResourceState, RwSignal, SuspenseContext,
+    Effect, Memo, ReadSignal, Resource, ResourceState, RwSignal, StoredValue, SuspenseContext,
 };
 pub use silex_core::traits::{RxGet, RxRead, RxWrite};
+pub use silex_core::{RootHandle, Runtime, Scope};
 #[cfg(feature = "persist")]
 pub use silex_persist::Persistent;
 
@@ -44,20 +45,21 @@ pub use silex_i18n_macros::I18nKeys;
 macro_rules! t {
     ($store:expr, $key:literal $(, $name:ident = $value:expr)* $(,)?) => {{
         let __silex_i18n_store = $store;
-        $crate::Memo::new(move |_| {
-            let mut __silex_i18n_arguments = ::std::vec::Vec::new();
-            $(
-                __silex_i18n_arguments.push($crate::Argument::new(
+        __silex_i18n_store.__memo(move || {
+            let __silex_i18n_arguments = ::std::vec![
+                $(
+                    $crate::Argument::new(
                     stringify!($name),
                     ($value),
-                ));
-            )*
+                    ),
+                )*
+            ];
             __silex_i18n_store.translate_now($key, &__silex_i18n_arguments)
         })
     }};
     ($store:expr, $variant:expr $(,)?) => {{
         let __silex_i18n_store = $store;
-        $crate::Memo::new(move |_| {
+        __silex_i18n_store.__memo(move || {
             let __silex_i18n_variant = $variant;
             __silex_i18n_store.translate_variant_now(&__silex_i18n_variant)
         })
@@ -67,7 +69,53 @@ macro_rules! t {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use silex_core::reactivity::create_scope;
+    use silex_core::Runtime;
+
+    #[cfg(feature = "persist")]
+    use std::{cell::RefCell, rc::Rc};
+
+    #[cfg(feature = "persist")]
+    use silex_persist::{
+        BackendEventSink, BackendSubscribeError, BackendSubscription, PersistenceBackend,
+        PersistenceError,
+    };
+
+    #[cfg(feature = "persist")]
+    #[derive(Clone)]
+    struct InputBackend {
+        inputs: silex_core::RuntimeInputs,
+        value: Rc<RefCell<Option<String>>>,
+    }
+
+    #[cfg(feature = "persist")]
+    impl<'scope> PersistenceBackend<'scope> for InputBackend {
+        fn get(&self, _key: &str) -> Result<Option<String>, PersistenceError> {
+            Ok(self.value.borrow().clone())
+        }
+
+        fn set(&self, _key: &str, value: &str) -> Result<(), PersistenceError> {
+            *self.value.borrow_mut() = Some(value.to_string());
+            Ok(())
+        }
+
+        fn remove(&self, _key: &str) -> Result<(), PersistenceError> {
+            *self.value.borrow_mut() = None;
+            Ok(())
+        }
+
+        fn runtime_inputs(&self) -> silex_core::RuntimeInputs {
+            self.inputs.clone()
+        }
+
+        fn subscribe(
+            &self,
+            _scope: Scope<'scope>,
+            _key: impl Into<ref_str::LocalStaticRefStr>,
+            _sink: BackendEventSink,
+        ) -> Result<BackendSubscription<'scope>, BackendSubscribeError<'scope>> {
+            Ok(BackendSubscription::new(|| {}))
+        }
+    }
 
     #[test]
     fn normalizes_locale_and_builds_fallback_chain() {
@@ -85,7 +133,8 @@ mod tests {
 
     #[test]
     fn translates_with_locale_fallback_and_interpolation() {
-        create_scope(|| {
+        let mut runtime = Runtime::new();
+        runtime.child(|scope| {
             let en = Catalog::from_entries(
                 Locale::new("en-US"),
                 [("welcome.user", "Hello, {name}!"), ("only.en", "English")],
@@ -94,14 +143,14 @@ mod tests {
             let zh =
                 Catalog::from_entries(Locale::new("zh-CN"), [("welcome.user", "你好，{name}！")])
                     .expect("valid catalog");
-            let store = I18nBuilder::new()
+            let store = I18nBuilder::new(scope)
                 .locale(Locale::new("zh-CN"))
                 .fallback_locale(Locale::new("en-US"))
                 .catalog(en)
                 .catalog(zh)
                 .build()
                 .expect("valid i18n store");
-            let name = RwSignal::new("Alice".to_string());
+            let name = scope.rw_signal("Alice".to_string());
             let greeting = t!(store, "welcome.user", name = name.get());
             assert_eq!(greeting.get(), "你好，Alice！");
             name.set("Bob".to_string());
@@ -114,8 +163,32 @@ mod tests {
     }
 
     #[test]
+    fn catalog_revision_invalidates_existing_translation_memo() {
+        let mut runtime = Runtime::new();
+        runtime.child(|scope| {
+            let initial = Catalog::from_entries(Locale::new("en"), [("title", "Old")])
+                .expect("valid initial catalog");
+            let replacement = Catalog::from_entries(Locale::new("en"), [("title", "New")])
+                .expect("valid replacement catalog");
+            let store = I18nBuilder::new(scope)
+                .locale(Locale::new("en"))
+                .catalog(initial)
+                .build()
+                .expect("valid i18n store");
+            let title = t!(store, "title");
+
+            assert_eq!(title.get(), "Old");
+            store.insert_catalog(replacement);
+            assert_eq!(title.get(), "New");
+            store.remove_catalog(&Locale::new("en"));
+            assert_eq!(title.get(), "title");
+        });
+    }
+
+    #[test]
     fn selects_plural_forms_and_keeps_missing_arguments() {
-        create_scope(|| {
+        let mut runtime = Runtime::new();
+        runtime.child(|scope| {
             let catalog = Catalog::from_entries(
                 Locale::new("en"),
                 [(
@@ -127,7 +200,7 @@ mod tests {
                 )],
             )
             .expect("valid catalog");
-            let store = I18nBuilder::new()
+            let store = I18nBuilder::new(scope)
                 .locale(Locale::new("en"))
                 .catalog(catalog)
                 .build()
@@ -150,7 +223,8 @@ mod tests {
 
     #[test]
     fn uses_the_fallback_catalog_locale_for_plural_rules() {
-        create_scope(|| {
+        let mut runtime = Runtime::new();
+        runtime.child(|scope| {
             let fallback = Catalog::from_entries(
                 Locale::new("en"),
                 [(
@@ -159,7 +233,7 @@ mod tests {
                 )],
             )
             .expect("valid catalog");
-            let store = I18nBuilder::new()
+            let store = I18nBuilder::new(scope)
                 .locale(Locale::new("zh-CN"))
                 .fallback_locale(Locale::new("en"))
                 .catalog(fallback)
@@ -190,19 +264,47 @@ mod tests {
     #[cfg(all(feature = "persist", target_arch = "wasm32"))]
     #[test]
     fn locale_binding_takes_precedence_over_builder_locale() {
-        create_scope(|| {
-            let saved = Persistent::builder("silex-test-locale")
+        let mut runtime = Runtime::new();
+        runtime.child(|scope| {
+            let saved = Persistent::builder(scope, "silex-test-locale")
                 .local()
                 .parse::<Locale>()
                 .default(Locale::new("en-US"))
                 .build();
-            let store = I18nBuilder::new()
+            let store = I18nBuilder::new(scope)
                 .locale(Locale::new("zh-CN"))
                 .locale_binding(saved)
                 .build()
                 .expect("valid i18n store");
 
             assert_eq!(store.locale().get_untracked(), Locale::new("en-US"));
+        });
+    }
+
+    #[cfg(feature = "persist")]
+    #[test]
+    fn locale_binding_stays_in_sync_inside_one_runtime() {
+        let mut runtime = Runtime::new();
+        runtime.child(|scope| {
+            let binding = Persistent::builder(scope, "silex-memory-locale")
+                .backend(InputBackend {
+                    inputs: silex_core::RuntimeInputs::new(),
+                    value: Rc::new(RefCell::new(None)),
+                })
+                .parse::<Locale>()
+                .default(Locale::new("en-US"))
+                .build();
+            let store = I18nBuilder::new(scope)
+                .locale(Locale::new("zh-CN"))
+                .locale_binding(binding)
+                .build()
+                .expect("valid i18n store");
+
+            assert_eq!(store.locale().get_untracked(), Locale::new("en-US"));
+            binding.set(Locale::new("ja-JP"));
+            assert_eq!(store.locale().get_untracked(), Locale::new("ja-JP"));
+            store.set_locale(Locale::new("de-DE"));
+            assert_eq!(binding.get_untracked(), Locale::new("de-DE"));
         });
     }
 

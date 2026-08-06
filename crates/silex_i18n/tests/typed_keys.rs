@@ -1,9 +1,7 @@
 #![cfg(feature = "macros")]
 
-use silex_core::reactivity::create_scope;
-use silex_i18n::{
-    Catalog, CatalogValue, I18nBuilder, I18nKeys, Locale, RwSignal, RxGet, RxWrite, t,
-};
+use silex_core::Runtime;
+use silex_i18n::{Catalog, CatalogValue, I18nBuilder, I18nKeys, Locale, t};
 
 #[derive(I18nKeys)]
 #[i18n(path = "tests/fixtures/typed-en.json", crate = "silex_i18n")]
@@ -16,7 +14,8 @@ enum Text {
 
 #[test]
 fn typed_key_macro_keeps_reactive_arguments_inside_the_memo() {
-    create_scope(|| {
+    let mut runtime = Runtime::new();
+    runtime.child(|scope| {
         let catalog = Catalog::from_entries(
             Locale::new("en"),
             [
@@ -31,12 +30,12 @@ fn typed_key_macro_keeps_reactive_arguments_inside_the_memo() {
             ],
         )
         .expect("valid catalog");
-        let store = I18nBuilder::new()
+        let store = I18nBuilder::new(scope)
             .locale(Locale::new("en"))
             .catalog(catalog)
             .build()
             .expect("valid store");
-        let name = RwSignal::new("Alice".to_string());
+        let name = scope.rw_signal("Alice".to_string());
         let greeting = t!(store, Text::WelcomeUser { name: name.get() });
 
         assert_eq!(greeting.get(), "Hello, Alice!");

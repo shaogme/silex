@@ -1720,6 +1720,7 @@ version = "0.1.0-beta.9"
 dependencies = [
  "gloo-timers",
  "js-sys",
+ "ref_str",
  "serde",
  "serde_json",
  "silex_core",
@@ -1727,6 +1728,7 @@ dependencies = [
  "silex_i18n_macros",
  "silex_persist",
  "silex_router",
+ "trybuild",
  "wasm-bindgen",
  "wasm-bindgen-test",
  "web-sys",

@@ -1,5 +1,7 @@
 use std::fmt::{Display, Formatter};
 
+use silex_core::ReactiveError;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum I18nError {
     InvalidLocale(String),
@@ -8,6 +10,13 @@ pub enum I18nError {
     InvalidMessage { key: String, reason: String },
     MissingOther { key: String },
     Loader(String),
+    Reactivity(ReactiveError),
+}
+
+impl From<ReactiveError> for I18nError {
+    fn from(error: ReactiveError) -> Self {
+        Self::Reactivity(error)
+    }
 }
 
 impl Display for I18nError {
@@ -23,6 +32,7 @@ impl Display for I18nError {
                 write!(f, "plural message {key} is missing the other form")
             }
             Self::Loader(reason) => write!(f, "catalog loader failed: {reason}"),
+            Self::Reactivity(error) => write!(f, "reactivity error: {error}"),
         }
     }
 }

@@ -29,20 +29,20 @@ impl<E: std::fmt::Display> std::fmt::Display for CatalogLoadError<E> {
 
 /// A `Resource` that loads catalogs for the store's current locale.
 #[derive(Clone)]
-pub struct CatalogResource<E = I18nError> {
-    resource: Resource<Catalog, CatalogLoadError<E>>,
+pub struct CatalogResource<'scope, E = I18nError> {
+    resource: Resource<'scope, Catalog, CatalogLoadError<E>>,
 }
 
-impl<E: Clone + Debug + 'static> CatalogResource<E> {
-    pub(crate) fn new(resource: Resource<Catalog, CatalogLoadError<E>>) -> Self {
+impl<'scope, E: Clone + Debug + 'static> CatalogResource<'scope, E> {
+    pub(crate) fn new(resource: Resource<'scope, Catalog, CatalogLoadError<E>>) -> Self {
         Self { resource }
     }
 
-    pub fn state(&self) -> ReadSignal<ResourceState<Catalog, CatalogLoadError<E>>> {
+    pub fn state(&self) -> ReadSignal<'scope, ResourceState<Catalog, CatalogLoadError<E>>> {
         self.resource.state
     }
 
-    pub fn resource(&self) -> Resource<Catalog, CatalogLoadError<E>> {
+    pub fn resource(&self) -> Resource<'scope, Catalog, CatalogLoadError<E>> {
         self.resource
     }
 

@@ -1,6 +1,15 @@
-use crate::Locale;
-use silex_core::reactivity::Effect;
-use silex_core::traits::RxGet;
+use crate::{I18nStore, Locale};
+use silex_core::{Effect, runtime_inputs_of};
+use std::{cell::Cell, rc::Rc};
+use wasm_bindgen::JsValue;
+
+const METADATA_STACK_PROPERTY: &str = "__silex_i18n_metadata_stack";
+const RECORD_ID: &str = "id";
+const RECORD_ACTIVE: &str = "active";
+const RECORD_PREVIOUS_LANG: &str = "previous_lang";
+const RECORD_PREVIOUS_DIR: &str = "previous_dir";
+const RECORD_LAST_LANG: &str = "last_lang";
+const RECORD_LAST_DIR: &str = "last_dir";
 
 /// The direction used by a locale when updating document metadata.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -92,19 +101,203 @@ pub fn locale_direction(locale: &Locale) -> TextDirection {
 }
 
 /// Keeps the document's `lang` and `dir` attributes in sync with the store.
-pub fn sync_document_metadata(store: crate::I18nStore) {
-    let Some(document) = web_sys::window().and_then(|window| window.document()) else {
-        return;
+pub(crate) fn sync_document_metadata<'scope>(store: I18nStore<'scope>) -> Effect<'scope> {
+    let scope = store.scope();
+    let Some(root) = web_sys::window()
+        .and_then(|window| window.document())
+        .and_then(|document| document.document_element())
+    else {
+        return scope.effect(|| {});
     };
 
+    let previous_lang = root.get_attribute("lang");
+    let previous_dir = root.get_attribute("dir");
+    let active = Rc::new(Cell::new(true));
     let locale = store.locale();
-    Effect::new(move |_| {
+    let stack_property = JsValue::from_str(METADATA_STACK_PROPERTY);
+    let owner_id = JsValue::from_str(&format!("{:p}", Rc::as_ptr(&active)));
+    let record = JsValue::from(js_sys::Object::new());
+    set_record_value(&record, RECORD_ID, &owner_id);
+    set_record_value(&record, RECORD_ACTIVE, &JsValue::TRUE);
+    set_record_value(
+        &record,
+        RECORD_PREVIOUS_LANG,
+        &optional_string_value(previous_lang.as_deref()),
+    );
+    set_record_value(
+        &record,
+        RECORD_PREVIOUS_DIR,
+        &optional_string_value(previous_dir.as_deref()),
+    );
+    set_record_value(
+        &record,
+        RECORD_LAST_LANG,
+        &optional_string_value(previous_lang.as_deref()),
+    );
+    set_record_value(
+        &record,
+        RECORD_LAST_DIR,
+        &optional_string_value(previous_dir.as_deref()),
+    );
+    // Keep ownership history separate from lang/dir so equal values stay distinguishable.
+    let stack = metadata_stack(&root, &stack_property).unwrap_or_default();
+    stack.push(&record);
+    let _ = js_sys::Reflect::set(root.as_ref(), &stack_property, &stack);
+
+    let active_for_effect = active.clone();
+    let root_for_effect = root.clone();
+    let stack_property_for_effect = stack_property.clone();
+    let owner_id_for_effect = owner_id.clone();
+    let record_for_effect = record.clone();
+    let effect = scope.effect_from(runtime_inputs_of(locale), move || {
+        if !active_for_effect.get() {
+            return;
+        }
+
+        let Some(stack) = metadata_stack(&root_for_effect, &stack_property_for_effect) else {
+            return;
+        };
+        if stack.length() == 0
+            || record_value(&stack.get(stack.length() - 1), RECORD_ID) != owner_id_for_effect
+        {
+            return;
+        }
+
         let locale = locale.get();
-        if let Some(root) = document.document_element() {
-            let _ = root.set_attribute("lang", locale.as_str());
-            let _ = root.set_attribute("dir", locale_direction(&locale).as_str());
+        let lang = locale.as_str().to_string();
+        let dir = locale_direction(&locale).as_str().to_string();
+        if root_for_effect.set_attribute("lang", &lang).is_ok() {
+            set_record_value(
+                &record_for_effect,
+                RECORD_LAST_LANG,
+                &JsValue::from_str(&lang),
+            );
+        }
+        if root_for_effect.set_attribute("dir", &dir).is_ok() {
+            set_record_value(
+                &record_for_effect,
+                RECORD_LAST_DIR,
+                &JsValue::from_str(&dir),
+            );
         }
     });
+
+    let root_for_cleanup = root;
+    let stack_property_for_cleanup = stack_property;
+    let owner_id_for_cleanup = owner_id;
+    scope.on_cleanup(move || {
+        if !active.replace(false) {
+            return;
+        }
+
+        let Some(stack) = metadata_stack(&root_for_cleanup, &stack_property_for_cleanup) else {
+            return;
+        };
+        let Some(index) = find_record(&stack, &owner_id_for_cleanup) else {
+            return;
+        };
+        let record = stack.get(index);
+        set_record_value(&record, RECORD_ACTIVE, &JsValue::FALSE);
+        if index == stack.length() - 1 {
+            restore_record(&root_for_cleanup, &record);
+        } else {
+            let next = stack.get(index + 1);
+            set_record_value(
+                &next,
+                RECORD_PREVIOUS_LANG,
+                &record_value(&record, RECORD_PREVIOUS_LANG),
+            );
+            set_record_value(
+                &next,
+                RECORD_PREVIOUS_DIR,
+                &record_value(&record, RECORD_PREVIOUS_DIR),
+            );
+        }
+        for position in index..stack.length().saturating_sub(1) {
+            stack.set(position, stack.get(position + 1));
+        }
+        stack.pop();
+        unwind_inactive_records(&root_for_cleanup, &stack);
+
+        if stack.length() == 0 {
+            let _ = js_sys::Reflect::delete_property(
+                root_for_cleanup.as_ref(),
+                &stack_property_for_cleanup,
+            );
+        } else {
+            let _ = js_sys::Reflect::set(
+                root_for_cleanup.as_ref(),
+                &stack_property_for_cleanup,
+                &stack,
+            );
+        }
+    });
+
+    effect
+}
+
+fn metadata_stack(root: &web_sys::Element, property: &JsValue) -> Option<js_sys::Array> {
+    let value = js_sys::Reflect::get(root.as_ref(), property).ok()?;
+    js_sys::Array::is_array(&value).then(|| js_sys::Array::from(&value))
+}
+
+fn find_record(stack: &js_sys::Array, id: &JsValue) -> Option<u32> {
+    (0..stack.length()).find(|index| record_value(&stack.get(*index), RECORD_ID) == *id)
+}
+
+fn record_value(record: &JsValue, name: &str) -> JsValue {
+    js_sys::Reflect::get(record, &JsValue::from_str(name)).unwrap_or(JsValue::UNDEFINED)
+}
+
+fn set_record_value(record: &JsValue, name: &str, value: &JsValue) {
+    let _ = js_sys::Reflect::set(record, &JsValue::from_str(name), value);
+}
+
+fn optional_string_value(value: Option<&str>) -> JsValue {
+    value.map(JsValue::from_str).unwrap_or(JsValue::UNDEFINED)
+}
+
+fn optional_attribute_value(value: JsValue) -> Option<String> {
+    value.as_string()
+}
+
+fn restore_record(root: &web_sys::Element, record: &JsValue) {
+    let current_lang = root.get_attribute("lang");
+    if current_lang == optional_attribute_value(record_value(record, RECORD_LAST_LANG)) {
+        let previous = optional_attribute_value(record_value(record, RECORD_PREVIOUS_LANG));
+        restore_attribute(root, "lang", previous.as_deref());
+    }
+
+    let current_dir = root.get_attribute("dir");
+    if current_dir == optional_attribute_value(record_value(record, RECORD_LAST_DIR)) {
+        let previous = optional_attribute_value(record_value(record, RECORD_PREVIOUS_DIR));
+        restore_attribute(root, "dir", previous.as_deref());
+    }
+}
+
+fn unwind_inactive_records(root: &web_sys::Element, stack: &js_sys::Array) {
+    while stack.length() > 0 {
+        let record = stack.get(stack.length() - 1);
+        if record_value(&record, RECORD_ACTIVE)
+            .as_bool()
+            .unwrap_or(false)
+        {
+            break;
+        }
+        restore_record(root, &record);
+        stack.pop();
+    }
+}
+
+fn restore_attribute(root: &web_sys::Element, name: &str, value: Option<&str>) {
+    match value {
+        Some(value) => {
+            let _ = root.set_attribute(name, value);
+        }
+        None => {
+            let _ = root.remove_attribute(name);
+        }
+    }
 }
 
 #[cfg(test)]

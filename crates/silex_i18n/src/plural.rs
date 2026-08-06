@@ -68,7 +68,7 @@ pub fn plural_category(locale: &Locale, number: f64) -> PluralCategory {
                 PluralCategory::One
             } else if (2..=4).contains(&(integer % 10)) && !(12..=14).contains(&(integer % 100)) {
                 PluralCategory::Few
-            } else if integer % 10 == 0
+            } else if integer.is_multiple_of(10)
                 || (5..=9).contains(&(integer % 10))
                 || (11..=14).contains(&(integer % 100))
             {

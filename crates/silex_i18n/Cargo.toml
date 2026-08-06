@@ -42,11 +42,13 @@ web-sys = { workspace = true, optional = true, features = [
 default = []
 json = ["dep:serde", "dep:serde_json"]
 persist = ["dep:silex_persist"]
-browser = ["dep:js-sys", "dep:web-sys"]
-intl = ["browser", "dep:wasm-bindgen"]
+browser = ["dep:js-sys", "dep:wasm-bindgen", "dep:web-sys"]
+intl = ["browser"]
 macros = ["dep:silex_i18n_macros"]
 browser-tests = ["browser", "persist", "dep:silex_dom", "dep:silex_router"]
 
 [dev-dependencies]
 gloo-timers.workspace = true
+trybuild = "1.0"
 wasm-bindgen-test.workspace = true
+ref_str = "0.2"
