@@ -14,6 +14,9 @@ readme.workspace = true
 [lints]
 workspace = true
 
+[features]
+test-support = ["silex_reactivity/test-support"]
+
 [dependencies]
 silex_reactivity.workspace = true
 silex_rx.workspace = true

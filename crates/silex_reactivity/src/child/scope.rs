@@ -22,6 +22,9 @@ use crate::{
     scope::ScopeStorage,
 };
 
+#[cfg(feature = "test-support")]
+use crate::runtime::RuntimeSnapshot;
+
 /// A copyable capability to create and operate nodes in one lexical scope.
 ///
 /// The scope itself does not own runtime state. The enclosing
@@ -77,6 +80,12 @@ impl<'scope> Scope<'scope> {
     #[doc(hidden)]
     pub fn try_validate_inputs(&self, inputs: &RuntimeInputs) -> ReactiveResult<()> {
         runtime::validate_inputs(&self.state(), inputs)
+    }
+
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    pub fn runtime_snapshot(&self) -> RuntimeSnapshot {
+        self.state().borrow().runtime_snapshot()
     }
 
     /// Execute a child scope. All child nodes and computations are destroyed

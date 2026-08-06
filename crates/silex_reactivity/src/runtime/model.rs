@@ -166,6 +166,20 @@ pub(crate) struct ScopeState<'scope> {
     pub(crate) root_cleanups: Vec<OnceThunk<'scope>>,
 }
 
+#[cfg(feature = "test-support")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RuntimeSnapshot {
+    pub nodes: usize,
+    pub data: usize,
+    pub edges: usize,
+    pub roots: usize,
+    pub cleanups: usize,
+    pub queue: usize,
+    pub epoch: u64,
+    pub observer: bool,
+    pub running_queue: bool,
+}
+
 impl<'scope> ScopeState<'scope> {
     pub(crate) fn new(scope_id: ScopeId, scheduler: Rc<RefCell<GlobalScheduler>>) -> Self {
         Self {
@@ -178,6 +192,28 @@ impl<'scope> ScopeState<'scope> {
             roots: Vec::new(),
             current_owner: None,
             root_cleanups: Vec::new(),
+        }
+    }
+
+    #[cfg(feature = "test-support")]
+    pub(crate) fn runtime_snapshot(&self) -> RuntimeSnapshot {
+        let cleanups = self.root_cleanups.len()
+            + self
+                .data
+                .values()
+                .map(|data| data.cleanups.len())
+                .sum::<usize>();
+        let scheduler = self.scheduler.borrow();
+        RuntimeSnapshot {
+            nodes: self.nodes.len(),
+            data: self.data.len(),
+            edges: self.edges.len(),
+            roots: self.roots.len(),
+            cleanups,
+            queue: scheduler.global_queue.len(),
+            epoch: scheduler.current_epoch(),
+            observer: scheduler.observer().is_some(),
+            running_queue: scheduler.running_queue,
         }
     }
 

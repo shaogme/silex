@@ -47,4 +47,5 @@ persist = ["dep:silex_persist"]
 
 [dev-dependencies]
 trybuild = "1.0"
+silex_core = { workspace = true, features = ["test-support"] }
 wasm-bindgen-test.workspace = true

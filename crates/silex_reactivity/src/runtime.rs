@@ -21,6 +21,8 @@ pub use input::{RuntimeInput, RuntimeInputs};
 pub(crate) use input::{
     create_derived, create_effect, create_memo, create_previous, create_watch, validate_inputs,
 };
+#[cfg(feature = "test-support")]
+pub use model::RuntimeSnapshot;
 pub(crate) use model::ScopeState;
 pub(crate) use ops::{
     invoke_callback, node_ref_clear, node_ref_get, node_ref_set, stop_effect, try_notify,

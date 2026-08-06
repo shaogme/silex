@@ -36,3 +36,6 @@ pub use crate::{
     root::*,
     runtime::{Runtime, RuntimeInput, RuntimeInputs},
 };
+
+#[cfg(feature = "test-support")]
+pub use runtime::RuntimeSnapshot;

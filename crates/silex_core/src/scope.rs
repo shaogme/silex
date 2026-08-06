@@ -9,6 +9,8 @@ use crate::{
     traits::RxData,
 };
 use silex_reactivity::RuntimeInputs;
+#[cfg(feature = "test-support")]
+use silex_reactivity::RuntimeSnapshot;
 use std::future::Future;
 
 /// User-owned high-level runtime.
@@ -379,6 +381,12 @@ impl<'scope> Scope<'scope> {
         self.inner
             .try_validate_inputs(inputs)
             .map_err(SilexError::from)
+    }
+
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    pub fn runtime_snapshot(self) -> RuntimeSnapshot {
+        self.inner.runtime_snapshot()
     }
 
     pub(crate) fn assert_inputs(self, inputs: &RuntimeInputs) {

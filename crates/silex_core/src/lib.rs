@@ -25,6 +25,8 @@ pub use reactivity::{
 };
 pub use scope::{OwnedScope, RootHandle, Runtime, Scope};
 pub use silex_reactivity::RuntimeInputs;
+#[cfg(feature = "test-support")]
+pub use silex_reactivity::RuntimeSnapshot;
 pub use silex_reactivity::{CompletionOnce, CompletionSender};
 pub use store::Store;
 pub use task::TaskHandle;

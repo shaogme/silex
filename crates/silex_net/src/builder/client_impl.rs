@@ -227,8 +227,17 @@ macro_rules! impl_net_methods {
             self,
             suspense: Option<SuspenseContext<'scope>>,
         ) -> Resource<'scope, T, NetError> {
+            self.try_into_resource(suspense)
+                .unwrap_or_else(|error| panic!("创建 HTTP Resource 失败: {error:?}"))
+        }
+
+        pub fn try_into_resource(
+            self,
+            suspense: Option<SuspenseContext<'scope>>,
+        ) -> Result<Resource<'scope, T, NetError>, NetError> {
+            self.validate_runtime_inputs()?;
             let source = self.scope.constant(());
-            self.as_resource(source, suspense)
+            self.try_as_resource(source, suspense)
         }
 
         pub fn try_as_resource<S>(
