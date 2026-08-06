@@ -1,0 +1,17 @@
+error: duplicate i18n path attribute
+ --> tests/ui/fail_duplicate_i18n_attributes.rs:6:5
+  |
+6 |     path = "../../../../crates/silex_i18n_macros/tests/fixtures/en-US.json"
+  |     ^^^^
+
+error: duplicate i18n key attribute
+  --> tests/ui/fail_duplicate_i18n_attributes.rs:16:32
+   |
+16 |     #[i18n(key = "home.title", key = "home.title")]
+   |                                ^^^
+
+error: duplicate i18n count attribute
+  --> tests/ui/fail_duplicate_i18n_attributes.rs:23:49
+   |
+23 |     #[i18n(key = "cart.items", count = "count", count = "count")]
+   |                                                 ^^^^^

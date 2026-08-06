@@ -1,0 +1,8 @@
+[package]
+name = "silex_i18n_renamed_dep_test"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+my_i18n = { package = "silex_i18n", path = "../../silex_i18n", version = "0.1.0-beta.9", features = ["macros"] }

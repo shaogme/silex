@@ -6,7 +6,7 @@ use std::{
     env, fs,
     path::PathBuf,
 };
-use syn::{Attribute, Data, DeriveInput, Fields, LitStr, Path, Type, parse::Result};
+use syn::{Attribute, Data, DeriveInput, Fields, LitStr, Path, Type, ext::IdentExt, parse::Result};
 
 #[derive(Default)]
 struct ContainerAttrs {
@@ -90,7 +90,7 @@ pub fn derive_i18n_keys(input: DeriveInput) -> Result<TokenStream> {
         };
         let field_names = named_fields
             .iter()
-            .map(ToString::to_string)
+            .map(|field| field.unraw().to_string())
             .collect::<BTreeSet<_>>();
         if field_names != schema.placeholders {
             return Err(syn::Error::new_spanned(
@@ -110,7 +110,7 @@ pub fn derive_i18n_keys(input: DeriveInput) -> Result<TokenStream> {
                 .unwrap_or_else(|| "count".to_string());
             let count_field = named_fields
                 .iter()
-                .find(|field| field.to_string() == count_name)
+                .find(|field| field.unraw() == count_name)
                 .ok_or_else(|| {
                     syn::Error::new_spanned(
                         &variant.ident,
@@ -156,20 +156,15 @@ pub fn derive_i18n_keys(input: DeriveInput) -> Result<TokenStream> {
                 Self::#variant_ident => ::std::vec::Vec::new()
             },
             Fields::Named(_) => {
-                let argument_pushes = named_fields.iter().map(|field| {
-                    let name = field.to_string();
+                let arguments = named_fields.iter().map(|field| {
+                    let name = field.unraw().to_string();
                     quote! {
-                        __silex_i18n_arguments.push(
-                            #runtime::Argument::new(#name, #field)
-                        );
+                        #runtime::Argument::new(#name, #field)
                     }
                 });
                 quote! {
-                    Self::#variant_ident { #(#named_fields),* } => {
-                        let mut __silex_i18n_arguments = ::std::vec::Vec::new();
-                        #(#argument_pushes)*
-                        __silex_i18n_arguments
-                    }
+                    Self::#variant_ident { #(#named_fields),* } =>
+                        ::std::vec![#(#arguments),*]
                 }
             }
             Fields::Unnamed(_) => unreachable!("tuple variants were rejected above"),

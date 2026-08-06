@@ -1,0 +1,5 @@
+error: plural message 'cart.items' must use the same placeholders in every form
+ --> tests/ui/fail_plural_placeholder_mismatch.rs:8:6
+  |
+8 | enum InvalidPluralPlaceholders {
+  |      ^^^^^^^^^^^^^^^^^^^^^^^^^

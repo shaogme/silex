@@ -1,0 +1,5 @@
+error: I18nKeys variants must use named fields, not tuple fields
+ --> tests/ui/fail_tuple_variant.rs:7:16
+  |
+7 |     WelcomeUser(String),
+  |                ^^^^^^^^

@@ -3,6 +3,7 @@
     "title": "Silex"
   },
   "welcome.user": "Hello, {name}!",
+  "reserved.argument": "Reserved {__silex_i18n_arguments}",
   "cart.items": {
     "one": "You have {count} item.",
     "other": "You have {count} items."

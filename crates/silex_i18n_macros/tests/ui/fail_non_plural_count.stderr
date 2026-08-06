@@ -1,0 +1,5 @@
+error: the count attribute is only valid for plural messages
+ --> tests/ui/fail_non_plural_count.rs:6:40
+  |
+6 |     #[i18n(key = "home.title", count = "count")]
+  |                                        ^^^^^^^
