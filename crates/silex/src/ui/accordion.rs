@@ -78,11 +78,11 @@ pub fn AccordionTrigger<'scope>(
     let state_attr = rx!(scope; if *$open { "open" } else { "closed" });
     let icon_cls = rx!(scope; {
         let is_open = *$open;
-        tw!(
-            "pointer-events-none size-4 shrink-0 translate-y-0.5 text-slate-500 dark:text-slate-400 transition-transform duration-200",
-            (is_open, "rotate-180")
-        )
-        .get()
+        if is_open {
+            tw!("pointer-events-none size-4 shrink-0 translate-y-0.5 text-slate-500 dark:text-slate-400 transition-transform duration-200 rotate-180").to_string()
+        } else {
+            tw!("pointer-events-none size-4 shrink-0 translate-y-0.5 text-slate-500 dark:text-slate-400 transition-transform duration-200").to_string()
+        }
     });
 
     let icon = svg(path().attr("d", "m6 9 6 6 6-6"))

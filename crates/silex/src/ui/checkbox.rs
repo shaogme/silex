@@ -18,14 +18,11 @@ pub fn Checkbox<'scope>(
 ) -> impl View<'scope> {
     let cls = rx!(scope; {
         let is_checked = *$checked;
-        let base = tw!(
-            "peer size-4 shrink-0 rounded-[4px] border border-solid shadow-xs transition-all duration-150 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 inline-flex items-center justify-center cursor-pointer",
-            (
-                is_checked,
-                "bg-slate-900 text-slate-50 border-slate-900 dark:bg-slate-50 dark:text-slate-900 dark:border-slate-50",
-                "border-slate-300 bg-white dark:border-slate-800 dark:bg-slate-900/30"
-            )
-        ).get();
+        let base = if is_checked {
+            tw!("peer size-4 shrink-0 rounded-[4px] border border-solid shadow-xs transition-all duration-150 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 inline-flex items-center justify-center cursor-pointer bg-slate-900 text-slate-50 border-slate-900 dark:bg-slate-50 dark:text-slate-900 dark:border-slate-50").to_string()
+        } else {
+            tw!("peer size-4 shrink-0 rounded-[4px] border border-solid shadow-xs transition-all duration-150 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 inline-flex items-center justify-center cursor-pointer border-slate-300 bg-white dark:border-slate-800 dark:bg-slate-900/30").to_string()
+        };
         let extra = $class;
         if extra.is_empty() {
             base
@@ -36,11 +33,11 @@ pub fn Checkbox<'scope>(
 
     let check_icon = rx!(scope; {
         let is_checked = *$checked;
-        let icon_cls = tw!(
-            "size-3.5 transition-all duration-150 ease-in-out",
-            (is_checked, "opacity-100 scale-100", "opacity-0 scale-50")
-        )
-        .get();
+        let icon_cls = if is_checked {
+            tw!("size-3.5 transition-all duration-150 ease-in-out opacity-100 scale-100").to_string()
+        } else {
+            tw!("size-3.5 transition-all duration-150 ease-in-out opacity-0 scale-50").to_string()
+        };
 
         svg(path().attr("d", "M20 6 9 17l-5-5"))
             .attr("xmlns", "http://www.w3.org/2000/svg")
