@@ -62,7 +62,7 @@ tw_variants! {
 
 tw_variants! {
     pub struct NumericStyle {
-        base: "box",
+        base: "box-border",
         variants: {
             size: {
                 "1x": "p-1",
