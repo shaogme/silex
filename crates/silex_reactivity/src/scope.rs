@@ -37,7 +37,14 @@ impl ScopeStorage {
     }
 
     pub(crate) fn dispose(&self) {
-        let scheduler = self.state.borrow().scheduler.clone();
+        let scheduler = {
+            let mut state = self.state.borrow_mut();
+            if !state.active {
+                return;
+            }
+            state.active = false;
+            state.scheduler.clone()
+        };
         scheduler.borrow_mut().deactivate_scope(self.scope_id);
         let dispose_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             runtime::dispose_all(&self.state);
@@ -64,5 +71,13 @@ impl ScopeStorage {
 
     pub(crate) fn scheduler(&self) -> Rc<RefCell<GlobalScheduler>> {
         self.state.borrow().scheduler.clone()
+    }
+
+    pub(crate) fn is_active(&self) -> bool {
+        let state = match self.state.try_borrow() {
+            Ok(state) => state,
+            Err(_) => return false,
+        };
+        state.is_active()
     }
 }

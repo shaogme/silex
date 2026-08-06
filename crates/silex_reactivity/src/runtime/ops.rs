@@ -92,11 +92,7 @@ fn commit_signal<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> 
     let mut state_ref = state
         .try_borrow_mut()
         .map_err(|_| ReactiveError::BorrowConflict)?;
-    if !state_ref
-        .scheduler
-        .borrow()
-        .is_scope_active(state_ref.scope_id)
-    {
+    if !state_ref.is_active() {
         return Ok(());
     }
     let epoch = state_ref.scheduler.borrow_mut().next_epoch();
@@ -186,7 +182,7 @@ pub(crate) fn stop_effect<'scope>(
             .try_borrow()
             .map_err(|_| ReactiveError::BorrowConflict)?;
         let scheduler = state_ref.scheduler.clone();
-        if !scheduler.borrow().is_scope_active(state_ref.scope_id) {
+        if !state_ref.is_active() {
             return Ok(false);
         }
         let Some(node) = state_ref.nodes.get(id) else {
@@ -257,11 +253,7 @@ pub(crate) fn try_notify<'scope>(
         let mut state_ref = state
             .try_borrow_mut()
             .map_err(|_| ReactiveError::BorrowConflict)?;
-        if !state_ref
-            .scheduler
-            .borrow()
-            .is_scope_active(state_ref.scope_id)
-        {
+        if !state_ref.is_active() {
             return Err(ReactiveError::NoSuchNode);
         }
         if !state_ref.node_exists(id) {
@@ -285,11 +277,7 @@ pub(crate) fn try_track<'scope>(
     let mut state_ref = state
         .try_borrow_mut()
         .map_err(|_| ReactiveError::BorrowConflict)?;
-    if !state_ref
-        .scheduler
-        .borrow()
-        .is_scope_active(state_ref.scope_id)
-    {
+    if !state_ref.is_active() {
         return Err(ReactiveError::NoSuchNode);
     }
     if !state_ref.node_exists(id) {
@@ -306,11 +294,7 @@ pub(crate) fn try_track_many<'scope>(
     let mut state_ref = state
         .try_borrow_mut()
         .map_err(|_| ReactiveError::BorrowConflict)?;
-    if !state_ref
-        .scheduler
-        .borrow()
-        .is_scope_active(state_ref.scope_id)
-    {
+    if !state_ref.is_active() {
         return Err(ReactiveError::NoSuchNode);
     }
     if ids.iter().any(|id| !state_ref.node_exists(*id)) {

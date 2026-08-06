@@ -221,7 +221,7 @@ where
 {
     let active = {
         let state = state.borrow();
-        state.scheduler.borrow().is_scope_active(storage.scope_id)
+        state.is_active()
     };
     if !active {
         return Rc::new(CompletionState::inactive());

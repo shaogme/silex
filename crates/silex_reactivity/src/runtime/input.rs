@@ -114,17 +114,17 @@ pub(crate) fn validate_inputs<'scope>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     inputs: &RuntimeInputs,
 ) -> ReactiveResult<()> {
-    let (scheduler, scope_id) = {
+    let (scheduler, scope_id, active) = {
         let state = state
             .try_borrow()
             .map_err(|_| ReactiveError::BorrowConflict)?;
-        (state.scheduler.clone(), state.scope_id)
+        (state.scheduler.clone(), state.scope_id, state.active)
     };
     let scheduler_ref = scheduler
         .try_borrow()
         .map_err(|_| ReactiveError::BorrowConflict)?;
 
-    if !scheduler_ref.is_scope_active(scope_id) {
+    if !active || !scheduler_ref.is_scope_active(scope_id) {
         return Err(ReactiveError::NoSuchNode);
     }
     if inputs.iter().any(|input| !input.belongs_to(&scheduler)) {

@@ -42,11 +42,7 @@ pub(crate) fn prepare_read<'scope>(
         let state_ref = state
             .try_borrow()
             .map_err(|_| ReactiveError::BorrowConflict)?;
-        if !state_ref
-            .scheduler
-            .borrow()
-            .is_scope_active(state_ref.scope_id)
-        {
+        if !state_ref.is_active() {
             return Err(ReactiveError::NoSuchNode);
         }
         let node = state_ref.nodes.get(id).ok_or(ReactiveError::NoSuchNode)?;
@@ -451,7 +447,7 @@ fn run_node<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> React
     let can_commit = if operation_error.is_none() && panic_data.is_none() {
         match state.try_borrow() {
             Ok(state_ref) => {
-                state_ref.node_exists(id) && state_ref.scheduler.borrow().is_scope_active(scope_id)
+                state_ref.node_exists(id) && state_ref.is_active() && state_ref.scope_id == scope_id
             }
             Err(_) => {
                 operation_error = Some(ReactiveError::BorrowConflict);

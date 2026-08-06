@@ -59,18 +59,18 @@ impl<'scope> Scope<'scope> {
     /// stack frame. Its caller must dispose it when the owned object is
     /// removed; the DOM owner adapters use this as the row lifetime boundary.
     pub fn owned_scope(&self) -> OwnedScope<'scope> {
+        assert!(
+            self.storage.is_active(),
+            "创建 owned scope 失败: {}",
+            ReactiveError::NoSuchNode
+        );
         let state = self.state();
         let scheduler = state.borrow().scheduler.clone();
         OwnedScope::new(scheduler)
     }
 
     pub fn is_active(&self) -> bool {
-        let state = self.state();
-        let state = state.borrow();
-        state
-            .scheduler
-            .borrow()
-            .is_scope_active(self.storage.scope_id)
+        self.storage.is_active()
     }
 
     /// Validate opaque source provenance for a framework-owned registration.
@@ -82,6 +82,11 @@ impl<'scope> Scope<'scope> {
     /// Execute a child scope. All child nodes and computations are destroyed
     /// before this method returns, including during panic unwinding.
     pub fn child<R>(&self, f: impl for<'child> FnOnce(Scope<'child>) -> R) -> R {
+        assert!(
+            self.storage.is_active(),
+            "创建 child scope 失败: {}",
+            ReactiveError::NoSuchNode
+        );
         let state = self.state();
         let scheduler = state.borrow().scheduler.clone();
         let storage = ScopeStorage::new(scheduler.clone());
@@ -133,17 +138,25 @@ impl<'scope> Scope<'scope> {
         T: 'scope,
         F: FnMut(T) + 'scope,
     {
+        self.try_callback(f)
+            .unwrap_or_else(|error| panic!("创建 scoped callback 失败: {error}"))
+    }
+
+    pub fn try_callback<T, F>(&self, f: F) -> ReactiveResult<Callback<'scope, T>>
+    where
+        T: 'scope,
+        F: FnMut(T) + 'scope,
+    {
         let thunk = CallbackThunk::new_typed(f);
         let state = self.state();
         let raw = state
             .try_borrow_mut()
-            .expect("scope 在用户代码执行期间不应持有运行时借用")
-            .create_callback(thunk)
-            .unwrap_or_else(|error| panic!("创建 scoped callback 失败: {error}"));
-        Callback {
+            .map_err(|_| ReactiveError::BorrowConflict)?
+            .create_callback(thunk)?;
+        Ok(Callback {
             handle: Handle::new(self.storage, raw),
             marker: PhantomData,
-        }
+        })
     }
 
     /// Create an effect owned by this scope and run it once immediately.
@@ -336,28 +349,39 @@ impl<'scope> Scope<'scope> {
 
     /// Create an empty host reference.
     pub fn node_ref<T: 'scope>(&self) -> NodeRef<'scope, T> {
+        self.try_node_ref()
+            .unwrap_or_else(|error| panic!("创建 scoped node_ref 失败: {error}"))
+    }
+
+    pub fn try_node_ref<T: 'scope>(&self) -> ReactiveResult<NodeRef<'scope, T>> {
         let state = self.state();
         let raw = state
             .try_borrow_mut()
-            .expect("scope 在 node_ref 创建期间被借用")
-            .create_node_ref(AnyValue::new(Option::<T>::None))
-            .unwrap_or_else(|error| panic!("创建 scoped node_ref 失败: {error}"));
-        NodeRef {
+            .map_err(|_| ReactiveError::BorrowConflict)?
+            .create_node_ref(AnyValue::new(Option::<T>::None))?;
+        Ok(NodeRef {
             handle: Handle::new(self.storage, raw),
             marker: PhantomData,
-        }
+        })
     }
 
     /// Create a signal owned by this scope.
     pub fn signal<T: 'scope>(&self, value: T) -> (ReadSignal<'scope, T>, WriteSignal<'scope, T>) {
+        self.try_signal(value)
+            .unwrap_or_else(|error| panic!("创建 scoped signal 失败: {error}"))
+    }
+
+    pub fn try_signal<T: 'scope>(
+        &self,
+        value: T,
+    ) -> ReactiveResult<(ReadSignal<'scope, T>, WriteSignal<'scope, T>)> {
         let state = self.state();
         let raw = state
             .try_borrow_mut()
-            .expect("scope 在 signal 创建期间被借用")
-            .create_signal(AnyValue::new(value))
-            .unwrap_or_else(|error| panic!("创建 scoped signal 失败: {error}"));
+            .map_err(|_| ReactiveError::BorrowConflict)?
+            .create_signal(AnyValue::new(value))?;
         let handle = Handle::new(self.storage, raw);
-        (
+        Ok((
             ReadSignal {
                 handle,
                 marker: PhantomData,
@@ -366,7 +390,7 @@ impl<'scope> Scope<'scope> {
                 handle,
                 marker: PhantomData,
             },
-        )
+        ))
     }
 
     /// Create the paired form of a signal for callers that want one copyable
@@ -378,16 +402,20 @@ impl<'scope> Scope<'scope> {
 
     /// Store a non-reactive value under this scope.
     pub fn stored<T: 'scope>(&self, value: T) -> StoredValue<'scope, T> {
+        self.try_stored(value)
+            .unwrap_or_else(|error| panic!("创建 scoped stored value 失败: {error}"))
+    }
+
+    pub fn try_stored<T: 'scope>(&self, value: T) -> ReactiveResult<StoredValue<'scope, T>> {
         let state = self.state();
         let raw = state
             .try_borrow_mut()
-            .expect("scope 在 stored value 创建期间被借用")
-            .create_stored(AnyValue::new(value))
-            .unwrap_or_else(|error| panic!("创建 scoped stored value 失败: {error}"));
-        StoredValue {
+            .map_err(|_| ReactiveError::BorrowConflict)?
+            .create_stored(AnyValue::new(value))?;
+        Ok(StoredValue {
             handle: Handle::new(self.storage, raw),
             marker: PhantomData,
-        }
+        })
     }
 
     /// Create a one-shot completion destination owned by this scope.
@@ -439,22 +467,23 @@ impl<'scope> OwnedScope<'scope> {
 
     /// Create a nested persistent owner using the same scheduler.
     pub fn child(&self) -> Self {
+        assert!(
+            self.is_active(),
+            "创建 owned child scope 失败: {}",
+            ReactiveError::NoSuchNode
+        );
         let state = self.state();
         let scheduler = state.borrow().scheduler.clone();
-        let child = Self::new(scheduler);
-        if !self.active.get() {
-            child.dispose();
-        }
-        child
+        Self::new(scheduler)
     }
 
     pub fn is_active(&self) -> bool {
-        self.active.get()
+        self.active.get() && self.storage.is_active()
     }
 
     #[doc(hidden)]
     pub fn try_validate_inputs(&self, inputs: &RuntimeInputs) -> ReactiveResult<()> {
-        if !self.active.get() {
+        if !self.is_active() {
             return Err(ReactiveError::NoSuchNode);
         }
         runtime::validate_inputs(&self.state(), inputs)
@@ -487,7 +516,7 @@ impl<'scope> OwnedScope<'scope> {
     where
         F: FnMut() + 'scope,
     {
-        if !self.active.get() {
+        if !self.is_active() {
             return Err(ReactiveError::NoSuchNode);
         }
         let state = self.state();
@@ -534,7 +563,7 @@ impl<'scope> OwnedScope<'scope> {
         G: FnMut() -> T + 'scope,
         C: FnMut(&T, Option<&T>) + 'scope,
     {
-        if !self.active.get() {
+        if !self.is_active() {
             return Err(ReactiveError::NoSuchNode);
         }
         let state = self.state();
@@ -547,7 +576,7 @@ impl<'scope> OwnedScope<'scope> {
     where
         F: FnOnce() + 'scope,
     {
-        if !self.active.get() {
+        if !self.is_active() {
             return;
         }
         let state = self.state();
@@ -562,7 +591,7 @@ impl<'scope> OwnedScope<'scope> {
     where
         F: FnMut(T) + 'scope,
     {
-        if !self.active.get() {
+        if !self.is_active() {
             return CompletionOnce::inactive();
         }
         create_completion_once(&self.storage, self.state(), callback)
@@ -573,7 +602,7 @@ impl<'scope> OwnedScope<'scope> {
     where
         F: FnMut(T) + 'scope,
     {
-        if !self.active.get() {
+        if !self.is_active() {
             return CompletionSender::inactive();
         }
         create_completion_sender(&self.storage, self.state(), callback)
@@ -592,5 +621,263 @@ impl<'scope> OwnedScope<'scope> {
 impl Drop for OwnedScope<'_> {
     fn drop(&mut self) {
         self.dispose();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime::{GlobalScheduler, ScopeState};
+    use std::{cell::RefCell, rc::Rc};
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    struct Snapshot {
+        nodes: usize,
+        data: usize,
+        edges: usize,
+        roots: usize,
+        queue: usize,
+    }
+
+    fn snapshot<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>) -> Snapshot {
+        let state_ref = state.borrow();
+        let queue = state_ref.scheduler.borrow().global_queue.len();
+        Snapshot {
+            nodes: state_ref.nodes.len(),
+            data: state_ref.data.len(),
+            edges: state_ref.edges.len(),
+            roots: state_ref.roots.len(),
+            queue,
+        }
+    }
+
+    fn rejected_creations(scope: Scope<'_>) -> Vec<ReactiveResult<()>> {
+        vec![
+            scope.try_signal(0_i32).map(|_| ()),
+            scope.try_stored(()).map(|_| ()),
+            scope.try_callback(|_: ()| {}).map(|_| ()),
+            scope.try_node_ref::<()>().map(|_| ()),
+        ]
+    }
+
+    #[test]
+    fn inactive_cleanup_rejects_all_value_creation_without_metadata_changes() {
+        let storage = ScopeStorage::new(GlobalScheduler::new());
+        let scope = Scope {
+            storage: &storage,
+            _marker: PhantomData,
+        };
+        let state = scope.state();
+        let state_in_cleanup = state.clone();
+        let observed = Rc::new(RefCell::new(None));
+        let observed_in_cleanup = observed.clone();
+        let scope_in_cleanup = scope;
+        scope.on_cleanup(move || {
+            assert_eq!(
+                rejected_creations(scope_in_cleanup),
+                vec![
+                    Err(ReactiveError::NoSuchNode),
+                    Err(ReactiveError::NoSuchNode),
+                    Err(ReactiveError::NoSuchNode),
+                    Err(ReactiveError::NoSuchNode),
+                ]
+            );
+            *observed_in_cleanup.borrow_mut() = Some(snapshot(&state_in_cleanup));
+        });
+
+        let before_dispose = snapshot(&state);
+        storage.dispose_untracked();
+
+        assert_eq!(*observed.borrow(), Some(before_dispose));
+        assert_eq!(
+            snapshot(&state),
+            Snapshot {
+                nodes: 0,
+                data: 0,
+                edges: 0,
+                roots: 0,
+                queue: 0,
+            }
+        );
+    }
+
+    struct DropProbe<'scope> {
+        scope: Scope<'scope>,
+        state: Rc<RefCell<ScopeState<'scope>>>,
+        expected: Snapshot,
+        observations: Observations,
+    }
+
+    type Observations = Rc<RefCell<Vec<(Snapshot, Vec<ReactiveResult<()>>)>>>;
+
+    impl Drop for DropProbe<'_> {
+        fn drop(&mut self) {
+            let result = rejected_creations(self.scope);
+            let actual = snapshot(&self.state);
+            assert_eq!(actual, self.expected);
+            self.observations.borrow_mut().push((actual, result));
+        }
+    }
+
+    fn drop_probe<'scope>(
+        scope: Scope<'scope>,
+        state: Rc<RefCell<ScopeState<'scope>>>,
+        expected: Snapshot,
+        observations: Observations,
+    ) -> DropProbe<'scope> {
+        DropProbe {
+            scope,
+            state,
+            expected,
+            observations,
+        }
+    }
+
+    #[test]
+    fn inactive_payload_drop_rejects_creation_after_node_removal() {
+        let storage = ScopeStorage::new(GlobalScheduler::new());
+        let scope = Scope {
+            storage: &storage,
+            _marker: PhantomData,
+        };
+        let state = scope.state();
+        let observations = Rc::new(RefCell::new(Vec::new()));
+
+        let _sentinel = scope.signal(());
+        let callback_probe = drop_probe(
+            scope,
+            state.clone(),
+            Snapshot {
+                nodes: 2,
+                data: 2,
+                edges: 0,
+                roots: 2,
+                queue: 0,
+            },
+            observations.clone(),
+        );
+        let _callback = scope.callback(move |_: ()| {
+            let _ = &callback_probe;
+        });
+
+        let stored_probe = drop_probe(
+            scope,
+            state.clone(),
+            Snapshot {
+                nodes: 1,
+                data: 1,
+                edges: 0,
+                roots: 1,
+                queue: 0,
+            },
+            observations.clone(),
+        );
+        let _stored = scope.stored(stored_probe);
+
+        let node_ref = scope.node_ref::<DropProbe<'_>>();
+        node_ref
+            .set(drop_probe(
+                scope,
+                state,
+                Snapshot {
+                    nodes: 0,
+                    data: 0,
+                    edges: 0,
+                    roots: 0,
+                    queue: 0,
+                },
+                observations.clone(),
+            ))
+            .expect("node ref should accept the probe while active");
+
+        storage.dispose_untracked();
+
+        let observations = observations.borrow();
+        assert_eq!(observations.len(), 3);
+        for (_, result) in observations.iter() {
+            assert!(
+                result
+                    .iter()
+                    .all(|value| *value == Err(ReactiveError::NoSuchNode))
+            );
+        }
+        assert_eq!(
+            observations[0].0,
+            Snapshot {
+                nodes: 2,
+                data: 2,
+                edges: 0,
+                roots: 2,
+                queue: 0,
+            }
+        );
+        assert_eq!(
+            observations[1].0,
+            Snapshot {
+                nodes: 1,
+                data: 1,
+                edges: 0,
+                roots: 1,
+                queue: 0,
+            }
+        );
+        assert_eq!(
+            observations[2].0,
+            Snapshot {
+                nodes: 0,
+                data: 0,
+                edges: 0,
+                roots: 0,
+                queue: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn inactive_scope_rejects_new_child_and_owned_scopes() {
+        let storage = ScopeStorage::new(GlobalScheduler::new());
+        let scope = Scope {
+            storage: &storage,
+            _marker: PhantomData,
+        };
+        let scope_copy = scope;
+        let child_rejected = Rc::new(RefCell::new(false));
+        let owned_rejected = Rc::new(RefCell::new(false));
+        let child_rejected_in_cleanup = child_rejected.clone();
+        let owned_rejected_in_cleanup = owned_rejected.clone();
+        scope.on_cleanup(move || {
+            *child_rejected_in_cleanup.borrow_mut() =
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| scope_copy.child(|_| ())))
+                    .is_err();
+            *owned_rejected_in_cleanup.borrow_mut() =
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| scope_copy.owned_scope()))
+                    .is_err();
+        });
+
+        storage.dispose_untracked();
+
+        assert!(*child_rejected.borrow());
+        assert!(*owned_rejected.borrow());
+    }
+
+    #[test]
+    fn disposed_scope_cannot_register_after_scope_id_reuse() {
+        let scheduler = GlobalScheduler::new();
+        let storage = ScopeStorage::new(scheduler.clone());
+        let scope = Scope {
+            storage: &storage,
+            _marker: PhantomData,
+        };
+        storage.dispose_untracked();
+
+        let replacement = ScopeStorage::new(scheduler);
+        assert!(matches!(
+            scope.try_signal(0_i32),
+            Err(ReactiveError::NoSuchNode)
+        ));
+        assert!(replacement.is_active());
+        assert_eq!(replacement.state.borrow().nodes.len(), 0);
+
+        replacement.dispose_untracked();
     }
 }

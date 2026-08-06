@@ -157,6 +157,7 @@ impl Iterator for EdgeIter<'_, '_> {
 pub(crate) struct ScopeState<'scope> {
     pub(crate) scope_id: ScopeId,
     pub(crate) scheduler: Rc<RefCell<GlobalScheduler>>,
+    pub(crate) active: bool,
     pub(crate) nodes: SlotMap<RawId, NodeCore>,
     pub(crate) data: SecondaryMap<RawId, NodeData<'scope>>,
     pub(crate) edges: SlotMap<EdgeId, ReactiveEdge>,
@@ -170,6 +171,7 @@ impl<'scope> ScopeState<'scope> {
         Self {
             scope_id,
             scheduler,
+            active: true,
             nodes: SlotMap::with_key(),
             data: SecondaryMap::new(),
             edges: SlotMap::with_key(),
@@ -267,14 +269,18 @@ impl<'scope> ScopeState<'scope> {
     pub(crate) fn register(
         &mut self,
         node: NodeCore,
-        data: NodeData<'scope>,
+        make_data: impl FnOnce() -> NodeData<'scope>,
     ) -> ReactiveResult<RawId> {
         self.ensure_active()?;
         let parent = node.parent;
         let id = self.nodes.insert(node);
-        self.data.insert(id, data);
+        self.data.insert(id, make_data());
         self.link_child(parent, id);
         Ok(id)
+    }
+
+    pub(crate) fn is_active(&self) -> bool {
+        self.active && self.scheduler.borrow().is_scope_active(self.scope_id)
     }
 
     pub(crate) fn node_exists(&self, id: RawId) -> bool {
@@ -282,7 +288,7 @@ impl<'scope> ScopeState<'scope> {
     }
 
     pub(crate) fn mark_notified(&mut self, id: RawId) -> bool {
-        if !self.scheduler.borrow().is_scope_active(self.scope_id) {
+        if !self.is_active() {
             return false;
         }
         let epoch = self.scheduler.borrow_mut().next_epoch();
@@ -304,10 +310,9 @@ impl<'scope> ScopeState<'scope> {
         let mut node = NodeCore::new(NodeKindTag::Signal, parent, NodeState::Clean);
         node.updated_epoch = epoch;
         node.last_computed_epoch = epoch;
-        self.register(
-            node,
-            NodeData::new(Rc::new(NodeStorage::Value(LeaseCell::new(value)))),
-        )
+        self.register(node, move || {
+            NodeData::new(Rc::new(NodeStorage::Value(LeaseCell::new(value))))
+        })
     }
 
     pub(super) fn register_effect(
@@ -317,9 +322,11 @@ impl<'scope> ScopeState<'scope> {
         let parent = self.parent_for_new_node();
         self.register(
             NodeCore::new(NodeKindTag::Effect, parent, NodeState::Dirty),
-            NodeData::new(Rc::new(NodeStorage::Computation(ComputationStorage::new(
-                Computation::Effect(callback),
-            )))),
+            move || {
+                NodeData::new(Rc::new(NodeStorage::Computation(ComputationStorage::new(
+                    Computation::Effect(callback),
+                ))))
+            },
         )
     }
 
@@ -330,9 +337,11 @@ impl<'scope> ScopeState<'scope> {
         let parent = self.parent_for_new_node();
         self.register(
             NodeCore::new(NodeKindTag::Effect, parent, NodeState::Dirty),
-            NodeData::new(Rc::new(NodeStorage::Computation(ComputationStorage::new(
-                Computation::Previous(callback),
-            )))),
+            move || {
+                NodeData::new(Rc::new(NodeStorage::Computation(ComputationStorage::new(
+                    Computation::Previous(callback),
+                ))))
+            },
         )
     }
 
@@ -340,9 +349,11 @@ impl<'scope> ScopeState<'scope> {
         let parent = self.parent_for_new_node();
         self.register(
             NodeCore::new(NodeKindTag::Effect, parent, NodeState::Dirty),
-            NodeData::new(Rc::new(NodeStorage::Computation(ComputationStorage::new(
-                Computation::Watch(callback),
-            )))),
+            move || {
+                NodeData::new(Rc::new(NodeStorage::Computation(ComputationStorage::new(
+                    Computation::Watch(callback),
+                ))))
+            },
         )
     }
 
@@ -357,19 +368,18 @@ impl<'scope> ScopeState<'scope> {
         } else {
             NodeKindTag::Memo
         };
-        self.register(
-            NodeCore::new(kind, parent, NodeState::Dirty),
+        self.register(NodeCore::new(kind, parent, NodeState::Dirty), move || {
             NodeData::new(Rc::new(NodeStorage::Computation(ComputationStorage::new(
                 Computation::Memo(callback),
-            )))),
-        )
+            ))))
+        })
     }
 
     pub(crate) fn create_stored(&mut self, value: AnyValue<'scope>) -> ReactiveResult<RawId> {
         let parent = self.parent_for_new_node();
         self.register(
             NodeCore::new(NodeKindTag::Stored, parent, NodeState::Clean),
-            NodeData::new(Rc::new(NodeStorage::Value(LeaseCell::new(value)))),
+            move || NodeData::new(Rc::new(NodeStorage::Value(LeaseCell::new(value)))),
         )
     }
 
@@ -380,7 +390,7 @@ impl<'scope> ScopeState<'scope> {
         let parent = self.parent_for_new_node();
         self.register(
             NodeCore::new(NodeKindTag::Callback, parent, NodeState::Clean),
-            NodeData::new(Rc::new(NodeStorage::Callback(LeaseCell::new(callback)))),
+            move || NodeData::new(Rc::new(NodeStorage::Callback(LeaseCell::new(callback)))),
         )
     }
 
@@ -388,7 +398,7 @@ impl<'scope> ScopeState<'scope> {
         let parent = self.parent_for_new_node();
         self.register(
             NodeCore::new(NodeKindTag::NodeRef, parent, NodeState::Clean),
-            NodeData::new(Rc::new(NodeStorage::Value(LeaseCell::new(value)))),
+            move || NodeData::new(Rc::new(NodeStorage::Value(LeaseCell::new(value)))),
         )
     }
 
@@ -421,7 +431,7 @@ impl<'scope> ScopeState<'scope> {
     }
 
     fn ensure_active(&self) -> Result<(), ReactiveError> {
-        if self.scheduler.borrow().is_scope_active(self.scope_id) {
+        if self.is_active() {
             Ok(())
         } else {
             Err(ReactiveError::NoSuchNode)
