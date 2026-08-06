@@ -1,4 +1,7 @@
-use crate::traits::{RxBase, RxData, RxRead, RxValue};
+use crate::{
+    ReactiveResult,
+    traits::{RxBase, RxData, RxRead, RxValue},
+};
 use std::marker::PhantomData;
 
 /// A safe projection over a source reactive value.
@@ -30,8 +33,8 @@ where
     S: RxBase,
     O: ?Sized + RxData,
 {
-    fn track(&self) {
-        self.source.track();
+    fn try_track(&self) -> ReactiveResult<()> {
+        self.source.try_track()
     }
 }
 
@@ -41,11 +44,11 @@ where
     F: Fn(&S::Value) -> &O,
     O: ?Sized + RxData,
 {
-    fn try_with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+    fn try_with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> ReactiveResult<U> {
         self.source.try_with(|value| f((self.getter)(value)))
     }
 
-    fn try_with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+    fn try_with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> ReactiveResult<U> {
         self.source
             .try_with_untracked(|value| f((self.getter)(value)))
     }

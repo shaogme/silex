@@ -461,7 +461,7 @@ fn router_stops_before_children_when_listener_registration_fails() {
         ErrorContext::new(move |_| {
             errors_for_handler.set(errors_for_handler.get() + 1);
         })
-        .push(&scope);
+        .push(scope);
 
         let children_calls_for_view = children_calls.clone();
         let view = Router(scope).base("/app").children(Rc::new(move |_ctx| {

@@ -1,10 +1,10 @@
-use silex_core::{Runtime, SilexError, SilexResult};
+use silex_core::{ReactiveError, Runtime, SilexError, SilexResult};
 use silex_router::{RouterContext, RouterContextProps};
 
 fn assert_runtime_mismatch<'scope>(result: SilexResult<RouterContext<'scope>>) {
     assert!(matches!(
         result,
-        Err(SilexError::Reactivity(message)) if message.contains("不同")
+        Err(SilexError::Reactivity(ReactiveError::RuntimeMismatch))
     ));
 }
 

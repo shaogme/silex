@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::fmt;
 use std::rc::Rc;
 
+use silex_reactivity::ReactiveError;
 use wasm_bindgen::JsValue;
 
 use crate::Scope;
@@ -9,7 +10,8 @@ use crate::Scope;
 #[derive(Debug, Clone)] // Clone to allow easy propagation in closures if needed
 pub enum SilexError {
     Dom(String),
-    Reactivity(String),
+    Reactivity(ReactiveError),
+    Framework(String),
     Javascript(String),
 }
 
@@ -20,9 +22,16 @@ impl fmt::Display for SilexError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             SilexError::Dom(msg) => write!(f, "DOM Error: {}", msg),
-            SilexError::Reactivity(msg) => write!(f, "Reactivity Error: {}", msg),
+            SilexError::Reactivity(error) => write!(f, "Reactivity Error: {}", error),
+            SilexError::Framework(msg) => write!(f, "Framework Error: {}", msg),
             SilexError::Javascript(msg) => write!(f, "JavaScript Error: {}", msg),
         }
+    }
+}
+
+impl From<ReactiveError> for SilexError {
+    fn from(error: ReactiveError) -> Self {
+        Self::Reactivity(error)
     }
 }
 

@@ -28,7 +28,7 @@ pub use silex_reactivity::RuntimeInputs;
 pub use silex_reactivity::{CompletionOnce, CompletionSender};
 pub use store::Store;
 pub use task::TaskHandle;
-pub use traits::{RxBase, RxData, RxGet, RxRead, RxValue};
+pub use traits::{RxBase, RxData, RxGet, RxRead, RxValue, RxWrite};
 
 pub use silex_reactivity::CleanupError;
 pub use silex_reactivity::{ReactiveError, ReactiveResult};
@@ -144,12 +144,34 @@ impl<'scope, T: 'scope> Rx<'scope, T, RxValueKind> {
         RxGet::get(self)
     }
 
+    pub fn try_get(&self) -> ReactiveResult<T>
+    where
+        T: Clone,
+    {
+        RxGet::try_get(self)
+    }
+
+    pub fn try_get_untracked(&self) -> ReactiveResult<T>
+    where
+        T: Clone,
+    {
+        RxGet::try_get_untracked(self)
+    }
+
     pub fn with<U>(&self, f: impl FnOnce(&T) -> U) -> U {
         RxRead::with(self, f)
     }
 
+    pub fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
+        RxRead::try_with(self, f)
+    }
+
     pub fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> U {
         RxRead::with_untracked(self, f)
+    }
+
+    pub fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
+        RxRead::try_with_untracked(self, f)
     }
 
     pub fn into_signal(self) -> crate::reactivity::Signal<'scope, T> {
@@ -229,8 +251,8 @@ macro_rules! batch_read_untracked_recurse {
 
 pub mod prelude {
     pub use crate::{
-        Callback, CompletionOnce, CompletionSender, ErrorContext, NodeRef, Runtime, Rx, Scope,
-        SilexError, SilexResult, Store, batch_read, batch_read_untracked, logic::*, reactivity::*,
-        rx, traits::*,
+        Callback, CompletionOnce, CompletionSender, ErrorContext, NodeRef, ReactiveError,
+        ReactiveResult, Runtime, Rx, Scope, SilexError, SilexResult, Store, batch_read,
+        batch_read_untracked, logic::*, reactivity::*, rx, traits::*,
     };
 }

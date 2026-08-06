@@ -7,6 +7,7 @@ pub mod ui;
 
 pub use components::*;
 pub use silex_core::error::{SilexError, SilexResult};
+pub use silex_core::{ReactiveError, ReactiveResult};
 
 pub mod reexports {
     pub use js_sys;
@@ -74,7 +75,7 @@ pub mod prelude {
     pub use crate::net::*;
     #[cfg(feature = "persistence")]
     pub use crate::persist::*;
-    pub use crate::{SilexError, SilexResult};
+    pub use crate::{ReactiveError, ReactiveResult, SilexError, SilexResult};
     pub use silex_core::prelude::*;
     pub use silex_css::prelude::*;
     pub use silex_dom::prelude::*;

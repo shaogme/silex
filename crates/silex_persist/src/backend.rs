@@ -4,7 +4,6 @@ use ref_str::LocalStaticRefStr;
 use silex_core::{
     RuntimeInputs, Scope,
     reactivity::{Memo, runtime_inputs_of},
-    traits::RxGet,
 };
 use silex_router::{Navigator, RouterContext};
 use std::{

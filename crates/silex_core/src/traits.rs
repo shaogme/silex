@@ -1,11 +1,11 @@
 //! Lifetime-aware reactive traits.
 
 use crate::{
-    Rx, RxInner, RxValueKind, Scope, SilexError, SilexResult,
+    ReactiveError, ReactiveResult, Rx, RxInner, RxValueKind, Scope, SilexError, SilexResult,
     error::handle_error,
-    reactivity::dispatch,
     reactivity::{Memo, ReactiveSource, ReadSignal, RwSignal, Signal, StoredValue, WriteSignal},
 };
+use silex_reactivity::try_notify as raw_try_notify;
 use std::{fmt::Debug, rc::Rc};
 
 /// Values accepted by the scoped runtime.
@@ -24,7 +24,11 @@ pub trait RxValue {
 
 /// Common diagnostics and dependency tracking for a reactive value.
 pub trait RxBase: RxValue {
-    fn track(&self);
+    fn try_track(&self) -> ReactiveResult<()>;
+
+    fn track(&self) {
+        self.try_track().unwrap_or_else(panic_reactive);
+    }
 
     fn debug_name(&self) -> Option<String> {
         None
@@ -34,23 +38,22 @@ pub trait RxBase: RxValue {
 /// Closure-based tracked and untracked access. No reference can outlive the
 /// callback supplied to these methods.
 pub trait RxRead: RxBase {
-    fn try_with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> Option<U>;
+    fn try_with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> ReactiveResult<U>;
 
     fn with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> U {
-        self.try_with(f).unwrap_or_else(|| panic_disposed(self))
+        self.try_with(f).unwrap_or_else(panic_reactive)
     }
 
-    fn try_with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> Option<U>;
+    fn try_with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> ReactiveResult<U>;
 
     fn with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> U {
-        self.try_with_untracked(f)
-            .unwrap_or_else(|| panic_disposed(self))
+        self.try_with_untracked(f).unwrap_or_else(panic_reactive)
     }
 }
 
 #[cold]
-fn panic_disposed<T: RxBase + ?Sized>(value: &T) -> ! {
-    dispatch::report_disposed(value.debug_name())
+fn panic_reactive<T>(error: ReactiveError) -> T {
+    panic!("reactive operation failed: {error}")
 }
 
 /// Clone-based convenience access built on top of [`RxRead`].
@@ -58,21 +61,20 @@ pub trait RxGet: RxRead
 where
     Self::Value: Sized + Clone,
 {
-    fn try_get_untracked(&self) -> Option<Self::Value> {
+    fn try_get_untracked(&self) -> ReactiveResult<Self::Value> {
         self.try_with_untracked(Clone::clone)
     }
 
     fn get_untracked(&self) -> Self::Value {
-        self.try_get_untracked()
-            .unwrap_or_else(|| panic_disposed(self))
+        self.try_get_untracked().unwrap_or_else(panic_reactive)
     }
 
-    fn try_get(&self) -> Option<Self::Value> {
+    fn try_get(&self) -> ReactiveResult<Self::Value> {
         self.try_with(Clone::clone)
     }
 
     fn get(&self) -> Self::Value {
-        self.try_get().unwrap_or_else(|| panic_disposed(self))
+        self.try_get().unwrap_or_else(panic_reactive)
     }
 }
 
@@ -85,18 +87,19 @@ where
 
 /// Unified scoped writes.
 pub trait RxWrite: RxBase {
-    fn rx_try_update_untracked<U>(&self, f: impl FnOnce(&mut Self::Value) -> U) -> Option<U>;
+    fn rx_try_update_untracked<U>(
+        &self,
+        f: impl FnOnce(&mut Self::Value) -> U,
+    ) -> ReactiveResult<U>;
 
-    fn rx_notify(&self);
+    fn rx_try_notify(&self) -> ReactiveResult<()>;
 
     fn update(&self, f: impl FnOnce(&mut Self::Value)) {
-        self.try_update(f).unwrap_or_else(|| panic_disposed(self));
+        self.try_update(f).unwrap_or_else(panic_reactive);
     }
 
-    fn try_update<U>(&self, f: impl FnOnce(&mut Self::Value) -> U) -> Option<U> {
-        let result = self.rx_try_update_untracked(f)?;
-        self.rx_notify();
-        Some(result)
+    fn try_update<U>(&self, f: impl FnOnce(&mut Self::Value) -> U) -> ReactiveResult<U> {
+        self.rx_try_update_untracked(f)
     }
 
     fn set(&self, value: Self::Value)
@@ -106,13 +109,12 @@ pub trait RxWrite: RxBase {
         self.update(|current| *current = value);
     }
 
-    fn try_update_untracked<U>(&self, f: impl FnOnce(&mut Self::Value) -> U) -> Option<U> {
+    fn try_update_untracked<U>(&self, f: impl FnOnce(&mut Self::Value) -> U) -> ReactiveResult<U> {
         self.rx_try_update_untracked(f)
     }
 
     fn update_untracked<U>(&self, f: impl FnOnce(&mut Self::Value) -> U) -> U {
-        self.try_update_untracked(f)
-            .unwrap_or_else(|| panic_disposed(self))
+        self.try_update_untracked(f).unwrap_or_else(panic_reactive)
     }
 
     fn set_untracked(&self, value: Self::Value)
@@ -122,8 +124,12 @@ pub trait RxWrite: RxBase {
         self.update_untracked(|current| *current = value);
     }
 
+    fn try_notify(&self) -> ReactiveResult<()> {
+        self.rx_try_notify()
+    }
+
     fn notify(&self) {
-        self.rx_notify();
+        self.try_notify().unwrap_or_else(panic_reactive);
     }
 
     fn setter(self, value: Self::Value) -> impl Fn() + Clone
@@ -149,18 +155,18 @@ impl<'scope, T: 'scope> RxValue for ReadSignal<'scope, T> {
 }
 
 impl<'scope, T: 'scope> RxBase for ReadSignal<'scope, T> {
-    fn track(&self) {
-        self.inner.with(|_| ());
+    fn try_track(&self) -> ReactiveResult<()> {
+        self.inner.try_with(|_| ()).map(|_| ())
     }
 }
 
 impl<'scope, T: 'scope> RxRead for ReadSignal<'scope, T> {
-    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> Option<U> {
-        self.inner.try_with(f).ok()
+    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
+        self.inner.try_with(f)
     }
 
-    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> Option<U> {
-        self.inner.with_untracked(f).ok()
+    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
+        self.inner.try_with_untracked(f)
     }
 }
 
@@ -169,15 +175,19 @@ impl<'scope, T: 'scope> RxValue for WriteSignal<'scope, T> {
 }
 
 impl<'scope, T: 'scope> RxBase for WriteSignal<'scope, T> {
-    fn track(&self) {}
+    fn try_track(&self) -> ReactiveResult<()> {
+        Ok(())
+    }
 }
 
 impl<'scope, T: 'scope> RxWrite for WriteSignal<'scope, T> {
-    fn rx_try_update_untracked<U>(&self, f: impl FnOnce(&mut T) -> U) -> Option<U> {
-        self.inner.try_update(f).ok()
+    fn rx_try_update_untracked<U>(&self, f: impl FnOnce(&mut T) -> U) -> ReactiveResult<U> {
+        self.inner.try_update(f)
     }
 
-    fn rx_notify(&self) {}
+    fn rx_try_notify(&self) -> ReactiveResult<()> {
+        raw_try_notify(&self.inner)
+    }
 }
 
 impl<'scope, T: 'scope> RxValue for RwSignal<'scope, T> {
@@ -185,28 +195,28 @@ impl<'scope, T: 'scope> RxValue for RwSignal<'scope, T> {
 }
 
 impl<'scope, T: 'scope> RxBase for RwSignal<'scope, T> {
-    fn track(&self) {
-        self.read.track();
+    fn try_track(&self) -> ReactiveResult<()> {
+        self.read.try_track()
     }
 }
 
 impl<'scope, T: 'scope> RxRead for RwSignal<'scope, T> {
-    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> Option<U> {
+    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
         self.read.try_with(f)
     }
 
-    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> Option<U> {
+    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
         self.read.try_with_untracked(f)
     }
 }
 
 impl<'scope, T: 'scope> RxWrite for RwSignal<'scope, T> {
-    fn rx_try_update_untracked<U>(&self, f: impl FnOnce(&mut T) -> U) -> Option<U> {
+    fn rx_try_update_untracked<U>(&self, f: impl FnOnce(&mut T) -> U) -> ReactiveResult<U> {
         self.write.rx_try_update_untracked(f)
     }
 
-    fn rx_notify(&self) {
-        self.write.rx_notify();
+    fn rx_try_notify(&self) -> ReactiveResult<()> {
+        self.write.rx_try_notify()
     }
 }
 
@@ -215,17 +225,17 @@ impl<'scope, T: 'scope> RxValue for Signal<'scope, T> {
 }
 
 impl<'scope, T: 'scope> RxBase for Signal<'scope, T> {
-    fn track(&self) {
-        self.rx.track();
+    fn try_track(&self) -> ReactiveResult<()> {
+        self.rx.try_track()
     }
 }
 
 impl<'scope, T: 'scope> RxRead for Signal<'scope, T> {
-    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> Option<U> {
+    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
         self.rx.try_with(f)
     }
 
-    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> Option<U> {
+    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
         self.rx.try_with_untracked(f)
     }
 }
@@ -235,32 +245,32 @@ impl<'scope, T: 'scope> RxValue for Rx<'scope, T, RxValueKind> {
 }
 
 impl<'scope, T: 'scope> RxBase for Rx<'scope, T, RxValueKind> {
-    fn track(&self) {
+    fn try_track(&self) -> ReactiveResult<()> {
         match &self.inner {
-            RxInner::Signal(signal) => signal.with(|_| ()),
-            RxInner::Memo(memo) => memo.with(|_| ()),
-            RxInner::Derived(derived) => derived.with(|_| ()),
-            RxInner::Stored(_) => {}
+            RxInner::Signal(signal) => signal.try_with(|_| ()).map(|_| ()),
+            RxInner::Memo(memo) => memo.try_with(|_| ()).map(|_| ()),
+            RxInner::Derived(derived) => derived.try_with(|_| ()).map(|_| ()),
+            RxInner::Stored(stored) => stored.try_with(|_| ()).map(|_| ()),
         }
     }
 }
 
 impl<'scope, T: 'scope> RxRead for Rx<'scope, T, RxValueKind> {
-    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> Option<U> {
+    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
         match &self.inner {
-            RxInner::Signal(signal) => Some(signal.with(f)),
-            RxInner::Memo(memo) => Some(memo.with(f)),
-            RxInner::Derived(derived) => Some(derived.with(f)),
-            RxInner::Stored(stored) => Some(stored.with(f)),
+            RxInner::Signal(signal) => signal.try_with(f),
+            RxInner::Memo(memo) => memo.try_with(f),
+            RxInner::Derived(derived) => derived.try_with(f),
+            RxInner::Stored(stored) => stored.try_with(f),
         }
     }
 
-    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> Option<U> {
+    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
         match &self.inner {
-            RxInner::Signal(signal) => signal.with_untracked(f).ok(),
-            RxInner::Memo(memo) => memo.with_untracked(f).ok(),
-            RxInner::Derived(derived) => derived.with_untracked(f).ok(),
-            RxInner::Stored(stored) => Some(stored.with(f)),
+            RxInner::Signal(signal) => signal.try_with_untracked(f),
+            RxInner::Memo(memo) => memo.try_with_untracked(f),
+            RxInner::Derived(derived) => derived.try_with_untracked(f),
+            RxInner::Stored(stored) => stored.try_with(f),
         }
     }
 }
@@ -270,25 +280,29 @@ impl<'scope, T: 'scope> RxValue for StoredValue<'scope, T> {
 }
 
 impl<'scope, T: 'scope> RxBase for StoredValue<'scope, T> {
-    fn track(&self) {}
+    fn try_track(&self) -> ReactiveResult<()> {
+        Ok(())
+    }
 }
 
 impl<'scope, T: 'scope> RxRead for StoredValue<'scope, T> {
-    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> Option<U> {
-        Some(self.inner.with(f))
+    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
+        self.inner.try_with(f)
     }
 
-    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> Option<U> {
-        Some(self.inner.with(f))
+    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
+        self.inner.try_with(f)
     }
 }
 
 impl<'scope, T: 'scope> RxWrite for StoredValue<'scope, T> {
-    fn rx_try_update_untracked<U>(&self, f: impl FnOnce(&mut T) -> U) -> Option<U> {
-        Some(self.inner.update(f))
+    fn rx_try_update_untracked<U>(&self, f: impl FnOnce(&mut T) -> U) -> ReactiveResult<U> {
+        self.inner.try_update(f)
     }
 
-    fn rx_notify(&self) {}
+    fn rx_try_notify(&self) -> ReactiveResult<()> {
+        Ok(())
+    }
 }
 
 impl<'scope, T: 'scope> RxValue for Memo<'scope, T> {
@@ -331,18 +345,18 @@ impl RxValue for &str {
 }
 
 impl<'scope, T: 'scope> RxBase for Memo<'scope, T> {
-    fn track(&self) {
-        self.inner.with(|_| ());
+    fn try_track(&self) -> ReactiveResult<()> {
+        self.inner.try_with(|_| ()).map(|_| ())
     }
 }
 
 impl<'scope, T: 'scope> RxRead for Memo<'scope, T> {
-    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> Option<U> {
-        Some(self.inner.with(f))
+    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
+        self.inner.try_with(f)
     }
 
-    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> Option<U> {
-        self.inner.with_untracked(f).ok()
+    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
+        self.inner.try_with_untracked(f)
     }
 }
 

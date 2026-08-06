@@ -172,8 +172,9 @@ impl<'scope, T: 'scope> Memo<'scope, T> {
         })?
     }
 
-    pub fn with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
+    pub fn with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> R {
         self.try_with_untracked(f)
+            .unwrap_or_else(|error| panic!("读取 scoped memo 失败: {error}"))
     }
 
     #[doc(hidden)]
@@ -215,13 +216,17 @@ impl<'scope, T: 'scope> Derived<'scope, T> {
         self.try_get_untracked().expect("读取 scoped derived 失败")
     }
 
-    pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> R {
+    pub fn try_with<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
         runtime::with_signal(&self.handle.state(), self.handle.raw(), true, |value| {
             unsafe { value.downcast_ref::<T>() }
                 .map(f)
-                .expect("读取 scoped derived 的类型不匹配")
-        })
-        .expect("读取 scoped derived 失败")
+                .ok_or(ReactiveError::TypeMismatch)
+        })?
+    }
+
+    pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> R {
+        self.try_with(f)
+            .unwrap_or_else(|error| panic!("读取 scoped derived 失败: {error}"))
     }
 
     pub fn try_with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
@@ -232,8 +237,9 @@ impl<'scope, T: 'scope> Derived<'scope, T> {
         })?
     }
 
-    pub fn with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
+    pub fn with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> R {
         self.try_with_untracked(f)
+            .unwrap_or_else(|error| panic!("读取 scoped derived 失败: {error}"))
     }
 
     #[doc(hidden)]
@@ -266,7 +272,8 @@ impl<'scope, T: Clone + 'scope> NodeRef<'scope, T> {
     }
 
     pub fn get(&self) -> Option<T> {
-        self.try_get().ok().flatten()
+        self.try_get()
+            .unwrap_or_else(|error| panic!("读取 scoped node ref 失败: {error}"))
     }
 }
 
@@ -375,12 +382,17 @@ impl<'scope, T: 'scope> ReadSignal<'scope, T> {
         })?
     }
 
-    pub fn with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
+    pub fn try_with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
         runtime::with_signal(&self.handle.state(), self.handle.raw(), false, |value| {
             unsafe { value.downcast_ref::<T>() }
                 .map(f)
                 .ok_or(ReactiveError::TypeMismatch)
         })?
+    }
+
+    pub fn with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> R {
+        self.try_with_untracked(f)
+            .unwrap_or_else(|error| panic!("读取 scoped signal 失败: {error}"))
     }
 
     #[doc(hidden)]
@@ -528,16 +540,26 @@ impl<'scope, T: 'scope> RwSignal<'scope, T> {
     }
 }
 
+/// Try to notify dependents after a silent update.
+pub fn try_notify<'scope, T>(signal: &WriteSignal<'scope, T>) -> ReactiveResult<()> {
+    let state = signal.handle.state();
+    runtime::try_notify(&state, signal.handle.raw())
+}
+
 /// Explicitly notify dependents after a silent update.
 pub fn notify<'scope, T>(signal: &WriteSignal<'scope, T>) {
+    try_notify(signal).unwrap_or_else(|error| panic!("通知 scoped signal 失败: {error}"));
+}
+
+/// Try to track a read capability without reading its value.
+pub fn try_track<'scope, T>(signal: &ReadSignal<'scope, T>) -> ReactiveResult<()> {
     let state = signal.handle.state();
-    runtime::notify(&state, signal.handle.raw());
+    runtime::try_track(&state, signal.handle.raw())
 }
 
 /// Track a read capability without reading its value.
 pub fn track<'scope, T>(signal: &ReadSignal<'scope, T>) {
-    let state = signal.handle.state();
-    runtime::track(&state, signal.handle.raw());
+    try_track(signal).unwrap_or_else(|error| panic!("追踪 scoped signal 失败: {error}"));
 }
 
 /// Track multiple read capabilities in one call.
@@ -545,7 +567,7 @@ pub fn track<'scope, T>(signal: &ReadSignal<'scope, T>) {
 /// Handles from different `Runtime::run` or child-scope runs cannot be mixed in
 /// one batch because their scope lifetimes are intentionally distinct. The
 /// compile-fail case is covered by `tests/ui/fail_mixed_track_batch.rs`.
-pub fn track_batch<'scope, T>(signals: &[ReadSignal<'scope, T>]) {
+pub fn try_track_batch<'scope, T>(signals: &[ReadSignal<'scope, T>]) -> ReactiveResult<()> {
     let mut groups: Vec<(Rc<RefCell<ScopeState<'scope>>>, Vec<RawId>)> = Vec::new();
 
     for signal in signals {
@@ -561,8 +583,15 @@ pub fn track_batch<'scope, T>(signals: &[ReadSignal<'scope, T>]) {
     }
 
     for (state, ids) in groups {
-        runtime::track_many(&state, &ids);
+        runtime::try_track_many(&state, &ids)?;
     }
+
+    Ok(())
+}
+
+/// Track multiple read capabilities in one call.
+pub fn track_batch<'scope, T>(signals: &[ReadSignal<'scope, T>]) {
+    try_track_batch(signals).unwrap_or_else(|error| panic!("批量追踪 scoped signal 失败: {error}"));
 }
 
 // =============================================================================

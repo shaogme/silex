@@ -1,4 +1,4 @@
-use crate::{Rx, RxValueKind, Scope};
+use crate::{ReactiveResult, Rx, RxValueKind, Scope};
 use std::fmt;
 
 /// Equality-gated computed value.
@@ -29,19 +29,52 @@ impl<'scope, T: 'scope> Memo<'scope, T> {
         Self { inner, scope }
     }
 
+    pub fn try_get(&self) -> ReactiveResult<T>
+    where
+        T: Clone,
+    {
+        self.inner.try_get()
+    }
+
     pub fn get(&self) -> T
     where
         T: Clone,
     {
-        self.inner.get()
+        self.try_get()
+            .unwrap_or_else(|error| panic!("读取 scoped memo 失败: {error}"))
+    }
+
+    pub fn try_get_untracked(&self) -> ReactiveResult<T>
+    where
+        T: Clone,
+    {
+        self.inner.try_get_untracked()
+    }
+
+    pub fn get_untracked(&self) -> T
+    where
+        T: Clone,
+    {
+        self.try_get_untracked()
+            .unwrap_or_else(|error| panic!("读取 scoped memo 失败: {error}"))
+    }
+
+    pub fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
+        self.inner.try_with(f)
     }
 
     pub fn with<U>(&self, f: impl FnOnce(&T) -> U) -> U {
-        self.inner.with(f)
+        self.try_with(f)
+            .unwrap_or_else(|error| panic!("读取 scoped memo 失败: {error}"))
+    }
+
+    pub fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
+        self.inner.try_with_untracked(f)
     }
 
     pub fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> U {
-        self.inner.with_untracked(f).expect("读取 scoped memo 失败")
+        self.try_with_untracked(f)
+            .unwrap_or_else(|error| panic!("读取 scoped memo 失败: {error}"))
     }
 
     pub fn map<U, F>(self, f: F) -> Rx<'scope, U>

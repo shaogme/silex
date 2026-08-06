@@ -1,6 +1,6 @@
 use crate::reactivity::ReactiveSource;
 use crate::{
-    Scope, SilexError,
+    ReactiveResult, Scope, SilexError,
     reactivity::{Memo, ReadSignal, RwSignal, WriteSignal},
     traits::{RxBase, RxCloneData, RxData, RxError, RxGet, RxRead, RxValue},
 };
@@ -231,17 +231,17 @@ impl<'scope, T: RxData + 'scope, E: RxError + 'scope> RxValue for Resource<'scop
 }
 
 impl<'scope, T: RxData + 'scope, E: RxError + 'scope> RxBase for Resource<'scope, T, E> {
-    fn track(&self) {
-        self.state.track();
+    fn try_track(&self) -> ReactiveResult<()> {
+        self.state.try_track()
     }
 }
 
 impl<'scope, T: RxCloneData + 'scope, E: RxError + 'scope> RxRead for Resource<'scope, T, E> {
-    fn try_with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+    fn try_with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> ReactiveResult<U> {
         self.state.try_with(|state| f(&state.as_option().cloned()))
     }
 
-    fn try_with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+    fn try_with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> ReactiveResult<U> {
         self.state
             .try_with_untracked(|state| f(&state.as_option().cloned()))
     }

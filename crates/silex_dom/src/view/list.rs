@@ -199,7 +199,10 @@ fn mount_indexed_list<'scope, IF, IS, T>(
     owner.effect_from(
         inputs,
         Box::new(move || {
-            let snapshot = source.with(|items| items.as_slice().map(|values| values.to_vec()));
+            let snapshot = source
+                .try_with(|items| items.as_slice().map(|values| values.to_vec()))
+                .map_err(SilexError::from)
+                .and_then(|snapshot| snapshot);
             match snapshot {
                 Ok(values) => {
                     let mut rows = mem::take(&mut *effect_rows.borrow_mut());
@@ -354,7 +357,10 @@ fn mount_keyed_list<'scope, IF, IS, T, K>(
     owner.effect_from(
         inputs,
         Box::new(move || {
-            let snapshot = source.with(|items| items.as_slice().map(|values| values.to_vec()));
+            let snapshot = source
+                .try_with(|items| items.as_slice().map(|values| values.to_vec()))
+                .map_err(SilexError::from)
+                .and_then(|snapshot| snapshot);
             let values = match snapshot {
                 Ok(values) => values,
                 Err(source_error) => {
@@ -369,7 +375,7 @@ fn mount_keyed_list<'scope, IF, IS, T, K>(
                 for item in &values {
                     let key = key_fn(item);
                     if !seen.insert(key.clone()) {
-                        error.call(SilexError::Reactivity(
+                        error.call(SilexError::Framework(
                             "duplicate key in keyed list".to_string(),
                         ));
                         return None;

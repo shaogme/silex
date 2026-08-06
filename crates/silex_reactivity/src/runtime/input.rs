@@ -115,12 +115,14 @@ pub(crate) fn validate_inputs<'scope>(
     inputs: &RuntimeInputs,
 ) -> ReactiveResult<()> {
     let (scheduler, scope_id) = {
-        let state = state.try_borrow().map_err(|_| ReactiveError::Reentrant)?;
+        let state = state
+            .try_borrow()
+            .map_err(|_| ReactiveError::BorrowConflict)?;
         (state.scheduler.clone(), state.scope_id)
     };
     let scheduler_ref = scheduler
         .try_borrow()
-        .map_err(|_| ReactiveError::Reentrant)?;
+        .map_err(|_| ReactiveError::BorrowConflict)?;
 
     if !scheduler_ref.is_scope_active(scope_id) {
         return Err(ReactiveError::NoSuchNode);
@@ -150,7 +152,7 @@ pub(crate) fn create_computation<'scope>(
     let raw = {
         let mut state = state
             .try_borrow_mut()
-            .map_err(|_| ReactiveError::Reentrant)?;
+            .map_err(|_| ReactiveError::BorrowConflict)?;
         match (kind, computation) {
             (ComputationKind::Effect, Computation::Effect(callback)) => {
                 state.register_effect(callback)?

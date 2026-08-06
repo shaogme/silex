@@ -131,7 +131,7 @@ impl<'scope> Scope<'scope> {
         self.inner
             .try_memo_from(inputs, f)
             .map(|memo| Memo::from_inner(memo, self))
-            .map_err(|error| SilexError::Reactivity(error.to_string()))
+            .map_err(SilexError::from)
     }
 
     /// Create a derived value without additional framework-declared inputs.
@@ -161,7 +161,7 @@ impl<'scope> Scope<'scope> {
         self.inner
             .try_derived_from(inputs, f)
             .map(|derived| Rx::from_derived(derived, self))
-            .map_err(|error| SilexError::Reactivity(error.to_string()))
+            .map_err(SilexError::from)
     }
 
     pub fn effect<F>(self, f: F) -> Effect<'scope>
@@ -188,7 +188,7 @@ impl<'scope> Scope<'scope> {
         let effect = self
             .inner
             .try_effect_from(inputs, f)
-            .map_err(|error| SilexError::Reactivity(error.to_string()))?;
+            .map_err(SilexError::from)?;
         Ok(Effect::from_inner(effect))
     }
 
@@ -228,7 +228,7 @@ impl<'scope> Scope<'scope> {
         let effect = self
             .inner
             .try_effect_with_previous_from(inputs, f)
-            .map_err(|error| SilexError::Reactivity(error.to_string()))?;
+            .map_err(SilexError::from)?;
         Ok(Effect::from_inner(effect))
     }
 
@@ -301,7 +301,7 @@ impl<'scope> Scope<'scope> {
         self.inner
             .try_watch_getter_from(inputs, getter, callback, options)
             .map(Effect::from_inner)
-            .map_err(|error| SilexError::Reactivity(error.to_string()))
+            .map_err(SilexError::from)
     }
 
     pub fn stored<T: 'scope>(self, value: T) -> StoredValue<'scope, T> {
@@ -362,7 +362,7 @@ impl<'scope> Scope<'scope> {
         value
             .into_promotion_plan()
             .materialize(self)
-            .map_err(|error| SilexError::Reactivity(error.to_string()))
+            .map_err(SilexError::from)
     }
 
     pub fn promote<T>(self, value: T) -> Rx<'scope, T::Value>
@@ -378,7 +378,7 @@ impl<'scope> Scope<'scope> {
     pub fn try_validate_inputs(self, inputs: &RuntimeInputs) -> SilexResult<()> {
         self.inner
             .try_validate_inputs(inputs)
-            .map_err(|error| SilexError::Reactivity(error.to_string()))
+            .map_err(SilexError::from)
     }
 
     pub(crate) fn assert_inputs(self, inputs: &RuntimeInputs) {
@@ -436,7 +436,7 @@ impl<'scope> OwnedScope<'scope> {
     pub fn try_validate_inputs(&self, inputs: &RuntimeInputs) -> SilexResult<()> {
         self.inner
             .try_validate_inputs(inputs)
-            .map_err(|error| SilexError::Reactivity(error.to_string()))
+            .map_err(SilexError::from)
     }
 
     /// Register and immediately run an owner-bound effect without extra
@@ -464,7 +464,7 @@ impl<'scope> OwnedScope<'scope> {
         self.inner
             .try_effect_from(inputs, f)
             .map(Effect::from_inner)
-            .map_err(|error| SilexError::Reactivity(error.to_string()))
+            .map_err(SilexError::from)
     }
 
     pub fn watch_getter<T, G, C>(&self, getter: G, callback: C) -> Effect<'_>
@@ -507,7 +507,7 @@ impl<'scope> OwnedScope<'scope> {
         self.inner
             .try_watch_getter_from(inputs, getter, callback, options)
             .map(Effect::from_inner)
-            .map_err(|error| SilexError::Reactivity(error.to_string()))
+            .map_err(SilexError::from)
     }
 
     pub fn on_cleanup<F>(&self, f: F)

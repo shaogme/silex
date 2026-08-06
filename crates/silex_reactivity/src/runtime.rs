@@ -23,8 +23,9 @@ pub(crate) use input::{
 };
 pub(crate) use model::ScopeState;
 pub(crate) use ops::{
-    invoke_callback, node_ref_clear, node_ref_get, node_ref_set, notify, stop_effect, track,
-    track_many, update_signal, update_stored, with_batch, with_signal, with_stored, with_untracked,
+    invoke_callback, node_ref_clear, node_ref_get, node_ref_set, stop_effect, try_notify,
+    try_track, try_track_many, update_signal, update_stored, with_batch, with_signal, with_stored,
+    with_untracked,
 };
 pub(crate) use scheduler::{GlobalScheduler, ObserverFrame, ScopeId};
 

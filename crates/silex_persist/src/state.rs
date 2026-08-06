@@ -264,29 +264,32 @@ impl<'scope, T: RxData> RxValue for Persistent<'scope, T> {
 }
 
 impl<'scope, T: RxData> RxBase for Persistent<'scope, T> {
-    fn track(&self) {
-        self.value.track();
+    fn try_track(&self) -> ReactiveResult<()> {
+        self.value.try_track()
     }
 }
 
 impl<'scope, T: RxData> RxRead for Persistent<'scope, T> {
-    fn try_with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+    fn try_with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> ReactiveResult<U> {
         self.value.try_with(f)
     }
 
-    fn try_with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+    fn try_with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> ReactiveResult<U> {
         self.value.try_with_untracked(f)
     }
 }
 
 impl<'scope, T: RxData> RxWrite for Persistent<'scope, T> {
-    fn rx_try_update_untracked<U>(&self, f: impl FnOnce(&mut Self::Value) -> U) -> Option<U> {
-        mark_local_value_write(self.controller).ok()?;
-        self.value.write_signal().try_update(f).ok()
+    fn rx_try_update_untracked<U>(
+        &self,
+        f: impl FnOnce(&mut Self::Value) -> U,
+    ) -> ReactiveResult<U> {
+        mark_local_value_write(self.controller)?;
+        self.value.write_signal().try_update(f)
     }
 
-    fn rx_notify(&self) {
-        self.value.rx_notify();
+    fn rx_try_notify(&self) -> ReactiveResult<()> {
+        self.value.write_signal().try_notify()
     }
 }
 

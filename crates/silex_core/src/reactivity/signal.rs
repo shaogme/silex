@@ -5,6 +5,7 @@ use crate::{
 };
 use silex_reactivity::{
     ReactiveResult, ReadSignal as RawReadSignal, WriteSignal as RawWriteSignal,
+    try_notify as raw_try_notify,
 };
 use std::fmt;
 
@@ -31,16 +32,18 @@ impl<T> RxValue for Constant<T> {
 }
 
 impl<T> RxBase for Constant<T> {
-    fn track(&self) {}
+    fn try_track(&self) -> ReactiveResult<()> {
+        Ok(())
+    }
 }
 
 impl<T> RxRead for Constant<T> {
-    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> Option<U> {
-        Some(f(&self.0))
+    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
+        Ok(f(&self.0))
     }
 
-    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> Option<U> {
-        Some(f(&self.0))
+    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
+        Ok(f(&self.0))
     }
 }
 
@@ -153,13 +156,21 @@ impl<'scope, T: 'scope> ReadSignal<'scope, T> {
     }
 
     pub fn with<U>(&self, f: impl FnOnce(&T) -> U) -> U {
-        self.inner.with(f)
+        self.try_with(f)
+            .unwrap_or_else(|error| panic!("读取 scoped signal 失败: {error}"))
+    }
+
+    pub fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
+        self.inner.try_with(f)
     }
 
     pub fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> U {
-        self.inner
-            .with_untracked(f)
-            .expect("读取 scoped signal 失败")
+        self.try_with_untracked(f)
+            .unwrap_or_else(|error| panic!("读取 scoped signal 失败: {error}"))
+    }
+
+    pub fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
+        self.inner.try_with_untracked(f)
     }
 
     pub fn into_rx(self) -> Rx<'scope, T> {
@@ -198,6 +209,15 @@ impl<'scope, T: 'scope> WriteSignal<'scope, T> {
 
     pub fn update(&self, f: impl FnOnce(&mut T)) {
         self.inner.update(f)
+    }
+
+    pub fn try_notify(&self) -> ReactiveResult<()> {
+        raw_try_notify(&self.inner)
+    }
+
+    pub fn notify(&self) {
+        self.try_notify()
+            .unwrap_or_else(|error| panic!("通知 scoped signal 失败: {error}"));
     }
 
     /// Return opaque runtime provenance for owner-bound validation.
@@ -274,12 +294,27 @@ impl<'scope, T: 'scope> Signal<'scope, T> {
         self.rx.get()
     }
 
+    pub fn try_get(&self) -> ReactiveResult<T>
+    where
+        T: Clone,
+    {
+        self.rx.try_get()
+    }
+
     pub fn with<U>(&self, f: impl FnOnce(&T) -> U) -> U {
         self.rx.with(f)
     }
 
+    pub fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
+        self.rx.try_with(f)
+    }
+
     pub fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> U {
         self.rx.with_untracked(f)
+    }
+
+    pub fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
+        self.rx.try_with_untracked(f)
     }
 
     pub fn is_constant(&self) -> bool {

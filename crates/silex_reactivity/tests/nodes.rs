@@ -279,7 +279,7 @@ fn nested_memo_child_payload_drop_does_not_track_the_outer_observer() {
                 set_inner_source_in_effect.set(1);
             }
             outer_inner
-                .with_untracked(|_| ())
+                .try_with_untracked(|_| ())
                 .expect("inner memo should remain readable");
         });
 
@@ -330,7 +330,7 @@ fn nested_memo_result_drop_does_not_track_the_outer_observer() {
                 set_inner_source_in_effect.set(1);
             }
             outer_inner
-                .with_untracked(|_| ())
+                .try_with_untracked(|_| ())
                 .expect("inner memo should remain readable");
         });
 

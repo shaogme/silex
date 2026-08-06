@@ -32,9 +32,7 @@ impl<'scope, T: 'scope> Callback<'scope, T> {
 
     /// Invoke the callback and preserve the underlying reactive error.
     pub fn invoke(&self, value: T) -> SilexResult<()> {
-        self.inner
-            .invoke(value)
-            .map_err(|error| SilexError::Reactivity(error.to_string()))
+        self.inner.invoke(value).map_err(SilexError::from)
     }
 
     /// Invoke the callback using the legacy method spelling.

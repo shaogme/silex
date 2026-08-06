@@ -249,11 +249,24 @@ pub(crate) fn node_ref_clear<'scope, T>(
     })?
 }
 
-pub(crate) fn notify<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) {
+pub(crate) fn try_notify<'scope>(
+    state: &Rc<RefCell<ScopeState<'scope>>>,
+    id: RawId,
+) -> ReactiveResult<()> {
     let should_flush = {
         let mut state_ref = state
             .try_borrow_mut()
-            .expect("ScopeState borrow failed during notify");
+            .map_err(|_| ReactiveError::BorrowConflict)?;
+        if !state_ref
+            .scheduler
+            .borrow()
+            .is_scope_active(state_ref.scope_id)
+        {
+            return Err(ReactiveError::NoSuchNode);
+        }
+        if !state_ref.node_exists(id) {
+            return Err(ReactiveError::NoSuchNode);
+        }
         if state_ref.mark_notified(id) {
             state_ref.queue_dependents(id);
         }
@@ -262,20 +275,49 @@ pub(crate) fn notify<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId)
     if should_flush {
         flush_if_idle(state);
     }
+    Ok(())
 }
 
-pub(crate) fn track<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) {
+pub(crate) fn try_track<'scope>(
+    state: &Rc<RefCell<ScopeState<'scope>>>,
+    id: RawId,
+) -> ReactiveResult<()> {
     let mut state_ref = state
         .try_borrow_mut()
-        .expect("ScopeState borrow failed during track");
+        .map_err(|_| ReactiveError::BorrowConflict)?;
+    if !state_ref
+        .scheduler
+        .borrow()
+        .is_scope_active(state_ref.scope_id)
+    {
+        return Err(ReactiveError::NoSuchNode);
+    }
+    if !state_ref.node_exists(id) {
+        return Err(ReactiveError::NoSuchNode);
+    }
     state_ref.track(id);
+    Ok(())
 }
 
-pub(crate) fn track_many<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, ids: &[RawId]) {
+pub(crate) fn try_track_many<'scope>(
+    state: &Rc<RefCell<ScopeState<'scope>>>,
+    ids: &[RawId],
+) -> ReactiveResult<()> {
     let mut state_ref = state
         .try_borrow_mut()
-        .expect("ScopeState borrow failed during track_many");
+        .map_err(|_| ReactiveError::BorrowConflict)?;
+    if !state_ref
+        .scheduler
+        .borrow()
+        .is_scope_active(state_ref.scope_id)
+    {
+        return Err(ReactiveError::NoSuchNode);
+    }
+    if ids.iter().any(|id| !state_ref.node_exists(*id)) {
+        return Err(ReactiveError::NoSuchNode);
+    }
     state_ref.track_many(ids);
+    Ok(())
 }
 
 pub(crate) fn with_untracked<'scope, R>(

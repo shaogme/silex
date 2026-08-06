@@ -37,7 +37,9 @@ pub(crate) fn mount_reactive_text<'scope, T>(
                 *node_for_effect.borrow_mut() = Some(node.clone());
                 node
             };
-            rx.with(|value| node.set_node_value(Some(&value.to_string())));
+            if let Err(error) = rx.try_with(|value| node.set_node_value(Some(&value.to_string()))) {
+                handle_error(error.into());
+            }
         }),
     );
 }
@@ -66,7 +68,9 @@ pub(crate) fn mount_reactive_view<'scope, V>(
                 attrs,
                 owner: token,
             } = args;
-            rx.with(|view| view.mount(&token, &parent, attrs));
+            if let Err(error) = rx.try_with(|view| view.mount(&token, &parent, attrs)) {
+                handle_error(error.into());
+            }
         }),
     );
 }

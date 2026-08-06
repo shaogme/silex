@@ -26,9 +26,7 @@ impl<'scope> Effect<'scope> {
     }
 
     pub fn try_stop(&self) -> SilexResult<bool> {
-        self.inner
-            .try_stop()
-            .map_err(|error| SilexError::Reactivity(error.to_string()))
+        self.inner.try_stop().map_err(SilexError::from)
     }
 
     pub fn stop(&self) {

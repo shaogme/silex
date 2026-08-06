@@ -5,6 +5,7 @@ use wasm_bindgen::convert::FromWasmAbi;
 use web_sys::{Element, Event, InputEvent, MouseEvent, PointerEvent};
 
 use silex_core::{
+    ReactiveError,
     error::handle_error,
     log::console_error,
     node_ref::NodeRef,
@@ -242,14 +243,20 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
         let node_ref_for_cleanup = node_ref;
         self.apply(PendingAttribute::new_listener(move |el: &Element| {
             if let Ok(typed) = el.clone().dyn_into::<N>() {
-                node_ref.load(typed);
+                if let Err(error) = node_ref.try_load(typed) {
+                    handle_error(error.into());
+                }
             } else {
                 console_error("NodeRef type mismatch: failed to cast element");
             }
         }))
         .apply(PendingAttribute::new_scoped(move |_el, owner| {
             owner.on_cleanup(Box::new(move || {
-                let _ = node_ref_for_cleanup.clear();
+                if let Err(error) = node_ref_for_cleanup.try_clear()
+                    && !matches!(error, ReactiveError::NoSuchNode)
+                {
+                    handle_error(error.into());
+                }
             }));
         }))
     }

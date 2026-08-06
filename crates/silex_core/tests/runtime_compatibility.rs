@@ -67,8 +67,9 @@ fn foreign_inputs_are_rejected_before_target_derived_creation() {
 
     assert!(matches!(
         result,
-        Err(silex_core::SilexError::Reactivity(message))
-            if message.contains("不同")
+        Err(silex_core::SilexError::Reactivity(
+            silex_core::ReactiveError::RuntimeMismatch,
+        ))
     ));
 }
 
@@ -94,8 +95,9 @@ fn foreign_inputs_are_rejected_before_target_memo_creation() {
 
     assert!(matches!(
         result,
-        Err(silex_core::SilexError::Reactivity(message))
-            if message.contains("不同")
+        Err(silex_core::SilexError::Reactivity(
+            silex_core::ReactiveError::RuntimeMismatch,
+        ))
     ));
     assert!(!called.get());
 }
@@ -120,10 +122,12 @@ fn external_promotion_plan_validates_inputs_before_materializing() {
             .map(|_| ())
     });
 
-    assert!(
-        matches!(result, Err(silex_core::SilexError::Reactivity(message))
-        if message.contains("不同"))
-    );
+    assert!(matches!(
+        result,
+        Err(silex_core::SilexError::Reactivity(
+            silex_core::ReactiveError::RuntimeMismatch
+        ))
+    ));
     assert!(!materialized.get());
 }
 
@@ -148,8 +152,9 @@ fn foreign_inputs_are_rejected_before_target_effect_creation() {
 
     assert!(matches!(
         result,
-        Err(silex_core::SilexError::Reactivity(message))
-            if message.contains("不同")
+        Err(silex_core::SilexError::Reactivity(
+            silex_core::ReactiveError::RuntimeMismatch,
+        ))
     ));
     assert!(!called.get());
 }

@@ -1,5 +1,5 @@
 use crate::{
-    Scope, SilexError,
+    ReactiveResult, Scope, SilexError,
     reactivity::{ReadSignal, WriteSignal},
     traits::{RxBase, RxCloneData, RxData, RxError, RxRead, RxValue},
 };
@@ -234,8 +234,8 @@ where
     T: RxData + 'scope,
     E: RxError + 'scope,
 {
-    fn track(&self) {
-        self.state.track();
+    fn try_track(&self) -> ReactiveResult<()> {
+        self.state.try_track()
     }
 }
 
@@ -245,11 +245,11 @@ where
     T: RxCloneData + 'scope,
     E: RxError + 'scope,
 {
-    fn try_with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+    fn try_with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> ReactiveResult<U> {
         self.state.try_with(|state| f(&state.value().cloned()))
     }
 
-    fn try_with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> Option<U> {
+    fn try_with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> ReactiveResult<U> {
         self.state
             .try_with_untracked(|state| f(&state.value().cloned()))
     }

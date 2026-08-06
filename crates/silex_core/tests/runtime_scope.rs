@@ -140,7 +140,7 @@ fn callbacks_and_node_refs_are_scope_owned() {
         assert_eq!(called.get(), 12);
 
         let node_ref = scope.node_ref::<String>();
-        assert!(node_ref.load(String::from("node")));
+        node_ref.load(String::from("node"));
         assert_eq!(node_ref.get().as_deref(), Some("node"));
     });
 }
