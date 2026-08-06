@@ -31,6 +31,13 @@ async fn wait_for_reactivity(milliseconds: u32) {
     TimeoutFuture::new(milliseconds).await;
 }
 
+fn restore_attribute(root: &web_sys::Element, name: &str, value: Option<&str>) {
+    match value {
+        Some(value) => root.set_attribute(name, value).expect("restore attribute"),
+        None => root.remove_attribute(name).expect("restore attribute"),
+    }
+}
+
 #[cfg(feature = "persist")]
 #[wasm_bindgen_test]
 fn local_storage_binding_round_trips_locale() {
@@ -231,6 +238,65 @@ async fn translated_memo_updates_the_existing_text_node() {
 }
 
 #[wasm_bindgen_test]
+fn translated_memo_is_removed_when_its_root_is_disposed() {
+    let parent = window()
+        .expect("window")
+        .document()
+        .expect("document")
+        .create_element("div")
+        .expect("parent element");
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    root.with_scope(|scope| {
+        let catalog = Catalog::from_entries(Locale::new("en-US"), [("title", "English")])
+            .expect("valid catalog");
+        let i18n = I18nBuilder::new(scope)
+            .locale(Locale::new("en-US"))
+            .catalog(catalog)
+            .build()
+            .expect("valid i18n store");
+        let owner = ScopedViewOwner::new(scope);
+        t!(i18n, "title").mount_owned(&owner, parent.as_ref(), Vec::new());
+        assert_eq!(parent.text_content(), Some("English".to_string()));
+        assert_eq!(parent.child_nodes().length(), 1);
+    });
+
+    root.dispose().expect("root cleanup");
+    assert!(parent.first_child().is_none());
+}
+
+#[wasm_bindgen_test]
+fn foreign_translation_source_does_not_mount_or_allocate_foreign_owner_nodes() {
+    let parent = window()
+        .expect("window")
+        .document()
+        .expect("document")
+        .create_element("div")
+        .expect("parent element");
+    let mut target_runtime = Runtime::new();
+    let target_root = target_runtime.run();
+    let mut foreign_runtime = Runtime::new();
+    let foreign_root = foreign_runtime.run();
+    let target_scope = target_root.scope();
+    let foreign_scope = foreign_root.scope();
+    let catalog =
+        Catalog::from_entries(Locale::new("en-US"), [("title", "English")]).expect("valid catalog");
+    let i18n = I18nBuilder::new(target_scope)
+        .locale(Locale::new("en-US"))
+        .catalog(catalog)
+        .build()
+        .expect("valid i18n store");
+    let translation = t!(i18n, "title");
+    let owner = ScopedViewOwner::new(foreign_scope);
+
+    translation.mount_owned(&owner, parent.as_ref(), Vec::new());
+
+    assert!(parent.first_child().is_none());
+    target_root.dispose().expect("target root cleanup");
+    foreign_root.dispose().expect("foreign root cleanup");
+}
+
+#[wasm_bindgen_test]
 fn metadata_owner_cleanup_does_not_overwrite_newer_owner() {
     let document_root = window()
         .expect("window")
@@ -279,6 +345,8 @@ fn metadata_cleanup_preserves_external_attribute_changes() {
         .expect("document")
         .document_element()
         .expect("document root");
+    let old_lang = document_root.get_attribute("lang");
+    let old_dir = document_root.get_attribute("dir");
     let mut runtime = Runtime::new();
     let root = runtime.run();
     root.with_scope(|scope| {
@@ -301,6 +369,8 @@ fn metadata_cleanup_preserves_external_attribute_changes() {
         document_root.get_attribute("dir"),
         Some("external".to_string())
     );
+    restore_attribute(&document_root, "lang", old_lang.as_deref());
+    restore_attribute(&document_root, "dir", old_dir.as_deref());
 }
 
 #[wasm_bindgen_test]
@@ -326,6 +396,79 @@ fn metadata_effect_stop_prevents_later_locale_updates() {
     });
 
     root.dispose().expect("root cleanup");
+}
+
+#[wasm_bindgen_test]
+fn metadata_owner_reclaims_latest_locale_after_newer_owner_disposes() {
+    let document_root = window()
+        .expect("window")
+        .document()
+        .expect("document")
+        .document_element()
+        .expect("document root");
+    let old_lang = document_root.get_attribute("lang");
+    let old_dir = document_root.get_attribute("dir");
+
+    let mut first_runtime = Runtime::new();
+    let first_root = first_runtime.run();
+    let mut second_runtime = Runtime::new();
+    let second_root = second_runtime.run();
+
+    first_root.with_scope(|first_scope| {
+        let first_i18n = store(first_scope, "en-US");
+        let _first_metadata = first_i18n.sync_document_metadata();
+        second_root.with_scope(|second_scope| {
+            let second_i18n = store(second_scope, "zh-CN");
+            let _second_metadata = second_i18n.sync_document_metadata();
+
+            first_i18n.set_locale(Locale::new("fr-FR"));
+            assert_eq!(
+                document_root.get_attribute("lang"),
+                Some("zh-CN".to_string())
+            );
+            assert_eq!(document_root.get_attribute("dir"), Some("ltr".to_string()));
+        });
+
+        second_root.dispose().expect("second root cleanup");
+        assert_eq!(
+            document_root.get_attribute("lang"),
+            Some("fr-FR".to_string())
+        );
+        assert_eq!(document_root.get_attribute("dir"), Some("ltr".to_string()));
+    });
+
+    first_root.dispose().expect("first root cleanup");
+    assert_eq!(document_root.get_attribute("lang"), old_lang);
+    assert_eq!(document_root.get_attribute("dir"), old_dir);
+}
+
+#[wasm_bindgen_test]
+fn metadata_stop_and_scope_cleanup_are_idempotent() {
+    let document_root = window()
+        .expect("window")
+        .document()
+        .expect("document")
+        .document_element()
+        .expect("document root");
+    let old_lang = document_root.get_attribute("lang");
+    let old_dir = document_root.get_attribute("dir");
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    root.with_scope(|scope| {
+        let i18n = store(scope, "en-US");
+        let metadata = i18n.sync_document_metadata();
+        metadata.stop();
+        metadata.stop();
+        assert_eq!(
+            document_root.get_attribute("lang"),
+            Some("en-US".to_string())
+        );
+        assert_eq!(document_root.get_attribute("dir"), Some("ltr".to_string()));
+    });
+
+    root.dispose().expect("root cleanup");
+    assert_eq!(document_root.get_attribute("lang"), old_lang);
+    assert_eq!(document_root.get_attribute("dir"), old_dir);
 }
 
 #[cfg(feature = "intl")]

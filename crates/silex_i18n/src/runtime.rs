@@ -5,7 +5,7 @@ use crate::{
 #[cfg(feature = "browser")]
 use silex_core::Effect;
 use silex_core::{
-    Memo, Scope,
+    Memo, Scope, SilexError,
     reactivity::{
         ReadSignal, Resource, ResourceState, RwSignal, StoredValue, SuspenseContext,
         runtime_inputs_of,
@@ -22,10 +22,9 @@ use std::{
 #[cfg(feature = "persist")]
 use silex_persist::Persistent;
 
+use silex_core::RuntimeInputs;
 #[cfg(feature = "persist")]
 use silex_core::traits::RxGet;
-#[cfg(feature = "persist")]
-use silex_core::{RuntimeInputs, SilexError};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum MissingKeyPolicy {
@@ -323,6 +322,28 @@ impl<'scope> I18nStore<'scope> {
         Fut: Future<Output = Result<Catalog, E>> + 'static,
         E: Clone + Debug + 'static,
     {
+        self.try_catalog_resource(loader, suspense_ctx)
+            .unwrap_or_else(|error| panic!("创建 catalog resource 失败: {error}"))
+    }
+
+    #[doc(hidden)]
+    pub fn try_catalog_resource<F, Fut, E>(
+        &self,
+        loader: F,
+        suspense_ctx: impl Into<Option<SuspenseContext<'scope>>>,
+    ) -> Result<CatalogResource<'scope, E>, I18nError>
+    where
+        F: Fn(Locale) -> Fut + 'static,
+        Fut: Future<Output = Result<Catalog, E>> + 'static,
+        E: Clone + Debug + 'static,
+    {
+        let suspense = suspense_ctx.into();
+        let mut inputs = runtime_inputs_of(self.locale());
+        if let Some(context) = suspense.as_ref() {
+            inputs.extend(&runtime_inputs_of(context.count));
+        }
+        validate_inputs(self.scope, &inputs)?;
+
         let cache = self.catalog_cache.with(Rc::clone);
         let loader = Rc::new(loader);
         let resource = Resource::new(
@@ -349,7 +370,7 @@ impl<'scope> I18nStore<'scope> {
                     Ok(catalog)
                 }
             },
-            suspense_ctx.into(),
+            suspense,
         );
 
         let state = resource.state;
@@ -361,7 +382,7 @@ impl<'scope> I18nStore<'scope> {
             }
         });
 
-        CatalogResource::new(resource)
+        Ok(CatalogResource::new(resource))
     }
 
     #[cfg(feature = "browser")]
@@ -428,7 +449,6 @@ impl<'scope> I18nStore<'scope> {
     }
 }
 
-#[cfg(feature = "persist")]
 fn validate_inputs(scope: Scope<'_>, inputs: &RuntimeInputs) -> Result<(), I18nError> {
     scope
         .try_validate_inputs(inputs)

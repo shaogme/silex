@@ -10,6 +10,8 @@ const RECORD_PREVIOUS_LANG: &str = "previous_lang";
 const RECORD_PREVIOUS_DIR: &str = "previous_dir";
 const RECORD_LAST_LANG: &str = "last_lang";
 const RECORD_LAST_DIR: &str = "last_dir";
+const RECORD_DESIRED_LANG: &str = "desired_lang";
+const RECORD_DESIRED_DIR: &str = "desired_dir";
 
 /// The direction used by a locale when updating document metadata.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -103,11 +105,16 @@ pub fn locale_direction(locale: &Locale) -> TextDirection {
 /// Keeps the document's `lang` and `dir` attributes in sync with the store.
 pub(crate) fn sync_document_metadata<'scope>(store: I18nStore<'scope>) -> Effect<'scope> {
     let scope = store.scope();
-    let Some(root) = web_sys::window()
+    #[cfg(target_arch = "wasm32")]
+    let root = web_sys::window()
         .and_then(|window| window.document())
-        .and_then(|document| document.document_element())
-    else {
-        return scope.effect(|| {});
+        .and_then(|document| document.document_element());
+    #[cfg(not(target_arch = "wasm32"))]
+    let root: Option<web_sys::Element> = None;
+    let Some(root) = root else {
+        let effect = scope.effect(|| {});
+        effect.stop();
+        return effect;
     };
 
     let previous_lang = root.get_attribute("lang");
@@ -139,6 +146,16 @@ pub(crate) fn sync_document_metadata<'scope>(store: I18nStore<'scope>) -> Effect
         RECORD_LAST_DIR,
         &optional_string_value(previous_dir.as_deref()),
     );
+    set_record_value(
+        &record,
+        RECORD_DESIRED_LANG,
+        &optional_string_value(previous_lang.as_deref()),
+    );
+    set_record_value(
+        &record,
+        RECORD_DESIRED_DIR,
+        &optional_string_value(previous_dir.as_deref()),
+    );
     // Keep ownership history separate from lang/dir so equal values stay distinguishable.
     let stack = metadata_stack(&root, &stack_property).unwrap_or_default();
     stack.push(&record);
@@ -154,6 +171,20 @@ pub(crate) fn sync_document_metadata<'scope>(store: I18nStore<'scope>) -> Effect
             return;
         }
 
+        let locale = locale.get();
+        let lang = locale.as_str().to_string();
+        let dir = locale_direction(&locale).as_str().to_string();
+        set_record_value(
+            &record_for_effect,
+            RECORD_DESIRED_LANG,
+            &JsValue::from_str(&lang),
+        );
+        set_record_value(
+            &record_for_effect,
+            RECORD_DESIRED_DIR,
+            &JsValue::from_str(&dir),
+        );
+
         let Some(stack) = metadata_stack(&root_for_effect, &stack_property_for_effect) else {
             return;
         };
@@ -163,23 +194,7 @@ pub(crate) fn sync_document_metadata<'scope>(store: I18nStore<'scope>) -> Effect
             return;
         }
 
-        let locale = locale.get();
-        let lang = locale.as_str().to_string();
-        let dir = locale_direction(&locale).as_str().to_string();
-        if root_for_effect.set_attribute("lang", &lang).is_ok() {
-            set_record_value(
-                &record_for_effect,
-                RECORD_LAST_LANG,
-                &JsValue::from_str(&lang),
-            );
-        }
-        if root_for_effect.set_attribute("dir", &dir).is_ok() {
-            set_record_value(
-                &record_for_effect,
-                RECORD_LAST_DIR,
-                &JsValue::from_str(&dir),
-            );
-        }
+        apply_record(&root_for_effect, &record_for_effect, true, true);
     });
 
     let root_for_cleanup = root;
@@ -198,8 +213,9 @@ pub(crate) fn sync_document_metadata<'scope>(store: I18nStore<'scope>) -> Effect
         };
         let record = stack.get(index);
         set_record_value(&record, RECORD_ACTIVE, &JsValue::FALSE);
+        let mut controlled = (false, false);
         if index == stack.length() - 1 {
-            restore_record(&root_for_cleanup, &record);
+            controlled = restore_record(&root_for_cleanup, &record);
         } else {
             let next = stack.get(index + 1);
             set_record_value(
@@ -217,7 +233,23 @@ pub(crate) fn sync_document_metadata<'scope>(store: I18nStore<'scope>) -> Effect
             stack.set(position, stack.get(position + 1));
         }
         stack.pop();
-        unwind_inactive_records(&root_for_cleanup, &stack);
+        while stack.length() > 0 {
+            let next = stack.get(stack.length() - 1);
+            if record_value(&next, RECORD_ACTIVE)
+                .as_bool()
+                .unwrap_or(false)
+            {
+                break;
+            }
+            let next_controlled = restore_record(&root_for_cleanup, &next);
+            controlled.0 &= next_controlled.0;
+            controlled.1 &= next_controlled.1;
+            stack.pop();
+        }
+        if stack.length() > 0 {
+            let next = stack.get(stack.length() - 1);
+            apply_record(&root_for_cleanup, &next, controlled.0, controlled.1);
+        }
 
         if stack.length() == 0 {
             let _ = js_sys::Reflect::delete_property(
@@ -261,32 +293,40 @@ fn optional_attribute_value(value: JsValue) -> Option<String> {
     value.as_string()
 }
 
-fn restore_record(root: &web_sys::Element, record: &JsValue) {
-    let current_lang = root.get_attribute("lang");
-    if current_lang == optional_attribute_value(record_value(record, RECORD_LAST_LANG)) {
-        let previous = optional_attribute_value(record_value(record, RECORD_PREVIOUS_LANG));
-        restore_attribute(root, "lang", previous.as_deref());
+fn apply_record(root: &web_sys::Element, record: &JsValue, apply_lang: bool, apply_dir: bool) {
+    if apply_lang
+        && let Some(lang) = optional_attribute_value(record_value(record, RECORD_DESIRED_LANG))
+        && root.set_attribute("lang", &lang).is_ok()
+    {
+        set_record_value(record, RECORD_LAST_LANG, &JsValue::from_str(&lang));
     }
 
-    let current_dir = root.get_attribute("dir");
-    if current_dir == optional_attribute_value(record_value(record, RECORD_LAST_DIR)) {
-        let previous = optional_attribute_value(record_value(record, RECORD_PREVIOUS_DIR));
-        restore_attribute(root, "dir", previous.as_deref());
+    if apply_dir
+        && let Some(dir) = optional_attribute_value(record_value(record, RECORD_DESIRED_DIR))
+        && root.set_attribute("dir", &dir).is_ok()
+    {
+        set_record_value(record, RECORD_LAST_DIR, &JsValue::from_str(&dir));
     }
 }
 
-fn unwind_inactive_records(root: &web_sys::Element, stack: &js_sys::Array) {
-    while stack.length() > 0 {
-        let record = stack.get(stack.length() - 1);
-        if record_value(&record, RECORD_ACTIVE)
-            .as_bool()
-            .unwrap_or(false)
-        {
-            break;
-        }
-        restore_record(root, &record);
-        stack.pop();
+fn restore_record(root: &web_sys::Element, record: &JsValue) -> (bool, bool) {
+    let current_lang = root.get_attribute("lang");
+    let mut controlled_lang = false;
+    if current_lang == optional_attribute_value(record_value(record, RECORD_LAST_LANG)) {
+        let previous = optional_attribute_value(record_value(record, RECORD_PREVIOUS_LANG));
+        restore_attribute(root, "lang", previous.as_deref());
+        controlled_lang = true;
     }
+
+    let current_dir = root.get_attribute("dir");
+    let mut controlled_dir = false;
+    if current_dir == optional_attribute_value(record_value(record, RECORD_LAST_DIR)) {
+        let previous = optional_attribute_value(record_value(record, RECORD_PREVIOUS_DIR));
+        restore_attribute(root, "dir", previous.as_deref());
+        controlled_dir = true;
+    }
+
+    (controlled_lang, controlled_dir)
 }
 
 fn restore_attribute(root: &web_sys::Element, name: &str, value: Option<&str>) {
@@ -330,5 +370,21 @@ mod tests {
     fn identifies_rtl_languages() {
         assert_eq!(locale_direction(&locale("ar-EG")), TextDirection::Rtl);
         assert_eq!(locale_direction(&locale("en-US")), TextDirection::Ltr);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn missing_document_returns_an_inactive_effect_without_leaking_nodes() {
+        let mut runtime = silex_core::Runtime::new();
+        runtime.child(|scope| {
+            let store = crate::I18nBuilder::new(scope)
+                .locale(Locale::new("en-US"))
+                .build()
+                .expect("valid i18n store");
+            let before = scope.runtime_snapshot();
+            let effect = sync_document_metadata(store);
+            assert_eq!(scope.runtime_snapshot(), before);
+            assert!(!effect.try_stop().expect("inactive effect can stop"));
+        });
     }
 }

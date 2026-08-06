@@ -42,6 +42,14 @@ pub(crate) fn mount_reactive_text<'scope, T>(
             }
         }),
     );
+    let node_for_cleanup = node.clone();
+    owner.on_cleanup(Box::new(move || {
+        if let Some(node) = node_for_cleanup.borrow_mut().take()
+            && let Some(parent) = node.parent_node()
+        {
+            let _ = parent.remove_child(&node);
+        }
+    }));
 }
 
 pub(crate) fn mount_reactive_view<'scope, V>(
