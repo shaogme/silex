@@ -1,4 +1,7 @@
-use silex_core::{Runtime, rx};
+use silex_core::{
+    Callback, Memo, NodeRef, ReactiveError, ReadSignal, Runtime, RwSignal, Rx, RxDefault, RxFrom,
+    Signal, StoredValue, rx,
+};
 use std::{
     cell::{Cell, RefCell},
     panic::{AssertUnwindSafe, catch_unwind},
@@ -199,4 +202,79 @@ fn non_static_types_in_scoped_primitives() {
         let stored = scope.stored(Borrowed(local_data.as_str()));
         assert_eq!(stored.with(|b| b.0), "hello from scope");
     });
+}
+
+#[test]
+fn rx_default_creates_supported_wrappers_from_the_current_scope() {
+    let mut runtime = Runtime::new();
+    runtime.child(|scope| {
+        let signal = <Signal<'_, i32> as RxDefault<'_>>::rx_default(scope);
+        let explicit = <Signal<'_, String> as RxFrom<'_>>::rx_from(scope, "explicit");
+        let read = <ReadSignal<'_, i32> as RxDefault<'_>>::rx_default(scope);
+        let rw = <RwSignal<'_, i32> as RxDefault<'_>>::rx_default(scope);
+        let memo = <Memo<'_, i32> as RxDefault<'_>>::rx_default(scope);
+        let stored = <StoredValue<'_, i32> as RxDefault<'_>>::rx_default(scope);
+        let rx = <Rx<'_, i32> as RxDefault<'_>>::rx_default(scope);
+        let callback = <Callback<'_, i32> as RxDefault<'_>>::rx_default(scope);
+        let node_ref = <NodeRef<'_, String> as RxDefault<'_>>::rx_default(scope);
+
+        assert_eq!(signal.get(), 0);
+        assert_eq!(explicit.get(), "explicit");
+        assert_eq!(read.get(), 0);
+        assert_eq!(rw.get(), 0);
+        assert_eq!(memo.get(), 0);
+        assert_eq!(stored.with(|value| *value), 0);
+        assert_eq!(rx.get(), 0);
+        assert!(callback.invoke(1).is_ok());
+        assert_eq!(node_ref.try_get(), Ok(None));
+    });
+}
+
+#[test]
+fn rx_default_nodes_keep_runtime_provenance() {
+    let mut first = Runtime::new();
+    let inputs = first.child(|scope| {
+        let signal = <Signal<'_, i32> as RxDefault<'_>>::rx_default(scope);
+        signal.into_rx().runtime_inputs()
+    });
+
+    let mut second = Runtime::new();
+    let result = second.child(|scope| scope.try_validate_inputs(&inputs));
+
+    assert!(matches!(
+        result,
+        Err(silex_core::SilexError::Reactivity(
+            ReactiveError::RuntimeMismatch
+        ))
+    ));
+}
+
+#[test]
+fn rx_default_handles_are_inactive_after_root_disposal() {
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    let stale = Rc::new(Cell::new(false));
+    let stale_for_cleanup = stale.clone();
+
+    root.with_scope(|scope| {
+        let signal = <Signal<'_, i32> as RxDefault<'_>>::rx_default(scope);
+        let callback = <Callback<'_, ()> as RxDefault<'_>>::rx_default(scope);
+        let node_ref = <NodeRef<'_, String> as RxDefault<'_>>::rx_default(scope);
+
+        scope.on_cleanup(move || {
+            stale_for_cleanup.set(
+                matches!(signal.try_get(), Err(ReactiveError::NoSuchNode))
+                    && matches!(
+                        callback.invoke(()),
+                        Err(silex_core::SilexError::Reactivity(
+                            ReactiveError::NoSuchNode
+                        ))
+                    )
+                    && matches!(node_ref.try_get(), Err(ReactiveError::NoSuchNode)),
+            );
+        });
+    });
+
+    root.dispose().expect("root disposal should succeed");
+    assert!(stale.get());
 }

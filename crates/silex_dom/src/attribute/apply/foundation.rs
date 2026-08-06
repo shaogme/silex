@@ -222,7 +222,7 @@ pub(crate) fn apply_primitive_static_internal(el: &WebElem, target: ApplyTarget,
     apply_immediate_string(el, &target, &value);
 }
 
-impl<'scope> ApplyToDom<'scope> for &'static str {
+impl<'scope, 'a: 'scope> ApplyToDom<'scope> for &'a str {
     fn apply(&self, el: &WebElem, target: ApplyTarget, _owner: &ViewOwnerToken<'scope>) {
         apply_immediate_string(el, &target, self);
     }
@@ -295,7 +295,7 @@ impl<'scope> ApplyToDom<'scope> for &String {
     }
 }
 
-impl<'scope> ApplyToDom<'scope> for Cow<'static, str> {
+impl<'scope, 'a: 'scope> ApplyToDom<'scope> for Cow<'a, str> {
     fn apply(&self, el: &WebElem, target: ApplyTarget, _owner: &ViewOwnerToken<'scope>) {
         apply_immediate_string(el, &target, self.as_ref());
     }
@@ -308,7 +308,7 @@ impl<'scope> ApplyToDom<'scope> for Cow<'static, str> {
     }
 }
 
-impl<'scope> ApplyToDom<'scope> for Attr {
+impl<'scope> ApplyToDom<'scope> for Attr<'scope> {
     fn apply(&self, el: &WebElem, target: ApplyTarget, _owner: &ViewOwnerToken<'scope>) {
         if let Some(name) = target.name() {
             apply_attr_with_target_internal(el, &name, target, self);

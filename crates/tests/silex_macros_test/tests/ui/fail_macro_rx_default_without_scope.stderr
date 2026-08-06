@@ -1,0 +1,5 @@
+error: RxDefault requires an explicit `scope: Scope<'scope>` parameter; scoped reactive defaults cannot create an implicit runtime
+  --> tests/ui/fail_macro_rx_default_without_scope.rs:12:23
+   |
+12 |     #[chain(default)] value: Signal<'scope, i32>,
+   |                       ^^^^^

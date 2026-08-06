@@ -10,7 +10,7 @@ use silex_reactivity::{
 use std::fmt;
 
 /// A plain value that has not yet been promoted into a runtime node.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct Constant<T>(pub(crate) T);
 
 impl<T> Constant<T> {
@@ -124,6 +124,38 @@ impl<T> fmt::Debug for Signal<'_, T> {
         f.debug_struct("Signal").finish_non_exhaustive()
     }
 }
+
+impl<'scope, T> PartialEq for ReadSignal<'scope, T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner && self.scope == other.scope
+    }
+}
+
+impl<'scope, T> Eq for ReadSignal<'scope, T> {}
+
+impl<'scope, T> PartialEq for WriteSignal<'scope, T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+}
+
+impl<'scope, T> Eq for WriteSignal<'scope, T> {}
+
+impl<'scope, T> PartialEq for RwSignal<'scope, T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.read == other.read && self.write == other.write
+    }
+}
+
+impl<'scope, T> Eq for RwSignal<'scope, T> {}
+
+impl<'scope, T> PartialEq for Signal<'scope, T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.rx == other.rx
+    }
+}
+
+impl<'scope, T> Eq for Signal<'scope, T> {}
 
 impl<'scope, T: 'scope> ReadSignal<'scope, T> {
     pub(crate) fn from_inner(inner: RawReadSignal<'scope, T>, scope: Scope<'scope>) -> Self {
@@ -355,5 +387,29 @@ impl<'scope, T: 'scope> From<Memo<'scope, T>> for Signal<'scope, T> {
 impl<'scope, T: 'scope> From<StoredValue<'scope, T>> for Signal<'scope, T> {
     fn from(stored: StoredValue<'scope, T>) -> Self {
         Self::from_rx(Rx::from_stored(stored))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::Runtime;
+
+    #[test]
+    fn test_signal_partial_eq() {
+        let mut runtime = Runtime::new();
+        runtime.child(|scope| {
+            let (read1, write1) = scope.signal(10);
+            let (read2, _write2) = scope.signal(10);
+
+            assert_eq!(read1, read1);
+            assert_ne!(read1, read2);
+            assert_eq!(write1, write1);
+
+            let rw1 = scope.rw_signal(20);
+            let rw2 = scope.rw_signal(20);
+
+            assert_eq!(rw1, rw1);
+            assert_ne!(rw1, rw2);
+        });
     }
 }

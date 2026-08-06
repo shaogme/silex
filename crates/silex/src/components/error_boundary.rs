@@ -3,9 +3,9 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use wasm_bindgen_futures::spawn_local;
 
 use silex_core::{
+    Scope,
     error::{ErrorContext, SilexError},
     log::console_error,
-    Scope,
     rx,
 };
 use silex_dom::prelude::*;

@@ -30,7 +30,7 @@ pub use silex_reactivity::RuntimeSnapshot;
 pub use silex_reactivity::{CompletionOnce, CompletionSender};
 pub use store::Store;
 pub use task::TaskHandle;
-pub use traits::{RxBase, RxData, RxGet, RxRead, RxValue, RxWrite};
+pub use traits::{RxBase, RxData, RxDefault, RxFrom, RxGet, RxRead, RxValue, RxWrite};
 
 pub use silex_reactivity::CleanupError;
 pub use silex_reactivity::{ReactiveError, ReactiveResult};

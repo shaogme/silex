@@ -21,6 +21,14 @@ impl<T> fmt::Debug for Memo<'_, T> {
     }
 }
 
+impl<'scope, T> PartialEq for Memo<'scope, T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner && self.scope == other.scope
+    }
+}
+
+impl<'scope, T> Eq for Memo<'scope, T> {}
+
 impl<'scope, T: 'scope> Memo<'scope, T> {
     pub(crate) fn from_inner(
         inner: silex_reactivity::Memo<'scope, T>,

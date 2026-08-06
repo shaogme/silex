@@ -13,19 +13,19 @@ pub type PendingAttribute<'scope> = AttrOp<'scope>;
 
 #[derive(Default)]
 struct ClassAccumulator<'scope> {
-    statics: Vec<Cow<'static, str>>,
-    toggles: Vec<(Cow<'static, str>, silex_core::Rx<'scope, bool>)>,
+    statics: Vec<Cow<'scope, str>>,
+    toggles: Vec<(Cow<'scope, str>, silex_core::Rx<'scope, bool>)>,
     reactives: Vec<silex_core::Rx<'scope, String>>,
 }
 
 impl<'scope> ClassAccumulator<'scope> {
-    fn push_static(&mut self, c: Cow<'static, str>) {
+    fn push_static(&mut self, c: Cow<'scope, str>) {
         if !self.statics.contains(&c) {
             self.statics.push(c);
         }
     }
 
-    fn push_toggle(&mut self, name: Cow<'static, str>, rx: silex_core::Rx<'scope, bool>) {
+    fn push_toggle(&mut self, name: Cow<'scope, str>, rx: silex_core::Rx<'scope, bool>) {
         if let Some(idx) = self.toggles.iter().position(|(n, _)| n == &name) {
             self.toggles[idx] = (name, rx);
         } else {
@@ -64,13 +64,13 @@ impl<'scope> ClassAccumulator<'scope> {
 
 #[derive(Default)]
 struct StyleAccumulator<'scope> {
-    statics: Vec<(Cow<'static, str>, Cow<'static, str>)>,
-    properties: Vec<(Cow<'static, str>, silex_core::Rx<'scope, String>)>,
+    statics: Vec<(Cow<'scope, str>, Cow<'scope, str>)>,
+    properties: Vec<(Cow<'scope, str>, silex_core::Rx<'scope, String>)>,
     sheets: Vec<silex_core::Rx<'scope, String>>,
 }
 
 impl<'scope> StyleAccumulator<'scope> {
-    fn push_static(&mut self, key: Cow<'static, str>, val: Cow<'static, str>) {
+    fn push_static(&mut self, key: Cow<'scope, str>, val: Cow<'scope, str>) {
         if let Some(idx) = self.statics.iter().position(|(k, _)| k == &key) {
             self.statics[idx] = (key, val);
         } else {
@@ -78,7 +78,7 @@ impl<'scope> StyleAccumulator<'scope> {
         }
     }
 
-    fn push_property(&mut self, key: Cow<'static, str>, rx: silex_core::Rx<'scope, String>) {
+    fn push_property(&mut self, key: Cow<'scope, str>, rx: silex_core::Rx<'scope, String>) {
         if let Some(idx) = self.properties.iter().position(|(k, _)| k == &key) {
             self.properties[idx] = (key, rx);
         } else {

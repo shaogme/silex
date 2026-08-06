@@ -1,7 +1,11 @@
 use silex_dom::prelude::*;
 use silex_dom::view::ViewOwner;
 use silex_macros::component;
-use std::{cell::Cell, panic::{AssertUnwindSafe, catch_unwind, resume_unwind}, rc::Rc};
+use std::{
+    cell::Cell,
+    panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
+    rc::Rc,
+};
 use web_sys::Node;
 
 #[derive(Clone)]

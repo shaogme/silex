@@ -22,6 +22,14 @@ impl<T> fmt::Debug for StoredValue<'_, T> {
     }
 }
 
+impl<'scope, T> PartialEq for StoredValue<'scope, T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner && self.scope == other.scope
+    }
+}
+
+impl<'scope, T> Eq for StoredValue<'scope, T> {}
+
 impl<'scope, T: 'scope> StoredValue<'scope, T> {
     pub(crate) fn from_inner(
         inner: silex_reactivity::StoredValue<'scope, T>,

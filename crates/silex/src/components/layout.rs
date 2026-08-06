@@ -14,7 +14,7 @@ styled! {
         #[prop(into)] #[chain(default)]
         gap: Signal<'scope, i32>,
         #[prop(into)] #[chain(default)]
-        style: Signal<'scope, Style>,
+        style: Signal<'scope, Style<'scope>>,
     ) {
         display: flex;
         flex-direction: $(direction);
@@ -27,9 +27,10 @@ styled! {
 styled! {
     /// 居中容器
     pub Center<'scope> <div> (
+        scope: Scope<'scope>,
         children: AnyView<'scope>,
         #[prop(into)] #[chain(default)]
-        style: Signal<'scope, Style>,
+        style: Signal<'scope, Style<'scope>>,
     ) {
         display: flex;
         align-items: center;
@@ -47,7 +48,7 @@ styled! {
         #[prop(into)] #[chain(default)]
         gap: Signal<'scope, i32>,
         #[prop(into)] #[chain(default)]
-        style: Signal<'scope, Style>,
+        style: Signal<'scope, Style<'scope>>,
     ) {
         display: grid;
         grid-template-columns: repeat($(columns), minmax(0, 1fr));

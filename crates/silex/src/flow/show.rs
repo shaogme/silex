@@ -24,10 +24,10 @@ where
 {
     let condition = scope.promote(when);
     silex_core::rx!(scope; if *$condition {
-            children.clone()
-        } else {
-            fallback.clone()
-        })
+        children.clone()
+    } else {
+        fallback.clone()
+    })
 }
 
 // --- Signal 扩展 ---

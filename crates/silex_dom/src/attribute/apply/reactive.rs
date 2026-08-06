@@ -287,7 +287,7 @@ impl<'scope> ReactiveApply<'scope> for bool {
     }
 }
 
-impl<'scope> ReactiveApply<'scope> for Attr {
+impl<'scope> ReactiveApply<'scope> for Attr<'scope> {
     fn apply_to_dom(
         rx: Rx<'scope, Self>,
         el: WebElem,
@@ -341,3 +341,80 @@ where
         });
     }
 }
+
+fn map_string_like_rx<'scope, T>(rx: Rx<'scope, T>) -> Rx<'scope, String>
+where
+    T: ToString + 'scope,
+{
+    rx.map(|value| value.to_string())
+}
+
+macro_rules! impl_reactive_apply_string_like {
+    ($($ty:ty),*) => {
+        $(
+            impl<'scope, 'a: 'scope> ReactiveApply<'scope> for $ty {
+                fn apply_to_dom(
+                    rx: Rx<'scope, Self>,
+                    el: WebElem,
+                    target: ApplyTarget,
+                    owner: &ViewOwnerToken<'scope>,
+                ) {
+                    apply_primitive_reactive_internal(el, target, rx, owner);
+                }
+
+                fn apply_pair(
+                    rx: Rx<'scope, Self>,
+                    key: Cow<'static, str>,
+                    el: WebElem,
+                    target: ApplyTarget,
+                    owner: &ViewOwnerToken<'scope>,
+                ) {
+                    if matches!(target, ApplyTarget::Style) {
+                        if let Some(style) = get_style_decl(&el) {
+                            register(owner, rx.runtime_inputs(), move || {
+                                let _ = style.set_property(&key, rx.get().as_ref());
+                            });
+                        }
+                    } else {
+                        apply_primitive_reactive_internal(el, target, rx, owner);
+                    }
+                }
+
+                fn into_op_reactive(
+                    rx: Rx<'scope, Self>,
+                    target: ApplyTarget,
+                ) -> Option<AttrOp<'scope>> {
+                    match target {
+                        ApplyTarget::Attr(_) | ApplyTarget::Known(_) => {
+                            Some(AttrOp::Update(AttrUpdate {
+                                target,
+                                data: AttrData::ReactiveString(map_string_like_rx(rx)),
+                            }))
+                        }
+                        ApplyTarget::Class => {
+                            Some(AttrOp::reactive_classes(map_string_like_rx(rx)))
+                        }
+                        ApplyTarget::Style => {
+                            Some(AttrOp::reactive_stylesheet(map_string_like_rx(rx)))
+                        }
+                        _ => None,
+                    }
+                }
+
+                fn into_op_pair_reactive(
+                    rx: Rx<'scope, Self>,
+                    key: Cow<'static, str>,
+                    target: ApplyTarget,
+                ) -> Option<AttrOp<'scope>> {
+                    if matches!(target, ApplyTarget::Style) {
+                        Some(AttrOp::style_property(key, map_string_like_rx(rx)))
+                    } else {
+                        None
+                    }
+                }
+            }
+        )*
+    };
+}
+
+impl_reactive_apply_string_like!(&'a str, Cow<'a, str>, &'a String);

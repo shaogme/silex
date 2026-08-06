@@ -68,6 +68,16 @@ impl<'scope, T, E> Clone for Resource<'scope, T, E> {
     }
 }
 
+impl<'scope, T, E> PartialEq for Resource<'scope, T, E> {
+    fn eq(&self, other: &Self) -> bool {
+        self.state == other.state
+            && self.set_state == other.set_state
+            && self.trigger == other.trigger
+    }
+}
+
+impl<'scope, T, E> Eq for Resource<'scope, T, E> {}
+
 pub trait ResourceFetcher<S> {
     type Data;
     type Error;
@@ -252,6 +262,14 @@ pub struct SuspenseContext<'scope> {
     pub count: ReadSignal<'scope, usize>,
     set_count: WriteSignal<'scope, usize>,
 }
+
+impl<'scope> PartialEq for SuspenseContext<'scope> {
+    fn eq(&self, other: &Self) -> bool {
+        self.count == other.count && self.set_count == other.set_count
+    }
+}
+
+impl<'scope> Eq for SuspenseContext<'scope> {}
 
 impl<'scope> SuspenseContext<'scope> {
     pub fn new(scope: Scope<'scope>) -> Self {

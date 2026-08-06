@@ -47,23 +47,23 @@ impl KnownProp {
 
 /// 代表 HTML Attribute 的三种基元状态
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Attr {
+pub enum Attr<'scope> {
     /// 移除属性 (remove_attribute)
     Removed,
     /// 布尔标志/空值属性 (set_attribute(name, ""))
     Empty,
     /// 包含字符串值的属性 (set_attribute(name, value))
-    String(Cow<'static, str>),
+    String(Cow<'scope, str>),
 }
 
-impl From<bool> for Attr {
+impl From<bool> for Attr<'_> {
     fn from(b: bool) -> Self {
         if b { Attr::Empty } else { Attr::Removed }
     }
 }
 
-impl From<&'static str> for Attr {
-    fn from(s: &'static str) -> Self {
+impl<'a> From<&'a str> for Attr<'a> {
+    fn from(s: &'a str) -> Self {
         if s.is_empty() {
             Attr::Empty
         } else {
@@ -72,7 +72,7 @@ impl From<&'static str> for Attr {
     }
 }
 
-impl From<String> for Attr {
+impl From<String> for Attr<'_> {
     fn from(s: String) -> Self {
         if s.is_empty() {
             Attr::Empty
@@ -82,8 +82,8 @@ impl From<String> for Attr {
     }
 }
 
-impl From<Cow<'static, str>> for Attr {
-    fn from(s: Cow<'static, str>) -> Self {
+impl<'scope> From<Cow<'scope, str>> for Attr<'scope> {
+    fn from(s: Cow<'scope, str>) -> Self {
         if s.is_empty() {
             Attr::Empty
         } else {
@@ -92,7 +92,7 @@ impl From<Cow<'static, str>> for Attr {
     }
 }
 
-impl<T: Into<Attr>> From<Option<T>> for Attr {
+impl<'scope, T: Into<Attr<'scope>>> From<Option<T>> for Attr<'scope> {
     fn from(opt: Option<T>) -> Self {
         match opt {
             Some(v) => v.into(),
@@ -104,11 +104,11 @@ impl<T: Into<Attr>> From<Option<T>> for Attr {
 #[derive(Clone)]
 pub enum AttrData<'scope> {
     // --- Static Values ---
-    StaticAttr(Attr),
+    StaticAttr(Attr<'scope>),
     StaticJs(JsValue),
 
     // --- Reactive Values ---
-    ReactiveAttr(Rx<'scope, Attr>),
+    ReactiveAttr(Rx<'scope, Attr<'scope>>),
     ReactiveString(Rx<'scope, String>),
     ReactiveBool(Rx<'scope, bool>),
     ReactiveOptionString(Rx<'scope, Option<String>>),
@@ -154,7 +154,7 @@ pub struct AttrUpdate<'scope> {
 
 #[derive(Clone)]
 pub struct ClassToggle<'scope> {
-    pub name: Cow<'static, str>,
+    pub name: Cow<'scope, str>,
     pub rx: Rx<'scope, bool>,
 }
 
@@ -175,7 +175,7 @@ impl std::fmt::Debug for ClassToggle<'_> {
 
 #[derive(Clone)]
 pub struct StyleProperty<'scope> {
-    pub name: Cow<'static, str>,
+    pub name: Cow<'scope, str>,
     pub rx: Rx<'scope, String>,
 }
 
@@ -196,8 +196,8 @@ impl std::fmt::Debug for StyleProperty<'_> {
 
 #[derive(Clone)]
 pub struct CombinedClasses<'scope> {
-    pub statics: Vec<Cow<'static, str>>,
-    pub toggles: Vec<(Cow<'static, str>, Rx<'scope, bool>)>,
+    pub statics: Vec<Cow<'scope, str>>,
+    pub toggles: Vec<(Cow<'scope, str>, Rx<'scope, bool>)>,
     pub reactives: Vec<Rx<'scope, String>>,
 }
 
@@ -221,8 +221,8 @@ impl std::fmt::Debug for CombinedClasses<'_> {
 
 #[derive(Clone)]
 pub struct CombinedStyles<'scope> {
-    pub statics: Vec<(Cow<'static, str>, Cow<'static, str>)>,
-    pub properties: Vec<(Cow<'static, str>, Rx<'scope, String>)>,
+    pub statics: Vec<(Cow<'scope, str>, Cow<'scope, str>)>,
+    pub properties: Vec<(Cow<'scope, str>, Rx<'scope, String>)>,
     pub sheets: Vec<Rx<'scope, String>>,
 }
 
@@ -314,7 +314,7 @@ impl PartialEq for AttrOp<'_> {
 }
 
 impl<'scope> AttrOp<'scope> {
-    pub fn static_class(c: Cow<'static, str>) -> Self {
+    pub fn static_class(c: Cow<'scope, str>) -> Self {
         AttrOp::CombinedClasses(CombinedClasses {
             statics: vec![c],
             toggles: Vec::new(),
@@ -322,7 +322,7 @@ impl<'scope> AttrOp<'scope> {
         })
     }
 
-    pub fn static_classes(c: Vec<Cow<'static, str>>) -> Self {
+    pub fn static_classes(c: Vec<Cow<'scope, str>>) -> Self {
         AttrOp::CombinedClasses(CombinedClasses {
             statics: c,
             toggles: Vec::new(),
@@ -330,7 +330,7 @@ impl<'scope> AttrOp<'scope> {
         })
     }
 
-    pub fn class_toggle(name: Cow<'static, str>, rx: Rx<'scope, bool>) -> Self {
+    pub fn class_toggle(name: Cow<'scope, str>, rx: Rx<'scope, bool>) -> Self {
         AttrOp::CombinedClasses(CombinedClasses {
             statics: Vec::new(),
             toggles: vec![(name, rx)],
@@ -346,7 +346,7 @@ impl<'scope> AttrOp<'scope> {
         })
     }
 
-    pub fn static_styles(styles: Vec<(Cow<'static, str>, Cow<'static, str>)>) -> Self {
+    pub fn static_styles(styles: Vec<(Cow<'scope, str>, Cow<'scope, str>)>) -> Self {
         AttrOp::CombinedStyles(CombinedStyles {
             statics: styles,
             properties: Vec::new(),
@@ -354,7 +354,7 @@ impl<'scope> AttrOp<'scope> {
         })
     }
 
-    pub fn style_property(name: Cow<'static, str>, rx: Rx<'scope, String>) -> Self {
+    pub fn style_property(name: Cow<'scope, str>, rx: Rx<'scope, String>) -> Self {
         AttrOp::CombinedStyles(CombinedStyles {
             statics: Vec::new(),
             properties: vec![(name, rx)],
@@ -547,8 +547,8 @@ fn apply_update_internal<'scope>(
 
 fn apply_combined_classes_internal<'scope>(
     el: &Element,
-    statics: Vec<Cow<'static, str>>,
-    toggles: Vec<(Cow<'static, str>, Rx<'scope, bool>)>,
+    statics: Vec<Cow<'scope, str>>,
+    toggles: Vec<(Cow<'scope, str>, Rx<'scope, bool>)>,
     reactives: Vec<Rx<'scope, String>>,
     owner: &ViewOwnerToken<'scope>,
 ) {
@@ -636,8 +636,8 @@ fn apply_combined_classes_internal<'scope>(
 
 fn apply_combined_styles_internal<'scope>(
     el: &Element,
-    statics: Vec<(Cow<'static, str>, Cow<'static, str>)>,
-    properties: Vec<(Cow<'static, str>, Rx<'scope, String>)>,
+    statics: Vec<(Cow<'scope, str>, Cow<'scope, str>)>,
+    properties: Vec<(Cow<'scope, str>, Rx<'scope, String>)>,
     sheets: Vec<Rx<'scope, String>>,
     owner: &ViewOwnerToken<'scope>,
 ) {
@@ -735,7 +735,7 @@ fn apply_combined_styles_internal<'scope>(
 
 // --- Kernel Functions (Non-generic DOM operations) ---
 
-pub(crate) fn apply_attr_internal(el: &Element, name: &str, attr: &Attr) {
+pub(crate) fn apply_attr_internal(el: &Element, name: &str, attr: &Attr<'_>) {
     if name.is_empty() {
         return;
     }
@@ -763,7 +763,7 @@ pub(crate) fn apply_attr_with_target_internal(
     el: &Element,
     name: &str,
     target: ApplyTarget,
-    attr: &Attr,
+    attr: &Attr<'_>,
 ) {
     let known_prop = match target {
         ApplyTarget::Known(kp) => Some(kp),

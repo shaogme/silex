@@ -20,6 +20,14 @@ impl fmt::Debug for Effect<'_> {
     }
 }
 
+impl<'scope> PartialEq for Effect<'scope> {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+}
+
+impl<'scope> Eq for Effect<'scope> {}
+
 impl<'scope> Effect<'scope> {
     pub(crate) fn from_inner(inner: silex_reactivity::Effect<'scope>) -> Self {
         Self { inner }

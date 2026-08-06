@@ -1,5 +1,5 @@
-use silex_core::traits::{ForErrorHandler, ForLoopSource, RxRead};
 use silex_core::reactivity::ReactiveSource;
+use silex_core::traits::{ForErrorHandler, ForLoopSource, RxRead};
 use silex_dom::prelude::*;
 use silex_dom::view::RowUpdater;
 use silex_macros::component;
@@ -43,8 +43,7 @@ pub fn For<'scope, ItemsFn, IS, Item, Key, KF, MF>(
     #[prop(into)]
     #[chain(default = ForErrorHandler::default())]
     error: ForErrorHandler,
-    #[chain(default)]
-    _scope: PhantomData<&'scope ()>,
+    #[chain(default)] _scope: PhantomData<&'scope ()>,
 ) -> silex_dom::view::list::KeyedLoopView<'scope, ItemsFn, IS, Item, Key>
 where
     ItemsFn: RxRead<Value = IS> + ReactiveSource<'scope> + Clone + 'scope,
@@ -54,9 +53,8 @@ where
     KF: Fn(&Item) -> Key + 'scope,
     MF: ForChildren<'scope, Item> + Clone + 'scope,
 {
-    let view_fn = Rc::new(move |item, index, updater| {
-        children.render(item, index, updater).into_any()
-    });
+    let view_fn =
+        Rc::new(move |item, index, updater| children.render(item, index, updater).into_any());
 
     silex_dom::view::list::KeyedLoopView {
         each,

@@ -1,5 +1,5 @@
-use silex_core::traits::{ForLoopSource, RxRead};
 use silex_core::reactivity::ReactiveSource;
+use silex_core::traits::{ForLoopSource, RxRead};
 use silex_dom::prelude::*;
 use silex_macros::component;
 use std::marker::PhantomData;
@@ -38,8 +38,7 @@ pub fn Index<'scope, IF, I, IS, MF>(
     #[prop(render)]
     #[chain]
     children: MF,
-    #[chain(default)]
-    _scope: PhantomData<&'scope ()>,
+    #[chain(default)] _scope: PhantomData<&'scope ()>,
 ) -> silex_dom::view::list::IndexedLoopView<'scope, IF, I, IS>
 where
     IF: RxRead<Value = IS> + ReactiveSource<'scope> + Clone + 'scope,

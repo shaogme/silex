@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use super::{ApplyToDom, Attr, AttrOp, AttributeGroup};
 use crate::view::Prop;
-use silex_core::{Rx, RxValueKind};
+use silex_core::{Memo, ReadSignal, RwSignal, Rx, RxValueKind, Signal, StoredValue};
 // --- IntoStorable: 允许非 'static 类型转换为可存储类型 ---
 
 /// 将值转换为可存储的类型。
@@ -18,8 +18,8 @@ pub trait IntoStorable<'scope> {
 
 // --- 1. 基础类型 ---
 
-impl<'scope> IntoStorable<'scope> for &'static str {
-    type Stored = &'static str;
+impl<'scope, 'a: 'scope> IntoStorable<'scope> for &'a str {
+    type Stored = &'a str;
     fn into_storable(self) -> Self::Stored {
         self
     }
@@ -39,8 +39,8 @@ impl<'scope> IntoStorable<'scope> for String {
     }
 }
 
-impl<'scope> IntoStorable<'scope> for Cow<'static, str> {
-    type Stored = Cow<'static, str>;
+impl<'scope, 'a: 'scope> IntoStorable<'scope> for Cow<'a, str> {
+    type Stored = Cow<'a, str>;
     fn into_storable(self) -> Self::Stored {
         self
     }
@@ -81,7 +81,7 @@ where
     }
 }
 
-impl<'scope, T> IntoStorable<'scope> for silex_core::reactivity::Signal<'scope, T>
+impl<'scope, T> IntoStorable<'scope> for Signal<'scope, T>
 where
     T: super::ReactiveApply<'scope> + Clone + 'scope,
 {
@@ -92,7 +92,7 @@ where
     }
 }
 
-impl<'scope, T> IntoStorable<'scope> for silex_core::reactivity::ReadSignal<'scope, T>
+impl<'scope, T> IntoStorable<'scope> for ReadSignal<'scope, T>
 where
     T: super::ReactiveApply<'scope> + Clone + 'scope,
 {
@@ -103,7 +103,7 @@ where
     }
 }
 
-impl<'scope, T> IntoStorable<'scope> for silex_core::reactivity::RwSignal<'scope, T>
+impl<'scope, T> IntoStorable<'scope> for RwSignal<'scope, T>
 where
     T: super::ReactiveApply<'scope> + Clone + 'scope,
 {
@@ -114,7 +114,7 @@ where
     }
 }
 
-impl<'scope, T> IntoStorable<'scope> for silex_core::reactivity::Memo<'scope, T>
+impl<'scope, T> IntoStorable<'scope> for Memo<'scope, T>
 where
     T: super::ReactiveApply<'scope> + Clone + 'scope,
 {
@@ -125,7 +125,7 @@ where
     }
 }
 
-impl<'scope, T> IntoStorable<'scope> for silex_core::reactivity::StoredValue<'scope, T>
+impl<'scope, T> IntoStorable<'scope> for StoredValue<'scope, T>
 where
     T: super::ReactiveApply<'scope> + Clone + 'scope,
 {
@@ -138,7 +138,7 @@ where
 
 // --- 3. 静态载体与逃逸舱 ---
 
-impl<'scope> IntoStorable<'scope> for Attr {
+impl<'scope> IntoStorable<'scope> for Attr<'scope> {
     type Stored = Self;
     fn into_storable(self) -> Self::Stored {
         self

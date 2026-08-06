@@ -76,6 +76,14 @@ impl fmt::Debug for Effect<'_> {
     }
 }
 
+impl<'scope> PartialEq for Effect<'scope> {
+    fn eq(&self, other: &Self) -> bool {
+        self.handle == other.handle
+    }
+}
+
+impl<'scope> Eq for Effect<'scope> {}
+
 impl<'scope> Effect<'scope> {
     pub fn try_stop(&self) -> ReactiveResult<bool> {
         runtime::stop_effect(&self.handle.state(), self.handle.raw())

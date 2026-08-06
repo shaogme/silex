@@ -1,6 +1,8 @@
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
-use syn::{Attribute, Data, DeriveInput, Fields, Ident, Type, Visibility};
+use syn::{
+    Attribute, Data, DeriveInput, Fields, GenericArgument, Ident, PathArguments, Type, Visibility,
+};
 
 #[derive(Clone, Default)]
 struct FieldAttrs {
@@ -48,6 +50,7 @@ struct BuilderContext {
     prop_generic_idents: Vec<Ident>,
     required_fields: Vec<FieldSpec>,
     scope: syn::Lifetime,
+    scope_field: Option<Ident>,
 }
 
 impl BuilderContext {
@@ -73,12 +76,7 @@ impl BuilderContext {
                 }
                 _ => None,
             })
-            .ok_or_else(|| {
-                syn::Error::new_spanned(
-                    &props_name,
-                    "PropsBuilder requires a `<'scope>` lifetime parameter; scoped View, attribute, and event contracts cannot default to `'static`",
-                )
-            })?;
+            .unwrap_or_else(|| syn::Lifetime::new("'static", proc_macro2::Span::call_site()));
 
         let fields = match data {
             Data::Struct(ref data) => match &data.fields {
@@ -102,6 +100,22 @@ impl BuilderContext {
             }
         };
 
+        let scope_field = fields
+            .iter()
+            .find(|field| {
+                !field.attrs.chained && field.ident == "scope" && is_scope_type(&field.ty, &scope)
+            })
+            .map(|field| field.ident.clone());
+
+        if let Some(field) = fields.iter().find(|field| is_reactive_default_field(field))
+            && scope_field.is_none()
+        {
+            return Err(syn::Error::new_spanned(
+                &field.ident,
+                "RxDefault requires an explicit `scope: Scope<'scope>` parameter; scoped reactive defaults cannot create an implicit runtime",
+            ));
+        }
+
         let required_fields: Vec<_> = fields.iter().filter(|f| f.required).cloned().collect();
         let prop_generic_idents: Vec<_> = required_fields
             .iter()
@@ -123,6 +137,7 @@ impl BuilderContext {
             prop_generic_idents,
             required_fields,
             scope,
+            scope_field,
         })
     }
 
@@ -293,10 +308,21 @@ impl BuilderContext {
             quote! { #ident: #ty }
         });
 
+        let scope_field = self.scope_field.as_ref();
         let builder_field_inits = self.fields.iter().map(|field| {
             let ident = &field.ident;
             if !field.attrs.chained {
                 quote! { #ident }
+            } else if is_reactive_default_field(field) {
+                let scope_field =
+                    scope_field.expect("reactive defaults were validated to have a scope field");
+                let init_expr = reactive_default_transform(
+                    field,
+                    &self.scope,
+                    scope_field,
+                    field.attrs.default_value.as_ref(),
+                );
+                quote! { #ident: #init_expr }
             } else if let Some(default_expr) = &field.attrs.default_value {
                 let init_expr = field_value_transform(field, quote! { #default_expr });
                 quote! { #ident: #init_expr }
@@ -322,7 +348,16 @@ impl BuilderContext {
             }
         });
 
-        let builder_setters = self.fields.iter().map(|f| self.generate_setter(f));
+        let builder_setters = self
+            .fields
+            .iter()
+            .filter(|field| {
+                self.scope_field
+                    .as_ref()
+                    .map(|scope_field| scope_field != &field.ident)
+                    .unwrap_or(true)
+            })
+            .map(|f| self.generate_setter(f));
 
         quote! {
             impl #builder_generics_decl #builder_name #builder_generics_type #where_clause {
@@ -630,6 +665,25 @@ fn field_value_transform(field: &FieldSpec, input: TokenStream2) -> TokenStream2
     }
 }
 
+fn reactive_default_transform(
+    field: &FieldSpec,
+    scope: &syn::Lifetime,
+    scope_field: &Ident,
+    default_value: Option<&TokenStream2>,
+) -> TokenStream2 {
+    let __silex = crate::crate_path::silex();
+    let ty = &field.ty;
+
+    match default_value {
+        Some(value) => quote! {
+            <#ty as #__silex::core::RxFrom<#scope>>::rx_from(#scope_field, #value)
+        },
+        None => quote! {
+            <#ty as #__silex::core::RxDefault<#scope>>::rx_default(#scope_field)
+        },
+    }
+}
+
 fn parse_field_attrs(attrs: &[Attribute]) -> syn::Result<FieldAttrs> {
     let mut result = FieldAttrs::default();
 
@@ -709,6 +763,50 @@ fn type_last_segment_name(ty: &Type) -> Option<String> {
 
 fn is_any_view_type(ty: &Type) -> bool {
     type_last_segment_name(ty).is_some_and(|ident| ident == "AnyView")
+}
+
+fn is_reactive_wrapper_type(ty: &Type) -> bool {
+    matches!(
+        type_last_segment_name(ty).as_deref(),
+        Some("Signal")
+            | Some("ReadSignal")
+            | Some("RwSignal")
+            | Some("Memo")
+            | Some("StoredValue")
+            | Some("Rx")
+            | Some("Callback")
+            | Some("NodeRef")
+    )
+}
+
+fn is_reactive_default_field(field: &FieldSpec) -> bool {
+    field.attrs.chained
+        && (field.attrs.default || field.attrs.default_value.is_some())
+        && is_reactive_wrapper_type(&field.ty)
+}
+
+fn is_scope_type(ty: &Type, scope: &syn::Lifetime) -> bool {
+    let Type::Path(type_path) = ty else {
+        return false;
+    };
+    let Some(segment) = type_path.path.segments.last() else {
+        return false;
+    };
+    if segment.ident != "Scope" {
+        return false;
+    }
+
+    let PathArguments::AngleBracketed(arguments) = &segment.arguments else {
+        return false;
+    };
+    if arguments.args.len() != 1 {
+        return false;
+    }
+
+    matches!(
+        arguments.args.first(),
+        Some(GenericArgument::Lifetime(lifetime)) if lifetime.ident == scope.ident
+    )
 }
 
 fn is_auto_into_type(ty: &Type) -> bool {

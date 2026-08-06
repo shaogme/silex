@@ -1,7 +1,8 @@
 //! Lifetime-aware reactive traits.
 
 use crate::{
-    ReactiveError, ReactiveResult, Rx, RxInner, RxValueKind, Scope, SilexError, SilexResult,
+    Callback, NodeRef, ReactiveError, ReactiveResult, Rx, RxInner, RxValueKind, Scope, SilexError,
+    SilexResult,
     error::handle_error,
     reactivity::{Memo, ReactiveSource, ReadSignal, RwSignal, Signal, StoredValue, WriteSignal},
 };
@@ -17,6 +18,47 @@ impl<T: Clone> RxCloneData for T {}
 
 pub trait RxError: Clone + Debug {}
 impl<T: Clone + Debug> RxError for T {}
+
+/// Construct a scope-owned reactive wrapper from an explicit value.
+///
+/// Unlike [`From`], this trait receives the [`Scope`] that owns the node.
+/// Implementations must create every node, callback, and owner resource from
+/// that scope. They must not create a [`Runtime`], a detached scope, or use
+/// thread-local runtime state.
+pub trait RxFrom<'scope>: Sized {
+    type Value: 'scope;
+
+    fn rx_from<V>(scope: Scope<'scope>, value: V) -> Self
+    where
+        V: Into<Self::Value>;
+}
+
+/// Construct a scope-owned reactive wrapper from its value's default.
+///
+/// Every [`RxFrom`] implementation automatically implements this trait. The
+/// default operation only delegates to [`RxFrom::rx_from`], so it cannot
+/// create a [`Runtime`], a detached scope, or thread-local runtime state.
+pub trait RxDefault<'scope>: RxFrom<'scope> {
+    fn rx_default(scope: Scope<'scope>) -> Self
+    where
+        Self::Value: Default,
+    {
+        Self::rx_from(scope, Self::Value::default())
+    }
+}
+
+impl<'scope, T> RxDefault<'scope> for T where T: RxFrom<'scope> {}
+
+impl<'scope, T: 'scope> RxFrom<'scope> for Signal<'scope, T> {
+    type Value = T;
+
+    fn rx_from<V>(scope: Scope<'scope>, value: V) -> Self
+    where
+        V: Into<Self::Value>,
+    {
+        scope.stored(value.into()).into()
+    }
+}
 
 pub trait RxValue {
     type Value: ?Sized;
@@ -54,6 +96,84 @@ pub trait RxRead: RxBase {
 #[cold]
 fn panic_reactive<T>(error: ReactiveError) -> T {
     panic!("reactive operation failed: {error}")
+}
+
+impl<'scope, T: 'scope> RxFrom<'scope> for ReadSignal<'scope, T> {
+    type Value = T;
+
+    fn rx_from<V>(scope: Scope<'scope>, value: V) -> Self
+    where
+        V: Into<Self::Value>,
+    {
+        scope.signal(value.into()).0
+    }
+}
+
+impl<'scope, T: 'scope> RxFrom<'scope> for RwSignal<'scope, T> {
+    type Value = T;
+
+    fn rx_from<V>(scope: Scope<'scope>, value: V) -> Self
+    where
+        V: Into<Self::Value>,
+    {
+        scope.rw_signal(value.into())
+    }
+}
+
+impl<'scope, T: Clone + PartialEq + 'scope> RxFrom<'scope> for Memo<'scope, T> {
+    type Value = T;
+
+    fn rx_from<V>(scope: Scope<'scope>, value: V) -> Self
+    where
+        V: Into<Self::Value>,
+    {
+        let value = value.into();
+        scope.memo(move |_| value.clone())
+    }
+}
+
+impl<'scope, T: 'scope> RxFrom<'scope> for StoredValue<'scope, T> {
+    type Value = T;
+
+    fn rx_from<V>(scope: Scope<'scope>, value: V) -> Self
+    where
+        V: Into<Self::Value>,
+    {
+        scope.stored(value.into())
+    }
+}
+
+impl<'scope, T: 'scope> RxFrom<'scope> for Rx<'scope, T, RxValueKind> {
+    type Value = T;
+
+    fn rx_from<V>(scope: Scope<'scope>, value: V) -> Self
+    where
+        V: Into<Self::Value>,
+    {
+        scope.constant(value.into())
+    }
+}
+
+impl<'scope, T: 'scope> RxFrom<'scope> for Callback<'scope, T> {
+    type Value = ();
+
+    fn rx_from<V>(scope: Scope<'scope>, _value: V) -> Self
+    where
+        V: Into<Self::Value>,
+    {
+        scope.callback(|_: T| {})
+    }
+}
+
+impl<'scope, T: 'scope> RxFrom<'scope> for NodeRef<'scope, T> {
+    type Value = ();
+
+    fn rx_from<V>(scope: Scope<'scope>, _value: V) -> Self
+    where
+        V: Into<Self::Value>,
+    {
+        scope.node_ref()
+    }
 }
 
 /// Clone-based convenience access built on top of [`RxRead`].

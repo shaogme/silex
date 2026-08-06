@@ -329,8 +329,6 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
         parsed.generics.where_clause.as_ref(),
         &scope,
     );
-    let extra_impls = get_extra_tag_impls(&tag_str, name, &parsed.generics);
-
     let filtered_attrs: Vec<_> = parsed
         .attrs
         .into_iter()
@@ -432,7 +430,6 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
 
     Ok(quote! {
         #component_tokens
-        #extra_impls
     })
 }
 
@@ -594,38 +591,6 @@ fn get_tag_return_type(
                 #where_clause
         }
     }
-}
-
-fn get_extra_tag_impls(tag: &str, name: &Ident, generics: &Generics) -> TokenStream {
-    let __silex = crate::crate_path::silex();
-    let mut items = TokenStream::new();
-    let comp = quote::format_ident!("{}Component", name);
-    let (impl_gen, ty_gen, where_c) = generics.split_for_impl();
-
-    let traits = match tag {
-        "button" | "input" | "form" | "select" | "textarea" | "option" | "optgroup"
-        | "fieldset" => vec!["FormAttributes"],
-        "a" | "area" | "link" => vec!["AnchorAttributes"],
-        "label" => vec!["LabelAttributes"],
-        "img" | "video" | "audio" | "source" | "iframe" | "embed" | "object" => {
-            vec!["MediaAttributes"]
-        }
-        "dialog" | "details" => vec!["OpenAttributes"],
-        "td" | "th" => {
-            if tag == "th" {
-                vec!["TableCellAttributes", "TableHeaderAttributes"]
-            } else {
-                vec!["TableCellAttributes"]
-            }
-        }
-        _ => vec![],
-    };
-
-    for t in traits {
-        let tid = quote::format_ident!("{}", t);
-        items.extend(quote! { impl #impl_gen #__silex::html::#tid for #comp #ty_gen #where_c {} });
-    }
-    items
 }
 
 // --- global! ---
