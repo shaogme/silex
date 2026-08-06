@@ -52,3 +52,4 @@ gloo-timers.workspace = true
 trybuild = "1.0"
 wasm-bindgen-test.workspace = true
 ref_str = "0.2"
+silex_core = { workspace = true, features = ["test-support"] }

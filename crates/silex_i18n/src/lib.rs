@@ -70,9 +70,10 @@ macro_rules! t {
 mod tests {
     use super::*;
     use silex_core::Runtime;
+    use std::{cell::Cell, rc::Rc};
 
     #[cfg(feature = "persist")]
-    use std::{cell::RefCell, rc::Rc};
+    use std::cell::RefCell;
 
     #[cfg(feature = "persist")]
     use silex_persist::{
@@ -159,6 +160,10 @@ mod tests {
 
             store.set_locale(Locale::new("en-GB"));
             assert_eq!(greeting.get(), "Hello, Bob!");
+            store.set_fallback_locale(Locale::new("fr-FR"));
+            assert_eq!(greeting.get(), "welcome.user");
+            store.set_fallback_locale(Locale::new("en-US"));
+            assert_eq!(greeting.get(), "Hello, Bob!");
         });
     }
 
@@ -183,6 +188,73 @@ mod tests {
             store.remove_catalog(&Locale::new("en"));
             assert_eq!(title.get(), "title");
         });
+    }
+
+    #[test]
+    fn catalog_cache_updates_before_translation_memo_reruns() {
+        let mut runtime = Runtime::new();
+        runtime.child(|scope| {
+            let initial = Catalog::from_entries(Locale::new("en"), [("title", "Old")])
+                .expect("valid initial catalog");
+            let same = Catalog::from_entries(Locale::new("en"), [("title", "Old")])
+                .expect("valid equal catalog");
+            let replacement = Catalog::from_entries(Locale::new("en"), [("title", "New")])
+                .expect("valid replacement catalog");
+            let store = I18nBuilder::new(scope)
+                .locale(Locale::new("en"))
+                .catalog(initial)
+                .build()
+                .expect("valid i18n store");
+            let runs = Rc::new(Cell::new(0));
+            let translation = store.__memo({
+                let runs = runs.clone();
+                move || {
+                    runs.set(runs.get() + 1);
+                    store.translate_now("title", &[])
+                }
+            });
+
+            assert_eq!(translation.get(), "Old");
+            assert_eq!(runs.get(), 1);
+
+            store.insert_catalog(same);
+            assert_eq!(translation.get(), "Old");
+            assert_eq!(runs.get(), 1);
+
+            store.insert_catalog(replacement);
+            assert_eq!(translation.get(), "New");
+            assert_eq!(runs.get(), 2);
+        });
+    }
+
+    #[test]
+    fn missing_key_and_argument_policies_are_independent() {
+        let mut runtime = Runtime::new();
+        runtime.child(|scope| {
+            let catalog = Catalog::from_entries(Locale::new("en"), [("greeting", "Hi, {name}!")])
+                .expect("valid catalog");
+            let store = I18nBuilder::new(scope)
+                .locale(Locale::new("en"))
+                .catalog(catalog)
+                .missing_key(MissingKeyPolicy::Empty)
+                .missing_argument(MissingArgumentPolicy::Empty)
+                .build()
+                .expect("valid i18n store");
+
+            assert_eq!(store.translate_now("missing", &[]), "");
+            assert_eq!(store.translate_now("greeting", &[]), "Hi, !");
+        });
+    }
+
+    #[test]
+    fn reactivity_errors_keep_their_structured_variant() {
+        let error = I18nError::from(silex_core::ReactiveError::RuntimeMismatch);
+
+        assert!(matches!(
+            &error,
+            I18nError::Reactivity(silex_core::ReactiveError::RuntimeMismatch)
+        ));
+        assert!(error.to_string().contains("响应式节点属于不同的 Runtime"));
     }
 
     #[test]
@@ -306,6 +378,44 @@ mod tests {
             store.set_locale(Locale::new("de-DE"));
             assert_eq!(binding.get_untracked(), Locale::new("de-DE"));
         });
+    }
+
+    #[cfg(feature = "persist")]
+    #[test]
+    fn foreign_runtime_binding_fails_before_i18n_node_creation() {
+        let mut foreign_runtime = Runtime::new();
+        let foreign_root = foreign_runtime.run();
+        let mut target_runtime = Runtime::new();
+        let target_root = target_runtime.run();
+
+        foreign_root.with_scope(|foreign_scope| {
+            let binding = Persistent::builder(foreign_scope, "foreign-i18n-locale")
+                .backend(InputBackend {
+                    inputs: silex_core::RuntimeInputs::new(),
+                    value: Rc::new(RefCell::new(None)),
+                })
+                .parse::<Locale>()
+                .default(Locale::new("en-US"))
+                .build();
+
+            target_root.with_scope(|target_scope| {
+                let before = target_scope.runtime_snapshot();
+                let result = I18nBuilder::new(target_scope)
+                    .locale_binding(binding)
+                    .build();
+
+                assert!(matches!(
+                    result,
+                    Err(I18nError::Reactivity(
+                        silex_core::ReactiveError::RuntimeMismatch
+                    ))
+                ));
+                assert_eq!(target_scope.runtime_snapshot(), before);
+            });
+        });
+
+        target_root.dispose().expect("target root cleanup");
+        foreign_root.dispose().expect("foreign root cleanup");
     }
 
     #[cfg(feature = "json")]

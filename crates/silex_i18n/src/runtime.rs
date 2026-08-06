@@ -236,8 +236,6 @@ impl<'scope> I18nBuilder<'scope> {
         #[cfg(feature = "persist")]
         if let Some((binding, binding_inputs)) = binding_inputs {
             let locale_inputs = runtime_inputs_of(store.locale());
-            validate_inputs(scope, &binding_inputs)?;
-            validate_inputs(scope, &locale_inputs)?;
 
             let store_for_binding = store;
             scope.effect_from(binding_inputs, move || {
@@ -436,7 +434,9 @@ fn validate_inputs(scope: Scope<'_>, inputs: &RuntimeInputs) -> Result<(), I18nE
         .try_validate_inputs(inputs)
         .map_err(|error| match error {
             SilexError::Reactivity(error) => I18nError::from(error),
-            error => I18nError::Loader(format!("reactivity validation failed: {error}")),
+            error => {
+                unreachable!("scope input validation returned a non-reactivity error: {error}")
+            }
         })
 }
 

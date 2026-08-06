@@ -1,0 +1,12 @@
+error: lifetime may not live long enough
+ --> tests/ui/fail_store_child_escape.rs:5:27
+  |
+5 |     runtime.child(|scope| I18nBuilder::new(scope).build().expect("valid store"))
+  |                    ------ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ returning this value requires that `'1` must outlive `'2`
+  |                    |    |
+  |                    |    return type of closure is I18nStore<'2>
+  |                    has type `silex_i18n::Scope<'1>`
+  |
+  = note: requirement occurs because of the type `I18nStore<'_>`, which makes the generic argument `'_` invariant
+  = note: the struct `I18nStore<'scope>` is invariant over the parameter `'scope`
+  = help: see <https://doc.rust-lang.org/nomicon/subtyping.html> for more information about variance

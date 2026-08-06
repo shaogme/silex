@@ -1,0 +1,11 @@
+error[E0599]: no associated function or constant named `default` found for struct `I18nBuilder<'scope>` in the current scope
+ --> tests/ui/fail_builder_default.rs:4:26
+  |
+4 |     let _ = I18nBuilder::default();
+  |                          ^^^^^^^ associated function or constant not found in `I18nBuilder<'_>`
+  |
+note: if you're trying to build a new `I18nBuilder<'_>`, consider using `I18nBuilder::<'scope>::new` which returns `I18nBuilder<'_>`
+ --> src/runtime.rs
+  |
+  |     pub fn new(scope: Scope<'scope>) -> Self {
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
