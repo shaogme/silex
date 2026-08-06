@@ -1,15 +1,17 @@
+use silex::dom::view::ScopedViewOwner;
 use silex::prelude::*;
 use silex::reexports::*;
 
 #[component]
-fn Card(
+fn Card<'scope>(
+    scope: Scope<'scope>,
     #[prop(into)] title: String,
     #[chain(default = 1)] elevation: u8,
-    #[chain(default)] child: AnyView,
+    #[chain(default)] child: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
-    on_hover: Callback,
-) -> impl View {
+    on_hover: Callback<'scope>,
+) -> impl View<'scope> {
     let style = format!(
         "border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px {}px rgba(0,0,0,0.1); transition: transform 0.2s;",
         elevation * 4
@@ -30,9 +32,12 @@ fn Card(
 }
 
 #[component]
-fn CounterDisplay(count: ReadSignal<i32>) -> SilexResult<impl View> {
+fn CounterDisplay<'scope>(
+    scope: Scope<'scope>,
+    count: ReadSignal<'scope, i32>,
+) -> SilexResult<impl View<'scope>> {
     // Demo: Style Map (Vec) and Dynamic Class (Signal)
-    let is_even = Memo::new(move |_| count.get() % 2 == 0);
+    let is_even = scope.memo(move |_| count.get() % 2 == 0);
 
     // Demo: CSS-in-Rust (Scoped CSS)
     let container_class = css! {
@@ -59,19 +64,22 @@ fn CounterDisplay(count: ReadSignal<i32>) -> SilexResult<impl View> {
             .style(("color", "#6200ea")),
         div(" (Even Number - Dynamic Class Active)")
             .style(("margin-top", "5px"))
-            .style(rx! {
+            .style(rx!(scope;
                 format!(
                     "opacity: {}; transition: opacity 0.3s",
-                    if is_even.get() { 1.0 } else { 0.0 }
+                    if *$is_even { 1.0 } else { 0.0 }
                 )
-            }),
+            )),
     )
     .class(container_class)
-    .class(("even-number", rx!(is_even.get())))) // Adds class "even-number" when count is even
+    .class(("even-number", rx!(scope; *$is_even)))) // Adds class "even-number" when count is even
 }
 
 #[component]
-fn CounterControls(count: ReadSignal<i32>, set_count: WriteSignal<i32>) -> SilexResult<impl View> {
+fn CounterControls<'scope>(
+    count: ReadSignal<'scope, i32>,
+    set_count: WriteSignal<'scope, i32>,
+) -> SilexResult<impl View<'scope>> {
     // Demo: Style Array
     let btn_style = [
         ("padding", "8px 16px"),
@@ -100,7 +108,7 @@ fn CounterControls(count: ReadSignal<i32>, set_count: WriteSignal<i32>) -> Silex
 // --- Views ---
 
 #[component]
-fn NavBar() -> impl View {
+fn NavBar<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
     div!(
         Link(AppRoute::Home)
             .children("Home")
@@ -113,13 +121,15 @@ fn NavBar() -> impl View {
 }
 
 #[component]
-fn HomeView() -> impl View {
+fn HomeView<'scope>(ctx: RouterContext<'scope>) -> impl View<'scope> {
+    let scope = ctx.scope();
+
     // 页面级状态
-    let (name, set_name) = Signal::pair("Rustacean".to_string());
+    let (name, set_name) = scope.signal("Rustacean".to_string());
 
     // 显式本地信号传递演示
-    let (count, set_count) = Signal::pair(0);
-    let is_high = Memo::new(move |_| count.get() > 5);
+    let (count, set_count) = scope.signal(0);
+    let is_high = scope.memo(move |_| count.get() > 5);
 
     div!(
         // Header
@@ -129,16 +139,18 @@ fn HomeView() -> impl View {
         ).style("text-align: center; margin-bottom: 30px;"),
 
         // Card 1: Explicit Parameter Counter
-        Card("Explicit Counter")
-            .elevation(3)
-            .on_hover(|_| { web_sys::console::log_1(&"Card Hovered!".into()); })
-            .child(view_chain!(
-                CounterControls(count, set_count),
-                CounterDisplay(count),
-            )),
+         Card(scope, "Explicit Counter")
+             .elevation(3)
+             .on_hover(scope.callback(|_| {
+                 web_sys::console::log_1(&"Card Hovered!".into());
+             }))
+             .child(view_chain!(
+                 CounterControls(count, set_count),
+                 CounterDisplay(scope, count),
+             )),
 
         // Card 2: Input & Local State
-        Card("Local State (Resets on Nav)")
+         Card(scope, "Local State (Resets on Nav)")
             .child(div!(div!(
                 div!(
                     span("Hello, "),
@@ -154,27 +166,27 @@ fn HomeView() -> impl View {
             ))),
 
         // Card 3: Control Flow
-        Card("Control Flow")
-            .child(
-                is_high
-                    .when(div("⚠️ Warning: Count is getting high!")
-                        .style("background: #ffebee; color: #c62828; padding: 10px; border-radius: 4px;"))
-                    .fallback(div("✓ System works normally.")
+         Card(scope, "Control Flow")
+             .child(
+                 is_high.when(scope, div("⚠️ Warning: Count is getting high!")
+                         .style("background: #ffebee; color: #c62828; padding: 10px; border-radius: 4px;"))
+                     .fallback(div("✓ System works normally.")
                         .style("background: #e8f5e9; color: #2e7d32; padding: 10px; border-radius: 4px;"))
             ),
         // Card 4: Suspense
-        Card("Suspense (Async Loading)")
-            .child(
-                Suspense(move |cx| {
-                    let async_data_local = Resource::new(
-                        rx!(()),
-                        |_| async {
+         Card(scope, "Suspense (Async Loading)")
+             .child(
+                 Suspense(scope, move |cx| {
+                     let async_data_local = Resource::new(
+                         scope,
+                         scope.constant(()),
+                         |_| async {
                             gloo_timers::future::TimeoutFuture::new(2_000).await;
                             Ok::<_, SilexError>("Loaded Data from Server!".to_string())
                         },
-                        cx,
-                    );
-                    div(rx!(async_data_local.get().unwrap_or("Waiting...".to_string())))
+                         Some(cx),
+                     );
+                     div(rx!(scope; $async_data_local.clone().unwrap_or("Waiting...".to_string())))
                         .style("color: #2e7d32; font-weight: bold; background: #e8f5e9; padding: 10px; border-radius: 4px;")
                 })
                 .fallback(div("Loading data (approx 2s)...").style("color: orange; font-style: italic;"))
@@ -183,22 +195,24 @@ fn HomeView() -> impl View {
 }
 
 #[component]
-fn AboutView() -> impl View {
+fn AboutView<'scope>() -> AnyView<'scope> {
     div!(
         h1("About"),
         p("This is the About Page to demonstrate Silex Router."),
         p("Try going back to Home, and notice the Counter is preserved while being passed explicitly to components."),
-    ).style("padding: 20px; text-align: center;")
+    ).style("padding: 20px; text-align: center;").into_any()
 }
 
 #[component]
-fn NotFound() -> impl View {
-    div(h1("404 - Page Not Found")).style("color: red; padding: 20px;")
+fn NotFound<'scope>() -> AnyView<'scope> {
+    div(h1("404 - Page Not Found"))
+        .style("color: red; padding: 20px;")
+        .into_any()
 }
 
 #[derive(Route, Clone, PartialEq)]
 enum AppRoute {
-    #[route("/", view = HomeView)]
+    #[route("/", view = HomeView, pass_ctx = true)]
     Home,
     #[route("/about", view = AboutView)]
     About,
@@ -214,15 +228,18 @@ fn main() {
     let document = window.document().expect("No Document");
     let app_container = document.get_element_by_id("app").expect("No App Element");
 
-    create_scope(move || {
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    root.with_scope(|scope| {
         // 构建应用壳 (App Shell)
         let app = div!(
-            NavBar(),
-            Router().match_route::<AppRoute>()
+            NavBar(scope),
+            Router(scope).match_route::<AppRoute>()
         )
         .class("app-container")
         .style("font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;");
 
-        app.mount(&app_container, Vec::new());
+        let owner = ScopedViewOwner::new(scope);
+        app.mount(&owner, app_container.as_ref(), Vec::new());
     });
 }

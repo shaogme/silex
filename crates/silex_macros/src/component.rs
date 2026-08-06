@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
-use syn::{FnArg, ItemFn, Pat};
+use syn::{FnArg, GenericParam, ItemFn, Pat};
 
 pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
     let __silex = crate::crate_path::silex();
@@ -46,6 +46,26 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
         prop_arg_names.push(param_name);
     }
 
+    if let Some(scope) = input_fn
+        .sig
+        .generics
+        .params
+        .iter()
+        .find_map(|param| match param {
+            GenericParam::Lifetime(def) if def.lifetime.ident == "scope" => {
+                Some(def.lifetime.clone())
+            }
+            _ => None,
+        })
+    {
+        field_defs.push(quote! {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            #[chain(default)]
+            pub __silex_scope_marker: ::core::marker::PhantomData<&#scope ()>
+        });
+    }
+
     let mut hidden_fn = input_fn.clone();
     hidden_fn.sig.ident = hidden_name;
     hidden_fn.vis = syn::Visibility::Inherited;
@@ -59,7 +79,7 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
 
     let mut hidden_stmts: Vec<syn::Stmt> = Vec::new();
     let destructure: syn::Stmt = syn::parse2(quote! {
-        let #props_name { #(#prop_arg_names),* } = props;
+        let #props_name { #(#prop_arg_names,)* .. } = props;
     })?;
     hidden_stmts.push(destructure);
     hidden_stmts.extend(hidden_fn.block.stmts);

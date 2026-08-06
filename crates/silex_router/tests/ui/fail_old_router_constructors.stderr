@@ -9,9 +9,21 @@ error[E0599]: no associated function or constant named `new` found for struct `M
   |
 5 |     let _ = Memo::new(|_| 1_i32);
   |                   ^^^ associated function or constant not found in `Memo<'_, _>`
+  |
+help: there is a method `ne` with a similar name
+  |
+5 -     let _ = Memo::new(|_| 1_i32);
+5 +     let _ = Memo::ne(|_| 1_i32);
+  |
 
 error[E0599]: no associated function or constant named `new` found for struct `StoredValue<'scope, T>` in the current scope
  --> tests/ui/fail_old_router_constructors.rs:6:26
   |
 6 |     let _ = StoredValue::new(1_i32);
   |                          ^^^ associated function or constant not found in `StoredValue<'_, _>`
+  |
+help: there is a method `ne` with a similar name
+  |
+6 -     let _ = StoredValue::new(1_i32);
+6 +     let _ = StoredValue::ne(1_i32);
+  |

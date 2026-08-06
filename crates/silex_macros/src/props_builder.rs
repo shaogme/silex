@@ -352,10 +352,12 @@ impl BuilderContext {
             .fields
             .iter()
             .filter(|field| {
-                self.scope_field
-                    .as_ref()
-                    .map(|scope_field| scope_field != &field.ident)
-                    .unwrap_or(true)
+                !is_scope_marker_field(field)
+                    && self
+                        .scope_field
+                        .as_ref()
+                        .map(|scope_field| scope_field != &field.ident)
+                        .unwrap_or(true)
             })
             .map(|f| self.generate_setter(f));
 
@@ -783,6 +785,10 @@ fn is_reactive_default_field(field: &FieldSpec) -> bool {
     field.attrs.chained
         && (field.attrs.default || field.attrs.default_value.is_some())
         && is_reactive_wrapper_type(&field.ty)
+}
+
+fn is_scope_marker_field(field: &FieldSpec) -> bool {
+    field.ident == "__silex_scope_marker"
 }
 
 fn is_scope_type(ty: &Type, scope: &syn::Lifetime) -> bool {
