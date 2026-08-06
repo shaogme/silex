@@ -1,4 +1,4 @@
-use silex_core::{Scope, reactivity::ReactiveSource};
+use silex_core::{ErrorReporter, Scope, SilexError, reactivity::ReactiveSource};
 use silex_dom::prelude::*;
 use silex_macros::component;
 use std::collections::HashMap;
@@ -58,7 +58,7 @@ where
                 entry.insert(view.into_any());
             }
             Entry::Occupied(_) => {
-                silex_core::error::handle_error(silex_core::SilexError::Javascript(
+                ErrorReporter::unhandled().report(SilexError::Javascript(
                     "Duplicate case detected in Switch; each case value must be unique."
                         .to_string(),
                 ));

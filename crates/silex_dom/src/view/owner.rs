@@ -1,6 +1,6 @@
 use crate::attribute::PendingAttribute;
 use crate::view::{OwnedViewOwner, ViewOwner, ViewOwnerToken};
-use silex_core::{OwnedScope, RuntimeInputs, SilexError};
+use silex_core::{ErrorReporter, OwnedScope, RuntimeInputs, SilexError};
 use std::{
     cell::{Cell, RefCell},
     marker::PhantomData,
@@ -268,6 +268,7 @@ pub(crate) struct RowController<'scope, T> {
     render: RowRender<'scope, T>,
     render_inputs: RuntimeInputs,
     attrs: Vec<PendingAttribute<'scope>>,
+    reporter: ErrorReporter<'scope>,
     updater: RowUpdater<'scope, T>,
     stateful: bool,
     active: Cell<bool>,
@@ -289,6 +290,7 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
     ) -> Option<Self> {
         let mut range_guard = RangeGuard::new(range.clone());
         let updater = RowUpdater::new();
+        let reporter = owner.token().error_reporter();
         let mut controller = Self {
             range,
             row_scope: Rc::new(owner.owned_scope()),
@@ -297,6 +299,7 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
             render,
             render_inputs,
             attrs,
+            reporter,
             updater,
             stateful,
             active: Cell::new(true),
@@ -329,7 +332,7 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
         let previous_scope = self.render_scope.take();
         let previous_nodes = self.render_nodes.borrow().clone();
         let render_scope = Rc::new(self.row_scope.child());
-        let render_owner = OwnedViewOwner::new(render_scope.clone());
+        let render_owner = OwnedViewOwner::new(render_scope.clone(), self.reporter.clone());
         let range = self.range.clone();
         let render = self.render.clone();
         let attrs = self.attrs.clone();
@@ -375,12 +378,12 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
                     Ok(Ok(())) => {}
                     Ok(Err(error)) => {
                         render_failed_for_effect.set(true);
-                        silex_core::error::handle_error(error);
+                        render_owner.report_error(error);
                     }
                     Err(panic) => {
                         render_failed_for_effect.set(true);
                         let message = panic_message(&panic, "Row render");
-                        silex_core::error::handle_error(SilexError::Javascript(message));
+                        render_owner.report_error(SilexError::Javascript(message));
                     }
                 }
             });
@@ -388,7 +391,7 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
         if let Err(panic) = result {
             render_failed.set(true);
             let message = panic_message(&panic, "Row effect");
-            silex_core::error::handle_error(SilexError::Javascript(message));
+            self.reporter.report(SilexError::Javascript(message));
         }
 
         if render_failed.get() {
@@ -401,7 +404,7 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
             && let Err(panic) = catch_unwind(AssertUnwindSafe(|| scope.dispose()))
         {
             let message = panic_message(&panic, "Previous row render cleanup");
-            silex_core::error::handle_error(SilexError::Javascript(message));
+            self.reporter.report(SilexError::Javascript(message));
         }
         self.render_scope = Some(render_scope);
         self.render_nodes = rendered_nodes;

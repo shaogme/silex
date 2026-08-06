@@ -155,14 +155,14 @@ fn mount_indexed_list<'scope, IF, IS, T>(
 {
     let inputs = runtime_inputs_of(source.clone());
     if let Err(error) = owner.validate_inputs(&inputs) {
-        silex_core::error::handle_error(error);
+        owner.report_error(error);
         return;
     }
     let token = owner.token();
     let range = match DomRange::append(parent, "for") {
         Ok(range) => range,
         Err(error) => {
-            silex_core::error::handle_error(error);
+            owner.report_error(error);
             return;
         }
     };
@@ -256,7 +256,7 @@ fn mount_indexed_list<'scope, IF, IS, T>(
                         Ok(false) => {
                             let _ = dispose_rows(&mut pending);
                             *effect_rows.borrow_mut() = rows;
-                            silex_core::error::handle_error(SilexError::Javascript(
+                            token.report_error(SilexError::Javascript(
                                 "indexed row update was rejected".to_string(),
                             ));
                         }
@@ -268,7 +268,7 @@ fn mount_indexed_list<'scope, IF, IS, T>(
                                 pending_panic = current_panic;
                             }
                             *effect_rows.borrow_mut() = Vec::new();
-                            silex_core::error::handle_error(panic_error("Indexed list", panic));
+                            token.report_error(panic_error("Indexed list", panic));
                             drop(pending_panic);
                         }
                     }
@@ -279,7 +279,7 @@ fn mount_indexed_list<'scope, IF, IS, T>(
                     if let Some(panic) = panic {
                         resume_unwind(panic);
                     }
-                    silex_core::error::handle_error(error);
+                    token.report_error(error);
                 }
             }
         }),
@@ -307,14 +307,14 @@ fn mount_keyed_list<'scope, IF, IS, T, K>(
 {
     let inputs = runtime_inputs_of(source.clone());
     if let Err(error) = owner.validate_inputs(&inputs) {
-        silex_core::error::handle_error(error);
+        owner.report_error(error);
         return;
     }
     let token = owner.token();
     let range = match DomRange::append(parent, "for") {
         Ok(range) => range,
         Err(error) => {
-            silex_core::error::handle_error(error);
+            owner.report_error(error);
             return;
         }
     };

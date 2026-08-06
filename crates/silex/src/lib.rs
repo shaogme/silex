@@ -6,7 +6,7 @@ pub mod flow;
 pub mod ui;
 
 pub use components::*;
-pub use silex_core::error::{SilexError, SilexResult};
+pub use silex_core::error::{ErrorReporter, SilexError, SilexResult};
 pub use silex_core::{
     Callback, NodeRef, OwnedScope, ReactiveError, ReactiveResult, RootHandle, Runtime, Rx, Scope,
 };

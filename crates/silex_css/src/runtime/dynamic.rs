@@ -9,7 +9,7 @@ use crate::{
     source::IntoCssReactive,
     types,
 };
-use silex_core::{RuntimeInputs, Rx, error::handle_error};
+use silex_core::{RuntimeInputs, Rx};
 use silex_dom::{
     attribute::{ApplyTarget, ApplyToDom, AttrOp, IntoStorable, PendingAttribute},
     view::{ApplyAttributes, View, ViewOwner, ViewOwnerToken},
@@ -376,7 +376,7 @@ impl<'scope> DynamicCss<'scope> {
     fn apply_to_element(&self, el: &Element, owner: &dyn ViewOwner<'scope>) {
         let all_inputs = self.runtime_inputs();
         if let Err(error) = owner.validate_inputs(&all_inputs) {
-            handle_error(error);
+            owner.report_error(error);
             return;
         }
 
@@ -594,7 +594,7 @@ impl<'scope> StyledVariantBinding<'scope> {
     fn mount_to_element(&self, element: &Element, owner: &ViewOwnerToken<'scope>) {
         let inputs = self.runtime_inputs();
         if let Err(error) = owner.validate_inputs(&inputs) {
-            handle_error(error);
+            owner.report_error(error);
             return;
         }
 
@@ -824,7 +824,7 @@ impl<'scope> GlobalStyleView<'scope> {
             inputs.extend(&binding.runtime_inputs());
         }
         if let Err(error) = owner.validate_inputs(&inputs) {
-            handle_error(error);
+            owner.report_error(error);
             return;
         }
 
@@ -934,7 +934,7 @@ pub fn inject_managed_dynamic_style<'scope>(
         inputs.extend(&getter.runtime_inputs());
     }
     if let Err(error) = owner.validate_inputs(&inputs) {
-        handle_error(error);
+        owner.report_error(error);
         return;
     }
 

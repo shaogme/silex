@@ -50,7 +50,7 @@ fn RecoverableComponent() -> impl View {
 
     move || {
         if should_error.get() {
-            // Return an Err, which triggers handle_error -> ErrorContext
+            // Return an Err so the surrounding error boundary can render its fallback.
             Err(SilexError::Javascript(
                 "User clicked the error button!".into(),
             ))

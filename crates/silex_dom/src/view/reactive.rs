@@ -4,7 +4,6 @@ use crate::view::{
     AnyView, ApplyAttributes, RenderArgs, RenderThunk, View, ViewCons, ViewOwner,
     mount_dynamic_view_universal_from,
 };
-use silex_core::error::handle_error;
 use silex_core::reactivity::{Memo, ReadSignal, RwSignal, Signal, StoredValue};
 use silex_core::traits::RxCloneData;
 use silex_core::{Rx, RxValueKind, SilexError};
@@ -22,6 +21,8 @@ pub(crate) fn mount_reactive_text<'scope, T>(
     let parent = parent.clone();
     let node = Rc::new(RefCell::new(None::<Node>));
     let node_for_effect = node.clone();
+    let token = owner.token();
+    let token_for_effect = token.clone();
     owner.effect_from(
         rx.runtime_inputs(),
         Box::new(move || {
@@ -30,7 +31,7 @@ pub(crate) fn mount_reactive_text<'scope, T>(
             } else {
                 let node = crate::document().create_text_node("");
                 if let Err(error) = parent.append_child(&node).map_err(SilexError::from) {
-                    handle_error(error);
+                    token_for_effect.report_error(error);
                     return;
                 }
                 let node: Node = node.into();
@@ -38,7 +39,7 @@ pub(crate) fn mount_reactive_text<'scope, T>(
                 node
             };
             if let Err(error) = rx.try_with(|value| node.set_node_value(Some(&value.to_string()))) {
-                handle_error(error.into());
+                token_for_effect.report_error(error.into());
             }
         }),
     );
@@ -62,7 +63,7 @@ pub(crate) fn mount_reactive_view<'scope, V>(
 {
     let inputs = rx.runtime_inputs();
     if let Err(error) = owner.validate_inputs(&inputs) {
-        handle_error(error);
+        owner.report_error(error);
         return;
     }
     mount_dynamic_view_universal_from(
@@ -77,7 +78,7 @@ pub(crate) fn mount_reactive_view<'scope, V>(
                 owner: token,
             } = args;
             if let Err(error) = rx.try_with(|view| view.mount(&token, &parent, attrs)) {
-                handle_error(error.into());
+                token.report_error(error.into());
             }
         }),
     );

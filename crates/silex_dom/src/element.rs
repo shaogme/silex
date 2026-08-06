@@ -7,7 +7,7 @@ use std::rc::Rc;
 use wasm_bindgen::{JsCast, JsValue, convert::FromWasmAbi, prelude::*};
 use web_sys::Element as WebElem;
 
-use silex_core::{RuntimeInputs, Scope, SilexError, error::handle_error};
+use silex_core::{RuntimeInputs, Scope, SilexError};
 
 pub mod tags;
 pub use tags::*;
@@ -93,7 +93,7 @@ impl<'scope> Element<'scope> {
             inputs.extend(&attr.runtime_inputs());
         }
         if let Err(error) = token.validate_inputs(&inputs) {
-            handle_error(error);
+            owner.report_error(error);
             return;
         }
         for attr in attrs {
@@ -103,7 +103,7 @@ impl<'scope> Element<'scope> {
             .append_child(&self.dom_element)
             .map_err(SilexError::from)
         {
-            handle_error(error);
+            owner.report_error(error);
             return;
         }
         for child in &self.children {
@@ -309,7 +309,7 @@ impl<'scope, T: Tag> View<'scope> for TypedElement<'scope, T> {
             inputs.extend(&attr.runtime_inputs());
         }
         if let Err(error) = token.validate_inputs(&inputs) {
-            handle_error(error);
+            owner.report_error(error);
             return;
         }
         for attr in all_attrs {
@@ -319,7 +319,7 @@ impl<'scope, T: Tag> View<'scope> for TypedElement<'scope, T> {
             .append_child(self.as_node())
             .map_err(SilexError::from)
         {
-            handle_error(error);
+            owner.report_error(error);
             return;
         }
         for child in &self.children {
@@ -405,7 +405,7 @@ pub fn bind_event_impl<'scope, E>(
     {
         destination.cancel();
         let _ = closure.borrow_mut().take();
-        handle_error(error);
+        owner.report_error(error);
         return;
     }
 

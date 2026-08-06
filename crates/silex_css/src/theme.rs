@@ -2,7 +2,7 @@ use crate::{
     runtime::{DynamicStyleManager, dynamic::unique_dynamic_style_id, platform::report},
     source::{CssSource, IntoCssSource},
 };
-use silex_core::{RuntimeInputs, error::handle_error};
+use silex_core::RuntimeInputs;
 use silex_dom::{
     attribute::{ApplyTarget, ApplyToDom, AttrOp, IntoStorable},
     view::{ViewOwner, ViewOwnerToken},
@@ -144,7 +144,7 @@ where
         let theme = self.0.clone();
         let inputs = source_inputs(&theme);
         if let Err(error) = owner.validate_inputs(&inputs) {
-            handle_error(error);
+            owner.report_error(error);
             return;
         }
         let el = el.clone();
@@ -207,7 +207,7 @@ where
     let source = theme.into_css_source();
     let inputs = source_inputs(&source);
     if let Err(error) = owner.validate_inputs(&inputs) {
-        handle_error(error);
+        owner.report_error(error);
         return;
     }
     let manager = Rc::new(DynamicStyleManager::new());
@@ -282,7 +282,7 @@ where
         let patch = self.0.clone();
         let inputs = source_inputs(&patch);
         if let Err(error) = owner.validate_inputs(&inputs) {
-            handle_error(error);
+            owner.report_error(error);
             return;
         }
         let el = el.clone();

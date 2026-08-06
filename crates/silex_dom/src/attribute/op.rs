@@ -1,5 +1,5 @@
+use silex_core::RuntimeInputs;
 use silex_core::prelude::*;
-use silex_core::{RuntimeInputs, error::handle_error};
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -429,7 +429,7 @@ impl<'scope> AttrOp<'scope> {
     pub fn apply(self, el: &Element, owner: &ViewOwnerToken<'scope>) {
         let inputs = self.runtime_inputs();
         if let Err(error) = owner.validate_inputs(&inputs) {
-            handle_error(error);
+            owner.report_error(error);
             return;
         }
         self.apply_unchecked(el, owner);

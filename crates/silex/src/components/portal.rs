@@ -31,14 +31,14 @@ impl<'scope> PortalView<'scope> {
         let container = match document.create_element("div") {
             Ok(container) => container,
             Err(error) => {
-                silex_core::error::handle_error(error.into());
+                owner.report_error(error.into());
                 return;
             }
         };
         let _ = container.set_attribute("style", "display: contents");
         let container: Node = container.into();
         if let Err(error) = target.append_child(&container).map_err(Into::into) {
-            silex_core::error::handle_error(error);
+            owner.report_error(error);
             return;
         }
 

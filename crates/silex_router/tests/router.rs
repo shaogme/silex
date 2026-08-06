@@ -1,6 +1,6 @@
 #![cfg(target_arch = "wasm32")]
 
-use silex_core::{ErrorContext, ReadSignal, Runtime};
+use silex_core::{ErrorReporter, ReadSignal, Runtime};
 use silex_dom::view::{
     AnyView, ApplyAttributes, ScopedViewOwner, View, ViewOwner, mount_text_node,
 };
@@ -457,18 +457,17 @@ fn router_stops_before_children_when_listener_registration_fails() {
     let root = runtime.run();
 
     root.with_scope(|scope| {
-        let errors_for_handler = errors.clone();
-        ErrorContext::new(move |_| {
-            errors_for_handler.set(errors_for_handler.get() + 1);
-        })
-        .push(scope);
+        let errors_for_reporter = errors.clone();
+        let reporter = ErrorReporter::new(move |_| {
+            errors_for_reporter.set(errors_for_reporter.get() + 1);
+        });
 
         let children_calls_for_view = children_calls.clone();
         let view = Router(scope).base("/app").children(Rc::new(move |_ctx| {
             children_calls_for_view.set(children_calls_for_view.get() + 1);
             AnyView::from("must not mount")
         }));
-        let owner = ScopedViewOwner::new(scope);
+        let owner = ScopedViewOwner::with_error_reporter(scope, reporter);
         view.mount_owned(&owner, &host, Vec::new());
     });
 

@@ -1,0 +1,17 @@
+error[E0373]: closure may outlive the current function, but it borrows `value`, which is owned by the current function
+  --> tests/ui/fail_reporter_scope_escape.rs:7:39
+   |
+ 7 |     let reporter = ErrorReporter::new(|_| {
+   |                                       ^^^ may outlive borrowed value `value`
+ 8 |         let _ = &value;
+   |                  ----- `value` is borrowed here
+   |
+note: function requires argument type to outlive `'static`
+  --> tests/ui/fail_reporter_scope_escape.rs:10:5
+   |
+10 |     require_static(reporter);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^
+help: to force the closure to take ownership of `value` (and any other referenced variables), use the `move` keyword
+   |
+ 7 |     let reporter = ErrorReporter::new(move |_| {
+   |                                       ++++

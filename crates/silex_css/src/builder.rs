@@ -9,7 +9,7 @@ use crate::{
         },
     },
 };
-use silex_core::{Rx, RxValueKind, error::handle_error};
+use silex_core::{Rx, RxValueKind};
 use silex_dom::attribute::{ApplyTarget, ApplyToDom, IntoStorable, ReactiveApply};
 use silex_dom::view::ViewOwnerToken;
 use silex_hash::{
@@ -348,7 +348,7 @@ impl<'scope> Style<'scope> {
             inputs.extend(&source.runtime_inputs());
         }
         if let Err(error) = owner.validate_inputs(&inputs) {
-            handle_error(error);
+            owner.report_error(error);
             return class_base;
         }
 
@@ -528,7 +528,7 @@ impl<'scope> ReactiveApply<'scope> for Style<'scope> {
             Box::new(move || {
                 let style = rx.get();
                 if let Err(error) = owner_for_effect.validate_inputs(&style.runtime_inputs()) {
-                    handle_error(error);
+                    owner_for_effect.report_error(error);
                     return;
                 }
                 if let Some(class_name) = previous_class_for_effect.borrow_mut().take() {

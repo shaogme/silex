@@ -3,7 +3,7 @@
 use crate::{
     Callback, NodeRef, ReactiveError, ReactiveResult, Rx, RxInner, RxValueKind, Scope, SilexError,
     SilexResult,
-    error::handle_error,
+    log::console_error,
     reactivity::{Memo, ReactiveSource, ReadSignal, RwSignal, Signal, StoredValue, WriteSignal},
 };
 use silex_reactivity::try_notify as raw_try_notify;
@@ -610,7 +610,9 @@ where
 
 impl Default for ForErrorHandler {
     fn default() -> Self {
-        Self(Rc::new(handle_error))
+        Self(Rc::new(|error| {
+            console_error(format!("Unhandled Silex list error: {error}"));
+        }))
     }
 }
 

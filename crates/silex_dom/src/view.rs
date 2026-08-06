@@ -11,8 +11,7 @@ pub use reactive::*;
 
 use crate::attribute::PendingAttribute;
 use silex_core::{
-    CompletionOnce, CompletionSender, OwnedScope, RuntimeInputs, Scope,
-    error::handle_error,
+    CompletionOnce, CompletionSender, ErrorReporter, OwnedScope, RuntimeInputs, Scope,
     reactivity::ReactiveSource,
     traits::{RxData, RxValue},
 };
@@ -329,6 +328,7 @@ pub struct ViewOwnerToken<'scope> {
     owned_scope: OwnedScopeRegistrar<'scope>,
     completion: CompletionRegistrar<'scope>,
     active: ActiveRegistrar<'scope>,
+    reporter: ErrorReporter<'scope>,
 }
 
 impl<'scope> ViewOwnerToken<'scope> {
@@ -339,6 +339,7 @@ impl<'scope> ViewOwnerToken<'scope> {
         owned_scope: OwnedScopeRegistrar<'scope>,
         completion: CompletionRegistrar<'scope>,
         active: ActiveRegistrar<'scope>,
+        reporter: ErrorReporter<'scope>,
     ) -> Self {
         Self {
             effect,
@@ -347,6 +348,7 @@ impl<'scope> ViewOwnerToken<'scope> {
             owned_scope,
             completion,
             active,
+            reporter,
         }
     }
 
@@ -360,6 +362,26 @@ impl<'scope> ViewOwnerToken<'scope> {
 
     pub fn on_cleanup(&self, cleanup: Box<dyn FnOnce() + 'scope>) {
         self.cleanup.call(cleanup);
+    }
+
+    pub fn report_error(&self, error: SilexError) {
+        self.reporter.report(error);
+    }
+
+    pub fn with_error_reporter(&self, reporter: ErrorReporter<'scope>) -> Self {
+        Self {
+            effect: self.effect.clone(),
+            validate: self.validate.clone(),
+            cleanup: self.cleanup.clone(),
+            owned_scope: self.owned_scope.clone(),
+            completion: self.completion.clone(),
+            active: self.active.clone(),
+            reporter,
+        }
+    }
+
+    pub(crate) fn error_reporter(&self) -> ErrorReporter<'scope> {
+        self.reporter.clone()
     }
 
     pub(crate) fn host_callback<F>(&self, callback: F) -> HostCallback
@@ -423,6 +445,10 @@ pub trait ViewOwner<'scope> {
     fn on_cleanup(&self, cleanup: Box<dyn FnOnce() + 'scope>);
     fn token(&self) -> ViewOwnerToken<'scope>;
     fn owned_scope(&self) -> OwnedScope<'scope>;
+
+    fn report_error(&self, error: SilexError) {
+        self.token().report_error(error);
+    }
 }
 
 impl<'scope> ViewOwner<'scope> for ViewOwnerToken<'scope> {
@@ -445,24 +471,33 @@ impl<'scope> ViewOwner<'scope> for ViewOwnerToken<'scope> {
     fn owned_scope(&self) -> OwnedScope<'scope> {
         self.owned_scope.call()
     }
+
+    fn report_error(&self, error: SilexError) {
+        ViewOwnerToken::report_error(self, error);
+    }
 }
 
 /// Adapter for a lexical child scope.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct ScopedViewOwner<'scope> {
     scope: Scope<'scope>,
+    reporter: ErrorReporter<'scope>,
 }
 
 impl<'scope> ScopedViewOwner<'scope> {
     pub fn new(scope: Scope<'scope>) -> Self {
-        Self { scope }
+        Self::with_error_reporter(scope, ErrorReporter::unhandled())
+    }
+
+    pub fn with_error_reporter(scope: Scope<'scope>, reporter: ErrorReporter<'scope>) -> Self {
+        Self { scope, reporter }
     }
 }
 
 impl<'scope> ViewOwner<'scope> for ScopedViewOwner<'scope> {
     fn effect_from(&self, inputs: RuntimeInputs, callback: Box<dyn FnMut() + 'scope>) {
         if let Err(error) = self.scope.try_effect_from(inputs, callback) {
-            handle_error(error);
+            self.report_error(error);
         }
     }
 
@@ -482,10 +517,12 @@ impl<'scope> ViewOwner<'scope> for ScopedViewOwner<'scope> {
         let scope_for_once = self.scope;
         let scope_for_active = self.scope;
         let scope_for_validate = self.scope;
+        let reporter = self.reporter.clone();
+        let reporter_for_effect = reporter.clone();
         ViewOwnerToken::new(
             EffectRegistrar::new(move |inputs, callback| {
                 if let Err(error) = scope_for_effect.try_effect_from(inputs, callback) {
-                    handle_error(error);
+                    reporter_for_effect.report(error);
                 }
             }),
             ValidationRegistrar::new(move |inputs| scope_for_validate.try_validate_inputs(inputs)),
@@ -496,6 +533,7 @@ impl<'scope> ViewOwner<'scope> for ScopedViewOwner<'scope> {
                 move |callback| scope_for_once.completion_once(callback),
             ),
             ActiveRegistrar::new(move || scope_for_active.is_active()),
+            reporter,
         )
     }
 
@@ -506,18 +544,19 @@ impl<'scope> ViewOwner<'scope> for ScopedViewOwner<'scope> {
 
 pub(crate) struct OwnedViewOwner<'scope> {
     scope: Rc<OwnedScope<'scope>>,
+    reporter: ErrorReporter<'scope>,
 }
 
 impl<'scope> OwnedViewOwner<'scope> {
-    pub(crate) fn new(scope: Rc<OwnedScope<'scope>>) -> Self {
-        Self { scope }
+    pub(crate) fn new(scope: Rc<OwnedScope<'scope>>, reporter: ErrorReporter<'scope>) -> Self {
+        Self { scope, reporter }
     }
 }
 
 impl<'scope> ViewOwner<'scope> for OwnedViewOwner<'scope> {
     fn effect_from(&self, inputs: RuntimeInputs, callback: Box<dyn FnMut() + 'scope>) {
         if let Err(error) = self.scope.try_effect_from(inputs, callback) {
-            handle_error(error);
+            self.report_error(error);
         }
     }
 
@@ -537,10 +576,12 @@ impl<'scope> ViewOwner<'scope> for OwnedViewOwner<'scope> {
         let scope_for_once = self.scope.clone();
         let scope_for_active = self.scope.clone();
         let scope_for_validate = self.scope.clone();
+        let reporter = self.reporter.clone();
+        let reporter_for_effect = reporter.clone();
         ViewOwnerToken::new(
             EffectRegistrar::new(move |inputs, callback| {
                 if let Err(error) = scope_for_effect.try_effect_from(inputs, callback) {
-                    handle_error(error);
+                    reporter_for_effect.report(error);
                 }
             }),
             ValidationRegistrar::new(move |inputs| scope_for_validate.try_validate_inputs(inputs)),
@@ -551,6 +592,7 @@ impl<'scope> ViewOwner<'scope> for OwnedViewOwner<'scope> {
                 move |callback| scope_for_once.completion_once(callback),
             ),
             ActiveRegistrar::new(move || scope_for_active.is_active()),
+            reporter,
         )
     }
 
@@ -750,11 +792,11 @@ pub trait View<'scope> {
         Self: Sized;
 }
 
-pub fn mount_text_node(parent: &Node, text: &str) {
+pub fn mount_text_node<'scope>(owner: &dyn ViewOwner<'scope>, parent: &Node, text: &str) {
     let document = crate::document();
     let node = document.create_text_node(text);
     if let Err(error) = parent.append_child(&node).map_err(SilexError::from) {
-        handle_error(error);
+        owner.report_error(error);
     }
 }
 
@@ -765,22 +807,22 @@ macro_rules! impl_text_view {
         impl<'scope> View<'scope> for $ty {
             fn mount(
                 &self,
-                _owner: &dyn ViewOwner<'scope>,
+                owner: &dyn ViewOwner<'scope>,
                 parent: &Node,
                 _attrs: Vec<PendingAttribute<'scope>>,
             ) {
-                mount_text_node(parent, self);
+                mount_text_node(owner, parent, self);
             }
 
             fn mount_owned(
                 self,
-                _owner: &dyn ViewOwner<'scope>,
+                owner: &dyn ViewOwner<'scope>,
                 parent: &Node,
                 _attrs: Vec<PendingAttribute<'scope>>,
             ) where
                 Self: Sized,
             {
-                mount_text_node(parent, &self);
+                mount_text_node(owner, parent, &self);
             }
         }
     };
@@ -793,22 +835,22 @@ impl<'scope> ApplyAttributes<'scope> for &'scope str {}
 impl<'scope> View<'scope> for &'scope str {
     fn mount(
         &self,
-        _owner: &dyn ViewOwner<'scope>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
     ) {
-        mount_text_node(parent, self);
+        mount_text_node(owner, parent, self);
     }
 
     fn mount_owned(
         self,
-        _owner: &dyn ViewOwner<'scope>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
     ) where
         Self: Sized,
     {
-        mount_text_node(parent, self);
+        mount_text_node(owner, parent, self);
     }
 }
 
@@ -817,22 +859,22 @@ impl<'scope> ApplyAttributes<'scope> for Cow<'scope, str> {}
 impl<'scope> View<'scope> for Cow<'scope, str> {
     fn mount(
         &self,
-        _owner: &dyn ViewOwner<'scope>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
     ) {
-        mount_text_node(parent, self.as_ref());
+        mount_text_node(owner, parent, self.as_ref());
     }
 
     fn mount_owned(
         self,
-        _owner: &dyn ViewOwner<'scope>,
+        owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
     ) where
         Self: Sized,
     {
-        mount_text_node(parent, self.as_ref());
+        mount_text_node(owner, parent, self.as_ref());
     }
 }
 
@@ -844,22 +886,22 @@ macro_rules! impl_primitive_view {
             impl<'scope> View<'scope> for $ty {
                 fn mount(
                     &self,
-                    _owner: &dyn ViewOwner<'scope>,
+                    owner: &dyn ViewOwner<'scope>,
                     parent: &Node,
                     _attrs: Vec<PendingAttribute<'scope>>,
                 ) {
-                    mount_text_node(parent, &self.to_string());
+                    mount_text_node(owner, parent, &self.to_string());
                 }
 
                 fn mount_owned(
                     self,
-                    _owner: &dyn ViewOwner<'scope>,
+                    owner: &dyn ViewOwner<'scope>,
                     parent: &Node,
                     _attrs: Vec<PendingAttribute<'scope>>,
                 ) where
                     Self: Sized,
                 {
-                    mount_text_node(parent, &self.to_string());
+                    mount_text_node(owner, parent, &self.to_string());
                 }
             }
         )*
@@ -956,13 +998,13 @@ pub(crate) fn mount_dynamic_view_universal_from<'scope>(
     renderer: RenderThunk<'scope>,
 ) {
     if let Err(error) = owner.validate_inputs(&inputs) {
-        handle_error(error);
+        owner.report_error(error);
         return;
     }
     let range = match DomRange::append(parent, "dyn") {
         Ok(range) => range,
         Err(error) => {
-            handle_error(error);
+            owner.report_error(error);
             return;
         }
     };
@@ -1059,13 +1101,13 @@ fn mount_keyed_dynamic_view<'scope, K, KeyFn>(
     KeyFn: Fn() -> K + Clone + 'scope,
 {
     if let Err(error) = owner.validate_inputs(&inputs) {
-        handle_error(error);
+        owner.report_error(error);
         return;
     }
     let range = match DomRange::append(parent, "branch") {
         Ok(range) => range,
         Err(error) => {
-            handle_error(error);
+            owner.report_error(error);
             return;
         }
     };
@@ -1110,7 +1152,7 @@ fn mount_keyed_dynamic_view<'scope, K, KeyFn>(
                         .as_mut()
                         .is_some_and(|row| row.update(key, 0));
                     if !updated {
-                        handle_error(SilexError::Javascript(
+                        token.report_error(SilexError::Javascript(
                             "dynamic row update was rejected".to_string(),
                         ));
                     }
@@ -1168,7 +1210,7 @@ fn mount_keyed_dynamic_view<'scope, K, KeyFn>(
                 } else {
                     "Panic in Dynamic Branch: unknown panic".to_string()
                 };
-                handle_error(SilexError::Javascript(message));
+                token.report_error(SilexError::Javascript(message));
             }
         }),
     );
@@ -1408,7 +1450,7 @@ impl<'scope, V: View<'scope>> View<'scope> for SilexResult<V> {
     ) {
         match self {
             Ok(value) => value.mount(owner, parent, attrs),
-            Err(error) => handle_error(error.clone()),
+            Err(error) => owner.report_error(error.clone()),
         }
     }
 
@@ -1422,7 +1464,7 @@ impl<'scope, V: View<'scope>> View<'scope> for SilexResult<V> {
     {
         match self {
             Ok(value) => value.mount_owned(owner, parent, attrs),
-            Err(error) => handle_error(error),
+            Err(error) => owner.report_error(error),
         }
     }
 }
@@ -1430,8 +1472,11 @@ impl<'scope, V: View<'scope>> View<'scope> for SilexResult<V> {
 #[cfg(test)]
 mod tests {
     use super::{HostResourceHandle, ScopedViewOwner, ViewOwner};
-    use silex_core::Runtime;
-    use std::{cell::Cell, rc::Rc};
+    use silex_core::{ErrorReporter, Runtime, SilexError};
+    use std::{
+        cell::{Cell, RefCell},
+        rc::Rc,
+    };
     use wasm_bindgen::JsValue;
 
     #[test]
@@ -1516,5 +1561,41 @@ mod tests {
         });
 
         assert_eq!(runs.get(), 0);
+    }
+
+    #[test]
+    fn owner_reporters_are_local_and_token_scoped() {
+        let outer_errors = Rc::new(RefCell::new(Vec::<String>::new()));
+        let inner_errors = Rc::new(RefCell::new(Vec::<String>::new()));
+        let outer_errors_for_reporter = outer_errors.clone();
+        let inner_errors_for_reporter = inner_errors.clone();
+        let mut runtime = Runtime::new();
+
+        runtime.child(|scope| {
+            let owner = ScopedViewOwner::with_error_reporter(
+                scope,
+                ErrorReporter::new(move |error| {
+                    outer_errors_for_reporter
+                        .borrow_mut()
+                        .push(error.to_string());
+                }),
+            );
+            let token = owner.token();
+            token.report_error(SilexError::Framework("outer".to_string()));
+
+            let nested = token.with_error_reporter(ErrorReporter::new(move |error| {
+                inner_errors_for_reporter
+                    .borrow_mut()
+                    .push(error.to_string());
+            }));
+            nested.report_error(SilexError::Framework("inner".to_string()));
+            token.report_error(SilexError::Framework("outer-again".to_string()));
+        });
+
+        assert_eq!(
+            outer_errors.borrow().as_slice(),
+            ["Framework Error: outer", "Framework Error: outer-again"]
+        );
+        assert_eq!(inner_errors.borrow().as_slice(), ["Framework Error: inner"]);
     }
 }

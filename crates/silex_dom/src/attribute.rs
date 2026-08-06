@@ -6,7 +6,6 @@ use web_sys::{Element, Event, InputEvent, MouseEvent, PointerEvent};
 
 use silex_core::{
     ReactiveError,
-    error::handle_error,
     log::console_error,
     node_ref::NodeRef,
     reactivity::{ReactiveSource, runtime_inputs_of},
@@ -241,21 +240,22 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
         N: JsCast + Clone + 'scope,
     {
         let node_ref_for_cleanup = node_ref;
-        self.apply(PendingAttribute::new_listener(move |el: &Element| {
+        self.apply(PendingAttribute::new_scoped(move |el: &Element, owner| {
             if let Ok(typed) = el.clone().dyn_into::<N>() {
                 if let Err(error) = node_ref.try_load(typed) {
-                    handle_error(error.into());
+                    owner.report_error(error.into());
                 }
             } else {
                 console_error("NodeRef type mismatch: failed to cast element");
             }
         }))
         .apply(PendingAttribute::new_scoped(move |_el, owner| {
+            let owner_for_cleanup = owner.clone();
             owner.on_cleanup(Box::new(move || {
                 if let Err(error) = node_ref_for_cleanup.try_clear()
                     && !matches!(error, ReactiveError::NoSuchNode)
                 {
-                    handle_error(error.into());
+                    owner_for_cleanup.report_error(error.into());
                 }
             }));
         }))
@@ -303,6 +303,7 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
         F: EventHandler<'scope, String, M> + Clone + 'scope,
     {
         self.apply(PendingAttribute::new_scoped(move |el: &Element, owner| {
+            let owner_for_handler = owner.clone();
             bind_event_impl(
                 el,
                 "input".to_string(),
@@ -310,7 +311,7 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
                     let mut handler = callback.clone().into_handler();
                     move |e: InputEvent| match event_target_value_result(&e) {
                         Ok(value) => handler(value),
-                        Err(err) => handle_error(err),
+                        Err(err) => owner_for_handler.report_error(err),
                     }
                 }),
                 owner,
@@ -323,6 +324,7 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
         F: EventHandler<'scope, String, M> + Clone + 'scope,
     {
         self.apply(PendingAttribute::new_scoped(move |el: &Element, owner| {
+            let owner_for_handler = owner.clone();
             bind_event_impl(
                 el,
                 "change".to_string(),
@@ -330,7 +332,7 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
                     let mut handler = callback.clone().into_handler();
                     move |e: Event| match event_target_value_result(&e) {
                         Ok(value) => handler(value),
-                        Err(err) => handle_error(err),
+                        Err(err) => owner_for_handler.report_error(err),
                     }
                 }),
                 owner,

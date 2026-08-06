@@ -1,13 +1,11 @@
-use std::cell::RefCell;
 use std::fmt;
 use std::rc::Rc;
 
+use crate::log::console_error;
 use silex_reactivity::ReactiveError;
 use wasm_bindgen::JsValue;
 
-use crate::Scope;
-
-#[derive(Debug, Clone)] // Clone to allow easy propagation in closures if needed
+#[derive(Debug, Clone)]
 pub enum SilexError {
     Dom(String),
     Reactivity(ReactiveError),
@@ -16,7 +14,7 @@ pub enum SilexError {
 }
 
 #[derive(Clone)]
-pub struct ErrorContext(Rc<dyn Fn(SilexError)>);
+pub struct ErrorReporter<'scope>(Rc<dyn Fn(SilexError) + 'scope>);
 
 impl fmt::Display for SilexError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -46,50 +44,24 @@ impl From<JsValue> for SilexError {
 
 pub type SilexResult<T> = Result<T, SilexError>;
 
-thread_local! {
-    static ERROR_CONTEXT_STACK: RefCell<Vec<ErrorContext>> = const { RefCell::new(Vec::new()) };
-}
-
-impl ErrorContext {
-    /// Creates a new `ErrorContext` with the given error handler callback.
+impl<'scope> ErrorReporter<'scope> {
+    /// Creates an owner-bound reporter with the given error handler callback.
     pub fn new<F>(handler: F) -> Self
     where
-        F: Fn(SilexError) + 'static,
+        F: Fn(SilexError) + 'scope,
     {
         Self(Rc::new(handler))
     }
 
-    /// Triggers the error handler held by this `ErrorContext`.
-    pub fn handle(&self, err: SilexError) {
-        (self.0)(err);
+    /// Creates a reporter that logs errors without consulting global state.
+    pub fn unhandled() -> Self {
+        Self::new(|error| {
+            console_error(format!("Unhandled Silex error: {error}"));
+        })
     }
 
-    /// Pushes `self` onto the thread-local error context stack and associates
-    /// its removal with an explicit reactive scope.
-    pub fn push<'scope>(self, scope: Scope<'scope>) {
-        ERROR_CONTEXT_STACK.with(|stack| {
-            stack.borrow_mut().push(self);
-        });
-        scope.on_cleanup(move || {
-            Self::pop();
-        });
-    }
-
-    /// Pops the top `ErrorContext` from the thread-local stack.
-    pub fn pop() -> Option<ErrorContext> {
-        ERROR_CONTEXT_STACK.with(|stack| stack.borrow_mut().pop())
-    }
-
-    /// Retrieves the active `ErrorContext` from the top of the thread-local stack.
-    pub fn current() -> Option<ErrorContext> {
-        ERROR_CONTEXT_STACK.with(|stack| stack.borrow().last().cloned())
-    }
-}
-
-pub fn handle_error(err: SilexError) {
-    if let Some(ctx) = ErrorContext::current() {
-        ctx.handle(err);
-    } else {
-        crate::error!("Unhandled Silex Error: {:?}", err);
+    /// Sends an error to this reporter.
+    pub fn report(&self, error: SilexError) {
+        (self.0)(error);
     }
 }
