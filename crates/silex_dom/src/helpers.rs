@@ -11,6 +11,10 @@ use silex_core::SilexError;
 
 use crate::view::{HostCallback, HostResourceHandle, ViewOwnerToken};
 
+fn host_resource_error(error: SilexError) -> JsValue {
+    JsValue::from_str(&error.to_string())
+}
+
 // --- Window & Document Access ---
 
 // --- Window & Document Access ---
@@ -172,10 +176,17 @@ pub fn window_event_listener_untyped_owned<'scope>(
 
     let closure_for_cleanup = closure.clone();
     let event_name = event_name.to_string();
-    Ok(owner.host_resource_for_callback(&destination, move || {
-        let _ = window.remove_event_listener_with_callback(&event_name, &js_fn);
+    let event_name_for_cleanup = event_name.clone();
+    let js_fn_for_cleanup = js_fn.clone();
+    let window_for_cleanup = window.clone();
+    match owner.try_host_resource_for_callback(&destination, move || {
+        let _ = window_for_cleanup
+            .remove_event_listener_with_callback(&event_name_for_cleanup, &js_fn_for_cleanup);
         let _ = closure_for_cleanup.borrow_mut().take();
-    }))
+    }) {
+        Ok(resource) => Ok(resource),
+        Err(error) => Err(host_resource_error(error)),
+    }
 }
 
 pub fn window_event_listener_owned<'scope, E, F>(
@@ -339,10 +350,13 @@ pub fn request_animation_frame_owned<'scope>(
         }
     };
     let callback_for_cleanup = callback.clone();
-    Ok(owner.host_resource_for_callback(&destination, move || {
+    match owner.try_host_resource_for_callback(&destination, move || {
         let _ = window().cancel_animation_frame(frame);
         let _ = callback_for_cleanup.borrow_mut().take();
-    }))
+    }) {
+        Ok(resource) => Ok(resource),
+        Err(error) => Err(host_resource_error(error)),
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -393,10 +407,13 @@ pub fn request_idle_callback_owned<'scope>(
         }
     };
     let callback_for_cleanup = callback.clone();
-    Ok(owner.host_resource_for_callback(&destination, move || {
+    match owner.try_host_resource_for_callback(&destination, move || {
         window().cancel_idle_callback(idle);
         let _ = callback_for_cleanup.borrow_mut().take();
-    }))
+    }) {
+        Ok(resource) => Ok(resource),
+        Err(error) => Err(host_resource_error(error)),
+    }
 }
 
 pub fn queue_microtask(task: impl FnOnce() + 'static) {
@@ -483,10 +500,14 @@ pub fn set_timeout_owned<'scope>(
         }
     };
     let callback_for_cleanup = callback.clone();
-    Ok(owner.host_resource_for_callback(&destination, move || {
-        window().clear_timeout_with_handle(timeout);
+    let window_for_cleanup = window();
+    match owner.try_host_resource_for_callback(&destination, move || {
+        window_for_cleanup.clear_timeout_with_handle(timeout);
         let _ = callback_for_cleanup.borrow_mut().take();
-    }))
+    }) {
+        Ok(resource) => Ok(resource),
+        Err(error) => Err(host_resource_error(error)),
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -547,10 +568,14 @@ pub fn set_interval_owned<'scope>(
         }
     };
     let closure_for_cleanup = closure.clone();
-    Ok(owner.host_resource_for_callback(&destination, move || {
-        window.clear_interval_with_handle(interval);
+    let window_for_cleanup = window.clone();
+    match owner.try_host_resource_for_callback(&destination, move || {
+        window_for_cleanup.clear_interval_with_handle(interval);
         let _ = closure_for_cleanup.borrow_mut().take();
-    }))
+    }) {
+        Ok(resource) => Ok(resource),
+        Err(error) => Err(host_resource_error(error)),
+    }
 }
 
 // --- Debounce ---

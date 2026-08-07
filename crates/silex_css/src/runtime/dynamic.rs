@@ -940,33 +940,36 @@ pub fn inject_managed_dynamic_style<'scope>(
     owner.validate_inputs(&inputs)?;
 
     let manager = Rc::new(DynamicStyleManager::new());
-    let manager_for_effect = manager.clone();
     let style_id_str = style_id.into();
-    owner.effect_from(
-        inputs,
-        Box::new(move || {
-            let vals: Vec<String> = positional.iter().map(|getter| getter.get()).collect();
-            // 全局样式没有组件类名，`CssPart::Class` 不会出现在这类模板里
-            let res = render_selector(parts, "", &vals);
-            let pairs: Vec<(String, String)> = replacements
-                .iter()
-                .map(|(pattern, getter)| {
-                    (
-                        pattern.clone(),
-                        crate::escape::declaration_value(&getter.get()).into_owned(),
-                    )
-                })
-                .collect();
-            let res = replace_placeholders(&res, &pairs);
-            let res = match layer {
-                Some(layer) => layers::wrap_dynamic(layer, &res),
-                None => res,
-            };
-            manager_for_effect.update(&style_id_str, &res);
-        }),
-    )?;
     let manager_for_cleanup = manager.clone();
     owner.on_cleanup(Box::new(move || manager_for_cleanup.dispose()))?;
+
+    let manager_for_effect = manager.clone();
+    owner
+        .effect_from(
+            inputs,
+            Box::new(move || {
+                let vals: Vec<String> = positional.iter().map(|getter| getter.get()).collect();
+                // 全局样式没有组件类名，`CssPart::Class` 不会出现在这类模板里
+                let res = render_selector(parts, "", &vals);
+                let pairs: Vec<(String, String)> = replacements
+                    .iter()
+                    .map(|(pattern, getter)| {
+                        (
+                            pattern.clone(),
+                            crate::escape::declaration_value(&getter.get()).into_owned(),
+                        )
+                    })
+                    .collect();
+                let res = replace_placeholders(&res, &pairs);
+                let res = match layer {
+                    Some(layer) => layers::wrap_dynamic(layer, &res),
+                    None => res,
+                };
+                manager_for_effect.update(&style_id_str, &res);
+            }),
+        )
+        .inspect_err(|_| manager.dispose())?;
     Ok(())
 }
 

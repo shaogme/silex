@@ -5,6 +5,7 @@ use crate::view::{
 };
 use std::cell::RefCell;
 use std::marker::PhantomData;
+use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::rc::Rc;
 use wasm_bindgen::{JsCast, JsValue, convert::FromWasmAbi, prelude::*};
 use web_sys::Element as WebElem;
@@ -92,38 +93,48 @@ impl<'scope> Element<'scope> {
         let provisional_owner =
             OwnedViewOwner::new(provisional_scope.clone(), owner.token().error_reporter());
         let token = provisional_owner.token();
-        let attrs = self.all_attrs(attrs);
-        let mut inputs = RuntimeInputs::new();
-        for attr in &attrs {
-            inputs.extend(&attr.runtime_inputs());
-        }
-        token.validate_inputs(&inputs)?;
-        for attr in attrs {
-            attr.apply(&self.dom_element, &token)?;
-        }
-        parent
-            .append_child(&self.dom_element)
-            .map_err(SilexError::from)?;
-        for child in &self.children {
-            if let Err(error) =
-                child.mount(&provisional_owner, self.dom_element.as_ref(), Vec::new())
-            {
-                provisional_scope.dispose();
-                if let Some(parent) = self.dom_element.parent_node() {
-                    let _ = parent.remove_child(&self.dom_element);
-                }
-                return Err(error);
+        let mut appended = false;
+        let result = (|| -> SilexResult<()> {
+            let attrs = self.all_attrs(attrs);
+            let mut inputs = RuntimeInputs::new();
+            for attr in &attrs {
+                inputs.extend(&attr.runtime_inputs());
             }
-        }
-        let scope_for_cleanup = provisional_scope.clone();
-        if let Err(error) = owner.on_cleanup(Box::new(move || scope_for_cleanup.dispose())) {
-            provisional_scope.dispose();
-            if let Some(parent) = self.dom_element.parent_node() {
-                let _ = parent.remove_child(&self.dom_element);
+            token.validate_inputs(&inputs)?;
+            for attr in attrs {
+                attr.apply(&self.dom_element, &token)?;
             }
+            parent
+                .append_child(&self.dom_element)
+                .map_err(SilexError::from)?;
+            appended = true;
+            for child in &self.children {
+                child.mount(&provisional_owner, self.dom_element.as_ref(), Vec::new())?;
+            }
+            let scope_for_cleanup = provisional_scope.clone();
+            owner.on_cleanup(Box::new(move || scope_for_cleanup.dispose()))?;
+            Ok(())
+        })();
+
+        if let Err(error) = result {
+            rollback_mount(&provisional_scope, &self.dom_element, appended);
             return Err(error);
         }
         Ok(())
+    }
+}
+
+fn rollback_mount<'scope>(
+    scope: &Rc<silex_core::OwnedScope<'scope>>,
+    element: &WebElem,
+    appended: bool,
+) {
+    let dispose_panic = catch_unwind(AssertUnwindSafe(|| scope.dispose())).err();
+    if appended && let Some(parent) = element.parent_node() {
+        let _ = parent.remove_child(element);
+    }
+    if let Some(panic) = dispose_panic {
+        resume_unwind(panic);
     }
 }
 
@@ -409,17 +420,10 @@ where
     let event_name_for_cleanup = event_name.clone();
     let closure_for_cleanup = closure.clone();
     let js_fn_for_cleanup = js_fn.clone();
-    if let Err(error) = owner.try_host_resource_for_callback(&destination, move || {
+    owner.try_host_resource_for_callback(&destination, move || {
         let _ =
             target.remove_event_listener_with_callback(&event_name_for_cleanup, &js_fn_for_cleanup);
         let _ = closure_for_cleanup.borrow_mut().take();
-    }) {
-        destination.cancel();
-        let _ = dom_element
-            .remove_event_listener_with_callback(&event_name, &js_fn)
-            .map_err(SilexError::from);
-        let _ = closure.borrow_mut().take();
-        return Err(error);
-    }
+    })?;
     Ok(())
 }

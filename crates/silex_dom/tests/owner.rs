@@ -1,7 +1,8 @@
 #![cfg(target_arch = "wasm32")]
 
-use silex_core::Runtime;
+use silex_core::{Runtime, SilexError};
 use silex_dom::attribute::{AttrOp, CombinedStyles, PendingAttribute};
+use silex_dom::element::Element;
 use silex_dom::view::{
     AnyView, ApplyAttributes, IndexedLoopView, KeyedLoopView, RowUpdater, ScopedViewOwner, View,
     ViewOwner, mount_branch_cached, mount_text_node,
@@ -36,6 +37,39 @@ impl<'scope> View<'scope> for CleanupProbe {
         }))?;
         mount_text_node(parent, &self.text)?;
         Ok(())
+    }
+
+    fn mount_owned(
+        self,
+        owner: &dyn ViewOwner<'scope>,
+        parent: &Node,
+        attrs: Vec<PendingAttribute<'scope>>,
+    ) -> silex_core::SilexResult<()>
+    where
+        Self: Sized,
+    {
+        self.mount(owner, parent, attrs)
+    }
+}
+
+struct FailingChild {
+    cleanups: Rc<Cell<usize>>,
+}
+
+impl<'scope> ApplyAttributes<'scope> for FailingChild {}
+
+impl<'scope> View<'scope> for FailingChild {
+    fn mount(
+        &self,
+        owner: &dyn ViewOwner<'scope>,
+        _parent: &Node,
+        _attrs: Vec<PendingAttribute<'scope>>,
+    ) -> silex_core::SilexResult<()> {
+        let cleanups = self.cleanups.clone();
+        owner.on_cleanup(Box::new(move || {
+            cleanups.set(cleanups.get() + 1);
+        }))?;
+        Err(SilexError::Framework("child mount rejected".to_string()))
     }
 
     fn mount_owned(
@@ -124,6 +158,68 @@ fn comment_count(node: &Node) -> u32 {
         .filter_map(|index| children.item(index))
         .filter(|child| child.node_type() == 8)
         .count() as u32
+}
+
+#[wasm_bindgen_test]
+fn element_child_failure_rolls_back_provisional_owner_and_dom() {
+    let host = mount_point();
+    let cleanups = Rc::new(Cell::new(0));
+    let mut runtime = Runtime::new();
+    runtime.child(|scope| {
+        let owner = ScopedViewOwner::new(scope);
+        let view = Element::with_child(
+            "section",
+            FailingChild {
+                cleanups: cleanups.clone(),
+            },
+        );
+
+        assert!(matches!(
+            view.mount_owned(&owner, &host, Vec::new()),
+            Err(SilexError::Framework(message)) if message == "child mount rejected"
+        ));
+    });
+
+    assert_eq!(cleanups.get(), 1);
+    assert!(host.first_child().is_none());
+    host.parent_node()
+        .expect("test host has a body parent")
+        .remove_child(&host)
+        .expect("test host can be removed");
+}
+
+#[wasm_bindgen_test]
+fn keyed_list_initial_key_panic_is_a_mount_error() {
+    let host = mount_point();
+    let reports = Rc::new(Cell::new(0));
+    let mut runtime = Runtime::new();
+
+    runtime.child(|scope| {
+        let (items, _) = scope.signal(vec![1_i32]);
+        let reports_for_handler = reports.clone();
+        let list = KeyedLoopView {
+            each: items,
+            key_fn: Rc::new(|_| panic!("key panic")),
+            view_fn: Rc::new(|item: i32, _, _| AnyView::new(item.to_string())),
+            error: silex_core::traits::ForErrorHandler::from(move |_| {
+                reports_for_handler.set(reports_for_handler.get() + 1);
+            }),
+            _marker: PhantomData,
+        };
+        let owner = ScopedViewOwner::new(scope);
+
+        assert!(matches!(
+            list.mount_owned(&owner, &host, Vec::new()),
+            Err(SilexError::Javascript(message)) if message.contains("Keyed list key function")
+        ));
+    });
+
+    assert_eq!(reports.get(), 0);
+    assert!(host.first_child().is_none());
+    host.parent_node()
+        .expect("test host has a body parent")
+        .remove_child(&host)
+        .expect("test host can be removed");
 }
 
 #[wasm_bindgen_test]

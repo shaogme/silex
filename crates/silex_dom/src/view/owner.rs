@@ -1,6 +1,8 @@
 use crate::attribute::PendingAttribute;
 use crate::view::{OwnedViewOwner, ViewOwner, ViewOwnerToken};
-use silex_core::{ErrorReporter, OwnedScope, RuntimeInputs, SilexError, SilexResult};
+use silex_core::{
+    ErrorReporter, OwnedScope, ReactiveError, RuntimeInputs, SilexError, SilexResult,
+};
 use std::{
     cell::{Cell, RefCell},
     marker::PhantomData,
@@ -236,10 +238,19 @@ impl DomRange {
         }
     }
 
-    pub(crate) fn move_before(&self, reference: &Node) {
+    pub(crate) fn move_before(&self, reference: &Node) -> SilexResult<()> {
         let Some(parent) = reference.parent_node() else {
-            return;
+            return Err(SilexError::Dom(
+                "cannot move a range before a reference without a parent".to_string(),
+            ));
         };
+        if self.start.parent_node().as_ref() != Some(&parent)
+            || self.end.parent_node().as_ref() != Some(&parent)
+        {
+            return Err(SilexError::Dom(
+                "cannot move a detached row range".to_string(),
+            ));
+        }
         let mut nodes = Vec::new();
         let mut current = Some(self.start.clone());
         while let Some(node) = current {
@@ -252,11 +263,16 @@ impl DomRange {
             current = next;
         }
         if nodes.last().is_none_or(|node| *node != self.end) {
-            return;
+            return Err(SilexError::Dom(
+                "cannot move an incomplete row range".to_string(),
+            ));
         }
         for node in nodes {
-            let _ = parent.insert_before(&node, Some(reference));
+            parent
+                .insert_before(&node, Some(reference))
+                .map_err(SilexError::from)?;
         }
+        Ok(())
     }
 }
 
@@ -323,9 +339,7 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
 
     pub(crate) fn update(&mut self, item: T, index: usize) -> SilexResult<()> {
         if !self.active.get() {
-            return Err(SilexError::Reactivity(
-                silex_core::ReactiveError::NoSuchNode,
-            ));
+            return Err(SilexError::Reactivity(ReactiveError::NoSuchNode));
         }
         if self.stateful {
             if self.updater.update(item, index) {
@@ -343,7 +357,13 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
     fn mount_render(&mut self, item: T, index: usize) -> SilexResult<()> {
         let previous_scope = self.render_scope.take();
         let previous_nodes = self.render_nodes.borrow().clone();
-        let render_scope = Rc::new(self.row_scope.try_child()?);
+        let render_scope = match self.row_scope.try_child() {
+            Ok(scope) => Rc::new(scope),
+            Err(error) => {
+                self.render_scope = previous_scope;
+                return Err(error);
+            }
+        };
         let render_owner = OwnedViewOwner::new(render_scope.clone(), self.reporter.clone());
         let range = self.range.clone();
         let render = self.render.clone();
@@ -453,10 +473,11 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
 }
 
 impl<'scope, T> RowController<'scope, T> {
-    pub(crate) fn move_before(&self, reference: &Node) {
-        if self.active.get() {
-            self.range.move_before(reference);
+    pub(crate) fn move_before(&self, reference: &Node) -> SilexResult<()> {
+        if !self.active.get() {
+            return Err(SilexError::Reactivity(ReactiveError::NoSuchNode));
         }
+        self.range.move_before(reference)
     }
 
     pub(crate) fn dispose(&mut self) {

@@ -238,18 +238,12 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
     where
         N: JsCast + Clone + 'scope,
     {
-        let node_ref_for_cleanup = node_ref;
-        self.apply(PendingAttribute::new_scoped(move |el: &Element, _owner| {
-            if let Ok(typed) = el.clone().dyn_into::<N>() {
-                node_ref.try_load(typed).map_err(SilexError::from)?;
-            } else {
-                return Err(SilexError::Dom(
-                    "NodeRef type mismatch: failed to cast element".to_string(),
-                ));
-            }
-            Ok(())
-        }))
-        .apply(PendingAttribute::new_scoped(move |_el, owner| {
+        self.apply(PendingAttribute::new_scoped(move |el: &Element, owner| {
+            let typed = el.clone().dyn_into::<N>().map_err(|_| {
+                SilexError::Dom("NodeRef type mismatch: failed to cast element".to_string())
+            })?;
+
+            let node_ref_for_cleanup = node_ref;
             let owner_for_cleanup = owner.clone();
             owner.on_cleanup(Box::new(move || {
                 if let Err(error) = node_ref_for_cleanup.try_clear()
@@ -257,7 +251,8 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
                 {
                     owner_for_cleanup.report_error(error.into());
                 }
-            }))
+            }))?;
+            node_ref.try_load(typed).map_err(SilexError::from)
         }))
     }
 

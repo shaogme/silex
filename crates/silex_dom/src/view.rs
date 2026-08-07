@@ -1102,7 +1102,7 @@ pub fn mount_dynamic_view_cached<'scope, K, KeyFn, RenderFn>(
 where
     K: PartialEq + Clone + 'scope,
     KeyFn: Fn() -> K + Clone + 'scope,
-    RenderFn: Fn(K, (Node, Vec<PendingAttribute<'scope>>)) + 'scope,
+    RenderFn: Fn(K, (Node, Vec<PendingAttribute<'scope>>)) -> SilexResult<()> + 'scope,
 {
     let render = RowRender::new(move |args: RowRenderArgs<'scope, K>| {
         let RowRenderArgs {
@@ -1111,8 +1111,7 @@ where
             attrs,
             ..
         } = args;
-        renderer(key, (parent, attrs));
-        Ok(())
+        renderer(key, (parent, attrs))
     });
     mount_keyed_dynamic_view(owner, parent, attrs, inputs, key_fn, render)
 }
@@ -1306,8 +1305,7 @@ where
                 } else {
                     "Panic in Dynamic Branch: unknown panic".to_string()
                 };
-                token.report_error(SilexError::Javascript(message));
-                Ok(())
+                Err(SilexError::Javascript(message))
             }
         }
     }) {

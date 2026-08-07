@@ -280,21 +280,20 @@ where
                 Ok(())
             }
             Ok(Err(error)) => {
-                let _ = dispose_rows(&mut pending);
+                let cleanup_panic = dispose_rows(&mut pending);
                 *effect_rows.borrow_mut() = rows;
+                if let Some(panic) = cleanup_panic {
+                    resume_unwind(panic);
+                }
                 Err(error)
             }
             Err(panic) => {
-                let mut pending_panic = dispose_rows(&mut pending);
-                let mut current = rows;
-                let current_panic = dispose_rows(&mut current);
-                if pending_panic.is_none() {
-                    pending_panic = current_panic;
+                let cleanup_panic = dispose_rows(&mut pending);
+                *effect_rows.borrow_mut() = rows;
+                if let Some(panic) = cleanup_panic {
+                    resume_unwind(panic);
                 }
-                *effect_rows.borrow_mut() = Vec::new();
-                token.report_error(panic_error("Indexed list", panic));
-                drop(pending_panic);
-                Ok(())
+                Err(panic_error("Indexed list", panic))
             }
         }
     })?;
@@ -401,8 +400,7 @@ where
             Ok(Ok(keys)) => keys,
             Ok(Err(error)) => return Err(error),
             Err(panic) => {
-                report_panic(&error, "Keyed list key function", panic);
-                return Ok(());
+                return Err(panic_error("Keyed list key function", panic));
             }
         };
 
@@ -456,7 +454,7 @@ where
                 old_rows.extend(pending.drain());
                 for key in &next_order {
                     if let Some(row) = old_rows.get(key) {
-                        row.move_before(&end);
+                        row.move_before(&end)?;
                     }
                 }
                 let cleanup_panic = dispose_rows(&mut removed);
@@ -470,27 +468,28 @@ where
                 Ok(())
             }
             Ok(Err(error)) => {
-                let _ = dispose_map(&mut pending);
+                restore_keyed_order(&old_rows, &old_order, &end);
+                let cleanup_panic = dispose_map(&mut pending);
                 let mut state = effect_state.borrow_mut();
                 state.rows = old_rows;
                 state.order = old_order;
                 drop(state);
+                if let Some(panic) = cleanup_panic {
+                    resume_unwind(panic);
+                }
                 Err(error)
             }
             Err(panic) => {
-                let mut cleanup_panic = dispose_map(&mut pending);
-                let mut current = old_rows.into_values().collect::<Vec<_>>();
-                let current_panic = dispose_rows(&mut current);
-                if cleanup_panic.is_none() {
-                    cleanup_panic = current_panic;
-                }
+                restore_keyed_order(&old_rows, &old_order, &end);
+                let cleanup_panic = dispose_map(&mut pending);
                 let mut state = effect_state.borrow_mut();
-                state.rows.clear();
-                state.order.clear();
+                state.rows = old_rows;
+                state.order = old_order;
                 drop(state);
-                report_panic(&error, "Keyed list", panic);
-                drop(cleanup_panic);
-                Ok(())
+                if let Some(panic) = cleanup_panic {
+                    resume_unwind(panic);
+                }
+                Err(panic_error("Keyed list", panic))
             }
         }
     }) {
@@ -513,8 +512,18 @@ fn dispose_map<'scope, T: Clone + 'scope, K>(
     dispose_rows(&mut values)
 }
 
-fn report_panic(error: &ForErrorHandler, prefix: &str, panic: Box<dyn std::any::Any + Send>) {
-    error.call(panic_error(prefix, panic));
+fn restore_keyed_order<'scope, T, K>(
+    rows: &HashMap<K, RowController<'scope, T>>,
+    order: &[K],
+    end: &Node,
+) where
+    K: std::hash::Hash + Eq,
+{
+    for key in order {
+        if let Some(row) = rows.get(key) {
+            let _ = row.move_before(end);
+        }
+    }
 }
 
 fn panic_error(prefix: &str, panic: Box<dyn std::any::Any + Send>) -> SilexError {
