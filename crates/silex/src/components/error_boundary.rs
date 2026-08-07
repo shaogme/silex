@@ -188,6 +188,9 @@ impl<'scope> View<'scope> for ErrorBoundaryView<'scope> {
 }
 
 /// Error boundary that routes descendant errors to its local fallback state.
+///
+/// The child factory receives the boundary handler so scope-bound services can
+/// bind their construction-time effects to this boundary before mount.
 #[component]
 pub fn ErrorBoundary<'scope, FB, CH, V1, V2>(
     scope: Scope<'scope>,
@@ -197,7 +200,7 @@ pub fn ErrorBoundary<'scope, FB, CH, V1, V2>(
 ) -> impl View<'scope>
 where
     FB: Fn(SilexError) -> V1 + Clone + 'scope,
-    CH: Fn() -> V2 + Clone + 'scope,
+    CH: Fn(ErrorReporter<'scope>) -> V2 + Clone + 'scope,
     V1: View<'scope> + 'scope,
     V2: View<'scope> + 'scope,
 {
@@ -232,6 +235,7 @@ where
 
     let fallback = fallback.clone();
     let children = children.clone();
+    let child_handler = boundary_handler.clone();
     let parent_handler_for_view = parent_handler.clone();
     let view = rx!(scope; {
         if let Some(error) = (*$error).clone() {
@@ -246,7 +250,8 @@ where
         } else {
             let result = catch_unwind(AssertUnwindSafe({
                 let children = children.clone();
-                move || children().into_any()
+                let child_handler = child_handler.clone();
+                move || children(child_handler).into_any()
             }));
 
             match result {

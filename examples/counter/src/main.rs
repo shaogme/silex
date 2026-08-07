@@ -24,9 +24,7 @@ fn Card<'scope>(
     .class("card")
     .style(&style);
 
-    root = root.on_click(move |_| {
-        let _ = on_hover.invoke(());
-    });
+    root = root.on_click(move |_| on_hover.invoke(()));
 
     root
 }
@@ -95,11 +93,13 @@ fn CounterControls<'scope>(
             .style(btn_style) // Apply array of styles
             .on_click(move |_| {
                 set_count.update(|n| *n -= 1);
+                Ok(())
             }),
         span(count)
             .style("font-size: 1.5rem; font-weight: bold; min-width: 30px; text-align: center;"),
         button("+").style(btn_style).on_click(move |_| {
             set_count.update(|n| *n += 1);
+            Ok(())
         }),
     )
     .style("display: flex; align-items: center; gap: 15px;"))
@@ -121,7 +121,10 @@ fn NavBar<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
 }
 
 #[component]
-fn HomeView<'scope>(ctx: RouterContext<'scope>) -> impl View<'scope> {
+fn HomeView<'scope>(
+    ctx: RouterContext<'scope>,
+    #[chain] error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
     let scope = ctx.scope();
 
     // 页面级状态
@@ -162,7 +165,10 @@ fn HomeView<'scope>(ctx: RouterContext<'scope>) -> impl View<'scope> {
                     .placeholder("Enter name")
                     .style("padding: 8px; border: 1px solid #ccc; border-radius: 4px; width: 100%;")
                     .value(name)
-                    .on_input(move |val| { set_name.set(val); })
+                    .on_input(move |val| {
+                        set_name.set(val);
+                        Ok(())
+                    })
             ))),
 
         // Card 3: Control Flow
@@ -177,15 +183,16 @@ fn HomeView<'scope>(ctx: RouterContext<'scope>) -> impl View<'scope> {
          Card(scope, "Suspense (Async Loading)")
              .child(
                  Suspense(scope, move |cx| {
-                     let async_data_local = Resource::new(
-                         scope,
-                         scope.constant(()),
-                         |_| async {
-                            gloo_timers::future::TimeoutFuture::new(2_000).await;
-                            Ok::<_, SilexError>("Loaded Data from Server!".to_string())
-                        },
-                         Some(cx),
-                     );
+                      let async_data_local = Resource::new(
+                          scope,
+                          scope.constant(()),
+                          |_| async {
+                              gloo_timers::future::TimeoutFuture::new(2_000).await;
+                              Ok::<_, SilexError>("Loaded Data from Server!".to_string())
+                          },
+                          Some(cx),
+                          error_handler.clone(),
+                      );
                      div(rx!(scope; $async_data_local.clone().unwrap_or("Waiting...".to_string())))
                         .style("color: #2e7d32; font-weight: bold; background: #e8f5e9; padding: 10px; border-radius: 4px;")
                 })
@@ -210,20 +217,70 @@ fn NotFound<'scope>() -> AnyView<'scope> {
         .into_any()
 }
 
+#[component]
+fn ErrorPage<'scope>(error: SilexError) -> AnyView<'scope> {
+    div!(
+        h1("Silex Application Error"),
+        p(error.to_string()),
+        button("Reload Application").on_click(|_| {
+            let window = web_sys::window()
+                .ok_or_else(|| SilexError::Javascript("Window is unavailable".to_string()))?;
+            window.location().reload().map_err(SilexError::from)?;
+            Ok(())
+        }),
+    )
+    .style("max-width: 600px; margin: 80px auto; padding: 32px; font-family: sans-serif; border: 1px solid #f0b4b4; background: #fff7f7; color: #7f1d1d;")
+    .into_any()
+}
+
 #[derive(Route, Clone, PartialEq)]
 enum AppRoute {
-    #[route("/", view = HomeView, pass_ctx = true)]
+    #[route("/")]
     Home,
-    #[route("/about", view = AboutView)]
+    #[route("/about")]
     About,
-    #[route("/*", view = NotFound)]
+    #[route("/*")]
     NotFound,
+}
+
+#[component]
+fn App<'scope>(
+    scope: Scope<'scope>,
+    root_error: ReadSignal<'scope, Option<SilexError>>,
+) -> impl View<'scope> {
+    let boundary = ErrorBoundary(
+        scope,
+        move |child_error_handler| {
+            let route_error_handler = child_error_handler.clone();
+            div!(
+                NavBar(scope),
+                Router(scope).match_enum(move |route, ctx| match route {
+                    AppRoute::Home => HomeView(ctx)
+                        .error_handler(route_error_handler.clone())
+                        .into_any(),
+                    AppRoute::About => AboutView().into_any(),
+                    AppRoute::NotFound => NotFound().into_any(),
+                })
+            )
+            .class("app-container")
+            .style("font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;")
+        },
+    )
+    .fallback(ErrorPage)
+    .into_any();
+
+    rx!(scope; {
+        if let Some(error) = (*$root_error).clone() {
+            ErrorPage(error).into_any()
+        } else {
+            boundary.clone()
+        }
+    })
 }
 
 // --- Main ---
 
 fn main() {
-    setup_global_error_handlers();
     let window = web_sys::window().expect("No Window");
     let document = window.document().expect("No Document");
     let app_container = document.get_element_by_id("app").expect("No App Element");
@@ -231,17 +288,15 @@ fn main() {
     let mut runtime = Runtime::new();
     let root = runtime.run();
     root.with_scope(|scope| {
-        // 构建应用壳 (App Shell)
-        let app = div!(
-            NavBar(scope),
-            Router(scope).match_route::<AppRoute>()
-        )
-        .class("app-container")
-        .style("font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;");
+        let (root_error, set_root_error) = scope.signal(None::<SilexError>);
+        let error_handler = ErrorHandler::new(move |error: SilexError| {
+            let _ = set_root_error.try_set(Some(error));
+        });
+        let app = App(scope, root_error);
 
-        let owner = ScopedViewOwner::new(scope);
+        let owner = ScopedViewOwner::new(scope, error_handler.clone());
         if let Err(error) = app.mount(&owner, app_container.as_ref(), Vec::new()) {
-            ErrorReporter::unhandled().report(error);
+            error_handler.handle(error);
         }
     });
 }
