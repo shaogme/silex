@@ -1,0 +1,9 @@
+error: lifetime may not live long enough
+ --> tests/ui/fail_handler_escape.rs:4:5
+  |
+3 |   fn make_handler(value: &str) -> ErrorHandler<'static, SilexError> {
+  |                          - let's call the lifetime of this reference `'1`
+4 | /     ErrorHandler::new(move |_| {
+5 | |         assert_eq!(value, "scoped");
+6 | |     })
+  | |______^ returning this value requires that `'1` must outlive `'static`

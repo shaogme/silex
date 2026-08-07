@@ -1,0 +1,11 @@
+error[E0599]: no method named `try_on_cleanup` found for struct `silex_core::Scope<'scope>` in the current scope
+ --> tests/ui/fail_removed_try_cleanup_api.rs:6:23
+  |
+6 |         let _ = scope.try_on_cleanup(
+  |                 ------^^^^^^^^^^^^^^
+  |
+help: there is a method `on_cleanup` with a similar name
+  |
+6 -         let _ = scope.try_on_cleanup(
+6 +         let _ = scope.on_cleanup(
+  |

@@ -1,6 +1,10 @@
 use silex_core::traits::RxBase;
-use silex_core::{ReactiveError, Runtime, SilexError};
+use silex_core::{ErrorHandler, ReactiveError, Runtime, SilexError};
 use std::{cell::Cell, rc::Rc};
+
+fn handler<'scope>() -> ErrorHandler<'scope, SilexError> {
+    ErrorHandler::new(|_| {})
+}
 
 #[test]
 fn core_try_operations_preserve_borrow_conflicts() {
@@ -53,9 +57,15 @@ fn node_ref_keeps_empty_value_separate_from_runtime_errors() {
         assert_eq!(node_ref.try_get(), Ok(None));
 
         let node_ref_for_cleanup = node_ref;
-        scope.on_cleanup(move || {
-            stale_error_for_cleanup.set(node_ref_for_cleanup.try_get().err());
-        });
+        scope
+            .on_cleanup(
+                move || {
+                    stale_error_for_cleanup.set(node_ref_for_cleanup.try_get().err());
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("cleanup should register");
     });
 
     assert_eq!(stale_error.get(), Some(ReactiveError::NoSuchNode));
@@ -69,13 +79,19 @@ fn stale_core_trait_access_returns_no_such_node() {
 
     runtime.child(|scope| {
         let (read, write) = scope.signal(1_i32);
-        scope.on_cleanup(move || {
-            assert_eq!(read.try_get(), Err(ReactiveError::NoSuchNode));
-            assert_eq!(read.try_track(), Err(ReactiveError::NoSuchNode));
-            assert_eq!(write.try_set(2), Err(ReactiveError::NoSuchNode));
-            assert_eq!(write.try_notify(), Err(ReactiveError::NoSuchNode));
-            stale_error_for_cleanup.set(read.try_get().err());
-        });
+        scope
+            .on_cleanup(
+                move || {
+                    assert_eq!(read.try_get(), Err(ReactiveError::NoSuchNode));
+                    assert_eq!(read.try_track(), Err(ReactiveError::NoSuchNode));
+                    assert_eq!(write.try_set(2), Err(ReactiveError::NoSuchNode));
+                    assert_eq!(write.try_notify(), Err(ReactiveError::NoSuchNode));
+                    stale_error_for_cleanup.set(read.try_get().err());
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("cleanup should register");
     });
 
     assert_eq!(stale_error.get(), Some(ReactiveError::NoSuchNode));
@@ -94,13 +110,13 @@ fn runtime_errors_are_matchable_through_silex_error() {
 fn core_owner_registration_exposes_inactive_errors() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
-        assert!(scope.try_on_cleanup(|| {}).is_ok());
+        assert!(scope.on_cleanup(|| Ok(()), handler()).is_ok());
         let owner = scope.try_owned_scope().expect("owner is active");
-        assert!(owner.try_on_cleanup(|| {}).is_ok());
+        assert!(owner.on_cleanup(|| Ok(()), handler()).is_ok());
         owner.dispose();
 
         assert!(matches!(
-            owner.try_on_cleanup(|| {}),
+            owner.on_cleanup(|| Ok(()), handler()),
             Err(SilexError::Reactivity(ReactiveError::NoSuchNode))
         ));
         assert!(matches!(

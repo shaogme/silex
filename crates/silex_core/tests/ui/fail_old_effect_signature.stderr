@@ -1,0 +1,8 @@
+error[E0308]: mismatched types
+ --> tests/ui/fail_old_effect_signature.rs:7:16
+  |
+7 |             || {},
+  |                ^^ expected `Result<(), SilexError>`, found `()`
+  |
+  = note:   expected enum `Result<(), SilexError>`
+          found unit type `()`

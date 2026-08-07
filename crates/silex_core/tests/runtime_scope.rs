@@ -1,12 +1,16 @@
 use silex_core::{
-    Callback, Memo, NodeRef, ReactiveError, ReadSignal, Runtime, RwSignal, Rx, RxDefault, RxFrom,
-    Signal, StoredValue, rx,
+    Callback, ErrorHandler, Memo, NodeRef, ReactiveError, ReadSignal, Runtime, RwSignal, Rx,
+    RxDefault, RxFrom, Signal, SilexError, StoredValue, rx,
 };
 use std::{
     cell::{Cell, RefCell},
     panic::{AssertUnwindSafe, catch_unwind},
     rc::Rc,
 };
+
+fn handler<'scope>() -> ErrorHandler<'scope, SilexError> {
+    ErrorHandler::new(|_| {})
+}
 
 #[test]
 fn scoped_primitives_propagate_without_raw_handles() {
@@ -53,10 +57,16 @@ fn owned_scope_exposes_an_owner_bound_effect_only() {
         let runs = Rc::new(Cell::new(0));
         let runs_for_effect = runs.clone();
         let owner = scope.owned_scope();
-        let _effect = owner.effect(move || {
-            let _ = source.get();
-            runs_for_effect.set(runs_for_effect.get() + 1);
-        });
+        let _effect = owner
+            .effect(
+                move || {
+                    let _ = source.get();
+                    runs_for_effect.set(runs_for_effect.get() + 1);
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("owned effect should register");
 
         set_source.set(2);
         assert_eq!(runs.get(), 2);
@@ -74,7 +84,15 @@ fn lexical_effect_is_direct_and_tracks_dependencies() {
         let seen = Rc::new(Cell::new(0));
         let seen_for_effect = seen.clone();
 
-        let _effect = scope.effect(move || seen_for_effect.set(value.get()));
+        let _effect = scope
+            .effect(
+                move || {
+                    seen_for_effect.set(value.get());
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("effect should register");
 
         assert_eq!(seen.get(), 1);
         set_value.set(4);
@@ -90,10 +108,15 @@ fn previous_effect_commits_the_last_returned_value() {
         let seen = Rc::new(RefCell::new(Vec::new()));
         let seen_for_effect = seen.clone();
 
-        let _effect = scope.effect_with_previous(move |previous: Option<i32>| {
-            seen_for_effect.borrow_mut().push(previous);
-            source.get()
-        });
+        let _effect = scope
+            .effect_with_previous(
+                move |previous: Option<&i32>| {
+                    seen_for_effect.borrow_mut().push(previous.copied());
+                    Ok(source.get())
+                },
+                handler(),
+            )
+            .expect("previous effect should register");
 
         set_source.set(2);
         set_source.set(3);
@@ -111,21 +134,26 @@ fn previous_effect_resets_after_a_panicking_run() {
         let should_panic = Rc::new(Cell::new(false));
         let should_panic_for_effect = should_panic.clone();
 
-        let _effect = scope.effect_with_previous(move |previous: Option<i32>| {
-            seen_for_effect.borrow_mut().push(previous);
-            let value = source.get();
-            if should_panic_for_effect.replace(false) {
-                panic!("test previous effect panic");
-            }
-            value
-        });
+        let _effect = scope
+            .effect_with_previous(
+                move |previous: Option<&i32>| {
+                    seen_for_effect.borrow_mut().push(previous.copied());
+                    let value = source.get();
+                    if should_panic_for_effect.replace(false) {
+                        panic!("test previous effect panic");
+                    }
+                    Ok(value)
+                },
+                handler(),
+            )
+            .expect("previous effect should register");
 
         should_panic.set(true);
         let result = catch_unwind(AssertUnwindSafe(|| set_source.set(2)));
         assert!(result.is_err());
 
         set_source.set(3);
-        assert_eq!(*seen.borrow(), vec![None, Some(1), None]);
+        assert_eq!(*seen.borrow(), vec![None, Some(1), Some(1)]);
     });
 }
 
@@ -261,18 +289,24 @@ fn rx_default_handles_are_inactive_after_root_disposal() {
         let callback = <Callback<'_, ()> as RxDefault<'_>>::rx_default(scope);
         let node_ref = <NodeRef<'_, String> as RxDefault<'_>>::rx_default(scope);
 
-        scope.on_cleanup(move || {
-            stale_for_cleanup.set(
-                matches!(signal.try_get(), Err(ReactiveError::NoSuchNode))
-                    && matches!(
-                        callback.invoke(()),
-                        Err(silex_core::SilexError::Reactivity(
-                            ReactiveError::NoSuchNode
-                        ))
-                    )
-                    && matches!(node_ref.try_get(), Err(ReactiveError::NoSuchNode)),
-            );
-        });
+        scope
+            .on_cleanup(
+                move || {
+                    stale_for_cleanup.set(
+                        matches!(signal.try_get(), Err(ReactiveError::NoSuchNode))
+                            && matches!(
+                                callback.invoke(()),
+                                Err(silex_core::SilexError::Reactivity(
+                                    ReactiveError::NoSuchNode
+                                ))
+                            )
+                            && matches!(node_ref.try_get(), Err(ReactiveError::NoSuchNode)),
+                    );
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("cleanup should register");
     });
 
     root.dispose().expect("root disposal should succeed");

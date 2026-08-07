@@ -1,17 +1,24 @@
 //! High-level runtime and scope wrappers.
 
 use crate::{
-    Callback, NodeRef, Rx, SilexError, SilexResult, TaskHandle,
+    Callback, ErrorHandler, ErrorReporter, NodeRef, Rx, SilexError, SilexResult, TaskHandle,
     reactivity::{
         Effect, Memo, ReactiveSource, ReadSignal, RwSignal, StoredValue, WatchOptions, WriteSignal,
     },
     task,
     traits::RxData,
 };
-use silex_reactivity::RuntimeInputs;
 #[cfg(feature = "test-support")]
 use silex_reactivity::RuntimeSnapshot;
+use silex_reactivity::{EffectInitError, RuntimeInputs};
 use std::future::Future;
+
+fn map_effect_init_error(error: EffectInitError<SilexError>) -> SilexError {
+    match error {
+        EffectInitError::Registration(error) => SilexError::from(error),
+        EffectInitError::Initial(error) => error,
+    }
+}
 
 /// User-owned high-level runtime.
 pub struct Runtime {
@@ -172,144 +179,161 @@ impl<'scope> Scope<'scope> {
             .map_err(SilexError::from)
     }
 
-    pub fn effect<F>(self, f: F) -> Effect<'scope>
+    pub fn effect<F>(
+        self,
+        f: F,
+        error_handler: ErrorHandler<'scope, SilexError>,
+    ) -> SilexResult<Effect<'scope>>
     where
-        F: FnMut() + 'scope,
+        F: FnMut() -> SilexResult<()> + 'scope,
     {
-        self.effect_from(RuntimeInputs::new(), f)
+        self.effect_from(RuntimeInputs::new(), f, error_handler)
     }
 
     #[doc(hidden)]
-    pub fn effect_from<F>(self, inputs: RuntimeInputs, f: F) -> Effect<'scope>
+    pub fn effect_from<F>(
+        self,
+        inputs: RuntimeInputs,
+        f: F,
+        error_handler: ErrorHandler<'scope, SilexError>,
+    ) -> SilexResult<Effect<'scope>>
     where
-        F: FnMut() + 'scope,
-    {
-        self.try_effect_from(inputs, f)
-            .unwrap_or_else(|error| panic!("创建 scoped effect 失败: {error}"))
-    }
-
-    #[doc(hidden)]
-    pub fn try_effect_from<F>(self, inputs: RuntimeInputs, f: F) -> SilexResult<Effect<'scope>>
-    where
-        F: FnMut() + 'scope,
+        F: FnMut() -> SilexResult<()> + 'scope,
     {
         let effect = self
             .inner
-            .try_effect_from(inputs, f)
-            .map_err(SilexError::from)?;
+            .effect_from(inputs, f, error_handler)
+            .map_err(map_effect_init_error)?;
         Ok(Effect::from_inner(effect))
     }
 
     /// Create an effect that receives the value returned by its previous run.
     ///
     /// The first run receives `None`. A returned value is committed as the
-    /// previous value for the next run; if the callback panics, no value is
-    /// committed and the next run receives `None`.
-    pub fn effect_with_previous<T, F>(self, f: F) -> Effect<'scope>
-    where
-        T: 'scope,
-        F: FnMut(Option<T>) -> T + 'scope,
-    {
-        self.effect_with_previous_from(RuntimeInputs::new(), f)
-    }
-
-    #[doc(hidden)]
-    pub fn effect_with_previous_from<T, F>(self, inputs: RuntimeInputs, f: F) -> Effect<'scope>
-    where
-        T: 'scope,
-        F: FnMut(Option<T>) -> T + 'scope,
-    {
-        self.try_effect_with_previous_from(inputs, f)
-            .unwrap_or_else(|error| panic!("创建 scoped previous effect 失败: {error}"))
-    }
-
-    #[doc(hidden)]
-    pub fn try_effect_with_previous_from<T, F>(
-        &self,
-        inputs: RuntimeInputs,
+    /// previous value for the next run; if the callback fails or panics, the
+    /// last successfully committed value remains available for retry.
+    pub fn effect_with_previous<T, F>(
+        self,
         f: F,
+        error_handler: ErrorHandler<'scope, SilexError>,
     ) -> SilexResult<Effect<'scope>>
     where
         T: 'scope,
-        F: FnMut(Option<T>) -> T + 'scope,
+        F: FnMut(Option<&T>) -> SilexResult<T> + 'scope,
+    {
+        self.effect_with_previous_from(RuntimeInputs::new(), f, error_handler)
+    }
+
+    #[doc(hidden)]
+    pub fn effect_with_previous_from<T, F>(
+        self,
+        inputs: RuntimeInputs,
+        f: F,
+        error_handler: ErrorHandler<'scope, SilexError>,
+    ) -> SilexResult<Effect<'scope>>
+    where
+        T: 'scope,
+        F: FnMut(Option<&T>) -> SilexResult<T> + 'scope,
     {
         let effect = self
             .inner
-            .try_effect_with_previous_from(inputs, f)
-            .map_err(SilexError::from)?;
+            .effect_with_previous_from(inputs, f, error_handler)
+            .map_err(map_effect_init_error)?;
         Ok(Effect::from_inner(effect))
     }
 
-    pub fn watch<S, C>(self, source: S, callback: C) -> Effect<'scope>
+    pub fn watch<S, C>(
+        self,
+        source: S,
+        callback: C,
+        error_handler: ErrorHandler<'scope, SilexError>,
+    ) -> SilexResult<Effect<'scope>>
     where
         S: ReactiveSource<'scope>,
         S::Value: Sized + Clone + PartialEq + RxData + 'scope,
-        C: FnMut(&S::Value, Option<&S::Value>) + 'scope,
+        C: FnMut(&S::Value, Option<&S::Value>) -> SilexResult<()> + 'scope,
     {
-        self.watch_with_options(source, callback, WatchOptions::default())
+        self.watch_with_options(source, callback, error_handler, WatchOptions::default())
     }
 
     pub fn watch_with_options<S, C>(
         self,
         source: S,
         callback: C,
+        error_handler: ErrorHandler<'scope, SilexError>,
         options: WatchOptions,
-    ) -> Effect<'scope>
+    ) -> SilexResult<Effect<'scope>>
     where
         S: ReactiveSource<'scope>,
         S::Value: Sized + Clone + PartialEq + RxData + 'scope,
-        C: FnMut(&S::Value, Option<&S::Value>) + 'scope,
+        C: FnMut(&S::Value, Option<&S::Value>) -> SilexResult<()> + 'scope,
     {
         let plan = source.into_promotion_plan();
         let inputs = plan.inputs();
-        self.try_validate_inputs(&inputs)
-            .unwrap_or_else(|error| panic!("验证 watch source 失败: {error}"));
+        self.try_validate_inputs(&inputs)?;
         let source = plan.materialize_unchecked(self);
-        self.try_watch_getter_from(inputs, move || source.get(), callback, options)
-            .unwrap_or_else(|error| panic!("创建 source watcher 失败: {error}"))
+        self.watch_getter_from(
+            inputs,
+            move || source.try_get().map_err(SilexError::from),
+            callback,
+            error_handler,
+            options,
+        )
     }
 
-    pub fn watch_getter<T, G, C>(self, getter: G, callback: C) -> Effect<'scope>
+    pub fn watch_getter<T, G, C>(
+        self,
+        getter: G,
+        callback: C,
+        error_handler: ErrorHandler<'scope, SilexError>,
+    ) -> SilexResult<Effect<'scope>>
     where
         T: PartialEq + 'scope,
-        G: FnMut() -> T + 'scope,
-        C: FnMut(&T, Option<&T>) + 'scope,
+        G: FnMut() -> SilexResult<T> + 'scope,
+        C: FnMut(&T, Option<&T>) -> SilexResult<()> + 'scope,
     {
-        self.watch_getter_with_options(getter, callback, WatchOptions::default())
+        self.watch_getter_with_options(getter, callback, error_handler, WatchOptions::default())
     }
 
     pub fn watch_getter_with_options<T, G, C>(
         self,
         getter: G,
         callback: C,
-        options: WatchOptions,
-    ) -> Effect<'scope>
-    where
-        T: PartialEq + 'scope,
-        G: FnMut() -> T + 'scope,
-        C: FnMut(&T, Option<&T>) + 'scope,
-    {
-        self.try_watch_getter_from(RuntimeInputs::new(), getter, callback, options)
-            .unwrap_or_else(|error| panic!("创建 watcher 失败: {error}"))
-    }
-
-    #[doc(hidden)]
-    pub fn try_watch_getter_from<T, G, C>(
-        &self,
-        inputs: RuntimeInputs,
-        getter: G,
-        callback: C,
+        error_handler: ErrorHandler<'scope, SilexError>,
         options: WatchOptions,
     ) -> SilexResult<Effect<'scope>>
     where
         T: PartialEq + 'scope,
-        G: FnMut() -> T + 'scope,
-        C: FnMut(&T, Option<&T>) + 'scope,
+        G: FnMut() -> SilexResult<T> + 'scope,
+        C: FnMut(&T, Option<&T>) -> SilexResult<()> + 'scope,
+    {
+        self.watch_getter_from(
+            RuntimeInputs::new(),
+            getter,
+            callback,
+            error_handler,
+            options,
+        )
+    }
+
+    #[doc(hidden)]
+    pub fn watch_getter_from<T, G, C>(
+        self,
+        inputs: RuntimeInputs,
+        getter: G,
+        callback: C,
+        error_handler: ErrorHandler<'scope, SilexError>,
+        options: WatchOptions,
+    ) -> SilexResult<Effect<'scope>>
+    where
+        T: PartialEq + 'scope,
+        G: FnMut() -> SilexResult<T> + 'scope,
+        C: FnMut(&T, Option<&T>) -> SilexResult<()> + 'scope,
     {
         self.inner
-            .try_watch_getter_from(inputs, getter, callback, options)
+            .watch_getter_from(inputs, getter, callback, error_handler, options)
+            .map_err(map_effect_init_error)
             .map(Effect::from_inner)
-            .map_err(SilexError::from)
     }
 
     pub fn stored<T: 'scope>(self, value: T) -> StoredValue<'scope, T> {
@@ -354,7 +378,14 @@ impl<'scope> Scope<'scope> {
             return TaskHandle::inactive();
         }
         let (task, cancel) = task::start(future);
-        self.on_cleanup(cancel);
+        self.on_cleanup(
+            move || {
+                cancel();
+                Ok::<(), SilexError>(())
+            },
+            ErrorReporter::unhandled().handler(),
+        )
+        .unwrap_or_else(|error| panic!("注册 scoped task cleanup 失败: {error}"));
         task
     }
 
@@ -418,18 +449,17 @@ impl<'scope> Scope<'scope> {
         self.inner.batch(f)
     }
 
-    pub fn on_cleanup<F>(self, f: F)
+    pub fn on_cleanup<F>(
+        &self,
+        f: F,
+        error_handler: ErrorHandler<'scope, SilexError>,
+    ) -> SilexResult<()>
     where
-        F: FnOnce() + 'scope,
+        F: FnOnce() -> SilexResult<()> + 'scope,
     {
-        self.inner.on_cleanup(f);
-    }
-
-    pub fn try_on_cleanup<F>(&self, f: F) -> SilexResult<()>
-    where
-        F: FnOnce() + 'scope,
-    {
-        self.inner.try_on_cleanup(f).map_err(SilexError::from)
+        self.inner
+            .on_cleanup(f, error_handler)
+            .map_err(SilexError::from)
     }
 }
 
@@ -468,87 +498,127 @@ impl<'scope> OwnedScope<'scope> {
 
     /// Register and immediately run an owner-bound effect without extra
     /// framework-declared inputs.
-    pub fn effect<F>(&self, f: F) -> Effect<'_>
+    pub fn effect<F>(
+        &self,
+        f: F,
+        error_handler: ErrorHandler<'scope, SilexError>,
+    ) -> SilexResult<Effect<'_>>
     where
-        F: FnMut() + 'scope,
+        F: FnMut() -> SilexResult<()> + 'scope,
     {
-        self.effect_from(RuntimeInputs::new(), f)
+        self.effect_from(RuntimeInputs::new(), f, error_handler)
     }
 
-    pub fn effect_from<F>(&self, inputs: RuntimeInputs, f: F) -> Effect<'_>
+    pub fn effect_from<F>(
+        &self,
+        inputs: RuntimeInputs,
+        f: F,
+        error_handler: ErrorHandler<'scope, SilexError>,
+    ) -> SilexResult<Effect<'_>>
     where
-        F: FnMut() + 'scope,
+        F: FnMut() -> SilexResult<()> + 'scope,
     {
-        self.try_effect_from(inputs, f)
-            .unwrap_or_else(|error| panic!("创建 owned effect 失败: {error}"))
+        self.inner
+            .effect_from(inputs, f, error_handler)
+            .map(Effect::from_inner)
+            .map_err(map_effect_init_error)
+    }
+
+    pub fn effect_with_previous<T, F>(
+        &self,
+        f: F,
+        error_handler: ErrorHandler<'scope, SilexError>,
+    ) -> SilexResult<Effect<'_>>
+    where
+        T: 'scope,
+        F: FnMut(Option<&T>) -> SilexResult<T> + 'scope,
+    {
+        self.effect_with_previous_from(RuntimeInputs::new(), f, error_handler)
     }
 
     #[doc(hidden)]
-    pub fn try_effect_from<F>(&self, inputs: RuntimeInputs, f: F) -> SilexResult<Effect<'_>>
+    pub fn effect_with_previous_from<T, F>(
+        &self,
+        inputs: RuntimeInputs,
+        f: F,
+        error_handler: ErrorHandler<'scope, SilexError>,
+    ) -> SilexResult<Effect<'_>>
     where
-        F: FnMut() + 'scope,
+        T: 'scope,
+        F: FnMut(Option<&T>) -> SilexResult<T> + 'scope,
     {
         self.inner
-            .try_effect_from(inputs, f)
+            .effect_with_previous_from(inputs, f, error_handler)
             .map(Effect::from_inner)
-            .map_err(SilexError::from)
+            .map_err(map_effect_init_error)
     }
 
-    pub fn watch_getter<T, G, C>(&self, getter: G, callback: C) -> Effect<'_>
+    pub fn watch_getter<T, G, C>(
+        &self,
+        getter: G,
+        callback: C,
+        error_handler: ErrorHandler<'scope, SilexError>,
+    ) -> SilexResult<Effect<'_>>
     where
         T: PartialEq + 'scope,
-        G: FnMut() -> T + 'scope,
-        C: FnMut(&T, Option<&T>) + 'scope,
+        G: FnMut() -> SilexResult<T> + 'scope,
+        C: FnMut(&T, Option<&T>) -> SilexResult<()> + 'scope,
     {
-        self.watch_getter_with_options(getter, callback, WatchOptions::default())
+        self.watch_getter_with_options(getter, callback, error_handler, WatchOptions::default())
     }
 
     pub fn watch_getter_with_options<T, G, C>(
         &self,
         getter: G,
         callback: C,
-        options: WatchOptions,
-    ) -> Effect<'_>
-    where
-        T: PartialEq + 'scope,
-        G: FnMut() -> T + 'scope,
-        C: FnMut(&T, Option<&T>) + 'scope,
-    {
-        self.try_watch_getter_from(RuntimeInputs::new(), getter, callback, options)
-            .unwrap_or_else(|error| panic!("创建 owned watcher 失败: {error}"))
-    }
-
-    #[doc(hidden)]
-    pub fn try_watch_getter_from<T, G, C>(
-        &self,
-        inputs: RuntimeInputs,
-        getter: G,
-        callback: C,
+        error_handler: ErrorHandler<'scope, SilexError>,
         options: WatchOptions,
     ) -> SilexResult<Effect<'_>>
     where
         T: PartialEq + 'scope,
-        G: FnMut() -> T + 'scope,
-        C: FnMut(&T, Option<&T>) + 'scope,
+        G: FnMut() -> SilexResult<T> + 'scope,
+        C: FnMut(&T, Option<&T>) -> SilexResult<()> + 'scope,
+    {
+        self.watch_getter_from(
+            RuntimeInputs::new(),
+            getter,
+            callback,
+            error_handler,
+            options,
+        )
+    }
+
+    #[doc(hidden)]
+    pub fn watch_getter_from<T, G, C>(
+        &self,
+        inputs: RuntimeInputs,
+        getter: G,
+        callback: C,
+        error_handler: ErrorHandler<'scope, SilexError>,
+        options: WatchOptions,
+    ) -> SilexResult<Effect<'_>>
+    where
+        T: PartialEq + 'scope,
+        G: FnMut() -> SilexResult<T> + 'scope,
+        C: FnMut(&T, Option<&T>) -> SilexResult<()> + 'scope,
     {
         self.inner
-            .try_watch_getter_from(inputs, getter, callback, options)
+            .watch_getter_from(inputs, getter, callback, error_handler, options)
             .map(Effect::from_inner)
+            .map_err(map_effect_init_error)
+    }
+
+    pub fn on_cleanup<F>(
+        &self,
+        f: F,
+        error_handler: ErrorHandler<'scope, SilexError>,
+    ) -> SilexResult<()>
+    where
+        F: FnOnce() -> SilexResult<()> + 'scope,
+    {
+        self.inner
+            .on_cleanup(f, error_handler)
             .map_err(SilexError::from)
-    }
-
-    pub fn on_cleanup<F>(&self, f: F)
-    where
-        F: FnOnce() + 'scope,
-    {
-        self.inner.on_cleanup(f);
-    }
-
-    pub fn try_on_cleanup<F>(&self, f: F) -> SilexResult<()>
-    where
-        F: FnOnce() + 'scope,
-    {
-        self.inner.try_on_cleanup(f).map_err(SilexError::from)
     }
 
     pub fn completion_once<T, F>(&self, callback: F) -> silex_reactivity::CompletionOnce<T>
@@ -576,7 +646,14 @@ impl<'scope> OwnedScope<'scope> {
             return TaskHandle::inactive();
         }
         let (task, cancel) = task::start(future);
-        self.on_cleanup(cancel);
+        self.on_cleanup(
+            move || {
+                cancel();
+                Ok::<(), SilexError>(())
+            },
+            ErrorReporter::unhandled().handler(),
+        )
+        .unwrap_or_else(|error| panic!("注册 owned task cleanup 失败: {error}"));
         task
     }
 

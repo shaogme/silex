@@ -2,6 +2,7 @@ use std::fmt;
 use std::rc::Rc;
 
 use crate::log::console_error;
+pub use silex_reactivity::ErrorHandler;
 use silex_reactivity::ReactiveError;
 use wasm_bindgen::JsValue;
 
@@ -63,5 +64,11 @@ impl<'scope> ErrorReporter<'scope> {
     /// Sends an error to this reporter.
     pub fn report(&self, error: SilexError) {
         (self.0)(error);
+    }
+
+    /// Adapt this reporter to the reactive runtime's scoped error handler.
+    pub fn handler(&self) -> ErrorHandler<'scope, SilexError> {
+        let reporter = self.clone();
+        ErrorHandler::new(move |error| reporter.report(error))
     }
 }

@@ -1,13 +1,11 @@
 //! Lifetime-aware reactive traits.
 
 use crate::{
-    Callback, NodeRef, ReactiveError, ReactiveResult, Rx, RxInner, RxValueKind, Scope, SilexError,
-    SilexResult,
-    log::console_error,
+    Callback, NodeRef, ReactiveError, ReactiveResult, Rx, RxInner, RxValueKind, Scope, SilexResult,
     reactivity::{Memo, ReactiveSource, ReadSignal, RwSignal, Signal, StoredValue, WriteSignal},
 };
 use silex_reactivity::try_notify as raw_try_notify;
-use std::{fmt::Debug, rc::Rc};
+use std::fmt::Debug;
 
 /// Values accepted by the scoped runtime.
 pub trait RxData {}
@@ -588,32 +586,6 @@ impl<S, T> RxOptionExt<T> for S where S: RxRead<Value = Option<T>> + Clone {}
 pub trait ForLoopSource {
     type Item: Clone;
     fn as_slice(&self) -> SilexResult<&[Self::Item]>;
-}
-
-#[derive(Clone)]
-pub struct ForErrorHandler(Rc<dyn Fn(SilexError)>);
-
-impl ForErrorHandler {
-    pub fn call(&self, error: SilexError) {
-        (self.0)(error);
-    }
-}
-
-impl<F> From<F> for ForErrorHandler
-where
-    F: Fn(SilexError) + 'static,
-{
-    fn from(value: F) -> Self {
-        Self(Rc::new(value))
-    }
-}
-
-impl Default for ForErrorHandler {
-    fn default() -> Self {
-        Self(Rc::new(|error| {
-            console_error(format!("Unhandled Silex list error: {error}"));
-        }))
-    }
 }
 
 impl<T: Clone + 'static> ForLoopSource for Vec<T> {

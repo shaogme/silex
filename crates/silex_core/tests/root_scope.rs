@@ -1,4 +1,4 @@
-use silex_core::{Runtime, Scope};
+use silex_core::{ErrorHandler, Runtime, Scope, SilexError};
 use std::{cell::Cell, rc::Rc};
 
 #[test]
@@ -11,7 +11,15 @@ fn high_level_root_uses_the_borrowed_scope_api() {
         let scope = root.scope();
         let (value, set_value) = scope.signal(0i32);
         let seen_for_effect = seen.clone();
-        let _effect = scope.effect(move || seen_for_effect.set(value.get()));
+        let _effect = scope
+            .effect(
+                move || {
+                    seen_for_effect.set(value.get());
+                    Ok(())
+                },
+                ErrorHandler::<SilexError>::new(|_| {}),
+            )
+            .expect("effect should register");
 
         set_value.set(4);
         assert_eq!(seen.get(), 4);

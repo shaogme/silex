@@ -1,5 +1,9 @@
-use silex_core::{Runtime, WatchOptions};
+use silex_core::{ErrorHandler, Runtime, SilexError, WatchOptions};
 use std::{cell::RefCell, rc::Rc};
+
+fn handler<'scope>() -> ErrorHandler<'scope, SilexError> {
+    ErrorHandler::new(|_| {})
+}
 
 #[test]
 fn source_watch_uses_promotion_and_typed_callback_values() {
@@ -9,9 +13,16 @@ fn source_watch_uses_promotion_and_typed_callback_values() {
     runtime.child(|scope| {
         let (source, set_source) = scope.signal(1_i32);
         let calls_in_callback = calls.clone();
-        scope.watch(source, move |new, old| {
-            calls_in_callback.borrow_mut().push((*new, old.copied()))
-        });
+        scope
+            .watch(
+                source,
+                move |new, old| {
+                    calls_in_callback.borrow_mut().push((*new, old.copied()));
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("watch should register");
 
         set_source.set(1);
         set_source.set(2);
@@ -27,11 +38,17 @@ fn getter_watch_supports_immediate_once_and_explicit_stop() {
     runtime.child(|scope| {
         let (source, set_source) = scope.signal(3_i32);
         let calls_in_callback = calls.clone();
-        let watcher = scope.watch_getter_with_options(
-            move || source.get(),
-            move |new, old| calls_in_callback.borrow_mut().push((*new, old.copied())),
-            WatchOptions::default().immediate().once(),
-        );
+        let watcher = scope
+            .watch_getter_with_options(
+                move || Ok(source.get()),
+                move |new, old| {
+                    calls_in_callback.borrow_mut().push((*new, old.copied()));
+                    Ok(())
+                },
+                handler(),
+                WatchOptions::default().immediate().once(),
+            )
+            .expect("watcher should register");
 
         assert_eq!(calls.borrow().as_slice(), &[(3, None)]);
         assert!(!watcher.try_stop().expect("watcher should be stoppable"));
@@ -49,9 +66,16 @@ fn tuple_source_watch_tracks_promoted_values_inside_a_batch() {
         let (first, set_first) = scope.signal(1_i32);
         let (second, set_second) = scope.signal(2_i32);
         let calls_in_callback = calls.clone();
-        scope.watch((first, second), move |new, old| {
-            calls_in_callback.borrow_mut().push((*new, old.copied()))
-        });
+        scope
+            .watch(
+                (first, second),
+                move |new, old| {
+                    calls_in_callback.borrow_mut().push((*new, old.copied()));
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("watch should register");
 
         scope.batch(|| {
             set_first.set(3);

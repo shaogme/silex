@@ -1,6 +1,6 @@
 use crate::reactivity::ReactiveSource;
 use crate::{
-    ReactiveResult, Scope, SilexError,
+    ErrorReporter, ReactiveResult, Scope, SilexError, SilexResult,
     reactivity::{Memo, ReadSignal, RwSignal, WriteSignal},
     traits::{RxBase, RxCloneData, RxData, RxError, RxGet, RxRead, RxValue},
 };
@@ -148,45 +148,58 @@ where
         let state_for_effect = state;
         let set_state_for_effect = set_state;
         let suspense_for_effect = suspense;
-        let _effect = scope.effect_from(inputs, move || {
-            let input = source_for_effect.get();
-            let _ = trigger_for_effect.get();
-            let next_state = state_for_effect.with_untracked(|state| {
-                state
-                    .as_option()
-                    .cloned()
-                    .map(ResourceState::Reloading)
-                    .unwrap_or(ResourceState::Loading)
-            });
-            set_state_for_effect.set(next_state);
-            if let Some(context) = suspense_for_effect {
-                context.increment();
-            }
-            let settled = Rc::new(Cell::new(false));
-            let settled_for_cleanup = settled.clone();
-            let suspense_for_cleanup = suspense_for_effect;
-            scope.on_cleanup(move || {
-                if !settled_for_cleanup.replace(true)
-                    && let Some(context) = suspense_for_cleanup
-                {
-                    context.decrement();
-                }
-            });
-            let id = request_id_for_effect
-                .get()
-                .checked_add(1)
-                .expect("Resource request id exhausted");
-            request_id_for_effect.set(id);
-            let future = fetcher.fetch(input);
-            let completion = completion.clone();
-            scope.spawn_scoped(async move {
-                let _ = completion.submit(ResourceCompletion {
-                    id,
-                    result: future.await,
-                    settled,
-                });
-            });
-        });
+        let error_handler = ErrorReporter::unhandled().handler();
+        let error_handler_for_effect = error_handler.clone();
+        let _effect = scope
+            .effect_from(
+                inputs,
+                move || -> SilexResult<()> {
+                    let input = source_for_effect.try_get()?;
+                    let _ = trigger_for_effect.try_get()?;
+                    let next_state = state_for_effect.try_with_untracked(|state| {
+                        state
+                            .as_option()
+                            .cloned()
+                            .map(ResourceState::Reloading)
+                            .unwrap_or(ResourceState::Loading)
+                    })?;
+                    set_state_for_effect.try_set(next_state)?;
+                    if let Some(context) = suspense_for_effect {
+                        context.increment();
+                    }
+                    let settled = Rc::new(Cell::new(false));
+                    let settled_for_cleanup = settled.clone();
+                    let suspense_for_cleanup = suspense_for_effect;
+                    scope.on_cleanup(
+                        move || {
+                            if !settled_for_cleanup.replace(true)
+                                && let Some(context) = suspense_for_cleanup
+                            {
+                                context.decrement();
+                            }
+                            Ok(())
+                        },
+                        error_handler.clone(),
+                    )?;
+                    let id = request_id_for_effect
+                        .get()
+                        .checked_add(1)
+                        .expect("Resource request id exhausted");
+                    request_id_for_effect.set(id);
+                    let future = fetcher.fetch(input);
+                    let completion = completion.clone();
+                    scope.spawn_scoped(async move {
+                        let _ = completion.submit(ResourceCompletion {
+                            id,
+                            result: future.await,
+                            settled,
+                        });
+                    });
+                    Ok(())
+                },
+                error_handler_for_effect,
+            )
+            .unwrap_or_else(|error| panic!("创建 resource effect 失败: {error}"));
 
         Self {
             state,
