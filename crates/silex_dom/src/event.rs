@@ -1,3 +1,4 @@
+use silex_core::SilexResult;
 use std::borrow::Cow;
 use wasm_bindgen::{JsCast, convert::FromWasmAbi};
 
@@ -28,24 +29,24 @@ pub struct WithEventArg;
 pub struct WithoutEventArg;
 
 pub trait EventHandler<'scope, E, M> {
-    fn into_handler(self) -> Box<dyn FnMut(E) + 'scope>;
+    fn into_handler(self) -> Box<dyn FnMut(E) -> SilexResult<()> + 'scope>;
 }
 
 impl<'scope, F, E> EventHandler<'scope, E, WithEventArg> for F
 where
-    F: FnMut(E) + 'scope,
+    F: FnMut(E) -> SilexResult<()> + 'scope,
 {
-    fn into_handler(self) -> Box<dyn FnMut(E) + 'scope> {
+    fn into_handler(self) -> Box<dyn FnMut(E) -> SilexResult<()> + 'scope> {
         Box::new(self)
     }
 }
 
 impl<'scope, F, E> EventHandler<'scope, E, WithoutEventArg> for F
 where
-    F: FnMut() + 'scope,
+    F: FnMut() -> SilexResult<()> + 'scope,
     E: 'scope,
 {
-    fn into_handler(mut self) -> Box<dyn FnMut(E) + 'scope> {
+    fn into_handler(mut self) -> Box<dyn FnMut(E) -> SilexResult<()> + 'scope> {
         Box::new(move |_| self())
     }
 }

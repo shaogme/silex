@@ -2,10 +2,10 @@ use super::owner::{DomRange, RowController, RowRender, RowRenderArgs, RowUpdater
 use crate::attribute::PendingAttribute;
 use crate::view::{AnyView, ApplyAttributes, OwnedViewOwner, View, ViewOwner};
 use silex_core::reactivity::{ReactiveSource, runtime_inputs_of};
-use silex_core::traits::{ForErrorHandler, ForLoopSource, RxRead};
-use silex_core::{RuntimeInputs, SilexError, SilexResult};
+use silex_core::traits::{ForLoopSource, RxRead};
+use silex_core::{ErrorHandler, ErrorReporter, RuntimeInputs, SilexError, SilexResult};
 use std::{
-    cell::{Cell, RefCell},
+    cell::RefCell,
     collections::{HashMap, HashSet},
     mem,
     panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
@@ -18,7 +18,7 @@ pub struct KeyedLoopView<'scope, IF, IS, T, K> {
     pub each: IF,
     pub key_fn: Rc<dyn Fn(&T) -> K + 'scope>,
     pub view_fn: Rc<dyn Fn(T, usize, RowUpdater<'scope, T>) -> AnyView<'scope> + 'scope>,
-    pub error: ForErrorHandler,
+    pub error_handler: Option<ErrorHandler<'scope, SilexError>>,
     pub _marker: std::marker::PhantomData<(IS, T)>,
 }
 
@@ -70,7 +70,7 @@ where
             self.each.clone(),
             self.key_fn.clone(),
             RowFactory::Stateful(self.view_fn.clone()),
-            self.error.clone(),
+            self.error_handler.clone(),
             attrs,
         )
     }
@@ -90,7 +90,7 @@ where
             self.each,
             self.key_fn,
             RowFactory::Stateful(self.view_fn),
-            self.error,
+            self.error_handler,
             attrs,
         )
     }
@@ -144,37 +144,6 @@ where
     }
 }
 
-type DeferredErrorHandler<'scope> = Rc<dyn Fn(SilexError) + 'scope>;
-
-fn register_list_effect<'scope, F>(
-    owner: &dyn ViewOwner<'scope>,
-    inputs: RuntimeInputs,
-    error_handler: DeferredErrorHandler<'scope>,
-    mut callback: F,
-) -> SilexResult<()>
-where
-    F: FnMut() -> SilexResult<()> + 'scope,
-{
-    let first_run = Rc::new(Cell::new(true));
-    let first_run_for_effect = first_run.clone();
-    let initial_error = Rc::new(RefCell::new(None::<SilexError>));
-    let initial_error_for_effect = initial_error.clone();
-    owner.effect_from(
-        inputs,
-        Box::new(move || {
-            let is_initial = first_run_for_effect.replace(false);
-            if let Err(error) = callback() {
-                if is_initial {
-                    *initial_error_for_effect.borrow_mut() = Some(error);
-                } else {
-                    error_handler(error);
-                }
-            }
-        }),
-    )?;
-    initial_error.borrow_mut().take().map_or(Ok(()), Err)
-}
-
 fn mount_indexed_list<'scope, IF, IS, T>(
     owner: &dyn ViewOwner<'scope>,
     parent: &Node,
@@ -212,14 +181,19 @@ where
 
     let cleanup_rows = rows.clone();
     let cleanup_range = range.clone();
-    if let Err(error) = local_owner.on_cleanup(Box::new(move || {
-        let mut rows = mem::take(&mut *cleanup_rows.borrow_mut());
-        let panic = dispose_rows(&mut rows);
-        cleanup_range.remove();
-        if let Some(panic) = panic {
-            resume_unwind(panic);
-        }
-    })) {
+    let error_handler = local_owner.token().error_handler();
+    if let Err(error) = local_owner.on_cleanup(
+        Box::new(move || {
+            let mut rows = mem::take(&mut *cleanup_rows.borrow_mut());
+            let panic = dispose_rows(&mut rows);
+            cleanup_range.remove();
+            if let Some(panic) = panic {
+                resume_unwind(panic);
+            }
+            Ok(())
+        }),
+        error_handler.clone(),
+    ) {
         scope.dispose();
         range.remove();
         return Err(error);
@@ -227,79 +201,89 @@ where
 
     let effect_rows = rows;
     let end = range.end.clone();
-    let deferred_errors = {
-        let token = token.clone();
-        Rc::new(move |error| token.report_error(error))
-    };
-    register_list_effect(&local_owner, inputs, deferred_errors, move || {
-        let values = source
-            .try_with(|items| items.as_slice().map(|values| values.to_vec()))
-            .map_err(SilexError::from)
-            .and_then(|result| result)?;
-        let mut rows = mem::take(&mut *effect_rows.borrow_mut());
-        let old_len = rows.len();
-        let new_len = values.len();
-        let mut pending = Vec::new();
-        let result = catch_unwind(AssertUnwindSafe(|| -> SilexResult<()> {
-            let mut values = values.into_iter();
-            for (index, row) in rows.iter_mut().enumerate().take(new_len) {
-                let item = values.next().expect("snapshot length is stable");
-                row.update(item, index)?;
-            }
-            for (offset, item) in values.enumerate() {
-                let index = old_len + offset;
-                let row_range = DomRange::before(&end, "for-row")?;
-                let row = RowController::try_new(
-                    &token,
-                    row_range,
-                    render.clone(),
-                    RuntimeInputs::new(),
-                    attrs.clone(),
-                    item,
-                    index,
-                    stateful,
-                )?;
-                pending.push(row);
-            }
-            Ok(())
-        }));
-
-        match result {
-            Ok(Ok(())) => {
-                let mut removed = if new_len < old_len {
-                    rows.split_off(new_len)
-                } else {
-                    Vec::new()
-                };
-                rows.append(&mut pending);
-                let cleanup_panic = dispose_rows(&mut removed);
-                *effect_rows.borrow_mut() = rows;
-                if let Some(panic) = cleanup_panic {
-                    resume_unwind(panic);
+    if let Err(error) = local_owner.effect_from(
+        inputs,
+        Box::new(move || -> SilexResult<()> {
+            let values = source
+                .try_with(|items| items.as_slice().map(|values| values.to_vec()))
+                .map_err(SilexError::from)
+                .and_then(|result| result)?;
+            let mut rows = mem::take(&mut *effect_rows.borrow_mut());
+            let old_len = rows.len();
+            let new_len = values.len();
+            let mut pending = Vec::new();
+            let result = catch_unwind(AssertUnwindSafe(|| -> SilexResult<()> {
+                let mut values = values.into_iter();
+                for (index, row) in rows.iter_mut().enumerate().take(new_len) {
+                    let item = values.next().expect("snapshot length is stable");
+                    row.update(item, index)?;
+                }
+                for (offset, item) in values.enumerate() {
+                    let index = old_len + offset;
+                    let row_range = DomRange::before(&end, "for-row")?;
+                    let row = RowController::try_new(
+                        &token,
+                        row_range,
+                        render.clone(),
+                        RuntimeInputs::new(),
+                        attrs.clone(),
+                        item,
+                        index,
+                        stateful,
+                    )?;
+                    pending.push(row);
                 }
                 Ok(())
-            }
-            Ok(Err(error)) => {
-                let cleanup_panic = dispose_rows(&mut pending);
-                *effect_rows.borrow_mut() = rows;
-                if let Some(panic) = cleanup_panic {
-                    resume_unwind(panic);
+            }));
+
+            match result {
+                Ok(Ok(())) => {
+                    let mut removed = if new_len < old_len {
+                        rows.split_off(new_len)
+                    } else {
+                        Vec::new()
+                    };
+                    rows.append(&mut pending);
+                    let cleanup_panic = dispose_rows(&mut removed);
+                    *effect_rows.borrow_mut() = rows;
+                    if let Some(panic) = cleanup_panic {
+                        resume_unwind(panic);
+                    }
+                    Ok(())
                 }
-                Err(error)
-            }
-            Err(panic) => {
-                let cleanup_panic = dispose_rows(&mut pending);
-                *effect_rows.borrow_mut() = rows;
-                if let Some(panic) = cleanup_panic {
-                    resume_unwind(panic);
+                Ok(Err(error)) => {
+                    let cleanup_panic = dispose_rows(&mut pending);
+                    *effect_rows.borrow_mut() = rows;
+                    if let Some(panic) = cleanup_panic {
+                        resume_unwind(panic);
+                    }
+                    Err(error)
                 }
-                Err(panic_error("Indexed list", panic))
+                Err(panic) => {
+                    let cleanup_panic = dispose_rows(&mut pending);
+                    *effect_rows.borrow_mut() = rows;
+                    if let Some(panic) = cleanup_panic {
+                        resume_unwind(panic);
+                    }
+                    Err(panic_error("Indexed list", panic))
+                }
             }
-        }
-    })?;
+        }),
+        error_handler,
+    ) {
+        scope.dispose();
+        range.remove();
+        return Err(error);
+    }
 
     let scope_for_cleanup = scope.clone();
-    if let Err(error) = owner.on_cleanup(Box::new(move || scope_for_cleanup.dispose())) {
+    if let Err(error) = owner.on_cleanup(
+        Box::new(move || {
+            scope_for_cleanup.dispose();
+            Ok(())
+        }),
+        owner.token().error_handler(),
+    ) {
         scope.dispose();
         return Err(error);
     }
@@ -317,7 +301,7 @@ fn mount_keyed_list<'scope, IF, IS, T, K>(
     source: IF,
     key_fn: Rc<dyn Fn(&T) -> K + 'scope>,
     factory: RowFactory<'scope, T>,
-    error: ForErrorHandler,
+    error_handler: Option<ErrorHandler<'scope, SilexError>>,
     attrs: Vec<PendingAttribute<'scope>>,
 ) -> SilexResult<()>
 where
@@ -329,7 +313,10 @@ where
     let inputs = runtime_inputs_of(source.clone());
     owner.validate_inputs(&inputs)?;
     let scope = Rc::new(owner.try_owned_scope()?);
-    let local_owner = OwnedViewOwner::new(scope.clone(), owner.token().error_reporter());
+    let reporter = error_handler
+        .map(|handler| ErrorReporter::new(move |error| handler.handle(error)))
+        .unwrap_or_else(|| owner.token().error_reporter());
+    let local_owner = OwnedViewOwner::new(scope.clone(), reporter);
     let token = local_owner.token();
     let range = DomRange::append(parent, "for")?;
     let stateful = factory.is_stateful();
@@ -354,17 +341,22 @@ where
 
     let cleanup_state = state.clone();
     let cleanup_range = range.clone();
-    if let Err(error) = local_owner.on_cleanup(Box::new(move || {
-        let mut state = cleanup_state.borrow_mut();
-        let mut rows = mem::take(&mut state.rows).into_values().collect::<Vec<_>>();
-        state.order.clear();
-        drop(state);
-        let panic = dispose_rows(&mut rows);
-        cleanup_range.remove();
-        if let Some(panic) = panic {
-            resume_unwind(panic);
-        }
-    })) {
+    let effect_handler = local_owner.token().error_handler();
+    if let Err(error) = local_owner.on_cleanup(
+        Box::new(move || {
+            let mut state = cleanup_state.borrow_mut();
+            let mut rows = mem::take(&mut state.rows).into_values().collect::<Vec<_>>();
+            state.order.clear();
+            drop(state);
+            let panic = dispose_rows(&mut rows);
+            cleanup_range.remove();
+            if let Some(panic) = panic {
+                resume_unwind(panic);
+            }
+            Ok(())
+        }),
+        effect_handler.clone(),
+    ) {
         scope.dispose();
         range.remove();
         return Err(error);
@@ -372,133 +364,139 @@ where
 
     let effect_state = state;
     let end = range.end.clone();
-    let deferred_errors = {
-        let error = error.clone();
-        Rc::new(move |error_value| error.call(error_value))
-    };
-    if let Err(error) = register_list_effect(&local_owner, inputs, deferred_errors, move || {
-        let values = source
-            .try_with(|items| items.as_slice().map(|values| values.to_vec()))
-            .map_err(SilexError::from)
-            .and_then(|result| result)?;
+    if let Err(error) = local_owner.effect_from(
+        inputs,
+        Box::new(move || -> SilexResult<()> {
+            let values = source
+                .try_with(|items| items.as_slice().map(|values| values.to_vec()))
+                .map_err(SilexError::from)
+                .and_then(|result| result)?;
 
-        let key_result = catch_unwind(AssertUnwindSafe(|| -> SilexResult<Vec<K>> {
-            let mut keys = Vec::with_capacity(values.len());
-            let mut seen = HashSet::with_capacity(values.len());
-            for item in &values {
-                let key = key_fn(item);
-                if !seen.insert(key.clone()) {
-                    return Err(SilexError::Framework(
-                        "duplicate key in keyed list".to_string(),
-                    ));
-                }
-                keys.push(key);
-            }
-            Ok(keys)
-        }));
-        let keys = match key_result {
-            Ok(Ok(keys)) => keys,
-            Ok(Err(error)) => return Err(error),
-            Err(panic) => {
-                return Err(panic_error("Keyed list key function", panic));
-            }
-        };
-
-        let mut old_rows = {
-            let mut state = effect_state.borrow_mut();
-            mem::take(&mut state.rows)
-        };
-        let old_order = {
-            let mut state = effect_state.borrow_mut();
-            mem::take(&mut state.order)
-        };
-        let mut pending = HashMap::with_capacity(keys.len());
-        let mut seen = HashSet::with_capacity(keys.len());
-        let mut next_order = Vec::with_capacity(keys.len());
-        let result = catch_unwind(AssertUnwindSafe(|| -> SilexResult<()> {
-            for (index, (key, item)) in keys.iter().cloned().zip(values).enumerate() {
-                if let Some(row) = old_rows.get_mut(&key) {
-                    row.update(item, index)?;
-                    seen.insert(key.clone());
-                    next_order.push(key);
-                    continue;
-                }
-                let row_range = DomRange::before(&end, "for-row")?;
-                let row = RowController::try_new(
-                    &token,
-                    row_range,
-                    render.clone(),
-                    RuntimeInputs::new(),
-                    attrs.clone(),
-                    item,
-                    index,
-                    stateful,
-                )?;
-                seen.insert(key.clone());
-                next_order.push(key.clone());
-                pending.insert(key, row);
-            }
-            Ok(())
-        }));
-
-        match result {
-            Ok(Ok(())) => {
-                let mut removed = Vec::new();
-                for key in &old_order {
-                    if !seen.contains(key)
-                        && let Some(row) = old_rows.remove(key)
-                    {
-                        removed.push(row);
+            let key_result = catch_unwind(AssertUnwindSafe(|| -> SilexResult<Vec<K>> {
+                let mut keys = Vec::with_capacity(values.len());
+                let mut seen = HashSet::with_capacity(values.len());
+                for item in &values {
+                    let key = key_fn(item);
+                    if !seen.insert(key.clone()) {
+                        return Err(SilexError::Framework(
+                            "duplicate key in keyed list".to_string(),
+                        ));
                     }
+                    keys.push(key);
                 }
-                old_rows.extend(pending.drain());
-                for key in &next_order {
-                    if let Some(row) = old_rows.get(key) {
-                        row.move_before(&end)?;
-                    }
+                Ok(keys)
+            }));
+            let keys = match key_result {
+                Ok(Ok(keys)) => keys,
+                Ok(Err(error)) => return Err(error),
+                Err(panic) => {
+                    return Err(panic_error("Keyed list key function", panic));
                 }
-                let cleanup_panic = dispose_rows(&mut removed);
+            };
+
+            let mut old_rows = {
                 let mut state = effect_state.borrow_mut();
-                state.rows = old_rows;
-                state.order = next_order;
-                drop(state);
-                if let Some(panic) = cleanup_panic {
-                    resume_unwind(panic);
+                mem::take(&mut state.rows)
+            };
+            let old_order = {
+                let mut state = effect_state.borrow_mut();
+                mem::take(&mut state.order)
+            };
+            let mut pending = HashMap::with_capacity(keys.len());
+            let mut seen = HashSet::with_capacity(keys.len());
+            let mut next_order = Vec::with_capacity(keys.len());
+            let result = catch_unwind(AssertUnwindSafe(|| -> SilexResult<()> {
+                for (index, (key, item)) in keys.iter().cloned().zip(values).enumerate() {
+                    if let Some(row) = old_rows.get_mut(&key) {
+                        row.update(item, index)?;
+                        seen.insert(key.clone());
+                        next_order.push(key);
+                        continue;
+                    }
+                    let row_range = DomRange::before(&end, "for-row")?;
+                    let row = RowController::try_new(
+                        &token,
+                        row_range,
+                        render.clone(),
+                        RuntimeInputs::new(),
+                        attrs.clone(),
+                        item,
+                        index,
+                        stateful,
+                    )?;
+                    seen.insert(key.clone());
+                    next_order.push(key.clone());
+                    pending.insert(key, row);
                 }
                 Ok(())
-            }
-            Ok(Err(error)) => {
-                restore_keyed_order(&old_rows, &old_order, &end);
-                let cleanup_panic = dispose_map(&mut pending);
-                let mut state = effect_state.borrow_mut();
-                state.rows = old_rows;
-                state.order = old_order;
-                drop(state);
-                if let Some(panic) = cleanup_panic {
-                    resume_unwind(panic);
+            }));
+
+            match result {
+                Ok(Ok(())) => {
+                    let mut removed = Vec::new();
+                    for key in &old_order {
+                        if !seen.contains(key)
+                            && let Some(row) = old_rows.remove(key)
+                        {
+                            removed.push(row);
+                        }
+                    }
+                    old_rows.extend(pending.drain());
+                    for key in &next_order {
+                        if let Some(row) = old_rows.get(key) {
+                            row.move_before(&end)?;
+                        }
+                    }
+                    let cleanup_panic = dispose_rows(&mut removed);
+                    let mut state = effect_state.borrow_mut();
+                    state.rows = old_rows;
+                    state.order = next_order;
+                    drop(state);
+                    if let Some(panic) = cleanup_panic {
+                        resume_unwind(panic);
+                    }
+                    Ok(())
                 }
-                Err(error)
-            }
-            Err(panic) => {
-                restore_keyed_order(&old_rows, &old_order, &end);
-                let cleanup_panic = dispose_map(&mut pending);
-                let mut state = effect_state.borrow_mut();
-                state.rows = old_rows;
-                state.order = old_order;
-                drop(state);
-                if let Some(panic) = cleanup_panic {
-                    resume_unwind(panic);
+                Ok(Err(error)) => {
+                    restore_keyed_order(&old_rows, &old_order, &end);
+                    let cleanup_panic = dispose_map(&mut pending);
+                    let mut state = effect_state.borrow_mut();
+                    state.rows = old_rows;
+                    state.order = old_order;
+                    drop(state);
+                    if let Some(panic) = cleanup_panic {
+                        resume_unwind(panic);
+                    }
+                    Err(error)
                 }
-                Err(panic_error("Keyed list", panic))
+                Err(panic) => {
+                    restore_keyed_order(&old_rows, &old_order, &end);
+                    let cleanup_panic = dispose_map(&mut pending);
+                    let mut state = effect_state.borrow_mut();
+                    state.rows = old_rows;
+                    state.order = old_order;
+                    drop(state);
+                    if let Some(panic) = cleanup_panic {
+                        resume_unwind(panic);
+                    }
+                    Err(panic_error("Keyed list", panic))
+                }
             }
-        }
-    }) {
+        }),
+        effect_handler,
+    ) {
         scope.dispose();
         return Err(error);
     }
 
     let scope_for_cleanup = scope.clone();
-    if let Err(error) = owner.on_cleanup(Box::new(move || scope_for_cleanup.dispose())) {
+    if let Err(error) = owner.on_cleanup(
+        Box::new(move || {
+            scope_for_cleanup.dispose();
+            Ok(())
+        }),
+        owner.token().error_handler(),
+    ) {
         scope.dispose();
         return Err(error);
     }

@@ -1,6 +1,8 @@
 #![cfg(target_arch = "wasm32")]
 
-use silex_core::{Runtime, SilexError};
+use silex_core::{
+    ErrorHandler, ErrorReporter, Runtime, RuntimeInputs, SilexError, SilexResult, runtime_inputs_of,
+};
 use silex_dom::attribute::{AttrOp, CombinedStyles, PendingAttribute};
 use silex_dom::element::Element;
 use silex_dom::view::{
@@ -32,9 +34,13 @@ impl<'scope> View<'scope> for CleanupProbe {
         _attrs: Vec<PendingAttribute<'scope>>,
     ) -> silex_core::SilexResult<()> {
         let cleanups = self.cleanups.clone();
-        owner.on_cleanup(Box::new(move || {
-            cleanups.set(cleanups.get() + 1);
-        }))?;
+        owner.on_cleanup(
+            Box::new(move || {
+                cleanups.set(cleanups.get() + 1);
+                Ok(())
+            }),
+            owner.token().error_handler(),
+        )?;
         mount_text_node(parent, &self.text)?;
         Ok(())
     }
@@ -66,9 +72,13 @@ impl<'scope> View<'scope> for FailingChild {
         _attrs: Vec<PendingAttribute<'scope>>,
     ) -> silex_core::SilexResult<()> {
         let cleanups = self.cleanups.clone();
-        owner.on_cleanup(Box::new(move || {
-            cleanups.set(cleanups.get() + 1);
-        }))?;
+        owner.on_cleanup(
+            Box::new(move || {
+                cleanups.set(cleanups.get() + 1);
+                Ok(())
+            }),
+            owner.token().error_handler(),
+        )?;
         Err(SilexError::Framework("child mount rejected".to_string()))
     }
 
@@ -115,10 +125,14 @@ impl<'scope> View<'scope> for StatefulProbe {
 
         let node_for_cleanup = self.node.clone();
         let cleanups = self.cleanups.clone();
-        owner.on_cleanup(Box::new(move || {
-            node_for_cleanup.borrow_mut().take();
-            cleanups.set(cleanups.get() + 1);
-        }))?;
+        owner.on_cleanup(
+            Box::new(move || {
+                node_for_cleanup.borrow_mut().take();
+                cleanups.set(cleanups.get() + 1);
+                Ok(())
+            }),
+            owner.token().error_handler(),
+        )?;
         Ok(())
     }
 
@@ -158,6 +172,88 @@ fn comment_count(node: &Node) -> u32 {
         .filter_map(|index| children.item(index))
         .filter(|child| child.node_type() == 8)
         .count() as u32
+}
+
+#[wasm_bindgen_test]
+fn native_owner_error_handler_separates_initial_deferred_and_cleanup_errors() {
+    let initial_reports = Rc::new(Cell::new(0));
+    let initial_reports_for_owner = initial_reports.clone();
+    let mut runtime = Runtime::new();
+    runtime.child(|scope| {
+        let owner = ScopedViewOwner::with_error_reporter(
+            scope,
+            ErrorReporter::new(move |_| {
+                initial_reports_for_owner.set(initial_reports_for_owner.get() + 1);
+            }),
+        );
+        let result = owner.effect_from(
+            RuntimeInputs::new(),
+            Box::new(|| Err(SilexError::Framework("initial effect failure".to_string()))),
+            owner.token().error_handler(),
+        );
+        assert!(matches!(
+            result,
+            Err(SilexError::Framework(message)) if message == "initial effect failure"
+        ));
+    });
+    assert_eq!(initial_reports.get(), 0);
+
+    let deferred_reports = Rc::new(Cell::new(0));
+    let cleanup_reports = Rc::new(Cell::new(0));
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    {
+        let scope = root.scope();
+        let (should_fail, set_should_fail) = scope.signal(false);
+        let runs = Rc::new(Cell::new(0));
+        let runs_for_effect = runs.clone();
+        let deferred_reports_for_owner = deferred_reports.clone();
+        let cleanup_reports_for_owner = cleanup_reports.clone();
+        let owner = ScopedViewOwner::with_error_reporter(
+            scope,
+            ErrorReporter::new(move |error| {
+                if matches!(&error, SilexError::Framework(message) if message == "deferred effect failure")
+                {
+                    deferred_reports_for_owner.set(deferred_reports_for_owner.get() + 1);
+                }
+                if matches!(&error, SilexError::Framework(message) if message == "cleanup failure")
+                {
+                    cleanup_reports_for_owner.set(cleanup_reports_for_owner.get() + 1);
+                }
+            }),
+        );
+        owner
+            .effect_from(
+                runtime_inputs_of(should_fail),
+                Box::new(move || -> SilexResult<()> {
+                    if should_fail.try_get().map_err(SilexError::from)? {
+                        return Err(SilexError::Framework("deferred effect failure".to_string()));
+                    }
+                    runs_for_effect.set(runs_for_effect.get() + 1);
+                    Ok(())
+                }),
+                owner.token().error_handler(),
+            )
+            .expect("initial effect run should succeed");
+        assert_eq!(runs.get(), 1);
+
+        owner
+            .on_cleanup(
+                Box::new(|| Err(SilexError::Framework("cleanup failure".to_string()))),
+                owner.token().error_handler(),
+            )
+            .expect("cleanup registration should succeed");
+
+        set_should_fail.set(true);
+        assert_eq!(deferred_reports.get(), 1);
+        assert_eq!(runs.get(), 1);
+        set_should_fail.set(false);
+        assert_eq!(runs.get(), 2);
+    }
+
+    root.dispose().expect("root cleanup should succeed");
+    assert_eq!(deferred_reports.get(), 1);
+    assert_eq!(cleanup_reports.get(), 1);
 }
 
 #[wasm_bindgen_test]
@@ -201,9 +297,9 @@ fn keyed_list_initial_key_panic_is_a_mount_error() {
             each: items,
             key_fn: Rc::new(|_| panic!("key panic")),
             view_fn: Rc::new(|item: i32, _, _| AnyView::new(item.to_string())),
-            error: silex_core::traits::ForErrorHandler::from(move |_| {
+            error_handler: Some(ErrorHandler::new(move |_| {
                 reports_for_handler.set(reports_for_handler.get() + 1);
-            }),
+            })),
             _marker: PhantomData,
         };
         let owner = ScopedViewOwner::new(scope);
@@ -306,7 +402,7 @@ fn combined_reactive_styles_clean_up_properties_on_scope_dispose() {
             .unwrap_or_default()
             .contains("--dom-owner-color")
     );
-    let host_node: Node = host.into();
+    let host_node = host;
     host_node
         .parent_node()
         .expect("test host has a body parent")
@@ -370,9 +466,9 @@ fn branch_replaces_row_owner_and_keyed_list_reorders_ranges() {
                         cleanups: Rc::new(Cell::new(0)),
                     })
                 }),
-                error: silex_core::traits::ForErrorHandler::from(move |_| {
+                error_handler: Some(ErrorHandler::new(move |_| {
                     duplicate_errors_for_handler.set(duplicate_errors_for_handler.get() + 1);
-                }),
+                })),
                 _marker: PhantomData,
             };
             let list_owner = ScopedViewOwner::new(child);
@@ -546,7 +642,7 @@ fn stateful_keyed_rows_preserve_mounts_and_invalidate_old_updaters() {
                         cleanups: cleanups_for_factory.clone(),
                     })
                 }),
-                error: silex_core::traits::ForErrorHandler::from(|_| {}),
+                error_handler: Some(ErrorHandler::new(|_| {})),
                 _marker: PhantomData,
             };
             let owner = ScopedViewOwner::new(child);
@@ -621,9 +717,9 @@ fn rejected_stateful_factory_cleans_uncommitted_row_range() {
                         cleanups: cleanups_for_factory.clone(),
                     })
                 }),
-                error: silex_core::traits::ForErrorHandler::from(move |_| {
+                error_handler: Some(ErrorHandler::new(move |_| {
                     errors_for_handler.set(errors_for_handler.get() + 1);
-                }),
+                })),
                 _marker: PhantomData,
             };
             let owner = ScopedViewOwner::new(child);

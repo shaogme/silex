@@ -7,7 +7,7 @@ use wasm_bindgen::prelude::*;
 use web_sys::Document;
 use web_sys::Window;
 
-use silex_core::SilexError;
+use silex_core::{SilexError, SilexResult};
 
 use crate::view::{HostCallback, HostResourceHandle, ViewOwnerToken};
 
@@ -148,14 +148,15 @@ where
 pub fn window_event_listener_untyped_owned<'scope>(
     owner: &ViewOwnerToken<'scope>,
     event_name: &str,
-    mut cb: impl FnMut(web_sys::Event) + 'scope,
+    mut cb: impl FnMut(web_sys::Event) -> SilexResult<()> + 'scope,
 ) -> Result<HostResourceHandle<'scope>, JsValue> {
     if !owner.is_active() {
         return Err(JsValue::from_str("view owner is inactive"));
     }
-    let destination = owner.host_callback(move |payload| {
-        cb(payload.unchecked_into::<web_sys::Event>());
-    });
+    let destination = owner.host_callback(
+        move |payload| cb(payload.unchecked_into::<web_sys::Event>()),
+        owner.error_handler(),
+    );
     let destination_for_closure = destination.clone();
     let closure = Closure::wrap(Box::new(move |event: web_sys::Event| {
         let _ = destination_for_closure.dispatch(event.into());
@@ -196,10 +197,10 @@ pub fn window_event_listener_owned<'scope, E, F>(
 ) -> Result<HostResourceHandle<'scope>, JsValue>
 where
     E: crate::event::EventDescriptor + 'static,
-    F: FnMut(E::EventType) + 'scope,
+    F: FnMut(E::EventType) -> SilexResult<()> + 'scope,
 {
     window_event_listener_untyped_owned(owner, &event.name(), move |event| {
-        cb(event.unchecked_into());
+        cb(event.unchecked_into())
     })
 }
 
@@ -301,15 +302,20 @@ impl Drop for OnceCallbackGuard {
 
 fn owned_once_callback<'scope>(
     owner: &ViewOwnerToken<'scope>,
-    cb: impl FnOnce() + 'scope,
+    cb: impl FnOnce() -> SilexResult<()> + 'scope,
     closure: &JsClosureSlot,
 ) -> HostCallback {
     let mut cb = Some(cb);
-    let destination = owner.host_callback_once(move |_| {
-        if let Some(cb) = cb.take() {
-            cb();
-        }
-    });
+    let destination = owner.host_callback_once(
+        move |_| {
+            if let Some(cb) = cb.take() {
+                cb()
+            } else {
+                Ok(())
+            }
+        },
+        owner.error_handler(),
+    );
     let destination_for_closure = destination.clone();
     let closure_for_callback = closure.clone();
     let callback = Closure::once_into_js(move || {
@@ -325,7 +331,7 @@ fn owned_once_callback<'scope>(
 
 pub fn request_animation_frame_owned<'scope>(
     owner: &ViewOwnerToken<'scope>,
-    cb: impl FnOnce() + 'scope,
+    cb: impl FnOnce() -> SilexResult<()> + 'scope,
 ) -> Result<HostResourceHandle<'scope>, JsValue> {
     if !owner.is_active() {
         return Err(JsValue::from_str("view owner is inactive"));
@@ -382,7 +388,7 @@ pub fn request_idle_callback_with_handle(
 
 pub fn request_idle_callback_owned<'scope>(
     owner: &ViewOwnerToken<'scope>,
-    cb: impl FnOnce() + 'scope,
+    cb: impl FnOnce() -> SilexResult<()> + 'scope,
 ) -> Result<HostResourceHandle<'scope>, JsValue> {
     if !owner.is_active() {
         return Err(JsValue::from_str("view owner is inactive"));
@@ -423,7 +429,7 @@ pub fn queue_microtask(task: impl FnOnce() + 'static) {
 
 pub fn queue_microtask_owned<'scope>(
     owner: &ViewOwnerToken<'scope>,
-    task: impl FnOnce() + 'scope,
+    task: impl FnOnce() -> SilexResult<()> + 'scope,
 ) -> HostResourceHandle<'scope> {
     if !owner.is_active() {
         return HostResourceHandle::inactive();
@@ -473,7 +479,7 @@ pub fn set_timeout_with_handle(
 
 pub fn set_timeout_owned<'scope>(
     owner: &ViewOwnerToken<'scope>,
-    cb: impl FnOnce() + 'scope,
+    cb: impl FnOnce() -> SilexResult<()> + 'scope,
     duration: Duration,
 ) -> Result<HostResourceHandle<'scope>, JsValue> {
     if !owner.is_active() {
@@ -538,13 +544,13 @@ pub fn set_interval_with_handle(
 
 pub fn set_interval_owned<'scope>(
     owner: &ViewOwnerToken<'scope>,
-    mut cb: impl FnMut() + 'scope,
+    mut cb: impl FnMut() -> SilexResult<()> + 'scope,
     duration: Duration,
 ) -> Result<HostResourceHandle<'scope>, JsValue> {
     if !owner.is_active() {
         return Err(JsValue::from_str("view owner is inactive"));
     }
-    let destination = owner.host_callback(move |_| cb());
+    let destination = owner.host_callback(move |_| cb(), owner.error_handler());
     let destination_for_closure = destination.clone();
     let closure = Closure::wrap(Box::new(move || {
         let _ = destination_for_closure.dispatch(JsValue::UNDEFINED);
@@ -634,7 +640,7 @@ pub fn debounce_owned<'scope, T, F>(
 ) -> impl FnMut(T) + 'scope + use<'scope, T, F>
 where
     T: 'scope,
-    F: FnMut(T) + 'scope,
+    F: FnMut(T) -> SilexResult<()> + 'scope,
 {
     let state = Rc::new(RefCell::new(DebounceState {
         pending: None,
@@ -642,24 +648,28 @@ where
         generation: 0,
     }));
     let state_for_callback = state.clone();
-    let destination = owner.host_callback(move |payload| {
-        let Some(generation) = payload.as_f64() else {
-            return;
-        };
-        let value = {
-            let mut state = state_for_callback.borrow_mut();
-            if state.generation as f64 != generation {
-                return;
+    let destination = owner.host_callback(
+        move |payload| {
+            let Some(generation) = payload.as_f64() else {
+                return Ok(());
+            };
+            let value = {
+                let mut state = state_for_callback.borrow_mut();
+                if state.generation as f64 != generation {
+                    return Ok(());
+                }
+                if let Some(timer) = state.timer.take() {
+                    drop(timer.callback);
+                }
+                state.pending.take()
+            };
+            if let Some(value) = value {
+                cb(value)?;
             }
-            if let Some(timer) = state.timer.take() {
-                drop(timer.callback);
-            }
-            state.pending.take()
-        };
-        if let Some(value) = value {
-            cb(value);
-        }
-    });
+            Ok(())
+        },
+        owner.error_handler(),
+    );
 
     let state_for_cleanup = state.clone();
     let resource = owner.host_resource_for_callback(&destination, move || {
@@ -702,7 +712,7 @@ where
 pub fn use_interval_owned<'scope>(
     owner: &ViewOwnerToken<'scope>,
     duration: Duration,
-    cb: impl FnMut() + 'scope,
+    cb: impl FnMut() -> SilexResult<()> + 'scope,
 ) -> Result<HostResourceHandle<'scope>, JsValue> {
     set_interval_owned(owner, cb, duration)
 }
@@ -710,7 +720,7 @@ pub fn use_interval_owned<'scope>(
 pub fn use_timeout_owned<'scope>(
     owner: &ViewOwnerToken<'scope>,
     duration: Duration,
-    cb: impl FnOnce() + 'scope,
+    cb: impl FnOnce() -> SilexResult<()> + 'scope,
 ) -> Result<HostResourceHandle<'scope>, JsValue> {
     set_timeout_owned(owner, cb, duration)
 }

@@ -112,7 +112,13 @@ impl<'scope> Element<'scope> {
                 child.mount(&provisional_owner, self.dom_element.as_ref(), Vec::new())?;
             }
             let scope_for_cleanup = provisional_scope.clone();
-            owner.on_cleanup(Box::new(move || scope_for_cleanup.dispose()))?;
+            owner.on_cleanup(
+                Box::new(move || {
+                    scope_for_cleanup.dispose();
+                    Ok(())
+                }),
+                owner.token().error_handler(),
+            )?;
             Ok(())
         })();
 
@@ -384,7 +390,7 @@ where
 pub fn bind_event_impl<'scope, E>(
     dom_element: &WebElem,
     event_name: String,
-    mut handler: Box<dyn FnMut(E) + 'scope>,
+    mut handler: Box<dyn FnMut(E) -> SilexResult<()> + 'scope>,
     owner: &ViewOwnerToken<'scope>,
 ) -> SilexResult<()>
 where
@@ -393,9 +399,10 @@ where
     if !owner.is_active() {
         return Err(SilexError::Reactivity(ReactiveError::NoSuchNode));
     }
-    let destination = owner.host_callback(move |payload| {
-        handler(payload.unchecked_into::<E>());
-    });
+    let destination = owner.host_callback(
+        move |payload| handler(payload.unchecked_into::<E>()),
+        owner.error_handler(),
+    );
     let destination_for_closure = destination.clone();
     let closure = Closure::wrap(Box::new(move |event: E| {
         let _ = destination_for_closure.dispatch(event.unchecked_into::<JsValue>());

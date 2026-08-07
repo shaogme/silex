@@ -370,67 +370,52 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
         let attrs = self.attrs.clone();
         let updater = self.updater.clone();
         let rendered_nodes = Rc::new(RefCell::new(previous_nodes));
-        let render_failed = Rc::new(Cell::new(false));
-        let render_failed_for_effect = render_failed.clone();
         let rendered_nodes_for_effect = rendered_nodes.clone();
-        let initial_error = Rc::new(RefCell::new(None::<SilexError>));
-        let initial_error_for_effect = initial_error.clone();
-        let first_run = Rc::new(Cell::new(true));
-        let first_run_for_effect = first_run.clone();
         let document = crate::document();
+        let render_token = render_owner.token();
+        let render_handler = render_token.error_handler();
         let registration = catch_unwind(AssertUnwindSafe(|| {
-            render_scope.try_effect_from(self.render_inputs.clone(), move || {
-                let old_nodes = rendered_nodes_for_effect.borrow().clone();
-                let result = catch_unwind(AssertUnwindSafe(|| -> SilexResult<()> {
-                    let fragment = document.create_document_fragment();
-                    let fragment_node: Node = fragment.into();
-                    let token = render_owner.token();
-                    render.call(RowRenderArgs::new(
-                        item.clone(),
-                        index,
-                        fragment_node.clone(),
-                        attrs.clone(),
-                        token,
-                        updater.clone(),
-                    ))?;
-                    let new_nodes = child_nodes(&fragment_node);
-                    let Some(parent) = range.end.parent_node() else {
-                        return Err(SilexError::Dom(
-                            "cannot commit row render without a parent".to_string(),
-                        ));
-                    };
-                    parent
-                        .insert_before(&fragment_node, Some(&range.end))
-                        .map_err(SilexError::from)?;
-                    for node in old_nodes {
-                        if node.parent_node().is_some() {
-                            let _ = parent.remove_child(&node);
+            render_scope.effect_from(
+                self.render_inputs.clone(),
+                move || -> SilexResult<()> {
+                    let old_nodes = rendered_nodes_for_effect.borrow().clone();
+                    let result = catch_unwind(AssertUnwindSafe(|| -> SilexResult<()> {
+                        let fragment = document.create_document_fragment();
+                        let fragment_node: Node = fragment.into();
+                        render.call(RowRenderArgs::new(
+                            item.clone(),
+                            index,
+                            fragment_node.clone(),
+                            attrs.clone(),
+                            render_token.clone(),
+                            updater.clone(),
+                        ))?;
+                        let new_nodes = child_nodes(&fragment_node);
+                        let Some(parent) = range.end.parent_node() else {
+                            return Err(SilexError::Dom(
+                                "cannot commit row render without a parent".to_string(),
+                            ));
+                        };
+                        parent
+                            .insert_before(&fragment_node, Some(&range.end))
+                            .map_err(SilexError::from)?;
+                        for node in old_nodes {
+                            if node.parent_node().is_some() {
+                                let _ = parent.remove_child(&node);
+                            }
+                        }
+                        *rendered_nodes_for_effect.borrow_mut() = new_nodes;
+                        Ok(())
+                    }));
+                    match result {
+                        Ok(result) => result,
+                        Err(panic) => {
+                            Err(SilexError::Javascript(panic_message(&panic, "Row render")))
                         }
                     }
-                    *rendered_nodes_for_effect.borrow_mut() = new_nodes;
-                    Ok(())
-                }));
-                match result {
-                    Ok(Ok(())) => {}
-                    Ok(Err(error)) => {
-                        render_failed_for_effect.set(true);
-                        if first_run_for_effect.replace(false) {
-                            *initial_error_for_effect.borrow_mut() = Some(error);
-                        } else {
-                            render_owner.report_error(error);
-                        }
-                    }
-                    Err(panic) => {
-                        render_failed_for_effect.set(true);
-                        let error = SilexError::Javascript(panic_message(&panic, "Row render"));
-                        if first_run_for_effect.replace(false) {
-                            *initial_error_for_effect.borrow_mut() = Some(error);
-                        } else {
-                            render_owner.report_error(error);
-                        }
-                    }
-                }
-            })
+                },
+                render_handler,
+            )
         }));
 
         let registration = match registration {
@@ -445,19 +430,6 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
             let _ = catch_unwind(AssertUnwindSafe(|| render_scope.dispose()));
             self.render_scope = previous_scope;
             return Err(error);
-        }
-        if let Some(error) = initial_error.borrow_mut().take() {
-            let _ = catch_unwind(AssertUnwindSafe(|| render_scope.dispose()));
-            self.render_scope = previous_scope;
-            return Err(error);
-        }
-
-        if render_failed.get() {
-            let _ = catch_unwind(AssertUnwindSafe(|| render_scope.dispose()));
-            self.render_scope = previous_scope;
-            return Err(SilexError::Framework(
-                "row render failed during initial mount".to_string(),
-            ));
         }
 
         if let Some(scope) = previous_scope

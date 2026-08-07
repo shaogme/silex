@@ -20,6 +20,7 @@ fn compile_element<'scope>(
     Element::new("button").on_click(move |_| {
         let _ = borrowed_ref;
         write.set(read.get() + 1);
+        Ok(())
     })
 }
 
@@ -32,29 +33,40 @@ fn compile_owned<'scope>(
 ) {
     let _timeout = set_timeout_owned(
         token,
-        move || write.set(read.get() + borrowed_ref.len() as i32),
+        move || {
+            write.set(read.get() + borrowed_ref.len() as i32);
+            Ok(())
+        },
         Duration::from_millis(1),
     );
     let _interval = set_interval_owned(
         token,
-        move || write.set(read.get() + borrowed_ref.len() as i32),
+        move || {
+            write.set(read.get() + borrowed_ref.len() as i32);
+            Ok(())
+        },
         Duration::from_millis(1),
     );
     let _frame = request_animation_frame_owned(token, move || {
-        write.set(read.get() + borrowed_ref.len() as i32)
+        write.set(read.get() + borrowed_ref.len() as i32);
+        Ok(())
     });
     let _idle = request_idle_callback_owned(token, move || {
-        write.set(read.get() + borrowed_ref.len() as i32)
+        write.set(read.get() + borrowed_ref.len() as i32);
+        Ok(())
     });
     let _microtask = queue_microtask_owned(token, move || {
-        write.set(read.get() + borrowed_ref.len() as i32)
+        write.set(read.get() + borrowed_ref.len() as i32);
+        Ok(())
     });
     let _listener = window_event_listener_owned(token, silex_dom::event::click, move |_| {
         let _ = borrowed_ref;
         write.set(read.get() + 1);
+        Ok(())
     });
     let _debounced = debounce_owned(token, Duration::from_millis(1), move |_: i32| {
         write.set(read.get() + 1);
+        Ok(())
     });
 }
 

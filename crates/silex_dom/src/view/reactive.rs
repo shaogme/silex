@@ -8,11 +8,7 @@ use silex_core::reactivity::{Memo, ReadSignal, RwSignal, Signal, StoredValue};
 use silex_core::traits::RxCloneData;
 use silex_core::{Rx, RxValueKind, SilexError, SilexResult};
 use std::fmt::Display;
-use std::{
-    borrow::Cow,
-    cell::{Cell, RefCell},
-    rc::Rc,
-};
+use std::{borrow::Cow, cell::RefCell, rc::Rc};
 use web_sys::Node;
 
 pub(crate) fn mount_reactive_text<'scope, T>(
@@ -30,59 +26,54 @@ where
     let parent = parent.clone();
     let node = Rc::new(RefCell::new(None::<Node>));
     let node_for_cleanup = node.clone();
-    if let Err(error) = local_owner.on_cleanup(Box::new(move || {
-        if let Some(node) = node_for_cleanup.borrow_mut().take()
-            && let Some(parent) = node.parent_node()
-        {
-            let _ = parent.remove_child(&node);
-        }
-    })) {
+    let error_handler = local_owner.token().error_handler();
+    if let Err(error) = local_owner.on_cleanup(
+        Box::new(move || {
+            if let Some(node) = node_for_cleanup.borrow_mut().take()
+                && let Some(parent) = node.parent_node()
+            {
+                let _ = parent.remove_child(&node);
+            }
+            Ok(())
+        }),
+        error_handler.clone(),
+    ) {
         scope.dispose();
         return Err(error);
     }
 
     let node_for_effect = node.clone();
-    let token = local_owner.token();
-    let initial_error = Rc::new(RefCell::new(None::<SilexError>));
-    let initial_error_for_effect = initial_error.clone();
-    let first_run = Rc::new(Cell::new(true));
-    let first_run_for_effect = first_run.clone();
     if let Err(error) = local_owner.effect_from(
         inputs,
-        Box::new(move || {
-            let result = (|| -> SilexResult<()> {
-                let node = if let Some(node) = node_for_effect.borrow().clone() {
-                    node
-                } else {
-                    let node = crate::document().create_text_node("");
-                    parent.append_child(&node).map_err(SilexError::from)?;
-                    let node: Node = node.into();
-                    *node_for_effect.borrow_mut() = Some(node.clone());
-                    node
-                };
-                rx.try_with(|value| node.set_node_value(Some(&value.to_string())))
-                    .map_err(SilexError::from)?;
-                Ok(())
-            })();
-            let is_initial = first_run_for_effect.replace(false);
-            if let Err(error) = result {
-                if is_initial {
-                    *initial_error_for_effect.borrow_mut() = Some(error);
-                } else {
-                    token.report_error(error);
-                }
-            }
+        Box::new(move || -> SilexResult<()> {
+            let node = if let Some(node) = node_for_effect.borrow().clone() {
+                node
+            } else {
+                let node = crate::document().create_text_node("");
+                parent.append_child(&node).map_err(SilexError::from)?;
+                let node: Node = node.into();
+                *node_for_effect.borrow_mut() = Some(node.clone());
+                node
+            };
+            let value = rx
+                .try_with(|value| value.to_string())
+                .map_err(SilexError::from)?;
+            node.set_node_value(Some(&value));
+            Ok(())
         }),
+        error_handler,
     ) {
         scope.dispose();
         return Err(error);
     }
-    if let Some(error) = initial_error.borrow_mut().take() {
-        scope.dispose();
-        return Err(error);
-    }
     let scope_for_cleanup = scope.clone();
-    if let Err(error) = owner.on_cleanup(Box::new(move || scope_for_cleanup.dispose())) {
+    if let Err(error) = owner.on_cleanup(
+        Box::new(move || {
+            scope_for_cleanup.dispose();
+            Ok(())
+        }),
+        owner.token().error_handler(),
+    ) {
         scope.dispose();
         return Err(error);
     }

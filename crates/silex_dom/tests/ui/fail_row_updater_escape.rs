@@ -19,7 +19,7 @@ fn main() {
                 *saved_for_factory.borrow_mut() = Some(updater);
                 AnyView::new(format!("{item}:{index}"))
             }),
-            error: silex_core::traits::ForErrorHandler::default(),
+            error_handler: None,
             _marker: PhantomData::<(Vec<i32>, i32)>,
         };
         let _ = view;

@@ -486,46 +486,68 @@ fn apply_update_internal<'scope>(
         }
         AttrData::ReactiveAttr(rx) => {
             let el = el.clone();
-            crate::view::register_initial_effect(owner, rx.runtime_inputs(), move || {
-                let name = target.attr_name();
-                apply_attr_with_target_internal(&el, name, target.clone(), &rx.get())
-            })?;
+            owner.effect_from(
+                rx.runtime_inputs(),
+                Box::new(move || -> SilexResult<()> {
+                    let name = target.attr_name();
+                    let value = rx.try_get().map_err(SilexError::from)?;
+                    apply_attr_with_target_internal(&el, name, target.clone(), &value)
+                }),
+                owner.error_handler(),
+            )?;
         }
         AttrData::ReactiveString(rx) => {
             let el = el.clone();
-            crate::view::register_initial_effect(owner, rx.runtime_inputs(), move || {
-                let name = target.attr_name();
-                let val = rx.get();
-                apply_attr_with_target_internal(&el, name, target.clone(), &Attr::from(val))
-            })?;
+            owner.effect_from(
+                rx.runtime_inputs(),
+                Box::new(move || -> SilexResult<()> {
+                    let name = target.attr_name();
+                    let val = rx.try_get().map_err(SilexError::from)?;
+                    apply_attr_with_target_internal(&el, name, target.clone(), &Attr::from(val))
+                }),
+                owner.error_handler(),
+            )?;
         }
         AttrData::ReactiveBool(rx) => {
             let el = el.clone();
-            crate::view::register_initial_effect(owner, rx.runtime_inputs(), move || {
-                let name = target.attr_name();
-                let val = rx.get();
-                apply_attr_with_target_internal(&el, name, target.clone(), &Attr::from(val))
-            })?;
+            owner.effect_from(
+                rx.runtime_inputs(),
+                Box::new(move || -> SilexResult<()> {
+                    let name = target.attr_name();
+                    let val = rx.try_get().map_err(SilexError::from)?;
+                    apply_attr_with_target_internal(&el, name, target.clone(), &Attr::from(val))
+                }),
+                owner.error_handler(),
+            )?;
         }
         AttrData::ReactiveOptionString(rx) => {
             let el = el.clone();
-            crate::view::register_initial_effect(owner, rx.runtime_inputs(), move || {
-                let name = target.attr_name();
-                let val = rx.get();
-                let attr = match val {
-                    Some(s) => Attr::from(s),
-                    None => Attr::Removed,
-                };
-                apply_attr_with_target_internal(&el, name, target.clone(), &attr)
-            })?;
+            owner.effect_from(
+                rx.runtime_inputs(),
+                Box::new(move || -> SilexResult<()> {
+                    let name = target.attr_name();
+                    let val = rx.try_get().map_err(SilexError::from)?;
+                    let attr = match val {
+                        Some(s) => Attr::from(s),
+                        None => Attr::Removed,
+                    };
+                    apply_attr_with_target_internal(&el, name, target.clone(), &attr)
+                }),
+                owner.error_handler(),
+            )?;
         }
         AttrData::ReactiveJs(rx) => {
             let el = el.clone();
-            crate::view::register_initial_effect(owner, rx.runtime_inputs(), move || {
-                js_sys::Reflect::set(&el, &JsValue::from_str(&name), &rx.get())
-                    .map(|_| ())
-                    .map_err(SilexError::from)
-            })?;
+            owner.effect_from(
+                rx.runtime_inputs(),
+                Box::new(move || -> SilexResult<()> {
+                    let value = rx.try_get().map_err(SilexError::from)?;
+                    js_sys::Reflect::set(&el, &JsValue::from_str(&name), &value)
+                        .map(|_| ())
+                        .map_err(SilexError::from)
+                }),
+                owner.error_handler(),
+            )?;
         }
     }
     Ok(())
@@ -569,54 +591,63 @@ fn apply_combined_classes_internal<'scope>(
     let static_tokens_for_cleanup = static_tokens.clone();
     let el_clone = el.clone();
     let el_for_cleanup = el.clone();
-    crate::view::register_initial_effect(owner, inputs, move || {
-        let list = el_clone.class_list();
+    owner.effect_from(
+        inputs,
+        Box::new(move || -> SilexResult<()> {
+            let list = el_clone.class_list();
 
-        // 先合并所有动态来源。一个 token 可能同时来自 toggle 与 reactive
-        // class，只有它不再被任何动态来源提供时才能从 DOM 中移除。
-        let mut new_dynamic_tokens = HashSet::new();
-        for (name, rx) in &toggles {
-            if rx.get() {
-                new_dynamic_tokens.insert(name.to_string());
+            // 先合并所有动态来源。一个 token 可能同时来自 toggle 与 reactive
+            // class，只有它不再被任何动态来源提供时才能从 DOM 中移除。
+            let mut new_dynamic_tokens = HashSet::new();
+            for (name, rx) in &toggles {
+                if rx.try_get().map_err(SilexError::from)? {
+                    new_dynamic_tokens.insert(name.to_string());
+                }
             }
-        }
 
-        for rx in &reactives {
-            for token in rx.get().split_whitespace() {
-                new_dynamic_tokens.insert(token.to_string());
+            for rx in &reactives {
+                let value = rx.try_get().map_err(SilexError::from)?;
+                for token in value.split_whitespace() {
+                    new_dynamic_tokens.insert(token.to_string());
+                }
             }
-        }
 
-        let mut prev = prev_dynamic_tokens.borrow_mut();
-        let previous = prev.clone();
+            let mut prev = prev_dynamic_tokens.borrow_mut();
+            let previous = prev.clone();
 
-        // 先添加新增加的 Class，确保样式/过渡声明（transition）无缝连接，
-        // 不因无类中间态产生闪烁或动画打断。
-        for token in new_dynamic_tokens.difference(&previous) {
-            list.add_1(token).map_err(SilexError::from)?;
-        }
-
-        // 只删除已经不再由任何动态来源提供的旧 Class；静态 Class 即使
-        // 同名，也必须继续保留。
-        for token in previous.difference(&new_dynamic_tokens) {
-            if !static_tokens_for_update.contains(token) {
-                list.remove_1(token).map_err(SilexError::from)?;
+            // 先添加新增加的 Class，确保样式/过渡声明（transition）无缝连接，
+            // 不因无类中间态产生闪烁或动画打断。
+            for token in new_dynamic_tokens.difference(&previous) {
+                list.add_1(token).map_err(SilexError::from)?;
             }
-        }
 
-        *prev = new_dynamic_tokens;
-        Ok(())
-    })?;
-
-    owner.on_cleanup(Box::new(move || {
-        let dynamic_tokens = prev_dynamic_tokens_for_cleanup.borrow().clone();
-        let list = el_for_cleanup.class_list();
-        for token in dynamic_tokens {
-            if !static_tokens_for_cleanup.contains(&token) {
-                let _ = list.remove_1(&token);
+            // 只删除已经不再由任何动态来源提供的旧 Class；静态 Class 即使
+            // 同名，也必须继续保留。
+            for token in previous.difference(&new_dynamic_tokens) {
+                if !static_tokens_for_update.contains(token) {
+                    list.remove_1(token).map_err(SilexError::from)?;
+                }
             }
-        }
-    }))?;
+
+            *prev = new_dynamic_tokens;
+            Ok(())
+        }),
+        owner.error_handler(),
+    )?;
+
+    owner.on_cleanup(
+        Box::new(move || -> SilexResult<()> {
+            let dynamic_tokens = prev_dynamic_tokens_for_cleanup.borrow().clone();
+            let list = el_for_cleanup.class_list();
+            for token in dynamic_tokens {
+                if !static_tokens_for_cleanup.contains(&token) {
+                    let _ = list.remove_1(&token);
+                }
+            }
+            Ok(())
+        }),
+        owner.error_handler(),
+    )?;
     Ok(())
 }
 
@@ -658,60 +689,72 @@ fn apply_combined_styles_internal<'scope>(
     let prev_sheet_keys_for_cleanup = prev_sheet_keys.clone();
     let el_for_cleanup = el.clone();
 
-    crate::view::register_initial_effect(owner, inputs, move || {
-        let style = get_style_decl(&el_clone)
-            .ok_or_else(|| SilexError::Dom("element does not expose a style declaration".into()))?;
+    owner.effect_from(
+        inputs,
+        Box::new(move || -> SilexResult<()> {
+            let style = get_style_decl(&el_clone).ok_or_else(|| {
+                SilexError::Dom("element does not expose a style declaration".into())
+            })?;
 
-        // 处理单项 Property 绑定 (仅在值发生变化时更新 DOM)
-        let mut prev_p = prev_props.borrow_mut();
-        for (i, (name, rx)) in properties.iter().enumerate() {
-            let val = rx.get();
-            if prev_p[i].as_deref() != Some(&val) {
-                style.set_property(name, &val).map_err(SilexError::from)?;
-                prev_p[i] = Some(val);
-            }
-        }
-        drop(prev_p);
-
-        // 处理整块响应式样式字符串 (Diff 处理)
-        if !sheets.is_empty() {
-            let sheet_strings: Vec<String> = sheets.iter().map(|rx| rx.get()).collect();
-            let mut new_style_map = std::collections::HashMap::new();
-            for s in &sheet_strings {
-                for (k, v) in parse_style_str(s) {
-                    new_style_map.insert(k.into_owned(), v.into_owned());
+            // 处理单项 Property 绑定 (仅在值发生变化时更新 DOM)
+            let mut prev_p = prev_props.borrow_mut();
+            for (i, (name, rx)) in properties.iter().enumerate() {
+                let val = rx.try_get().map_err(SilexError::from)?;
+                if prev_p[i].as_deref() != Some(&val) {
+                    style.set_property(name, &val).map_err(SilexError::from)?;
+                    prev_p[i] = Some(val);
                 }
             }
+            drop(prev_p);
 
-            let mut prev = prev_sheet_keys.borrow_mut();
-            let stale = prev
-                .iter()
-                .filter(|key| !new_style_map.contains_key(*key))
-                .cloned()
-                .collect::<Vec<_>>();
-            for key in stale {
-                style.remove_property(&key).map_err(SilexError::from)?;
-                prev.remove(&key);
-            }
+            // 处理整块响应式样式字符串 (Diff 处理)
+            if !sheets.is_empty() {
+                let sheet_strings: Vec<String> = sheets
+                    .iter()
+                    .map(|rx| rx.try_get().map_err(SilexError::from))
+                    .collect::<SilexResult<_>>()?;
+                let mut new_style_map = std::collections::HashMap::new();
+                for s in &sheet_strings {
+                    for (k, v) in parse_style_str(s) {
+                        new_style_map.insert(k.into_owned(), v.into_owned());
+                    }
+                }
 
-            for (key, value) in new_style_map {
-                style.set_property(&key, &value).map_err(SilexError::from)?;
-                prev.insert(key);
-            }
-        }
-        Ok(())
-    })?;
+                let mut prev = prev_sheet_keys.borrow_mut();
+                let stale = prev
+                    .iter()
+                    .filter(|key| !new_style_map.contains_key(*key))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                for key in stale {
+                    style.remove_property(&key).map_err(SilexError::from)?;
+                    prev.remove(&key);
+                }
 
-    owner.on_cleanup(Box::new(move || {
-        if let Some(style) = get_style_decl(&el_for_cleanup) {
-            for name in property_names {
-                let _ = style.remove_property(&name);
+                for (key, value) in new_style_map {
+                    style.set_property(&key, &value).map_err(SilexError::from)?;
+                    prev.insert(key);
+                }
             }
-            for name in prev_sheet_keys_for_cleanup.borrow().iter() {
-                let _ = style.remove_property(name);
+            Ok(())
+        }),
+        owner.error_handler(),
+    )?;
+
+    owner.on_cleanup(
+        Box::new(move || -> SilexResult<()> {
+            if let Some(style) = get_style_decl(&el_for_cleanup) {
+                for name in property_names {
+                    let _ = style.remove_property(&name);
+                }
+                for name in prev_sheet_keys_for_cleanup.borrow().iter() {
+                    let _ = style.remove_property(name);
+                }
             }
-        }
-    }))?;
+            Ok(())
+        }),
+        owner.error_handler(),
+    )?;
     Ok(())
 }
 

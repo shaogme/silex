@@ -5,7 +5,7 @@ use wasm_bindgen::convert::FromWasmAbi;
 use web_sys::{Element, Event, InputEvent, MouseEvent, PointerEvent};
 
 use silex_core::{
-    ReactiveError, SilexError,
+    ReactiveError, SilexError, SilexResult,
     node_ref::NodeRef,
     reactivity::{ReactiveSource, runtime_inputs_of},
     traits::{RxGet, RxWrite},
@@ -244,14 +244,15 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
             })?;
 
             let node_ref_for_cleanup = node_ref;
-            let owner_for_cleanup = owner.clone();
-            owner.on_cleanup(Box::new(move || {
-                if let Err(error) = node_ref_for_cleanup.try_clear()
-                    && !matches!(error, ReactiveError::NoSuchNode)
-                {
-                    owner_for_cleanup.report_error(error.into());
-                }
-            }))?;
+            owner.on_cleanup(
+                Box::new(move || -> SilexResult<()> {
+                    match node_ref_for_cleanup.try_clear() {
+                        Ok(()) | Err(ReactiveError::NoSuchNode) => Ok(()),
+                        Err(error) => Err(error.into()),
+                    }
+                }),
+                owner.error_handler(),
+            )?;
             node_ref.try_load(typed).map_err(SilexError::from)
         }))
     }
@@ -298,15 +299,14 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
         F: EventHandler<'scope, String, M> + Clone + 'scope,
     {
         self.apply(PendingAttribute::new_scoped(move |el: &Element, owner| {
-            let owner_for_handler = owner.clone();
             bind_event_impl(
                 el,
                 "input".to_string(),
                 Box::new({
                     let mut handler = callback.clone().into_handler();
-                    move |e: InputEvent| match event_target_value_result(&e) {
-                        Ok(value) => handler(value),
-                        Err(err) => owner_for_handler.report_error(err),
+                    move |e: InputEvent| {
+                        let value = event_target_value_result(&e)?;
+                        handler(value)
                     }
                 }),
                 owner,
@@ -319,15 +319,14 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
         F: EventHandler<'scope, String, M> + Clone + 'scope,
     {
         self.apply(PendingAttribute::new_scoped(move |el: &Element, owner| {
-            let owner_for_handler = owner.clone();
             bind_event_impl(
                 el,
                 "change".to_string(),
                 Box::new({
                     let mut handler = callback.clone().into_handler();
-                    move |e: Event| match event_target_value_result(&e) {
-                        Ok(value) => handler(value),
-                        Err(err) => owner_for_handler.report_error(err),
+                    move |e: Event| {
+                        let value = event_target_value_result(&e)?;
+                        handler(value)
                     }
                 }),
                 owner,
@@ -342,17 +341,18 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
     {
         let s = signal.clone();
         let this = self.on_input(move |value| {
-            s.set(T::from(value));
+            s.try_update(|current| *current = T::from(value))
+                .map_err(SilexError::from)?;
+            Ok(())
         });
 
         this.apply(PendingAttribute::new_scoped(move |el: &Element, owner| {
             let dom_element = el.clone();
             let signal = signal.clone();
-            crate::view::register_initial_effect(
-                owner,
+            owner.effect_from(
                 runtime_inputs_of(signal.clone()),
-                move || {
-                    let value = signal.get();
+                Box::new(move || -> SilexResult<()> {
+                    let value = signal.try_get().map_err(SilexError::from)?;
                     let str_val = value.as_ref();
                     apply_attr_with_target_internal(
                         &dom_element,
@@ -360,7 +360,8 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
                         ApplyTarget::Known(KnownProp::Value),
                         &Attr::from(str_val.to_string()),
                     )
-                },
+                }),
+                owner.error_handler(),
             )
         }))
     }
@@ -368,7 +369,7 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
     fn on_untyped<E, F>(self, event_type: &str, callback: F) -> Self
     where
         E: FromWasmAbi + JsCast + 'static,
-        F: FnMut(E) + 'scope + Clone,
+        F: FnMut(E) -> SilexResult<()> + 'scope + Clone,
     {
         let event_type_str = event_type.to_string();
         let cb_template = callback.clone();
