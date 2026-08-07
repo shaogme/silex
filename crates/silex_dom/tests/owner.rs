@@ -95,6 +95,42 @@ impl<'scope> View<'scope> for FailingChild {
     }
 }
 
+struct ConditionalRow {
+    value: i32,
+    fail: Option<i32>,
+}
+
+impl<'scope> ApplyAttributes<'scope> for ConditionalRow {}
+
+impl<'scope> View<'scope> for ConditionalRow {
+    fn mount(
+        &self,
+        _owner: &dyn ViewOwner<'scope>,
+        parent: &Node,
+        _attrs: Vec<PendingAttribute<'scope>>,
+    ) -> SilexResult<()> {
+        if self.fail == Some(self.value) {
+            return Err(SilexError::Framework(format!(
+                "row {} rejected",
+                self.value
+            )));
+        }
+        mount_text_node(parent, &format!("{};", self.value))
+    }
+
+    fn mount_owned(
+        self,
+        owner: &dyn ViewOwner<'scope>,
+        parent: &Node,
+        attrs: Vec<PendingAttribute<'scope>>,
+    ) -> SilexResult<()>
+    where
+        Self: Sized,
+    {
+        self.mount(owner, parent, attrs)
+    }
+}
+
 struct StatefulProbe {
     text: String,
     node: Rc<RefCell<Option<Node>>>,
@@ -285,17 +321,140 @@ fn element_child_failure_rolls_back_provisional_owner_and_dom() {
 }
 
 #[wasm_bindgen_test]
-fn keyed_list_initial_key_panic_is_a_mount_error() {
+fn composite_view_failure_rolls_back_only_its_mount_transaction() {
+    let host = mount_point();
+    let cleanups = Rc::new(Cell::new(0));
+    let mut runtime = Runtime::new();
+
+    runtime.child(|scope| {
+        let owner = ScopedViewOwner::new(scope);
+        let view = vec![
+            AnyView::new(CleanupProbe {
+                text: "kept out of the document".to_string(),
+                cleanups: cleanups.clone(),
+            }),
+            AnyView::new(FailingChild {
+                cleanups: cleanups.clone(),
+            }),
+        ];
+
+        assert!(matches!(
+            view.mount_owned(&owner, &host.clone().into(), Vec::new()),
+            Err(SilexError::Framework(message)) if message == "child mount rejected"
+        ));
+    });
+
+    assert_eq!(cleanups.get(), 2);
+    assert!(host.first_child().is_none());
+    host.parent_node()
+        .expect("test host has a body parent")
+        .remove_child(&host)
+        .expect("test host can be removed");
+}
+
+#[wasm_bindgen_test]
+fn indexed_list_failure_restores_previous_rows_and_can_retry() {
+    let host = mount_point();
+    let reports = Rc::new(Cell::new(0));
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    {
+        let scope = root.scope();
+        let (items, set_items) = scope.signal(vec![1_i32, 2]);
+        let reports_for_handler = reports.clone();
+        let owner = ScopedViewOwner::with_error_reporter(
+            scope,
+            ErrorReporter::new(move |_| {
+                reports_for_handler.set(reports_for_handler.get() + 1);
+            }),
+        );
+        let list = IndexedLoopView {
+            each: items,
+            view_fn: Rc::new(|value: i32, _| {
+                AnyView::new(ConditionalRow {
+                    value,
+                    fail: Some(4),
+                })
+            }),
+            _marker: PhantomData,
+        };
+
+        list.mount_owned(&owner, &host.clone().into(), Vec::new())
+            .expect("indexed list should mount");
+        assert_eq!(host.text_content().as_deref(), Some("1;2;"));
+
+        set_items.set(vec![3, 4]);
+        assert_eq!(host.text_content().as_deref(), Some("1;2;"));
+        assert_eq!(reports.get(), 1);
+
+        set_items.set(vec![3, 2]);
+        assert_eq!(host.text_content().as_deref(), Some("3;2;"));
+    }
+
+    root.dispose().expect("root cleanup should succeed");
+    assert!(host.first_child().is_none());
+    host.parent_node()
+        .expect("test host has a body parent")
+        .remove_child(&host)
+        .expect("test host can be removed");
+}
+
+#[wasm_bindgen_test]
+fn deferred_row_render_failure_keeps_previous_content_and_recovers() {
+    let host = mount_point();
+    let reports = Rc::new(Cell::new(0));
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    {
+        let scope = root.scope();
+        let (value, set_value) = scope.signal(1_i32);
+        let reports_for_handler = reports.clone();
+        let owner = ScopedViewOwner::with_error_reporter(
+            scope,
+            ErrorReporter::new(move |_| {
+                reports_for_handler.set(reports_for_handler.get() + 1);
+            }),
+        );
+        let view = move || {
+            let value = value.get();
+            AnyView::new(ConditionalRow {
+                value,
+                fail: Some(2),
+            })
+        };
+
+        view.mount_owned(&owner, &host.clone().into(), Vec::new())
+            .expect("dynamic view should mount");
+        assert_eq!(host.text_content().as_deref(), Some("1;"));
+
+        set_value.set(2);
+        assert_eq!(host.text_content().as_deref(), Some("1;"));
+        assert_eq!(reports.get(), 1);
+
+        set_value.set(3);
+        assert_eq!(host.text_content().as_deref(), Some("3;"));
+    }
+
+    root.dispose().expect("root cleanup should succeed");
+    assert!(host.first_child().is_none());
+    host.parent_node()
+        .expect("test host has a body parent")
+        .remove_child(&host)
+        .expect("test host can be removed");
+}
+
+#[wasm_bindgen_test]
+fn keyed_list_initial_duplicate_key_is_a_mount_error() {
     let host = mount_point();
     let reports = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
 
     runtime.child(|scope| {
-        let (items, _) = scope.signal(vec![1_i32]);
+        let (items, _) = scope.signal(vec![1_i32, 1]);
         let reports_for_handler = reports.clone();
         let list = KeyedLoopView {
             each: items,
-            key_fn: Rc::new(|_| panic!("key panic")),
+            key_fn: Rc::new(|_: &i32| 0),
             view_fn: Rc::new(|item: i32, _, _| AnyView::new(item.to_string())),
             error_handler: Some(ErrorHandler::new(move |_| {
                 reports_for_handler.set(reports_for_handler.get() + 1);
@@ -306,7 +465,7 @@ fn keyed_list_initial_key_panic_is_a_mount_error() {
 
         assert!(matches!(
             list.mount_owned(&owner, &host, Vec::new()),
-            Err(SilexError::Javascript(message)) if message.contains("Keyed list key function")
+            Err(SilexError::Framework(message)) if message == "duplicate key in keyed list"
         ));
     });
 

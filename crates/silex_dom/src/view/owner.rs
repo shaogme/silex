@@ -280,6 +280,7 @@ pub(crate) struct RowController<'scope, T> {
     range: DomRange,
     row_scope: Rc<OwnedScope<'scope>>,
     render_scope: Option<Rc<OwnedScope<'scope>>>,
+    render_content_scope: Option<Rc<RefCell<Option<Rc<OwnedScope<'scope>>>>>>,
     render_nodes: Rc<RefCell<Vec<Node>>>,
     render: RowRender<'scope, T>,
     render_inputs: RuntimeInputs,
@@ -289,6 +290,8 @@ pub(crate) struct RowController<'scope, T> {
     stateful: bool,
     active: Cell<bool>,
     generation: u64,
+    item: T,
+    index: usize,
     marker: PhantomData<fn(T)>,
 }
 
@@ -312,6 +315,7 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
             range,
             row_scope: Rc::new(row_scope),
             render_scope: None,
+            render_content_scope: None,
             render_nodes: Rc::new(RefCell::new(Vec::new())),
             render,
             render_inputs,
@@ -321,6 +325,8 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
             stateful,
             active: Cell::new(true),
             generation: 0,
+            item: item.clone(),
+            index,
             marker: PhantomData,
         };
         if let Err(error) = controller.mount_render(item, index) {
@@ -341,7 +347,8 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
         if !self.active.get() {
             return Err(SilexError::Reactivity(ReactiveError::NoSuchNode));
         }
-        if self.stateful {
+        let next_item = item.clone();
+        let result = if self.stateful {
             if self.updater.update(item, index) {
                 Ok(())
             } else {
@@ -351,26 +358,41 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
             }
         } else {
             self.mount_render(item, index)
+        };
+        if result.is_ok() {
+            self.item = next_item;
+            self.index = index;
         }
+        result
+    }
+
+    pub(crate) fn snapshot(&self) -> (T, usize) {
+        (self.item.clone(), self.index)
     }
 
     fn mount_render(&mut self, item: T, index: usize) -> SilexResult<()> {
         let previous_scope = self.render_scope.take();
+        let previous_content_scope = self.render_content_scope.take();
         let previous_nodes = self.render_nodes.borrow().clone();
         let render_scope = match self.row_scope.try_child() {
             Ok(scope) => Rc::new(scope),
             Err(error) => {
                 self.render_scope = previous_scope;
+                self.render_content_scope = previous_content_scope;
                 return Err(error);
             }
         };
         let render_owner = OwnedViewOwner::new(render_scope.clone(), self.reporter.clone());
+        let row_scope = self.row_scope.clone();
         let range = self.range.clone();
         let render = self.render.clone();
         let attrs = self.attrs.clone();
         let updater = self.updater.clone();
         let rendered_nodes = Rc::new(RefCell::new(previous_nodes));
         let rendered_nodes_for_effect = rendered_nodes.clone();
+        let rendered_scope = Rc::new(RefCell::new(None::<Rc<OwnedScope<'scope>>>));
+        let rendered_scope_for_effect = rendered_scope.clone();
+        let reporter = self.reporter.clone();
         let document = crate::document();
         let render_token = render_owner.token();
         let render_handler = render_token.error_handler();
@@ -379,6 +401,13 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
                 self.render_inputs.clone(),
                 move || -> SilexResult<()> {
                     let old_nodes = rendered_nodes_for_effect.borrow().clone();
+                    let candidate_scope = match row_scope.try_child() {
+                        Ok(scope) => Rc::new(scope),
+                        Err(error) => return Err(error),
+                    };
+                    let candidate_owner =
+                        OwnedViewOwner::new(candidate_scope.clone(), reporter.clone());
+                    let candidate_token = candidate_owner.token();
                     let result = catch_unwind(AssertUnwindSafe(|| -> SilexResult<()> {
                         let fragment = document.create_document_fragment();
                         let fragment_node: Node = fragment.into();
@@ -387,7 +416,7 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
                             index,
                             fragment_node.clone(),
                             attrs.clone(),
-                            render_token.clone(),
+                            candidate_token,
                             updater.clone(),
                         ))?;
                         let new_nodes = child_nodes(&fragment_node);
@@ -408,9 +437,23 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
                         Ok(())
                     }));
                     match result {
-                        Ok(result) => result,
+                        Ok(Ok(())) => {
+                            let previous = rendered_scope_for_effect
+                                .borrow_mut()
+                                .replace(candidate_scope);
+                            if let Some(scope) = previous {
+                                dispose_scope_or_resume(scope);
+                            }
+                            Ok(())
+                        }
+                        Ok(Err(error)) => {
+                            dispose_scope_or_resume(candidate_scope);
+                            Err(error)
+                        }
                         Err(panic) => {
-                            Err(SilexError::Javascript(panic_message(&panic, "Row render")))
+                            let error = SilexError::Javascript(panic_message(&panic, "Row render"));
+                            dispose_scope_or_resume(candidate_scope);
+                            Err(error)
                         }
                     }
                 },
@@ -421,24 +464,29 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
         let registration = match registration {
             Ok(result) => result,
             Err(panic) => {
-                let _ = catch_unwind(AssertUnwindSafe(|| render_scope.dispose()));
+                dispose_render_candidate(&rendered_scope);
+                dispose_scope_or_resume(render_scope);
                 self.render_scope = previous_scope;
+                self.render_content_scope = previous_content_scope;
                 return Err(SilexError::Javascript(panic_message(&panic, "Row effect")));
             }
         };
         if let Err(error) = registration {
-            let _ = catch_unwind(AssertUnwindSafe(|| render_scope.dispose()));
+            dispose_render_candidate(&rendered_scope);
+            dispose_scope_or_resume(render_scope);
             self.render_scope = previous_scope;
+            self.render_content_scope = previous_content_scope;
             return Err(error);
         }
 
-        if let Some(scope) = previous_scope
-            && let Err(panic) = catch_unwind(AssertUnwindSafe(|| scope.dispose()))
-        {
-            let message = panic_message(&panic, "Previous row render cleanup");
-            self.reporter.report(SilexError::Javascript(message));
+        if let Some(scope) = previous_scope {
+            dispose_scope_or_resume(scope);
+        }
+        if let Some(scope) = previous_content_scope {
+            dispose_render_candidate(&scope);
         }
         self.render_scope = Some(render_scope);
+        self.render_content_scope = Some(rendered_scope);
         self.render_nodes = rendered_nodes;
         Ok(())
     }
@@ -472,12 +520,32 @@ impl<'scope, T> RowController<'scope, T> {
         {
             first_panic = Some(panic);
         }
+        if let Some(scope) = self.render_content_scope.take()
+            && let Err(panic) = catch_unwind(AssertUnwindSafe(|| {
+                dispose_render_candidate(&scope);
+            }))
+            && first_panic.is_none()
+        {
+            first_panic = Some(panic);
+        }
         if let Err(panic) = catch_unwind(AssertUnwindSafe(|| self.row_scope.dispose()))
             && first_panic.is_none()
         {
             first_panic = Some(panic);
         }
         first_panic
+    }
+}
+
+fn dispose_scope_or_resume<'scope>(scope: Rc<OwnedScope<'scope>>) {
+    if let Err(panic) = catch_unwind(AssertUnwindSafe(|| scope.dispose())) {
+        resume_unwind(panic);
+    }
+}
+
+fn dispose_render_candidate<'scope>(scope: &Rc<RefCell<Option<Rc<OwnedScope<'scope>>>>>) {
+    if let Some(scope) = scope.borrow_mut().take() {
+        dispose_scope_or_resume(scope);
     }
 }
 

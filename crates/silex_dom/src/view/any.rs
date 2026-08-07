@@ -1,6 +1,8 @@
 use crate::attribute::PendingAttribute;
 use crate::element::Element;
-use crate::view::{ApplyAttributes, View, ViewCons, ViewNil, ViewOwner, ViewOwnerToken};
+use crate::view::{
+    ApplyAttributes, View, ViewCons, ViewNil, ViewOwner, ViewOwnerToken, mount_composite,
+};
 use silex_core::SilexResult;
 use std::rc::Rc;
 use web_sys::Node;
@@ -82,18 +84,25 @@ fn mount_list<'scope>(
     parent: &Node,
     attrs: Vec<PendingAttribute<'scope>>,
 ) -> SilexResult<()> {
-    for (index, child) in list.iter().enumerate() {
-        child.mount(
-            owner,
-            parent,
-            if index == 0 {
-                attrs.clone()
-            } else {
-                Vec::new()
-            },
-        )?;
-    }
-    Ok(())
+    mount_composite(
+        owner,
+        parent,
+        attrs,
+        move |transaction_owner, fragment, attrs| {
+            for (index, child) in list.iter().enumerate() {
+                child.mount(
+                    transaction_owner,
+                    fragment,
+                    if index == 0 {
+                        attrs.clone()
+                    } else {
+                        Vec::new()
+                    },
+                )?;
+            }
+            Ok(())
+        },
+    )
 }
 
 fn mount_list_owned<'scope>(
@@ -102,18 +111,25 @@ fn mount_list_owned<'scope>(
     parent: &Node,
     attrs: Vec<PendingAttribute<'scope>>,
 ) -> SilexResult<()> {
-    for (index, child) in list.into_iter().enumerate() {
-        child.mount_owned(
-            owner,
-            parent,
-            if index == 0 {
-                attrs.clone()
-            } else {
-                Vec::new()
-            },
-        )?;
-    }
-    Ok(())
+    mount_composite(
+        owner,
+        parent,
+        attrs,
+        move |transaction_owner, fragment, attrs| {
+            for (index, child) in list.into_iter().enumerate() {
+                child.mount_owned(
+                    transaction_owner,
+                    fragment,
+                    if index == 0 {
+                        attrs.clone()
+                    } else {
+                        Vec::new()
+                    },
+                )?;
+            }
+            Ok(())
+        },
+    )
 }
 
 impl<'scope> ApplyAttributes<'scope> for AnyView<'scope> {

@@ -812,6 +812,30 @@ async fn debounce_clears_replaced_timer_and_blocks_dispose_completion() {
     assert_eq!(spy.count("timeout_clear"), 3);
 }
 
+#[wasm_bindgen_test]
+fn debounce_timeout_creation_failure_reaches_owner_handler() {
+    let spy = Spy::new();
+    let errors = Rc::new(RefCell::new(Vec::<SilexError>::new()));
+    let errors_for_reporter = errors.clone();
+    let mut runtime = Runtime::new();
+
+    runtime.child(|scope| {
+        let owner = silex_dom::view::ScopedViewOwner::with_error_reporter(
+            scope,
+            ErrorReporter::new(move |error| errors_for_reporter.borrow_mut().push(error)),
+        );
+        let token = owner.token();
+        let mut debounce = debounce_owned(&token, Duration::from_millis(0), |_| Ok(()));
+        spy.fail_next_timeout();
+        debounce(1_i32);
+    });
+
+    assert!(matches!(
+        errors.borrow().as_slice(),
+        [SilexError::Javascript(message)] if message.contains("forced timeout creation failure")
+    ));
+}
+
 #[wasm_bindgen_test(async)]
 async fn timer_callback_can_reenter_root_dispose_without_late_registration() {
     let spy = Spy::new();

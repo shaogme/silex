@@ -212,11 +212,14 @@ where
             let old_len = rows.len();
             let new_len = values.len();
             let mut pending = Vec::new();
+            let mut updated = Vec::new();
             let result = catch_unwind(AssertUnwindSafe(|| -> SilexResult<()> {
                 let mut values = values.into_iter();
-                for (index, row) in rows.iter_mut().enumerate().take(new_len) {
+                for (row_index, row) in rows.iter_mut().enumerate().take(new_len) {
                     let item = values.next().expect("snapshot length is stable");
-                    row.update(item, index)?;
+                    let previous = row.snapshot();
+                    row.update(item, row_index)?;
+                    updated.push((row_index, previous));
                 }
                 for (offset, item) in values.enumerate() {
                     let index = old_len + offset;
@@ -252,16 +255,24 @@ where
                     Ok(())
                 }
                 Ok(Err(error)) => {
+                    let restore_panic = restore_indexed_rows(&mut rows, &updated);
                     let cleanup_panic = dispose_rows(&mut pending);
                     *effect_rows.borrow_mut() = rows;
+                    if let Some(panic) = restore_panic {
+                        resume_unwind(panic);
+                    }
                     if let Some(panic) = cleanup_panic {
                         resume_unwind(panic);
                     }
                     Err(error)
                 }
                 Err(panic) => {
+                    let restore_panic = restore_indexed_rows(&mut rows, &updated);
                     let cleanup_panic = dispose_rows(&mut pending);
                     *effect_rows.borrow_mut() = rows;
+                    if let Some(panic) = restore_panic {
+                        resume_unwind(panic);
+                    }
                     if let Some(panic) = cleanup_panic {
                         resume_unwind(panic);
                     }
@@ -405,10 +416,13 @@ where
             let mut pending = HashMap::with_capacity(keys.len());
             let mut seen = HashSet::with_capacity(keys.len());
             let mut next_order = Vec::with_capacity(keys.len());
+            let mut updated = Vec::new();
             let result = catch_unwind(AssertUnwindSafe(|| -> SilexResult<()> {
                 for (index, (key, item)) in keys.iter().cloned().zip(values).enumerate() {
                     if let Some(row) = old_rows.get_mut(&key) {
+                        let previous = row.snapshot();
                         row.update(item, index)?;
+                        updated.push((key.clone(), previous));
                         seen.insert(key.clone());
                         next_order.push(key);
                         continue;
@@ -433,6 +447,37 @@ where
 
             match result {
                 Ok(Ok(())) => {
+                    let move_result = (|| -> SilexResult<()> {
+                        for key in &next_order {
+                            if let Some(row) = old_rows.get(key) {
+                                row.move_before(&end)?;
+                            } else if let Some(row) = pending.get(key) {
+                                row.move_before(&end)?;
+                            } else {
+                                return Err(SilexError::Framework(
+                                    "keyed list row disappeared during diff".to_string(),
+                                ));
+                            }
+                        }
+                        Ok(())
+                    })();
+                    if let Err(error) = move_result {
+                        restore_keyed_order(&old_rows, &old_order, &end);
+                        let restore_panic = restore_keyed_rows(&mut old_rows, &updated);
+                        let cleanup_panic = dispose_map(&mut pending);
+                        let mut state = effect_state.borrow_mut();
+                        state.rows = old_rows;
+                        state.order = old_order;
+                        drop(state);
+                        if let Some(panic) = restore_panic {
+                            resume_unwind(panic);
+                        }
+                        if let Some(panic) = cleanup_panic {
+                            resume_unwind(panic);
+                        }
+                        return Err(error);
+                    }
+
                     let mut removed = Vec::new();
                     for key in &old_order {
                         if !seen.contains(key)
@@ -442,11 +487,6 @@ where
                         }
                     }
                     old_rows.extend(pending.drain());
-                    for key in &next_order {
-                        if let Some(row) = old_rows.get(key) {
-                            row.move_before(&end)?;
-                        }
-                    }
                     let cleanup_panic = dispose_rows(&mut removed);
                     let mut state = effect_state.borrow_mut();
                     state.rows = old_rows;
@@ -459,11 +499,15 @@ where
                 }
                 Ok(Err(error)) => {
                     restore_keyed_order(&old_rows, &old_order, &end);
+                    let restore_panic = restore_keyed_rows(&mut old_rows, &updated);
                     let cleanup_panic = dispose_map(&mut pending);
                     let mut state = effect_state.borrow_mut();
                     state.rows = old_rows;
                     state.order = old_order;
                     drop(state);
+                    if let Some(panic) = restore_panic {
+                        resume_unwind(panic);
+                    }
                     if let Some(panic) = cleanup_panic {
                         resume_unwind(panic);
                     }
@@ -471,11 +515,15 @@ where
                 }
                 Err(panic) => {
                     restore_keyed_order(&old_rows, &old_order, &end);
+                    let restore_panic = restore_keyed_rows(&mut old_rows, &updated);
                     let cleanup_panic = dispose_map(&mut pending);
                     let mut state = effect_state.borrow_mut();
                     state.rows = old_rows;
                     state.order = old_order;
                     drop(state);
+                    if let Some(panic) = restore_panic {
+                        resume_unwind(panic);
+                    }
                     if let Some(panic) = cleanup_panic {
                         resume_unwind(panic);
                     }
@@ -508,6 +556,48 @@ fn dispose_map<'scope, T: Clone + 'scope, K>(
 ) -> Option<Box<dyn std::any::Any + Send>> {
     let mut values = rows.drain().map(|(_, row)| row).collect::<Vec<_>>();
     dispose_rows(&mut values)
+}
+
+fn restore_indexed_rows<'scope, T: Clone + 'scope>(
+    rows: &mut [RowController<'scope, T>],
+    updated: &[(usize, (T, usize))],
+) -> Option<Box<dyn std::any::Any + Send>> {
+    let mut first_panic = None;
+    for (index, (item, row_index)) in updated.iter().rev() {
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            let _ = rows[*index].update(item.clone(), *row_index);
+        }));
+        if let Err(panic) = result
+            && first_panic.is_none()
+        {
+            first_panic = Some(panic);
+        }
+    }
+    first_panic
+}
+
+fn restore_keyed_rows<'scope, T: Clone + 'scope, K>(
+    rows: &mut HashMap<K, RowController<'scope, T>>,
+    updated: &[(K, (T, usize))],
+) -> Option<Box<dyn std::any::Any + Send>>
+where
+    K: std::hash::Hash + Eq,
+{
+    let mut first_panic = None;
+    for (key, (item, index)) in updated.iter().rev() {
+        let Some(row) = rows.get_mut(key) else {
+            continue;
+        };
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            let _ = row.update(item.clone(), *index);
+        }));
+        if let Err(panic) = result
+            && first_panic.is_none()
+        {
+            first_panic = Some(panic);
+        }
+    }
+    first_panic
 }
 
 fn restore_keyed_order<'scope, T, K>(

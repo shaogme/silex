@@ -648,6 +648,7 @@ where
         generation: 0,
     }));
     let state_for_callback = state.clone();
+    let error_handler = owner.error_handler();
     let destination = owner.host_callback(
         move |payload| {
             let Some(generation) = payload.as_f64() else {
@@ -700,8 +701,9 @@ where
             Ok(id) => {
                 state.borrow_mut().timer = Some(DebounceTimer { id, callback });
             }
-            Err(_) => {
+            Err(error) => {
                 let _ = state.borrow_mut().pending.take();
+                error_handler.handle(error.into());
             }
         }
     }

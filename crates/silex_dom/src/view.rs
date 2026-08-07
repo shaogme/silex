@@ -939,6 +939,49 @@ pub trait View<'scope> {
         Self: Sized;
 }
 
+pub(crate) fn mount_composite<'scope, F>(
+    owner: &dyn ViewOwner<'scope>,
+    parent: &Node,
+    attrs: Vec<PendingAttribute<'scope>>,
+    mount: F,
+) -> SilexResult<()>
+where
+    F: FnOnce(&dyn ViewOwner<'scope>, &Node, Vec<PendingAttribute<'scope>>) -> SilexResult<()>,
+{
+    let scope = Rc::new(owner.try_owned_scope()?);
+    let provisional_owner = OwnedViewOwner::new(scope.clone(), owner.token().error_reporter());
+    let fragment: Node = crate::document().create_document_fragment().into();
+
+    if let Err(error) = mount(&provisional_owner, &fragment, attrs) {
+        rollback_composite_scope(&scope);
+        return Err(error);
+    }
+
+    let scope_for_cleanup = scope.clone();
+    if let Err(error) = owner.on_cleanup(
+        Box::new(move || {
+            scope_for_cleanup.dispose();
+            Ok(())
+        }),
+        owner.token().error_handler(),
+    ) {
+        rollback_composite_scope(&scope);
+        return Err(error);
+    }
+
+    if let Err(error) = parent.append_child(&fragment).map_err(SilexError::from) {
+        rollback_composite_scope(&scope);
+        return Err(error);
+    }
+    Ok(())
+}
+
+fn rollback_composite_scope<'scope>(scope: &Rc<OwnedScope<'scope>>) {
+    if let Err(panic) = catch_unwind(AssertUnwindSafe(|| scope.dispose())) {
+        resume_unwind(panic);
+    }
+}
+
 pub fn mount_text_node(parent: &Node, text: &str) -> SilexResult<()> {
     let document = crate::document();
     let node = document.create_text_node(text);
@@ -1462,18 +1505,25 @@ impl<'scope, V: View<'scope>> View<'scope> for Vec<V> {
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
     ) -> SilexResult<()> {
-        for (index, value) in self.iter().enumerate() {
-            value.mount(
-                owner,
-                parent,
-                if index == 0 {
-                    attrs.clone()
-                } else {
-                    Vec::new()
-                },
-            )?;
-        }
-        Ok(())
+        mount_composite(
+            owner,
+            parent,
+            attrs,
+            move |transaction_owner, fragment, attrs| {
+                for (index, value) in self.iter().enumerate() {
+                    value.mount(
+                        transaction_owner,
+                        fragment,
+                        if index == 0 {
+                            attrs.clone()
+                        } else {
+                            Vec::new()
+                        },
+                    )?;
+                }
+                Ok(())
+            },
+        )
     }
 
     fn mount_owned(
@@ -1485,18 +1535,25 @@ impl<'scope, V: View<'scope>> View<'scope> for Vec<V> {
     where
         Self: Sized,
     {
-        for (index, value) in self.into_iter().enumerate() {
-            value.mount_owned(
-                owner,
-                parent,
-                if index == 0 {
-                    attrs.clone()
-                } else {
-                    Vec::new()
-                },
-            )?;
-        }
-        Ok(())
+        mount_composite(
+            owner,
+            parent,
+            attrs,
+            move |transaction_owner, fragment, attrs| {
+                for (index, value) in self.into_iter().enumerate() {
+                    value.mount_owned(
+                        transaction_owner,
+                        fragment,
+                        if index == 0 {
+                            attrs.clone()
+                        } else {
+                            Vec::new()
+                        },
+                    )?;
+                }
+                Ok(())
+            },
+        )
     }
 }
 
@@ -1517,18 +1574,25 @@ impl<'scope, V: View<'scope>, const N: usize> View<'scope> for [V; N] {
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
     ) -> SilexResult<()> {
-        for (index, value) in self.iter().enumerate() {
-            value.mount(
-                owner,
-                parent,
-                if index == 0 {
-                    attrs.clone()
-                } else {
-                    Vec::new()
-                },
-            )?;
-        }
-        Ok(())
+        mount_composite(
+            owner,
+            parent,
+            attrs,
+            move |transaction_owner, fragment, attrs| {
+                for (index, value) in self.iter().enumerate() {
+                    value.mount(
+                        transaction_owner,
+                        fragment,
+                        if index == 0 {
+                            attrs.clone()
+                        } else {
+                            Vec::new()
+                        },
+                    )?;
+                }
+                Ok(())
+            },
+        )
     }
 
     fn mount_owned(
@@ -1540,18 +1604,25 @@ impl<'scope, V: View<'scope>, const N: usize> View<'scope> for [V; N] {
     where
         Self: Sized,
     {
-        for (index, value) in self.into_iter().enumerate() {
-            value.mount_owned(
-                owner,
-                parent,
-                if index == 0 {
-                    attrs.clone()
-                } else {
-                    Vec::new()
-                },
-            )?;
-        }
-        Ok(())
+        mount_composite(
+            owner,
+            parent,
+            attrs,
+            move |transaction_owner, fragment, attrs| {
+                for (index, value) in self.into_iter().enumerate() {
+                    value.mount_owned(
+                        transaction_owner,
+                        fragment,
+                        if index == 0 {
+                            attrs.clone()
+                        } else {
+                            Vec::new()
+                        },
+                    )?;
+                }
+                Ok(())
+            },
+        )
     }
 }
 
@@ -1608,8 +1679,15 @@ impl<'scope, H: View<'scope>, T: View<'scope>> View<'scope> for ViewCons<H, T> {
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
     ) -> SilexResult<()> {
-        self.0.mount(owner, parent, attrs)?;
-        self.1.mount(owner, parent, Vec::new())
+        mount_composite(
+            owner,
+            parent,
+            attrs,
+            move |transaction_owner, fragment, attrs| {
+                self.0.mount(transaction_owner, fragment, attrs)?;
+                self.1.mount(transaction_owner, fragment, Vec::new())
+            },
+        )
     }
 
     fn mount_owned(
@@ -1622,8 +1700,15 @@ impl<'scope, H: View<'scope>, T: View<'scope>> View<'scope> for ViewCons<H, T> {
         Self: Sized,
     {
         let ViewCons(head, tail) = self;
-        head.mount_owned(owner, parent, attrs)?;
-        tail.mount_owned(owner, parent, Vec::new())
+        mount_composite(
+            owner,
+            parent,
+            attrs,
+            move |transaction_owner, fragment, attrs| {
+                head.mount_owned(transaction_owner, fragment, attrs)?;
+                tail.mount_owned(transaction_owner, fragment, Vec::new())
+            },
+        )
     }
 }
 
