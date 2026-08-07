@@ -11,8 +11,8 @@ pub use reactive::*;
 
 use crate::attribute::PendingAttribute;
 use silex_core::{
-    CompletionOnce, CompletionSender, ErrorHandler, ErrorReporter, OwnedScope, ReactiveError,
-    RuntimeInputs, Scope,
+    CompletionOnce, CompletionSender, ErrorReporter, OwnedScope, ReactiveError, RuntimeInputs,
+    Scope,
     reactivity::ReactiveSource,
     traits::{RxData, RxValue},
 };
@@ -38,7 +38,7 @@ use owner::{DomRange, RowController, RowRender, RowRenderArgs};
 /// the original mount call.
 pub type ViewEffect<'scope> = Box<dyn FnMut() -> SilexResult<()> + 'scope>;
 pub type ViewCleanup<'scope> = Box<dyn FnOnce() -> SilexResult<()> + 'scope>;
-pub type ViewErrorHandler<'scope> = ErrorHandler<'scope, SilexError>;
+pub type ViewErrorHandler<'scope> = ErrorReporter<'scope>;
 
 #[derive(Clone)]
 struct EffectRegistrar<'scope> {
@@ -377,7 +377,7 @@ pub struct ViewOwnerToken<'scope> {
     owned_scope: OwnedScopeRegistrar<'scope>,
     completion: CompletionRegistrar<'scope>,
     active: ActiveRegistrar<'scope>,
-    reporter: ErrorReporter<'scope>,
+    error_handler: ErrorReporter<'scope>,
 }
 
 impl<'scope> ViewOwnerToken<'scope> {
@@ -388,7 +388,7 @@ impl<'scope> ViewOwnerToken<'scope> {
         owned_scope: OwnedScopeRegistrar<'scope>,
         completion: CompletionRegistrar<'scope>,
         active: ActiveRegistrar<'scope>,
-        reporter: ErrorReporter<'scope>,
+        error_handler: ErrorReporter<'scope>,
     ) -> Self {
         Self {
             effect,
@@ -397,7 +397,7 @@ impl<'scope> ViewOwnerToken<'scope> {
             owned_scope,
             completion,
             active,
-            reporter,
+            error_handler,
         }
     }
 
@@ -426,15 +426,15 @@ impl<'scope> ViewOwnerToken<'scope> {
         self.owned_scope.call()
     }
 
-    pub fn report_error(&self, error: SilexError) {
-        self.reporter.report(error);
+    pub fn handle_error(&self, error: SilexError) {
+        self.error_handler.handle(error);
     }
 
     pub fn error_handler(&self) -> ViewErrorHandler<'scope> {
-        self.reporter.handler()
+        self.error_handler.clone()
     }
 
-    pub fn with_error_reporter(&self, reporter: ErrorReporter<'scope>) -> Self {
+    pub fn with_error_handler(&self, error_handler: ErrorReporter<'scope>) -> Self {
         Self {
             effect: self.effect.clone(),
             validate: self.validate.clone(),
@@ -442,12 +442,8 @@ impl<'scope> ViewOwnerToken<'scope> {
             owned_scope: self.owned_scope.clone(),
             completion: self.completion.clone(),
             active: self.active.clone(),
-            reporter,
+            error_handler,
         }
-    }
-
-    pub(crate) fn error_reporter(&self) -> ErrorReporter<'scope> {
-        self.reporter.clone()
     }
 
     pub(crate) fn host_callback<F>(
@@ -497,7 +493,7 @@ impl<'scope> ViewOwnerToken<'scope> {
     {
         self.try_host_resource_for_callback(callback, cancel)
             .unwrap_or_else(|error| {
-                self.report_error(error);
+                self.handle_error(error);
                 HostResourceHandle::inactive()
             })
     }
@@ -562,8 +558,8 @@ pub trait ViewOwner<'scope> {
     fn token(&self) -> ViewOwnerToken<'scope>;
     fn try_owned_scope(&self) -> SilexResult<OwnedScope<'scope>>;
 
-    fn report_error(&self, error: SilexError) {
-        self.token().report_error(error);
+    fn handle_error(&self, error: SilexError) {
+        self.token().handle_error(error);
     }
 }
 
@@ -597,8 +593,8 @@ impl<'scope> ViewOwner<'scope> for ViewOwnerToken<'scope> {
         ViewOwnerToken::try_owned_scope(self)
     }
 
-    fn report_error(&self, error: SilexError) {
-        ViewOwnerToken::report_error(self, error);
+    fn handle_error(&self, error: SilexError) {
+        ViewOwnerToken::handle_error(self, error);
     }
 }
 
@@ -606,16 +602,15 @@ impl<'scope> ViewOwner<'scope> for ViewOwnerToken<'scope> {
 #[derive(Clone)]
 pub struct ScopedViewOwner<'scope> {
     scope: Scope<'scope>,
-    reporter: ErrorReporter<'scope>,
+    error_handler: ErrorReporter<'scope>,
 }
 
 impl<'scope> ScopedViewOwner<'scope> {
-    pub fn new(scope: Scope<'scope>) -> Self {
-        Self::with_error_reporter(scope, ErrorReporter::unhandled())
-    }
-
-    pub fn with_error_reporter(scope: Scope<'scope>, reporter: ErrorReporter<'scope>) -> Self {
-        Self { scope, reporter }
+    pub fn new(scope: Scope<'scope>, error_handler: ErrorReporter<'scope>) -> Self {
+        Self {
+            scope,
+            error_handler,
+        }
     }
 }
 
@@ -651,7 +646,7 @@ impl<'scope> ViewOwner<'scope> for ScopedViewOwner<'scope> {
         let scope_for_once = self.scope;
         let scope_for_active = self.scope;
         let scope_for_validate = self.scope;
-        let reporter = self.reporter.clone();
+        let error_handler = self.error_handler.clone();
         ViewOwnerToken::new(
             EffectRegistrar::new(move |inputs, callback, error_handler| {
                 scope_for_effect
@@ -668,7 +663,7 @@ impl<'scope> ViewOwner<'scope> for ScopedViewOwner<'scope> {
                 move |callback| scope_for_once.completion_once(callback),
             ),
             ActiveRegistrar::new(move || scope_for_active.is_active()),
-            reporter,
+            error_handler,
         )
     }
 
@@ -679,12 +674,15 @@ impl<'scope> ViewOwner<'scope> for ScopedViewOwner<'scope> {
 
 pub(crate) struct OwnedViewOwner<'scope> {
     scope: Rc<OwnedScope<'scope>>,
-    reporter: ErrorReporter<'scope>,
+    error_handler: ErrorReporter<'scope>,
 }
 
 impl<'scope> OwnedViewOwner<'scope> {
-    pub(crate) fn new(scope: Rc<OwnedScope<'scope>>, reporter: ErrorReporter<'scope>) -> Self {
-        Self { scope, reporter }
+    pub(crate) fn new(scope: Rc<OwnedScope<'scope>>, error_handler: ErrorReporter<'scope>) -> Self {
+        Self {
+            scope,
+            error_handler,
+        }
     }
 }
 
@@ -720,7 +718,7 @@ impl<'scope> ViewOwner<'scope> for OwnedViewOwner<'scope> {
         let scope_for_once = self.scope.clone();
         let scope_for_active = self.scope.clone();
         let scope_for_validate = self.scope.clone();
-        let reporter = self.reporter.clone();
+        let error_handler = self.error_handler.clone();
         ViewOwnerToken::new(
             EffectRegistrar::new(move |inputs, callback, error_handler| {
                 scope_for_effect
@@ -737,7 +735,7 @@ impl<'scope> ViewOwner<'scope> for OwnedViewOwner<'scope> {
                 move |callback| scope_for_once.completion_once(callback),
             ),
             ActiveRegistrar::new(move || scope_for_active.is_active()),
-            reporter,
+            error_handler,
         )
     }
 
@@ -949,7 +947,7 @@ where
     F: FnOnce(&dyn ViewOwner<'scope>, &Node, Vec<PendingAttribute<'scope>>) -> SilexResult<()>,
 {
     let scope = Rc::new(owner.try_owned_scope()?);
-    let provisional_owner = OwnedViewOwner::new(scope.clone(), owner.token().error_reporter());
+    let provisional_owner = OwnedViewOwner::new(scope.clone(), owner.token().error_handler());
     let fragment: Node = crate::document().create_document_fragment().into();
 
     if let Err(error) = mount(&provisional_owner, &fragment, attrs) {
@@ -1307,7 +1305,7 @@ where
 {
     owner.validate_inputs(&inputs)?;
     let scope = Rc::new(owner.try_owned_scope()?);
-    let local_owner = OwnedViewOwner::new(scope.clone(), owner.token().error_reporter());
+    let local_owner = OwnedViewOwner::new(scope.clone(), owner.token().error_handler());
     let range = DomRange::append(parent, "branch")?;
     let state = Rc::new(RefCell::new(BranchState {
         range,
@@ -1780,7 +1778,7 @@ mod tests {
         let root = runtime.run();
         let bridge = {
             let scope = root.scope();
-            let owner = ScopedViewOwner::new(scope);
+            let owner = ScopedViewOwner::new(scope, ErrorReporter::new(|_| {}));
             let token = owner.token();
             let bridge = token.host_callback(
                 move |_| {
@@ -1824,7 +1822,7 @@ mod tests {
         let root = runtime.run();
         {
             let scope = root.scope();
-            let owner = ScopedViewOwner::new(scope);
+            let owner = ScopedViewOwner::new(scope, ErrorReporter::new(|_| {}));
             let token = owner.token();
             let callback = token.host_callback(|_| Ok(()), token.error_handler());
             let handle = token.host_resource_for_callback(&callback, move || {
@@ -1851,7 +1849,7 @@ mod tests {
         second.child(|scope| {
             let errors = Rc::new(RefCell::new(Vec::new()));
             let errors_for_reporter = errors.clone();
-            let owner = ScopedViewOwner::with_error_reporter(
+            let owner = ScopedViewOwner::new(
                 scope,
                 ErrorReporter::new(move |error| errors_for_reporter.borrow_mut().push(error)),
             );
@@ -1875,7 +1873,7 @@ mod tests {
     }
 
     #[test]
-    fn owner_reporters_are_local_and_token_scoped() {
+    fn owner_handlers_are_local_and_token_scoped() {
         let outer_errors = Rc::new(RefCell::new(Vec::<String>::new()));
         let inner_errors = Rc::new(RefCell::new(Vec::<String>::new()));
         let outer_errors_for_reporter = outer_errors.clone();
@@ -1883,7 +1881,7 @@ mod tests {
         let mut runtime = Runtime::new();
 
         runtime.child(|scope| {
-            let owner = ScopedViewOwner::with_error_reporter(
+            let owner = ScopedViewOwner::new(
                 scope,
                 ErrorReporter::new(move |error| {
                     outer_errors_for_reporter
@@ -1892,15 +1890,15 @@ mod tests {
                 }),
             );
             let token = owner.token();
-            token.report_error(SilexError::Framework("outer".to_string()));
+            token.handle_error(SilexError::Framework("outer".to_string()));
 
-            let nested = token.with_error_reporter(ErrorReporter::new(move |error| {
+            let nested = token.with_error_handler(ErrorReporter::new(move |error| {
                 inner_errors_for_reporter
                     .borrow_mut()
                     .push(error.to_string());
             }));
-            nested.report_error(SilexError::Framework("inner".to_string()));
-            token.report_error(SilexError::Framework("outer-again".to_string()));
+            nested.handle_error(SilexError::Framework("inner".to_string()));
+            token.handle_error(SilexError::Framework("outer-again".to_string()));
         });
 
         assert_eq!(

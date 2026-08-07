@@ -3,7 +3,7 @@ use crate::attribute::PendingAttribute;
 use crate::view::{AnyView, ApplyAttributes, OwnedViewOwner, View, ViewOwner};
 use silex_core::reactivity::{ReactiveSource, runtime_inputs_of};
 use silex_core::traits::{ForLoopSource, RxRead};
-use silex_core::{ErrorHandler, ErrorReporter, RuntimeInputs, SilexError, SilexResult};
+use silex_core::{ErrorHandler, RuntimeInputs, SilexError, SilexResult};
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
@@ -159,7 +159,7 @@ where
     let inputs = runtime_inputs_of(source.clone());
     owner.validate_inputs(&inputs)?;
     let scope = Rc::new(owner.try_owned_scope()?);
-    let local_owner = OwnedViewOwner::new(scope.clone(), owner.token().error_reporter());
+    let local_owner = OwnedViewOwner::new(scope.clone(), owner.token().error_handler());
     let range = DomRange::append(parent, "for")?;
     let token = local_owner.token();
     let stateful = factory.is_stateful();
@@ -324,10 +324,8 @@ where
     let inputs = runtime_inputs_of(source.clone());
     owner.validate_inputs(&inputs)?;
     let scope = Rc::new(owner.try_owned_scope()?);
-    let reporter = error_handler
-        .map(|handler| ErrorReporter::new(move |error| handler.handle(error)))
-        .unwrap_or_else(|| owner.token().error_reporter());
-    let local_owner = OwnedViewOwner::new(scope.clone(), reporter);
+    let error_handler = error_handler.unwrap_or_else(|| owner.token().error_handler());
+    let local_owner = OwnedViewOwner::new(scope.clone(), error_handler);
     let token = local_owner.token();
     let range = DomRange::append(parent, "for")?;
     let stateful = factory.is_stateful();

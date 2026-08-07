@@ -1,7 +1,7 @@
 #![cfg(all(target_arch = "wasm32", feature = "browser-tests"))]
 
 use gloo_timers::future::TimeoutFuture;
-use silex_core::{Runtime, traits::RxGet};
+use silex_core::{ErrorReporter, Runtime, traits::RxGet};
 use silex_dom::view::{ScopedViewOwner, View};
 use silex_i18n::{Catalog, I18nBuilder, Locale, detect_browser_locale, t};
 #[cfg(feature = "intl")]
@@ -14,6 +14,10 @@ use web_sys::StorageEvent;
 use web_sys::window;
 
 wasm_bindgen_test_configure!(run_in_browser);
+
+fn test_handler<'scope>() -> ErrorReporter<'scope> {
+    ErrorReporter::new(|_| {})
+}
 
 #[cfg(feature = "persist")]
 const BINDING_KEY: &str = "silex-i18n-wasm-binding";
@@ -225,7 +229,7 @@ async fn translated_memo_updates_the_existing_text_node() {
             .expect("document")
             .create_element("div")
             .expect("parent element");
-        let owner = ScopedViewOwner::new(scope);
+        let owner = ScopedViewOwner::new(scope, test_handler());
         t!(i18n, "title")
             .mount_owned(&owner, parent.as_ref(), Vec::new())
             .expect("translation should mount");
@@ -259,7 +263,7 @@ fn translated_memo_is_removed_when_its_root_is_disposed() {
             .catalog(catalog)
             .build()
             .expect("valid i18n store");
-        let owner = ScopedViewOwner::new(scope);
+        let owner = ScopedViewOwner::new(scope, test_handler());
         t!(i18n, "title")
             .mount_owned(&owner, parent.as_ref(), Vec::new())
             .expect("translation should mount");
@@ -294,7 +298,7 @@ fn foreign_translation_source_does_not_mount_or_allocate_foreign_owner_nodes() {
     {
         let foreign_scope = foreign_root.scope();
         let translation = t!(i18n, "title");
-        let owner = ScopedViewOwner::new(foreign_scope);
+        let owner = ScopedViewOwner::new(foreign_scope, test_handler());
         assert!(
             translation
                 .mount_owned(&owner, parent.as_ref(), Vec::new())

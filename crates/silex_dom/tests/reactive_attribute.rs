@@ -2,7 +2,7 @@
 
 use std::borrow::Cow;
 
-use silex_core::Runtime;
+use silex_core::{ErrorHandler, ErrorReporter, Runtime};
 use silex_dom::attribute::AttributeBuilder;
 use silex_dom::element::Element;
 use silex_dom::view::{ScopedViewOwner, View};
@@ -10,6 +10,10 @@ use wasm_bindgen_test::*;
 use web_sys::Element as DomElement;
 
 wasm_bindgen_test_configure!(run_in_browser);
+
+fn test_handler<'scope>() -> ErrorReporter<'scope> {
+    ErrorHandler::new(|_| {})
+}
 
 fn host() -> DomElement {
     web_sys::window()
@@ -35,7 +39,7 @@ fn reactive_static_str_attribute_updates() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
         let (read, write) = scope.signal("initial");
-        let owner = ScopedViewOwner::new(scope);
+        let owner = ScopedViewOwner::new(scope, test_handler());
         let view = Element::new("button").attr("data-state", read.into_rx());
         view.mount(&owner, &host, Vec::new())
             .expect("reactive view should mount");
@@ -62,7 +66,7 @@ fn reactive_borrowed_str_attribute_updates() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
         let (read, write) = scope.signal(initial.as_str());
-        let owner = ScopedViewOwner::new(scope);
+        let owner = ScopedViewOwner::new(scope, test_handler());
         let view = Element::new("div").attr("data-value", read.into_rx());
         view.mount(&owner, &host, Vec::new())
             .expect("reactive view should mount");
@@ -87,7 +91,7 @@ fn reactive_cow_attribute_updates() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
         let (read, write) = scope.signal(Cow::Borrowed("initial"));
-        let owner = ScopedViewOwner::new(scope);
+        let owner = ScopedViewOwner::new(scope, test_handler());
         let view = Element::new("span").attr("data-state", read.into_rx());
         view.mount(&owner, &host, Vec::new())
             .expect("reactive view should mount");
@@ -114,7 +118,7 @@ fn reactive_string_reference_attribute_updates() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
         let (read, write) = scope.signal(&initial);
-        let owner = ScopedViewOwner::new(scope);
+        let owner = ScopedViewOwner::new(scope, test_handler());
         let view = Element::new("p").attr("data-text", read.into_rx());
         view.mount(&owner, &host, Vec::new())
             .expect("reactive view should mount");
@@ -142,7 +146,7 @@ fn reactive_str_classes_merge_update_and_cleanup() {
     {
         let scope = root.scope();
         let (read, write) = scope.signal("dynamic-one");
-        let owner = ScopedViewOwner::new(scope);
+        let owner = ScopedViewOwner::new(scope, test_handler());
         let view = Element::new("div")
             .attr("class", "static")
             .attr("class", read.into_rx());
@@ -173,7 +177,7 @@ fn reactive_str_stylesheet_merges_update_and_cleanup() {
     {
         let scope = root.scope();
         let (read, write) = scope.signal("color: red;");
-        let owner = ScopedViewOwner::new(scope);
+        let owner = ScopedViewOwner::new(scope, test_handler());
         let view = Element::new("div")
             .attr("style", "display: block;")
             .attr("style", read.into_rx());
@@ -207,7 +211,7 @@ fn reactive_cow_style_property_updates_and_cleans_up() {
     {
         let scope = root.scope();
         let (read, write) = scope.signal(Cow::Borrowed("red"));
-        let owner = ScopedViewOwner::new(scope);
+        let owner = ScopedViewOwner::new(scope, test_handler());
         let view = Element::new("div")
             .attr("style", ("color", read.into_rx()))
             .attr("style", ("display", "block"));

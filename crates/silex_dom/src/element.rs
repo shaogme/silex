@@ -10,7 +10,7 @@ use std::rc::Rc;
 use wasm_bindgen::{JsCast, JsValue, convert::FromWasmAbi, prelude::*};
 use web_sys::Element as WebElem;
 
-use silex_core::{ReactiveError, RuntimeInputs, Scope, SilexError, SilexResult};
+use silex_core::{ErrorReporter, ReactiveError, RuntimeInputs, Scope, SilexError, SilexResult};
 
 pub mod tags;
 pub use tags::*;
@@ -91,7 +91,7 @@ impl<'scope> Element<'scope> {
     ) -> SilexResult<()> {
         let provisional_scope = Rc::new(owner.try_owned_scope()?);
         let provisional_owner =
-            OwnedViewOwner::new(provisional_scope.clone(), owner.token().error_reporter());
+            OwnedViewOwner::new(provisional_scope.clone(), owner.token().error_handler());
         let token = provisional_owner.token();
         let mut appended = false;
         let result = (|| -> SilexResult<()> {
@@ -199,14 +199,18 @@ impl<'scope> View<'scope> for Element<'scope> {
 }
 
 /// Mount a view using the caller-owned scope.
-pub fn mount_to_body<'scope, V>(scope: Scope<'scope>, view: V) -> SilexResult<()>
+pub fn mount_to_body<'scope, V>(
+    scope: Scope<'scope>,
+    view: V,
+    error_handler: ErrorReporter<'scope>,
+) -> SilexResult<()>
 where
     V: View<'scope> + 'scope,
 {
     let document = crate::document();
     let body = document.body().expect("No body element");
     let node: web_sys::Node = body.into();
-    let owner = ScopedViewOwner::new(scope);
+    let owner = ScopedViewOwner::new(scope, error_handler);
     view.mount_owned(&owner, &node, Vec::new())
 }
 

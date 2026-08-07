@@ -1,7 +1,7 @@
 #![cfg(all(target_arch = "wasm32", feature = "test-style-fallback"))]
 
 use js_sys::Promise;
-use silex_core::Runtime;
+use silex_core::{ErrorReporter, Runtime};
 use silex_css::{CssPart, DynamicCss, DynamicStyleManager, IntoCssReactive, prelude::inject_style};
 use silex_dom::{
     attribute::{ApplyTarget, ApplyToDom},
@@ -14,6 +14,10 @@ use wasm_bindgen_test::*;
 use web_sys::{Document, Element, HtmlStyleElement, Node};
 
 wasm_bindgen_test_configure!(run_in_browser);
+
+fn test_handler<'scope>() -> ErrorReporter<'scope> {
+    ErrorReporter::new(|_| {})
+}
 
 fn document() -> Document {
     web_sys::window()
@@ -120,7 +124,7 @@ async fn style_tag_fallback_injects_updates_and_detaches_on_owner_dispose() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
         let (value, set_value) = scope.signal(String::from("red"));
-        let owner = ScopedViewOwner::new(scope);
+        let owner = ScopedViewOwner::new(scope, test_handler());
         let token = owner.token();
         let dynamic = DynamicCss::new("slx-fallback-dynamic").with_rule(
             &[

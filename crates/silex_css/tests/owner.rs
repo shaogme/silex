@@ -1,7 +1,7 @@
 #![cfg(target_arch = "wasm32")]
 
 use js_sys::{Array, Reflect};
-use silex_core::Runtime;
+use silex_core::{ErrorReporter, Runtime};
 use silex_css::{
     CssPart, DynamicCss, IntoCssReactive,
     prelude::{
@@ -23,6 +23,10 @@ use wasm_bindgen_test::*;
 use web_sys::{Element, Node};
 
 wasm_bindgen_test_configure!(run_in_browser);
+
+fn test_handler<'scope>() -> ErrorReporter<'scope> {
+    ErrorReporter::new(|_| {})
+}
 
 fn document() -> web_sys::Document {
     web_sys::window()
@@ -138,7 +142,7 @@ fn style_updates_inline_values_and_cleans_on_scope_dispose() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
         let (value, set_value) = scope.signal(String::from("red"));
-        let owner = ScopedViewOwner::new(scope);
+        let owner = ScopedViewOwner::new(scope, test_handler());
         let token = owner.token();
         let class_name = Style::new()
             .raw("--test-color", value)
@@ -185,7 +189,7 @@ fn theme_updates_variables_and_cleans_on_scope_dispose() {
         let (theme, set_theme) = scope.signal(TestTheme {
             color: String::from("red"),
         });
-        let owner = ScopedViewOwner::new(scope);
+        let owner = ScopedViewOwner::new(scope, test_handler());
         let token = owner.token();
         theme_variables(theme)
             .apply(&element, ApplyTarget::Apply, &token)
@@ -229,7 +233,7 @@ fn svg_style_updates_inline_values_and_cleans_on_scope_dispose() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
         let (value, set_value) = scope.signal(String::from("red"));
-        let owner = ScopedViewOwner::new(scope);
+        let owner = ScopedViewOwner::new(scope, test_handler());
         let token = owner.token();
         Style::new()
             .raw("--svg-color", value)
@@ -271,7 +275,7 @@ fn dynamic_css_replaces_rule_class_and_cleans_on_scope_dispose() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
         let (value, set_value) = scope.signal(String::from("red"));
-        let owner = ScopedViewOwner::new(scope);
+        let owner = ScopedViewOwner::new(scope, test_handler());
         let token = owner.token();
         let dynamic = DynamicCss::new("slx-owner-test").with_rule(
             &[
@@ -312,7 +316,7 @@ async fn pending_dynamic_sheet_operations_do_not_survive_owner_dispose() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
         let (value, _) = scope.signal(String::from("red"));
-        let owner = ScopedViewOwner::new(scope);
+        let owner = ScopedViewOwner::new(scope, test_handler());
         let token = owner.token();
         let dynamic = DynamicCss::new("slx-pending-owner").with_rule(
             &[
@@ -344,8 +348,8 @@ async fn global_theme_stylesheets_are_isolated_per_owner() {
 
     first_root.with_scope(|first_scope| {
         second_root.with_scope(|second_scope| {
-            let first_owner = ScopedViewOwner::new(first_scope);
-            let second_owner = ScopedViewOwner::new(second_scope);
+            let first_owner = ScopedViewOwner::new(first_scope, test_handler());
+            let second_owner = ScopedViewOwner::new(second_scope, test_handler());
             set_global_theme(
                 &first_owner,
                 first_scope.stored(TestTheme {
@@ -388,7 +392,7 @@ fn theme_patch_removes_variables_that_disappear_from_the_next_round() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
         let (patch, set_patch) = scope.signal(TestPatch { alternate: false });
-        let owner = ScopedViewOwner::new(scope);
+        let owner = ScopedViewOwner::new(scope, test_handler());
         let token = owner.token();
         theme_patch(patch)
             .apply(&element, ApplyTarget::Apply, &token)
@@ -426,7 +430,7 @@ fn foreign_runtime_css_input_is_rejected_before_custom_callback() {
 
     let mut local_runtime = Runtime::new();
     local_runtime.child(|scope| {
-        let owner = ScopedViewOwner::new(scope);
+        let owner = ScopedViewOwner::new(scope, test_handler());
         let token = owner.token();
         let operation = AttrOp::custom_with_inputs(foreign_inputs, |element, _| {
             callback_runs.set(callback_runs.get() + 1);

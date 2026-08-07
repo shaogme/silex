@@ -1,0 +1,15 @@
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+ --> tests/ui/fail_scoped_owner_without_handler.rs:7:22
+  |
+7 |         let _owner = ScopedViewOwner::new(scope);
+  |                      ^^^^^^^^^^^^^^^^^^^^------- argument #2 of type `ErrorHandler<'_, SilexError>` is missing
+  |
+note: associated function defined here
+ --> src/view.rs
+  |
+  |     pub fn new(scope: Scope<'scope>, error_handler: ErrorReporter<'scope>) -> Self {
+  |            ^^^
+help: provide the argument
+  |
+7 |         let _owner = ScopedViewOwner::new(scope, /* ErrorHandler<'_, SilexError> */);
+  |                                                ++++++++++++++++++++++++++++++++++++

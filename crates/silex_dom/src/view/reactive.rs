@@ -22,7 +22,7 @@ where
     let inputs = rx.runtime_inputs();
     owner.validate_inputs(&inputs)?;
     let scope = Rc::new(owner.try_owned_scope()?);
-    let local_owner = OwnedViewOwner::new(scope.clone(), owner.token().error_reporter());
+    let local_owner = OwnedViewOwner::new(scope.clone(), owner.token().error_handler());
     let parent = parent.clone();
     let node = Rc::new(RefCell::new(None::<Node>));
     let node_for_cleanup = node.clone();

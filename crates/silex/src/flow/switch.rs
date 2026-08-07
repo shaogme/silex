@@ -1,4 +1,4 @@
-use silex_core::{ErrorReporter, Scope, SilexError, reactivity::ReactiveSource};
+use silex_core::{Scope, SilexError, reactivity::ReactiveSource};
 use silex_dom::prelude::*;
 use silex_macros::component;
 use std::collections::HashMap;
@@ -15,8 +15,8 @@ use std::rc::Rc;
 ///
 /// Switch(scope, count)
 ///     .fallback("Default View")
-///     .case(0, "Zero")
-///     .case(1, "One");
+///     .try_case(0, "Zero")?
+///     .try_case(1, "One")?;
 /// ```
 #[component]
 pub fn Switch<'scope, Source, T>(
@@ -48,22 +48,19 @@ where
     Source: ReactiveSource<'scope, Value = T> + Clone + 'scope,
     T: Eq + Hash + Clone + 'scope,
 {
-    /// 添加一个匹配分支
-    pub fn case<V>(mut self, value: T, view: V) -> Self
+    /// 添加一个匹配分支，并在重复 key 时返回配置错误。
+    pub fn try_case<V>(mut self, value: T, view: V) -> Result<Self, SilexError>
     where
         V: View<'scope> + 'scope,
     {
         match self.cases.entry(value) {
             Entry::Vacant(entry) => {
                 entry.insert(view.into_any());
+                Ok(self)
             }
-            Entry::Occupied(_) => {
-                ErrorReporter::unhandled().report(SilexError::Javascript(
-                    "Duplicate case detected in Switch; each case value must be unique."
-                        .to_string(),
-                ));
-            }
+            Entry::Occupied(_) => Err(SilexError::Javascript(
+                "Duplicate case detected in Switch; each case value must be unique.".to_string(),
+            )),
         }
-        self
     }
 }

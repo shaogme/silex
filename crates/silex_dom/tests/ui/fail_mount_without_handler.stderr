@@ -1,0 +1,15 @@
+error[E0061]: this function takes 3 arguments but 2 arguments were supplied
+ --> tests/ui/fail_mount_without_handler.rs:7:17
+  |
+7 |         let _ = mount_to_body(scope, "missing-handler");
+  |                 ^^^^^^^^^^^^^-------------------------- argument #3 of type `ErrorHandler<'_, SilexError>` is missing
+  |
+note: function defined here
+ --> src/element.rs
+  |
+  | pub fn mount_to_body<'scope, V>(
+  |        ^^^^^^^^^^^^^
+help: provide the argument
+  |
+7 |         let _ = mount_to_body(scope, "missing-handler", /* ErrorHandler<'_, SilexError> */);
+  |                                                       ++++++++++++++++++++++++++++++++++++

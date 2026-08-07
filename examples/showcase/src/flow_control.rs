@@ -129,16 +129,18 @@ pub fn SwitchDemo() -> impl View {
         .style("display: flex; gap: 10px; margin-bottom: 10px;"),
         Switch(tab)
             .fallback(div("Fallback (Should not happen)"))
-            .case(
+            .try_case(
                 0,
                 div("Content for Tab 1")
                     .style(sty().padding(px(10)).background(AppTheme::SURFACE_ALT))
             )
-            .case(
+            .expect("switch case 0 must be unique")
+            .try_case(
                 1,
                 div("Content for Tab 2").style(sty().padding(px(10)).background(AppTheme::BORDER))
             )
-            .case(
+            .expect("switch case 1 must be unique")
+            .try_case(
                 2,
                 div("Content for Tab 3").style(
                     sty()
@@ -147,6 +149,7 @@ pub fn SwitchDemo() -> impl View {
                         .opacity(0.8)
                 )
             )
+            .expect("switch case 2 must be unique")
     ]
 }
 

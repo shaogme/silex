@@ -19,6 +19,10 @@ use web_sys::{Node, StorageEvent, window};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
+fn test_handler<'scope>() -> ErrorReporter<'scope> {
+    ErrorReporter::new(|_| {})
+}
+
 const STORAGE_KEY: &str = "silex-persist-runtime-refactor";
 const DEBOUNCE_KEY: &str = "silex-persist-runtime-refactor-debounce";
 const DEBOUNCE_REMOVE_KEY: &str = "silex-persist-runtime-refactor-debounce-remove";
@@ -493,7 +497,7 @@ fn query_backend_writes_one_push_and_one_url_update_per_change() {
                     search_updates_for_effect.set(search_updates_for_effect.get() + 1);
                     Ok(())
                 },
-                ErrorReporter::unhandled().handler(),
+                test_handler(),
             )
             .expect("query update effect can be registered");
         let initial_search_updates = search_updates.get();
@@ -553,7 +557,7 @@ fn persistent_view_updates_and_stops_with_root() {
             .string()
             .default("one".to_string())
             .build();
-        let owner = ScopedViewOwner::new(scope);
+        let owner = ScopedViewOwner::new(scope, test_handler());
         binding
             .mount(&owner, parent.as_ref(), Vec::new())
             .expect("persistent view should mount");
@@ -594,7 +598,7 @@ fn persistent_view_stops_after_lexical_owner_dispose() {
                 .string()
                 .default("one".to_string())
                 .build();
-            let owner = ScopedViewOwner::new(child);
+            let owner = ScopedViewOwner::new(child, test_handler());
             CapturedPersistent {
                 binding,
                 node: captured_node_for_child,
@@ -666,7 +670,7 @@ fn persistent_view_stops_after_row_owner_dispose() {
             }),
             _marker: std::marker::PhantomData,
         };
-        let owner = ScopedViewOwner::new(scope);
+        let owner = ScopedViewOwner::new(scope, test_handler());
         list.mount_owned(&owner, parent.as_ref(), Vec::new())
             .expect("persistent list should mount");
         assert_eq!(parent.text_content(), Some("one".to_string()));
@@ -809,7 +813,7 @@ fn debounce_timer_failure_reentry_and_late_callbacks_are_gated() {
                     }
                     Ok(())
                 },
-                ErrorReporter::unhandled().handler(),
+                test_handler(),
             )
             .expect("debounce state effect can be registered");
 
