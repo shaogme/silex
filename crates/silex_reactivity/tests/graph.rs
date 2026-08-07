@@ -1,8 +1,12 @@
-use silex_reactivity::{Memo, Runtime, notify, track_batch};
+use silex_reactivity::{ErrorHandler, Memo, Runtime, notify, track_batch};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
 };
+
+fn handler<'scope>() -> ErrorHandler<'scope, ()> {
+    ErrorHandler::ignore()
+}
 
 #[test]
 fn memo_and_derived_keep_their_notification_rules() {
@@ -46,9 +50,15 @@ fn dependency_chain_evaluates_upstream_before_effect() {
         let seen = Rc::new(Cell::new(0));
         let seen_in_effect = seen.clone();
         let tail_in_effect = tail;
-        scope.effect(move || {
-            seen_in_effect.set(tail_in_effect.get());
-        });
+        scope
+            .effect(
+                move || {
+                    seen_in_effect.set(tail_in_effect.get());
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("effect should initialize");
 
         assert_eq!(seen.get(), 3);
         set_source.set(4);
@@ -66,13 +76,21 @@ fn diamond_dependencies_do_not_observe_intermediate_state() {
         let left = scope.memo(move |_| source.get() + 1);
         let right = scope.memo(move |_| source.get() + 10);
         let seen_in_effect = seen.clone();
-        scope.effect(move || {
-            let left_value = left.get();
-            let right_value = right.get();
-            seen_in_effect
-                .borrow_mut()
-                .push((left_value, right_value, left_value + right_value));
-        });
+        scope
+            .effect(
+                move || {
+                    let left_value = left.get();
+                    let right_value = right.get();
+                    seen_in_effect.borrow_mut().push((
+                        left_value,
+                        right_value,
+                        left_value + right_value,
+                    ));
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("effect should initialize");
 
         assert_eq!(seen.borrow().as_slice(), &[(2, 11, 13)]);
         set_source.set(2);
@@ -91,14 +109,20 @@ fn dynamic_dependencies_are_replaced_on_each_effect_run() {
         let seen = Rc::new(Cell::new(0));
         let runs_in_effect = runs.clone();
         let seen_in_effect = seen.clone();
-        scope.effect(move || {
-            runs_in_effect.set(runs_in_effect.get() + 1);
-            seen_in_effect.set(if switch.get() {
-                left.get()
-            } else {
-                right.get()
-            });
-        });
+        scope
+            .effect(
+                move || {
+                    runs_in_effect.set(runs_in_effect.get() + 1);
+                    seen_in_effect.set(if switch.get() {
+                        left.get()
+                    } else {
+                        right.get()
+                    });
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("effect should initialize");
 
         set_right.set(1);
         assert_eq!(runs.get(), 1);
@@ -132,10 +156,16 @@ fn nested_memo_cleanup_does_not_track_the_outer_observer() {
             let value = inner_source.get();
             if first_inner_run.replace(false) {
                 let cleanup_runs_for_cleanup = cleanup_runs_in_cleanup.clone();
-                scope_for_cleanup.on_cleanup(move || {
-                    cleanup_runs_for_cleanup.set(cleanup_runs_for_cleanup.get() + 1);
-                    let _ = probe_for_cleanup.try_get();
-                });
+                scope_for_cleanup
+                    .on_cleanup(
+                        move || {
+                            cleanup_runs_for_cleanup.set(cleanup_runs_for_cleanup.get() + 1);
+                            let _ = probe_for_cleanup.try_get();
+                            Ok(())
+                        },
+                        handler(),
+                    )
+                    .expect("cleanup should register");
             }
             value
         });
@@ -147,16 +177,22 @@ fn nested_memo_cleanup_does_not_track_the_outer_observer() {
         let set_inner_source_in_effect = set_inner_source;
         let outer_runs_in_effect = outer_runs.clone();
         let refresh_inner_in_effect = refresh_inner.clone();
-        scope.effect(move || {
-            let _ = outer_source_in_effect.get();
-            outer_runs_in_effect.set(outer_runs_in_effect.get() + 1);
-            if refresh_inner_in_effect.replace(false) {
-                set_inner_source_in_effect.set(1);
-            }
-            outer_inner
-                .try_with_untracked(|_| ())
-                .expect("inner memo should remain readable");
-        });
+        scope
+            .effect(
+                move || {
+                    let _ = outer_source_in_effect.get();
+                    outer_runs_in_effect.set(outer_runs_in_effect.get() + 1);
+                    if refresh_inner_in_effect.replace(false) {
+                        set_inner_source_in_effect.set(1);
+                    }
+                    outer_inner
+                        .try_with_untracked(|_| ())
+                        .expect("inner memo should remain readable");
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("effect should initialize");
 
         assert_eq!(outer_runs.get(), 1);
         assert_eq!(cleanup_runs.get(), 0);
@@ -182,9 +218,15 @@ fn batch_delays_effects_and_untrack_preserves_ownership_context() {
         let seen_in_effect = seen.clone();
         let effect_source = source;
         let effect_hidden = hidden;
-        scope.effect(move || {
-            seen_in_effect.set(effect_source.get() + effect_hidden.get());
-        });
+        scope
+            .effect(
+                move || {
+                    seen_in_effect.set(effect_source.get() + effect_hidden.get());
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("effect should initialize");
 
         scope.batch(|| {
             set_source.set(1);
@@ -197,10 +239,16 @@ fn batch_delays_effects_and_untrack_preserves_ownership_context() {
         let tracked_in_effect = tracked.clone();
         let second_source = source;
         let second_hidden = hidden;
-        scope.effect(move || {
-            tracked_in_effect.set(second_hidden.get());
-            let _ = second_source.get();
-        });
+        scope
+            .effect(
+                move || {
+                    tracked_in_effect.set(second_hidden.get());
+                    let _ = second_source.get();
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("effect should initialize");
         set_hidden.set(4);
         assert_eq!(tracked.get(), 4);
         assert_eq!(scope.untrack(|| hidden.get()), 4);
@@ -265,10 +313,16 @@ fn track_batch_tracks_all_signals_in_one_scope() {
         let (sig2, set_sig2) = scope.signal(20i32);
         let runs_in_effect = runs.clone();
 
-        scope.effect(move || {
-            track_batch(&[sig1, sig2]);
-            runs_in_effect.set(runs_in_effect.get() + 1);
-        });
+        scope
+            .effect(
+                move || {
+                    track_batch(&[sig1, sig2]);
+                    runs_in_effect.set(runs_in_effect.get() + 1);
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("effect should initialize");
 
         assert_eq!(runs.get(), 1);
         set_sig1.set(11);
@@ -286,9 +340,15 @@ fn notify_recomputes_after_silent_interior_mutation() {
     runtime.child(|scope| {
         let (source, set_source) = scope.signal(RefCell::new(0i32));
         let seen_in_effect = seen.clone();
-        scope.effect(move || {
-            seen_in_effect.set(source.with(|value| *value.borrow()));
-        });
+        scope
+            .effect(
+                move || {
+                    seen_in_effect.set(source.with(|value| *value.borrow()));
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("effect should initialize");
 
         source.with(|value| {
             *value.borrow_mut() = 1;
@@ -309,12 +369,18 @@ fn cross_scope_silent_notify_from_callback_waits_for_value_borrow() {
         let (source, set_source) = scope.signal(RefCell::new(0i32));
         scope.child(|child| {
             let runs_in_effect = runs.clone();
-            child.effect(move || {
-                source.with(|value| {
-                    let _ = *value.borrow();
-                    runs_in_effect.set(runs_in_effect.get() + 1);
-                });
-            });
+            child
+                .effect(
+                    move || {
+                        source.with(|value| {
+                            let _ = *value.borrow();
+                            runs_in_effect.set(runs_in_effect.get() + 1);
+                        });
+                        Ok(())
+                    },
+                    handler(),
+                )
+                .expect("effect should initialize");
 
             let runs_in_callback = runs.clone();
             let callback = child.callback(move |_: ()| {
@@ -352,7 +418,15 @@ fn cross_scope_computation_stack_includes_scope_identity() {
             let child_memo = child.memo(move |_| parent_memo_in_child.get() + 1);
             let seen = Rc::new(Cell::new(0));
             let seen_in_effect = seen.clone();
-            child.effect(move || seen_in_effect.set(child_memo.get()));
+            child
+                .effect(
+                    move || {
+                        seen_in_effect.set(child_memo.get());
+                        Ok(())
+                    },
+                    handler(),
+                )
+                .expect("effect should initialize");
 
             assert_eq!(seen.get(), 3);
             set_source.set(2);
@@ -372,7 +446,15 @@ fn cross_scope_derived_reacts_and_detaches_on_exit() {
             let child_source = source;
             let derived = child.derived(move || child_source.get() * 2);
             let seen_in_effect = seen.clone();
-            child.effect(move || seen_in_effect.set(derived.get()));
+            child
+                .effect(
+                    move || {
+                        seen_in_effect.set(derived.get());
+                        Ok(())
+                    },
+                    handler(),
+                )
+                .expect("effect should initialize");
 
             assert_eq!(seen.get(), 2);
             set_source.set(2);
@@ -448,10 +530,16 @@ fn cyclic_effect_queue_failure_does_not_poison_unrelated_effects() {
 
         let first_in_effect = first;
         let runs_in_effect = runs.clone();
-        scope.effect(move || {
-            let _ = first_in_effect.get();
-            runs_in_effect.set(runs_in_effect.get() + 1);
-        });
+        scope
+            .effect(
+                move || {
+                    let _ = first_in_effect.get();
+                    runs_in_effect.set(runs_in_effect.get() + 1);
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("effect should initialize");
 
         assert_eq!(runs.get(), 1);
         let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -462,9 +550,16 @@ fn cyclic_effect_queue_failure_does_not_poison_unrelated_effects() {
         let independent_runs = Rc::new(Cell::new(0));
         let (independent, set_independent) = scope.signal(0i32);
         let independent_runs_in_effect = independent_runs.clone();
-        scope.effect(move || {
-            independent_runs_in_effect.set(independent_runs_in_effect.get() + independent.get());
-        });
+        scope
+            .effect(
+                move || {
+                    independent_runs_in_effect
+                        .set(independent_runs_in_effect.get() + independent.get());
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("effect should initialize");
         set_independent.set(1);
         assert_eq!(independent_runs.get(), 1);
         assert_eq!(source.try_get(), Ok(1));

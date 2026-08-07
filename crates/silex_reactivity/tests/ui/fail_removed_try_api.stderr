@@ -1,0 +1,11 @@
+error[E0599]: no method named `try_effect_from` found for struct `silex_reactivity::Scope<'scope>` in the current scope
+ --> tests/ui/fail_removed_try_api.rs:6:23
+  |
+6 |         let _ = scope.try_effect_from(
+  |                 ------^^^^^^^^^^^^^^^
+  |
+help: there is a method `effect_from` with a similar name
+  |
+6 -         let _ = scope.try_effect_from(
+6 +         let _ = scope.effect_from(
+  |

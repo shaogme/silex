@@ -1,0 +1,8 @@
+error[E0308]: mismatched types
+ --> tests/ui/fail_old_cleanup_signature.rs:6:37
+  |
+6 |         let _ = scope.on_cleanup(|| {}, ErrorHandler::ignore());
+  |                                     ^^ expected `Result<(), _>`, found `()`
+  |
+  = note:   expected enum `Result<(), _>`
+          found unit type `()`

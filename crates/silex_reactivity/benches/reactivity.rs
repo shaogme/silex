@@ -1,5 +1,5 @@
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use silex_reactivity::Runtime;
+use silex_reactivity::{ErrorHandler, Runtime};
 use std::{
     cell::Cell,
     hint::black_box,
@@ -11,6 +11,10 @@ const SIGNAL_SIZES: &[usize] = &[1, 64, 1024, 4096];
 const GRAPH_SIZES: &[usize] = &[1, 8, 32, 128];
 const OWNER_SIZES: &[usize] = &[1, 16, 128, 512];
 
+fn handler<'scope>() -> ErrorHandler<'scope, ()> {
+    ErrorHandler::ignore()
+}
+
 fn scoped_signal_round_trip(c: &mut Criterion) {
     c.bench_function("scoped signal round trip", |bench| {
         bench.iter(|| {
@@ -19,9 +23,15 @@ fn scoped_signal_round_trip(c: &mut Criterion) {
             {
                 let scope = root.scope();
                 let (read, write) = scope.signal(0i32);
-                let _effect = scope.effect(move || {
-                    black_box(read.get());
-                });
+                let _effect = scope
+                    .effect(
+                        move || {
+                            black_box(read.get());
+                            Ok(())
+                        },
+                        handler(),
+                    )
+                    .expect("benchmark effect should initialize");
                 write.set(black_box(1));
             }
         });
@@ -139,14 +149,20 @@ fn bench_signal_read_tracked(c: &mut Criterion) {
                 let runs = Rc::new(Cell::new(0usize));
                 let reads_in_effect = reads.clone();
                 let runs_in_effect = runs.clone();
-                let _effect = scope.effect(move || {
-                    let mut observed = 0i32;
-                    for signal in &reads_in_effect {
-                        observed = observed.wrapping_add(black_box(signal.get()));
-                    }
-                    black_box(observed);
-                    runs_in_effect.set(runs_in_effect.get().wrapping_add(1));
-                });
+                let _effect = scope
+                    .effect(
+                        move || {
+                            let mut observed = 0i32;
+                            for signal in &reads_in_effect {
+                                observed = observed.wrapping_add(black_box(signal.get()));
+                            }
+                            black_box(observed);
+                            runs_in_effect.set(runs_in_effect.get().wrapping_add(1));
+                            Ok(())
+                        },
+                        handler(),
+                    )
+                    .expect("benchmark effect should initialize");
 
                 let mut value = 0i32;
                 bench.iter(|| {
@@ -394,10 +410,16 @@ fn bench_graph_effect_fanout(c: &mut Criterion) {
 
                     for _ in 0..fanout {
                         let notifications = notifications.clone();
-                        scope.effect(move || {
-                            black_box(source.get());
-                            notifications.set(notifications.get().wrapping_add(1));
-                        });
+                        scope
+                            .effect(
+                                move || {
+                                    black_box(source.get());
+                                    notifications.set(notifications.get().wrapping_add(1));
+                                    Ok(())
+                                },
+                                handler(),
+                            )
+                            .expect("benchmark effect should initialize");
                     }
 
                     let mut value = 0i32;
@@ -437,9 +459,15 @@ fn bench_graph_memo_chain(c: &mut Criterion) {
                     let observed = Rc::new(Cell::new(0i32));
                     let observed_in_effect = observed.clone();
                     let tail_in_effect = tail;
-                    scope.effect(move || {
-                        observed_in_effect.set(tail_in_effect.get());
-                    });
+                    scope
+                        .effect(
+                            move || {
+                                observed_in_effect.set(tail_in_effect.get());
+                                Ok(())
+                            },
+                            handler(),
+                        )
+                        .expect("benchmark effect should initialize");
 
                     let mut value = 0i32;
                     bench.iter(|| {
@@ -475,13 +503,19 @@ fn bench_graph_memo_diamond(c: &mut Criterion) {
                     let observed = Rc::new(Cell::new(0i32));
                     let memos_in_effect = memos.clone();
                     let observed_in_effect = observed.clone();
-                    scope.effect(move || {
-                        let mut value = 0i32;
-                        for memo in &memos_in_effect {
-                            value = value.wrapping_add(memo.get());
-                        }
-                        observed_in_effect.set(value);
-                    });
+                    scope
+                        .effect(
+                            move || {
+                                let mut value = 0i32;
+                                for memo in &memos_in_effect {
+                                    value = value.wrapping_add(memo.get());
+                                }
+                                observed_in_effect.set(value);
+                                Ok(())
+                            },
+                            handler(),
+                        )
+                        .expect("benchmark effect should initialize");
 
                     let mut value = 0i32;
                     bench.iter(|| {
@@ -513,10 +547,16 @@ fn bench_graph_effect_fanout_cross_scope(c: &mut Criterion) {
                         let notifications = Rc::new(Cell::new(0usize));
                         for _ in 0..fanout {
                             let notifications = notifications.clone();
-                            child.effect(move || {
-                                black_box(source.get());
-                                notifications.set(notifications.get().wrapping_add(1));
-                            });
+                            child
+                                .effect(
+                                    move || {
+                                        black_box(source.get());
+                                        notifications.set(notifications.get().wrapping_add(1));
+                                        Ok(())
+                                    },
+                                    handler(),
+                                )
+                                .expect("benchmark effect should initialize");
                         }
 
                         let mut value = 0i32;
@@ -556,9 +596,15 @@ fn bench_graph_memo_chain_cross_scope(c: &mut Criterion) {
                         let observed = Rc::new(Cell::new(0i32));
                         let observed_in_effect = observed.clone();
                         let tail_in_effect = tail;
-                        child.effect(move || {
-                            observed_in_effect.set(tail_in_effect.get());
-                        });
+                        child
+                            .effect(
+                                move || {
+                                    observed_in_effect.set(tail_in_effect.get());
+                                    Ok(())
+                                },
+                                handler(),
+                            )
+                            .expect("benchmark effect should initialize");
 
                         let mut value = 0i32;
                         bench.iter(|| {
@@ -597,13 +643,19 @@ fn bench_graph_memo_diamond_cross_scope(c: &mut Criterion) {
                         let observed = Rc::new(Cell::new(0i32));
                         let memos_in_effect = memos.clone();
                         let observed_in_effect = observed.clone();
-                        child.effect(move || {
-                            let mut value = 0i32;
-                            for memo in &memos_in_effect {
-                                value = value.wrapping_add(memo.get());
-                            }
-                            observed_in_effect.set(value);
-                        });
+                        child
+                            .effect(
+                                move || {
+                                    let mut value = 0i32;
+                                    for memo in &memos_in_effect {
+                                        value = value.wrapping_add(memo.get());
+                                    }
+                                    observed_in_effect.set(value);
+                                    Ok(())
+                                },
+                                handler(),
+                            )
+                            .expect("benchmark effect should initialize");
 
                         let mut value = 0i32;
                         bench.iter(|| {
@@ -645,12 +697,19 @@ fn bench_graph_memo_equal_write(c: &mut Criterion) {
                     let effect_runs = Rc::new(Cell::new(0usize));
                     let memos_in_effect = memos.clone();
                     let effect_runs_in_effect = effect_runs.clone();
-                    scope.effect(move || {
-                        for memo in &memos_in_effect {
-                            black_box(memo.get());
-                        }
-                        effect_runs_in_effect.set(effect_runs_in_effect.get().wrapping_add(1));
-                    });
+                    scope
+                        .effect(
+                            move || {
+                                for memo in &memos_in_effect {
+                                    black_box(memo.get());
+                                }
+                                effect_runs_in_effect
+                                    .set(effect_runs_in_effect.get().wrapping_add(1));
+                                Ok(())
+                            },
+                            handler(),
+                        )
+                        .expect("benchmark effect should initialize");
 
                     bench.iter_custom(|iterations| {
                         let start = Instant::now();
@@ -696,13 +755,26 @@ fn bench_owner_churn(c: &mut Criterion) {
                     let row_scope = scope.owned_scope();
                     let render_scope = row_scope.child();
                     let source_in_effect = source;
-                    render_scope.effect(move || {
-                        black_box(source_in_effect.get());
-                    });
+                    render_scope
+                        .effect(
+                            move || {
+                                black_box(source_in_effect.get());
+                                Ok(())
+                            },
+                            handler(),
+                        )
+                        .expect("benchmark effect should initialize");
                     let cleanup_count_in_row = cleanup_count.clone();
-                    render_scope.on_cleanup(move || {
-                        cleanup_count_in_row.set(cleanup_count_in_row.get().wrapping_add(1));
-                    });
+                    render_scope
+                        .on_cleanup(
+                            move || {
+                                cleanup_count_in_row
+                                    .set(cleanup_count_in_row.get().wrapping_add(1));
+                                Ok(())
+                            },
+                            handler(),
+                        )
+                        .expect("benchmark cleanup should register");
                     owners.push((row_scope, render_scope));
                 }
 
@@ -716,13 +788,26 @@ fn bench_owner_churn(c: &mut Criterion) {
                         let row_scope = scope.owned_scope();
                         let render_scope = row_scope.child();
                         let source_in_effect = source;
-                        render_scope.effect(move || {
-                            black_box(source_in_effect.get());
-                        });
+                        render_scope
+                            .effect(
+                                move || {
+                                    black_box(source_in_effect.get());
+                                    Ok(())
+                                },
+                                handler(),
+                            )
+                            .expect("benchmark effect should initialize");
                         let cleanup_count_in_row = cleanup_count.clone();
-                        render_scope.on_cleanup(move || {
-                            cleanup_count_in_row.set(cleanup_count_in_row.get().wrapping_add(1));
-                        });
+                        render_scope
+                            .on_cleanup(
+                                move || {
+                                    cleanup_count_in_row
+                                        .set(cleanup_count_in_row.get().wrapping_add(1));
+                                    Ok(())
+                                },
+                                handler(),
+                            )
+                            .expect("benchmark cleanup should register");
                         owners.push((row_scope, render_scope));
                     }
 

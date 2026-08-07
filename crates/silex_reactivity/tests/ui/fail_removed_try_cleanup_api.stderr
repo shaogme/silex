@@ -1,0 +1,17 @@
+error[E0599]: no method named `try_on_cleanup` found for struct `silex_reactivity::Scope<'scope>` in the current scope
+ --> tests/ui/fail_removed_try_cleanup_api.rs:6:23
+  |
+6 |         let _ = scope.try_on_cleanup(|| Ok::<(), ()>(()));
+  |                       ^^^^^^^^^^^^^^
+  |
+help: there is a method `on_cleanup` with a similar name, but with different arguments
+ --> src/child/scope.rs
+  |
+  | /     pub fn on_cleanup<E, F>(
+  | |         &self,
+  | |         f: F,
+  | |         error_handler: ErrorHandler<'scope, E>,
+... |
+  | |         E: 'scope,
+  | |         F: FnOnce() -> Result<(), E> + 'scope,
+  | |______________________________________________^

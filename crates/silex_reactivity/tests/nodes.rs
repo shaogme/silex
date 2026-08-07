@@ -1,12 +1,16 @@
 use silex_reactivity::{
-    Callback, Derived, Effect, Memo, NodeRef, ReactiveError, ReadSignal, Runtime, StoredValue,
-    WriteSignal,
+    Callback, Derived, Effect, ErrorHandler, Memo, NodeRef, ReactiveError, ReadSignal, Runtime,
+    StoredValue, WriteSignal,
 };
 use std::{
     cell::{Cell, RefCell},
     panic::{AssertUnwindSafe, catch_unwind},
     rc::Rc,
 };
+
+fn handler<'scope>() -> ErrorHandler<'scope, ()> {
+    ErrorHandler::ignore()
+}
 
 struct ReenterOnDrop<'scope> {
     setter: WriteSignal<'scope, i32>,
@@ -61,7 +65,9 @@ fn all_public_node_capabilities_are_copy() {
         let write = signal.write();
         let memo = scope.memo(move |_| read.get());
         let derived = scope.derived(move || 1i32);
-        let effect = scope.effect(|| {});
+        let effect = scope
+            .effect(|| Ok(()), handler())
+            .expect("effect should initialize");
         let stored = scope.stored(1i32);
         let callback = scope.callback(|_: ()| {});
         let node_ref = scope.node_ref::<i32>();
@@ -201,11 +207,17 @@ fn updating_another_signal_during_read_defers_effect_flush() {
         let (source, _set_source) = scope.signal(0i32);
         let (other, set_other) = scope.signal(0i32);
         let runs_in_effect = runs.clone();
-        scope.effect(move || {
-            let _ = source.get();
-            let _ = other.get();
-            runs_in_effect.set(runs_in_effect.get() + 1);
-        });
+        scope
+            .effect(
+                move || {
+                    let _ = source.get();
+                    let _ = other.get();
+                    runs_in_effect.set(runs_in_effect.get() + 1);
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("effect should initialize");
 
         let result = catch_unwind(AssertUnwindSafe(|| {
             source.with(|_| set_other.set(1));
@@ -226,17 +238,29 @@ fn computation_payload_drop_observes_disposed_scope() {
         let scope_copy = scope;
         let called_in_outer = called.clone();
         let error_in_outer = error.clone();
-        scope.effect(move || {
-            let (_source, set_source) = scope_copy.signal(0i32);
-            let guard = ReenterOnDrop {
-                setter: set_source,
-                called: called_in_outer.clone(),
-                error: error_in_outer.clone(),
-            };
-            scope_copy.effect(move || {
-                let _ = &guard;
-            });
-        });
+        scope
+            .effect(
+                move || {
+                    let (_source, set_source) = scope_copy.signal(0i32);
+                    let guard = ReenterOnDrop {
+                        setter: set_source,
+                        called: called_in_outer.clone(),
+                        error: error_in_outer.clone(),
+                    };
+                    scope_copy
+                        .effect(
+                            move || {
+                                let _ = &guard;
+                                Ok(())
+                            },
+                            handler(),
+                        )
+                        .expect("nested effect should initialize");
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("effect should initialize");
     });
     assert!(called.get());
     assert_eq!(error.get(), Some(ReactiveError::NoSuchNode));
@@ -272,16 +296,22 @@ fn nested_memo_child_payload_drop_does_not_track_the_outer_observer() {
         let set_inner_source_in_effect = set_inner_source;
         let outer_runs_in_effect = outer_runs.clone();
         let refresh_inner_in_effect = refresh_inner.clone();
-        scope.effect(move || {
-            let _ = outer_source_in_effect.get();
-            outer_runs_in_effect.set(outer_runs_in_effect.get() + 1);
-            if refresh_inner_in_effect.replace(false) {
-                set_inner_source_in_effect.set(1);
-            }
-            outer_inner
-                .try_with_untracked(|_| ())
-                .expect("inner memo should remain readable");
-        });
+        scope
+            .effect(
+                move || {
+                    let _ = outer_source_in_effect.get();
+                    outer_runs_in_effect.set(outer_runs_in_effect.get() + 1);
+                    if refresh_inner_in_effect.replace(false) {
+                        set_inner_source_in_effect.set(1);
+                    }
+                    outer_inner
+                        .try_with_untracked(|_| ())
+                        .expect("inner memo should remain readable");
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("effect should initialize");
 
         assert_eq!(outer_runs.get(), 1);
         assert_eq!(drops.get(), 0);
@@ -323,16 +353,22 @@ fn nested_memo_result_drop_does_not_track_the_outer_observer() {
         let set_inner_source_in_effect = set_inner_source;
         let outer_runs_in_effect = outer_runs.clone();
         let refresh_inner_in_effect = refresh_inner.clone();
-        scope.effect(move || {
-            let _ = outer_source_in_effect.get();
-            outer_runs_in_effect.set(outer_runs_in_effect.get() + 1);
-            if refresh_inner_in_effect.replace(false) {
-                set_inner_source_in_effect.set(1);
-            }
-            outer_inner
-                .try_with_untracked(|_| ())
-                .expect("inner memo should remain readable");
-        });
+        scope
+            .effect(
+                move || {
+                    let _ = outer_source_in_effect.get();
+                    outer_runs_in_effect.set(outer_runs_in_effect.get() + 1);
+                    if refresh_inner_in_effect.replace(false) {
+                        set_inner_source_in_effect.set(1);
+                    }
+                    outer_inner
+                        .try_with_untracked(|_| ())
+                        .expect("inner memo should remain readable");
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("effect should initialize");
 
         assert_eq!(outer_runs.get(), 1);
         assert_eq!(drops.get(), 0);
@@ -360,36 +396,42 @@ fn child_payloads_drop_before_parent_computation_payload() {
             events: events.clone(),
         };
         let child_events = events.clone();
-        scope.effect(move || {
-            let _ = &parent_event;
-            let signal_event = DropEvent {
-                label: "signal",
-                events: child_events.clone(),
-            };
-            let _ = scope_copy.signal(signal_event);
+        scope
+            .effect(
+                move || {
+                    let _ = &parent_event;
+                    let signal_event = DropEvent {
+                        label: "signal",
+                        events: child_events.clone(),
+                    };
+                    let _ = scope_copy.signal(signal_event);
 
-            let stored_event = DropEvent {
-                label: "stored",
-                events: child_events.clone(),
-            };
-            let _ = scope_copy.stored(stored_event);
+                    let stored_event = DropEvent {
+                        label: "stored",
+                        events: child_events.clone(),
+                    };
+                    let _ = scope_copy.stored(stored_event);
 
-            let callback_event = DropEvent {
-                label: "callback",
-                events: child_events.clone(),
-            };
-            let _ = scope_copy.callback(move |_: ()| {
-                let _ = &callback_event;
-            });
+                    let callback_event = DropEvent {
+                        label: "callback",
+                        events: child_events.clone(),
+                    };
+                    let _ = scope_copy.callback(move |_: ()| {
+                        let _ = &callback_event;
+                    });
 
-            let node_ref = scope_copy.node_ref::<DropEvent>();
-            node_ref
-                .set(DropEvent {
-                    label: "node_ref",
-                    events: child_events.clone(),
-                })
-                .expect("node ref type should match");
-        });
+                    let node_ref = scope_copy.node_ref::<DropEvent>();
+                    node_ref
+                        .set(DropEvent {
+                            label: "node_ref",
+                            events: child_events.clone(),
+                        })
+                        .expect("node ref type should match");
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("effect should initialize");
     });
     let events = events.borrow();
     assert_eq!(events.len(), 5);
@@ -416,7 +458,15 @@ fn child_callback_payload_drop_can_schedule_an_active_parent_effect() {
     runtime.child(|scope| {
         let (source, set_source) = scope.signal(0i32);
         let seen_in_effect = seen.clone();
-        scope.effect(move || seen_in_effect.set(source.get()));
+        scope
+            .effect(
+                move || {
+                    seen_in_effect.set(source.get());
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("effect should initialize");
 
         let setter = set_source;
         scope.child(|child| {
@@ -446,7 +496,15 @@ fn stored_value_update_flushes_after_the_write_lease_is_released() {
         let (source, set_source) = scope.signal(0i32);
         let stored = scope.stored(0i32);
         let seen_in_effect = seen.clone();
-        scope.effect(move || seen_in_effect.set(source.get()));
+        scope
+            .effect(
+                move || {
+                    seen_in_effect.set(source.get());
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("effect should initialize");
 
         stored.update(|value| {
             *value = 1;

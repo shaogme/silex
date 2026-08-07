@@ -1,0 +1,236 @@
+use silex_reactivity::{EffectInitError, ErrorHandler, Runtime};
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+};
+
+fn collecting_handler<'scope>(
+    errors: Rc<RefCell<Vec<&'static str>>>,
+) -> ErrorHandler<'scope, &'static str> {
+    ErrorHandler::new(move |error| errors.borrow_mut().push(error))
+}
+
+#[test]
+fn initial_callback_error_returns_without_calling_the_handler() {
+    let mut runtime = Runtime::new();
+    let errors = Rc::new(RefCell::new(Vec::new()));
+    let cleanup_runs = Rc::new(Cell::new(0));
+    let callback_runs = Rc::new(Cell::new(0));
+
+    runtime.child(|scope| {
+        let (source, set_source) = scope.signal(0_i32);
+        let cleanup_runs_in_callback = cleanup_runs.clone();
+        let callback_runs_in_callback = callback_runs.clone();
+        let cleanup_handler = collecting_handler(errors.clone());
+        let result = scope.effect(
+            move || {
+                callback_runs_in_callback.set(callback_runs_in_callback.get() + 1);
+                let _ = source.get();
+                let cleanup_runs = cleanup_runs_in_callback.clone();
+                scope
+                    .on_cleanup(
+                        move || {
+                            cleanup_runs.set(cleanup_runs.get() + 1);
+                            Ok(())
+                        },
+                        cleanup_handler.clone(),
+                    )
+                    .expect("provisional cleanup should register");
+                Err("initial")
+            },
+            collecting_handler(errors.clone()),
+        );
+
+        assert!(matches!(result, Err(EffectInitError::Initial("initial"))));
+        assert!(errors.borrow().is_empty());
+        assert_eq!(cleanup_runs.get(), 1);
+
+        set_source.set(1);
+        assert_eq!(callback_runs.get(), 1);
+    });
+}
+
+#[test]
+fn deferred_callback_error_reaches_its_handler_and_can_retry() {
+    let mut runtime = Runtime::new();
+    let errors = Rc::new(RefCell::new(Vec::new()));
+    let callback_runs = Rc::new(Cell::new(0));
+    let should_fail = Rc::new(Cell::new(false));
+
+    runtime.child(|scope| {
+        let (source, set_source) = scope.signal(0_i32);
+        let callback_runs_in_callback = callback_runs.clone();
+        let should_fail_in_callback = should_fail.clone();
+        let effect = scope
+            .effect(
+                move || {
+                    let _ = source.get();
+                    callback_runs_in_callback.set(callback_runs_in_callback.get() + 1);
+                    if should_fail_in_callback.get() {
+                        Err("deferred")
+                    } else {
+                        Ok(())
+                    }
+                },
+                collecting_handler(errors.clone()),
+            )
+            .expect("effect should initialize");
+
+        should_fail.set(true);
+        set_source.set(1);
+        assert_eq!(errors.borrow().as_slice(), &["deferred"]);
+        assert_eq!(callback_runs.get(), 2);
+
+        should_fail.set(false);
+        set_source.set(2);
+        assert_eq!(errors.borrow().as_slice(), &["deferred"]);
+        assert_eq!(callback_runs.get(), 3);
+        assert_eq!(effect.try_stop(), Ok(true));
+    });
+}
+
+#[test]
+fn failed_dynamic_run_rolls_back_new_dependency_edges() {
+    let mut runtime = Runtime::new();
+    let errors = Rc::new(RefCell::new(Vec::new()));
+    let runs = Rc::new(Cell::new(0));
+    let fail_next = Rc::new(Cell::new(false));
+
+    runtime.child(|scope| {
+        let (switch, set_switch) = scope.signal(false);
+        let (left, set_left) = scope.signal(0_i32);
+        let (right, set_right) = scope.signal(0_i32);
+        let runs_in_callback = runs.clone();
+        let fail_next_in_callback = fail_next.clone();
+        scope
+            .effect(
+                move || {
+                    let value = if switch.get() {
+                        right.get()
+                    } else {
+                        left.get()
+                    };
+                    let _ = value;
+                    runs_in_callback.set(runs_in_callback.get() + 1);
+                    if fail_next_in_callback.replace(false) {
+                        Err("dynamic")
+                    } else {
+                        Ok(())
+                    }
+                },
+                collecting_handler(errors.clone()),
+            )
+            .expect("effect should initialize");
+
+        fail_next.set(true);
+        set_switch.set(true);
+        assert_eq!(errors.borrow().as_slice(), &["dynamic"]);
+        assert_eq!(runs.get(), 2);
+
+        set_left.set(1);
+        assert_eq!(runs.get(), 3);
+        set_right.set(1);
+        assert_eq!(runs.get(), 4);
+    });
+}
+
+#[test]
+fn previous_value_is_kept_when_a_run_returns_an_error() {
+    let mut runtime = Runtime::new();
+    let errors = Rc::new(RefCell::new(Vec::new()));
+    let previous_values = Rc::new(RefCell::new(Vec::new()));
+    let fail_next = Rc::new(Cell::new(false));
+
+    runtime.child(|scope| {
+        let (source, set_source) = scope.signal(0_i32);
+        let previous_values_in_callback = previous_values.clone();
+        let fail_next_in_callback = fail_next.clone();
+        scope
+            .effect_with_previous(
+                move |previous| {
+                    let _ = source.get();
+                    previous_values_in_callback
+                        .borrow_mut()
+                        .push(previous.copied());
+                    if fail_next_in_callback.replace(false) {
+                        Err("previous")
+                    } else {
+                        Ok(previous.copied().unwrap_or(0) + 1)
+                    }
+                },
+                collecting_handler(errors.clone()),
+            )
+            .expect("previous effect should initialize");
+
+        fail_next.set(true);
+        set_source.set(1);
+        assert_eq!(errors.borrow().as_slice(), &["previous"]);
+        set_source.set(2);
+        assert_eq!(
+            previous_values.borrow().as_slice(),
+            &[None, Some(1), Some(1)]
+        );
+    });
+}
+
+#[test]
+fn watch_error_keeps_the_previous_snapshot_for_retry() {
+    let mut runtime = Runtime::new();
+    let errors = Rc::new(RefCell::new(Vec::new()));
+    let calls = Rc::new(RefCell::new(Vec::new()));
+    let fail_next = Rc::new(Cell::new(false));
+
+    runtime.child(|scope| {
+        let (source, set_source) = scope.signal(0_i32);
+        let calls_in_callback = calls.clone();
+        let fail_next_in_callback = fail_next.clone();
+        scope
+            .watch_getter(
+                move || Ok(source.get()),
+                move |new, old| {
+                    if fail_next_in_callback.replace(false) {
+                        Err("watch")
+                    } else {
+                        calls_in_callback.borrow_mut().push((*new, old.copied()));
+                        Ok(())
+                    }
+                },
+                collecting_handler(errors.clone()),
+            )
+            .expect("watch should initialize");
+
+        fail_next.set(true);
+        set_source.set(1);
+        assert_eq!(errors.borrow().as_slice(), &["watch"]);
+        assert!(calls.borrow().is_empty());
+
+        set_source.set(2);
+        assert_eq!(calls.borrow().as_slice(), &[(2, Some(0))]);
+    });
+}
+
+#[test]
+fn cleanup_errors_do_not_skip_the_remaining_cleanup_batch() {
+    let mut runtime = Runtime::new();
+    let errors = Rc::new(RefCell::new(Vec::new()));
+    let second_cleanup_ran = Rc::new(Cell::new(false));
+
+    runtime.child(|scope| {
+        scope
+            .on_cleanup(|| Err("cleanup"), collecting_handler(errors.clone()))
+            .expect("cleanup should register");
+        let second_cleanup_ran_in_cleanup = second_cleanup_ran.clone();
+        scope
+            .on_cleanup(
+                move || {
+                    second_cleanup_ran_in_cleanup.set(true);
+                    Ok(())
+                },
+                collecting_handler(errors.clone()),
+            )
+            .expect("cleanup should register");
+    });
+
+    assert_eq!(errors.borrow().as_slice(), &["cleanup"]);
+    assert!(second_cleanup_ran.get());
+}

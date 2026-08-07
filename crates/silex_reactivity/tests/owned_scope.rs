@@ -1,8 +1,12 @@
-use silex_reactivity::{ReactiveError, Runtime};
+use silex_reactivity::{ErrorHandler, ReactiveError, Runtime};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
 };
+
+fn handler<'scope>() -> ErrorHandler<'scope, ()> {
+    ErrorHandler::ignore()
+}
 
 #[test]
 fn owned_scope_keeps_effects_until_explicit_dispose() {
@@ -16,16 +20,28 @@ fn owned_scope_keeps_effects_until_explicit_dispose() {
         let owner = scope.owned_scope();
 
         let runs_for_effect = runs.clone();
-        let _effect = owner.effect(move || {
-            read.with(|value| {
-                assert!(*value >= 1);
-            });
-            runs_for_effect.set(runs_for_effect.get() + 1);
-        });
+        let _effect = owner
+            .effect(
+                move || {
+                    read.with(|value| {
+                        assert!(*value >= 1);
+                    });
+                    runs_for_effect.set(runs_for_effect.get() + 1);
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("effect should initialize");
         let cleanups_for_owner = cleanups.clone();
-        owner.on_cleanup(move || {
-            cleanups_for_owner.set(cleanups_for_owner.get() + 1);
-        });
+        owner
+            .on_cleanup(
+                move || {
+                    cleanups_for_owner.set(cleanups_for_owner.get() + 1);
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("cleanup should register");
 
         assert_eq!(runs.get(), 1);
         write.set(2);
@@ -54,18 +70,30 @@ fn lexical_owned_scope_supports_borrowed_callbacks_and_nested_dispose() {
         let cleanups = Rc::new(Cell::new(0));
 
         let runs_for_effect = runs.clone();
-        owner.effect(move || {
-            read.with(|value| {
-                assert!(*value >= 1);
-                assert_eq!(text.as_str(), "borrowed");
-            });
-            runs_for_effect.set(runs_for_effect.get() + 1);
-        });
+        owner
+            .effect(
+                move || {
+                    read.with(|value| {
+                        assert!(*value >= 1);
+                        assert_eq!(text.as_str(), "borrowed");
+                    });
+                    runs_for_effect.set(runs_for_effect.get() + 1);
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("effect should initialize");
         let child = owner.child();
         let child_cleanups = cleanups.clone();
-        child.on_cleanup(move || {
-            child_cleanups.set(child_cleanups.get() + 1);
-        });
+        child
+            .on_cleanup(
+                move || {
+                    child_cleanups.set(child_cleanups.get() + 1);
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("cleanup should register");
 
         write.set(2);
         assert_eq!(runs.get(), 2);
@@ -101,24 +129,33 @@ fn fallible_owner_registration_rejects_inactive_scope() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
         let scope_for_cleanup = scope;
-        scope.on_cleanup(move || {
-            assert_eq!(
-                scope_for_cleanup.try_on_cleanup(|| {}),
-                Err(ReactiveError::NoSuchNode)
-            );
-            assert!(matches!(
-                scope_for_cleanup.try_owned_scope(),
-                Err(ReactiveError::NoSuchNode)
-            ));
-        });
+        scope
+            .on_cleanup(
+                move || {
+                    assert_eq!(
+                        scope_for_cleanup.on_cleanup(|| Ok(()), handler()),
+                        Err(ReactiveError::NoSuchNode)
+                    );
+                    assert!(matches!(
+                        scope_for_cleanup.try_owned_scope(),
+                        Err(ReactiveError::NoSuchNode)
+                    ));
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("cleanup should register");
     });
 
     let mut root_runtime = Runtime::new();
     let root = root_runtime.run();
     let owner = root.scope().try_owned_scope().expect("owner is active");
-    assert!(owner.try_on_cleanup(|| {}).is_ok());
+    assert!(owner.on_cleanup(|| Ok(()), handler()).is_ok());
     owner.dispose();
-    assert_eq!(owner.try_on_cleanup(|| {}), Err(ReactiveError::NoSuchNode));
+    assert_eq!(
+        owner.on_cleanup(|| Ok(()), handler()),
+        Err(ReactiveError::NoSuchNode)
+    );
     assert!(matches!(owner.try_child(), Err(ReactiveError::NoSuchNode)));
     drop(owner);
     root.dispose().expect("root cleanup should succeed");
@@ -132,10 +169,19 @@ fn fallible_cleanup_preserves_registration_order_during_dispose() {
 
     runtime.child(|scope| {
         let scope_for_cleanup = scope;
-        scope.on_cleanup(move || {
-            events_for_cleanup.borrow_mut().push("first");
-            scope_for_cleanup.on_cleanup(|| {});
-        });
+        scope
+            .on_cleanup(
+                move || {
+                    events_for_cleanup.borrow_mut().push("first");
+                    assert_eq!(
+                        scope_for_cleanup.on_cleanup(|| Ok(()), handler()),
+                        Err(ReactiveError::NoSuchNode)
+                    );
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("cleanup should register");
     });
 
     assert_eq!(events.borrow().as_slice(), ["first"]);

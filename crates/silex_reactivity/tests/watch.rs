@@ -1,9 +1,13 @@
-use silex_reactivity::{Effect, Runtime, WatchOptions};
+use silex_reactivity::{Effect, EffectInitError, ErrorHandler, Runtime, WatchOptions};
 use std::{
     cell::{Cell, RefCell},
     panic::{AssertUnwindSafe, catch_unwind},
     rc::Rc,
 };
+
+fn handler<'scope>() -> ErrorHandler<'scope, ()> {
+    ErrorHandler::ignore()
+}
 
 #[test]
 fn getter_watch_commits_values_and_gates_equal_updates() {
@@ -15,13 +19,19 @@ fn getter_watch_commits_values_and_gates_equal_updates() {
         let (source, set_source) = scope.signal(1_i32);
         let getter_runs_in_getter = getter_runs.clone();
         let calls_in_callback = calls.clone();
-        scope.watch_getter(
-            move || {
-                getter_runs_in_getter.set(getter_runs_in_getter.get() + 1);
-                source.get()
-            },
-            move |new, old| calls_in_callback.borrow_mut().push((*new, old.copied())),
-        );
+        scope
+            .watch_getter(
+                move || {
+                    getter_runs_in_getter.set(getter_runs_in_getter.get() + 1);
+                    Ok(source.get())
+                },
+                move |new, old| {
+                    calls_in_callback.borrow_mut().push((*new, old.copied()));
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("watch should initialize");
 
         assert_eq!(getter_runs.get(), 1);
         assert!(calls.borrow().is_empty());
@@ -41,15 +51,19 @@ fn immediate_once_watch_stops_after_the_initial_callback() {
     runtime.child(|scope| {
         let (source, set_source) = scope.signal(1_i32);
         let calls_in_callback = calls.clone();
-        let watcher = scope.watch_getter_with_options(
-            move || source.get(),
-            move |new, old| {
-                assert_eq!(*new, 1);
-                assert!(old.is_none());
-                calls_in_callback.set(calls_in_callback.get() + 1);
-            },
-            WatchOptions::default().immediate().once(),
-        );
+        let watcher = scope
+            .watch_getter_with_options(
+                move || Ok(source.get()),
+                move |new, old| {
+                    assert_eq!(*new, 1);
+                    assert!(old.is_none());
+                    calls_in_callback.set(calls_in_callback.get() + 1);
+                    Ok(())
+                },
+                handler(),
+                WatchOptions::default().immediate().once(),
+            )
+            .expect("watch should initialize");
 
         assert_eq!(calls.get(), 1);
         assert_eq!(watcher.try_stop(), Ok(false));
@@ -69,19 +83,23 @@ fn callback_reads_are_untracked_and_dynamic_getter_dependencies_replace() {
         let (right, set_right) = scope.signal(10_i32);
         let (probe, set_probe) = scope.signal(0_i32);
         let calls_in_callback = calls.clone();
-        scope.watch_getter(
-            move || {
-                if switch.get() {
-                    left.get()
-                } else {
-                    right.get()
-                }
-            },
-            move |_, _| {
-                let _ = probe.get();
-                calls_in_callback.set(calls_in_callback.get() + 1);
-            },
-        );
+        scope
+            .watch_getter(
+                move || {
+                    if switch.get() {
+                        Ok(left.get())
+                    } else {
+                        Ok(right.get())
+                    }
+                },
+                move |_, _| {
+                    let _ = probe.get();
+                    calls_in_callback.set(calls_in_callback.get() + 1);
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("watch should initialize");
 
         set_probe.set(1);
         assert_eq!(calls.get(), 0);
@@ -109,14 +127,26 @@ fn stop_cancels_future_runs_and_runs_cleanup_once() {
         let calls_in_callback = calls.clone();
         let cleanups_in_callback = cleanups.clone();
         let watcher_scope = scope;
-        let watcher = scope.watch_getter(
-            move || source.get(),
-            move |_, _| {
-                calls_in_callback.set(calls_in_callback.get() + 1);
-                let cleanups = cleanups_in_callback.clone();
-                watcher_scope.on_cleanup(move || cleanups.set(cleanups.get() + 1));
-            },
-        );
+        let watcher = scope
+            .watch_getter(
+                move || Ok(source.get()),
+                move |_, _| {
+                    calls_in_callback.set(calls_in_callback.get() + 1);
+                    let cleanups = cleanups_in_callback.clone();
+                    watcher_scope
+                        .on_cleanup(
+                            move || {
+                                cleanups.set(cleanups.get() + 1);
+                                Ok(())
+                            },
+                            handler(),
+                        )
+                        .expect("watch cleanup should register");
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("watch should initialize");
 
         set_source.set(1);
         assert_eq!(calls.get(), 1);
@@ -142,15 +172,19 @@ fn callback_panic_keeps_the_old_snapshot_for_a_later_retry() {
         let (source, set_source) = scope.signal(0_i32);
         let should_panic_in_callback = should_panic.clone();
         let calls_in_callback = calls.clone();
-        scope.watch_getter(
-            move || source.get(),
-            move |new, old| {
-                calls_in_callback.borrow_mut().push((*new, old.copied()));
-                if should_panic_in_callback.replace(false) {
-                    panic!("watch callback panic");
-                }
-            },
-        );
+        scope
+            .watch_getter(
+                move || Ok(source.get()),
+                move |new, old| {
+                    calls_in_callback.borrow_mut().push((*new, old.copied()));
+                    if should_panic_in_callback.replace(false) {
+                        panic!("watch callback panic");
+                    }
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("watch should initialize");
 
         let panic = catch_unwind(AssertUnwindSafe(|| set_source.set(1)));
         assert!(panic.is_err());
@@ -168,16 +202,17 @@ fn initial_watch_panic_rolls_back_the_registered_node() {
         let (source, set_source) = scope.signal(0_i32);
         let getter_runs_in_getter = getter_runs.clone();
         let panic = catch_unwind(AssertUnwindSafe(|| {
-            scope.watch_getter(
+            let _ = scope.watch_getter(
                 move || {
                     getter_runs_in_getter.set(getter_runs_in_getter.get() + 1);
                     let value = source.get();
                     if value == 0 {
                         panic!("initial watch panic");
                     }
-                    value
+                    Ok(value)
                 },
-                |_, _| {},
+                |_, _| Ok(()),
+                handler(),
             );
         }));
         assert!(panic.is_err());
@@ -201,13 +236,17 @@ fn foreign_watch_inputs_fail_before_getter_or_callback_execution() {
         let getter_runs_in_getter = getter_runs.clone();
         let callback_runs_in_callback = callback_runs.clone();
         scope
-            .try_watch_getter_from(
+            .watch_getter_from(
                 foreign_inputs,
                 move || {
                     getter_runs_in_getter.set(getter_runs_in_getter.get() + 1);
-                    1_i32
+                    Ok(1_i32)
                 },
-                move |_, _| callback_runs_in_callback.set(callback_runs_in_callback.get() + 1),
+                move |_, _| {
+                    callback_runs_in_callback.set(callback_runs_in_callback.get() + 1);
+                    Ok(())
+                },
+                handler(),
                 WatchOptions::default(),
             )
             .map(|_| ())
@@ -215,7 +254,9 @@ fn foreign_watch_inputs_fail_before_getter_or_callback_execution() {
 
     assert!(matches!(
         result,
-        Err(silex_reactivity::ReactiveError::RuntimeMismatch)
+        Err(EffectInitError::Registration(
+            silex_reactivity::ReactiveError::RuntimeMismatch,
+        ))
     ));
     assert_eq!(getter_runs.get(), 0);
     assert_eq!(callback_runs.get(), 0);
@@ -228,7 +269,9 @@ fn owner_disposal_makes_a_watcher_handle_stopped() {
     {
         let scope = root.scope();
         let owner = scope.owned_scope();
-        let watcher = owner.watch_getter(|| 1_i32, |_, _| {});
+        let watcher = owner
+            .watch_getter(|| Ok(1_i32), |_, _| Ok(()), handler())
+            .expect("watch should initialize");
 
         owner.dispose();
         assert_eq!(watcher.try_stop(), Ok(false));
@@ -244,10 +287,16 @@ fn ordinary_effects_can_be_stopped_through_the_same_handle() {
     runtime.child(|scope| {
         let (source, set_source) = scope.signal(0_i32);
         let runs_in_effect = runs.clone();
-        let effect = scope.effect(move || {
-            let _ = source.get();
-            runs_in_effect.set(runs_in_effect.get() + 1);
-        });
+        let effect = scope
+            .effect(
+                move || {
+                    let _ = source.get();
+                    runs_in_effect.set(runs_in_effect.get() + 1);
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("effect should initialize");
 
         assert_eq!(runs.get(), 1);
         assert_eq!(effect.try_stop(), Ok(true));
@@ -267,13 +316,19 @@ fn stopping_the_current_effect_does_not_write_back_deleted_metadata() {
         let slot: Rc<Cell<Option<Effect<'_>>>> = Rc::new(Cell::new(None));
         let slot_in_effect = slot.clone();
         let runs_in_effect = runs.clone();
-        let effect = scope.effect(move || {
-            let _ = source.get();
-            runs_in_effect.set(runs_in_effect.get() + 1);
-            if let Some(effect) = slot_in_effect.get() {
-                effect.stop();
-            }
-        });
+        let effect = scope
+            .effect(
+                move || {
+                    let _ = source.get();
+                    runs_in_effect.set(runs_in_effect.get() + 1);
+                    if let Some(effect) = slot_in_effect.get() {
+                        effect.stop();
+                    }
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("effect should initialize");
         slot.set(Some(effect));
 
         set_source.set(1);

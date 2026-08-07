@@ -1,13 +1,88 @@
 //! Dependency tracking and node subscription operations on ScopeState.
 
 use super::{
-    model::{EdgeId, NodeState, ReactiveEdge, ScopeState},
+    model::{DependencyTransaction, EdgeId, NodeState, ReactiveEdge, ScopeState},
     scheduler::{ScheduledTask, TargetNode},
 };
 use crate::{handle::NodeKindTag, internal::RawId};
 use std::collections::VecDeque;
 
 impl<'scope> ScopeState<'scope> {
+    pub(crate) fn begin_dependency_transaction(&mut self, observer: RawId) {
+        let previous = self
+            .dependency_edges_of(observer)
+            .map(|(_, edge)| edge.target)
+            .collect();
+        self.dependency_transactions.push(DependencyTransaction {
+            observer,
+            previous,
+            current: Vec::new(),
+        });
+    }
+
+    pub(crate) fn observe_dependency(&mut self, observer: RawId, target: TargetNode) {
+        if let Some(transaction) = self
+            .dependency_transactions
+            .iter_mut()
+            .rev()
+            .find(|transaction| transaction.observer == observer)
+            && !transaction.current.contains(&target)
+        {
+            transaction.current.push(target);
+        }
+    }
+
+    fn remove_dependency_pair(&mut self, observer: RawId, dependency: TargetNode) {
+        self.remove_dependency(observer, dependency);
+        let observer_target = TargetNode {
+            scope_id: self.scope_id,
+            node: observer,
+        };
+        if dependency.scope_id == self.scope_id {
+            self.remove_subscriber(dependency.node, observer_target);
+        } else {
+            let dependency_scope = self.scheduler.borrow().get_scope(dependency.scope_id);
+            if let Some(dependency_scope) = dependency_scope {
+                dependency_scope
+                    .try_borrow_mut()
+                    .expect("dependency scope borrow failed during transaction rollback")
+                    .remove_subscriber(dependency.node, observer_target);
+            }
+        }
+    }
+
+    pub(crate) fn commit_dependency_transaction(&mut self, observer: RawId) {
+        let Some(index) = self
+            .dependency_transactions
+            .iter()
+            .rposition(|transaction| transaction.observer == observer)
+        else {
+            return;
+        };
+        let transaction = self.dependency_transactions.remove(index);
+        for dependency in transaction.previous {
+            if !transaction.current.contains(&dependency) {
+                self.remove_dependency_pair(observer, dependency);
+            }
+        }
+    }
+
+    pub(crate) fn rollback_dependency_transaction(&mut self, observer: RawId) {
+        let Some(index) = self
+            .dependency_transactions
+            .iter()
+            .rposition(|transaction| transaction.observer == observer)
+        else {
+            return;
+        };
+        let transaction = self.dependency_transactions.remove(index);
+        for dependency in transaction.current {
+            if !transaction.previous.contains(&dependency) {
+                self.remove_dependency_pair(observer, dependency);
+            }
+        }
+    }
+
     pub(crate) fn add_subscriber(&mut self, target_id: RawId, sub_target: TargetNode) {
         if self
             .subscriber_edges_of(target_id)
@@ -177,6 +252,7 @@ impl<'scope> ScopeState<'scope> {
             {
                 return;
             }
+            self.observe_dependency(observer_node, observer_dep);
             self.add_subscriber(target, target_sub);
             self.add_dependency(observer_node, observer_dep);
             return;
@@ -191,6 +267,7 @@ impl<'scope> ScopeState<'scope> {
             if let Some(obs_node) = obs_state.nodes.get(observer.node)
                 && obs_node.is_computation()
             {
+                obs_state.observe_dependency(observer.node, observer_dep);
                 obs_state.add_dependency(observer.node, observer_dep);
                 drop(obs_state);
                 self.add_subscriber(target, target_sub);
@@ -282,7 +359,7 @@ impl<'scope> ScopeState<'scope> {
 mod tests {
     use super::*;
     use crate::{
-        Runtime, Scope,
+        ErrorHandler, Runtime, Scope,
         runtime::{
             dispose::dispose_nodes,
             scheduler::{Observer, ObserverFrame},
@@ -294,24 +371,34 @@ mod tests {
         runtime.child(f);
     }
 
+    fn handler<'scope>() -> ErrorHandler<'scope, ()> {
+        ErrorHandler::ignore()
+    }
+
     #[test]
     fn child_boundary_does_not_track_local_reads_in_an_outer_effect() {
         let mut runtime = Runtime::new();
         child(&mut runtime, |scope| {
             let parent_scope = scope;
-            let effect = scope.effect(move || {
-                parent_scope.child(|child| {
-                    let (local, _) = child.signal(0i32);
-                    let local_state = local.handle.state();
-                    let local_raw = local.handle.raw();
+            let effect = scope
+                .effect(
+                    move || {
+                        parent_scope.child(|child| {
+                            let (local, _) = child.signal(0i32);
+                            let local_state = local.handle.state();
+                            let local_raw = local.handle.raw();
 
-                    assert_eq!(local.get(), 0);
-                    assert_eq!(
-                        local_state.borrow().subscriber_edges_of(local_raw).count(),
-                        0
-                    );
-                });
-            });
+                            assert_eq!(local.get(), 0);
+                            assert_eq!(
+                                local_state.borrow().subscriber_edges_of(local_raw).count(),
+                                0
+                            );
+                        });
+                        Ok(())
+                    },
+                    handler(),
+                )
+                .expect("effect should initialize");
 
             assert_eq!(
                 effect
@@ -334,9 +421,15 @@ mod tests {
             let source_raw = source.handle.raw();
 
             scope.child(|child| {
-                let effect = child.effect(move || {
-                    let _ = source.get();
-                });
+                let effect = child
+                    .effect(
+                        move || {
+                            let _ = source.get();
+                            Ok(())
+                        },
+                        handler(),
+                    )
+                    .expect("effect should initialize");
                 let effect_state = effect.handle.state();
                 let effect_raw = effect.handle.raw();
 
@@ -378,9 +471,15 @@ mod tests {
 
             scope.child(|child| {
                 let (local, _) = child.signal(0i32);
-                let effect = child.effect(move || {
-                    let _ = source.get();
-                });
+                let effect = child
+                    .effect(
+                        move || {
+                            let _ = source.get();
+                            Ok(())
+                        },
+                        handler(),
+                    )
+                    .expect("effect should initialize");
                 let child_state = local.handle.state();
                 let (scheduler, child_scope_id) = {
                     let state = child_state.borrow();
@@ -456,9 +555,15 @@ mod tests {
 
             scope.child(|child| {
                 let (local, _) = child.signal(0i32);
-                let effect = child.effect(move || {
-                    let _ = source.get();
-                });
+                let effect = child
+                    .effect(
+                        move || {
+                            let _ = source.get();
+                            Ok(())
+                        },
+                        handler(),
+                    )
+                    .expect("effect should initialize");
                 let child_state = local.handle.state();
                 let effect_raw = effect.handle.raw();
                 let (child_scope_id, source_scope_id) = {

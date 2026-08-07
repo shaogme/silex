@@ -1,9 +1,13 @@
-use silex_reactivity::{CompletionOnce, Runtime, Scope};
+use silex_reactivity::{CompletionOnce, ErrorHandler, Runtime, Scope};
 use std::{
     cell::Cell,
     panic::{AssertUnwindSafe, catch_unwind},
     rc::Rc,
 };
+
+fn handler<'scope>() -> ErrorHandler<'scope, ()> {
+    ErrorHandler::ignore()
+}
 
 #[test]
 fn root_scope_uses_the_same_nodes_as_lexical_scope() {
@@ -15,7 +19,15 @@ fn root_scope_uses_the_same_nodes_as_lexical_scope() {
         let scope = root.scope();
         let (value, set_value) = scope.signal(0i32);
         let seen_for_effect = seen.clone();
-        let _effect = scope.effect(move || seen_for_effect.set(value.get()));
+        let _effect = scope
+            .effect(
+                move || {
+                    seen_for_effect.set(value.get());
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("effect should initialize");
 
         set_value.set(3);
         assert_eq!(seen.get(), 3);
@@ -52,7 +64,15 @@ fn root_cleanup_runs_once_on_drop() {
         let root = runtime.run();
         let scope = root.scope();
         let cleaned_for_scope = cleaned.clone();
-        scope.on_cleanup(move || cleaned_for_scope.set(cleaned_for_scope.get() + 1));
+        scope
+            .on_cleanup(
+                move || {
+                    cleaned_for_scope.set(cleaned_for_scope.get() + 1);
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("cleanup should register");
     }
     assert_eq!(cleaned.get(), 1);
 }
@@ -61,7 +81,9 @@ fn root_cleanup_runs_once_on_drop() {
 fn root_cleanup_panic_is_reported_by_explicit_dispose() {
     let mut runtime = Runtime::new();
     let root = runtime.run();
-    root.scope().on_cleanup(|| panic!("cleanup panic"));
+    root.scope()
+        .on_cleanup(|| panic!("cleanup panic"), handler())
+        .expect("cleanup should register");
 
     let result = root.dispose();
     assert!(result.is_err());

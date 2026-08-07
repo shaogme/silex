@@ -1,0 +1,17 @@
+error[E0277]: `Rc<(dyn Fn(()) + 'static)>` cannot be sent between threads safely
+ --> tests/ui/fail_send_handler.rs:6:20
+  |
+6 |     require_send::<ErrorHandler<'static, ()>>();
+  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^ `Rc<(dyn Fn(()) + 'static)>` cannot be sent between threads safely
+  |
+  = help: within `ErrorHandler<'static, ()>`, the trait `Send` is not implemented for `Rc<(dyn Fn(()) + 'static)>`
+note: required because it appears within the type `ErrorHandler<'static, ()>`
+ --> src/error.rs
+  |
+  | pub struct ErrorHandler<'scope, E> {
+  |            ^^^^^^^^^^^^
+note: required by a bound in `require_send`
+ --> tests/ui/fail_send_handler.rs:3:20
+  |
+3 | fn require_send<T: Send>() {}
+  |                    ^^^^ required by this bound in `require_send`

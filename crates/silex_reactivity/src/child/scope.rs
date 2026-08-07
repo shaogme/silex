@@ -12,12 +12,12 @@ use super::node::{
     WriteSignal,
 };
 use crate::{
-    ReactiveError, ReactiveResult,
+    EffectInitError, EffectInitResult, ErrorHandler, ReactiveError, ReactiveResult,
     completion::{
         CompletionOnce, CompletionSender, create_completion_once, create_completion_sender,
     },
     handle::Handle,
-    internal::value::{AnyValue, CallbackThunk, OnceThunk},
+    internal::value::{AnyValue, CallbackThunk, CleanupThunk},
     runtime::{self, RuntimeInputs},
     scope::ScopeStorage,
 };
@@ -136,25 +136,16 @@ impl<'scope> Scope<'scope> {
 
     /// Register cleanup on the current effect, or on this scope when no
     /// computation is active.
-    pub fn on_cleanup<F>(&self, f: F)
+    pub fn on_cleanup<E, F>(
+        &self,
+        f: F,
+        error_handler: ErrorHandler<'scope, E>,
+    ) -> ReactiveResult<()>
     where
-        F: FnOnce() + 'scope,
+        E: 'scope,
+        F: FnOnce() -> Result<(), E> + 'scope,
     {
-        let thunk = OnceThunk::new(f);
-        let state = self.state();
-        let mut state = state
-            .try_borrow_mut()
-            .expect("ScopeState borrow failed during on_cleanup registration");
-        state.register_cleanup(thunk);
-    }
-
-    /// Register cleanup while preserving a structured failure for an inactive
-    /// or currently borrowed scope.
-    pub fn try_on_cleanup<F>(&self, f: F) -> ReactiveResult<()>
-    where
-        F: FnOnce() + 'scope,
-    {
-        let thunk = OnceThunk::new(f);
+        let thunk = CleanupThunk::new(f, error_handler);
         let state = self.state();
         let mut state = state
             .try_borrow_mut()
@@ -194,112 +185,127 @@ impl<'scope> Scope<'scope> {
     }
 
     /// Create an effect owned by this scope and run it once immediately.
-    pub fn effect<F>(&self, f: F) -> Effect<'scope>
+    pub fn effect<E, F>(
+        &self,
+        f: F,
+        error_handler: ErrorHandler<'scope, E>,
+    ) -> EffectInitResult<Effect<'scope>, E>
     where
-        F: FnMut() + 'scope,
+        E: 'scope,
+        F: FnMut() -> Result<(), E> + 'scope,
     {
-        self.effect_from(RuntimeInputs::new(), f)
+        self.effect_from(RuntimeInputs::new(), f, error_handler)
     }
 
     /// Create an effect after validating all declared reactive inputs.
     #[doc(hidden)]
-    pub fn effect_from<F>(&self, inputs: RuntimeInputs, f: F) -> Effect<'scope>
-    where
-        F: FnMut() + 'scope,
-    {
-        self.try_effect_from(inputs, f)
-            .unwrap_or_else(|error| panic!("创建 scoped effect 失败: {error}"))
-    }
-
-    /// Fallible computation creation boundary used by framework adapters.
-    #[doc(hidden)]
-    pub fn try_effect_from<F>(&self, inputs: RuntimeInputs, f: F) -> ReactiveResult<Effect<'scope>>
-    where
-        F: FnMut() + 'scope,
-    {
-        let state = self.state();
-        let raw = runtime::create_effect(&state, inputs, f)?;
-        let handle = Handle::new(self.storage, raw);
-        Ok(Effect { handle })
-    }
-
-    /// Create an effect that receives the value returned by its previous run.
-    pub fn effect_with_previous<T, F>(&self, f: F) -> Effect<'scope>
-    where
-        T: 'scope,
-        F: FnMut(Option<T>) -> T + 'scope,
-    {
-        self.effect_with_previous_from(RuntimeInputs::new(), f)
-    }
-
-    #[doc(hidden)]
-    pub fn effect_with_previous_from<T, F>(&self, inputs: RuntimeInputs, f: F) -> Effect<'scope>
-    where
-        T: 'scope,
-        F: FnMut(Option<T>) -> T + 'scope,
-    {
-        self.try_effect_with_previous_from(inputs, f)
-            .unwrap_or_else(|error| panic!("创建 scoped previous effect 失败: {error}"))
-    }
-
-    #[doc(hidden)]
-    pub fn try_effect_with_previous_from<T, F>(
+    pub fn effect_from<E, F>(
         &self,
         inputs: RuntimeInputs,
         f: F,
-    ) -> ReactiveResult<Effect<'scope>>
+        error_handler: ErrorHandler<'scope, E>,
+    ) -> EffectInitResult<Effect<'scope>, E>
     where
-        T: 'scope,
-        F: FnMut(Option<T>) -> T + 'scope,
+        E: 'scope,
+        F: FnMut() -> Result<(), E> + 'scope,
     {
         let state = self.state();
-        let raw = runtime::create_previous(&state, inputs, f)?;
-        let handle = Handle::new(self.storage, raw);
-        Ok(Effect { handle })
+        runtime::create_effect(&state, inputs, f, error_handler).map(|raw| Effect {
+            handle: Handle::new(self.storage, raw),
+        })
     }
 
-    /// Create a getter-based watcher.
-    pub fn watch_getter<T, G, C>(&self, getter: G, callback: C) -> Effect<'scope>
-    where
-        T: PartialEq + 'scope,
-        G: FnMut() -> T + 'scope,
-        C: FnMut(&T, Option<&T>) + 'scope,
-    {
-        self.watch_getter_with_options(getter, callback, WatchOptions::default())
-    }
-
-    pub fn watch_getter_with_options<T, G, C>(
+    /// Create an effect that receives the value returned by its previous run.
+    pub fn effect_with_previous<T, E, F>(
         &self,
-        getter: G,
-        callback: C,
-        options: WatchOptions,
-    ) -> Effect<'scope>
+        f: F,
+        error_handler: ErrorHandler<'scope, E>,
+    ) -> EffectInitResult<Effect<'scope>, E>
     where
-        T: PartialEq + 'scope,
-        G: FnMut() -> T + 'scope,
-        C: FnMut(&T, Option<&T>) + 'scope,
+        T: 'scope,
+        E: 'scope,
+        F: FnMut(Option<&T>) -> Result<T, E> + 'scope,
     {
-        self.try_watch_getter_from(RuntimeInputs::new(), getter, callback, options)
-            .unwrap_or_else(|error| panic!("创建 scoped watcher 失败: {error}"))
+        self.effect_with_previous_from(RuntimeInputs::new(), f, error_handler)
     }
 
     #[doc(hidden)]
-    pub fn try_watch_getter_from<T, G, C>(
+    pub fn effect_with_previous_from<T, E, F>(
+        &self,
+        inputs: RuntimeInputs,
+        f: F,
+        error_handler: ErrorHandler<'scope, E>,
+    ) -> EffectInitResult<Effect<'scope>, E>
+    where
+        T: 'scope,
+        E: 'scope,
+        F: FnMut(Option<&T>) -> Result<T, E> + 'scope,
+    {
+        let state = self.state();
+        runtime::create_previous(&state, inputs, f, error_handler).map(|raw| Effect {
+            handle: Handle::new(self.storage, raw),
+        })
+    }
+
+    /// Create a getter-based watcher.
+    pub fn watch_getter<T, E, G, C>(
+        &self,
+        getter: G,
+        callback: C,
+        error_handler: ErrorHandler<'scope, E>,
+    ) -> EffectInitResult<Effect<'scope>, E>
+    where
+        T: PartialEq + 'scope,
+        E: 'scope,
+        G: FnMut() -> Result<T, E> + 'scope,
+        C: FnMut(&T, Option<&T>) -> Result<(), E> + 'scope,
+    {
+        self.watch_getter_with_options(getter, callback, error_handler, WatchOptions::default())
+    }
+
+    pub fn watch_getter_with_options<T, E, G, C>(
+        &self,
+        getter: G,
+        callback: C,
+        error_handler: ErrorHandler<'scope, E>,
+        options: WatchOptions,
+    ) -> EffectInitResult<Effect<'scope>, E>
+    where
+        T: PartialEq + 'scope,
+        E: 'scope,
+        G: FnMut() -> Result<T, E> + 'scope,
+        C: FnMut(&T, Option<&T>) -> Result<(), E> + 'scope,
+    {
+        self.watch_getter_from(
+            RuntimeInputs::new(),
+            getter,
+            callback,
+            error_handler,
+            options,
+        )
+    }
+
+    #[doc(hidden)]
+    pub fn watch_getter_from<T, E, G, C>(
         &self,
         inputs: RuntimeInputs,
         getter: G,
         callback: C,
+        error_handler: ErrorHandler<'scope, E>,
         options: WatchOptions,
-    ) -> ReactiveResult<Effect<'scope>>
+    ) -> EffectInitResult<Effect<'scope>, E>
     where
         T: PartialEq + 'scope,
-        G: FnMut() -> T + 'scope,
-        C: FnMut(&T, Option<&T>) + 'scope,
+        E: 'scope,
+        G: FnMut() -> Result<T, E> + 'scope,
+        C: FnMut(&T, Option<&T>) -> Result<(), E> + 'scope,
     {
         let state = self.state();
-        let raw = runtime::create_watch(&state, inputs, getter, callback, options)?;
-        let handle = Handle::new(self.storage, raw);
-        Ok(Effect { handle })
+        runtime::create_watch(&state, inputs, getter, callback, error_handler, options).map(|raw| {
+            Effect {
+                handle: Handle::new(self.storage, raw),
+            }
+        })
     }
 
     /// Create a lazy memo whose dependents are notified only when its value
@@ -538,106 +544,150 @@ impl<'scope> OwnedScope<'scope> {
     /// The returned effect handle borrows this owner and cannot outlive
     /// that borrow. The effect itself remains owned by `OwnedScope` until
     /// [`OwnedScope::dispose`] or `Drop`.
-    pub fn effect<F>(&self, f: F) -> Effect<'_>
+    pub fn effect<E, F>(
+        &self,
+        f: F,
+        error_handler: ErrorHandler<'scope, E>,
+    ) -> EffectInitResult<Effect<'_>, E>
     where
-        F: FnMut() + 'scope,
+        E: 'scope,
+        F: FnMut() -> Result<(), E> + 'scope,
     {
-        self.effect_from(RuntimeInputs::new(), f)
+        self.effect_from(RuntimeInputs::new(), f, error_handler)
     }
 
     /// Register an effect after validating all declared reactive inputs.
     #[doc(hidden)]
-    pub fn effect_from<F>(&self, inputs: RuntimeInputs, f: F) -> Effect<'_>
+    pub fn effect_from<E, F>(
+        &self,
+        inputs: RuntimeInputs,
+        f: F,
+        error_handler: ErrorHandler<'scope, E>,
+    ) -> EffectInitResult<Effect<'_>, E>
     where
-        F: FnMut() + 'scope,
+        E: 'scope,
+        F: FnMut() -> Result<(), E> + 'scope,
     {
-        self.try_effect_from(inputs, f)
-            .unwrap_or_else(|error| panic!("创建 owned effect 失败: {error}"))
+        if !self.is_active() {
+            return Err(EffectInitError::Registration(ReactiveError::NoSuchNode));
+        }
+        let state = self.state();
+        runtime::create_effect(&state, inputs, f, error_handler).map(|raw| Effect {
+            handle: Handle::new(&self.storage, raw),
+        })
+    }
+
+    pub fn effect_with_previous<T, E, F>(
+        &self,
+        f: F,
+        error_handler: ErrorHandler<'scope, E>,
+    ) -> EffectInitResult<Effect<'_>, E>
+    where
+        T: 'scope,
+        E: 'scope,
+        F: FnMut(Option<&T>) -> Result<T, E> + 'scope,
+    {
+        self.effect_with_previous_from(RuntimeInputs::new(), f, error_handler)
     }
 
     #[doc(hidden)]
-    pub fn try_effect_from<F>(&self, inputs: RuntimeInputs, f: F) -> ReactiveResult<Effect<'_>>
+    pub fn effect_with_previous_from<T, E, F>(
+        &self,
+        inputs: RuntimeInputs,
+        f: F,
+        error_handler: ErrorHandler<'scope, E>,
+    ) -> EffectInitResult<Effect<'_>, E>
     where
-        F: FnMut() + 'scope,
+        T: 'scope,
+        E: 'scope,
+        F: FnMut(Option<&T>) -> Result<T, E> + 'scope,
     {
         if !self.is_active() {
-            return Err(ReactiveError::NoSuchNode);
+            return Err(EffectInitError::Registration(ReactiveError::NoSuchNode));
         }
         let state = self.state();
-        let raw = runtime::create_effect(&state, inputs, f)?;
-        let handle = Handle::new(&self.storage, raw);
-        Ok(Effect { handle })
+        runtime::create_previous(&state, inputs, f, error_handler).map(|raw| Effect {
+            handle: Handle::new(&self.storage, raw),
+        })
     }
 
     /// Create a getter-based watcher owned by this persistent scope.
-    pub fn watch_getter<T, G, C>(&self, getter: G, callback: C) -> Effect<'_>
-    where
-        T: PartialEq + 'scope,
-        G: FnMut() -> T + 'scope,
-        C: FnMut(&T, Option<&T>) + 'scope,
-    {
-        self.watch_getter_with_options(getter, callback, WatchOptions::default())
-    }
-
-    pub fn watch_getter_with_options<T, G, C>(
+    pub fn watch_getter<T, E, G, C>(
         &self,
         getter: G,
         callback: C,
-        options: WatchOptions,
-    ) -> Effect<'_>
+        error_handler: ErrorHandler<'scope, E>,
+    ) -> EffectInitResult<Effect<'_>, E>
     where
         T: PartialEq + 'scope,
-        G: FnMut() -> T + 'scope,
-        C: FnMut(&T, Option<&T>) + 'scope,
+        E: 'scope,
+        G: FnMut() -> Result<T, E> + 'scope,
+        C: FnMut(&T, Option<&T>) -> Result<(), E> + 'scope,
     {
-        self.try_watch_getter_from(RuntimeInputs::new(), getter, callback, options)
-            .unwrap_or_else(|error| panic!("创建 owned watcher 失败: {error}"))
+        self.watch_getter_with_options(getter, callback, error_handler, WatchOptions::default())
+    }
+
+    pub fn watch_getter_with_options<T, E, G, C>(
+        &self,
+        getter: G,
+        callback: C,
+        error_handler: ErrorHandler<'scope, E>,
+        options: WatchOptions,
+    ) -> EffectInitResult<Effect<'_>, E>
+    where
+        T: PartialEq + 'scope,
+        E: 'scope,
+        G: FnMut() -> Result<T, E> + 'scope,
+        C: FnMut(&T, Option<&T>) -> Result<(), E> + 'scope,
+    {
+        self.watch_getter_from(
+            RuntimeInputs::new(),
+            getter,
+            callback,
+            error_handler,
+            options,
+        )
     }
 
     #[doc(hidden)]
-    pub fn try_watch_getter_from<T, G, C>(
+    pub fn watch_getter_from<T, E, G, C>(
         &self,
         inputs: RuntimeInputs,
         getter: G,
         callback: C,
+        error_handler: ErrorHandler<'scope, E>,
         options: WatchOptions,
-    ) -> ReactiveResult<Effect<'_>>
+    ) -> EffectInitResult<Effect<'_>, E>
     where
         T: PartialEq + 'scope,
-        G: FnMut() -> T + 'scope,
-        C: FnMut(&T, Option<&T>) + 'scope,
+        E: 'scope,
+        G: FnMut() -> Result<T, E> + 'scope,
+        C: FnMut(&T, Option<&T>) -> Result<(), E> + 'scope,
+    {
+        if !self.is_active() {
+            return Err(EffectInitError::Registration(ReactiveError::NoSuchNode));
+        }
+        let state = self.state();
+        runtime::create_watch(&state, inputs, getter, callback, error_handler, options).map(|raw| {
+            Effect {
+                handle: Handle::new(&self.storage, raw),
+            }
+        })
+    }
+
+    pub fn on_cleanup<E, F>(
+        &self,
+        f: F,
+        error_handler: ErrorHandler<'scope, E>,
+    ) -> ReactiveResult<()>
+    where
+        E: 'scope,
+        F: FnOnce() -> Result<(), E> + 'scope,
     {
         if !self.is_active() {
             return Err(ReactiveError::NoSuchNode);
         }
-        let state = self.state();
-        let raw = runtime::create_watch(&state, inputs, getter, callback, options)?;
-        let handle = Handle::new(&self.storage, raw);
-        Ok(Effect { handle })
-    }
-
-    pub fn on_cleanup<F>(&self, f: F)
-    where
-        F: FnOnce() + 'scope,
-    {
-        if !self.is_active() {
-            return;
-        }
-        let state = self.state();
-        let mut state = state
-            .try_borrow_mut()
-            .expect("owned scope 在 cleanup 注册期间被借用");
-        state.register_cleanup(OnceThunk::new(f));
-    }
-
-    /// Register cleanup without silently accepting an inactive owner.
-    pub fn try_on_cleanup<F>(&self, f: F) -> ReactiveResult<()>
-    where
-        F: FnOnce() + 'scope,
-    {
-        if !self.active.get() {
-            return Err(ReactiveError::NoSuchNode);
-        }
+        let cleanup = CleanupThunk::new(f, error_handler);
         let state = self.state();
         let mut state = state
             .try_borrow_mut()
@@ -645,7 +695,7 @@ impl<'scope> OwnedScope<'scope> {
         if !state.is_active() {
             return Err(ReactiveError::NoSuchNode);
         }
-        state.register_cleanup(OnceThunk::new(f));
+        state.register_cleanup(cleanup);
         Ok(())
     }
 
@@ -723,6 +773,10 @@ mod tests {
         ]
     }
 
+    fn handler<'scope>() -> ErrorHandler<'scope, ()> {
+        ErrorHandler::ignore()
+    }
+
     #[test]
     fn inactive_cleanup_rejects_all_value_creation_without_metadata_changes() {
         let storage = ScopeStorage::new(GlobalScheduler::new());
@@ -735,18 +789,24 @@ mod tests {
         let observed = Rc::new(RefCell::new(None));
         let observed_in_cleanup = observed.clone();
         let scope_in_cleanup = scope;
-        scope.on_cleanup(move || {
-            assert_eq!(
-                rejected_creations(scope_in_cleanup),
-                vec![
-                    Err(ReactiveError::NoSuchNode),
-                    Err(ReactiveError::NoSuchNode),
-                    Err(ReactiveError::NoSuchNode),
-                    Err(ReactiveError::NoSuchNode),
-                ]
-            );
-            *observed_in_cleanup.borrow_mut() = Some(snapshot(&state_in_cleanup));
-        });
+        scope
+            .on_cleanup(
+                move || {
+                    assert_eq!(
+                        rejected_creations(scope_in_cleanup),
+                        vec![
+                            Err(ReactiveError::NoSuchNode),
+                            Err(ReactiveError::NoSuchNode),
+                            Err(ReactiveError::NoSuchNode),
+                            Err(ReactiveError::NoSuchNode),
+                        ]
+                    );
+                    *observed_in_cleanup.borrow_mut() = Some(snapshot(&state_in_cleanup));
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("cleanup should register");
 
         let before_dispose = snapshot(&state);
         storage.dispose_untracked();
@@ -908,14 +968,24 @@ mod tests {
         let owned_rejected = Rc::new(RefCell::new(false));
         let child_rejected_in_cleanup = child_rejected.clone();
         let owned_rejected_in_cleanup = owned_rejected.clone();
-        scope.on_cleanup(move || {
-            *child_rejected_in_cleanup.borrow_mut() =
-                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| scope_copy.child(|_| ())))
-                    .is_err();
-            *owned_rejected_in_cleanup.borrow_mut() =
-                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| scope_copy.owned_scope()))
-                    .is_err();
-        });
+        scope
+            .on_cleanup(
+                move || {
+                    *child_rejected_in_cleanup.borrow_mut() =
+                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            scope_copy.child(|_| ())
+                        }))
+                        .is_err();
+                    *owned_rejected_in_cleanup.borrow_mut() =
+                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            scope_copy.owned_scope()
+                        }))
+                        .is_err();
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("cleanup should register");
 
         storage.dispose_untracked();
 

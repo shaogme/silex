@@ -1,6 +1,6 @@
 //! Explicit runtime operation errors.
 
-use std::fmt;
+use std::{cell::RefCell, fmt, rc::Rc};
 
 /// A response to an operation that cannot be completed in the current scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,3 +46,138 @@ impl fmt::Display for ReactiveError {
 impl std::error::Error for ReactiveError {}
 
 pub type ReactiveResult<T> = Result<T, ReactiveError>;
+
+/// A scoped, single-threaded destination for callback errors.
+///
+/// The handler is deliberately an `Fn` so the runtime never holds a mutable
+/// borrow into user state while dispatching an error. Callers that need
+/// mutable state can capture an `Rc<RefCell<_>>` (or another scoped cell).
+pub struct ErrorHandler<'scope, E> {
+    callback: Rc<dyn Fn(E) + 'scope>,
+}
+
+impl<E> Clone for ErrorHandler<'_, E> {
+    fn clone(&self) -> Self {
+        Self {
+            callback: self.callback.clone(),
+        }
+    }
+}
+
+impl<'scope, E: 'scope> ErrorHandler<'scope, E> {
+    /// Create an error handler from a scoped callback.
+    pub fn new<F>(handler: F) -> Self
+    where
+        F: Fn(E) + 'scope,
+    {
+        Self {
+            callback: Rc::new(handler),
+        }
+    }
+
+    /// Create a handler that intentionally discards its input.
+    pub fn ignore() -> Self {
+        Self::new(|_| {})
+    }
+
+    /// Dispatch one error to this handler.
+    pub fn handle(&self, error: E) {
+        (self.callback)(error);
+    }
+}
+
+/// Distinguishes registration failures from errors returned by the first
+/// callback execution.
+#[derive(Debug)]
+pub enum EffectInitError<E> {
+    /// The runtime could not register or initialize the computation.
+    Registration(ReactiveError),
+    /// The computation was registered, but its first callback returned this
+    /// user error. The provisional computation has already been disposed.
+    Initial(E),
+}
+
+pub type EffectInitResult<T, E> = Result<T, EffectInitError<E>>;
+
+#[derive(Clone, Copy)]
+pub(crate) enum ErrorPhase {
+    Initial,
+    Deferred,
+}
+
+/// Type-erased transport for a scoped callback error.
+///
+/// The event owns exactly one dispatch operation. Its payload remains erased
+/// inside the closure, while the registration adapter retains a typed slot for
+/// the initial error result.
+pub(crate) struct ErrorEvent<'scope> {
+    dispatch: Option<Box<dyn FnOnce(ErrorPhase) + 'scope>>,
+}
+
+impl<'scope> ErrorEvent<'scope> {
+    pub(crate) fn new<E: 'scope>(
+        error: E,
+        handler: ErrorHandler<'scope, E>,
+        initial_slot: InitialErrorSlot<E>,
+    ) -> Self {
+        let mut error = Some(error);
+        Self {
+            dispatch: Some(Box::new(move |phase| {
+                let error = error.take().expect("callback error event dispatched twice");
+                match phase {
+                    ErrorPhase::Initial => initial_slot.store(error),
+                    ErrorPhase::Deferred => handler.handle(error),
+                }
+            })),
+        }
+    }
+
+    pub(crate) fn deferred<E: 'scope>(error: E, handler: ErrorHandler<'scope, E>) -> Self {
+        let mut error = Some(error);
+        Self {
+            dispatch: Some(Box::new(move |_| {
+                let error = error.take().expect("callback error event dispatched twice");
+                handler.handle(error);
+            })),
+        }
+    }
+
+    pub(crate) fn dispatch(mut self, phase: ErrorPhase) {
+        let dispatch = self
+            .dispatch
+            .take()
+            .expect("callback error event dispatched twice");
+        dispatch(phase);
+    }
+}
+
+pub(crate) struct InitialErrorSlot<E> {
+    value: Rc<RefCell<Option<E>>>,
+}
+
+impl<E> Clone for InitialErrorSlot<E> {
+    fn clone(&self) -> Self {
+        Self {
+            value: self.value.clone(),
+        }
+    }
+}
+
+impl<E> InitialErrorSlot<E> {
+    pub(crate) fn new() -> Self {
+        Self {
+            value: Rc::new(RefCell::new(None)),
+        }
+    }
+
+    pub(crate) fn store(&self, error: E) {
+        *self.value.borrow_mut() = Some(error);
+    }
+
+    pub(crate) fn take(&self) -> E {
+        self.value
+            .borrow_mut()
+            .take()
+            .expect("initial callback error slot was not populated")
+    }
+}

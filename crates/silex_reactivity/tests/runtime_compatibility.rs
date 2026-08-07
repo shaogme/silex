@@ -1,4 +1,8 @@
-use silex_reactivity::{Runtime, RuntimeInputs};
+use silex_reactivity::{EffectInitError, ErrorHandler, Runtime, RuntimeInputs};
+
+fn handler<'scope>() -> ErrorHandler<'scope, ()> {
+    ErrorHandler::ignore()
+}
 
 #[test]
 fn parent_child_owned_and_root_scopes_accept_same_family_inputs() {
@@ -10,24 +14,24 @@ fn parent_child_owned_and_root_scopes_accept_same_family_inputs() {
         let nested = owned.child();
         assert!(
             scope
-                .try_effect_from(RuntimeInputs::single(input.clone()), || {})
+                .effect_from(RuntimeInputs::single(input.clone()), || Ok(()), handler())
                 .is_ok()
         );
         assert!(
             owned
-                .try_effect_from(RuntimeInputs::single(input.clone()), || {})
+                .effect_from(RuntimeInputs::single(input.clone()), || Ok(()), handler())
                 .is_ok()
         );
         assert!(
             nested
-                .try_effect_from(RuntimeInputs::single(input.clone()), || {})
+                .effect_from(RuntimeInputs::single(input.clone()), || Ok(()), handler())
                 .is_ok()
         );
 
         scope.child(|child| {
             assert!(
                 child
-                    .try_effect_from(RuntimeInputs::single(input), || {})
+                    .effect_from(RuntimeInputs::single(input), || Ok(()), handler())
                     .is_ok()
             );
         });
@@ -41,7 +45,7 @@ fn parent_child_owned_and_root_scopes_accept_same_family_inputs() {
         let input = source.runtime_input();
         assert!(
             scope
-                .try_effect_from(RuntimeInputs::single(input), || {})
+                .effect_from(RuntimeInputs::single(input), || Ok(()), handler())
                 .is_ok()
         );
     }
@@ -58,12 +62,18 @@ fn different_schedulers_are_rejected_even_when_scope_ids_are_reused() {
     });
     let result = second.child(|scope| {
         scope
-            .try_effect_from(RuntimeInputs::single(foreign_input), move || {})
+            .effect_from(
+                RuntimeInputs::single(foreign_input),
+                move || Ok(()),
+                handler(),
+            )
             .map(|_| ())
     });
 
     assert!(matches!(
         result,
-        Err(silex_reactivity::ReactiveError::RuntimeMismatch)
+        Err(EffectInitError::Registration(
+            silex_reactivity::ReactiveError::RuntimeMismatch,
+        ))
     ));
 }

@@ -1,9 +1,11 @@
 //! Opaque scheduler-family inputs and the computation creation kernel.
 
-use super::{model::ScopeState, scheduler::GlobalScheduler};
+use super::eval::flush_if_idle;
+use super::{eval::EvaluationError, model::ScopeState, scheduler::GlobalScheduler};
 use crate::{
-    ReactiveError, ReactiveResult,
+    EffectInitError, EffectInitResult, ErrorHandler, ReactiveError, ReactiveResult,
     child::WatchOptions,
+    error::InitialErrorSlot,
     internal::{
         RawId,
         value::{Computation, EffectThunk, MemoThunk, PreviousThunk, WatchThunk},
@@ -141,8 +143,8 @@ pub(crate) fn validate_inputs<'scope>(
 pub(crate) fn create_computation<'scope>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     spec: ComputationSpec<'scope>,
-) -> ReactiveResult<RawId> {
-    validate_inputs(state, &spec.inputs)?;
+) -> Result<RawId, EvaluationError<'scope>> {
+    validate_inputs(state, &spec.inputs).map_err(EvaluationError::Runtime)?;
 
     let ComputationSpec {
         kind,
@@ -152,24 +154,24 @@ pub(crate) fn create_computation<'scope>(
     let raw = {
         let mut state = state
             .try_borrow_mut()
-            .map_err(|_| ReactiveError::BorrowConflict)?;
+            .map_err(|_| EvaluationError::Runtime(ReactiveError::BorrowConflict))?;
         match (kind, computation) {
-            (ComputationKind::Effect, Computation::Effect(callback)) => {
-                state.register_effect(callback)?
-            }
-            (ComputationKind::Previous, Computation::Previous(callback)) => {
-                state.register_previous(callback)?
-            }
-            (ComputationKind::Watch, Computation::Watch(callback)) => {
-                state.register_watch(callback)?
-            }
-            (ComputationKind::Memo, Computation::Memo(callback)) => {
-                state.register_memo(callback, false)?
-            }
-            (ComputationKind::Derived, Computation::Memo(callback)) => {
-                state.register_memo(callback, true)?
-            }
-            _ => return Err(ReactiveError::WrongKind),
+            (ComputationKind::Effect, Computation::Effect(callback)) => state
+                .register_effect(callback)
+                .map_err(EvaluationError::Runtime)?,
+            (ComputationKind::Previous, Computation::Previous(callback)) => state
+                .register_previous(callback)
+                .map_err(EvaluationError::Runtime)?,
+            (ComputationKind::Watch, Computation::Watch(callback)) => state
+                .register_watch(callback)
+                .map_err(EvaluationError::Runtime)?,
+            (ComputationKind::Memo, Computation::Memo(callback)) => state
+                .register_memo(callback, false)
+                .map_err(EvaluationError::Runtime)?,
+            (ComputationKind::Derived, Computation::Memo(callback)) => state
+                .register_memo(callback, true)
+                .map_err(EvaluationError::Runtime)?,
+            _ => return Err(EvaluationError::Runtime(ReactiveError::WrongKind)),
         }
     };
 
@@ -177,78 +179,133 @@ pub(crate) fn create_computation<'scope>(
     match result {
         Ok(Ok(())) => Ok(raw),
         Ok(Err(error)) => {
-            let _ = catch_unwind(AssertUnwindSafe(|| super::dispose_nodes(state, vec![raw])));
+            let dispose = catch_unwind(AssertUnwindSafe(|| super::dispose_nodes(state, vec![raw])));
+            if let Err(panic) = dispose {
+                resume_unwind(panic);
+            }
             Err(error)
         }
         Err(panic) => {
-            let _ = catch_unwind(AssertUnwindSafe(|| super::dispose_nodes(state, vec![raw])));
+            let dispose = catch_unwind(AssertUnwindSafe(|| super::dispose_nodes(state, vec![raw])));
+            if let Err(dispose_panic) = dispose {
+                resume_unwind(dispose_panic);
+            }
             resume_unwind(panic);
         }
     }
 }
 
-pub(crate) fn create_effect<'scope, F>(
+fn finish_creation<'scope, E>(
+    state: &Rc<RefCell<ScopeState<'scope>>>,
+    result: Result<RawId, EvaluationError<'scope>>,
+    initial_slot: &InitialErrorSlot<E>,
+) -> EffectInitResult<RawId, E> {
+    match result {
+        Ok(raw) => Ok(raw),
+        Err(EvaluationError::Runtime(error)) => Err(EffectInitError::Registration(error)),
+        Err(EvaluationError::Callback(error)) => {
+            error.dispatch(crate::error::ErrorPhase::Initial);
+            let initial = initial_slot.take();
+            flush_if_idle(state);
+            Err(EffectInitError::Initial(initial))
+        }
+    }
+}
+
+fn finish_infallible_creation(result: Result<RawId, EvaluationError<'_>>) -> ReactiveResult<RawId> {
+    match result {
+        Ok(raw) => Ok(raw),
+        Err(EvaluationError::Runtime(error)) => Err(error),
+        Err(EvaluationError::Callback(_)) => {
+            unreachable!("infallible computations cannot return callback errors")
+        }
+    }
+}
+
+pub(crate) fn create_effect<'scope, E, F>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     inputs: RuntimeInputs,
     callback: F,
-) -> ReactiveResult<RawId>
+    handler: ErrorHandler<'scope, E>,
+) -> EffectInitResult<RawId, E>
 where
-    F: FnMut() + 'scope,
+    E: 'scope,
+    F: FnMut() -> Result<(), E> + 'scope,
 {
-    create_computation(
+    let initial_slot = InitialErrorSlot::new();
+    let result = create_computation(
         state,
         ComputationSpec {
             kind: ComputationKind::Effect,
             inputs,
-            computation: Computation::Effect(EffectThunk::new(callback)),
+            computation: Computation::Effect(EffectThunk::new(
+                callback,
+                handler,
+                initial_slot.clone(),
+            )),
         },
-    )
+    );
+    finish_creation(state, result, &initial_slot)
 }
 
-pub(crate) fn create_previous<'scope, T, F>(
+pub(crate) fn create_previous<'scope, T, E, F>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     inputs: RuntimeInputs,
     callback: F,
-) -> ReactiveResult<RawId>
+    handler: ErrorHandler<'scope, E>,
+) -> EffectInitResult<RawId, E>
 where
     T: 'scope,
-    F: FnMut(Option<T>) -> T + 'scope,
+    E: 'scope,
+    F: FnMut(Option<&T>) -> Result<T, E> + 'scope,
 {
-    create_computation(
+    let initial_slot = InitialErrorSlot::new();
+    let result = create_computation(
         state,
         ComputationSpec {
             kind: ComputationKind::Previous,
             inputs,
-            computation: Computation::Previous(PreviousThunk::new::<T, F>(callback)),
+            computation: Computation::Previous(PreviousThunk::new::<T, E, F>(
+                callback,
+                handler,
+                initial_slot.clone(),
+            )),
         },
-    )
+    );
+    finish_creation(state, result, &initial_slot)
 }
 
-pub(crate) fn create_watch<'scope, T, G, C>(
+pub(crate) fn create_watch<'scope, T, E, G, C>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     inputs: RuntimeInputs,
     getter: G,
     callback: C,
+    handler: ErrorHandler<'scope, E>,
     options: WatchOptions,
-) -> ReactiveResult<RawId>
+) -> EffectInitResult<RawId, E>
 where
     T: PartialEq + 'scope,
-    G: FnMut() -> T + 'scope,
-    C: FnMut(&T, Option<&T>) + 'scope,
+    E: 'scope,
+    G: FnMut() -> Result<T, E> + 'scope,
+    C: FnMut(&T, Option<&T>) -> Result<(), E> + 'scope,
 {
-    create_computation(
+    let initial_slot = InitialErrorSlot::new();
+    let result = create_computation(
         state,
         ComputationSpec {
             kind: ComputationKind::Watch,
             inputs,
-            computation: Computation::Watch(WatchThunk::new(
+            computation: Computation::Watch(WatchThunk::new::<T, E, G, C>(
                 getter,
                 callback,
+                handler,
+                initial_slot.clone(),
                 options.immediate,
                 options.once,
             )),
         },
-    )
+    );
+    finish_creation(state, result, &initial_slot)
 }
 
 pub(crate) fn create_memo<'scope, T, F>(
@@ -260,14 +317,14 @@ where
     T: PartialEq + 'scope,
     F: FnMut(Option<&T>) -> T + 'scope,
 {
-    create_computation(
+    finish_infallible_creation(create_computation(
         state,
         ComputationSpec {
             kind: ComputationKind::Memo,
             inputs,
             computation: Computation::Memo(MemoThunk::new::<T, F>(callback)),
         },
-    )
+    ))
 }
 
 pub(crate) fn create_derived<'scope, T, F>(
@@ -279,14 +336,14 @@ where
     T: 'scope,
     F: FnMut() -> T + 'scope,
 {
-    create_computation(
+    finish_infallible_creation(create_computation(
         state,
         ComputationSpec {
             kind: ComputationKind::Derived,
             inputs,
             computation: Computation::Memo(MemoThunk::new_derived::<T, F>(callback)),
         },
-    )
+    ))
 }
 
 #[cfg(test)]
@@ -314,6 +371,10 @@ mod tests {
         )
     }
 
+    fn handler<'scope>() -> ErrorHandler<'scope, ()> {
+        ErrorHandler::ignore()
+    }
+
     #[test]
     fn mismatched_input_is_rejected_before_any_state_changes() {
         let source = ScopeStorage::new(GlobalScheduler::new());
@@ -327,9 +388,19 @@ mod tests {
         let target_state = unsafe { target.typed_state() };
         let before = snapshot(&target);
 
-        let result = create_effect(&target_state, RuntimeInputs::single(input), || {});
+        let result = create_effect(
+            &target_state,
+            RuntimeInputs::single(input),
+            || Ok(()),
+            handler(),
+        );
 
-        assert_eq!(result, Err(ReactiveError::RuntimeMismatch));
+        assert!(matches!(
+            result,
+            Err(EffectInitError::Registration(
+                ReactiveError::RuntimeMismatch
+            ))
+        ));
         assert_eq!(snapshot(&target), before);
 
         target.dispose();
@@ -344,9 +415,17 @@ mod tests {
         let target_state = unsafe { target.typed_state() };
         target.dispose();
 
-        let result = create_effect(&target_state, RuntimeInputs::single(input), || {});
+        let result = create_effect(
+            &target_state,
+            RuntimeInputs::single(input),
+            || Ok(()),
+            handler(),
+        );
 
-        assert_eq!(result, Err(ReactiveError::NoSuchNode));
+        assert!(matches!(
+            result,
+            Err(EffectInitError::Registration(ReactiveError::NoSuchNode))
+        ));
         source.dispose();
     }
 
@@ -364,11 +443,22 @@ mod tests {
         let mut inputs = RuntimeInputs::single(same_input);
         inputs.push(foreign_input);
 
-        let result = create_effect(&target_state, inputs, move || {
-            *ran_in_callback.borrow_mut() = true
-        });
+        let result = create_effect(
+            &target_state,
+            inputs,
+            move || {
+                *ran_in_callback.borrow_mut() = true;
+                Ok(())
+            },
+            handler(),
+        );
 
-        assert_eq!(result, Err(ReactiveError::RuntimeMismatch));
+        assert!(matches!(
+            result,
+            Err(EffectInitError::Registration(
+                ReactiveError::RuntimeMismatch
+            ))
+        ));
         assert!(!*ran.borrow());
         assert_eq!(snapshot(&same_family), before);
 
@@ -386,9 +476,15 @@ mod tests {
         let ran = Rc::new(RefCell::new(false));
         let ran_in_callback = ran.clone();
 
-        let result = create_effect(&target_state, RuntimeInputs::single(input), move || {
-            *ran_in_callback.borrow_mut() = true
-        });
+        let result = create_effect(
+            &target_state,
+            RuntimeInputs::single(input),
+            move || {
+                *ran_in_callback.borrow_mut() = true;
+                Ok(())
+            },
+            handler(),
+        );
 
         assert!(result.is_ok());
         assert!(*ran.borrow());

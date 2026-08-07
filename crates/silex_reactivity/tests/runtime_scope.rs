@@ -1,9 +1,13 @@
-use silex_reactivity::{ReactiveError, Runtime, notify};
+use silex_reactivity::{ErrorHandler, ReactiveError, Runtime, notify};
 use std::{
     cell::{Cell, RefCell},
     panic::{AssertUnwindSafe, catch_unwind},
     rc::Rc,
 };
+
+fn handler<'scope>() -> ErrorHandler<'scope, ()> {
+    ErrorHandler::ignore()
+}
 
 #[test]
 fn runtime_run_provides_scoped_signal_and_effect() {
@@ -15,10 +19,16 @@ fn runtime_run_provides_scoped_signal_and_effect() {
         let doubled = scope.memo(move |_| count.get() * 2);
         let runs_in_effect = runs.clone();
         let doubled_in_effect = doubled;
-        let _effect = scope.effect(move || {
-            let _ = doubled_in_effect.get();
-            runs_in_effect.set(runs_in_effect.get() + 1);
-        });
+        let _effect = scope
+            .effect(
+                move || {
+                    let _ = doubled_in_effect.get();
+                    runs_in_effect.set(runs_in_effect.get() + 1);
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("effect should initialize");
 
         assert_eq!(runs.get(), 1);
         set_count.set(1);
@@ -37,9 +47,15 @@ fn non_static_effect_can_capture_data_and_scoped_signal() {
     runtime.child(|scope| {
         let (signal, set_signal) = scope.signal(1i32);
         let external_in_effect = external.clone();
-        scope.effect(move || {
-            external_in_effect.set(external_in_effect.get() + signal.get());
-        });
+        scope
+            .effect(
+                move || {
+                    external_in_effect.set(external_in_effect.get() + signal.get());
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("effect should initialize");
         set_signal.set(2);
     });
 
@@ -55,10 +71,16 @@ fn child_scope_is_lexical_and_cleans_up_its_nodes() {
         scope.child(|child| {
             let (local, set_local) = child.signal(0i32);
             let runs = cleaned.clone();
-            let _effect = child.effect(move || {
-                let _ = local.get();
-                runs.set(runs.get() + 1);
-            });
+            let _effect = child
+                .effect(
+                    move || {
+                        let _ = local.get();
+                        runs.set(runs.get() + 1);
+                        Ok(())
+                    },
+                    handler(),
+                )
+                .expect("effect should initialize");
             set_local.set(1);
             assert_eq!(cleaned.get(), 2);
         });
@@ -75,10 +97,16 @@ fn child_effect_reacts_to_parent_signal_and_detaches_on_exit() {
         let (parent, set_parent) = scope.signal(0i32);
         scope.child(|child| {
             let runs_in_effect = runs.clone();
-            child.effect(move || {
-                let _ = parent.get();
-                runs_in_effect.set(runs_in_effect.get() + 1);
-            });
+            child
+                .effect(
+                    move || {
+                        let _ = parent.get();
+                        runs_in_effect.set(runs_in_effect.get() + 1);
+                        Ok(())
+                    },
+                    handler(),
+                )
+                .expect("effect should initialize");
             assert_eq!(runs.get(), 1);
             set_parent.set(1);
             assert_eq!(runs.get(), 2);
@@ -95,7 +123,15 @@ fn child_cleanup_runs_when_scoped_run_ends() {
     let cleaned = Rc::new(Cell::new(false));
     let cleaned_in_scope = cleaned.clone();
     runtime.child(|scope| {
-        scope.on_cleanup(move || cleaned_in_scope.set(true));
+        scope
+            .on_cleanup(
+                move || {
+                    cleaned_in_scope.set(true);
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("cleanup should register");
         assert!(!cleaned.get());
     });
     assert!(cleaned.get());
@@ -125,11 +161,27 @@ fn cleanup_order_follows_lexical_scope_order() {
 
     runtime.child(|scope| {
         let parent_events = events.clone();
-        scope.on_cleanup(move || parent_events.borrow_mut().push("parent"));
+        scope
+            .on_cleanup(
+                move || {
+                    parent_events.borrow_mut().push("parent");
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("cleanup should register");
 
         scope.child(|child| {
             let child_events = events.clone();
-            child.on_cleanup(move || child_events.borrow_mut().push("child"));
+            child
+                .on_cleanup(
+                    move || {
+                        child_events.borrow_mut().push("child");
+                        Ok(())
+                    },
+                    handler(),
+                )
+                .expect("cleanup should register");
         });
 
         assert_eq!(events.borrow().as_slice(), &["child"]);
@@ -148,7 +200,15 @@ fn child_scope_panic_cleans_up_before_parent_continues() {
         let cleaned_in_child = cleaned.clone();
         let panic = catch_unwind(AssertUnwindSafe(|| {
             scope.child(|child| {
-                child.on_cleanup(move || cleaned_in_child.set(true));
+                child
+                    .on_cleanup(
+                        move || {
+                            cleaned_in_child.set(true);
+                            Ok(())
+                        },
+                        handler(),
+                    )
+                    .expect("cleanup should register");
                 panic!("child callback panic");
             });
         }));
@@ -167,7 +227,9 @@ fn child_callback_panic_is_not_replaced_by_cleanup_panic() {
     runtime.child(|scope| {
         let panic = catch_unwind(AssertUnwindSafe(|| {
             scope.child(|child| {
-                child.on_cleanup(|| panic!("cleanup panic"));
+                child
+                    .on_cleanup(|| panic!("cleanup panic"), handler())
+                    .expect("cleanup should register");
                 panic!("callback panic");
             });
         }))
@@ -186,12 +248,18 @@ fn parent_effect_tracks_reads_inside_child_callback() {
         let (source, set_source) = scope.signal(0i32);
         let parent_scope = scope;
         let runs_in_effect = runs.clone();
-        scope.effect(move || {
-            parent_scope.child(|_| {
-                let _ = source.get();
-            });
-            runs_in_effect.set(runs_in_effect.get() + 1);
-        });
+        scope
+            .effect(
+                move || {
+                    parent_scope.child(|_| {
+                        let _ = source.get();
+                    });
+                    runs_in_effect.set(runs_in_effect.get() + 1);
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("effect should initialize");
 
         assert_eq!(runs.get(), 1);
         set_source.set(1);
@@ -208,14 +276,20 @@ fn child_local_signal_does_not_keep_parent_effect_queued_after_exit() {
         let parent_scope = scope;
         let runs_in_effect = runs.clone();
         let result = catch_unwind(AssertUnwindSafe(|| {
-            scope.effect(move || {
-                runs_in_effect.set(runs_in_effect.get() + 1);
-                parent_scope.child(|child| {
-                    let (local, set_local) = child.signal(0i32);
-                    let _ = local.get();
-                    set_local.set(1);
-                });
-            });
+            scope
+                .effect(
+                    move || {
+                        runs_in_effect.set(runs_in_effect.get() + 1);
+                        parent_scope.child(|child| {
+                            let (local, set_local) = child.signal(0i32);
+                            let _ = local.get();
+                            set_local.set(1);
+                        });
+                        Ok(())
+                    },
+                    handler(),
+                )
+                .expect("effect should initialize");
         }));
 
         assert!(result.is_ok());
@@ -231,10 +305,26 @@ fn cleanup_can_reenter_an_active_parent_scope() {
     runtime.child(|scope| {
         let (source, set_source) = scope.signal(0i32);
         let seen_in_effect = seen.clone();
-        scope.effect(move || seen_in_effect.set(source.get()));
+        scope
+            .effect(
+                move || {
+                    seen_in_effect.set(source.get());
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("effect should initialize");
 
         scope.child(|child| {
-            child.on_cleanup(move || set_source.set(1));
+            child
+                .on_cleanup(
+                    move || {
+                        set_source.set(1);
+                        Ok(())
+                    },
+                    handler(),
+                )
+                .expect("cleanup should register");
         });
 
         assert_eq!(seen.get(), 1);
@@ -248,7 +338,15 @@ fn panic_in_scoped_run_still_drops_the_scope() {
     let cleaned_in_scope = cleaned.clone();
     let panic = catch_unwind(AssertUnwindSafe(|| {
         runtime.child(|scope| {
-            scope.on_cleanup(move || cleaned_in_scope.set(true));
+            scope
+                .on_cleanup(
+                    move || {
+                        cleaned_in_scope.set(true);
+                        Ok(())
+                    },
+                    handler(),
+                )
+                .expect("cleanup should register");
             panic!("run panic");
         });
     }));
@@ -267,7 +365,9 @@ fn cleanup_panic_does_not_poison_runtime() {
     let mut runtime = Runtime::new();
     let panic = catch_unwind(AssertUnwindSafe(|| {
         runtime.child(|scope| {
-            scope.on_cleanup(|| panic!("cleanup panic"));
+            scope
+                .on_cleanup(|| panic!("cleanup panic"), handler())
+                .expect("cleanup should register");
         });
     }));
     assert!(panic.is_err());
@@ -287,8 +387,18 @@ fn cleanup_panic_does_not_skip_remaining_cleanups() {
 
     let panic = catch_unwind(AssertUnwindSafe(|| {
         runtime.child(|scope| {
-            scope.on_cleanup(|| panic!("first cleanup panic"));
-            scope.on_cleanup(move || remaining_cleanup_ran_in_scope.set(true));
+            scope
+                .on_cleanup(|| panic!("first cleanup panic"), handler())
+                .expect("cleanup should register");
+            scope
+                .on_cleanup(
+                    move || {
+                        remaining_cleanup_ran_in_scope.set(true);
+                        Ok(())
+                    },
+                    handler(),
+                )
+                .expect("cleanup should register");
         });
     }));
 
@@ -307,17 +417,47 @@ fn cleanup_panic_does_not_skip_other_nodes_or_root_cleanup() {
     let panic = catch_unwind(AssertUnwindSafe(|| {
         runtime.child(|scope| {
             let scope_copy = scope;
-            scope.effect(move || {
-                scope_copy.on_cleanup(|| panic!("first node cleanup panic"));
-            });
+            scope
+                .effect(
+                    move || {
+                        scope_copy
+                            .on_cleanup(|| panic!("first node cleanup panic"), handler())
+                            .expect("cleanup should register");
+                        Ok(())
+                    },
+                    handler(),
+                )
+                .expect("effect should initialize");
 
             let scope_copy = scope;
-            scope.effect(move || {
-                let cleaned = other_node_cleaned_in_scope.clone();
-                scope_copy.on_cleanup(move || cleaned.set(true));
-            });
+            scope
+                .effect(
+                    move || {
+                        let cleaned = other_node_cleaned_in_scope.clone();
+                        scope_copy
+                            .on_cleanup(
+                                move || {
+                                    cleaned.set(true);
+                                    Ok(())
+                                },
+                                handler(),
+                            )
+                            .expect("cleanup should register");
+                        Ok(())
+                    },
+                    handler(),
+                )
+                .expect("effect should initialize");
 
-            scope.on_cleanup(move || root_cleaned_in_scope.set(true));
+            scope
+                .on_cleanup(
+                    move || {
+                        root_cleaned_in_scope.set(true);
+                        Ok(())
+                    },
+                    handler(),
+                )
+                .expect("cleanup should register");
         });
     }));
 
@@ -336,15 +476,30 @@ fn scope_cleanup_can_register_another_cleanup() {
 
     runtime.child(|scope| {
         let scope_copy = scope;
-        scope.on_cleanup(move || {
-            first_ran_in_scope.set(true);
-            let second_ran = second_ran_in_scope.clone();
-            scope_copy.on_cleanup(move || second_ran.set(true));
-        });
+        scope
+            .on_cleanup(
+                move || {
+                    first_ran_in_scope.set(true);
+                    let second_ran = second_ran_in_scope.clone();
+                    assert_eq!(
+                        scope_copy.on_cleanup(
+                            move || {
+                                second_ran.set(true);
+                                Ok(())
+                            },
+                            handler(),
+                        ),
+                        Err(ReactiveError::NoSuchNode)
+                    );
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("cleanup should register");
     });
 
     assert!(first_ran.get());
-    assert!(second_ran.get());
+    assert!(!second_ran.get());
 }
 
 #[test]
@@ -359,18 +514,38 @@ fn effect_cleanup_can_register_cleanup_for_the_next_run() {
         let register_initial_cleanup = Rc::new(Cell::new(true));
         let first_cleanup_ran_in_effect = first_cleanup_ran.clone();
         let second_cleanup_ran_in_effect = second_cleanup_ran.clone();
-        scope.effect(move || {
-            let _ = source.get();
-            if register_initial_cleanup.replace(false) {
-                let scope_for_cleanup = scope_copy;
-                let first_cleanup = first_cleanup_ran_in_effect.clone();
-                let second_cleanup = second_cleanup_ran_in_effect.clone();
-                scope_copy.on_cleanup(move || {
-                    first_cleanup.set(true);
-                    scope_for_cleanup.on_cleanup(move || second_cleanup.set(true));
-                });
-            }
-        });
+        scope
+            .effect(
+                move || {
+                    let _ = source.get();
+                    if register_initial_cleanup.replace(false) {
+                        let scope_for_cleanup = scope_copy;
+                        let first_cleanup = first_cleanup_ran_in_effect.clone();
+                        let second_cleanup = second_cleanup_ran_in_effect.clone();
+                        scope_copy
+                            .on_cleanup(
+                                move || {
+                                    first_cleanup.set(true);
+                                    scope_for_cleanup
+                                        .on_cleanup(
+                                            move || {
+                                                second_cleanup.set(true);
+                                                Ok(())
+                                            },
+                                            handler(),
+                                        )
+                                        .expect("cleanup should register");
+                                    Ok(())
+                                },
+                                handler(),
+                            )
+                            .expect("cleanup should register");
+                    }
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("effect should initialize");
 
         set_source.set(1);
         assert!(first_cleanup_ran.get());
@@ -389,12 +564,18 @@ fn child_cleanup_panic_still_flushes_parent_queue() {
     runtime.child(|scope| {
         let (source, set_source) = scope.signal(RefCell::new(0i32));
         let runs_in_effect = runs.clone();
-        scope.effect(move || {
-            source.with(|value| {
-                let _ = *value.borrow();
-                runs_in_effect.set(runs_in_effect.get() + 1);
-            });
-        });
+        scope
+            .effect(
+                move || {
+                    source.with(|value| {
+                        let _ = *value.borrow();
+                        runs_in_effect.set(runs_in_effect.get() + 1);
+                    });
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("effect should initialize");
         assert_eq!(runs.get(), 1);
 
         let panic = catch_unwind(AssertUnwindSafe(|| {
@@ -402,13 +583,19 @@ fn child_cleanup_panic_still_flushes_parent_queue() {
                 let source_in_cleanup = source;
                 let setter_in_cleanup = set_source;
                 let runs_in_cleanup = runs.clone();
-                child.on_cleanup(move || {
-                    source_in_cleanup.with(|_| {
-                        notify(&setter_in_cleanup);
-                        assert_eq!(runs_in_cleanup.get(), 1);
-                        panic!("child cleanup panic");
-                    });
-                });
+                child
+                    .on_cleanup(
+                        move || {
+                            source_in_cleanup.with(|_| {
+                                notify(&setter_in_cleanup);
+                                assert_eq!(runs_in_cleanup.get(), 1);
+                                panic!("child cleanup panic");
+                            });
+                            Ok(())
+                        },
+                        handler(),
+                    )
+                    .expect("cleanup should register");
             });
         }));
 
@@ -444,12 +631,24 @@ fn completion_token_rejects_submission_after_scope_deactivation() {
             let callback_called_in_child = callback_called.clone();
             let token = child.completion_once(move |_: i32| callback_called_in_child.set(true));
             let child_scope = child;
-            child.effect(move || {
-                let token_in_cleanup = token.clone();
-                child_scope.on_cleanup(move || {
-                    assert!(!token_in_cleanup.submit(1));
-                });
-            });
+            child
+                .effect(
+                    move || {
+                        let token_in_cleanup = token.clone();
+                        child_scope
+                            .on_cleanup(
+                                move || {
+                                    assert!(!token_in_cleanup.submit(1));
+                                    Ok(())
+                                },
+                                handler(),
+                            )
+                            .expect("cleanup should register");
+                        Ok(())
+                    },
+                    handler(),
+                )
+                .expect("effect should initialize");
         });
     });
 

@@ -3,6 +3,7 @@
 //! Values are optimized with `InlineStorage` (SOO) for small payloads (<=24 bytes),
 //! eliminating heap allocations for standard reactive types (`i32`, `bool`, `f64`, etc.).
 
+use crate::error::{ErrorEvent, ErrorHandler, InitialErrorSlot};
 use silex_vtable::{any_box::InlineStorage, func_ptr::FuncPtr};
 use std::{marker::PhantomData, ptr};
 
@@ -314,21 +315,30 @@ pub(crate) enum Computation<'scope> {
 }
 
 pub(crate) struct EffectThunk<'scope> {
-    callback: Box<dyn FnMut() + 'scope>,
+    callback: Box<dyn FnMut() -> Result<(), ErrorEvent<'scope>> + 'scope>,
 }
 
 impl<'scope> EffectThunk<'scope> {
-    pub(crate) fn new<F>(callback: F) -> Self
+    pub(crate) fn new<E, F>(
+        callback: F,
+        handler: ErrorHandler<'scope, E>,
+        initial_slot: InitialErrorSlot<E>,
+    ) -> Self
     where
-        F: FnMut() + 'scope,
+        E: 'scope,
+        F: FnMut() -> Result<(), E> + 'scope,
     {
+        let mut callback = callback;
         Self {
-            callback: Box::new(callback),
+            callback: Box::new(move || {
+                callback()
+                    .map_err(|error| ErrorEvent::new(error, handler.clone(), initial_slot.clone()))
+            }),
         }
     }
 
-    pub(crate) fn call(&mut self) {
-        (self.callback)();
+    pub(crate) fn call(&mut self) -> Result<(), ErrorEvent<'scope>> {
+        (self.callback)()
     }
 }
 
@@ -336,61 +346,92 @@ pub(crate) struct PreviousThunk<'scope> {
     callback: PreviousCallback<'scope>,
 }
 
-type PreviousCallback<'scope> =
-    Box<dyn FnMut(Option<AnyValue<'scope>>) -> AnyValue<'scope> + 'scope>;
+type PreviousCallback<'scope> = Box<
+    dyn FnMut(Option<&AnyValue<'scope>>) -> Result<AnyValue<'scope>, ErrorEvent<'scope>> + 'scope,
+>;
 
 impl<'scope> PreviousThunk<'scope> {
-    pub(crate) fn new<T, F>(callback: F) -> Self
+    pub(crate) fn new<T, E, F>(
+        callback: F,
+        handler: ErrorHandler<'scope, E>,
+        initial_slot: InitialErrorSlot<E>,
+    ) -> Self
     where
         T: 'scope,
-        F: FnMut(Option<T>) -> T + 'scope,
+        E: 'scope,
+        F: FnMut(Option<&T>) -> Result<T, E> + 'scope,
     {
         let mut callback = callback;
         Self {
             callback: Box::new(move |old| {
-                let old = old.map(|value| {
-                    unsafe { value.downcast::<T>() }
+                let old = old.map(|value| unsafe {
+                    value
+                        .downcast_ref::<T>()
                         .expect("previous computation value type must match")
                 });
-                AnyValue::new(callback(old))
+                callback(old)
+                    .map(AnyValue::new)
+                    .map_err(|error| ErrorEvent::new(error, handler.clone(), initial_slot.clone()))
             }),
         }
     }
 
-    pub(crate) fn compute(&mut self, old: Option<AnyValue<'scope>>) -> AnyValue<'scope> {
+    pub(crate) fn compute(
+        &mut self,
+        old: Option<&AnyValue<'scope>>,
+    ) -> Result<AnyValue<'scope>, ErrorEvent<'scope>> {
         (self.callback)(old)
     }
 }
 
 pub(crate) struct WatchThunk<'scope> {
-    getter: Box<dyn FnMut() -> AnyValue<'scope> + 'scope>,
+    getter: Box<dyn FnMut() -> Result<AnyValue<'scope>, ErrorEvent<'scope>> + 'scope>,
     callback: WatchCallback<'scope>,
     initialized: bool,
     immediate: bool,
     once: bool,
 }
 
-type WatchCallback<'scope> = Box<dyn FnMut(&AnyValue<'scope>, Option<&AnyValue<'scope>>) + 'scope>;
+type WatchCallback<'scope> = Box<
+    dyn FnMut(&AnyValue<'scope>, Option<&AnyValue<'scope>>) -> Result<(), ErrorEvent<'scope>>
+        + 'scope,
+>;
 
 impl<'scope> WatchThunk<'scope> {
-    pub(crate) fn new<T, G, C>(getter: G, callback: C, immediate: bool, once: bool) -> Self
+    pub(crate) fn new<T, E, G, C>(
+        getter: G,
+        callback: C,
+        handler: ErrorHandler<'scope, E>,
+        initial_slot: InitialErrorSlot<E>,
+        immediate: bool,
+        once: bool,
+    ) -> Self
     where
         T: PartialEq + 'scope,
-        G: FnMut() -> T + 'scope,
-        C: FnMut(&T, Option<&T>) + 'scope,
+        E: 'scope,
+        G: FnMut() -> Result<T, E> + 'scope,
+        C: FnMut(&T, Option<&T>) -> Result<(), E> + 'scope,
     {
         let mut getter = getter;
         let mut callback = callback;
+        let getter_handler = handler.clone();
+        let getter_slot = initial_slot.clone();
         Self {
-            getter: Box::new(move || AnyValue::new_reactive(getter())),
+            getter: Box::new(move || {
+                getter().map(AnyValue::new_reactive).map_err(|error| {
+                    ErrorEvent::new(error, getter_handler.clone(), getter_slot.clone())
+                })
+            }),
             callback: Box::new(move |new, old| {
                 let new = unsafe { new.downcast_ref::<T>() }
                     .expect("watch getter and callback value types must match");
-                let old = old.map(|value| {
-                    unsafe { value.downcast_ref::<T>() }
+                let old = old.map(|value| unsafe {
+                    value
+                        .downcast_ref::<T>()
                         .expect("watch getter and callback value types must match")
                 });
-                callback(new, old);
+                callback(new, old)
+                    .map_err(|error| ErrorEvent::new(error, handler.clone(), initial_slot.clone()))
             }),
             initialized: false,
             immediate,
@@ -398,12 +439,16 @@ impl<'scope> WatchThunk<'scope> {
         }
     }
 
-    pub(crate) fn get(&mut self) -> AnyValue<'scope> {
+    pub(crate) fn get(&mut self) -> Result<AnyValue<'scope>, ErrorEvent<'scope>> {
         (self.getter)()
     }
 
-    pub(crate) fn call(&mut self, new: &AnyValue<'scope>, old: Option<&AnyValue<'scope>>) {
-        (self.callback)(new, old);
+    pub(crate) fn call(
+        &mut self,
+        new: &AnyValue<'scope>,
+        old: Option<&AnyValue<'scope>>,
+    ) -> Result<(), ErrorEvent<'scope>> {
+        (self.callback)(new, old)
     }
 
     pub(crate) fn initialized(&self) -> bool {
@@ -460,24 +505,25 @@ impl<'scope> MemoThunk<'scope> {
     }
 }
 
-pub(crate) struct OnceThunk<'scope> {
-    callback: Option<Box<dyn FnOnce() + 'scope>>,
+pub(crate) struct CleanupThunk<'scope> {
+    callback: Option<Box<dyn FnOnce() -> Result<(), ErrorEvent<'scope>> + 'scope>>,
 }
 
-impl<'scope> OnceThunk<'scope> {
-    pub(crate) fn new<F>(callback: F) -> Self
+impl<'scope> CleanupThunk<'scope> {
+    pub(crate) fn new<E, F>(callback: F, handler: ErrorHandler<'scope, E>) -> Self
     where
-        F: FnOnce() + 'scope,
+        E: 'scope,
+        F: FnOnce() -> Result<(), E> + 'scope,
     {
         Self {
-            callback: Some(Box::new(callback)),
+            callback: Some(Box::new(move || {
+                callback().map_err(|error| ErrorEvent::deferred(error, handler.clone()))
+            })),
         }
     }
 
-    pub(crate) fn call(mut self) {
-        if let Some(callback) = self.callback.take() {
-            callback();
-        }
+    pub(crate) fn call(mut self) -> Result<(), ErrorEvent<'scope>> {
+        self.callback.take().expect("cleanup thunk called twice")()
     }
 }
 

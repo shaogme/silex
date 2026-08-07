@@ -1,8 +1,12 @@
-use silex_reactivity::Runtime;
+use silex_reactivity::{ErrorHandler, Runtime};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
 };
+
+fn handler<'scope>() -> ErrorHandler<'scope, ()> {
+    ErrorHandler::ignore()
+}
 
 #[test]
 fn test_any_value_soo_boundary_and_downcast() {
@@ -94,10 +98,16 @@ fn test_any_value_memo_skip_equal_update() {
         });
 
         let memo_for_effect = memo;
-        let _effect = scope.effect(move || {
-            let _ = memo_for_effect.get();
-            effect_eval_count_cloned.set(effect_eval_count_cloned.get() + 1);
-        });
+        let _effect = scope
+            .effect(
+                move || {
+                    let _ = memo_for_effect.get();
+                    effect_eval_count_cloned.set(effect_eval_count_cloned.get() + 1);
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("effect should initialize");
 
         assert_eq!(memo.get(), 20);
         assert_eq!(memo_eval_count.get(), 1);

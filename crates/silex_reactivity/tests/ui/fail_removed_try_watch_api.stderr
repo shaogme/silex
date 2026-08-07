@@ -1,0 +1,17 @@
+error[E0599]: no method named `try_watch_getter_from` found for struct `silex_reactivity::Scope<'scope>` in the current scope
+ --> tests/ui/fail_removed_try_watch_api.rs:6:23
+  |
+6 |         let _ = scope.try_watch_getter_from(
+  |                 ------^^^^^^^^^^^^^^^^^^^^^
+  |
+help: there is a method `watch_getter_from` with a similar name, but with different arguments
+ --> src/child/scope.rs
+  |
+  | /     pub fn watch_getter_from<T, E, G, C>(
+  | |         &self,
+  | |         inputs: RuntimeInputs,
+  | |         getter: G,
+... |
+  | |         G: FnMut() -> Result<T, E> + 'scope,
+  | |         C: FnMut(&T, Option<&T>) -> Result<(), E> + 'scope,
+  | |___________________________________________________________^

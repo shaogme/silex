@@ -1,0 +1,18 @@
+error[E0631]: type mismatch in closure arguments
+ --> tests/ui/fail_previous_owned_argument.rs:6:23
+  |
+6 |         let _ = scope.effect_with_previous(
+  |                       ^^^^^^^^^^^^^^^^^^^^ expected due to this
+7 |             |previous: Option<i32>| Ok::<i32, ()>(previous.unwrap_or_default()),
+  |             ----------------------- found signature defined here
+  |
+  = note: expected closure signature `for<'a> fn(Option<&'a _>) -> _`
+             found closure signature `fn(Option<i32>) -> _`
+note: required by a bound in `silex_reactivity::Scope::<'scope>::effect_with_previous`
+ --> src/child/scope.rs
+  |
+  |     pub fn effect_with_previous<T, E, F>(
+  |            -------------------- required by a bound in this associated function
+...
+  |         F: FnMut(Option<&T>) -> Result<T, E> + 'scope,
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `Scope::<'scope>::effect_with_previous`

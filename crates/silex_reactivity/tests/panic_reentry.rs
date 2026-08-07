@@ -1,9 +1,13 @@
-use silex_reactivity::{Memo, ReactiveError, Runtime};
+use silex_reactivity::{ErrorHandler, Memo, ReactiveError, Runtime};
 use std::{
     cell::Cell,
     panic::{AssertUnwindSafe, catch_unwind},
     rc::Rc,
 };
+
+fn handler<'scope>() -> ErrorHandler<'scope, ()> {
+    ErrorHandler::ignore()
+}
 
 #[test]
 fn panic_in_update_keeps_the_value_and_releases_the_lease() {
@@ -84,13 +88,19 @@ fn panic_in_effect_does_not_block_the_next_notification() {
         let (source, set_source) = scope.signal(0i32);
         let runs_in_effect = runs.clone();
         let panic_in_effect = should_panic.clone();
-        let _effect = scope.effect(move || {
-            let _ = source.get();
-            runs_in_effect.set(runs_in_effect.get() + 1);
-            if panic_in_effect.replace(false) {
-                panic!("effect panic");
-            }
-        });
+        let _effect = scope
+            .effect(
+                move || {
+                    let _ = source.get();
+                    runs_in_effect.set(runs_in_effect.get() + 1);
+                    if panic_in_effect.replace(false) {
+                        panic!("effect panic");
+                    }
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("effect should initialize");
 
         should_panic.set(true);
         let panic = catch_unwind(AssertUnwindSafe(|| {
@@ -120,15 +130,31 @@ fn cleanup_panic_during_effect_rerun_does_not_skip_remaining_cleanups() {
         let effect_runs = Rc::new(Cell::new(0));
         let effect_runs_in_effect = effect_runs.clone();
         let remaining_cleanup_ran_in_effect = remaining_cleanup_ran.clone();
-        scope.effect(move || {
-            let _ = source.get();
-            effect_runs_in_effect.set(effect_runs_in_effect.get() + 1);
-            if register_cleanups.replace(false) {
-                scope_copy.on_cleanup(|| panic!("effect cleanup panic"));
-                let remaining_cleanup_ran = remaining_cleanup_ran_in_effect.clone();
-                scope_copy.on_cleanup(move || remaining_cleanup_ran.set(true));
-            }
-        });
+        scope
+            .effect(
+                move || {
+                    let _ = source.get();
+                    effect_runs_in_effect.set(effect_runs_in_effect.get() + 1);
+                    if register_cleanups.replace(false) {
+                        scope_copy
+                            .on_cleanup(|| panic!("effect cleanup panic"), handler())
+                            .expect("cleanup should register");
+                        let remaining_cleanup_ran = remaining_cleanup_ran_in_effect.clone();
+                        scope_copy
+                            .on_cleanup(
+                                move || {
+                                    remaining_cleanup_ran.set(true);
+                                    Ok(())
+                                },
+                                handler(),
+                            )
+                            .expect("cleanup should register");
+                    }
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("effect should initialize");
 
         let panic = catch_unwind(AssertUnwindSafe(|| set_source.set(1)));
         assert!(panic.is_err());
@@ -141,7 +167,15 @@ fn cleanup_panic_during_effect_rerun_does_not_skip_remaining_cleanups() {
         let (independent, set_independent) = scope.signal(0i32);
         let seen = Rc::new(Cell::new(0));
         let seen_in_effect = seen.clone();
-        scope.effect(move || seen_in_effect.set(independent.get()));
+        scope
+            .effect(
+                move || {
+                    seen_in_effect.set(independent.get());
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("effect should initialize");
         set_independent.set(1);
         assert_eq!(seen.get(), 1);
     });
@@ -226,7 +260,15 @@ fn batch_panic_restores_depth_and_flushes_pending_effects() {
     runtime.child(|scope| {
         let (source, set_source) = scope.signal(0i32);
         let seen_in_effect = seen.clone();
-        scope.effect(move || seen_in_effect.set(source.get()));
+        scope
+            .effect(
+                move || {
+                    seen_in_effect.set(source.get());
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("effect should initialize");
 
         let panic = catch_unwind(AssertUnwindSafe(|| {
             scope.batch(|| {
@@ -254,17 +296,23 @@ fn untrack_panic_restores_the_active_dependency_observer() {
         let scope_copy = scope;
         let runs_in_effect = runs.clone();
         let first_run_in_effect = first_run.clone();
-        scope.effect(move || {
-            let _ = source.get();
-            if first_run_in_effect.replace(false) {
-                let panic = catch_unwind(AssertUnwindSafe(|| {
-                    scope_copy.untrack(|| panic!("untrack panic"));
-                }));
-                assert!(panic.is_err());
-            }
-            let _ = tracked.get();
-            runs_in_effect.set(runs_in_effect.get() + 1);
-        });
+        scope
+            .effect(
+                move || {
+                    let _ = source.get();
+                    if first_run_in_effect.replace(false) {
+                        let panic = catch_unwind(AssertUnwindSafe(|| {
+                            scope_copy.untrack(|| panic!("untrack panic"));
+                        }));
+                        assert!(panic.is_err());
+                    }
+                    let _ = tracked.get();
+                    runs_in_effect.set(runs_in_effect.get() + 1);
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("effect should initialize");
 
         assert_eq!(runs.get(), 1);
         set_tracked.set(1);
@@ -284,15 +332,21 @@ fn child_callback_panic_restores_the_outer_observer_frame() {
         let (source, _) = scope.signal(0i32);
         let (tail, set_tail) = scope.signal(0i32);
         let runs_in_effect = runs.clone();
-        scope.effect(move || {
-            let _ = source.get();
-            let panic = catch_unwind(AssertUnwindSafe(|| {
-                parent_scope.child(|_| panic!("child callback panic"));
-            }));
-            assert!(panic.is_err());
-            let _ = tail.get();
-            runs_in_effect.set(runs_in_effect.get() + 1);
-        });
+        scope
+            .effect(
+                move || {
+                    let _ = source.get();
+                    let panic = catch_unwind(AssertUnwindSafe(|| {
+                        parent_scope.child(|_| panic!("child callback panic"));
+                    }));
+                    assert!(panic.is_err());
+                    let _ = tail.get();
+                    runs_in_effect.set(runs_in_effect.get() + 1);
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("effect should initialize");
 
         assert_eq!(runs.get(), 1);
         set_tail.set(1);

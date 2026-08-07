@@ -10,8 +10,8 @@ use crate::{
     internal::{
         RawId,
         value::{
-            AnyValue, CallbackThunk, Computation, EffectThunk, MemoThunk, OnceThunk, PreviousThunk,
-            WatchThunk,
+            AnyValue, CallbackThunk, CleanupThunk, Computation, EffectThunk, MemoThunk,
+            PreviousThunk, WatchThunk,
         },
     },
 };
@@ -97,7 +97,7 @@ impl NodeCore {
 
 pub(crate) struct NodeData<'scope> {
     pub(crate) storage: Rc<NodeStorage<'scope>>,
-    pub(crate) cleanups: Vec<OnceThunk<'scope>>,
+    pub(crate) cleanups: Vec<CleanupThunk<'scope>>,
 }
 
 impl<'scope> NodeData<'scope> {
@@ -107,6 +107,12 @@ impl<'scope> NodeData<'scope> {
             cleanups: Vec::new(),
         }
     }
+}
+
+pub(crate) struct DependencyTransaction {
+    pub(crate) observer: RawId,
+    pub(crate) previous: Vec<TargetNode>,
+    pub(crate) current: Vec<TargetNode>,
 }
 
 /// Iterator over child nodes in an intra-arena sibling chain.
@@ -163,7 +169,8 @@ pub(crate) struct ScopeState<'scope> {
     pub(crate) edges: SlotMap<EdgeId, ReactiveEdge>,
     pub(crate) roots: Vec<RawId>,
     pub(crate) current_owner: Option<RawId>,
-    pub(crate) root_cleanups: Vec<OnceThunk<'scope>>,
+    pub(crate) root_cleanups: Vec<CleanupThunk<'scope>>,
+    pub(crate) dependency_transactions: Vec<DependencyTransaction>,
 }
 
 #[cfg(feature = "test-support")]
@@ -192,6 +199,7 @@ impl<'scope> ScopeState<'scope> {
             roots: Vec::new(),
             current_owner: None,
             root_cleanups: Vec::new(),
+            dependency_transactions: Vec::new(),
         }
     }
 
@@ -438,7 +446,7 @@ impl<'scope> ScopeState<'scope> {
         )
     }
 
-    pub(crate) fn register_cleanup(&mut self, cleanup: OnceThunk<'scope>) {
+    pub(crate) fn register_cleanup(&mut self, cleanup: CleanupThunk<'scope>) {
         if let Some(owner) = self.current_owner
             && let Some(data) = self.data.get_mut(owner)
         {
