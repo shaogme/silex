@@ -22,22 +22,25 @@ impl WebSocket {
     pub fn connect<'scope>(
         scope: Scope<'scope>,
         url: impl IntoNetValue<'scope>,
+        error_handler: ErrorReporter<'scope>,
     ) -> WebSocketBuilder<'scope> {
-        WebSocketBuilder::new(scope, url.into_net_value())
+        WebSocketBuilder::new(scope, url.into_net_value(), error_handler)
     }
 
     pub fn open<'scope>(
         scope: Scope<'scope>,
         url: impl IntoNetValue<'scope>,
+        error_handler: ErrorReporter<'scope>,
     ) -> Result<WebSocketConnection<'scope>, NetError> {
-        Self::connect(scope, url).try_build()
+        Self::connect(scope, url, error_handler).try_build()
     }
 
     pub fn lazy<'scope>(
         scope: Scope<'scope>,
         url: impl IntoNetValue<'scope>,
+        error_handler: ErrorReporter<'scope>,
     ) -> WebSocketBuilder<'scope> {
-        Self::connect(scope, url).auto_connect(false)
+        Self::connect(scope, url, error_handler).auto_connect(false)
     }
 }
 
@@ -177,6 +180,7 @@ struct WebSocketInner<'scope> {
     set_state: WriteSignal<'scope, ConnectionState>,
     set_message: WriteSignal<'scope, Option<String>>,
     set_error: WriteSignal<'scope, Option<NetError>>,
+    error_handler: ErrorReporter<'scope>,
     completion: CompletionSender<WebSocketEvent>,
     scope: Scope<'scope>,
     registration: Option<HostRegistration>,
@@ -306,12 +310,15 @@ impl<'scope> WebSocketInner<'scope> {
         let delay = policy.delay_for_attempt(self.retry_attempt);
         let token = self.completion.clone();
         self.retry_generation = Some(generation);
-        self.retry_task = Some(self.scope.spawn_scoped(async move {
-            if delay > Duration::from_millis(0) {
-                sleep(delay).await;
-            }
-            let _ = token.submit(WebSocketEvent::Retry { generation });
-        }));
+        self.retry_task = Some(self.scope.spawn_scoped(
+            async move {
+                if delay > Duration::from_millis(0) {
+                    sleep(delay).await;
+                }
+                let _ = token.submit(WebSocketEvent::Retry { generation });
+            },
+            self.error_handler.clone(),
+        ));
     }
 
     fn handle_event(&mut self, event: WebSocketEvent) -> Option<DeferredCallback<'scope>> {
@@ -491,6 +498,7 @@ impl<'scope> WebSocketConnection<'scope> {
 #[derive(Clone)]
 pub struct WebSocketBuilder<'scope> {
     scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
     url: ValueResolver<'scope>,
     protocols: Vec<String>,
     auto_connect: bool,
@@ -501,9 +509,14 @@ pub struct WebSocketBuilder<'scope> {
 }
 
 impl<'scope> WebSocketBuilder<'scope> {
-    fn new(scope: Scope<'scope>, url: ValueResolver<'scope>) -> Self {
+    fn new(
+        scope: Scope<'scope>,
+        url: ValueResolver<'scope>,
+        error_handler: ErrorReporter<'scope>,
+    ) -> Self {
         Self {
             scope,
+            error_handler,
             url,
             protocols: Vec::new(),
             auto_connect: true,
@@ -552,6 +565,7 @@ impl<'scope> WebSocketBuilder<'scope> {
     pub fn try_build(self) -> Result<WebSocketConnection<'scope>, NetError> {
         let Self {
             scope,
+            error_handler,
             url,
             protocols,
             auto_connect,
@@ -608,6 +622,7 @@ impl<'scope> WebSocketBuilder<'scope> {
             set_state,
             set_message,
             set_error,
+            error_handler: error_handler.clone(),
             completion,
             scope,
             registration: None,
@@ -624,7 +639,7 @@ impl<'scope> WebSocketBuilder<'scope> {
                     cleanup_stored_inner(inner);
                     Ok(())
                 },
-                ErrorReporter::unhandled().handler(),
+                error_handler,
             )
             .map_err(|error| NetError::InvalidConfiguration(error.to_string()))?;
 

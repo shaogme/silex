@@ -59,6 +59,7 @@ where
     T: 'scope,
 {
     scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
     key: LocalStaticRefStr,
     backend: B,
     codec: C,
@@ -67,9 +68,14 @@ where
 }
 
 impl<'scope> PersistentBuilder<'scope, NoBackend, NoCodec, (), NoDefault> {
-    pub fn new(scope: Scope<'scope>, key: impl Into<LocalStaticRefStr>) -> Self {
+    pub fn new(
+        scope: Scope<'scope>,
+        key: impl Into<LocalStaticRefStr>,
+        error_handler: ErrorReporter<'scope>,
+    ) -> Self {
         Self {
             scope,
+            error_handler,
             key: key.into(),
             backend: NoBackend,
             codec: NoCodec,
@@ -90,6 +96,7 @@ where
     {
         PersistentBuilder {
             scope: self.scope,
+            error_handler: self.error_handler,
             key: self.key,
             backend,
             codec: self.codec,
@@ -101,6 +108,7 @@ where
     pub fn local(self) -> PersistentBuilder<'scope, LocalStorageBackend, C, T, D> {
         PersistentBuilder {
             scope: self.scope,
+            error_handler: self.error_handler,
             key: self.key,
             backend: LocalStorageBackend::default(),
             codec: self.codec,
@@ -112,6 +120,7 @@ where
     pub fn session(self) -> PersistentBuilder<'scope, SessionStorageBackend, C, T, D> {
         PersistentBuilder {
             scope: self.scope,
+            error_handler: self.error_handler,
             key: self.key,
             backend: SessionStorageBackend::default(),
             codec: self.codec,
@@ -126,6 +135,7 @@ where
     ) -> PersistentBuilder<'scope, QueryBackend<'scope>, C, T, D> {
         PersistentBuilder {
             scope: self.scope,
+            error_handler: self.error_handler,
             key: self.key,
             backend: QueryBackend::new(ctx),
             codec: self.codec,
@@ -147,6 +157,7 @@ where
     {
         PersistentBuilder {
             scope: self.scope,
+            error_handler: self.error_handler,
             key: self.key,
             backend: self.backend,
             codec,
@@ -165,6 +176,7 @@ where
     pub fn string(self) -> PersistentBuilder<'scope, B, StringCodec, String, D> {
         PersistentBuilder {
             scope: self.scope,
+            error_handler: self.error_handler,
             key: self.key,
             backend: self.backend,
             codec: StringCodec,
@@ -183,6 +195,7 @@ where
     pub fn cow(self) -> PersistentBuilder<'scope, B, StringCodec, Cow<'static, str>, D> {
         PersistentBuilder {
             scope: self.scope,
+            error_handler: self.error_handler,
             key: self.key,
             backend: self.backend,
             codec: StringCodec,
@@ -205,6 +218,7 @@ where
     {
         PersistentBuilder {
             scope: self.scope,
+            error_handler: self.error_handler,
             key: self.key,
             backend: self.backend,
             codec: ParseCodec::new(),
@@ -227,6 +241,7 @@ where
     {
         PersistentBuilder {
             scope: self.scope,
+            error_handler: self.error_handler,
             key: self.key,
             backend: self.backend,
             codec: crate::PersistJsonCodec::new(),
@@ -281,6 +296,7 @@ where
         let value = Rc::new(value);
         PersistentBuilder {
             scope: self.scope,
+            error_handler: self.error_handler,
             key: self.key,
             backend: self.backend,
             codec: self.codec,
@@ -305,6 +321,7 @@ where
     ) -> PersistentBuilder<'scope, B, C, T, HasDefault> {
         PersistentBuilder {
             scope: self.scope,
+            error_handler: self.error_handler,
             key: self.key,
             backend: self.backend,
             codec: self.codec,
@@ -331,6 +348,7 @@ where
     ) -> PersistentBuilder<'scope, B, OptionCodec<C, T>, Option<T>, HasDefault> {
         PersistentBuilder {
             scope: self.scope,
+            error_handler: self.error_handler,
             key: self.key,
             backend: self.backend,
             codec: OptionCodec::new(self.codec),
@@ -375,7 +393,10 @@ where
                     pending_events_for_sink.borrow_mut().push(event);
                 }
             });
-            match self.backend.subscribe(self.scope, key.clone(), sink) {
+            match self
+                .backend
+                .subscribe(self.scope, key.clone(), sink, self.error_handler.clone())
+            {
                 Ok(binding) => *subscription.borrow_mut() = Some(binding),
                 Err(error) => match error.into_error() {
                     PersistenceError::BackendUnavailable => {}
@@ -394,7 +415,7 @@ where
                     subscription_for_cleanup.borrow_mut().take();
                     Ok(())
                 },
-                ErrorReporter::unhandled().handler(),
+                self.error_handler.clone(),
             )
             .map_err(|error| PersistenceError::InvalidConfiguration(error.to_string()))?;
 
@@ -583,7 +604,7 @@ where
                                 debounce_for_cleanup.borrow_mut().invalidate();
                                 Ok(())
                             },
-                            ErrorReporter::unhandled().handler(),
+                            self.error_handler.clone(),
                         )
                         .map_err(|error| {
                             PersistenceError::InvalidConfiguration(error.to_string())
@@ -633,7 +654,7 @@ where
                                 }
                                 Ok(())
                             },
-                            ErrorReporter::unhandled().handler(),
+                            self.error_handler.clone(),
                         )
                         .map_err(|error| {
                             PersistenceError::InvalidConfiguration(error.to_string())
@@ -654,7 +675,7 @@ where
                                 }
                                 Ok(())
                             },
-                            ErrorReporter::unhandled().handler(),
+                            self.error_handler.clone(),
                         )
                         .map_err(|error| {
                             PersistenceError::InvalidConfiguration(error.to_string())
@@ -704,7 +725,7 @@ where
                             }
                             Ok(())
                         },
-                        ErrorReporter::unhandled().handler(),
+                        self.error_handler.clone(),
                     )
                     .map_err(|error| PersistenceError::InvalidConfiguration(error.to_string()))?;
             }

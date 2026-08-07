@@ -3,7 +3,7 @@ use crate::builder::PersistentBuilder;
 use crate::{DecodePolicy, NoBackend, NoCodec, PersistenceError, RemovePolicy};
 use ref_str::LocalStaticRefStr;
 use silex_core::{
-    ReactiveError, ReactiveResult, Rx, RxGet, Scope,
+    ErrorReporter, ReactiveError, ReactiveResult, Rx, RxGet, Scope,
     reactivity::{PromotionPlan, ReactiveSource, ReadSignal, RwSignal, StoredValue},
     traits::{RxBase, RxCloneData, RxData, RxRead, RxValue, RxWrite},
 };
@@ -118,8 +118,9 @@ impl<'scope> Persistent<'scope, ()> {
     pub fn builder(
         scope: Scope<'scope>,
         key: impl Into<LocalStaticRefStr>,
+        error_handler: ErrorReporter<'scope>,
     ) -> PersistentBuilder<'scope, NoBackend, NoCodec> {
-        PersistentBuilder::new(scope, key)
+        PersistentBuilder::new(scope, key, error_handler)
     }
 }
 

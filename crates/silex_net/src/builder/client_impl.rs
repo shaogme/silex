@@ -195,9 +195,13 @@ macro_rules! impl_net_methods {
                 let refresh_binding = self.cache_binding(&spec);
                 let cache_token =
                     refresh_binding.map(|binding| self.cache_completion_once_for_binding(binding));
-                self.scope.spawn_scoped(async move {
-                    let _ = execute_prepared(refresh_client, refresh_spec, None, cache_token).await;
-                });
+                self.scope.spawn_scoped(
+                    async move {
+                        let _ =
+                            execute_prepared(refresh_client, refresh_spec, None, cache_token).await;
+                    },
+                    self.error_handler.clone(),
+                );
                 return Ok(value);
             }
 
@@ -269,6 +273,8 @@ macro_rules! impl_net_methods {
             #[cfg(not(feature = "persist"))]
             let cache_policy = None;
             let fetch_client = self.prepared();
+            let error_handler = self.error_handler.clone();
+            let fetch_error_handler = error_handler.clone();
             #[cfg(feature = "persist")]
             let fetch_builder = self.clone();
             let resource_generation = Rc::new(Cell::new(0usize));
@@ -336,17 +342,20 @@ macro_rules! impl_net_methods {
                                     resource.set(value);
                                 }
                             });
-                        scope.spawn_scoped(async move {
-                            sleep(Duration::from_millis(0)).await;
-                            let result = execute_prepared(
-                                refresh_client,
-                                refresh_spec,
-                                None,
-                                refresh_cache_token,
-                            )
-                            .await;
-                            let _ = completion.submit(result);
-                        });
+                        scope.spawn_scoped(
+                            async move {
+                                sleep(Duration::from_millis(0)).await;
+                                let result = execute_prepared(
+                                    refresh_client,
+                                    refresh_spec,
+                                    None,
+                                    refresh_cache_token,
+                                )
+                                .await;
+                                let _ = completion.submit(result);
+                            },
+                            fetch_error_handler.clone(),
+                        );
                     }
 
                     let cache_token = if cached.is_some() {
@@ -373,6 +382,7 @@ macro_rules! impl_net_methods {
                     })
                 },
                 suspense,
+                error_handler,
             );
 
             resource_slot.set(Some(resource));
@@ -396,31 +406,35 @@ macro_rules! impl_net_methods {
         pub fn try_as_mutation(&self) -> Result<Mutation<'scope, (), T, NetError>, NetError> {
             self.validate_runtime_inputs()?;
             let builder = self.clone();
-            Ok(Mutation::new(self.scope, move |_| {
-                let mut spec = builder.resolve_spec();
-                let client = builder.prepared();
-                client.apply_interceptors(&mut spec);
-                #[cfg(feature = "persist")]
-                let fallback = if matches!(builder.cache_policy(), Some(CachePolicy::NetworkFirst))
-                {
-                    builder.cached_value(&spec)
-                } else {
-                    None
-                };
-                #[cfg(not(feature = "persist"))]
-                let fallback = None;
-                let cache_token = {
+            Ok(Mutation::new(
+                self.scope,
+                move |_| {
+                    let mut spec = builder.resolve_spec();
+                    let client = builder.prepared();
+                    client.apply_interceptors(&mut spec);
                     #[cfg(feature = "persist")]
-                    {
-                        builder.cache_completion_once(&spec)
-                    }
+                    let fallback =
+                        if matches!(builder.cache_policy(), Some(CachePolicy::NetworkFirst)) {
+                            builder.cached_value(&spec)
+                        } else {
+                            None
+                        };
                     #[cfg(not(feature = "persist"))]
-                    {
-                        None
-                    }
-                };
-                async move { execute_prepared(client, spec, fallback, cache_token).await }
-            }))
+                    let fallback = None;
+                    let cache_token = {
+                        #[cfg(feature = "persist")]
+                        {
+                            builder.cache_completion_once(&spec)
+                        }
+                        #[cfg(not(feature = "persist"))]
+                        {
+                            None
+                        }
+                    };
+                    async move { execute_prepared(client, spec, fallback, cache_token).await }
+                },
+                self.error_handler.clone(),
+            ))
         }
 
         pub fn as_mutation(&self) -> Mutation<'scope, (), T, NetError> {
@@ -434,33 +448,37 @@ macro_rules! impl_net_methods {
             Input: 'scope,
         {
             let scope = self.scope;
-            Mutation::new_with_prepare(scope, move |input: Input| {
-                let builder = factory(input);
-                builder.validate_runtime_inputs_for(scope)?;
-                let mut spec = builder.resolve_spec();
-                let client = builder.prepared();
-                client.apply_interceptors(&mut spec);
-                #[cfg(feature = "persist")]
-                let fallback = if matches!(builder.cache_policy(), Some(CachePolicy::NetworkFirst))
-                {
-                    builder.cached_value(&spec)
-                } else {
-                    None
-                };
-                #[cfg(not(feature = "persist"))]
-                let fallback = None;
-                let cache_token = {
+            Mutation::new_with_prepare(
+                scope,
+                move |input: Input| {
+                    let builder = factory(input);
+                    builder.validate_runtime_inputs_for(scope)?;
+                    let mut spec = builder.resolve_spec();
+                    let client = builder.prepared();
+                    client.apply_interceptors(&mut spec);
                     #[cfg(feature = "persist")]
-                    {
-                        builder.cache_completion_once(&spec)
-                    }
+                    let fallback =
+                        if matches!(builder.cache_policy(), Some(CachePolicy::NetworkFirst)) {
+                            builder.cached_value(&spec)
+                        } else {
+                            None
+                        };
                     #[cfg(not(feature = "persist"))]
-                    {
-                        None
-                    }
-                };
-                Ok(async move { execute_prepared(client, spec, fallback, cache_token).await })
-            })
+                    let fallback = None;
+                    let cache_token = {
+                        #[cfg(feature = "persist")]
+                        {
+                            builder.cache_completion_once(&spec)
+                        }
+                        #[cfg(not(feature = "persist"))]
+                        {
+                            None
+                        }
+                    };
+                    Ok(async move { execute_prepared(client, spec, fallback, cache_token).await })
+                },
+                self.error_handler.clone(),
+            )
         }
     };
 }

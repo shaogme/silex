@@ -117,6 +117,7 @@ pub trait PersistenceBackend<'scope>: Clone + 'scope {
         scope: Scope<'scope>,
         key: impl Into<LocalStaticRefStr>,
         sink: BackendEventSink,
+        error_handler: ErrorReporter<'scope>,
     ) -> Result<BackendSubscription<'scope>, BackendSubscribeError<'scope>>;
 }
 
@@ -227,6 +228,7 @@ impl<'scope, const IS_LOCAL: bool> PersistenceBackend<'scope> for WebStorageBack
         _scope: Scope<'scope>,
         key: impl Into<LocalStaticRefStr>,
         sink: BackendEventSink,
+        _error_handler: ErrorReporter<'scope>,
     ) -> Result<BackendSubscription<'scope>, BackendSubscribeError<'scope>> {
         subscribe_storage(Self::kind(), key.into(), sink)
     }
@@ -256,6 +258,7 @@ impl<'scope> PersistenceBackend<'scope> for QueryBackend<'scope> {
         scope: Scope<'scope>,
         key: impl Into<LocalStaticRefStr>,
         sink: BackendEventSink,
+        error_handler: ErrorReporter<'scope>,
     ) -> Result<BackendSubscription<'scope>, BackendSubscribeError<'scope>> {
         let inputs = self.runtime_inputs();
         scope.try_validate_inputs(&inputs).map_err(|error| {
@@ -288,7 +291,7 @@ impl<'scope> PersistenceBackend<'scope> for QueryBackend<'scope> {
                     }
                     Ok(current)
                 },
-                ErrorReporter::unhandled().handler(),
+                error_handler,
             )
             .map_err(|error| {
                 BackendSubscribeError::new(PersistenceError::InvalidConfiguration(
@@ -551,7 +554,9 @@ mod tests {
                 Rc::new(move |event| events.borrow_mut().push(event)) as BackendEventSink
             };
 
-            let _subscription = backend.subscribe(scope, "q", callback).unwrap();
+            let _subscription = backend
+                .subscribe(scope, "q", callback, ErrorReporter::new(|_| {}))
+                .unwrap();
             assert_eq!(backend.get("q").unwrap(), None);
 
             let mut with_value = HashMap::new();
@@ -583,7 +588,7 @@ mod tests {
         runtime.child(|scope| {
             let backend = QueryBackend::unavailable();
             let result = backend
-                .subscribe(scope, "q", Rc::new(|_| {}))
+                .subscribe(scope, "q", Rc::new(|_| {}), ErrorReporter::new(|_| {}))
                 .map_err(|error| error.into_error());
             assert!(matches!(result, Err(PersistenceError::BackendUnavailable)));
         });
@@ -612,7 +617,7 @@ mod tests {
                             runs_for_effect.set(runs_for_effect.get() + 1);
                             Ok(())
                         },
-                        ErrorReporter::unhandled().handler(),
+                        ErrorReporter::new(|_| {}),
                     )
                     .is_err()
             );

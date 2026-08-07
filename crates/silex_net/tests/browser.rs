@@ -11,7 +11,7 @@ use std::{
 use gloo_timers::future::TimeoutFuture;
 use js_sys::{Array, Function, Reflect};
 use silex_core::reactivity::{MutationState, ResourceState};
-use silex_core::{Runtime, TaskHandle};
+use silex_core::{ErrorReporter, Runtime, TaskHandle};
 use silex_net::{
     BrowserTransport, EventStream, EventStreamConnection, HttpMethod, HttpResponse, NetError,
     RequestBody, RequestSpec, RetryPolicy, Transport, TransportFuture, WebSocket,
@@ -21,6 +21,10 @@ use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_test::*;
 
 wasm_bindgen_test_configure!(run_in_browser);
+
+fn test_handler<'scope>() -> ErrorReporter<'scope> {
+    ErrorReporter::new(|_| {})
+}
 
 struct MockHost {
     global: JsValue,
@@ -419,8 +423,8 @@ async fn http_resource_resolves_owned_request() {
     let root = runtime.run();
     root.with_scope(|scope| async move {
         let (source, _) = scope.signal(1_u32);
-        let resource =
-            silex_net::HttpClient::get(scope, "data:text/plain,hello").as_resource(source, None);
+        let resource = silex_net::HttpClient::get(scope, "data:text/plain,hello", test_handler())
+            .as_resource(source, None);
         TimeoutFuture::new(10).await;
         assert!(matches!(
             resource.state.get(),
@@ -440,17 +444,18 @@ async fn resource_runs_interceptor_once_and_rejects_custom_status() {
         let interceptor_calls = Rc::new(Cell::new(0));
         let transport_calls = Rc::new(Cell::new(0));
         let interceptor_calls_for_hook = interceptor_calls.clone();
-        let resource = silex_net::HttpClient::get(scope, "https://example.test/success")
-            .intercept(move |_| {
-                interceptor_calls_for_hook.set(interceptor_calls_for_hook.get() + 1);
-            })
-            .transport(ScriptedTransport {
-                calls: transport_calls.clone(),
-                status: 200,
-                body: "ok",
-                delay_ms: 0,
-            })
-            .as_resource(source, None);
+        let resource =
+            silex_net::HttpClient::get(scope, "https://example.test/success", test_handler())
+                .intercept(move |_| {
+                    interceptor_calls_for_hook.set(interceptor_calls_for_hook.get() + 1);
+                })
+                .transport(ScriptedTransport {
+                    calls: transport_calls.clone(),
+                    status: 200,
+                    body: "ok",
+                    delay_ms: 0,
+                })
+                .as_resource(source, None);
         TimeoutFuture::new(0).await;
         assert!(matches!(
             resource.state.get(),
@@ -471,23 +476,24 @@ async fn resource_runs_interceptor_once_and_rejects_custom_status() {
         let retry_calls = Rc::new(Cell::new(0));
         let error_calls_for_hook = error_calls.clone();
         let retry_calls_for_hook = retry_calls.clone();
-        let resource = silex_net::HttpClient::get(scope, "https://example.test/status")
-            .transport(ScriptedTransport {
-                calls: transport_calls.clone(),
-                status: 503,
-                body: "unavailable",
-                delay_ms: 0,
-            })
-            .retry(RetryPolicy::new(3, std::time::Duration::ZERO).no_jitter())
-            .on_error(move |_, error| {
-                assert!(matches!(error, NetError::HttpStatus { status: 503, .. }));
-                error_calls_for_hook.set(error_calls_for_hook.get() + 1);
-            })
-            .on_retry(move |_, _, _, error| {
-                assert!(matches!(error, NetError::HttpStatus { status: 503, .. }));
-                retry_calls_for_hook.set(retry_calls_for_hook.get() + 1);
-            })
-            .as_resource(source, None);
+        let resource =
+            silex_net::HttpClient::get(scope, "https://example.test/status", test_handler())
+                .transport(ScriptedTransport {
+                    calls: transport_calls.clone(),
+                    status: 503,
+                    body: "unavailable",
+                    delay_ms: 0,
+                })
+                .retry(RetryPolicy::new(3, std::time::Duration::ZERO).no_jitter())
+                .on_error(move |_, error| {
+                    assert!(matches!(error, NetError::HttpStatus { status: 503, .. }));
+                    error_calls_for_hook.set(error_calls_for_hook.get() + 1);
+                })
+                .on_retry(move |_, _, _, error| {
+                    assert!(matches!(error, NetError::HttpStatus { status: 503, .. }));
+                    retry_calls_for_hook.set(retry_calls_for_hook.get() + 1);
+                })
+                .as_resource(source, None);
         TimeoutFuture::new(1).await;
         assert!(matches!(
             resource.state.get(),
@@ -509,12 +515,13 @@ async fn resource_replacement_keeps_new_request_result() {
         let (query, set_query) = scope.signal("first".to_string());
         let (source, _) = scope.signal(1_u32);
         let calls = Rc::new(Cell::new(0));
-        let resource = silex_net::HttpClient::get(scope, "https://example.test/replacement")
-            .query("value", query)
-            .transport(ReplacementTransport {
-                calls: calls.clone(),
-            })
-            .as_resource(source, None);
+        let resource =
+            silex_net::HttpClient::get(scope, "https://example.test/replacement", test_handler())
+                .query("value", query)
+                .transport(ReplacementTransport {
+                    calls: calls.clone(),
+                })
+                .as_resource(source, None);
         TimeoutFuture::new(0).await;
         assert_eq!(calls.get(), 1);
         set_query.set("second".to_string());
@@ -539,17 +546,25 @@ async fn mutation_preflight_error_does_not_enter_pending() {
         let (foreign, _) = source_scope.signal("foreign".to_string());
         let foreign_inputs = silex_core::runtime_inputs_of(foreign);
         target_root.with_scope(|target_scope| {
-            let mutation = silex_net::HttpClient::post(target_scope, "https://example.test/mutate")
-                .as_mutation_with(move |_| {
-                    let inputs = foreign_inputs.clone();
-                    let body = silex_net::ValueResolver::dynamic_with_inputs(
-                        || "foreign".to_string(),
-                        || "foreign".to_string(),
-                        inputs,
-                    );
-                    silex_net::HttpClient::post(target_scope, "https://example.test/mutate")
-                        .text_body(body)
-                });
+            let mutation = silex_net::HttpClient::post(
+                target_scope,
+                "https://example.test/mutate",
+                test_handler(),
+            )
+            .as_mutation_with(move |_| {
+                let inputs = foreign_inputs.clone();
+                let body = silex_net::ValueResolver::dynamic_with_inputs(
+                    || "foreign".to_string(),
+                    || "foreign".to_string(),
+                    inputs,
+                );
+                silex_net::HttpClient::post(
+                    target_scope,
+                    "https://example.test/mutate",
+                    test_handler(),
+                )
+                .text_body(body)
+            });
             mutation.mutate(());
             assert!(matches!(
                 mutation.state.get(),
@@ -567,17 +582,22 @@ async fn mutation_commits_only_the_latest_completion() {
     let root = runtime.run();
     root.with_scope(|scope| async move {
         let calls = Rc::new(Cell::new(0));
-        let mutation = silex_net::HttpClient::get(scope, "https://example.test/mutation")
-            .as_mutation_with({
-                let calls = calls.clone();
-                move |id: u32| {
-                    silex_net::HttpClient::get(scope, "https://example.test/mutation")
+        let mutation =
+            silex_net::HttpClient::get(scope, "https://example.test/mutation", test_handler())
+                .as_mutation_with({
+                    let calls = calls.clone();
+                    move |id: u32| {
+                        silex_net::HttpClient::get(
+                            scope,
+                            "https://example.test/mutation",
+                            test_handler(),
+                        )
                         .query("id", id)
                         .transport(MutationTransport {
                             calls: calls.clone(),
                         })
-                }
-            });
+                    }
+                });
         mutation.mutate(1);
         mutation.mutate(2);
         assert!(matches!(mutation.state.get(), MutationState::Pending));
@@ -598,7 +618,7 @@ async fn cache_first_does_not_treat_default_as_history() {
     let root = runtime.run();
     root.with_scope(|scope| async move {
         let (source, _) = scope.signal(1_u32);
-        let resource = silex_net::HttpClient::get(scope, "data:text/plain,cache")
+        let resource = silex_net::HttpClient::get(scope, "data:text/plain,cache", test_handler())
             .cache_with_default(silex_net::CachePolicy::CacheFirst, "default".to_string())
             .as_resource(source, None);
         TimeoutFuture::new(10).await;
@@ -638,7 +658,7 @@ async fn cache_first_reloads_history_when_request_key_changes() {
         let (query, set_query) = scope.signal("first".to_string());
         let (source, _) = scope.signal(1_u32);
         let calls = Rc::new(Cell::new(0));
-        let resource = silex_net::HttpClient::get(scope, url)
+        let resource = silex_net::HttpClient::get(scope, url, test_handler())
             .query("value", query)
             .cache_with_default(silex_net::CachePolicy::CacheFirst, "default".to_string())
             .transport(ScriptedTransport {
@@ -704,7 +724,7 @@ async fn swr_rejects_stale_same_key_cache_write() {
     root.with_scope(|scope| async move {
         let (source, set_source) = scope.signal(1_u32);
         let calls = Rc::new(Cell::new(0));
-        let resource = silex_net::HttpClient::get(scope, url)
+        let resource = silex_net::HttpClient::get(scope, url, test_handler())
             .cache_with_default(
                 silex_net::CachePolicy::StaleWhileRevalidate,
                 "default".to_string(),
@@ -771,7 +791,7 @@ async fn network_first_uses_history_after_retryable_failure() {
     root.with_scope(|scope| async move {
         let (source, _) = scope.signal(1_u32);
         let calls = Rc::new(Cell::new(0));
-        let resource = silex_net::HttpClient::get(scope, url)
+        let resource = silex_net::HttpClient::get(scope, url, test_handler())
             .cache_with_default(silex_net::CachePolicy::NetworkFirst, "default".to_string())
             .transport(ScriptedTransport {
                 calls: calls.clone(),
@@ -801,9 +821,12 @@ async fn task_cancel_drops_pending_scoped_future() {
     let root = runtime.run();
     let dropped_for_scope = dropped.clone();
     root.with_scope(|scope| async move {
-        let task: TaskHandle = scope.spawn_scoped(PendingFuture {
-            dropped: dropped_for_scope.clone(),
-        });
+        let task: TaskHandle = scope.spawn_scoped(
+            PendingFuture {
+                dropped: dropped_for_scope.clone(),
+            },
+            test_handler(),
+        );
         TimeoutFuture::new(10).await;
         assert_eq!(dropped_for_scope.get(), 0);
         task.cancel();
@@ -819,8 +842,9 @@ async fn task_cancel_drops_pending_scoped_future() {
 fn lazy_connections_validate_scope_without_opening_host_resources() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
-        let socket = WebSocket::lazy(scope, "wss://example.test").build();
-        let stream = EventStream::lazy(scope, "https://example.test/events").build();
+        let socket = WebSocket::lazy(scope, "wss://example.test", test_handler()).build();
+        let stream =
+            EventStream::lazy(scope, "https://example.test/events", test_handler()).build();
         assert!(socket.state().get().is_active() == false);
         assert!(stream.state().get().is_active() == false);
     });
@@ -835,7 +859,7 @@ async fn websocket_host_bridge_covers_events_retry_and_manual_close() {
         let opened = Rc::new(Cell::new(0));
         let errors = Rc::new(Cell::new(0));
         let closed = Rc::new(Cell::new(0));
-        let socket = WebSocket::lazy(scope, "ws://mock")
+        let socket = WebSocket::lazy(scope, "ws://mock", test_handler())
             .reconnect(3, std::time::Duration::ZERO)
             .on_open({
                 let opened = opened.clone();
@@ -918,7 +942,7 @@ async fn websocket_retry_window_counts_continuous_pre_open_failures() {
     let mut runtime = Runtime::new();
     let root = runtime.run();
     root.with_scope(|scope| async move {
-        let socket = WebSocket::lazy(scope, "ws://mock")
+        let socket = WebSocket::lazy(scope, "ws://mock", test_handler())
             .reconnect_policy(RetryPolicy::new(3, std::time::Duration::ZERO).no_jitter())
             .build();
 
@@ -963,7 +987,7 @@ async fn websocket_callbacks_can_control_connection_after_state_restore() {
         let connection_for_open = connection_slot.clone();
         let send_succeeded_for_open = send_succeeded.clone();
         let connection_for_close = connection_slot.clone();
-        let socket = WebSocket::lazy(scope, "ws://mock")
+        let socket = WebSocket::lazy(scope, "ws://mock", test_handler())
             .on_open(move || {
                 let socket = connection_for_open
                     .get()
@@ -1002,7 +1026,7 @@ async fn websocket_constructor_failure_reports_error_before_connection_creation(
     let root = runtime.run();
     root.with_scope(|scope| async move {
         let errors = Rc::new(Cell::new(0));
-        let result = WebSocket::connect(scope, "mock://failure")
+        let result = WebSocket::connect(scope, "mock://failure", test_handler())
             .on_error({
                 let errors = errors.clone();
                 move |error| {
@@ -1017,7 +1041,7 @@ async fn websocket_constructor_failure_reports_error_before_connection_creation(
 
         let (url, set_url) = scope.signal("ws://mock".to_string());
         let reconnect_errors = Rc::new(Cell::new(0));
-        let socket = WebSocket::lazy(scope, url)
+        let socket = WebSocket::lazy(scope, url, test_handler())
             .on_error({
                 let reconnect_errors = reconnect_errors.clone();
                 move |error| {
@@ -1042,7 +1066,7 @@ async fn websocket_retry_stops_after_max_elapsed() {
     let mut runtime = Runtime::new();
     let root = runtime.run();
     root.with_scope(|scope| async move {
-        let socket = WebSocket::lazy(scope, "ws://mock")
+        let socket = WebSocket::lazy(scope, "ws://mock", test_handler())
             .reconnect_policy(
                 RetryPolicy::new(3, std::time::Duration::from_millis(5))
                     .max_elapsed(std::time::Duration::from_millis(1))
@@ -1069,7 +1093,7 @@ async fn websocket_owner_dispose_removes_active_host_registration() {
     root.with_scope(|scope| {
         let opened_for_assert = opened.clone();
         async move {
-            let socket = WebSocket::lazy(scope, "ws://mock")
+            let socket = WebSocket::lazy(scope, "ws://mock", test_handler())
                 .on_open(move || opened_for_scope.set(opened_for_scope.get() + 1))
                 .build();
             socket.reconnect();
@@ -1104,7 +1128,7 @@ async fn event_stream_host_bridge_covers_named_messages_reconnect_and_cleanup() 
     root.with_scope(|scope| async move {
         let opened = Rc::new(Cell::new(0));
         let errors = Rc::new(Cell::new(0));
-        let stream = EventStream::lazy(scope, "http://mock")
+        let stream = EventStream::lazy(scope, "http://mock", test_handler())
             .event("update")
             .max_messages(2)
             .on_open({
@@ -1197,7 +1221,7 @@ async fn event_stream_callbacks_can_control_connection_after_state_restore() {
         let opened = Rc::new(Cell::new(0));
         let connection_for_open = connection_slot.clone();
         let opened_for_callback = opened.clone();
-        let stream = EventStream::lazy(scope, "http://mock")
+        let stream = EventStream::lazy(scope, "http://mock", test_handler())
             .on_open(move || {
                 opened_for_callback.set(opened_for_callback.get() + 1);
                 let stream = connection_for_open
@@ -1230,7 +1254,7 @@ async fn event_stream_constructor_failure_reports_error_before_connection_creati
     let root = runtime.run();
     root.with_scope(|scope| async move {
         let errors = Rc::new(Cell::new(0));
-        let result = EventStream::builder(scope, "mock://failure")
+        let result = EventStream::builder(scope, "mock://failure", test_handler())
             .on_error({
                 let errors = errors.clone();
                 move |error| {
@@ -1248,7 +1272,7 @@ async fn event_stream_constructor_failure_reports_error_before_connection_creati
 
         let (url, set_url) = scope.signal("http://mock".to_string());
         let reconnect_errors = Rc::new(Cell::new(0));
-        let stream = EventStream::lazy(scope, url)
+        let stream = EventStream::lazy(scope, url, test_handler())
             .on_error({
                 let reconnect_errors = reconnect_errors.clone();
                 move |error| {
@@ -1280,7 +1304,7 @@ async fn event_stream_owner_dispose_removes_active_host_registration() {
     root.with_scope(|scope| {
         let opened_for_assert = opened.clone();
         async move {
-            let stream = EventStream::lazy(scope, "http://mock")
+            let stream = EventStream::lazy(scope, "http://mock", test_handler())
                 .event("update")
                 .on_open(move || opened_for_scope.set(opened_for_scope.get() + 1))
                 .build();

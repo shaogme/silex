@@ -1,5 +1,5 @@
 error[E0521]: borrowed data escapes outside of closure
-  --> tests/ui/fail_scoped_loader_future.rs:8:25
+  --> tests/ui/fail_scoped_loader_future.rs:10:25
    |
  5 |       runtime.child(|scope| {
    |                      -----
@@ -7,14 +7,14 @@ error[E0521]: borrowed data escapes outside of closure
    |                      `scope` is a reference that is only valid in the closure body
    |                      has type `silex_i18n::Scope<'1>`
 ...
- 8 |           let _resource = store.catalog_resource(
+10 |           let _resource = store.catalog_resource(
    |  _________________________^
- 9 | |             move |_locale| async move {
-10 | |                 let _ = source.get();
-11 | |                 Err::<Catalog, I18nError>(I18nError::Loader("not loaded".to_string()))
-12 | |             },
-13 | |             None,
-14 | |         );
+11 | |             move |_locale| async move {
+12 | |                 let _ = source.get();
+13 | |                 Err::<Catalog, I18nError>(I18nError::Loader("not loaded".to_string()))
+14 | |             },
+15 | |             None,
+16 | |         );
    | |         ^
    | |         |
    | |_________`scope` escapes the closure body here

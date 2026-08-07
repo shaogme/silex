@@ -1,6 +1,6 @@
 use crate::NetError;
 #[cfg(feature = "persist")]
-use silex_core::Scope;
+use silex_core::{ErrorReporter, Scope};
 #[cfg(feature = "json")]
 use std::marker::PhantomData;
 
@@ -14,6 +14,7 @@ pub trait CacheCodec<T>: ResponseCodec<T> {
         scope: Scope<'scope>,
         key: String,
         default: T,
+        error_handler: ErrorReporter<'scope>,
     ) -> silex_persist::Persistent<'scope, T>;
 }
 
@@ -43,8 +44,9 @@ impl CacheCodec<String> for TextCodec {
         scope: Scope<'scope>,
         key: String,
         default: String,
+        error_handler: ErrorReporter<'scope>,
     ) -> silex_persist::Persistent<'scope, String> {
-        silex_persist::Persistent::builder(scope, key)
+        silex_persist::Persistent::builder(scope, key, error_handler)
             .local()
             .string()
             .write_default(silex_persist::WriteDefault::Never)
@@ -97,8 +99,9 @@ where
         scope: Scope<'scope>,
         key: String,
         default: T,
+        error_handler: ErrorReporter<'scope>,
     ) -> silex_persist::Persistent<'scope, T> {
-        silex_persist::Persistent::builder(scope, key)
+        silex_persist::Persistent::builder(scope, key, error_handler)
             .local()
             .json::<T>()
             .write_default(silex_persist::WriteDefault::Never)

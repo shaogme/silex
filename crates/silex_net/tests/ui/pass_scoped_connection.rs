@@ -6,10 +6,14 @@ fn main() {
     runtime.child(|scope| {
         let url = scope.rw_signal("wss://example.test/socket".to_string());
         let (opened, set_opened) = scope.signal(false);
-        let socket = WebSocket::lazy(scope, url)
+        let socket = WebSocket::lazy(scope, url, silex_core::ErrorReporter::new(|_| {}))
             .on_open(move || set_opened.set(true))
             .build();
-        let stream = EventStream::lazy(scope, "https://example.test/events")
+        let stream = EventStream::lazy(
+            scope,
+            "https://example.test/events",
+            silex_core::ErrorReporter::new(|_| {}),
+        )
             .max_messages(16)
             .build();
         let _ = (socket.state().get(), stream.raw_messages().get(), opened.get());

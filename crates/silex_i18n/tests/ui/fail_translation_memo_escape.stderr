@@ -1,12 +1,12 @@
 error: lifetime may not live long enough
- --> tests/ui/fail_translation_memo_escape.rs:7:9
+ --> tests/ui/fail_translation_memo_escape.rs:9:9
   |
 5 |     runtime.child(|scope| {
   |                    ------ return type of closure is Memo<'2, String>
   |                    |
   |                    has type `silex_i18n::Scope<'1>`
-6 |         let store = I18nBuilder::new(scope).build().expect("valid store");
-7 |         t!(store, "missing.key")
+...
+9 |         t!(store, "missing.key")
   |         ^^^^^^^^^^^^^^^^^^^^^^^^ returning this value requires that `'1` must outlive `'2`
   |
   = note: requirement occurs because of the type `Memo<'_, String>`, which makes the generic argument `'_` invariant

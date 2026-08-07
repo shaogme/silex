@@ -26,22 +26,25 @@ impl EventStream {
     pub fn builder<'scope>(
         scope: Scope<'scope>,
         url: impl IntoNetValue<'scope>,
+        error_handler: ErrorReporter<'scope>,
     ) -> EventStreamBuilder<'scope> {
-        EventStreamBuilder::new(scope, url.into_net_value())
+        EventStreamBuilder::new(scope, url.into_net_value(), error_handler)
     }
 
     pub fn open<'scope>(
         scope: Scope<'scope>,
         url: impl IntoNetValue<'scope>,
+        error_handler: ErrorReporter<'scope>,
     ) -> Result<EventStreamConnection<'scope>, NetError> {
-        Self::builder(scope, url).try_build()
+        Self::builder(scope, url, error_handler).try_build()
     }
 
     pub fn lazy<'scope>(
         scope: Scope<'scope>,
         url: impl IntoNetValue<'scope>,
+        error_handler: ErrorReporter<'scope>,
     ) -> EventStreamBuilder<'scope> {
-        Self::builder(scope, url).auto_connect(false)
+        Self::builder(scope, url, error_handler).auto_connect(false)
     }
 }
 
@@ -425,6 +428,7 @@ impl<'scope> EventStreamConnection<'scope> {
 #[derive(Clone)]
 pub struct EventStreamBuilder<'scope> {
     scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
     url: ValueResolver<'scope>,
     event_name: Option<String>,
     auto_connect: bool,
@@ -434,9 +438,14 @@ pub struct EventStreamBuilder<'scope> {
 }
 
 impl<'scope> EventStreamBuilder<'scope> {
-    fn new(scope: Scope<'scope>, url: ValueResolver<'scope>) -> Self {
+    fn new(
+        scope: Scope<'scope>,
+        url: ValueResolver<'scope>,
+        error_handler: ErrorReporter<'scope>,
+    ) -> Self {
         Self {
             scope,
+            error_handler,
             url,
             event_name: None,
             auto_connect: true,
@@ -474,6 +483,7 @@ impl<'scope> EventStreamBuilder<'scope> {
     pub fn try_build(self) -> Result<EventStreamConnection<'scope>, NetError> {
         let Self {
             scope,
+            error_handler,
             url,
             event_name,
             auto_connect,
@@ -539,7 +549,7 @@ impl<'scope> EventStreamBuilder<'scope> {
                     cleanup_stored_inner(inner);
                     Ok(())
                 },
-                ErrorReporter::unhandled().handler(),
+                error_handler,
             )
             .map_err(|error| NetError::InvalidConfiguration(error.to_string()))?;
 

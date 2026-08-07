@@ -1,7 +1,11 @@
 use std::{panic::AssertUnwindSafe, panic::catch_unwind};
 
-use silex_core::{Runtime, runtime_inputs_of};
+use silex_core::{ErrorReporter, Runtime, runtime_inputs_of};
 use silex_net::{HttpClient, NetError, ValueResolver};
+
+fn test_handler<'scope>() -> ErrorReporter<'scope> {
+    ErrorReporter::new(|_| {})
+}
 
 #[test]
 fn foreign_request_source_is_rejected_before_resource_creation() {
@@ -12,7 +16,7 @@ fn foreign_request_source_is_rejected_before_resource_creation() {
     source_root.with_scope(|source_scope| {
         let (source, _) = source_scope.signal(1_i32);
         target_root.with_scope(|target_scope| {
-            let builder = HttpClient::get(target_scope, "https://example.test");
+            let builder = HttpClient::get(target_scope, "https://example.test", test_handler());
             let result = builder.try_as_resource(source, None);
             assert!(result.is_err());
         });
@@ -38,7 +42,8 @@ fn foreign_builder_into_resource_is_transactional_before_target_creation() {
                 foreign_inputs.clone(),
             );
             let before = target_scope.runtime_snapshot();
-            let result = HttpClient::get(target_scope, foreign_url).try_into_resource(None);
+            let result =
+                HttpClient::get(target_scope, foreign_url, test_handler()).try_into_resource(None);
 
             assert!(matches!(result, Err(NetError::InvalidConfiguration(_))));
             assert_eq!(target_scope.runtime_snapshot(), before);
@@ -50,7 +55,7 @@ fn foreign_builder_into_resource_is_transactional_before_target_creation() {
             );
             let before_panic = target_scope.runtime_snapshot();
             let result = catch_unwind(AssertUnwindSafe(|| {
-                HttpClient::get(target_scope, foreign_url).into_resource(None)
+                HttpClient::get(target_scope, foreign_url, test_handler()).into_resource(None)
             }));
 
             assert!(result.is_err());

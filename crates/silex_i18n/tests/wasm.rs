@@ -1,17 +1,19 @@
 #![cfg(target_arch = "wasm32")]
 
 use gloo_timers::future::TimeoutFuture;
-use silex_core::{
-    ErrorReporter, Runtime, Scope, SilexError, SilexResult, runtime_inputs_of, traits::RxGet,
-};
+use silex_core::{ErrorReporter, Runtime, Scope, SilexResult, runtime_inputs_of, traits::RxGet};
 use silex_i18n::{
     Catalog, CatalogLoadError, I18nBuilder, I18nStore, Locale, ResourceState, SuspenseContext, t,
 };
 use std::{cell::Cell, rc::Rc};
 use wasm_bindgen_test::*;
 
+fn test_handler<'scope>() -> ErrorReporter<'scope> {
+    ErrorReporter::new(|_| {})
+}
+
 fn store<'scope>(scope: Scope<'scope>, locale: &str) -> I18nStore<'scope> {
-    I18nBuilder::new(scope)
+    I18nBuilder::new(scope, test_handler())
         .locale(Locale::new(locale))
         .build()
         .expect("valid i18n store")
@@ -93,7 +95,7 @@ async fn catalog_resource_uses_store_catalog_without_calling_loader() {
     let mut runtime = Runtime::new();
     let root = runtime.run();
     root.with_scope(|scope| async move {
-        let i18n = I18nBuilder::new(scope)
+        let i18n = I18nBuilder::new(scope, test_handler())
             .locale(Locale::new("en-US"))
             .catalog(catalog(Locale::new("en-US"), "Cached").expect("valid catalog"))
             .build()
@@ -350,7 +352,7 @@ async fn catalog_resource_completion_is_cancelled_after_root_dispose() {
                     resource_state_runs_for_effect.set(resource_state_runs_for_effect.get() + 1);
                     Ok(())
                 },
-                ErrorReporter::unhandled().handler(),
+                test_handler(),
             )
             .expect("resource state effect can be registered");
         let translation = t!(i18n, "title");
@@ -363,7 +365,7 @@ async fn catalog_resource_completion_is_cancelled_after_root_dispose() {
                     translation_runs_for_effect.set(translation_runs_for_effect.get() + 1);
                     Ok(())
                 },
-                ErrorReporter::unhandled().handler(),
+                test_handler(),
             )
             .expect("translation effect can be registered");
 

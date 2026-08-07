@@ -96,6 +96,7 @@ impl CatalogRegistry {
 #[derive(Clone, Copy)]
 pub struct I18nStore<'scope> {
     scope: Scope<'scope>,
+    error_handler: StoredValue<'scope, ErrorReporter<'scope>>,
     locale: RwSignal<'scope, Locale>,
     fallback_locale: RwSignal<'scope, Locale>,
     catalog_cache: StoredValue<'scope, Rc<RefCell<CatalogRegistry>>>,
@@ -116,6 +117,7 @@ impl Debug for I18nStore<'_> {
 
 pub struct I18nBuilder<'scope> {
     scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
     locale: Option<Locale>,
     fallback_locale: Option<Locale>,
     catalogs: Vec<Catalog>,
@@ -126,9 +128,10 @@ pub struct I18nBuilder<'scope> {
 }
 
 impl<'scope> I18nBuilder<'scope> {
-    pub fn new(scope: Scope<'scope>) -> Self {
+    pub fn new(scope: Scope<'scope>, error_handler: ErrorReporter<'scope>) -> Self {
         Self {
             scope,
+            error_handler,
             locale: None,
             fallback_locale: None,
             catalogs: Vec::new(),
@@ -181,6 +184,7 @@ impl<'scope> I18nBuilder<'scope> {
     pub fn build(self) -> Result<I18nStore<'scope>, I18nError> {
         let Self {
             scope,
+            error_handler,
             locale,
             fallback_locale,
             catalogs,
@@ -221,9 +225,11 @@ impl<'scope> I18nBuilder<'scope> {
             .unwrap_or_else(|| Locale::new("en"));
         let fallback_locale = fallback_locale.unwrap_or_else(|| locale.clone());
         let catalog_cache = scope.stored(Rc::new(RefCell::new(registry)));
+        let error_handler = scope.stored(error_handler);
 
         let store = I18nStore {
             scope,
+            error_handler,
             locale: scope.rw_signal(locale),
             fallback_locale: scope.rw_signal(fallback_locale),
             catalog_cache,
@@ -247,7 +253,7 @@ impl<'scope> I18nBuilder<'scope> {
                         }
                         Ok(())
                     },
-                    ErrorReporter::unhandled().handler(),
+                    store_for_binding.error_handler(),
                 )
                 .map_err(map_silex_error)?;
 
@@ -262,7 +268,7 @@ impl<'scope> I18nBuilder<'scope> {
                         }
                         Ok(())
                     },
-                    ErrorReporter::unhandled().handler(),
+                    store_for_locale.error_handler(),
                 )
                 .map_err(map_silex_error)?;
         }
@@ -272,6 +278,10 @@ impl<'scope> I18nBuilder<'scope> {
 }
 
 impl<'scope> I18nStore<'scope> {
+    pub(crate) fn error_handler(&self) -> ErrorReporter<'scope> {
+        self.error_handler.with(Clone::clone)
+    }
+
     pub fn set_locale(&self, locale: Locale) {
         self.locale.set(locale);
     }
@@ -385,6 +395,7 @@ impl<'scope> I18nStore<'scope> {
                 }
             },
             suspense,
+            self.error_handler(),
         );
 
         let state = resource.state;
@@ -399,7 +410,7 @@ impl<'scope> I18nStore<'scope> {
                     }
                     Ok(())
                 },
-                ErrorReporter::unhandled().handler(),
+                store.error_handler(),
             )
             .map_err(map_silex_error)?;
 

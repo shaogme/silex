@@ -5,7 +5,11 @@ fn main() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
         let (value, _) = scope.signal(1_i32);
-        let _builder = HttpClient::get(scope, "https://example.test")
+        let _builder = HttpClient::get(
+            scope,
+            "https://example.test",
+            silex_core::ErrorReporter::new(|_| {}),
+        )
             .query("value", move || value.get());
     });
 }

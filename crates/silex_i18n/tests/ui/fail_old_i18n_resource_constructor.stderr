@@ -1,4 +1,4 @@
-error[E0061]: this function takes 4 arguments but 0 arguments were supplied
+error[E0061]: this function takes 5 arguments but 0 arguments were supplied
  --> tests/ui/fail_old_i18n_resource_constructor.rs:4:21
   |
 4 |     let _resource = Resource::<i32, String>::new();
@@ -11,5 +11,5 @@ note: associated function defined here
   |            ^^^
 help: provide the arguments
   |
-4 |     let _resource = Resource::<i32, String>::new(/* silex_i18n::Scope<'_> */, /* source */, /* fetcher */, /* Option<SuspenseContext<'_>> */);
-  |                                                  +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+4 |     let _resource = Resource::<i32, String>::new(/* silex_i18n::Scope<'_> */, /* source */, /* fetcher */, /* Option<SuspenseContext<'_>> */, /* silex_reactivity::error::ErrorHandler<'_, silex_core::error::SilexError> */);
+  |                                                  +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

@@ -1,5 +1,5 @@
 use crate::{I18nStore, Locale};
-use silex_core::{Effect, ErrorReporter, SilexError, SilexResult, runtime_inputs_of};
+use silex_core::{Effect, SilexError, SilexResult, runtime_inputs_of};
 use std::{cell::Cell, rc::Rc};
 use wasm_bindgen::JsValue;
 
@@ -114,7 +114,7 @@ pub(crate) fn sync_document_metadata<'scope>(
     #[cfg(not(target_arch = "wasm32"))]
     let root: Option<web_sys::Element> = None;
     let Some(root) = root else {
-        let effect = scope.effect(|| Ok(()), ErrorReporter::unhandled().handler())?;
+        let effect = scope.effect(|| Ok(()), store.error_handler())?;
         effect.stop();
         return Ok(effect);
     };
@@ -168,7 +168,7 @@ pub(crate) fn sync_document_metadata<'scope>(
     let stack_property_for_effect = stack_property.clone();
     let owner_id_for_effect = owner_id.clone();
     let record_for_effect = record.clone();
-    let error_handler = ErrorReporter::unhandled().handler();
+    let error_handler = store.error_handler();
     let effect = scope.effect_from(
         runtime_inputs_of(locale),
         move || -> SilexResult<()> {
@@ -401,7 +401,7 @@ mod tests {
     fn missing_document_returns_an_inactive_effect_without_leaking_nodes() {
         let mut runtime = silex_core::Runtime::new();
         runtime.child(|scope| {
-            let store = crate::I18nBuilder::new(scope)
+            let store = crate::I18nBuilder::new(scope, silex_core::ErrorReporter::new(|_| {}))
                 .locale(Locale::new("en-US"))
                 .build()
                 .expect("valid i18n store");

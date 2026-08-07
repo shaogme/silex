@@ -5,8 +5,8 @@ use crate::{
     state::{CachePolicy, HttpMethod, HttpResponse, RequestBody, RequestSpec, RetryPolicy},
 };
 #[cfg(feature = "persist")]
-use silex_core::{ErrorReporter, SilexResult};
-use silex_core::{RuntimeInputs, Scope};
+use silex_core::SilexResult;
+use silex_core::{ErrorReporter, RuntimeInputs, Scope};
 use std::{marker::PhantomData, rc::Rc, time::Duration};
 
 pub mod client_impl;
@@ -114,6 +114,7 @@ impl<'scope> BodyResolver<'scope> {
 #[derive(Clone)]
 pub struct HttpClientBuilder<'scope, T, C> {
     pub(crate) scope: Scope<'scope>,
+    pub(crate) error_handler: ErrorReporter<'scope>,
     pub(crate) method: HttpMethod,
     pub(crate) url: ValueResolver<'scope>,
     pub(crate) headers: Vec<(String, ValueResolver<'scope>)>,
@@ -139,43 +140,55 @@ impl HttpClient {
         scope: Scope<'scope>,
         method: HttpMethod,
         url: impl IntoNetValue<'scope>,
+        error_handler: ErrorReporter<'scope>,
     ) -> HttpClientBuilder<'scope, String, TextCodec> {
-        HttpClientBuilder::new(scope, method, url.into_net_value(), TextCodec)
+        HttpClientBuilder::new(
+            scope,
+            method,
+            url.into_net_value(),
+            TextCodec,
+            error_handler,
+        )
     }
 
     pub fn get<'scope>(
         scope: Scope<'scope>,
         url: impl IntoNetValue<'scope>,
+        error_handler: ErrorReporter<'scope>,
     ) -> HttpClientBuilder<'scope, String, TextCodec> {
-        Self::builder(scope, HttpMethod::Get, url)
+        Self::builder(scope, HttpMethod::Get, url, error_handler)
     }
 
     pub fn post<'scope>(
         scope: Scope<'scope>,
         url: impl IntoNetValue<'scope>,
+        error_handler: ErrorReporter<'scope>,
     ) -> HttpClientBuilder<'scope, String, TextCodec> {
-        Self::builder(scope, HttpMethod::Post, url)
+        Self::builder(scope, HttpMethod::Post, url, error_handler)
     }
 
     pub fn put<'scope>(
         scope: Scope<'scope>,
         url: impl IntoNetValue<'scope>,
+        error_handler: ErrorReporter<'scope>,
     ) -> HttpClientBuilder<'scope, String, TextCodec> {
-        Self::builder(scope, HttpMethod::Put, url)
+        Self::builder(scope, HttpMethod::Put, url, error_handler)
     }
 
     pub fn patch<'scope>(
         scope: Scope<'scope>,
         url: impl IntoNetValue<'scope>,
+        error_handler: ErrorReporter<'scope>,
     ) -> HttpClientBuilder<'scope, String, TextCodec> {
-        Self::builder(scope, HttpMethod::Patch, url)
+        Self::builder(scope, HttpMethod::Patch, url, error_handler)
     }
 
     pub fn delete<'scope>(
         scope: Scope<'scope>,
         url: impl IntoNetValue<'scope>,
+        error_handler: ErrorReporter<'scope>,
     ) -> HttpClientBuilder<'scope, String, TextCodec> {
-        Self::builder(scope, HttpMethod::Delete, url)
+        Self::builder(scope, HttpMethod::Delete, url, error_handler)
     }
 }
 
@@ -185,9 +198,11 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
         method: HttpMethod,
         url: ValueResolver<'scope>,
         response_codec: C,
+        error_handler: ErrorReporter<'scope>,
     ) -> Self {
         Self {
             scope,
+            error_handler,
             method,
             url,
             headers: Vec::new(),
@@ -558,7 +573,12 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
             .stores
             .borrow_mut()
             .retain(|(_, entry)| entry.valid.get());
-        let store = C::build_cache(self.scope, key.to_string(), cache.default.clone());
+        let store = C::build_cache(
+            self.scope,
+            key.to_string(),
+            cache.default.clone(),
+            self.error_handler.clone(),
+        );
         let valid = Rc::new(Cell::new(true));
         let valid_for_cleanup = valid.clone();
         if self
@@ -568,7 +588,7 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
                     valid_for_cleanup.set(false);
                     Ok(())
                 },
-                ErrorReporter::unhandled().handler(),
+                self.error_handler.clone(),
             )
             .is_err()
         {
@@ -659,6 +679,7 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
     pub fn text(self) -> HttpClientBuilder<'scope, String, TextCodec> {
         HttpClientBuilder {
             scope: self.scope,
+            error_handler: self.error_handler,
             method: self.method,
             url: self.url,
             headers: self.headers,
@@ -685,6 +706,7 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
     {
         HttpClientBuilder {
             scope: self.scope,
+            error_handler: self.error_handler,
             method: self.method,
             url: self.url,
             headers: self.headers,
@@ -709,7 +731,11 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
 mod tests {
     use super::{HttpClient, IntoNetValue, ValueResolver};
     use crate::state::RequestBody;
-    use silex_core::{Runtime, runtime_inputs_of};
+    use silex_core::{ErrorReporter, Runtime, runtime_inputs_of};
+
+    fn test_handler<'scope>() -> ErrorReporter<'scope> {
+        ErrorReporter::new(|_| {})
+    }
 
     #[test]
     fn request_inputs_include_dynamic_body_and_all_request_parts() {
@@ -720,7 +746,7 @@ mod tests {
             let (query, _) = scope.signal("search".to_string());
             let (path, _) = scope.signal("42".to_string());
             let (body, _) = scope.signal("payload".to_string());
-            let builder = HttpClient::post(scope, url)
+            let builder = HttpClient::post(scope, url, test_handler())
                 .header("Authorization", header)
                 .query("q", query)
                 .path_param("id", path)
@@ -744,13 +770,14 @@ mod tests {
         runtime.child(|scope| {
             let (name, _) = scope.signal("first".to_string());
             let (value, set_value) = scope.signal("one".to_string());
-            let builder = HttpClient::post(scope, "https://example.test").form_body([
-                (name.into_net_value(), value.into_net_value()),
-                (
-                    ValueResolver::static_value("second"),
-                    ValueResolver::static_value("two"),
-                ),
-            ]);
+            let builder = HttpClient::post(scope, "https://example.test", test_handler())
+                .form_body([
+                    (name.into_net_value(), value.into_net_value()),
+                    (
+                        ValueResolver::static_value("second"),
+                        ValueResolver::static_value("two"),
+                    ),
+                ]);
 
             assert_eq!(builder.runtime_inputs().len(), 2);
             assert_eq!(
@@ -785,7 +812,8 @@ mod tests {
                     foreign_inputs,
                 );
                 let builder =
-                    HttpClient::post(target_scope, "https://example.test").text_body(foreign_body);
+                    HttpClient::post(target_scope, "https://example.test", test_handler())
+                        .text_body(foreign_body);
                 assert!(builder.validate_runtime_inputs().is_err());
                 assert!(builder.try_as_mutation().is_err());
             });
@@ -798,7 +826,8 @@ mod tests {
         let mut runtime = Runtime::new();
         runtime.child(|scope| {
             let (body, _) = scope.signal("{\"value\":1}".to_string());
-            let builder = HttpClient::post(scope, "https://example.test").json_body_value(body);
+            let builder = HttpClient::post(scope, "https://example.test", test_handler())
+                .json_body_value(body);
 
             assert_eq!(builder.runtime_inputs().len(), 1);
             assert_eq!(

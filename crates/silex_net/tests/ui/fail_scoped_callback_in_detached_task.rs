@@ -6,6 +6,6 @@ fn main() {
         let (value, _) = scope.signal(1_i32);
         scope.spawn_scoped(async move {
             let _ = value.get();
-        });
+        }, silex_core::ErrorReporter::new(|_| {}));
     });
 }

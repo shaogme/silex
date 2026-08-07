@@ -7,5 +7,5 @@ error[E0599]: no associated function or constant named `default` found for struc
 note: if you're trying to build a new `I18nBuilder<'_>`, consider using `I18nBuilder::<'scope>::new` which returns `I18nBuilder<'_>`
  --> src/runtime.rs
   |
-  |     pub fn new(scope: Scope<'scope>) -> Self {
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |     pub fn new(scope: Scope<'scope>, error_handler: ErrorReporter<'scope>) -> Self {
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
