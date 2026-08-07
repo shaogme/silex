@@ -297,9 +297,10 @@ impl<'scope> View<'scope> for CapturedPersistent<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) {
-        self.binding.mount(owner, parent, attrs);
+    ) -> silex_core::SilexResult<()> {
+        self.binding.mount(owner, parent, attrs)?;
         *self.node.borrow_mut() = parent.last_child();
+        Ok(())
     }
 
     fn mount_owned(
@@ -307,10 +308,11 @@ impl<'scope> View<'scope> for CapturedPersistent<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) where
+    ) -> silex_core::SilexResult<()>
+    where
         Self: Sized,
     {
-        self.mount(owner, parent, attrs);
+        self.mount(owner, parent, attrs)
     }
 }
 
@@ -546,14 +548,16 @@ fn persistent_view_updates_and_stops_with_root() {
             .default("one".to_string())
             .build();
         let owner = ScopedViewOwner::new(scope);
-        binding.mount(&owner, parent.as_ref(), Vec::new());
+        binding
+            .mount(&owner, parent.as_ref(), Vec::new())
+            .expect("persistent view should mount");
         assert_eq!(parent.text_content(), Some("one".to_string()));
         binding.set("two".to_string());
         assert_eq!(parent.text_content(), Some("two".to_string()));
     });
 
     root.dispose().expect("dispose root");
-    assert_eq!(parent.text_content(), Some("two".to_string()));
+    assert_eq!(parent.text_content(), Some(String::new()));
 }
 
 #[wasm_bindgen_test]
@@ -589,7 +593,8 @@ fn persistent_view_stops_after_lexical_owner_dispose() {
                 binding,
                 node: captured_node_for_child,
             }
-            .mount_owned(&owner, parent.as_ref(), Vec::new());
+            .mount_owned(&owner, parent.as_ref(), Vec::new())
+            .expect("captured persistent view should mount");
             assert_eq!(parent.text_content(), Some("one".to_string()));
             binding.set("two".to_string());
             assert_eq!(parent.text_content(), Some("two".to_string()));
@@ -610,7 +615,7 @@ fn persistent_view_stops_after_lexical_owner_dispose() {
             .expect("window")
             .dispatch_event(event.as_ref())
             .expect("dispatch storage event");
-        assert_eq!(parent.text_content(), Some("two".to_string()));
+        assert_eq!(parent.text_content(), Some(String::new()));
         assert_eq!(
             captured_node
                 .borrow()
@@ -656,7 +661,8 @@ fn persistent_view_stops_after_row_owner_dispose() {
             _marker: std::marker::PhantomData,
         };
         let owner = ScopedViewOwner::new(scope);
-        list.mount_owned(&owner, parent.as_ref(), Vec::new());
+        list.mount_owned(&owner, parent.as_ref(), Vec::new())
+            .expect("persistent list should mount");
         assert_eq!(parent.text_content(), Some("one".to_string()));
 
         set_items.set(Vec::new());

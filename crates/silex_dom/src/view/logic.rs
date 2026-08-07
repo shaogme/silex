@@ -1,5 +1,6 @@
 use crate::attribute::PendingAttribute;
 use crate::view::{ApplyAttributes, View, ViewOwner};
+use silex_core::SilexResult;
 use web_sys::Node;
 
 /// View wrapper reserved for an explicit lexical owner supplied by the caller.
@@ -26,8 +27,8 @@ impl<'scope, V: View<'scope>> View<'scope> for ScopeView<V> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) {
-        self.view.mount(owner, parent, attrs);
+    ) -> SilexResult<()> {
+        self.view.mount(owner, parent, attrs)
     }
 
     fn mount_owned(
@@ -35,9 +36,10 @@ impl<'scope, V: View<'scope>> View<'scope> for ScopeView<V> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) where
+    ) -> SilexResult<()>
+    where
         Self: Sized,
     {
-        self.view.mount_owned(owner, parent, attrs);
+        self.view.mount_owned(owner, parent, attrs)
     }
 }

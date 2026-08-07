@@ -29,14 +29,13 @@ impl<'scope> View<'scope> for CleanupProbe {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
-    ) {
+    ) -> silex_core::SilexResult<()> {
         let cleanups = self.cleanups.clone();
-        owner
-            .on_cleanup(Box::new(move || {
-                cleanups.set(cleanups.get() + 1);
-            }))
-            .expect("view owner is active");
-        mount_text_node(parent, &self.text).expect("text node can be mounted");
+        owner.on_cleanup(Box::new(move || {
+            cleanups.set(cleanups.get() + 1);
+        }))?;
+        mount_text_node(parent, &self.text)?;
+        Ok(())
     }
 
     fn mount_owned(
@@ -44,10 +43,11 @@ impl<'scope> View<'scope> for CleanupProbe {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) where
+    ) -> silex_core::SilexResult<()>
+    where
         Self: Sized,
     {
-        self.mount(owner, parent, attrs);
+        self.mount(owner, parent, attrs)
     }
 }
 
@@ -66,7 +66,7 @@ impl<'scope> View<'scope> for StatefulProbe {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
-    ) {
+    ) -> silex_core::SilexResult<()> {
         self.mounts.set(self.mounts.get() + 1);
         let node: Node = web_sys::window()
             .expect("window is available in browser tests")
@@ -74,17 +74,18 @@ impl<'scope> View<'scope> for StatefulProbe {
             .expect("document is available in browser tests")
             .create_text_node(&self.text)
             .into();
-        parent.append_child(&node).expect("stateful row can mount");
+        parent
+            .append_child(&node)
+            .map_err(silex_core::SilexError::from)?;
         *self.node.borrow_mut() = Some(node);
 
         let node_for_cleanup = self.node.clone();
         let cleanups = self.cleanups.clone();
-        owner
-            .on_cleanup(Box::new(move || {
-                node_for_cleanup.borrow_mut().take();
-                cleanups.set(cleanups.get() + 1);
-            }))
-            .expect("view owner is active");
+        owner.on_cleanup(Box::new(move || {
+            node_for_cleanup.borrow_mut().take();
+            cleanups.set(cleanups.get() + 1);
+        }))?;
+        Ok(())
     }
 
     fn mount_owned(
@@ -92,10 +93,11 @@ impl<'scope> View<'scope> for StatefulProbe {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) where
+    ) -> silex_core::SilexResult<()>
+    where
         Self: Sized,
     {
-        self.mount(owner, parent, attrs);
+        self.mount(owner, parent, attrs)
     }
 }
 
@@ -142,7 +144,8 @@ fn dynamic_render_owner_cleans_children_on_rerun_and_root_dispose() {
             })
         };
         let owner = ScopedViewOwner::new(scope);
-        view.mount_owned(&owner, &host, Vec::new());
+        view.mount_owned(&owner, &host, Vec::new())
+            .expect("dynamic view should mount");
         assert_eq!(host.text_content().as_deref(), Some("0"));
 
         set_value.set(1);
@@ -239,7 +242,8 @@ fn branch_replaces_row_owner_and_keyed_list_reorders_ranges() {
                     cleanups: branch_cleanups_for_view.clone(),
                 })
             },
-        );
+        )
+        .expect("branch should mount");
         assert_eq!(host.text_content().as_deref(), Some("b0"));
 
         set_key.set(0);
@@ -276,7 +280,8 @@ fn branch_replaces_row_owner_and_keyed_list_reorders_ranges() {
                 _marker: PhantomData,
             };
             let list_owner = ScopedViewOwner::new(child);
-            list.mount_owned(&list_owner, &host, Vec::new());
+            list.mount_owned(&list_owner, &host, Vec::new())
+                .expect("keyed list should mount");
             assert_eq!(host.text_content().as_deref(), Some("b11:0;2:1;3:2;"));
 
             set_items.set(vec![1, 1]);
@@ -314,7 +319,8 @@ fn indexed_list_preserves_position_identity_across_diff() {
                 _marker: PhantomData,
             };
             let owner = ScopedViewOwner::new(child);
-            list.mount_owned(&owner, &host, Vec::new());
+            list.mount_owned(&owner, &host, Vec::new())
+                .expect("indexed list should mount");
             assert_eq!(host.text_content().as_deref(), Some("1:0;2:1;"));
 
             set_items.set(vec![3, 4, 5]);
@@ -355,7 +361,8 @@ fn repeated_branch_and_list_replacement_keeps_owner_lifecycle_stable() {
                     cleanups: branch_cleanups_for_view.clone(),
                 })
             },
-        );
+        )
+        .expect("branch should mount");
 
         for key in 1..8 {
             set_key.set(key);
@@ -373,7 +380,8 @@ fn repeated_branch_and_list_replacement_keeps_owner_lifecycle_stable() {
                 _marker: PhantomData,
             };
             let list_owner = ScopedViewOwner::new(child);
-            list.mount_owned(&list_owner, &host, Vec::new());
+            list.mount_owned(&list_owner, &host, Vec::new())
+                .expect("indexed list should mount");
 
             for values in [vec![1, 2, 3], vec![3], vec![4, 5], vec![6, 7, 8, 9]] {
                 set_items.set(values.clone());
@@ -446,7 +454,8 @@ fn stateful_keyed_rows_preserve_mounts_and_invalidate_old_updaters() {
                 _marker: PhantomData,
             };
             let owner = ScopedViewOwner::new(child);
-            view.mount_owned(&owner, &host, Vec::new());
+            view.mount_owned(&owner, &host, Vec::new())
+                .expect("branch view should mount");
             assert_eq!(host.text_content().as_deref(), Some("1:0;2:1;"));
             assert_eq!(mounts.get(), 2);
 
@@ -522,7 +531,8 @@ fn rejected_stateful_factory_cleans_uncommitted_row_range() {
                 _marker: PhantomData,
             };
             let owner = ScopedViewOwner::new(child);
-            list.mount_owned(&owner, &host, Vec::new());
+            list.mount_owned(&owner, &host, Vec::new())
+                .expect("keyed list should mount");
             assert_eq!(host.text_content().as_deref(), Some("1:0;"));
             assert_eq!(comment_count(&host), 4);
 

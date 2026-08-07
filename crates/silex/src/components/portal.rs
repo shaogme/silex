@@ -20,7 +20,7 @@ impl<'scope> PortalView<'scope> {
         owner: &dyn ViewOwner<'scope>,
         _parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) {
+    ) -> silex_core::SilexResult<()> {
         let document = silex_dom::document();
         let target = self.mount_to.unwrap_or_else(|| {
             document
@@ -28,41 +28,46 @@ impl<'scope> PortalView<'scope> {
                 .expect("Portal requires document.body when no target is supplied")
                 .into()
         });
-        let container = match document.create_element("div") {
-            Ok(container) => container,
-            Err(error) => {
-                owner.report_error(error.into());
-                return;
-            }
-        };
-        let _ = container.set_attribute("style", "display: contents");
+        let container = document
+            .create_element("div")
+            .map_err(silex_core::SilexError::from)?;
+        container
+            .set_attribute("style", "display: contents")
+            .map_err(silex_core::SilexError::from)?;
         let container: Node = container.into();
-        if let Err(error) = target.append_child(&container).map_err(Into::into) {
-            owner.report_error(error);
-            return;
-        }
+        target
+            .append_child(&container)
+            .map_err(silex_core::SilexError::from)?;
 
         let active = Rc::new(Cell::new(true));
         let cleanup_active = active.clone();
         let cleanup_target = target.clone();
         let cleanup_container = container.clone();
-        owner
-            .on_cleanup(Box::new(move || {
-                if cleanup_active.replace(false) {
-                    let _ = cleanup_target.remove_child(&cleanup_container);
-                }
-            }))
-            .unwrap_or_else(|error| owner.report_error(error));
+        owner.on_cleanup(Box::new(move || {
+            if cleanup_active.replace(false) {
+                let _ = cleanup_target.remove_child(&cleanup_container);
+            }
+        }))?;
 
         let result = catch_unwind(AssertUnwindSafe(|| {
-            self.children.mount_owned(owner, &container, attrs);
+            self.children.mount_owned(owner, &container, attrs)
         }));
-        if let Err(panic) = result {
-            if active.replace(false) {
-                let _ = target.remove_child(&container);
+        match result {
+            Err(panic) => {
+                if active.replace(false) {
+                    let _ = target.remove_child(&container);
+                }
+                resume_unwind(panic);
             }
-            resume_unwind(panic);
+            Ok(Err(error)) => {
+                if active.replace(false) {
+                    let _ = target.remove_child(&container);
+                }
+                return Err(error);
+            }
+            Ok(Ok(())) => {}
         }
+        Ok(())
     }
 }
 
@@ -72,8 +77,8 @@ impl<'scope> View<'scope> for PortalView<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) {
-        self.clone().mount_inner(owner, parent, attrs);
+    ) -> silex_core::SilexResult<()> {
+        self.clone().mount_inner(owner, parent, attrs)
     }
 
     fn mount_owned(
@@ -81,10 +86,11 @@ impl<'scope> View<'scope> for PortalView<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) where
+    ) -> silex_core::SilexResult<()>
+    where
         Self: Sized,
     {
-        self.mount_inner(owner, parent, attrs);
+        self.mount_inner(owner, parent, attrs)
     }
 }
 

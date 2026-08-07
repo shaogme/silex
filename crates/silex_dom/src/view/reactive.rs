@@ -1,60 +1,92 @@
 use crate::attribute::PendingAttribute;
 use crate::element::{Element, TypedElement, tags::Tag};
 use crate::view::{
-    AnyView, ApplyAttributes, RenderArgs, RenderThunk, View, ViewCons, ViewOwner,
+    AnyView, ApplyAttributes, OwnedViewOwner, RenderArgs, RenderThunk, View, ViewCons, ViewOwner,
     mount_dynamic_view_universal_from,
 };
 use silex_core::reactivity::{Memo, ReadSignal, RwSignal, Signal, StoredValue};
 use silex_core::traits::RxCloneData;
-use silex_core::{Rx, RxValueKind, SilexError};
+use silex_core::{Rx, RxValueKind, SilexError, SilexResult};
 use std::fmt::Display;
-use std::{borrow::Cow, cell::RefCell, rc::Rc};
+use std::{
+    borrow::Cow,
+    cell::{Cell, RefCell},
+    rc::Rc,
+};
 use web_sys::Node;
 
 pub(crate) fn mount_reactive_text<'scope, T>(
     owner: &dyn ViewOwner<'scope>,
     parent: &Node,
     rx: Rx<'scope, T>,
-) where
+) -> SilexResult<()>
+where
     T: Display + RxCloneData + 'scope,
 {
+    let inputs = rx.runtime_inputs();
+    owner.validate_inputs(&inputs)?;
+    let scope = Rc::new(owner.try_owned_scope()?);
+    let local_owner = OwnedViewOwner::new(scope.clone(), owner.token().error_reporter());
     let parent = parent.clone();
     let node = Rc::new(RefCell::new(None::<Node>));
-    let node_for_effect = node.clone();
-    let token = owner.token();
-    let token_for_effect = token.clone();
-    if let Err(error) = owner.effect_from(
-        rx.runtime_inputs(),
-        Box::new(move || {
-            let node = if let Some(node) = node_for_effect.borrow().clone() {
-                node
-            } else {
-                let node = crate::document().create_text_node("");
-                if let Err(error) = parent.append_child(&node).map_err(SilexError::from) {
-                    token_for_effect.report_error(error);
-                    return;
-                }
-                let node: Node = node.into();
-                *node_for_effect.borrow_mut() = Some(node.clone());
-                node
-            };
-            if let Err(error) = rx.try_with(|value| node.set_node_value(Some(&value.to_string()))) {
-                token_for_effect.report_error(error.into());
-            }
-        }),
-    ) {
-        owner.report_error(error);
-    }
     let node_for_cleanup = node.clone();
-    if let Err(error) = owner.on_cleanup(Box::new(move || {
+    if let Err(error) = local_owner.on_cleanup(Box::new(move || {
         if let Some(node) = node_for_cleanup.borrow_mut().take()
             && let Some(parent) = node.parent_node()
         {
             let _ = parent.remove_child(&node);
         }
     })) {
-        owner.report_error(error);
+        scope.dispose();
+        return Err(error);
     }
+
+    let node_for_effect = node.clone();
+    let token = local_owner.token();
+    let initial_error = Rc::new(RefCell::new(None::<SilexError>));
+    let initial_error_for_effect = initial_error.clone();
+    let first_run = Rc::new(Cell::new(true));
+    let first_run_for_effect = first_run.clone();
+    if let Err(error) = local_owner.effect_from(
+        inputs,
+        Box::new(move || {
+            let result = (|| -> SilexResult<()> {
+                let node = if let Some(node) = node_for_effect.borrow().clone() {
+                    node
+                } else {
+                    let node = crate::document().create_text_node("");
+                    parent.append_child(&node).map_err(SilexError::from)?;
+                    let node: Node = node.into();
+                    *node_for_effect.borrow_mut() = Some(node.clone());
+                    node
+                };
+                rx.try_with(|value| node.set_node_value(Some(&value.to_string())))
+                    .map_err(SilexError::from)?;
+                Ok(())
+            })();
+            let is_initial = first_run_for_effect.replace(false);
+            if let Err(error) = result {
+                if is_initial {
+                    *initial_error_for_effect.borrow_mut() = Some(error);
+                } else {
+                    token.report_error(error);
+                }
+            }
+        }),
+    ) {
+        scope.dispose();
+        return Err(error);
+    }
+    if let Some(error) = initial_error.borrow_mut().take() {
+        scope.dispose();
+        return Err(error);
+    }
+    let scope_for_cleanup = scope.clone();
+    if let Err(error) = owner.on_cleanup(Box::new(move || scope_for_cleanup.dispose())) {
+        scope.dispose();
+        return Err(error);
+    }
+    Ok(())
 }
 
 pub(crate) fn mount_reactive_view<'scope, V>(
@@ -62,14 +94,12 @@ pub(crate) fn mount_reactive_view<'scope, V>(
     parent: &Node,
     rx: Rx<'scope, V>,
     attrs: Vec<PendingAttribute<'scope>>,
-) where
+) -> SilexResult<()>
+where
     V: View<'scope> + 'scope,
 {
     let inputs = rx.runtime_inputs();
-    if let Err(error) = owner.validate_inputs(&inputs) {
-        owner.report_error(error);
-        return;
-    }
+    owner.validate_inputs(&inputs)?;
     mount_dynamic_view_universal_from(
         owner,
         parent,
@@ -81,11 +111,11 @@ pub(crate) fn mount_reactive_view<'scope, V>(
                 attrs,
                 owner: token,
             } = args;
-            if let Err(error) = rx.try_with(|view| view.mount(&token, &parent, attrs)) {
-                token.report_error(error.into());
-            }
+            rx.try_with(|view| view.mount(&token, &parent, attrs))
+                .map_err(SilexError::from)
+                .and_then(|result| result)
         }),
-    );
+    )
 }
 
 pub trait AutoReactiveView<'scope>: View<'scope> + Sized + 'scope {
@@ -94,8 +124,8 @@ pub trait AutoReactiveView<'scope>: View<'scope> + Sized + 'scope {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) {
-        mount_reactive_view(owner, parent, rx, attrs);
+    ) -> SilexResult<()> {
+        mount_reactive_view(owner, parent, rx, attrs)
     }
 }
 
@@ -113,8 +143,8 @@ where
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) {
-        V::mount_reactive(*self, owner, parent, attrs);
+    ) -> SilexResult<()> {
+        V::mount_reactive(*self, owner, parent, attrs)
     }
 
     fn mount_owned(
@@ -122,10 +152,11 @@ where
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) where
+    ) -> SilexResult<()>
+    where
         Self: Sized,
     {
-        V::mount_reactive(self, owner, parent, attrs);
+        V::mount_reactive(self, owner, parent, attrs)
     }
 }
 
@@ -138,8 +169,8 @@ macro_rules! impl_auto_reactive_text {
                     owner: &dyn ViewOwner<'scope>,
                     parent: &Node,
                     _attrs: Vec<PendingAttribute<'scope>>,
-                ) {
-                    mount_reactive_text(owner, parent, rx);
+                ) -> SilexResult<()> {
+                    mount_reactive_text(owner, parent, rx)
                 }
             }
         )*
@@ -164,8 +195,8 @@ impl<'scope> AutoReactiveView<'scope> for &'scope str {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
-    ) {
-        mount_reactive_text(owner, parent, rx);
+    ) -> SilexResult<()> {
+        mount_reactive_text(owner, parent, rx)
     }
 }
 
@@ -175,8 +206,8 @@ impl<'scope> AutoReactiveView<'scope> for Cow<'scope, str> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
-    ) {
-        mount_reactive_text(owner, parent, rx);
+    ) -> SilexResult<()> {
+        mount_reactive_text(owner, parent, rx)
     }
 }
 
@@ -213,8 +244,8 @@ macro_rules! impl_view_forward_to_rx {
                     owner: &dyn ViewOwner<'scope>,
                     parent: &Node,
                     attrs: Vec<PendingAttribute<'scope>>,
-                ) {
-                    self.clone().into_rx().mount(owner, parent, attrs);
+                ) -> SilexResult<()> {
+                    self.clone().into_rx().mount(owner, parent, attrs)
                 }
 
                 fn mount_owned(
@@ -222,10 +253,10 @@ macro_rules! impl_view_forward_to_rx {
                     owner: &dyn ViewOwner<'scope>,
                     parent: &Node,
                     attrs: Vec<PendingAttribute<'scope>>,
-                ) where
+                ) -> SilexResult<()> where
                     Self: Sized,
                 {
-                    self.into_rx().mount_owned(owner, parent, attrs);
+                    self.into_rx().mount_owned(owner, parent, attrs)
                 }
             }
         )*

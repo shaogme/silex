@@ -21,7 +21,7 @@ pub mod link;
 pub use context::*;
 pub use link::*;
 
-use silex_core::{Scope, SilexResult, reactivity::runtime_inputs_of};
+use silex_core::{Scope, SilexError, SilexResult, reactivity::runtime_inputs_of};
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::helpers::window_event_listener_untyped_owned;
 use silex_dom::view::{AnyView, ApplyAttributes, View, ViewOwner};
@@ -147,8 +147,8 @@ impl<'scope> View<'scope> for RouterView<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) {
-        self.clone().mount_owned(owner, parent, attrs);
+    ) -> SilexResult<()> {
+        self.clone().mount_owned(owner, parent, attrs)
     }
 
     fn mount_owned(
@@ -156,10 +156,11 @@ impl<'scope> View<'scope> for RouterView<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) where
+    ) -> SilexResult<()>
+    where
         Self: Sized,
     {
-        self.mount_internal(owner, parent, attrs);
+        self.mount_internal(owner, parent, attrs)
     }
 }
 
@@ -169,24 +170,23 @@ impl<'scope> RouterView<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) {
+    ) -> SilexResult<()> {
         let inputs = self.context.runtime_inputs();
-        if let Err(error) = owner.validate_inputs(&inputs) {
-            owner.report_error(error);
-            return;
-        }
+        owner.validate_inputs(&inputs)?;
 
         let token = owner.token();
         let navigator = self.context.navigator;
-        if let Err(error) = window_event_listener_untyped_owned(&token, "popstate", move |_| {
+        let listener = window_event_listener_untyped_owned(&token, "popstate", move |_| {
             navigator.refresh_location();
-        }) {
-            owner.report_error(error.into());
-            return;
-        }
+        })
+        .map_err(SilexError::from)?;
 
         let children_view = (self.children)(self.context);
-        children_view.mount_owned(owner, parent, attrs);
+        if let Err(error) = children_view.mount_owned(owner, parent, attrs) {
+            listener.cancel();
+            return Err(error);
+        }
+        Ok(())
     }
 }
 
@@ -216,7 +216,7 @@ where
         owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) {
+    ) -> SilexResult<()> {
         let ctx = self.ctx;
         let path_signal = ctx.path;
         let inputs = runtime_inputs_of(path_signal);
@@ -233,7 +233,7 @@ where
                     AnyView::Empty
                 }
             },
-        );
+        )
     }
 
     fn mount_owned(
@@ -241,7 +241,8 @@ where
         owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) where
+    ) -> SilexResult<()>
+    where
         Self: Sized,
     {
         let ctx = self.ctx;
@@ -260,7 +261,7 @@ where
                     AnyView::Empty
                 }
             },
-        );
+        )
     }
 }
 
@@ -294,7 +295,7 @@ where
         owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) {
+    ) -> SilexResult<()> {
         let ctx = self.ctx;
         let path_signal = ctx.path;
         let inputs = runtime_inputs_of(path_signal);
@@ -312,7 +313,7 @@ where
                     AnyView::Empty
                 }
             },
-        );
+        )
     }
 
     fn mount_owned(
@@ -320,7 +321,8 @@ where
         owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) where
+    ) -> SilexResult<()>
+    where
         Self: Sized,
     {
         let ctx = self.ctx;
@@ -340,7 +342,7 @@ where
                     AnyView::Empty
                 }
             },
-        );
+        )
     }
 }
 

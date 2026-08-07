@@ -823,15 +823,12 @@ impl<'scope> GlobalStyleView<'scope> {
         }
     }
 
-    fn mount_inner(&self, owner: &dyn ViewOwner<'scope>) {
+    fn mount_inner(&self, owner: &dyn ViewOwner<'scope>) -> SilexResult<()> {
         let mut inputs = RuntimeInputs::new();
         for binding in &self.bindings {
             inputs.extend(&binding.runtime_inputs());
         }
-        if let Err(error) = owner.validate_inputs(&inputs) {
-            owner.report_error(error);
-            return;
-        }
+        owner.validate_inputs(&inputs)?;
 
         for (style_id, css) in &self.static_styles {
             if !style_id.is_empty() && !css.is_empty() {
@@ -848,8 +845,9 @@ impl<'scope> GlobalStyleView<'scope> {
                 binding.parts,
                 binding.positional.clone(),
                 binding.replacements.clone(),
-            );
+            )?;
         }
+        Ok(())
     }
 }
 
@@ -861,8 +859,8 @@ impl<'scope> View<'scope> for GlobalStyleView<'scope> {
         owner: &dyn ViewOwner<'scope>,
         _parent: &web_sys::Node,
         _attrs: Vec<PendingAttribute<'scope>>,
-    ) {
-        self.mount_inner(owner);
+    ) -> SilexResult<()> {
+        self.mount_inner(owner)
     }
 
     fn mount_owned(
@@ -870,10 +868,11 @@ impl<'scope> View<'scope> for GlobalStyleView<'scope> {
         owner: &dyn ViewOwner<'scope>,
         _parent: &web_sys::Node,
         _attrs: Vec<PendingAttribute<'scope>>,
-    ) where
+    ) -> SilexResult<()>
+    where
         Self: Sized,
     {
-        self.mount_inner(owner);
+        self.mount_inner(owner)
     }
 }
 
@@ -930,7 +929,7 @@ pub fn inject_managed_dynamic_style<'scope>(
     parts: &'static [CssPart],
     positional: Vec<CssVariableGetter<'scope>>,
     replacements: Vec<(String, CssVariableGetter<'scope>)>,
-) {
+) -> SilexResult<()> {
     let mut inputs = RuntimeInputs::new();
     for getter in &positional {
         inputs.extend(&getter.runtime_inputs());
@@ -938,15 +937,12 @@ pub fn inject_managed_dynamic_style<'scope>(
     for (_, getter) in &replacements {
         inputs.extend(&getter.runtime_inputs());
     }
-    if let Err(error) = owner.validate_inputs(&inputs) {
-        owner.report_error(error);
-        return;
-    }
+    owner.validate_inputs(&inputs)?;
 
     let manager = Rc::new(DynamicStyleManager::new());
     let manager_for_effect = manager.clone();
     let style_id_str = style_id.into();
-    if let Err(error) = owner.effect_from(
+    owner.effect_from(
         inputs,
         Box::new(move || {
             let vals: Vec<String> = positional.iter().map(|getter| getter.get()).collect();
@@ -968,13 +964,10 @@ pub fn inject_managed_dynamic_style<'scope>(
             };
             manager_for_effect.update(&style_id_str, &res);
         }),
-    ) {
-        owner.report_error(error);
-    }
+    )?;
     let manager_for_cleanup = manager.clone();
-    if let Err(error) = owner.on_cleanup(Box::new(move || manager_for_cleanup.dispose())) {
-        owner.report_error(error);
-    }
+    owner.on_cleanup(Box::new(move || manager_for_cleanup.dispose()))?;
+    Ok(())
 }
 
 fn element_style(el: &Element) -> Option<web_sys::CssStyleDeclaration> {

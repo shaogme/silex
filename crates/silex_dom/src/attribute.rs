@@ -353,22 +353,19 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
         this.apply(PendingAttribute::new_scoped(move |el: &Element, owner| {
             let dom_element = el.clone();
             let signal = signal.clone();
-            let owner = owner.clone();
-            let owner_for_effect = owner.clone();
-            owner.effect_from(
+            crate::view::register_initial_effect(
+                owner,
                 runtime_inputs_of(signal.clone()),
-                Box::new(move || {
+                move || {
                     let value = signal.get();
                     let str_val = value.as_ref();
-                    if let Err(error) = apply_attr_with_target_internal(
+                    apply_attr_with_target_internal(
                         &dom_element,
                         "value",
                         ApplyTarget::Known(KnownProp::Value),
                         &Attr::from(str_val.to_string()),
-                    ) {
-                        owner_for_effect.report_error(error);
-                    }
-                }),
+                    )
+                },
             )
         }))
     }

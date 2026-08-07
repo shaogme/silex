@@ -158,7 +158,7 @@ fn mount_foreign_css<'scope>(
         --macro-foreign-css: $(color);
     });
     let owner = ScopedViewOwner::new(local_scope);
-    view.mount_owned(&owner, host, Vec::new());
+    assert!(view.mount_owned(&owner, host, Vec::new()).is_err());
 }
 
 fn mount_foreign_global<'scope>(
@@ -170,7 +170,11 @@ fn mount_foreign_global<'scope>(
     let foreign_scope = foreign_root.scope();
     let (color, _) = foreign_scope.signal(hex("#654321"));
     let owner = ScopedViewOwner::new(local_scope);
-    MacroForeignGlobal(color.into()).mount_owned(&owner, host, Vec::new());
+    assert!(
+        MacroForeignGlobal(color.into())
+            .mount_owned(&owner, host, Vec::new())
+            .is_err()
+    );
 }
 
 fn mount_mixed_foreign_global<'scope>(
@@ -183,7 +187,11 @@ fn mount_mixed_foreign_global<'scope>(
     let (color, _) = local_scope.signal(hex("#112233"));
     let (selector, _) = foreign_scope.signal(String::from("macro-mixed-foreign-selector"));
     let owner = ScopedViewOwner::new(local_scope);
-    MacroMixedForeignGlobal(color.into(), selector.into()).mount_owned(&owner, host, Vec::new());
+    assert!(
+        MacroMixedForeignGlobal(color.into(), selector.into())
+            .mount_owned(&owner, host, Vec::new())
+            .is_err()
+    );
 }
 
 #[wasm_bindgen_test]
@@ -243,7 +251,8 @@ fn css_dynamic_value_mounts_updates_and_cleans_with_owner() {
         let (width, set_width) = scope.signal(px(4));
         let view = silex::html::div(()).apply(css! { width: $(width); });
         let owner = ScopedViewOwner::new(scope);
-        view.mount_owned(&owner, &host, Vec::new());
+        view.mount_owned(&owner, &host, Vec::new())
+            .expect("macro view should mount");
         element = host
             .last_element_child()
             .expect("dynamic css view mounts an element");
@@ -281,7 +290,8 @@ async fn css_dynamic_selector_updates_and_detaches_on_owner_dispose() {
             & $selector { color: red; }
         });
         let owner = ScopedViewOwner::new(scope);
-        view.mount_owned(&owner, &host, Vec::new());
+        view.mount_owned(&owner, &host, Vec::new())
+            .expect("macro view should mount");
         element = host
             .last_element_child()
             .expect("dynamic css selector view mounts an element");
@@ -337,7 +347,8 @@ async fn css_dynamic_selector_dispose_before_pending_style_flush_does_not_readd_
             $selector { color: red; }
         });
         let owner = ScopedViewOwner::new(scope);
-        view.mount_owned(&owner, &host, Vec::new());
+        view.mount_owned(&owner, &host, Vec::new())
+            .expect("macro view should mount");
         element = host
             .last_element_child()
             .expect("dynamic selector view mounts an element");
@@ -376,7 +387,8 @@ async fn css_dynamic_selector_stylesheet_is_leased_across_owners() {
             $selector { color: red; }
         });
         let owner = ScopedViewOwner::new(scope);
-        view.mount_owned(&owner, &host, Vec::new());
+        view.mount_owned(&owner, &host, Vec::new())
+            .expect("macro view should mount");
         first_element = host
             .last_element_child()
             .expect("first shared selector view mounts an element");
@@ -388,7 +400,8 @@ async fn css_dynamic_selector_stylesheet_is_leased_across_owners() {
             $selector { color: red; }
         });
         let owner = ScopedViewOwner::new(scope);
-        view.mount_owned(&owner, &host, Vec::new());
+        view.mount_owned(&owner, &host, Vec::new())
+            .expect("macro view should mount");
         second_element = host
             .last_element_child()
             .expect("second shared selector view mounts an element");
@@ -441,7 +454,8 @@ fn conditional_tw_switches_one_owner_bound_class_and_cleans_on_dispose() {
             )
         ));
         let owner = ScopedViewOwner::new(scope);
-        view.mount_owned(&owner, &host, Vec::new());
+        view.mount_owned(&owner, &host, Vec::new())
+            .expect("macro view should mount");
         element = host
             .last_element_child()
             .expect("conditional tw view mounts an element");
@@ -492,7 +506,8 @@ fn classes_reactive_toggle_updates_and_cleans_without_removing_static_classes() 
             dynamic_classes,
         ]);
         let owner = ScopedViewOwner::new(scope);
-        view.mount_owned(&owner, &host, Vec::new());
+        view.mount_owned(&owner, &host, Vec::new())
+            .expect("macro view should mount");
         element = host
             .last_element_child()
             .expect("classes view mounts an element");
@@ -557,7 +572,8 @@ fn static_class_strings_are_applied_as_separate_dom_tokens() {
         let scope = root.scope();
         let view = silex::html::div(()).class("static-first static-second");
         let owner = ScopedViewOwner::new(scope);
-        view.mount_owned(&owner, &host, Vec::new());
+        view.mount_owned(&owner, &host, Vec::new())
+            .expect("macro view should mount");
 
         let element = host
             .last_element_child()
@@ -589,7 +605,8 @@ fn styled_dynamic_value_cleans_inline_property_on_owner_dispose() {
         let (color, set_color) = scope.signal(hex("#123456"));
         let view = MacroStyledValue(AnyView::new(()), color);
         let owner = ScopedViewOwner::new(scope);
-        view.mount_owned(&owner, &host, Vec::new());
+        view.mount_owned(&owner, &host, Vec::new())
+            .expect("styled value view should mount");
         element = host
             .last_element_child()
             .expect("styled value view mounts an element");
@@ -624,7 +641,8 @@ async fn styled_dynamic_selector_updates_and_detaches_on_owner_dispose() {
         let (selector, set_selector) = scope.signal(String::from("macro-selector-a"));
         let view = MacroStyledSelector(AnyView::new(()), selector);
         let owner = ScopedViewOwner::new(scope);
-        view.mount_owned(&owner, &host, Vec::new());
+        view.mount_owned(&owner, &host, Vec::new())
+            .expect("styled selector view should mount");
         element = host
             .last_element_child()
             .expect("styled selector view mounts an element");
@@ -681,7 +699,8 @@ async fn styled_dynamic_variant_switches_rules_and_cleans_on_dispose() {
         let (selector, _) = scope.signal(String::from("macro-variant-selector"));
         let view = MacroStyledVariant(AnyView::new(()), selector).mode(mode);
         let owner = ScopedViewOwner::new(scope);
-        view.mount_owned(&owner, &host, Vec::new());
+        view.mount_owned(&owner, &host, Vec::new())
+            .expect("styled variant view should mount");
         element = host
             .last_element_child()
             .expect("styled variant view mounts an element");
@@ -728,7 +747,9 @@ async fn dynamic_global_mounts_without_a_dom_node_and_cleans_on_dispose() {
             let (color, set_color) = scope.signal(hex("#123456"));
             let (selector, _) = scope.signal(String::from(".macro-target"));
             let owner = ScopedViewOwner::new(scope);
-            MacroGlobal(color.into(), selector.into()).mount_owned(&owner, &host, Vec::new());
+            MacroGlobal(color.into(), selector.into())
+                .mount_owned(&owner, &host, Vec::new())
+                .expect("global macro view should mount");
             assert_eq!(host.child_element_count(), 0);
             set_color
         });
@@ -754,7 +775,9 @@ async fn dynamic_global_mounts_without_a_dom_node_and_cleans_on_dispose() {
         let (color, _) = scope.signal(hex("#abcdef"));
         let (selector, _) = scope.signal(String::from(".macro-target-secondary"));
         let owner = ScopedViewOwner::new(scope);
-        MacroGlobal(color.into(), selector.into()).mount_owned(&owner, &host, Vec::new());
+        MacroGlobal(color.into(), selector.into())
+            .mount_owned(&owner, &host, Vec::new())
+            .expect("global macro view should mount");
     });
     flush_style_microtasks().await;
     assert!(document_style_contains_all(&[

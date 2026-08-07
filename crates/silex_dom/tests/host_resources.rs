@@ -243,15 +243,14 @@ impl<'scope> View<'scope> for WindowResourceView {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         _attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
-    ) {
+    ) -> silex_core::SilexResult<()> {
         let calls = self.calls.clone();
         let id = self.id;
-        let _ = window_event_listener_untyped_owned(
-            &owner.token(),
-            "silex-window-resource",
-            move |_| calls.borrow_mut().push(id),
-        );
-        mount_text_node(parent, &self.id.to_string()).expect("text node can be mounted");
+        window_event_listener_untyped_owned(&owner.token(), "silex-window-resource", move |_| {
+            calls.borrow_mut().push(id)
+        })?;
+        mount_text_node(parent, &self.id.to_string())?;
+        Ok(())
     }
 
     fn mount_owned(
@@ -259,10 +258,11 @@ impl<'scope> View<'scope> for WindowResourceView {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
-    ) where
+    ) -> silex_core::SilexResult<()>
+    where
         Self: Sized,
     {
-        self.mount(owner, parent, attrs);
+        self.mount(owner, parent, attrs)
     }
 }
 
@@ -334,9 +334,12 @@ fn fallible_dom_primitives_and_attribute_mount_failures_are_observable() {
         let view = Element::new("div").apply(PendingAttribute::new_scoped(|_, _| {
             Err(SilexError::Framework("attribute rejected".to_string()))
         }));
-        view.mount_owned(&owner, &host.clone().into(), Vec::new());
+        assert!(matches!(
+            view.mount_owned(&owner, &host.clone().into(), Vec::new()),
+            Err(SilexError::Framework(message)) if message == "attribute rejected"
+        ));
     });
-    assert!(reported.get());
+    assert!(!reported.get());
     assert!(host.first_child().is_none());
     remove_mount_point(&host);
 }
@@ -375,7 +378,9 @@ fn element_listener_removes_physically_and_drops_on_root_dispose() {
         .expect("element listener can be registered");
 
         node_ref.load(element.dom_element.clone());
-        element.mount_owned(&owner, &host.clone().into(), Vec::new());
+        element
+            .mount_owned(&owner, &host.clone().into(), Vec::new())
+            .expect("element should mount");
         assert!(node_ref.get().is_some());
         dispatch(&element_node, MouseEvent::new("click").unwrap().into());
         assert_eq!(calls.get(), 1);
@@ -415,7 +420,8 @@ fn render_rerun_replaces_old_window_listener() {
             id: value.get(),
             calls: calls_for_view.clone(),
         };
-        view.mount_owned(&owner, &host_node, Vec::new());
+        view.mount_owned(&owner, &host_node, Vec::new())
+            .expect("view should mount");
 
         let window = web_sys::window().expect("window is available");
         window
@@ -491,7 +497,8 @@ fn keyed_reorder_keeps_window_resources_until_row_delete() {
                 _marker: PhantomData,
             };
             let owner = ScopedViewOwner::new(child);
-            list.mount_owned(&owner, &host_node, Vec::new());
+            list.mount_owned(&owner, &host_node, Vec::new())
+                .expect("keyed list should mount");
             assert_eq!(spy.count("event_add:silex-window-resource"), 2);
 
             set_items.set(vec![2, 1]);

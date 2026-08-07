@@ -224,7 +224,9 @@ async fn translated_memo_updates_the_existing_text_node() {
             .create_element("div")
             .expect("parent element");
         let owner = ScopedViewOwner::new(scope);
-        t!(i18n, "title").mount_owned(&owner, parent.as_ref(), Vec::new());
+        t!(i18n, "title")
+            .mount_owned(&owner, parent.as_ref(), Vec::new())
+            .expect("translation should mount");
 
         assert_eq!(parent.text_content(), Some("English".to_string()));
         assert_eq!(parent.child_nodes().length(), 1);
@@ -256,7 +258,9 @@ fn translated_memo_is_removed_when_its_root_is_disposed() {
             .build()
             .expect("valid i18n store");
         let owner = ScopedViewOwner::new(scope);
-        t!(i18n, "title").mount_owned(&owner, parent.as_ref(), Vec::new());
+        t!(i18n, "title")
+            .mount_owned(&owner, parent.as_ref(), Vec::new())
+            .expect("translation should mount");
         assert_eq!(parent.text_content(), Some("English".to_string()));
         assert_eq!(parent.child_nodes().length(), 1);
     });
@@ -278,7 +282,6 @@ fn foreign_translation_source_does_not_mount_or_allocate_foreign_owner_nodes() {
     let mut foreign_runtime = Runtime::new();
     let foreign_root = foreign_runtime.run();
     let target_scope = target_root.scope();
-    let foreign_scope = foreign_root.scope();
     let catalog =
         Catalog::from_entries(Locale::new("en-US"), [("title", "English")]).expect("valid catalog");
     let i18n = I18nBuilder::new(target_scope)
@@ -286,10 +289,16 @@ fn foreign_translation_source_does_not_mount_or_allocate_foreign_owner_nodes() {
         .catalog(catalog)
         .build()
         .expect("valid i18n store");
-    let translation = t!(i18n, "title");
-    let owner = ScopedViewOwner::new(foreign_scope);
-
-    translation.mount_owned(&owner, parent.as_ref(), Vec::new());
+    {
+        let foreign_scope = foreign_root.scope();
+        let translation = t!(i18n, "title");
+        let owner = ScopedViewOwner::new(foreign_scope);
+        assert!(
+            translation
+                .mount_owned(&owner, parent.as_ref(), Vec::new())
+                .is_err()
+        );
+    }
 
     assert!(parent.first_child().is_none());
     target_root.dispose().expect("target root cleanup");

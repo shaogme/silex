@@ -3,9 +3,21 @@ error[E0599]: no associated function or constant named `new` found for struct `R
   |
 4 |     let _ = RwSignal::new(1_u32);
   |                       ^^^ associated function or constant not found in `RwSignal<'_, _>`
+  |
+help: there is a method `ne` with a similar name
+  |
+4 -     let _ = RwSignal::new(1_u32);
+4 +     let _ = RwSignal::ne(1_u32);
+  |
 
 error[E0599]: no associated function or constant named `new` found for struct `Effect<'scope>` in the current scope
  --> tests/ui/fail_old_i18n_signal_constructors.rs:5:21
   |
 5 |     let _ = Effect::new(|| {});
   |                     ^^^ associated function or constant not found in `Effect<'_>`
+  |
+help: there is a method `ne` with a similar name
+  |
+5 -     let _ = Effect::new(|| {});
+5 +     let _ = Effect::ne(|| {});
+  |

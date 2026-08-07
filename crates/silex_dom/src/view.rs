@@ -736,7 +736,7 @@ where
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) {
+    ) -> SilexResult<()> {
         match self {
             Self::Owned(value) => value.mount(owner, parent, attrs),
             Self::Borrowed(value) => value.mount(owner, parent, attrs),
@@ -748,7 +748,8 @@ where
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) where
+    ) -> SilexResult<()>
+    where
         Self: Sized,
     {
         match self {
@@ -830,14 +831,15 @@ pub trait View<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    );
+    ) -> SilexResult<()>;
 
     fn mount_owned(
         self,
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) where
+    ) -> SilexResult<()>
+    where
         Self: Sized;
 }
 
@@ -858,10 +860,9 @@ macro_rules! impl_text_view {
                 owner: &dyn ViewOwner<'scope>,
                 parent: &Node,
                 _attrs: Vec<PendingAttribute<'scope>>,
-            ) {
-                if let Err(error) = mount_text_node(parent, self) {
-                    owner.report_error(error);
-                }
+            ) -> SilexResult<()> {
+                let _ = owner;
+                mount_text_node(parent, self)
             }
 
             fn mount_owned(
@@ -869,12 +870,12 @@ macro_rules! impl_text_view {
                 owner: &dyn ViewOwner<'scope>,
                 parent: &Node,
                 _attrs: Vec<PendingAttribute<'scope>>,
-            ) where
+            ) -> SilexResult<()>
+            where
                 Self: Sized,
             {
-                if let Err(error) = mount_text_node(parent, &self) {
-                    owner.report_error(error);
-                }
+                let _ = owner;
+                mount_text_node(parent, &self)
             }
         }
     };
@@ -890,10 +891,9 @@ impl<'scope> View<'scope> for &'scope str {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
-    ) {
-        if let Err(error) = mount_text_node(parent, self) {
-            owner.report_error(error);
-        }
+    ) -> SilexResult<()> {
+        let _ = owner;
+        mount_text_node(parent, self)
     }
 
     fn mount_owned(
@@ -901,12 +901,12 @@ impl<'scope> View<'scope> for &'scope str {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
-    ) where
+    ) -> SilexResult<()>
+    where
         Self: Sized,
     {
-        if let Err(error) = mount_text_node(parent, self) {
-            owner.report_error(error);
-        }
+        let _ = owner;
+        mount_text_node(parent, self)
     }
 }
 
@@ -918,10 +918,9 @@ impl<'scope> View<'scope> for Cow<'scope, str> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
-    ) {
-        if let Err(error) = mount_text_node(parent, self.as_ref()) {
-            owner.report_error(error);
-        }
+    ) -> SilexResult<()> {
+        let _ = owner;
+        mount_text_node(parent, self.as_ref())
     }
 
     fn mount_owned(
@@ -929,12 +928,12 @@ impl<'scope> View<'scope> for Cow<'scope, str> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
-    ) where
+    ) -> SilexResult<()>
+    where
         Self: Sized,
     {
-        if let Err(error) = mount_text_node(parent, self.as_ref()) {
-            owner.report_error(error);
-        }
+        let _ = owner;
+        mount_text_node(parent, self.as_ref())
     }
 }
 
@@ -949,10 +948,9 @@ macro_rules! impl_primitive_view {
                     owner: &dyn ViewOwner<'scope>,
                     parent: &Node,
                     _attrs: Vec<PendingAttribute<'scope>>,
-                ) {
-                    if let Err(error) = mount_text_node(parent, &self.to_string()) {
-                        owner.report_error(error);
-                    }
+                ) -> SilexResult<()> {
+                    let _ = owner;
+                    mount_text_node(parent, &self.to_string())
                 }
 
                 fn mount_owned(
@@ -960,12 +958,11 @@ macro_rules! impl_primitive_view {
                     owner: &dyn ViewOwner<'scope>,
                     parent: &Node,
                     _attrs: Vec<PendingAttribute<'scope>>,
-                ) where
+                ) -> SilexResult<()> where
                     Self: Sized,
                 {
-                    if let Err(error) = mount_text_node(parent, &self.to_string()) {
-                        owner.report_error(error);
-                    }
+                    let _ = owner;
+                    mount_text_node(parent, &self.to_string())
                 }
             }
         )*
@@ -984,7 +981,8 @@ impl<'scope> View<'scope> for () {
         _owner: &dyn ViewOwner<'scope>,
         _parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
-    ) {
+    ) -> SilexResult<()> {
+        Ok(())
     }
 
     fn mount_owned(
@@ -992,9 +990,11 @@ impl<'scope> View<'scope> for () {
         _owner: &dyn ViewOwner<'scope>,
         _parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
-    ) where
+    ) -> SilexResult<()>
+    where
         Self: Sized,
     {
+        Ok(())
     }
 }
 
@@ -1015,8 +1015,8 @@ where
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) {
-        self.clone().mount_owned(owner, parent, attrs);
+    ) -> SilexResult<()> {
+        self.clone().mount_owned(owner, parent, attrs)
     }
 
     fn mount_owned(
@@ -1024,7 +1024,8 @@ where
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) where
+    ) -> SilexResult<()>
+    where
         Self: Sized,
     {
         mount_dynamic_view_universal(
@@ -1038,9 +1039,9 @@ where
                     owner: token,
                 } = args;
                 let view = self();
-                view.mount_owned(&token, &parent, attrs);
+                view.mount_owned(&token, &parent, attrs)
             }),
-        );
+        )
     }
 }
 
@@ -1050,8 +1051,8 @@ pub fn mount_dynamic_view_universal<'scope>(
     parent: &Node,
     attrs: Vec<PendingAttribute<'scope>>,
     renderer: RenderThunk<'scope>,
-) {
-    mount_dynamic_view_universal_from(owner, parent, attrs, RuntimeInputs::new(), renderer);
+) -> SilexResult<()> {
+    mount_dynamic_view_universal_from(owner, parent, attrs, RuntimeInputs::new(), renderer)
 }
 
 pub(crate) fn mount_dynamic_view_universal_from<'scope>(
@@ -1060,18 +1061,9 @@ pub(crate) fn mount_dynamic_view_universal_from<'scope>(
     attrs: Vec<PendingAttribute<'scope>>,
     inputs: RuntimeInputs,
     renderer: RenderThunk<'scope>,
-) {
-    if let Err(error) = owner.validate_inputs(&inputs) {
-        owner.report_error(error);
-        return;
-    }
-    let range = match DomRange::append(parent, "dyn") {
-        Ok(range) => range,
-        Err(error) => {
-            owner.report_error(error);
-            return;
-        }
-    };
+) -> SilexResult<()> {
+    owner.validate_inputs(&inputs)?;
+    let range = DomRange::append(parent, "dyn")?;
     let render = RowRender::new(move |args: RowRenderArgs<'scope, ()>| {
         let RowRenderArgs {
             parent,
@@ -1079,13 +1071,10 @@ pub(crate) fn mount_dynamic_view_universal_from<'scope>(
             owner: token,
             ..
         } = args;
-        renderer.call(RenderArgs::new(parent, attrs, token));
+        renderer.call(RenderArgs::new(parent, attrs, token))
     });
     let token = owner.token();
-    let Some(row) = RowController::try_new(&token, range, render, inputs, attrs, (), 0, false)
-    else {
-        return;
-    };
+    let row = RowController::try_new(&token, range, render, inputs, attrs, (), 0, false)?;
     let row_state = Rc::new(RefCell::new(Some(row)));
     let cleanup_state = row_state.clone();
     if let Err(error) = owner.on_cleanup(Box::new(move || {
@@ -1093,8 +1082,12 @@ pub(crate) fn mount_dynamic_view_universal_from<'scope>(
             row.dispose();
         }
     })) {
-        owner.report_error(error);
+        if let Some(mut row) = row_state.borrow_mut().take() {
+            row.dispose();
+        }
+        return Err(error);
     }
+    Ok(())
 }
 
 /// Dynamic view mount with a persistent row owner keyed by the current key.
@@ -1105,7 +1098,8 @@ pub fn mount_dynamic_view_cached<'scope, K, KeyFn, RenderFn>(
     inputs: RuntimeInputs,
     key_fn: KeyFn,
     renderer: RenderFn,
-) where
+) -> SilexResult<()>
+where
     K: PartialEq + Clone + 'scope,
     KeyFn: Fn() -> K + Clone + 'scope,
     RenderFn: Fn(K, (Node, Vec<PendingAttribute<'scope>>)) + 'scope,
@@ -1118,8 +1112,9 @@ pub fn mount_dynamic_view_cached<'scope, K, KeyFn, RenderFn>(
             ..
         } = args;
         renderer(key, (parent, attrs));
+        Ok(())
     });
-    mount_keyed_dynamic_view(owner, parent, attrs, inputs, key_fn, render);
+    mount_keyed_dynamic_view(owner, parent, attrs, inputs, key_fn, render)
 }
 
 pub fn mount_branch_cached<'scope, K, KeyFn, BranchFn>(
@@ -1129,7 +1124,8 @@ pub fn mount_branch_cached<'scope, K, KeyFn, BranchFn>(
     inputs: RuntimeInputs,
     key_fn: KeyFn,
     branch_fn: BranchFn,
-) where
+) -> SilexResult<()>
+where
     K: PartialEq + Clone + 'scope,
     KeyFn: Fn() -> K + Clone + 'scope,
     BranchFn: Fn(K) -> AnyView<'scope> + 'scope,
@@ -1142,9 +1138,9 @@ pub fn mount_branch_cached<'scope, K, KeyFn, BranchFn>(
             owner: token,
             ..
         } = args;
-        branch_fn(key).mount_owned(&token, &parent, attrs);
+        branch_fn(key).mount_owned(&token, &parent, attrs)
     });
-    mount_keyed_dynamic_view(owner, parent, attrs, inputs, key_fn, render);
+    mount_keyed_dynamic_view(owner, parent, attrs, inputs, key_fn, render)
 }
 
 struct BranchState<'scope, K> {
@@ -1155,6 +1151,35 @@ struct BranchState<'scope, K> {
     attrs: Vec<PendingAttribute<'scope>>,
 }
 
+pub(crate) fn register_initial_effect<'scope, F>(
+    owner: &dyn ViewOwner<'scope>,
+    inputs: RuntimeInputs,
+    mut callback: F,
+) -> SilexResult<()>
+where
+    F: FnMut() -> SilexResult<()> + 'scope,
+{
+    let first_run = Rc::new(Cell::new(true));
+    let first_run_for_effect = first_run.clone();
+    let initial_error = Rc::new(RefCell::new(None::<SilexError>));
+    let initial_error_for_effect = initial_error.clone();
+    let token = owner.token();
+    owner.effect_from(
+        inputs,
+        Box::new(move || {
+            let is_initial = first_run_for_effect.replace(false);
+            if let Err(error) = callback() {
+                if is_initial {
+                    *initial_error_for_effect.borrow_mut() = Some(error);
+                } else {
+                    token.report_error(error);
+                }
+            }
+        }),
+    )?;
+    initial_error.borrow_mut().take().map_or(Ok(()), Err)
+}
+
 fn mount_keyed_dynamic_view<'scope, K, KeyFn>(
     owner: &dyn ViewOwner<'scope>,
     parent: &Node,
@@ -1162,21 +1187,15 @@ fn mount_keyed_dynamic_view<'scope, K, KeyFn>(
     inputs: RuntimeInputs,
     key_fn: KeyFn,
     render: RowRender<'scope, K>,
-) where
+) -> SilexResult<()>
+where
     K: PartialEq + Clone + 'scope,
     KeyFn: Fn() -> K + Clone + 'scope,
 {
-    if let Err(error) = owner.validate_inputs(&inputs) {
-        owner.report_error(error);
-        return;
-    }
-    let range = match DomRange::append(parent, "branch") {
-        Ok(range) => range,
-        Err(error) => {
-            owner.report_error(error);
-            return;
-        }
-    };
+    owner.validate_inputs(&inputs)?;
+    let scope = Rc::new(owner.try_owned_scope()?);
+    let local_owner = OwnedViewOwner::new(scope.clone(), owner.token().error_reporter());
+    let range = DomRange::append(parent, "branch")?;
     let state = Rc::new(RefCell::new(BranchState {
         range,
         row: None,
@@ -1185,7 +1204,8 @@ fn mount_keyed_dynamic_view<'scope, K, KeyFn>(
         attrs,
     }));
     let cleanup_state = state.clone();
-    if let Err(error) = owner.on_cleanup(Box::new(move || {
+    let cleanup_range = state.borrow().range.clone();
+    if let Err(error) = local_owner.on_cleanup(Box::new(move || {
         let (row, range) = {
             let mut state = cleanup_state.borrow_mut();
             state.key = None;
@@ -1199,78 +1219,86 @@ fn mount_keyed_dynamic_view<'scope, K, KeyFn>(
             resume_unwind(panic);
         }
     })) {
-        owner.report_error(error);
+        scope.dispose();
+        cleanup_range.remove();
+        return Err(error);
     }
 
-    let token = owner.token();
-    if let Err(error) = owner.effect_from(
-        inputs,
-        Box::new(move || {
-            let result = catch_unwind(AssertUnwindSafe(|| {
-                let key = key_fn();
-                let same_key = state
-                    .borrow()
-                    .key
-                    .as_ref()
-                    .is_some_and(|current| current == &key);
-                if same_key {
-                    let updated = state
-                        .borrow_mut()
-                        .row
-                        .as_mut()
-                        .is_some_and(|row| row.update(key, 0));
-                    if !updated {
-                        token.report_error(SilexError::Javascript(
-                            "dynamic row update was rejected".to_string(),
-                        ));
-                    }
-                    return;
-                }
+    let token = local_owner.token();
+    let effect_state = state.clone();
+    if let Err(error) = register_initial_effect(&local_owner, inputs, move || {
+        let result = catch_unwind(AssertUnwindSafe(|| -> SilexResult<()> {
+            let key = key_fn();
+            let same_key = effect_state
+                .borrow()
+                .key
+                .as_ref()
+                .is_some_and(|current| current == &key);
+            if same_key {
+                effect_state
+                    .borrow_mut()
+                    .row
+                    .as_mut()
+                    .ok_or_else(|| {
+                        SilexError::Framework("dynamic row is missing for current key".to_string())
+                    })?
+                    .update(key, 0)?;
+                return Ok(());
+            }
 
-                let (outer_range, render, attrs, old_row, old_key) = {
-                    let mut state = state.borrow_mut();
-                    (
-                        state.range.clone(),
-                        state.render.clone(),
-                        state.attrs.clone(),
-                        state.row.take(),
-                        state.key.take(),
-                    )
-                };
-                let Ok(row_range) = DomRange::before(&outer_range.end, "branch-row") else {
-                    let mut state = state.borrow_mut();
+            let (outer_range, render, attrs, old_row, old_key) = {
+                let mut state = effect_state.borrow_mut();
+                (
+                    state.range.clone(),
+                    state.render.clone(),
+                    state.attrs.clone(),
+                    state.row.take(),
+                    state.key.take(),
+                )
+            };
+            let row_range = match DomRange::before(&outer_range.end, "branch-row") {
+                Ok(row_range) => row_range,
+                Err(error) => {
+                    let mut state = effect_state.borrow_mut();
                     state.row = old_row;
                     state.key = old_key;
-                    return;
-                };
-                let Some(row) = RowController::try_new(
-                    &token,
-                    row_range,
-                    render,
-                    RuntimeInputs::new(),
-                    attrs,
-                    key.clone(),
-                    0,
-                    false,
-                ) else {
-                    let mut state = state.borrow_mut();
+                    return Err(error);
+                }
+            };
+            let row = match RowController::try_new(
+                &token,
+                row_range,
+                render,
+                RuntimeInputs::new(),
+                attrs,
+                key.clone(),
+                0,
+                false,
+            ) {
+                Ok(row) => row,
+                Err(error) => {
+                    let mut state = effect_state.borrow_mut();
                     state.row = old_row;
                     state.key = old_key;
-                    return;
-                };
-
-                let old_panic = old_row
-                    .map(|mut row| catch_unwind(AssertUnwindSafe(move || row.dispose())))
-                    .and_then(Result::err);
-                let mut state = state.borrow_mut();
-                state.key = Some(key);
-                state.row = Some(row);
-                drop(state);
-                if let Some(panic) = old_panic {
-                    resume_unwind(panic);
+                    return Err(error);
                 }
-            }));
-            if let Err(panic) = result {
+            };
+
+            let old_panic = old_row
+                .map(|mut row| catch_unwind(AssertUnwindSafe(move || row.dispose())))
+                .and_then(Result::err);
+            let mut state = effect_state.borrow_mut();
+            state.key = Some(key);
+            state.row = Some(row);
+            drop(state);
+            if let Some(panic) = old_panic {
+                resume_unwind(panic);
+            }
+            Ok(())
+        }));
+        match result {
+            Ok(result) => result,
+            Err(panic) => {
                 let message = if let Some(value) = panic.downcast_ref::<&str>() {
                     format!("Panic in Dynamic Branch: {value}")
                 } else if let Some(value) = panic.downcast_ref::<String>() {
@@ -1279,11 +1307,19 @@ fn mount_keyed_dynamic_view<'scope, K, KeyFn>(
                     "Panic in Dynamic Branch: unknown panic".to_string()
                 };
                 token.report_error(SilexError::Javascript(message));
+                Ok(())
             }
-        }),
-    ) {
-        owner.report_error(error);
+        }
+    }) {
+        scope.dispose();
+        return Err(error);
     }
+    let scope_for_cleanup = scope.clone();
+    if let Err(error) = owner.on_cleanup(Box::new(move || scope_for_cleanup.dispose())) {
+        scope.dispose();
+        return Err(error);
+    }
+    Ok(())
 }
 
 impl<'scope, V: View<'scope> + ApplyAttributes<'scope>> ApplyAttributes<'scope> for Option<V> {
@@ -1300,9 +1336,11 @@ impl<'scope, V: View<'scope>> View<'scope> for Option<V> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) {
+    ) -> SilexResult<()> {
         if let Some(value) = self {
-            value.mount(owner, parent, attrs);
+            value.mount(owner, parent, attrs)
+        } else {
+            Ok(())
         }
     }
 
@@ -1311,11 +1349,14 @@ impl<'scope, V: View<'scope>> View<'scope> for Option<V> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) where
+    ) -> SilexResult<()>
+    where
         Self: Sized,
     {
         if let Some(value) = self {
-            value.mount_owned(owner, parent, attrs);
+            value.mount_owned(owner, parent, attrs)
+        } else {
+            Ok(())
         }
     }
 }
@@ -1334,7 +1375,7 @@ impl<'scope, V: View<'scope>> View<'scope> for Vec<V> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) {
+    ) -> SilexResult<()> {
         for (index, value) in self.iter().enumerate() {
             value.mount(
                 owner,
@@ -1344,8 +1385,9 @@ impl<'scope, V: View<'scope>> View<'scope> for Vec<V> {
                 } else {
                     Vec::new()
                 },
-            );
+            )?;
         }
+        Ok(())
     }
 
     fn mount_owned(
@@ -1353,7 +1395,8 @@ impl<'scope, V: View<'scope>> View<'scope> for Vec<V> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) where
+    ) -> SilexResult<()>
+    where
         Self: Sized,
     {
         for (index, value) in self.into_iter().enumerate() {
@@ -1365,8 +1408,9 @@ impl<'scope, V: View<'scope>> View<'scope> for Vec<V> {
                 } else {
                     Vec::new()
                 },
-            );
+            )?;
         }
+        Ok(())
     }
 }
 
@@ -1386,7 +1430,7 @@ impl<'scope, V: View<'scope>, const N: usize> View<'scope> for [V; N] {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) {
+    ) -> SilexResult<()> {
         for (index, value) in self.iter().enumerate() {
             value.mount(
                 owner,
@@ -1396,8 +1440,9 @@ impl<'scope, V: View<'scope>, const N: usize> View<'scope> for [V; N] {
                 } else {
                     Vec::new()
                 },
-            );
+            )?;
         }
+        Ok(())
     }
 
     fn mount_owned(
@@ -1405,7 +1450,8 @@ impl<'scope, V: View<'scope>, const N: usize> View<'scope> for [V; N] {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) where
+    ) -> SilexResult<()>
+    where
         Self: Sized,
     {
         for (index, value) in self.into_iter().enumerate() {
@@ -1417,8 +1463,9 @@ impl<'scope, V: View<'scope>, const N: usize> View<'scope> for [V; N] {
                 } else {
                     Vec::new()
                 },
-            );
+            )?;
         }
+        Ok(())
     }
 }
 
@@ -1442,7 +1489,8 @@ impl<'scope> View<'scope> for ViewNil {
         _owner: &dyn ViewOwner<'scope>,
         _parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
-    ) {
+    ) -> SilexResult<()> {
+        Ok(())
     }
 
     fn mount_owned(
@@ -1450,9 +1498,11 @@ impl<'scope> View<'scope> for ViewNil {
         _owner: &dyn ViewOwner<'scope>,
         _parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
-    ) where
+    ) -> SilexResult<()>
+    where
         Self: Sized,
     {
+        Ok(())
     }
 }
 
@@ -1471,9 +1521,9 @@ impl<'scope, H: View<'scope>, T: View<'scope>> View<'scope> for ViewCons<H, T> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) {
-        self.0.mount(owner, parent, attrs);
-        self.1.mount(owner, parent, Vec::new());
+    ) -> SilexResult<()> {
+        self.0.mount(owner, parent, attrs)?;
+        self.1.mount(owner, parent, Vec::new())
     }
 
     fn mount_owned(
@@ -1481,12 +1531,13 @@ impl<'scope, H: View<'scope>, T: View<'scope>> View<'scope> for ViewCons<H, T> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) where
+    ) -> SilexResult<()>
+    where
         Self: Sized,
     {
         let ViewCons(head, tail) = self;
-        head.mount_owned(owner, parent, attrs);
-        tail.mount_owned(owner, parent, Vec::new());
+        head.mount_owned(owner, parent, attrs)?;
+        tail.mount_owned(owner, parent, Vec::new())
     }
 }
 
@@ -1517,10 +1568,10 @@ impl<'scope, V: View<'scope>> View<'scope> for SilexResult<V> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) {
+    ) -> SilexResult<()> {
         match self {
             Ok(value) => value.mount(owner, parent, attrs),
-            Err(error) => owner.report_error(error.clone()),
+            Err(error) => Err(error.clone()),
         }
     }
 
@@ -1529,12 +1580,13 @@ impl<'scope, V: View<'scope>> View<'scope> for SilexResult<V> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) where
+    ) -> SilexResult<()>
+    where
         Self: Sized,
     {
         match self {
             Ok(value) => value.mount_owned(owner, parent, attrs),
-            Err(error) => owner.report_error(error),
+            Err(error) => Err(error),
         }
     }
 }

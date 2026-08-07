@@ -19,7 +19,7 @@ fn main() {
         let view: AnyView<'_> = AnyView::new(borrowed_view.as_str());
         accept_root_view(view);
 
-        let _renderer: RenderThunk<'_> = RenderThunk::new(|_| {});
+        let _renderer: RenderThunk<'_> = RenderThunk::new(|_| Ok(()));
     }
 
     root.dispose().expect("root disposal should succeed");

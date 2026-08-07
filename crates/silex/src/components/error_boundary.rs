@@ -25,9 +25,9 @@ impl<'scope> View<'scope> for ErrorBoundaryView<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) {
+    ) -> silex_core::SilexResult<()> {
         let token = owner.token().with_error_reporter(self.reporter.clone());
-        self.view.mount(&token, parent, attrs);
+        self.view.mount(&token, parent, attrs)
     }
 
     fn mount_owned(
@@ -35,11 +35,12 @@ impl<'scope> View<'scope> for ErrorBoundaryView<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) where
+    ) -> silex_core::SilexResult<()>
+    where
         Self: Sized,
     {
         let token = owner.token().with_error_reporter(self.reporter);
-        self.view.mount_owned(&token, parent, attrs);
+        self.view.mount_owned(&token, parent, attrs)
     }
 }
 

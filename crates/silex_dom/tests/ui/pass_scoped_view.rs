@@ -22,6 +22,7 @@ fn main() {
         let borrowed_renderer = String::from("borrowed-renderer");
         let _renderer: RenderThunk<'_> = RenderThunk::new(move |_| {
             let _ = borrowed_renderer.as_str();
+            Ok(())
         });
     });
 }

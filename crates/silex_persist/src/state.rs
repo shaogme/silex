@@ -329,8 +329,8 @@ where
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) {
-        self.value.into_rx().mount(owner, parent, attrs);
+    ) -> silex_core::SilexResult<()> {
+        self.value.into_rx().mount(owner, parent, attrs)
     }
 
     fn mount_owned(
@@ -338,10 +338,11 @@ where
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) where
+    ) -> silex_core::SilexResult<()>
+    where
         Self: Sized,
     {
-        self.value.into_rx().mount_owned(owner, parent, attrs);
+        self.value.into_rx().mount_owned(owner, parent, attrs)
     }
 }
 

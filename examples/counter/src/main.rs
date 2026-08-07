@@ -240,6 +240,8 @@ fn main() {
         .style("font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;");
 
         let owner = ScopedViewOwner::new(scope);
-        app.mount(&owner, app_container.as_ref(), Vec::new());
+        if let Err(error) = app.mount(&owner, app_container.as_ref(), Vec::new()) {
+            ErrorReporter::unhandled().report(error);
+        }
     });
 }

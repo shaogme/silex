@@ -3,6 +3,7 @@ use silex_dom::view::RenderThunk;
 fn make_renderer<'scope>(value: &'scope str) -> RenderThunk<'scope> {
     RenderThunk::new(move |_| {
         let _ = value.len();
+        Ok(())
     })
 }
 

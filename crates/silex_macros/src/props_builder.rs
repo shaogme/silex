@@ -502,8 +502,8 @@ impl BuilderContext {
                     owner: &dyn #__silex::dom::view::ViewOwner<#scope>,
                     parent: &#__silex::reexports::web_sys::Node,
                     attrs: ::std::vec::Vec<#pending_attribute_ty>,
-                ) {
-                    self.clone().mount_owned(owner, parent, attrs);
+                ) -> #__silex::core::SilexResult<()> {
+                    self.clone().mount_owned(owner, parent, attrs)
                 }
 
                 fn mount_owned(
@@ -511,7 +511,7 @@ impl BuilderContext {
                     owner: &dyn #__silex::dom::view::ViewOwner<#scope>,
                     parent: &#__silex::reexports::web_sys::Node,
                     attrs: ::std::vec::Vec<#pending_attribute_ty>,
-                )
+                ) -> #__silex::core::SilexResult<()>
                 where
                     Self: Sized,
                 {
@@ -523,7 +523,7 @@ impl BuilderContext {
                         owner,
                         parent,
                         pending_attrs,
-                    );
+                    )
                 }
             }
         }

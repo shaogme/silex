@@ -1,6 +1,7 @@
 use crate::attribute::PendingAttribute;
 use crate::element::Element;
 use crate::view::{ApplyAttributes, View, ViewCons, ViewNil, ViewOwner, ViewOwnerToken};
+use silex_core::SilexResult;
 use std::rc::Rc;
 use web_sys::Node;
 
@@ -25,21 +26,21 @@ impl<'scope> RenderArgs<'scope> {
 }
 
 pub struct RenderThunk<'scope> {
-    inner: silex_vtable::thunk::ThunkBox<'scope, RenderArgs<'scope>, ()>,
+    inner: silex_vtable::thunk::ThunkBox<'scope, RenderArgs<'scope>, SilexResult<()>>,
 }
 
 impl<'scope> RenderThunk<'scope> {
     pub fn new<F>(render: F) -> Self
     where
-        F: Fn(RenderArgs<'scope>) + 'scope,
+        F: Fn(RenderArgs<'scope>) -> SilexResult<()> + 'scope,
     {
         Self {
             inner: silex_vtable::thunk::ThunkBox::new(render),
         }
     }
 
-    pub fn call(&self, args: RenderArgs<'scope>) {
-        self.inner.call(args);
+    pub fn call(&self, args: RenderArgs<'scope>) -> SilexResult<()> {
+        self.inner.call(args)
     }
 }
 
@@ -80,7 +81,7 @@ fn mount_list<'scope>(
     owner: &dyn ViewOwner<'scope>,
     parent: &Node,
     attrs: Vec<PendingAttribute<'scope>>,
-) {
+) -> SilexResult<()> {
     for (index, child) in list.iter().enumerate() {
         child.mount(
             owner,
@@ -90,8 +91,9 @@ fn mount_list<'scope>(
             } else {
                 Vec::new()
             },
-        );
+        )?;
     }
+    Ok(())
 }
 
 fn mount_list_owned<'scope>(
@@ -99,7 +101,7 @@ fn mount_list_owned<'scope>(
     owner: &dyn ViewOwner<'scope>,
     parent: &Node,
     attrs: Vec<PendingAttribute<'scope>>,
-) {
+) -> SilexResult<()> {
     for (index, child) in list.into_iter().enumerate() {
         child.mount_owned(
             owner,
@@ -109,8 +111,9 @@ fn mount_list_owned<'scope>(
             } else {
                 Vec::new()
             },
-        );
+        )?;
     }
+    Ok(())
 }
 
 impl<'scope> ApplyAttributes<'scope> for AnyView<'scope> {
@@ -141,14 +144,14 @@ impl<'scope> View<'scope> for AnyView<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) {
+    ) -> SilexResult<()> {
         match self {
-            Self::Empty => {}
+            Self::Empty => Ok(()),
             Self::Text(text) => text.mount(owner, parent, attrs),
             Self::Element(element) => element.mount(owner, parent, attrs),
             Self::List(list) => mount_list(list, owner, parent, attrs),
             Self::Boxed(view, inner_attrs) => {
-                view.mount(owner, parent, merge_attrs(inner_attrs.clone(), attrs));
+                view.mount(owner, parent, merge_attrs(inner_attrs.clone(), attrs))
             }
         }
     }
@@ -158,16 +161,17 @@ impl<'scope> View<'scope> for AnyView<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) where
+    ) -> SilexResult<()>
+    where
         Self: Sized,
     {
         match self {
-            Self::Empty => {}
+            Self::Empty => Ok(()),
             Self::Text(text) => text.mount_owned(owner, parent, attrs),
             Self::Element(element) => element.mount_owned(owner, parent, attrs),
             Self::List(list) => mount_list_owned(list, owner, parent, attrs),
             Self::Boxed(view, inner_attrs) => {
-                view.mount(owner, parent, merge_attrs(inner_attrs, attrs));
+                view.mount(owner, parent, merge_attrs(inner_attrs, attrs))
             }
         }
     }

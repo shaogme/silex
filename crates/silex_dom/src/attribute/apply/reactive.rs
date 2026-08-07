@@ -13,9 +13,9 @@ use crate::view::ViewOwnerToken;
 fn register<'scope>(
     owner: &ViewOwnerToken<'scope>,
     inputs: silex_core::RuntimeInputs,
-    callback: impl FnMut() + 'scope,
+    callback: impl FnMut() -> SilexResult<()> + 'scope,
 ) -> SilexResult<()> {
-    owner.effect_from(inputs, Box::new(callback))
+    crate::view::register_initial_effect(owner, inputs, callback)
 }
 
 pub(crate) fn apply_primitive_reactive_internal<'scope, T>(
@@ -27,10 +27,9 @@ pub(crate) fn apply_primitive_reactive_internal<'scope, T>(
 where
     T: ToString + Clone + 'scope,
 {
-    let owner_for_effect = owner.clone();
     register(owner, rx.runtime_inputs(), move || {
         let value = rx.get().to_string();
-        let result = match &target {
+        match &target {
             ApplyTarget::Attr(_) => apply_immediate_string(&el, &target, &value),
             ApplyTarget::Prop(_) => apply_immediate_string(&el, &target, &value),
             ApplyTarget::Known(prop) => apply_attr_with_target_internal(
@@ -51,9 +50,6 @@ where
                 }
             }
             ApplyTarget::Apply => Ok(()),
-        };
-        if let Err(error) = result {
-            owner_for_effect.report_error(error);
         }
     })
 }
@@ -77,14 +73,10 @@ pub(crate) fn apply_string_pair_reactive_internal<'scope>(
     if matches!(target, ApplyTarget::Style) {
         let style = get_style_decl(&el)
             .ok_or_else(|| SilexError::Dom("element does not expose a style declaration".into()))?;
-        let owner_for_effect = owner.clone();
         register(owner, rx.runtime_inputs(), move || {
-            if let Err(error) = style
+            style
                 .set_property(&key, &rx.get())
                 .map_err(SilexError::from)
-            {
-                owner_for_effect.report_error(error);
-            }
         })?;
     } else {
         apply_string_reactive_internal(el, target, rx, owner)?;
@@ -98,43 +90,27 @@ pub(crate) fn apply_bool_reactive_internal<'scope>(
     rx: Rx<'scope, bool>,
     owner: &ViewOwnerToken<'scope>,
 ) -> SilexResult<()> {
-    let owner_for_effect = owner.clone();
     register(owner, rx.runtime_inputs(), move || match &target {
         ApplyTarget::Attr(name) => {
-            let result = if rx.get() {
+            if rx.get() {
                 el.set_attribute(name, "").map_err(SilexError::from)
             } else {
                 el.remove_attribute(name).map_err(SilexError::from)
-            };
-            if let Err(error) = result {
-                owner_for_effect.report_error(error);
             }
         }
-        ApplyTarget::Prop(name) => {
-            if let Err(error) = apply_immediate_bool_internal(&el, name, rx.get(), true) {
-                owner_for_effect.report_error(error);
-            }
-        }
-        ApplyTarget::Known(prop) => {
-            if let Err(error) = apply_attr_with_target_internal(
-                &el,
-                prop.name(),
-                ApplyTarget::Known(*prop),
-                &Attr::from(rx.get()),
-            ) {
-                owner_for_effect.report_error(error);
-            }
-        }
-        ApplyTarget::Class => {
-            if let Err(error) = el
-                .class_list()
-                .toggle_with_force("active", rx.get())
-                .map_err(SilexError::from)
-            {
-                owner_for_effect.report_error(error);
-            }
-        }
-        _ => {}
+        ApplyTarget::Prop(name) => apply_immediate_bool_internal(&el, name, rx.get(), true),
+        ApplyTarget::Known(prop) => apply_attr_with_target_internal(
+            &el,
+            prop.name(),
+            ApplyTarget::Known(*prop),
+            &Attr::from(rx.get()),
+        ),
+        ApplyTarget::Class => el
+            .class_list()
+            .toggle_with_force("active", rx.get())
+            .map(|_| ())
+            .map_err(SilexError::from),
+        _ => Ok(()),
     })
 }
 
@@ -145,15 +121,11 @@ pub(crate) fn apply_bool_pair_reactive_internal<'scope>(
     owner: &ViewOwnerToken<'scope>,
 ) -> SilexResult<()> {
     let list = el.class_list();
-    let owner_for_effect = owner.clone();
     register(owner, rx.runtime_inputs(), move || {
-        let result = if rx.get() {
+        if rx.get() {
             list.add_1(&key).map_err(SilexError::from)
         } else {
             list.remove_1(&key).map_err(SilexError::from)
-        };
-        if let Err(error) = result {
-            owner_for_effect.report_error(error);
         }
     })
 }
@@ -338,13 +310,11 @@ impl<'scope> ReactiveApply<'scope> for Attr<'scope> {
         target: ApplyTarget,
         owner: &ViewOwnerToken<'scope>,
     ) -> SilexResult<()> {
-        let owner_for_effect = owner.clone();
         register(owner, rx.runtime_inputs(), move || {
-            if let Some(name) = target.name()
-                && let Err(error) =
-                    apply_attr_with_target_internal(&el, &name, target.clone(), &rx.get())
-            {
-                owner_for_effect.report_error(error);
+            if let Some(name) = target.name() {
+                apply_attr_with_target_internal(&el, &name, target.clone(), &rx.get())
+            } else {
+                Ok(())
             }
         })
     }
@@ -373,10 +343,9 @@ where
         target: ApplyTarget,
         owner: &ViewOwnerToken<'scope>,
     ) -> SilexResult<()> {
-        let owner_for_effect = owner.clone();
         register(owner, rx.runtime_inputs(), move || {
             let value = rx.get().map(|value| value.to_string()).unwrap_or_default();
-            let result = match target {
+            match target {
                 ApplyTarget::Class => el.set_attribute("class", &value).map_err(SilexError::from),
                 ApplyTarget::Style => {
                     if let Some(style) = get_style_decl(&el) {
@@ -389,9 +358,6 @@ where
                     }
                 }
                 _ => apply_immediate_string(&el, &target, &value),
-            };
-            if let Err(error) = result {
-                owner_for_effect.report_error(error);
             }
         })
     }
@@ -428,14 +394,10 @@ macro_rules! impl_reactive_apply_string_like {
                         let style = get_style_decl(&el).ok_or_else(|| {
                             SilexError::Dom("element does not expose a style declaration".into())
                         })?;
-                        let owner_for_effect = owner.clone();
                         register(owner, rx.runtime_inputs(), move || {
-                            if let Err(error) = style
+                            style
                                 .set_property(&key, rx.get().as_ref())
                                 .map_err(SilexError::from)
-                            {
-                                owner_for_effect.report_error(error);
-                            }
                         })?;
                         Ok(())
                     } else {

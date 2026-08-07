@@ -1,6 +1,6 @@
 #![cfg(target_arch = "wasm32")]
 
-use silex_core::{ErrorReporter, ReadSignal, Runtime};
+use silex_core::{ErrorReporter, ReadSignal, Runtime, SilexError};
 use silex_dom::view::{
     AnyView, ApplyAttributes, ScopedViewOwner, View, ViewOwner, mount_text_node,
 };
@@ -121,14 +121,13 @@ impl<'scope> View<'scope> for RouterCleanupView {
         owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
         _attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
-    ) {
+    ) -> silex_core::SilexResult<()> {
         let cleanups = self.cleanups.clone();
-        owner
-            .on_cleanup(Box::new(move || {
-                cleanups.set(cleanups.get() + 1);
-            }))
-            .expect("router owner is active");
-        mount_text_node(parent, &self.text).expect("text node can be mounted");
+        owner.on_cleanup(Box::new(move || {
+            cleanups.set(cleanups.get() + 1);
+        }))?;
+        mount_text_node(parent, &self.text)?;
+        Ok(())
     }
 
     fn mount_owned(
@@ -136,10 +135,11 @@ impl<'scope> View<'scope> for RouterCleanupView {
         owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
-    ) where
+    ) -> silex_core::SilexResult<()>
+    where
         Self: Sized,
     {
-        self.mount(owner, parent, attrs);
+        self.mount(owner, parent, attrs)
     }
 }
 
@@ -156,14 +156,13 @@ impl<'scope> View<'scope> for FactoryTextView<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
         _attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
-    ) {
+    ) -> silex_core::SilexResult<()> {
         let cleanups = self.cleanups.clone();
-        owner
-            .on_cleanup(Box::new(move || {
-                cleanups.set(cleanups.get() + 1);
-            }))
-            .expect("router owner is active");
-        mount_text_node(parent, &self.text.get()).expect("text node can be mounted");
+        owner.on_cleanup(Box::new(move || {
+            cleanups.set(cleanups.get() + 1);
+        }))?;
+        mount_text_node(parent, &self.text.get())?;
+        Ok(())
     }
 
     fn mount_owned(
@@ -171,10 +170,11 @@ impl<'scope> View<'scope> for FactoryTextView<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
-    ) where
+    ) -> silex_core::SilexResult<()>
+    where
         Self: Sized,
     {
-        self.mount(owner, parent, attrs);
+        self.mount(owner, parent, attrs)
     }
 }
 
@@ -250,7 +250,8 @@ fn router_navigation_popstate_and_dispose_follow_owner() {
             RouterRouteView::<TestRoute>::new(ctx).into_any()
         }));
         let owner = ScopedViewOwner::new(scope);
-        view.mount_owned(&owner, &host, Vec::new());
+        view.mount_owned(&owner, &host, Vec::new())
+            .expect("router view should mount");
 
         assert_eq!(host.text_content().as_deref(), Some("users"));
         assert_eq!(spy.count("add"), 1);
@@ -326,7 +327,8 @@ fn link_active_class_tracks_the_router_path() {
             .children("users")
             .active_class("active");
         let owner = ScopedViewOwner::new(scope);
-        link.mount_owned(&owner, &host, Vec::new());
+        link.mount_owned(&owner, &host, Vec::new())
+            .expect("link should mount");
 
         let element: web_sys::Element = host
             .first_child()
@@ -427,7 +429,8 @@ fn router_lexical_owner_dispose_removes_listener_and_ignores_late_popstate() {
             .into_any()
         }));
         let owner = ScopedViewOwner::new(scope);
-        view.mount_owned(&owner, &host, Vec::new());
+        view.mount_owned(&owner, &host, Vec::new())
+            .expect("router view should mount");
 
         assert_eq!(host.text_content().as_deref(), Some("lexical"));
         assert_eq!(spy.count("add"), 1);
@@ -472,11 +475,14 @@ fn router_stops_before_children_when_listener_registration_fails() {
             AnyView::from("must not mount")
         }));
         let owner = ScopedViewOwner::with_error_reporter(scope, reporter);
-        view.mount_owned(&owner, &host, Vec::new());
+        assert!(matches!(
+            view.mount_owned(&owner, &host, Vec::new()),
+            Err(SilexError::Javascript(_))
+        ));
     });
 
     assert_eq!(children_calls.get(), 0);
-    assert_eq!(errors.get(), 1);
+    assert_eq!(errors.get(), 0);
     assert_eq!(spy.count("add"), 1);
     assert_eq!(spy.count("remove"), 0);
     assert_eq!(host.text_content().as_deref(), Some(""));
@@ -511,7 +517,9 @@ fn router_view_factory_mounts_scoped_view_with_dynamic_owner_cleanup() {
             })
         }));
         let owner = ScopedViewOwner::new(scope);
-        factory.mount_owned(&owner, &host, Vec::new());
+        factory
+            .mount_owned(&owner, &host, Vec::new())
+            .expect("router factory should mount");
 
         assert_eq!(host.text_content().as_deref(), Some("factory-one"));
         assert_eq!(factory_calls.get(), 1);

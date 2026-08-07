@@ -105,7 +105,15 @@ impl<'scope> Element<'scope> {
             .append_child(&self.dom_element)
             .map_err(SilexError::from)?;
         for child in &self.children {
-            child.mount(&provisional_owner, self.dom_element.as_ref(), Vec::new());
+            if let Err(error) =
+                child.mount(&provisional_owner, self.dom_element.as_ref(), Vec::new())
+            {
+                provisional_scope.dispose();
+                if let Some(parent) = self.dom_element.parent_node() {
+                    let _ = parent.remove_child(&self.dom_element);
+                }
+                return Err(error);
+            }
         }
         let scope_for_cleanup = provisional_scope.clone();
         if let Err(error) = owner.on_cleanup(Box::new(move || scope_for_cleanup.dispose())) {
@@ -158,10 +166,8 @@ impl<'scope> View<'scope> for Element<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) {
-        if let Err(error) = self.mount_inner(owner, parent, attrs) {
-            owner.report_error(error);
-        }
+    ) -> SilexResult<()> {
+        self.mount_inner(owner, parent, attrs)
     }
 
     fn mount_owned(
@@ -169,17 +175,16 @@ impl<'scope> View<'scope> for Element<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) where
+    ) -> SilexResult<()>
+    where
         Self: Sized,
     {
-        if let Err(error) = self.mount_inner(owner, parent, attrs) {
-            owner.report_error(error);
-        }
+        self.mount_inner(owner, parent, attrs)
     }
 }
 
 /// Mount a view using the caller-owned scope.
-pub fn mount_to_body<'scope, V>(scope: Scope<'scope>, view: V)
+pub fn mount_to_body<'scope, V>(scope: Scope<'scope>, view: V) -> SilexResult<()>
 where
     V: View<'scope> + 'scope,
 {
@@ -187,7 +192,7 @@ where
     let body = document.body().expect("No body element");
     let node: web_sys::Node = body.into();
     let owner = ScopedViewOwner::new(scope);
-    view.mount_owned(&owner, &node, Vec::new());
+    view.mount_owned(&owner, &node, Vec::new())
 }
 
 pub struct TypedElement<'scope, T: Tag> {
@@ -310,11 +315,9 @@ impl<'scope, T: Tag> View<'scope> for TypedElement<'scope, T> {
         owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) {
+    ) -> SilexResult<()> {
         let element = self.clone().into_untyped();
-        if let Err(error) = element.mount_inner(owner, parent, attrs) {
-            owner.report_error(error);
-        }
+        element.mount_inner(owner, parent, attrs)
     }
 
     fn mount_owned(
@@ -322,13 +325,12 @@ impl<'scope, T: Tag> View<'scope> for TypedElement<'scope, T> {
         owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) where
+    ) -> SilexResult<()>
+    where
         Self: Sized,
     {
         let element = self.into_untyped();
-        if let Err(error) = element.mount_inner(owner, parent, attrs) {
-            owner.report_error(error);
-        }
+        element.mount_inner(owner, parent, attrs)
     }
 }
 

@@ -28,8 +28,8 @@ impl<'scope> View<'scope> for RouterViewFactory<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) {
-        self.clone().mount_owned(owner, parent, attrs);
+    ) -> SilexResult<()> {
+        self.clone().mount_owned(owner, parent, attrs)
     }
 
     fn mount_owned(
@@ -37,11 +37,12 @@ impl<'scope> View<'scope> for RouterViewFactory<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) where
+    ) -> SilexResult<()>
+    where
         Self: Sized,
     {
         let factory = self.0;
-        (move || (factory)()).mount_owned(owner, parent, attrs);
+        (move || (factory)()).mount_owned(owner, parent, attrs)
     }
 }
 
