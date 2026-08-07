@@ -6,7 +6,7 @@ fn main() {
         let _ = scope.try_effect_from(
             RuntimeInputs::new(),
             || Ok::<(), ()>(()),
-            ErrorHandler::ignore(),
+            ErrorHandler::new(|_| {}),
         );
     });
 }

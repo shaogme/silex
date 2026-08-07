@@ -2,7 +2,7 @@
 
 use gloo_timers::future::TimeoutFuture;
 use silex_core::{
-    Runtime,
+    ErrorHandler, Runtime, SilexError,
     reactivity::{Mutation, MutationState, Resource, ResourceState, SuspenseContext},
 };
 use std::{
@@ -50,6 +50,10 @@ async fn wait_for_tasks(milliseconds: u32) {
     TimeoutFuture::new(milliseconds).await;
 }
 
+fn handler<'scope>() -> ErrorHandler<'scope, SilexError> {
+    ErrorHandler::new(|_| {})
+}
+
 #[wasm_bindgen_test(async)]
 async fn resource_enters_loading_and_reloading_states() {
     let mut runtime = Runtime::new();
@@ -61,6 +65,7 @@ async fn resource_enters_loading_and_reloading_states() {
             source,
             |_| async { Ok::<_, ()>(1u32) },
             Some(suspense),
+            handler(),
         );
 
         assert!(matches!(resource.state.get(), ResourceState::Loading));
@@ -92,6 +97,7 @@ async fn resource_future_is_cancelled_after_scope_dispose() {
                 PendingFuture::<Result<u32, ()>>::new(dropped_for_fetcher.clone())
             },
             None,
+            handler(),
         );
 
         assert!(resource.loading());
@@ -130,6 +136,7 @@ async fn resource_replacement_keeps_only_the_new_suspense_request() {
                 }
             },
             Some(suspense),
+            handler(),
         );
 
         assert_eq!(suspense.count.get(), 1);
@@ -155,6 +162,7 @@ async fn resource_scope_capability_survives_async_replacement() {
             source,
             |value| async move { Ok::<_, ()>(value) },
             None,
+            handler(),
         );
 
         wait_for_tasks(0).await;
@@ -182,11 +190,15 @@ async fn mutation_future_is_cancelled_after_scope_dispose() {
     runtime.child(|scope| {
         let dropped_for_action = dropped.clone();
         let calls_for_action = calls.clone();
-        let mutation = Mutation::new(scope, move |value: u32| {
-            calls_for_action.set(calls_for_action.get() + 1);
-            let _ = value;
-            PendingFuture::<Result<u32, ()>>::new(dropped_for_action.clone())
-        });
+        let mutation = Mutation::new(
+            scope,
+            move |value: u32| {
+                calls_for_action.set(calls_for_action.get() + 1);
+                let _ = value;
+                PendingFuture::<Result<u32, ()>>::new(dropped_for_action.clone())
+            },
+            handler(),
+        );
 
         mutation.mutate(1);
         mutation.mutate(2);
@@ -204,7 +216,7 @@ async fn scoped_task_cancels_and_drops_its_future() {
     let root = runtime.run();
     let task = {
         let scope = root.scope();
-        scope.spawn_scoped(PendingFuture::<()>::new(dropped.clone()))
+        scope.spawn_scoped(PendingFuture::<()>::new(dropped.clone()), handler())
     };
 
     assert!(!task.is_cancelled());
@@ -230,6 +242,7 @@ async fn child_scope_cancels_resource_without_reactivating_parent() {
                 source,
                 move |_| PendingFuture::<Result<u32, ()>>::new(dropped_for_fetcher.clone()),
                 None,
+                handler(),
             );
             assert!(resource.loading());
         });

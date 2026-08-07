@@ -12,7 +12,7 @@ const GRAPH_SIZES: &[usize] = &[1, 8, 32, 128];
 const OWNER_SIZES: &[usize] = &[1, 16, 128, 512];
 
 fn handler<'scope>() -> ErrorHandler<'scope, ()> {
-    ErrorHandler::ignore()
+    ErrorHandler::new(|_| {})
 }
 
 fn scoped_signal_round_trip(c: &mut Criterion) {

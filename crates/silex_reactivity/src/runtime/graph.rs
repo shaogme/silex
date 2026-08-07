@@ -470,7 +470,7 @@ mod tests {
     }
 
     fn handler<'scope>() -> ErrorHandler<'scope, ()> {
-        ErrorHandler::ignore()
+        ErrorHandler::new(|_| {})
     }
 
     #[test]

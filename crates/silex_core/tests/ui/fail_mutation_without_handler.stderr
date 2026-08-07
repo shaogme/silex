@@ -1,0 +1,15 @@
+error[E0061]: this function takes 3 arguments but 2 arguments were supplied
+ --> tests/ui/fail_mutation_without_handler.rs:6:17
+  |
+6 |         let _ = Mutation::new(scope, |_: u32| async { Ok::<u32, ()>(1) });
+  |                 ^^^^^^^^^^^^^-------------------------------------------- argument #3 of type `ErrorHandler<'_, SilexError>` is missing
+  |
+note: associated function defined here
+ --> src/reactivity/mutation.rs
+  |
+  |     pub fn new<F, Fut>(
+  |            ^^^
+help: provide the argument
+  |
+6 |         let _ = Mutation::new(scope, |_: u32| async { Ok::<u32, ()>(1) }, /* ErrorHandler<'_, SilexError> */);
+  |                                                                         ++++++++++++++++++++++++++++++++++++

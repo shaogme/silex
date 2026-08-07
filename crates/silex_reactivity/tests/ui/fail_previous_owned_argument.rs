@@ -5,7 +5,7 @@ fn main() {
     runtime.child(|scope| {
         let _ = scope.effect_with_previous(
             |previous: Option<i32>| Ok::<i32, ()>(previous.unwrap_or_default()),
-            ErrorHandler::ignore(),
+            ErrorHandler::new(|_| {}),
         );
     });
 }

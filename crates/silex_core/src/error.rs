@@ -1,7 +1,5 @@
 use std::fmt;
-use std::rc::Rc;
 
-use crate::log::console_error;
 pub use silex_reactivity::ErrorHandler;
 use silex_reactivity::ReactiveError;
 use wasm_bindgen::JsValue;
@@ -13,9 +11,6 @@ pub enum SilexError {
     Framework(String),
     Javascript(String),
 }
-
-#[derive(Clone)]
-pub struct ErrorReporter<'scope>(Rc<dyn Fn(SilexError) + 'scope>);
 
 impl fmt::Display for SilexError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -45,30 +40,4 @@ impl From<JsValue> for SilexError {
 
 pub type SilexResult<T> = Result<T, SilexError>;
 
-impl<'scope> ErrorReporter<'scope> {
-    /// Creates an owner-bound reporter with the given error handler callback.
-    pub fn new<F>(handler: F) -> Self
-    where
-        F: Fn(SilexError) + 'scope,
-    {
-        Self(Rc::new(handler))
-    }
-
-    /// Creates a reporter that logs errors without consulting global state.
-    pub fn unhandled() -> Self {
-        Self::new(|error| {
-            console_error(format!("Unhandled Silex error: {error}"));
-        })
-    }
-
-    /// Sends an error to this reporter.
-    pub fn report(&self, error: SilexError) {
-        (self.0)(error);
-    }
-
-    /// Adapt this reporter to the reactive runtime's scoped error handler.
-    pub fn handler(&self) -> ErrorHandler<'scope, SilexError> {
-        let reporter = self.clone();
-        ErrorHandler::new(move |error| reporter.report(error))
-    }
-}
+pub type ErrorReporter<'scope> = ErrorHandler<'scope, SilexError>;

@@ -1,4 +1,4 @@
-use silex_core::{ErrorReporter, Runtime, SilexError};
+use silex_core::{ErrorHandler, ErrorReporter, Runtime, SilexError};
 use std::{cell::RefCell, rc::Rc};
 
 #[test]
@@ -12,8 +12,8 @@ fn reporter_delivers_errors_without_shared_context() {
     let second_reporter =
         ErrorReporter::new(move |error| second_for_reporter.borrow_mut().push(error));
 
-    first_reporter.report(SilexError::Framework("first".to_string()));
-    second_reporter.report(SilexError::Framework("second".to_string()));
+    first_reporter.handle(SilexError::Framework("first".to_string()));
+    second_reporter.handle(SilexError::Framework("second".to_string()));
 
     assert!(matches!(
         first.borrow().as_slice(),
@@ -35,7 +35,7 @@ fn reporter_can_capture_a_scoped_value() {
         let reporter = ErrorReporter::new(move |error| {
             *observed_for_reporter.borrow_mut() = Some(error.to_string());
         });
-        reporter.report(SilexError::Javascript("scoped".to_string()));
+        reporter.handle(SilexError::Javascript("scoped".to_string()));
         assert!(scope.is_active());
     });
 
@@ -43,4 +43,12 @@ fn reporter_can_capture_a_scoped_value() {
         observed.borrow().as_deref(),
         Some("JavaScript Error: scoped")
     );
+}
+
+#[test]
+fn error_reporter_is_the_reactivity_handler_alias() {
+    let handler: ErrorHandler<'_, SilexError> = ErrorHandler::new(|_| {});
+    let reporter: ErrorReporter<'_> = handler.clone();
+
+    reporter.handle(SilexError::Framework("alias".to_string()));
 }

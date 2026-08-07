@@ -1,0 +1,11 @@
+error[E0599]: no method named `handler` found for struct `ErrorHandler<'scope, E>` in the current scope
+ --> tests/ui/fail_error_reporter_handler_adapter.rs:5:22
+  |
+5 |     let _ = reporter.handler();
+  |                      ^^^^^^^
+  |
+help: there is a method `handle` with a similar name, but with different arguments
+ --> $WORKSPACE/crates/silex_reactivity/src/error.rs
+  |
+  |     pub fn handle(&self, error: E) {
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

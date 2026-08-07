@@ -1,5 +1,5 @@
 use crate::{
-    ReactiveResult, Scope, SilexError,
+    ErrorReporter, ReactiveResult, Scope, SilexError,
     reactivity::{ReadSignal, WriteSignal},
     traits::{RxBase, RxCloneData, RxData, RxError, RxRead, RxValue},
 };
@@ -64,6 +64,7 @@ pub struct Mutation<'scope, Arg, T, E = SilexError> {
     last_id: Rc<Cell<usize>>,
     completion: CompletionSender<(usize, Result<T, E>)>,
     scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
 }
 
 impl<'scope, Arg, T, E> Clone for Mutation<'scope, Arg, T, E> {
@@ -75,6 +76,7 @@ impl<'scope, Arg, T, E> Clone for Mutation<'scope, Arg, T, E> {
             last_id: self.last_id.clone(),
             completion: self.completion.clone(),
             scope: self.scope,
+            error_handler: self.error_handler.clone(),
         }
     }
 }
@@ -85,7 +87,11 @@ where
     T: RxData + 'static,
     E: RxError + 'static,
 {
-    pub fn new<F, Fut>(scope: Scope<'scope>, action: F) -> Self
+    pub fn new<F, Fut>(
+        scope: Scope<'scope>,
+        action: F,
+        error_handler: ErrorReporter<'scope>,
+    ) -> Self
     where
         F: Fn(Arg) -> Fut + 'scope,
         Fut: Future<Output = Result<T, E>> + 'static,
@@ -109,12 +115,17 @@ where
             last_id,
             completion,
             scope,
+            error_handler,
         }
     }
 
     /// Create a mutation whose owned future is prepared before `Pending` is
     /// published. Preparation errors become `Error` without starting a task.
-    pub fn new_with_prepare<F, Fut>(scope: Scope<'scope>, prepare: F) -> Self
+    pub fn new_with_prepare<F, Fut>(
+        scope: Scope<'scope>,
+        prepare: F,
+        error_handler: ErrorReporter<'scope>,
+    ) -> Self
     where
         F: Fn(Arg) -> Result<Fut, E> + 'scope,
         Fut: Future<Output = Result<T, E>> + 'static,
@@ -140,6 +151,7 @@ where
             last_id,
             completion,
             scope,
+            error_handler,
         }
     }
 
@@ -184,9 +196,12 @@ where
             }
         };
         let completion = self.completion.clone();
-        self.scope.spawn_scoped(async move {
-            let _ = completion.submit((id, future.await));
-        });
+        self.scope.spawn_scoped(
+            async move {
+                let _ = completion.submit((id, future.await));
+            },
+            self.error_handler.clone(),
+        );
     }
 
     pub fn mutate_with<S>(&self, source: S)

@@ -370,7 +370,7 @@ impl<'scope> Scope<'scope> {
     }
 
     /// Spawn a task owned by this persistent scope or the currently running computation.
-    pub fn spawn_scoped<F>(self, future: F) -> TaskHandle
+    pub fn spawn_scoped<F>(self, future: F, error_handler: ErrorReporter<'scope>) -> TaskHandle
     where
         F: Future<Output = ()> + 'static,
     {
@@ -383,7 +383,7 @@ impl<'scope> Scope<'scope> {
                 cancel();
                 Ok::<(), SilexError>(())
             },
-            ErrorReporter::unhandled().handler(),
+            error_handler,
         )
         .unwrap_or_else(|error| panic!("注册 scoped task cleanup 失败: {error}"));
         task
@@ -638,7 +638,7 @@ impl<'scope> OwnedScope<'scope> {
     }
 
     /// Spawn a task owned by this persistent scope or the currently running computation.
-    pub fn spawn_scoped<F>(&self, future: F) -> TaskHandle
+    pub fn spawn_scoped<F>(&self, future: F, error_handler: ErrorReporter<'scope>) -> TaskHandle
     where
         F: Future<Output = ()> + 'static,
     {
@@ -651,7 +651,7 @@ impl<'scope> OwnedScope<'scope> {
                 cancel();
                 Ok::<(), SilexError>(())
             },
-            ErrorReporter::unhandled().handler(),
+            error_handler,
         )
         .unwrap_or_else(|error| panic!("注册 owned task cleanup 失败: {error}"));
         task

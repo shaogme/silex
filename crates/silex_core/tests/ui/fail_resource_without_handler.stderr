@@ -1,0 +1,15 @@
+error[E0061]: this function takes 5 arguments but 4 arguments were supplied
+ --> tests/ui/fail_resource_without_handler.rs:7:17
+  |
+7 |         let _ = Resource::new(scope, source, |_| async { Ok::<u32, ()>(1) }, None);
+  |                 ^^^^^^^^^^^^^----------------------------------------------------- argument #5 of type `ErrorHandler<'_, SilexError>` is missing
+  |
+note: associated function defined here
+ --> src/reactivity/resource.rs
+  |
+  |     pub fn new<S, R, Fetcher>(
+  |            ^^^
+help: provide the argument
+  |
+7 |         let _ = Resource::new(scope, source, |_| async { Ok::<u32, ()>(1) }, None, /* ErrorHandler<'_, SilexError> */);
+  |                                                                                  ++++++++++++++++++++++++++++++++++++

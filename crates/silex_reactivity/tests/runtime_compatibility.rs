@@ -1,7 +1,7 @@
 use silex_reactivity::{EffectInitError, ErrorHandler, Runtime, RuntimeInputs};
 
 fn handler<'scope>() -> ErrorHandler<'scope, ()> {
-    ErrorHandler::ignore()
+    ErrorHandler::new(|_| {})
 }
 
 #[test]

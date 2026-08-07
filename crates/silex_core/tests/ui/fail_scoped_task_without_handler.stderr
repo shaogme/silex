@@ -1,0 +1,15 @@
+error[E0061]: this method takes 2 arguments but 1 argument was supplied
+ --> tests/ui/fail_scoped_task_without_handler.rs:6:15
+  |
+6 |         scope.spawn_scoped(async {});
+  |               ^^^^^^^^^^^^---------- argument #2 of type `ErrorHandler<'_, SilexError>` is missing
+  |
+note: method defined here
+ --> src/scope.rs
+  |
+  |     pub fn spawn_scoped<F>(self, future: F, error_handler: ErrorReporter<'scope>) -> TaskHandle
+  |            ^^^^^^^^^^^^
+help: provide the argument
+  |
+6 |         scope.spawn_scoped(async {}, /* ErrorHandler<'_, SilexError> */);
+  |                                    ++++++++++++++++++++++++++++++++++++

@@ -110,6 +110,7 @@ where
         source: R,
         fetcher: Fetcher,
         suspense: Option<SuspenseContext<'scope>>,
+        error_handler: ErrorReporter<'scope>,
     ) -> Self
     where
         S: Clone + PartialEq + 'static,
@@ -148,7 +149,6 @@ where
         let state_for_effect = state;
         let set_state_for_effect = set_state;
         let suspense_for_effect = suspense;
-        let error_handler = ErrorReporter::unhandled().handler();
         let error_handler_for_effect = error_handler.clone();
         let _effect = scope
             .effect_from(
@@ -188,13 +188,16 @@ where
                     request_id_for_effect.set(id);
                     let future = fetcher.fetch(input);
                     let completion = completion.clone();
-                    scope.spawn_scoped(async move {
-                        let _ = completion.submit(ResourceCompletion {
-                            id,
-                            result: future.await,
-                            settled,
-                        });
-                    });
+                    scope.spawn_scoped(
+                        async move {
+                            let _ = completion.submit(ResourceCompletion {
+                                id,
+                                result: future.await,
+                                settled,
+                            });
+                        },
+                        error_handler.clone(),
+                    );
                     Ok(())
                 },
                 error_handler_for_effect,

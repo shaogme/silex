@@ -180,13 +180,12 @@ fn watch_error_preserves_the_previous_snapshot_for_retry() {
 fn reporter_handler_can_be_cloned_for_effect_and_cleanup() {
     let mut runtime = Runtime::new();
     let errors = Rc::new(RefCell::new(Vec::new()));
-    let reporter = ErrorReporter::new({
+    let handler = ErrorReporter::new({
         let errors = errors.clone();
         move |error| errors.borrow_mut().push(error)
     });
 
     runtime.child(|scope| {
-        let handler = reporter.handler();
         scope
             .effect(|| Ok(()), handler.clone())
             .expect("effect should initialize");
