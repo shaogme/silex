@@ -1,7 +1,7 @@
 //! Global flat scheduler and scope bitmask lifetime tracking.
 
 use super::model::ScopeState;
-use crate::internal::RawId;
+use crate::{ReactiveError, internal::RawId};
 
 use std::{
     cell::RefCell,
@@ -91,6 +91,35 @@ impl Drop for ObserverFrame {
     }
 }
 
+/// Prevents queue flushing while a computation is still provisional.
+///
+/// Initial callbacks may register children and cleanups that can write to
+/// other signals while the provisional node is being rolled back. A nested
+/// guard keeps that invariant intact for computations created by the callback.
+pub(crate) struct InitialFlushGuard {
+    scheduler: Rc<RefCell<GlobalScheduler>>,
+}
+
+impl InitialFlushGuard {
+    pub(crate) fn try_new(scheduler: Rc<RefCell<GlobalScheduler>>) -> Result<Self, ReactiveError> {
+        scheduler
+            .try_borrow_mut()
+            .map_err(|_| ReactiveError::BorrowConflict)?
+            .initial_flush_depth += 1;
+        Ok(Self { scheduler })
+    }
+}
+
+impl Drop for InitialFlushGuard {
+    fn drop(&mut self) {
+        let mut scheduler = self
+            .scheduler
+            .try_borrow_mut()
+            .expect("initial flush guard must release without a scheduler borrow");
+        scheduler.initial_flush_depth = scheduler.initial_flush_depth.saturating_sub(1);
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct ScheduledTask {
     pub(crate) scope_id: ScopeId,
@@ -149,6 +178,7 @@ pub(crate) struct GlobalScheduler {
     pub(crate) evaluating: usize,
     pub(crate) executing: usize,
     pub(crate) active_leases: usize,
+    initial_flush_depth: usize,
 }
 
 impl GlobalScheduler {
@@ -167,6 +197,7 @@ impl GlobalScheduler {
             evaluating: 0,
             executing: 0,
             active_leases: 0,
+            initial_flush_depth: 0,
         }))
     }
 
@@ -306,7 +337,10 @@ impl GlobalScheduler {
     }
 
     pub(crate) fn should_flush(&self) -> bool {
-        self.is_idle() && self.active_leases == 0 && !self.global_queue.is_empty()
+        self.initial_flush_depth == 0
+            && self.is_idle()
+            && self.active_leases == 0
+            && !self.global_queue.is_empty()
     }
 }
 

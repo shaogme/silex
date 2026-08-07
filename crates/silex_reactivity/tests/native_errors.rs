@@ -51,6 +51,104 @@ fn initial_callback_error_returns_without_calling_the_handler() {
 }
 
 #[test]
+fn initial_failure_does_not_reenter_from_rollback_cleanup() {
+    let mut runtime = Runtime::new();
+    let errors = Rc::new(RefCell::new(Vec::new()));
+    let callback_runs = Rc::new(Cell::new(0));
+    let register_cleanup = Rc::new(Cell::new(true));
+
+    runtime.child(|scope| {
+        let (source, set_source) = scope.signal(0_i32);
+        let callback_runs_in_callback = callback_runs.clone();
+        let register_cleanup_in_callback = register_cleanup.clone();
+        let setter_in_cleanup = set_source;
+        let cleanup_handler = collecting_handler(errors.clone());
+        let result = scope.effect(
+            move || {
+                callback_runs_in_callback.set(callback_runs_in_callback.get() + 1);
+                let _ = source.get();
+                if register_cleanup_in_callback.replace(false) {
+                    scope
+                        .on_cleanup(
+                            move || {
+                                setter_in_cleanup.set(1);
+                                Ok(())
+                            },
+                            cleanup_handler.clone(),
+                        )
+                        .expect("rollback cleanup should register");
+                }
+                Err("initial")
+            },
+            collecting_handler(errors.clone()),
+        );
+
+        assert!(matches!(result, Err(EffectInitError::Initial("initial"))));
+        assert_eq!(callback_runs.get(), 1);
+        assert!(errors.borrow().is_empty());
+    });
+}
+
+#[test]
+fn nested_node_cleanup_errors_wait_for_outer_run_recovery() {
+    let mut runtime = Runtime::new();
+    let registered_cleanup_runs = Rc::new(Cell::new(0));
+    let first_run = Rc::new(Cell::new(true));
+
+    runtime.child(|scope| {
+        let (source, set_source) = scope.signal(0_i32);
+        let registered_cleanup_runs_in_handler = registered_cleanup_runs.clone();
+        let scope_in_handler = scope;
+        let cleanup_error_handler = ErrorHandler::new(move |_| {
+            let registered_cleanup_runs = registered_cleanup_runs_in_handler.clone();
+            scope_in_handler
+                .on_cleanup(
+                    move || {
+                        registered_cleanup_runs.set(registered_cleanup_runs.get() + 1);
+                        Ok(())
+                    },
+                    ErrorHandler::new(|_: &'static str| {}),
+                )
+                .expect("recovered owner should accept a root cleanup");
+        });
+        let first_run_in_effect = first_run.clone();
+        let cleanup_error_handler_in_effect = cleanup_error_handler.clone();
+        scope
+            .effect(
+                move || {
+                    let _ = source.get();
+                    if first_run_in_effect.replace(false) {
+                        let nested_cleanup_handler = cleanup_error_handler_in_effect.clone();
+                        scope
+                            .effect(
+                                move || {
+                                    scope
+                                        .on_cleanup(
+                                            || Err("nested cleanup"),
+                                            nested_cleanup_handler.clone(),
+                                        )
+                                        .expect("nested cleanup should register");
+                                    Ok(())
+                                },
+                                ErrorHandler::new(|_: ()| {}),
+                            )
+                            .expect("nested effect should initialize");
+                    }
+                    Ok(())
+                },
+                ErrorHandler::new(|_: ()| {}),
+            )
+            .expect("outer effect should initialize");
+
+        set_source.set(1);
+        set_source.set(2);
+        assert_eq!(registered_cleanup_runs.get(), 0);
+    });
+
+    assert_eq!(registered_cleanup_runs.get(), 1);
+}
+
+#[test]
 fn deferred_callback_error_reaches_its_handler_and_can_retry() {
     let mut runtime = Runtime::new();
     let errors = Rc::new(RefCell::new(Vec::new()));

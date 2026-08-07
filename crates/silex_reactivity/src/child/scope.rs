@@ -533,7 +533,7 @@ impl<'scope> OwnedScope<'scope> {
 
     #[doc(hidden)]
     pub fn try_validate_inputs(&self, inputs: &RuntimeInputs) -> ReactiveResult<()> {
-        if !self.is_active() {
+        if !self.active.get() {
             return Err(ReactiveError::NoSuchNode);
         }
         runtime::validate_inputs(&self.state(), inputs)
@@ -568,7 +568,7 @@ impl<'scope> OwnedScope<'scope> {
         E: 'scope,
         F: FnMut() -> Result<(), E> + 'scope,
     {
-        if !self.is_active() {
+        if !self.active.get() {
             return Err(EffectInitError::Registration(ReactiveError::NoSuchNode));
         }
         let state = self.state();
@@ -602,7 +602,7 @@ impl<'scope> OwnedScope<'scope> {
         E: 'scope,
         F: FnMut(Option<&T>) -> Result<T, E> + 'scope,
     {
-        if !self.is_active() {
+        if !self.active.get() {
             return Err(EffectInitError::Registration(ReactiveError::NoSuchNode));
         }
         let state = self.state();
@@ -664,7 +664,7 @@ impl<'scope> OwnedScope<'scope> {
         G: FnMut() -> Result<T, E> + 'scope,
         C: FnMut(&T, Option<&T>) -> Result<(), E> + 'scope,
     {
-        if !self.is_active() {
+        if !self.active.get() {
             return Err(EffectInitError::Registration(ReactiveError::NoSuchNode));
         }
         let state = self.state();
@@ -684,7 +684,7 @@ impl<'scope> OwnedScope<'scope> {
         E: 'scope,
         F: FnOnce() -> Result<(), E> + 'scope,
     {
-        if !self.is_active() {
+        if !self.active.get() {
             return Err(ReactiveError::NoSuchNode);
         }
         let cleanup = CleanupThunk::new(f, error_handler);
@@ -1012,5 +1012,26 @@ mod tests {
         assert_eq!(replacement.state.borrow().nodes.len(), 0);
 
         replacement.dispose_untracked();
+    }
+
+    #[test]
+    fn owned_registration_preserves_borrow_conflict() {
+        let storage = ScopeStorage::new(GlobalScheduler::new());
+        let scope = Scope {
+            storage: &storage,
+            _marker: PhantomData,
+        };
+        let owner = scope.owned_scope();
+        let state = owner.state();
+        let state_borrow = state.borrow_mut();
+
+        assert!(matches!(
+            owner.effect(|| Ok(()), handler()),
+            Err(EffectInitError::Registration(ReactiveError::BorrowConflict))
+        ));
+
+        drop(state_borrow);
+        owner.dispose();
+        storage.dispose_untracked();
     }
 }

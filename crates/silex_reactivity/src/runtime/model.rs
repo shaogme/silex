@@ -109,10 +109,12 @@ impl<'scope> NodeData<'scope> {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct DependencyTransaction {
     pub(crate) observer: RawId,
     pub(crate) previous: Vec<TargetNode>,
     pub(crate) current: Vec<TargetNode>,
+    pub(crate) removed: Vec<TargetNode>,
 }
 
 /// Iterator over child nodes in an intra-arena sibling chain.

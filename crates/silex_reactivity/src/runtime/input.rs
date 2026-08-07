@@ -1,11 +1,15 @@
 //! Opaque scheduler-family inputs and the computation creation kernel.
 
 use super::eval::flush_if_idle;
-use super::{eval::EvaluationError, model::ScopeState, scheduler::GlobalScheduler};
+use super::{
+    eval::EvaluationError,
+    model::ScopeState,
+    scheduler::{GlobalScheduler, InitialFlushGuard},
+};
 use crate::{
     EffectInitError, EffectInitResult, ErrorHandler, ReactiveError, ReactiveResult,
     child::WatchOptions,
-    error::InitialErrorSlot,
+    error::{ErrorPhase, InitialErrorSlot},
     internal::{
         RawId,
         value::{Computation, EffectThunk, MemoThunk, PreviousThunk, WatchThunk},
@@ -146,6 +150,14 @@ pub(crate) fn create_computation<'scope>(
 ) -> Result<RawId, EvaluationError<'scope>> {
     validate_inputs(state, &spec.inputs).map_err(EvaluationError::Runtime)?;
 
+    let scheduler = state
+        .try_borrow()
+        .map_err(|_| EvaluationError::Runtime(ReactiveError::BorrowConflict))?
+        .scheduler
+        .clone();
+    let initial_flush_guard =
+        InitialFlushGuard::try_new(scheduler).map_err(EvaluationError::Runtime)?;
+
     let ComputationSpec {
         kind,
         inputs: _,
@@ -177,19 +189,27 @@ pub(crate) fn create_computation<'scope>(
 
     let result = catch_unwind(AssertUnwindSafe(|| super::run_initial(state, raw)));
     match result {
-        Ok(Ok(())) => Ok(raw),
+        Ok(Ok(())) => {
+            drop(initial_flush_guard);
+            flush_if_idle(state);
+            Ok(raw)
+        }
         Ok(Err(error)) => {
             let dispose = catch_unwind(AssertUnwindSafe(|| super::dispose_nodes(state, vec![raw])));
             if let Err(panic) = dispose {
+                drop(initial_flush_guard);
                 resume_unwind(panic);
             }
+            drop(initial_flush_guard);
             Err(error)
         }
         Err(panic) => {
             let dispose = catch_unwind(AssertUnwindSafe(|| super::dispose_nodes(state, vec![raw])));
             if let Err(dispose_panic) = dispose {
+                drop(initial_flush_guard);
                 resume_unwind(dispose_panic);
             }
+            drop(initial_flush_guard);
             resume_unwind(panic);
         }
     }
@@ -204,7 +224,7 @@ fn finish_creation<'scope, E>(
         Ok(raw) => Ok(raw),
         Err(EvaluationError::Runtime(error)) => Err(EffectInitError::Registration(error)),
         Err(EvaluationError::Callback(error)) => {
-            error.dispatch(crate::error::ErrorPhase::Initial);
+            error.dispatch(ErrorPhase::Initial);
             let initial = initial_slot.take();
             flush_if_idle(state);
             Err(EffectInitError::Initial(initial))

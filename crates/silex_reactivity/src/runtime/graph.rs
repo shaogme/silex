@@ -4,7 +4,7 @@ use super::{
     model::{DependencyTransaction, EdgeId, NodeState, ReactiveEdge, ScopeState},
     scheduler::{ScheduledTask, TargetNode},
 };
-use crate::{handle::NodeKindTag, internal::RawId};
+use crate::{ReactiveError, ReactiveResult, handle::NodeKindTag, internal::RawId};
 use std::collections::VecDeque;
 
 impl<'scope> ScopeState<'scope> {
@@ -17,6 +17,7 @@ impl<'scope> ScopeState<'scope> {
             observer,
             previous,
             current: Vec::new(),
+            removed: Vec::new(),
         });
     }
 
@@ -32,55 +33,151 @@ impl<'scope> ScopeState<'scope> {
         }
     }
 
-    fn remove_dependency_pair(&mut self, observer: RawId, dependency: TargetNode) {
-        self.remove_dependency(observer, dependency);
+    fn ensure_dependency_scopes_available(
+        &self,
+        dependencies: &[TargetNode],
+    ) -> ReactiveResult<()> {
+        let scheduler = self.scheduler.borrow();
+        for dependency in dependencies {
+            if dependency.scope_id == self.scope_id {
+                continue;
+            }
+            if let Some(dependency_scope) = scheduler.get_scope(dependency.scope_id) {
+                dependency_scope
+                    .try_borrow_mut()
+                    .map_err(|_| ReactiveError::BorrowConflict)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn remove_dependency_pair(
+        &mut self,
+        observer: RawId,
+        dependency: TargetNode,
+    ) -> ReactiveResult<()> {
         let observer_target = TargetNode {
             scope_id: self.scope_id,
             node: observer,
         };
         if dependency.scope_id == self.scope_id {
+            self.remove_dependency(observer, dependency);
             self.remove_subscriber(dependency.node, observer_target);
-        } else {
-            let dependency_scope = self.scheduler.borrow().get_scope(dependency.scope_id);
-            if let Some(dependency_scope) = dependency_scope {
-                dependency_scope
-                    .try_borrow_mut()
-                    .expect("dependency scope borrow failed during transaction rollback")
-                    .remove_subscriber(dependency.node, observer_target);
-            }
+            return Ok(());
         }
+
+        let dependency_scope = self.scheduler.borrow().get_scope(dependency.scope_id);
+        let Some(dependency_scope) = dependency_scope else {
+            self.remove_dependency(observer, dependency);
+            return Ok(());
+        };
+        let mut dependency_state = dependency_scope
+            .try_borrow_mut()
+            .map_err(|_| ReactiveError::BorrowConflict)?;
+        self.remove_dependency(observer, dependency);
+        dependency_state.remove_subscriber(dependency.node, observer_target);
+        Ok(())
     }
 
-    pub(crate) fn commit_dependency_transaction(&mut self, observer: RawId) {
+    fn restore_dependency_pair(
+        &mut self,
+        observer: RawId,
+        dependency: TargetNode,
+    ) -> ReactiveResult<()> {
+        if !self.node_exists(observer) {
+            return Ok(());
+        }
+        let observer_target = TargetNode {
+            scope_id: self.scope_id,
+            node: observer,
+        };
+        if dependency.scope_id == self.scope_id {
+            if !self.node_exists(dependency.node) {
+                return Ok(());
+            }
+            self.add_dependency(observer, dependency);
+            self.add_subscriber(dependency.node, observer_target);
+            return Ok(());
+        }
+
+        let dependency_scope = self.scheduler.borrow().get_scope(dependency.scope_id);
+        let Some(dependency_scope) = dependency_scope else {
+            return Ok(());
+        };
+        let mut dependency_state = dependency_scope
+            .try_borrow_mut()
+            .map_err(|_| ReactiveError::BorrowConflict)?;
+        if !dependency_state.node_exists(dependency.node) {
+            return Ok(());
+        }
+        self.add_dependency(observer, dependency);
+        dependency_state.add_subscriber(dependency.node, observer_target);
+        Ok(())
+    }
+
+    pub(crate) fn commit_dependency_transaction(&mut self, observer: RawId) -> ReactiveResult<()> {
         let Some(index) = self
             .dependency_transactions
             .iter()
             .rposition(|transaction| transaction.observer == observer)
         else {
-            return;
+            return Ok(());
         };
-        let transaction = self.dependency_transactions.remove(index);
-        for dependency in transaction.previous {
-            if !transaction.current.contains(&dependency) {
-                self.remove_dependency_pair(observer, dependency);
-            }
+
+        let (previous, current) = {
+            let transaction = &self.dependency_transactions[index];
+            (transaction.previous.clone(), transaction.current.clone())
+        };
+        let removed: Vec<TargetNode> = previous
+            .into_iter()
+            .filter(|dependency| !current.contains(dependency))
+            .collect();
+        self.ensure_dependency_scopes_available(&removed)?;
+        for dependency in removed {
+            self.remove_dependency_pair(observer, dependency)?;
+            self.dependency_transactions[index].removed.push(dependency);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn finish_dependency_transaction(&mut self, observer: RawId) {
+        if let Some(index) = self
+            .dependency_transactions
+            .iter()
+            .rposition(|transaction| transaction.observer == observer)
+        {
+            self.dependency_transactions.remove(index);
         }
     }
 
-    pub(crate) fn rollback_dependency_transaction(&mut self, observer: RawId) {
+    pub(crate) fn rollback_dependency_transaction(
+        &mut self,
+        observer: RawId,
+    ) -> ReactiveResult<()> {
         let Some(index) = self
             .dependency_transactions
             .iter()
             .rposition(|transaction| transaction.observer == observer)
         else {
-            return;
+            return Ok(());
         };
-        let transaction = self.dependency_transactions.remove(index);
-        for dependency in transaction.current {
-            if !transaction.previous.contains(&dependency) {
-                self.remove_dependency_pair(observer, dependency);
-            }
+        let transaction = self.dependency_transactions[index].clone();
+        let to_remove: Vec<TargetNode> = transaction
+            .current
+            .iter()
+            .copied()
+            .filter(|dependency| !transaction.previous.contains(dependency))
+            .collect();
+        self.ensure_dependency_scopes_available(&to_remove)?;
+        self.ensure_dependency_scopes_available(&transaction.removed)?;
+        for dependency in to_remove {
+            self.remove_dependency_pair(observer, dependency)?;
         }
+        for dependency in transaction.removed {
+            self.restore_dependency_pair(observer, dependency)?;
+        }
+        self.dependency_transactions.remove(index);
+        Ok(())
     }
 
     pub(crate) fn add_subscriber(&mut self, target_id: RawId, sub_target: TargetNode) {
@@ -362,8 +459,9 @@ mod tests {
         ErrorHandler, Runtime, Scope,
         runtime::{
             dispose::dispose_nodes,
-            scheduler::{Observer, ObserverFrame},
+            scheduler::{GlobalScheduler, Observer, ObserverFrame},
         },
+        scope::ScopeStorage,
     };
     use std::{panic::AssertUnwindSafe, panic::catch_unwind};
 
@@ -621,5 +719,75 @@ mod tests {
                 );
             });
         });
+    }
+
+    #[test]
+    fn transaction_commit_conflict_preserves_both_sides_of_the_edge() {
+        let scheduler = GlobalScheduler::new();
+        let source_storage = ScopeStorage::new(scheduler.clone());
+        let observer_storage = ScopeStorage::new(scheduler);
+        let source_scope = Scope {
+            storage: &source_storage,
+            _marker: std::marker::PhantomData,
+        };
+        let observer_scope = Scope {
+            storage: &observer_storage,
+            _marker: std::marker::PhantomData,
+        };
+        let (source, _) = source_scope.signal(0_i32);
+        let effect = observer_scope
+            .effect(
+                move || {
+                    let _ = source.get();
+                    Ok(())
+                },
+                handler(),
+            )
+            .expect("effect should initialize");
+        let source_state = unsafe { source_storage.typed_state() };
+        let observer_state = unsafe { observer_storage.typed_state() };
+        let source_raw = source.handle.raw();
+        let effect_raw = effect.handle.raw();
+        let observer_target = TargetNode {
+            scope_id: observer_state.borrow().scope_id,
+            node: effect_raw,
+        };
+        let source_target = TargetNode {
+            scope_id: source_state.borrow().scope_id,
+            node: source_raw,
+        };
+
+        observer_state
+            .borrow_mut()
+            .begin_dependency_transaction(effect_raw);
+        let source_borrow = source_state.borrow_mut();
+        let mut observer_borrow = observer_state.borrow_mut();
+        assert_eq!(
+            observer_borrow.commit_dependency_transaction(effect_raw),
+            Err(ReactiveError::BorrowConflict)
+        );
+        assert_eq!(
+            observer_borrow
+                .dependency_edges_of(effect_raw)
+                .filter(|(_, edge)| edge.target == source_target)
+                .count(),
+            1
+        );
+        assert_eq!(
+            source_borrow
+                .subscriber_edges_of(source_raw)
+                .filter(|(_, edge)| edge.target == observer_target)
+                .count(),
+            1
+        );
+        drop(observer_borrow);
+        drop(source_borrow);
+
+        observer_state
+            .borrow_mut()
+            .rollback_dependency_transaction(effect_raw)
+            .expect("rollback should discard the pending transaction");
+        observer_storage.dispose_untracked();
+        source_storage.dispose_untracked();
     }
 }

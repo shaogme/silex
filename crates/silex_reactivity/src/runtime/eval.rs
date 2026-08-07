@@ -1,7 +1,7 @@
 //! Computation evaluation engine and queue flush scheduler.
 
 use super::{
-    dispose::{dispatch_cleanup_errors, dispose_nodes, run_cleanups},
+    dispose::{dispatch_cleanup_errors, dispose_nodes, dispose_nodes_collect, run_cleanups},
     model::{NodeState, ScopeState},
     scheduler::{GlobalScheduler, Observer, ObserverFrame, TargetNode},
     storage::NodeStorage,
@@ -358,16 +358,22 @@ fn commit_computation_value<'scope>(
     let NodeStorage::Computation(computation) = storage else {
         return Err(ReactiveError::WrongKind);
     };
-    let mut lease = computation.value.try_write(scheduler.clone())?;
-    let previous = (*lease).replace(value);
-    drop(lease);
-    drop(previous);
     if initialize_watch {
         let mut computation_lease = computation.computation.try_write(scheduler.clone())?;
         let Computation::Watch(watch) = &mut *computation_lease else {
             return Err(ReactiveError::WrongKind);
         };
+        let mut value_lease = computation.value.try_write(scheduler.clone())?;
+        let previous = (*value_lease).replace(value);
         watch.mark_initialized();
+        drop(value_lease);
+        drop(computation_lease);
+        drop(previous);
+    } else {
+        let mut value_lease = computation.value.try_write(scheduler)?;
+        let previous = (*value_lease).replace(value);
+        drop(value_lease);
+        drop(previous);
     }
     Ok(())
 }
@@ -448,11 +454,17 @@ fn run_node<'scope>(
     let outcome = catch_unwind(AssertUnwindSafe(
         || -> EvaluationResult<'scope, ComputationResult<'scope>> {
             let child_dispose = catch_unwind(AssertUnwindSafe(|| {
-                dispose_nodes(state, children_to_dispose);
+                dispose_nodes_collect(state, children_to_dispose)
             }));
+            let mut cleanup_panic = match child_dispose {
+                Ok(child_outcome) => {
+                    cleanup_errors.extend(child_outcome.errors);
+                    child_outcome.panic
+                }
+                Err(panic) => Some(panic),
+            };
             let cleanup_outcome = run_cleanups(scheduler.clone(), cleanups);
             cleanup_errors.extend(cleanup_outcome.errors);
-            let mut cleanup_panic = child_dispose.err();
             if cleanup_panic.is_none() {
                 cleanup_panic = cleanup_outcome.panic;
             }
@@ -529,13 +541,11 @@ fn run_node<'scope>(
             state
                 .try_borrow_mut()
                 .map_err(|_| ReactiveError::BorrowConflict)?
-                .commit_dependency_transaction(id);
+                .commit_dependency_transaction(id)?;
             Ok::<(), ReactiveError>(())
         }));
         match commit_dependencies {
             Ok(Ok(())) => {
-                transaction_finished = true;
-                committed = true;
                 if computation_result.commit_value
                     && let Some(value) = std::mem::take(&mut computation_result.produced_value)
                 {
@@ -560,6 +570,25 @@ fn run_node<'scope>(
                         }
                     }
                 }
+                if operation_error.is_none() && panic_data.is_none() {
+                    let finish = catch_unwind(AssertUnwindSafe(|| {
+                        state
+                            .try_borrow_mut()
+                            .map_err(|_| ReactiveError::BorrowConflict)?
+                            .finish_dependency_transaction(id);
+                        Ok::<(), ReactiveError>(())
+                    }));
+                    match finish {
+                        Ok(Ok(())) => {
+                            transaction_finished = true;
+                            committed = true;
+                        }
+                        Ok(Err(error)) => {
+                            operation_error = Some(EvaluationError::Runtime(error));
+                        }
+                        Err(panic) => panic_data = Some(panic),
+                    }
+                }
             }
             Ok(Err(error)) => {
                 operation_error = Some(EvaluationError::Runtime(error));
@@ -581,7 +610,7 @@ fn run_node<'scope>(
             state
                 .try_borrow_mut()
                 .map_err(|_| ReactiveError::BorrowConflict)?
-                .rollback_dependency_transaction(id);
+                .rollback_dependency_transaction(id)?;
             Ok::<(), ReactiveError>(())
         }));
         match rollback {
@@ -630,10 +659,16 @@ fn run_node<'scope>(
 
     if failed {
         let child_dispose = catch_unwind(AssertUnwindSafe(|| {
-            dispose_nodes(state, failed_children);
+            dispose_nodes_collect(state, failed_children)
         }));
-        if let Err(panic) = child_dispose {
-            remember_panic(&mut panic_data, panic);
+        match child_dispose {
+            Ok(outcome) => {
+                cleanup_errors.extend(outcome.errors);
+                if let Some(panic) = outcome.panic {
+                    remember_panic(&mut panic_data, panic);
+                }
+            }
+            Err(panic) => remember_panic(&mut panic_data, panic),
         }
         let cleanup_outcome = run_cleanups(scheduler.clone(), failed_cleanups);
         cleanup_errors.extend(cleanup_outcome.errors);
