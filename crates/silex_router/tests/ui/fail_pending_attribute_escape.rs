@@ -9,6 +9,7 @@ fn main() {
         let (value, _) = scope.signal(1_i32);
         PendingAttribute::new_scoped(move |_, _| {
             let _ = value.get();
+            Ok(())
         })
     });
     require_static(attribute);

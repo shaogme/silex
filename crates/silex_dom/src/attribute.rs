@@ -5,8 +5,7 @@ use wasm_bindgen::convert::FromWasmAbi;
 use web_sys::{Element, Event, InputEvent, MouseEvent, PointerEvent};
 
 use silex_core::{
-    ReactiveError,
-    log::console_error,
+    ReactiveError, SilexError,
     node_ref::NodeRef,
     reactivity::{ReactiveSource, runtime_inputs_of},
     traits::{RxGet, RxWrite},
@@ -240,26 +239,25 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
         N: JsCast + Clone + 'scope,
     {
         let node_ref_for_cleanup = node_ref;
-        self.apply(PendingAttribute::new_scoped(move |el: &Element, owner| {
+        self.apply(PendingAttribute::new_scoped(move |el: &Element, _owner| {
             if let Ok(typed) = el.clone().dyn_into::<N>() {
-                if let Err(error) = node_ref.try_load(typed) {
-                    owner.report_error(error.into());
-                }
+                node_ref.try_load(typed).map_err(SilexError::from)?;
             } else {
-                console_error("NodeRef type mismatch: failed to cast element");
+                return Err(SilexError::Dom(
+                    "NodeRef type mismatch: failed to cast element".to_string(),
+                ));
             }
+            Ok(())
         }))
         .apply(PendingAttribute::new_scoped(move |_el, owner| {
             let owner_for_cleanup = owner.clone();
-            if let Err(error) = owner.on_cleanup(Box::new(move || {
+            owner.on_cleanup(Box::new(move || {
                 if let Err(error) = node_ref_for_cleanup.try_clear()
                     && !matches!(error, ReactiveError::NoSuchNode)
                 {
                     owner_for_cleanup.report_error(error.into());
                 }
-            })) {
-                owner.report_error(error);
-            }
+            }))
         }))
     }
 
@@ -317,7 +315,7 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
                     }
                 }),
                 owner,
-            );
+            )
         }))
     }
 
@@ -338,7 +336,7 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
                     }
                 }),
                 owner,
-            );
+            )
         }))
     }
 
@@ -356,21 +354,22 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
             let dom_element = el.clone();
             let signal = signal.clone();
             let owner = owner.clone();
-            if let Err(error) = owner.effect_from(
+            let owner_for_effect = owner.clone();
+            owner.effect_from(
                 runtime_inputs_of(signal.clone()),
                 Box::new(move || {
                     let value = signal.get();
                     let str_val = value.as_ref();
-                    apply_attr_with_target_internal(
+                    if let Err(error) = apply_attr_with_target_internal(
                         &dom_element,
                         "value",
                         ApplyTarget::Known(KnownProp::Value),
                         &Attr::from(str_val.to_string()),
-                    );
+                    ) {
+                        owner_for_effect.report_error(error);
+                    }
                 }),
-            ) {
-                owner.report_error(error);
-            }
+            )
         }))
     }
 
@@ -387,7 +386,7 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
                 event_type_str.clone(),
                 Box::new(cb_template.clone()),
                 owner,
-            );
+            )
         }))
     }
 }
@@ -412,7 +411,7 @@ impl<'scope> AttributeBuilder<'scope> for AnyView<'scope> {
         F: EventHandler<'scope, E::EventType, M> + Clone + 'scope,
     {
         self.apply_attributes(vec![PendingAttribute::new_scoped(move |el, owner| {
-            crate::element::bind_event(el, event, callback.clone(), owner);
+            crate::element::bind_event(el, event, callback.clone(), owner)
         })]);
         self
     }
@@ -529,7 +528,7 @@ mod tests {
         let mut runtime = Runtime::new();
         runtime.child(|scope| {
             let source = scope.rw_signal(1i32).into_rx();
-            let op = AttrOp::custom_with_inputs(source.runtime_inputs(), |_, _| {});
+            let op = AttrOp::custom_with_inputs(source.runtime_inputs(), |_, _| Ok(()));
 
             assert_eq!(op.runtime_inputs().len(), 1);
             assert!(format!("{op:?}").contains("CustomWithInputs"));

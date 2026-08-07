@@ -11,7 +11,8 @@ pub use reactive::*;
 
 use crate::attribute::PendingAttribute;
 use silex_core::{
-    CompletionOnce, CompletionSender, ErrorReporter, OwnedScope, RuntimeInputs, Scope,
+    CompletionOnce, CompletionSender, ErrorReporter, OwnedScope, ReactiveError, RuntimeInputs,
+    Scope,
     reactivity::ReactiveSource,
     traits::{RxData, RxValue},
 };
@@ -432,30 +433,47 @@ impl<'scope> ViewOwnerToken<'scope> {
     where
         F: FnOnce() + 'scope,
     {
+        self.try_host_resource_for_callback(callback, cancel)
+            .unwrap_or_else(|error| {
+                self.report_error(error);
+                HostResourceHandle::inactive()
+            })
+    }
+
+    pub(crate) fn try_host_resource_for_callback<F>(
+        &self,
+        callback: &HostCallback,
+        cancel: F,
+    ) -> SilexResult<HostResourceHandle<'scope>>
+    where
+        F: FnOnce() + 'scope,
+    {
         let callback_for_cancel = callback.clone();
-        self.register_host_resource(callback.gate.clone(), move || {
+        self.try_register_host_resource(callback.gate.clone(), move || {
             callback_for_cancel.cancel();
             cancel();
         })
     }
 
-    fn register_host_resource<F>(&self, gate: ResourceGate, cancel: F) -> HostResourceHandle<'scope>
+    fn try_register_host_resource<F>(
+        &self,
+        gate: ResourceGate,
+        cancel: F,
+    ) -> SilexResult<HostResourceHandle<'scope>>
     where
         F: FnOnce() + 'scope,
     {
         let resource = HostResourceHandle::with_gate(gate, cancel);
         if !self.is_active() {
             resource.cancel();
-            return resource;
+            return Err(SilexError::Reactivity(ReactiveError::NoSuchNode));
         }
         let owner_resource = resource.clone();
-        if self
-            .on_cleanup(Box::new(move || owner_resource.cancel()))
-            .is_err()
-        {
+        if let Err(error) = self.on_cleanup(Box::new(move || owner_resource.cancel())) {
             resource.cancel();
+            return Err(error);
         }
-        resource
+        Ok(resource)
     }
 }
 
@@ -823,12 +841,11 @@ pub trait View<'scope> {
         Self: Sized;
 }
 
-pub fn mount_text_node<'scope>(owner: &dyn ViewOwner<'scope>, parent: &Node, text: &str) {
+pub fn mount_text_node(parent: &Node, text: &str) -> SilexResult<()> {
     let document = crate::document();
     let node = document.create_text_node(text);
-    if let Err(error) = parent.append_child(&node).map_err(SilexError::from) {
-        owner.report_error(error);
-    }
+    parent.append_child(&node).map_err(SilexError::from)?;
+    Ok(())
 }
 
 macro_rules! impl_text_view {
@@ -842,7 +859,9 @@ macro_rules! impl_text_view {
                 parent: &Node,
                 _attrs: Vec<PendingAttribute<'scope>>,
             ) {
-                mount_text_node(owner, parent, self);
+                if let Err(error) = mount_text_node(parent, self) {
+                    owner.report_error(error);
+                }
             }
 
             fn mount_owned(
@@ -853,7 +872,9 @@ macro_rules! impl_text_view {
             ) where
                 Self: Sized,
             {
-                mount_text_node(owner, parent, &self);
+                if let Err(error) = mount_text_node(parent, &self) {
+                    owner.report_error(error);
+                }
             }
         }
     };
@@ -870,7 +891,9 @@ impl<'scope> View<'scope> for &'scope str {
         parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
     ) {
-        mount_text_node(owner, parent, self);
+        if let Err(error) = mount_text_node(parent, self) {
+            owner.report_error(error);
+        }
     }
 
     fn mount_owned(
@@ -881,7 +904,9 @@ impl<'scope> View<'scope> for &'scope str {
     ) where
         Self: Sized,
     {
-        mount_text_node(owner, parent, self);
+        if let Err(error) = mount_text_node(parent, self) {
+            owner.report_error(error);
+        }
     }
 }
 
@@ -894,7 +919,9 @@ impl<'scope> View<'scope> for Cow<'scope, str> {
         parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
     ) {
-        mount_text_node(owner, parent, self.as_ref());
+        if let Err(error) = mount_text_node(parent, self.as_ref()) {
+            owner.report_error(error);
+        }
     }
 
     fn mount_owned(
@@ -905,7 +932,9 @@ impl<'scope> View<'scope> for Cow<'scope, str> {
     ) where
         Self: Sized,
     {
-        mount_text_node(owner, parent, self.as_ref());
+        if let Err(error) = mount_text_node(parent, self.as_ref()) {
+            owner.report_error(error);
+        }
     }
 }
 
@@ -921,7 +950,9 @@ macro_rules! impl_primitive_view {
                     parent: &Node,
                     _attrs: Vec<PendingAttribute<'scope>>,
                 ) {
-                    mount_text_node(owner, parent, &self.to_string());
+                    if let Err(error) = mount_text_node(parent, &self.to_string()) {
+                        owner.report_error(error);
+                    }
                 }
 
                 fn mount_owned(
@@ -932,7 +963,9 @@ macro_rules! impl_primitive_view {
                 ) where
                     Self: Sized,
                 {
-                    mount_text_node(owner, parent, &self.to_string());
+                    if let Err(error) = mount_text_node(parent, &self.to_string()) {
+                        owner.report_error(error);
+                    }
                 }
             }
         )*

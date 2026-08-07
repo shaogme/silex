@@ -16,6 +16,7 @@ fn main() {
         let borrowed_attr = String::from("borrowed-attribute");
         let _attr: PendingAttribute<'_> = PendingAttribute::new_listener(move |_| {
             let _ = borrowed_attr.as_str();
+            Ok(())
         });
 
         let borrowed_renderer = String::from("borrowed-renderer");

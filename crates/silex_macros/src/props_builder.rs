@@ -565,7 +565,7 @@ impl BuilderContext {
                     let event = event.clone();
                     self._pending_attrs.push(
                         #__silex::dom::attribute::AttrOp::<#scope>::new_scoped(move |el, owner| {
-                            #__silex::dom::element::bind_event(el, event, callback.clone(), owner);
+                            #__silex::dom::element::bind_event(el, event, callback.clone(), owner)
                         })
                     );
                     self

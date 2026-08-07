@@ -10,7 +10,8 @@ use web_sys::{CssStyleDeclaration, Element, HtmlElement, SvgElement};
 use crate::attribute::apply::ApplyTarget;
 use crate::view::ViewOwnerToken;
 
-type CustomAttribute<'scope> = Rc<dyn Fn(&Element, &ViewOwnerToken<'scope>) + 'scope>;
+type CustomAttribute<'scope> =
+    Rc<dyn Fn(&Element, &ViewOwnerToken<'scope>) -> SilexResult<()> + 'scope>;
 
 /// 预定义的 DOM 强类型 Property (Fast-Path)
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -372,7 +373,7 @@ impl<'scope> AttrOp<'scope> {
 
     pub fn custom_with_inputs(
         inputs: RuntimeInputs,
-        callback: impl Fn(&Element, &ViewOwnerToken<'scope>) + 'scope,
+        callback: impl Fn(&Element, &ViewOwnerToken<'scope>) -> SilexResult<()> + 'scope,
     ) -> Self {
         Self::CustomWithInputs {
             inputs,
@@ -426,47 +427,45 @@ impl<'scope> AttrOp<'scope> {
         inputs
     }
 
-    pub fn apply(self, el: &Element, owner: &ViewOwnerToken<'scope>) {
+    pub fn apply(self, el: &Element, owner: &ViewOwnerToken<'scope>) -> SilexResult<()> {
         let inputs = self.runtime_inputs();
-        if let Err(error) = owner.validate_inputs(&inputs) {
-            owner.report_error(error);
-            return;
-        }
-        self.apply_unchecked(el, owner);
+        owner.validate_inputs(&inputs)?;
+        self.apply_unchecked(el, owner)
     }
 
-    fn apply_unchecked(self, el: &Element, owner: &ViewOwnerToken<'scope>) {
+    fn apply_unchecked(self, el: &Element, owner: &ViewOwnerToken<'scope>) -> SilexResult<()> {
         match self {
             AttrOp::Update(AttrUpdate { target, data }) => {
-                apply_update_internal(el, target, data, owner);
+                apply_update_internal(el, target, data, owner)?;
             }
             AttrOp::CombinedClasses(CombinedClasses {
                 statics,
                 toggles,
                 reactives,
             }) => {
-                apply_combined_classes_internal(el, statics, toggles, reactives, owner);
+                apply_combined_classes_internal(el, statics, toggles, reactives, owner)?;
             }
             AttrOp::CombinedStyles(CombinedStyles {
                 statics,
                 properties,
                 sheets,
             }) => {
-                apply_combined_styles_internal(el, statics, properties, sheets, owner);
+                apply_combined_styles_internal(el, statics, properties, sheets, owner)?;
             }
             AttrOp::Sequence(ops) => {
                 for op in ops {
-                    op.apply_unchecked(el, owner);
+                    op.apply_unchecked(el, owner)?;
                 }
             }
             AttrOp::Custom(f) => {
-                f(el, owner);
+                f(el, owner)?;
             }
             AttrOp::CustomWithInputs { callback, .. } => {
-                callback(el, owner);
+                callback(el, owner)?;
             }
             AttrOp::Noop => {}
         }
+        Ok(())
     }
 }
 
@@ -475,56 +474,67 @@ fn apply_update_internal<'scope>(
     target: ApplyTarget,
     data: AttrData<'scope>,
     owner: &ViewOwnerToken<'scope>,
-) {
+) -> SilexResult<()> {
     let name = target.attr_name().to_string();
     match data {
         AttrData::StaticAttr(attr) => {
-            apply_attr_with_target_internal(el, &name, target, &attr);
+            apply_attr_with_target_internal(el, &name, target, &attr)?;
         }
         AttrData::StaticJs(value) => {
-            let _ = js_sys::Reflect::set(el, &JsValue::from_str(&name), &value);
+            js_sys::Reflect::set(el, &JsValue::from_str(&name), &value)
+                .map_err(SilexError::from)?;
         }
         AttrData::ReactiveAttr(rx) => {
             let el = el.clone();
-            if let Err(error) = owner.effect_from(
+            let owner_for_effect = owner.clone();
+            owner.effect_from(
                 rx.runtime_inputs(),
                 Box::new(move || {
                     let name = target.attr_name();
-                    apply_attr_with_target_internal(&el, name, target.clone(), &rx.get());
+                    if let Err(error) =
+                        apply_attr_with_target_internal(&el, name, target.clone(), &rx.get())
+                    {
+                        owner_for_effect.report_error(error);
+                    }
                 }),
-            ) {
-                owner.report_error(error);
-            }
+            )?;
         }
         AttrData::ReactiveString(rx) => {
             let el = el.clone();
-            if let Err(error) = owner.effect_from(
+            let owner_for_effect = owner.clone();
+            owner.effect_from(
                 rx.runtime_inputs(),
                 Box::new(move || {
                     let name = target.attr_name();
                     let val = rx.get();
-                    apply_attr_with_target_internal(&el, name, target.clone(), &Attr::from(val));
+                    if let Err(error) =
+                        apply_attr_with_target_internal(&el, name, target.clone(), &Attr::from(val))
+                    {
+                        owner_for_effect.report_error(error);
+                    }
                 }),
-            ) {
-                owner.report_error(error);
-            }
+            )?;
         }
         AttrData::ReactiveBool(rx) => {
             let el = el.clone();
-            if let Err(error) = owner.effect_from(
+            let owner_for_effect = owner.clone();
+            owner.effect_from(
                 rx.runtime_inputs(),
                 Box::new(move || {
                     let name = target.attr_name();
                     let val = rx.get();
-                    apply_attr_with_target_internal(&el, name, target.clone(), &Attr::from(val));
+                    if let Err(error) =
+                        apply_attr_with_target_internal(&el, name, target.clone(), &Attr::from(val))
+                    {
+                        owner_for_effect.report_error(error);
+                    }
                 }),
-            ) {
-                owner.report_error(error);
-            }
+            )?;
         }
         AttrData::ReactiveOptionString(rx) => {
             let el = el.clone();
-            if let Err(error) = owner.effect_from(
+            let owner_for_effect = owner.clone();
+            owner.effect_from(
                 rx.runtime_inputs(),
                 Box::new(move || {
                     let name = target.attr_name();
@@ -533,24 +543,30 @@ fn apply_update_internal<'scope>(
                         Some(s) => Attr::from(s),
                         None => Attr::Removed,
                     };
-                    apply_attr_with_target_internal(&el, name, target.clone(), &attr);
+                    if let Err(error) =
+                        apply_attr_with_target_internal(&el, name, target.clone(), &attr)
+                    {
+                        owner_for_effect.report_error(error);
+                    }
                 }),
-            ) {
-                owner.report_error(error);
-            }
+            )?;
         }
         AttrData::ReactiveJs(rx) => {
             let el = el.clone();
-            if let Err(error) = owner.effect_from(
+            let owner_for_effect = owner.clone();
+            owner.effect_from(
                 rx.runtime_inputs(),
                 Box::new(move || {
-                    let _ = js_sys::Reflect::set(&el, &JsValue::from_str(&name), &rx.get());
+                    if let Err(error) =
+                        js_sys::Reflect::set(&el, &JsValue::from_str(&name), &rx.get())
+                    {
+                        owner_for_effect.report_error(error.into());
+                    }
                 }),
-            ) {
-                owner.report_error(error);
-            }
+            )?;
         }
     }
+    Ok(())
 }
 
 // --- Kernel Implementation Functions for Combined Op ---
@@ -561,15 +577,15 @@ fn apply_combined_classes_internal<'scope>(
     toggles: Vec<(Cow<'scope, str>, Rx<'scope, bool>)>,
     reactives: Vec<Rx<'scope, String>>,
     owner: &ViewOwnerToken<'scope>,
-) {
+) -> SilexResult<()> {
     let list = el.class_list();
     // 1. 立即应用所有静态类（非响应式，仅执行一次）
     for s in &statics {
-        let _ = list.add_1(s);
+        list.add_1(s).map_err(SilexError::from)?;
     }
 
     if toggles.is_empty() && reactives.is_empty() {
-        return;
+        return Ok(());
     }
 
     let static_tokens: HashSet<String> = statics
@@ -591,8 +607,9 @@ fn apply_combined_classes_internal<'scope>(
     let static_tokens_for_cleanup = static_tokens.clone();
     let el_clone = el.clone();
     let el_for_cleanup = el.clone();
+    let owner_for_effect = owner.clone();
 
-    if let Err(error) = owner.effect_from(
+    owner.effect_from(
         inputs,
         Box::new(move || {
             let list = el_clone.class_list();
@@ -618,24 +635,28 @@ fn apply_combined_classes_internal<'scope>(
             // 先添加新增加的 Class，确保样式/过渡声明（transition）无缝连接，
             // 不因无类中间态产生闪烁或动画打断。
             for token in new_dynamic_tokens.difference(&previous) {
-                let _ = list.add_1(token);
+                if let Err(error) = list.add_1(token).map_err(SilexError::from) {
+                    owner_for_effect.report_error(error);
+                    return;
+                }
             }
 
             // 只删除已经不再由任何动态来源提供的旧 Class；静态 Class 即使
             // 同名，也必须继续保留。
             for token in previous.difference(&new_dynamic_tokens) {
-                if !static_tokens_for_update.contains(token) {
-                    let _ = list.remove_1(token);
+                if !static_tokens_for_update.contains(token)
+                    && let Err(error) = list.remove_1(token).map_err(SilexError::from)
+                {
+                    owner_for_effect.report_error(error);
+                    return;
                 }
             }
 
             *prev = new_dynamic_tokens;
         }),
-    ) {
-        owner.report_error(error);
-    }
+    )?;
 
-    if let Err(error) = owner.on_cleanup(Box::new(move || {
+    owner.on_cleanup(Box::new(move || {
         let dynamic_tokens = prev_dynamic_tokens_for_cleanup.borrow().clone();
         let list = el_for_cleanup.class_list();
         for token in dynamic_tokens {
@@ -643,9 +664,8 @@ fn apply_combined_classes_internal<'scope>(
                 let _ = list.remove_1(&token);
             }
         }
-    })) {
-        owner.report_error(error);
-    }
+    }))?;
+    Ok(())
 }
 
 fn apply_combined_styles_internal<'scope>(
@@ -654,18 +674,17 @@ fn apply_combined_styles_internal<'scope>(
     properties: Vec<(Cow<'scope, str>, Rx<'scope, String>)>,
     sheets: Vec<Rx<'scope, String>>,
     owner: &ViewOwnerToken<'scope>,
-) {
-    let Some(style) = get_style_decl(el) else {
-        return;
-    };
+) -> SilexResult<()> {
+    let style = get_style_decl(el)
+        .ok_or_else(|| SilexError::Dom("element does not expose a style declaration".into()))?;
 
     // 1. 立即应用所有静态样式项
     for (k, v) in &statics {
-        let _ = style.set_property(k, v);
+        style.set_property(k, v).map_err(SilexError::from)?;
     }
 
     if properties.is_empty() && sheets.is_empty() {
-        return;
+        return Ok(());
     }
 
     let mut inputs = RuntimeInputs::new();
@@ -686,8 +705,9 @@ fn apply_combined_styles_internal<'scope>(
         .collect();
     let prev_sheet_keys_for_cleanup = prev_sheet_keys.clone();
     let el_for_cleanup = el.clone();
+    let owner_for_effect = owner.clone();
 
-    if let Err(error) = owner.effect_from(
+    owner.effect_from(
         inputs,
         Box::new(move || {
             if let Some(style) = get_style_decl(&el_clone) {
@@ -696,7 +716,11 @@ fn apply_combined_styles_internal<'scope>(
                 for (i, (name, rx)) in properties.iter().enumerate() {
                     let val = rx.get();
                     if prev_p[i].as_deref() != Some(&val) {
-                        let _ = style.set_property(name, &val);
+                        if let Err(error) = style.set_property(name, &val).map_err(SilexError::from)
+                        {
+                            owner_for_effect.report_error(error);
+                            return;
+                        }
                         prev_p[i] = Some(val);
                     }
                 }
@@ -717,7 +741,10 @@ fn apply_combined_styles_internal<'scope>(
 
                     prev.retain(|k| {
                         if !new_keys.contains(k.as_str()) {
-                            let _ = style.remove_property(k);
+                            if let Err(error) = style.remove_property(k).map_err(SilexError::from) {
+                                owner_for_effect.report_error(error);
+                                return false;
+                            }
                             false
                         } else {
                             true
@@ -725,7 +752,10 @@ fn apply_combined_styles_internal<'scope>(
                     });
 
                     for (k, v) in new_style_map {
-                        let _ = style.set_property(&k, &v);
+                        if let Err(error) = style.set_property(&k, &v).map_err(SilexError::from) {
+                            owner_for_effect.report_error(error);
+                            return;
+                        }
                         if !prev.contains(&k) {
                             prev.insert(k);
                         }
@@ -733,11 +763,9 @@ fn apply_combined_styles_internal<'scope>(
                 }
             }
         }),
-    ) {
-        owner.report_error(error);
-    }
+    )?;
 
-    if let Err(error) = owner.on_cleanup(Box::new(move || {
+    owner.on_cleanup(Box::new(move || {
         if let Some(style) = get_style_decl(&el_for_cleanup) {
             for name in property_names {
                 let _ = style.remove_property(&name);
@@ -746,35 +774,39 @@ fn apply_combined_styles_internal<'scope>(
                 let _ = style.remove_property(name);
             }
         }
-    })) {
-        owner.report_error(error);
-    }
+    }))?;
+    Ok(())
 }
 
 // --- Kernel Functions (Non-generic DOM operations) ---
 
-pub(crate) fn apply_attr_internal(el: &Element, name: &str, attr: &Attr<'_>) {
+pub(crate) fn apply_attr_internal(el: &Element, name: &str, attr: &Attr<'_>) -> SilexResult<()> {
     if name.is_empty() {
-        return;
+        return Ok(());
     }
     match attr {
         Attr::Removed => {
-            let _ = el.remove_attribute(name);
+            el.remove_attribute(name).map_err(SilexError::from)?;
         }
         Attr::Empty => {
-            let _ = el.set_attribute(name, "");
+            el.set_attribute(name, "").map_err(SilexError::from)?;
         }
         Attr::String(val) => match name {
             "style" => {
                 if let Some(style) = get_style_decl(el) {
                     style.set_css_text(val);
+                } else {
+                    return Err(SilexError::Dom(
+                        "element does not expose a style declaration".into(),
+                    ));
                 }
             }
             _ => {
-                let _ = el.set_attribute(name, val);
+                el.set_attribute(name, val).map_err(SilexError::from)?;
             }
         },
     }
+    Ok(())
 }
 
 pub(crate) fn apply_attr_with_target_internal(
@@ -782,7 +814,7 @@ pub(crate) fn apply_attr_with_target_internal(
     name: &str,
     target: ApplyTarget,
     attr: &Attr<'_>,
-) {
+) -> SilexResult<()> {
     let known_prop = match target {
         ApplyTarget::Known(kp) => Some(kp),
         _ => None,
@@ -799,9 +831,9 @@ pub(crate) fn apply_attr_with_target_internal(
             ($attr_name:expr, $expr:expr) => {{
                 $expr;
                 if is_truthy {
-                    let _ = el.set_attribute($attr_name, "");
+                    el.set_attribute($attr_name, "").map_err(SilexError::from)?;
                 } else {
-                    let _ = el.remove_attribute($attr_name);
+                    el.remove_attribute($attr_name).map_err(SilexError::from)?;
                 }
             }};
         }
@@ -893,29 +925,39 @@ pub(crate) fn apply_attr_with_target_internal(
         };
 
         if handled {
-            return;
+            return Ok(());
         }
     }
 
-    apply_attr_internal(el, name, attr);
+    apply_attr_internal(el, name, attr)
 }
 
-pub(crate) fn set_string_property_internal(el: &Element, name: &str, value: &str, is_prop: bool) {
+pub(crate) fn set_string_property_internal(
+    el: &Element,
+    name: &str,
+    value: &str,
+    is_prop: bool,
+) -> SilexResult<()> {
     let target = if is_prop {
         ApplyTarget::prop(name.to_string())
     } else {
         ApplyTarget::attr(name.to_string())
     };
-    apply_attr_with_target_internal(el, name, target, &Attr::from(value.to_string()));
+    apply_attr_with_target_internal(el, name, target, &Attr::from(value.to_string()))
 }
 
-pub(crate) fn apply_immediate_bool_internal(el: &Element, name: &str, value: bool, is_prop: bool) {
+pub(crate) fn apply_immediate_bool_internal(
+    el: &Element,
+    name: &str,
+    value: bool,
+    is_prop: bool,
+) -> SilexResult<()> {
     let target = if is_prop {
         ApplyTarget::prop(name.to_string())
     } else {
         ApplyTarget::attr(name.to_string())
     };
-    apply_attr_with_target_internal(el, name, target, &Attr::from(value));
+    apply_attr_with_target_internal(el, name, target, &Attr::from(value))
 }
 
 pub(crate) fn get_style_decl(el: &Element) -> Option<CssStyleDeclaration> {

@@ -2,7 +2,7 @@ use crate::{
     runtime::{DynamicStyleManager, dynamic::unique_dynamic_style_id, platform::report},
     source::{CssSource, IntoCssSource},
 };
-use silex_core::RuntimeInputs;
+use silex_core::{RuntimeInputs, SilexError, SilexResult};
 use silex_dom::{
     attribute::{ApplyTarget, ApplyToDom, AttrOp, IntoStorable},
     view::{ViewOwner, ViewOwnerToken},
@@ -42,18 +42,18 @@ fn apply_var_diff(
     style: &CssStyleDeclaration,
     entries: &[(&'static str, Option<String>)],
     prev: Option<&Vec<(&'static str, Option<String>)>>,
-) -> Vec<(&'static str, Option<String>)> {
+) -> SilexResult<Vec<(&'static str, Option<String>)>> {
     for write in var_writes(entries, prev) {
         match write {
             VarWrite::Set(name, value) => {
-                let _ = style.set_property(name, value);
+                style.set_property(name, value).map_err(SilexError::from)?;
             }
             VarWrite::Remove(name) => {
-                let _ = style.remove_property(name);
+                style.remove_property(name).map_err(SilexError::from)?;
             }
         }
     }
-    entries.to_vec()
+    Ok(entries.to_vec())
 }
 
 /// 一次变量写入。
@@ -140,18 +140,21 @@ impl<'scope, T> ApplyToDom<'scope> for ThemeVariables<'scope, T>
 where
     T: ThemeType + ThemeToCss + Clone + 'scope,
 {
-    fn apply(&self, el: &Element, _target: ApplyTarget, owner: &ViewOwnerToken<'scope>) {
+    fn apply(
+        &self,
+        el: &Element,
+        _target: ApplyTarget,
+        owner: &ViewOwnerToken<'scope>,
+    ) -> SilexResult<()> {
         let theme = self.0.clone();
         let inputs = source_inputs(&theme);
-        if let Err(error) = owner.validate_inputs(&inputs) {
-            owner.report_error(error);
-            return;
-        }
+        owner.validate_inputs(&inputs)?;
         let el = el.clone();
         let effect_el = el.clone();
         let previous = Rc::new(RefCell::new(None::<Vec<(&'static str, Option<String>)>>));
         let previous_for_effect = previous.clone();
-        if let Err(error) = owner.effect_from(
+        let owner_for_effect = owner.clone();
+        owner.effect_from(
             inputs,
             Box::new(move || {
                 let theme = match &theme {
@@ -159,34 +162,40 @@ where
                     CssSource::Reactive(rx) => rx.get(),
                 };
                 let Some(style) = element_style(&effect_el) else {
+                    owner_for_effect.report_error(SilexError::Dom(
+                        "element does not expose a style declaration".into(),
+                    ));
                     return;
                 };
                 let Some(entries) = theme_entries(&theme) else {
                     return;
                 };
-                let next = apply_var_diff(&style, &entries, previous_for_effect.borrow().as_ref());
-                *previous_for_effect.borrow_mut() = Some(next);
+                let next = {
+                    let previous = previous_for_effect.borrow();
+                    apply_var_diff(&style, &entries, previous.as_ref())
+                };
+                match next {
+                    Ok(next) => *previous_for_effect.borrow_mut() = Some(next),
+                    Err(error) => owner_for_effect.report_error(error),
+                }
             }),
-        ) {
-            owner.report_error(error);
-        }
+        )?;
         let names = T::get_variable_names().to_vec();
         let el_clone = el.clone();
-        if let Err(error) = owner.on_cleanup(Box::new(move || {
+        owner.on_cleanup(Box::new(move || {
             if let Some(style) = element_style(&el_clone) {
                 for name in &names {
                     let _ = style.remove_property(name);
                 }
             };
-        })) {
-            owner.report_error(error);
-        }
+        }))?;
+        Ok(())
     }
 
     fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope> {
         let inputs = source_inputs(&self.0);
         AttrOp::custom_with_inputs(inputs, move |el, owner| {
-            self.apply(el, ApplyTarget::Apply, owner);
+            self.apply(el, ApplyTarget::Apply, owner)
         })
     }
 }
@@ -286,20 +295,23 @@ impl<'scope, P> ApplyToDom<'scope> for ThemePatchVariables<'scope, P>
 where
     P: ThemePatchToCss + Clone + 'scope,
 {
-    fn apply(&self, el: &Element, _target: ApplyTarget, owner: &ViewOwnerToken<'scope>) {
+    fn apply(
+        &self,
+        el: &Element,
+        _target: ApplyTarget,
+        owner: &ViewOwnerToken<'scope>,
+    ) -> SilexResult<()> {
         let patch = self.0.clone();
         let inputs = source_inputs(&patch);
-        if let Err(error) = owner.validate_inputs(&inputs) {
-            owner.report_error(error);
-            return;
-        }
+        owner.validate_inputs(&inputs)?;
         let el = el.clone();
         let effect_el = el.clone();
         let previous = Rc::new(RefCell::new(None::<Vec<(&'static str, Option<String>)>>));
         let names = Rc::new(RefCell::new(Vec::<&'static str>::new()));
         let previous_for_effect = previous.clone();
         let names_for_effect = names.clone();
-        if let Err(error) = owner.effect_from(
+        let owner_for_effect = owner.clone();
+        owner.effect_from(
             inputs,
             Box::new(move || {
                 let patch = match &patch {
@@ -316,31 +328,37 @@ where
                     }
                 }
                 let Some(style) = element_style(&effect_el) else {
+                    owner_for_effect.report_error(SilexError::Dom(
+                        "element does not expose a style declaration".into(),
+                    ));
                     return;
                 };
-                let next = apply_var_diff(&style, &entries, previous_for_effect.borrow().as_ref());
-                *previous_for_effect.borrow_mut() = Some(next);
+                let next = {
+                    let previous = previous_for_effect.borrow();
+                    apply_var_diff(&style, &entries, previous.as_ref())
+                };
+                match next {
+                    Ok(next) => *previous_for_effect.borrow_mut() = Some(next),
+                    Err(error) => owner_for_effect.report_error(error),
+                }
             }),
-        ) {
-            owner.report_error(error);
-        }
+        )?;
         let names_for_cleanup = names.clone();
         let el_clone = el.clone();
-        if let Err(error) = owner.on_cleanup(Box::new(move || {
+        owner.on_cleanup(Box::new(move || {
             if let Some(style) = element_style(&el_clone) {
                 for name in names_for_cleanup.borrow().iter() {
                     let _ = style.remove_property(name);
                 }
             }
-        })) {
-            owner.report_error(error);
-        }
+        }))?;
+        Ok(())
     }
 
     fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope> {
         let inputs = source_inputs(&self.0);
         AttrOp::custom_with_inputs(inputs, move |el, owner| {
-            self.apply(el, ApplyTarget::Apply, owner);
+            self.apply(el, ApplyTarget::Apply, owner)
         })
     }
 }

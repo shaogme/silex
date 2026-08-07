@@ -142,7 +142,8 @@ fn style_updates_inline_values_and_cleans_on_scope_dispose() {
         let token = owner.token();
         let class_name = Style::new()
             .raw("--test-color", value)
-            .apply_to_element(&element, &token);
+            .apply_to_element(&element, &token)
+            .expect("style can be applied");
 
         assert!(element.class_list().contains(&class_name));
         assert!(
@@ -186,7 +187,9 @@ fn theme_updates_variables_and_cleans_on_scope_dispose() {
         });
         let owner = ScopedViewOwner::new(scope);
         let token = owner.token();
-        theme_variables(theme).apply(&element, ApplyTarget::Apply, &token);
+        theme_variables(theme)
+            .apply(&element, ApplyTarget::Apply, &token)
+            .expect("theme variables can be applied");
 
         assert!(
             element
@@ -230,7 +233,8 @@ fn svg_style_updates_inline_values_and_cleans_on_scope_dispose() {
         let token = owner.token();
         Style::new()
             .raw("--svg-color", value)
-            .apply_to_element(&element, &token);
+            .apply_to_element(&element, &token)
+            .expect("svg style can be applied");
         assert!(
             element
                 .get_attribute("style")
@@ -280,7 +284,9 @@ fn dynamic_css_replaces_rule_class_and_cleans_on_scope_dispose() {
             vec![value.into_css_reactive()],
         );
 
-        dynamic.apply(&element, ApplyTarget::Class, &token);
+        dynamic
+            .apply(&element, ApplyTarget::Class, &token)
+            .expect("dynamic style can be applied");
         let first_class = element.class_name();
         assert!(first_class.contains("slx-owner-test"));
         assert!(first_class.contains("-d"));
@@ -318,7 +324,9 @@ async fn pending_dynamic_sheet_operations_do_not_survive_owner_dispose() {
             ],
             vec![value.into_css_reactive()],
         );
-        dynamic.apply(&element, ApplyTarget::Class, &token);
+        dynamic
+            .apply(&element, ApplyTarget::Class, &token)
+            .expect("dynamic style can be applied");
         assert!(element.class_name().contains("slx-pending-owner"));
     });
 
@@ -380,7 +388,9 @@ fn theme_patch_removes_variables_that_disappear_from_the_next_round() {
         let (patch, set_patch) = scope.signal(TestPatch { alternate: false });
         let owner = ScopedViewOwner::new(scope);
         let token = owner.token();
-        theme_patch(patch).apply(&element, ApplyTarget::Apply, &token);
+        theme_patch(patch)
+            .apply(&element, ApplyTarget::Apply, &token)
+            .expect("theme patch can be applied");
         let initial = element.get_attribute("style").unwrap_or_default();
         assert!(initial.contains("--patch-old"), "{initial}");
 
@@ -419,8 +429,11 @@ fn foreign_runtime_css_input_is_rejected_before_custom_callback() {
         let operation = AttrOp::custom_with_inputs(foreign_inputs, |element, _| {
             callback_runs.set(callback_runs.get() + 1);
             let _ = element.set_attribute("data-foreign", "unexpected");
+            Ok(())
         });
-        operation.apply(&element, &token);
+        operation
+            .apply(&element, &token)
+            .expect_err("foreign runtime input should be rejected");
     });
 
     assert_eq!(callback_runs.get(), 0);

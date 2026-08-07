@@ -1,3 +1,4 @@
+use silex_core::SilexResult;
 use std::borrow::Cow;
 use std::rc::Rc;
 use web_sys::Element as WebElem;
@@ -187,11 +188,13 @@ impl<'scope> AttrOp<'scope> {
         value.into_op(target)
     }
 
-    pub fn new_listener(f: impl Fn(&WebElem) + 'scope) -> Self {
+    pub fn new_listener(f: impl Fn(&WebElem) -> SilexResult<()> + 'scope) -> Self {
         AttrOp::Custom(Rc::new(move |el, _| f(el)))
     }
 
-    pub fn new_scoped(f: impl Fn(&WebElem, &ViewOwnerToken<'scope>) + 'scope) -> Self {
+    pub fn new_scoped(
+        f: impl Fn(&WebElem, &ViewOwnerToken<'scope>) -> SilexResult<()> + 'scope,
+    ) -> Self {
         AttrOp::Custom(Rc::new(f))
     }
 }

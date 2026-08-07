@@ -1,7 +1,9 @@
 #![cfg(target_arch = "wasm32")]
 
-use silex_core::{RootHandle, Runtime, traits::ForErrorHandler};
+use silex_core::{ErrorReporter, RootHandle, Runtime, SilexError, traits::ForErrorHandler};
 use silex_dom::{
+    attribute::{AttrOp, AttributeBuilder, PendingAttribute},
+    document,
     element::{Element, bind_event},
     event::click,
     helpers::{
@@ -249,7 +251,7 @@ impl<'scope> View<'scope> for WindowResourceView {
             "silex-window-resource",
             move |_| calls.borrow_mut().push(id),
         );
-        mount_text_node(owner, parent, &self.id.to_string());
+        mount_text_node(parent, &self.id.to_string()).expect("text node can be mounted");
     }
 
     fn mount_owned(
@@ -303,6 +305,43 @@ fn dispatch(target: &Node, event: Event) {
 }
 
 #[wasm_bindgen_test]
+fn fallible_dom_primitives_and_attribute_mount_failures_are_observable() {
+    let host = mount_point();
+    let text_parent: Node = document().create_text_node("not a parent").into();
+    assert!(mount_text_node(&text_parent, "rejected").is_err());
+
+    let mut runtime = Runtime::new();
+    runtime.child(|scope| {
+        let owner = ScopedViewOwner::new(scope);
+        let token = owner.token();
+        let element = document()
+            .create_element("div")
+            .expect("test element can be created");
+        let invalid_class = AttrOp::static_class("invalid token".into());
+        assert!(invalid_class.apply(&element, &token).is_err());
+    });
+
+    let reported = Rc::new(Cell::new(false));
+    let reported_for_owner = reported.clone();
+    let mut runtime = Runtime::new();
+    runtime.child(|scope| {
+        let owner = ScopedViewOwner::with_error_reporter(
+            scope,
+            ErrorReporter::new(move |error| {
+                reported_for_owner.set(matches!(error, SilexError::Framework(_)));
+            }),
+        );
+        let view = Element::new("div").apply(PendingAttribute::new_scoped(|_, _| {
+            Err(SilexError::Framework("attribute rejected".to_string()))
+        }));
+        view.mount_owned(&owner, &host.clone().into(), Vec::new());
+    });
+    assert!(reported.get());
+    assert!(host.first_child().is_none());
+    remove_mount_point(&host);
+}
+
+#[wasm_bindgen_test]
 fn element_listener_removes_physically_and_drops_on_root_dispose() {
     let spy = Spy::new();
     let host = mount_point();
@@ -332,7 +371,8 @@ fn element_listener_removes_physically_and_drops_on_root_dispose() {
                 let _ = &probe;
             },
             &token,
-        );
+        )
+        .expect("element listener can be registered");
 
         node_ref.load(element.dom_element.clone());
         element.mount_owned(&owner, &host.clone().into(), Vec::new());

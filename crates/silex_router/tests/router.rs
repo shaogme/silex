@@ -128,7 +128,7 @@ impl<'scope> View<'scope> for RouterCleanupView {
                 cleanups.set(cleanups.get() + 1);
             }))
             .expect("router owner is active");
-        mount_text_node(owner, parent, &self.text);
+        mount_text_node(parent, &self.text).expect("text node can be mounted");
     }
 
     fn mount_owned(
@@ -163,7 +163,7 @@ impl<'scope> View<'scope> for FactoryTextView<'scope> {
                 cleanups.set(cleanups.get() + 1);
             }))
             .expect("router owner is active");
-        mount_text_node(owner, parent, &self.text.get());
+        mount_text_node(parent, &self.text.get()).expect("text node can be mounted");
     }
 
     fn mount_owned(

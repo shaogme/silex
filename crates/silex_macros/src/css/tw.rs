@@ -346,11 +346,11 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
                             __slx_current_class.replace(__slx_next_class);
                         }),
                     ) {
-                        owner.report_error(error);
+                        return Err(error);
                     }
 
                     let __slx_element_for_cleanup = element.clone();
-                    if let Err(error) = owner.on_cleanup(::std::boxed::Box::new(move || {
+                    owner.on_cleanup(::std::boxed::Box::new(move || {
                         if let Some(__slx_class) = __slx_current_class.borrow_mut().take() {
                             for __slx_token in __slx_class.split_whitespace() {
                                 let _ = __slx_element_for_cleanup
@@ -358,9 +358,8 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
                                     .remove_1(__slx_token);
                             }
                         }
-                    })) {
-                        owner.report_error(error);
-                    }
+                    }))?;
+                    Ok(())
                 },
             )
         }

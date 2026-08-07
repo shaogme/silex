@@ -36,7 +36,7 @@ impl<'scope> View<'scope> for CleanupProbe {
                 cleanups.set(cleanups.get() + 1);
             }))
             .expect("view owner is active");
-        mount_text_node(owner, parent, &self.text);
+        mount_text_node(parent, &self.text).expect("text node can be mounted");
     }
 
     fn mount_owned(
@@ -182,7 +182,9 @@ fn combined_reactive_styles_clean_up_properties_on_scope_dispose() {
             sheets: Vec::new(),
         });
 
-        operation.apply(&element, &token);
+        operation
+            .apply(&element, &token)
+            .expect("combined styles can be applied");
         assert!(
             element
                 .get_attribute("style")

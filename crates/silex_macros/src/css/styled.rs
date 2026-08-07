@@ -357,6 +357,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
                 move |_, _| {
                     #base_style_inits
                     #(#variant_injections)*
+                    Ok(())
                 },
             ))
         }

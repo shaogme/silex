@@ -9,7 +9,7 @@ use crate::{
     source::IntoCssReactive,
     types,
 };
-use silex_core::{RuntimeInputs, Rx};
+use silex_core::{RuntimeInputs, Rx, SilexError, SilexResult};
 use silex_dom::{
     attribute::{ApplyTarget, ApplyToDom, AttrOp, IntoStorable, PendingAttribute},
     view::{ApplyAttributes, View, ViewOwner, ViewOwnerToken},
@@ -373,18 +373,17 @@ impl<'scope> DynamicCss<'scope> {
         inputs
     }
 
-    fn apply_to_element(&self, el: &Element, owner: &dyn ViewOwner<'scope>) {
+    fn apply_to_element(&self, el: &Element, owner: &dyn ViewOwner<'scope>) -> SilexResult<()> {
         let all_inputs = self.runtime_inputs();
-        if let Err(error) = owner.validate_inputs(&all_inputs) {
-            owner.report_error(error);
-            return;
-        }
+        owner.validate_inputs(&all_inputs)?;
 
         for (style_id, css) in &self.static_styles {
             crate::inject_style(style_id, css);
         }
 
-        let _ = el.class_list().add_1(self.class_name);
+        el.class_list()
+            .add_1(self.class_name)
+            .map_err(SilexError::from)?;
 
         if !self.vars.is_empty() {
             let vars = self.vars.clone();
@@ -396,7 +395,7 @@ impl<'scope> DynamicCss<'scope> {
             let previous = Rc::new(RefCell::new(vec![None::<String>; vars.len()]));
             let previous_for_effect = previous.clone();
             let el_clone = el.clone();
-            if let Err(error) = owner.effect_from(
+            owner.effect_from(
                 inputs,
                 Box::new(move || {
                     let values: Vec<String> = vars_for_effect
@@ -415,21 +414,17 @@ impl<'scope> DynamicCss<'scope> {
                     }
                     *previous = values.into_iter().map(Some).collect();
                 }),
-            ) {
-                owner.report_error(error);
-            }
+            )?;
 
             let names: Vec<&'static str> = vars.iter().map(|(name, _)| *name).collect();
             let el_clone = el.clone();
-            if let Err(error) = owner.on_cleanup(Box::new(move || {
+            owner.on_cleanup(Box::new(move || {
                 if let Some(style) = element_style(&el_clone) {
                     for name in names {
                         let _ = style.remove_property(name);
                     }
                 }
-            })) {
-                owner.report_error(error);
-            }
+            }))?;
         }
 
         for (parts, getters) in self.rules.clone() {
@@ -444,7 +439,7 @@ impl<'scope> DynamicCss<'scope> {
             let el_clone = el.clone();
             let base_class = self.class_name;
             let layer = self.layer;
-            if let Err(error) = owner.effect_from(
+            owner.effect_from(
                 inputs,
                 Box::new(move || {
                     let current_vals: Vec<String> =
@@ -464,43 +459,41 @@ impl<'scope> DynamicCss<'scope> {
                         let _ = el_clone.class_list().remove_1(&old_class);
                     }
                 }),
-            ) {
-                owner.report_error(error);
-            }
+            )?;
 
             let manager_for_cleanup = manager.clone();
             let current_class_for_cleanup = current_class.clone();
             let el_clone = el.clone();
-            if let Err(error) = owner.on_cleanup(Box::new(move || {
+            owner.on_cleanup(Box::new(move || {
                 if let Some(class_name) = current_class_for_cleanup.borrow_mut().take() {
                     let _ = el_clone.class_list().remove_1(&class_name);
                 }
                 manager_for_cleanup.dispose();
-            })) {
-                owner.report_error(error);
-            }
+            }))?;
         }
 
         let class_name = self.class_name;
         let el_clone = el.clone();
-        if let Err(error) = owner.on_cleanup(Box::new(move || {
+        owner.on_cleanup(Box::new(move || {
             let _ = el_clone.class_list().remove_1(class_name);
-        })) {
-            owner.report_error(error);
-        }
+        }))?;
+        Ok(())
     }
 }
 
 impl<'scope> ApplyToDom<'scope> for DynamicCss<'scope> {
-    fn apply(&self, el: &Element, _target: ApplyTarget, owner: &ViewOwnerToken<'scope>) {
-        self.apply_to_element(el, owner);
+    fn apply(
+        &self,
+        el: &Element,
+        _target: ApplyTarget,
+        owner: &ViewOwnerToken<'scope>,
+    ) -> SilexResult<()> {
+        self.apply_to_element(el, owner)
     }
 
     fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope> {
         let inputs = self.runtime_inputs();
-        AttrOp::custom_with_inputs(inputs, move |el, owner| {
-            self.apply_to_element(el, owner);
-        })
+        AttrOp::custom_with_inputs(inputs, move |el, owner| self.apply_to_element(el, owner))
     }
 }
 
@@ -584,7 +577,7 @@ impl<'scope> StyledVariantBinding<'scope> {
     pub fn into_op(self) -> AttrOp<'scope> {
         let inputs = self.runtime_inputs();
         AttrOp::custom_with_inputs(inputs, move |element, owner| {
-            self.mount_to_element(element, owner);
+            self.mount_to_element(element, owner)
         })
     }
 
@@ -601,12 +594,13 @@ impl<'scope> StyledVariantBinding<'scope> {
         inputs
     }
 
-    fn mount_to_element(&self, element: &Element, owner: &ViewOwnerToken<'scope>) {
+    fn mount_to_element(
+        &self,
+        element: &Element,
+        owner: &ViewOwnerToken<'scope>,
+    ) -> SilexResult<()> {
         let inputs = self.runtime_inputs();
-        if let Err(error) = owner.validate_inputs(&inputs) {
-            owner.report_error(error);
-            return;
-        }
+        owner.validate_inputs(&inputs)?;
 
         let rules = self.rules.clone();
         let groups = self.groups.clone();
@@ -623,7 +617,7 @@ impl<'scope> StyledVariantBinding<'scope> {
         let states_for_effect = states.clone();
         let variant_classes_for_effect = variant_classes.clone();
         let element_for_effect = element.clone();
-        if let Err(error) = owner.effect_from(
+        owner.effect_from(
             inputs,
             Box::new(move || {
                 let active_variants: Vec<String> = groups
@@ -644,12 +638,10 @@ impl<'scope> StyledVariantBinding<'scope> {
                     &states_for_effect,
                 );
             }),
-        ) {
-            owner.report_error(error);
-        }
+        )?;
 
         let element_for_cleanup = element.clone();
-        if let Err(error) = owner.on_cleanup(Box::new(move || {
+        owner.on_cleanup(Box::new(move || {
             let mut classes = variant_classes.borrow_mut();
             for class in classes.iter_mut().filter_map(Option::take) {
                 let _ = element_for_cleanup.class_list().remove_1(class);
@@ -665,9 +657,8 @@ impl<'scope> StyledVariantBinding<'scope> {
                     manager.dispose();
                 }
             }
-        })) {
-            owner.report_error(error);
-        }
+        }))?;
+        Ok(())
     }
 }
 

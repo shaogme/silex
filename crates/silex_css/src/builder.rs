@@ -9,7 +9,7 @@ use crate::{
         },
     },
 };
-use silex_core::{Rx, RxValueKind};
+use silex_core::{Rx, RxValueKind, SilexError, SilexResult};
 use silex_dom::attribute::{ApplyTarget, ApplyToDom, IntoStorable, ReactiveApply};
 use silex_dom::view::ViewOwnerToken;
 use silex_hash::{
@@ -279,14 +279,19 @@ macro_rules! generate_builder_methods {
 for_all_properties!(generate_builder_methods);
 
 impl<'scope> ApplyToDom<'scope> for Style<'scope> {
-    fn apply(&self, el: &Element, _target: ApplyTarget, owner: &ViewOwnerToken<'scope>) {
-        self.apply_to_element(el, owner);
+    fn apply(
+        &self,
+        el: &Element,
+        _target: ApplyTarget,
+        owner: &ViewOwnerToken<'scope>,
+    ) -> SilexResult<()> {
+        self.apply_to_element(el, owner).map(|_| ())
     }
 
     fn into_op(self, _target: ApplyTarget) -> silex_dom::attribute::AttrOp<'scope> {
         let inputs = self.runtime_inputs();
         silex_dom::attribute::AttrOp::custom_with_inputs(inputs, move |el, owner| {
-            self.apply_to_element(el, owner);
+            self.apply_to_element(el, owner).map(|_| ())
         })
     }
 }
@@ -336,7 +341,11 @@ impl<'scope> Style<'scope> {
         }
     }
 
-    pub fn apply_to_element(&self, el: &Element, owner: &ViewOwnerToken<'scope>) -> String {
+    pub fn apply_to_element(
+        &self,
+        el: &Element,
+        owner: &ViewOwnerToken<'scope>,
+    ) -> SilexResult<String> {
         let RenderedStyle {
             class_base,
             css,
@@ -347,15 +356,14 @@ impl<'scope> Style<'scope> {
         for (_, source) in &dyn_bindings {
             inputs.extend(&source.runtime_inputs());
         }
-        if let Err(error) = owner.validate_inputs(&inputs) {
-            owner.report_error(error);
-            return class_base;
-        }
+        owner.validate_inputs(&inputs)?;
 
         if !css.is_empty() {
             inject_style(&class_base, &css);
         }
-        let _ = el.class_list().add_1(&class_base);
+        el.class_list()
+            .add_1(&class_base)
+            .map_err(SilexError::from)?;
 
         let owned_vars: Vec<String> = dyn_bindings
             .iter()
@@ -366,7 +374,8 @@ impl<'scope> Style<'scope> {
             let el_clone = el.clone();
             let bindings = dyn_bindings;
             let previous_for_effect = previous.clone();
-            if let Err(error) = owner.effect_from(
+            let owner_for_effect = owner.clone();
+            owner.effect_from(
                 inputs.clone(),
                 Box::new(move || {
                     let values: Vec<String> =
@@ -376,31 +385,31 @@ impl<'scope> Style<'scope> {
                         for (index, ((name, _), value)) in
                             bindings.iter().zip(values.iter()).enumerate()
                         {
-                            if previous[index].as_deref() != Some(value) {
-                                let _ = style.set_property(name, value);
+                            if previous[index].as_deref() != Some(value)
+                                && let Err(error) =
+                                    style.set_property(name, value).map_err(SilexError::from)
+                            {
+                                owner_for_effect.report_error(error);
+                                return;
                             }
                         }
                     }
                     *previous = values.into_iter().map(Some).collect();
                 }),
-            ) {
-                owner.report_error(error);
-            }
+            )?;
         }
 
         let el_clone = el.clone();
         let class_name = class_base.clone();
-        if let Err(error) = owner.on_cleanup(Box::new(move || {
+        owner.on_cleanup(Box::new(move || {
             if let Some(style) = element_style(&el_clone) {
                 for name in &owned_vars {
                     let _ = style.remove_property(name);
                 }
             }
             let _ = el_clone.class_list().remove_1(&class_name);
-        })) {
-            owner.report_error(error);
-        }
-        class_base
+        }))?;
+        Ok(class_base)
     }
 
     pub(crate) fn runtime_inputs(&self) -> silex_core::RuntimeInputs {
@@ -521,13 +530,13 @@ impl<'scope> ReactiveApply<'scope> for Style<'scope> {
         el: Element,
         _target: ApplyTarget,
         owner: &ViewOwnerToken<'scope>,
-    ) {
+    ) -> SilexResult<()> {
         let el = el.clone();
         let owner = owner.clone();
         let owner_for_effect = owner.clone();
         let previous_class = Rc::new(RefCell::new(None::<String>));
         let previous_class_for_effect = previous_class.clone();
-        if let Err(error) = owner.effect_from(
+        owner.effect_from(
             rx.runtime_inputs(),
             Box::new(move || {
                 let style = rx.get();
@@ -538,12 +547,14 @@ impl<'scope> ReactiveApply<'scope> for Style<'scope> {
                 if let Some(class_name) = previous_class_for_effect.borrow_mut().take() {
                     let _ = el.class_list().remove_1(&class_name);
                 }
-                let class_name = style.apply_to_element(&el, &owner_for_effect);
-                *previous_class_for_effect.borrow_mut() = Some(class_name);
+                match style.apply_to_element(&el, &owner_for_effect) {
+                    Ok(class_name) => {
+                        *previous_class_for_effect.borrow_mut() = Some(class_name);
+                    }
+                    Err(error) => owner_for_effect.report_error(error),
+                }
             }),
-        ) {
-            owner.report_error(error);
-        }
+        )
     }
 }
 

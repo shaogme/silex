@@ -8,7 +8,8 @@ error: lifetime may not live long enough
  9 |           let (value, _) = scope.signal(1_i32);
 10 | /         PendingAttribute::new_scoped(move |_, _| {
 11 | |             let _ = value.get();
-12 | |         })
+12 | |             Ok(())
+13 | |         })
    | |__________^ returning this value requires that `'1` must outlive `'2`
    |
    = note: requirement occurs because of the type `AttrOp<'_>`, which makes the generic argument `'_` invariant

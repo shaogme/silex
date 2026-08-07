@@ -5,7 +5,8 @@ error: lifetime may not live long enough
   |                     ------ lifetime `'scope` defined here
 4 | /     PendingAttribute::new_listener(move |_| {
 5 | |         let _ = value.len();
-6 | |     })
+6 | |         Ok(())
+7 | |     })
   | |______^ returning this value requires that `'scope` must outlive `'static`
   |
   = note: requirement occurs because of the type `AttrOp<'_>`, which makes the generic argument `'_` invariant

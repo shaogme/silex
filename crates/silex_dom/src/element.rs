@@ -1,13 +1,15 @@
 use crate::attribute::{ApplyTarget, AttributeBuilder, IntoStorable, PendingAttribute};
 use crate::event::{EventDescriptor, EventHandler};
-use crate::view::{AnyView, ApplyAttributes, ScopedViewOwner, View, ViewOwner, ViewOwnerToken};
+use crate::view::{
+    AnyView, ApplyAttributes, OwnedViewOwner, ScopedViewOwner, View, ViewOwner, ViewOwnerToken,
+};
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::rc::Rc;
 use wasm_bindgen::{JsCast, JsValue, convert::FromWasmAbi, prelude::*};
 use web_sys::Element as WebElem;
 
-use silex_core::{RuntimeInputs, Scope, SilexError};
+use silex_core::{ReactiveError, RuntimeInputs, Scope, SilexError, SilexResult};
 
 pub mod tags;
 pub use tags::*;
@@ -85,30 +87,35 @@ impl<'scope> Element<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
-    ) {
-        let token = owner.token();
+    ) -> SilexResult<()> {
+        let provisional_scope = Rc::new(owner.try_owned_scope()?);
+        let provisional_owner =
+            OwnedViewOwner::new(provisional_scope.clone(), owner.token().error_reporter());
+        let token = provisional_owner.token();
         let attrs = self.all_attrs(attrs);
         let mut inputs = RuntimeInputs::new();
         for attr in &attrs {
             inputs.extend(&attr.runtime_inputs());
         }
-        if let Err(error) = token.validate_inputs(&inputs) {
-            owner.report_error(error);
-            return;
-        }
+        token.validate_inputs(&inputs)?;
         for attr in attrs {
-            attr.apply(&self.dom_element, &token);
+            attr.apply(&self.dom_element, &token)?;
         }
-        if let Err(error) = parent
+        parent
             .append_child(&self.dom_element)
-            .map_err(SilexError::from)
-        {
-            owner.report_error(error);
-            return;
-        }
+            .map_err(SilexError::from)?;
         for child in &self.children {
-            child.mount(owner, self.dom_element.as_ref(), Vec::new());
+            child.mount(&provisional_owner, self.dom_element.as_ref(), Vec::new());
         }
+        let scope_for_cleanup = provisional_scope.clone();
+        if let Err(error) = owner.on_cleanup(Box::new(move || scope_for_cleanup.dispose())) {
+            provisional_scope.dispose();
+            if let Some(parent) = self.dom_element.parent_node() {
+                let _ = parent.remove_child(&self.dom_element);
+            }
+            return Err(error);
+        }
+        Ok(())
     }
 }
 
@@ -152,7 +159,9 @@ impl<'scope> View<'scope> for Element<'scope> {
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
     ) {
-        self.mount_inner(owner, parent, attrs);
+        if let Err(error) = self.mount_inner(owner, parent, attrs) {
+            owner.report_error(error);
+        }
     }
 
     fn mount_owned(
@@ -163,7 +172,9 @@ impl<'scope> View<'scope> for Element<'scope> {
     ) where
         Self: Sized,
     {
-        self.mount_inner(owner, parent, attrs);
+        if let Err(error) = self.mount_inner(owner, parent, attrs) {
+            owner.report_error(error);
+        }
     }
 }
 
@@ -300,30 +311,9 @@ impl<'scope, T: Tag> View<'scope> for TypedElement<'scope, T> {
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
     ) {
-        let token = owner.token();
-        let mut all_attrs = self.pending_attrs.clone();
-        all_attrs.extend(attrs);
-        let all_attrs = crate::attribute::consolidate_attributes(all_attrs);
-        let mut inputs = RuntimeInputs::new();
-        for attr in &all_attrs {
-            inputs.extend(&attr.runtime_inputs());
-        }
-        if let Err(error) = token.validate_inputs(&inputs) {
+        let element = self.clone().into_untyped();
+        if let Err(error) = element.mount_inner(owner, parent, attrs) {
             owner.report_error(error);
-            return;
-        }
-        for attr in all_attrs {
-            attr.apply(self.as_element(), &token);
-        }
-        if let Err(error) = parent
-            .append_child(self.as_node())
-            .map_err(SilexError::from)
-        {
-            owner.report_error(error);
-            return;
-        }
-        for child in &self.children {
-            child.mount(owner, self.as_node(), Vec::new());
         }
     }
 
@@ -335,7 +325,10 @@ impl<'scope, T: Tag> View<'scope> for TypedElement<'scope, T> {
     ) where
         Self: Sized,
     {
-        self.mount(owner, parent, attrs);
+        let element = self.into_untyped();
+        if let Err(error) = element.mount_inner(owner, parent, attrs) {
+            owner.report_error(error);
+        }
     }
 }
 
@@ -366,12 +359,13 @@ pub fn bind_event<'scope, E, F, M>(
     event: E,
     callback: F,
     owner: &ViewOwnerToken<'scope>,
-) where
+) -> SilexResult<()>
+where
     E: crate::event::EventDescriptor + 'static,
     F: EventHandler<'scope, E::EventType, M> + 'scope,
 {
     let handler = callback.into_handler();
-    bind_event_impl(dom_element, event.name().to_string(), handler, owner);
+    bind_event_impl(dom_element, event.name().to_string(), handler, owner)
 }
 
 pub fn bind_event_impl<'scope, E>(
@@ -379,11 +373,12 @@ pub fn bind_event_impl<'scope, E>(
     event_name: String,
     mut handler: Box<dyn FnMut(E) + 'scope>,
     owner: &ViewOwnerToken<'scope>,
-) where
+) -> SilexResult<()>
+where
     E: FromWasmAbi + JsCast + 'static,
 {
     if !owner.is_active() {
-        return;
+        return Err(SilexError::Reactivity(ReactiveError::NoSuchNode));
     }
     let destination = owner.host_callback(move |payload| {
         handler(payload.unchecked_into::<E>());
@@ -405,15 +400,24 @@ pub fn bind_event_impl<'scope, E>(
     {
         destination.cancel();
         let _ = closure.borrow_mut().take();
-        owner.report_error(error);
-        return;
+        return Err(error);
     }
 
     let target = dom_element.clone();
     let event_name_for_cleanup = event_name.clone();
     let closure_for_cleanup = closure.clone();
-    owner.host_resource_for_callback(&destination, move || {
-        let _ = target.remove_event_listener_with_callback(&event_name_for_cleanup, &js_fn);
+    let js_fn_for_cleanup = js_fn.clone();
+    if let Err(error) = owner.try_host_resource_for_callback(&destination, move || {
+        let _ =
+            target.remove_event_listener_with_callback(&event_name_for_cleanup, &js_fn_for_cleanup);
         let _ = closure_for_cleanup.borrow_mut().take();
-    });
+    }) {
+        destination.cancel();
+        let _ = dom_element
+            .remove_event_listener_with_callback(&event_name, &js_fn)
+            .map_err(SilexError::from);
+        let _ = closure.borrow_mut().take();
+        return Err(error);
+    }
+    Ok(())
 }
