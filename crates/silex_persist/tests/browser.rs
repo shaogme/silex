@@ -1,7 +1,7 @@
 #![cfg(target_arch = "wasm32")]
 
 use gloo_timers::future::TimeoutFuture;
-use silex_core::{RootHandle, Runtime, RxGet};
+use silex_core::{ErrorReporter, RootHandle, Runtime, RxGet, SilexError, SilexResult};
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::view::{
     AnyView, ApplyAttributes, IndexedLoopView, ScopedViewOwner, View, ViewOwner,
@@ -486,10 +486,16 @@ fn query_backend_writes_one_push_and_one_url_update_per_change() {
         .expect("router context should be created");
         let search_updates = Rc::new(Cell::new(0));
         let search_updates_for_effect = search_updates.clone();
-        scope.effect(move || {
-            search.get();
-            search_updates_for_effect.set(search_updates_for_effect.get() + 1);
-        });
+        scope
+            .effect(
+                move || -> SilexResult<()> {
+                    search.try_get()?;
+                    search_updates_for_effect.set(search_updates_for_effect.get() + 1);
+                    Ok(())
+                },
+                ErrorReporter::unhandled().handler(),
+            )
+            .expect("query update effect can be registered");
         let initial_search_updates = search_updates.get();
 
         let binding = Persistent::builder(scope, QUERY_HISTORY_KEY)
@@ -791,14 +797,21 @@ fn debounce_timer_failure_reentry_and_late_callbacks_are_gated() {
             .build();
         let binding_for_dispose = binding;
         let dispose_for_effect = dispose_slot.clone();
-        scope.effect(move || {
-            if binding_for_dispose.state().get() == PersistenceState::Ready("second".to_string())
-                && let Some(root) = dispose_for_effect.borrow_mut().take()
-            {
-                root.dispose()
-                    .expect("state effect can dispose its root reentrantly");
-            }
-        });
+        scope
+            .effect(
+                move || -> SilexResult<()> {
+                    if binding_for_dispose.state().try_get()?
+                        == PersistenceState::Ready("second".to_string())
+                        && let Some(root) = dispose_for_effect.borrow_mut().take()
+                    {
+                        root.dispose()
+                            .expect("state effect can dispose its root reentrantly");
+                    }
+                    Ok(())
+                },
+                ErrorReporter::unhandled().handler(),
+            )
+            .expect("debounce state effect can be registered");
 
         controller.fail_next();
         binding.set("failed".to_string());

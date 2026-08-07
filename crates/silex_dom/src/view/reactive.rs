@@ -50,14 +50,12 @@ where
                 node
             } else {
                 let node = crate::document().create_text_node("");
-                parent.append_child(&node).map_err(SilexError::from)?;
+                parent.append_child(&node)?;
                 let node: Node = node.into();
                 *node_for_effect.borrow_mut() = Some(node.clone());
                 node
             };
-            let value = rx
-                .try_with(|value| value.to_string())
-                .map_err(SilexError::from)?;
+            let value = rx.try_with(|value| value.to_string())?;
             node.set_node_value(Some(&value));
             Ok(())
         }),

@@ -481,8 +481,7 @@ fn apply_update_internal<'scope>(
             apply_attr_with_target_internal(el, &name, target, &attr)?;
         }
         AttrData::StaticJs(value) => {
-            js_sys::Reflect::set(el, &JsValue::from_str(&name), &value)
-                .map_err(SilexError::from)?;
+            js_sys::Reflect::set(el, &JsValue::from_str(&name), &value)?;
         }
         AttrData::ReactiveAttr(rx) => {
             let el = el.clone();
@@ -490,7 +489,7 @@ fn apply_update_internal<'scope>(
                 rx.runtime_inputs(),
                 Box::new(move || -> SilexResult<()> {
                     let name = target.attr_name();
-                    let value = rx.try_get().map_err(SilexError::from)?;
+                    let value = rx.try_get()?;
                     apply_attr_with_target_internal(&el, name, target.clone(), &value)
                 }),
                 owner.error_handler(),
@@ -502,7 +501,7 @@ fn apply_update_internal<'scope>(
                 rx.runtime_inputs(),
                 Box::new(move || -> SilexResult<()> {
                     let name = target.attr_name();
-                    let val = rx.try_get().map_err(SilexError::from)?;
+                    let val = rx.try_get()?;
                     apply_attr_with_target_internal(&el, name, target.clone(), &Attr::from(val))
                 }),
                 owner.error_handler(),
@@ -514,7 +513,7 @@ fn apply_update_internal<'scope>(
                 rx.runtime_inputs(),
                 Box::new(move || -> SilexResult<()> {
                     let name = target.attr_name();
-                    let val = rx.try_get().map_err(SilexError::from)?;
+                    let val = rx.try_get()?;
                     apply_attr_with_target_internal(&el, name, target.clone(), &Attr::from(val))
                 }),
                 owner.error_handler(),
@@ -526,7 +525,7 @@ fn apply_update_internal<'scope>(
                 rx.runtime_inputs(),
                 Box::new(move || -> SilexResult<()> {
                     let name = target.attr_name();
-                    let val = rx.try_get().map_err(SilexError::from)?;
+                    let val = rx.try_get()?;
                     let attr = match val {
                         Some(s) => Attr::from(s),
                         None => Attr::Removed,
@@ -541,7 +540,7 @@ fn apply_update_internal<'scope>(
             owner.effect_from(
                 rx.runtime_inputs(),
                 Box::new(move || -> SilexResult<()> {
-                    let value = rx.try_get().map_err(SilexError::from)?;
+                    let value = rx.try_get()?;
                     js_sys::Reflect::set(&el, &JsValue::from_str(&name), &value)
                         .map(|_| ())
                         .map_err(SilexError::from)
@@ -565,7 +564,7 @@ fn apply_combined_classes_internal<'scope>(
     let list = el.class_list();
     // 1. 立即应用所有静态类（非响应式，仅执行一次）
     for s in &statics {
-        list.add_1(s).map_err(SilexError::from)?;
+        list.add_1(s)?;
     }
 
     if toggles.is_empty() && reactives.is_empty() {
@@ -600,13 +599,13 @@ fn apply_combined_classes_internal<'scope>(
             // class，只有它不再被任何动态来源提供时才能从 DOM 中移除。
             let mut new_dynamic_tokens = HashSet::new();
             for (name, rx) in &toggles {
-                if rx.try_get().map_err(SilexError::from)? {
+                if rx.try_get()? {
                     new_dynamic_tokens.insert(name.to_string());
                 }
             }
 
             for rx in &reactives {
-                let value = rx.try_get().map_err(SilexError::from)?;
+                let value = rx.try_get()?;
                 for token in value.split_whitespace() {
                     new_dynamic_tokens.insert(token.to_string());
                 }
@@ -618,14 +617,14 @@ fn apply_combined_classes_internal<'scope>(
             // 先添加新增加的 Class，确保样式/过渡声明（transition）无缝连接，
             // 不因无类中间态产生闪烁或动画打断。
             for token in new_dynamic_tokens.difference(&previous) {
-                list.add_1(token).map_err(SilexError::from)?;
+                list.add_1(token)?;
             }
 
             // 只删除已经不再由任何动态来源提供的旧 Class；静态 Class 即使
             // 同名，也必须继续保留。
             for token in previous.difference(&new_dynamic_tokens) {
                 if !static_tokens_for_update.contains(token) {
-                    list.remove_1(token).map_err(SilexError::from)?;
+                    list.remove_1(token)?;
                 }
             }
 
@@ -663,7 +662,7 @@ fn apply_combined_styles_internal<'scope>(
 
     // 1. 立即应用所有静态样式项
     for (k, v) in &statics {
-        style.set_property(k, v).map_err(SilexError::from)?;
+        style.set_property(k, v)?;
     }
 
     if properties.is_empty() && sheets.is_empty() {
@@ -699,9 +698,9 @@ fn apply_combined_styles_internal<'scope>(
             // 处理单项 Property 绑定 (仅在值发生变化时更新 DOM)
             let mut prev_p = prev_props.borrow_mut();
             for (i, (name, rx)) in properties.iter().enumerate() {
-                let val = rx.try_get().map_err(SilexError::from)?;
+                let val = rx.try_get()?;
                 if prev_p[i].as_deref() != Some(&val) {
-                    style.set_property(name, &val).map_err(SilexError::from)?;
+                    style.set_property(name, &val)?;
                     prev_p[i] = Some(val);
                 }
             }
@@ -727,12 +726,12 @@ fn apply_combined_styles_internal<'scope>(
                     .cloned()
                     .collect::<Vec<_>>();
                 for key in stale {
-                    style.remove_property(&key).map_err(SilexError::from)?;
+                    style.remove_property(&key)?;
                     prev.remove(&key);
                 }
 
                 for (key, value) in new_style_map {
-                    style.set_property(&key, &value).map_err(SilexError::from)?;
+                    style.set_property(&key, &value)?;
                     prev.insert(key);
                 }
             }
@@ -766,10 +765,10 @@ pub(crate) fn apply_attr_internal(el: &Element, name: &str, attr: &Attr<'_>) -> 
     }
     match attr {
         Attr::Removed => {
-            el.remove_attribute(name).map_err(SilexError::from)?;
+            el.remove_attribute(name)?;
         }
         Attr::Empty => {
-            el.set_attribute(name, "").map_err(SilexError::from)?;
+            el.set_attribute(name, "")?;
         }
         Attr::String(val) => match name {
             "style" => {
@@ -782,7 +781,7 @@ pub(crate) fn apply_attr_internal(el: &Element, name: &str, attr: &Attr<'_>) -> 
                 }
             }
             _ => {
-                el.set_attribute(name, val).map_err(SilexError::from)?;
+                el.set_attribute(name, val)?;
             }
         },
     }
@@ -811,9 +810,9 @@ pub(crate) fn apply_attr_with_target_internal(
             ($attr_name:expr, $expr:expr) => {{
                 $expr;
                 if is_truthy {
-                    el.set_attribute($attr_name, "").map_err(SilexError::from)?;
+                    el.set_attribute($attr_name, "")?;
                 } else {
-                    el.remove_attribute($attr_name).map_err(SilexError::from)?;
+                    el.remove_attribute($attr_name)?;
                 }
             }};
         }

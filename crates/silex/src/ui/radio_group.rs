@@ -94,11 +94,12 @@ pub fn RadioGroupItem<'scope>(
         }
     });
 
-    let handle_click = move |_| {
-        if !disabled.get() {
-            let _ = on_select.invoke(value);
-            let _ = on_change.invoke(value.to_string());
+    let handle_click = move |_| -> SilexResult<()> {
+        if !disabled.try_get()? {
+            on_select.invoke(value)?;
+            on_change.invoke(value.to_string())?;
         }
+        Ok(())
     };
 
     button(view_chain!(

@@ -1,5 +1,6 @@
 use silex_core::reactivity::ReactiveSource;
-use silex_core::traits::{ForErrorHandler, ForLoopSource, RxRead};
+use silex_core::traits::{ForLoopSource, RxRead};
+use silex_core::{ErrorHandler, SilexError};
 use silex_dom::prelude::*;
 use silex_dom::view::RowUpdater;
 use silex_macros::component;
@@ -41,8 +42,8 @@ pub fn For<'scope, ItemsFn, IS, Item, Key, KF, MF>(
     #[chain]
     children: MF,
     #[prop(into)]
-    #[chain(default = ForErrorHandler::default())]
-    error: ForErrorHandler,
+    #[chain(default)]
+    error_handler: Option<ErrorHandler<'scope, SilexError>>,
     #[chain(default)] _scope: PhantomData<&'scope ()>,
 ) -> silex_dom::view::list::KeyedLoopView<'scope, ItemsFn, IS, Item, Key>
 where
@@ -60,7 +61,7 @@ where
         each,
         key_fn: Rc::new(key),
         view_fn,
-        error,
+        error_handler,
         _marker: std::marker::PhantomData,
     }
 }

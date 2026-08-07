@@ -52,7 +52,7 @@ pub fn Checkbox<'scope>(
             .class(icon_cls)
     });
 
-    button(check_icon).class(cls).on_click(move |_| {
-        let _ = on_change.invoke(!checked.get());
-    })
+    button(check_icon)
+        .class(cls)
+        .on_click(move |_| -> SilexResult<()> { on_change.invoke(!checked.try_get()?) })
 }

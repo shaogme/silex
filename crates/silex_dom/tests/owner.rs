@@ -262,7 +262,7 @@ fn native_owner_error_handler_separates_initial_deferred_and_cleanup_errors() {
             .effect_from(
                 runtime_inputs_of(should_fail),
                 Box::new(move || -> SilexResult<()> {
-                    if should_fail.try_get().map_err(SilexError::from)? {
+                    if should_fail.try_get()? {
                         return Err(SilexError::Framework("deferred effect failure".to_string()));
                     }
                     runs_for_effect.set(runs_for_effect.get() + 1);

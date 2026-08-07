@@ -66,9 +66,10 @@ impl<'scope> TooltipContext<'scope> {
         let timer = self.timer;
         if let Ok(handle) = set_timeout_owned(
             &owner,
-            move || {
-                let _ = timer.try_update(|slot| *slot = None);
+            move || -> SilexResult<()> {
+                timer.try_update(|slot| *slot = None)?;
                 open.set(false);
+                Ok(())
             },
             Duration::from_millis(delay_ms.max(0) as u64),
         ) {
@@ -208,29 +209,41 @@ pub fn TooltipTrigger<'scope>(
         .apply(owner_binding(ctx))
         .attr("data-slot", "tooltip-trigger")
         .class(trigger_cls)
-        .on(event::mouseenter, move |e: web_sys::MouseEvent| {
-            ctx.anchor.set(get_event_anchor(&e));
-            ctx.on_pointer_enter();
-            let _ = on_mouse_enter.invoke(e);
-        })
-        .on(event::mouseleave, move |e: web_sys::MouseEvent| {
-            ctx.on_pointer_leave();
-            let _ = on_mouse_leave.invoke(e);
-        })
-        .on(event::focus, move |e: web_sys::FocusEvent| {
-            let target = e.current_target().or_else(|| e.target());
-            if let Some(target) = target
-                && let Ok(el) = target.dyn_into::<web_sys::Element>()
-            {
-                ctx.anchor.set(get_element_anchor(&el));
-            }
-            ctx.on_pointer_enter();
-            let _ = on_focus.invoke(e);
-        })
-        .on(event::blur, move |e: web_sys::FocusEvent| {
-            ctx.on_pointer_leave();
-            let _ = on_blur.invoke(e);
-        })
+        .on(
+            event::mouseenter,
+            move |e: web_sys::MouseEvent| -> SilexResult<()> {
+                ctx.anchor.set(get_event_anchor(&e));
+                ctx.on_pointer_enter();
+                on_mouse_enter.invoke(e)
+            },
+        )
+        .on(
+            event::mouseleave,
+            move |e: web_sys::MouseEvent| -> SilexResult<()> {
+                ctx.on_pointer_leave();
+                on_mouse_leave.invoke(e)
+            },
+        )
+        .on(
+            event::focus,
+            move |e: web_sys::FocusEvent| -> SilexResult<()> {
+                let target = e.current_target().or_else(|| e.target());
+                if let Some(target) = target
+                    && let Ok(el) = target.dyn_into::<web_sys::Element>()
+                {
+                    ctx.anchor.set(get_element_anchor(&el));
+                }
+                ctx.on_pointer_enter();
+                on_focus.invoke(e)
+            },
+        )
+        .on(
+            event::blur,
+            move |e: web_sys::FocusEvent| -> SilexResult<()> {
+                ctx.on_pointer_leave();
+                on_blur.invoke(e)
+            },
+        )
 }
 
 #[component]
@@ -340,11 +353,13 @@ pub fn TooltipContent<'scope>(
                     .attr("data-state", "delayed-open")
                     .attr("role", "tooltip")
                     .class(content_cls)
-                    .on(event::mouseenter, move |_| {
+                    .on(event::mouseenter, move |_| -> SilexResult<()> {
                         ctx.on_pointer_enter();
+                        Ok(())
                     })
-                    .on(event::mouseleave, move |_| {
+                    .on(event::mouseleave, move |_| -> SilexResult<()> {
                         ctx.on_pointer_leave();
+                        Ok(())
                     }))
                 .attr("data-radix-popper-content-wrapper", "")
                 .class(wrapper_cls)

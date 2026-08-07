@@ -160,7 +160,8 @@ fn a_failed_dynamic_rule_does_not_produce_a_class_name() {
 
     let manager = DynamicStyleManager::new();
     static PARTS: &[CssPart] = &[CssPart::Lit(".base{color:red}")];
-    let class_name = dynamic::dynamic_rule_class(&manager, layers::COMPONENTS, "base", PARTS, &[]);
+    let class_name = dynamic::dynamic_rule_class(&manager, layers::COMPONENTS, "base", PARTS, &[])
+        .expect("dynamic rule getter succeeds");
 
     assert!(class_name.is_none());
     assert!(fake::adopted_now().is_empty());
@@ -173,7 +174,9 @@ fn dynamic_rule_class_keeps_the_named_layer_and_layer_order() {
     static PARTS: &[CssPart] = &[CssPart::Lit(".base{color:red}")];
 
     assert!(
-        dynamic::dynamic_rule_class(&manager, layers::COMPONENTS, "base", PARTS, &[]).is_some()
+        dynamic::dynamic_rule_class(&manager, layers::COMPONENTS, "base", PARTS, &[])
+            .expect("dynamic rule getter succeeds")
+            .is_some()
     );
     let content = fake::sheet_log(0).content;
     assert!(content.starts_with(layers::ORDER_STATEMENT), "{content}");

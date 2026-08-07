@@ -145,31 +145,32 @@ pub fn Slider<'scope>(
 
     let handle_down = {
         let is_dragging = is_dragging.clone();
-        move |e: web_sys::PointerEvent| {
-            if disabled.get() {
-                return;
+        move |e: web_sys::PointerEvent| -> SilexResult<()> {
+            if disabled.try_get()? {
+                return Ok(());
             }
             if let Some(target) = e.current_target()
                 && let Ok(el) = target.dyn_into::<web_sys::Element>()
-                && el.set_pointer_capture(e.pointer_id()).is_ok()
             {
+                el.set_pointer_capture(e.pointer_id())?;
                 is_dragging.set(true);
                 let new_val = calculate_slider_value(
                     &e,
                     &el,
-                    is_vertical.get(),
-                    min_val.get(),
-                    max_val.get(),
-                    step_val.get(),
+                    is_vertical.try_get()?,
+                    min_val.try_get()?,
+                    max_val.try_get()?,
+                    step_val.try_get()?,
                 );
-                let _ = on_change.invoke(new_val);
+                on_change.invoke(new_val)?;
             }
+            Ok(())
         }
     };
 
     let handle_move = {
         let is_dragging = is_dragging.clone();
-        move |e: web_sys::PointerEvent| {
+        move |e: web_sys::PointerEvent| -> SilexResult<()> {
             if is_dragging.get()
                 && let Some(target) = e.current_target()
                 && let Ok(el) = target.dyn_into::<web_sys::Element>()
@@ -177,34 +178,37 @@ pub fn Slider<'scope>(
                 let new_val = calculate_slider_value(
                     &e,
                     &el,
-                    is_vertical.get(),
-                    min_val.get(),
-                    max_val.get(),
-                    step_val.get(),
+                    is_vertical.try_get()?,
+                    min_val.try_get()?,
+                    max_val.try_get()?,
+                    step_val.try_get()?,
                 );
-                let _ = on_change.invoke(new_val);
+                on_change.invoke(new_val)?;
             }
+            Ok(())
         }
     };
 
     let handle_up = {
         let is_dragging = is_dragging.clone();
-        move |e: web_sys::PointerEvent| {
+        move |e: web_sys::PointerEvent| -> SilexResult<()> {
             if is_dragging.get() {
                 is_dragging.set(false);
                 if let Some(target) = e.current_target()
                     && let Ok(el) = target.dyn_into::<web_sys::Element>()
                 {
-                    let _ = el.release_pointer_capture(e.pointer_id());
+                    el.release_pointer_capture(e.pointer_id())?;
                 }
             }
+            Ok(())
         }
     };
 
-    let handle_input = move |v: String| {
+    let handle_input = move |v: String| -> SilexResult<()> {
         if let Ok(num) = v.parse::<f64>() {
-            let _ = on_change.invoke(num);
+            on_change.invoke(num)?;
         }
+        Ok(())
     };
 
     div(view_chain!(

@@ -257,7 +257,7 @@ pub(crate) fn apply_static_pair(
             let style = get_style_decl(el).ok_or_else(|| {
                 SilexError::Dom("element does not expose a style declaration".into())
             })?;
-            style.set_property(key, value).map_err(SilexError::from)?;
+            style.set_property(key, value)?;
         }
         _ => {
             apply_immediate_string(el, target, value)?;
@@ -662,9 +662,9 @@ where
             ApplyTarget::Class => {
                 let list = el.class_list();
                 if value {
-                    list.add_1(key_cow.as_ref()).map_err(SilexError::from)?;
+                    list.add_1(key_cow.as_ref())?;
                 } else {
-                    list.remove_1(key_cow.as_ref()).map_err(SilexError::from)?;
+                    list.remove_1(key_cow.as_ref())?;
                 }
             }
             _ => {

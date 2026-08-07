@@ -9,7 +9,7 @@ fn main() {
         let _link = Link("/")
             .children(text)
             .active_class("active")
-            .on_click(|_| {});
+            .on_click(|_| Ok(()));
         let _router = Router(scope).base("/app");
     });
 }

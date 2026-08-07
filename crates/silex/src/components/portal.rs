@@ -45,11 +45,17 @@ impl<'scope> PortalView<'scope> {
         let cleanup_container = container.clone();
         let rollback_target = target.clone();
         let rollback_container = container.clone();
-        if let Err(error) = owner.on_cleanup(Box::new(move || {
-            if cleanup_active.replace(false) {
-                let _ = cleanup_target.remove_child(&cleanup_container);
-            }
-        })) {
+        if let Err(error) = owner.on_cleanup(
+            Box::new(move || -> silex_core::SilexResult<()> {
+                if cleanup_active.replace(false) {
+                    cleanup_target
+                        .remove_child(&cleanup_container)
+                        .map_err(silex_core::SilexError::from)?;
+                }
+                Ok(())
+            }),
+            owner.token().error_handler(),
+        ) {
             active.set(false);
             let _ = rollback_target.remove_child(&rollback_container);
             return Err(error);

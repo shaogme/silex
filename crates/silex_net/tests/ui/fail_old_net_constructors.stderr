@@ -25,3 +25,9 @@ error[E0599]: no associated function or constant named `new` found for struct `M
   |
 7 |     let _ = Memo::new(|_| 1_i32);
   |                   ^^^ associated function or constant not found in `Memo<'_, _>`
+  |
+help: there is a method `ne` with a similar name
+  |
+7 -     let _ = Memo::new(|_| 1_i32);
+7 +     let _ = Memo::ne(|_| 1_i32);
+  |

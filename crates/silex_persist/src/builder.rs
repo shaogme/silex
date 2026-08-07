@@ -15,7 +15,7 @@ use crate::{
 };
 use ref_str::LocalStaticRefStr;
 use silex_core::{
-    RxRead, Scope,
+    ErrorReporter, RxRead, Scope, SilexResult,
     traits::{RxGet, RxWrite},
 };
 use silex_dom::helpers::set_timeout_with_handle;
@@ -388,9 +388,15 @@ where
         }
 
         let subscription_for_cleanup = subscription.clone();
-        self.scope.on_cleanup(move || {
-            let _ = subscription_for_cleanup.borrow_mut().take();
-        });
+        self.scope
+            .on_cleanup(
+                move || -> SilexResult<()> {
+                    subscription_for_cleanup.borrow_mut().take();
+                    Ok(())
+                },
+                ErrorReporter::unhandled().handler(),
+            )
+            .map_err(|error| PersistenceError::InvalidConfiguration(error.to_string()))?;
 
         let default = self
             .config
@@ -571,95 +577,136 @@ where
                         }
                     });
                     let debounce_for_cleanup = debounce_state.clone();
-                    self.scope.on_cleanup(move || {
-                        debounce_for_cleanup.borrow_mut().invalidate();
-                    });
-                    self.scope.effect(move || {
-                        let current = value.get();
-                        let should_skip = take_skip_next_auto_flush(controller);
-                        if should_skip {
-                            return;
-                        }
-
-                        let encode =
-                            controller.with_untracked(|controller| controller.encode.clone());
-                        let raw = encode(&current);
-                        let raw = match raw {
-                            Ok(raw) => raw,
-                            Err(error) => {
-                                debounce_state.borrow_mut().invalidate();
-                                state.set(PersistenceState::WriteError(error.message()));
-                                return;
-                            }
-                        };
-                        state.set(PersistenceState::Syncing(raw));
-                        let generation = debounce_state.borrow_mut().begin();
-                        let completion = completion.clone();
-                        match set_timeout_with_handle(
-                            move || {
-                                let _ = completion.submit(generation);
+                    self.scope
+                        .on_cleanup(
+                            move || -> SilexResult<()> {
+                                debounce_for_cleanup.borrow_mut().invalidate();
+                                Ok(())
                             },
-                            duration,
-                        ) {
-                            Ok(timer) => {
-                                let _ = debounce_state.borrow_mut().set_timer(generation, timer);
-                            }
-                            Err(error) => {
-                                debounce_state.borrow_mut().invalidate();
-                                state.set(PersistenceState::WriteError(format!(
-                                    "schedule persistence timeout failed: {:?}",
-                                    error
-                                )));
-                            }
-                        }
-                    });
+                            ErrorReporter::unhandled().handler(),
+                        )
+                        .map_err(|error| {
+                            PersistenceError::InvalidConfiguration(error.to_string())
+                        })?;
+                    let _effect = self
+                        .scope
+                        .effect(
+                            move || -> SilexResult<()> {
+                                let current = value.try_get()?;
+                                let should_skip = take_skip_next_auto_flush(controller);
+                                if should_skip {
+                                    return Ok(());
+                                }
+
+                                let encode = controller
+                                    .with_untracked(|controller| controller.encode.clone());
+                                let raw = encode(&current);
+                                let raw = match raw {
+                                    Ok(raw) => raw,
+                                    Err(error) => {
+                                        debounce_state.borrow_mut().invalidate();
+                                        state.set(PersistenceState::WriteError(error.message()));
+                                        return Ok(());
+                                    }
+                                };
+                                state.set(PersistenceState::Syncing(raw));
+                                let generation = debounce_state.borrow_mut().begin();
+                                let completion = completion.clone();
+                                match set_timeout_with_handle(
+                                    move || {
+                                        let _ = completion.submit(generation);
+                                    },
+                                    duration,
+                                ) {
+                                    Ok(timer) => {
+                                        let _ = debounce_state
+                                            .borrow_mut()
+                                            .set_timer(generation, timer);
+                                    }
+                                    Err(error) => {
+                                        debounce_state.borrow_mut().invalidate();
+                                        state.set(PersistenceState::WriteError(format!(
+                                            "schedule persistence timeout failed: {:?}",
+                                            error
+                                        )));
+                                    }
+                                }
+                                Ok(())
+                            },
+                            ErrorReporter::unhandled().handler(),
+                        )
+                        .map_err(|error| {
+                            PersistenceError::InvalidConfiguration(error.to_string())
+                        })?;
                 } else {
-                    self.scope.effect(move || {
-                        value.get();
-                        let should_skip = take_skip_next_auto_flush(controller);
-                        if should_skip {
-                            return;
-                        }
-                        let _ = flush_persistent_value(controller, value, state);
-                    });
+                    let _effect = self
+                        .scope
+                        .effect(
+                            move || -> SilexResult<()> {
+                                value.try_get()?;
+                                let should_skip = take_skip_next_auto_flush(controller);
+                                if should_skip {
+                                    return Ok(());
+                                }
+                                if let Err(error) = flush_persistent_value(controller, value, state)
+                                {
+                                    state.set(PersistenceState::WriteError(error.message()));
+                                }
+                                Ok(())
+                            },
+                            ErrorReporter::unhandled().handler(),
+                        )
+                        .map_err(|error| {
+                            PersistenceError::InvalidConfiguration(error.to_string())
+                        })?;
                 }
             }
             PersistMode::Manual => {
-                self.scope.effect(move || {
-                    let current = value.get();
-                    let suppress = take_suppress_manual_state(controller);
-                    if suppress {
-                        return;
-                    }
-
-                    let (encode, default, last_raw) = controller.with_untracked(|controller| {
-                        (
-                            controller.encode.clone(),
-                            controller.default.clone(),
-                            controller.last_flushed_raw.clone(),
-                        )
-                    });
-                    let raw = encode(&current);
-                    let is_default = current == default();
-                    match raw {
-                        Ok(raw) => {
-                            let is_ready = match &last_raw {
-                                Some(last) => last == &raw,
-                                None => is_default,
-                            };
-                            if is_ready {
-                                if last_raw.is_none() {
-                                    state.set(PersistenceState::Ready(String::new()));
-                                } else {
-                                    state.set(PersistenceState::Ready(raw));
-                                }
-                            } else {
-                                state.set(PersistenceState::Dirty(raw));
+                let _effect = self
+                    .scope
+                    .effect(
+                        move || -> SilexResult<()> {
+                            let current = value.try_get()?;
+                            let suppress = take_suppress_manual_state(controller);
+                            if suppress {
+                                return Ok(());
                             }
-                        }
-                        Err(error) => state.set(PersistenceState::WriteError(error.message())),
-                    }
-                });
+
+                            let (encode, default, last_raw) =
+                                controller.with_untracked(|controller| {
+                                    (
+                                        controller.encode.clone(),
+                                        controller.default.clone(),
+                                        controller.last_flushed_raw.clone(),
+                                    )
+                                });
+                            let raw = encode(&current);
+                            let is_default = current == default();
+                            match raw {
+                                Ok(raw) => {
+                                    let is_ready = match &last_raw {
+                                        Some(last) => last == &raw,
+                                        None => is_default,
+                                    };
+                                    if is_ready {
+                                        if last_raw.is_none() {
+                                            state.set(PersistenceState::Ready(String::new()));
+                                        } else {
+                                            state.set(PersistenceState::Ready(raw));
+                                        }
+                                    } else {
+                                        state.set(PersistenceState::Dirty(raw));
+                                    }
+                                }
+                                Err(error) => {
+                                    state.set(PersistenceState::WriteError(error.message()))
+                                }
+                            }
+                            Ok(())
+                        },
+                        ErrorReporter::unhandled().handler(),
+                    )
+                    .map_err(|error| PersistenceError::InvalidConfiguration(error.to_string()))?;
             }
         }
 

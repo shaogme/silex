@@ -1,7 +1,9 @@
 #![cfg(target_arch = "wasm32")]
 
 use gloo_timers::future::TimeoutFuture;
-use silex_core::{Runtime, Scope, runtime_inputs_of, traits::RxGet};
+use silex_core::{
+    ErrorReporter, Runtime, Scope, SilexError, SilexResult, runtime_inputs_of, traits::RxGet,
+};
 use silex_i18n::{
     Catalog, CatalogLoadError, I18nBuilder, I18nStore, Locale, ResourceState, SuspenseContext, t,
 };
@@ -340,16 +342,30 @@ async fn catalog_resource_completion_is_cancelled_after_root_dispose() {
         );
         let resource_state = resource.state();
         let resource_state_runs_for_effect = resource_state_runs_for_scope.clone();
-        scope.effect_from(runtime_inputs_of(resource_state), move || {
-            let _ = resource_state.get_untracked();
-            resource_state_runs_for_effect.set(resource_state_runs_for_effect.get() + 1);
-        });
+        scope
+            .effect_from(
+                runtime_inputs_of(resource_state),
+                move || -> SilexResult<()> {
+                    let _ = resource_state.try_get_untracked()?;
+                    resource_state_runs_for_effect.set(resource_state_runs_for_effect.get() + 1);
+                    Ok(())
+                },
+                ErrorReporter::unhandled().handler(),
+            )
+            .expect("resource state effect can be registered");
         let translation = t!(i18n, "title");
         let translation_runs_for_effect = translation_runs_for_scope.clone();
-        scope.effect_from(runtime_inputs_of(translation), move || {
-            let _ = translation.get_untracked();
-            translation_runs_for_effect.set(translation_runs_for_effect.get() + 1);
-        });
+        scope
+            .effect_from(
+                runtime_inputs_of(translation),
+                move || -> SilexResult<()> {
+                    let _ = translation.try_get_untracked()?;
+                    translation_runs_for_effect.set(translation_runs_for_effect.get() + 1);
+                    Ok(())
+                },
+                ErrorReporter::unhandled().handler(),
+            )
+            .expect("translation effect can be registered");
 
         wait_for_reactivity(0).await;
         assert_eq!(calls_before_dispose.get(), 1);

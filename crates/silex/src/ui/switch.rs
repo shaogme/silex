@@ -66,7 +66,5 @@ pub fn Switch<'scope>(
 
     button(span(()).class(thumb_cls))
         .class(track_cls)
-        .on_click(move |_| {
-            let _ = on_change.invoke(!checked.get());
-        })
+        .on_click(move |_| -> SilexResult<()> { on_change.invoke(!checked.try_get()?) })
 }

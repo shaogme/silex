@@ -381,9 +381,7 @@ impl<'scope> DynamicCss<'scope> {
             crate::inject_style(style_id, css);
         }
 
-        el.class_list()
-            .add_1(self.class_name)
-            .map_err(SilexError::from)?;
+        el.class_list().add_1(self.class_name)?;
 
         if !self.vars.is_empty() {
             let vars = self.vars.clone();
@@ -395,36 +393,46 @@ impl<'scope> DynamicCss<'scope> {
             let previous = Rc::new(RefCell::new(vec![None::<String>; vars.len()]));
             let previous_for_effect = previous.clone();
             let el_clone = el.clone();
+            let error_handler = owner.token().error_handler();
             owner.effect_from(
                 inputs,
-                Box::new(move || {
+                Box::new(move || -> SilexResult<()> {
                     let values: Vec<String> = vars_for_effect
                         .iter()
-                        .map(|(_, getter)| getter.get())
-                        .collect();
+                        .map(|(_, getter)| getter.try_get().map_err(SilexError::from))
+                        .collect::<SilexResult<_>>()?;
                     let mut previous = previous_for_effect.borrow_mut();
                     if let Some(style) = element_style(&el_clone) {
                         for (index, ((name, _), value)) in
                             vars_for_effect.iter().zip(values.iter()).enumerate()
                         {
                             if previous[index].as_deref() != Some(value) {
-                                let _ = style.set_property(name, value);
+                                style.set_property(name, value)?;
                             }
                         }
                     }
                     *previous = values.into_iter().map(Some).collect();
+                    Ok(())
                 }),
+                error_handler.clone(),
             )?;
 
             let names: Vec<&'static str> = vars.iter().map(|(name, _)| *name).collect();
             let el_clone = el.clone();
-            owner.on_cleanup(Box::new(move || {
-                if let Some(style) = element_style(&el_clone) {
-                    for name in names {
-                        let _ = style.remove_property(name);
+            owner.on_cleanup(
+                Box::new(move || -> SilexResult<()> {
+                    let mut first_error = None;
+                    if let Some(style) = element_style(&el_clone) {
+                        for name in names {
+                            if let Err(error) = style.remove_property(name) {
+                                first_error.get_or_insert_with(|| SilexError::from(error));
+                            }
+                        }
                     }
-                }
-            }))?;
+                    first_error.map_or(Ok(()), Err)
+                }),
+                error_handler.clone(),
+            )?;
         }
 
         for (parts, getters) in self.rules.clone() {
@@ -439,44 +447,62 @@ impl<'scope> DynamicCss<'scope> {
             let el_clone = el.clone();
             let base_class = self.class_name;
             let layer = self.layer;
+            let error_handler = owner.token().error_handler();
             owner.effect_from(
                 inputs,
-                Box::new(move || {
-                    let current_vals: Vec<String> =
-                        getters.iter().map(|getter| getter.get()).collect();
+                Box::new(move || -> SilexResult<()> {
+                    let current_vals: Vec<String> = getters
+                        .iter()
+                        .map(|getter| getter.try_get().map_err(SilexError::from))
+                        .collect::<SilexResult<_>>()?;
                     let dyn_class = dynamic_class(base_class, parts, &current_vals);
                     let mut current_class = current_class_for_effect.borrow_mut();
                     if current_class.as_deref() == Some(dyn_class.as_str()) {
-                        return;
+                        return Ok(());
                     }
 
                     let rule = render_layered_selector(layer, parts, &dyn_class, &current_vals);
                     if !manager_for_effect.update(&dyn_class, &rule) {
-                        return;
+                        return Err(SilexError::Dom("无法更新动态样式表".into()));
                     }
-                    let _ = el_clone.class_list().add_1(&dyn_class);
+                    el_clone.class_list().add_1(&dyn_class)?;
                     if let Some(old_class) = current_class.replace(dyn_class) {
-                        let _ = el_clone.class_list().remove_1(&old_class);
+                        el_clone.class_list().remove_1(&old_class)?;
                     }
+                    Ok(())
                 }),
+                error_handler.clone(),
             )?;
 
             let manager_for_cleanup = manager.clone();
             let current_class_for_cleanup = current_class.clone();
             let el_clone = el.clone();
-            owner.on_cleanup(Box::new(move || {
-                if let Some(class_name) = current_class_for_cleanup.borrow_mut().take() {
-                    let _ = el_clone.class_list().remove_1(&class_name);
-                }
-                manager_for_cleanup.dispose();
-            }))?;
+            owner.on_cleanup(
+                Box::new(move || -> SilexResult<()> {
+                    let mut first_error = None;
+                    if let Some(class_name) = current_class_for_cleanup.borrow_mut().take()
+                        && let Err(error) = el_clone.class_list().remove_1(&class_name)
+                    {
+                        first_error = Some(SilexError::from(error));
+                    }
+                    manager_for_cleanup.dispose();
+                    first_error.map_or(Ok(()), Err)
+                }),
+                error_handler.clone(),
+            )?;
         }
 
         let class_name = self.class_name;
         let el_clone = el.clone();
-        owner.on_cleanup(Box::new(move || {
-            let _ = el_clone.class_list().remove_1(class_name);
-        }))?;
+        owner.on_cleanup(
+            Box::new(move || -> SilexResult<()> {
+                el_clone
+                    .class_list()
+                    .remove_1(class_name)
+                    .map_err(SilexError::from)
+            }),
+            owner.token().error_handler(),
+        )?;
         Ok(())
     }
 }
@@ -617,47 +643,59 @@ impl<'scope> StyledVariantBinding<'scope> {
         let states_for_effect = states.clone();
         let variant_classes_for_effect = variant_classes.clone();
         let element_for_effect = element.clone();
+        let error_handler = owner.error_handler();
         owner.effect_from(
             inputs,
-            Box::new(move || {
+            Box::new(move || -> SilexResult<()> {
                 let active_variants: Vec<String> = groups
                     .iter()
-                    .map(|group| group.source.get().to_lowercase())
-                    .collect();
+                    .map(|group| group.source.try_get().map(|value| value.to_lowercase()))
+                    .collect::<Result<_, _>>()?;
                 update_styled_variant_classes(
                     &element_for_effect,
                     &groups,
                     &active_variants,
                     &variant_classes_for_effect,
-                );
+                )?;
                 update_styled_dynamic_rules(
                     &element_for_effect,
                     &rules,
                     layer,
                     &active_variants,
                     &states_for_effect,
-                );
+                )?;
+                Ok(())
             }),
+            error_handler.clone(),
         )?;
 
         let element_for_cleanup = element.clone();
-        owner.on_cleanup(Box::new(move || {
-            let mut classes = variant_classes.borrow_mut();
-            for class in classes.iter_mut().filter_map(Option::take) {
-                let _ = element_for_cleanup.class_list().remove_1(class);
-            }
-            drop(classes);
+        owner.on_cleanup(
+            Box::new(move || -> SilexResult<()> {
+                let mut first_error = None;
+                let mut classes = variant_classes.borrow_mut();
+                for class in classes.iter_mut().filter_map(Option::take) {
+                    if let Err(error) = element_for_cleanup.class_list().remove_1(class) {
+                        first_error.get_or_insert_with(|| SilexError::from(error));
+                    }
+                }
+                drop(classes);
 
-            let mut states = states.borrow_mut();
-            for state in states.iter_mut() {
-                if let Some(class) = state.current_class.take() {
-                    let _ = element_for_cleanup.class_list().remove_1(&class);
+                let mut states = states.borrow_mut();
+                for state in states.iter_mut() {
+                    if let Some(class) = state.current_class.take()
+                        && let Err(error) = element_for_cleanup.class_list().remove_1(&class)
+                    {
+                        first_error.get_or_insert_with(|| SilexError::from(error));
+                    }
+                    if let Some(manager) = &state.manager {
+                        manager.dispose();
+                    }
                 }
-                if let Some(manager) = &state.manager {
-                    manager.dispose();
-                }
-            }
-        }))?;
+                first_error.map_or(Ok(()), Err)
+            }),
+            error_handler,
+        )?;
         Ok(())
     }
 }
@@ -667,7 +705,7 @@ fn update_styled_variant_classes(
     groups: &[StyledVariantGroup<'_>],
     active_variants: &[String],
     current_classes: &Rc<RefCell<Vec<Option<&'static str>>>>,
-) {
+) -> SilexResult<()> {
     let mut current_classes = current_classes.borrow_mut();
     for (index, group) in groups.iter().enumerate() {
         let next_class = group
@@ -683,14 +721,15 @@ fn update_styled_variant_classes(
             continue;
         }
         if let Some(next_class) = next_class {
-            let _ = element.class_list().add_1(next_class);
+            element.class_list().add_1(next_class)?;
         }
         let old_class = current_classes[index];
         current_classes[index] = next_class;
         if let Some(old_class) = old_class {
-            let _ = element.class_list().remove_1(old_class);
+            element.class_list().remove_1(old_class)?;
         }
     }
+    Ok(())
 }
 
 fn update_styled_dynamic_rules(
@@ -699,7 +738,7 @@ fn update_styled_dynamic_rules(
     layer: &'static str,
     active_variants: &[String],
     states: &Rc<RefCell<Vec<StyledRuleState>>>,
-) {
+) -> SilexResult<()> {
     for (index, rule) in rules.iter().enumerate() {
         let active = match (rule.variant_group, rule.variant_key) {
             (None, None) => true,
@@ -719,7 +758,7 @@ fn update_styled_dynamic_rules(
                 state.current_class.take()
             };
             if let Some(old_class) = old_class {
-                let _ = element.class_list().remove_1(&old_class);
+                element.class_list().remove_1(&old_class)?;
             }
             continue;
         }
@@ -733,9 +772,9 @@ fn update_styled_dynamic_rules(
                 .clone()
         };
         let Some(next_class) =
-            dynamic_rule_class(&manager, layer, rule.class_name, rule.parts, &rule.getters)
+            dynamic_rule_class(&manager, layer, rule.class_name, rule.parts, &rule.getters)?
         else {
-            continue;
+            return Err(SilexError::Dom("无法更新动态样式表".into()));
         };
 
         let mut states = states.borrow_mut();
@@ -743,11 +782,12 @@ fn update_styled_dynamic_rules(
         if state.current_class.as_deref() == Some(next_class.as_str()) {
             continue;
         }
-        let _ = element.class_list().add_1(&next_class);
+        element.class_list().add_1(&next_class)?;
         if let Some(old_class) = state.current_class.replace(next_class) {
-            let _ = element.class_list().remove_1(&old_class);
+            element.class_list().remove_1(&old_class)?;
         }
     }
+    Ok(())
 }
 
 /// A document-level dynamic stylesheet binding with no DOM representation.
@@ -895,11 +935,14 @@ pub fn dynamic_rule_class(
     base_class: &str,
     parts: &'static [CssPart],
     getters: &[CssVariableGetter<'_>],
-) -> Option<String> {
-    let vals: Vec<String> = getters.iter().map(|g| g.get()).collect();
+) -> SilexResult<Option<String>> {
+    let vals: Vec<String> = getters
+        .iter()
+        .map(|getter| getter.try_get().map_err(SilexError::from))
+        .collect::<SilexResult<_>>()?;
     let dyn_class = dynamic_class(base_class, parts, &vals);
     let rule = render_layered_selector(layer, parts, &dyn_class, &vals);
-    manager.update(&dyn_class, &rule).then_some(dyn_class)
+    Ok(manager.update(&dyn_class, &rule).then_some(dyn_class))
 }
 
 fn render_layered_selector(
@@ -942,32 +985,51 @@ pub fn inject_managed_dynamic_style<'scope>(
     let manager = Rc::new(DynamicStyleManager::new());
     let style_id_str = style_id.into();
     let manager_for_cleanup = manager.clone();
-    owner.on_cleanup(Box::new(move || manager_for_cleanup.dispose()))?;
+    let error_handler = owner.token().error_handler();
+    owner.on_cleanup(
+        Box::new(move || {
+            manager_for_cleanup.dispose();
+            Ok(())
+        }),
+        error_handler.clone(),
+    )?;
 
     let manager_for_effect = manager.clone();
     owner
         .effect_from(
             inputs,
-            Box::new(move || {
-                let vals: Vec<String> = positional.iter().map(|getter| getter.get()).collect();
+            Box::new(move || -> SilexResult<()> {
+                let vals: Vec<String> = positional
+                    .iter()
+                    .map(|getter| getter.try_get().map_err(SilexError::from))
+                    .collect::<SilexResult<_>>()?;
                 // 全局样式没有组件类名，`CssPart::Class` 不会出现在这类模板里
                 let res = render_selector(parts, "", &vals);
                 let pairs: Vec<(String, String)> = replacements
                     .iter()
                     .map(|(pattern, getter)| {
-                        (
-                            pattern.clone(),
-                            crate::escape::declaration_value(&getter.get()).into_owned(),
-                        )
+                        getter
+                            .try_get()
+                            .map(|value| {
+                                (
+                                    pattern.clone(),
+                                    crate::escape::declaration_value(&value).into_owned(),
+                                )
+                            })
+                            .map_err(SilexError::from)
                     })
-                    .collect();
+                    .collect::<SilexResult<_>>()?;
                 let res = replace_placeholders(&res, &pairs);
                 let res = match layer {
                     Some(layer) => layers::wrap_dynamic(layer, &res),
                     None => res,
                 };
-                manager_for_effect.update(&style_id_str, &res);
+                if !manager_for_effect.update(&style_id_str, &res) {
+                    return Err(SilexError::Dom("无法更新动态样式表".into()));
+                }
+                Ok(())
             }),
+            error_handler,
         )
         .inspect_err(|_| manager.dispose())?;
     Ok(())

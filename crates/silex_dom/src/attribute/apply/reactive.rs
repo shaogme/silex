@@ -28,7 +28,7 @@ where
     T: ToString + Clone + 'scope,
 {
     register(owner, rx.runtime_inputs(), move || {
-        let value = rx.try_get().map_err(SilexError::from)?.to_string();
+        let value = rx.try_get()?.to_string();
         match &target {
             ApplyTarget::Attr(_) => apply_immediate_string(&el, &target, &value),
             ApplyTarget::Prop(_) => apply_immediate_string(&el, &target, &value),
@@ -74,7 +74,7 @@ pub(crate) fn apply_string_pair_reactive_internal<'scope>(
         let style = get_style_decl(&el)
             .ok_or_else(|| SilexError::Dom("element does not expose a style declaration".into()))?;
         register(owner, rx.runtime_inputs(), move || {
-            let value = rx.try_get().map_err(SilexError::from)?;
+            let value = rx.try_get()?;
             style.set_property(&key, &value).map_err(SilexError::from)
         })?;
     } else {
@@ -90,7 +90,7 @@ pub(crate) fn apply_bool_reactive_internal<'scope>(
     owner: &ViewOwnerToken<'scope>,
 ) -> SilexResult<()> {
     register(owner, rx.runtime_inputs(), move || {
-        let value = rx.try_get().map_err(SilexError::from)?;
+        let value = rx.try_get()?;
         match &target {
             ApplyTarget::Attr(name) => {
                 if value {
@@ -124,7 +124,7 @@ pub(crate) fn apply_bool_pair_reactive_internal<'scope>(
 ) -> SilexResult<()> {
     let list = el.class_list();
     register(owner, rx.runtime_inputs(), move || {
-        if rx.try_get().map_err(SilexError::from)? {
+        if rx.try_get()? {
             list.add_1(&key).map_err(SilexError::from)
         } else {
             list.remove_1(&key).map_err(SilexError::from)
@@ -314,7 +314,7 @@ impl<'scope> ReactiveApply<'scope> for Attr<'scope> {
     ) -> SilexResult<()> {
         register(owner, rx.runtime_inputs(), move || {
             if let Some(name) = target.name() {
-                let value = rx.try_get().map_err(SilexError::from)?;
+                let value = rx.try_get()?;
                 apply_attr_with_target_internal(&el, &name, target.clone(), &value)
             } else {
                 Ok(())
@@ -348,8 +348,7 @@ where
     ) -> SilexResult<()> {
         register(owner, rx.runtime_inputs(), move || {
             let value = rx
-                .try_get()
-                .map_err(SilexError::from)?
+                .try_get()?
                 .map(|value| value.to_string())
                 .unwrap_or_default();
             match target {
@@ -402,7 +401,7 @@ macro_rules! impl_reactive_apply_string_like {
                             SilexError::Dom("element does not expose a style declaration".into())
                         })?;
                         register(owner, rx.runtime_inputs(), move || {
-                            let value = rx.try_get().map_err(SilexError::from)?;
+                            let value = rx.try_get()?;
                             style
                                 .set_property(&key, value.as_ref())
                                 .map_err(SilexError::from)

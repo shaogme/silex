@@ -1,4 +1,5 @@
 use crate::{ToRoute, context::RouterContext};
+use silex_core::SilexResult;
 use silex_core::traits::RxGet;
 use silex_dom::prelude::*;
 use silex_html::a;
@@ -68,7 +69,7 @@ pub fn Link<'scope, T: ToRoute + Clone + 'scope>(
     a(children)
         .attr("href", display_href)
         .class(is_active_class)
-        .on_click(move |e: web_sys::MouseEvent| {
+        .on_click(move |e: web_sys::MouseEvent| -> SilexResult<()> {
             // 阻止默认跳转行为
             e.prevent_default();
 
@@ -78,9 +79,10 @@ pub fn Link<'scope, T: ToRoute + Clone + 'scope>(
             } else {
                 // 如果没有 Router，回退到普通跳转
                 if let Some(window) = web_sys::window() {
-                    let _ = window.location().set_href(&href_for_click);
+                    window.location().set_href(&href_for_click)?;
                 }
             }
+            Ok(())
         })
 }
 

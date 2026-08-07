@@ -1,6 +1,6 @@
 #![cfg(target_arch = "wasm32")]
 
-use silex_core::{ErrorReporter, ReadSignal, Runtime, SilexError};
+use silex_core::{ErrorReporter, ReadSignal, Runtime, SilexError, SilexResult};
 use silex_dom::view::{
     AnyView, ApplyAttributes, ScopedViewOwner, View, ViewOwner, mount_text_node,
 };
@@ -123,9 +123,13 @@ impl<'scope> View<'scope> for RouterCleanupView {
         _attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
     ) -> silex_core::SilexResult<()> {
         let cleanups = self.cleanups.clone();
-        owner.on_cleanup(Box::new(move || {
-            cleanups.set(cleanups.get() + 1);
-        }))?;
+        owner.on_cleanup(
+            Box::new(move || -> SilexResult<()> {
+                cleanups.set(cleanups.get() + 1);
+                Ok(())
+            }),
+            owner.token().error_handler(),
+        )?;
         mount_text_node(parent, &self.text)?;
         Ok(())
     }
@@ -158,9 +162,13 @@ impl<'scope> View<'scope> for FactoryTextView<'scope> {
         _attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
     ) -> silex_core::SilexResult<()> {
         let cleanups = self.cleanups.clone();
-        owner.on_cleanup(Box::new(move || {
-            cleanups.set(cleanups.get() + 1);
-        }))?;
+        owner.on_cleanup(
+            Box::new(move || -> SilexResult<()> {
+                cleanups.set(cleanups.get() + 1);
+                Ok(())
+            }),
+            owner.token().error_handler(),
+        )?;
         mount_text_node(parent, &self.text.get())?;
         Ok(())
     }
@@ -374,9 +382,15 @@ fn query_memo_handles_empty_multiple_duplicate_delete_and_reactive_changes() {
         let query = context.query_map();
         let snapshots = Rc::new(RefCell::new(Vec::<HashMap<String, String>>::new()));
         let snapshots_for_effect = snapshots.clone();
-        scope.effect(move || {
-            snapshots_for_effect.borrow_mut().push(query.get());
-        });
+        scope
+            .effect(
+                move || -> SilexResult<()> {
+                    snapshots_for_effect.borrow_mut().push(query.try_get()?);
+                    Ok(())
+                },
+                ErrorReporter::unhandled().handler(),
+            )
+            .expect("query effect can be registered");
 
         let initial = query.get();
         assert_eq!(initial.len(), 5);

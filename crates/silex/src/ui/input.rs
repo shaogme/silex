@@ -47,12 +47,16 @@ pub fn Input<'scope>(
         .attr("placeholder", rx!(scope; $placeholder.clone()))
         .prop("value", rx!(scope; $value.clone()))
         .class(input_cls)
-        .on(event::input, move |e: web_sys::InputEvent| {
-            if let Some(target) = e.target()
-                && let Ok(input_el) =
-                    wasm_bindgen::JsCast::dyn_into::<web_sys::HtmlInputElement>(target)
-            {
-                let _ = on_input.invoke(input_el.value());
-            }
-        })
+        .on(
+            event::input,
+            move |e: web_sys::InputEvent| -> SilexResult<()> {
+                if let Some(target) = e.target()
+                    && let Ok(input_el) =
+                        wasm_bindgen::JsCast::dyn_into::<web_sys::HtmlInputElement>(target)
+                {
+                    on_input.invoke(input_el.value())?;
+                }
+                Ok(())
+            },
+        )
 }

@@ -6,8 +6,8 @@ use wasm_bindgen::{JsCast, closure::Closure};
 use web_sys::{Event, MessageEvent, WebSocket as JsWebSocket};
 
 use silex_core::{
-    CompletionSender, Memo, ReactiveError, ReadSignal, RuntimeInputs, Scope, StoredValue,
-    TaskHandle, WriteSignal,
+    CompletionSender, ErrorReporter, Memo, ReactiveError, ReadSignal, RuntimeInputs, Scope,
+    SilexResult, StoredValue, TaskHandle, WriteSignal,
 };
 
 use crate::{
@@ -618,7 +618,15 @@ impl<'scope> WebSocketBuilder<'scope> {
             retry_started_at: None,
         });
         inner_slot.set(Some(inner));
-        scope.on_cleanup(move || cleanup_stored_inner(inner));
+        scope
+            .on_cleanup(
+                move || -> SilexResult<()> {
+                    cleanup_stored_inner(inner);
+                    Ok(())
+                },
+                ErrorReporter::unhandled().handler(),
+            )
+            .map_err(|error| NetError::InvalidConfiguration(error.to_string()))?;
 
         let connection = WebSocketConnection {
             scope,

@@ -985,7 +985,7 @@ fn rollback_composite_scope<'scope>(scope: &Rc<OwnedScope<'scope>>) {
 pub fn mount_text_node(parent: &Node, text: &str) -> SilexResult<()> {
     let document = crate::document();
     let node = document.create_text_node(text);
-    parent.append_child(&node).map_err(SilexError::from)?;
+    parent.append_child(&node)?;
     Ok(())
 }
 

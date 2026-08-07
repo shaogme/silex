@@ -186,7 +186,7 @@ impl DomRange {
         let document = crate::document();
         let start: Node = document.create_comment(&format!("{label}-start")).into();
         let end: Node = document.create_comment(&format!("{label}-end")).into();
-        parent.append_child(&start).map_err(SilexError::from)?;
+        parent.append_child(&start)?;
         if let Err(error) = parent.append_child(&end).map_err(SilexError::from) {
             let _ = parent.remove_child(&start);
             return Err(error);
@@ -203,9 +203,7 @@ impl DomRange {
         let document = crate::document();
         let start: Node = document.create_comment(&format!("{label}-start")).into();
         let end: Node = document.create_comment(&format!("{label}-end")).into();
-        parent
-            .insert_before(&start, Some(reference))
-            .map_err(SilexError::from)?;
+        parent.insert_before(&start, Some(reference))?;
         if let Err(error) = parent
             .insert_before(&end, Some(reference))
             .map_err(SilexError::from)
@@ -268,9 +266,7 @@ impl DomRange {
             ));
         }
         for node in nodes {
-            parent
-                .insert_before(&node, Some(reference))
-                .map_err(SilexError::from)?;
+            parent.insert_before(&node, Some(reference))?;
         }
         Ok(())
     }
@@ -425,9 +421,7 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
                                 "cannot commit row render without a parent".to_string(),
                             ));
                         };
-                        parent
-                            .insert_before(&fragment_node, Some(&range.end))
-                            .map_err(SilexError::from)?;
+                        parent.insert_before(&fragment_node, Some(&range.end))?;
                         for node in old_nodes {
                             if node.parent_node().is_some() {
                                 let _ = parent.remove_child(&node);

@@ -1,5 +1,5 @@
 use crate::{
-    runtime::{DynamicStyleManager, dynamic::unique_dynamic_style_id, platform::report},
+    runtime::{DynamicStyleManager, dynamic::unique_dynamic_style_id},
     source::{CssSource, IntoCssSource},
 };
 use silex_core::{RuntimeInputs, SilexError, SilexResult};
@@ -46,10 +46,10 @@ fn apply_var_diff(
     for write in var_writes(entries, prev) {
         match write {
             VarWrite::Set(name, value) => {
-                style.set_property(name, value).map_err(SilexError::from)?;
+                style.set_property(name, value)?;
             }
             VarWrite::Remove(name) => {
-                style.remove_property(name).map_err(SilexError::from)?;
+                style.remove_property(name)?;
             }
         }
     }
@@ -100,20 +100,17 @@ fn element_style(el: &Element) -> Option<CssStyleDeclaration> {
 }
 
 /// 把主题的当前取值配成 `(变量名, 值)`。
-fn theme_entries<T: ThemeToCss>(theme: &T) -> Option<Vec<(&'static str, Option<String>)>> {
+fn theme_entries<T: ThemeToCss>(theme: &T) -> SilexResult<Vec<(&'static str, Option<String>)>> {
     let names = T::get_variable_names();
     let values = theme.get_variable_values();
     if names.len() != values.len() {
-        report("主题的变量名与取值数量不一致");
-        return None;
+        return Err(SilexError::Framework("主题的变量名与取值数量不一致".into()));
     }
-    Some(
-        names
-            .iter()
-            .zip(values)
-            .map(|(name, value)| (*name, Some(value)))
-            .collect(),
-    )
+    Ok(names
+        .iter()
+        .zip(values)
+        .map(|(name, value)| (*name, Some(value)))
+        .collect())
 }
 
 fn source_inputs<'scope, T: 'scope>(source: &CssSource<'scope, T>) -> RuntimeInputs {
@@ -153,42 +150,45 @@ where
         let effect_el = el.clone();
         let previous = Rc::new(RefCell::new(None::<Vec<(&'static str, Option<String>)>>));
         let previous_for_effect = previous.clone();
-        let owner_for_effect = owner.clone();
+        let error_handler = owner.error_handler();
         owner.effect_from(
             inputs,
-            Box::new(move || {
+            Box::new(move || -> SilexResult<()> {
                 let theme = match &theme {
                     CssSource::Static(theme) => theme.clone(),
-                    CssSource::Reactive(rx) => rx.get(),
+                    CssSource::Reactive(rx) => rx.try_get()?,
                 };
                 let Some(style) = element_style(&effect_el) else {
-                    owner_for_effect.report_error(SilexError::Dom(
+                    return Err(SilexError::Dom(
                         "element does not expose a style declaration".into(),
                     ));
-                    return;
                 };
-                let Some(entries) = theme_entries(&theme) else {
-                    return;
-                };
+                let entries = theme_entries(&theme)?;
                 let next = {
                     let previous = previous_for_effect.borrow();
-                    apply_var_diff(&style, &entries, previous.as_ref())
+                    apply_var_diff(&style, &entries, previous.as_ref())?
                 };
-                match next {
-                    Ok(next) => *previous_for_effect.borrow_mut() = Some(next),
-                    Err(error) => owner_for_effect.report_error(error),
-                }
+                *previous_for_effect.borrow_mut() = Some(next);
+                Ok(())
             }),
+            error_handler.clone(),
         )?;
         let names = T::get_variable_names().to_vec();
         let el_clone = el.clone();
-        owner.on_cleanup(Box::new(move || {
-            if let Some(style) = element_style(&el_clone) {
-                for name in &names {
-                    let _ = style.remove_property(name);
+        owner.on_cleanup(
+            Box::new(move || -> SilexResult<()> {
+                let mut first_error = None;
+                if let Some(style) = element_style(&el_clone) {
+                    for name in &names {
+                        if let Err(error) = style.remove_property(name) {
+                            first_error.get_or_insert_with(|| SilexError::from(error));
+                        }
+                    }
                 }
-            };
-        }))?;
+                first_error.map_or(Ok(()), Err)
+            }),
+            error_handler,
+        )?;
         Ok(())
     }
 
@@ -212,49 +212,52 @@ where
 
 /// 全局主题下 `:root{}` 规则所用的样式表 id。
 /// Sets a global theme that applies to the entire document (:root).
-pub fn set_global_theme<'scope, S>(owner: &dyn ViewOwner<'scope>, theme: S)
+pub fn set_global_theme<'scope, S>(owner: &dyn ViewOwner<'scope>, theme: S) -> SilexResult<()>
 where
     S: IntoCssSource<'scope>,
     S::Value: ThemeType + ThemeToCss + Clone + 'scope,
 {
     let source = theme.into_css_source();
     let inputs = source_inputs(&source);
-    if let Err(error) = owner.validate_inputs(&inputs) {
-        owner.report_error(error);
-        return;
-    }
+    owner.validate_inputs(&inputs)?;
     let manager = Rc::new(DynamicStyleManager::new());
     let manager_for_effect = manager.clone();
     let style_id = unique_dynamic_style_id("slx-global-theme");
     let previous = Rc::new(RefCell::new(None::<String>));
     let previous_for_effect = previous.clone();
-    if let Err(error) = owner.effect_from(
-        inputs,
-        Box::new(move || {
-            let theme = match &source {
-                CssSource::Static(theme) => theme.clone(),
-                CssSource::Reactive(rx) => rx.get(),
-            };
-            let Some(css) = global_theme_css(&theme) else {
-                return;
-            };
-            if previous_for_effect.borrow().as_deref() != Some(css.as_str())
-                && !manager_for_effect.update(&style_id, &css)
-            {
-                return;
-            }
-            *previous_for_effect.borrow_mut() = Some(css);
-        }),
-    ) {
-        owner.report_error(error);
-    }
+    let error_handler = owner.token().error_handler();
+    owner
+        .effect_from(
+            inputs,
+            Box::new(move || -> SilexResult<()> {
+                let theme = match &source {
+                    CssSource::Static(theme) => theme.clone(),
+                    CssSource::Reactive(rx) => rx.try_get()?,
+                };
+                let css = global_theme_css(&theme)?;
+                if previous_for_effect.borrow().as_deref() != Some(css.as_str())
+                    && !manager_for_effect.update(&style_id, &css)
+                {
+                    return Err(SilexError::Dom("无法更新全局主题样式表".into()));
+                }
+                *previous_for_effect.borrow_mut() = Some(css);
+                Ok(())
+            }),
+            error_handler.clone(),
+        )
+        .inspect_err(|_| manager.dispose())?;
     let manager_for_cleanup = manager.clone();
-    if let Err(error) = owner.on_cleanup(Box::new(move || manager_for_cleanup.dispose())) {
-        owner.report_error(error);
-    }
+    owner.on_cleanup(
+        Box::new(move || {
+            manager_for_cleanup.dispose();
+            Ok(())
+        }),
+        error_handler,
+    )?;
+    Ok(())
 }
 
-fn global_theme_css<T: ThemeToCss>(theme: &T) -> Option<String> {
+fn global_theme_css<T: ThemeToCss>(theme: &T) -> SilexResult<String> {
     let entries = theme_entries(theme)?;
     let mut css = String::from(":root{");
     for (name, value) in entries {
@@ -268,7 +271,7 @@ fn global_theme_css<T: ThemeToCss>(theme: &T) -> Option<String> {
         }
     }
     css.push('}');
-    Some(css)
+    Ok(css)
 }
 
 /// A trait for theme patches that only override a subset of variables.
@@ -310,13 +313,13 @@ where
         let names = Rc::new(RefCell::new(Vec::<&'static str>::new()));
         let previous_for_effect = previous.clone();
         let names_for_effect = names.clone();
-        let owner_for_effect = owner.clone();
+        let error_handler = owner.error_handler();
         owner.effect_from(
             inputs,
-            Box::new(move || {
+            Box::new(move || -> SilexResult<()> {
                 let patch = match &patch {
                     CssSource::Static(patch) => patch.clone(),
-                    CssSource::Reactive(rx) => rx.get(),
+                    CssSource::Reactive(rx) => rx.try_get()?,
                 };
                 let entries = patch.get_patch_entries();
                 {
@@ -328,30 +331,35 @@ where
                     }
                 }
                 let Some(style) = element_style(&effect_el) else {
-                    owner_for_effect.report_error(SilexError::Dom(
+                    return Err(SilexError::Dom(
                         "element does not expose a style declaration".into(),
                     ));
-                    return;
                 };
                 let next = {
                     let previous = previous_for_effect.borrow();
-                    apply_var_diff(&style, &entries, previous.as_ref())
+                    apply_var_diff(&style, &entries, previous.as_ref())?
                 };
-                match next {
-                    Ok(next) => *previous_for_effect.borrow_mut() = Some(next),
-                    Err(error) => owner_for_effect.report_error(error),
-                }
+                *previous_for_effect.borrow_mut() = Some(next);
+                Ok(())
             }),
+            error_handler.clone(),
         )?;
         let names_for_cleanup = names.clone();
         let el_clone = el.clone();
-        owner.on_cleanup(Box::new(move || {
-            if let Some(style) = element_style(&el_clone) {
-                for name in names_for_cleanup.borrow().iter() {
-                    let _ = style.remove_property(name);
+        owner.on_cleanup(
+            Box::new(move || -> SilexResult<()> {
+                let mut first_error = None;
+                if let Some(style) = element_style(&el_clone) {
+                    for name in names_for_cleanup.borrow().iter() {
+                        if let Err(error) = style.remove_property(name) {
+                            first_error.get_or_insert_with(|| SilexError::from(error));
+                        }
+                    }
                 }
-            }
-        }))?;
+                first_error.map_or(Ok(()), Err)
+            }),
+            error_handler,
+        )?;
         Ok(())
     }
 
@@ -469,8 +477,8 @@ mod tests {
             }
         }
         assert_eq!(
-            theme_entries(&T),
-            Some(entries(&[("--a", Some("1")), ("--b", Some("2"))]))
+            theme_entries(&T).expect("matching theme entries"),
+            entries(&[("--a", Some("1")), ("--b", Some("2"))])
         );
     }
 
@@ -491,7 +499,7 @@ mod tests {
                 &["--a", "--b"]
             }
         }
-        assert!(theme_entries(&Broken).is_none());
+        assert!(theme_entries(&Broken).is_err());
     }
 
     #[test]

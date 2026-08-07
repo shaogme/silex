@@ -143,14 +143,18 @@ pub fn PopoverAnchor<'scope>(
     div(children)
         .attr("data-slot", "popover-anchor")
         .class(anchor_cls)
-        .on(event::click, move |e: web_sys::MouseEvent| {
-            let target = e.current_target().or_else(|| e.target());
-            if let Some(target) = target
-                && let Ok(el) = target.dyn_into::<web_sys::Element>()
-            {
-                ctx.update_anchor_from_element(&el);
-            }
-        })
+        .on(
+            event::click,
+            move |e: web_sys::MouseEvent| -> SilexResult<()> {
+                let target = e.current_target().or_else(|| e.target());
+                if let Some(target) = target
+                    && let Ok(el) = target.dyn_into::<web_sys::Element>()
+                {
+                    ctx.update_anchor_from_element(&el);
+                }
+                Ok(())
+            },
+        )
 }
 
 #[component]
@@ -178,9 +182,9 @@ pub fn PopoverClose<'scope>(
     div(children)
         .attr("data-slot", "popover-close")
         .class(close_cls)
-        .on(event::click, move |_| {
+        .on(event::click, move |_| -> SilexResult<()> {
             ctx.close();
-            let _ = on_click.invoke(());
+            on_click.invoke(())
         })
 }
 
@@ -334,9 +338,9 @@ pub fn PopoverContent<'scope>(
                 // Overlay for click-outside
                 div(()).class(tw!("fixed inset-0 z-50 bg-transparent")).on(
                     event::click,
-                    move |_| {
+                    move |_| -> SilexResult<()> {
                         ctx.close();
-                        let _ = on_close.invoke(());
+                        on_close.invoke(())
                     }
                 ),
                 // Content wrapper
@@ -384,16 +388,19 @@ pub fn PopoverTrigger<'scope>(
     div(children)
         .attr("data-slot", "popover-trigger")
         .class(trigger_cls)
-        .on(event::click, move |e: web_sys::MouseEvent| {
-            let target = e.current_target().or_else(|| e.target());
-            if let Some(target) = target
-                && let Ok(el) = target.dyn_into::<web_sys::Element>()
-            {
-                ctx.update_anchor_from_element(&el);
-            }
-            ctx.toggle();
-            let _ = on_click.invoke(());
-        })
+        .on(
+            event::click,
+            move |e: web_sys::MouseEvent| -> SilexResult<()> {
+                let target = e.current_target().or_else(|| e.target());
+                if let Some(target) = target
+                    && let Ok(el) = target.dyn_into::<web_sys::Element>()
+                {
+                    ctx.update_anchor_from_element(&el);
+                }
+                ctx.toggle();
+                on_click.invoke(())
+            },
+        )
 }
 
 #[component]

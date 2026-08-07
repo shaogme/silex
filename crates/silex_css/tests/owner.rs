@@ -351,13 +351,15 @@ async fn global_theme_stylesheets_are_isolated_per_owner() {
                 first_scope.stored(TestTheme {
                     color: String::from("owner-red"),
                 }),
-            );
+            )
+            .expect("first global theme can be registered");
             set_global_theme(
                 &second_owner,
                 second_scope.stored(TestTheme {
                     color: String::from("owner-blue"),
                 }),
-            );
+            )
+            .expect("second global theme can be registered");
         });
     });
 

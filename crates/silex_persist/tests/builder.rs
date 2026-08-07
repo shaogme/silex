@@ -1,5 +1,5 @@
 use ref_str::LocalStaticRefStr;
-use silex_core::{ReactiveError, Runtime, RuntimeInputs, RxGet, Scope};
+use silex_core::{ErrorReporter, ReactiveError, Runtime, RuntimeInputs, RxGet, Scope, SilexResult};
 use silex_persist::{
     BackendEvent, BackendEventSink, BackendSubscribeError, BackendSubscription, DecodePolicy,
     NoDefault, ParseCodec, PersistCodec, PersistMode, PersistenceBackend, PersistenceError,
@@ -634,21 +634,27 @@ fn local_write_after_external_fallback_before_effect_flush_is_persisted() {
         let (trigger, set_trigger) = scope.signal(false);
         let value_for_effect = value;
         let backend_for_effect = backend.clone();
-        scope.effect(move || {
-            if trigger.get() {
-                backend_for_effect
-                    .state
-                    .borrow_mut()
-                    .remove("same-transaction");
-                backend_for_effect.emit(
-                    "same-transaction",
-                    BackendEvent::Removed {
-                        key: "same-transaction".into(),
-                    },
-                );
-                value_for_effect.set(6);
-            }
-        });
+        scope
+            .effect(
+                move || -> SilexResult<()> {
+                    if trigger.try_get()? {
+                        backend_for_effect
+                            .state
+                            .borrow_mut()
+                            .remove("same-transaction");
+                        backend_for_effect.emit(
+                            "same-transaction",
+                            BackendEvent::Removed {
+                                key: "same-transaction".into(),
+                            },
+                        );
+                        value_for_effect.set(6);
+                    }
+                    Ok(())
+                },
+                ErrorReporter::unhandled().handler(),
+            )
+            .expect("persistence test effect can be registered");
 
         set_trigger.set(true);
         assert_eq!(
@@ -875,22 +881,28 @@ fn stale_persistent_operations_return_no_such_node_during_root_cleanup() {
             .default(1)
             .build();
         let errors_for_cleanup = errors.clone();
-        scope.on_cleanup(move || {
-            errors_for_cleanup
-                .borrow_mut()
-                .push(value.remove().expect_err("stale remove must fail"));
-            errors_for_cleanup
-                .borrow_mut()
-                .push(value.reload().expect_err("stale reload must fail"));
-            errors_for_cleanup
-                .borrow_mut()
-                .push(value.flush().expect_err("stale flush must fail"));
-            assert_eq!(
-                value.try_set(2),
-                Err(PersistenceError::Reactivity(ReactiveError::NoSuchNode))
-            );
-            value.reset();
-        });
+        scope
+            .on_cleanup(
+                move || -> SilexResult<()> {
+                    errors_for_cleanup
+                        .borrow_mut()
+                        .push(value.remove().expect_err("stale remove must fail"));
+                    errors_for_cleanup
+                        .borrow_mut()
+                        .push(value.reload().expect_err("stale reload must fail"));
+                    errors_for_cleanup
+                        .borrow_mut()
+                        .push(value.flush().expect_err("stale flush must fail"));
+                    assert_eq!(
+                        value.try_set(2),
+                        Err(PersistenceError::Reactivity(ReactiveError::NoSuchNode))
+                    );
+                    value.reset();
+                    Ok(())
+                },
+                ErrorReporter::unhandled().handler(),
+            )
+            .expect("stale cleanup can be registered");
     });
 
     let writes_before_dispose = backend.writes.borrow().len();

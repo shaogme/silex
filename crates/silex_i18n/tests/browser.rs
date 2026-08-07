@@ -184,7 +184,9 @@ fn browser_locale_and_document_metadata_use_real_window() {
             .expect("document root");
         let old_lang = root.get_attribute("lang");
         let old_dir = root.get_attribute("dir");
-        let _metadata = i18n.sync_document_metadata();
+        let _metadata = i18n
+            .sync_document_metadata()
+            .expect("metadata effect can be registered");
         assert_eq!(root.get_attribute("lang"), Some("en-US".to_string()));
         assert_eq!(root.get_attribute("dir"), Some("ltr".to_string()));
         i18n.set_locale(Locale::new("ar-EG"));
@@ -320,14 +322,18 @@ fn metadata_owner_cleanup_does_not_overwrite_newer_owner() {
     let first_root = first_runtime.run();
     first_root.with_scope(|scope| {
         let i18n = store(scope, "en-US");
-        let _metadata = i18n.sync_document_metadata();
+        let _metadata = i18n
+            .sync_document_metadata()
+            .expect("metadata effect can be registered");
     });
 
     let mut second_runtime = Runtime::new();
     let second_root = second_runtime.run();
     second_root.with_scope(|scope| {
         let i18n = store(scope, "zh-CN");
-        let _metadata = i18n.sync_document_metadata();
+        let _metadata = i18n
+            .sync_document_metadata()
+            .expect("metadata effect can be registered");
     });
 
     assert_eq!(
@@ -360,7 +366,9 @@ fn metadata_cleanup_preserves_external_attribute_changes() {
     let root = runtime.run();
     root.with_scope(|scope| {
         let i18n = store(scope, "en-US");
-        let _metadata = i18n.sync_document_metadata();
+        let _metadata = i18n
+            .sync_document_metadata()
+            .expect("metadata effect can be registered");
         document_root
             .set_attribute("lang", "external")
             .expect("set external lang");
@@ -394,7 +402,9 @@ fn metadata_effect_stop_prevents_later_locale_updates() {
     let root = runtime.run();
     root.with_scope(|scope| {
         let i18n = store(scope, "en-US");
-        let metadata = i18n.sync_document_metadata();
+        let metadata = i18n
+            .sync_document_metadata()
+            .expect("metadata effect can be registered");
         metadata.stop();
         i18n.set_locale(Locale::new("ar-EG"));
         assert_eq!(
@@ -425,10 +435,14 @@ fn metadata_owner_reclaims_latest_locale_after_newer_owner_disposes() {
 
     first_root.with_scope(|first_scope| {
         let first_i18n = store(first_scope, "en-US");
-        let _first_metadata = first_i18n.sync_document_metadata();
+        let _first_metadata = first_i18n
+            .sync_document_metadata()
+            .expect("metadata effect can be registered");
         second_root.with_scope(|second_scope| {
             let second_i18n = store(second_scope, "zh-CN");
-            let _second_metadata = second_i18n.sync_document_metadata();
+            let _second_metadata = second_i18n
+                .sync_document_metadata()
+                .expect("metadata effect can be registered");
 
             first_i18n.set_locale(Locale::new("fr-FR"));
             assert_eq!(
@@ -465,7 +479,9 @@ fn metadata_stop_and_scope_cleanup_are_idempotent() {
     let root = runtime.run();
     root.with_scope(|scope| {
         let i18n = store(scope, "en-US");
-        let metadata = i18n.sync_document_metadata();
+        let metadata = i18n
+            .sync_document_metadata()
+            .expect("metadata effect can be registered");
         metadata.stop();
         metadata.stop();
         assert_eq!(

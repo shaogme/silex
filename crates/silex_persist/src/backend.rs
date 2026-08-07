@@ -2,7 +2,7 @@ use crate::PersistenceError;
 use js_sys::Object;
 use ref_str::LocalStaticRefStr;
 use silex_core::{
-    RuntimeInputs, Scope,
+    ErrorReporter, RuntimeInputs, Scope, SilexResult,
     reactivity::{Memo, runtime_inputs_of},
 };
 use silex_router::{Navigator, RouterContext};
@@ -268,24 +268,28 @@ impl<'scope> PersistenceBackend<'scope> for QueryBackend<'scope> {
         let active_for_effect = active.clone();
         let key_for_effect = key.clone();
         let _effect = scope
-            .try_effect_with_previous_from(inputs, move |previous: Option<Option<String>>| {
-                let current = query_map.get().get(key_for_effect.as_ref()).cloned();
-                if active_for_effect.get()
-                    && let Some(previous) = previous
-                    && previous != current
-                {
-                    match current.clone() {
-                        Some(value) => sink(BackendEvent::Set {
-                            key: key_for_effect.clone(),
-                            value,
-                        }),
-                        None => sink(BackendEvent::Removed {
-                            key: key_for_effect.clone(),
-                        }),
+            .effect_with_previous_from(
+                inputs,
+                move |previous: Option<&Option<String>>| -> SilexResult<Option<String>> {
+                    let current = query_map.try_get()?.get(key_for_effect.as_ref()).cloned();
+                    if active_for_effect.get()
+                        && let Some(previous) = previous
+                        && previous != &current
+                    {
+                        match current.clone() {
+                            Some(value) => sink(BackendEvent::Set {
+                                key: key_for_effect.clone(),
+                                value,
+                            }),
+                            None => sink(BackendEvent::Removed {
+                                key: key_for_effect.clone(),
+                            }),
+                        }
                     }
-                }
-                current
-            })
+                    Ok(current)
+                },
+                ErrorReporter::unhandled().handler(),
+            )
             .map_err(|error| {
                 BackendSubscribeError::new(PersistenceError::InvalidConfiguration(
                     error.to_string(),
@@ -602,9 +606,13 @@ mod tests {
             let runs_for_effect = runs.clone();
             assert!(
                 scope
-                    .try_effect_from(
+                    .effect_from(
                         inputs,
-                        Box::new(move || runs_for_effect.set(runs_for_effect.get() + 1)),
+                        move || -> SilexResult<()> {
+                            runs_for_effect.set(runs_for_effect.get() + 1);
+                            Ok(())
+                        },
+                        ErrorReporter::unhandled().handler(),
                     )
                     .is_err()
             );

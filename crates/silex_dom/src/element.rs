@@ -104,9 +104,7 @@ impl<'scope> Element<'scope> {
             for attr in attrs {
                 attr.apply(&self.dom_element, &token)?;
             }
-            parent
-                .append_child(&self.dom_element)
-                .map_err(SilexError::from)?;
+            parent.append_child(&self.dom_element)?;
             appended = true;
             for child in &self.children {
                 child.mount(&provisional_owner, self.dom_element.as_ref(), Vec::new())?;

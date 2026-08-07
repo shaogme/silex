@@ -101,9 +101,7 @@ pub fn AccordionTrigger<'scope>(
         .attr("data-slot", "accordion-trigger")
         .attr("data-state", state_attr)
         .class(trigger_cls)
-        .on_click(move |_| {
-            let _ = on_click.invoke(());
-        })
+        .on_click(move |_| -> SilexResult<()> { on_click.invoke(()) })
 }
 
 #[component]

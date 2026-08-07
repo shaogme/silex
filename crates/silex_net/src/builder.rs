@@ -4,6 +4,8 @@ use crate::{
     codec::TextCodec,
     state::{CachePolicy, HttpMethod, HttpResponse, RequestBody, RequestSpec, RetryPolicy},
 };
+#[cfg(feature = "persist")]
+use silex_core::{ErrorReporter, SilexResult};
 use silex_core::{RuntimeInputs, Scope};
 use std::{marker::PhantomData, rc::Rc, time::Duration};
 
@@ -559,7 +561,19 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
         let store = C::build_cache(self.scope, key.to_string(), cache.default.clone());
         let valid = Rc::new(Cell::new(true));
         let valid_for_cleanup = valid.clone();
-        self.scope.on_cleanup(move || valid_for_cleanup.set(false));
+        if self
+            .scope
+            .on_cleanup(
+                move || -> SilexResult<()> {
+                    valid_for_cleanup.set(false);
+                    Ok(())
+                },
+                ErrorReporter::unhandled().handler(),
+            )
+            .is_err()
+        {
+            return None;
+        }
         cache
             .stores
             .borrow_mut()

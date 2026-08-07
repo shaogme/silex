@@ -21,7 +21,7 @@ pub mod link;
 pub use context::*;
 pub use link::*;
 
-use silex_core::{Scope, SilexError, SilexResult, reactivity::runtime_inputs_of};
+use silex_core::{Scope, SilexResult, reactivity::runtime_inputs_of};
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::helpers::window_event_listener_untyped_owned;
 use silex_dom::view::{AnyView, ApplyAttributes, View, ViewOwner};
@@ -178,8 +178,8 @@ impl<'scope> RouterView<'scope> {
         let navigator = self.context.navigator;
         let listener = window_event_listener_untyped_owned(&token, "popstate", move |_| {
             navigator.refresh_location();
-        })
-        .map_err(SilexError::from)?;
+            Ok(())
+        })?;
 
         let children_view = (self.children)(self.context);
         if let Err(error) = children_view.mount_owned(owner, parent, attrs) {

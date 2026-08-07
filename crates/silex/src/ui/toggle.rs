@@ -59,7 +59,5 @@ pub fn Toggle<'scope>(
         .attr("aria-pressed", rx!(scope; $pressed.to_string()))
         .attr("data-state", state_attr)
         .class(cls)
-        .on_click(move |_| {
-            let _ = on_change.invoke(!pressed.get());
-        })
+        .on_click(move |_| -> SilexResult<()> { on_change.invoke(!pressed.try_get()?) })
 }

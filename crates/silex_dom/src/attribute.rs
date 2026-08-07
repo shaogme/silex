@@ -341,8 +341,7 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
     {
         let s = signal.clone();
         let this = self.on_input(move |value| {
-            s.try_update(|current| *current = T::from(value))
-                .map_err(SilexError::from)?;
+            s.try_update(|current| *current = T::from(value))?;
             Ok(())
         });
 
@@ -352,7 +351,7 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
             owner.effect_from(
                 runtime_inputs_of(signal.clone()),
                 Box::new(move || -> SilexResult<()> {
-                    let value = signal.try_get().map_err(SilexError::from)?;
+                    let value = signal.try_get()?;
                     let str_val = value.as_ref();
                     apply_attr_with_target_internal(
                         &dom_element,

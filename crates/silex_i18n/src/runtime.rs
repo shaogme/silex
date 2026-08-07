@@ -5,7 +5,7 @@ use crate::{
 #[cfg(feature = "browser")]
 use silex_core::Effect;
 use silex_core::{
-    Memo, Scope, SilexError,
+    ErrorReporter, Memo, Scope, SilexError, SilexResult,
     reactivity::{
         ReadSignal, Resource, ResourceState, RwSignal, StoredValue, SuspenseContext,
         runtime_inputs_of,
@@ -237,20 +237,34 @@ impl<'scope> I18nBuilder<'scope> {
             let locale_inputs = runtime_inputs_of(store.locale());
 
             let store_for_binding = store;
-            scope.effect_from(binding_inputs, move || {
-                let locale = binding.get();
-                if store_for_binding.locale.get_untracked() != locale {
-                    store_for_binding.locale.set(locale);
-                }
-            });
+            scope
+                .effect_from(
+                    binding_inputs,
+                    move || -> SilexResult<()> {
+                        let locale = binding.signal().try_get()?;
+                        if store_for_binding.locale.get_untracked() != locale {
+                            store_for_binding.locale.set(locale);
+                        }
+                        Ok(())
+                    },
+                    ErrorReporter::unhandled().handler(),
+                )
+                .map_err(map_silex_error)?;
 
             let store_for_locale = store;
-            scope.effect_from(locale_inputs, move || {
-                let locale = store_for_locale.locale.get();
-                if binding.get_untracked() != locale {
-                    binding.set(locale);
-                }
-            });
+            scope
+                .effect_from(
+                    locale_inputs,
+                    move || -> SilexResult<()> {
+                        let locale = store_for_locale.locale.try_get()?;
+                        if binding.get_untracked() != locale {
+                            binding.set(locale);
+                        }
+                        Ok(())
+                    },
+                    ErrorReporter::unhandled().handler(),
+                )
+                .map_err(map_silex_error)?;
         }
 
         Ok(store)
@@ -376,17 +390,24 @@ impl<'scope> I18nStore<'scope> {
         let state = resource.state;
         let state_inputs = runtime_inputs_of(state);
         let store = *self;
-        self.scope.effect_from(state_inputs, move || {
-            if let ResourceState::Ready(catalog) = state.get() {
-                store.insert_catalog(catalog);
-            }
-        });
+        self.scope
+            .effect_from(
+                state_inputs,
+                move || -> SilexResult<()> {
+                    if let ResourceState::Ready(catalog) = state.try_get()? {
+                        store.insert_catalog(catalog);
+                    }
+                    Ok(())
+                },
+                ErrorReporter::unhandled().handler(),
+            )
+            .map_err(map_silex_error)?;
 
         Ok(CatalogResource::new(resource))
     }
 
     #[cfg(feature = "browser")]
-    pub fn sync_document_metadata(&self) -> Effect<'scope> {
+    pub fn sync_document_metadata(&self) -> SilexResult<Effect<'scope>> {
         crate::browser::sync_document_metadata(*self)
     }
 
@@ -458,6 +479,13 @@ fn validate_inputs(scope: Scope<'_>, inputs: &RuntimeInputs) -> Result<(), I18nE
                 unreachable!("scope input validation returned a non-reactivity error: {error}")
             }
         })
+}
+
+fn map_silex_error(error: SilexError) -> I18nError {
+    match error {
+        SilexError::Reactivity(error) => I18nError::from(error),
+        error => I18nError::InvalidCatalog(error.to_string()),
+    }
 }
 
 fn render_message(

@@ -1,5 +1,5 @@
 use crate::{I18nStore, Locale};
-use silex_core::{Effect, runtime_inputs_of};
+use silex_core::{Effect, ErrorReporter, SilexError, SilexResult, runtime_inputs_of};
 use std::{cell::Cell, rc::Rc};
 use wasm_bindgen::JsValue;
 
@@ -103,7 +103,9 @@ pub fn locale_direction(locale: &Locale) -> TextDirection {
 }
 
 /// Keeps the document's `lang` and `dir` attributes in sync with the store.
-pub(crate) fn sync_document_metadata<'scope>(store: I18nStore<'scope>) -> Effect<'scope> {
+pub(crate) fn sync_document_metadata<'scope>(
+    store: I18nStore<'scope>,
+) -> SilexResult<Effect<'scope>> {
     let scope = store.scope();
     #[cfg(target_arch = "wasm32")]
     let root = web_sys::window()
@@ -112,9 +114,9 @@ pub(crate) fn sync_document_metadata<'scope>(store: I18nStore<'scope>) -> Effect
     #[cfg(not(target_arch = "wasm32"))]
     let root: Option<web_sys::Element> = None;
     let Some(root) = root else {
-        let effect = scope.effect(|| {});
+        let effect = scope.effect(|| Ok(()), ErrorReporter::unhandled().handler())?;
         effect.stop();
-        return effect;
+        return Ok(effect);
     };
 
     let previous_lang = root.get_attribute("lang");
@@ -124,153 +126,166 @@ pub(crate) fn sync_document_metadata<'scope>(store: I18nStore<'scope>) -> Effect
     let stack_property = JsValue::from_str(METADATA_STACK_PROPERTY);
     let owner_id = JsValue::from_str(&format!("{:p}", Rc::as_ptr(&active)));
     let record = JsValue::from(js_sys::Object::new());
-    set_record_value(&record, RECORD_ID, &owner_id);
-    set_record_value(&record, RECORD_ACTIVE, &JsValue::TRUE);
+    set_record_value(&record, RECORD_ID, &owner_id)?;
+    set_record_value(&record, RECORD_ACTIVE, &JsValue::TRUE)?;
     set_record_value(
         &record,
         RECORD_PREVIOUS_LANG,
         &optional_string_value(previous_lang.as_deref()),
-    );
+    )?;
     set_record_value(
         &record,
         RECORD_PREVIOUS_DIR,
         &optional_string_value(previous_dir.as_deref()),
-    );
+    )?;
     set_record_value(
         &record,
         RECORD_LAST_LANG,
         &optional_string_value(previous_lang.as_deref()),
-    );
+    )?;
     set_record_value(
         &record,
         RECORD_LAST_DIR,
         &optional_string_value(previous_dir.as_deref()),
-    );
+    )?;
     set_record_value(
         &record,
         RECORD_DESIRED_LANG,
         &optional_string_value(previous_lang.as_deref()),
-    );
+    )?;
     set_record_value(
         &record,
         RECORD_DESIRED_DIR,
         &optional_string_value(previous_dir.as_deref()),
-    );
+    )?;
     // Keep ownership history separate from lang/dir so equal values stay distinguishable.
-    let stack = metadata_stack(&root, &stack_property).unwrap_or_default();
+    let stack = metadata_stack(&root, &stack_property)?.unwrap_or_default();
     stack.push(&record);
-    let _ = js_sys::Reflect::set(root.as_ref(), &stack_property, &stack);
+    js_sys::Reflect::set(root.as_ref(), &stack_property, &stack)?;
 
     let active_for_effect = active.clone();
     let root_for_effect = root.clone();
     let stack_property_for_effect = stack_property.clone();
     let owner_id_for_effect = owner_id.clone();
     let record_for_effect = record.clone();
-    let effect = scope.effect_from(runtime_inputs_of(locale), move || {
-        if !active_for_effect.get() {
-            return;
-        }
+    let error_handler = ErrorReporter::unhandled().handler();
+    let effect = scope.effect_from(
+        runtime_inputs_of(locale),
+        move || -> SilexResult<()> {
+            if !active_for_effect.get() {
+                return Ok(());
+            }
 
-        let locale = locale.get();
-        let lang = locale.as_str().to_string();
-        let dir = locale_direction(&locale).as_str().to_string();
-        set_record_value(
-            &record_for_effect,
-            RECORD_DESIRED_LANG,
-            &JsValue::from_str(&lang),
-        );
-        set_record_value(
-            &record_for_effect,
-            RECORD_DESIRED_DIR,
-            &JsValue::from_str(&dir),
-        );
+            let locale = locale.try_get()?;
+            let lang = locale.as_str().to_string();
+            let dir = locale_direction(&locale).as_str().to_string();
+            set_record_value(
+                &record_for_effect,
+                RECORD_DESIRED_LANG,
+                &JsValue::from_str(&lang),
+            )?;
+            set_record_value(
+                &record_for_effect,
+                RECORD_DESIRED_DIR,
+                &JsValue::from_str(&dir),
+            )?;
 
-        let Some(stack) = metadata_stack(&root_for_effect, &stack_property_for_effect) else {
-            return;
-        };
-        if stack.length() == 0
-            || record_value(&stack.get(stack.length() - 1), RECORD_ID) != owner_id_for_effect
-        {
-            return;
-        }
+            let Some(stack) = metadata_stack(&root_for_effect, &stack_property_for_effect)? else {
+                return Ok(());
+            };
+            if stack.length() == 0
+                || record_value(&stack.get(stack.length() - 1), RECORD_ID) != owner_id_for_effect
+            {
+                return Ok(());
+            }
 
-        apply_record(&root_for_effect, &record_for_effect, true, true);
-    });
+            apply_record(&root_for_effect, &record_for_effect, true, true)
+        },
+        error_handler.clone(),
+    )?;
 
     let root_for_cleanup = root;
     let stack_property_for_cleanup = stack_property;
     let owner_id_for_cleanup = owner_id;
-    scope.on_cleanup(move || {
-        if !active.replace(false) {
-            return;
-        }
-
-        let Some(stack) = metadata_stack(&root_for_cleanup, &stack_property_for_cleanup) else {
-            return;
-        };
-        let Some(index) = find_record(&stack, &owner_id_for_cleanup) else {
-            return;
-        };
-        let record = stack.get(index);
-        set_record_value(&record, RECORD_ACTIVE, &JsValue::FALSE);
-        let mut controlled = (false, false);
-        if index == stack.length() - 1 {
-            controlled = restore_record(&root_for_cleanup, &record);
-        } else {
-            let next = stack.get(index + 1);
-            set_record_value(
-                &next,
-                RECORD_PREVIOUS_LANG,
-                &record_value(&record, RECORD_PREVIOUS_LANG),
-            );
-            set_record_value(
-                &next,
-                RECORD_PREVIOUS_DIR,
-                &record_value(&record, RECORD_PREVIOUS_DIR),
-            );
-        }
-        for position in index..stack.length().saturating_sub(1) {
-            stack.set(position, stack.get(position + 1));
-        }
-        stack.pop();
-        while stack.length() > 0 {
-            let next = stack.get(stack.length() - 1);
-            if record_value(&next, RECORD_ACTIVE)
-                .as_bool()
-                .unwrap_or(false)
-            {
-                break;
+    scope.on_cleanup(
+        move || -> SilexResult<()> {
+            if !active.replace(false) {
+                return Ok(());
             }
-            let next_controlled = restore_record(&root_for_cleanup, &next);
-            controlled.0 &= next_controlled.0;
-            controlled.1 &= next_controlled.1;
+
+            let Some(stack) = metadata_stack(&root_for_cleanup, &stack_property_for_cleanup)?
+            else {
+                return Ok(());
+            };
+            let Some(index) = find_record(&stack, &owner_id_for_cleanup) else {
+                return Ok(());
+            };
+            let record = stack.get(index);
+            set_record_value(&record, RECORD_ACTIVE, &JsValue::FALSE)?;
+            let mut controlled = (false, false);
+            if index == stack.length() - 1 {
+                controlled = restore_record(&root_for_cleanup, &record)?;
+            } else {
+                let next = stack.get(index + 1);
+                set_record_value(
+                    &next,
+                    RECORD_PREVIOUS_LANG,
+                    &record_value(&record, RECORD_PREVIOUS_LANG),
+                )?;
+                set_record_value(
+                    &next,
+                    RECORD_PREVIOUS_DIR,
+                    &record_value(&record, RECORD_PREVIOUS_DIR),
+                )?;
+            }
+            for position in index..stack.length().saturating_sub(1) {
+                stack.set(position, stack.get(position + 1));
+            }
             stack.pop();
-        }
-        if stack.length() > 0 {
-            let next = stack.get(stack.length() - 1);
-            apply_record(&root_for_cleanup, &next, controlled.0, controlled.1);
-        }
+            while stack.length() > 0 {
+                let next = stack.get(stack.length() - 1);
+                if record_value(&next, RECORD_ACTIVE)
+                    .as_bool()
+                    .unwrap_or(false)
+                {
+                    break;
+                }
+                let next_controlled = restore_record(&root_for_cleanup, &next)?;
+                controlled.0 &= next_controlled.0;
+                controlled.1 &= next_controlled.1;
+                stack.pop();
+            }
+            if stack.length() > 0 {
+                let next = stack.get(stack.length() - 1);
+                apply_record(&root_for_cleanup, &next, controlled.0, controlled.1)?;
+            }
 
-        if stack.length() == 0 {
-            let _ = js_sys::Reflect::delete_property(
-                root_for_cleanup.as_ref(),
-                &stack_property_for_cleanup,
-            );
-        } else {
-            let _ = js_sys::Reflect::set(
-                root_for_cleanup.as_ref(),
-                &stack_property_for_cleanup,
-                &stack,
-            );
-        }
-    });
+            if stack.length() == 0 {
+                js_sys::Reflect::delete_property(
+                    root_for_cleanup.as_ref(),
+                    &stack_property_for_cleanup,
+                )?;
+            } else {
+                js_sys::Reflect::set(
+                    root_for_cleanup.as_ref(),
+                    &stack_property_for_cleanup,
+                    &stack,
+                )?;
+            }
+            Ok(())
+        },
+        error_handler,
+    )?;
 
-    effect
+    Ok(effect)
 }
 
-fn metadata_stack(root: &web_sys::Element, property: &JsValue) -> Option<js_sys::Array> {
-    let value = js_sys::Reflect::get(root.as_ref(), property).ok()?;
-    js_sys::Array::is_array(&value).then(|| js_sys::Array::from(&value))
+fn metadata_stack(
+    root: &web_sys::Element,
+    property: &JsValue,
+) -> SilexResult<Option<js_sys::Array>> {
+    let value = js_sys::Reflect::get(root.as_ref(), property)?;
+    Ok(js_sys::Array::is_array(&value).then(|| js_sys::Array::from(&value)))
 }
 
 fn find_record(stack: &js_sys::Array, id: &JsValue) -> Option<u32> {
@@ -281,8 +296,10 @@ fn record_value(record: &JsValue, name: &str) -> JsValue {
     js_sys::Reflect::get(record, &JsValue::from_str(name)).unwrap_or(JsValue::UNDEFINED)
 }
 
-fn set_record_value(record: &JsValue, name: &str, value: &JsValue) {
-    let _ = js_sys::Reflect::set(record, &JsValue::from_str(name), value);
+fn set_record_value(record: &JsValue, name: &str, value: &JsValue) -> SilexResult<()> {
+    js_sys::Reflect::set(record, &JsValue::from_str(name), value)
+        .map(|_| ())
+        .map_err(SilexError::from)
 }
 
 fn optional_string_value(value: Option<&str>) -> JsValue {
@@ -293,28 +310,34 @@ fn optional_attribute_value(value: JsValue) -> Option<String> {
     value.as_string()
 }
 
-fn apply_record(root: &web_sys::Element, record: &JsValue, apply_lang: bool, apply_dir: bool) {
+fn apply_record(
+    root: &web_sys::Element,
+    record: &JsValue,
+    apply_lang: bool,
+    apply_dir: bool,
+) -> SilexResult<()> {
     if apply_lang
         && let Some(lang) = optional_attribute_value(record_value(record, RECORD_DESIRED_LANG))
-        && root.set_attribute("lang", &lang).is_ok()
     {
-        set_record_value(record, RECORD_LAST_LANG, &JsValue::from_str(&lang));
+        root.set_attribute("lang", &lang)?;
+        set_record_value(record, RECORD_LAST_LANG, &JsValue::from_str(&lang))?;
     }
 
     if apply_dir
         && let Some(dir) = optional_attribute_value(record_value(record, RECORD_DESIRED_DIR))
-        && root.set_attribute("dir", &dir).is_ok()
     {
-        set_record_value(record, RECORD_LAST_DIR, &JsValue::from_str(&dir));
+        root.set_attribute("dir", &dir)?;
+        set_record_value(record, RECORD_LAST_DIR, &JsValue::from_str(&dir))?;
     }
+    Ok(())
 }
 
-fn restore_record(root: &web_sys::Element, record: &JsValue) -> (bool, bool) {
+fn restore_record(root: &web_sys::Element, record: &JsValue) -> SilexResult<(bool, bool)> {
     let current_lang = root.get_attribute("lang");
     let mut controlled_lang = false;
     if current_lang == optional_attribute_value(record_value(record, RECORD_LAST_LANG)) {
         let previous = optional_attribute_value(record_value(record, RECORD_PREVIOUS_LANG));
-        restore_attribute(root, "lang", previous.as_deref());
+        restore_attribute(root, "lang", previous.as_deref())?;
         controlled_lang = true;
     }
 
@@ -322,22 +345,23 @@ fn restore_record(root: &web_sys::Element, record: &JsValue) -> (bool, bool) {
     let mut controlled_dir = false;
     if current_dir == optional_attribute_value(record_value(record, RECORD_LAST_DIR)) {
         let previous = optional_attribute_value(record_value(record, RECORD_PREVIOUS_DIR));
-        restore_attribute(root, "dir", previous.as_deref());
+        restore_attribute(root, "dir", previous.as_deref())?;
         controlled_dir = true;
     }
 
-    (controlled_lang, controlled_dir)
+    Ok((controlled_lang, controlled_dir))
 }
 
-fn restore_attribute(root: &web_sys::Element, name: &str, value: Option<&str>) {
+fn restore_attribute(root: &web_sys::Element, name: &str, value: Option<&str>) -> SilexResult<()> {
     match value {
         Some(value) => {
-            let _ = root.set_attribute(name, value);
+            root.set_attribute(name, value)?;
         }
         None => {
-            let _ = root.remove_attribute(name);
+            root.remove_attribute(name)?;
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -382,7 +406,7 @@ mod tests {
                 .build()
                 .expect("valid i18n store");
             let before = scope.runtime_snapshot();
-            let effect = sync_document_metadata(store);
+            let effect = sync_document_metadata(store).expect("metadata effect can be created");
             assert_eq!(scope.runtime_snapshot(), before);
             assert!(!effect.try_stop().expect("inactive effect can stop"));
         });

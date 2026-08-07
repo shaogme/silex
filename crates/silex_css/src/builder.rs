@@ -361,9 +361,7 @@ impl<'scope> Style<'scope> {
         if !css.is_empty() {
             inject_style(&class_base, &css);
         }
-        el.class_list()
-            .add_1(&class_base)
-            .map_err(SilexError::from)?;
+        el.class_list().add_1(&class_base)?;
 
         let owned_vars: Vec<String> = dyn_bindings
             .iter()
@@ -374,41 +372,70 @@ impl<'scope> Style<'scope> {
             let el_clone = el.clone();
             let bindings = dyn_bindings;
             let previous_for_effect = previous.clone();
-            let owner_for_effect = owner.clone();
+            let error_handler = owner.error_handler();
             owner.effect_from(
                 inputs.clone(),
-                Box::new(move || {
-                    let values: Vec<String> =
-                        bindings.iter().map(|(_, source)| source.get()).collect();
+                Box::new(move || -> SilexResult<()> {
+                    let values: Vec<String> = bindings
+                        .iter()
+                        .map(|(_, source)| source.try_get().map_err(SilexError::from))
+                        .collect::<SilexResult<_>>()?;
                     let mut previous = previous_for_effect.borrow_mut();
                     if let Some(style) = element_style(&el_clone) {
                         for (index, ((name, _), value)) in
                             bindings.iter().zip(values.iter()).enumerate()
                         {
-                            if previous[index].as_deref() != Some(value)
-                                && let Err(error) =
-                                    style.set_property(name, value).map_err(SilexError::from)
-                            {
-                                owner_for_effect.report_error(error);
-                                return;
+                            if previous[index].as_deref() != Some(value) {
+                                style.set_property(name, value)?;
                             }
                         }
                     }
                     *previous = values.into_iter().map(Some).collect();
+                    Ok(())
                 }),
+                error_handler.clone(),
+            )?;
+            let el_clone = el.clone();
+            let class_name = class_base.clone();
+            owner.on_cleanup(
+                Box::new(move || -> SilexResult<()> {
+                    let mut first_error = None;
+                    if let Some(style) = element_style(&el_clone) {
+                        for name in &owned_vars {
+                            if let Err(error) = style.remove_property(name) {
+                                first_error.get_or_insert_with(|| SilexError::from(error));
+                            }
+                        }
+                    }
+                    if let Err(error) = el_clone.class_list().remove_1(&class_name) {
+                        first_error.get_or_insert_with(|| SilexError::from(error));
+                    }
+                    first_error.map_or(Ok(()), Err)
+                }),
+                error_handler,
+            )?;
+        } else {
+            let error_handler = owner.error_handler();
+            let el_clone = el.clone();
+            let class_name = class_base.clone();
+            owner.on_cleanup(
+                Box::new(move || -> SilexResult<()> {
+                    let mut first_error = None;
+                    if let Some(style) = element_style(&el_clone) {
+                        for name in &owned_vars {
+                            if let Err(error) = style.remove_property(name) {
+                                first_error.get_or_insert_with(|| SilexError::from(error));
+                            }
+                        }
+                    }
+                    if let Err(error) = el_clone.class_list().remove_1(&class_name) {
+                        first_error.get_or_insert_with(|| SilexError::from(error));
+                    }
+                    first_error.map_or(Ok(()), Err)
+                }),
+                error_handler,
             )?;
         }
-
-        let el_clone = el.clone();
-        let class_name = class_base.clone();
-        owner.on_cleanup(Box::new(move || {
-            if let Some(style) = element_style(&el_clone) {
-                for name in &owned_vars {
-                    let _ = style.remove_property(name);
-                }
-            }
-            let _ = el_clone.class_list().remove_1(&class_name);
-        }))?;
         Ok(class_base)
     }
 
@@ -533,27 +560,23 @@ impl<'scope> ReactiveApply<'scope> for Style<'scope> {
     ) -> SilexResult<()> {
         let el = el.clone();
         let owner = owner.clone();
-        let owner_for_effect = owner.clone();
         let previous_class = Rc::new(RefCell::new(None::<String>));
         let previous_class_for_effect = previous_class.clone();
+        let owner_for_callback = owner.clone();
+        let error_handler = owner.error_handler();
         owner.effect_from(
             rx.runtime_inputs(),
-            Box::new(move || {
-                let style = rx.get();
-                if let Err(error) = owner_for_effect.validate_inputs(&style.runtime_inputs()) {
-                    owner_for_effect.report_error(error);
-                    return;
-                }
+            Box::new(move || -> SilexResult<()> {
+                let style = rx.try_get()?;
+                owner_for_callback.validate_inputs(&style.runtime_inputs())?;
                 if let Some(class_name) = previous_class_for_effect.borrow_mut().take() {
-                    let _ = el.class_list().remove_1(&class_name);
+                    el.class_list().remove_1(&class_name)?;
                 }
-                match style.apply_to_element(&el, &owner_for_effect) {
-                    Ok(class_name) => {
-                        *previous_class_for_effect.borrow_mut() = Some(class_name);
-                    }
-                    Err(error) => owner_for_effect.report_error(error),
-                }
+                let class_name = style.apply_to_element(&el, &owner_for_callback)?;
+                *previous_class_for_effect.borrow_mut() = Some(class_name);
+                Ok(())
             }),
+            error_handler,
         )
     }
 }
@@ -745,7 +768,7 @@ mod tests {
     /// 钉一根桩：哪天所有权模型变了，先坏在这儿而不是坏成线上的 Effect 泄漏。
     #[test]
     fn inner_effects_are_reclaimed_when_the_outer_effect_reruns() {
-        use silex_core::Runtime;
+        use silex_core::{Runtime, RxGet};
         use std::{cell::Cell, rc::Rc};
 
         let mut runtime = Runtime::new();
@@ -755,14 +778,24 @@ mod tests {
             let inner_runs = Rc::new(Cell::new(0));
 
             let counter = inner_runs.clone();
-            scope.effect(move || {
-                outer.get();
-                let counter = counter.clone();
-                scope.effect(move || {
-                    inner_dep.get();
-                    counter.set(counter.get() + 1);
-                });
-            });
+            scope
+                .effect(
+                    move || -> SilexResult<()> {
+                        outer.try_get()?;
+                        let counter = counter.clone();
+                        scope.effect(
+                            move || -> SilexResult<()> {
+                                inner_dep.try_get()?;
+                                counter.set(counter.get() + 1);
+                                Ok(())
+                            },
+                            silex_core::ErrorReporter::unhandled().handler(),
+                        )?;
+                        Ok(())
+                    },
+                    silex_core::ErrorReporter::unhandled().handler(),
+                )
+                .expect("nested effects can be registered");
 
             assert_eq!(inner_runs.get(), 1, "首轮内层 Effect 跑一次");
             outer.set(1);

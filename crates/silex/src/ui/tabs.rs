@@ -129,9 +129,7 @@ pub fn TabsTrigger<'scope>(
         .attr("data-state", state_attr)
         .attr("data-value", value)
         .class(cls)
-        .on_click(move |_| {
-            let _ = on_select.invoke(value);
-        })
+        .on_click(move |_| -> SilexResult<()> { on_select.invoke(value) })
 }
 
 #[component]
