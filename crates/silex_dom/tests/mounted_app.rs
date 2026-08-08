@@ -95,10 +95,63 @@ fn mounted_app_stages_and_commits_after_the_caller_node() {
     assert_eq!(host.child_nodes().length(), 4);
 
     drop(app);
+    assert_eq!(host.text_content().as_deref(), Some("caller-owned"));
+    assert_eq!(host.child_nodes().length(), 1);
     host.parent_node()
         .expect("host has a body parent")
         .remove_child(&host)
         .expect("host can be removed");
+}
+
+#[wasm_bindgen_test]
+fn explicit_dispose_cleans_committed_boundary() {
+    let host = host_with_caller_node();
+    let app = MountedApp::mount(
+        Runtime::new(),
+        host.clone(),
+        CleanupSink::new(|_| panic!("clean explicit dispose should not report")),
+        |context| {
+            let handler = error_handler(context.scope());
+            context.mount(Element::with_child("section", "app"), handler)
+        },
+    )
+    .expect("mount should commit");
+
+    app.dispose().expect("explicit dispose should succeed");
+    assert_eq!(host.text_content().as_deref(), Some("caller-owned"));
+    assert_eq!(host.child_nodes().length(), 1);
+
+    host.parent_node()
+        .expect("host has a body parent")
+        .remove_child(&host)
+        .expect("host can be removed");
+}
+
+#[wasm_bindgen_test]
+fn dispose_after_external_host_removal_is_clean_and_keeps_caller_nodes() {
+    let host = host_with_caller_node();
+    let app = MountedApp::mount(
+        Runtime::new(),
+        host.clone(),
+        CleanupSink::new(|_| panic!("external removal should be clean")),
+        |context| {
+            let handler = error_handler(context.scope());
+            context.mount(Element::with_child("section", "app"), handler)
+        },
+    )
+    .expect("mount should commit");
+
+    assert!(app.is_active());
+    host.parent_node()
+        .expect("host has a body parent")
+        .remove_child(&host)
+        .expect("host can be removed externally");
+    assert!(app.is_active());
+
+    app.dispose()
+        .expect("detached host should be cleanup-idempotent");
+    assert_eq!(host.text_content().as_deref(), Some("caller-owned"));
+    assert_eq!(host.child_nodes().length(), 1);
 }
 
 #[wasm_bindgen_test]

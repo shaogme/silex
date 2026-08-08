@@ -6,7 +6,7 @@ use crate::{
 };
 use silex_core::{
     CleanupDiagnostic, CleanupError, ErrorReporter, RootHandle, Runtime, Scope, SilexError,
-    SilexResult,
+    SilexResult, log::console_error,
 };
 use std::{
     fmt,
@@ -342,7 +342,7 @@ impl MountBoundary {
         Ok(())
     }
 
-    fn abort(&mut self) -> Vec<SilexError> {
+    fn dispose(&mut self) -> Vec<SilexError> {
         let mut errors = Vec::new();
         let nodes = if self.committed {
             self.owned_nodes.clone()
@@ -388,6 +388,8 @@ enum TransactionState {
     Mounting,
     Committed,
     Published,
+    Disposing,
+    Disposed,
     Aborted,
 }
 
@@ -396,7 +398,7 @@ pub struct MountedApp {
     _runtime: Runtime,
     root: Option<RootHandle>,
     boundary: Option<MountBoundary>,
-    _cleanup_sink: CleanupSink,
+    cleanup_sink: CleanupSink,
     state: TransactionState,
 }
 
@@ -436,6 +438,111 @@ impl MountedApp {
             .host
             .clone()
     }
+
+    /// Dispose the root and outer DOM boundary in a fixed order.
+    pub fn dispose(mut self) -> Result<(), DisposeError> {
+        let report = self.dispose_inner();
+        if report.is_clean() {
+            Ok(())
+        } else {
+            Err(DisposeError::new(report))
+        }
+    }
+
+    fn dispose_inner(&mut self) -> CleanupReport {
+        if self.root.is_none() && self.boundary.is_none() {
+            self.state = TransactionState::Disposed;
+            return CleanupReport::new();
+        }
+
+        self.state = TransactionState::Disposing;
+        let report = cleanup_parts(&mut self.root, &mut self.boundary);
+        self.state = TransactionState::Disposed;
+        report
+    }
+}
+
+impl Drop for MountedApp {
+    fn drop(&mut self) {
+        if self.root.is_none() && self.boundary.is_none() {
+            return;
+        }
+
+        let report = self.dispose_inner();
+        record_drop_report(&self.cleanup_sink, report);
+    }
+}
+
+fn cleanup_parts(
+    root: &mut Option<RootHandle>,
+    boundary: &mut Option<MountBoundary>,
+) -> CleanupReport {
+    let mut cleanup_failures = Vec::new();
+
+    if let Some(root) = root.take()
+        && let Some(failure) = dispose_root_safely(root)
+    {
+        cleanup_failures.push(failure);
+    }
+
+    let boundary_errors = if let Some(mut boundary) = boundary.take() {
+        match catch_unwind(AssertUnwindSafe(|| boundary.dispose())) {
+            Ok(errors) => errors,
+            Err(panic) => {
+                cleanup_failures.push(CleanupFailure::new(
+                    CleanupOrigin::MountBoundary,
+                    CleanupError::from_panic(panic),
+                ));
+                Vec::new()
+            }
+        }
+    } else {
+        Vec::new()
+    };
+
+    CleanupReport::from_parts(cleanup_failures, boundary_errors)
+}
+
+fn dispose_root_safely(root: RootHandle) -> Option<CleanupFailure> {
+    match catch_unwind(AssertUnwindSafe(|| root.dispose())) {
+        Ok(Ok(())) => None,
+        Ok(Err(error)) => Some(CleanupFailure::new(CleanupOrigin::Root, error)),
+        Err(panic) => Some(CleanupFailure::new(
+            CleanupOrigin::Root,
+            CleanupError::from_panic(panic),
+        )),
+    }
+}
+
+fn cleanup_report_for_root(root: RootHandle) -> CleanupReport {
+    CleanupReport::from_parts(dispose_root_safely(root).into_iter().collect(), Vec::new())
+}
+
+fn record_drop_report(sink: &CleanupSink, report: CleanupReport) {
+    if report.is_clean() {
+        return;
+    }
+
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let (cleanup_failures, boundary_errors) = report.into_parts();
+        let cleanup_failures = cleanup_failures
+            .into_iter()
+            .map(|failure| {
+                let (origin, error) = failure.into_parts();
+                CleanupFailureDiagnostic::new(origin, error.into_diagnostic())
+            })
+            .collect();
+        sink.record(DropFailureReport::from_parts(
+            cleanup_failures,
+            boundary_errors,
+        ));
+    }));
+
+    if result.is_err() {
+        let _ = catch_unwind(AssertUnwindSafe(|| {
+            console_error("Silex cleanup sink panicked");
+        }));
+    }
 }
 
 struct MountTransaction {
@@ -456,7 +563,7 @@ impl MountTransaction {
         let boundary = match MountBoundary::new(host) {
             Ok(boundary) => boundary,
             Err(primary) => {
-                let rollback = Self::dispose_root(root);
+                let rollback = cleanup_report_for_root(root);
                 return Err(MountError::new(primary, rollback));
             }
         };
@@ -514,7 +621,7 @@ impl MountTransaction {
             Ok(Err(primary)) => self.fail(primary),
             Err(panic) => {
                 let report = self.abort();
-                self.record_drop_report(report);
+                record_drop_report(&self.cleanup_sink, report);
                 resume_unwind(panic)
             }
         }
@@ -528,64 +635,7 @@ impl MountTransaction {
 
     fn abort(&mut self) -> CleanupReport {
         self.state = TransactionState::Aborted;
-        let mut cleanup_failures = Vec::new();
-
-        if let Some(root) = self.root.take() {
-            match catch_unwind(AssertUnwindSafe(|| root.dispose())) {
-                Ok(Ok(())) => {}
-                Ok(Err(error)) => {
-                    cleanup_failures.push(CleanupFailure::new(CleanupOrigin::Root, error));
-                }
-                Err(panic) => {
-                    cleanup_failures.push(CleanupFailure::new(
-                        CleanupOrigin::Root,
-                        CleanupError::from_panic(panic),
-                    ));
-                }
-            }
-        }
-
-        let boundary_errors = if let Some(mut boundary) = self.boundary.take() {
-            match catch_unwind(AssertUnwindSafe(|| boundary.abort())) {
-                Ok(errors) => errors,
-                Err(panic) => {
-                    cleanup_failures.push(CleanupFailure::new(
-                        CleanupOrigin::MountBoundary,
-                        CleanupError::from_panic(panic),
-                    ));
-                    Vec::new()
-                }
-            }
-        } else {
-            Vec::new()
-        };
-
-        CleanupReport::from_parts(cleanup_failures, boundary_errors)
-    }
-
-    fn dispose_root(root: RootHandle) -> CleanupReport {
-        match root.dispose() {
-            Ok(()) => CleanupReport::new(),
-            Err(error) => CleanupReport::from_parts(
-                vec![CleanupFailure::new(CleanupOrigin::Root, error)],
-                Vec::new(),
-            ),
-        }
-    }
-
-    fn record_drop_report(&self, report: CleanupReport) {
-        let (cleanup_failures, boundary_errors) = report.into_parts();
-        let cleanup_failures = cleanup_failures
-            .into_iter()
-            .map(|failure| {
-                let (origin, error) = failure.into_parts();
-                CleanupFailureDiagnostic::new(origin, error.into_diagnostic())
-            })
-            .collect();
-        let report = DropFailureReport::from_parts(cleanup_failures, boundary_errors);
-        if catch_unwind(AssertUnwindSafe(|| self.cleanup_sink.record(report))).is_err() {
-            silex_core::log::console_error("Silex cleanup sink panicked");
-        }
+        cleanup_parts(&mut self.root, &mut self.boundary)
     }
 
     fn publish(mut self) -> Result<MountedApp, MountError> {
@@ -605,7 +655,7 @@ impl MountTransaction {
                     .take()
                     .expect("published transaction boundary must exist"),
             ),
-            _cleanup_sink: self.cleanup_sink.clone(),
+            cleanup_sink: self.cleanup_sink.clone(),
             state: self.state,
         })
     }
@@ -623,6 +673,54 @@ impl Drop for MountTransaction {
             return;
         }
         let report = self.abort();
-        self.record_drop_report(report);
+        record_drop_report(&self.cleanup_sink, report);
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use super::*;
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    fn root_with_cleanup_panic(message: &'static str) -> RootHandle {
+        let mut runtime = Runtime::new();
+        let root = runtime.run();
+        root.with_scope(|scope| {
+            scope
+                .on_cleanup(
+                    move || panic!("{message}"),
+                    scope.error_handler(|_: SilexError| {}),
+                )
+                .expect("cleanup should register");
+        });
+        root
+    }
+
+    #[test]
+    fn cleanup_parts_preserves_root_cleanup_error() {
+        let mut root = Some(root_with_cleanup_panic("mounted root cleanup"));
+        let mut boundary = None;
+        let report = cleanup_parts(&mut root, &mut boundary);
+
+        assert!(root.is_none());
+        assert!(boundary.is_none());
+        assert_eq!(report.cleanup_failures().len(), 1);
+        assert_eq!(report.cleanup_failures()[0].origin, CleanupOrigin::Root);
+        assert_eq!(
+            report.cleanup_failures()[0].error.diagnostic().message(),
+            "mounted root cleanup"
+        );
+        assert!(report.boundary_errors().is_empty());
+    }
+
+    #[test]
+    fn drop_sink_panic_is_contained_after_diagnostic_conversion() {
+        let mut root = Some(root_with_cleanup_panic("drop root cleanup"));
+        let mut boundary = None;
+        let report = cleanup_parts(&mut root, &mut boundary);
+        let sink = CleanupSink::new(|_| panic!("sink failure"));
+
+        let result = catch_unwind(AssertUnwindSafe(|| record_drop_report(&sink, report)));
+        assert!(result.is_ok());
     }
 }
