@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::panic::AssertUnwindSafe;
 use std::rc::Rc;
 use std::time::Duration;
 use wasm_bindgen::JsCast;
@@ -121,7 +122,9 @@ pub fn window_event_listener_untyped_detached(
     event_name: &str,
     cb: impl FnMut(web_sys::Event) + 'static,
 ) -> WindowListenerHandle {
-    let cb = Closure::wrap(Box::new(cb) as Box<dyn FnMut(web_sys::Event)>).into_js_value();
+    let mut cb = AssertUnwindSafe(cb);
+    let cb: Closure<dyn FnMut(web_sys::Event)> = Closure::wrap(Box::new(move |event| (*cb)(event)));
+    let cb = cb.into_js_value();
 
     let _ = window().add_event_listener_with_callback(event_name, cb.as_ref().unchecked_ref());
 
@@ -157,10 +160,11 @@ pub fn window_event_listener_untyped_owned<'scope>(
         move |payload| cb(payload.unchecked_into::<web_sys::Event>()),
         owner.error_handler(),
     );
-    let destination_for_closure = destination.clone();
-    let closure = Closure::wrap(Box::new(move |event: web_sys::Event| {
-        let _ = destination_for_closure.dispatch(event.into());
-    }) as Box<dyn FnMut(web_sys::Event)>);
+    let destination_for_closure = AssertUnwindSafe(destination.clone());
+    let closure: Closure<dyn FnMut(web_sys::Event)> =
+        Closure::wrap(Box::new(move |event: web_sys::Event| {
+            let _ = destination_for_closure.dispatch(event.into());
+        }));
     let closure = Rc::new(RefCell::new(Some(closure.into_js_value())));
     let js_fn = closure
         .borrow()
@@ -258,7 +262,7 @@ impl Drop for WindowListenerHandle {
 // --- Timer & Animation Frame Helpers ---
 
 fn closure_once(cb: impl FnOnce() + 'static) -> JsValue {
-    Closure::once_into_js(cb)
+    Closure::once_into_js(AssertUnwindSafe(cb))
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -318,13 +322,13 @@ fn owned_once_callback<'scope>(
     );
     let destination_for_closure = destination.clone();
     let closure_for_callback = closure.clone();
-    let callback = Closure::once_into_js(move || {
+    let callback = Closure::once_into_js(AssertUnwindSafe(move || {
         let _guard = OnceCallbackGuard {
             destination: destination_for_closure.clone(),
             closure: closure_for_callback.clone(),
         };
         let _ = destination_for_closure.dispatch(JsValue::UNDEFINED);
-    });
+    }));
     *closure.borrow_mut() = Some(callback);
     destination
 }
@@ -423,7 +427,7 @@ pub fn request_idle_callback_owned<'scope>(
 }
 
 pub fn queue_microtask(task: impl FnOnce() + 'static) {
-    let task = Closure::once_into_js(task);
+    let task = Closure::once_into_js(AssertUnwindSafe(task));
     window().queue_microtask(&task.unchecked_into());
 }
 
@@ -533,7 +537,9 @@ pub fn set_interval_with_handle(
     cb: impl Fn() + 'static,
     duration: Duration,
 ) -> Result<IntervalHandle, JsValue> {
-    let cb = Closure::wrap(Box::new(cb) as Box<dyn FnMut()>).into_js_value();
+    let cb = AssertUnwindSafe(cb);
+    let cb: Closure<dyn FnMut()> = Closure::wrap(Box::new(move || (*cb)()));
+    let cb = cb.into_js_value();
     window()
         .set_interval_with_callback_and_timeout_and_arguments_0(
             cb.as_ref().unchecked_ref(),
@@ -551,10 +557,10 @@ pub fn set_interval_owned<'scope>(
         return Err(JsValue::from_str("view owner is inactive"));
     }
     let destination = owner.host_callback(move |_| cb(), owner.error_handler());
-    let destination_for_closure = destination.clone();
-    let closure = Closure::wrap(Box::new(move || {
+    let destination_for_closure = AssertUnwindSafe(destination.clone());
+    let closure: Closure<dyn FnMut()> = Closure::wrap(Box::new(move || {
         let _ = destination_for_closure.dispatch(JsValue::UNDEFINED);
-    }) as Box<dyn FnMut()>);
+    }));
     let closure = Rc::new(RefCell::new(Some(closure.into_js_value())));
     let js_fn = closure
         .borrow()
@@ -690,9 +696,9 @@ where
             state.generation
         };
         let destination = destination.clone();
-        let callback = Closure::once_into_js(move || {
+        let callback = Closure::once_into_js(AssertUnwindSafe(move || {
             let _ = destination.dispatch(JsValue::from_f64(generation as f64));
-        });
+        }));
         let timeout = window().set_timeout_with_callback_and_timeout_and_arguments_0(
             callback.as_ref().unchecked_ref(),
             duration_millis(delay),

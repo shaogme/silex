@@ -1,0 +1,40 @@
+[package]
+name = "silex_bootstrap"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+silex_core.workspace = true
+silex_dom.workspace = true
+web-sys = { workspace = true, features = [
+    "Document",
+    "Element",
+    "Event",
+    "EventTarget",
+    "Node",
+    "Window",
+] }
+wasm-bindgen = { workspace = true, optional = true }
+js-sys = { workspace = true, optional = true }
+
+[features]
+default = []
+js-object = ["dep:wasm-bindgen", "dep:js-sys"]
+page-controller = []
+browser-bootstrap = ["js-object", "page-controller"]
+all = ["browser-bootstrap"]
+
+[dev-dependencies]
+trybuild = "1.0"
+wasm-bindgen-test.workspace = true

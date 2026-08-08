@@ -86,9 +86,10 @@ pub fn setup_global_error_handlers() {
     let window = web_sys::window().expect("Window not found");
 
     // 2. Window "error" event
-    let closure = Closure::wrap(Box::new(move |event: web_sys::ErrorEvent| {
-        silex_core::log::console_error(format!("Global Error: {:?}", event.message()));
-    }) as Box<dyn FnMut(_)>);
+    let closure: Closure<dyn FnMut(web_sys::ErrorEvent)> =
+        Closure::wrap(Box::new(move |event: web_sys::ErrorEvent| {
+            silex_core::log::console_error(format!("Global Error: {:?}", event.message()));
+        }));
 
     window
         .add_event_listener_with_callback("error", closure.as_ref().unchecked_ref())
@@ -96,9 +97,10 @@ pub fn setup_global_error_handlers() {
     closure.forget();
 
     // 3. Promise Rejection
-    let closure_rej = Closure::wrap(Box::new(move |event: web_sys::PromiseRejectionEvent| {
-        silex_core::log::console_error(format!("Unhandled Rejection: {:?}", event.reason()));
-    }) as Box<dyn FnMut(_)>);
+    let closure_rej: Closure<dyn FnMut(web_sys::PromiseRejectionEvent)> =
+        Closure::wrap(Box::new(move |event: web_sys::PromiseRejectionEvent| {
+            silex_core::log::console_error(format!("Unhandled Rejection: {:?}", event.reason()));
+        }));
 
     window
         .add_event_listener_with_callback(

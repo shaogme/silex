@@ -1,0 +1,19 @@
+error[E0521]: borrowed data escapes outside of closure
+  --> tests/ui/fail_app_host_scope_escape.rs:12:9
+   |
+ 9 |     slot: &mut Option<Scope<'static>>,
+   |     ---- `slot` declared here, outside of the closure body
+10 | ) {
+11 |     let _ = host.mount(runtime, |context| {
+   |                                  ------- `context` is a reference that is only valid in the closure body
+12 |         *slot = Some(context.scope());
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `context` escapes the closure body here
+
+error: lifetime may not live long enough
+  --> tests/ui/fail_app_host_scope_escape.rs:22:5
+   |
+18 | fn builder<'scope>(
+   |            ------ lifetime `'scope` defined here
+...
+22 |     *slot = Some(context.scope());
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ assignment requires that `'scope` must outlive `'static`

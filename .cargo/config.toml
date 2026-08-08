@@ -1,2 +1,16 @@
 [target.wasm32-unknown-unknown]
 runner = "wasm-bindgen-test-runner"
+
+[alias]
+wasm-check-nightly = [
+    "check",
+    "--target",
+    "wasm32-unknown-unknown",
+    "-Zbuild-std",
+]
+wasm-test-nightly = [
+    "test",
+    "--target",
+    "wasm32-unknown-unknown",
+    "-Zbuild-std",
+]

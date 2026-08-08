@@ -405,10 +405,10 @@ where
         move |payload| handler(payload.unchecked_into::<E>()),
         owner.error_handler(),
     );
-    let destination_for_closure = destination.clone();
-    let closure = Closure::wrap(Box::new(move |event: E| {
+    let destination_for_closure = std::panic::AssertUnwindSafe(destination.clone());
+    let closure: Closure<dyn FnMut(E)> = Closure::wrap(Box::new(move |event: E| {
         let _ = destination_for_closure.dispatch(event.unchecked_into::<JsValue>());
-    }) as Box<dyn FnMut(E)>);
+    }));
     let closure = Rc::new(RefCell::new(Some(closure.into_js_value())));
     let js_fn = closure
         .borrow()
