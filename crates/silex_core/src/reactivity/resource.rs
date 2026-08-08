@@ -149,7 +149,7 @@ where
         let state_for_effect = state;
         let set_state_for_effect = set_state;
         let suspense_for_effect = suspense;
-        let error_handler_for_effect = error_handler.clone();
+        let error_handler_for_effect = error_handler;
         let _effect = scope
             .effect_from(
                 inputs,
@@ -179,7 +179,7 @@ where
                             }
                             Ok(())
                         },
-                        error_handler.clone(),
+                        error_handler,
                     )?;
                     let id = request_id_for_effect
                         .get()
@@ -196,7 +196,7 @@ where
                                 settled,
                             });
                         },
-                        error_handler.clone(),
+                        error_handler,
                     );
                     Ok(())
                 },

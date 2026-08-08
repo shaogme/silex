@@ -200,7 +200,7 @@ macro_rules! impl_net_methods {
                         let _ =
                             execute_prepared(refresh_client, refresh_spec, None, cache_token).await;
                     },
-                    self.error_handler.clone(),
+                    self.error_handler,
                 );
                 return Ok(value);
             }
@@ -273,8 +273,8 @@ macro_rules! impl_net_methods {
             #[cfg(not(feature = "persist"))]
             let cache_policy = None;
             let fetch_client = self.prepared();
-            let error_handler = self.error_handler.clone();
-            let fetch_error_handler = error_handler.clone();
+            let error_handler = self.error_handler;
+            let fetch_error_handler = error_handler;
             #[cfg(feature = "persist")]
             let fetch_builder = self.clone();
             let resource_generation = Rc::new(Cell::new(0usize));
@@ -354,7 +354,7 @@ macro_rules! impl_net_methods {
                                 .await;
                                 let _ = completion.submit(result);
                             },
-                            fetch_error_handler.clone(),
+                            fetch_error_handler,
                         );
                     }
 
@@ -433,7 +433,7 @@ macro_rules! impl_net_methods {
                     };
                     async move { execute_prepared(client, spec, fallback, cache_token).await }
                 },
-                self.error_handler.clone(),
+                self.error_handler,
             ))
         }
 
@@ -477,7 +477,7 @@ macro_rules! impl_net_methods {
                     };
                     Ok(async move { execute_prepared(client, spec, fallback, cache_token).await })
                 },
-                self.error_handler.clone(),
+                self.error_handler,
             )
         }
     };

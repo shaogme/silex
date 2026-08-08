@@ -393,7 +393,7 @@ impl<'scope> Style<'scope> {
                     *previous = values.into_iter().map(Some).collect();
                     Ok(())
                 }),
-                error_handler.clone(),
+                error_handler,
             )?;
             let el_clone = el.clone();
             let class_name = class_base.clone();

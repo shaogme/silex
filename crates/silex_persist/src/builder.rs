@@ -395,7 +395,7 @@ where
             });
             match self
                 .backend
-                .subscribe(self.scope, key.clone(), sink, self.error_handler.clone())
+                .subscribe(self.scope, key.clone(), sink, self.error_handler)
             {
                 Ok(binding) => *subscription.borrow_mut() = Some(binding),
                 Err(error) => match error.into_error() {
@@ -415,7 +415,7 @@ where
                     subscription_for_cleanup.borrow_mut().take();
                     Ok(())
                 },
-                self.error_handler.clone(),
+                self.error_handler,
             )
             .map_err(|error| PersistenceError::InvalidConfiguration(error.to_string()))?;
 
@@ -604,7 +604,7 @@ where
                                 debounce_for_cleanup.borrow_mut().invalidate();
                                 Ok(())
                             },
-                            self.error_handler.clone(),
+                            self.error_handler,
                         )
                         .map_err(|error| {
                             PersistenceError::InvalidConfiguration(error.to_string())
@@ -654,7 +654,7 @@ where
                                 }
                                 Ok(())
                             },
-                            self.error_handler.clone(),
+                            self.error_handler,
                         )
                         .map_err(|error| {
                             PersistenceError::InvalidConfiguration(error.to_string())
@@ -675,7 +675,7 @@ where
                                 }
                                 Ok(())
                             },
-                            self.error_handler.clone(),
+                            self.error_handler,
                         )
                         .map_err(|error| {
                             PersistenceError::InvalidConfiguration(error.to_string())
@@ -725,7 +725,7 @@ where
                             }
                             Ok(())
                         },
-                        self.error_handler.clone(),
+                        self.error_handler,
                     )
                     .map_err(|error| PersistenceError::InvalidConfiguration(error.to_string()))?;
             }

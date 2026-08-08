@@ -36,7 +36,7 @@ where
             }
             Ok(())
         }),
-        error_handler.clone(),
+        error_handler,
     ) {
         scope.dispose();
         return Err(error);

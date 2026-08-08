@@ -201,7 +201,7 @@ pub(crate) fn sync_document_metadata<'scope>(
 
             apply_record(&root_for_effect, &record_for_effect, true, true)
         },
-        error_handler.clone(),
+        error_handler,
     )?;
 
     let root_for_cleanup = root;

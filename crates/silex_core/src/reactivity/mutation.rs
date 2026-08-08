@@ -76,7 +76,7 @@ impl<'scope, Arg, T, E> Clone for Mutation<'scope, Arg, T, E> {
             last_id: self.last_id.clone(),
             completion: self.completion.clone(),
             scope: self.scope,
-            error_handler: self.error_handler.clone(),
+            error_handler: self.error_handler,
         }
     }
 }
@@ -200,7 +200,7 @@ where
             async move {
                 let _ = completion.submit((id, future.await));
             },
-            self.error_handler.clone(),
+            self.error_handler,
         );
     }
 

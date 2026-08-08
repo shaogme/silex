@@ -89,6 +89,14 @@ impl<'scope> PartialEq for Scope<'scope> {
 impl<'scope> Eq for Scope<'scope> {}
 
 impl<'scope> Scope<'scope> {
+    /// Register an application error destination owned by this scope.
+    pub fn error_handler<F>(self, handler: F) -> ErrorReporter<'scope>
+    where
+        F: Fn(SilexError) + 'scope,
+    {
+        self.inner.error_handler(handler)
+    }
+
     pub fn owned_scope(self) -> OwnedScope<'scope> {
         self.try_owned_scope()
             .unwrap_or_else(|error| panic!("创建 owned scope 失败: {error}"))

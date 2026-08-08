@@ -300,4 +300,41 @@ mod tests {
         assert_eq!(state.borrow().error_handlers.len(), 0);
         assert_eq!(drops.get(), 1);
     }
+
+    #[test]
+    fn handler_capture_drop_sees_an_already_empty_registry() {
+        struct ReentrantDrop<'scope> {
+            handler: Rc<RefCell<Option<ErrorHandler<'scope, ()>>>>,
+            result: Rc<RefCell<Option<ReactiveResult<()>>>>,
+        }
+
+        impl Drop for ReentrantDrop<'_> {
+            fn drop(&mut self) {
+                let Some(handler) = *self.handler.borrow() else {
+                    return;
+                };
+                *self.result.borrow_mut() = Some(handler.try_handle(()));
+            }
+        }
+
+        let storage = ScopeStorage::new(GlobalScheduler::new());
+        let scope = Scope {
+            storage: &storage,
+            _marker: PhantomData,
+        };
+        let saved_handler = Rc::new(RefCell::new(None));
+        let result = Rc::new(RefCell::new(None));
+        let probe = ReentrantDrop {
+            handler: saved_handler.clone(),
+            result: result.clone(),
+        };
+        let handler = scope.error_handler(move |_: ()| {
+            let _ = &probe;
+        });
+        *saved_handler.borrow_mut() = Some(handler);
+
+        storage.dispose_untracked();
+
+        assert_eq!(*result.borrow(), Some(Err(ReactiveError::NoSuchNode)));
+    }
 }

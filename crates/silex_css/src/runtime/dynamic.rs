@@ -414,7 +414,7 @@ impl<'scope> DynamicCss<'scope> {
                     *previous = values.into_iter().map(Some).collect();
                     Ok(())
                 }),
-                error_handler.clone(),
+                error_handler,
             )?;
 
             let names: Vec<&'static str> = vars.iter().map(|(name, _)| *name).collect();
@@ -431,7 +431,7 @@ impl<'scope> DynamicCss<'scope> {
                     }
                     first_error.map_or(Ok(()), Err)
                 }),
-                error_handler.clone(),
+                error_handler,
             )?;
         }
 
@@ -471,7 +471,7 @@ impl<'scope> DynamicCss<'scope> {
                     }
                     Ok(())
                 }),
-                error_handler.clone(),
+                error_handler,
             )?;
 
             let manager_for_cleanup = manager.clone();
@@ -488,7 +488,7 @@ impl<'scope> DynamicCss<'scope> {
                     manager_for_cleanup.dispose();
                     first_error.map_or(Ok(()), Err)
                 }),
-                error_handler.clone(),
+                error_handler,
             )?;
         }
 
@@ -666,7 +666,7 @@ impl<'scope> StyledVariantBinding<'scope> {
                 )?;
                 Ok(())
             }),
-            error_handler.clone(),
+            error_handler,
         )?;
 
         let element_for_cleanup = element.clone();
@@ -991,7 +991,7 @@ pub fn inject_managed_dynamic_style<'scope>(
             manager_for_cleanup.dispose();
             Ok(())
         }),
-        error_handler.clone(),
+        error_handler,
     )?;
 
     let manager_for_effect = manager.clone();

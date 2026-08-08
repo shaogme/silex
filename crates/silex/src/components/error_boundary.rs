@@ -6,7 +6,7 @@ use std::{
 
 use wasm_bindgen_futures::spawn_local;
 
-use silex_core::{ErrorHandler, ErrorReporter, Scope, SilexError, rx};
+use silex_core::{ErrorReporter, Scope, SilexError, rx};
 use silex_dom::prelude::*;
 use silex_dom::view::ViewOwner;
 use silex_macros::component;
@@ -67,11 +67,11 @@ impl<'scope> ErrorBoundaryBranch<'scope> {
     }
 
     fn parent_handler(&self) -> ErrorReporter<'scope> {
-        self.parent_handler
+        *self
+            .parent_handler
             .borrow()
             .as_ref()
             .expect("ErrorBoundary parent handler must be resolved during mount")
-            .clone()
     }
 
     fn mount_inner(
@@ -81,7 +81,7 @@ impl<'scope> ErrorBoundaryBranch<'scope> {
         attrs: Vec<PendingAttribute<'scope>>,
     ) -> silex_core::SilexResult<()> {
         let phase = self.phase;
-        let child_handler = self.boundary_handler.clone();
+        let child_handler = self.boundary_handler;
         let parent_handler = self.parent_handler();
         let fallback = self.fallback.clone();
         let record_error = self.record_error.clone();
@@ -96,7 +96,7 @@ impl<'scope> ErrorBoundaryBranch<'scope> {
                     Ok(()) => Ok(()),
                     Err(error) => {
                         record_error(error.clone());
-                        let fallback_owner = owner_token.with_error_handler(parent_handler.clone());
+                        let fallback_owner = owner_token.with_error_handler(parent_handler);
                         fallback(error).mount_owned(&fallback_owner, parent, fallback_attrs)
                     }
                 }
@@ -161,10 +161,9 @@ impl<'scope> View<'scope> for ErrorBoundaryView<'scope> {
     ) -> silex_core::SilexResult<()> {
         let parent_handler = self
             .parent_handler_override
-            .clone()
             .unwrap_or_else(|| owner.token().error_handler());
         *self.parent_handler.borrow_mut() = Some(parent_handler);
-        let token = owner.token().with_error_handler(self.phase_handler.clone());
+        let token = owner.token().with_error_handler(self.phase_handler);
         self.view.mount(&token, parent, attrs)
     }
 
@@ -179,7 +178,6 @@ impl<'scope> View<'scope> for ErrorBoundaryView<'scope> {
     {
         let parent_handler = self
             .parent_handler_override
-            .clone()
             .unwrap_or_else(|| owner.token().error_handler());
         *self.parent_handler.borrow_mut() = Some(parent_handler);
         let token = owner.token().with_error_handler(self.phase_handler);
@@ -207,7 +205,7 @@ where
     let (error, set_error) = scope.signal(None::<SilexError>);
     let completion = scope.completion_sender(move |value| set_error.set(Some(value)));
     let reporter_completion = completion.clone();
-    let boundary_handler = ErrorHandler::new(move |error| {
+    let boundary_handler = scope.error_handler(move |error| {
         let completion = reporter_completion.clone();
         spawn_local(async move {
             let _ = completion.submit(error);
@@ -219,8 +217,7 @@ where
     let record_error = Rc::new(move |error: SilexError| set_error.set(Some(error)));
     let phase_handler = {
         let parent_handler = parent_handler.clone();
-        let boundary_handler = boundary_handler.clone();
-        ErrorHandler::new(move |error_value| {
+        scope.error_handler(move |error_value| {
             if error.try_get_untracked().ok().flatten().is_some() {
                 parent_handler
                     .borrow()
@@ -235,13 +232,13 @@ where
 
     let fallback = fallback.clone();
     let children = children.clone();
-    let child_handler = boundary_handler.clone();
+    let child_handler = boundary_handler;
     let parent_handler_for_view = parent_handler.clone();
     let view = rx!(scope; {
         if let Some(error) = (*$error).clone() {
             ErrorBoundaryBranch::fallback(
                 fallback(error),
-                boundary_handler.clone(),
+                boundary_handler,
                 parent_handler_for_view.clone(),
                 fallback.clone(),
                 record_error.clone(),
@@ -250,14 +247,13 @@ where
         } else {
             let result = catch_unwind(AssertUnwindSafe({
                 let children = children.clone();
-                let child_handler = child_handler.clone();
                 move || children(child_handler).into_any()
             }));
 
             match result {
                 Ok(view) => ErrorBoundaryBranch::child(
                     view,
-                    boundary_handler.clone(),
+                    boundary_handler,
                     parent_handler_for_view.clone(),
                     fallback.clone(),
                     record_error.clone(),

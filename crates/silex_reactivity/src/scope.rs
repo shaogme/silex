@@ -56,7 +56,10 @@ impl ScopeStorage {
             }
         }));
         let clear_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            self.state.borrow_mut().clear_error_handlers();
+            let handlers = self.state.borrow_mut().take_error_handlers();
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                ScopeState::drop_error_handlers(handlers);
+            }))
         }));
         let release_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             scheduler.borrow_mut().release_scope_id(self.scope_id);
@@ -67,10 +70,12 @@ impl ScopeStorage {
         {
             first_panic = Some(panic);
         }
-        if let Err(panic) = clear_result
-            && first_panic.is_none()
-        {
-            first_panic = Some(panic);
+        match clear_result {
+            Ok(Ok(())) => {}
+            Ok(Err(panic)) | Err(panic) if first_panic.is_none() => {
+                first_panic = Some(panic);
+            }
+            Ok(Err(_)) | Err(_) => {}
         }
         if let Err(panic) = release_result
             && first_panic.is_none()

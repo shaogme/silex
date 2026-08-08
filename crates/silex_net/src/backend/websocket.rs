@@ -317,7 +317,7 @@ impl<'scope> WebSocketInner<'scope> {
                 }
                 let _ = token.submit(WebSocketEvent::Retry { generation });
             },
-            self.error_handler.clone(),
+            self.error_handler,
         ));
     }
 
@@ -622,7 +622,7 @@ impl<'scope> WebSocketBuilder<'scope> {
             set_state,
             set_message,
             set_error,
-            error_handler: error_handler.clone(),
+            error_handler,
             completion,
             scope,
             registration: None,

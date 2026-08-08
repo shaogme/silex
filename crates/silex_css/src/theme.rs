@@ -171,7 +171,7 @@ where
                 *previous_for_effect.borrow_mut() = Some(next);
                 Ok(())
             }),
-            error_handler.clone(),
+            error_handler,
         )?;
         let names = T::get_variable_names().to_vec();
         let el_clone = el.clone();
@@ -243,7 +243,7 @@ where
                 *previous_for_effect.borrow_mut() = Some(css);
                 Ok(())
             }),
-            error_handler.clone(),
+            error_handler,
         )
         .inspect_err(|_| manager.dispose())?;
     let manager_for_cleanup = manager.clone();
@@ -342,7 +342,7 @@ where
                 *previous_for_effect.borrow_mut() = Some(next);
                 Ok(())
             }),
-            error_handler.clone(),
+            error_handler,
         )?;
         let names_for_cleanup = names.clone();
         let el_clone = el.clone();

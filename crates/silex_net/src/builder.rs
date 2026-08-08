@@ -577,7 +577,7 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
             self.scope,
             key.to_string(),
             cache.default.clone(),
-            self.error_handler.clone(),
+            self.error_handler,
         );
         let valid = Rc::new(Cell::new(true));
         let valid_for_cleanup = valid.clone();
@@ -588,7 +588,7 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
                     valid_for_cleanup.set(false);
                     Ok(())
                 },
-                self.error_handler.clone(),
+                self.error_handler,
             )
             .is_err()
         {

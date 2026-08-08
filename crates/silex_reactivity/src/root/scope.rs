@@ -31,7 +31,7 @@ impl CleanupError {
 
 /// Owns one long-lived root storage.
 pub struct RootHandle {
-    storage: Box<ScopeStorage>,
+    storage: Rc<ScopeStorage>,
     runtime_slot: Rc<Cell<bool>>,
     disposed: bool,
 }
@@ -39,7 +39,7 @@ pub struct RootHandle {
 impl RootHandle {
     pub(crate) fn new(runtime_slot: Rc<Cell<bool>>) -> Self {
         Self {
-            storage: Box::new(ScopeStorage::new(GlobalScheduler::new())),
+            storage: Rc::new(ScopeStorage::new(GlobalScheduler::new())),
             runtime_slot,
             disposed: false,
         }
@@ -48,7 +48,7 @@ impl RootHandle {
     /// Borrow the ordinary scope capability used to create root nodes.
     pub fn scope(&self) -> Scope<'_> {
         Scope {
-            storage: &self.storage,
+            storage: self.storage.as_ref(),
             _marker: std::marker::PhantomData,
         }
     }
@@ -56,7 +56,7 @@ impl RootHandle {
     /// Execute a callback with a root scope borrowed for exactly this owner.
     pub fn with_scope<'scope, R>(&'scope self, f: impl FnOnce(Scope<'scope>) -> R) -> R {
         let scope = Scope {
-            storage: &self.storage,
+            storage: self.storage.as_ref(),
             _marker: std::marker::PhantomData,
         };
         f(scope)

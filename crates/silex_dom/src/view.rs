@@ -431,7 +431,7 @@ impl<'scope> ViewOwnerToken<'scope> {
     }
 
     pub fn error_handler(&self) -> ViewErrorHandler<'scope> {
-        self.error_handler.clone()
+        self.error_handler
     }
 
     pub fn with_error_handler(&self, error_handler: ErrorReporter<'scope>) -> Self {
@@ -646,7 +646,7 @@ impl<'scope> ViewOwner<'scope> for ScopedViewOwner<'scope> {
         let scope_for_once = self.scope;
         let scope_for_active = self.scope;
         let scope_for_validate = self.scope;
-        let error_handler = self.error_handler.clone();
+        let error_handler = self.error_handler;
         ViewOwnerToken::new(
             EffectRegistrar::new(move |inputs, callback, error_handler| {
                 scope_for_effect
@@ -718,7 +718,7 @@ impl<'scope> ViewOwner<'scope> for OwnedViewOwner<'scope> {
         let scope_for_once = self.scope.clone();
         let scope_for_active = self.scope.clone();
         let scope_for_validate = self.scope.clone();
-        let error_handler = self.error_handler.clone();
+        let error_handler = self.error_handler;
         ViewOwnerToken::new(
             EffectRegistrar::new(move |inputs, callback, error_handler| {
                 scope_for_effect
@@ -1333,7 +1333,7 @@ where
             }
             Ok(())
         }),
-        error_handler.clone(),
+        error_handler,
     ) {
         scope.dispose();
         cleanup_range.remove();

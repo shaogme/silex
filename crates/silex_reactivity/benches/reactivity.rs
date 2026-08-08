@@ -749,6 +749,8 @@ fn bench_owner_churn(c: &mut Criterion) {
             root.with_scope(|scope| {
                 let (source, _) = scope.signal(0i32);
                 let cleanup_count = Rc::new(Cell::new(0usize));
+                let effect_handler = handler(scope);
+                let cleanup_handler = handler(scope);
                 let mut owners = Vec::with_capacity(rows);
 
                 for _ in 0..rows {
@@ -761,7 +763,7 @@ fn bench_owner_churn(c: &mut Criterion) {
                                 black_box(source_in_effect.get());
                                 Ok(())
                             },
-                            handler(scope),
+                            effect_handler,
                         )
                         .expect("benchmark effect should initialize");
                     let cleanup_count_in_row = cleanup_count.clone();
@@ -772,7 +774,7 @@ fn bench_owner_churn(c: &mut Criterion) {
                                     .set(cleanup_count_in_row.get().wrapping_add(1));
                                 Ok(())
                             },
-                            handler(scope),
+                            cleanup_handler,
                         )
                         .expect("benchmark cleanup should register");
                     owners.push((row_scope, render_scope));
@@ -794,7 +796,7 @@ fn bench_owner_churn(c: &mut Criterion) {
                                     black_box(source_in_effect.get());
                                     Ok(())
                                 },
-                                handler(scope),
+                                effect_handler,
                             )
                             .expect("benchmark effect should initialize");
                         let cleanup_count_in_row = cleanup_count.clone();
@@ -805,7 +807,7 @@ fn bench_owner_churn(c: &mut Criterion) {
                                         .set(cleanup_count_in_row.get().wrapping_add(1));
                                     Ok(())
                                 },
-                                handler(scope),
+                                cleanup_handler,
                             )
                             .expect("benchmark cleanup should register");
                         owners.push((row_scope, render_scope));

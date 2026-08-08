@@ -485,8 +485,15 @@ impl<'scope> ScopeState<'scope> {
         Ok(self.error_handlers.insert(entry))
     }
 
-    pub(crate) fn clear_error_handlers(&mut self) {
-        let handlers = std::mem::take(&mut self.error_handlers);
+    pub(crate) fn take_error_handlers(
+        &mut self,
+    ) -> SlotMap<ErrorHandlerKey, ErrorHandlerEntry<'scope>> {
+        std::mem::take(&mut self.error_handlers)
+    }
+
+    pub(crate) fn drop_error_handlers(
+        handlers: SlotMap<ErrorHandlerKey, ErrorHandlerEntry<'scope>>,
+    ) {
         let mut first_panic = None;
         for (_, entry) in handlers {
             if let Err(panic) = catch_unwind(AssertUnwindSafe(|| drop(entry)))

@@ -378,7 +378,7 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
                 return Err(error);
             }
         };
-        let render_owner = OwnedViewOwner::new(render_scope.clone(), self.error_handler.clone());
+        let render_owner = OwnedViewOwner::new(render_scope.clone(), self.error_handler);
         let row_scope = self.row_scope.clone();
         let range = self.range.clone();
         let render = self.render.clone();
@@ -388,7 +388,7 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
         let rendered_nodes_for_effect = rendered_nodes.clone();
         let rendered_scope = Rc::new(RefCell::new(None::<Rc<OwnedScope<'scope>>>));
         let rendered_scope_for_effect = rendered_scope.clone();
-        let error_handler = self.error_handler.clone();
+        let error_handler = self.error_handler;
         let document = crate::document();
         let render_token = render_owner.token();
         let render_handler = render_token.error_handler();
@@ -402,7 +402,7 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
                         Err(error) => return Err(error),
                     };
                     let candidate_owner =
-                        OwnedViewOwner::new(candidate_scope.clone(), error_handler.clone());
+                        OwnedViewOwner::new(candidate_scope.clone(), error_handler);
                     let candidate_token = candidate_owner.token();
                     let result = catch_unwind(AssertUnwindSafe(|| -> SilexResult<()> {
                         let fragment = document.create_document_fragment();

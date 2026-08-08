@@ -70,7 +70,7 @@ where
             self.each.clone(),
             self.key_fn.clone(),
             RowFactory::Stateful(self.view_fn.clone()),
-            self.error_handler.clone(),
+            self.error_handler,
             attrs,
         )
     }
@@ -192,7 +192,7 @@ where
             }
             Ok(())
         }),
-        error_handler.clone(),
+        error_handler,
     ) {
         scope.dispose();
         range.remove();
@@ -364,7 +364,7 @@ where
             }
             Ok(())
         }),
-        effect_handler.clone(),
+        effect_handler,
     ) {
         scope.dispose();
         range.remove();
