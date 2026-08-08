@@ -62,7 +62,11 @@ categories = ["web-programming", "wasm", "gui"]
 silex = { path = "crates/silex", version = "0.1.0-beta.9" }
 silex_core = { path = "crates/silex_core", version = "0.1.0-beta.9" }
 silex_dom = { path = "crates/silex_dom", version = "0.1.0-beta.9" }
-silex_bootstrap = { path = "crates/silex_bootstrap", version = "0.1.0-beta.9" }
+silex_bootstrap = {
+    path = "crates/silex_bootstrap",
+    version = "0.1.0-beta.9",
+    default-features = false,
+}
 silex_html = { path = "crates/silex_html", version = "0.1.0-beta.9" }
 silex_css = { path = "crates/silex_css", version = "0.1.0-beta.9" }
 silex_macros = { path = "crates/silex_macros", version = "0.1.0-beta.9", default-features = false }

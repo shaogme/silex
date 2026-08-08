@@ -1,0 +1,13 @@
+error[E0432]: unresolved import `silex::bootstrap`
+ --> tests/ui/fail_bootstrap_facade_off.rs:1:12
+  |
+1 | use silex::bootstrap::AppHost;
+  |            ^^^^^^^^^ could not find `bootstrap` in `silex`
+  |
+note: found an item that was configured out
+ --> src/lib.rs
+  |
+  | #[cfg(feature = "bootstrap")]
+  |       --------------------- the item is gated behind the `bootstrap` feature
+  | pub mod bootstrap {
+  |         ^^^^^^^^^

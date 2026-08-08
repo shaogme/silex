@@ -43,6 +43,11 @@ pub mod dom {
     pub use silex_dom::*;
 }
 
+#[cfg(feature = "bootstrap")]
+pub mod bootstrap {
+    pub use silex_bootstrap::*;
+}
+
 pub mod hash {
     pub use silex_hash::*;
 }

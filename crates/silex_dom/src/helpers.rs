@@ -137,6 +137,31 @@ pub fn window_event_listener_untyped_detached(
     })
 }
 
+/// Fallibly adds an event listener to the `Window`, returning an owned RAII handle.
+pub fn try_window_event_listener_untyped_detached(
+    event_name: &str,
+    cb: impl FnMut(web_sys::Event) + 'static,
+) -> Result<WindowListenerHandle, JsValue> {
+    let mut cb = AssertUnwindSafe(cb);
+    let cb: Closure<dyn FnMut(web_sys::Event)> = Closure::wrap(Box::new(move |event| (*cb)(event)));
+    let cb = cb.into_js_value();
+
+    let window = try_window().ok_or_else(|| JsValue::from_str("Window not found"))?;
+    window.add_event_listener_with_callback(event_name, cb.as_ref().unchecked_ref())?;
+
+    let event_name = event_name.to_string();
+    let cb_clone = cb.clone();
+
+    Ok(WindowListenerHandle::new(move || {
+        if let Some(window) = try_window() {
+            let _ = window.remove_event_listener_with_callback(
+                &event_name,
+                cb_clone.as_ref().unchecked_ref(),
+            );
+        }
+    }))
+}
+
 /// Adds a typed event listener to the `Window`, returning a cancelable handle.
 pub fn window_event_listener_detached<E, F>(event: E, mut cb: F) -> WindowListenerHandle
 where
