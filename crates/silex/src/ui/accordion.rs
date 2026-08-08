@@ -97,7 +97,7 @@ pub fn AccordionTrigger<'scope>(
         .attr("stroke-linejoin", "round")
         .class(icon_cls);
 
-    button(view_chain!(children, icon))
+    button(chain!(children, icon))
         .attr("data-slot", "accordion-trigger")
         .attr("data-state", state_attr)
         .class(trigger_cls)

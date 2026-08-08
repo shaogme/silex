@@ -211,7 +211,7 @@ pub fn Slider<'scope>(
         Ok(())
     };
 
-    div(view_chain!(
+    div(chain!(
         // Hidden Range Input for Accessibility & Keyboard arrows
         input()
             .type_("range")
@@ -224,7 +224,7 @@ pub fn Slider<'scope>(
             .on_input(handle_input)
             .on_change(handle_input),
         // Visual Track
-        div(view_chain!(
+        div(chain!(
             // Visual Range Fill
             div(())
                 .attr("data-slot", "slider-range")

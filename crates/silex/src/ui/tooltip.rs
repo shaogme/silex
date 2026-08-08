@@ -346,7 +346,7 @@ pub fn TooltipContent<'scope>(
             };
 
             crate::components::Portal(
-                div(div(view_chain!(children_view, arrow_view))
+                div(div(chain!(children_view, arrow_view))
                     .attr("data-slot", "tooltip-content")
                     .attr("data-side", side_val)
                     .attr("data-align", "center")

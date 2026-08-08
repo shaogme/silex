@@ -128,7 +128,7 @@ styled! {
 pub fn NavBar() -> impl View {
     let settings = use_user_settings();
 
-    StyledNav(view_chain!(
+    StyledNav(chain!(
         Link(AppRoute::Home).children("Home").active_class("active"),
         Link(AppRoute::Basics)
             .children("Basics")

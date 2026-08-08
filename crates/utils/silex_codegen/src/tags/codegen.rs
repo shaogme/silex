@@ -74,7 +74,7 @@ pub fn generate_module_content(
                 namespace, fn_name
             ));
             code.push_str(&format!(
-                "    ($($child:expr),+ $(,)?) => {{ $crate::{}::{}($crate::view_chain!($($child),+)) }};\n",
+                "    ($($child:expr),+ $(,)?) => {{ $crate::{}::{}($crate::chain!($($child),+)) }};\n",
                 namespace, fn_name
             ));
             code.push_str("}\n");

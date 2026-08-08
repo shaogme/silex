@@ -297,7 +297,7 @@ pub fn StylingBasics() -> impl View {
                 .style("opacity: 0.7; font-size: 1.1em;"),
         ].style("margin-bottom: 40px;"),
 
-        DemoCard(view_chain!(
+        DemoCard(chain!(
             h3("🌈 Color Transformations"),
             p("Use the new $(...) syntax to perform Rust-side transformations like alpha blending, which are then compiled to efficient CSS color-mix functions."),
             div![
@@ -321,12 +321,12 @@ pub fn StylingBasics() -> impl View {
             ].style("margin-top: 16px;")
         )),
 
-        DemoCard(view_chain!(
+        DemoCard(chain!(
             h3("1. Atomic & Scoped Styles (styled!)"),
             p(
                 "The `styled!` macro creates scoped, reusable components with dynamic interpolation and variants."
             ).style("margin-bottom: 24px; color: #9ca3af;"),
-            StyledButton(view_chain!(
+            StyledButton(chain!(
                 "Interactive Scoped Button"
             ))
                 .color(color)
@@ -358,7 +358,7 @@ pub fn StylingBasics() -> impl View {
                 }),
         )),
 
-        DemoCard(view_chain!(
+        DemoCard(chain!(
             h3("1.5 Dynamic Variants & Attribute Passthrough"),
             p(
                 "The `styled!` macro now supports dynamic interpolation directly inside variants, and fully preserves the chainable typed attributes of native HTML tags."
@@ -367,8 +367,8 @@ pub fn StylingBasics() -> impl View {
                 let (btn_kind, set_btn_kind) = Signal::pair("primary".to_string());
                 let (btn_width, _set_btn_width) = Signal::pair(px(160));
 
-                Stack(view_chain!(
-                    DynamicVariantBtn(view_chain!(
+                Stack(chain!(
+                    DynamicVariantBtn(chain!(
                         "Toggle Variant"
                     ))
                         .kind(btn_kind)
@@ -386,7 +386,7 @@ pub fn StylingBasics() -> impl View {
             }
         )),
 
-        DemoCard(view_chain!(
+        DemoCard(chain!(
             h3("2. Type-Safe Style Builder (sty)"),
             p(
                 "A chainable API for defining styles with full reactivity, ideal for dynamic inline styles."
@@ -418,7 +418,7 @@ pub fn StylingBasics() -> impl View {
                 let (show_shadow, set_show_shadow) = Signal::pair(true);
                 let (active_border, set_active_border) = Signal::pair(true);
 
-                Stack(view_chain!(
+                Stack(chain!(
                     div![
                         button("Grow").on(event::click, move |_| set_count.update(|n| *n += 1))
                             .style("padding: 8px 16px; border-radius: 6px; border: 1px solid #374151; background: #111827; color: white; cursor: pointer; margin-right: 8px;"),
@@ -448,19 +448,19 @@ pub fn StylingBasics() -> impl View {
             }
         )),
 
-        DemoCard(view_chain!(
+        DemoCard(chain!(
             h3("3. Layout Primitives"),
             p("Structural layout components like Stack, Grid, and Center for effortless alignment.")
                 .style("margin-bottom: 24px; color: #9ca3af;"),
 
-            Stack(view_chain!(
+            Stack(chain!(
                 span("Vertical Stack with Gap"),
-                Grid(view_chain!(
+                Grid(chain!(
                     div("Grid Item 1").style("background: #312e81; padding: 10px; border-radius: 8px;"),
                     div("Grid Item 2").style("background: #312e81; padding: 10px; border-radius: 8px;"),
                     div("Grid Item 3").style("background: #312e81; padding: 10px; border-radius: 8px;"),
                 )).columns(3).gap(12),
-                Center(view_chain!(
+                Center(chain!(
                     "I am perfectly centered"
                 ))
                     .style(sty().background_color(hex("#4f46e5")).padding(px(12)).border_radius(px(8))),
@@ -508,7 +508,7 @@ pub fn Theming() -> impl View {
                 ),
         ].style("margin-bottom: 24px;"),
 
-        ThemePreviewCard(view_chain!(
+        ThemePreviewCard(chain!(
             h4("Real-time Propagation"),
             p("These styles react to the Rust theme object via CSS variables."),
             ThemeButton("Themed Scoped Button").active(false)
@@ -519,7 +519,7 @@ pub fn Theming() -> impl View {
             .style("color: #9ca3af; margin-bottom: 24px;"),
 
         div![
-            ThemePreviewCard(view_chain!(
+            ThemePreviewCard(chain!(
                 h4("Primary Patch"),
                 p("This card ONLY patches 'primary' to Hot Pink."),
                 div![
@@ -534,10 +534,10 @@ pub fn Theming() -> impl View {
         p("Theme variables are injected via 'apply', ensuring no extra DOM wrappers break CSS layouts like Flex or Grid.")
             .style("color: #9ca3af; margin-bottom: 24px;"),
 
-        DemoCard(view_chain!(
+        DemoCard(chain!(
             h4("1. Theme variables in Flex (Stack)"),
             p("The red border is a Stack. Variable injection doesn't break the flow.").style("margin-bottom: 12px; font-size: 0.9em; opacity: 0.7;"),
-            Stack(view_chain!(
+            Stack(chain!(
                 div("Themed Row 1").style(sty().background(AppTheme::SURFACE_ALT).padding(px(10)).margin(px(4)).border_radius(px(4)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::PRIMARY)))
                     .apply(theme_variables(theme)),
                 div("Themed Row 2").style(sty().background(AppTheme::SURFACE_ALT).padding(px(10)).margin(px(4)).border_radius(px(4)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::SECONDARY)))
@@ -545,11 +545,11 @@ pub fn Theming() -> impl View {
             )).style(sty().border(border(px(2), BorderStyleKeyword::Solid, hex("#ef4444"))).padding(px(8)))
         )),
 
-        DemoCard(view_chain!(
+        DemoCard(chain!(
             h4("2. Nested Layout Stability"),
             p("Even deeply nested layouts remain stable with variable injection.").style("margin-bottom: 12px; font-size: 0.9em; opacity: 0.7;"),
-            Stack(view_chain!(
-                Stack(view_chain!(
+            Stack(chain!(
+                Stack(chain!(
                     div("Nested 1").style(sty().background(AppTheme::SURFACE).color(AppTheme::TEXT).padding(px(10)).border_radius(px(4)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::PRIMARY))),
                     div("Nested 2").style(sty().background(AppTheme::SURFACE).color(AppTheme::TEXT).padding(px(10)).border_radius(px(4)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::SECONDARY))),
                 )).gap(4).apply(theme_variables(theme)),
@@ -567,11 +567,11 @@ pub fn AdvancedStyling() -> impl View {
         p("Type-safe CSS math functions and declarative gradients for complex visuals.")
             .style("margin-bottom: 32px; color: #9ca3af; font-size: 1.1em;"),
 
-        Stack(view_chain!(
-            DemoCard(view_chain!(
+        Stack(chain!(
+            DemoCard(chain!(
                 h4("1. Math Functions (calc, clamp, min, max)"),
                 p("Perform type-safe math operations across units at compile time.").style("margin-bottom: 16px; font-size: 0.9em; opacity: 0.7;"),
-                Stack(view_chain!(
+                Stack(chain!(
                     div("Calc: 100% - 60px").style(
                         sty()
                             .width(calc(pct(100) - px(60)))
@@ -594,10 +594,10 @@ pub fn AdvancedStyling() -> impl View {
                     ),
                 )).gap(12)
             )),
-            DemoCard(view_chain!(
+            DemoCard(chain!(
                 h4("2. Gradients DSL"),
                 p("Declarative API for complex linear and radial gradients.").style("margin-bottom: 16px; font-size: 0.9em; opacity: 0.7;"),
-                Grid(view_chain!(
+                Grid(chain!(
                     div![
                         p("Linear").style("margin-bottom: 8px; font-size: 0.8em;"),
                         div(()).style(sty().height(px(100)).border_radius(px(12)).background_image(linear_gradient().to(Direction::ToRight).stop_at(hex("#6366f1"), pct(0)).stop_at(hex("#a855f7"), pct(100)).build()))
@@ -616,7 +616,7 @@ pub fn AdvancedStyling() -> impl View {
                     ],
                 )).columns(2).gap(16)
             )),
-            DemoCard(view_chain!(
+            DemoCard(chain!(
                 h4("3. Responsive & Nested (Style Builder)"),
                 p("The enhanced `sty()` API now supports `@media` and complex nesting, just like the `styled!` macro.").style("margin-bottom: 16px; font-size: 0.9em; opacity: 0.7;"),
                 div![
@@ -655,10 +655,10 @@ pub fn AdvancedStyling() -> impl View {
                     ),
                 ].style("position: relative;")
             )),
-            DemoCard(view_chain!(
+            DemoCard(chain!(
                 h4("4. Complex DSLs (Grid Areas & Font Variations)"),
                 p("Specialized support for complex grid layouts and variable fonts.").style("margin-bottom: 24px; color: #9ca3af;"),
-                Stack(view_chain!(
+                Stack(chain!(
                     div![
                         span("Grid Template Areas").style("margin-bottom: 8px; display: block; font-size: 0.9em; opacity: 0.7;"),
                         div![
@@ -690,7 +690,7 @@ pub fn AdvancedStyling() -> impl View {
         p("Use `@apply` directives inside `css!` & `styled!` blocks and inline Tailwind utility strings in variant definitions.")
             .style("margin-bottom: 24px; color: #9ca3af;"),
 
-        DemoCard(view_chain!(
+        DemoCard(chain!(
             h4("1. `@apply` Directives & Inline Tailwind String Variants"),
             p("Compose complex styles seamlessly using Tailwind utilities within standard styled! components.").style("margin-bottom: 16px; font-size: 0.9em; opacity: 0.7;"),
             div![
@@ -704,13 +704,13 @@ pub fn AdvancedStyling() -> impl View {
         p("Bypass compile-time property and type validation for non-standard CSS or raw value injection.")
             .style("margin-bottom: 24px; color: #9ca3af;"),
 
-        Stack(view_chain!(
-            DemoCard(view_chain!(
+        Stack(chain!(
+            DemoCard(chain!(
                 h4("1. Local Unsafe Blocks"),
                 p("Use `unsafe { ... }` blocks to inject raw properties or bypass type checks locally.").style("margin-bottom: 16px; font-size: 0.9em; opacity: 0.7;"),
                 UnsafeBlockDemo("I have a raw orange glow").style("margin-bottom: 16px;")
             )),
-            DemoCard(view_chain!(
+            DemoCard(chain!(
                 h4("2. Global Unsafe Component"),
                 p("Marking a styled component as `unsafe` disables all validation for its entire CSS block.").style("margin-bottom: 16px; font-size: 0.9em; opacity: 0.7;"),
                 UnsafeCompDemo("Everything here is raw").style("width: 100%;")

@@ -15,7 +15,7 @@ pub mod prelude {
         ApplyAttributes, AutoReactiveView, HostResourceHandle, Prop, PropFixed, PropMissing, View,
         ViewCons, ViewNil, any::*, logic::*,
     };
-    pub use crate::{view_chain, view_match};
+    pub use crate::{chain, view_match};
 }
 
 use wasm_bindgen::JsCast;

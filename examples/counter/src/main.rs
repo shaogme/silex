@@ -147,7 +147,7 @@ fn HomeView<'scope>(
              .on_hover(scope.callback(|_| {
                  web_sys::console::log_1(&"Card Hovered!".into());
              }))
-             .child(view_chain!(
+             .child(chain!(
                  CounterControls(count, set_count),
                  CounterDisplay(scope, count),
              )),

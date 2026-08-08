@@ -334,7 +334,7 @@ pub fn PopoverContent<'scope>(
 
     rx!(scope; {
         if *$is_open {
-            crate::components::Portal(view_chain!(
+            crate::components::Portal(chain!(
                 // Overlay for click-outside
                 div(()).class(tw!("fixed inset-0 z-50 bg-transparent")).on(
                     event::click,

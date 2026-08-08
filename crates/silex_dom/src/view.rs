@@ -1711,7 +1711,7 @@ impl<'scope, H: View<'scope>, T: View<'scope>> View<'scope> for ViewCons<H, T> {
 }
 
 #[macro_export]
-macro_rules! view_chain {
+macro_rules! chain {
     () => {
         $crate::view::ViewNil
     };
@@ -1719,7 +1719,7 @@ macro_rules! view_chain {
         $crate::view::ViewCons($head, $crate::view::ViewNil)
     };
     ($head:expr, $($tail:expr),+ $(,)?) => {
-        $crate::view::ViewCons($head, $crate::view_chain!($($tail),+))
+        $crate::view::ViewCons($head, $crate::chain!($($tail),+))
     };
 }
 

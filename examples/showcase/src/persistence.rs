@@ -85,7 +85,7 @@ fn BackendGrid(ctx: RouterContext) -> impl View {
         .default("Stored in URL Query".to_string())
         .build();
 
-    Card(view_chain!(
+    Card(chain!(
         p("Different storage areas serving different lifetimes and visibility needs."),
         div![
             div![
@@ -149,7 +149,7 @@ fn ManualFlushDemo() -> impl View {
         .default(String::new())
         .build();
 
-    Card(view_chain!(
+    Card(chain!(
         p("Sometimes you don't want every keystroke saved. Use Manual mode for 'Save' button behavior."),
         div![
             textarea("")
@@ -195,7 +195,7 @@ fn DebounceDemo() -> impl View {
         .default(String::new())
         .build();
 
-    Card(view_chain!(
+    Card(chain!(
         p("Optimizes performance by delaying the write operation until 1.5s after the last change."),
         div![
             input()
@@ -242,7 +242,7 @@ fn ErrorHandlingDemo() -> impl View {
         .default(Settings::default())
         .build();
 
-    Card(view_chain!(
+    Card(chain!(
         p("Using JSON codec for complex types with built-in error recovery policies."),
         div![
             div![

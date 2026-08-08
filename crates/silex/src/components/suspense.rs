@@ -60,7 +60,7 @@ where
             } else {
                 "display: none".to_string()
             });
-            view_chain!(
+            chain!(
                 div(initial_view.clone())
                     .class("suspense-content")
                     .style(content_display),
@@ -95,7 +95,7 @@ where
                     AnyView::Empty
                 }
             });
-            view_chain!(content, fallback_view).into_any()
+            chain!(content, fallback_view).into_any()
         }
     }
 }

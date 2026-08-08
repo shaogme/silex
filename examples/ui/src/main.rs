@@ -5,14 +5,14 @@ use silex::ui::{Button, Dialog, Input, Progress, Switch, Textarea, *};
 
 #[component]
 fn ButtonShowcase() -> impl View {
-    Card(view_chain!(
-        CardHeader(view_chain!(
+    Card(chain!(
+        CardHeader(chain!(
             CardTitle("Button & Badge System"),
             CardDescription("Standard variants and sizes ported from shadcn/ui.")
         )),
-        CardContent(view_chain!(
+        CardContent(chain!(
             // Variants
-            div(view_chain!(
+            div(chain!(
                 span("Variants").class(tw!(
                     "text-xs font-semibold text-slate-500 dark:text-slate-400 w-full mb-1"
                 )),
@@ -25,7 +25,7 @@ fn ButtonShowcase() -> impl View {
             ))
             .class(tw!("flex flex-wrap items-center gap-2 mb-6")),
             // Sizes
-            div(view_chain!(
+            div(chain!(
                 span("Sizes").class(tw!(
                     "text-xs font-semibold text-slate-500 dark:text-slate-400 w-full mb-1"
                 )),
@@ -38,7 +38,7 @@ fn ButtonShowcase() -> impl View {
             ))
             .class(tw!("flex flex-wrap items-center gap-2 mb-6")),
             // Badges
-            div(view_chain!(
+            div(chain!(
                 span("Badges").class(tw!(
                     "text-xs font-semibold text-slate-500 dark:text-slate-400 w-full mb-1"
                 )),
@@ -60,14 +60,14 @@ fn FormControlsShowcase() -> impl View {
     let (checked_val, set_checked_val) = Signal::pair(true);
     let (switch_val, set_switch_val) = Signal::pair(true);
 
-    Card(view_chain!(
-        CardHeader(view_chain!(
+    Card(chain!(
+        CardHeader(chain!(
             CardTitle("Form & Interactive Controls"),
             CardDescription("Reactive Input, Textarea, Checkbox and Switch components.")
         )),
-        CardContent(view_chain!(
+        CardContent(chain!(
             // Input
-            div(view_chain!(
+            div(chain!(
                 span("Text Input").class(tw!("text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1")),
                 Input()
                     .value(text_val)
@@ -78,7 +78,7 @@ fn FormControlsShowcase() -> impl View {
             )).class(tw!("flex flex-col mb-6")),
 
             // Textarea
-            div(view_chain!(
+            div(chain!(
                 span("Textarea").class(tw!("text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1")),
                 Textarea()
                     .value("Multi-line textarea component styling ported straight from shadcn/ui v4.")
@@ -86,15 +86,15 @@ fn FormControlsShowcase() -> impl View {
             )).class(tw!("flex flex-col mb-6")),
 
             // Checkbox & Switch
-            div(view_chain!(
-                div(view_chain!(
+            div(chain!(
+                div(chain!(
                     Checkbox()
                         .checked(checked_val)
                         .on_change(move |v| set_checked_val.set(v)),
                     span("Enable Notifications").class(tw!("text-sm font-medium text-slate-900 dark:text-slate-100"))
                 )).class(tw!("flex items-center gap-2")),
 
-                div(view_chain!(
+                div(chain!(
                     Switch()
                         .checked(switch_val)
                         .on_change(move |v| set_switch_val.set(v)),
@@ -110,16 +110,16 @@ fn TabsAndDialogShowcase() -> impl View {
     let (active_tab, set_active_tab) = Signal::pair("account".to_string());
     let (dialog_open, set_dialog_open) = Signal::pair(false);
 
-    Card(view_chain!(
-        CardHeader(view_chain!(
+    Card(chain!(
+        CardHeader(chain!(
             CardTitle("Tabs & Modal Dialog"),
             CardDescription("Seamless tab switching and portal-rendered modal dialogs.")
         )),
-        CardContent(view_chain!(
+        CardContent(chain!(
             // Tabs
-            div(view_chain!(
-                Tabs(view_chain!(
-                    TabsList(view_chain!(
+            div(chain!(
+                Tabs(chain!(
+                    TabsList(chain!(
                         TabsTrigger("Account", "account")
                             .active_tab(active_tab)
                             .on_select(move |tab: &'static str| set_active_tab.set(tab.to_string())),
@@ -155,7 +155,7 @@ fn TabsAndDialogShowcase() -> impl View {
             ))
             .class(tw!("mb-6")),
             Separator().class(tw!("my-4")),
-            div(view_chain!(
+            div(chain!(
                 span("Silex UI"),
                 Separator().orientation("vertical").class(tw!("h-4 mx-2")),
                 span("Docs"),
@@ -164,23 +164,23 @@ fn TabsAndDialogShowcase() -> impl View {
             ))
             .class(tw!("flex items-center text-xs font-medium text-slate-500 dark:text-slate-400 mb-4")),
             // Dialog Trigger
-            div(view_chain!(
+            div(chain!(
                 Button("Open Modal Dialog")
                     .variant("default")
                     .on_click(move |_| set_dialog_open.set(true)),
-                Dialog(view_chain!(
-                    DialogHeader(view_chain!(
+                Dialog(chain!(
+                    DialogHeader(chain!(
                         DialogTitle("Edit Profile"),
                         DialogDescription(
                             "Make changes to your profile here. Click save when you're done."
                         )
                     )),
-                    div(view_chain!(
+                    div(chain!(
                         Input().value("Shao G.").placeholder("Name"),
                         Input().value("shaog.me@gmail.com").placeholder("Email")
                     ))
                     .class(tw!("grid gap-3 py-4")),
-                    DialogFooter(view_chain!(
+                    DialogFooter(chain!(
                         Button("Cancel")
                             .variant("outline")
                             .on_click(move |_| set_dialog_open.set(false)),
@@ -201,48 +201,48 @@ fn TabsAndDialogShowcase() -> impl View {
 fn FeedbackAndDataShowcase() -> impl View {
     let (progress_val, set_progress_val) = Signal::pair(45u32);
 
-    Card(view_chain!(
-        CardHeader(view_chain!(
+    Card(chain!(
+        CardHeader(chain!(
             CardTitle("Avatars, Progress & Feedback"),
             CardDescription("Progress indicators, Avatar fallback, Alert banners and Skeletons.")
         )),
-        CardContent(view_chain!(
+        CardContent(chain!(
             // Alert
-            Alert(view_chain!(
+            Alert(chain!(
                 AlertTitle("System Update Complete"),
                 AlertDescription("All shadcn/ui components have been successfully compiled into Silex zero-runtime AST.")
             )).variant("default").class(tw!("mb-6")),
 
             // Progress Bar
-            div(view_chain!(
-                div(view_chain!(
+            div(chain!(
+                div(chain!(
                     span("Progress").class(tw!("text-xs font-semibold text-slate-500 dark:text-slate-400")),
                     span(rx!(move || format!("{}%", progress_val.get()))).class(tw!("text-xs font-bold text-indigo-600 dark:text-indigo-400"))
                 )).class(tw!("flex justify-between items-center mb-1.5")),
                 Progress().value(progress_val).class(tw!("mb-3")),
-                div(view_chain!(
+                div(chain!(
                     Button("-10%").variant("outline").size("xs").on_click(move |_| set_progress_val.update(|v| *v = v.saturating_sub(10))),
                     Button("+10%").variant("outline").size("xs").on_click(move |_| set_progress_val.update(|v| *v = (*v + 10).min(100)))
                 )).class(tw!("flex justify-end gap-2"))
             )).class(tw!("mb-6")),
 
             // Avatar & Skeleton
-            div(view_chain!(
+            div(chain!(
                 // Avatars
-                div(view_chain!(
-                    Avatar(view_chain!(
+                div(chain!(
+                    Avatar(chain!(
                         AvatarFallback("SG")
                     )),
-                    Avatar(view_chain!(
+                    Avatar(chain!(
                         AvatarFallback("UI").variant("indigo")
                     )).class(tw!("bg-indigo-600 text-white")),
-                    Avatar(view_chain!(
+                    Avatar(chain!(
                         AvatarFallback("SX").variant("emerald")
                     )).class(tw!("bg-emerald-600 text-white"))
                 )).class(tw!("flex items-center gap-3")),
 
                 // Skeletons
-                div(view_chain!(
+                div(chain!(
                     Skeleton().class(tw!("h-4 w-32")),
                     Skeleton().class(tw!("h-4 w-20"))
                 )).class(tw!("flex flex-col gap-2"))
@@ -259,16 +259,16 @@ fn NewComponentsShowcase() -> impl View {
     let (popover_open, set_popover_open) = Signal::pair(false);
     let (accordion_open, set_accordion_open) = Signal::pair(true);
 
-    Card(view_chain!(
-        CardHeader(view_chain!(
+    Card(chain!(
+        CardHeader(chain!(
             CardTitle("Extended shadcn/ui Components"),
             CardDescription("1:1 ported Slider, Tooltip, Toggle, RadioGroup, Accordion & Popover.")
         )),
-        CardContent(view_chain!(
+        CardContent(chain!(
             // Slider & Toggle
-            div(view_chain!(
-                div(view_chain!(
-                    div(view_chain!(
+            div(chain!(
+                div(chain!(
+                    div(chain!(
                         span("Volume Slider").class(tw!("text-xs font-semibold text-slate-500 dark:text-slate-400")),
                         span(rx!(move || format!("{:.0}%", slider_val.get()))).class(tw!("text-xs font-bold text-indigo-600 dark:text-indigo-400"))
                     )).class(tw!("flex justify-between items-center mb-2")),
@@ -279,7 +279,7 @@ fn NewComponentsShowcase() -> impl View {
                         .on_change(move |v| set_slider_val.set(v))
                 )).class(tw!("flex-1")),
 
-                div(view_chain!(
+                div(chain!(
                     span("Bold Toggle").class(tw!("text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1 block")),
                     Toggle(span("B").class(tw!("font-bold")))
                         .variant("outline")
@@ -289,8 +289,8 @@ fn NewComponentsShowcase() -> impl View {
             )).class(tw!("flex items-center gap-6 mb-6")),
 
             // Tooltip & Popover
-            div(view_chain!(
-                Tooltip(move |ctx| view_chain!(
+            div(chain!(
+                Tooltip(move |ctx| chain!(
                     TooltipTrigger(
                         Button("Hover for Tooltip")
                             .variant("outline")
@@ -305,23 +305,23 @@ fn NewComponentsShowcase() -> impl View {
                         .side("top")
                 )),
 
-                Popover(move |ctx| view_chain!(
+                Popover(move |ctx| chain!(
                     PopoverTrigger(
                         Button("Open Popover")
                             .variant("default")
                             .size("sm")
                     )
                     .ctx(ctx),
-                    PopoverContent(view_chain!(
-                        PopoverHeader(view_chain!(
+                    PopoverContent(chain!(
+                        PopoverHeader(chain!(
                             PopoverTitle("Dimensions"),
                             PopoverDescription("Set the height and width for the layer.")
                         )),
-                        div(view_chain!(
+                        div(chain!(
                             Input().value("100%").placeholder("Width"),
                             Input().value("300px").placeholder("Height")
                         )).class(tw!("grid gap-2 py-2")),
-                        div(view_chain!(
+                        div(chain!(
                             PopoverClose(
                                 Button("Close")
                                     .variant("outline")
@@ -335,25 +335,25 @@ fn NewComponentsShowcase() -> impl View {
             )).class(tw!("flex items-center gap-4 mb-6")),
 
             // RadioGroup & Accordion
-            div(view_chain!(
-                div(view_chain!(
+            div(chain!(
+                div(chain!(
                     span("Theme Style").class(tw!("text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2 block")),
-                    RadioGroup(view_chain!(
-                        div(view_chain!(
+                    RadioGroup(chain!(
+                        div(chain!(
                             RadioGroupItem("option-1").selected_value(radio_val).on_select(move |v: &'static str| set_radio_val.set(v.to_string())),
                             span("Default").class(tw!("text-xs font-medium text-slate-900 dark:text-slate-100"))
                         )).class(tw!("flex items-center gap-2")),
-                        div(view_chain!(
+                        div(chain!(
                             RadioGroupItem("option-2").selected_value(radio_val).on_select(move |v: &'static str| set_radio_val.set(v.to_string())),
                             span("Comfortable").class(tw!("text-xs font-medium text-slate-900 dark:text-slate-100"))
                         )).class(tw!("flex items-center gap-2"))
                     ))
                 )).class(tw!("flex-1")),
 
-                div(view_chain!(
+                div(chain!(
                     span("Accordion").class(tw!("text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2 block")),
-                    Accordion(view_chain!(
-                        AccordionItem(view_chain!(
+                    Accordion(chain!(
+                        AccordionItem(chain!(
                             AccordionTrigger("Is Silex 1:1 compatible?")
                                 .open(accordion_open)
                                 .on_click(move |_| set_accordion_open.update(|v| *v = !*v)),
@@ -388,10 +388,10 @@ fn App() -> impl View {
         }
     });
 
-    div(view_chain!(
+    div(chain!(
         // Header
-        div(view_chain!(
-            div(view_chain!(
+        div(chain!(
+            div(chain!(
                 span("🎨 Silex UI Kit").class(tw!(
                     "text-xs font-black uppercase tracking-widest px-3.5 py-1.5 bg-indigo-50 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 rounded-full border border-solid border-indigo-200 dark:border-indigo-800/60 shadow-sm"
                 )),
@@ -408,7 +408,7 @@ fn App() -> impl View {
         )).class(tw!("w-full flex items-center justify-between mb-8 max-w-6xl mx-auto")),
 
         // Hero
-        div(view_chain!(
+        div(chain!(
             h1("Pure Rust shadcn/ui Component Library")
                 .class(tw!("text-3xl sm:text-5xl font-black text-slate-900 dark:text-white tracking-tight mb-4 text-center")),
             p("Zero-runtime overhead Tailwind CSS styling with fine-grained signal reactivity and type-safe Rust components.")
@@ -416,13 +416,13 @@ fn App() -> impl View {
         )).class(tw!("flex flex-col items-center max-w-6xl mx-auto mb-10")),
 
         // Masonry Component Grid
-        div(view_chain!(
-            div(view_chain!(
+        div(chain!(
+            div(chain!(
                 ButtonShowcase(),
                 FormControlsShowcase()
             )).class(tw!("flex flex-col gap-6 w-full")),
 
-            div(view_chain!(
+            div(chain!(
                 TabsAndDialogShowcase(),
                 FeedbackAndDataShowcase(),
                 NewComponentsShowcase()

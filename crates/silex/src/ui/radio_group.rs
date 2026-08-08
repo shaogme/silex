@@ -102,7 +102,7 @@ pub fn RadioGroupItem<'scope>(
         Ok(())
     };
 
-    button(view_chain!(
+    button(chain!(
         // Hidden native radio input for Accessibility & Form submission (referencing slider.rs pattern)
         input()
             .type_("radio")

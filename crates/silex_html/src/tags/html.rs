@@ -136,477 +136,477 @@
 // --- Macros ---
 #[rustfmt::skip] #[macro_export] macro_rules! a {
     () => { $crate::html::a($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::a($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::a($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! abbr {
     () => { $crate::html::abbr($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::abbr($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::abbr($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! acronym {
     () => { $crate::html::acronym($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::acronym($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::acronym($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! address {
     () => { $crate::html::address($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::address($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::address($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! article {
     () => { $crate::html::article($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::article($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::article($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! aside {
     () => { $crate::html::aside($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::aside($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::aside($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! audio {
     () => { $crate::html::audio($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::audio($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::audio($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! b {
     () => { $crate::html::b($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::b($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::b($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! bdi {
     () => { $crate::html::bdi($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::bdi($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::bdi($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! bdo {
     () => { $crate::html::bdo($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::bdo($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::bdo($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! big {
     () => { $crate::html::big($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::big($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::big($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! blockquote {
     () => { $crate::html::blockquote($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::blockquote($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::blockquote($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! body {
     () => { $crate::html::body($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::body($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::body($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! button {
     () => { $crate::html::button($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::button($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::button($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! canvas {
     () => { $crate::html::canvas($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::canvas($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::canvas($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! caption {
     () => { $crate::html::caption($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::caption($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::caption($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! center {
     () => { $crate::html::center($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::center($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::center($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! cite {
     () => { $crate::html::cite($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::cite($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::cite($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! code {
     () => { $crate::html::code($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::code($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::code($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! colgroup {
     () => { $crate::html::colgroup($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::colgroup($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::colgroup($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! data_tag {
     () => { $crate::html::data_tag($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::data_tag($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::data_tag($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! datalist {
     () => { $crate::html::datalist($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::datalist($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::datalist($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! dd {
     () => { $crate::html::dd($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::dd($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::dd($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! del {
     () => { $crate::html::del($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::del($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::del($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! details {
     () => { $crate::html::details($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::details($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::details($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! dfn {
     () => { $crate::html::dfn($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::dfn($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::dfn($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! dialog {
     () => { $crate::html::dialog($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::dialog($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::dialog($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! dir {
     () => { $crate::html::dir($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::dir($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::dir($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! div {
     () => { $crate::html::div($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::div($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::div($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! dl {
     () => { $crate::html::dl($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::dl($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::dl($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! dt {
     () => { $crate::html::dt($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::dt($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::dt($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! em {
     () => { $crate::html::em($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::em($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::em($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! fencedframe {
     () => { $crate::html::fencedframe($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::fencedframe($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::fencedframe($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! fieldset {
     () => { $crate::html::fieldset($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::fieldset($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::fieldset($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! figcaption {
     () => { $crate::html::figcaption($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::figcaption($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::figcaption($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! figure {
     () => { $crate::html::figure($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::figure($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::figure($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! font {
     () => { $crate::html::font($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::font($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::font($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! footer {
     () => { $crate::html::footer($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::footer($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::footer($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! form {
     () => { $crate::html::form($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::form($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::form($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! frame {
     () => { $crate::html::frame($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::frame($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::frame($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! frameset {
     () => { $crate::html::frameset($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::frameset($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::frameset($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! geolocation {
     () => { $crate::html::geolocation($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::geolocation($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::geolocation($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! h1 {
     () => { $crate::html::h1($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::h1($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::h1($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! h2 {
     () => { $crate::html::h2($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::h2($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::h2($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! h3 {
     () => { $crate::html::h3($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::h3($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::h3($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! h4 {
     () => { $crate::html::h4($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::h4($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::h4($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! h5 {
     () => { $crate::html::h5($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::h5($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::h5($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! h6 {
     () => { $crate::html::h6($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::h6($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::h6($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! head {
     () => { $crate::html::head($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::head($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::head($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! header {
     () => { $crate::html::header($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::header($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::header($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! hgroup {
     () => { $crate::html::hgroup($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::hgroup($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::hgroup($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! html {
     () => { $crate::html::html($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::html($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::html($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! i {
     () => { $crate::html::i($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::i($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::i($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! iframe {
     () => { $crate::html::iframe($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::iframe($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::iframe($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! ins {
     () => { $crate::html::ins($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::ins($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::ins($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! kbd {
     () => { $crate::html::kbd($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::kbd($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::kbd($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! label {
     () => { $crate::html::label($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::label($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::label($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! legend {
     () => { $crate::html::legend($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::legend($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::legend($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! li {
     () => { $crate::html::li($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::li($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::li($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! main {
     () => { $crate::html::main($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::main($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::main($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! map {
     () => { $crate::html::map($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::map($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::map($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! mark {
     () => { $crate::html::mark($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::mark($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::mark($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! marquee {
     () => { $crate::html::marquee($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::marquee($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::marquee($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! menu {
     () => { $crate::html::menu($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::menu($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::menu($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! meter {
     () => { $crate::html::meter($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::meter($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::meter($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! nav {
     () => { $crate::html::nav($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::nav($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::nav($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! nobr {
     () => { $crate::html::nobr($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::nobr($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::nobr($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! noembed {
     () => { $crate::html::noembed($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::noembed($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::noembed($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! noframes {
     () => { $crate::html::noframes($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::noframes($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::noframes($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! noscript {
     () => { $crate::html::noscript($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::noscript($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::noscript($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! object {
     () => { $crate::html::object($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::object($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::object($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! ol {
     () => { $crate::html::ol($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::ol($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::ol($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! optgroup {
     () => { $crate::html::optgroup($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::optgroup($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::optgroup($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! option_tag {
     () => { $crate::html::option_tag($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::option_tag($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::option_tag($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! output {
     () => { $crate::html::output($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::output($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::output($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! p {
     () => { $crate::html::p($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::p($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::p($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! picture {
     () => { $crate::html::picture($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::picture($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::picture($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! plaintext {
     () => { $crate::html::plaintext($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::plaintext($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::plaintext($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! pre {
     () => { $crate::html::pre($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::pre($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::pre($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! progress {
     () => { $crate::html::progress($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::progress($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::progress($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! q {
     () => { $crate::html::q($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::q($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::q($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! rb {
     () => { $crate::html::rb($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::rb($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::rb($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! rp {
     () => { $crate::html::rp($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::rp($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::rp($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! rt {
     () => { $crate::html::rt($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::rt($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::rt($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! rtc {
     () => { $crate::html::rtc($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::rtc($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::rtc($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! ruby {
     () => { $crate::html::ruby($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::ruby($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::ruby($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! s {
     () => { $crate::html::s($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::s($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::s($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! samp {
     () => { $crate::html::samp($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::samp($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::samp($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! script {
     () => { $crate::html::script($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::script($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::script($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! search {
     () => { $crate::html::search($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::search($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::search($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! section {
     () => { $crate::html::section($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::section($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::section($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! select {
     () => { $crate::html::select($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::select($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::select($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! selectedcontent {
     () => { $crate::html::selectedcontent($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::selectedcontent($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::selectedcontent($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! slot {
     () => { $crate::html::slot($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::slot($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::slot($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! small {
     () => { $crate::html::small($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::small($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::small($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! span {
     () => { $crate::html::span($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::span($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::span($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! strike {
     () => { $crate::html::strike($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::strike($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::strike($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! strong {
     () => { $crate::html::strong($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::strong($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::strong($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! style {
     () => { $crate::html::style($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::style($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::style($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! sub {
     () => { $crate::html::sub($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::sub($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::sub($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! summary {
     () => { $crate::html::summary($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::summary($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::summary($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! sup {
     () => { $crate::html::sup($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::sup($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::sup($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! table {
     () => { $crate::html::table($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::table($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::table($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! tbody {
     () => { $crate::html::tbody($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::tbody($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::tbody($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! td {
     () => { $crate::html::td($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::td($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::td($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! template {
     () => { $crate::html::template($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::template($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::template($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! textarea {
     () => { $crate::html::textarea($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::textarea($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::textarea($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! tfoot {
     () => { $crate::html::tfoot($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::tfoot($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::tfoot($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! th {
     () => { $crate::html::th($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::th($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::th($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! thead {
     () => { $crate::html::thead($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::thead($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::thead($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! time {
     () => { $crate::html::time($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::time($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::time($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! title {
     () => { $crate::html::title($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::title($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::title($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! tr {
     () => { $crate::html::tr($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::tr($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::tr($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! tt {
     () => { $crate::html::tt($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::tt($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::tt($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! u {
     () => { $crate::html::u($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::u($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::u($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! ul {
     () => { $crate::html::ul($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::ul($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::ul($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! var {
     () => { $crate::html::var($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::var($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::var($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! video {
     () => { $crate::html::video($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::video($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::video($crate::chain!($($child),+)) };
 }
 #[rustfmt::skip] #[macro_export] macro_rules! xmp {
     () => { $crate::html::xmp($crate::ViewNil) };
-    ($($child:expr),+ $(,)?) => { $crate::html::xmp($crate::view_chain!($($child),+)) };
+    ($($child:expr),+ $(,)?) => { $crate::html::xmp($crate::chain!($($child),+)) };
 }
