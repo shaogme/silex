@@ -1,0 +1,8 @@
+error: lifetime may not live long enough
+ --> tests/ui/fail_mounted_app_scope_escape.rs:8:5
+  |
+4 | fn leak_scope<'scope>(
+  |               ------ lifetime `'scope` defined here
+...
+8 |     *slot = Some(context.scope());
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ assignment requires that `'scope` must outlive `'static`
