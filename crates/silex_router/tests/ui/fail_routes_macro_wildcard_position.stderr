@@ -1,0 +1,5 @@
+error: wildcard route parameters must be the final segment
+ --> tests/ui/fail_routes_macro_wildcard_position.rs:5:15
+  |
+5 |         files "/files/*rest/more" => move |_ctx| {
+  |               ^^^^^^^^^^^^^^^^^^^

@@ -1,0 +1,5 @@
+error: route pattern `/users/:name` conflicts with another normalized route pattern
+ --> tests/ui/fail_routes_macro_duplicate.rs:8:9
+  |
+8 |         second "/users/:name" => move |_ctx, name: u32| {
+  |         ^^^^^^

@@ -1,7 +1,7 @@
 #![allow(linker_messages)]
 
 use proc_macro::TokenStream;
-#[cfg(any(feature = "component", feature = "store", feature = "route"))]
+#[cfg(any(feature = "component", feature = "store"))]
 use syn::{DeriveInput, parse_macro_input};
 
 #[cfg(feature = "component")]
@@ -170,10 +170,9 @@ pub fn derive_props_builder(input: TokenStream) -> TokenStream {
 }
 
 #[cfg(feature = "route")]
-#[proc_macro_derive(Route, attributes(route, nested))]
-pub fn derive_route(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as DeriveInput);
-    match route::derive_route_impl(input) {
+#[proc_macro]
+pub fn routes(input: TokenStream) -> TokenStream {
+    match route::routes_impl(input.into()) {
         Ok(tokens) => tokens.into(),
         Err(e) => e.to_compile_error().into(),
     }

@@ -1,3 +1,4 @@
+use crate::ToRoute;
 use silex_core::{
     RuntimeInputs, Scope, SilexResult,
     reactivity::{Memo, ReadSignal, StoredValue, WriteSignal, runtime_inputs_of},
@@ -249,12 +250,12 @@ impl<'scope> Navigator<'scope> {
     }
 
     /// 导航到指定路径
-    pub fn push<T: crate::ToRoute>(self, to: T) {
+    pub fn push<T: ToRoute>(self, to: T) {
         self.handle_navigation(&to.to_route(), false);
     }
 
     /// 替换当前路径
-    pub fn replace<T: crate::ToRoute>(self, to: T) {
+    pub fn replace<T: ToRoute>(self, to: T) {
         self.handle_navigation(&to.to_route(), true);
     }
 

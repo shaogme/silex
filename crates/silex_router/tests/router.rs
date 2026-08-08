@@ -5,8 +5,8 @@ use silex_dom::view::{
     AnyView, ApplyAttributes, ScopedViewOwner, View, ViewOwner, mount_text_node,
 };
 use silex_router::{
-    Link, Routable, RouteView, Router, RouterContext, RouterContextProps, RouterMatchView,
-    RouterRouteView, RouterViewFactory,
+    Link, Navigator, RouteEntry, RoutePath, RouteTable, Router, RouterContext, RouterContextProps,
+    RouterViewFactory,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -112,116 +112,6 @@ fn dispatch_popstate() {
         .expect("popstate can be dispatched");
 }
 
-struct RouterCleanupView {
-    text: String,
-    cleanups: Rc<Cell<u32>>,
-}
-
-impl<'scope> ApplyAttributes<'scope> for RouterCleanupView {}
-
-impl<'scope> View<'scope> for RouterCleanupView {
-    fn mount(
-        &self,
-        owner: &dyn ViewOwner<'scope>,
-        parent: &web_sys::Node,
-        _attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
-    ) -> silex_core::SilexResult<()> {
-        let cleanups = self.cleanups.clone();
-        owner.on_cleanup(
-            Box::new(move || -> SilexResult<()> {
-                cleanups.set(cleanups.get() + 1);
-                Ok(())
-            }),
-            owner.token().error_handler(),
-        )?;
-        mount_text_node(parent, &self.text)?;
-        Ok(())
-    }
-
-    fn mount_owned(
-        self,
-        owner: &dyn ViewOwner<'scope>,
-        parent: &web_sys::Node,
-        attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
-    ) -> silex_core::SilexResult<()>
-    where
-        Self: Sized,
-    {
-        self.mount(owner, parent, attrs)
-    }
-}
-
-struct FactoryTextView<'scope> {
-    text: ReadSignal<'scope, String>,
-    cleanups: Rc<Cell<u32>>,
-}
-
-impl<'scope> ApplyAttributes<'scope> for FactoryTextView<'scope> {}
-
-impl<'scope> View<'scope> for FactoryTextView<'scope> {
-    fn mount(
-        &self,
-        owner: &dyn ViewOwner<'scope>,
-        parent: &web_sys::Node,
-        _attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
-    ) -> silex_core::SilexResult<()> {
-        let cleanups = self.cleanups.clone();
-        owner.on_cleanup(
-            Box::new(move || -> SilexResult<()> {
-                cleanups.set(cleanups.get() + 1);
-                Ok(())
-            }),
-            owner.token().error_handler(),
-        )?;
-        mount_text_node(parent, &self.text.get())?;
-        Ok(())
-    }
-
-    fn mount_owned(
-        self,
-        owner: &dyn ViewOwner<'scope>,
-        parent: &web_sys::Node,
-        attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
-    ) -> silex_core::SilexResult<()>
-    where
-        Self: Sized,
-    {
-        self.mount(owner, parent, attrs)
-    }
-}
-
-#[derive(Clone, PartialEq)]
-enum TestRoute {
-    Home,
-    Users,
-}
-
-impl Routable for TestRoute {
-    fn match_path(path: &str) -> Option<Self> {
-        match path {
-            "/" | "/home" => Some(Self::Home),
-            "/users" => Some(Self::Users),
-            _ => None,
-        }
-    }
-
-    fn to_path(&self) -> String {
-        match self {
-            Self::Home => "/home".to_string(),
-            Self::Users => "/users".to_string(),
-        }
-    }
-}
-
-impl RouteView for TestRoute {
-    fn render<'scope>(&self, _ctx: RouterContext<'scope>) -> AnyView<'scope> {
-        match self {
-            Self::Home => AnyView::from("home"),
-            Self::Users => AnyView::from("users"),
-        }
-    }
-}
-
 fn set_url(path: &str) {
     web_sys::window()
         .expect("window is available")
@@ -245,64 +135,88 @@ fn mount_host() -> web_sys::Node {
     host
 }
 
+fn navigation_table<'scope>(
+    navigator: Rc<RefCell<Option<Navigator<'scope>>>>,
+) -> RouteTable<'scope> {
+    let home_navigator = navigator.clone();
+    let user_navigator = navigator.clone();
+    let fallback = RouteEntry::new("/*", move |_, _| Some(AnyView::from("not found")))
+        .expect("fallback route should compile");
+    RouteTable::from_entries(vec![
+        RouteEntry::new("/", move |_, context| {
+            *home_navigator.borrow_mut() = Some(context.navigator);
+            Some(AnyView::from("home"))
+        })
+        .expect("home route should compile"),
+        RouteEntry::new("/users/:id", move |matched, context| {
+            *user_navigator.borrow_mut() = Some(context.navigator);
+            let id = matched.parse::<u32>("id").ok()?;
+            Some(AnyView::from(id.to_string()))
+        })
+        .expect("user route should compile"),
+        RouteEntry::new("/home", move |_, context| {
+            *navigator.borrow_mut() = Some(context.navigator);
+            Some(AnyView::from("home"))
+        })
+        .expect("named home route should compile"),
+        fallback,
+    ])
+    .expect("route table should compile")
+}
+
 #[wasm_bindgen_test]
-fn router_navigation_popstate_and_dispose_follow_owner() {
-    set_url("/app/users?tab=initial");
+fn router_navigation_uses_required_table_and_updates_outlet() {
+    set_url("/app/users/7?tab=initial");
     let spy = RouterListenerSpy::new();
     let host = mount_host();
+    let navigator = Rc::new(RefCell::new(None));
     let mut runtime = Runtime::new();
     let root = runtime.run();
 
     root.with_scope(|scope| {
-        let navigator = Rc::new(RefCell::new(None));
-        let navigator_for_children = navigator.clone();
-        let navigator_for_cleanup = navigator.clone();
-        let view = Router(scope).base("/app").children(Rc::new(move |ctx| {
-            *navigator_for_children.borrow_mut() = Some(ctx.navigator);
-            RouterRouteView::<TestRoute>::new(ctx).into_any()
-        }));
+        let view = Router(scope)
+            .base("/app")
+            .routes(navigation_table(navigator.clone()));
         let owner = ScopedViewOwner::new(scope, test_handler());
         view.mount_owned(&owner, &host, Vec::new())
             .expect("router view should mount");
 
-        assert_eq!(host.text_content().as_deref(), Some("users"));
+        assert_eq!(host.text_content().as_deref(), Some("7"));
         assert_eq!(spy.count("add"), 1);
-        let navigator = navigator
-            .borrow()
-            .as_ref()
-            .copied()
-            .expect("router exposes navigator");
-
-        navigator.push(TestRoute::Home);
-        assert_eq!(host.text_content().as_deref(), Some("home"));
-        assert_eq!(
-            web_sys::window().unwrap().location().pathname().unwrap(),
-            "/app/home"
-        );
-
-        let history_length = web_sys::window().unwrap().history().unwrap().length();
-        navigator.replace("/users?tab=replaced");
-        assert_eq!(host.text_content().as_deref(), Some("users"));
-        assert_eq!(
-            web_sys::window().unwrap().history().unwrap().length(),
-            history_length,
-            "replace must reuse the current history entry"
-        );
-        assert_eq!(
-            web_sys::window().unwrap().location().search().unwrap(),
-            "?tab=replaced"
-        );
-
-        set_url("/app/home?tab=popstate");
-        dispatch_popstate();
-        assert_eq!(host.text_content().as_deref(), Some("home"));
-
-        navigator_for_cleanup.borrow_mut().take();
     });
+
+    let navigator = navigator
+        .borrow()
+        .as_ref()
+        .copied()
+        .expect("route handler should expose navigator");
+    navigator.push(RoutePath::new("/home").expect("route path should be valid"));
+    assert_eq!(host.text_content().as_deref(), Some("home"));
+    assert_eq!(
+        web_sys::window().unwrap().location().pathname().unwrap(),
+        "/app/home"
+    );
+
+    let history_length = web_sys::window().unwrap().history().unwrap().length();
+    navigator.replace("/users/8?tab=replaced");
+    assert_eq!(host.text_content().as_deref(), Some("8"));
+    assert_eq!(
+        web_sys::window().unwrap().history().unwrap().length(),
+        history_length,
+        "replace must reuse the current history entry"
+    );
+    assert_eq!(
+        web_sys::window().unwrap().location().search().unwrap(),
+        "?tab=replaced"
+    );
+
+    set_url("/app/users/9?tab=popstate");
+    dispatch_popstate();
+    assert_eq!(host.text_content().as_deref(), Some("9"));
 
     root.dispose().expect("root cleanup should succeed");
     assert_eq!(spy.count("remove"), 1);
-    set_url("/app/users");
+    set_url("/app/users/10");
     dispatch_popstate();
     assert_eq!(host.text_content().as_deref(), Some(""));
 
@@ -314,7 +228,64 @@ fn router_navigation_popstate_and_dispose_follow_owner() {
 }
 
 #[wasm_bindgen_test]
-fn link_active_class_tracks_the_router_path() {
+fn router_layout_is_created_once_while_outlet_changes() {
+    set_url("/app/one");
+    let host = mount_host();
+    let navigator = Rc::new(RefCell::new(None));
+    let layouts = Rc::new(Cell::new(0));
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+
+    root.with_scope(|scope| {
+        let navigator_for_one = navigator.clone();
+        let navigator_for_two = navigator.clone();
+        let table = RouteTable::from_entries(vec![
+            RouteEntry::new("/one", move |_, context| {
+                *navigator_for_one.borrow_mut() = Some(context.navigator);
+                Some(AnyView::from("one"))
+            })
+            .expect("first route should compile"),
+            RouteEntry::new("/two", move |_, context| {
+                *navigator_for_two.borrow_mut() = Some(context.navigator);
+                Some(AnyView::from("two"))
+            })
+            .expect("second route should compile"),
+        ])
+        .expect("route table should compile");
+        let layouts_for_view = layouts.clone();
+        let view = Router(scope)
+            .base("/app")
+            .routes(table)
+            .layout(move |_context, outlet| {
+                layouts_for_view.set(layouts_for_view.get() + 1);
+                outlet
+            });
+        let owner = ScopedViewOwner::new(scope, test_handler());
+        view.mount_owned(&owner, &host, Vec::new())
+            .expect("router view should mount");
+    });
+
+    assert_eq!(host.text_content().as_deref(), Some("one"));
+    assert_eq!(layouts.get(), 1);
+    let navigator = navigator
+        .borrow()
+        .as_ref()
+        .copied()
+        .expect("route handler should expose navigator");
+    navigator.push(RoutePath::new("/two").expect("route path should be valid"));
+    assert_eq!(host.text_content().as_deref(), Some("two"));
+    assert_eq!(layouts.get(), 1);
+
+    root.dispose().expect("root cleanup should succeed");
+    host.parent_node()
+        .expect("host has a parent")
+        .remove_child(&host)
+        .expect("host can be removed");
+    set_url("/");
+}
+
+#[wasm_bindgen_test]
+fn link_requires_context_and_tracks_active_path() {
     set_url("/");
     let host = mount_host();
     let mut runtime = Runtime::new();
@@ -334,8 +305,7 @@ fn link_active_class_tracks_the_router_path() {
             },
         )
         .expect("router context should be created");
-        let link = Link("/users")
-            .router_ctx(context)
+        let link = Link(context, RoutePath::new("/users").unwrap())
             .children("users")
             .active_class("active");
         let owner = ScopedViewOwner::new(scope, test_handler());
@@ -347,6 +317,7 @@ fn link_active_class_tracks_the_router_path() {
             .expect("link element is mounted")
             .dyn_into()
             .expect("mounted node is an element");
+        assert_eq!(element.get_attribute("href").as_deref(), Some("/app/users"));
         assert_eq!(element.class_name(), "active");
 
         set_path.set(String::from("/other"));
@@ -423,8 +394,47 @@ fn query_memo_handles_empty_multiple_duplicate_delete_and_reactive_changes() {
     set_url("/");
 }
 
+struct RouterCleanupView {
+    text: String,
+    cleanups: Rc<Cell<u32>>,
+}
+
+impl<'scope> ApplyAttributes<'scope> for RouterCleanupView {}
+
+impl<'scope> View<'scope> for RouterCleanupView {
+    fn mount(
+        &self,
+        owner: &dyn ViewOwner<'scope>,
+        parent: &web_sys::Node,
+        _attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
+    ) -> SilexResult<()> {
+        let cleanups = self.cleanups.clone();
+        owner.on_cleanup(
+            Box::new(move || {
+                cleanups.set(cleanups.get() + 1);
+                Ok(())
+            }),
+            owner.token().error_handler(),
+        )?;
+        mount_text_node(parent, &self.text)?;
+        Ok(())
+    }
+
+    fn mount_owned(
+        self,
+        owner: &dyn ViewOwner<'scope>,
+        parent: &web_sys::Node,
+        attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
+    ) -> SilexResult<()>
+    where
+        Self: Sized,
+    {
+        self.mount(owner, parent, attrs)
+    }
+}
+
 #[wasm_bindgen_test]
-fn router_lexical_owner_dispose_removes_listener_and_ignores_late_popstate() {
+fn router_owner_dispose_removes_listener_and_ignores_late_popstate() {
     set_url("/app/users");
     let spy = RouterListenerSpy::new();
     let host = mount_host();
@@ -432,20 +442,18 @@ fn router_lexical_owner_dispose_removes_listener_and_ignores_late_popstate() {
     let mut runtime = Runtime::new();
 
     runtime.child(|scope| {
-        let cleanups_for_children = cleanups.clone();
-        let view = Router(scope).base("/app").children(Rc::new(move |ctx| {
-            let cleanups_for_view = cleanups_for_children.clone();
-            RouterMatchView::<TestRoute, _, _>::new(
-                move |_route, _ctx| {
-                    AnyView::new(RouterCleanupView {
-                        text: String::from("lexical"),
-                        cleanups: cleanups_for_view.clone(),
-                    })
-                },
-                ctx,
-            )
-            .into_any()
-        }));
+        let cleanups_for_route = cleanups.clone();
+        let table = RouteTable::from_entries(vec![
+            RouteEntry::new("/users", move |_, _| {
+                Some(AnyView::new(RouterCleanupView {
+                    text: String::from("lexical"),
+                    cleanups: cleanups_for_route.clone(),
+                }))
+            })
+            .expect("route should compile"),
+        ])
+        .expect("route table should compile");
+        let view = Router(scope).base("/app").routes(table);
         let owner = ScopedViewOwner::new(scope, test_handler());
         view.mount_owned(&owner, &host, Vec::new())
             .expect("router view should mount");
@@ -471,42 +479,39 @@ fn router_lexical_owner_dispose_removes_listener_and_ignores_late_popstate() {
 }
 
 #[wasm_bindgen_test]
-fn router_stops_before_children_when_listener_registration_fails() {
+fn router_does_not_mount_outlet_when_listener_registration_fails() {
     set_url("/app/home");
     let spy = RouterListenerSpy::new();
     spy.set_failure(true);
     let host = mount_host();
-    let children_calls = Rc::new(Cell::new(0));
-    let errors = Rc::new(Cell::new(0));
+    let route_calls = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
     let root = runtime.run();
 
     root.with_scope(|scope| {
-        let errors_for_reporter = errors.clone();
-        let reporter = ErrorReporter::new(move |_| {
-            errors_for_reporter.set(errors_for_reporter.get() + 1);
-        });
-
-        let children_calls_for_view = children_calls.clone();
-        let view = Router(scope).base("/app").children(Rc::new(move |_ctx| {
-            children_calls_for_view.set(children_calls_for_view.get() + 1);
-            AnyView::from("must not mount")
-        }));
-        let owner = ScopedViewOwner::new(scope, reporter);
+        let calls = route_calls.clone();
+        let table = RouteTable::from_entries(vec![
+            RouteEntry::new("/home", move |_, _| {
+                calls.set(calls.get() + 1);
+                Some(AnyView::from("must not mount"))
+            })
+            .expect("route should compile"),
+        ])
+        .expect("route table should compile");
+        let view = Router(scope).base("/app").routes(table);
+        let owner = ScopedViewOwner::new(scope, test_handler());
         assert!(matches!(
             view.mount_owned(&owner, &host, Vec::new()),
             Err(SilexError::Javascript(_))
         ));
     });
 
-    assert_eq!(children_calls.get(), 0);
-    assert_eq!(errors.get(), 0);
+    assert_eq!(route_calls.get(), 0);
     assert_eq!(spy.count("add"), 1);
     assert_eq!(spy.count("remove"), 0);
     assert_eq!(host.text_content().as_deref(), Some(""));
 
     root.dispose().expect("root cleanup should succeed");
-    assert_eq!(spy.count("remove"), 0);
     host.parent_node()
         .expect("host has a parent")
         .remove_child(&host)
@@ -514,8 +519,47 @@ fn router_stops_before_children_when_listener_registration_fails() {
     set_url("/");
 }
 
+struct FactoryTextView<'scope> {
+    text: ReadSignal<'scope, String>,
+    cleanups: Rc<Cell<u32>>,
+}
+
+impl<'scope> ApplyAttributes<'scope> for FactoryTextView<'scope> {}
+
+impl<'scope> View<'scope> for FactoryTextView<'scope> {
+    fn mount(
+        &self,
+        owner: &dyn ViewOwner<'scope>,
+        parent: &web_sys::Node,
+        _attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
+    ) -> SilexResult<()> {
+        let cleanups = self.cleanups.clone();
+        owner.on_cleanup(
+            Box::new(move || {
+                cleanups.set(cleanups.get() + 1);
+                Ok(())
+            }),
+            owner.token().error_handler(),
+        )?;
+        mount_text_node(parent, &self.text.get())?;
+        Ok(())
+    }
+
+    fn mount_owned(
+        self,
+        owner: &dyn ViewOwner<'scope>,
+        parent: &web_sys::Node,
+        attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
+    ) -> SilexResult<()>
+    where
+        Self: Sized,
+    {
+        self.mount(owner, parent, attrs)
+    }
+}
+
 #[wasm_bindgen_test]
-fn router_view_factory_mounts_scoped_view_with_dynamic_owner_cleanup() {
+fn router_view_factory_keeps_scoped_dynamic_owner_cleanup() {
     set_url("/");
     let host = mount_host();
     let cleanups = Rc::new(Cell::new(0));

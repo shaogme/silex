@@ -99,6 +99,15 @@ pub fn card_class_from_str(size: &str) -> Result<String, String> {
         .map_err(|e| e.to_string())
 }
 
+pub fn renamed_route_path() -> my_silex::router::RoutePath {
+    let routes = routes!(RenamedRoutes {
+        user "/users/:id" => move |_ctx, id: u32| {
+            my_silex::dom::view::AnyView::from(id.to_string())
+        },
+    });
+    routes.user(42)
+}
+
 // `styled!`：展开出 `#[component]`、`inject_style`、`TypedElement` 等一大片绝对路径
 styled! {
     pub Panel <div> (

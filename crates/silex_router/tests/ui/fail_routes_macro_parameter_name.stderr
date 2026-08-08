@@ -1,0 +1,5 @@
+error: route `user` expects handler parameter `id` here
+ --> tests/ui/fail_routes_macro_parameter_name.rs:5:42
+  |
+5 |         user "/users/:id" => move |_ctx, user_id: u32| {
+  |                                          ^^^^^^^^^^^^

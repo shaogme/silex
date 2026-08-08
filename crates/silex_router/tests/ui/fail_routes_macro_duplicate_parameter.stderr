@@ -1,0 +1,5 @@
+error: route pattern `/users/:id/:id` repeats parameter `id`
+ --> tests/ui/fail_routes_macro_duplicate_parameter.rs:5:14
+  |
+5 |         user "/users/:id/:id" => move |_ctx, id: u32, other: u32| {
+  |              ^^^^^^^^^^^^^^^^

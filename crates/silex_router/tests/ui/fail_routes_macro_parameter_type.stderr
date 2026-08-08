@@ -1,0 +1,5 @@
+error: route parameter `id` needs an explicit type
+ --> tests/ui/fail_routes_macro_parameter_type.rs:5:42
+  |
+5 |         user "/users/:id" => move |_ctx, id| silex_router::dom::view::AnyView::from(id),
+  |                                          ^^

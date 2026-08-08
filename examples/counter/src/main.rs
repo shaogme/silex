@@ -108,12 +108,12 @@ fn CounterControls<'scope>(
 // --- Views ---
 
 #[component]
-fn NavBar<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
+fn NavBar<'scope>(ctx: RouterContext<'scope>) -> impl View<'scope> {
     div!(
-        Link(AppRoute::Home)
+        Link(ctx, "/")
             .children("Home")
             .style("margin-right: 15px; text-decoration: none; color: #007bff; font-weight: bold;"),
-        Link(AppRoute::About)
+        Link(ctx, "/about")
             .children("About")
             .style("text-decoration: none; color: #007bff; font-weight: bold;"),
     )
@@ -233,16 +233,6 @@ fn ErrorPage<'scope>(error: SilexError) -> AnyView<'scope> {
     .into_any()
 }
 
-#[derive(Route, Clone, PartialEq)]
-enum AppRoute {
-    #[route("/")]
-    Home,
-    #[route("/about")]
-    About,
-    #[route("/*")]
-    NotFound,
-}
-
 #[component]
 fn App<'scope>(
     scope: Scope<'scope>,
@@ -252,15 +242,17 @@ fn App<'scope>(
         scope,
         move |child_error_handler| {
             let route_error_handler = child_error_handler.clone();
+            let routes = routes!(AppRoutes {
+                home "/" => move |ctx| {
+                    HomeView(ctx).error_handler(route_error_handler.clone())
+                },
+                about "/about" => move |_ctx| AboutView(),
+                not_found "/*" => move |_ctx| NotFound(),
+            });
             div!(
-                NavBar(scope),
-                Router(scope).match_enum(move |route, ctx| match route {
-                    AppRoute::Home => HomeView(ctx)
-                        .error_handler(route_error_handler.clone())
-                        .into_any(),
-                    AppRoute::About => AboutView().into_any(),
-                    AppRoute::NotFound => NotFound().into_any(),
-                })
+                Router(scope)
+                    .routes(routes.table())
+                    .layout(move |ctx, outlet| div!(NavBar(ctx), outlet))
             )
             .class("app-container")
             .style("font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;")
