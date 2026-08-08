@@ -7,7 +7,7 @@ use web_sys::{Event, MessageEvent, WebSocket as JsWebSocket};
 
 use silex_core::{
     CompletionSender, ErrorReporter, Memo, ReactiveError, ReadSignal, RuntimeInputs, Scope,
-    SilexResult, StoredValue, TaskHandle, WriteSignal,
+    SilexResult, StoredValue, TaskHandle, WriteSignal, unwind_safe,
 };
 
 use crate::{
@@ -605,13 +605,13 @@ impl<'scope> WebSocketBuilder<'scope> {
             None::<StoredValue<'scope, WebSocketInner<'scope>>>,
         ));
         let inner_slot_for_completion = inner_slot.clone();
-        let completion = scope.completion_sender(move |event: WebSocketEvent| {
+        let completion = scope.completion_sender(unwind_safe(move |event: WebSocketEvent| {
             if let Some(inner) = inner_slot_for_completion.get()
                 && let Some(callback) = inner.update(|inner| inner.handle_event(event))
             {
                 callback();
             }
-        });
+        }));
         let inner = scope.stored(WebSocketInner {
             url,
             protocols,

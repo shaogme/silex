@@ -409,6 +409,53 @@ fn element_listener_removes_physically_and_drops_on_root_dispose() {
 }
 
 #[wasm_bindgen_test]
+fn element_listener_panic_closes_destination_before_owner_cleanup() {
+    let spy = Spy::new();
+    let host = mount_point();
+    let calls = Rc::new(Cell::new(0));
+    let drops = Rc::new(Cell::new(0));
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    let element_node: Node;
+
+    {
+        let scope = root.scope();
+        let owner = ScopedViewOwner::new(scope, test_handler(scope));
+        let token = owner.token();
+        let element = Element::new("button");
+        spy.spy_target(element.dom_element.as_ref());
+        element_node = element.dom_element.clone().into();
+        let calls_for_callback = calls.clone();
+        let probe = DropProbe::new(drops.clone());
+
+        bind_event(
+            &element.dom_element,
+            click,
+            move |_| {
+                calls_for_callback.set(calls_for_callback.get() + 1);
+                let _ = &probe;
+                panic!("element callback panic");
+            },
+            &token,
+        )
+        .expect("element listener should register");
+    }
+
+    let first_dispatch = element_node.dispatch_event(&MouseEvent::new("click").unwrap());
+    assert!(first_dispatch.is_err());
+    assert_eq!(calls.get(), 1);
+    assert_eq!(drops.get(), 1);
+
+    dispatch(&element_node, MouseEvent::new("click").unwrap().into());
+    assert_eq!(calls.get(), 1);
+
+    root.dispose().expect("root disposal should succeed");
+    assert_eq!(spy.count("event_remove:click"), 1);
+    assert_eq!(drops.get(), 1);
+    remove_mount_point(&host);
+}
+
+#[wasm_bindgen_test]
 fn render_rerun_replaces_old_window_listener() {
     let spy = Spy::new();
     let host = mount_point();

@@ -2,6 +2,7 @@ use crate::{
     ErrorReporter, ReactiveResult, Scope, SilexError,
     reactivity::{ReadSignal, WriteSignal},
     traits::{RxBase, RxCloneData, RxData, RxError, RxRead, RxValue},
+    unwind_safe,
 };
 use silex_reactivity::CompletionSender;
 use std::{cell::Cell, future::Future, pin::Pin, rc::Rc};
@@ -100,13 +101,14 @@ where
         let last_id = Rc::new(Cell::new(0usize));
         let last_id_for_callback = last_id.clone();
         let set_state_for_callback = set_state;
-        let completion = scope.completion_sender(move |(id, result): (usize, Result<T, E>)| {
-            if let Some(next_state) =
-                resolve_mutation_result(last_id_for_callback.get(), id, result)
-            {
-                set_state_for_callback.set(next_state);
-            }
-        });
+        let completion =
+            scope.completion_sender(unwind_safe(move |(id, result): (usize, Result<T, E>)| {
+                if let Some(next_state) =
+                    resolve_mutation_result(last_id_for_callback.get(), id, result)
+                {
+                    set_state_for_callback.set(next_state);
+                }
+            }));
 
         Self {
             state,
@@ -134,13 +136,14 @@ where
         let last_id = Rc::new(Cell::new(0usize));
         let last_id_for_callback = last_id.clone();
         let set_state_for_callback = set_state;
-        let completion = scope.completion_sender(move |(id, result): (usize, Result<T, E>)| {
-            if let Some(next_state) =
-                resolve_mutation_result(last_id_for_callback.get(), id, result)
-            {
-                set_state_for_callback.set(next_state);
-            }
-        });
+        let completion =
+            scope.completion_sender(unwind_safe(move |(id, result): (usize, Result<T, E>)| {
+                if let Some(next_state) =
+                    resolve_mutation_result(last_id_for_callback.get(), id, result)
+                {
+                    set_state_for_callback.set(next_state);
+                }
+            }));
 
         Self {
             state,

@@ -10,6 +10,7 @@ use silex_persist::{PersistMode, PersistenceState, Persistent, SyncStrategy, Wri
 use silex_router::{RouterContext, RouterContextProps};
 use std::{
     cell::{Cell, RefCell},
+    panic::AssertUnwindSafe,
     rc::Rc,
     time::Duration,
 };
@@ -359,8 +360,10 @@ fn storage_listener_reentrant_cleanup_does_not_leave_a_listener() {
     let reentrant_root = reentrant_runtime.run();
     let reentrant_root = Rc::new(RefCell::new(Some(reentrant_root)));
     let root_for_reentry = reentrant_root.clone();
-    let reentry = Closure::wrap(Box::new(move || {
-        let Some(root) = root_for_reentry.borrow_mut().take() else {
+    let root_for_reentry = AssertUnwindSafe(root_for_reentry);
+    let reentry: Closure<dyn FnMut()> = Closure::wrap(Box::new(move || {
+        let root_for_reentry = &root_for_reentry;
+        let Some(root) = root_for_reentry.0.borrow_mut().take() else {
             return;
         };
         root.with_scope(|scope| {
@@ -372,7 +375,7 @@ fn storage_listener_reentrant_cleanup_does_not_leave_a_listener() {
         });
         root.dispose()
             .expect("reentrant root cleanup should succeed");
-    }) as Box<dyn FnMut()>);
+    }));
     set_storage_listener_spy_reentry(&spy.value, reentry.as_ref());
 
     let mut runtime = Runtime::new();

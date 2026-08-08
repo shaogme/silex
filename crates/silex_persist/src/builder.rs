@@ -17,6 +17,7 @@ use ref_str::LocalStaticRefStr;
 use silex_core::{
     ErrorReporter, RxRead, Scope, SilexResult,
     traits::{RxGet, RxWrite},
+    unwind_safe,
 };
 use silex_dom::helpers::set_timeout_with_handle;
 use silex_router::RouterContext;
@@ -568,11 +569,11 @@ where
         }
 
         if matches!(self.config.sync, SyncStrategy::CrossContext) {
-            let token = self.scope.completion_sender({
+            let token = self.scope.completion_sender(unwind_safe({
                 move |event| {
                     apply_backend_event(controller, value, state, event);
                 }
-            });
+            }));
             let sink: BackendEventSink = Rc::new(move |event| {
                 let _ = token.submit(event);
             });
@@ -590,13 +591,13 @@ where
                         .clone()
                         .expect("debounce state must exist for debounce mode");
                     let debounce_for_completion = debounce_state.clone();
-                    let completion = self.scope.completion_sender({
+                    let completion = self.scope.completion_sender(unwind_safe({
                         move |generation| {
                             if debounce_for_completion.borrow_mut().take_ready(generation) {
                                 let _ = flush_persistent_value(controller, value, state);
                             }
                         }
-                    });
+                    }));
                     let debounce_for_cleanup = debounce_state.clone();
                     self.scope
                         .on_cleanup(

@@ -1,4 +1,4 @@
-use silex_reactivity::{ErrorHandler, ReactiveError, Runtime, Scope};
+use silex_reactivity::{ErrorHandler, ReactiveError, Runtime, Scope, unwind_safe};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -112,10 +112,10 @@ fn owned_scope_completion_can_capture_scope_local_data() {
         let owner = scope.owned_scope();
         let local = String::from("owned");
         let seen_in_callback = seen.clone();
-        let token = owner.completion_once(move |value: i32| {
+        let token = owner.completion_once(unwind_safe(move |value: i32| {
             assert_eq!(local, "owned");
             seen_in_callback.set(value);
-        });
+        }));
         assert!(token.submit(9));
         owner.dispose();
         assert!(!token.submit(10));

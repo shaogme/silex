@@ -15,6 +15,7 @@ use silex_core::{
     Scope,
     reactivity::ReactiveSource,
     traits::{RxData, RxValue},
+    unwind_safe,
 };
 use silex_core::{Rx, SilexError, SilexResult};
 use std::{
@@ -22,7 +23,7 @@ use std::{
     cell::{Cell, RefCell},
     fmt::{Debug, Display, Formatter, Result as FmtResult},
     ops::{Add, Deref, Div, Mul, Sub},
-    panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
+    panic::{AssertUnwindSafe, UnwindSafe, catch_unwind, resume_unwind},
     rc::Rc,
 };
 use wasm_bindgen::JsValue;
@@ -351,6 +352,10 @@ pub(crate) struct HostCallback {
     gate: ResourceGate,
 }
 
+// HostCallback only carries framework-owned gate and Completion state. User
+// callbacks are invoked behind Completion's panic cleanup boundary.
+impl UnwindSafe for HostCallback {}
+
 impl HostCallback {
     pub(crate) fn dispatch(&self, payload: JsValue) -> bool {
         if !self.gate.get() {
@@ -659,8 +664,8 @@ impl<'scope> ViewOwner<'scope> for ScopedViewOwner<'scope> {
             }),
             OwnedScopeRegistrar::new(move || scope_for_owned.try_owned_scope()),
             CompletionRegistrar::new(
-                move |callback| scope_for_sender.completion_sender(callback),
-                move |callback| scope_for_once.completion_once(callback),
+                move |callback| scope_for_sender.completion_sender(unwind_safe(callback)),
+                move |callback| scope_for_once.completion_once(unwind_safe(callback)),
             ),
             ActiveRegistrar::new(move || scope_for_active.is_active()),
             error_handler,
@@ -731,8 +736,8 @@ impl<'scope> ViewOwner<'scope> for OwnedViewOwner<'scope> {
             }),
             OwnedScopeRegistrar::new(move || scope_for_owned.try_child()),
             CompletionRegistrar::new(
-                move |callback| scope_for_sender.completion_sender(callback),
-                move |callback| scope_for_once.completion_once(callback),
+                move |callback| scope_for_sender.completion_sender(unwind_safe(callback)),
+                move |callback| scope_for_once.completion_once(unwind_safe(callback)),
             ),
             ActiveRegistrar::new(move || scope_for_active.is_active()),
             error_handler,

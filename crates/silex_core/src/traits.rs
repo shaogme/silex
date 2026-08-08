@@ -21,7 +21,7 @@ impl<T: Clone + Debug> RxError for T {}
 ///
 /// Unlike [`From`], this trait receives the [`Scope`] that owns the node.
 /// Implementations must create every node, callback, and owner resource from
-/// that scope. They must not create a [`Runtime`], a detached scope, or use
+/// that scope. They must not create a [`crate::Runtime`], a detached scope, or use
 /// thread-local runtime state.
 pub trait RxFrom<'scope>: Sized {
     type Value: 'scope;
@@ -35,7 +35,7 @@ pub trait RxFrom<'scope>: Sized {
 ///
 /// Every [`RxFrom`] implementation automatically implements this trait. The
 /// default operation only delegates to [`RxFrom::rx_from`], so it cannot
-/// create a [`Runtime`], a detached scope, or thread-local runtime state.
+/// create a [`crate::Runtime`], a detached scope, or thread-local runtime state.
 pub trait RxDefault<'scope>: RxFrom<'scope> {
     fn rx_default(scope: Scope<'scope>) -> Self
     where

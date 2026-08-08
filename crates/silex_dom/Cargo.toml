@@ -65,7 +65,6 @@ web-sys = { workspace = true, features = [
 js-sys.workspace = true
 
 [dev-dependencies]
-gloo-timers.workspace = true
 wasm-bindgen-futures.workspace = true
 trybuild = "1.0"
 wasm-bindgen-test.workspace = true

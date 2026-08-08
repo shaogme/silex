@@ -3,6 +3,7 @@ use crate::{
     ErrorReporter, ReactiveResult, Scope, SilexError, SilexResult,
     reactivity::{Memo, ReadSignal, RwSignal, WriteSignal},
     traits::{RxBase, RxCloneData, RxData, RxError, RxGet, RxRead, RxValue},
+    unwind_safe,
 };
 use silex_reactivity::RuntimeInputs;
 use std::{cell::Cell, future::Future, marker::PhantomData, rc::Rc};
@@ -129,19 +130,22 @@ where
         let request_id_for_callback = request_id.clone();
         let set_state_for_callback = set_state;
         let suspense_for_callback = suspense;
-        let completion = scope.completion_sender(move |message: ResourceCompletion<T, E>| {
-            if message.settled.replace(true) {
-                return;
-            }
-            if let Some(next_state) =
-                resolve_resource_result(request_id_for_callback.get(), message.id, message.result)
-            {
-                set_state_for_callback.set(next_state);
-            }
-            if let Some(context) = suspense_for_callback {
-                context.decrement();
-            }
-        });
+        let completion =
+            scope.completion_sender(unwind_safe(move |message: ResourceCompletion<T, E>| {
+                if message.settled.replace(true) {
+                    return;
+                }
+                if let Some(next_state) = resolve_resource_result(
+                    request_id_for_callback.get(),
+                    message.id,
+                    message.result,
+                ) {
+                    set_state_for_callback.set(next_state);
+                }
+                if let Some(context) = suspense_for_callback {
+                    context.decrement();
+                }
+            }));
 
         let source_for_effect = source.clone();
         let trigger_for_effect = trigger.read_signal();

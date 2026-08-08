@@ -1,5 +1,5 @@
 use silex_reactivity::{
-    CleanupPayloadKind, CompletionOnce, ErrorHandler, ReactiveError, Runtime, Scope,
+    CleanupPayloadKind, CompletionOnce, ErrorHandler, ReactiveError, Runtime, Scope, unwind_safe,
 };
 use std::{
     cell::Cell,
@@ -47,7 +47,7 @@ fn root_completion_is_invalidated_by_dispose() {
     let token: CompletionOnce<i32> = {
         let scope = root.scope();
         let seen_for_callback = seen.clone();
-        scope.completion_once(move |value: i32| seen_for_callback.set(value))
+        scope.completion_once(unwind_safe(move |value: i32| seen_for_callback.set(value)))
     };
 
     assert!(token.submit(7));

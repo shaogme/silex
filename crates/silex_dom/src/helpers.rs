@@ -20,22 +20,22 @@ fn host_resource_error(error: SilexError) -> JsValue {
 
 // --- Window & Document Access ---
 
-/// Try returning the current [`Window`](web_sys::Window) if available.
+/// Try returning the current [`Window`] if available.
 pub fn try_window() -> Option<Window> {
     web_sys::window()
 }
 
-/// Returns the current [`Window`](web_sys::Window).
+/// Returns the current [`Window`].
 pub fn window() -> Window {
     web_sys::window().expect("Window not found")
 }
 
-/// Try returning the current [`Document`](web_sys::Document) if available.
+/// Try returning the current [`Document`] if available.
 pub fn try_document() -> Option<Document> {
     web_sys::window().and_then(|w| w.document())
 }
 
-/// Returns the current [`Document`](web_sys::Document).
+/// Returns the current [`Document`].
 pub fn document() -> Document {
     try_document().expect("Document not found")
 }

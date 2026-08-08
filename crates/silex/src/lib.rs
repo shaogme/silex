@@ -9,6 +9,7 @@ pub use components::*;
 pub use silex_core::error::{ErrorHandler, ErrorReporter, SilexError, SilexResult};
 pub use silex_core::{
     Callback, NodeRef, OwnedScope, ReactiveError, ReactiveResult, RootHandle, Runtime, Rx, Scope,
+    unwind_safe,
 };
 
 pub mod reexports {

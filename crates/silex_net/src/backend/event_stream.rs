@@ -6,7 +6,7 @@ use web_sys::{Event, EventSource as JsEventSource, MessageEvent};
 
 use silex_core::{
     CompletionSender, ErrorReporter, Memo, ReactiveError, ReadSignal, RuntimeInputs, RwSignal,
-    Scope, SilexResult, StoredValue, WriteSignal,
+    Scope, SilexResult, StoredValue, WriteSignal, unwind_safe,
 };
 
 use crate::{
@@ -522,13 +522,13 @@ impl<'scope> EventStreamBuilder<'scope> {
             None::<StoredValue<'scope, EventStreamInner<'scope>>>,
         ));
         let inner_slot_for_completion = inner_slot.clone();
-        let completion = scope.completion_sender(move |event: EventStreamEvent| {
+        let completion = scope.completion_sender(unwind_safe(move |event: EventStreamEvent| {
             if let Some(inner) = inner_slot_for_completion.get()
                 && let Some(callback) = inner.update(|inner| inner.handle_event(event))
             {
                 callback();
             }
-        });
+        }));
         let inner = scope.stored(EventStreamInner {
             url,
             event_name,

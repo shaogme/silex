@@ -390,53 +390,54 @@ impl StorageDispatcher {
         let local_storage = self.local_storage.clone();
         let session_storage = self.session_storage.clone();
 
-        let closure = Closure::wrap(Box::new(move |event: StorageEvent| {
-            let Some(area) = event.storage_area() else {
-                return;
-            };
-            let kind = if local_storage
-                .as_ref()
-                .is_some_and(|storage| Object::is(area.as_ref(), storage.as_ref()))
-            {
-                StorageAreaKind::Local
-            } else if session_storage
-                .as_ref()
-                .is_some_and(|storage| Object::is(area.as_ref(), storage.as_ref()))
-            {
-                StorageAreaKind::Session
-            } else {
-                return;
-            };
+        let closure: Closure<dyn FnMut(StorageEvent)> =
+            Closure::wrap(Box::new(move |event: StorageEvent| {
+                let Some(area) = event.storage_area() else {
+                    return;
+                };
+                let kind = if local_storage
+                    .as_ref()
+                    .is_some_and(|storage| Object::is(area.as_ref(), storage.as_ref()))
+                {
+                    StorageAreaKind::Local
+                } else if session_storage
+                    .as_ref()
+                    .is_some_and(|storage| Object::is(area.as_ref(), storage.as_ref()))
+                {
+                    StorageAreaKind::Session
+                } else {
+                    return;
+                };
 
-            let Some(key) = event.key() else {
-                return;
-            };
-            let key: LocalStaticRefStr = key.into();
-            let event = match event.new_value() {
-                Some(value) => BackendEvent::Set {
-                    key: key.clone(),
-                    value,
-                },
-                None => BackendEvent::Removed { key: key.clone() },
-            };
-            let sinks = DISPATCHER.with(|dispatcher| {
-                let dispatcher = dispatcher.borrow();
-                dispatcher
-                    .subscribers
-                    .get(&(kind, key))
-                    .map(|subscribers| {
-                        subscribers
-                            .iter()
-                            .map(|subscriber| subscriber.sink.clone())
-                            .collect::<Vec<_>>()
-                    })
-                    .unwrap_or_default()
-            });
+                let Some(key) = event.key() else {
+                    return;
+                };
+                let key: LocalStaticRefStr = key.into();
+                let event = match event.new_value() {
+                    Some(value) => BackendEvent::Set {
+                        key: key.clone(),
+                        value,
+                    },
+                    None => BackendEvent::Removed { key: key.clone() },
+                };
+                let sinks = DISPATCHER.with(|dispatcher| {
+                    let dispatcher = dispatcher.borrow();
+                    dispatcher
+                        .subscribers
+                        .get(&(kind, key))
+                        .map(|subscribers| {
+                            subscribers
+                                .iter()
+                                .map(|subscriber| subscriber.sink.clone())
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default()
+                });
 
-            for sink in sinks {
-                sink(event.clone());
-            }
-        }) as Box<dyn FnMut(StorageEvent)>);
+                for sink in sinks {
+                    sink(event.clone());
+                }
+            }));
 
         window
             .add_event_listener_with_callback("storage", closure.as_ref().unchecked_ref())

@@ -3,7 +3,7 @@
 use std::{
     cell::{Cell, RefCell},
     marker::PhantomData,
-    panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
+    panic::{AssertUnwindSafe, UnwindSafe, catch_unwind, resume_unwind},
     rc::Rc,
 };
 
@@ -29,7 +29,7 @@ use crate::runtime::RuntimeSnapshot;
 /// A copyable capability to create and operate nodes in one lexical scope.
 ///
 /// The scope itself does not own runtime state. The enclosing
-/// [`ScopeStorage`] manages the lexical lifetime, which makes copying this
+/// `ScopeStorage` manages the lexical lifetime, which makes copying this
 /// capability harmless and prevents a copied value from disposing the
 /// original scope early.
 ///
@@ -488,17 +488,23 @@ impl<'scope> Scope<'scope> {
     }
 
     /// Create a one-shot completion destination owned by this scope.
+    ///
+    /// Use [`crate::unwind_safe`] when the callback captures interior-mutable
+    /// state such as `Rc<RefCell<_>>`.
     pub fn completion_once<T: 'static, F>(&self, callback: F) -> CompletionOnce<T>
     where
-        F: FnMut(T) + 'scope,
+        F: FnMut(T) + UnwindSafe + 'scope,
     {
         create_completion_once(self.storage, self.state(), callback)
     }
 
     /// Create a reusable completion destination owned by this scope.
+    ///
+    /// Use [`crate::unwind_safe`] when the callback captures interior-mutable
+    /// state such as `Rc<RefCell<_>>`.
     pub fn completion_sender<T: 'static, F>(&self, callback: F) -> CompletionSender<T>
     where
-        F: FnMut(T) + 'scope,
+        F: FnMut(T) + UnwindSafe + 'scope,
     {
         create_completion_sender(self.storage, self.state(), callback)
     }
@@ -729,9 +735,12 @@ impl<'scope> OwnedScope<'scope> {
     }
 
     /// Create a one-shot completion destination owned by this persistent scope.
+    ///
+    /// Use [`crate::unwind_safe`] when the callback captures interior-mutable
+    /// state such as `Rc<RefCell<_>>`.
     pub fn completion_once<T: 'static, F>(&self, callback: F) -> CompletionOnce<T>
     where
-        F: FnMut(T) + 'scope,
+        F: FnMut(T) + UnwindSafe + 'scope,
     {
         if !self.is_active() {
             return CompletionOnce::inactive();
@@ -740,9 +749,12 @@ impl<'scope> OwnedScope<'scope> {
     }
 
     /// Create a reusable completion destination owned by this persistent scope.
+    ///
+    /// Use [`crate::unwind_safe`] when the callback captures interior-mutable
+    /// state such as `Rc<RefCell<_>>`.
     pub fn completion_sender<T: 'static, F>(&self, callback: F) -> CompletionSender<T>
     where
-        F: FnMut(T) + 'scope,
+        F: FnMut(T) + UnwindSafe + 'scope,
     {
         if !self.is_active() {
             return CompletionSender::inactive();

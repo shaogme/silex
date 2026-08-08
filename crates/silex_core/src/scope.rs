@@ -11,7 +11,7 @@ use crate::{
 #[cfg(feature = "test-support")]
 use silex_reactivity::RuntimeSnapshot;
 use silex_reactivity::{EffectInitError, RuntimeInputs};
-use std::future::Future;
+use std::{future::Future, panic::UnwindSafe};
 
 fn map_effect_init_error(error: EffectInitError<SilexError>) -> SilexError {
     match error {
@@ -368,18 +368,26 @@ impl<'scope> Scope<'scope> {
         NodeRef::from_inner(self.inner.node_ref())
     }
 
+    /// Create a one-shot completion destination.
+    ///
+    /// Use [`crate::unwind_safe`] for callbacks that capture interior-mutable
+    /// state.
     pub fn completion_once<T, F>(self, callback: F) -> silex_reactivity::CompletionOnce<T>
     where
         T: 'static,
-        F: FnMut(T) + 'scope,
+        F: FnMut(T) + UnwindSafe + 'scope,
     {
         self.inner.completion_once(callback)
     }
 
+    /// Create a reusable completion destination.
+    ///
+    /// Use [`crate::unwind_safe`] for callbacks that capture interior-mutable
+    /// state.
     pub fn completion_sender<T, F>(self, callback: F) -> silex_reactivity::CompletionSender<T>
     where
         T: 'static,
-        F: FnMut(T) + 'scope,
+        F: FnMut(T) + UnwindSafe + 'scope,
     {
         self.inner.completion_sender(callback)
     }
@@ -636,18 +644,26 @@ impl<'scope> OwnedScope<'scope> {
             .map_err(SilexError::from)
     }
 
+    /// Create a one-shot completion destination.
+    ///
+    /// Use [`crate::unwind_safe`] for callbacks that capture interior-mutable
+    /// state.
     pub fn completion_once<T, F>(&self, callback: F) -> silex_reactivity::CompletionOnce<T>
     where
         T: 'static,
-        F: FnMut(T) + 'scope,
+        F: FnMut(T) + UnwindSafe + 'scope,
     {
         self.inner.completion_once(callback)
     }
 
+    /// Create a reusable completion destination.
+    ///
+    /// Use [`crate::unwind_safe`] for callbacks that capture interior-mutable
+    /// state.
     pub fn completion_sender<T, F>(&self, callback: F) -> silex_reactivity::CompletionSender<T>
     where
         T: 'static,
-        F: FnMut(T) + 'scope,
+        F: FnMut(T) + UnwindSafe + 'scope,
     {
         self.inner.completion_sender(callback)
     }

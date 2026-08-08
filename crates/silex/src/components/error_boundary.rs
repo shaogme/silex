@@ -6,7 +6,7 @@ use std::{
 
 use wasm_bindgen_futures::spawn_local;
 
-use silex_core::{ErrorReporter, Scope, SilexError, rx};
+use silex_core::{ErrorReporter, Scope, SilexError, rx, unwind_safe};
 use silex_dom::prelude::*;
 use silex_dom::view::ViewOwner;
 use silex_macros::component;
@@ -203,7 +203,7 @@ where
     V2: View<'scope> + 'scope,
 {
     let (error, set_error) = scope.signal(None::<SilexError>);
-    let completion = scope.completion_sender(move |value| set_error.set(Some(value)));
+    let completion = scope.completion_sender(unwind_safe(move |value| set_error.set(Some(value))));
     let reporter_completion = completion.clone();
     let boundary_handler = scope.error_handler(move |error| {
         let completion = reporter_completion.clone();

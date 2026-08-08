@@ -27,7 +27,7 @@ pub use scope::{OwnedScope, RootHandle, Runtime, Scope};
 pub use silex_reactivity::RuntimeInputs;
 #[cfg(feature = "test-support")]
 pub use silex_reactivity::RuntimeSnapshot;
-pub use silex_reactivity::{CompletionOnce, CompletionSender};
+pub use silex_reactivity::{CompletionOnce, CompletionSender, unwind_safe};
 pub use store::Store;
 pub use task::TaskHandle;
 pub use traits::{RxBase, RxData, RxDefault, RxFrom, RxGet, RxRead, RxValue, RxWrite};
@@ -255,6 +255,6 @@ pub mod prelude {
     pub use crate::{
         Callback, CompletionOnce, CompletionSender, ErrorHandler, ErrorReporter, NodeRef,
         ReactiveError, ReactiveResult, Runtime, Rx, Scope, SilexError, SilexResult, Store,
-        batch_read, batch_read_untracked, logic::*, reactivity::*, rx, traits::*,
+        batch_read, batch_read_untracked, logic::*, reactivity::*, rx, traits::*, unwind_safe,
     };
 }

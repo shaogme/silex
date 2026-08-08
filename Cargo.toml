@@ -23,6 +23,7 @@ members = [
     "crates/utils/silex_vtable",
     "crates/utils/silex_tw_core",
     "crates/utils/silex_codegen",
+    "crates/utils/silex_timers",
     
     "examples/counter",
     "examples/store_demo",
@@ -81,7 +82,7 @@ web-sys = { version = "0.3", default-features = false }
 js-sys = { version = "0.3", default-features = false }
 wasm-bindgen-futures = { version = "0.4.68", default-features = false }
 wasm-bindgen-test = "0.3"
-gloo-timers = { version = "0.4", default-features = false, features = ["futures"] }
+gloo-timers = { path = "crates/utils/silex_timers", version = "0.4.0", default-features = false, features = ["futures"] }
 futures-util = { version = "0.3", default-features = false, features = ["alloc"] }
 
 serde = { version = "1.0", features = ["derive"] }

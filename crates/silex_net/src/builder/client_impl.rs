@@ -2,7 +2,7 @@ use std::{cell::Cell, marker::PhantomData, rc::Rc, time::Duration};
 
 use gloo_timers::future::sleep;
 use silex_core::{
-    CompletionOnce, Mutation, ReactiveSource, Resource, RxGet, RxRead, SuspenseContext,
+    CompletionOnce, Mutation, ReactiveSource, Resource, RxGet, RxRead, SuspenseContext, unwind_safe,
 };
 
 use crate::{
@@ -156,11 +156,11 @@ macro_rules! impl_net_methods {
                 .clone();
             let key = binding.key;
             let generation = binding.generation;
-            self.scope.completion_once(move |value: T| {
+            self.scope.completion_once(unwind_safe(move |value: T| {
                 if generations.borrow().get(&key) == Some(&generation) {
                     binding.store.set(value);
                 }
-            })
+            }))
         }
 
         pub async fn send(&self) -> Result<T, NetError> {
@@ -333,15 +333,16 @@ macro_rules! impl_net_methods {
                         let resource_generation_for_completion =
                             resource_generation_for_fetcher.clone();
                         let resource_slot_for_completion = resource_slot_for_fetcher.clone();
-                        let completion =
-                            scope.completion_once(move |result: Result<T, NetError>| {
+                        let completion = scope.completion_once(unwind_safe(
+                            move |result: Result<T, NetError>| {
                                 if resource_generation_for_completion.get() == generation
                                     && let Ok(value) = result
                                     && let Some(resource) = resource_slot_for_completion.get()
                                 {
                                     resource.set(value);
                                 }
-                            });
+                            },
+                        ));
                         scope.spawn_scoped(
                             async move {
                                 sleep(Duration::from_millis(0)).await;

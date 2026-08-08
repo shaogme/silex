@@ -11,9 +11,21 @@ use crate::{
 use std::{
     cell::{Cell, RefCell},
     marker::PhantomData,
-    panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
+    panic::{AssertUnwindSafe, UnwindSafe, catch_unwind, resume_unwind},
     rc::{Rc, Weak},
 };
+
+/// Wrap a repeating callback with an explicit unwind-safety assertion.
+///
+/// `AssertUnwindSafe` itself only implements `FnOnce`; this adapter preserves
+/// the `FnMut` contract required by repeating completion destinations.
+pub fn unwind_safe<T, F>(callback: F) -> impl FnMut(T) + UnwindSafe
+where
+    F: FnMut(T),
+{
+    let mut callback = AssertUnwindSafe(callback);
+    move |value| (*callback)(value)
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum CompletionPhase {
@@ -172,6 +184,8 @@ impl<T: 'static> CompletionOnce<T> {
 ///
 /// The final active clone cancels the callback node. Explicit cancellation is
 /// still required when a long-lived owner is replaced before all senders drop.
+/// A callback panic is terminal: the callback node is disposed before the panic
+/// is resumed, and later submissions return `false`.
 pub struct CompletionSender<T> {
     state: Rc<CompletionState>,
     marker: PhantomData<Rc<T>>,
@@ -203,7 +217,14 @@ impl<T: 'static> CompletionSender<T> {
     }
 
     pub fn submit(&self, value: T) -> bool {
-        self.state.submit_repeating(value)
+        let callback_result = catch_unwind(AssertUnwindSafe(|| self.state.submit_repeating(value)));
+        match callback_result {
+            Ok(result) => result,
+            Err(callback_panic) => {
+                let _ = catch_unwind(AssertUnwindSafe(|| self.state.close_and_dispose()));
+                resume_unwind(callback_panic)
+            }
+        }
     }
 
     pub fn cancel(&self) {

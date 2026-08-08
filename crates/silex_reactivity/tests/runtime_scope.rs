@@ -1,4 +1,4 @@
-use silex_reactivity::{ErrorHandler, ReactiveError, Runtime, Scope, notify};
+use silex_reactivity::{ErrorHandler, ReactiveError, Runtime, Scope, notify, unwind_safe};
 use std::{
     cell::{Cell, RefCell},
     panic::{AssertUnwindSafe, catch_unwind},
@@ -143,9 +143,9 @@ fn child_scope_is_inactive_after_scope_returns() {
     let (token, read_cell) = runtime.child(|scope| {
         let cell = Rc::new(Cell::new(10));
         let cell_in_callback = cell.clone();
-        let token = scope.completion_once(move |val: i32| {
+        let token = scope.completion_once(unwind_safe(move |val: i32| {
             cell_in_callback.set(val);
-        });
+        }));
         (token, cell)
     });
 
@@ -612,7 +612,8 @@ fn completion_token_accepts_active_submissions_and_rejects_after_scope() {
     let seen_in_scope = seen.clone();
     let token = runtime.child(|scope| {
         let seen_in_callback = seen_in_scope.clone();
-        let token = scope.completion_sender(move |value: i32| seen_in_callback.set(value));
+        let token =
+            scope.completion_sender(unwind_safe(move |value: i32| seen_in_callback.set(value)));
         assert!(token.submit(1));
         token
     });
@@ -630,7 +631,9 @@ fn completion_token_rejects_submission_after_scope_deactivation() {
     runtime.child(|scope| {
         scope.child(|child| {
             let callback_called_in_child = callback_called.clone();
-            let token = child.completion_once(move |_: i32| callback_called_in_child.set(true));
+            let token = child.completion_once(unwind_safe(move |_: i32| {
+                callback_called_in_child.set(true)
+            }));
             let child_scope = child;
             child
                 .effect(
@@ -664,10 +667,10 @@ fn lexical_completion_can_capture_scope_local_data() {
     runtime.child(|scope| {
         let local = String::from("scoped");
         let seen_in_callback = seen.clone();
-        let token = scope.completion_once(move |value: i32| {
+        let token = scope.completion_once(unwind_safe(move |value: i32| {
             assert_eq!(local, "scoped");
             seen_in_callback.set(value);
-        });
+        }));
         assert!(token.submit(7));
     });
 
@@ -695,7 +698,7 @@ fn handles_are_invalid_after_their_scope_and_runtimes_are_isolated() {
             let (signal, _) = child.signal(1i32);
             assert_eq!(signal.try_get(), Ok(1));
         });
-        scope.completion_once(|_: i32| {})
+        scope.completion_once(unwind_safe(|_: i32| {}))
     });
     assert!(!token.submit(1));
 
