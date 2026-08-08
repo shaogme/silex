@@ -1,11 +1,11 @@
-use silex_reactivity::{ErrorHandler, ReactiveError, Runtime};
+use silex_reactivity::{ErrorHandler, ReactiveError, Runtime, Scope};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
 };
 
-fn handler<'scope>() -> ErrorHandler<'scope, ()> {
-    ErrorHandler::new(|_| {})
+fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, ()> {
+    scope.error_handler(|_| {})
 }
 
 #[test]
@@ -29,7 +29,7 @@ fn owned_scope_keeps_effects_until_explicit_dispose() {
                     runs_for_effect.set(runs_for_effect.get() + 1);
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("effect should initialize");
         let cleanups_for_owner = cleanups.clone();
@@ -39,7 +39,7 @@ fn owned_scope_keeps_effects_until_explicit_dispose() {
                     cleanups_for_owner.set(cleanups_for_owner.get() + 1);
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("cleanup should register");
 
@@ -80,7 +80,7 @@ fn lexical_owned_scope_supports_borrowed_callbacks_and_nested_dispose() {
                     runs_for_effect.set(runs_for_effect.get() + 1);
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("effect should initialize");
         let child = owner.child();
@@ -91,7 +91,7 @@ fn lexical_owned_scope_supports_borrowed_callbacks_and_nested_dispose() {
                     child_cleanups.set(child_cleanups.get() + 1);
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("cleanup should register");
 
@@ -129,11 +129,12 @@ fn fallible_owner_registration_rejects_inactive_scope() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
         let scope_for_cleanup = scope;
+        let cleanup_error_handler = handler(scope);
         scope
             .on_cleanup(
                 move || {
                     assert_eq!(
-                        scope_for_cleanup.on_cleanup(|| Ok(()), handler()),
+                        scope_for_cleanup.on_cleanup(|| Ok(()), cleanup_error_handler),
                         Err(ReactiveError::NoSuchNode)
                     );
                     assert!(matches!(
@@ -142,18 +143,19 @@ fn fallible_owner_registration_rejects_inactive_scope() {
                     ));
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("cleanup should register");
     });
 
     let mut root_runtime = Runtime::new();
     let root = root_runtime.run();
-    let owner = root.scope().try_owned_scope().expect("owner is active");
-    assert!(owner.on_cleanup(|| Ok(()), handler()).is_ok());
+    let root_scope = root.scope();
+    let owner = root_scope.try_owned_scope().expect("owner is active");
+    assert!(owner.on_cleanup(|| Ok(()), handler(root_scope)).is_ok());
     owner.dispose();
     assert_eq!(
-        owner.on_cleanup(|| Ok(()), handler()),
+        owner.on_cleanup(|| Ok(()), handler(root_scope)),
         Err(ReactiveError::NoSuchNode)
     );
     assert!(matches!(owner.try_child(), Err(ReactiveError::NoSuchNode)));
@@ -169,17 +171,18 @@ fn fallible_cleanup_preserves_registration_order_during_dispose() {
 
     runtime.child(|scope| {
         let scope_for_cleanup = scope;
+        let cleanup_error_handler = handler(scope);
         scope
             .on_cleanup(
                 move || {
                     events_for_cleanup.borrow_mut().push("first");
                     assert_eq!(
-                        scope_for_cleanup.on_cleanup(|| Ok(()), handler()),
+                        scope_for_cleanup.on_cleanup(|| Ok(()), cleanup_error_handler),
                         Err(ReactiveError::NoSuchNode)
                     );
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("cleanup should register");
     });

@@ -1,11 +1,11 @@
-use silex_reactivity::{ErrorHandler, Memo, Runtime, notify, track_batch};
+use silex_reactivity::{ErrorHandler, Memo, Runtime, Scope, notify, track_batch};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
 };
 
-fn handler<'scope>() -> ErrorHandler<'scope, ()> {
-    ErrorHandler::new(|_| {})
+fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, ()> {
+    scope.error_handler(|_| {})
 }
 
 #[test]
@@ -56,7 +56,7 @@ fn dependency_chain_evaluates_upstream_before_effect() {
                     seen_in_effect.set(tail_in_effect.get());
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("effect should initialize");
 
@@ -88,7 +88,7 @@ fn diamond_dependencies_do_not_observe_intermediate_state() {
                     ));
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("effect should initialize");
 
@@ -120,7 +120,7 @@ fn dynamic_dependencies_are_replaced_on_each_effect_run() {
                     });
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("effect should initialize");
 
@@ -152,6 +152,7 @@ fn nested_memo_cleanup_does_not_track_the_outer_observer() {
         let scope_for_cleanup = scope;
         let probe_for_cleanup = probe;
         let cleanup_runs_in_cleanup = cleanup_runs.clone();
+        let cleanup_handler = handler(scope);
         let inner = scope.memo(move |_| {
             let value = inner_source.get();
             if first_inner_run.replace(false) {
@@ -163,7 +164,7 @@ fn nested_memo_cleanup_does_not_track_the_outer_observer() {
                             let _ = probe_for_cleanup.try_get();
                             Ok(())
                         },
-                        handler(),
+                        cleanup_handler,
                     )
                     .expect("cleanup should register");
             }
@@ -190,7 +191,7 @@ fn nested_memo_cleanup_does_not_track_the_outer_observer() {
                         .expect("inner memo should remain readable");
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("effect should initialize");
 
@@ -224,7 +225,7 @@ fn batch_delays_effects_and_untrack_preserves_ownership_context() {
                     seen_in_effect.set(effect_source.get() + effect_hidden.get());
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("effect should initialize");
 
@@ -246,7 +247,7 @@ fn batch_delays_effects_and_untrack_preserves_ownership_context() {
                     let _ = second_source.get();
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("effect should initialize");
         set_hidden.set(4);
@@ -320,7 +321,7 @@ fn track_batch_tracks_all_signals_in_one_scope() {
                     runs_in_effect.set(runs_in_effect.get() + 1);
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("effect should initialize");
 
@@ -346,7 +347,7 @@ fn notify_recomputes_after_silent_interior_mutation() {
                     seen_in_effect.set(source.with(|value| *value.borrow()));
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("effect should initialize");
 
@@ -378,7 +379,7 @@ fn cross_scope_silent_notify_from_callback_waits_for_value_borrow() {
                         });
                         Ok(())
                     },
-                    handler(),
+                    handler(child),
                 )
                 .expect("effect should initialize");
 
@@ -424,7 +425,7 @@ fn cross_scope_computation_stack_includes_scope_identity() {
                         seen_in_effect.set(child_memo.get());
                         Ok(())
                     },
-                    handler(),
+                    handler(child),
                 )
                 .expect("effect should initialize");
 
@@ -452,7 +453,7 @@ fn cross_scope_derived_reacts_and_detaches_on_exit() {
                         seen_in_effect.set(derived.get());
                         Ok(())
                     },
-                    handler(),
+                    handler(child),
                 )
                 .expect("effect should initialize");
 
@@ -537,7 +538,7 @@ fn cyclic_effect_queue_failure_does_not_poison_unrelated_effects() {
                     runs_in_effect.set(runs_in_effect.get() + 1);
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("effect should initialize");
 
@@ -557,7 +558,7 @@ fn cyclic_effect_queue_failure_does_not_poison_unrelated_effects() {
                         .set(independent_runs_in_effect.get() + independent.get());
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("effect should initialize");
         set_independent.set(1);

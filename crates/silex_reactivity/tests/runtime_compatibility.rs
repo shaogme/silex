@@ -1,7 +1,7 @@
-use silex_reactivity::{EffectInitError, ErrorHandler, Runtime, RuntimeInputs};
+use silex_reactivity::{EffectInitError, ErrorHandler, Runtime, RuntimeInputs, Scope};
 
-fn handler<'scope>() -> ErrorHandler<'scope, ()> {
-    ErrorHandler::new(|_| {})
+fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, ()> {
+    scope.error_handler(|_| {})
 }
 
 #[test]
@@ -14,24 +14,36 @@ fn parent_child_owned_and_root_scopes_accept_same_family_inputs() {
         let nested = owned.child();
         assert!(
             scope
-                .effect_from(RuntimeInputs::single(input.clone()), || Ok(()), handler())
+                .effect_from(
+                    RuntimeInputs::single(input.clone()),
+                    || Ok(()),
+                    handler(scope)
+                )
                 .is_ok()
         );
         assert!(
             owned
-                .effect_from(RuntimeInputs::single(input.clone()), || Ok(()), handler())
+                .effect_from(
+                    RuntimeInputs::single(input.clone()),
+                    || Ok(()),
+                    handler(scope)
+                )
                 .is_ok()
         );
         assert!(
             nested
-                .effect_from(RuntimeInputs::single(input.clone()), || Ok(()), handler())
+                .effect_from(
+                    RuntimeInputs::single(input.clone()),
+                    || Ok(()),
+                    handler(scope)
+                )
                 .is_ok()
         );
 
         scope.child(|child| {
             assert!(
                 child
-                    .effect_from(RuntimeInputs::single(input), || Ok(()), handler())
+                    .effect_from(RuntimeInputs::single(input), || Ok(()), handler(child))
                     .is_ok()
             );
         });
@@ -45,7 +57,7 @@ fn parent_child_owned_and_root_scopes_accept_same_family_inputs() {
         let input = source.runtime_input();
         assert!(
             scope
-                .effect_from(RuntimeInputs::single(input), || Ok(()), handler())
+                .effect_from(RuntimeInputs::single(input), || Ok(()), handler(scope))
                 .is_ok()
         );
     }
@@ -65,7 +77,7 @@ fn different_schedulers_are_rejected_even_when_scope_ids_are_reused() {
             .effect_from(
                 RuntimeInputs::single(foreign_input),
                 move || Ok(()),
-                handler(),
+                handler(scope),
             )
             .map(|_| ())
     });

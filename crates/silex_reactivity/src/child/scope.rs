@@ -16,6 +16,7 @@ use crate::{
     completion::{
         CompletionOnce, CompletionSender, create_completion_once, create_completion_sender,
     },
+    error::ErrorHandlerEntry,
     handle::Handle,
     internal::value::{AnyValue, CallbackThunk, CleanupThunk},
     runtime::{self, RuntimeInputs},
@@ -81,6 +82,34 @@ impl<'scope> Scope<'scope> {
 
     pub fn is_active(&self) -> bool {
         self.storage.is_active()
+    }
+
+    /// Register a callback owned by this scope and return a copyable handle.
+    ///
+    /// The callback remains in the scope registry until disposal. Creating a
+    /// handler in a frequently rerun reactive callback therefore grows the
+    /// registry until the owning scope ends.
+    pub fn error_handler<E, F>(&self, handler: F) -> ErrorHandler<'scope, E>
+    where
+        E: 'scope,
+        F: Fn(E) + 'scope,
+    {
+        self.try_error_handler(handler)
+            .unwrap_or_else(|error| panic!("创建 scoped error handler 失败: {error}"))
+    }
+
+    pub fn try_error_handler<E, F>(&self, handler: F) -> ReactiveResult<ErrorHandler<'scope, E>>
+    where
+        E: 'scope,
+        F: Fn(E) + 'scope,
+    {
+        let entry = ErrorHandlerEntry::new::<E, F>(handler);
+        let state = self.state();
+        let key = state
+            .try_borrow_mut()
+            .map_err(|_| ReactiveError::BorrowConflict)?
+            .register_error_handler(entry)?;
+        Ok(ErrorHandler::from_parts(self.storage, key))
     }
 
     /// Validate opaque source provenance for a framework-owned registration.
@@ -773,8 +802,8 @@ mod tests {
         ]
     }
 
-    fn handler<'scope>() -> ErrorHandler<'scope, ()> {
-        ErrorHandler::new(|_| {})
+    fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, ()> {
+        scope.error_handler(|_| {})
     }
 
     #[test]
@@ -804,7 +833,7 @@ mod tests {
                     *observed_in_cleanup.borrow_mut() = Some(snapshot(&state_in_cleanup));
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("cleanup should register");
 
@@ -983,7 +1012,7 @@ mod tests {
                         .is_err();
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("cleanup should register");
 
@@ -1026,7 +1055,7 @@ mod tests {
         let state_borrow = state.borrow_mut();
 
         assert!(matches!(
-            owner.effect(|| Ok(()), handler()),
+            owner.effect(|| Ok(()), handler(scope)),
             Err(EffectInitError::Registration(ReactiveError::BorrowConflict))
         ));
 

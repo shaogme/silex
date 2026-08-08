@@ -469,8 +469,8 @@ mod tests {
         runtime.child(f);
     }
 
-    fn handler<'scope>() -> ErrorHandler<'scope, ()> {
-        ErrorHandler::new(|_| {})
+    fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, ()> {
+        scope.error_handler(|_| {})
     }
 
     #[test]
@@ -494,7 +494,7 @@ mod tests {
                         });
                         Ok(())
                     },
-                    handler(),
+                    handler(scope),
                 )
                 .expect("effect should initialize");
 
@@ -525,7 +525,7 @@ mod tests {
                             let _ = source.get();
                             Ok(())
                         },
-                        handler(),
+                        handler(child),
                     )
                     .expect("effect should initialize");
                 let effect_state = effect.handle.state();
@@ -575,7 +575,7 @@ mod tests {
                             let _ = source.get();
                             Ok(())
                         },
-                        handler(),
+                        handler(child),
                     )
                     .expect("effect should initialize");
                 let child_state = local.handle.state();
@@ -659,7 +659,7 @@ mod tests {
                             let _ = source.get();
                             Ok(())
                         },
-                        handler(),
+                        handler(child),
                     )
                     .expect("effect should initialize");
                 let child_state = local.handle.state();
@@ -741,7 +741,7 @@ mod tests {
                     let _ = source.get();
                     Ok(())
                 },
-                handler(),
+                handler(observer_scope),
             )
             .expect("effect should initialize");
         let source_state = unsafe { source_storage.typed_state() };

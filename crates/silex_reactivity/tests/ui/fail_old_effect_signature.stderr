@@ -1,7 +1,7 @@
 error[E0308]: mismatched types
  --> tests/ui/fail_old_effect_signature.rs:6:33
   |
-6 |         let _ = scope.effect(|| {}, ErrorHandler::new(|_| {}));
+6 |         let _ = scope.effect(|| {}, scope.error_handler(|_| {}));
   |                                 ^^ expected `Result<(), _>`, found `()`
   |
   = note:   expected enum `Result<(), _>`

@@ -1,13 +1,14 @@
-use silex_reactivity::{EffectInitError, ErrorHandler, Runtime};
+use silex_reactivity::{EffectInitError, ErrorHandler, Runtime, Scope};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
 };
 
 fn collecting_handler<'scope>(
+    scope: Scope<'scope>,
     errors: Rc<RefCell<Vec<&'static str>>>,
 ) -> ErrorHandler<'scope, &'static str> {
-    ErrorHandler::new(move |error| errors.borrow_mut().push(error))
+    scope.error_handler(move |error| errors.borrow_mut().push(error))
 }
 
 #[test]
@@ -21,7 +22,7 @@ fn initial_callback_error_returns_without_calling_the_handler() {
         let (source, set_source) = scope.signal(0_i32);
         let cleanup_runs_in_callback = cleanup_runs.clone();
         let callback_runs_in_callback = callback_runs.clone();
-        let cleanup_handler = collecting_handler(errors.clone());
+        let cleanup_handler = collecting_handler(scope, errors.clone());
         let result = scope.effect(
             move || {
                 callback_runs_in_callback.set(callback_runs_in_callback.get() + 1);
@@ -33,12 +34,12 @@ fn initial_callback_error_returns_without_calling_the_handler() {
                             cleanup_runs.set(cleanup_runs.get() + 1);
                             Ok(())
                         },
-                        cleanup_handler.clone(),
+                        cleanup_handler,
                     )
                     .expect("provisional cleanup should register");
                 Err("initial")
             },
-            collecting_handler(errors.clone()),
+            collecting_handler(scope, errors.clone()),
         );
 
         assert!(matches!(result, Err(EffectInitError::Initial("initial"))));
@@ -62,7 +63,7 @@ fn initial_failure_does_not_reenter_from_rollback_cleanup() {
         let callback_runs_in_callback = callback_runs.clone();
         let register_cleanup_in_callback = register_cleanup.clone();
         let setter_in_cleanup = set_source;
-        let cleanup_handler = collecting_handler(errors.clone());
+        let cleanup_handler = collecting_handler(scope, errors.clone());
         let result = scope.effect(
             move || {
                 callback_runs_in_callback.set(callback_runs_in_callback.get() + 1);
@@ -74,13 +75,13 @@ fn initial_failure_does_not_reenter_from_rollback_cleanup() {
                                 setter_in_cleanup.set(1);
                                 Ok(())
                             },
-                            cleanup_handler.clone(),
+                            cleanup_handler,
                         )
                         .expect("rollback cleanup should register");
                 }
                 Err("initial")
             },
-            collecting_handler(errors.clone()),
+            collecting_handler(scope, errors.clone()),
         );
 
         assert!(matches!(result, Err(EffectInitError::Initial("initial"))));
@@ -99,7 +100,10 @@ fn nested_node_cleanup_errors_wait_for_outer_run_recovery() {
         let (source, set_source) = scope.signal(0_i32);
         let registered_cleanup_runs_in_handler = registered_cleanup_runs.clone();
         let scope_in_handler = scope;
-        let cleanup_error_handler = ErrorHandler::new(move |_| {
+        let recovered_cleanup_handler = scope.error_handler(|_: &'static str| {});
+        let nested_effect_handler = scope.error_handler(|_: ()| {});
+        let outer_effect_handler = scope.error_handler(|_: ()| {});
+        let cleanup_error_handler = scope.error_handler(move |_: &'static str| {
             let registered_cleanup_runs = registered_cleanup_runs_in_handler.clone();
             scope_in_handler
                 .on_cleanup(
@@ -107,36 +111,36 @@ fn nested_node_cleanup_errors_wait_for_outer_run_recovery() {
                         registered_cleanup_runs.set(registered_cleanup_runs.get() + 1);
                         Ok(())
                     },
-                    ErrorHandler::new(|_: &'static str| {}),
+                    recovered_cleanup_handler,
                 )
                 .expect("recovered owner should accept a root cleanup");
         });
         let first_run_in_effect = first_run.clone();
-        let cleanup_error_handler_in_effect = cleanup_error_handler.clone();
+        let cleanup_error_handler_in_effect = cleanup_error_handler;
         scope
             .effect(
                 move || {
                     let _ = source.get();
                     if first_run_in_effect.replace(false) {
-                        let nested_cleanup_handler = cleanup_error_handler_in_effect.clone();
+                        let nested_cleanup_handler = cleanup_error_handler_in_effect;
                         scope
                             .effect(
                                 move || {
                                     scope
                                         .on_cleanup(
                                             || Err("nested cleanup"),
-                                            nested_cleanup_handler.clone(),
+                                            nested_cleanup_handler,
                                         )
                                         .expect("nested cleanup should register");
                                     Ok(())
                                 },
-                                ErrorHandler::new(|_: ()| {}),
+                                nested_effect_handler,
                             )
                             .expect("nested effect should initialize");
                     }
                     Ok(())
                 },
-                ErrorHandler::new(|_: ()| {}),
+                outer_effect_handler,
             )
             .expect("outer effect should initialize");
 
@@ -170,7 +174,7 @@ fn deferred_callback_error_reaches_its_handler_and_can_retry() {
                         Ok(())
                     }
                 },
-                collecting_handler(errors.clone()),
+                collecting_handler(scope, errors.clone()),
             )
             .expect("effect should initialize");
 
@@ -216,7 +220,7 @@ fn failed_dynamic_run_rolls_back_new_dependency_edges() {
                         Ok(())
                     }
                 },
-                collecting_handler(errors.clone()),
+                collecting_handler(scope, errors.clone()),
             )
             .expect("effect should initialize");
 
@@ -256,7 +260,7 @@ fn previous_value_is_kept_when_a_run_returns_an_error() {
                         Ok(previous.copied().unwrap_or(0) + 1)
                     }
                 },
-                collecting_handler(errors.clone()),
+                collecting_handler(scope, errors.clone()),
             )
             .expect("previous effect should initialize");
 
@@ -293,7 +297,7 @@ fn watch_error_keeps_the_previous_snapshot_for_retry() {
                         Ok(())
                     }
                 },
-                collecting_handler(errors.clone()),
+                collecting_handler(scope, errors.clone()),
             )
             .expect("watch should initialize");
 
@@ -315,7 +319,7 @@ fn cleanup_errors_do_not_skip_the_remaining_cleanup_batch() {
 
     runtime.child(|scope| {
         scope
-            .on_cleanup(|| Err("cleanup"), collecting_handler(errors.clone()))
+            .on_cleanup(|| Err("cleanup"), collecting_handler(scope, errors.clone()))
             .expect("cleanup should register");
         let second_cleanup_ran_in_cleanup = second_cleanup_ran.clone();
         scope
@@ -324,7 +328,7 @@ fn cleanup_errors_do_not_skip_the_remaining_cleanup_batch() {
                     second_cleanup_ran_in_cleanup.set(true);
                     Ok(())
                 },
-                collecting_handler(errors.clone()),
+                collecting_handler(scope, errors.clone()),
             )
             .expect("cleanup should register");
     });

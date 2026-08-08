@@ -1,12 +1,12 @@
-use silex_reactivity::{ErrorHandler, ReactiveError, Runtime, notify};
+use silex_reactivity::{ErrorHandler, ReactiveError, Runtime, Scope, notify};
 use std::{
     cell::{Cell, RefCell},
     panic::{AssertUnwindSafe, catch_unwind},
     rc::Rc,
 };
 
-fn handler<'scope>() -> ErrorHandler<'scope, ()> {
-    ErrorHandler::new(|_| {})
+fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, ()> {
+    scope.error_handler(|_| {})
 }
 
 #[test]
@@ -26,7 +26,7 @@ fn runtime_run_provides_scoped_signal_and_effect() {
                     runs_in_effect.set(runs_in_effect.get() + 1);
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("effect should initialize");
 
@@ -53,7 +53,7 @@ fn non_static_effect_can_capture_data_and_scoped_signal() {
                     external_in_effect.set(external_in_effect.get() + signal.get());
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("effect should initialize");
         set_signal.set(2);
@@ -78,7 +78,7 @@ fn child_scope_is_lexical_and_cleans_up_its_nodes() {
                         runs.set(runs.get() + 1);
                         Ok(())
                     },
-                    handler(),
+                    handler(child),
                 )
                 .expect("effect should initialize");
             set_local.set(1);
@@ -104,7 +104,7 @@ fn child_effect_reacts_to_parent_signal_and_detaches_on_exit() {
                         runs_in_effect.set(runs_in_effect.get() + 1);
                         Ok(())
                     },
-                    handler(),
+                    handler(child),
                 )
                 .expect("effect should initialize");
             assert_eq!(runs.get(), 1);
@@ -129,7 +129,7 @@ fn child_cleanup_runs_when_scoped_run_ends() {
                     cleaned_in_scope.set(true);
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("cleanup should register");
         assert!(!cleaned.get());
@@ -167,7 +167,7 @@ fn cleanup_order_follows_lexical_scope_order() {
                     parent_events.borrow_mut().push("parent");
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("cleanup should register");
 
@@ -179,7 +179,7 @@ fn cleanup_order_follows_lexical_scope_order() {
                         child_events.borrow_mut().push("child");
                         Ok(())
                     },
-                    handler(),
+                    handler(child),
                 )
                 .expect("cleanup should register");
         });
@@ -206,7 +206,7 @@ fn child_scope_panic_cleans_up_before_parent_continues() {
                             cleaned_in_child.set(true);
                             Ok(())
                         },
-                        handler(),
+                        handler(child),
                     )
                     .expect("cleanup should register");
                 panic!("child callback panic");
@@ -228,7 +228,7 @@ fn child_callback_panic_is_not_replaced_by_cleanup_panic() {
         let panic = catch_unwind(AssertUnwindSafe(|| {
             scope.child(|child| {
                 child
-                    .on_cleanup(|| panic!("cleanup panic"), handler())
+                    .on_cleanup(|| panic!("cleanup panic"), handler(child))
                     .expect("cleanup should register");
                 panic!("callback panic");
             });
@@ -257,7 +257,7 @@ fn parent_effect_tracks_reads_inside_child_callback() {
                     runs_in_effect.set(runs_in_effect.get() + 1);
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("effect should initialize");
 
@@ -287,7 +287,7 @@ fn child_local_signal_does_not_keep_parent_effect_queued_after_exit() {
                         });
                         Ok(())
                     },
-                    handler(),
+                    handler(scope),
                 )
                 .expect("effect should initialize");
         }));
@@ -311,7 +311,7 @@ fn cleanup_can_reenter_an_active_parent_scope() {
                     seen_in_effect.set(source.get());
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("effect should initialize");
 
@@ -322,7 +322,7 @@ fn cleanup_can_reenter_an_active_parent_scope() {
                         set_source.set(1);
                         Ok(())
                     },
-                    handler(),
+                    handler(child),
                 )
                 .expect("cleanup should register");
         });
@@ -344,7 +344,7 @@ fn panic_in_scoped_run_still_drops_the_scope() {
                         cleaned_in_scope.set(true);
                         Ok(())
                     },
-                    handler(),
+                    handler(scope),
                 )
                 .expect("cleanup should register");
             panic!("run panic");
@@ -366,7 +366,7 @@ fn cleanup_panic_does_not_poison_runtime() {
     let panic = catch_unwind(AssertUnwindSafe(|| {
         runtime.child(|scope| {
             scope
-                .on_cleanup(|| panic!("cleanup panic"), handler())
+                .on_cleanup(|| panic!("cleanup panic"), handler(scope))
                 .expect("cleanup should register");
         });
     }));
@@ -388,7 +388,7 @@ fn cleanup_panic_does_not_skip_remaining_cleanups() {
     let panic = catch_unwind(AssertUnwindSafe(|| {
         runtime.child(|scope| {
             scope
-                .on_cleanup(|| panic!("first cleanup panic"), handler())
+                .on_cleanup(|| panic!("first cleanup panic"), handler(scope))
                 .expect("cleanup should register");
             scope
                 .on_cleanup(
@@ -396,7 +396,7 @@ fn cleanup_panic_does_not_skip_remaining_cleanups() {
                         remaining_cleanup_ran_in_scope.set(true);
                         Ok(())
                     },
-                    handler(),
+                    handler(scope),
                 )
                 .expect("cleanup should register");
         });
@@ -421,11 +421,11 @@ fn cleanup_panic_does_not_skip_other_nodes_or_root_cleanup() {
                 .effect(
                     move || {
                         scope_copy
-                            .on_cleanup(|| panic!("first node cleanup panic"), handler())
+                            .on_cleanup(|| panic!("first node cleanup panic"), handler(scope_copy))
                             .expect("cleanup should register");
                         Ok(())
                     },
-                    handler(),
+                    handler(scope),
                 )
                 .expect("effect should initialize");
 
@@ -440,12 +440,12 @@ fn cleanup_panic_does_not_skip_other_nodes_or_root_cleanup() {
                                     cleaned.set(true);
                                     Ok(())
                                 },
-                                handler(),
+                                handler(scope_copy),
                             )
                             .expect("cleanup should register");
                         Ok(())
                     },
-                    handler(),
+                    handler(scope),
                 )
                 .expect("effect should initialize");
 
@@ -455,7 +455,7 @@ fn cleanup_panic_does_not_skip_other_nodes_or_root_cleanup() {
                         root_cleaned_in_scope.set(true);
                         Ok(())
                     },
-                    handler(),
+                    handler(scope),
                 )
                 .expect("cleanup should register");
         });
@@ -476,6 +476,7 @@ fn scope_cleanup_can_register_another_cleanup() {
 
     runtime.child(|scope| {
         let scope_copy = scope;
+        let second_cleanup_handler = handler(scope);
         scope
             .on_cleanup(
                 move || {
@@ -487,13 +488,13 @@ fn scope_cleanup_can_register_another_cleanup() {
                                 second_ran.set(true);
                                 Ok(())
                             },
-                            handler(),
+                            second_cleanup_handler,
                         ),
                         Err(ReactiveError::NoSuchNode)
                     );
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("cleanup should register");
     });
@@ -532,18 +533,18 @@ fn effect_cleanup_can_register_cleanup_for_the_next_run() {
                                                 second_cleanup.set(true);
                                                 Ok(())
                                             },
-                                            handler(),
+                                            handler(scope_for_cleanup),
                                         )
                                         .expect("cleanup should register");
                                     Ok(())
                                 },
-                                handler(),
+                                handler(scope_for_cleanup),
                             )
                             .expect("cleanup should register");
                     }
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("effect should initialize");
 
@@ -573,7 +574,7 @@ fn child_cleanup_panic_still_flushes_parent_queue() {
                     });
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("effect should initialize");
         assert_eq!(runs.get(), 1);
@@ -593,7 +594,7 @@ fn child_cleanup_panic_still_flushes_parent_queue() {
                             });
                             Ok(())
                         },
-                        handler(),
+                        handler(child),
                     )
                     .expect("cleanup should register");
             });
@@ -641,12 +642,12 @@ fn completion_token_rejects_submission_after_scope_deactivation() {
                                     assert!(!token_in_cleanup.submit(1));
                                     Ok(())
                                 },
-                                handler(),
+                                handler(child_scope),
                             )
                             .expect("cleanup should register");
                         Ok(())
                     },
-                    handler(),
+                    handler(child),
                 )
                 .expect("effect should initialize");
         });

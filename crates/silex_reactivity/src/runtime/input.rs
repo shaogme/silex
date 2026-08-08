@@ -369,8 +369,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{internal::value::AnyValue, scope::ScopeStorage};
-    use std::{cell::RefCell, rc::Rc};
+    use crate::{Scope, internal::value::AnyValue, scope::ScopeStorage};
+    use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 
     fn snapshot(storage: &ScopeStorage) -> (usize, usize, usize, u64, bool, bool) {
         let state = storage.state.borrow();
@@ -391,8 +391,12 @@ mod tests {
         )
     }
 
-    fn handler<'scope>() -> ErrorHandler<'scope, ()> {
-        ErrorHandler::new(|_| {})
+    fn handler<'scope>(storage: &'scope ScopeStorage) -> ErrorHandler<'scope, ()> {
+        let scope = Scope {
+            storage,
+            _marker: PhantomData,
+        };
+        scope.error_handler(|_| {})
     }
 
     #[test]
@@ -412,7 +416,7 @@ mod tests {
             &target_state,
             RuntimeInputs::single(input),
             || Ok(()),
-            handler(),
+            handler(&target),
         );
 
         assert!(matches!(
@@ -433,13 +437,14 @@ mod tests {
         let target = ScopeStorage::new(GlobalScheduler::new());
         let input = RuntimeInput::from_scheduler(source.scheduler());
         let target_state = unsafe { target.typed_state() };
+        let error_handler = handler(&target);
         target.dispose();
 
         let result = create_effect(
             &target_state,
             RuntimeInputs::single(input),
             || Ok(()),
-            handler(),
+            error_handler,
         );
 
         assert!(matches!(
@@ -470,7 +475,7 @@ mod tests {
                 *ran_in_callback.borrow_mut() = true;
                 Ok(())
             },
-            handler(),
+            handler(&same_family),
         );
 
         assert!(matches!(
@@ -503,7 +508,7 @@ mod tests {
                 *ran_in_callback.borrow_mut() = true;
                 Ok(())
             },
-            handler(),
+            handler(&target),
         );
 
         assert!(result.is_ok());

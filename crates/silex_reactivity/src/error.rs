@@ -1,6 +1,11 @@
 //! Explicit runtime operation errors.
 
-use std::{cell::RefCell, fmt, rc::Rc};
+use crate::{internal::value::AnyValue, runtime::invoke_error_handler, scope::ScopeStorage};
+use std::{cell::RefCell, fmt, marker::PhantomData, rc::Rc};
+
+slotmap::new_key_type! {
+    pub(crate) struct ErrorHandlerKey;
+}
 
 /// A response to an operation that cannot be completed in the current scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,42 +52,74 @@ impl std::error::Error for ReactiveError {}
 
 pub type ReactiveResult<T> = Result<T, ReactiveError>;
 
-/// A scoped, single-threaded destination for callback errors.
-///
-/// The handler is deliberately an `Fn` so the runtime never holds a mutable
-/// borrow into user state while dispatching an error. Callers that need
-/// mutable state can capture an `Rc<RefCell<_>>` (or another scoped cell).
-pub struct ErrorHandler<'scope, E> {
-    callback: Rc<dyn Fn(E) + 'scope>,
+pub(crate) type ErasedErrorCallback<'scope> = dyn Fn(AnyValue<'scope>) + 'scope;
+
+pub(crate) struct ErrorHandlerEntry<'scope> {
+    pub(crate) callback: Rc<ErasedErrorCallback<'scope>>,
 }
 
-impl<E> Clone for ErrorHandler<'_, E> {
-    fn clone(&self) -> Self {
-        Self {
-            callback: self.callback.clone(),
-        }
-    }
-}
-
-impl<'scope, E: 'scope> ErrorHandler<'scope, E> {
-    /// Create an error handler from a scoped callback.
-    pub fn new<F>(handler: F) -> Self
+impl<'scope> ErrorHandlerEntry<'scope> {
+    pub(crate) fn new<E, F>(handler: F) -> Self
     where
+        E: 'scope,
         F: Fn(E) + 'scope,
     {
+        let callback: Rc<ErasedErrorCallback<'scope>> = Rc::new(move |value| {
+            let error = unsafe {
+                value
+                    .downcast::<E>()
+                    .expect("error handler payload type must match")
+            };
+            handler(error);
+        });
+        Self { callback }
+    }
+}
+
+/// A copyable, scoped destination for callback errors.
+///
+/// The callback is owned by the scope registry. Copies of this handle only
+/// copy the registry key and never clone callback ownership. The registry
+/// keeps the callback until scope disposal completes.
+pub struct ErrorHandler<'scope, E> {
+    storage: &'scope ScopeStorage,
+    key: ErrorHandlerKey,
+    marker: PhantomData<fn(E)>,
+}
+
+impl<'scope, E> Copy for ErrorHandler<'scope, E> {}
+
+impl<'scope, E> Clone for ErrorHandler<'scope, E> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<'scope, E> ErrorHandler<'scope, E> {
+    pub(crate) fn from_parts(storage: &'scope ScopeStorage, key: ErrorHandlerKey) -> Self {
         Self {
-            callback: Rc::new(handler),
+            storage,
+            key,
+            marker: PhantomData,
         }
     }
 
-    /// Create a handler that intentionally discards its input.
-    pub fn ignore() -> Self {
-        Self::new(|_| {})
+    /// Dispatch one error and report a stale or invalid registry key.
+    pub fn try_handle(&self, error: E) -> ReactiveResult<()>
+    where
+        E: 'scope,
+    {
+        invoke_error_handler(self.storage, self.key, error)
     }
 
-    /// Dispatch one error to this handler.
-    pub fn handle(&self, error: E) {
-        (self.callback)(error);
+    /// Dispatch one error, panicking if the owning scope no longer has the
+    /// registered handler.
+    pub fn handle(&self, error: E)
+    where
+        E: 'scope,
+    {
+        self.try_handle(error)
+            .expect("派发 scoped error handler 失败");
     }
 }
 
@@ -179,5 +216,88 @@ impl<E> InitialErrorSlot<E> {
             .borrow_mut()
             .take()
             .expect("initial callback error slot was not populated")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Scope, runtime::GlobalScheduler, scope::ScopeStorage};
+    use std::{cell::Cell, marker::PhantomData, rc::Rc};
+
+    #[test]
+    fn stale_handler_is_rejected_after_disposal_and_scope_id_reuse() {
+        let scheduler = GlobalScheduler::new();
+        let first_storage = ScopeStorage::new(scheduler.clone());
+        let first_scope = Scope {
+            storage: &first_storage,
+            _marker: PhantomData,
+        };
+        let first_calls = Cell::new(0);
+        let first_handler = first_scope.error_handler(|_: &'static str| {
+            first_calls.set(first_calls.get() + 1);
+        });
+        let first_state = unsafe { first_storage.typed_state() };
+        assert_eq!(first_state.borrow().error_handlers.len(), 1);
+        assert_eq!(first_state.borrow().nodes.len(), 0);
+
+        first_storage.dispose_untracked();
+        assert_eq!(first_state.borrow().error_handlers.len(), 0);
+        assert_eq!(
+            first_handler.try_handle("stale"),
+            Err(ReactiveError::NoSuchNode)
+        );
+        assert_eq!(first_calls.get(), 0);
+
+        let second_storage = ScopeStorage::new(scheduler);
+        let second_scope = Scope {
+            storage: &second_storage,
+            _marker: PhantomData,
+        };
+        let second_calls = Cell::new(0);
+        let second_handler = second_scope.error_handler(|_: &'static str| {
+            second_calls.set(second_calls.get() + 1);
+        });
+
+        assert_eq!(
+            first_handler.try_handle("still stale"),
+            Err(ReactiveError::NoSuchNode)
+        );
+        second_handler.handle("current");
+        assert_eq!(second_calls.get(), 1);
+
+        second_storage.dispose_untracked();
+    }
+
+    #[test]
+    fn handler_drop_panic_does_not_leave_registry_entries() {
+        struct PanicOnDrop(Rc<Cell<usize>>);
+
+        impl Drop for PanicOnDrop {
+            fn drop(&mut self) {
+                self.0.set(self.0.get() + 1);
+                panic!("handler capture drop panic");
+            }
+        }
+
+        let storage = ScopeStorage::new(GlobalScheduler::new());
+        let scope = Scope {
+            storage: &storage,
+            _marker: PhantomData,
+        };
+        let drops = Rc::new(Cell::new(0));
+        let drop_probe = PanicOnDrop(drops.clone());
+        let _handler = scope.error_handler(move |_: ()| {
+            let _ = &drop_probe;
+        });
+        let state = unsafe { storage.typed_state() };
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            storage.dispose_untracked();
+        }));
+
+        assert!(result.is_err());
+        assert_eq!(state.borrow().error_handlers.len(), 0);
+        assert_eq!(drops.get(), 1);
     }
 }

@@ -55,11 +55,30 @@ impl ScopeStorage {
                 run_global_queue(&scheduler);
             }
         }));
-        scheduler.borrow_mut().release_scope_id(self.scope_id);
-        match (dispose_result, flush_result) {
-            (Err(panic), _) => std::panic::resume_unwind(panic),
-            (Ok(()), Err(panic)) => std::panic::resume_unwind(panic),
-            (Ok(()), Ok(())) => {}
+        let clear_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.state.borrow_mut().clear_error_handlers();
+        }));
+        let release_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            scheduler.borrow_mut().release_scope_id(self.scope_id);
+        }));
+        let mut first_panic = dispose_result.err();
+        if let Err(panic) = flush_result
+            && first_panic.is_none()
+        {
+            first_panic = Some(panic);
+        }
+        if let Err(panic) = clear_result
+            && first_panic.is_none()
+        {
+            first_panic = Some(panic);
+        }
+        if let Err(panic) = release_result
+            && first_panic.is_none()
+        {
+            first_panic = Some(panic);
+        }
+        if let Some(panic) = first_panic {
+            std::panic::resume_unwind(panic);
         }
     }
 

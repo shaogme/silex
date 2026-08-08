@@ -1,4 +1,4 @@
-use silex_reactivity::{ErrorHandler, Runtime, RuntimeInputs};
+use silex_reactivity::{Runtime, RuntimeInputs};
 
 fn main() {
     let mut runtime = Runtime::new();
@@ -6,7 +6,7 @@ fn main() {
         let _ = scope.try_effect_from(
             RuntimeInputs::new(),
             || Ok::<(), ()>(()),
-            ErrorHandler::new(|_| {}),
+            scope.error_handler(|_| {}),
         );
     });
 }

@@ -1,9 +1,13 @@
-use silex_reactivity::ErrorHandler;
+use silex_reactivity::{ErrorHandler, Runtime};
 
 fn main() {
-    let local = String::from("scoped");
-    let value = &local;
-    let _: ErrorHandler<'static, ()> = ErrorHandler::new(move |_| {
-        assert_eq!(value.as_str(), "scoped");
+    let mut runtime = Runtime::new();
+    let handler = runtime.child(|scope| {
+        let local = String::from("scoped");
+        let value = &local;
+        scope.error_handler(move |_: ()| {
+            assert_eq!(value.as_str(), "scoped");
+        })
     });
+    let _: ErrorHandler<'static, ()> = handler;
 }

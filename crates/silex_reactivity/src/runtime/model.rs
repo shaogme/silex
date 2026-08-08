@@ -6,6 +6,7 @@ use super::{
 };
 use crate::{
     ReactiveError, ReactiveResult,
+    error::{ErrorHandlerEntry, ErrorHandlerKey},
     handle::NodeKindTag,
     internal::{
         RawId,
@@ -16,7 +17,11 @@ use crate::{
     },
 };
 use slotmap::{SecondaryMap, SlotMap};
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    cell::RefCell,
+    panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
+    rc::Rc,
+};
 
 slotmap::new_key_type! {
     pub(crate) struct EdgeId;
@@ -173,6 +178,7 @@ pub(crate) struct ScopeState<'scope> {
     pub(crate) current_owner: Option<RawId>,
     pub(crate) root_cleanups: Vec<CleanupThunk<'scope>>,
     pub(crate) dependency_transactions: Vec<DependencyTransaction>,
+    pub(crate) error_handlers: SlotMap<ErrorHandlerKey, ErrorHandlerEntry<'scope>>,
 }
 
 #[cfg(feature = "test-support")]
@@ -183,6 +189,7 @@ pub struct RuntimeSnapshot {
     pub edges: usize,
     pub roots: usize,
     pub cleanups: usize,
+    pub handlers: usize,
     pub queue: usize,
     pub epoch: u64,
     pub observer: bool,
@@ -202,6 +209,7 @@ impl<'scope> ScopeState<'scope> {
             current_owner: None,
             root_cleanups: Vec::new(),
             dependency_transactions: Vec::new(),
+            error_handlers: SlotMap::with_key(),
         }
     }
 
@@ -220,6 +228,7 @@ impl<'scope> ScopeState<'scope> {
             edges: self.edges.len(),
             roots: self.roots.len(),
             cleanups,
+            handlers: self.error_handlers.len(),
             queue: scheduler.global_queue.len(),
             epoch: scheduler.current_epoch(),
             observer: scheduler.observer().is_some(),
@@ -456,6 +465,39 @@ impl<'scope> ScopeState<'scope> {
             return;
         }
         self.root_cleanups.push(cleanup);
+    }
+
+    pub(crate) fn register_error_handler(
+        &mut self,
+        entry: ErrorHandlerEntry<'scope>,
+    ) -> ReactiveResult<ErrorHandlerKey> {
+        if !self.active {
+            return Err(ReactiveError::NoSuchNode);
+        }
+        if !self
+            .scheduler
+            .try_borrow()
+            .map_err(|_| ReactiveError::BorrowConflict)?
+            .is_scope_active(self.scope_id)
+        {
+            return Err(ReactiveError::NoSuchNode);
+        }
+        Ok(self.error_handlers.insert(entry))
+    }
+
+    pub(crate) fn clear_error_handlers(&mut self) {
+        let handlers = std::mem::take(&mut self.error_handlers);
+        let mut first_panic = None;
+        for (_, entry) in handlers {
+            if let Err(panic) = catch_unwind(AssertUnwindSafe(|| drop(entry)))
+                && first_panic.is_none()
+            {
+                first_panic = Some(panic);
+            }
+        }
+        if let Some(panic) = first_panic {
+            resume_unwind(panic);
+        }
     }
 
     pub(crate) fn has_value(&self, id: RawId) -> bool {

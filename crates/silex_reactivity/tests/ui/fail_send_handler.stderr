@@ -1,10 +1,16 @@
-error[E0277]: `Rc<(dyn Fn(()) + 'static)>` cannot be sent between threads safely
+error[E0277]: `Rc<RefCell<silex_reactivity::runtime::model::ScopeState<'static>>>` cannot be shared between threads safely
  --> tests/ui/fail_send_handler.rs:6:20
   |
 6 |     require_send::<ErrorHandler<'static, ()>>();
-  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^ `Rc<(dyn Fn(()) + 'static)>` cannot be sent between threads safely
+  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^ `Rc<RefCell<silex_reactivity::runtime::model::ScopeState<'static>>>` cannot be shared between threads safely
   |
-  = help: within `ErrorHandler<'static, ()>`, the trait `Send` is not implemented for `Rc<(dyn Fn(()) + 'static)>`
+  = help: within `silex_reactivity::scope::ScopeStorage`, the trait `Sync` is not implemented for `Rc<RefCell<silex_reactivity::runtime::model::ScopeState<'static>>>`
+note: required because it appears within the type `silex_reactivity::scope::ScopeStorage`
+ --> src/scope.rs
+  |
+  | pub(crate) struct ScopeStorage {
+  |                   ^^^^^^^^^^^^
+  = note: required for `&'static silex_reactivity::scope::ScopeStorage` to implement `Send`
 note: required because it appears within the type `ErrorHandler<'static, ()>`
  --> src/error.rs
   |

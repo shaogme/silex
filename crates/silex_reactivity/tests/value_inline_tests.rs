@@ -1,11 +1,11 @@
-use silex_reactivity::{ErrorHandler, Runtime};
+use silex_reactivity::{ErrorHandler, Runtime, Scope};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
 };
 
-fn handler<'scope>() -> ErrorHandler<'scope, ()> {
-    ErrorHandler::new(|_| {})
+fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, ()> {
+    scope.error_handler(|_| {})
 }
 
 #[test]
@@ -105,7 +105,7 @@ fn test_any_value_memo_skip_equal_update() {
                     effect_eval_count_cloned.set(effect_eval_count_cloned.get() + 1);
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("effect should initialize");
 

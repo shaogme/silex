@@ -331,8 +331,7 @@ impl<'scope> EffectThunk<'scope> {
         let mut callback = callback;
         Self {
             callback: Box::new(move || {
-                callback()
-                    .map_err(|error| ErrorEvent::new(error, handler.clone(), initial_slot.clone()))
+                callback().map_err(|error| ErrorEvent::new(error, handler, initial_slot.clone()))
             }),
         }
     }
@@ -371,7 +370,7 @@ impl<'scope> PreviousThunk<'scope> {
                 });
                 callback(old)
                     .map(AnyValue::new)
-                    .map_err(|error| ErrorEvent::new(error, handler.clone(), initial_slot.clone()))
+                    .map_err(|error| ErrorEvent::new(error, handler, initial_slot.clone()))
             }),
         }
     }
@@ -414,13 +413,13 @@ impl<'scope> WatchThunk<'scope> {
     {
         let mut getter = getter;
         let mut callback = callback;
-        let getter_handler = handler.clone();
+        let getter_handler = handler;
         let getter_slot = initial_slot.clone();
         Self {
             getter: Box::new(move || {
-                getter().map(AnyValue::new_reactive).map_err(|error| {
-                    ErrorEvent::new(error, getter_handler.clone(), getter_slot.clone())
-                })
+                getter()
+                    .map(AnyValue::new_reactive)
+                    .map_err(|error| ErrorEvent::new(error, getter_handler, getter_slot.clone()))
             }),
             callback: Box::new(move |new, old| {
                 let new = unsafe { new.downcast_ref::<T>() }
@@ -431,7 +430,7 @@ impl<'scope> WatchThunk<'scope> {
                         .expect("watch getter and callback value types must match")
                 });
                 callback(new, old)
-                    .map_err(|error| ErrorEvent::new(error, handler.clone(), initial_slot.clone()))
+                    .map_err(|error| ErrorEvent::new(error, handler, initial_slot.clone()))
             }),
             initialized: false,
             immediate,
@@ -517,7 +516,7 @@ impl<'scope> CleanupThunk<'scope> {
     {
         Self {
             callback: Some(Box::new(move || {
-                callback().map_err(|error| ErrorEvent::deferred(error, handler.clone()))
+                callback().map_err(|error| ErrorEvent::deferred(error, handler))
             })),
         }
     }

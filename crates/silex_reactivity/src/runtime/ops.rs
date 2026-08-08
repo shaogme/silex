@@ -9,8 +9,10 @@ use super::{
 };
 use crate::{
     ReactiveError, ReactiveResult,
+    error::ErrorHandlerKey,
     handle::NodeKindTag,
     internal::{RawId, value::AnyValue},
+    scope::ScopeStorage,
 };
 use std::{
     cell::RefCell,
@@ -50,6 +52,29 @@ fn lookup_callback_storage<'scope>(
         .map_err(|_| ReactiveError::BorrowConflict)?;
     let storage = state_ref.callback_storage(id)?;
     Ok((storage, state_ref.scheduler.clone()))
+}
+
+pub(crate) fn invoke_error_handler<'scope, E>(
+    storage: &ScopeStorage,
+    key: ErrorHandlerKey,
+    error: E,
+) -> ReactiveResult<()>
+where
+    E: 'scope,
+{
+    let state: Rc<RefCell<ScopeState<'scope>>> = unsafe { storage.typed_state() };
+    let callback = {
+        let state_ref = state
+            .try_borrow()
+            .map_err(|_| ReactiveError::BorrowConflict)?;
+        state_ref
+            .error_handlers
+            .get(key)
+            .map(|entry| entry.callback.clone())
+            .ok_or(ReactiveError::NoSuchNode)?
+    };
+    callback(AnyValue::new(error));
+    Ok(())
 }
 
 fn read_value<'scope, R>(

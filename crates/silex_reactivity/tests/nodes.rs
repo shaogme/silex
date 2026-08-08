@@ -1,6 +1,6 @@
 use silex_reactivity::{
     Callback, Derived, Effect, ErrorHandler, Memo, NodeRef, ReactiveError, ReadSignal, Runtime,
-    StoredValue, WriteSignal,
+    Scope, StoredValue, WriteSignal,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -8,8 +8,8 @@ use std::{
     rc::Rc,
 };
 
-fn handler<'scope>() -> ErrorHandler<'scope, ()> {
-    ErrorHandler::new(|_| {})
+fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, ()> {
+    scope.error_handler(|_| {})
 }
 
 struct ReenterOnDrop<'scope> {
@@ -66,7 +66,7 @@ fn all_public_node_capabilities_are_copy() {
         let memo = scope.memo(move |_| read.get());
         let derived = scope.derived(move || 1i32);
         let effect = scope
-            .effect(|| Ok(()), handler())
+            .effect(|| Ok(()), handler(scope))
             .expect("effect should initialize");
         let stored = scope.stored(1i32);
         let callback = scope.callback(|_: ()| {});
@@ -215,7 +215,7 @@ fn updating_another_signal_during_read_defers_effect_flush() {
                     runs_in_effect.set(runs_in_effect.get() + 1);
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("effect should initialize");
 
@@ -253,12 +253,12 @@ fn computation_payload_drop_observes_disposed_scope() {
                                 let _ = &guard;
                                 Ok(())
                             },
-                            handler(),
+                            handler(scope_copy),
                         )
                         .expect("nested effect should initialize");
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("effect should initialize");
     });
@@ -309,7 +309,7 @@ fn nested_memo_child_payload_drop_does_not_track_the_outer_observer() {
                         .expect("inner memo should remain readable");
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("effect should initialize");
 
@@ -366,7 +366,7 @@ fn nested_memo_result_drop_does_not_track_the_outer_observer() {
                         .expect("inner memo should remain readable");
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("effect should initialize");
 
@@ -429,7 +429,7 @@ fn child_payloads_drop_before_parent_computation_payload() {
                         .expect("node ref type should match");
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("effect should initialize");
     });
@@ -464,7 +464,7 @@ fn child_callback_payload_drop_can_schedule_an_active_parent_effect() {
                     seen_in_effect.set(source.get());
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("effect should initialize");
 
@@ -502,7 +502,7 @@ fn stored_value_update_flushes_after_the_write_lease_is_released() {
                     seen_in_effect.set(source.get());
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("effect should initialize");
 

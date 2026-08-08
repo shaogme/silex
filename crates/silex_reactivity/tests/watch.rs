@@ -1,12 +1,12 @@
-use silex_reactivity::{Effect, EffectInitError, ErrorHandler, Runtime, WatchOptions};
+use silex_reactivity::{Effect, EffectInitError, ErrorHandler, Runtime, Scope, WatchOptions};
 use std::{
     cell::{Cell, RefCell},
     panic::{AssertUnwindSafe, catch_unwind},
     rc::Rc,
 };
 
-fn handler<'scope>() -> ErrorHandler<'scope, ()> {
-    ErrorHandler::new(|_| {})
+fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, ()> {
+    scope.error_handler(|_| {})
 }
 
 #[test]
@@ -29,7 +29,7 @@ fn getter_watch_commits_values_and_gates_equal_updates() {
                     calls_in_callback.borrow_mut().push((*new, old.copied()));
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("watch should initialize");
 
@@ -60,7 +60,7 @@ fn immediate_once_watch_stops_after_the_initial_callback() {
                     calls_in_callback.set(calls_in_callback.get() + 1);
                     Ok(())
                 },
-                handler(),
+                handler(scope),
                 WatchOptions::default().immediate().once(),
             )
             .expect("watch should initialize");
@@ -97,7 +97,7 @@ fn callback_reads_are_untracked_and_dynamic_getter_dependencies_replace() {
                     calls_in_callback.set(calls_in_callback.get() + 1);
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("watch should initialize");
 
@@ -139,12 +139,12 @@ fn stop_cancels_future_runs_and_runs_cleanup_once() {
                                 cleanups.set(cleanups.get() + 1);
                                 Ok(())
                             },
-                            handler(),
+                            handler(watcher_scope),
                         )
                         .expect("watch cleanup should register");
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("watch should initialize");
 
@@ -182,7 +182,7 @@ fn callback_panic_keeps_the_old_snapshot_for_a_later_retry() {
                     }
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("watch should initialize");
 
@@ -212,7 +212,7 @@ fn initial_watch_panic_rolls_back_the_registered_node() {
                     Ok(value)
                 },
                 |_, _| Ok(()),
-                handler(),
+                handler(scope),
             );
         }));
         assert!(panic.is_err());
@@ -246,7 +246,7 @@ fn foreign_watch_inputs_fail_before_getter_or_callback_execution() {
                     callback_runs_in_callback.set(callback_runs_in_callback.get() + 1);
                     Ok(())
                 },
-                handler(),
+                handler(scope),
                 WatchOptions::default(),
             )
             .map(|_| ())
@@ -270,7 +270,7 @@ fn owner_disposal_makes_a_watcher_handle_stopped() {
         let scope = root.scope();
         let owner = scope.owned_scope();
         let watcher = owner
-            .watch_getter(|| Ok(1_i32), |_, _| Ok(()), handler())
+            .watch_getter(|| Ok(1_i32), |_, _| Ok(()), handler(scope))
             .expect("watch should initialize");
 
         owner.dispose();
@@ -294,7 +294,7 @@ fn ordinary_effects_can_be_stopped_through_the_same_handle() {
                     runs_in_effect.set(runs_in_effect.get() + 1);
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("effect should initialize");
 
@@ -326,7 +326,7 @@ fn stopping_the_current_effect_does_not_write_back_deleted_metadata() {
                     }
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("effect should initialize");
         slot.set(Some(effect));

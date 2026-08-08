@@ -1,5 +1,5 @@
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use silex_reactivity::{ErrorHandler, Runtime};
+use silex_reactivity::{ErrorHandler, Runtime, Scope};
 use std::{
     cell::Cell,
     hint::black_box,
@@ -11,8 +11,8 @@ const SIGNAL_SIZES: &[usize] = &[1, 64, 1024, 4096];
 const GRAPH_SIZES: &[usize] = &[1, 8, 32, 128];
 const OWNER_SIZES: &[usize] = &[1, 16, 128, 512];
 
-fn handler<'scope>() -> ErrorHandler<'scope, ()> {
-    ErrorHandler::new(|_| {})
+fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, ()> {
+    scope.error_handler(|_| {})
 }
 
 fn scoped_signal_round_trip(c: &mut Criterion) {
@@ -29,7 +29,7 @@ fn scoped_signal_round_trip(c: &mut Criterion) {
                             black_box(read.get());
                             Ok(())
                         },
-                        handler(),
+                        handler(scope),
                     )
                     .expect("benchmark effect should initialize");
                 write.set(black_box(1));
@@ -160,7 +160,7 @@ fn bench_signal_read_tracked(c: &mut Criterion) {
                             runs_in_effect.set(runs_in_effect.get().wrapping_add(1));
                             Ok(())
                         },
-                        handler(),
+                        handler(scope),
                     )
                     .expect("benchmark effect should initialize");
 
@@ -417,7 +417,7 @@ fn bench_graph_effect_fanout(c: &mut Criterion) {
                                     notifications.set(notifications.get().wrapping_add(1));
                                     Ok(())
                                 },
-                                handler(),
+                                handler(scope),
                             )
                             .expect("benchmark effect should initialize");
                     }
@@ -465,7 +465,7 @@ fn bench_graph_memo_chain(c: &mut Criterion) {
                                 observed_in_effect.set(tail_in_effect.get());
                                 Ok(())
                             },
-                            handler(),
+                            handler(scope),
                         )
                         .expect("benchmark effect should initialize");
 
@@ -513,7 +513,7 @@ fn bench_graph_memo_diamond(c: &mut Criterion) {
                                 observed_in_effect.set(value);
                                 Ok(())
                             },
-                            handler(),
+                            handler(scope),
                         )
                         .expect("benchmark effect should initialize");
 
@@ -554,7 +554,7 @@ fn bench_graph_effect_fanout_cross_scope(c: &mut Criterion) {
                                         notifications.set(notifications.get().wrapping_add(1));
                                         Ok(())
                                     },
-                                    handler(),
+                                    handler(scope),
                                 )
                                 .expect("benchmark effect should initialize");
                         }
@@ -602,7 +602,7 @@ fn bench_graph_memo_chain_cross_scope(c: &mut Criterion) {
                                     observed_in_effect.set(tail_in_effect.get());
                                     Ok(())
                                 },
-                                handler(),
+                                handler(scope),
                             )
                             .expect("benchmark effect should initialize");
 
@@ -653,7 +653,7 @@ fn bench_graph_memo_diamond_cross_scope(c: &mut Criterion) {
                                     observed_in_effect.set(value);
                                     Ok(())
                                 },
-                                handler(),
+                                handler(scope),
                             )
                             .expect("benchmark effect should initialize");
 
@@ -707,7 +707,7 @@ fn bench_graph_memo_equal_write(c: &mut Criterion) {
                                     .set(effect_runs_in_effect.get().wrapping_add(1));
                                 Ok(())
                             },
-                            handler(),
+                            handler(scope),
                         )
                         .expect("benchmark effect should initialize");
 
@@ -761,7 +761,7 @@ fn bench_owner_churn(c: &mut Criterion) {
                                 black_box(source_in_effect.get());
                                 Ok(())
                             },
-                            handler(),
+                            handler(scope),
                         )
                         .expect("benchmark effect should initialize");
                     let cleanup_count_in_row = cleanup_count.clone();
@@ -772,7 +772,7 @@ fn bench_owner_churn(c: &mut Criterion) {
                                     .set(cleanup_count_in_row.get().wrapping_add(1));
                                 Ok(())
                             },
-                            handler(),
+                            handler(scope),
                         )
                         .expect("benchmark cleanup should register");
                     owners.push((row_scope, render_scope));
@@ -794,7 +794,7 @@ fn bench_owner_churn(c: &mut Criterion) {
                                     black_box(source_in_effect.get());
                                     Ok(())
                                 },
-                                handler(),
+                                handler(scope),
                             )
                             .expect("benchmark effect should initialize");
                         let cleanup_count_in_row = cleanup_count.clone();
@@ -805,7 +805,7 @@ fn bench_owner_churn(c: &mut Criterion) {
                                         .set(cleanup_count_in_row.get().wrapping_add(1));
                                     Ok(())
                                 },
-                                handler(),
+                                handler(scope),
                             )
                             .expect("benchmark cleanup should register");
                         owners.push((row_scope, render_scope));

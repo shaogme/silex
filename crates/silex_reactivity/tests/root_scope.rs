@@ -5,8 +5,8 @@ use std::{
     rc::Rc,
 };
 
-fn handler<'scope>() -> ErrorHandler<'scope, ()> {
-    ErrorHandler::new(|_| {})
+fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, ()> {
+    scope.error_handler(|_| {})
 }
 
 #[test]
@@ -25,7 +25,7 @@ fn root_scope_uses_the_same_nodes_as_lexical_scope() {
                     seen_for_effect.set(value.get());
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("effect should initialize");
 
@@ -70,7 +70,7 @@ fn root_cleanup_runs_once_on_drop() {
                     cleaned_for_scope.set(cleaned_for_scope.get() + 1);
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("cleanup should register");
     }
@@ -81,8 +81,9 @@ fn root_cleanup_runs_once_on_drop() {
 fn root_cleanup_panic_is_reported_by_explicit_dispose() {
     let mut runtime = Runtime::new();
     let root = runtime.run();
-    root.scope()
-        .on_cleanup(|| panic!("cleanup panic"), handler())
+    let scope = root.scope();
+    scope
+        .on_cleanup(|| panic!("cleanup panic"), handler(scope))
         .expect("cleanup should register");
 
     let result = root.dispose();

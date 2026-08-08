@@ -1,12 +1,12 @@
-use silex_reactivity::{ErrorHandler, Memo, ReactiveError, Runtime};
+use silex_reactivity::{ErrorHandler, Memo, ReactiveError, Runtime, Scope};
 use std::{
     cell::Cell,
     panic::{AssertUnwindSafe, catch_unwind},
     rc::Rc,
 };
 
-fn handler<'scope>() -> ErrorHandler<'scope, ()> {
-    ErrorHandler::new(|_| {})
+fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, ()> {
+    scope.error_handler(|_| {})
 }
 
 #[test]
@@ -98,7 +98,7 @@ fn panic_in_effect_does_not_block_the_next_notification() {
                     }
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("effect should initialize");
 
@@ -137,7 +137,7 @@ fn cleanup_panic_during_effect_rerun_does_not_skip_remaining_cleanups() {
                     effect_runs_in_effect.set(effect_runs_in_effect.get() + 1);
                     if register_cleanups.replace(false) {
                         scope_copy
-                            .on_cleanup(|| panic!("effect cleanup panic"), handler())
+                            .on_cleanup(|| panic!("effect cleanup panic"), handler(scope_copy))
                             .expect("cleanup should register");
                         let remaining_cleanup_ran = remaining_cleanup_ran_in_effect.clone();
                         scope_copy
@@ -146,13 +146,13 @@ fn cleanup_panic_during_effect_rerun_does_not_skip_remaining_cleanups() {
                                     remaining_cleanup_ran.set(true);
                                     Ok(())
                                 },
-                                handler(),
+                                handler(scope_copy),
                             )
                             .expect("cleanup should register");
                     }
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("effect should initialize");
 
@@ -173,7 +173,7 @@ fn cleanup_panic_during_effect_rerun_does_not_skip_remaining_cleanups() {
                     seen_in_effect.set(independent.get());
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("effect should initialize");
         set_independent.set(1);
@@ -266,7 +266,7 @@ fn batch_panic_restores_depth_and_flushes_pending_effects() {
                     seen_in_effect.set(source.get());
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("effect should initialize");
 
@@ -310,7 +310,7 @@ fn untrack_panic_restores_the_active_dependency_observer() {
                     runs_in_effect.set(runs_in_effect.get() + 1);
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("effect should initialize");
 
@@ -344,7 +344,7 @@ fn child_callback_panic_restores_the_outer_observer_frame() {
                     runs_in_effect.set(runs_in_effect.get() + 1);
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("effect should initialize");
 

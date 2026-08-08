@@ -1,0 +1,5 @@
+error[E0599]: no associated function or constant named `new` found for struct `ErrorHandler<'scope, E>` in the current scope
+ --> tests/ui/fail_unscoped_handler.rs:4:54
+  |
+4 |     let _: ErrorHandler<'static, ()> = ErrorHandler::new(|_: ()| {});
+  |                                                      ^^^ associated function or constant not found in `ErrorHandler<'_, _>`

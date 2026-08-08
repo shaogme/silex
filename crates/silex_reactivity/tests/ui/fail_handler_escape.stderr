@@ -1,18 +1,22 @@
-error[E0597]: `local` does not live long enough
- --> tests/ui/fail_handler_escape.rs:5:17
-  |
-4 |     let local = String::from("scoped");
-  |         ----- binding `local` declared here
-5 |     let value = &local;
-  |                 ^^^^^^ borrowed value does not live long enough
-6 |     let _: ErrorHandler<'static, ()> = ErrorHandler::new(move |_| {
-  |            ------------------------- type annotation requires that `local` is borrowed for `'static`
+error: lifetime may not live long enough
+  --> tests/ui/fail_handler_escape.rs:8:9
+   |
+ 5 |       let handler = runtime.child(|scope| {
+   |                                    ------ return type of closure is ErrorHandler<'2, ()>
+   |                                    |
+   |                                    has type `silex_reactivity::Scope<'1>`
 ...
-9 | }
-  | - `local` dropped here while still borrowed
-  |
-note: requirement that the value outlives `'static` introduced here
- --> src/error.rs
-  |
-  |         F: Fn(E) + 'scope,
-  |                    ^^^^^^
+ 8 | /         scope.error_handler(move |_: ()| {
+ 9 | |             assert_eq!(value.as_str(), "scoped");
+10 | |         })
+   | |__________^ returning this value requires that `'1` must outlive `'2`
+
+error[E0515]: cannot return value referencing local variable `local`
+  --> tests/ui/fail_handler_escape.rs:8:9
+   |
+ 7 |           let value = &local;
+   |                       ------ `local` is borrowed here
+ 8 | /         scope.error_handler(move |_: ()| {
+ 9 | |             assert_eq!(value.as_str(), "scoped");
+10 | |         })
+   | |__________^ returns a value referencing data owned by the current function
