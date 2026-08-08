@@ -8,7 +8,7 @@ pub use error::BootstrapError;
 pub mod js_object;
 
 #[cfg(feature = "js-object")]
-pub use js_object::JsAppHost;
+pub use js_object::{JsAppHost, bootstrap_error_to_js};
 
 #[cfg(feature = "page-controller")]
 pub mod page_controller;

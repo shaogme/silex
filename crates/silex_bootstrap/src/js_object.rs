@@ -1,4 +1,4 @@
-use crate::{AppHost, AppHostError, HostState, UnmountOutcome};
+use crate::{AppHost, AppHostError, BootstrapError, HostState, UnmountOutcome};
 use js_sys::{Array, Object, Reflect};
 use silex_core::{CleanupDiagnostic, CleanupPayloadKind, SilexError};
 use silex_dom::{CleanupFailure, CleanupOrigin, CleanupReport};
@@ -54,6 +54,24 @@ fn host_state_name(state: HostState) -> &'static str {
     }
 }
 
+/// Convert a bootstrap adapter failure into the stable JavaScript error object shape.
+pub fn bootstrap_error_to_js(error: &BootstrapError) -> Result<JsValue, JsValue> {
+    match error {
+        BootstrapError::Host(error) => app_host_error_to_js(error),
+        BootstrapError::TargetNotFound(target) => simple_bootstrap_error_to_js(
+            "target-not-found",
+            &format!("bootstrap target not found: {target}"),
+            Some(("target", JsValue::from_str(target))),
+        ),
+        BootstrapError::Lifecycle(message) => {
+            simple_bootstrap_error_to_js("lifecycle", message, None)
+        }
+        BootstrapError::Listener(error) => {
+            simple_bootstrap_error_to_js("listener", &error.to_string(), None)
+        }
+    }
+}
+
 fn app_host_error_to_js(error: &AppHostError) -> Result<JsValue, JsValue> {
     let object = Object::new();
     set_property(
@@ -84,6 +102,22 @@ fn app_host_error_to_js(error: &AppHostError) -> Result<JsValue, JsValue> {
         | AppHostError::Poisoned => {}
     }
 
+    Ok(object.into())
+}
+
+fn simple_bootstrap_error_to_js(
+    code: &str,
+    message: &str,
+    extra: Option<(&str, JsValue)>,
+) -> Result<JsValue, JsValue> {
+    let object = Object::new();
+    set_property(&object, "code", JsValue::from_str(code))?;
+    set_property(&object, "message", JsValue::from_str(message))?;
+    set_property(&object, "primary", JsValue::UNDEFINED)?;
+    set_property(&object, "rollback", JsValue::UNDEFINED)?;
+    if let Some((name, value)) = extra {
+        set_property(&object, name, value)?;
+    }
     Ok(object.into())
 }
 

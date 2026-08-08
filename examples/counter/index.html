@@ -8,6 +8,28 @@
 
 <body>
     <div id="app"></div>
+
+    <script type="module">
+        let counterHost = null;
+
+        window.addEventListener("TrunkApplicationStarted", () => {
+            if (counterHost !== null) return;
+            try {
+                counterHost = window.wasmBindings.mountCounter();
+            } catch (error) {
+                console.error("Counter mount failed", error);
+            }
+        });
+
+        window.addEventListener("counter-unmount", () => {
+            if (counterHost === null) return;
+            try {
+                counterHost.unmount();
+            } catch (error) {
+                console.error("Counter unmount failed", error);
+            }
+        });
+    </script>
 </body>
 
 </html>
