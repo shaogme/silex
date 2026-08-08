@@ -2,7 +2,13 @@ pub mod attribute;
 pub mod element;
 pub mod event;
 pub mod helpers;
+pub mod mounted;
 pub mod view;
+
+pub use mounted::{
+    CleanupFailure, CleanupFailureDiagnostic, CleanupOrigin, CleanupReport, CleanupSink,
+    DisposeError, DropFailureReport, MountError,
+};
 
 pub mod prelude {
     pub use crate::attribute::*;
@@ -10,6 +16,10 @@ pub mod prelude {
     pub use crate::event;
     pub use crate::event::{EventDescriptor, EventHandler, WithEventArg, WithoutEventArg};
     pub use crate::helpers::*;
+    pub use crate::mounted::{
+        CleanupFailure, CleanupFailureDiagnostic, CleanupOrigin, CleanupReport, CleanupSink,
+        DisposeError, DropFailureReport, MountError,
+    };
     pub use crate::setup_global_error_handlers;
     pub use crate::view::{
         ApplyAttributes, AutoReactiveView, HostResourceHandle, Prop, PropFixed, PropMissing, View,

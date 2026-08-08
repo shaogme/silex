@@ -2,4 +2,4 @@
 
 mod scope;
 
-pub use scope::{CleanupError, RootHandle};
+pub use scope::{CleanupDiagnostic, CleanupError, CleanupPayloadKind, RootHandle};

@@ -2,15 +2,70 @@
 
 use crate::{Scope, runtime::GlobalScheduler, scope::ScopeStorage};
 use std::{
+    any::Any,
     cell::Cell,
     fmt,
     panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
     rc::Rc,
 };
 
+/// Identifies the panic payload shape preserved by a cleanup diagnostic.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CleanupPayloadKind {
+    /// The payload was an owned [`String`].
+    String,
+    /// The payload was a string literal or another `&'static str`.
+    StaticStr,
+    /// The payload was not one of the safely inspectable string forms.
+    Unknown,
+}
+
+/// Stable, owned information about a cleanup panic.
+///
+/// The diagnostic deliberately does not expose the original panic payload. The
+/// payload remains owned by [`CleanupError`] until the explicit error path
+/// consumes it, while Drop-only paths can safely retain this value.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CleanupDiagnostic {
+    message: String,
+    payload_kind: CleanupPayloadKind,
+}
+
+impl CleanupDiagnostic {
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+
+    pub fn payload_kind(&self) -> CleanupPayloadKind {
+        self.payload_kind
+    }
+}
+
+fn diagnostic_for(panic: &(dyn Any + Send)) -> CleanupDiagnostic {
+    if let Some(message) = panic.downcast_ref::<String>() {
+        return CleanupDiagnostic {
+            message: message.clone(),
+            payload_kind: CleanupPayloadKind::String,
+        };
+    }
+
+    if let Some(message) = panic.downcast_ref::<&'static str>() {
+        return CleanupDiagnostic {
+            message: (*message).to_string(),
+            payload_kind: CleanupPayloadKind::StaticStr,
+        };
+    }
+
+    CleanupDiagnostic {
+        message: "unknown cleanup panic payload".to_string(),
+        payload_kind: CleanupPayloadKind::Unknown,
+    }
+}
+
 /// A cleanup failure returned by an explicit root disposal.
 pub struct CleanupError {
     panic: Box<dyn std::any::Any + Send>,
+    diagnostic: CleanupDiagnostic,
 }
 
 impl fmt::Debug for CleanupError {
@@ -21,7 +76,29 @@ impl fmt::Debug for CleanupError {
 
 impl CleanupError {
     fn new(panic: Box<dyn std::any::Any + Send>) -> Self {
-        Self { panic }
+        let diagnostic = diagnostic_for(panic.as_ref());
+        Self { panic, diagnostic }
+    }
+
+    /// Adapt a caught framework panic into a cleanup error.
+    ///
+    /// This is hidden from generated documentation because it is intended for
+    /// framework cleanup adapters, not as a replacement for ordinary errors.
+    #[doc(hidden)]
+    pub fn from_panic(panic: Box<dyn std::any::Any + Send>) -> Self {
+        Self::new(panic)
+    }
+
+    /// Borrow the stable diagnostic without consuming the original error.
+    pub fn diagnostic(&self) -> &CleanupDiagnostic {
+        &self.diagnostic
+    }
+
+    /// Consume the error and return only its stable, owned diagnostic.
+    pub fn into_diagnostic(self) -> CleanupDiagnostic {
+        let Self { panic, diagnostic } = self;
+        let _ = catch_unwind(AssertUnwindSafe(|| drop(panic)));
+        diagnostic
     }
 
     fn resume(self) -> ! {

@@ -32,7 +32,7 @@ pub(crate) use ops::{
 pub(crate) use scheduler::{GlobalScheduler, ObserverFrame, ScopeId};
 
 use crate::scope::ScopeStorage;
-use crate::{Scope, root::RootHandle};
+use crate::{Scope, error::ReactiveError, root::RootHandle};
 
 use std::{
     cell::Cell,
@@ -57,12 +57,19 @@ impl Runtime {
 
     /// Create one long-lived root owned by the returned handle.
     pub fn run(&mut self) -> RootHandle {
-        assert!(
-            !self.root_active.replace(true),
-            "一个 Runtime 只能同时拥有一个 root"
-        );
+        self.try_run()
+            .unwrap_or_else(|_| panic!("一个 Runtime 只能同时拥有一个 root"))
+    }
 
-        RootHandle::new(self.root_active.clone())
+    /// Try to create one long-lived root without converting a predictable
+    /// runtime conflict into a panic.
+    pub fn try_run(&mut self) -> Result<RootHandle, ReactiveError> {
+        if self.root_active.get() {
+            return Err(ReactiveError::RuntimeAlreadyRunning);
+        }
+
+        self.root_active.set(true);
+        Ok(RootHandle::new(self.root_active.clone()))
     }
 
     pub fn child<R>(&mut self, f: impl for<'scope> FnOnce(Scope<'scope>) -> R) -> R {

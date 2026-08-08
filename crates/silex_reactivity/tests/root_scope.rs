@@ -1,4 +1,6 @@
-use silex_reactivity::{CompletionOnce, ErrorHandler, Runtime, Scope};
+use silex_reactivity::{
+    CleanupPayloadKind, CompletionOnce, ErrorHandler, ReactiveError, Runtime, Scope,
+};
 use std::{
     cell::Cell,
     panic::{AssertUnwindSafe, catch_unwind},
@@ -91,6 +93,115 @@ fn root_cleanup_panic_is_reported_by_explicit_dispose() {
 }
 
 #[test]
+fn cleanup_error_exposes_stable_string_diagnostic_without_resuming_panic() {
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    root.with_scope(|scope| {
+        scope
+            .on_cleanup(|| panic!("cleanup panic"), handler(scope))
+            .expect("cleanup should register");
+    });
+
+    let error = root
+        .dispose()
+        .expect_err("cleanup panic should be returned");
+    assert_eq!(error.diagnostic().message(), "cleanup panic");
+    assert_eq!(
+        error.diagnostic().payload_kind(),
+        CleanupPayloadKind::StaticStr
+    );
+
+    let diagnostic = error.into_diagnostic();
+    assert_eq!(diagnostic.message(), "cleanup panic");
+}
+
+#[test]
+fn cleanup_error_uses_unknown_diagnostic_for_non_string_payloads() {
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    root.with_scope(|scope| {
+        scope
+            .on_cleanup(|| std::panic::panic_any(42_u32), handler(scope))
+            .expect("cleanup should register");
+    });
+
+    let error = root
+        .dispose()
+        .expect_err("cleanup panic should be returned");
+    assert_eq!(
+        error.diagnostic().payload_kind(),
+        CleanupPayloadKind::Unknown
+    );
+    assert_eq!(
+        error.diagnostic().message(),
+        "unknown cleanup panic payload"
+    );
+}
+
+#[test]
+fn diagnostic_conversion_does_not_resume_a_payload_drop_panic() {
+    struct PanicOnDrop;
+
+    impl Drop for PanicOnDrop {
+        fn drop(&mut self) {
+            panic!("payload drop panic");
+        }
+    }
+
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    root.with_scope(|scope| {
+        scope
+            .on_cleanup(|| std::panic::panic_any(PanicOnDrop), handler(scope))
+            .expect("cleanup should register");
+    });
+
+    let error = root
+        .dispose()
+        .expect_err("cleanup panic should be returned");
+    let diagnostic = error.into_diagnostic();
+    assert_eq!(diagnostic.payload_kind(), CleanupPayloadKind::Unknown);
+}
+
+#[test]
+fn explicit_root_dispose_does_not_run_cleanup_again() {
+    let cleaned = Rc::new(Cell::new(0));
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    root.with_scope(|scope| {
+        let cleaned = cleaned.clone();
+        scope
+            .on_cleanup(
+                move || {
+                    cleaned.set(cleaned.get() + 1);
+                    Ok(())
+                },
+                handler(scope),
+            )
+            .expect("cleanup should register");
+    });
+
+    root.dispose().expect("root disposal should succeed");
+    assert_eq!(cleaned.get(), 1);
+}
+
+#[test]
+fn direct_root_drop_still_resumes_cleanup_panic() {
+    let panic = catch_unwind(AssertUnwindSafe(|| {
+        let mut runtime = Runtime::new();
+        let root = runtime.run();
+        root.with_scope(|scope| {
+            scope
+                .on_cleanup(|| panic!("direct drop panic"), handler(scope))
+                .expect("cleanup should register");
+        });
+        drop(root);
+    }));
+
+    assert!(panic.is_err());
+}
+
+#[test]
 fn runtime_rejects_run_while_root_is_active() {
     let mut runtime = Runtime::new();
     let root = runtime.run();
@@ -102,6 +213,23 @@ fn runtime_rejects_run_while_root_is_active() {
 
     root.dispose().expect("root disposal should succeed");
     let next_root = runtime.run();
+    next_root.dispose().expect("second root should dispose");
+}
+
+#[test]
+fn try_run_reports_an_active_root_without_mutating_the_runtime_slot() {
+    let mut runtime = Runtime::new();
+    let root = runtime.try_run().expect("first root should be created");
+
+    assert!(matches!(
+        runtime.try_run(),
+        Err(ReactiveError::RuntimeAlreadyRunning)
+    ));
+
+    drop(root);
+    let next_root = runtime
+        .try_run()
+        .expect("runtime should be reusable after root drop");
     next_root.dispose().expect("second root should dispose");
 }
 

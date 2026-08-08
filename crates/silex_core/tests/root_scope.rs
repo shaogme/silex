@@ -1,4 +1,4 @@
-use silex_core::{Runtime, Scope, SilexError};
+use silex_core::{ReactiveError, Runtime, Scope, SilexError};
 use std::{cell::Cell, rc::Rc};
 
 #[test]
@@ -41,5 +41,18 @@ fn high_level_scope_callbacks_receive_scope_values() {
         let copied = scope;
         assert!(scope == copied);
     });
+    root.dispose().expect("root disposal should succeed");
+}
+
+#[test]
+fn high_level_try_run_reports_an_active_root() {
+    let mut runtime = Runtime::new();
+    let root = runtime.try_run().expect("first root should be created");
+
+    assert!(matches!(
+        runtime.try_run(),
+        Err(SilexError::Reactivity(ReactiveError::RuntimeAlreadyRunning))
+    ));
+
     root.dispose().expect("root disposal should succeed");
 }

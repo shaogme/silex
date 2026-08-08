@@ -37,6 +37,13 @@ impl Runtime {
         RootHandle { inner: handle }
     }
 
+    pub fn try_run(&mut self) -> SilexResult<RootHandle> {
+        self.inner
+            .try_run()
+            .map(|handle| RootHandle { inner: handle })
+            .map_err(SilexError::from)
+    }
+
     pub fn child<R>(&mut self, f: impl for<'scope> FnOnce(Scope<'scope>) -> R) -> R {
         self.inner.child(|s| f(Scope { inner: s }))
     }
