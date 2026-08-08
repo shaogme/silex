@@ -27,7 +27,7 @@ pub type LifecycleReporter = Rc<dyn Fn(BootstrapError) + 'static>;
 /// Owns an [`AppHost`] and optionally connects it to browser page lifecycle events.
 pub struct PageController {
     lifecycle_listeners: Vec<WindowListenerHandle>,
-    host: Rc<RefCell<AppHost>>,
+    host: Option<Rc<RefCell<AppHost>>>,
 }
 
 impl PageController {
@@ -35,7 +35,7 @@ impl PageController {
     pub fn new(target: Node, cleanup_sink: CleanupSink) -> Self {
         Self {
             lifecycle_listeners: Vec::new(),
-            host: Rc::new(RefCell::new(AppHost::new(target, cleanup_sink))),
+            host: Some(Rc::new(RefCell::new(AppHost::new(target, cleanup_sink)))),
         }
     }
 
@@ -51,6 +51,8 @@ impl PageController {
     {
         let mut host = self
             .host
+            .as_ref()
+            .expect("page controller host is present")
             .try_borrow_mut()
             .map_err(|_| BootstrapError::Host(AppHostError::ReentrantOperation))?;
         host.mount(runtime, builder).map_err(BootstrapError::from)
@@ -63,6 +65,8 @@ impl PageController {
     {
         let mut host = self
             .host
+            .as_ref()
+            .expect("page controller host is present")
             .try_borrow_mut()
             .map_err(|_| BootstrapError::Host(AppHostError::ReentrantOperation))?;
         host.replace(runtime, builder).map_err(BootstrapError::from)
@@ -72,6 +76,8 @@ impl PageController {
     pub fn unmount(&mut self) -> Result<UnmountOutcome, BootstrapError> {
         let mut host = self
             .host
+            .as_ref()
+            .expect("page controller host is present")
             .try_borrow_mut()
             .map_err(|_| BootstrapError::Host(AppHostError::ReentrantOperation))?;
         host.unmount().map_err(BootstrapError::from)
@@ -107,7 +113,7 @@ impl PageController {
             PageLifecyclePolicy::Manual | PageLifecyclePolicy::PageHide => None,
         };
         let only_when_hidden = document.is_some();
-        let host = Rc::downgrade(&self.host);
+        let host = Rc::downgrade(self.host.as_ref().expect("page controller host is present"));
         let mut listeners = Vec::with_capacity(events.len());
 
         for &event_name in events {
@@ -138,17 +144,46 @@ impl PageController {
 
     /// Return whether the underlying host currently owns an active application.
     pub fn is_active(&self) -> bool {
-        self.host.borrow().is_active()
+        self.host
+            .as_ref()
+            .expect("page controller host is present")
+            .borrow()
+            .is_active()
     }
 
     /// Return the underlying host state.
     pub fn state(&self) -> HostState {
-        self.host.borrow().state()
+        self.host
+            .as_ref()
+            .expect("page controller host is present")
+            .borrow()
+            .state()
     }
 
     /// Return the caller-provided target node.
     pub fn target(&self) -> Node {
-        self.host.borrow().target()
+        self.host
+            .as_ref()
+            .expect("page controller host is present")
+            .borrow()
+            .target()
+    }
+
+    #[cfg(feature = "browser-bootstrap")]
+    pub(crate) fn into_app_host(mut self) -> Result<AppHost, BootstrapError> {
+        if !self.lifecycle_listeners.is_empty() {
+            return Err(BootstrapError::Lifecycle(
+                "page lifecycle listeners must be removed before host transfer".to_string(),
+            ));
+        }
+
+        let host = self.host.take().expect("page controller host is present");
+        match Rc::try_unwrap(host) {
+            Ok(host) => Ok(host.into_inner()),
+            Err(_) => Err(BootstrapError::Lifecycle(
+                "page controller host is still shared".to_string(),
+            )),
+        }
     }
 }
 

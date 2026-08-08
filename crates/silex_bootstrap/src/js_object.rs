@@ -1,0 +1,222 @@
+use crate::{AppHost, AppHostError, HostState, UnmountOutcome};
+use js_sys::{Array, Object, Reflect};
+use silex_core::{CleanupDiagnostic, CleanupPayloadKind, SilexError};
+use silex_dom::{CleanupFailure, CleanupOrigin, CleanupReport};
+use wasm_bindgen::{JsValue, prelude::wasm_bindgen};
+
+/// An opaque JavaScript owner for an application-specific Rust mount.
+///
+/// The wrapper deliberately exposes no generic mount method. Rust application glue must
+/// construct and mount an [`AppHost`] before transferring it to JavaScript.
+#[wasm_bindgen]
+pub struct JsAppHost {
+    host: AppHost,
+}
+
+impl JsAppHost {
+    /// Transfer an already configured host to the JavaScript-facing owner.
+    pub fn from_app_host(host: AppHost) -> Self {
+        Self { host }
+    }
+}
+
+#[wasm_bindgen]
+impl JsAppHost {
+    /// Return whether the wrapped host currently owns an active application.
+    pub fn is_active(&self) -> bool {
+        self.host.is_active()
+    }
+
+    /// Return the stable lowercase host state used by the JavaScript API.
+    pub fn state(&self) -> String {
+        host_state_name(self.host.state()).to_string()
+    }
+
+    /// Dispose the application and convert failures into a structured JavaScript object.
+    ///
+    /// Rust keeps `UnmountOutcome` intact. The JavaScript-facing operation is intentionally
+    /// idempotent, so both `Disposed` and `AlreadyUnmounted` resolve successfully.
+    pub fn unmount(&mut self) -> Result<(), JsValue> {
+        match self.host.unmount() {
+            Ok(UnmountOutcome::Disposed | UnmountOutcome::AlreadyUnmounted) => Ok(()),
+            Err(error) => Err(app_host_error_to_js(&error)?),
+        }
+    }
+}
+
+fn host_state_name(state: HostState) -> &'static str {
+    match state {
+        HostState::Ready => "ready",
+        HostState::Mounting => "mounting",
+        HostState::Active => "active",
+        HostState::Disposing => "disposing",
+        HostState::Poisoned => "poisoned",
+    }
+}
+
+fn app_host_error_to_js(error: &AppHostError) -> Result<JsValue, JsValue> {
+    let object = Object::new();
+    set_property(
+        &object,
+        "code",
+        JsValue::from_str(app_host_error_code(error)),
+    )?;
+    set_property(&object, "message", JsValue::from_str(&error.to_string()))?;
+    set_property(&object, "primary", JsValue::UNDEFINED)?;
+    set_property(&object, "rollback", JsValue::UNDEFINED)?;
+
+    match error {
+        AppHostError::Mount(error) => {
+            set_property(&object, "primary", silex_error_to_js(error.primary())?)?;
+            set_property(&object, "rollback", cleanup_report_to_js(error.rollback())?)?;
+        }
+        AppHostError::Dispose(error) => {
+            let report = cleanup_report_to_js(error.report())?;
+            set_property(&object, "rollback", report.clone())?;
+            set_property(&object, "report", report)?;
+        }
+        AppHostError::InvalidState { state } => {
+            set_property(&object, "state", JsValue::from_str(host_state_name(*state)))?;
+        }
+        AppHostError::AlreadyMounted
+        | AppHostError::NotMounted
+        | AppHostError::ReentrantOperation
+        | AppHostError::Poisoned => {}
+    }
+
+    Ok(object.into())
+}
+
+fn app_host_error_code(error: &AppHostError) -> &'static str {
+    match error {
+        AppHostError::AlreadyMounted => "already-mounted",
+        AppHostError::NotMounted => "not-mounted",
+        AppHostError::InvalidState { .. } => "invalid-state",
+        AppHostError::Mount(_) => "mount",
+        AppHostError::Dispose(_) => "dispose",
+        AppHostError::ReentrantOperation => "reentrant",
+        AppHostError::Poisoned => "poisoned",
+    }
+}
+
+fn cleanup_report_to_js(report: &CleanupReport) -> Result<JsValue, JsValue> {
+    let object = Object::new();
+    set_property(&object, "clean", JsValue::from_bool(report.is_clean()))?;
+
+    let cleanup = Array::new();
+    for failure in report.cleanup_failures() {
+        cleanup.push(&cleanup_failure_to_js(failure)?);
+    }
+    set_property(&object, "cleanupFailures", cleanup.into())?;
+
+    let boundary = Array::new();
+    for error in report.boundary_errors() {
+        boundary.push(&silex_error_to_js(error)?);
+    }
+    set_property(&object, "boundaryErrors", boundary.into())?;
+
+    Ok(object.into())
+}
+
+fn cleanup_failure_to_js(failure: &CleanupFailure) -> Result<JsValue, JsValue> {
+    let object = Object::new();
+    set_property(
+        &object,
+        "origin",
+        JsValue::from_str(cleanup_origin_name(failure.origin)),
+    )?;
+    set_property(
+        &object,
+        "diagnostic",
+        cleanup_diagnostic_to_js(failure.error.diagnostic())?,
+    )?;
+    Ok(object.into())
+}
+
+fn cleanup_diagnostic_to_js(diagnostic: &CleanupDiagnostic) -> Result<JsValue, JsValue> {
+    let object = Object::new();
+    set_property(&object, "message", JsValue::from_str(diagnostic.message()))?;
+    set_property(
+        &object,
+        "payloadKind",
+        JsValue::from_str(cleanup_payload_kind_name(diagnostic.payload_kind())),
+    )?;
+    Ok(object.into())
+}
+
+fn silex_error_to_js(error: &SilexError) -> Result<JsValue, JsValue> {
+    let object = Object::new();
+    set_property(&object, "kind", JsValue::from_str(silex_error_kind(error)))?;
+    set_property(&object, "message", JsValue::from_str(&error.to_string()))?;
+    Ok(object.into())
+}
+
+fn set_property(object: &Object, name: &str, value: JsValue) -> Result<(), JsValue> {
+    Reflect::set(object.as_ref(), &JsValue::from_str(name), &value).and_then(|set| {
+        if set {
+            Ok(())
+        } else {
+            Err(JsValue::from_str(
+                "JavaScript error object property was not set",
+            ))
+        }
+    })
+}
+
+fn cleanup_origin_name(origin: CleanupOrigin) -> &'static str {
+    match origin {
+        CleanupOrigin::Root => "root",
+        CleanupOrigin::ProvisionalOwner => "provisional-owner",
+        CleanupOrigin::MountBoundary => "mount-boundary",
+    }
+}
+
+fn cleanup_payload_kind_name(kind: CleanupPayloadKind) -> &'static str {
+    match kind {
+        CleanupPayloadKind::String => "string",
+        CleanupPayloadKind::StaticStr => "static-str",
+        CleanupPayloadKind::Unknown => "unknown",
+    }
+}
+
+fn silex_error_kind(error: &SilexError) -> &'static str {
+    match error {
+        SilexError::Dom(_) => "dom",
+        SilexError::Reactivity(_) => "reactivity",
+        SilexError::Framework(_) => "framework",
+        SilexError::Javascript(_) => "javascript",
+    }
+}
+
+#[cfg(all(test, target_arch = "wasm32"))]
+mod tests {
+    use super::*;
+    use wasm_bindgen_test::*;
+
+    wasm_bindgen_test_configure!(run_in_browser);
+
+    #[wasm_bindgen_test]
+    fn app_host_errors_are_structured_without_stringifying_reports() {
+        let error = app_host_error_to_js(&AppHostError::AlreadyMounted)
+            .expect("error object should be created");
+        assert_eq!(
+            Reflect::get(&error, &JsValue::from_str("code"))
+                .expect("code property should exist")
+                .as_string()
+                .as_deref(),
+            Some("already-mounted")
+        );
+        assert_eq!(
+            Reflect::get(&error, &JsValue::from_str("message"))
+                .expect("message property should exist")
+                .as_string()
+                .as_deref(),
+            Some("application host already has a mounted app")
+        );
+        assert!(
+            Reflect::get(&error, &JsValue::from_str("primary"))
+                .expect("primary property should exist")
+                .is_undefined()
+        );
+    }
+}

@@ -4,7 +4,20 @@ pub mod error;
 pub use app_host::{AppHost, AppHostError, HostState, UnmountOutcome};
 pub use error::BootstrapError;
 
+#[cfg(feature = "js-object")]
+pub mod js_object;
+
+#[cfg(feature = "js-object")]
+pub use js_object::JsAppHost;
+
 #[cfg(feature = "page-controller")]
 pub mod page_controller;
+
 #[cfg(feature = "page-controller")]
 pub use page_controller::{LifecycleReporter, PageController, PageLifecyclePolicy};
+
+#[cfg(feature = "browser-bootstrap")]
+pub mod browser_bootstrap;
+
+#[cfg(feature = "browser-bootstrap")]
+pub use browser_bootstrap::BrowserBootstrap;

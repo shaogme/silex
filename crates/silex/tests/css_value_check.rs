@@ -9,5 +9,7 @@
 #[test]
 fn ui() {
     let t = trybuild::TestCases::new();
-    t.compile_fail("tests/ui/*.rs");
+    t.compile_fail("tests/ui/fail_color_function_on_a_keyword_property.rs");
+    t.compile_fail("tests/ui/fail_multi_component_on_a_single_value_property.rs");
+    t.compile_fail("tests/ui/fail_unknown_keyword_value.rs");
 }
