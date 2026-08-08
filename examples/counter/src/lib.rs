@@ -139,65 +139,67 @@ fn HomeView<'scope>(
         div!(
             h1("Silex: Next Gen"),
             p("Builder Pattern + Router + Explicit State + Suspense").style("color: #666"),
-        ).style("text-align: center; margin-bottom: 30px;"),
-
+        )
+        .style("text-align: center; margin-bottom: 30px;"),
         // Card 1: Explicit Parameter Counter
-         Card(scope, "Explicit Counter")
-             .elevation(3)
-             .on_hover(scope.callback(|_| {
-                 web_sys::console::log_1(&"Card Hovered!".into());
-             }))
-             .child(chain!(
-                 CounterControls(count, set_count),
-                 CounterDisplay(scope, count),
-             )),
-
+        Card(scope, "Explicit Counter")
+            .elevation(3)
+            .on_hover(scope.callback(|_| {
+                web_sys::console::log_1(&"Card Hovered!".into());
+            }))
+            .child(chain!(
+                CounterControls(count, set_count),
+                CounterDisplay(scope, count),
+            )),
         // Card 2: Input & Local State
-         Card(scope, "Local State (Resets on Nav)")
-            .child(div!(div!(
-                div!(
-                    span("Hello, "),
-                    span(name).style("color: #007bff; font-weight: bold;"),
-                    span("!"),
-                ).style("margin-bottom: 10px"),
-                input()
-                    .type_("text")
-                    .placeholder("Enter name")
-                    .style("padding: 8px; border: 1px solid #ccc; border-radius: 4px; width: 100%;")
-                    .value(name)
-                    .on_input(move |val| {
-                        set_name.set(val);
-                        Ok(())
-                    })
-            ))),
-
-        // Card 3: Control Flow
-         Card(scope, "Control Flow")
-             .child(
-                 is_high.when(scope, div("⚠️ Warning: Count is getting high!")
-                         .style("background: #ffebee; color: #c62828; padding: 10px; border-radius: 4px;"))
-                     .fallback(div("✓ System works normally.")
-                        .style("background: #e8f5e9; color: #2e7d32; padding: 10px; border-radius: 4px;"))
-            ),
-        // Card 4: Suspense
-         Card(scope, "Suspense (Async Loading)")
-             .child(
-                 Suspense(scope, move |cx| {
-                      let async_data_local = Resource::new(
-                          scope,
-                          scope.constant(()),
-                          |_| async {
-                              gloo_timers::future::TimeoutFuture::new(2_000).await;
-                              Ok::<_, SilexError>("Loaded Data from Server!".to_string())
-                          },
-                          Some(cx),
-                        error_handler,
-                      );
-                     div(rx!(scope; $async_data_local.clone().unwrap_or("Waiting...".to_string())))
-                        .style("color: #2e7d32; font-weight: bold; background: #e8f5e9; padding: 10px; border-radius: 4px;")
-                })
-                .fallback(div("Loading data (approx 2s)...").style("color: orange; font-style: italic;"))
+        Card(scope, "Local State (Resets on Nav)").child(div!(div!(
+            div!(
+                span("Hello, "),
+                span(name).style("color: #007bff; font-weight: bold;"),
+                span("!"),
             )
+            .style("margin-bottom: 10px"),
+            input()
+                .type_("text")
+                .placeholder("Enter name")
+                .style("padding: 8px; border: 1px solid #ccc; border-radius: 4px; width: 100%;")
+                .value(name)
+                .on_input(move |val| {
+                    set_name.set(val);
+                    Ok(())
+                })
+        ))),
+        // Card 3: Control Flow
+        Card(scope, "Control Flow").child(
+            is_high
+                .when(
+                    scope,
+                    div("⚠️ Warning: Count is getting high!").style(
+                        "background: #ffebee; color: #c62828; padding: 10px; border-radius: 4px;"
+                    )
+                )
+                .fallback(div("✓ System works normally.").style(
+                    "background: #e8f5e9; color: #2e7d32; padding: 10px; border-radius: 4px;"
+                ))
+        ),
+        // Card 4: Suspense
+        Card(scope, "Suspense (Async Loading)").child(
+            Suspense(scope, move |cx| {
+                let async_data_local = Resource::new(
+                    scope,
+                    scope.constant(()),
+                    |_| async {
+                        gloo_timers::future::TimeoutFuture::new(2_000).await;
+                        Ok::<_, SilexError>("Loaded Data from Server!".to_string())
+                    },
+                    Some(cx),
+                    error_handler,
+                );
+                div(rx!(scope; $async_data_local.clone().unwrap_or("Waiting...".to_string())))
+                    .style("color: #2e7d32; font-weight: bold; background: #e8f5e9; padding: 10px; border-radius: 4px;")
+            })
+            .fallback(div("Loading data (approx 2s)...").style("color: orange; font-style: italic;")),
+        ),
     )
 }
 
