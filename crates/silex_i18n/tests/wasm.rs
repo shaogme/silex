@@ -8,12 +8,12 @@ use silex_i18n::{
 use std::{cell::Cell, rc::Rc};
 use wasm_bindgen_test::*;
 
-fn test_handler<'scope>() -> ErrorReporter<'scope> {
-    ErrorReporter::new(|_| {})
+fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
+    scope.error_handler(|_| {})
 }
 
 fn store<'scope>(scope: Scope<'scope>, locale: &str) -> I18nStore<'scope> {
-    I18nBuilder::new(scope, test_handler())
+    I18nBuilder::new(scope, test_handler(scope))
         .locale(Locale::new(locale))
         .build()
         .expect("valid i18n store")
@@ -95,7 +95,7 @@ async fn catalog_resource_uses_store_catalog_without_calling_loader() {
     let mut runtime = Runtime::new();
     let root = runtime.run();
     root.with_scope(|scope| async move {
-        let i18n = I18nBuilder::new(scope, test_handler())
+        let i18n = I18nBuilder::new(scope, test_handler(scope))
             .locale(Locale::new("en-US"))
             .catalog(catalog(Locale::new("en-US"), "Cached").expect("valid catalog"))
             .build()
@@ -352,7 +352,7 @@ async fn catalog_resource_completion_is_cancelled_after_root_dispose() {
                     resource_state_runs_for_effect.set(resource_state_runs_for_effect.get() + 1);
                     Ok(())
                 },
-                test_handler(),
+                test_handler(scope),
             )
             .expect("resource state effect can be registered");
         let translation = t!(i18n, "title");
@@ -365,7 +365,7 @@ async fn catalog_resource_completion_is_cancelled_after_root_dispose() {
                     translation_runs_for_effect.set(translation_runs_for_effect.get() + 1);
                     Ok(())
                 },
-                test_handler(),
+                test_handler(scope),
             )
             .expect("translation effect can be registered");
 

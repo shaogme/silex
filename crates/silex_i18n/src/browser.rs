@@ -401,7 +401,7 @@ mod tests {
     fn missing_document_returns_an_inactive_effect_without_leaking_nodes() {
         let mut runtime = silex_core::Runtime::new();
         runtime.child(|scope| {
-            let store = crate::I18nBuilder::new(scope, silex_core::ErrorReporter::new(|_| {}))
+            let store = crate::I18nBuilder::new(scope, scope.error_handler(|_| {}))
                 .locale(Locale::new("en-US"))
                 .build()
                 .expect("valid i18n store");

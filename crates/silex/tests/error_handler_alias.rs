@@ -1,9 +1,12 @@
-use silex::{ErrorHandler, ErrorReporter, SilexError};
+use silex::{ErrorHandler, ErrorReporter, Runtime, SilexError};
 
 #[test]
 fn facade_exports_one_handler_type_under_both_names() {
-    let handler: ErrorHandler<'_, SilexError> = ErrorHandler::new(|_| {});
-    let reporter: ErrorReporter<'_> = handler.clone();
+    let mut runtime = Runtime::new();
+    runtime.child(|scope| {
+        let handler: ErrorHandler<'_, SilexError> = scope.error_handler(|_| {});
+        let reporter: ErrorReporter<'_> = handler;
 
-    reporter.handle(SilexError::Framework(String::from("alias")));
+        reporter.handle(SilexError::Framework(String::from("alias")));
+    });
 }

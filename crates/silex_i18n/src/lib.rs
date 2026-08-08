@@ -69,11 +69,11 @@ macro_rules! t {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use silex_core::{ErrorReporter, Runtime};
+    use silex_core::{ErrorReporter, Runtime, Scope};
     use std::{cell::Cell, rc::Rc};
 
-    fn test_handler<'scope>() -> ErrorReporter<'scope> {
-        ErrorReporter::new(|_| {})
+    fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
+        scope.error_handler(|_| {})
     }
 
     #[cfg(feature = "persist")]
@@ -175,7 +175,7 @@ mod tests {
             let zh =
                 Catalog::from_entries(Locale::new("zh-CN"), [("welcome.user", "你好，{name}！")])
                     .expect("valid catalog");
-            let store = I18nBuilder::new(scope, test_handler())
+            let store = I18nBuilder::new(scope, test_handler(scope))
                 .locale(Locale::new("zh-CN"))
                 .fallback_locale(Locale::new("en-US"))
                 .catalog(en)
@@ -206,7 +206,7 @@ mod tests {
                 .expect("valid initial catalog");
             let replacement = Catalog::from_entries(Locale::new("en"), [("title", "New")])
                 .expect("valid replacement catalog");
-            let store = I18nBuilder::new(scope, test_handler())
+            let store = I18nBuilder::new(scope, test_handler(scope))
                 .locale(Locale::new("en"))
                 .catalog(initial)
                 .build()
@@ -231,7 +231,7 @@ mod tests {
                 .expect("valid equal catalog");
             let replacement = Catalog::from_entries(Locale::new("en"), [("title", "New")])
                 .expect("valid replacement catalog");
-            let store = I18nBuilder::new(scope, test_handler())
+            let store = I18nBuilder::new(scope, test_handler(scope))
                 .locale(Locale::new("en"))
                 .catalog(initial)
                 .build()
@@ -264,7 +264,7 @@ mod tests {
         runtime.child(|scope| {
             let catalog = Catalog::from_entries(Locale::new("en"), [("greeting", "Hi, {name}!")])
                 .expect("valid catalog");
-            let store = I18nBuilder::new(scope, test_handler())
+            let store = I18nBuilder::new(scope, test_handler(scope))
                 .locale(Locale::new("en"))
                 .catalog(catalog)
                 .missing_key(MissingKeyPolicy::Empty)
@@ -303,7 +303,7 @@ mod tests {
                 )],
             )
             .expect("valid catalog");
-            let store = I18nBuilder::new(scope, test_handler())
+            let store = I18nBuilder::new(scope, test_handler(scope))
                 .locale(Locale::new("en"))
                 .catalog(catalog)
                 .build()
@@ -336,7 +336,7 @@ mod tests {
                 )],
             )
             .expect("valid catalog");
-            let store = I18nBuilder::new(scope, test_handler())
+            let store = I18nBuilder::new(scope, test_handler(scope))
                 .locale(Locale::new("zh-CN"))
                 .fallback_locale(Locale::new("en"))
                 .catalog(fallback)
@@ -369,12 +369,12 @@ mod tests {
     fn locale_binding_takes_precedence_over_builder_locale() {
         let mut runtime = Runtime::new();
         runtime.child(|scope| {
-            let saved = Persistent::builder(scope, "silex-test-locale", test_handler())
+            let saved = Persistent::builder(scope, "silex-test-locale", test_handler(scope))
                 .local()
                 .parse::<Locale>()
                 .default(Locale::new("en-US"))
                 .build();
-            let store = I18nBuilder::new(scope, test_handler())
+            let store = I18nBuilder::new(scope, test_handler(scope))
                 .locale(Locale::new("zh-CN"))
                 .locale_binding(saved)
                 .build()
@@ -389,12 +389,12 @@ mod tests {
     fn locale_binding_stays_in_sync_inside_one_runtime() {
         let mut runtime = Runtime::new();
         runtime.child(|scope| {
-            let binding = Persistent::builder(scope, "silex-memory-locale", test_handler())
+            let binding = Persistent::builder(scope, "silex-memory-locale", test_handler(scope))
                 .backend(InputBackend::new(silex_core::RuntimeInputs::new()))
                 .parse::<Locale>()
                 .default(Locale::new("en-US"))
                 .build();
-            let store = I18nBuilder::new(scope, test_handler())
+            let store = I18nBuilder::new(scope, test_handler(scope))
                 .locale(Locale::new("zh-CN"))
                 .locale_binding(binding)
                 .build()
@@ -417,12 +417,12 @@ mod tests {
         let child_backend = InputBackend::new(silex_core::RuntimeInputs::new());
 
         root.with_scope(|scope| {
-            let root_binding = Persistent::builder(scope, "root-locale", test_handler())
+            let root_binding = Persistent::builder(scope, "root-locale", test_handler(scope))
                 .backend(root_backend.clone())
                 .parse::<Locale>()
                 .default(Locale::new("en-US"))
                 .build();
-            let root_store = I18nBuilder::new(scope, test_handler())
+            let root_store = I18nBuilder::new(scope, test_handler(scope))
                 .locale_binding(root_binding)
                 .build()
                 .expect("root binding should build");
@@ -432,12 +432,12 @@ mod tests {
 
             scope.child(|child_scope| {
                 let child_binding =
-                    Persistent::builder(child_scope, "child-locale", test_handler())
+                    Persistent::builder(child_scope, "child-locale", test_handler(child_scope))
                         .backend(child_backend.clone())
                         .parse::<Locale>()
                         .default(Locale::new("en-US"))
                         .build();
-                let child_store = I18nBuilder::new(child_scope, test_handler())
+                let child_store = I18nBuilder::new(child_scope, test_handler(child_scope))
                     .locale(Locale::new("zh-CN"))
                     .locale_binding(child_binding)
                     .build()
@@ -463,12 +463,12 @@ mod tests {
         let mut runtime = Runtime::new();
         runtime.child(|scope| {
             let backend = InputBackend::new(silex_core::RuntimeInputs::new());
-            let binding = Persistent::builder(scope, "equal-locale", test_handler())
+            let binding = Persistent::builder(scope, "equal-locale", test_handler(scope))
                 .backend(backend.clone())
                 .parse::<Locale>()
                 .default(Locale::new("en-US"))
                 .build();
-            let store = I18nBuilder::new(scope, test_handler())
+            let store = I18nBuilder::new(scope, test_handler(scope))
                 .locale(Locale::new("en-US"))
                 .locale_binding(binding)
                 .build()
@@ -493,11 +493,15 @@ mod tests {
 
         foreign_root.with_scope(|foreign_scope| {
             let backend = InputBackend::new(silex_core::RuntimeInputs::new());
-            let binding = Persistent::builder(foreign_scope, "foreign-i18n-locale", test_handler())
-                .backend(backend.clone())
-                .parse::<Locale>()
-                .default(Locale::new("en-US"))
-                .build();
+            let binding = Persistent::builder(
+                foreign_scope,
+                "foreign-i18n-locale",
+                test_handler(foreign_scope),
+            )
+            .backend(backend.clone())
+            .parse::<Locale>()
+            .default(Locale::new("en-US"))
+            .build();
             let before_backend = (
                 backend.get_calls.get(),
                 backend.set_calls.get(),
@@ -507,7 +511,7 @@ mod tests {
 
             target_root.with_scope(|target_scope| {
                 let before = target_scope.runtime_snapshot();
-                let result = I18nBuilder::new(target_scope, test_handler())
+                let result = I18nBuilder::new(target_scope, test_handler(target_scope))
                     .locale_binding(binding)
                     .build();
 

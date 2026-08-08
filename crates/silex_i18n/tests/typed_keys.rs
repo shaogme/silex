@@ -1,6 +1,6 @@
 #![cfg(feature = "macros")]
 
-use silex_core::{ErrorReporter, Runtime};
+use silex_core::Runtime;
 use silex_i18n::{Catalog, CatalogValue, I18nBuilder, I18nKeys, Locale, t};
 
 #[derive(I18nKeys)]
@@ -30,7 +30,7 @@ fn typed_key_macro_keeps_reactive_arguments_inside_the_memo() {
             ],
         )
         .expect("valid catalog");
-        let store = I18nBuilder::new(scope, ErrorReporter::new(|_| {}))
+        let store = I18nBuilder::new(scope, scope.error_handler(|_| {}))
             .locale(Locale::new("en"))
             .catalog(catalog)
             .build()
@@ -62,7 +62,7 @@ fn typed_key_memo_tracks_fallback_and_catalog_revision() {
             [("welcome.user", CatalogValue::from("Hallo, {name}!"))],
         )
         .expect("valid german catalog");
-        let store = I18nBuilder::new(scope, ErrorReporter::new(|_| {}))
+        let store = I18nBuilder::new(scope, scope.error_handler(|_| {}))
             .locale(Locale::new("es-MX"))
             .fallback_locale(Locale::new("fr"))
             .catalog(french)

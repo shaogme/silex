@@ -731,10 +731,10 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
 mod tests {
     use super::{HttpClient, IntoNetValue, ValueResolver};
     use crate::state::RequestBody;
-    use silex_core::{ErrorReporter, Runtime, runtime_inputs_of};
+    use silex_core::{ErrorReporter, Runtime, Scope, runtime_inputs_of};
 
-    fn test_handler<'scope>() -> ErrorReporter<'scope> {
-        ErrorReporter::new(|_| {})
+    fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
+        scope.error_handler(|_| {})
     }
 
     #[test]
@@ -746,7 +746,7 @@ mod tests {
             let (query, _) = scope.signal("search".to_string());
             let (path, _) = scope.signal("42".to_string());
             let (body, _) = scope.signal("payload".to_string());
-            let builder = HttpClient::post(scope, url, test_handler())
+            let builder = HttpClient::post(scope, url, test_handler(scope))
                 .header("Authorization", header)
                 .query("q", query)
                 .path_param("id", path)
@@ -770,7 +770,7 @@ mod tests {
         runtime.child(|scope| {
             let (name, _) = scope.signal("first".to_string());
             let (value, set_value) = scope.signal("one".to_string());
-            let builder = HttpClient::post(scope, "https://example.test", test_handler())
+            let builder = HttpClient::post(scope, "https://example.test", test_handler(scope))
                 .form_body([
                     (name.into_net_value(), value.into_net_value()),
                     (
@@ -811,9 +811,12 @@ mod tests {
                     || "foreign".to_string(),
                     foreign_inputs,
                 );
-                let builder =
-                    HttpClient::post(target_scope, "https://example.test", test_handler())
-                        .text_body(foreign_body);
+                let builder = HttpClient::post(
+                    target_scope,
+                    "https://example.test",
+                    test_handler(target_scope),
+                )
+                .text_body(foreign_body);
                 assert!(builder.validate_runtime_inputs().is_err());
                 assert!(builder.try_as_mutation().is_err());
             });
@@ -826,7 +829,7 @@ mod tests {
         let mut runtime = Runtime::new();
         runtime.child(|scope| {
             let (body, _) = scope.signal("{\"value\":1}".to_string());
-            let builder = HttpClient::post(scope, "https://example.test", test_handler())
+            let builder = HttpClient::post(scope, "https://example.test", test_handler(scope))
                 .json_body_value(body);
 
             assert_eq!(builder.runtime_inputs().len(), 1);

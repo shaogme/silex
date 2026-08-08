@@ -1763,7 +1763,7 @@ impl<'scope, V: View<'scope>> View<'scope> for SilexResult<V> {
 #[cfg(test)]
 mod tests {
     use super::{HostResourceHandle, ScopedViewOwner, ViewOwner};
-    use silex_core::{ErrorReporter, Runtime, SilexError};
+    use silex_core::{Runtime, SilexError};
     use std::{
         cell::{Cell, RefCell},
         rc::Rc,
@@ -1778,7 +1778,7 @@ mod tests {
         let root = runtime.run();
         let bridge = {
             let scope = root.scope();
-            let owner = ScopedViewOwner::new(scope, ErrorReporter::new(|_| {}));
+            let owner = ScopedViewOwner::new(scope, scope.error_handler(|_| {}));
             let token = owner.token();
             let bridge = token.host_callback(
                 move |_| {
@@ -1822,7 +1822,7 @@ mod tests {
         let root = runtime.run();
         {
             let scope = root.scope();
-            let owner = ScopedViewOwner::new(scope, ErrorReporter::new(|_| {}));
+            let owner = ScopedViewOwner::new(scope, scope.error_handler(|_| {}));
             let token = owner.token();
             let callback = token.host_callback(|_| Ok(()), token.error_handler());
             let handle = token.host_resource_for_callback(&callback, move || {
@@ -1851,7 +1851,7 @@ mod tests {
             let errors_for_reporter = errors.clone();
             let owner = ScopedViewOwner::new(
                 scope,
-                ErrorReporter::new(move |error| errors_for_reporter.borrow_mut().push(error)),
+                scope.error_handler(move |error| errors_for_reporter.borrow_mut().push(error)),
             );
             assert!(owner.validate_inputs(&inputs).is_err());
             assert!(
@@ -1883,7 +1883,7 @@ mod tests {
         runtime.child(|scope| {
             let owner = ScopedViewOwner::new(
                 scope,
-                ErrorReporter::new(move |error| {
+                scope.error_handler(move |error| {
                     outer_errors_for_reporter
                         .borrow_mut()
                         .push(error.to_string());
@@ -1892,7 +1892,7 @@ mod tests {
             let token = owner.token();
             token.handle_error(SilexError::Framework("outer".to_string()));
 
-            let nested = token.with_error_handler(ErrorReporter::new(move |error| {
+            let nested = token.with_error_handler(scope.error_handler(move |error| {
                 inner_errors_for_reporter
                     .borrow_mut()
                     .push(error.to_string());

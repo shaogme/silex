@@ -599,10 +599,10 @@ mod tests {
     use super::*;
     use crate::layers;
     use crate::types::{hex, px};
-    use silex_core::ErrorReporter;
+    use silex_core::{ErrorReporter, Scope};
 
-    fn discard_test_errors<'scope>() -> ErrorReporter<'scope> {
-        ErrorReporter::new(|_| {})
+    fn discard_test_errors<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
+        scope.error_handler(|_| {})
     }
 
     fn css_of(style: Style<'_>) -> String {
@@ -794,11 +794,11 @@ mod tests {
                                 counter.set(counter.get() + 1);
                                 Ok(())
                             },
-                            discard_test_errors(),
+                            discard_test_errors(scope),
                         )?;
                         Ok(())
                     },
-                    discard_test_errors(),
+                    discard_test_errors(scope),
                 )
                 .expect("nested effects can be registered");
 

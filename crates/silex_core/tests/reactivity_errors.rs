@@ -1,9 +1,9 @@
 use silex_core::traits::RxBase;
-use silex_core::{ErrorHandler, ReactiveError, Runtime, SilexError};
+use silex_core::{ErrorHandler, ReactiveError, Runtime, Scope, SilexError};
 use std::{cell::Cell, rc::Rc};
 
-fn handler<'scope>() -> ErrorHandler<'scope, SilexError> {
-    ErrorHandler::new(|_| {})
+fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, SilexError> {
+    scope.error_handler(|_| {})
 }
 
 #[test]
@@ -63,7 +63,7 @@ fn node_ref_keeps_empty_value_separate_from_runtime_errors() {
                     stale_error_for_cleanup.set(node_ref_for_cleanup.try_get().err());
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("cleanup should register");
     });
@@ -89,7 +89,7 @@ fn stale_core_trait_access_returns_no_such_node() {
                     stale_error_for_cleanup.set(read.try_get().err());
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("cleanup should register");
     });
@@ -110,13 +110,13 @@ fn runtime_errors_are_matchable_through_silex_error() {
 fn core_owner_registration_exposes_inactive_errors() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
-        assert!(scope.on_cleanup(|| Ok(()), handler()).is_ok());
+        assert!(scope.on_cleanup(|| Ok(()), handler(scope)).is_ok());
         let owner = scope.try_owned_scope().expect("owner is active");
-        assert!(owner.on_cleanup(|| Ok(()), handler()).is_ok());
+        assert!(owner.on_cleanup(|| Ok(()), handler(scope)).is_ok());
         owner.dispose();
 
         assert!(matches!(
-            owner.on_cleanup(|| Ok(()), handler()),
+            owner.on_cleanup(|| Ok(()), handler(scope)),
             Err(SilexError::Reactivity(ReactiveError::NoSuchNode))
         ));
         assert!(matches!(

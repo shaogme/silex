@@ -69,7 +69,7 @@ impl<'scope> View<'scope> for DeferredFailure<'scope> {
                 }
                 Ok(())
             }),
-            error_handler.clone(),
+            error_handler,
         )?;
 
         let source = self.source;
@@ -138,8 +138,11 @@ fn host() -> web_sys::Element {
         .expect("test host should be creatable")
 }
 
-fn test_handler<'scope>(errors: Rc<Cell<usize>>) -> ErrorReporter<'scope> {
-    ErrorReporter::new(move |_| errors.set(errors.get() + 1))
+fn test_handler<'scope>(
+    scope: silex_core::Scope<'scope>,
+    errors: Rc<Cell<usize>>,
+) -> ErrorReporter<'scope> {
+    scope.error_handler(move |_| errors.set(errors.get() + 1))
 }
 
 #[wasm_bindgen_test]
@@ -149,7 +152,7 @@ fn initial_child_error_switches_to_fallback_without_parent_dispatch() {
     let mut runtime = Runtime::new();
 
     runtime.child(|scope| {
-        let owner = ScopedViewOwner::new(scope, test_handler(parent_errors.clone()));
+        let owner = ScopedViewOwner::new(scope, test_handler(scope, parent_errors.clone()));
         let view =
             ErrorBoundary(scope, |_| InitialFailure).fallback(|error| format!("fallback: {error}"));
 
@@ -173,7 +176,7 @@ async fn deferred_child_error_reaches_boundary_and_disposes_child() {
 
     let set_failed = root.with_scope(|scope| {
         let (failed, set_failed) = scope.signal(false);
-        let owner = ScopedViewOwner::new(scope, test_handler(parent_errors.clone()));
+        let owner = ScopedViewOwner::new(scope, test_handler(scope, parent_errors.clone()));
         let child = DeferredFailure { source: failed };
         let view = ErrorBoundary(scope, move |_| child).fallback(|_| "fallback");
 
@@ -202,7 +205,7 @@ async fn child_factory_handler_reaches_boundary_fallback() {
     let root = runtime.run();
 
     root.with_scope(|scope| {
-        let owner = ScopedViewOwner::new(scope, test_handler(parent_errors.clone()));
+        let owner = ScopedViewOwner::new(scope, test_handler(scope, parent_errors.clone()));
         let view = ErrorBoundary(scope, move |child_handler| ConstructedHandlerFailure {
             handler: child_handler,
         })

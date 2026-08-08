@@ -1,5 +1,5 @@
 use silex_core::{
-    ErrorHandler, ErrorReporter, Runtime, SilexError, SilexResult, WatchOptions, runtime_inputs_of,
+    ErrorHandler, Runtime, Scope, SilexError, SilexResult, WatchOptions, runtime_inputs_of,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -7,9 +7,10 @@ use std::{
 };
 
 fn collecting_handler<'scope>(
+    scope: Scope<'scope>,
     errors: Rc<RefCell<Vec<SilexError>>>,
 ) -> ErrorHandler<'scope, SilexError> {
-    ErrorHandler::new(move |error| errors.borrow_mut().push(error))
+    scope.error_handler(move |error| errors.borrow_mut().push(error))
 }
 
 #[test]
@@ -23,7 +24,7 @@ fn registration_error_maps_to_reactivity_error() {
 
     let result = second.child(|scope| {
         scope
-            .effect_from(inputs, || Ok(()), ErrorHandler::new(|_| {}))
+            .effect_from(inputs, || Ok(()), scope.error_handler(|_| {}))
             .map(|_| ())
     });
 
@@ -43,7 +44,7 @@ fn initial_silex_error_is_returned_without_reporting_twice() {
     runtime.child(|scope| {
         let result = scope.effect(
             || Err(SilexError::Dom("initial".to_string())),
-            collecting_handler(errors.clone()),
+            collecting_handler(scope, errors.clone()),
         );
 
         assert!(matches!(
@@ -76,7 +77,7 @@ fn deferred_error_reaches_reporter_and_effect_can_retry() {
                         Ok(())
                     }
                 },
-                collecting_handler(errors.clone()),
+                collecting_handler(scope, errors.clone()),
             )
             .expect("effect should initialize");
 
@@ -118,7 +119,7 @@ fn previous_error_preserves_the_last_successful_value() {
                         Ok(previous.copied().unwrap_or(0) + 1)
                     }
                 },
-                collecting_handler(errors.clone()),
+                collecting_handler(scope, errors.clone()),
             )
             .expect("previous effect should initialize");
 
@@ -158,7 +159,7 @@ fn watch_error_preserves_the_previous_snapshot_for_retry() {
                         Ok(())
                     }
                 },
-                collecting_handler(errors.clone()),
+                collecting_handler(scope, errors.clone()),
                 WatchOptions::default(),
             )
             .expect("watch should initialize");
@@ -180,14 +181,13 @@ fn watch_error_preserves_the_previous_snapshot_for_retry() {
 fn reporter_handler_can_be_cloned_for_effect_and_cleanup() {
     let mut runtime = Runtime::new();
     let errors = Rc::new(RefCell::new(Vec::new()));
-    let handler = ErrorReporter::new({
-        let errors = errors.clone();
-        move |error| errors.borrow_mut().push(error)
-    });
-
     runtime.child(|scope| {
+        let handler = scope.error_handler({
+            let errors = errors.clone();
+            move |error| errors.borrow_mut().push(error)
+        });
         scope
-            .effect(|| Ok(()), handler.clone())
+            .effect(|| Ok(()), handler)
             .expect("effect should initialize");
         scope
             .on_cleanup(

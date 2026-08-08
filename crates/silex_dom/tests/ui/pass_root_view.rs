@@ -1,4 +1,4 @@
-use silex_core::{ErrorHandler, Runtime};
+use silex_core::Runtime;
 use silex_dom::view::{AnyView, RenderThunk, ScopedViewOwner, View, ViewOwner};
 
 fn accept_root_view<'scope, V>(_: V)
@@ -12,7 +12,7 @@ fn main() {
     let root = runtime.run();
     {
         let scope = root.scope();
-        let owner = ScopedViewOwner::new(scope, ErrorHandler::new(|_| {}));
+        let owner = ScopedViewOwner::new(scope, scope.error_handler(|_| {}));
         let _token = owner.token();
 
         let borrowed_view = String::from("borrowed-view");

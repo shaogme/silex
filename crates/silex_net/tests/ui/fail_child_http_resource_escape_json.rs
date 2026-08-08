@@ -3,7 +3,7 @@ use silex_net::{HttpClient, NetError};
 
 fn escape(runtime: &mut Runtime) -> Resource<'static, String, NetError> {
     runtime.child(|scope| {
-        HttpClient::get(scope, "https://example.test", silex_core::ErrorReporter::new(|_| {}))
+        HttpClient::get(scope, "https://example.test", scope.error_handler(|_| {}))
             .into_resource(None)
     })
 }

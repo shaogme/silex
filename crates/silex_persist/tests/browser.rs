@@ -1,7 +1,7 @@
 #![cfg(target_arch = "wasm32")]
 
 use gloo_timers::future::TimeoutFuture;
-use silex_core::{ErrorReporter, RootHandle, Runtime, RxGet, SilexResult};
+use silex_core::{ErrorReporter, RootHandle, Runtime, RxGet, Scope, SilexResult};
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::view::{
     AnyView, ApplyAttributes, IndexedLoopView, ScopedViewOwner, View, ViewOwner,
@@ -19,8 +19,8 @@ use web_sys::{Node, StorageEvent, window};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
-fn test_handler<'scope>() -> ErrorReporter<'scope> {
-    ErrorReporter::new(|_| {})
+fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
+    scope.error_handler(|_| {})
 }
 
 const STORAGE_KEY: &str = "silex-persist-runtime-refactor";
@@ -331,7 +331,7 @@ fn storage_listener_is_physically_removed_after_last_binding_cleanup() {
     let mut runtime = Runtime::new();
     let root = runtime.run();
     root.with_scope(|scope| {
-        let _binding = Persistent::builder(scope, LISTENER_CLEANUP_KEY, test_handler())
+        let _binding = Persistent::builder(scope, LISTENER_CLEANUP_KEY, test_handler(scope))
             .local()
             .string()
             .default("initial".to_string())
@@ -364,7 +364,7 @@ fn storage_listener_reentrant_cleanup_does_not_leave_a_listener() {
             return;
         };
         root.with_scope(|scope| {
-            let _binding = Persistent::builder(scope, LISTENER_REENTRY_KEY, test_handler())
+            let _binding = Persistent::builder(scope, LISTENER_REENTRY_KEY, test_handler(scope))
                 .local()
                 .string()
                 .default("reentrant".to_string())
@@ -378,7 +378,7 @@ fn storage_listener_reentrant_cleanup_does_not_leave_a_listener() {
     let mut runtime = Runtime::new();
     let root = runtime.run();
     root.with_scope(|scope| {
-        let _binding = Persistent::builder(scope, LISTENER_REENTRY_KEY, test_handler())
+        let _binding = Persistent::builder(scope, LISTENER_REENTRY_KEY, test_handler(scope))
             .local()
             .string()
             .default("initial".to_string())
@@ -405,12 +405,12 @@ fn local_storage_event_updates_bindings_and_scope_cleanup() {
     let mut runtime = Runtime::new();
     let root = runtime.run();
     root.with_scope(|scope| {
-        let first = Persistent::builder(scope, STORAGE_KEY, test_handler())
+        let first = Persistent::builder(scope, STORAGE_KEY, test_handler(scope))
             .local()
             .string()
             .default("initial".to_string())
             .build();
-        let second = Persistent::builder(scope, STORAGE_KEY, test_handler())
+        let second = Persistent::builder(scope, STORAGE_KEY, test_handler(scope))
             .local()
             .string()
             .default("initial".to_string())
@@ -456,7 +456,7 @@ fn query_binding_uses_target_scope_and_updates_only_its_key() {
             },
         )
         .expect("router context should be created");
-        let page = Persistent::builder(scope, "page", test_handler())
+        let page = Persistent::builder(scope, "page", test_handler(scope))
             .query(&context)
             .parse::<u32>()
             .default(1)
@@ -497,12 +497,12 @@ fn query_backend_writes_one_push_and_one_url_update_per_change() {
                     search_updates_for_effect.set(search_updates_for_effect.get() + 1);
                     Ok(())
                 },
-                test_handler(),
+                test_handler(scope),
             )
             .expect("query update effect can be registered");
         let initial_search_updates = search_updates.get();
 
-        let binding = Persistent::builder(scope, QUERY_HISTORY_KEY, test_handler())
+        let binding = Persistent::builder(scope, QUERY_HISTORY_KEY, test_handler(scope))
             .query(&context)
             .parse::<u32>()
             .write_default(WriteDefault::Never)
@@ -552,12 +552,12 @@ fn persistent_view_updates_and_stops_with_root() {
         .expect("parent element");
 
     root.with_scope(|scope| {
-        let binding = Persistent::builder(scope, "view", test_handler())
+        let binding = Persistent::builder(scope, "view", test_handler(scope))
             .local()
             .string()
             .default("one".to_string())
             .build();
-        let owner = ScopedViewOwner::new(scope, test_handler());
+        let owner = ScopedViewOwner::new(scope, test_handler(scope));
         binding
             .mount(&owner, parent.as_ref(), Vec::new())
             .expect("persistent view should mount");
@@ -585,7 +585,7 @@ fn persistent_view_stops_after_lexical_owner_dispose() {
         .expect("parent element");
 
     root.with_scope(|scope| {
-        let _root_binding = Persistent::builder(scope, KEY, test_handler())
+        let _root_binding = Persistent::builder(scope, KEY, test_handler(scope))
             .local()
             .string()
             .default("one".to_string())
@@ -593,12 +593,12 @@ fn persistent_view_stops_after_lexical_owner_dispose() {
         let captured_node = Rc::new(RefCell::new(None::<Node>));
         let captured_node_for_child = captured_node.clone();
         scope.child(|child| {
-            let binding = Persistent::builder(child, KEY, test_handler())
+            let binding = Persistent::builder(child, KEY, test_handler(child))
                 .local()
                 .string()
                 .default("one".to_string())
                 .build();
-            let owner = ScopedViewOwner::new(child, test_handler());
+            let owner = ScopedViewOwner::new(child, test_handler(child));
             CapturedPersistent {
                 binding,
                 node: captured_node_for_child,
@@ -651,7 +651,7 @@ fn persistent_view_stops_after_row_owner_dispose() {
         .expect("parent element");
 
     root.with_scope(|scope| {
-        let binding = Persistent::builder(scope, "silex-persist-row-owner", test_handler())
+        let binding = Persistent::builder(scope, "silex-persist-row-owner", test_handler(scope))
             .local()
             .string()
             .sync(SyncStrategy::None)
@@ -670,7 +670,7 @@ fn persistent_view_stops_after_row_owner_dispose() {
             }),
             _marker: std::marker::PhantomData,
         };
-        let owner = ScopedViewOwner::new(scope, test_handler());
+        let owner = ScopedViewOwner::new(scope, test_handler(scope));
         list.mount_owned(&owner, parent.as_ref(), Vec::new())
             .expect("persistent list should mount");
         assert_eq!(parent.text_content(), Some("one".to_string()));
@@ -694,7 +694,7 @@ async fn debounce_writes_only_latest_value() {
     let mut runtime = Runtime::new();
     let root = runtime.run();
     root.with_scope(|scope| {
-        let binding = Persistent::builder(scope, DEBOUNCE_KEY, test_handler())
+        let binding = Persistent::builder(scope, DEBOUNCE_KEY, test_handler(scope))
             .local()
             .string()
             .sync(SyncStrategy::Debounce(Duration::from_millis(5)))
@@ -719,7 +719,7 @@ async fn debounce_late_callback_is_gated_after_root_dispose() {
     let mut runtime = Runtime::new();
     let root = runtime.run();
     root.with_scope(|scope| {
-        let binding = Persistent::builder(scope, DEBOUNCE_KEY, test_handler())
+        let binding = Persistent::builder(scope, DEBOUNCE_KEY, test_handler(scope))
             .local()
             .string()
             .mode(PersistMode::Immediate)
@@ -747,7 +747,7 @@ async fn debounce_external_remove_does_not_skip_next_write() {
     let mut runtime = Runtime::new();
     let root = runtime.run();
     root.with_scope(|scope| {
-        let binding = Persistent::builder(scope, DEBOUNCE_REMOVE_KEY, test_handler())
+        let binding = Persistent::builder(scope, DEBOUNCE_REMOVE_KEY, test_handler(scope))
             .local()
             .string()
             .sync(SyncStrategy::Debounce(Duration::from_millis(5)))
@@ -792,7 +792,7 @@ fn debounce_timer_failure_reentry_and_late_callbacks_are_gated() {
     let root = runtime.run();
 
     root.with_scope(|scope| {
-        let binding = Persistent::builder(scope, KEY, test_handler())
+        let binding = Persistent::builder(scope, KEY, test_handler(scope))
             .local()
             .string()
             .write_default(WriteDefault::Never)
@@ -813,7 +813,7 @@ fn debounce_timer_failure_reentry_and_late_callbacks_are_gated() {
                     }
                     Ok(())
                 },
-                test_handler(),
+                test_handler(scope),
             )
             .expect("debounce state effect can be registered");
 

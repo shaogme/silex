@@ -1,5 +1,5 @@
 error[E0599]: no method named `report` found for struct `ErrorHandler<'scope, E>` in the current scope
- --> tests/ui/fail_error_reporter_report.rs:5:14
+ --> tests/ui/fail_error_reporter_report.rs:7:18
   |
-5 |     reporter.report(SilexError::Framework(String::from("removed")));
-  |              ^^^^^^ method not found in `ErrorHandler<'_, SilexError>`
+7 |         reporter.report(SilexError::Framework(String::from("removed")));
+  |                  ^^^^^^ method not found in `ErrorHandler<'_, SilexError>`

@@ -1,8 +1,8 @@
-use silex_core::{ErrorHandler, Runtime, SilexError, WatchOptions};
+use silex_core::{ErrorHandler, Runtime, Scope, SilexError, WatchOptions};
 use std::{cell::RefCell, rc::Rc};
 
-fn handler<'scope>() -> ErrorHandler<'scope, SilexError> {
-    ErrorHandler::new(|_| {})
+fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, SilexError> {
+    scope.error_handler(|_| {})
 }
 
 #[test]
@@ -20,7 +20,7 @@ fn source_watch_uses_promotion_and_typed_callback_values() {
                     calls_in_callback.borrow_mut().push((*new, old.copied()));
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("watch should register");
 
@@ -45,7 +45,7 @@ fn getter_watch_supports_immediate_once_and_explicit_stop() {
                     calls_in_callback.borrow_mut().push((*new, old.copied()));
                     Ok(())
                 },
-                handler(),
+                handler(scope),
                 WatchOptions::default().immediate().once(),
             )
             .expect("watcher should register");
@@ -73,7 +73,7 @@ fn tuple_source_watch_tracks_promoted_values_inside_a_batch() {
                     calls_in_callback.borrow_mut().push((*new, old.copied()));
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("watch should register");
 

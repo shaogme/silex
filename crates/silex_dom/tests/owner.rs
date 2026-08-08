@@ -1,7 +1,7 @@
 #![cfg(target_arch = "wasm32")]
 
 use silex_core::{
-    ErrorHandler, ErrorReporter, Runtime, RuntimeInputs, SilexError, SilexResult, runtime_inputs_of,
+    ErrorReporter, Runtime, RuntimeInputs, Scope, SilexError, SilexResult, runtime_inputs_of,
 };
 use silex_dom::attribute::{AttrOp, CombinedStyles, PendingAttribute};
 use silex_dom::element::Element;
@@ -19,8 +19,8 @@ use web_sys::Node;
 
 wasm_bindgen_test_configure!(run_in_browser);
 
-fn test_handler<'scope>() -> ErrorReporter<'scope> {
-    ErrorHandler::new(|_| {})
+fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
+    scope.error_handler(|_| {})
 }
 
 struct CleanupProbe {
@@ -222,7 +222,7 @@ fn native_owner_error_handler_separates_initial_deferred_and_cleanup_errors() {
     runtime.child(|scope| {
         let owner = ScopedViewOwner::new(
             scope,
-            ErrorReporter::new(move |_| {
+            scope.error_handler(move |_| {
                 initial_reports_for_owner.set(initial_reports_for_owner.get() + 1);
             }),
         );
@@ -251,7 +251,7 @@ fn native_owner_error_handler_separates_initial_deferred_and_cleanup_errors() {
         let cleanup_reports_for_owner = cleanup_reports.clone();
         let owner = ScopedViewOwner::new(
             scope,
-            ErrorReporter::new(move |error| {
+            scope.error_handler(move |error| {
                 if matches!(&error, SilexError::Framework(message) if message == "deferred effect failure")
                 {
                     deferred_reports_for_owner.set(deferred_reports_for_owner.get() + 1);
@@ -302,7 +302,7 @@ fn element_child_failure_rolls_back_provisional_owner_and_dom() {
     let cleanups = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
-        let owner = ScopedViewOwner::new(scope, test_handler());
+        let owner = ScopedViewOwner::new(scope, test_handler(scope));
         let view = Element::with_child(
             "section",
             FailingChild {
@@ -331,7 +331,7 @@ fn composite_view_failure_rolls_back_only_its_mount_transaction() {
     let mut runtime = Runtime::new();
 
     runtime.child(|scope| {
-        let owner = ScopedViewOwner::new(scope, test_handler());
+        let owner = ScopedViewOwner::new(scope, test_handler(scope));
         let view = vec![
             AnyView::new(CleanupProbe {
                 text: "kept out of the document".to_string(),
@@ -368,7 +368,7 @@ fn indexed_list_failure_restores_previous_rows_and_can_retry() {
         let reports_for_handler = reports.clone();
         let owner = ScopedViewOwner::new(
             scope,
-            ErrorReporter::new(move |_| {
+            scope.error_handler(move |_| {
                 reports_for_handler.set(reports_for_handler.get() + 1);
             }),
         );
@@ -415,7 +415,7 @@ fn deferred_row_render_failure_keeps_previous_content_and_recovers() {
         let reports_for_handler = reports.clone();
         let owner = ScopedViewOwner::new(
             scope,
-            ErrorReporter::new(move |_| {
+            scope.error_handler(move |_| {
                 reports_for_handler.set(reports_for_handler.get() + 1);
             }),
         );
@@ -460,12 +460,12 @@ fn keyed_list_initial_duplicate_key_is_a_mount_error() {
             each: items,
             key_fn: Rc::new(|_: &i32| 0),
             view_fn: Rc::new(|item: i32, _, _| AnyView::new(item.to_string())),
-            error_handler: Some(ErrorHandler::new(move |_| {
+            error_handler: Some(scope.error_handler(move |_| {
                 reports_for_handler.set(reports_for_handler.get() + 1);
             })),
             _marker: PhantomData,
         };
-        let owner = ScopedViewOwner::new(scope, test_handler());
+        let owner = ScopedViewOwner::new(scope, test_handler(scope));
 
         assert!(matches!(
             list.mount_owned(&owner, &host, Vec::new()),
@@ -498,7 +498,7 @@ fn dynamic_render_owner_cleans_children_on_rerun_and_root_dispose() {
                 cleanups: cleanups_for_view.clone(),
             })
         };
-        let owner = ScopedViewOwner::new(scope, test_handler());
+        let owner = ScopedViewOwner::new(scope, test_handler(scope));
         view.mount_owned(&owner, &host, Vec::new())
             .expect("dynamic view should mount");
         assert_eq!(host.text_content().as_deref(), Some("0"));
@@ -532,7 +532,7 @@ fn combined_reactive_styles_clean_up_properties_on_scope_dispose() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
         let (color, set_color) = scope.signal(String::from("red"));
-        let owner = ScopedViewOwner::new(scope, test_handler());
+        let owner = ScopedViewOwner::new(scope, test_handler(scope));
         let token = owner.token();
         let operation = AttrOp::CombinedStyles(CombinedStyles {
             statics: Vec::new(),
@@ -582,7 +582,7 @@ fn branch_replaces_row_owner_and_keyed_list_reorders_ranges() {
     {
         let scope = root.scope();
         let (key, set_key) = scope.signal(0i32);
-        let owner = ScopedViewOwner::new(scope, test_handler());
+        let owner = ScopedViewOwner::new(scope, test_handler(scope));
         let branch_cleanups_for_view = branch_cleanups.clone();
         let key_inputs = scope.promote(key).runtime_inputs();
         mount_branch_cached(
@@ -629,12 +629,12 @@ fn branch_replaces_row_owner_and_keyed_list_reorders_ranges() {
                         cleanups: Rc::new(Cell::new(0)),
                     })
                 }),
-                error_handler: Some(ErrorHandler::new(move |_| {
+                error_handler: Some(child.error_handler(move |_| {
                     duplicate_errors_for_handler.set(duplicate_errors_for_handler.get() + 1);
                 })),
                 _marker: PhantomData,
             };
-            let list_owner = ScopedViewOwner::new(child, test_handler());
+            let list_owner = ScopedViewOwner::new(child, test_handler(child));
             list.mount_owned(&list_owner, &host, Vec::new())
                 .expect("keyed list should mount");
             assert_eq!(host.text_content().as_deref(), Some("b11:0;2:1;3:2;"));
@@ -673,7 +673,7 @@ fn indexed_list_preserves_position_identity_across_diff() {
                 view_fn: Rc::new(|item: i32, index| format!("{item}:{index};").into_any()),
                 _marker: PhantomData,
             };
-            let owner = ScopedViewOwner::new(child, test_handler());
+            let owner = ScopedViewOwner::new(child, test_handler(child));
             list.mount_owned(&owner, &host, Vec::new())
                 .expect("indexed list should mount");
             assert_eq!(host.text_content().as_deref(), Some("1:0;2:1;"));
@@ -702,7 +702,7 @@ fn repeated_branch_and_list_replacement_keeps_owner_lifecycle_stable() {
     {
         let scope = root.scope();
         let (key, set_key) = scope.signal(0i32);
-        let owner = ScopedViewOwner::new(scope, test_handler());
+        let owner = ScopedViewOwner::new(scope, test_handler(scope));
         let branch_cleanups_for_view = branch_cleanups.clone();
         mount_branch_cached(
             &owner,
@@ -734,7 +734,7 @@ fn repeated_branch_and_list_replacement_keeps_owner_lifecycle_stable() {
                 view_fn: Rc::new(|item: i32, index| format!("{item}:{index};").into_any()),
                 _marker: PhantomData,
             };
-            let list_owner = ScopedViewOwner::new(child, test_handler());
+            let list_owner = ScopedViewOwner::new(child, test_handler(child));
             list.mount_owned(&list_owner, &host, Vec::new())
                 .expect("indexed list should mount");
 
@@ -805,10 +805,10 @@ fn stateful_keyed_rows_preserve_mounts_and_invalidate_old_updaters() {
                         cleanups: cleanups_for_factory.clone(),
                     })
                 }),
-                error_handler: Some(ErrorHandler::new(|_| {})),
+                error_handler: Some(child.error_handler(|_| {})),
                 _marker: PhantomData,
             };
-            let owner = ScopedViewOwner::new(child, test_handler());
+            let owner = ScopedViewOwner::new(child, test_handler(child));
             view.mount_owned(&owner, &host, Vec::new())
                 .expect("branch view should mount");
             assert_eq!(host.text_content().as_deref(), Some("1:0;2:1;"));
@@ -880,12 +880,12 @@ fn rejected_stateful_factory_cleans_uncommitted_row_range() {
                         cleanups: cleanups_for_factory.clone(),
                     })
                 }),
-                error_handler: Some(ErrorHandler::new(move |_| {
+                error_handler: Some(child.error_handler(move |_| {
                     errors_for_handler.set(errors_for_handler.get() + 1);
                 })),
                 _marker: PhantomData,
             };
-            let owner = ScopedViewOwner::new(child, test_handler());
+            let owner = ScopedViewOwner::new(child, test_handler(child));
             list.mount_owned(&owner, &host, Vec::new())
                 .expect("keyed list should mount");
             assert_eq!(host.text_content().as_deref(), Some("1:0;"));

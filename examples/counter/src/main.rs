@@ -191,7 +191,7 @@ fn HomeView<'scope>(
                               Ok::<_, SilexError>("Loaded Data from Server!".to_string())
                           },
                           Some(cx),
-                          error_handler.clone(),
+                        error_handler,
                       );
                      div(rx!(scope; $async_data_local.clone().unwrap_or("Waiting...".to_string())))
                         .style("color: #2e7d32; font-weight: bold; background: #e8f5e9; padding: 10px; border-radius: 4px;")
@@ -240,11 +240,10 @@ fn App<'scope>(
 ) -> impl View<'scope> {
     let boundary = ErrorBoundary(
         scope,
-        move |child_error_handler| {
-            let route_error_handler = child_error_handler.clone();
+        move |error_handler| {
             let routes = routes!(AppRoutes {
                 home "/" => move |ctx| {
-                    HomeView(ctx).error_handler(route_error_handler.clone())
+                     HomeView(ctx).error_handler(error_handler)
                 },
                 about "/about" => move |_ctx| AboutView(),
                 not_found "/*" => move |_ctx| NotFound(),
@@ -281,12 +280,12 @@ fn main() {
     let root = runtime.run();
     root.with_scope(|scope| {
         let (root_error, set_root_error) = scope.signal(None::<SilexError>);
-        let error_handler = ErrorHandler::new(move |error: SilexError| {
+        let error_handler = scope.error_handler(move |error: SilexError| {
             let _ = set_root_error.try_set(Some(error));
         });
         let app = App(scope, root_error);
 
-        let owner = ScopedViewOwner::new(scope, error_handler.clone());
+        let owner = ScopedViewOwner::new(scope, error_handler);
         if let Err(error) = app.mount(&owner, app_container.as_ref(), Vec::new()) {
             error_handler.handle(error);
         }

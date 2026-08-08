@@ -5,7 +5,7 @@ error: lifetime may not live long enough
   |                      ------ return type of closure is WebSocketConnection<'2>
   |                      |
   |                      has type `silex_core::Scope<'1>`
-6 | /         WebSocket::lazy(scope, "wss://example.test", silex_core::ErrorReporter::new(|_| {}))
+6 | /         WebSocket::lazy(scope, "wss://example.test", scope.error_handler(|_| {}))
 7 | |             .build()
   | |____________________^ returning this value requires that `'1` must outlive `'2`
   |

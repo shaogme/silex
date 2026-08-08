@@ -1,13 +1,13 @@
 use silex_core::traits::RxOptionExt;
 use silex_core::{
-    ErrorHandler, PromotionPlan, ReactiveSource, Runtime, RuntimeInputs, RxData, RxValue,
+    ErrorHandler, PromotionPlan, ReactiveSource, Runtime, RuntimeInputs, RxData, RxValue, Scope,
     SilexError,
     logic::{Map, Memoize, ReactivePartialEq, ReactivePartialOrd},
 };
 use std::{cell::Cell, rc::Rc};
 
-fn handler<'scope>() -> ErrorHandler<'scope, SilexError> {
-    ErrorHandler::new(|_| {})
+fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, SilexError> {
+    scope.error_handler(|_| {})
 }
 
 struct DeclaredExternalSource {
@@ -155,7 +155,7 @@ fn foreign_inputs_are_rejected_before_target_effect_creation() {
                     called_for_effect.set(true);
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .map(|_| ())
     });

@@ -1,6 +1,6 @@
 use silex_core::{
     Callback, ErrorHandler, Memo, NodeRef, ReactiveError, ReadSignal, Runtime, RwSignal, Rx,
-    RxDefault, RxFrom, Signal, SilexError, StoredValue, rx,
+    RxDefault, RxFrom, Scope, Signal, SilexError, StoredValue, rx,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -8,8 +8,8 @@ use std::{
     rc::Rc,
 };
 
-fn handler<'scope>() -> ErrorHandler<'scope, SilexError> {
-    ErrorHandler::new(|_| {})
+fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, SilexError> {
+    scope.error_handler(|_| {})
 }
 
 #[test]
@@ -64,7 +64,7 @@ fn owned_scope_exposes_an_owner_bound_effect_only() {
                     runs_for_effect.set(runs_for_effect.get() + 1);
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("owned effect should register");
 
@@ -90,7 +90,7 @@ fn lexical_effect_is_direct_and_tracks_dependencies() {
                     seen_for_effect.set(value.get());
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("effect should register");
 
@@ -114,7 +114,7 @@ fn previous_effect_commits_the_last_returned_value() {
                     seen_for_effect.borrow_mut().push(previous.copied());
                     Ok(source.get())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("previous effect should register");
 
@@ -144,7 +144,7 @@ fn previous_effect_resets_after_a_panicking_run() {
                     }
                     Ok(value)
                 },
-                handler(),
+                handler(scope),
             )
             .expect("previous effect should register");
 
@@ -304,7 +304,7 @@ fn rx_default_handles_are_inactive_after_root_disposal() {
                     );
                     Ok(())
                 },
-                handler(),
+                handler(scope),
             )
             .expect("cleanup should register");
     });

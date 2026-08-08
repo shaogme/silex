@@ -10,10 +10,10 @@ fn main() {
         let builder = HttpClient::get(
             scope,
             "https://example.test",
-            silex_core::ErrorReporter::new(|_| {}),
+            scope.error_handler(|_| {}),
         )
         .query("id", id);
         require_static(builder);
-        scope.spawn_scoped(async move {}, silex_core::ErrorReporter::new(|_| {}));
+        scope.spawn_scoped(async move {}, scope.error_handler(|_| {}));
     });
 }

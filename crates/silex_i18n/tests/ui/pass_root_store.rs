@@ -4,7 +4,7 @@ fn main() {
     let mut runtime = Runtime::new();
     let root = runtime.run();
     root.with_scope(|scope| {
-        let store = I18nBuilder::new(scope, silex_core::ErrorReporter::new(|_| {}))
+        let store = I18nBuilder::new(scope, scope.error_handler(|_| {}))
             .build()
             .expect("valid store");
         let translation = t!(store, "missing.key");

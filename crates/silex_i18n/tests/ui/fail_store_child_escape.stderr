@@ -5,7 +5,7 @@ error: lifetime may not live long enough
   |                      ------ return type of closure is I18nStore<'2>
   |                      |
   |                      has type `silex_i18n::Scope<'1>`
-6 | /         I18nBuilder::new(scope, silex_core::ErrorReporter::new(|_| {}))
+6 | /         I18nBuilder::new(scope, scope.error_handler(|_| {}))
 7 | |             .build()
 8 | |             .expect("valid store")
   | |__________________________________^ returning this value requires that `'1` must outlive `'2`

@@ -555,7 +555,7 @@ mod tests {
             };
 
             let _subscription = backend
-                .subscribe(scope, "q", callback, ErrorReporter::new(|_| {}))
+                .subscribe(scope, "q", callback, scope.error_handler(|_| {}))
                 .unwrap();
             assert_eq!(backend.get("q").unwrap(), None);
 
@@ -588,7 +588,7 @@ mod tests {
         runtime.child(|scope| {
             let backend = QueryBackend::unavailable();
             let result = backend
-                .subscribe(scope, "q", Rc::new(|_| {}), ErrorReporter::new(|_| {}))
+                .subscribe(scope, "q", Rc::new(|_| {}), scope.error_handler(|_| {}))
                 .map_err(|error| error.into_error());
             assert!(matches!(result, Err(PersistenceError::BackendUnavailable)));
         });
@@ -617,7 +617,7 @@ mod tests {
                             runs_for_effect.set(runs_for_effect.get() + 1);
                             Ok(())
                         },
-                        ErrorReporter::new(|_| {}),
+                        scope.error_handler(|_| {}),
                     )
                     .is_err()
             );

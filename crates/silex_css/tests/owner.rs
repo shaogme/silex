@@ -1,7 +1,7 @@
 #![cfg(target_arch = "wasm32")]
 
 use js_sys::{Array, Reflect};
-use silex_core::{ErrorReporter, Runtime};
+use silex_core::{ErrorReporter, Runtime, Scope};
 use silex_css::{
     CssPart, DynamicCss, IntoCssReactive,
     prelude::{
@@ -24,8 +24,8 @@ use web_sys::{Element, Node};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
-fn test_handler<'scope>() -> ErrorReporter<'scope> {
-    ErrorReporter::new(|_| {})
+fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
+    scope.error_handler(|_| {})
 }
 
 fn document() -> web_sys::Document {
@@ -142,7 +142,7 @@ fn style_updates_inline_values_and_cleans_on_scope_dispose() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
         let (value, set_value) = scope.signal(String::from("red"));
-        let owner = ScopedViewOwner::new(scope, test_handler());
+        let owner = ScopedViewOwner::new(scope, test_handler(scope));
         let token = owner.token();
         let class_name = Style::new()
             .raw("--test-color", value)
@@ -189,7 +189,7 @@ fn theme_updates_variables_and_cleans_on_scope_dispose() {
         let (theme, set_theme) = scope.signal(TestTheme {
             color: String::from("red"),
         });
-        let owner = ScopedViewOwner::new(scope, test_handler());
+        let owner = ScopedViewOwner::new(scope, test_handler(scope));
         let token = owner.token();
         theme_variables(theme)
             .apply(&element, ApplyTarget::Apply, &token)
@@ -233,7 +233,7 @@ fn svg_style_updates_inline_values_and_cleans_on_scope_dispose() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
         let (value, set_value) = scope.signal(String::from("red"));
-        let owner = ScopedViewOwner::new(scope, test_handler());
+        let owner = ScopedViewOwner::new(scope, test_handler(scope));
         let token = owner.token();
         Style::new()
             .raw("--svg-color", value)
@@ -275,7 +275,7 @@ fn dynamic_css_replaces_rule_class_and_cleans_on_scope_dispose() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
         let (value, set_value) = scope.signal(String::from("red"));
-        let owner = ScopedViewOwner::new(scope, test_handler());
+        let owner = ScopedViewOwner::new(scope, test_handler(scope));
         let token = owner.token();
         let dynamic = DynamicCss::new("slx-owner-test").with_rule(
             &[
@@ -316,7 +316,7 @@ async fn pending_dynamic_sheet_operations_do_not_survive_owner_dispose() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
         let (value, _) = scope.signal(String::from("red"));
-        let owner = ScopedViewOwner::new(scope, test_handler());
+        let owner = ScopedViewOwner::new(scope, test_handler(scope));
         let token = owner.token();
         let dynamic = DynamicCss::new("slx-pending-owner").with_rule(
             &[

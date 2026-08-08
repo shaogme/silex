@@ -1,9 +1,12 @@
-use silex_core::{ErrorHandler, ErrorReporter, SilexError};
+use silex_core::{ErrorHandler, ErrorReporter, Runtime, SilexError};
 
 fn main() {
-    let handler: ErrorHandler<'_, SilexError> = ErrorHandler::new(|error| {
-        let _ = error;
+    let mut runtime = Runtime::new();
+    runtime.child(|scope| {
+        let handler: ErrorHandler<'_, SilexError> = scope.error_handler(|error| {
+            let _ = error;
+        });
+        let reporter: ErrorReporter<'_> = handler;
+        reporter.handle(SilexError::Framework("compile-pass".to_string()));
     });
-    let reporter: ErrorReporter<'_> = handler.clone();
-    reporter.handle(SilexError::Framework("compile-pass".to_string()));
 }

@@ -15,7 +15,7 @@ fn Home<'scope>(
 
 fn make_routes<'scope>(reporter: ErrorReporter<'scope>) {
     let routes = routes!(AppRoutes {
-        home "/" => move |ctx| Home(ctx).error_handler(reporter.clone()),
+        home "/" => move |ctx| Home(ctx).error_handler(reporter),
     });
     let _ = routes.table();
 }

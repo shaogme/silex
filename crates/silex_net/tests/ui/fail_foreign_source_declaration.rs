@@ -8,7 +8,7 @@ fn main() {
         let _builder = HttpClient::get(
             scope,
             "https://example.test",
-            silex_core::ErrorReporter::new(|_| {}),
+            scope.error_handler(|_| {}),
         )
             .query("value", move || value.get());
     });

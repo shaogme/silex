@@ -1,4 +1,4 @@
-use silex_core::{ErrorHandler, Runtime};
+use silex_core::Runtime;
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::view::{AnyView, RenderThunk, ScopedViewOwner, ViewOwner};
 
@@ -10,7 +10,7 @@ fn main() {
         let (read, _) = scope.signal(borrowed_view.as_str());
         let _view: AnyView<'_> = AnyView::new(read);
 
-        let owner = ScopedViewOwner::new(scope, ErrorHandler::new(|_| {}));
+        let owner = ScopedViewOwner::new(scope, scope.error_handler(|_| {}));
         let _token = owner.token();
 
         let borrowed_attr = String::from("borrowed-attribute");

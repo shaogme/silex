@@ -18,8 +18,8 @@ use wasm_bindgen_test::*;
 
 wasm_bindgen_test_configure!(run_in_browser);
 
-fn test_handler<'scope>() -> ErrorReporter<'scope> {
-    ErrorReporter::new(|_| {})
+fn test_handler<'scope>(scope: silex_core::Scope<'scope>) -> ErrorReporter<'scope> {
+    scope.error_handler(|_| {})
 }
 
 #[wasm_bindgen(inline_js = r#"
@@ -177,7 +177,7 @@ fn router_navigation_uses_required_table_and_updates_outlet() {
         let view = Router(scope)
             .base("/app")
             .routes(navigation_table(navigator.clone()));
-        let owner = ScopedViewOwner::new(scope, test_handler());
+        let owner = ScopedViewOwner::new(scope, test_handler(scope));
         view.mount_owned(&owner, &host, Vec::new())
             .expect("router view should mount");
 
@@ -260,7 +260,7 @@ fn router_layout_is_created_once_while_outlet_changes() {
                 layouts_for_view.set(layouts_for_view.get() + 1);
                 outlet
             });
-        let owner = ScopedViewOwner::new(scope, test_handler());
+        let owner = ScopedViewOwner::new(scope, test_handler(scope));
         view.mount_owned(&owner, &host, Vec::new())
             .expect("router view should mount");
     });
@@ -308,7 +308,7 @@ fn link_requires_context_and_tracks_active_path() {
         let link = Link(context, RoutePath::new("/users").unwrap())
             .children("users")
             .active_class("active");
-        let owner = ScopedViewOwner::new(scope, test_handler());
+        let owner = ScopedViewOwner::new(scope, test_handler(scope));
         link.mount_owned(&owner, &host, Vec::new())
             .expect("link should mount");
 
@@ -363,7 +363,7 @@ fn query_memo_handles_empty_multiple_duplicate_delete_and_reactive_changes() {
                     snapshots_for_effect.borrow_mut().push(query.try_get()?);
                     Ok(())
                 },
-                test_handler(),
+                test_handler(scope),
             )
             .expect("query effect can be registered");
 
@@ -454,7 +454,7 @@ fn router_owner_dispose_removes_listener_and_ignores_late_popstate() {
         ])
         .expect("route table should compile");
         let view = Router(scope).base("/app").routes(table);
-        let owner = ScopedViewOwner::new(scope, test_handler());
+        let owner = ScopedViewOwner::new(scope, test_handler(scope));
         view.mount_owned(&owner, &host, Vec::new())
             .expect("router view should mount");
 
@@ -499,7 +499,7 @@ fn router_does_not_mount_outlet_when_listener_registration_fails() {
         ])
         .expect("route table should compile");
         let view = Router(scope).base("/app").routes(table);
-        let owner = ScopedViewOwner::new(scope, test_handler());
+        let owner = ScopedViewOwner::new(scope, test_handler(scope));
         assert!(matches!(
             view.mount_owned(&owner, &host, Vec::new()),
             Err(SilexError::Javascript(_))
@@ -578,7 +578,7 @@ fn router_view_factory_keeps_scoped_dynamic_owner_cleanup() {
                 cleanups: cleanups_for_factory.clone(),
             })
         }));
-        let owner = ScopedViewOwner::new(scope, test_handler());
+        let owner = ScopedViewOwner::new(scope, test_handler(scope));
         factory
             .mount_owned(&owner, &host, Vec::new())
             .expect("router factory should mount");

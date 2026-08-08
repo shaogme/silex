@@ -1,4 +1,4 @@
-use silex_core::{ErrorHandler, Runtime, SilexError};
+use silex_core::{Runtime, SilexError};
 
 fn main() {
     let mut runtime = Runtime::new();
@@ -8,7 +8,7 @@ fn main() {
             async move {
                 let _ = value.get();
             },
-            ErrorHandler::new(|_: SilexError| {}),
+            scope.error_handler(|_: SilexError| {}),
         );
     });
 }

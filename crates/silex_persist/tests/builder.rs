@@ -14,8 +14,8 @@ use std::{
 
 type SubscriptionMap = Rc<RefCell<HashMap<LocalStaticRefStr, Vec<(usize, BackendEventSink)>>>>;
 
-fn test_handler<'scope>() -> ErrorReporter<'scope> {
-    ErrorReporter::new(|_| {})
+fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
+    scope.error_handler(|_| {})
 }
 
 #[derive(Clone, Default)]
@@ -355,7 +355,7 @@ fn parse_builder<'scope, B>(
 where
     B: PersistenceBackend<'scope>,
 {
-    Persistent::builder(scope, key.to_string(), test_handler())
+    Persistent::builder(scope, key.to_string(), test_handler(scope))
         .backend(backend)
         .parse::<i32>()
 }
@@ -457,7 +457,7 @@ fn manual_encode_failure_sets_write_error_for_effect_and_flush() {
             fail: Rc::new(Cell::new(false)),
         };
         let fail = codec.fail.clone();
-        let value = Persistent::builder(scope, "manual-encode-failure", test_handler())
+        let value = Persistent::builder(scope, "manual-encode-failure", test_handler(scope))
             .backend(backend.clone())
             .custom_codec::<i32, _>(codec)
             .mode(PersistMode::Manual)
@@ -495,7 +495,7 @@ fn optional_none_flush_removes_backend_key() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
         let backend = MockBackend::with_value("name", "alice");
-        let value = Persistent::builder(scope, "name", test_handler())
+        let value = Persistent::builder(scope, "name", test_handler(scope))
             .backend(backend.clone())
             .string()
             .optional()
@@ -660,7 +660,7 @@ fn local_write_after_external_fallback_before_effect_flush_is_persisted() {
                     }
                     Ok(())
                 },
-                test_handler(),
+                test_handler(scope),
             )
             .expect("persistence test effect can be registered");
 
@@ -717,7 +717,7 @@ fn codec_callbacks_can_reenter_the_same_binding() {
             on_decode,
             on_should_remove,
         };
-        let binding = Persistent::builder(scope, "codec-reentry", test_handler())
+        let binding = Persistent::builder(scope, "codec-reentry", test_handler(scope))
             .backend(backend.clone())
             .custom_codec::<i32, _>(codec)
             .default(1)
@@ -817,7 +817,7 @@ fn backend_callbacks_can_reenter_the_same_binding() {
             on_set: Some(on_set),
             on_remove: Some(on_remove),
         };
-        let binding = Persistent::builder(scope, "backend-reentry", test_handler())
+        let binding = Persistent::builder(scope, "backend-reentry", test_handler(scope))
             .backend(backend)
             .parse::<i32>()
             .default(1)
@@ -850,7 +850,7 @@ fn panicking_codec_callback_restores_the_controller_payload() {
             on_decode: Rc::new(|| {}),
             on_should_remove: Rc::new(|| {}),
         };
-        let binding = Persistent::builder(scope, "codec-panic", test_handler())
+        let binding = Persistent::builder(scope, "codec-panic", test_handler(scope))
             .backend(backend.clone())
             .custom_codec::<i32, _>(codec)
             .default(1)
@@ -908,7 +908,7 @@ fn stale_persistent_operations_return_no_such_node_during_root_cleanup() {
                     value.reset();
                     Ok(())
                 },
-                test_handler(),
+                test_handler(scope),
             )
             .expect("stale cleanup can be registered");
     });
@@ -1002,7 +1002,7 @@ fn foreign_runtime_try_build_leaves_no_binding_resources() {
             active_subscriptions: Rc::new(Cell::new(0)),
         };
         let marker_count_without_builder = Rc::strong_count(&marker);
-        let builder = Persistent::builder(scope, "foreign-runtime", test_handler())
+        let builder = Persistent::builder(scope, "foreign-runtime", test_handler(scope))
             .backend(backend.clone())
             .custom_codec::<MarkerValue, _>(MarkerCodec)
             .default_with({

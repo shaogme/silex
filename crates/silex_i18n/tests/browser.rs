@@ -1,7 +1,7 @@
 #![cfg(all(target_arch = "wasm32", feature = "browser-tests"))]
 
 use gloo_timers::future::TimeoutFuture;
-use silex_core::{ErrorReporter, Runtime, traits::RxGet};
+use silex_core::{ErrorReporter, Runtime, Scope, traits::RxGet};
 use silex_dom::view::{ScopedViewOwner, View};
 use silex_i18n::{Catalog, I18nBuilder, Locale, detect_browser_locale, t};
 #[cfg(feature = "intl")]
@@ -15,8 +15,8 @@ use web_sys::window;
 
 wasm_bindgen_test_configure!(run_in_browser);
 
-fn test_handler<'scope>() -> ErrorReporter<'scope> {
-    ErrorReporter::new(|_| {})
+fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
+    scope.error_handler(|_| {})
 }
 
 #[cfg(feature = "persist")]
@@ -25,7 +25,7 @@ const BINDING_KEY: &str = "silex-i18n-wasm-binding";
 const EVENT_KEY: &str = "silex-i18n-wasm-storage-event";
 
 fn store<'scope>(scope: silex_core::Scope<'scope>, locale: &str) -> silex_i18n::I18nStore<'scope> {
-    I18nBuilder::new(scope, test_handler())
+    I18nBuilder::new(scope, test_handler(scope))
         .locale(Locale::new(locale))
         .build()
         .expect("valid i18n store")
@@ -55,7 +55,7 @@ fn local_storage_binding_round_trips_locale() {
             .expect("localStorage available");
         storage.remove_item(BINDING_KEY).expect("clear test key");
 
-        let binding = silex_i18n::Persistent::builder(scope, BINDING_KEY, test_handler())
+        let binding = silex_i18n::Persistent::builder(scope, BINDING_KEY, test_handler(scope))
             .local()
             .parse::<Locale>()
             .default(Locale::new("en-US"))
@@ -63,7 +63,7 @@ fn local_storage_binding_round_trips_locale() {
         binding.set(Locale::new("zh-CN"));
         binding.flush().expect("persist initial locale");
 
-        let i18n = I18nBuilder::new(scope, test_handler())
+        let i18n = I18nBuilder::new(scope, test_handler(scope))
             .locale(Locale::new("en-US"))
             .locale_binding(binding)
             .build()
@@ -97,12 +97,12 @@ fn storage_event_updates_all_locale_bindings() {
             .expect("localStorage available");
         storage.remove_item(EVENT_KEY).expect("clear test key");
 
-        let first = silex_i18n::Persistent::builder(scope, EVENT_KEY, test_handler())
+        let first = silex_i18n::Persistent::builder(scope, EVENT_KEY, test_handler(scope))
             .local()
             .parse::<Locale>()
             .default(Locale::new("en-US"))
             .build();
-        let second = silex_i18n::Persistent::builder(scope, EVENT_KEY, test_handler())
+        let second = silex_i18n::Persistent::builder(scope, EVENT_KEY, test_handler(scope))
             .local()
             .parse::<Locale>()
             .default(Locale::new("en-US"))
@@ -156,7 +156,7 @@ fn query_binding_follows_router_search_signal() {
             },
         )
         .expect("valid router context");
-        let binding = silex_i18n::Persistent::builder(scope, "lang", test_handler())
+        let binding = silex_i18n::Persistent::builder(scope, "lang", test_handler(scope))
             .query(&ctx)
             .parse::<Locale>()
             .default(Locale::new("en-US"))
@@ -218,7 +218,7 @@ async fn translated_memo_updates_the_existing_text_node() {
             .expect("valid English catalog");
         let zh = Catalog::from_entries(Locale::new("zh-CN"), [("title", "中文")])
             .expect("valid Chinese catalog");
-        let i18n = I18nBuilder::new(scope, test_handler())
+        let i18n = I18nBuilder::new(scope, test_handler(scope))
             .locale(Locale::new("en-US"))
             .catalogs([en, zh])
             .build()
@@ -229,7 +229,7 @@ async fn translated_memo_updates_the_existing_text_node() {
             .expect("document")
             .create_element("div")
             .expect("parent element");
-        let owner = ScopedViewOwner::new(scope, test_handler());
+        let owner = ScopedViewOwner::new(scope, test_handler(scope));
         t!(i18n, "title")
             .mount_owned(&owner, parent.as_ref(), Vec::new())
             .expect("translation should mount");
@@ -258,12 +258,12 @@ fn translated_memo_is_removed_when_its_root_is_disposed() {
     root.with_scope(|scope| {
         let catalog = Catalog::from_entries(Locale::new("en-US"), [("title", "English")])
             .expect("valid catalog");
-        let i18n = I18nBuilder::new(scope, test_handler())
+        let i18n = I18nBuilder::new(scope, test_handler(scope))
             .locale(Locale::new("en-US"))
             .catalog(catalog)
             .build()
             .expect("valid i18n store");
-        let owner = ScopedViewOwner::new(scope, test_handler());
+        let owner = ScopedViewOwner::new(scope, test_handler(scope));
         t!(i18n, "title")
             .mount_owned(&owner, parent.as_ref(), Vec::new())
             .expect("translation should mount");
@@ -290,7 +290,7 @@ fn foreign_translation_source_does_not_mount_or_allocate_foreign_owner_nodes() {
     let target_scope = target_root.scope();
     let catalog =
         Catalog::from_entries(Locale::new("en-US"), [("title", "English")]).expect("valid catalog");
-    let i18n = I18nBuilder::new(target_scope, test_handler())
+    let i18n = I18nBuilder::new(target_scope, test_handler(target_scope))
         .locale(Locale::new("en-US"))
         .catalog(catalog)
         .build()
@@ -298,7 +298,7 @@ fn foreign_translation_source_does_not_mount_or_allocate_foreign_owner_nodes() {
     {
         let foreign_scope = foreign_root.scope();
         let translation = t!(i18n, "title");
-        let owner = ScopedViewOwner::new(foreign_scope, test_handler());
+        let owner = ScopedViewOwner::new(foreign_scope, test_handler(foreign_scope));
         assert!(
             translation
                 .mount_owned(&owner, parent.as_ref(), Vec::new())

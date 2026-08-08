@@ -7,7 +7,7 @@ fn build<'scope>(scope: silex_core::Scope<'scope>) {
         let resource = HttpClient::get(
             scope,
             "https://example.test/posts/{id}",
-            silex_core::ErrorReporter::new(|_| {}),
+            scope.error_handler(|_| {}),
         )
             .path_param("id", post_id)
             .query("filter", query)
