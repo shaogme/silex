@@ -1,0 +1,5 @@
+error: `silex_component` metadata for `MissingProductProps` requires `product`; omit the attribute for the standalone fallback (`MissingProductPropsBuilder`, `<component>Component`, and `__silex_render_<component>`)
+ --> tests/ui/fail_component_metadata_missing_product.rs:8:1
+  |
+8 | #[silex_component(builder = ExplicitBuilder, render = render_explicit)]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

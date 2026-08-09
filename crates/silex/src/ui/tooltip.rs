@@ -365,8 +365,9 @@ pub fn TooltipContent<'scope>(
                 .class(wrapper_cls)
                 .attr("style", wrapper_style)
                 .apply(owner_binding(ctx)),
-            )
-            .into_any()
+                )
+                .build()
+                .into_any()
         } else {
             ().into_any()
         }

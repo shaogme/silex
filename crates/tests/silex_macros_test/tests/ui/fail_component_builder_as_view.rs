@@ -1,0 +1,20 @@
+#![allow(unused_extern_crates)]
+
+include!("../../src/lib.rs");
+
+use silex_core::prelude::*;
+use silex_dom::prelude::*;
+use silex_macros::component;
+
+#[component]
+fn BuilderAsView<'scope>(scope: Scope<'scope>, children: AnyView<'scope>) -> impl View<'scope> {
+    let _ = scope;
+    children
+}
+
+fn main() {
+    let mut runtime = Runtime::new();
+    runtime.child(|scope| {
+        let _ = AnyView::new(BuilderAsView(scope, AnyView::Empty));
+    });
+}

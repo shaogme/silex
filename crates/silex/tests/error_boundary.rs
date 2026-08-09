@@ -153,8 +153,9 @@ fn initial_child_error_switches_to_fallback_without_parent_dispatch() {
 
     runtime.child(|scope| {
         let owner = ScopedViewOwner::new(scope, test_handler(scope, parent_errors.clone()));
-        let view =
-            ErrorBoundary(scope, |_| InitialFailure).fallback(|error| format!("fallback: {error}"));
+        let view = ErrorBoundary(scope, |_| InitialFailure)
+            .fallback(|error| format!("fallback: {error}"))
+            .build();
 
         view.mount_owned(&owner, host.as_ref(), Vec::new())
             .expect("initial child error should be recovered by the boundary");
@@ -178,7 +179,9 @@ async fn deferred_child_error_reaches_boundary_and_disposes_child() {
         let (failed, set_failed) = scope.signal(false);
         let owner = ScopedViewOwner::new(scope, test_handler(scope, parent_errors.clone()));
         let child = DeferredFailure { source: failed };
-        let view = ErrorBoundary(scope, move |_| child).fallback(|_| "fallback");
+        let view = ErrorBoundary(scope, move |_| child)
+            .fallback(|_| "fallback")
+            .build();
 
         view.mount_owned(&owner, host.as_ref(), Vec::new())
             .expect("child should mount before it fails");
@@ -209,7 +212,8 @@ async fn child_factory_handler_reaches_boundary_fallback() {
         let view = ErrorBoundary(scope, move |child_handler| ConstructedHandlerFailure {
             handler: child_handler,
         })
-        .fallback(|error| format!("boundary: {error}"));
+        .fallback(|error| format!("boundary: {error}"))
+        .build();
 
         view.mount_owned(&owner, host.as_ref(), Vec::new())
             .expect("child handler failure should be deferred");

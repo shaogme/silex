@@ -26,6 +26,7 @@ pub enum SuspenseMode {
 ///     ]
 /// })
 /// .fallback(div("Loading..."))
+/// .build()
 /// ```
 #[component]
 pub fn Suspense<'scope, CH, R>(

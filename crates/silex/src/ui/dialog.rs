@@ -69,7 +69,7 @@ pub fn Dialog<'scope>(
                     .on_click(move |_| -> SilexResult<()> { on_close.invoke(()) }),
                      stored_children.with(|children| children.clone())
                  )).class(content_cls)
-            )).into_any()
+            )).build().into_any()
         } else {
             ().into_any()
         }

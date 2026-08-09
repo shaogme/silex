@@ -38,12 +38,20 @@ impl FieldSpec {
     }
 }
 
+#[derive(Clone)]
+struct ComponentMetadata {
+    builder_name: Ident,
+    product_name: Ident,
+    render_fn_name: Ident,
+    constructor_name: Option<Ident>,
+}
+
 struct BuilderContext {
     vis: Visibility,
     props_name: Ident,
     builder_name: Ident,
     component_name: Ident,
-    component_component_alias: Ident,
+    product_name: Ident,
     render_fn_name: Ident,
     generics: syn::Generics,
     fields: Vec<FieldSpec>,
@@ -59,14 +67,32 @@ impl BuilderContext {
             ident: props_name,
             generics,
             vis,
+            attrs,
             data,
             ..
         } = input;
 
-        let builder_name = format_ident!("{}Builder", props_name);
-        let component_name = strip_props_suffix(&props_name);
-        let component_component_alias = format_ident!("{}Component", component_name);
-        let render_fn_name = format_ident!("__silex_render_{}", component_name);
+        let inferred_component_name = strip_props_suffix(&props_name);
+        let metadata = parse_component_metadata(&attrs, &props_name)?;
+        // Component metadata is authoritative; only standalone derives use the legacy naming fallback.
+        let (builder_name, product_name, render_fn_name, component_name) =
+            if let Some(metadata) = metadata {
+                (
+                    metadata.builder_name,
+                    metadata.product_name,
+                    metadata.render_fn_name,
+                    metadata
+                        .constructor_name
+                        .unwrap_or_else(|| inferred_component_name.clone()),
+                )
+            } else {
+                (
+                    format_ident!("{}Builder", props_name),
+                    format_ident!("{}Component", inferred_component_name),
+                    format_ident!("__silex_render_{}", inferred_component_name),
+                    inferred_component_name,
+                )
+            };
         let scope = generics
             .params
             .iter()
@@ -130,7 +156,7 @@ impl BuilderContext {
             props_name,
             builder_name,
             component_name,
-            component_component_alias,
+            product_name,
             render_fn_name,
             generics,
             fields,
@@ -314,13 +340,29 @@ impl BuilderContext {
         }
     }
 
+    fn generate_product_struct(&self) -> TokenStream2 {
+        let __silex = crate::crate_path::silex();
+        let vis = &self.vis;
+        let product_name = &self.product_name;
+        let props_name = &self.props_name;
+        let (impl_generics, ty_generics, where_clause) = self.generics.split_for_impl();
+        let pending_attribute_ty = self.pending_attribute_ty();
+
+        quote! {
+            #[derive(Clone)]
+            #[allow(non_camel_case_types)]
+            #vis struct #product_name #impl_generics #where_clause {
+                props: #props_name #ty_generics,
+                _pending_attrs: ::std::vec::Vec<#pending_attribute_ty>,
+            }
+        }
+    }
+
     fn generate_builder_impl(&self) -> TokenStream2 {
         let __silex = crate::crate_path::silex();
         let (builder_generics_decl, builder_generics_type) = self.get_builder_generics();
         let builder_name = &self.builder_name;
-        let props_name = &self.props_name;
-        let (_, ty_generics, where_clause) = self.generics.split_for_impl();
-        let pending_attribute_ty = self.pending_attribute_ty();
+        let (_, _, where_clause) = self.generics.split_for_impl();
 
         let initial_states: Vec<_> = self
             .prop_generic_idents
@@ -387,24 +429,11 @@ impl BuilderContext {
             builder_value
         };
 
-        let fields_destructure = self.fields.iter().map(|f| &f.ident);
-        let props_field_inits = self.fields.iter().map(|field| {
-            let ident = &field.ident;
-            if field.required {
-                let name_str = ident.to_string();
-                quote! {
-                    #ident: #ident.expect(concat!("Component '", stringify!(#props_name), "' missing required prop: '", #name_str, "'"))
-                }
-            } else {
-                quote! { #ident }
-            }
-        });
-
         let builder_setters = self
             .fields
             .iter()
             .filter(|field| {
-                !is_scope_marker_field(field)
+                !is_internal_marker_field(field)
                     && self
                         .scope_field
                         .as_ref()
@@ -417,25 +446,6 @@ impl BuilderContext {
             impl #builder_generics_decl #builder_name #builder_generics_type #where_clause {
                 pub fn new(#(#builder_new_params),*) -> #builder_new_return {
                     #builder_new_value
-                }
-
-                pub fn into_parts(self) -> (#props_name #ty_generics, ::std::vec::Vec<#pending_attribute_ty>) {
-                    let Self {
-                        #(#fields_destructure,)*
-                        _pending_attrs,
-                        ..
-                    } = self;
-
-                    (
-                        #props_name {
-                            #(#props_field_inits,)*
-                        },
-                        _pending_attrs,
-                    )
-                }
-
-                pub fn build(self) -> #props_name #ty_generics {
-                    self.into_parts().0
                 }
 
                 #(#builder_setters)*
@@ -572,12 +582,11 @@ impl BuilderContext {
         }
     }
 
-    fn generate_view_impl(&self) -> TokenStream2 {
+    fn generate_build_impl(&self) -> TokenStream2 {
         let __silex = crate::crate_path::silex();
-        let (impl_generics, _, where_clause) = self.generics.split_for_impl();
-        let render_fn_name = &self.render_fn_name;
-        let scope = self.scope_lifetime();
-        let pending_attribute_ty = self.pending_attribute_ty();
+        let (impl_generics, ty_generics, where_clause) = self.generics.split_for_impl();
+        let product_name = &self.product_name;
+        let props_name = &self.props_name;
 
         let fixed_states: Vec<_> = self
             .prop_generic_idents
@@ -585,6 +594,48 @@ impl BuilderContext {
             .map(|_| quote! { #__silex::dom::view::PropFixed })
             .collect();
         let builder_ty_fixed = self.get_builder_ty(&fixed_states);
+        let fields_destructure = self.fields.iter().map(|field| &field.ident);
+        let props_field_inits = self.fields.iter().map(|field| {
+            let ident = &field.ident;
+            if field.required {
+                let name_str = ident.to_string();
+                quote! {
+                    #ident: #ident.expect(concat!("Component '", stringify!(#props_name), "' missing required prop: '", #name_str, "'"))
+                }
+            } else {
+                quote! { #ident }
+            }
+        });
+
+        quote! {
+            impl #impl_generics #builder_ty_fixed #where_clause {
+                pub fn build(self) -> #product_name #ty_generics {
+                    let Self {
+                        #(#fields_destructure,)*
+                        _pending_attrs,
+                        ..
+                    } = self;
+
+                    #product_name {
+                        props: #props_name {
+                            #(#props_field_inits,)*
+                        },
+                        _pending_attrs,
+                    }
+                }
+            }
+        }
+    }
+
+    fn generate_view_impl(&self) -> TokenStream2 {
+        let __silex = crate::crate_path::silex();
+        let (impl_generics, _, where_clause) = self.generics.split_for_impl();
+        let product_name = &self.product_name;
+        let (_, product_ty_generics, _) = self.generics.split_for_impl();
+        let product_ty = quote! { #product_name #product_ty_generics };
+        let render_fn_name = &self.render_fn_name;
+        let scope = self.scope_lifetime();
+        let pending_attribute_ty = self.pending_attribute_ty();
 
         let mut view_where_clause: syn::WhereClause = match where_clause {
             Some(clause) => clause.clone(),
@@ -592,10 +643,10 @@ impl BuilderContext {
         };
         view_where_clause
             .predicates
-            .push(syn::parse_quote!(#builder_ty_fixed: ::core::clone::Clone));
+            .push(syn::parse_quote!(#product_ty: ::core::clone::Clone));
 
         quote! {
-            impl #impl_generics #__silex::dom::view::View<#scope> for #builder_ty_fixed #view_where_clause {
+            impl #impl_generics #__silex::dom::view::View<#scope> for #product_ty #view_where_clause {
                 fn mount(
                     &self,
                     owner: &dyn #__silex::dom::view::ViewOwner<#scope>,
@@ -606,7 +657,7 @@ impl BuilderContext {
                 }
 
                 fn mount_owned(
-                    self,
+                    mut self,
                     owner: &dyn #__silex::dom::view::ViewOwner<#scope>,
                     parent: &#__silex::reexports::web_sys::Node,
                     attrs: ::std::vec::Vec<#pending_attribute_ty>,
@@ -614,9 +665,9 @@ impl BuilderContext {
                 where
                     Self: Sized,
                 {
-                    let (props, mut pending_attrs) = self.into_parts();
-                    pending_attrs.extend(attrs);
-                    let view_instance = #render_fn_name(props);
+                    self._pending_attrs.extend(attrs);
+                    let pending_attrs = self._pending_attrs;
+                    let view_instance = #render_fn_name(self.props);
                     #__silex::dom::view::View::mount_owned(
                         view_instance,
                         owner,
@@ -628,10 +679,47 @@ impl BuilderContext {
         }
     }
 
+    fn generate_attribute_builder_methods(&self) -> TokenStream2 {
+        let __silex = crate::crate_path::silex();
+        let scope = self.scope_lifetime();
+
+        quote! {
+            fn build_attribute<__SilexValue>(mut self, target: #__silex::dom::attribute::ApplyTarget, value: __SilexValue) -> Self
+            where
+                __SilexValue: #__silex::dom::attribute::IntoStorable<#scope>,
+            {
+                self._pending_attrs.push(
+                    #__silex::dom::attribute::AttrOp::<#scope>::build(
+                        value.into_storable(),
+                        target,
+                    )
+                );
+                self
+            }
+
+            fn build_event<E, F, M>(mut self, event: E, callback: F) -> Self
+            where
+                E: #__silex::dom::event::EventDescriptor + 'static,
+                F: #__silex::dom::event::EventHandler<#scope, E::EventType, M> + Clone + #scope,
+            {
+                let event = event.clone();
+                self._pending_attrs.push(
+                    #__silex::dom::attribute::AttrOp::<#scope>::new_scoped(move |el, owner| {
+                        #__silex::dom::element::bind_event(el, event, callback.clone(), owner)
+                    })
+                );
+                self
+            }
+        }
+    }
+
     fn generate_attribute_impl(&self) -> TokenStream2 {
         let __silex = crate::crate_path::silex();
         let (builder_generics_decl, _) = self.get_builder_generics();
-        let (_, _, where_clause) = self.generics.split_for_impl();
+        let (product_impl_generics, product_ty_generics, product_where_clause) =
+            self.generics.split_for_impl();
+        let (_, _, builder_where_clause) = self.generics.split_for_impl();
+        let product_name = &self.product_name;
         let scope = self.scope_lifetime();
 
         let current_states: Vec<_> = self
@@ -640,38 +728,23 @@ impl BuilderContext {
             .map(|ident| quote! { #ident })
             .collect();
         let builder_ty_current = self.get_builder_ty(&current_states);
+        let product_ty = quote! { #product_name #product_ty_generics };
+        let methods = self.generate_attribute_builder_methods();
 
         quote! {
-            impl #builder_generics_decl #__silex::dom::attribute::AttributeBuilder<#scope> for #builder_ty_current #where_clause {
-                fn build_attribute<__SilexValue>(mut self, target: #__silex::dom::attribute::ApplyTarget, value: __SilexValue) -> Self
-                where
-                    __SilexValue: #__silex::dom::attribute::IntoStorable<#scope>,
-                {
-                    self._pending_attrs.push(
-                        #__silex::dom::attribute::AttrOp::<#scope>::build(
-                            value.into_storable(),
-                            target,
-                        )
-                    );
-                    self
-                }
-
-                fn build_event<E, F, M>(mut self, event: E, callback: F) -> Self
-                where
-                    E: #__silex::dom::event::EventDescriptor + 'static,
-                    F: #__silex::dom::event::EventHandler<#scope, E::EventType, M> + Clone + #scope,
-                {
-                    let event = event.clone();
-                    self._pending_attrs.push(
-                        #__silex::dom::attribute::AttrOp::<#scope>::new_scoped(move |el, owner| {
-                            #__silex::dom::element::bind_event(el, event, callback.clone(), owner)
-                        })
-                    );
-                    self
-                }
+            impl #builder_generics_decl #__silex::dom::attribute::AttributeBuilder<#scope> for #builder_ty_current #builder_where_clause {
+                #methods
             }
 
-            impl #builder_generics_decl #__silex::dom::view::ApplyAttributes<#scope> for #builder_ty_current #where_clause {}
+            impl #product_impl_generics #__silex::dom::attribute::AttributeBuilder<#scope> for #product_ty #product_where_clause {
+                #methods
+            }
+
+            impl #product_impl_generics #__silex::dom::view::ApplyAttributes<#scope> for #product_ty #product_where_clause {
+                fn apply_attributes(&mut self, attrs: ::std::vec::Vec<#__silex::dom::attribute::PendingAttribute<#scope>>) {
+                    self._pending_attrs.extend(attrs);
+                }
+            }
         }
     }
 
@@ -680,7 +753,6 @@ impl BuilderContext {
         let vis = &self.vis;
         let component_name = &self.component_name;
         let (impl_generics, _, where_clause) = self.generics.split_for_impl();
-        let component_component_alias = &self.component_component_alias;
         let scope = self.scope_lifetime();
 
         let initial_states: Vec<_> = self
@@ -690,13 +762,6 @@ impl BuilderContext {
             .collect();
         let builder_ty_initial = self.get_builder_ty(&initial_states);
         let fallible_defaults = self.has_fallible_reactive_defaults();
-
-        let fixed_states: Vec<_> = self
-            .prop_generic_idents
-            .iter()
-            .map(|_| quote! { #__silex::dom::view::PropFixed })
-            .collect();
-        let builder_ty_fixed = self.get_builder_ty(&fixed_states);
 
         let standalone_fields: Vec<_> = self.fields.iter().filter(|f| !f.attrs.chained).collect();
 
@@ -731,10 +796,6 @@ impl BuilderContext {
         };
 
         quote! {
-            #[allow(non_camel_case_types)]
-            #[allow(type_alias_bounds)]
-            #vis type #component_component_alias #impl_generics = #builder_ty_fixed;
-
             #[allow(non_snake_case, unused_variables, unused_mut)]
             #vis fn #component_name #impl_generics(#(#constructor_params),*) -> #constructor_return #where_clause {
                 <#builder_ty_initial>::new(#(#constructor_args),*)
@@ -747,14 +808,18 @@ pub fn derive_props_builder_impl(input: DeriveInput) -> syn::Result<TokenStream2
     let ctx = BuilderContext::new(input)?;
 
     let builder_struct = ctx.generate_builder_struct();
+    let product_struct = ctx.generate_product_struct();
     let builder_impl = ctx.generate_builder_impl();
+    let build_impl = ctx.generate_build_impl();
     let attribute_impl = ctx.generate_attribute_impl();
     let view_impl = ctx.generate_view_impl();
     let constructor = ctx.generate_constructor();
 
     Ok(quote! {
         #builder_struct
+        #product_struct
         #builder_impl
+        #build_impl
         #attribute_impl
         #view_impl
         #constructor
@@ -822,6 +887,92 @@ fn reactive_default_transform(
             <#ty as #__silex::core::RxDefault<#scope>>::rx_default(#scope_field)
         },
     }
+}
+
+fn parse_component_metadata(
+    attrs: &[Attribute],
+    props_name: &Ident,
+) -> syn::Result<Option<ComponentMetadata>> {
+    let mut metadata_attr = None;
+    for attr in attrs {
+        if attr.path().is_ident("silex_component") {
+            if metadata_attr.is_some() {
+                return Err(syn::Error::new_spanned(
+                    attr,
+                    "duplicate `silex_component` metadata attribute",
+                ));
+            }
+            metadata_attr = Some(attr);
+        }
+    }
+
+    let Some(attr) = metadata_attr else {
+        return Ok(None);
+    };
+
+    let mut builder_name = None;
+    let mut product_name = None;
+    let mut render_fn_name = None;
+    let mut constructor_name = None;
+
+    attr.parse_nested_meta(|meta| {
+        if meta.path.is_ident("builder") {
+            if builder_name.is_some() {
+                return Err(meta.error("duplicate `builder` metadata entry"));
+            }
+            builder_name = Some(meta.value()?.parse::<Ident>()?);
+        } else if meta.path.is_ident("product") {
+            if product_name.is_some() {
+                return Err(meta.error("duplicate `product` metadata entry"));
+            }
+            product_name = Some(meta.value()?.parse::<Ident>()?);
+        } else if meta.path.is_ident("render") {
+            if render_fn_name.is_some() {
+                return Err(meta.error("duplicate `render` metadata entry"));
+            }
+            render_fn_name = Some(meta.value()?.parse::<Ident>()?);
+        } else if meta.path.is_ident("constructor") {
+            if constructor_name.is_some() {
+                return Err(meta.error("duplicate `constructor` metadata entry"));
+            }
+            constructor_name = Some(meta.value()?.parse::<Ident>()?);
+        } else {
+            return Err(meta.error("expected `builder`, `product`, `render`, or `constructor`"));
+        }
+        Ok(())
+    })?;
+
+    let Some(builder_name) = builder_name else {
+        return Err(syn::Error::new_spanned(
+            attr,
+            format!(
+                "`silex_component` metadata for `{props_name}` requires `builder`; omit the attribute for the standalone fallback (`{props_name}Builder`, `<component>Component`, and `__silex_render_<component>`)",
+            ),
+        ));
+    };
+    let Some(product_name) = product_name else {
+        return Err(syn::Error::new_spanned(
+            attr,
+            format!(
+                "`silex_component` metadata for `{props_name}` requires `product`; omit the attribute for the standalone fallback (`{props_name}Builder`, `<component>Component`, and `__silex_render_<component>`)",
+            ),
+        ));
+    };
+    let Some(render_fn_name) = render_fn_name else {
+        return Err(syn::Error::new_spanned(
+            attr,
+            format!(
+                "`silex_component` metadata for `{props_name}` requires `render`; omit the attribute for the standalone fallback (`{props_name}Builder`, `<component>Component`, and `__silex_render_<component>`)",
+            ),
+        ));
+    };
+
+    Ok(Some(ComponentMetadata {
+        builder_name,
+        product_name,
+        render_fn_name,
+        constructor_name,
+    }))
 }
 
 fn parse_field_attrs(attrs: &[Attribute]) -> syn::Result<FieldAttrs> {
@@ -973,6 +1124,10 @@ fn is_fallible_reactive_default_field(field: &FieldSpec) -> bool {
 
 fn is_scope_marker_field(field: &FieldSpec) -> bool {
     field.ident == "__silex_scope_marker"
+}
+
+fn is_internal_marker_field(field: &FieldSpec) -> bool {
+    is_scope_marker_field(field) || field.ident == "__silex_generic_marker"
 }
 
 fn is_scope_type(ty: &Type, scope: &syn::Lifetime) -> bool {

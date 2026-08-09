@@ -1,0 +1,21 @@
+#![allow(unused_extern_crates)]
+
+include!("../../src/lib.rs");
+
+use silex_core::prelude::*;
+use silex_dom::prelude::*;
+use silex_macros::component;
+
+#[component]
+fn BuilderMount<'scope>(scope: Scope<'scope>, children: AnyView<'scope>) -> impl View<'scope> {
+    let _ = scope;
+    children
+}
+
+fn main() {
+    let mut runtime = Runtime::new();
+    runtime.child(|scope| {
+        let error_handler = scope.error_handler(|_| {});
+        let _ = mount_to_body(scope, BuilderMount(scope, AnyView::Empty), error_handler);
+    });
+}

@@ -15,6 +15,7 @@ use std::rc::Rc;
 ///
 /// Switch(scope, count)
 ///     .fallback("Default View")
+///     .build()
 ///     .try_case(0, "Zero")?
 ///     .try_case(1, "One")?;
 /// ```
@@ -53,7 +54,7 @@ where
     where
         V: View<'scope> + 'scope,
     {
-        match self.cases.entry(value) {
+        match self.props.cases.entry(value) {
             Entry::Vacant(entry) => {
                 entry.insert(view.into_any());
                 Ok(self)

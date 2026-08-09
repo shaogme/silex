@@ -30,7 +30,9 @@ where
 ///
 /// 使用方式：
 /// ```rust,ignore
-/// Index(list).children(|item, index| li(rx! { index.get() }))
+/// Index(list)
+///     .children(|item, index| li(rx! { index.get() }))
+///     .build()
 /// ```
 #[component]
 pub fn Index<'scope, IF, I, IS, MF>(

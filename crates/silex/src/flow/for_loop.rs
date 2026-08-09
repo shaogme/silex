@@ -33,6 +33,7 @@ where
 /// For(list, |item| item.id)
 ///     .children(|item, idx, updater| li(format!("{}: {}", idx, item.name)))
 ///     .error(|err| log_error(err))
+///     .build()
 /// ```
 #[component]
 pub fn For<'scope, ItemsFn, IS, Item, Key, KF, MF>(

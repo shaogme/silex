@@ -20,7 +20,7 @@ use silex_macros::component;
 ///     } else {
 ///         "Component B"
 ///     }
-/// }));
+/// })).build();
 /// ```
 #[component]
 pub fn Dynamic<'scope, V, FView>(scope: Scope<'scope>, view_fn: FView) -> impl View<'scope>

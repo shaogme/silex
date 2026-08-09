@@ -113,17 +113,17 @@ pub fn tw_verbose(input: TokenStream) -> TokenStream {
 /// use silex::prelude::*;
 ///
 /// #[component]
-/// fn MyComponent(
+/// fn MyComponent<'scope>(
+///     scope: Scope<'scope>,
 ///     name: String,
-///     #[prop(default)] age: u32,
+///     #[chain(default)] age: u32,
 ///     #[prop(into)] message: String,
-/// ) -> impl View {
+/// ) -> impl View<'scope> {
 ///     div(format!("{} ({}): {}", name, age, message))
 /// }
 ///
-/// // 生成的代码等效于:
-/// // pub struct MyComponentProps<M> { ... }
-/// // pub fn MyComponent(props: MyComponentProps<...>) -> impl View { ... }
+/// // 生成 Props、builder 和 product；builder 只有在状态满足后才有 build 方法。
+/// let view = MyComponent(scope, "name", "message").build();
 /// ```
 ///
 /// # 属性
@@ -172,9 +172,11 @@ pub fn store(attr: TokenStream, item: TokenStream) -> TokenStream {
 
 /// `#[derive(PropsBuilder)]` 结构体派生宏
 ///
-/// 为组件 Props 结构体生成链式构造器与 `View` 桥接层。
+/// 为组件 Props 结构体生成链式 builder 和独立的 `View` product。
+/// `#[component]` 会通过隐藏的 `silex_component` metadata 传入生成名称；
+/// standalone derive 未提供 metadata 时保留 `<PropsName>Builder` 的 fallback。
 #[cfg(feature = "component")]
-#[proc_macro_derive(PropsBuilder, attributes(prop, chain))]
+#[proc_macro_derive(PropsBuilder, attributes(prop, chain, silex_component))]
 pub fn derive_props_builder(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     match props_builder::derive_props_builder_impl(input) {

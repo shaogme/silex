@@ -6,7 +6,10 @@ use silex_macros::component;
 ///
 /// 使用方式：
 /// ```rust,ignore
-/// Show(scope, condition).children(view).fallback(fallback_view)
+/// Show(scope, condition)
+///     .children(view)
+///     .fallback(fallback_view)
+///     .build()
 /// ```
 #[component]
 pub fn Show<'scope, C>(
@@ -47,6 +50,6 @@ where
     where
         V: View<'scope> + 'scope,
     {
-        Show(scope, self).children(view)
+        Show(scope, self).children(view).build()
     }
 }

@@ -21,11 +21,11 @@ help: `silex_core::Signal<'_, T>` implements trait `From<T>`
    | impl<'scope, T: 'scope> From<StoredValue<'scope, T>> for Signal<'scope, T> {
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<StoredValue<'_, T>>`
    = note: required for `bool` to implement `Into<silex_core::Signal<'_, bool>>`
-note: required by a bound in `NoReactiveInputScopePropsBuilder::<'scope, PSource>::source`
+note: required by a bound in `NoReactiveInputScopeBuilder::<'scope, PSource>::source`
   --> tests/ui/fail_macro_reactive_input_without_scope.rs:9:1
    |
  9 | #[component]
-   | ^^^^^^^^^^^^ required by this bound in `NoReactiveInputScopePropsBuilder::<'scope, PSource>::source`
+   | ^^^^^^^^^^^^ required by this bound in `NoReactiveInputScopeBuilder::<'scope, PSource>::source`
 10 | fn NoReactiveInputScope<'scope>(
 11 |     #[chain] source: Signal<'scope, bool>,
    |              ------ required by a bound in this associated function

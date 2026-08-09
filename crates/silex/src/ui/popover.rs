@@ -118,7 +118,7 @@ pub fn PopoverDescription<'scope>(
 
 #[component]
 pub fn PopoverPortal<'scope>(children: AnyView<'scope>) -> impl View<'scope> {
-    crate::components::Portal(children)
+    crate::components::Portal(children).build()
 }
 
 #[component]
@@ -355,7 +355,7 @@ pub fn PopoverContent<'scope>(
                 .attr("data-radix-popper-content-wrapper", "")
                 .class(wrapper_cls)
                 .attr("style", wrapper_style)
-            )))
+            ))).build()
             .into_any()
         } else {
             ().into_any()
