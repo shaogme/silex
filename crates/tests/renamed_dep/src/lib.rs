@@ -139,7 +139,9 @@ fn RenamedReactiveInput<'scope>(
 }
 
 pub fn renamed_reactive_input<'scope>(scope: my_silex::Scope<'scope>) -> impl View<'scope> {
-    RenamedReactiveInput(scope, AnyView::Empty).value("renamed")
+    RenamedReactiveInput(scope, AnyView::Empty)
+        .value("renamed")
+        .build()
 }
 
 #[cfg(test)]

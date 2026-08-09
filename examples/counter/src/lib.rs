@@ -112,10 +112,12 @@ fn NavBar<'scope>(ctx: RouterContext<'scope>) -> impl View<'scope> {
     div!(
         Link(ctx, "/")
             .children("Home")
-            .style("margin-right: 15px; text-decoration: none; color: #007bff; font-weight: bold;"),
+            .style("margin-right: 15px; text-decoration: none; color: #007bff; font-weight: bold;")
+            .build(),
         Link(ctx, "/about")
             .children("About")
-            .style("text-decoration: none; color: #007bff; font-weight: bold;"),
+            .style("text-decoration: none; color: #007bff; font-weight: bold;")
+            .build(),
     )
     .style("margin-bottom: 20px; padding: 10px; border-bottom: 1px solid #eee")
 }
@@ -134,7 +136,7 @@ fn HomeView<'scope>(
     let (count, set_count) = scope.signal(0);
     let is_high = scope.memo(move |_| count.get() > 5);
 
-    div!(
+    Ok(div!(
         // Header
         div!(
             h1("Silex: Next Gen"),
@@ -146,11 +148,13 @@ fn HomeView<'scope>(
             .elevation(3)
             .on_hover(scope.callback(|_| {
                 web_sys::console::log_1(&"Card Hovered!".into());
-            }))
+                Ok(())
+            })?)
             .child(chain!(
-                CounterControls(count, set_count),
-                CounterDisplay(scope, count),
-            )),
+                CounterControls(count, set_count).build(),
+                CounterDisplay(scope, count).build(),
+            ))
+            .build(),
         // Card 2: Input & Local State
         Card(scope, "Local State (Resets on Nav)").child(div!(div!(
             div!(
@@ -168,7 +172,8 @@ fn HomeView<'scope>(
                     set_name.set(val);
                     Ok(())
                 })
-        ))),
+        )))
+        .build(),
         // Card 3: Control Flow
         Card(scope, "Control Flow").child(
             is_high
@@ -181,7 +186,9 @@ fn HomeView<'scope>(
                 .fallback(div("✓ System works normally.").style(
                     "background: #e8f5e9; color: #2e7d32; padding: 10px; border-radius: 4px;"
                 ))
-        ),
+                .build()
+        )
+        .build(),
         // Card 4: Suspense
         Card(scope, "Suspense (Async Loading)").child(
             Suspense(scope, move |cx| {
@@ -198,9 +205,11 @@ fn HomeView<'scope>(
                 div(rx!(scope; $async_data_local.clone().unwrap_or("Waiting...".to_string())))
                     .style("color: #2e7d32; font-weight: bold; background: #e8f5e9; padding: 10px; border-radius: 4px;")
             })
-            .fallback(div("Loading data (approx 2s)...").style("color: orange; font-style: italic;")),
-        ),
-    )
+            .fallback(div("Loading data (approx 2s)...").style("color: orange; font-style: italic;"))
+            .build(),
+        )
+        .build(),
+    ))
 }
 
 #[component]
@@ -245,26 +254,27 @@ fn App<'scope>(
         move |error_handler| {
             let routes = routes!(AppRoutes {
                 home "/" => move |ctx| {
-                     HomeView(ctx).error_handler(error_handler)
+                     HomeView(ctx).error_handler(error_handler).build()
                 },
-                about "/about" => move |_ctx| AboutView(),
-                not_found "/*" => move |_ctx| NotFound(),
+                about "/about" => move |_ctx| AboutView().build(),
+                not_found "/*" => move |_ctx| NotFound().build(),
             });
             div!(
                 Router(scope)
                     .routes(routes.table())
-                    .layout(move |ctx, outlet| div!(NavBar(ctx), outlet))
+                    .layout(move |ctx, outlet| div!(NavBar(ctx).build(), outlet))
             )
             .class("app-container")
             .style("font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;")
         },
     )
-    .fallback(ErrorPage)
+    .fallback(|e| ErrorPage(e).build())
+    .build()
     .into_any();
 
     rx!(scope; {
         if let Some(error) = (*$root_error).clone() {
-            ErrorPage(error).into_any()
+            ErrorPage(error).build().into_any()
         } else {
             boundary.clone()
         }
@@ -291,6 +301,6 @@ fn mount_counter_view<'scope>(context: &MountContext<'scope>) -> SilexResult<()>
     let error_handler = scope.error_handler(move |error: SilexError| {
         let _ = set_root_error.try_set(Some(error));
     });
-    let app = App(scope, root_error);
+    let app = App(scope, root_error).build();
     context.mount(app, error_handler)
 }

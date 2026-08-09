@@ -37,7 +37,7 @@ where
 
 /// Signal 扩展特质，提供 .when() 语法糖
 pub trait SignalShowExt<'scope>: ReactiveSource<'scope, Value = bool> + Clone + Sized {
-    fn when<V>(self, scope: Scope<'scope>, view: V) -> ShowComponent<'scope, Self>
+    fn when<V>(self, scope: Scope<'scope>, view: V) -> ShowBuilder<'scope, PropFixed, Self>
     where
         V: View<'scope> + 'scope;
 }
@@ -46,10 +46,10 @@ impl<'scope, S> SignalShowExt<'scope> for S
 where
     S: ReactiveSource<'scope, Value = bool> + Clone,
 {
-    fn when<V>(self, scope: Scope<'scope>, view: V) -> ShowComponent<'scope, Self>
+    fn when<V>(self, scope: Scope<'scope>, view: V) -> ShowBuilder<'scope, PropFixed, Self>
     where
         V: View<'scope> + 'scope,
     {
-        Show(scope, self).children(view).build()
+        Show(scope, self).children(view)
     }
 }

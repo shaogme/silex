@@ -11,7 +11,7 @@ fn App<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
         div!(
             h2("1. Recoverable Error Test"),
             ErrorBoundary(scope, move |_child_error_handler| {
-                RecoverableComponent(scope)
+                RecoverableComponent(scope).build()
             })
             .fallback(|error| {
                 div!(
@@ -28,7 +28,8 @@ fn App<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
                 .style(
                     "background-color: #fee; border: 1px solid red; padding: 10px; color: red;",
                 )
-            }),
+            })
+            .build(),
         )
         .style("margin-bottom: 20px; border: 1px solid #ccc; padding: 10px;"),
 
@@ -36,7 +37,7 @@ fn App<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
             h2("2. Immediate Panic Test (Render Phase)"),
             p("The component below panics during rendering when triggered."),
             ErrorBoundary(scope, move |_child_error_handler| {
-                PanicToggleComponent(scope)
+                PanicToggleComponent(scope).build()
             })
             .fallback(|error| {
                 div!(
@@ -46,7 +47,8 @@ fn App<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
                 .style(
                     "background-color: #fff3cd; border: 1px solid orange; padding: 10px; color: #856404;",
                 )
-            }),
+            })
+            .build(),
         )
         .style("margin-bottom: 20px; border: 1px solid #ccc; padding: 10px;"),
     )
@@ -81,7 +83,7 @@ fn PanicToggleComponent<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
 
     move || {
         if show_panic.get() {
-            Some(immediate_panic.clone().into_any())
+            Some(immediate_panic.clone().build().into_any())
         } else {
             Some(
                 div!(
@@ -135,5 +137,5 @@ fn mount_error_boundary_demo_view<'scope>(context: &MountContext<'scope>) -> Sil
     let error_handler = scope.error_handler(|error: SilexError| {
         web_sys::console::error_1(&error.to_string().into());
     });
-    context.mount(App(scope), error_handler)
+    context.mount(App(scope).build(), error_handler)
 }

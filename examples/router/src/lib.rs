@@ -24,6 +24,7 @@ fn NavLink<'scope, T: ToRoute + Clone + 'scope>(
         .children(children)
         .style("margin-right: 15px; text-decoration: none; color: #666; padding: 5px 10px; border-radius: 4px; transition: all 0.2s;")
         .active_class("nav-active")
+        .build()
 }
 
 // ==========================================
@@ -80,13 +81,14 @@ fn SearchPage<'scope>(
             .style("color: #e91e63; font-family: monospace;"),
         ),
     ))
+    .build()
 }
 
 // --- 用户模块 (嵌套路由中的共享布局) ---
 
 #[component]
 fn CreateUser<'scope>() -> impl View<'scope> {
-    Card(h3("🆕 Create New User Form"))
+    Card(h3("🆕 Create New User Form")).build()
 }
 
 #[component]
@@ -97,9 +99,11 @@ fn UsersLayout<'scope>(
     div!(
         h2("👥 Users Module"),
         div!(
-            NavLink(ctx, "/users").children("User List"),
+            NavLink(ctx, "/users").children("User List").build(),
             span("|").style("margin: 0 10px; color: #ccc;"),
-            NavLink(ctx, "/users/new").children("Create User (Static)"),
+            NavLink(ctx, "/users/new")
+                .children("Create User (Static)")
+                .build(),
         )
         .style("border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 20px;"),
         children,
@@ -130,7 +134,8 @@ fn UserList<'scope>(ctx: RouterContext<'scope>) -> impl View<'scope> {
                 li(Link(ctx, user_detail_path(id))
                     .children(format!("👤 {} (ID: {})", name, id))
                     .style("text-decoration: none; color: #2196f3;")
-                    .active_class("active-user"))
+                    .active_class("active-user")
+                    .build())
                 .style("margin: 5px 0;")
             })
             .collect::<Vec<_>>())
@@ -165,6 +170,7 @@ fn UserDetail<'scope>(ctx: RouterContext<'scope>, id: u32) -> impl View<'scope> 
         )))
         .style("background: #f5f5f5; padding: 10px; border-radius: 4px; margin-top: 10px;"),
     ))
+    .build()
 }
 
 #[component]
@@ -174,7 +180,8 @@ fn NotFound<'scope>(ctx: RouterContext<'scope>) -> impl View<'scope> {
         p("Page not found."),
         Link(ctx, "/")
             .children("Return Home")
-            .style("color: #2196f3; text-decoration: underline;"),
+            .style("color: #2196f3; text-decoration: underline;")
+            .build(),
     )
     .style("text-align: center; padding: 50px; color: #d32f2f;")
 }
@@ -193,10 +200,10 @@ fn MainLayout<'scope>(
         header!(
             h1("🚀 Silex Router").style("margin: 0; font-size: 1.5rem; color: #2c3e50;"),
             nav!(
-                NavLink(ctx, home_path).children("Home"),
-                NavLink(ctx, users_path).children("Users"),
-                NavLink(ctx, search_path).children("Search"),
-                NavLink(ctx, "/nowhere").children("404 Test"),
+                NavLink(ctx, home_path).children("Home").build(),
+                NavLink(ctx, users_path).children("Users").build(),
+                NavLink(ctx, search_path).children("Search").build(),
+                NavLink(ctx, "/nowhere").children("404 Test").build(),
             )
         )
         .style("display: flex; align-items: center; justify-content: space-between; padding: 20px 0; border-bottom: 1px solid #eee;"),
@@ -215,15 +222,15 @@ fn MainLayout<'scope>(
 #[component]
 fn App<'scope>(scope: Scope<'scope>, error_handler: ErrorReporter<'scope>) -> impl View<'scope> {
     let users = routes!(UsersRoutes {
-        list "/" => move |ctx| UserList(ctx),
-        create "/new" => move |_ctx| CreateUser(),
-        detail "/:id" => move |ctx, id: u32| UserDetail(ctx, id),
+        list "/" => move |ctx| UserList(ctx).build(),
+        create "/new" => move |_ctx| CreateUser().build(),
+        detail "/:id" => move |ctx, id: u32| UserDetail(ctx, id).build(),
     })
     .at("/users");
     let routes = routes!(AppRoutes {
-        home "/" => move |_ctx| Home(),
-        search "/search" => move |ctx| SearchPage(ctx).error_handler(error_handler),
-        not_found "/*" => move |ctx| NotFound(ctx),
+        home "/" => move |_ctx| Home().build(),
+        search "/search" => move |ctx| SearchPage(ctx).error_handler(error_handler).build(),
+        not_found "/*" => move |ctx| NotFound(ctx).build(),
     });
 
     let home_path = routes.home();
@@ -232,7 +239,7 @@ fn App<'scope>(scope: Scope<'scope>, error_handler: ErrorReporter<'scope>) -> im
     let table = routes
         .table()
         .nest(users.prefix(), users.table(), move |ctx, outlet| {
-            UsersLayout(ctx).children(outlet)
+            UsersLayout(ctx).children(outlet).build()
         });
 
     Router(scope).routes(table).layout(move |ctx, outlet| {
@@ -243,6 +250,7 @@ fn App<'scope>(scope: Scope<'scope>, error_handler: ErrorReporter<'scope>) -> im
             search_path.clone(),
         )
         .children(outlet)
+        .build()
     })
 }
 
@@ -277,5 +285,5 @@ fn mount_router_view<'scope>(context: &MountContext<'scope>) -> SilexResult<()> 
     let error_handler = scope.error_handler(|error: SilexError| {
         web_sys::console::error_1(&error.to_string().into());
     });
-    context.mount(App(scope, error_handler), error_handler)
+    context.mount(App(scope, error_handler).build(), error_handler)
 }
