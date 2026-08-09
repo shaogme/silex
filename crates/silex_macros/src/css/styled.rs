@@ -193,10 +193,12 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
     // 静态声明的编译期类型断言：属性名与「一眼能定型」的字面量取值
     let mut assertions = crate::css::generate_static_assertions(&compile_result.assertions)?;
     let base_style_inits = compile_result.generate_inits();
+    let mut deferred_style_descriptors = style_descriptors(&compile_result);
     let layer = compile_result.layer;
 
     let mut var_decls = Vec::new();
     let mut style_bindings = Vec::new();
+    let mut style_getters = Vec::new();
     let mut dynamic_rule_descriptors = Vec::new();
 
     // 1. Process base dynamic values
@@ -206,6 +208,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
         tag.span(),
         &mut var_decls,
         &mut style_bindings,
+        &mut style_getters,
         "",
     )?;
 
@@ -245,6 +248,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
             let v_class = res.class_name.clone();
             assertions.extend(crate::css::generate_static_assertions(&res.assertions)?);
             variant_injections.push(res.generate_inits());
+            deferred_style_descriptors.extend(style_descriptors(&res));
 
             process_dynamic_entries(
                 &res.expressions,
@@ -252,6 +256,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
                 v_name.span(),
                 &mut var_decls,
                 &mut style_bindings,
+                &mut style_getters,
                 &format!("_{}_{}", prop, v_name),
             )?;
 
@@ -350,32 +355,22 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
             #(#variant_injections)*
         }
     };
-    let deferred_style_attribute = if has_dynamic_bindings {
-        quote! {
-            .apply(#__silex::dom::attribute::AttrOp::custom_with_inputs(
-                #__silex::core::RuntimeInputs::new(),
-                move |_, _| {
-                    #base_style_inits
-                    #(#variant_injections)*
-                    Ok(())
-                },
-            ))
-        }
-    } else {
+    let styled_variant_binding = if !has_dynamic_bindings {
         quote! {}
+    } else {
+        quote! {
+            .apply(#__silex::css::StyledVariantBinding::new(
+                #layer,
+                ::std::vec![ #(#dynamic_rule_descriptors),* ],
+                ::std::vec![ #(#variant_group_descriptors),* ],
+            )
+            .with_static_styles(
+                ::std::vec![ #(#deferred_style_descriptors),* ],
+                ::std::vec![ #(#style_getters.clone()),* ],
+            )
+            .into_op())
+        }
     };
-    let styled_variant_binding =
-        if dynamic_rule_descriptors.is_empty() && variant_group_descriptors.is_empty() {
-            quote! {}
-        } else {
-            quote! {
-                .apply(#__silex::css::StyledVariantBinding::new(
-                    #layer,
-                    ::std::vec![ #(#dynamic_rule_descriptors),* ],
-                    ::std::vec![ #(#variant_group_descriptors),* ],
-                ).into_op())
-            }
-        };
 
     let node_init = if is_void_tag(&tag_str) {
         quote! { #__silex::html::#tag() }
@@ -395,7 +390,6 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
             #node_init
                 .class(#class_name)
                 #style_prop_binding
-                #deferred_style_attribute
                 .apply(#__silex::dom::attribute::AttrOp::CombinedStyles(#__silex::dom::attribute::CombinedStyles {
                     statics: ::std::vec![],
                     properties: ::std::vec![ #(#style_bindings),* ],
@@ -440,6 +434,7 @@ fn process_dynamic_entries(
     span: Span,
     var_decls: &mut Vec<TokenStream>,
     style_bindings: &mut Vec<TokenStream>,
+    style_getters: &mut Vec<Ident>,
     suffix: &str,
 ) -> Result<()> {
     let __silex = crate::crate_path::silex();
@@ -449,10 +444,26 @@ fn process_dynamic_entries(
         var_decls.push(quote! {
             let #var_ident = #__silex::css::make_property_val::<#prop_type, _>((#expr).clone());
         });
+        style_getters.push(var_ident.clone());
         let var_name = format!("--{}-{}", class_name, i);
         style_bindings.push(quote! { (::std::borrow::Cow::Borrowed(#var_name), #var_ident) });
     }
     Ok(())
+}
+
+fn style_descriptors(result: &crate::css::compiler::CssCompileResult) -> Vec<TokenStream> {
+    let mut descriptors = Vec::new();
+    if !result.static_css.is_empty() {
+        let style_id = &result.static_id;
+        let css = &result.static_css;
+        descriptors.push(quote! { (#style_id, #css) });
+    }
+    if !result.component_css.is_empty() {
+        let style_id = &result.style_id;
+        let css = &result.component_css;
+        descriptors.push(quote! { (#style_id, #css) });
+    }
+    descriptors
 }
 
 fn expand_dynamic_rule(
@@ -909,13 +920,10 @@ mod tests {
             }
         };
         let code = styled_impl(input).unwrap().to_string();
-        let custom_pos = code
-            .find("custom_with_inputs")
-            .expect("dynamic styled output has an owner-bound attribute");
-        let inject_pos = code
-            .find("inject_style")
-            .expect("dynamic styled injects CSS");
-        assert!(inject_pos > custom_pos, "{code}");
+        assert!(code.contains("StyledVariantBinding"), "{code}");
+        assert!(code.contains("with_static_styles"), "{code}");
+        assert!(code.contains("dyn_var_0"), "{code}");
+        assert!(!code.contains("inject_style"), "{code}");
     }
 
     #[test]

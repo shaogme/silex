@@ -580,6 +580,8 @@ pub struct StyledVariantBinding<'scope> {
     layer: &'static str,
     rules: Vec<StyledDynamicRule<'scope>>,
     groups: Vec<StyledVariantGroup<'scope>>,
+    static_styles: Vec<(&'static str, &'static str)>,
+    property_getters: Vec<CssVariableGetter<'scope>>,
 }
 
 struct StyledRuleState {
@@ -597,7 +599,21 @@ impl<'scope> StyledVariantBinding<'scope> {
             layer,
             rules,
             groups,
+            static_styles: Vec::new(),
+            property_getters: Vec::new(),
         }
+    }
+
+    /// Attach styled static descriptors and declaration getters to one
+    /// owner-bound validation boundary.
+    pub fn with_static_styles(
+        mut self,
+        static_styles: Vec<(&'static str, &'static str)>,
+        property_getters: Vec<CssVariableGetter<'scope>>,
+    ) -> Self {
+        self.static_styles = static_styles;
+        self.property_getters = property_getters;
+        self
     }
 
     pub fn into_op(self) -> AttrOp<'scope> {
@@ -617,6 +633,9 @@ impl<'scope> StyledVariantBinding<'scope> {
                 inputs.extend(&getter.runtime_inputs());
             }
         }
+        for getter in &self.property_getters {
+            inputs.extend(&getter.runtime_inputs());
+        }
         inputs
     }
 
@@ -627,6 +646,16 @@ impl<'scope> StyledVariantBinding<'scope> {
     ) -> SilexResult<()> {
         let inputs = self.runtime_inputs();
         owner.validate_inputs(&inputs)?;
+
+        for (style_id, css) in &self.static_styles {
+            if !style_id.is_empty() && !css.is_empty() {
+                crate::inject_style(style_id, css);
+            }
+        }
+
+        if self.rules.is_empty() && self.groups.is_empty() {
+            return Ok(());
+        }
 
         let rules = self.rules.clone();
         let groups = self.groups.clone();

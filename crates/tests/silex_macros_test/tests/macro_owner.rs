@@ -7,7 +7,7 @@ use silex::core::{ErrorReporter, Runtime, Scope};
 use silex::css::types::{Hex, hex, px};
 use silex::dom::attribute::{AttributeBuilder, GlobalAttributes};
 use silex::dom::prelude::AnyView;
-use silex::dom::view::{ScopedViewOwner, View};
+use silex::dom::view::{ScopedViewOwner, View, ViewOwner};
 use silex::macros::{classes, css, global, styled, tw};
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
@@ -607,7 +607,7 @@ fn styled_dynamic_value_cleans_inline_property_on_owner_dispose() {
     {
         let scope = root.scope();
         let (color, set_color) = scope.signal(hex("#123456"));
-        let view = MacroStyledValue(AnyView::new(()), color);
+        let view = MacroStyledValue(AnyView::new(()), color).build();
         let owner = ScopedViewOwner::new(scope, test_handler(scope));
         view.mount_owned(&owner, &host, Vec::new())
             .expect("styled value view should mount");
@@ -622,6 +622,53 @@ fn styled_dynamic_value_cleans_inline_property_on_owner_dispose() {
 
     root.dispose().expect("styled value owner can be disposed");
     assert!(style_text(&element).is_empty());
+    remove_host(&host);
+}
+
+#[wasm_bindgen_test]
+fn styled_static_descriptor_rejects_foreign_inputs_without_outer_mount_aggregation() {
+    let host = document()
+        .create_element("div")
+        .expect("test host can be created");
+    document()
+        .body()
+        .expect("document has a body")
+        .append_child(&host)
+        .expect("test host can be mounted");
+
+    let mut local_runtime = Runtime::new();
+    let local_root = local_runtime.run();
+    let mut foreign_runtime = Runtime::new();
+    let foreign_root = foreign_runtime.run();
+
+    let local_scope = local_root.scope();
+    let foreign_scope = foreign_root.scope();
+    let (color, _) = foreign_scope.signal(hex("#123456"));
+    let getter = color.into_rx().map(|value| value.to_string());
+    let operation = silex::css::StyledVariantBinding::new(
+        silex::css::layers::COMPONENTS,
+        Vec::new(),
+        Vec::new(),
+    )
+    .with_static_styles(
+        vec![(
+            "macro-standalone-styled-static",
+            ".macro-standalone-styled-static { color: red; }",
+        )],
+        vec![getter],
+    )
+    .into_op();
+    let owner = ScopedViewOwner::new(local_scope, test_handler(local_scope));
+
+    assert!(operation.apply(&host, &owner.token()).is_err());
+    assert!(!document_style_contains("macro-standalone-styled-static"));
+
+    local_root
+        .dispose()
+        .expect("local styled owner can be disposed");
+    foreign_root
+        .dispose()
+        .expect("foreign styled source can be disposed");
     remove_host(&host);
 }
 
@@ -643,8 +690,8 @@ async fn styled_dynamic_selector_updates_and_detaches_on_owner_dispose() {
     {
         let scope = root.scope();
         let (selector, set_selector) = scope.signal(String::from("macro-selector-a"));
-        let view = MacroStyledSelector(AnyView::new(()), selector);
-        let owner = ScopedViewOwner::new(scope, test_handler());
+        let view = MacroStyledSelector(AnyView::new(()), selector).build();
+        let owner = ScopedViewOwner::new(scope, test_handler(scope));
         view.mount_owned(&owner, &host, Vec::new())
             .expect("styled selector view should mount");
         element = host
@@ -701,8 +748,10 @@ async fn styled_dynamic_variant_switches_rules_and_cleans_on_dispose() {
         let scope = root.scope();
         let (mode, set_mode) = scope.signal(String::from("light"));
         let (selector, _) = scope.signal(String::from("macro-variant-selector"));
-        let view = MacroStyledVariant(AnyView::new(()), selector).mode(mode);
-        let owner = ScopedViewOwner::new(scope, test_handler());
+        let view = MacroStyledVariant(AnyView::new(()), selector)
+            .mode(mode)
+            .build();
+        let owner = ScopedViewOwner::new(scope, test_handler(scope));
         view.mount_owned(&owner, &host, Vec::new())
             .expect("styled variant view should mount");
         element = host
@@ -750,7 +799,7 @@ async fn dynamic_global_mounts_without_a_dom_node_and_cleans_on_dispose() {
         let set_color = root.with_scope(|scope| {
             let (color, set_color) = scope.signal(hex("#123456"));
             let (selector, _) = scope.signal(String::from(".macro-target"));
-            let owner = ScopedViewOwner::new(scope, test_handler());
+            let owner = ScopedViewOwner::new(scope, test_handler(scope));
             MacroGlobal(color.into(), selector.into())
                 .mount_owned(&owner, &host, Vec::new())
                 .expect("global macro view should mount");
@@ -778,7 +827,7 @@ async fn dynamic_global_mounts_without_a_dom_node_and_cleans_on_dispose() {
     second_root.with_scope(|scope| {
         let (color, _) = scope.signal(hex("#abcdef"));
         let (selector, _) = scope.signal(String::from(".macro-target-secondary"));
-        let owner = ScopedViewOwner::new(scope, test_handler());
+        let owner = ScopedViewOwner::new(scope, test_handler(scope));
         MacroGlobal(color.into(), selector.into())
             .mount_owned(&owner, &host, Vec::new())
             .expect("global macro view should mount");
