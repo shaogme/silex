@@ -4,6 +4,7 @@ use silex_core::{ErrorReporter, ReadSignal, Runtime, SilexError, SilexResult};
 use silex_dom::view::{
     AnyView, ApplyAttributes, ScopedViewOwner, View, ViewOwner, mount_text_node,
 };
+use silex_router::macros::routes;
 use silex_router::{
     Link, Navigator, RouteEntry, RoutePath, RouteTable, Router, RouterContext, RouterContextProps,
     RouterViewFactory,
@@ -295,26 +296,20 @@ fn nested_outlet_keeps_parent_layout_while_child_route_changes() {
 
     root.with_scope(|scope| {
         let navigator_for_detail = navigator.clone();
-        let child = RouteTable::from_entries(vec![
-            RouteEntry::new("/:id", move |matched, context| {
-                *navigator_for_detail.borrow_mut() = Some(context.navigator);
-                let id = matched.parse::<u32>("id").ok()?;
-                Some(AnyView::from(id.to_string()))
-            })
-            .expect("nested detail route should compile"),
-        ])
-        .expect("nested table should compile");
         let layouts_for_view = layouts.clone();
-        let table = RouteTable::from_entries(vec![
-            RouteEntry::new("/", |_, _| Some(AnyView::from("home")))
-                .expect("home route should compile"),
-        ])
-        .expect("parent table should compile")
-        .nest("/users", child, move |_, outlet| {
-            layouts_for_view.set(layouts_for_view.get() + 1);
-            AnyView::from(vec![AnyView::from("users:"), outlet])
+        let routes = routes!(NestedRoutes {
+            home "/" => move |_ctx| AnyView::from("home"),
+            nest users "/users" => move |_ctx, outlet| {
+                layouts_for_view.set(layouts_for_view.get() + 1);
+                AnyView::from(vec![AnyView::from("users:"), outlet])
+            } {
+                detail "/:id" => move |context, id: u32| {
+                    *navigator_for_detail.borrow_mut() = Some(context.navigator);
+                    AnyView::from(id.to_string())
+                },
+            },
         });
-        let view = Router(scope).base("/app").routes(table);
+        let view = Router(scope).base("/app").routes(routes.table());
         let owner = ScopedViewOwner::new(scope, test_handler(scope));
         view.mount_owned(&owner, &host, Vec::new())
             .expect("nested router should mount");

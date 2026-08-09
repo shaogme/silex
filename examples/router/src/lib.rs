@@ -82,7 +82,7 @@ fn SearchPage<'scope>(
     ))
 }
 
-// --- 用户模块 (扁平路由表中的共享布局) ---
+// --- 用户模块 (嵌套路由中的共享布局) ---
 
 #[component]
 fn CreateUser<'scope>() -> impl View<'scope> {
@@ -214,38 +214,36 @@ fn MainLayout<'scope>(
 
 #[component]
 fn App<'scope>(scope: Scope<'scope>, error_handler: ErrorReporter<'scope>) -> impl View<'scope> {
+    let users = routes!(UsersRoutes {
+        list "/" => move |ctx| UserList(ctx),
+        create "/new" => move |_ctx| CreateUser(),
+        detail "/:id" => move |ctx, id: u32| UserDetail(ctx, id),
+    })
+    .at("/users");
     let routes = routes!(AppRoutes {
         home "/" => move |_ctx| Home(),
-        search "/search" => move |ctx| {
-            SearchPage(ctx).error_handler(error_handler)
-        },
-        users_list "/users" => move |ctx| {
-            UsersLayout(ctx).children(UserList(ctx))
-        },
-        users_create "/users/new" => move |ctx| {
-            UsersLayout(ctx).children(CreateUser())
-        },
-        users_detail "/users/:id" => move |ctx, id: u32| {
-            UsersLayout(ctx).children(UserDetail(ctx, id))
-        },
+        search "/search" => move |ctx| SearchPage(ctx).error_handler(error_handler),
         not_found "/*" => move |ctx| NotFound(ctx),
     });
 
     let home_path = routes.home();
-    let users_path = routes.users_list();
+    let users_path = users.list();
     let search_path = routes.search();
+    let table = routes
+        .table()
+        .nest(users.prefix(), users.table(), move |ctx, outlet| {
+            UsersLayout(ctx).children(outlet)
+        });
 
-    Router(scope)
-        .routes(routes.table())
-        .layout(move |ctx, outlet| {
-            MainLayout(
-                ctx,
-                home_path.clone(),
-                users_path.clone(),
-                search_path.clone(),
-            )
-            .children(outlet)
-        })
+    Router(scope).routes(table).layout(move |ctx, outlet| {
+        MainLayout(
+            ctx,
+            home_path.clone(),
+            users_path.clone(),
+            search_path.clone(),
+        )
+        .children(outlet)
+    })
 }
 
 /// Mount the Router demo into the conventional `#app` target.

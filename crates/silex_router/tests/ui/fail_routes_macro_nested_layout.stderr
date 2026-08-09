@@ -1,0 +1,5 @@
+error: nested route `users` layout must accept RouterContext and outlet
+ --> tests/ui/fail_routes_macro_nested_layout.rs:5:32
+  |
+5 |         nest users "/users" => move |_ctx| { silex_router::dom::view::AnyView::from("users") } {
+  |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

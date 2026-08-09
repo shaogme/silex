@@ -1,7 +1,7 @@
 use crate::{
     RouteOutlet, RouterContext,
     path::{
-        PathError, PathParam, RawPathSegment, normalize_path, percent_decode_segment,
+        PathError, PathParam, RawPathSegment, RoutePath, normalize_path, percent_decode_segment,
         raw_path_segments,
     },
 };
@@ -604,6 +604,43 @@ impl<'scope> RouteTable<'scope> {
         debug_assert_eq!(route_id, self.entries.len());
         self.entries.push(entry);
         Ok(route_id)
+    }
+}
+
+/// A route catalog mounted below a static prefix.
+///
+/// The mounted table keeps relative child patterns for matching while its
+/// generated catalog methods produce destinations with the mounted prefix.
+#[derive(Clone)]
+pub struct MountedCatalog<'scope> {
+    prefix: RoutePath,
+    table: RouteTable<'scope>,
+}
+
+impl<'scope> MountedCatalog<'scope> {
+    pub fn from_parts(prefix: RoutePath, table: RouteTable<'scope>) -> Self {
+        Self { prefix, table }
+    }
+
+    pub fn prefix(&self) -> &RoutePath {
+        &self.prefix
+    }
+
+    pub fn table(&self) -> RouteTable<'scope> {
+        self.table.clone()
+    }
+
+    pub fn child_prefix(&self, suffix: impl AsRef<str>) -> RoutePath {
+        let suffix = normalize_path(suffix.as_ref())
+            .unwrap_or_else(|error| panic!("invalid mounted route prefix: {error}"));
+        let path = if self.prefix.as_str() == "/" {
+            suffix
+        } else if suffix == "/" {
+            self.prefix.as_str().to_string()
+        } else {
+            format!("{}{}", self.prefix.as_str(), suffix)
+        };
+        RoutePath::new(path).unwrap_or_else(|error| panic!("invalid mounted route prefix: {error}"))
     }
 }
 

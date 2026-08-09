@@ -1,0 +1,5 @@
+error: nested route prefixes must contain only static segments
+ --> tests/ui/fail_routes_macro_dynamic_nested_prefix.rs:5:21
+  |
+5 |         nest tenant "/:tenant" => move |_ctx, outlet| { outlet } {
+  |                     ^^^^^^^^^^

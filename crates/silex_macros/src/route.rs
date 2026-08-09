@@ -6,7 +6,7 @@ use syn::{Error, ExprClosure, Ident, LitStr, Pat, PathArguments, Token, Type};
 
 struct RoutesInput {
     catalog: Ident,
-    routes: syn::punctuated::Punctuated<RouteMacroDef, Token![,]>,
+    routes: syn::punctuated::Punctuated<RouteNodeInput, Token![,]>,
 }
 
 impl Parse for RoutesInput {
@@ -14,8 +14,62 @@ impl Parse for RoutesInput {
         let catalog = input.parse()?;
         let content;
         syn::braced!(content in input);
-        let routes = content.parse_terminated(RouteMacroDef::parse, Token![,])?;
+        let routes = content.parse_terminated(RouteNodeInput::parse, Token![,])?;
         Ok(Self { catalog, routes })
+    }
+}
+
+enum RouteNodeInput {
+    Leaf(RouteMacroDef),
+    Nest(NestedRouteMacroDef),
+}
+
+impl Parse for RouteNodeInput {
+    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
+        let keyword: Ident = input.parse()?;
+        if keyword == "nest" {
+            let name: Ident = input.parse()?;
+            let prefix: LitStr = input.parse()?;
+            let guards_before = parse_guard_metadata(input)?;
+            input.parse::<Token![=>]>()?;
+            let layout = input.parse()?;
+            let content;
+            syn::braced!(content in input);
+            let children = content
+                .parse_terminated(RouteNodeInput::parse, Token![,])?
+                .into_iter()
+                .collect();
+            let mut guards_after = parse_guard_metadata(input)?;
+            if guards_after.is_none() && comma_precedes_guard_metadata(input) {
+                input.parse::<Token![,]>()?;
+                guards_after = parse_guard_metadata(input)?;
+            }
+
+            Ok(Self::Nest(NestedRouteMacroDef {
+                name: name.clone(),
+                prefix,
+                layout,
+                children,
+                guards: merge_guard_metadata(&name, guards_before, guards_after)?,
+            }))
+        } else {
+            let path = input.parse()?;
+            let guards_before = parse_guard_metadata(input)?;
+            input.parse::<Token![=>]>()?;
+            let handler = input.parse()?;
+            let mut guards_after = parse_guard_metadata(input)?;
+            if guards_after.is_none() && comma_precedes_guard_metadata(input) {
+                input.parse::<Token![,]>()?;
+                guards_after = parse_guard_metadata(input)?;
+            }
+
+            Ok(Self::Leaf(RouteMacroDef {
+                name: keyword.clone(),
+                path,
+                handler,
+                guards: merge_guard_metadata(&keyword, guards_before, guards_after)?,
+            }))
+        }
     }
 }
 
@@ -26,33 +80,12 @@ struct RouteMacroDef {
     guards: Vec<syn::Path>,
 }
 
-impl Parse for RouteMacroDef {
-    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
-        let name = input.parse()?;
-        let path = input.parse()?;
-        let guards_before = parse_guard_metadata(input)?;
-        input.parse::<Token![=>]>()?;
-        let handler = input.parse()?;
-        let mut guards_after = parse_guard_metadata(input)?;
-        if guards_after.is_none() && comma_precedes_guard_metadata(input) {
-            input.parse::<Token![,]>()?;
-            guards_after = parse_guard_metadata(input)?;
-        }
-
-        if guards_before.is_some() && guards_after.is_some() {
-            return Err(Error::new_spanned(
-                &name,
-                "route guards may be declared only once",
-            ));
-        }
-
-        Ok(Self {
-            name,
-            path,
-            handler,
-            guards: guards_before.or(guards_after).unwrap_or_default(),
-        })
-    }
+struct NestedRouteMacroDef {
+    name: Ident,
+    prefix: LitStr,
+    layout: ExprClosure,
+    children: Vec<RouteNodeInput>,
+    guards: Vec<syn::Path>,
 }
 
 fn parse_guard_metadata(input: ParseStream<'_>) -> syn::Result<Option<Vec<syn::Path>>> {
@@ -75,6 +108,20 @@ fn parse_guard_metadata(input: ParseStream<'_>) -> syn::Result<Option<Vec<syn::P
         .into_iter()
         .collect();
     Ok(Some(guards))
+}
+
+fn merge_guard_metadata(
+    name: &Ident,
+    before: Option<Vec<syn::Path>>,
+    after: Option<Vec<syn::Path>>,
+) -> syn::Result<Vec<syn::Path>> {
+    if before.is_some() && after.is_some() {
+        return Err(Error::new_spanned(
+            name,
+            "route guards may be declared only once",
+        ));
+    }
+    Ok(before.or(after).unwrap_or_default())
 }
 
 fn comma_precedes_guard_metadata(input: ParseStream<'_>) -> bool {
@@ -111,26 +158,178 @@ struct HandlerPathParam {
 struct MacroRoute {
     name: Ident,
     pattern: String,
+    full_pattern: String,
     key: Vec<MacroPatternKey>,
+    full_key: Vec<MacroPatternKey>,
     segments: Vec<MacroSegment>,
+    destination_segments: Vec<MacroSegment>,
     params: Vec<HandlerPathParam>,
     handler: ExprClosure,
     guards: Vec<syn::Path>,
+    handler_name: Ident,
+    entry_name: Ident,
 }
 
-fn compile_macro_route(def: RouteMacroDef) -> syn::Result<MacroRoute> {
-    let (pattern, segments, key) = parse_macro_pattern(&def.path)?;
-    let params = validate_handler(&def.handler, &def.name, &segments)?;
+struct MacroNest {
+    name: Ident,
+    prefix: String,
+    catalog: Ident,
+    value_name: Ident,
+    layout: ExprClosure,
+    layout_name: Ident,
+    guards: Vec<syn::Path>,
+    children: Vec<MacroNode>,
+}
 
+enum MacroNode {
+    Leaf(MacroRoute),
+    Nest(MacroNest),
+}
+
+struct CompileCounters {
+    route: usize,
+    nest: usize,
+}
+
+fn compile_nodes(
+    definitions: Vec<RouteNodeInput>,
+    parent_prefix: &str,
+    full_patterns: &mut HashSet<Vec<MacroPatternKey>>,
+    counters: &mut CompileCounters,
+) -> syn::Result<Vec<MacroNode>> {
+    let mut names = HashSet::new();
+    let mut table_patterns = HashSet::new();
+    let mut nodes = Vec::with_capacity(definitions.len());
+
+    for definition in definitions {
+        let name = match &definition {
+            RouteNodeInput::Leaf(route) => &route.name,
+            RouteNodeInput::Nest(nest) => &nest.name,
+        };
+        if matches!(name.to_string().as_str(), "table" | "at" | "prefix") {
+            return Err(Error::new_spanned(
+                name,
+                "route name is reserved by the generated catalog",
+            ));
+        }
+        if !names.insert(name.to_string()) {
+            return Err(Error::new_spanned(
+                name,
+                "route and nested route names in one catalog must be unique",
+            ));
+        }
+
+        match definition {
+            RouteNodeInput::Leaf(definition) => {
+                let route = compile_macro_route(definition, parent_prefix, counters)?;
+                if !table_patterns.insert(route.key.clone()) {
+                    return Err(Error::new_spanned(
+                        &route.name,
+                        format!(
+                            "route pattern `{}` conflicts with another normalized route pattern",
+                            route.pattern
+                        ),
+                    ));
+                }
+                if !full_patterns.insert(route.full_key.clone()) {
+                    return Err(Error::new_spanned(
+                        &route.name,
+                        format!(
+                            "route pattern `{}` conflicts with another normalized complete route pattern",
+                            route.full_pattern
+                        ),
+                    ));
+                }
+                nodes.push(MacroNode::Leaf(route));
+            }
+            RouteNodeInput::Nest(definition) => {
+                let (prefix, prefix_segments, _) = parse_macro_pattern(&definition.prefix)?;
+                if prefix_segments
+                    .iter()
+                    .any(|segment| !matches!(segment, MacroSegment::Static { .. }))
+                {
+                    return Err(Error::new_spanned(
+                        &definition.prefix,
+                        "nested route prefixes must contain only static segments",
+                    ));
+                }
+                validate_nested_layout(&definition.layout, &definition.name)?;
+
+                let synthetic_pattern = if prefix == "/" {
+                    String::from("/*")
+                } else {
+                    format!("{prefix}/*")
+                };
+                let synthetic_literal = LitStr::new(&synthetic_pattern, definition.prefix.span());
+                let (_, _, synthetic_key) = parse_macro_pattern(&synthetic_literal)?;
+                if !table_patterns.insert(synthetic_key) {
+                    return Err(Error::new_spanned(
+                        &definition.name,
+                        format!(
+                            "nested route prefix `{prefix}` conflicts with another route pattern"
+                        ),
+                    ));
+                }
+
+                let full_prefix = join_route_patterns(parent_prefix, &prefix);
+                let children =
+                    compile_nodes(definition.children, &full_prefix, full_patterns, counters)?;
+                let nest_index = counters.nest;
+                counters.nest += 1;
+                nodes.push(MacroNode::Nest(MacroNest {
+                    name: definition.name,
+                    prefix,
+                    catalog: format_ident!("__silex_routes_nested_catalog_{nest_index}"),
+                    value_name: format_ident!("__silex_routes_nested_value_{nest_index}"),
+                    layout: definition.layout,
+                    layout_name: format_ident!("__silex_routes_layout_{nest_index}"),
+                    guards: definition.guards,
+                    children,
+                }));
+            }
+        }
+    }
+
+    Ok(nodes)
+}
+
+fn compile_macro_route(
+    definition: RouteMacroDef,
+    parent_prefix: &str,
+    counters: &mut CompileCounters,
+) -> syn::Result<MacroRoute> {
+    let (pattern, segments, key) = parse_macro_pattern(&definition.path)?;
+    let params = validate_handler(&definition.handler, &definition.name, &segments)?;
+    let full_pattern = join_route_patterns(parent_prefix, &pattern);
+    let full_literal = LitStr::new(&full_pattern, definition.path.span());
+    let (_, destination_segments, full_key) = parse_macro_pattern(&full_literal)?;
+
+    let route_index = counters.route;
+    counters.route += 1;
     Ok(MacroRoute {
-        name: def.name,
+        name: definition.name,
         pattern,
+        full_pattern,
         key,
+        full_key,
         segments,
+        destination_segments,
         params,
-        handler: def.handler,
-        guards: def.guards,
+        handler: definition.handler,
+        guards: definition.guards,
+        handler_name: format_ident!("__silex_routes_handler_{route_index}"),
+        entry_name: format_ident!("__silex_routes_entry_{route_index}"),
     })
+}
+
+fn join_route_patterns(parent: &str, child: &str) -> String {
+    if parent == "/" {
+        child.to_string()
+    } else if child == "/" {
+        parent.to_string()
+    } else {
+        format!("{parent}{child}")
+    }
 }
 
 fn parse_macro_pattern(
@@ -281,6 +480,18 @@ fn macro_hex_value(byte: u8) -> Option<u8> {
     }
 }
 
+fn validate_nested_layout(layout: &ExprClosure, name: &Ident) -> syn::Result<()> {
+    if layout.inputs.len() != 2 {
+        return Err(Error::new_spanned(
+            layout,
+            format!("nested route `{name}` layout must accept RouterContext and outlet"),
+        ));
+    }
+    parse_handler_param(&layout.inputs[0])?;
+    parse_handler_param(&layout.inputs[1])?;
+    Ok(())
+}
+
 fn validate_handler(
     handler: &ExprClosure,
     route_name: &Ident,
@@ -390,101 +601,380 @@ fn is_path_tail_type(ty: &Type) -> bool {
 
 pub fn routes_impl(input: TokenStream) -> syn::Result<TokenStream> {
     let input: RoutesInput = syn::parse2(input)?;
-    let catalog = input.catalog.clone();
-    let mut route_names = HashSet::new();
-    let mut pattern_keys = HashSet::new();
-    let mut routes = Vec::with_capacity(input.routes.len());
-
-    for definition in input.routes {
-        let route = compile_macro_route(definition)?;
-        if route.name == "table" {
-            return Err(Error::new_spanned(
-                &route.name,
-                "route name `table` is reserved by the generated catalog",
-            ));
-        }
-        if !route_names.insert(route.name.to_string()) {
-            return Err(Error::new_spanned(
-                &route.name,
-                "route names in one catalog must be unique",
-            ));
-        }
-        if !pattern_keys.insert(route.key.clone()) {
-            return Err(Error::new_spanned(
-                &route.name,
-                format!(
-                    "route pattern `{}` conflicts with another normalized route pattern",
-                    route.pattern
-                ),
-            ));
-        }
-        routes.push(route);
-    }
+    let catalog = input.catalog;
+    let mut counters = CompileCounters { route: 0, nest: 0 };
+    let nodes = compile_nodes(
+        input.routes.into_iter().collect(),
+        "/",
+        &mut HashSet::new(),
+        &mut counters,
+    )?;
 
     let silex = crate::crate_path::silex();
     let scope = syn::Lifetime::new("'__silex_routes_scope", proc_macro2::Span::call_site());
-    let table_field = format_ident!("__silex_route_table");
-    let entry_names: Vec<_> = (0..routes.len())
-        .map(|index| format_ident!("__silex_routes_entry_{index}"))
-        .collect();
-    let handler_names: Vec<_> = (0..routes.len())
-        .map(|index| format_ident!("__silex_routes_handler_{index}"))
-        .collect();
+    let root_value = format_ident!("__silex_routes_root_value");
 
-    let handler_bindings = routes
-        .iter()
-        .zip(&handler_names)
-        .map(|(route, handler_name)| {
-            let handler = &route.handler;
-            quote! {
-                let #handler_name = #handler;
-            }
-        });
+    let mut definitions = Vec::new();
+    generate_catalog_definitions(&silex, &scope, &catalog, &nodes, &mut definitions, true);
 
-    let entry_bindings = routes
-        .iter()
-        .zip(entry_names.iter().zip(&handler_names))
-        .map(|(route, (entry_name, handler_name))| {
-            generate_entry_binding(&silex, route, entry_name, handler_name)
-        })
-        .collect::<syn::Result<Vec<_>>>()?;
-
-    let methods = routes
-        .iter()
-        .filter_map(|route| generate_path_method(&silex, route))
-        .collect::<Vec<_>>();
+    let handler_bindings = generate_handler_bindings(&silex, &nodes);
+    let layout_bindings = generate_layout_bindings(&nodes);
+    let entry_bindings = generate_entry_bindings(&silex, &nodes)?;
+    let mut catalog_bindings = Vec::new();
+    generate_catalog_binding(&silex, &catalog, &nodes, &root_value, &mut catalog_bindings);
 
     Ok(quote! {{
+        #(#definitions)*
         #(#handler_bindings)*
+        #(#layout_bindings)*
         #(#entry_bindings)*
+        #(#catalog_bindings)*
+        #root_value
+    }})
+}
 
-        struct #catalog <#scope> {
+fn generate_handler_bindings(silex: &TokenStream, nodes: &[MacroNode]) -> Vec<TokenStream> {
+    let mut bindings = Vec::new();
+    for node in nodes {
+        match node {
+            MacroNode::Leaf(route) => {
+                let handler_name = &route.handler_name;
+                let handler = &route.handler;
+                let infer_name = format_ident!("{}_infer", handler_name);
+                let scope = syn::Lifetime::new(
+                    &format!("'{}_scope", infer_name),
+                    proc_macro2::Span::call_site(),
+                );
+                let parameter_types = route.params.iter().map(|param| {
+                    let ty = &param.ty;
+                    quote! { #ty }
+                });
+                bindings.push(quote! {
+                    fn #infer_name<#scope, F, V>(handler: F) -> F
+                    where
+                        F: Fn(
+                            #silex::router::RouterContext<#scope>,
+                            #(#parameter_types),*
+                        ) -> V,
+                    {
+                        handler
+                    }
+
+                    let #handler_name = #infer_name(#handler);
+                });
+            }
+            MacroNode::Nest(nest) => {
+                bindings.extend(generate_handler_bindings(silex, &nest.children));
+            }
+        }
+    }
+    bindings
+}
+
+fn generate_layout_bindings(nodes: &[MacroNode]) -> Vec<TokenStream> {
+    let mut bindings = Vec::new();
+    for node in nodes {
+        match node {
+            MacroNode::Leaf(_) => {}
+            MacroNode::Nest(nest) => {
+                let layout_name = &nest.layout_name;
+                let layout = &nest.layout;
+                bindings.push(quote! {
+                    let #layout_name = #layout;
+                });
+                bindings.extend(generate_layout_bindings(&nest.children));
+            }
+        }
+    }
+    bindings
+}
+
+fn generate_entry_bindings(
+    silex: &TokenStream,
+    nodes: &[MacroNode],
+) -> syn::Result<Vec<TokenStream>> {
+    let mut bindings = Vec::new();
+    for node in nodes {
+        match node {
+            MacroNode::Leaf(route) => bindings.push(generate_entry_binding(silex, route)),
+            MacroNode::Nest(nest) => {
+                bindings.extend(generate_entry_bindings(silex, &nest.children)?);
+            }
+        }
+    }
+    Ok(bindings)
+}
+
+fn generate_catalog_definitions(
+    silex: &TokenStream,
+    scope: &syn::Lifetime,
+    catalog: &Ident,
+    nodes: &[MacroNode],
+    definitions: &mut Vec<TokenStream>,
+    is_root: bool,
+) {
+    for node in nodes {
+        if let MacroNode::Nest(nest) = node {
+            generate_catalog_definitions(
+                silex,
+                scope,
+                &nest.catalog,
+                &nest.children,
+                definitions,
+                false,
+            );
+        }
+    }
+
+    let table_field = format_ident!("__silex_route_table");
+    let mounted_catalog = mounted_catalog_ident(catalog);
+    let child_fields = nodes.iter().filter_map(|node| match node {
+        MacroNode::Leaf(_) => None,
+        MacroNode::Nest(nest) => {
+            let field = nested_catalog_field(&nest.name);
+            let catalog = &nest.catalog;
+            Some(quote! { #field: #catalog<#scope> })
+        }
+    });
+    let methods = nodes
+        .iter()
+        .flat_map(|node| match node {
+            MacroNode::Leaf(route) => generate_path_method(silex, route).into_iter().collect(),
+            MacroNode::Nest(nest) => {
+                let name = &nest.name;
+                let field = nested_catalog_field(name);
+                let catalog = &nest.catalog;
+                vec![quote! {
+                    fn #name(&self) -> &#catalog<#scope> {
+                        &self.#field
+                    }
+                }]
+            }
+        })
+        .collect::<Vec<_>>();
+    let mount_method =
+        generate_catalog_mount_method(silex, scope, nodes, &mounted_catalog, is_root);
+    let mounted_child_fields = nodes.iter().filter_map(|node| match node {
+        MacroNode::Leaf(_) => None,
+        MacroNode::Nest(nest) => {
+            let field = nested_catalog_field(&nest.name);
+            let catalog = mounted_catalog_ident(&nest.catalog);
+            Some(quote! { #field: #catalog<#scope> })
+        }
+    });
+    let mounted_methods = nodes
+        .iter()
+        .flat_map(|node| match node {
+            MacroNode::Leaf(route) => generate_mounted_path_method(silex, route)
+                .into_iter()
+                .collect(),
+            MacroNode::Nest(nest) => {
+                let name = &nest.name;
+                let field = nested_catalog_field(name);
+                let catalog = mounted_catalog_ident(&nest.catalog);
+                vec![quote! {
+                    fn #name(&self) -> &#catalog<#scope> {
+                        &self.#field
+                    }
+                }]
+            }
+        })
+        .collect::<Vec<_>>();
+
+    definitions.push(quote! {
+        #[allow(dead_code)]
+        struct #catalog<#scope> {
             #table_field: #silex::router::RouteTable<#scope>,
+            #(#child_fields),*
         }
 
-        impl <#scope> #catalog <#scope> {
+        #[allow(dead_code)]
+        impl<#scope> #catalog<#scope> {
             fn table(&self) -> #silex::router::RouteTable<#scope> {
                 self.#table_field.clone()
             }
 
             #(#methods)*
+            #mount_method
         }
 
-        let __silex_route_entries = ::std::vec![#(#entry_names),*];
-        #catalog {
-            #table_field: #silex::router::RouteTable::from_entries(__silex_route_entries)
-                .expect("routes! generated an invalid route table"),
+        #[allow(dead_code)]
+        struct #mounted_catalog<#scope> {
+            __silex_mounted: #silex::router::MountedCatalog<#scope>,
+            #(#mounted_child_fields),*
         }
-    }})
+
+        #[allow(dead_code)]
+        impl<#scope> #mounted_catalog<#scope> {
+            fn table(&self) -> #silex::router::RouteTable<#scope> {
+                self.__silex_mounted.table()
+            }
+
+            fn prefix(&self) -> &#silex::router::RoutePath {
+                self.__silex_mounted.prefix()
+            }
+
+            #(#mounted_methods)*
+        }
+    });
 }
 
-fn generate_entry_binding(
+fn nested_catalog_field(name: &Ident) -> Ident {
+    format_ident!("__silex_routes_child_{name}")
+}
+
+fn mounted_catalog_ident(catalog: &Ident) -> Ident {
+    format_ident!("__silex_routes_mounted_{catalog}")
+}
+
+fn generate_catalog_mount_method(
     silex: &TokenStream,
-    route: &MacroRoute,
-    entry_name: &Ident,
-    handler_name: &Ident,
-) -> syn::Result<TokenStream> {
+    scope: &syn::Lifetime,
+    nodes: &[MacroNode],
+    mounted_catalog: &Ident,
+    is_root: bool,
+) -> TokenStream {
+    let mount_method = format_ident!("__silex_routes_mount");
+    let mut child_bindings = Vec::new();
+    let mut child_fields = Vec::new();
+    for node in nodes {
+        let MacroNode::Nest(nest) = node else {
+            continue;
+        };
+        let field = nested_catalog_field(&nest.name);
+        let prefix = format_ident!("__silex_routes_prefix_{}", nest.name);
+        let value = format_ident!("__silex_routes_mounted_child_{}", nest.name);
+        let nested_prefix = &nest.prefix;
+        let nested_mount = quote! {
+            let #prefix = __silex_mounted.child_prefix(#nested_prefix);
+            let #value = self.#field.#mount_method(#prefix);
+        };
+        child_bindings.push(nested_mount);
+        child_fields.push(quote! { #field: #value });
+    }
+
+    let at_method = if is_root {
+        quote! {
+            fn at(
+                self,
+                prefix: &'static str,
+            ) -> #mounted_catalog<#scope> {
+                let prefix = #silex::router::RoutePath::new(prefix).unwrap_or_else(|error| {
+                    panic!("routes! generated an invalid mount prefix: {}", error)
+                });
+                self.#mount_method(prefix)
+            }
+        }
+    } else {
+        quote! {}
+    };
+
+    quote! {
+        fn #mount_method(
+            self,
+            prefix: #silex::router::RoutePath,
+        ) -> #mounted_catalog<#scope> {
+            let __silex_mounted = #silex::router::MountedCatalog::from_parts(
+                prefix,
+                self.__silex_route_table.clone(),
+            );
+            #(#child_bindings)*
+            #mounted_catalog {
+                __silex_mounted,
+                #(#child_fields),*
+            }
+        }
+
+        #at_method
+    }
+}
+
+fn generate_catalog_binding(
+    silex: &TokenStream,
+    catalog: &Ident,
+    nodes: &[MacroNode],
+    value_name: &Ident,
+    bindings: &mut Vec<TokenStream>,
+) {
+    for node in nodes {
+        if let MacroNode::Nest(nest) = node {
+            generate_catalog_binding(
+                silex,
+                &nest.catalog,
+                &nest.children,
+                &nest.value_name,
+                bindings,
+            );
+        }
+    }
+
+    let table_field = format_ident!("__silex_route_table");
+    let table = generate_table_expression(silex, nodes);
+    let child_fields = nodes.iter().filter_map(|node| match node {
+        MacroNode::Leaf(_) => None,
+        MacroNode::Nest(nest) => {
+            let field = nested_catalog_field(&nest.name);
+            let value_name = &nest.value_name;
+            Some(quote! { #field: #value_name })
+        }
+    });
+
+    bindings.push(quote! {
+        let #value_name = #catalog {
+            #table_field: #table,
+            #(#child_fields),*
+        };
+    });
+}
+
+fn generate_table_expression(silex: &TokenStream, nodes: &[MacroNode]) -> TokenStream {
+    let entry_names = nodes.iter().filter_map(|node| match node {
+        MacroNode::Leaf(route) => Some(&route.entry_name),
+        MacroNode::Nest(_) => None,
+    });
+    let mut table = quote! {{
+        let __silex_route_entries = ::std::vec![#(#entry_names),*];
+        #silex::router::RouteTable::from_entries(__silex_route_entries)
+            .expect("routes! generated an invalid route table")
+    }};
+
+    for node in nodes {
+        let MacroNode::Nest(nest) = node else {
+            continue;
+        };
+        let prefix = &nest.prefix;
+        let child_value = &nest.value_name;
+        let layout_name = &nest.layout_name;
+        let context = format_ident!("__silex_nested_context");
+        let outlet = format_ident!("__silex_nested_outlet");
+        let mut layout_view = quote! {
+            #silex::dom::view::View::into_any(
+                (#layout_name)(#context, #outlet)
+            )
+        };
+        for guard in nest.guards.iter().rev() {
+            layout_view = quote! {
+                #silex::dom::view::View::into_any(#guard(#layout_view))
+            };
+        }
+        table = quote! {
+            #table.nest(
+                #prefix,
+                #child_value.table(),
+                move |#context, #outlet| {
+                    #layout_view
+                },
+            )
+        };
+    }
+
+    table
+}
+
+fn generate_entry_binding(silex: &TokenStream, route: &MacroRoute) -> TokenStream {
     let pattern = &route.pattern;
+    let entry_name = &route.entry_name;
+    let handler_name = &route.handler_name;
     let matched = format_ident!("__silex_route_match");
     let context = format_ident!("__silex_route_context");
     let arguments = route.params.iter().map(|param| {
@@ -494,7 +984,10 @@ fn generate_entry_binding(
     });
 
     let mut view = quote! {
-        #silex::dom::view::View::into_any((#handler_name)(#context, #(#arguments),*))
+        #silex::dom::view::View::into_any((#handler_name)(
+            #context,
+            #(#arguments),*
+        ))
     };
     for guard in route.guards.iter().rev() {
         view = quote! {
@@ -502,7 +995,7 @@ fn generate_entry_binding(
         };
     }
 
-    Ok(quote! {
+    quote! {
         let #entry_name = #silex::router::RouteEntry::new(
             #pattern,
             move |#matched, #context| {
@@ -511,10 +1004,10 @@ fn generate_entry_binding(
             },
         )
         .expect("routes! generated an invalid route entry");
-    })
+    }
 }
 
-fn generate_path_method(silex: &TokenStream, route: &MacroRoute) -> Option<TokenStream> {
+fn generate_mounted_path_method(silex: &TokenStream, route: &MacroRoute) -> Option<TokenStream> {
     if route
         .segments
         .iter()
@@ -529,7 +1022,65 @@ fn generate_path_method(silex: &TokenStream, route: &MacroRoute) -> Option<Token
         let ty = &param.ty;
         quote! { #ident: #ty }
     });
-    let mut path_parts = if route.segments.is_empty() {
+    let mut path_parts = Vec::new();
+
+    for segment in &route.segments {
+        path_parts.push(quote! {
+            __silex_route_path.push('/');
+        });
+        match segment {
+            MacroSegment::Static { raw } => path_parts.push(quote! {
+                __silex_route_path.push_str(#raw);
+            }),
+            MacroSegment::Param { name } | MacroSegment::Wildcard { name: Some(name) } => {
+                let param = route
+                    .params
+                    .iter()
+                    .find(|param| param.name == *name)
+                    .expect("validated route parameter is missing from handler parameters");
+                let ident = &param.ident;
+                let ty = &param.ty;
+                path_parts.push(quote! {
+                    let __silex_encoded_segment =
+                        <#ty as #silex::router::PathParam>::encode_segment(&#ident)
+                            .unwrap_or_else(|error| {
+                                panic!("routes! could not encode a route parameter: {}", error)
+                            });
+                    __silex_route_path.push_str(&__silex_encoded_segment);
+                });
+            }
+            MacroSegment::Wildcard { name: None } => {}
+        }
+    }
+
+    Some(quote! {
+        fn #name(&self, #(#arguments),*) -> #silex::router::RoutePath {
+            let mut __silex_route_path =
+                self.__silex_mounted.prefix().as_str().to_string();
+            #(#path_parts)*
+            #silex::router::RoutePath::new(__silex_route_path).unwrap_or_else(|error| {
+                panic!("routes! generated an invalid destination path: {}", error)
+            })
+        }
+    })
+}
+
+fn generate_path_method(silex: &TokenStream, route: &MacroRoute) -> Option<TokenStream> {
+    if route
+        .destination_segments
+        .iter()
+        .any(|segment| matches!(segment, MacroSegment::Wildcard { name: None }))
+    {
+        return None;
+    }
+
+    let name = &route.name;
+    let arguments = route.params.iter().map(|param| {
+        let ident = &param.ident;
+        let ty = &param.ty;
+        quote! { #ident: #ty }
+    });
+    let mut path_parts = if route.destination_segments.is_empty() {
         vec![quote! {
             __silex_route_path.push('/');
         }]
@@ -537,7 +1088,7 @@ fn generate_path_method(silex: &TokenStream, route: &MacroRoute) -> Option<Token
         Vec::new()
     };
 
-    for segment in &route.segments {
+    for segment in &route.destination_segments {
         path_parts.push(quote! {
             __silex_route_path.push('/');
         });

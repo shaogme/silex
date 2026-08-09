@@ -1,0 +1,5 @@
+error: route and nested route names in one catalog must be unique
+ --> tests/ui/fail_routes_macro_duplicate_nested_name.rs:8:14
+  |
+8 |         nest users "/accounts" => move |_ctx, outlet| { outlet } {
+  |              ^^^^^
