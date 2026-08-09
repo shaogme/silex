@@ -43,8 +43,7 @@ fn persistent_field_store<'scope>(
 ) {
     let _settings: SettingsStore<'scope> =
         SettingsStore::try_from_handles(scope, theme, notifications).unwrap();
-    let _settings: SettingsStore<'scope> =
-        SettingsStore::from_handles(scope, theme, notifications);
+    let _settings: SettingsStore<'scope> = SettingsStore::from_handles(scope, theme, notifications);
 }
 
 fn typed_persistent_field_store<'scope>(
@@ -52,11 +51,8 @@ fn typed_persistent_field_store<'scope>(
     theme: Persistent<'scope, String>,
     notifications: RwSignal<'scope, bool>,
 ) {
-    let _settings: SettingsStore<
-        'scope,
-        Persistent<'scope, String>,
-        RwSignal<'scope, bool>,
-    > = SettingsStore::try_from_typed_handles(scope, theme, notifications).unwrap();
+    let _settings: SettingsStore<'scope, Persistent<'scope, String>, RwSignal<'scope, bool>> =
+        SettingsStore::try_from_typed_handles(scope, theme, notifications).unwrap();
     let _settings: SettingsStore<'scope, Persistent<'scope, String>, RwSignal<'scope, bool>> =
         SettingsStore::from_typed_handles(scope, theme, notifications);
 }
@@ -86,15 +82,21 @@ fn main() {
         let from_handles: UserStore<'_> = UserStore::try_from_handles(scope, name, age).unwrap();
         assert_eq!(from_handles.snapshot().name, "Carol");
 
-        let value = scope.rw_signal(7u32);
-        let label = "generic";
-        let generic = GenericStore::new(
+        let settings = SettingsStore::new(
             scope,
-            Generic {
-                value: 7,
-                label,
+            Settings {
+                theme: "Light".to_string(),
+                notifications: false,
             },
         );
+        let theme = rx!(scope; $(settings.theme).clone());
+        let label = rx!(scope; format!("Theme: {}", $(settings.theme)));
+        assert_eq!(theme.get(), "Light");
+        assert_eq!(label.get(), "Theme: Light");
+
+        let value = scope.rw_signal(7u32);
+        let label = "generic";
+        let generic = GenericStore::new(scope, Generic { value: 7, label });
         let _ = (value, generic.snapshot());
 
         let fixed = FixedStore::new(scope, Fixed { values: [1, 2] });

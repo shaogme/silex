@@ -525,6 +525,13 @@ pub trait RxWrite: RxBase {
         self.update(|current| *current = value);
     }
 
+    fn try_set(&self, value: Self::Value) -> ReactiveResult<()>
+    where
+        Self::Value: Sized,
+    {
+        self.try_update(|current| *current = value)
+    }
+
     fn try_update_untracked<U>(&self, f: impl FnOnce(&mut Self::Value) -> U) -> ReactiveResult<U> {
         self.rx_try_update_untracked(f)
     }
@@ -548,21 +555,21 @@ pub trait RxWrite: RxBase {
         self.try_notify().unwrap_or_else(panic_reactive);
     }
 
-    fn setter(self, value: Self::Value) -> impl Fn() + Clone
+    fn setter(self, value: Self::Value) -> impl Fn() -> SilexResult<()> + Clone
     where
         Self: Sized + Clone,
         Self::Value: Sized + Clone,
     {
-        move || self.set(value.clone())
+        move || self.try_set(value.clone()).map_err(Into::into)
     }
 
-    fn updater<F>(self, f: F) -> impl Fn() + Clone
+    fn updater<F>(self, f: F) -> impl Fn() -> SilexResult<()> + Clone
     where
         Self: Sized + Clone,
         Self::Value: Sized,
         F: Fn(&mut Self::Value) + Clone,
     {
-        move || self.update(f.clone())
+        move || self.try_update(f.clone()).map_err(Into::into)
     }
 }
 

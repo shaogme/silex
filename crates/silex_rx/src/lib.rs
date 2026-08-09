@@ -1,76 +1,159 @@
 #![allow(linker_messages)]
 
 use proc_macro::TokenStream;
-use proc_macro2::{Group, TokenStream as TokenStream2, TokenTree};
+use proc_macro2::{Delimiter, Group, Span, TokenStream as TokenStream2, TokenTree};
 use quote::{format_ident, quote};
-use std::{collections::HashMap, iter::once};
+use std::{
+    collections::{HashMap, HashSet},
+    iter::once,
+};
 use syn::{
     Block, Error, Expr, ExprBlock, Ident, Macro, Result, parse2,
     token::Move,
     visit_mut::{VisitMut, visit_expr_mut, visit_macro_mut},
 };
 
-struct SignalVisitor {
-    signal_map: HashMap<Ident, Ident>,
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum SourceKind {
+    Shorthand,
+    Explicit,
 }
 
-impl VisitMut for SignalVisitor {
+struct SourceBinding {
+    id: usize,
+    source: TokenStream2,
+    marker: Ident,
+    reference: Ident,
+    promoted: Ident,
+}
+
+#[derive(Default)]
+struct SourceRegistry {
+    bindings: Vec<SourceBinding>,
+    keys: HashMap<(SourceKind, String), usize>,
+    markers: HashMap<String, usize>,
+}
+
+impl SourceRegistry {
+    fn register_shorthand(&mut self, identifier: Ident) -> Ident {
+        let source = quote!(#identifier);
+        let key = (SourceKind::Shorthand, source.to_string());
+        if let Some(id) = self.keys.get(&key) {
+            return self.bindings[*id].marker.clone();
+        }
+
+        let marker = format_ident!("__silex_rx_sig_{}", identifier, span = identifier.span());
+        let reference = format_ident!("__ref_{}", identifier, span = identifier.span());
+        self.register(key, source, marker.clone(), reference);
+        marker
+    }
+
+    fn register_explicit(&mut self, source: TokenStream2, span: Span) -> Ident {
+        let key = (SourceKind::Explicit, source.to_string());
+        if let Some(id) = self.keys.get(&key) {
+            return self.bindings[*id].marker.clone();
+        }
+
+        let id = self.bindings.len();
+        let marker = format_ident!("__silex_rx_src_{id}", span = span);
+        let reference = format_ident!("__silex_rx_ref_{id}", span = span);
+        self.register(key, source, marker.clone(), reference);
+        marker
+    }
+
+    fn register(
+        &mut self,
+        key: (SourceKind, String),
+        source: TokenStream2,
+        marker: Ident,
+        reference: Ident,
+    ) {
+        let id = self.bindings.len();
+        self.keys.insert(key, id);
+        self.markers.insert(marker.to_string(), id);
+        self.bindings.push(SourceBinding {
+            id,
+            source,
+            marker,
+            reference,
+            promoted: format_ident!("__silex_rx_source_{id}"),
+        });
+    }
+
+    fn binding_for_marker(&self, identifier: &Ident) -> Option<&SourceBinding> {
+        self.markers
+            .get(&identifier.to_string())
+            .and_then(|id| self.bindings.get(*id))
+    }
+
+    fn active_bindings<'a>(&'a self, used: &HashSet<usize>) -> Vec<&'a SourceBinding> {
+        self.bindings
+            .iter()
+            .filter(|binding| used.contains(&binding.id))
+            .collect()
+    }
+}
+
+struct SignalVisitor<'registry> {
+    registry: &'registry SourceRegistry,
+    used: HashSet<usize>,
+}
+
+impl SignalVisitor<'_> {
+    fn rewrite_identifier(&mut self, identifier: &mut Ident) {
+        let Some(binding) = self.registry.binding_for_marker(identifier) else {
+            return;
+        };
+        self.used.insert(binding.id);
+        *identifier = binding.reference.clone();
+    }
+}
+
+impl VisitMut for SignalVisitor<'_> {
     fn visit_expr_mut(&mut self, expression: &mut Expr) {
         if let Expr::Path(path) = expression
             && let Some(segment) = path.path.segments.last_mut()
         {
-            let name = segment.ident.to_string();
-            if let Some(original) = name.strip_prefix("__silex_rx_sig_") {
-                let original = format_ident!("{}", original, span = segment.ident.span());
-                let reference = self
-                    .signal_map
-                    .entry(original.clone())
-                    .or_insert_with(|| format_ident!("__ref_{}", original));
-                segment.ident = reference.clone();
-            }
+            self.rewrite_identifier(&mut segment.ident);
         }
         visit_expr_mut(self, expression);
     }
 
     fn visit_macro_mut(&mut self, macro_call: &mut Macro) {
-        fn rewrite_tokens(
-            tokens: TokenStream2,
-            signal_map: &mut HashMap<Ident, Ident>,
-        ) -> TokenStream2 {
-            tokens
-                .into_iter()
-                .map(|token| match token {
-                    TokenTree::Ident(identifier) => {
-                        let name = identifier.to_string();
-                        if let Some(original) = name.strip_prefix("__silex_rx_sig_") {
-                            let original = format_ident!("{}", original, span = identifier.span());
-                            let reference = signal_map
-                                .entry(original.clone())
-                                .or_insert_with(|| format_ident!("__ref_{}", original));
-                            TokenTree::Ident(reference.clone())
-                        } else {
-                            TokenTree::Ident(identifier)
-                        }
-                    }
-                    TokenTree::Group(group) => {
-                        let inner = rewrite_tokens(group.stream(), signal_map);
-                        let mut rewritten = Group::new(group.delimiter(), inner);
-                        rewritten.set_span(group.span());
-                        TokenTree::Group(rewritten)
-                    }
-                    other => other,
-                })
-                .collect()
-        }
-
-        macro_call.tokens = rewrite_tokens(macro_call.tokens.clone(), &mut self.signal_map);
+        macro_call.tokens =
+            rewrite_tokens(macro_call.tokens.clone(), self.registry, &mut self.used);
         visit_macro_mut(self, macro_call);
     }
 }
 
-fn preprocess_tokens(tokens: TokenStream2) -> (TokenStream2, bool) {
+fn rewrite_tokens(
+    tokens: TokenStream2,
+    registry: &SourceRegistry,
+    used: &mut HashSet<usize>,
+) -> TokenStream2 {
+    tokens
+        .into_iter()
+        .map(|token| match token {
+            TokenTree::Ident(mut identifier) => {
+                if let Some(binding) = registry.binding_for_marker(&identifier) {
+                    used.insert(binding.id);
+                    identifier = binding.reference.clone();
+                }
+                TokenTree::Ident(identifier)
+            }
+            TokenTree::Group(group) => {
+                let inner = rewrite_tokens(group.stream(), registry, used);
+                let mut rewritten = Group::new(group.delimiter(), inner);
+                rewritten.set_span(group.span());
+                TokenTree::Group(rewritten)
+            }
+            other => other,
+        })
+        .collect()
+}
+
+fn preprocess_tokens(tokens: TokenStream2, registry: &mut SourceRegistry) -> Result<TokenStream2> {
     let mut output = TokenStream2::new();
-    let mut invalid_dollar = false;
     let mut tokens = tokens.into_iter().peekable();
 
     while let Some(token) = tokens.next() {
@@ -79,19 +162,31 @@ fn preprocess_tokens(tokens: TokenStream2) -> (TokenStream2, bool) {
                 if let Some(TokenTree::Ident(identifier)) = tokens.peek() {
                     let identifier = identifier.clone();
                     tokens.next();
-                    output.extend(once(TokenTree::Ident(format_ident!(
-                        "__silex_rx_sig_{}",
-                        identifier,
-                        span = identifier.span()
-                    ))));
+                    let marker = registry.register_shorthand(identifier);
+                    output.extend(once(TokenTree::Ident(marker)));
+                } else if let Some(TokenTree::Group(group)) = tokens.peek()
+                    && group.delimiter() == Delimiter::Parenthesis
+                {
+                    let group = group.clone();
+                    tokens.next();
+                    let source: Expr = parse2(group.stream()).map_err(|_| {
+                        Error::new(
+                            group.span(),
+                            "explicit reactive source must be a path or field access",
+                        )
+                    })?;
+                    validate_source_expression(&source)?;
+                    let marker = registry.register_explicit(group.stream(), group.span());
+                    output.extend(once(TokenTree::Ident(marker)));
                 } else {
-                    invalid_dollar = true;
-                    output.extend(once(TokenTree::Punct(punct)));
+                    return Err(Error::new(
+                        punct.span(),
+                        "invalid reactive source: use $name or $(source)",
+                    ));
                 }
             }
             TokenTree::Group(group) => {
-                let (inner, inner_invalid) = preprocess_tokens(group.stream());
-                invalid_dollar |= inner_invalid;
+                let inner = preprocess_tokens(group.stream(), registry)?;
                 let mut rewritten = Group::new(group.delimiter(), inner);
                 rewritten.set_span(group.span());
                 output.extend(once(TokenTree::Group(rewritten)));
@@ -100,7 +195,19 @@ fn preprocess_tokens(tokens: TokenStream2) -> (TokenStream2, bool) {
         }
     }
 
-    (output, invalid_dollar)
+    Ok(output)
+}
+
+fn validate_source_expression(expression: &Expr) -> Result<()> {
+    match expression {
+        Expr::Path(_) => Ok(()),
+        Expr::Field(field) => validate_source_expression(&field.base),
+        Expr::Paren(paren) => validate_source_expression(&paren.expr),
+        _ => Err(Error::new_spanned(
+            expression,
+            "explicit reactive source must be a path or field access; put method calls outside $(...)",
+        )),
+    }
 }
 
 fn split_at_semicolon(tokens: &mut impl Iterator<Item = TokenTree>) -> Option<TokenStream2> {
@@ -114,20 +221,42 @@ fn split_at_semicolon(tokens: &mut impl Iterator<Item = TokenTree>) -> Option<To
     None
 }
 
-fn nested_reads(pairs: &[(Ident, Ident)], body: &TokenStream2) -> TokenStream2 {
-    let Some((signal, reference)) = pairs.first() else {
+fn nested_reads(bindings: &[&SourceBinding], body: &TokenStream2, promoted: bool) -> TokenStream2 {
+    let Some(binding) = bindings.first() else {
         return quote! {{ #body }};
     };
-    let rest = nested_reads(&pairs[1..], body);
+    let source = if promoted {
+        let promoted = &binding.promoted;
+        quote!(#promoted)
+    } else {
+        let source = &binding.source;
+        quote!(#source)
+    };
+    let reference = &binding.reference;
+    let rest = nested_reads(&bindings[1..], body, promoted);
     quote! {
-        (#signal).with(|#reference| #rest)
+        (#source).with(|#reference| #rest)
     }
 }
 
-fn input_set(prefix: &TokenStream2, pairs: &[(Ident, Ident)]) -> TokenStream2 {
-    let sources = pairs.iter().map(|(signal, _)| {
+fn source_setup(bindings: &[&SourceBinding]) -> TokenStream2 {
+    let sources = bindings.iter().map(|binding| {
+        let promoted = &binding.promoted;
+        let source = &binding.source;
         quote! {
-            __silex_inputs.extend(&__silex_scope.promote(#signal).runtime_inputs());
+            let #promoted = __silex_scope.promote(#source);
+        }
+    });
+    quote! {
+        #(#sources)*
+    }
+}
+
+fn input_set(prefix: &TokenStream2, bindings: &[&SourceBinding]) -> TokenStream2 {
+    let sources = bindings.iter().map(|binding| {
+        let promoted = &binding.promoted;
+        quote! {
+            __silex_inputs.extend(&#promoted.runtime_inputs());
         }
     });
     quote! {
@@ -171,13 +300,8 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
         return Ok(quote! {{ let __silex_scope = #scope; __silex_scope.constant(()) }});
     }
 
-    let (processed, invalid_dollar) = preprocess_tokens(body.clone());
-    if invalid_dollar {
-        return Err(Error::new_spanned(
-            body,
-            "invalid signal identifier: '$' must be followed by an identifier",
-        ));
-    }
+    let mut registry = SourceRegistry::default();
+    let processed = preprocess_tokens(body.clone(), &mut registry)?;
 
     let mut force_derived = false;
     let mut expression_tokens = processed.clone();
@@ -202,22 +326,26 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
     };
 
     let mut visitor = SignalVisitor {
-        signal_map: HashMap::new(),
+        registry: &registry,
+        used: HashSet::new(),
     };
     visitor.visit_expr_mut(&mut expression);
-    let mut pairs: Vec<_> = visitor.signal_map.into_iter().collect();
-    pairs.sort_by_key(|(identifier, _)| identifier.to_string());
+    let bindings = registry.active_bindings(&visitor.used);
     let scope_binding = quote! { let __silex_scope = #scope; };
-    let inputs = input_set(&prefix, &pairs);
 
     if let Expr::Closure(mut closure) = expression {
         let closure_body = *closure.body;
         let closure_body = quote! { #closure_body };
-        let reads = nested_reads(&pairs, &closure_body);
+        let reads = nested_reads(&bindings, &closure_body, false);
         closure.capture = Some(Move::default());
         *closure.body = parse2(reads)?;
         let constructor = if closure.inputs.is_empty() {
-            quote! { __silex_scope.derived_from(#inputs, #closure) }
+            let setup = source_setup(&bindings);
+            let inputs = input_set(&prefix, &bindings);
+            quote! {
+                #setup
+                __silex_scope.derived_from(#inputs, #closure)
+            }
         } else {
             quote! { __silex_scope.callback(#closure) }
         };
@@ -225,10 +353,10 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
     }
 
     let expression = quote! { #expression };
-    let reads = nested_reads(&pairs, &expression);
+    let reads = nested_reads(&bindings, &expression, true);
 
     if !force_derived
-        && pairs.is_empty()
+        && bindings.is_empty()
         && matches!(
             expression_tokens.clone().into_iter().next(),
             Some(TokenTree::Literal(_))
@@ -238,7 +366,13 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
         return Ok(quote! {{ #scope_binding __silex_scope.constant(#expression) }});
     }
 
-    Ok(quote! {{ #scope_binding __silex_scope.derived_from(#inputs, move || #reads) }})
+    let setup = source_setup(&bindings);
+    let inputs = input_set(&prefix, &bindings);
+    Ok(quote! {{
+        #scope_binding
+        #setup
+        __silex_scope.derived_from(#inputs, move || #reads)
+    }})
 }
 
 /// `rx!` process macro. The first section is a dependency prefix, the second
@@ -258,9 +392,69 @@ mod tests {
 
     #[test]
     fn preprocesses_dollar_identifiers() {
-        let (tokens, invalid) = preprocess_tokens(quote! { $count + $user.name });
-        assert!(!invalid);
+        let body: TokenStream2 = "$count + $user.name".parse().unwrap();
+        let mut registry = SourceRegistry::default();
+        let tokens = preprocess_tokens(body, &mut registry).unwrap();
         assert!(tokens.to_string().contains("__silex_rx_sig_count"));
+    }
+
+    #[test]
+    fn preprocesses_parenthesized_source_expression() {
+        let body: TokenStream2 = "$(settings.theme)".parse().unwrap();
+        let mut registry = SourceRegistry::default();
+        let tokens = preprocess_tokens(body, &mut registry).unwrap();
+
+        assert!(tokens.to_string().contains("__silex_rx_src_0"));
+        assert_eq!(registry.bindings.len(), 1);
+        assert_eq!(registry.bindings[0].source.to_string(), "settings . theme");
+    }
+
+    #[test]
+    fn rejects_non_source_parenthesized_expression() {
+        let input: TokenStream2 = "::silex_core; scope; $(settings.theme.clone())"
+            .parse()
+            .unwrap();
+        let error = expand(input).unwrap_err();
+
+        assert!(error.to_string().contains("path or field access"));
+    }
+
+    #[test]
+    fn rewrites_explicit_source_inside_nested_macro() {
+        let input: TokenStream2 = "::silex_core; scope; format!(\"Theme: {}\", $(settings.theme))"
+            .parse()
+            .unwrap();
+        let output = expand(input).unwrap().to_string();
+
+        assert!(output.contains("settings . theme"));
+        assert!(output.contains("__silex_rx_ref_0"));
+        assert_eq!(output.matches("promote").count(), 1);
+    }
+
+    #[test]
+    fn keeps_legacy_field_access_on_the_root_source() {
+        let output = expand(quote! {
+            ::silex_core;
+            scope;
+            $state.name.clone()
+        })
+        .unwrap()
+        .to_string();
+
+        assert!(output.contains("promote"));
+        assert!(output.contains("state"));
+        assert!(output.contains("__ref_state"));
+        assert!(output.contains("name"));
+    }
+
+    #[test]
+    fn deduplicates_repeated_explicit_sources() {
+        let input: TokenStream2 = "::silex_core; scope; $(settings.theme) == $(settings.theme)"
+            .parse()
+            .unwrap();
+        let output = expand(input).unwrap().to_string();
+
+        assert_eq!(output.matches("promote").count(), 1);
     }
 
     #[test]
