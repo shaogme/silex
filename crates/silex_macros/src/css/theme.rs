@@ -329,6 +329,7 @@ pub fn bridge_theme_impl(input: TokenStream) -> Result<TokenStream> {
     let mut patch_fields = Vec::new();
     let mut patch_entries = Vec::new();
     let mut patch_setters = Vec::new();
+    let mut patch_to_css_items = Vec::new();
 
     // 用补全后的 `fields`，不是 `def.fields`：配置驱动的主题
     // （`theme!{ struct T {} }` + `silex.toml` 配色）在 `def.fields` 里是空的，
@@ -342,6 +343,11 @@ pub fn bridge_theme_impl(input: TokenStream) -> Result<TokenStream> {
         patch_fields.push(quote! { pub #f_name: Option<#f_ty> });
         patch_entries.push(quote! {
             (#css_var_name, self.#f_name.as_ref().map(|v| v.to_string()))
+        });
+        patch_to_css_items.push(quote! {
+            if let Some(value) = &self.#f_name {
+                ::std::write!(f, "{}: {};", #css_var_name, value)?;
+            }
         });
         patch_setters.push(quote! {
             pub fn #f_name(mut self, val: impl Into<#f_ty>) -> Self {
@@ -421,6 +427,13 @@ pub fn bridge_theme_impl(input: TokenStream) -> Result<TokenStream> {
         impl #__silex::css::theme::ThemePatchToCss for #patch_name {
             fn get_patch_entries(&self) -> Vec<(&'static str, Option<String>)> {
                 vec![ #(#patch_entries),* ]
+            }
+        }
+
+        impl ::std::fmt::Display for #patch_name {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                #( #patch_to_css_items )*
+                ::std::result::Result::Ok(())
             }
         }
 
