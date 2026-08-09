@@ -12,7 +12,7 @@ silex_core.workspace = true
 silex_css = { workspace = true, features = ["tw"] }
 silex_dom.workspace = true
 silex_html.workspace = true
-silex_macros = { workspace = true, default-features = false, features = ["component", "css", "tw"] }
+silex_macros = { workspace = true, default-features = false, features = ["component", "css", "tw", "store"] }
 web-sys.workspace = true
 
 [dev-dependencies]

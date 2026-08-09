@@ -1,77 +1,42 @@
-/// 状态管理 Trait
+use crate::{
+    reactivity::{ReactiveSource, RwSignal},
+    traits::{RxRead, RxWrite},
+};
+
+/// A writable reactive handle that can be used as a Store field.
 ///
-/// 为全局状态提供统一的 Thread Local 注入和获取接口。
-/// 配合 `#[derive(Store)]` 宏使用可获得最佳体验。
-pub trait Store: Sized + Clone + 'static {
-    /// 从 Thread Local 中获取 Store 实例
-    ///
-    /// # Panics
-    ///
-    /// 如果未找到该 Store，将会 panic。
-    /// 使用 `try_get` 以避免 panic。
-    fn get() -> Self {
-        Self::try_get().expect("Store not found in thread-local storage")
-    }
-
-    /// 尝试从 Thread Local 中获取 Store 实例
-    fn try_get() -> Option<Self>;
-
-    /// 将当前 Store 实例提供给 Thread Local
-    ///
-    /// # Returns
-    ///
-    /// 返回自身，方便链式调用。
-    fn provide(self) -> Self;
+/// Store fields are owned by the same scope as the generated Store handle.
+/// The bound also keeps enough runtime provenance available for validating a
+/// Store assembled from existing handles.
+pub trait StoreField<'scope, T>:
+    ReactiveSource<'scope, Value = T> + RxRead<Value = T> + RxWrite<Value = T> + Copy + 'scope
+where
+    T: 'scope,
+{
 }
+
+impl<'scope, T> StoreField<'scope, T> for RwSignal<'scope, T> where T: 'scope {}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::cell::RefCell;
+    use crate::Runtime;
 
-    #[derive(Clone, PartialEq, Debug)]
-    struct MyCoreStore {
-        value: i32,
-    }
-
-    thread_local! {
-        static MY_CORE_STORE: RefCell<Option<MyCoreStore>> = const { RefCell::new(None) };
-    }
-
-    impl Store for MyCoreStore {
-        fn try_get() -> Option<Self> {
-            MY_CORE_STORE.with(|cell| cell.borrow().clone())
-        }
-
-        fn provide(self) -> Self {
-            MY_CORE_STORE.with(|cell| {
-                *cell.borrow_mut() = Some(self.clone());
-            });
-            self
-        }
+    fn assert_store_field<'scope, T, F>(_: F)
+    where
+        T: 'scope,
+        F: StoreField<'scope, T>,
+    {
     }
 
     #[test]
-    fn test_store_try_get_none() {
-        let result = MyCoreStore::try_get();
-        assert_eq!(result, None);
-    }
+    fn rw_signal_is_a_store_field() {
+        let mut runtime = Runtime::new();
 
-    #[test]
-    fn test_store_provide_and_try_get() {
-        let store = MyCoreStore { value: 42 };
-        store.clone().provide();
-
-        let result = MyCoreStore::try_get();
-        assert_eq!(result, Some(store));
-    }
-
-    #[test]
-    fn test_store_get() {
-        let store = MyCoreStore { value: 42 };
-        store.clone().provide();
-
-        let result = MyCoreStore::get();
-        assert_eq!(result, store);
+        runtime.child(|scope| {
+            let field = scope.rw_signal(42);
+            assert_store_field(field);
+            assert_eq!(field.get(), 42);
+        });
     }
 }

@@ -3,7 +3,7 @@ use crate::builder::PersistentBuilder;
 use crate::{DecodePolicy, NoBackend, NoCodec, PersistenceError, RemovePolicy};
 use ref_str::LocalStaticRefStr;
 use silex_core::{
-    ErrorReporter, ReactiveError, ReactiveResult, Rx, RxGet, Scope,
+    ErrorReporter, ReactiveError, ReactiveResult, Rx, RxGet, Scope, StoreField,
     reactivity::{PromotionPlan, ReactiveSource, ReadSignal, RwSignal, StoredValue},
     traits::{RxBase, RxCloneData, RxData, RxRead, RxValue, RxWrite},
 };
@@ -112,6 +112,8 @@ pub struct Persistent<'scope, T> {
     pub(crate) state: RwSignal<'scope, PersistenceState>,
     pub(crate) controller: StoredValue<'scope, PersistenceController<'scope, T>>,
 }
+
+impl<'scope, T: 'scope> StoreField<'scope, T> for Persistent<'scope, T> {}
 
 impl<'scope> Persistent<'scope, ()> {
     /// Starts a new persistent binding builder for the given backend key.

@@ -28,7 +28,7 @@ pub use silex_reactivity::RuntimeInputs;
 #[cfg(feature = "test-support")]
 pub use silex_reactivity::RuntimeSnapshot;
 pub use silex_reactivity::{CompletionOnce, CompletionSender, unwind_safe};
-pub use store::Store;
+pub use store::StoreField;
 pub use task::TaskHandle;
 pub use traits::{RxBase, RxData, RxDefault, RxFrom, RxGet, RxRead, RxValue, RxWrite};
 
@@ -254,7 +254,7 @@ macro_rules! batch_read_untracked_recurse {
 pub mod prelude {
     pub use crate::{
         Callback, CompletionOnce, CompletionSender, ErrorHandler, ErrorReporter, NodeRef,
-        ReactiveError, ReactiveResult, Runtime, Rx, Scope, SilexError, SilexResult, Store,
+        ReactiveError, ReactiveResult, Runtime, Rx, Scope, SilexError, SilexResult, StoreField,
         batch_read, batch_read_untracked, logic::*, reactivity::*, rx, traits::*, unwind_safe,
     };
 }

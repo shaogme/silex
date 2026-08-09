@@ -8,6 +8,28 @@
 
 <body>
     <div id="app"></div>
+
+    <script type="module">
+        let storeHost = null;
+
+        window.addEventListener("TrunkApplicationStarted", () => {
+            if (storeHost !== null) return;
+            try {
+                storeHost = window.wasmBindings.mountStore();
+            } catch (error) {
+                console.error("Store demo mount failed", error);
+            }
+        });
+
+        window.addEventListener("store-unmount", () => {
+            if (storeHost === null) return;
+            try {
+                storeHost.unmount();
+            } catch (error) {
+                console.error("Store demo unmount failed", error);
+            }
+        });
+    </script>
 </body>
 
 </html>

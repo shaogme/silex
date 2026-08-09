@@ -2,7 +2,12 @@
 
 use proc_macro::TokenStream;
 #[cfg(any(feature = "component", feature = "store"))]
-use syn::{DeriveInput, parse_macro_input};
+use syn::parse_macro_input;
+
+#[cfg(feature = "component")]
+use syn::DeriveInput;
+#[cfg(feature = "store")]
+use syn::ItemStruct;
 
 #[cfg(feature = "component")]
 mod component;
@@ -147,12 +152,21 @@ pub fn component(attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 #[cfg(feature = "store")]
-#[proc_macro_derive(Store, attributes(store, persist))]
-pub fn derive_store(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as DeriveInput);
-    match store::derive_store_impl(input) {
+#[proc_macro_attribute]
+pub fn store(attr: TokenStream, item: TokenStream) -> TokenStream {
+    if !attr.is_empty() {
+        return syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "#[store] does not accept arguments; configure fields with explicit handles",
+        )
+        .to_compile_error()
+        .into();
+    }
+
+    let input = parse_macro_input!(item as ItemStruct);
+    match store::store_impl(input) {
         Ok(tokens) => tokens.into(),
-        Err(e) => e.to_compile_error().into(),
+        Err(error) => error.to_compile_error().into(),
     }
 }
 

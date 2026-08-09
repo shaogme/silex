@@ -1,306 +1,393 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use syn::{Data, DeriveInput, Field, Fields, Meta, Result, Type};
+use syn::{
+    Field, Fields, GenericParam, Generics, Ident, ItemStruct, Result, Type, Visibility, parse_quote,
+};
 
-#[derive(Clone)]
-struct PersistFieldConfig {
-    backend: syn::Ident,
-    codec: syn::LitStr,
-    key: Option<String>,
+struct StoreFieldInfo {
+    ident: Ident,
+    ty: Type,
+    visibility: Visibility,
+    handle_ident: Ident,
 }
 
-pub fn derive_store_impl(input: DeriveInput) -> Result<TokenStream> {
-    let __silex = crate::crate_path::silex();
-    let __silex_core = crate::crate_path::silex_core();
-    let name = &input.ident;
-    let store_name = format_ident!("{}Store", name);
-    let vis = &input.vis;
+pub fn store_impl(mut model: ItemStruct) -> Result<TokenStream> {
+    let core = crate::crate_path::silex_core();
+    let model_name = model.ident.clone();
+    let model_visibility = model.vis.clone();
+    let model_generics = model.generics.clone();
 
-    let mut hook_name: Option<syn::Ident> = None;
-    let mut err_msg: Option<String> = None;
-    let mut persist_prefix: Option<String> = None;
+    reject_reserved_lifetime(&model_generics)?;
 
-    for attr in &input.attrs {
-        if attr.path().is_ident("store") {
-            let nested = attr.parse_args_with(
-                syn::punctuated::Punctuated::<Meta, syn::Token![,]>::parse_terminated,
-            )?;
-            for meta in nested {
-                if let Meta::NameValue(nv) = meta {
-                    if nv.path.is_ident("name")
-                        && let syn::Expr::Lit(syn::ExprLit {
-                            lit: syn::Lit::Str(lit_str),
-                            ..
-                        }) = nv.value
-                    {
-                        hook_name = Some(syn::Ident::new(&lit_str.value(), lit_str.span()));
-                    } else if nv.path.is_ident("err_msg")
-                        && let syn::Expr::Lit(syn::ExprLit {
-                            lit: syn::Lit::Str(lit_str),
-                            ..
-                        }) = nv.value
-                    {
-                        err_msg = Some(lit_str.value());
-                    }
-                }
-            }
-        } else if attr.path().is_ident("persist")
-            && let Meta::List(list) = &attr.meta
-        {
-            let nested = list.parse_args_with(
-                syn::punctuated::Punctuated::<Meta, syn::Token![,]>::parse_terminated,
-            )?;
-            for meta in nested {
-                if let Meta::NameValue(nv) = meta
-                    && nv.path.is_ident("prefix")
-                    && let syn::Expr::Lit(syn::ExprLit {
-                        lit: syn::Lit::Str(lit_str),
-                        ..
-                    }) = nv.value
-                {
-                    persist_prefix = Some(lit_str.value());
-                }
-            }
-        }
-    }
-
-    let hook_fn_name = hook_name.unwrap_or_else(|| {
-        let snake_name = to_snake_case(&name.to_string());
-        format_ident!("use_{}", snake_name)
-    });
-
-    let fields = match input.data {
-        Data::Struct(ref data) => match data.fields {
-            Fields::Named(ref fields) => &fields.named,
-            _ => {
-                return Err(syn::Error::new_spanned(
-                    &input.ident,
-                    "Store derive only supports structs with named fields",
-                ));
-            }
-        },
+    let fields = match &model.fields {
+        Fields::Named(fields) => fields.named.iter().collect::<Vec<_>>(),
         _ => {
             return Err(syn::Error::new_spanned(
-                &input.ident,
-                "Store derive only supports structs",
+                &model,
+                "#[store] only supports structs with named fields",
             ));
         }
     };
 
-    let struct_fields = fields
+    reject_persistence_attributes(&model, &fields)?;
+    model
+        .attrs
+        .retain(|attribute| !attribute.path().is_ident("store"));
+
+    let field_infos = fields
         .iter()
-        .map(|field| {
-            let name = &field.ident;
-            let ty = &field.ty;
-            match parse_field_persist(field)? {
-                Some(_) => Ok(quote! { pub #name: #__silex::prelude::Persistent<#ty> }),
-                None => Ok(quote! { pub #name: #__silex::prelude::RwSignal<#ty> }),
-            }
+        .enumerate()
+        .map(|(index, field)| StoreFieldInfo {
+            ident: field.ident.clone().expect("named Store field"),
+            ty: field.ty.clone(),
+            visibility: field.vis.clone(),
+            handle_ident: format_ident!("__SilexStoreField{index}"),
         })
-        .collect::<Result<Vec<_>>>()?;
+        .collect::<Vec<_>>();
 
-    let new_fields = fields
-        .iter()
-        .map(|field| build_field_initializer(field, persist_prefix.as_deref()))
-        .collect::<Result<Vec<_>>>()?;
+    let store_name = format_ident!("{model_name}Store");
+    let fields_name = format_ident!("{model_name}StoreFields");
+    let model_type = model_type(&model_name, &model_generics);
 
-    let get_fields = fields.iter().map(|f| {
-        let name = &f.ident;
-        quote! { #name: self.#name.get() }
+    let mut alias_generics = alias_generics(&model_generics);
+    add_scope_bounds_to_parameters(&mut alias_generics);
+    let impl_generics = impl_generics(&model_generics);
+    let mut fields_generics = fields_generics(&model_generics, &field_infos);
+    add_scope_bounds_to_where(&mut fields_generics, &model_generics);
+    add_store_field_bounds(&mut fields_generics, &field_infos, &core);
+
+    let (fields_impl_generics, fields_ty_generics, fields_where) = fields_generics.split_for_impl();
+
+    let default_fields_args = type_arguments(&model_generics, &field_infos, |field| {
+        let ty = &field.ty;
+        quote!(#core::RwSignal<'scope, #ty>)
+    });
+    let model_fields = field_infos.iter().map(|field| {
+        let ident = &field.ident;
+        let handle = &field.handle_ident;
+        let visibility = &field.visibility;
+        quote!(#visibility #ident: #handle)
     });
 
-    let panic_msg = err_msg
-        .unwrap_or_else(|| format!("Store for {} not found in thread-local storage", store_name));
+    let new_fields = field_infos.iter().map(|field| {
+        let ident = &field.ident;
+        quote!(#ident: scope.rw_signal(source.#ident))
+    });
+
+    let handle_arguments = field_infos
+        .iter()
+        .map(|field| {
+            let ident = &field.ident;
+            let handle = &field.handle_ident;
+            quote!(#ident: #handle)
+        })
+        .collect::<Vec<_>>();
+    let handle_arguments_for_from = handle_arguments.clone();
+
+    let handle_names = field_infos
+        .iter()
+        .map(|field| {
+            let ident = &field.ident;
+            quote!(#ident)
+        })
+        .collect::<Vec<_>>();
+    let handle_names_for_from = handle_names.clone();
+    let input_collection = field_infos.iter().map(|field| {
+        let ident = &field.ident;
+        quote!(inputs.extend(&#core::runtime_inputs_of(#ident));)
+    });
+    let snapshot_fields = field_infos.iter().map(|field| {
+        let ident = &field.ident;
+        quote!(#ident: #core::RxGet::get(&self.#ident))
+    });
+    let snapshot_untracked_fields = field_infos.iter().map(|field| {
+        let ident = &field.ident;
+        quote!(#ident: #core::RxGet::get_untracked(&self.#ident))
+    });
+    let model_expression = model_expression(&model_name, &model_generics);
+
+    let mut default_impl_generics = impl_generics.clone();
+    add_scope_bounds_to_where(&mut default_impl_generics, &model_generics);
+    let (default_impl_generics_tokens, _, default_impl_where) =
+        default_impl_generics.split_for_impl();
 
     Ok(quote! {
-        /// Generated Store struct wrapping fields in reactive handles
+        #model
+
+        #[doc(hidden)]
         #[derive(Clone, Copy)]
-        #vis struct #store_name {
-            #(#struct_fields),*
+        #model_visibility struct #fields_name #fields_generics #fields_where {
+            scope: #core::Scope<'scope>,
+            _marker: ::std::marker::PhantomData<fn() -> #model_type>,
+            #(#model_fields),*
         }
 
-        ::std::thread_local! {
-            static __SILEX_STORE_INSTANCE: ::std::cell::RefCell<::std::option::Option<#store_name>> = const { ::std::cell::RefCell::new(::std::option::Option::None) };
-        }
+        #model_visibility type #store_name #alias_generics = #fields_name #default_fields_args;
 
-        impl #store_name {
-            pub fn new(source: #name) -> Self {
+        impl #default_impl_generics_tokens #fields_name #default_fields_args #default_impl_where
+        {
+            pub fn new(scope: #core::Scope<'scope>, source: #model_type) -> Self {
                 Self {
+                    scope,
+                    _marker: ::std::marker::PhantomData,
                     #(#new_fields),*
                 }
             }
+        }
 
-            pub fn get(&self) -> #name {
-                #name {
-                    #(#get_fields),*
+        impl #fields_impl_generics #fields_name #fields_ty_generics #fields_where {
+            pub fn scope(&self) -> #core::Scope<'scope> {
+                self.scope
+            }
+
+            pub fn try_from_handles(
+                scope: #core::Scope<'scope>,
+                #(#handle_arguments),*
+            ) -> #core::SilexResult<Self> {
+                let mut inputs = #core::RuntimeInputs::new();
+                #(#input_collection)*
+                scope.try_validate_inputs(&inputs)?;
+
+                Ok(Self {
+                    scope,
+                    _marker: ::std::marker::PhantomData,
+                    #(#handle_names),*
+                })
+            }
+
+            pub fn from_handles(
+                scope: #core::Scope<'scope>,
+                #(#handle_arguments_for_from),*
+            ) -> Self {
+                Self::try_from_handles(scope, #(#handle_names_for_from),*)
+                    .unwrap_or_else(|error| panic!("创建 scoped Store 失败: {error}"))
+            }
+
+            pub fn snapshot(&self) -> #model_type {
+                #model_expression {
+                    #(#snapshot_fields),*
                 }
             }
-        }
 
-        impl #__silex_core::store::Store for #store_name {
-            fn get() -> Self {
-                Self::try_get().expect(#panic_msg)
+            pub fn snapshot_untracked(&self) -> #model_type {
+                #model_expression {
+                    #(#snapshot_untracked_fields),*
+                }
             }
-
-            fn try_get() -> ::std::option::Option<Self> {
-                __SILEX_STORE_INSTANCE.with(|cell| cell.borrow().clone())
-            }
-
-            fn provide(self) -> Self {
-                __SILEX_STORE_INSTANCE.with(|cell| {
-                    *cell.borrow_mut() = ::std::option::Option::Some(self);
-                });
-                self
-            }
-        }
-
-        #vis fn #hook_fn_name() -> #store_name {
-            <#store_name as #__silex_core::store::Store>::get()
         }
     })
 }
 
-fn build_field_initializer(field: &Field, persist_prefix: Option<&str>) -> Result<TokenStream> {
-    let __silex = crate::crate_path::silex();
-    let name = field.ident.as_ref().expect("named field");
-    let ty = &field.ty;
+fn reject_persistence_attributes(model: &ItemStruct, fields: &[&Field]) -> Result<()> {
+    for attribute in &model.attrs {
+        if attribute.path().is_ident("persist") {
+            return Err(syn::Error::new_spanned(
+                attribute,
+                "#[persist(...)] is not supported by #[store]; build Persistent explicitly and use from_handles",
+            ));
+        }
+    }
 
-    if let Some(config) = parse_field_persist(field)? {
-        let key = config.key.unwrap_or_else(|| name.to_string());
-        let full_key = if let Some(prefix) = persist_prefix {
-            format!("{}{}", prefix, key)
-        } else {
-            key
-        };
-        let backend_method = config.backend;
-        let codec_tokens = codec_builder_tokens(ty, &config.codec)?;
-        Ok(quote! {
-            #name: #__silex::prelude::Persistent::builder(#full_key)
-                .#backend_method()
-                #codec_tokens
-                .default(source.#name)
-                .build()
-        })
+    for field in fields {
+        for attribute in &field.attrs {
+            if attribute.path().is_ident("persist") {
+                return Err(syn::Error::new_spanned(
+                    attribute,
+                    "#[persist(...)] is not supported by #[store]; build Persistent explicitly and use from_handles",
+                ));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn reject_reserved_lifetime(generics: &Generics) -> Result<()> {
+    for parameter in &generics.params {
+        if let GenericParam::Lifetime(parameter) = parameter
+            && parameter.lifetime.ident == "scope"
+        {
+            return Err(syn::Error::new_spanned(
+                parameter,
+                "the model lifetime 'scope is reserved by #[store]",
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn model_type(model_name: &Ident, generics: &Generics) -> TokenStream {
+    let (_, ty_generics, _) = generics.split_for_impl();
+    quote!(#model_name #ty_generics)
+}
+
+fn model_expression(model_name: &Ident, generics: &Generics) -> TokenStream {
+    let (_, ty_generics, _) = generics.split_for_impl();
+
+    if generics.params.is_empty() {
+        quote!(#model_name)
     } else {
-        Ok(quote! {
-            #name: #__silex::prelude::RwSignal::new(source.#name)
-        })
+        quote!(#model_name :: #ty_generics)
     }
 }
 
-fn parse_field_persist(field: &Field) -> Result<Option<PersistFieldConfig>> {
-    let mut config = None;
+fn alias_generics(model_generics: &Generics) -> Generics {
+    let mut generics = model_generics.clone();
+    generics.params.insert(0, parse_quote!('scope));
+    generics.where_clause = None;
+    generics
+}
 
-    for attr in &field.attrs {
-        if !attr.path().is_ident("persist") {
-            continue;
-        }
+fn impl_generics(model_generics: &Generics) -> Generics {
+    let mut generics = model_generics.clone();
+    generics.params.insert(0, parse_quote!('scope));
+    clear_generic_defaults(&mut generics);
+    generics
+}
 
-        let nested = attr.parse_args_with(
-            syn::punctuated::Punctuated::<Meta, syn::Token![,]>::parse_terminated,
-        )?;
+fn fields_generics(model_generics: &Generics, fields: &[StoreFieldInfo]) -> Generics {
+    let mut params = syn::punctuated::Punctuated::new();
+    params.push(parse_quote!('scope));
 
-        let mut backend: Option<syn::Ident> = None;
-        let mut codec: Option<syn::LitStr> = None;
-        let mut key: Option<String> = None;
-
-        for meta in nested {
-            match meta {
-                Meta::Path(path) if path.is_ident("local") => {
-                    backend = Some(format_ident!("local"))
-                }
-                Meta::Path(path) if path.is_ident("session") => {
-                    backend = Some(format_ident!("session"))
-                }
-                Meta::Path(path) if path.is_ident("query") => {
-                    backend = Some(format_ident!("query"))
-                }
-                Meta::NameValue(nv) if nv.path.is_ident("key") => {
-                    if let syn::Expr::Lit(syn::ExprLit {
-                        lit: syn::Lit::Str(lit_str),
-                        ..
-                    }) = nv.value
-                    {
-                        key = Some(lit_str.value());
-                    } else {
-                        return Err(syn::Error::new_spanned(
-                            nv,
-                            "persist key must be a string literal",
-                        ));
-                    }
-                }
-                Meta::NameValue(nv) if nv.path.is_ident("codec") => {
-                    if let syn::Expr::Lit(syn::ExprLit {
-                        lit: syn::Lit::Str(lit_str),
-                        ..
-                    }) = nv.value
-                    {
-                        codec = Some(lit_str);
-                    } else {
-                        return Err(syn::Error::new_spanned(
-                            nv,
-                            "persist codec must be a string literal",
-                        ));
-                    }
-                }
-                other => {
-                    return Err(syn::Error::new_spanned(
-                        other,
-                        "unsupported #[persist(...)] option",
-                    ));
-                }
+    let mut const_params = Vec::new();
+    for parameter in &model_generics.params {
+        match parameter {
+            GenericParam::Lifetime(parameter) => {
+                params.push(GenericParam::Lifetime(parameter.clone()));
+            }
+            GenericParam::Type(parameter) => {
+                let mut parameter = parameter.clone();
+                parameter.eq_token = None;
+                parameter.default = None;
+                params.push(GenericParam::Type(parameter));
+            }
+            GenericParam::Const(parameter) => {
+                let mut parameter = parameter.clone();
+                parameter.eq_token = None;
+                parameter.default = None;
+                const_params.push(GenericParam::Const(parameter));
             }
         }
-
-        let backend = backend.ok_or_else(|| {
-            syn::Error::new_spanned(
-                attr,
-                "#[persist(...)] requires one backend: local, session, or query",
-            )
-        })?;
-        let codec = codec.ok_or_else(|| {
-            syn::Error::new_spanned(
-                attr,
-                "#[persist(...)] requires codec = \"string\" | \"cow\" | \"parse\" | \"json\"",
-            )
-        })?;
-
-        config = Some(PersistFieldConfig {
-            backend,
-            codec,
-            key,
-        });
     }
 
-    Ok(config)
-}
+    for field in fields {
+        params.push(GenericParam::Type(syn::TypeParam {
+            attrs: Vec::new(),
+            ident: field.handle_ident.clone(),
+            colon_token: None,
+            bounds: syn::punctuated::Punctuated::new(),
+            eq_token: None,
+            default: None,
+        }));
+    }
 
-fn codec_builder_tokens(ty: &Type, codec: &syn::LitStr) -> Result<TokenStream> {
-    match codec.value().as_str() {
-        "string" => Ok(quote!(.string())),
-        "cow" => Ok(quote!(.cow())),
-        "parse" => Ok(quote!(.parse::<#ty>())),
-        "json" => Ok(quote!(.json::<#ty>())),
-        _ => Err(syn::Error::new_spanned(
-            codec,
-            "unsupported codec, expected string|cow|parse|json",
-        )),
+    params.extend(const_params);
+
+    Generics {
+        lt_token: Some(Default::default()),
+        params,
+        gt_token: Some(Default::default()),
+        where_clause: model_generics.where_clause.clone(),
     }
 }
 
-fn to_snake_case(s: &str) -> String {
-    let mut result = String::new();
-    for (i, c) in s.char_indices() {
-        if c.is_uppercase() {
-            if i != 0 {
-                result.push('_');
+fn clear_generic_defaults(generics: &mut Generics) {
+    for parameter in &mut generics.params {
+        match parameter {
+            GenericParam::Type(parameter) => {
+                parameter.eq_token = None;
+                parameter.default = None;
             }
-            result.push(c.to_ascii_lowercase());
-        } else {
-            result.push(c);
+            GenericParam::Const(parameter) => {
+                parameter.eq_token = None;
+                parameter.default = None;
+            }
+            GenericParam::Lifetime(_) => {}
         }
     }
-    result
+}
+
+fn add_scope_bounds_to_parameters(generics: &mut Generics) {
+    for parameter in &mut generics.params {
+        match parameter {
+            GenericParam::Lifetime(parameter) => {
+                if parameter.lifetime.ident != "scope" {
+                    parameter.bounds.push(parse_quote!('scope));
+                }
+            }
+            GenericParam::Type(parameter) => {
+                parameter.bounds.push(parse_quote!('scope));
+            }
+            GenericParam::Const(_) => {}
+        }
+    }
+}
+
+fn add_scope_bounds_to_where(generics: &mut Generics, model_generics: &Generics) {
+    let where_clause = generics.make_where_clause();
+
+    for parameter in &model_generics.params {
+        match parameter {
+            GenericParam::Lifetime(parameter) => {
+                let lifetime = &parameter.lifetime;
+                where_clause
+                    .predicates
+                    .push(parse_quote!(#lifetime: 'scope));
+            }
+            GenericParam::Type(parameter) => {
+                let ident = &parameter.ident;
+                where_clause.predicates.push(parse_quote!(#ident: 'scope));
+            }
+            GenericParam::Const(_) => {}
+        }
+    }
+}
+
+fn add_store_field_bounds(generics: &mut Generics, fields: &[StoreFieldInfo], core: &TokenStream) {
+    let where_clause = generics.make_where_clause();
+
+    for field in fields {
+        let ty = &field.ty;
+        let handle = &field.handle_ident;
+        where_clause.predicates.push(parse_quote!(
+            #handle: #core::StoreField<'scope, #ty>
+        ));
+    }
+}
+
+fn type_arguments<F>(
+    model_generics: &Generics,
+    fields: &[StoreFieldInfo],
+    field_argument: F,
+) -> TokenStream
+where
+    F: Fn(&StoreFieldInfo) -> TokenStream,
+{
+    let mut arguments = vec![quote!('scope)];
+    let mut const_arguments = Vec::new();
+
+    for parameter in &model_generics.params {
+        match parameter {
+            GenericParam::Lifetime(parameter) => {
+                let lifetime = &parameter.lifetime;
+                arguments.push(quote!(#lifetime));
+            }
+            GenericParam::Type(parameter) => {
+                let ident = &parameter.ident;
+                arguments.push(quote!(#ident));
+            }
+            GenericParam::Const(parameter) => {
+                let ident = &parameter.ident;
+                const_arguments.push(quote!(#ident));
+            }
+        }
+    }
+
+    arguments.extend(fields.iter().map(field_argument));
+    arguments.extend(const_arguments);
+
+    quote!(<#(#arguments),*>)
 }
 
 #[cfg(test)]
@@ -309,29 +396,32 @@ mod tests {
     use syn::parse_quote;
 
     #[test]
-    fn store_macro_emits_persistent_fields_for_persist_attributes() {
-        let input: DeriveInput = parse_quote! {
-            #[store(name = "use_settings")]
-            #[persist(prefix = "settings-")]
-            pub struct Settings {
-                #[persist(local, codec = "string")]
-                pub theme: String,
-                #[persist(query, key = "page", codec = "parse")]
-                pub page: u32,
-                pub username: String,
+    fn generated_store_expansion_is_parseable() {
+        let input: ItemStruct = parse_quote! {
+            #[derive(Clone)]
+            struct Generic<'model, T>
+            where
+                T: Clone,
+            {
+                value: T,
+                label: &'model str,
             }
         };
 
-        let expanded = derive_store_impl(input).unwrap().to_string();
+        let tokens = store_impl(input).unwrap();
+        syn::parse2::<syn::File>(tokens).unwrap();
+    }
 
-        assert!(expanded.contains("pub theme : :: silex :: prelude :: Persistent < String >"));
-        assert!(expanded.contains("pub page : :: silex :: prelude :: Persistent < u32 >"));
-        assert!(expanded.contains("pub username : :: silex :: prelude :: RwSignal < String >"));
-        assert!(expanded.contains(
-            ":: silex :: prelude :: Persistent :: builder (\"settings-theme\") . local () . string () . default (source . theme) . build ()"
-        ));
-        assert!(expanded.contains(
-            ":: silex :: prelude :: Persistent :: builder (\"settings-page\") . query () . parse :: < u32 > () . default (source . page) . build ()"
-        ));
+    #[test]
+    fn persistence_attributes_are_rejected() {
+        let input: ItemStruct = parse_quote! {
+            struct Settings {
+                #[persist(local, codec = "string")]
+                theme: String,
+            }
+        };
+
+        let error = store_impl(input).unwrap_err();
+        assert!(error.to_string().contains("not supported by #[store]"));
     }
 }
