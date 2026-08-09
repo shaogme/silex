@@ -108,26 +108,6 @@ pub(crate) struct RowRenderArgs<'scope, T> {
     pub(crate) updater: RowUpdater<'scope, T>,
 }
 
-impl<'scope, T> RowRenderArgs<'scope, T> {
-    pub(crate) fn new(
-        item: T,
-        index: usize,
-        parent: Node,
-        attrs: Vec<PendingAttribute<'scope>>,
-        owner: ViewOwnerToken<'scope>,
-        updater: RowUpdater<'scope, T>,
-    ) -> Self {
-        Self {
-            item,
-            index,
-            parent,
-            attrs,
-            owner,
-            updater,
-        }
-    }
-}
-
 pub(crate) struct RowRender<'scope, T> {
     inner: Rc<dyn Fn(RowRenderArgs<'scope, T>) -> SilexResult<()> + 'scope>,
 }
@@ -291,18 +271,30 @@ pub(crate) struct RowController<'scope, T> {
     marker: PhantomData<fn(T)>,
 }
 
+pub(crate) struct RowControllerConfig<'scope, T> {
+    pub(crate) range: DomRange,
+    pub(crate) render: RowRender<'scope, T>,
+    pub(crate) render_inputs: RuntimeInputs,
+    pub(crate) attrs: Vec<PendingAttribute<'scope>>,
+    pub(crate) item: T,
+    pub(crate) index: usize,
+    pub(crate) stateful: bool,
+}
+
 impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn try_new(
         owner: &dyn ViewOwner<'scope>,
-        range: DomRange,
-        render: RowRender<'scope, T>,
-        render_inputs: RuntimeInputs,
-        attrs: Vec<PendingAttribute<'scope>>,
-        item: T,
-        index: usize,
-        stateful: bool,
+        config: RowControllerConfig<'scope, T>,
     ) -> SilexResult<Self> {
+        let RowControllerConfig {
+            range,
+            render,
+            render_inputs,
+            attrs,
+            item,
+            index,
+            stateful,
+        } = config;
         let mut range_guard = RangeGuard::new(range.clone());
         let updater = RowUpdater::new();
         let error_handler = owner.token().error_handler();
@@ -407,14 +399,14 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
                     let result = catch_unwind(AssertUnwindSafe(|| -> SilexResult<()> {
                         let fragment = document.create_document_fragment();
                         let fragment_node: Node = fragment.into();
-                        render.call(RowRenderArgs::new(
-                            item.clone(),
+                        render.call(RowRenderArgs {
+                            item: item.clone(),
                             index,
-                            fragment_node.clone(),
-                            attrs.clone(),
-                            candidate_token,
-                            updater.clone(),
-                        ))?;
+                            parent: fragment_node.clone(),
+                            attrs: attrs.clone(),
+                            owner: candidate_token,
+                            updater: updater.clone(),
+                        })?;
                         let new_nodes = child_nodes(&fragment_node);
                         let Some(parent) = range.end.parent_node() else {
                             return Err(SilexError::Dom(

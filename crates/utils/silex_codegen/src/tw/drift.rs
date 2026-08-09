@@ -120,20 +120,31 @@ pub fn check_drift(
     }
 }
 
+pub struct TailwindDatasetInputs<'a> {
+    pub classes: &'a [String],
+    pub dynamic_prefixes: &'a BTreeMap<String, Vec<String>>,
+    pub prefix_metadata: &'a BTreeMap<String, super::PrefixMetaJson>,
+    pub test_cases: &'a [String],
+    pub palette: &'a BTreeMap<String, Vec<super::ColorShadeInfo>>,
+    pub modifiers: &'a [super::ModifierMetaJson],
+    pub keyframes: &'a [super::KeyframeMetaJson],
+    pub reference_css: &'a super::ReferenceCssJson,
+}
+
 /// 为全部 Tailwind 输入数据集算指纹。
 ///
 /// 值都压成一行紧凑文本——重点是"内容变没变"，不是可读性。
-#[allow(clippy::too_many_arguments)]
-pub fn fingerprint_tw_datasets(
-    classes: &[String],
-    dynamic_prefixes: &BTreeMap<String, Vec<String>>,
-    prefix_metadata: &BTreeMap<String, super::PrefixMetaJson>,
-    test_cases: &[String],
-    palette: &BTreeMap<String, Vec<super::ColorShadeInfo>>,
-    modifiers: &[super::ModifierMetaJson],
-    keyframes: &[super::KeyframeMetaJson],
-    reference_css: &super::ReferenceCssJson,
-) -> CodegenBaseline {
+pub fn fingerprint_tw_datasets(inputs: TailwindDatasetInputs<'_>) -> CodegenBaseline {
+    let TailwindDatasetInputs {
+        classes,
+        dynamic_prefixes,
+        prefix_metadata,
+        test_cases,
+        palette,
+        modifiers,
+        keyframes,
+        reference_css,
+    } = inputs;
     let mut out = CodegenBaseline::new();
 
     out.insert(

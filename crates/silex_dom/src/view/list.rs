@@ -1,4 +1,6 @@
-use super::owner::{DomRange, RowController, RowRender, RowRenderArgs, RowUpdater};
+use super::owner::{
+    DomRange, RowController, RowControllerConfig, RowRender, RowRenderArgs, RowUpdater,
+};
 use crate::attribute::PendingAttribute;
 use crate::view::{AnyView, ApplyAttributes, OwnedViewOwner, View, ViewOwner};
 use silex_core::reactivity::{ReactiveSource, runtime_inputs_of};
@@ -226,13 +228,15 @@ where
                     let row_range = DomRange::before(&end, "for-row")?;
                     let row = RowController::try_new(
                         &token,
-                        row_range,
-                        render.clone(),
-                        RuntimeInputs::new(),
-                        attrs.clone(),
-                        item,
-                        index,
-                        stateful,
+                        RowControllerConfig {
+                            range: row_range,
+                            render: render.clone(),
+                            render_inputs: RuntimeInputs::new(),
+                            attrs: attrs.clone(),
+                            item,
+                            index,
+                            stateful,
+                        },
                     )?;
                     pending.push(row);
                 }
@@ -428,13 +432,15 @@ where
                     let row_range = DomRange::before(&end, "for-row")?;
                     let row = RowController::try_new(
                         &token,
-                        row_range,
-                        render.clone(),
-                        RuntimeInputs::new(),
-                        attrs.clone(),
-                        item,
-                        index,
-                        stateful,
+                        RowControllerConfig {
+                            range: row_range,
+                            render: render.clone(),
+                            render_inputs: RuntimeInputs::new(),
+                            attrs: attrs.clone(),
+                            item,
+                            index,
+                            stateful,
+                        },
                     )?;
                     seen.insert(key.clone());
                     next_order.push(key.clone());

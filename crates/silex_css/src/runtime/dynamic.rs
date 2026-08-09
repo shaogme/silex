@@ -908,6 +908,18 @@ pub struct GlobalStyleBinding<'scope> {
     pub static_replacements: Vec<(String, String)>,
 }
 
+/// 绑定 owner 的动态样式注入参数。
+#[doc(hidden)]
+pub struct ManagedDynamicStyle<'scope> {
+    pub style_id: String,
+    pub layer: Option<&'static str>,
+    pub parts: &'static [CssPart],
+    pub positional: Vec<CssVariableGetter<'scope>>,
+    pub replacements: Vec<(String, CssVariableGetter<'scope>)>,
+    pub static_values: Vec<String>,
+    pub static_replacements: Vec<(String, String)>,
+}
+
 impl<'scope> GlobalStyleBinding<'scope> {
     pub fn new(
         style_id: &'static str,
@@ -994,13 +1006,15 @@ impl<'scope> GlobalStyleView<'scope> {
             let style_id = unique_dynamic_style_id(binding.style_id);
             inject_managed_dynamic_style(
                 owner,
-                style_id,
-                binding.layer,
-                binding.parts,
-                binding.positional.clone(),
-                binding.replacements.clone(),
-                binding.static_values.clone(),
-                binding.static_replacements.clone(),
+                ManagedDynamicStyle {
+                    style_id,
+                    layer: binding.layer,
+                    parts: binding.parts,
+                    positional: binding.positional.clone(),
+                    replacements: binding.replacements.clone(),
+                    static_values: binding.static_values.clone(),
+                    static_replacements: binding.static_replacements.clone(),
+                },
             )?;
         }
         Ok(())
@@ -1093,17 +1107,19 @@ fn render_layered_selector(
 /// - `replacements`：具名的 `var(--slx-dyn-N)`，用于**声明值**里的片段。这段
 ///   模板要先过一遍 lightningcss，位置信息在那之后不复存在，只能按文本找；但
 ///   替换是一遍扫描完成的，写进去的值不会再被当成占位符。
-#[allow(clippy::too_many_arguments)]
 pub fn inject_managed_dynamic_style<'scope>(
     owner: &dyn ViewOwner<'scope>,
-    style_id: impl Into<String>,
-    layer: Option<&'static str>,
-    parts: &'static [CssPart],
-    positional: Vec<CssVariableGetter<'scope>>,
-    replacements: Vec<(String, CssVariableGetter<'scope>)>,
-    static_values: Vec<String>,
-    static_replacements: Vec<(String, String)>,
+    style: ManagedDynamicStyle<'scope>,
 ) -> SilexResult<()> {
+    let ManagedDynamicStyle {
+        style_id,
+        layer,
+        parts,
+        positional,
+        replacements,
+        static_values,
+        static_replacements,
+    } = style;
     let mut inputs = RuntimeInputs::new();
     for getter in &positional {
         inputs.extend(&getter.runtime_inputs());
@@ -1114,7 +1130,7 @@ pub fn inject_managed_dynamic_style<'scope>(
     owner.validate_inputs(&inputs)?;
 
     let manager = Rc::new(DynamicStyleManager::new());
-    let style_id_str = style_id.into();
+    let style_id_str = style_id;
     let manager_for_cleanup = manager.clone();
     let error_handler = owner.token().error_handler();
     owner.on_cleanup(

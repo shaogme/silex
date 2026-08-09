@@ -4,7 +4,9 @@ use syn::Result;
 
 use super::tokens::*;
 use super::types::*;
-use crate::css::ast::{CssBlock, CssDeclaration, CssInterpolation, CssRule, parse_interpolation};
+use crate::css::ast::{
+    CssBlock, CssDeclaration, CssInterpolation, CssNested, CssRule, parse_interpolation,
+};
 
 fn validate_declaration_property(
     decl: &CssDeclaration,
@@ -18,21 +20,41 @@ fn validate_declaration_property(
     Ok(validate)
 }
 
-#[allow(clippy::too_many_arguments)]
-fn validate_static_declaration_value(
-    decl: &CssDeclaration,
-    val: &str,
-    expr_count_before: usize,
-    expr_count_after: usize,
-    static_expr_count_before: usize,
-    static_expr_count_after: usize,
+#[derive(Clone, Copy)]
+struct ExpressionCounts {
+    before: usize,
+    after: usize,
+}
+
+impl ExpressionCounts {
+    fn new(before: usize, after: usize) -> Self {
+        Self { before, after }
+    }
+}
+
+struct StaticDeclarationValidation<'a> {
+    decl: &'a CssDeclaration,
+    value: &'a str,
+    expressions: ExpressionCounts,
+    static_expressions: ExpressionCounts,
     validate: bool,
-    warnings: &mut Vec<CssWarning>,
-    assertions: &mut Vec<StaticAssertion>,
-) -> Result<()> {
+    warnings: &'a mut Vec<CssWarning>,
+    assertions: &'a mut Vec<StaticAssertion>,
+}
+
+fn validate_static_declaration_value(input: StaticDeclarationValidation<'_>) -> Result<()> {
+    let StaticDeclarationValidation {
+        decl,
+        value,
+        expressions,
+        static_expressions,
+        validate,
+        warnings,
+        assertions,
+    } = input;
     if !validate
-        || expr_count_after != expr_count_before
-        || static_expr_count_after != static_expr_count_before
+        || expressions.after != expressions.before
+        || static_expressions.after != static_expressions.before
     {
         return Ok(());
     }
@@ -42,14 +64,14 @@ fn validate_static_declaration_value(
     // 认成一个合法的 `10px`。
     crate::css::value_check::check_static_value(
         &decl.property,
-        val,
+        value,
         value_span(&decl.values).unwrap_or(decl.span),
         warnings,
     )?;
 
     // 整条取值就是一个能定型的字面量时，生成一条编译期断言，交给
     // `ValidFor` 回答「这个值类型对这个属性合法吗」。
-    if let Some(value_type) = classify_static_value(val) {
+    if let Some(value_type) = classify_static_value(value) {
         assertions.push(StaticAssertion {
             property: decl.property.clone(),
             value_type,
@@ -95,17 +117,18 @@ pub(crate) fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Re
                     false,
                 )?;
 
-                validate_static_declaration_value(
+                validate_static_declaration_value(StaticDeclarationValidation {
                     decl,
-                    &val,
-                    expr_count_before,
-                    state.expressions.len(),
-                    static_expr_count_before,
-                    state.static_expressions.len(),
+                    value: &val,
+                    expressions: ExpressionCounts::new(expr_count_before, state.expressions.len()),
+                    static_expressions: ExpressionCounts::new(
+                        static_expr_count_before,
+                        state.static_expressions.len(),
+                    ),
                     validate,
-                    &mut state.warnings,
-                    &mut state.assertions,
-                )?;
+                    warnings: &mut state.warnings,
+                    assertions: &mut state.assertions,
+                })?;
 
                 state.static_css.push_str(&val);
                 // 分号无条件补上，不看源码里写没写。块内最后一条声明的分号
@@ -146,15 +169,14 @@ pub(crate) fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Re
             CssRule::Nested(nested) => {
                 if contains_dynamic_selector(&nested.selectors) {
                     let mut selector_exprs = Vec::new();
-                    let template = build_dynamic_template(
-                        nested,
-                        &mut selector_exprs,
-                        &mut state.expressions,
-                        &mut state.static_expressions,
-                        &mut state.warnings,
-                        &ctx,
-                        &mut state.assertions,
-                    )?;
+                    let mut builder = DynamicBlockBuilder {
+                        selector_exprs: &mut selector_exprs,
+                        global_expressions: &mut state.expressions,
+                        static_expressions: &mut state.static_expressions,
+                        warnings: &mut state.warnings,
+                        assertions: &mut state.assertions,
+                    };
+                    let template = build_dynamic_template(nested, &mut builder, &ctx)?;
                     state.dynamic_rules.push(DynamicRule {
                         template,
                         expressions: selector_exprs,
@@ -253,179 +275,163 @@ pub(crate) fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Re
     Ok(())
 }
 
-pub(crate) fn build_dynamic_template(
-    nested: &crate::css::ast::CssNested,
-    selector_exprs: &mut Vec<(String, TokenStream)>,
-    global_expressions: &mut Vec<(String, TokenStream)>,
-    static_expressions: &mut Vec<(String, TokenStream)>,
-    warnings: &mut Vec<CssWarning>,
-    ctx: &DynamicContext,
-    assertions: &mut Vec<StaticAssertion>,
+struct DynamicBlockBuilder<'a> {
+    selector_exprs: &'a mut Vec<(String, TokenStream)>,
+    global_expressions: &'a mut Vec<(String, TokenStream)>,
+    static_expressions: &'a mut Vec<(String, TokenStream)>,
+    warnings: &'a mut Vec<CssWarning>,
+    assertions: &'a mut Vec<StaticAssertion>,
+}
+
+fn build_dynamic_template(
+    nested: &CssNested,
+    builder: &mut DynamicBlockBuilder<'_>,
+    ctx: &DynamicContext<'_>,
 ) -> Result<String> {
-    let mut template = extract_dynamic_selector(&nested.selectors, selector_exprs, warnings, ctx)?;
-    template.push_str(" { ");
-    build_dynamic_block_recursive(
-        &nested.block,
-        &mut template,
-        selector_exprs,
-        global_expressions,
-        static_expressions,
-        warnings,
+    let mut template = extract_dynamic_selector(
+        &nested.selectors,
+        builder.selector_exprs,
+        builder.warnings,
         ctx,
-        assertions,
     )?;
+    template.push_str(" { ");
+    builder.build(&nested.block, &mut template, ctx)?;
     template.push_str(" }");
     Ok(template)
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn build_dynamic_block_recursive(
-    block: &CssBlock,
-    template: &mut String,
-    selector_exprs: &mut Vec<(String, TokenStream)>,
-    global_expressions: &mut Vec<(String, TokenStream)>,
-    static_expressions: &mut Vec<(String, TokenStream)>,
-    warnings: &mut Vec<CssWarning>,
-    ctx: &DynamicContext,
-    assertions: &mut Vec<StaticAssertion>,
-) -> Result<()> {
-    for rule in &block.rules {
-        match rule {
-            CssRule::Declaration(decl) => {
-                let validate = validate_declaration_property(decl, ctx.validate, ctx.is_unsafe)?;
-                template.push_str(&decl.property);
-                template.push_str(": ");
-                let prop_for_expr = if ctx.is_unsafe { "any" } else { &decl.property };
-                let expr_count_before = global_expressions.len();
-                let static_expr_count_before = static_expressions.len();
-                let val = extract_dynamic_value(
-                    &decl.values,
-                    global_expressions,
-                    static_expressions,
-                    warnings,
-                    prop_for_expr,
-                    ctx,
-                    true,
-                )?;
-                validate_static_declaration_value(
-                    decl,
-                    &val,
-                    expr_count_before,
-                    global_expressions.len(),
-                    static_expr_count_before,
-                    static_expressions.len(),
-                    validate,
-                    warnings,
-                    assertions,
-                )?;
-                template.push_str(&val);
-                // 与静态那一侧同理，见 `process_css_block`
-                template.push_str("; ");
-            }
-            CssRule::Nested(nested) => {
-                let sel = extract_dynamic_selector(
-                    &nested.selectors,
-                    selector_exprs,
-                    warnings,
-                    &DynamicContext {
-                        class_name: "",
-                        ..ctx.clone()
-                    },
-                )?;
-                template.push_str(&sel);
-                template.push_str(" { ");
-                build_dynamic_block_recursive(
-                    &nested.block,
-                    template,
-                    selector_exprs,
-                    global_expressions,
-                    static_expressions,
-                    warnings,
-                    ctx,
-                    assertions,
-                )?;
-                template.push_str(" } ");
-            }
-            CssRule::AtRule(at) => {
-                let params =
-                    extract_at_rule_params(&at.params, ctx.region.clone(), warnings, &at.name)?;
-                let Some(at_block) = &at.block else {
-                    // 语句式 at-rule 不能出现在动态规则内部（它是全局声明）
-                    return Err(syn::Error::new(
-                        at.span,
-                        format!(
-                            "`@{}` is a statement-level at-rule and cannot appear inside a rule with a dynamic selector.",
-                            at.name
+impl DynamicBlockBuilder<'_> {
+    fn build(
+        &mut self,
+        block: &CssBlock,
+        template: &mut String,
+        ctx: &DynamicContext<'_>,
+    ) -> Result<()> {
+        for rule in &block.rules {
+            match rule {
+                CssRule::Declaration(decl) => {
+                    let validate =
+                        validate_declaration_property(decl, ctx.validate, ctx.is_unsafe)?;
+                    template.push_str(&decl.property);
+                    template.push_str(": ");
+                    let prop_for_expr = if ctx.is_unsafe { "any" } else { &decl.property };
+                    let expr_count_before = self.global_expressions.len();
+                    let static_expr_count_before = self.static_expressions.len();
+                    let val = extract_dynamic_value(
+                        &decl.values,
+                        self.global_expressions,
+                        self.static_expressions,
+                        self.warnings,
+                        prop_for_expr,
+                        ctx,
+                        true,
+                    )?;
+                    validate_static_declaration_value(StaticDeclarationValidation {
+                        decl,
+                        value: &val,
+                        expressions: ExpressionCounts::new(
+                            expr_count_before,
+                            self.global_expressions.len(),
                         ),
-                    ));
-                };
-                template.push('@');
-                template.push_str(&at.name);
-                template.push(' ');
-                template.push_str(&params);
-                template.push_str(" { ");
-                build_dynamic_block_recursive(
-                    at_block,
-                    template,
-                    selector_exprs,
-                    global_expressions,
-                    static_expressions,
-                    warnings,
-                    &DynamicContext {
-                        validate: ctx.validate && !is_descriptor_at_rule(&at.name),
-                        ..ctx.clone()
-                    },
-                    assertions,
-                )?;
-                template.push_str(" } ");
-            }
-            CssRule::Apply(ap) => {
-                #[cfg(feature = "tw")]
-                {
-                    let raw_str = ap.classes.trim().trim_matches('"');
-                    let anchor = crate::css::tw::parser::TokenAnchor::whole(raw_str, ap.span);
-                    let rules = crate::css::tw::parser::parse_class_list(&anchor, &mut Vec::new())?;
-                    let apply_block = crate::css::tw::codegen::build_css_block_from_rules(rules)?;
-                    build_dynamic_block_recursive(
-                        &apply_block,
-                        template,
-                        selector_exprs,
-                        global_expressions,
-                        static_expressions,
-                        warnings,
+                        static_expressions: ExpressionCounts::new(
+                            static_expr_count_before,
+                            self.static_expressions.len(),
+                        ),
+                        validate,
+                        warnings: self.warnings,
+                        assertions: self.assertions,
+                    })?;
+                    template.push_str(&val);
+                    // 与静态那一侧同理，见 `process_css_block`
+                    template.push_str("; ");
+                }
+                CssRule::Nested(nested) => {
+                    let sel = extract_dynamic_selector(
+                        &nested.selectors,
+                        self.selector_exprs,
+                        self.warnings,
                         &DynamicContext {
-                            validate: false,
+                            class_name: "",
                             ..ctx.clone()
                         },
-                        assertions,
+                    )?;
+                    template.push_str(&sel);
+                    template.push_str(" { ");
+                    self.build(&nested.block, template, ctx)?;
+                    template.push_str(" } ");
+                }
+                CssRule::AtRule(at) => {
+                    let params = extract_at_rule_params(
+                        &at.params,
+                        ctx.region.clone(),
+                        self.warnings,
+                        &at.name,
+                    )?;
+                    let Some(at_block) = &at.block else {
+                        // 语句式 at-rule 不能出现在动态规则内部（它是全局声明）
+                        return Err(syn::Error::new(
+                            at.span,
+                            format!(
+                                "`@{}` is a statement-level at-rule and cannot appear inside a rule with a dynamic selector.",
+                                at.name
+                            ),
+                        ));
+                    };
+                    template.push('@');
+                    template.push_str(&at.name);
+                    template.push(' ');
+                    template.push_str(&params);
+                    template.push_str(" { ");
+                    self.build(
+                        at_block,
+                        template,
+                        &DynamicContext {
+                            validate: ctx.validate && !is_descriptor_at_rule(&at.name),
+                            ..ctx.clone()
+                        },
+                    )?;
+                    template.push_str(" } ");
+                }
+                CssRule::Apply(ap) => {
+                    #[cfg(feature = "tw")]
+                    {
+                        let raw_str = ap.classes.trim().trim_matches('"');
+                        let anchor = crate::css::tw::parser::TokenAnchor::whole(raw_str, ap.span);
+                        let rules =
+                            crate::css::tw::parser::parse_class_list(&anchor, &mut Vec::new())?;
+                        let apply_block =
+                            crate::css::tw::codegen::build_css_block_from_rules(rules)?;
+                        self.build(
+                            &apply_block,
+                            template,
+                            &DynamicContext {
+                                validate: false,
+                                ..ctx.clone()
+                            },
+                        )?;
+                    }
+                    #[cfg(not(feature = "tw"))]
+                    {
+                        return Err(syn::Error::new(
+                            ap.span,
+                            "The `@apply` directive requires the `tw` feature flag to be enabled in `silex_macros`.",
+                        ));
+                    }
+                }
+                CssRule::Unsafe(u) => {
+                    self.build(
+                        &u.block,
+                        template,
+                        &DynamicContext {
+                            is_unsafe: true,
+                            ..ctx.clone()
+                        },
                     )?;
                 }
-                #[cfg(not(feature = "tw"))]
-                {
-                    return Err(syn::Error::new(
-                        ap.span,
-                        "The `@apply` directive requires the `tw` feature flag to be enabled in `silex_macros`.",
-                    ));
-                }
-            }
-            CssRule::Unsafe(u) => {
-                build_dynamic_block_recursive(
-                    &u.block,
-                    template,
-                    selector_exprs,
-                    global_expressions,
-                    static_expressions,
-                    warnings,
-                    &DynamicContext {
-                        is_unsafe: true,
-                        ..ctx.clone()
-                    },
-                    assertions,
-                )?;
             }
         }
+        Ok(())
     }
-    Ok(())
 }
 
 /// 选择器里是否含运行时片段。

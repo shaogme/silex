@@ -30,7 +30,7 @@ use wasm_bindgen::JsValue;
 use web_sys::Node;
 
 pub use owner::RowUpdater;
-use owner::{DomRange, RowController, RowRender, RowRenderArgs};
+use owner::{DomRange, RowController, RowControllerConfig, RowRender, RowRenderArgs};
 
 /// Owner capabilities captured by a mounted view or attribute operation.
 ///
@@ -1216,7 +1216,18 @@ pub(crate) fn mount_dynamic_view_universal_from<'scope>(
         renderer.call(RenderArgs::new(parent, attrs, token))
     });
     let token = owner.token();
-    let row = RowController::try_new(&token, range, render, inputs, attrs, (), 0, false)?;
+    let row = RowController::try_new(
+        &token,
+        RowControllerConfig {
+            range,
+            render,
+            render_inputs: inputs,
+            attrs,
+            item: (),
+            index: 0,
+            stateful: false,
+        },
+    )?;
     let row_state = Rc::new(RefCell::new(Some(row)));
     let cleanup_state = row_state.clone();
     if let Err(error) = owner.on_cleanup(
@@ -1426,13 +1437,15 @@ where
                 };
                 let row = match RowController::try_new(
                     &token,
-                    row_range,
-                    render,
-                    RuntimeInputs::new(),
-                    attrs,
-                    key.clone(),
-                    0,
-                    false,
+                    RowControllerConfig {
+                        range: row_range,
+                        render,
+                        render_inputs: RuntimeInputs::new(),
+                        attrs,
+                        item: key.clone(),
+                        index: 0,
+                        stateful: false,
+                    },
                 ) {
                     Ok(row) => row,
                     Err(error) => {

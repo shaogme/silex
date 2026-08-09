@@ -9,11 +9,11 @@ use crate::{
     },
     tags::{apply_memory_only_patches, codegen::generate_module_content, parse_tags},
     tw::{
-        CodegenBaseline, ReferenceCssJson, check_drift, fingerprint_tw_datasets,
-        generate_keyframes_code, generate_macro_tables, generate_modifiers_code,
-        generate_palette_code, generate_prefix_metadata_code, generate_property_id_code,
-        generate_reference_css_code, generate_table_examples, validate_prefix_metadata,
-        validate_resolver_properties, validate_resolver_values,
+        CodegenBaseline, ReferenceCssJson, TailwindDatasetInputs, check_drift,
+        fingerprint_tw_datasets, generate_keyframes_code, generate_macro_tables,
+        generate_modifiers_code, generate_palette_code, generate_prefix_metadata_code,
+        generate_property_id_code, generate_reference_css_code, generate_table_examples,
+        validate_prefix_metadata, validate_resolver_properties, validate_resolver_values,
     },
 };
 use heck::AsSnakeCase;
@@ -224,16 +224,16 @@ fn main() -> Result<(), Box<dyn Error>> {
         } else {
             CodegenBaseline::new()
         };
-        let current = fingerprint_tw_datasets(
-            &classes,
-            &dynamic_prefixes,
-            &prefix_metadata,
-            &test_cases,
-            &palette_data,
-            &modifiers_data,
-            &keyframes_data,
-            &reference_css,
-        );
+        let current = fingerprint_tw_datasets(TailwindDatasetInputs {
+            classes: &classes,
+            dynamic_prefixes: &dynamic_prefixes,
+            prefix_metadata: &prefix_metadata,
+            test_cases: &test_cases,
+            palette: &palette_data,
+            modifiers: &modifiers_data,
+            keyframes: &keyframes_data,
+            reference_css: &reference_css,
+        });
         for notice in check_drift(&baseline, &current, accept_drift)? {
             println!("{notice}");
         }

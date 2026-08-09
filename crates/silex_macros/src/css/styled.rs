@@ -1,4 +1,4 @@
-use crate::css::compiler::{CssCompiler, DynamicRule};
+use crate::css::compiler::{CssCompileResult, CssCompiler, DynamicRule};
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::parse::{Parse, ParseStream};
@@ -247,16 +247,16 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
 
     // 2. Process base dynamic rules
     for (idx, rule) in compile_result.dynamic_rules.into_iter().enumerate() {
-        expand_dynamic_rule(
+        expand_dynamic_rule(DynamicRuleExpansion {
             idx,
             rule,
-            &compile_result.class_name,
-            tag.span(),
-            &mut dynamic_rule_descriptors,
-            &mut var_decls,
-            None,
-            base_static_values_ident.as_ref(),
-        )?;
+            class_name: &compile_result.class_name,
+            span: tag.span(),
+            descriptors: &mut dynamic_rule_descriptors,
+            var_decls: &mut var_decls,
+            variant_info: None,
+            static_values: base_static_values_ident.as_ref(),
+        })?;
     }
 
     // 3. Process Variants
@@ -330,16 +330,20 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
             )?;
 
             for (idx, rule) in res.dynamic_rules.into_iter().enumerate() {
-                expand_dynamic_rule(
+                expand_dynamic_rule(DynamicRuleExpansion {
                     idx,
                     rule,
-                    &v_class,
-                    v_name.span(),
-                    &mut dynamic_rule_descriptors,
-                    &mut var_decls,
-                    Some((group_index, &sig_ident, &v_name.to_string().to_lowercase())),
-                    variant_static_values_ident.as_ref(),
-                )?;
+                    class_name: &v_class,
+                    span: v_name.span(),
+                    descriptors: &mut dynamic_rule_descriptors,
+                    var_decls: &mut var_decls,
+                    variant_info: Some(DynamicVariantInfo {
+                        group_index,
+                        signature: &sig_ident,
+                        name_lower: v_name.to_string().to_lowercase(),
+                    }),
+                    static_values: variant_static_values_ident.as_ref(),
+                })?;
             }
 
             let v_name_lower = v_name.to_string().to_lowercase();
@@ -563,23 +567,40 @@ fn append_style_descriptors(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn expand_dynamic_rule(
+struct DynamicVariantInfo<'a> {
+    group_index: usize,
+    signature: &'a Ident,
+    name_lower: String,
+}
+
+struct DynamicRuleExpansion<'a> {
     idx: usize,
     rule: DynamicRule,
-    class_name: &str,
+    class_name: &'a str,
     span: Span,
-    descriptors: &mut Vec<TokenStream>,
-    var_decls: &mut Vec<TokenStream>,
-    variant_info: Option<(usize, &Ident, &str)>, // (group_index, sig_ident, name_lower)
-    static_values: Option<&Ident>,
-) -> Result<()> {
+    descriptors: &'a mut Vec<TokenStream>,
+    var_decls: &'a mut Vec<TokenStream>,
+    variant_info: Option<DynamicVariantInfo<'a>>,
+    static_values: Option<&'a Ident>,
+}
+
+fn expand_dynamic_rule(input: DynamicRuleExpansion<'_>) -> Result<()> {
+    let DynamicRuleExpansion {
+        idx,
+        rule,
+        class_name,
+        span,
+        descriptors,
+        var_decls,
+        variant_info,
+        static_values,
+    } = input;
     let __silex = crate::crate_path::silex();
     let parts = crate::css::compiler::template_parts_tokens(&rule.template);
     let mut getters = Vec::new();
 
-    let suffix = if let Some((_, sig, name)) = variant_info {
-        format!("_{}_{}", sig, name)
+    let suffix = if let Some(info) = variant_info.as_ref() {
+        format!("_{}_{}", info.signature, info.name_lower)
     } else {
         String::new()
     };
@@ -594,7 +615,11 @@ fn expand_dynamic_rule(
     }
 
     let (variant_group, variant_key) = match variant_info {
-        Some((group_index, _, value)) => (quote! { Some(#group_index) }, quote! { Some(#value) }),
+        Some(info) => {
+            let group_index = info.group_index;
+            let name_lower = info.name_lower;
+            (quote! { Some(#group_index) }, quote! { Some(#name_lower) })
+        }
         None => (quote! { None }, quote! { None }),
     };
     let static_value_call = match static_values {
@@ -807,9 +832,15 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
     }
 
     if !has_dynamic {
-        return generate_static_global(
-            &__silex, attrs, vis, c_name, generics, params, is_unsafe, &res,
-        );
+        return generate_static_global(StaticGlobalExpansion {
+            silex: &__silex,
+            attrs,
+            vis,
+            name: c_name,
+            generics,
+            params,
+            result: &res,
+        });
     }
 
     let scope = generics
@@ -952,17 +983,26 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
     })
 }
 
-#[allow(clippy::too_many_arguments)]
-fn generate_static_global(
-    __silex: &TokenStream,
+struct StaticGlobalExpansion<'a> {
+    silex: &'a TokenStream,
     attrs: Vec<Attribute>,
     vis: Visibility,
     name: Ident,
     generics: Generics,
     params: Punctuated<FnArg, Token![,]>,
-    is_unsafe: bool,
-    res: &crate::css::compiler::CssCompileResult,
-) -> Result<TokenStream> {
+    result: &'a CssCompileResult,
+}
+
+fn generate_static_global(input: StaticGlobalExpansion<'_>) -> Result<TokenStream> {
+    let StaticGlobalExpansion {
+        silex: __silex,
+        attrs,
+        vis,
+        name,
+        generics,
+        params,
+        result: res,
+    } = input;
     let assertions = crate::css::generate_static_assertions(&res.assertions)?;
     let static_values_ident = quote::format_ident!("__slx_global_static_values");
     let (static_value_decls, static_value_ids) = crate::css::generate_static_value_bindings(
@@ -976,7 +1016,6 @@ fn generate_static_global(
     } else {
         crate::css::generate_static_style_inits(res, Some(&static_values_ident))
     };
-    let _ = is_unsafe;
     let mut fn_generics = generics;
     let where_clause = fn_generics.where_clause.take();
 
