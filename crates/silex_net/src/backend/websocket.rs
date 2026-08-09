@@ -1,4 +1,9 @@
-use std::{cell::Cell, rc::Rc, time::Duration};
+use std::{
+    cell::Cell,
+    panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
+    rc::Rc,
+    time::Duration,
+};
 
 use gloo_timers::future::sleep;
 use js_sys::Function;
@@ -6,8 +11,9 @@ use wasm_bindgen::{JsCast, closure::Closure};
 use web_sys::{Event, MessageEvent, WebSocket as JsWebSocket};
 
 use silex_core::{
-    CompletionSender, ErrorReporter, Memo, ReactiveError, ReadSignal, RuntimeInputs, Scope,
-    SilexResult, StoredValue, TaskHandle, WriteSignal, unwind_safe,
+    CallbackInvokeError, CompletionSender, ErrorReporter, Memo, ReactiveError, ReadSignal,
+    RuntimeInputs, Scope, SilexError, SilexResult, StoredValue, TaskHandle, WriteSignal,
+    unwind_safe,
 };
 
 use crate::{
@@ -97,15 +103,55 @@ fn create_socket(url: &str, protocols: &[String]) -> Result<JsWebSocket, NetErro
     }
 }
 
+fn submit_completion<T: 'static>(
+    token: &CompletionSender<T>,
+    value: T,
+    error_handler: ErrorReporter<'static>,
+    gate: Option<&Cell<bool>>,
+) {
+    let result = token.submit(value);
+    let Err(error) = result else {
+        return;
+    };
+    let error = match error {
+        CallbackInvokeError::Runtime(error) => SilexError::Reactivity(error),
+        CallbackInvokeError::User(error) => error,
+    };
+    let handler_result = catch_unwind(AssertUnwindSafe(|| error_handler.handle(error)));
+    if let Err(handler_panic) = handler_result {
+        if let Some(gate) = gate {
+            gate.set(false);
+        }
+        let _ = catch_unwind(AssertUnwindSafe(|| token.cancel()));
+        resume_unwind(handler_panic);
+    }
+}
+
+fn erase_error_handler<'scope>(handler: ErrorReporter<'scope>) -> ErrorReporter<'static> {
+    // SAFETY: the CompletionSender rejects stale submissions before this
+    // owner-bound handler is accessed after scope disposal.
+    unsafe { std::mem::transmute(handler) }
+}
+
 impl HostRegistration {
-    fn new(socket: JsWebSocket, generation: u64, token: &CompletionSender<WebSocketEvent>) -> Self {
+    fn new(
+        socket: JsWebSocket,
+        generation: u64,
+        token: &CompletionSender<WebSocketEvent>,
+        error_handler: ErrorReporter<'static>,
+    ) -> Self {
         let gate = Rc::new(Cell::new(true));
 
         let open_gate = gate.clone();
         let open_token = token.clone();
         let on_open = Closure::wrap(Box::new(move |_event: Event| {
             if open_gate.get() {
-                let _ = open_token.submit(WebSocketEvent::Open { generation });
+                submit_completion(
+                    &open_token,
+                    WebSocketEvent::Open { generation },
+                    error_handler,
+                    Some(&open_gate),
+                );
             }
         }) as Box<dyn FnMut(Event)>);
 
@@ -114,7 +160,12 @@ impl HostRegistration {
         let on_message = Closure::wrap(Box::new(move |event: MessageEvent| {
             if message_gate.get() {
                 let data = event.data().as_string().unwrap_or_default();
-                let _ = message_token.submit(WebSocketEvent::Message { generation, data });
+                submit_completion(
+                    &message_token,
+                    WebSocketEvent::Message { generation, data },
+                    error_handler,
+                    Some(&message_gate),
+                );
             }
         }) as Box<dyn FnMut(MessageEvent)>);
 
@@ -122,10 +173,15 @@ impl HostRegistration {
         let error_token = token.clone();
         let on_error = Closure::wrap(Box::new(move |event: web_sys::ErrorEvent| {
             if error_gate.get() {
-                let _ = error_token.submit(WebSocketEvent::Error {
-                    generation,
-                    error: NetError::JsError(event.message()),
-                });
+                submit_completion(
+                    &error_token,
+                    WebSocketEvent::Error {
+                        generation,
+                        error: NetError::JsError(event.message()),
+                    },
+                    error_handler,
+                    Some(&error_gate),
+                );
             }
         }) as Box<dyn FnMut(web_sys::ErrorEvent)>);
 
@@ -133,11 +189,16 @@ impl HostRegistration {
         let close_token = token.clone();
         let on_close = Closure::wrap(Box::new(move |event: web_sys::CloseEvent| {
             if close_gate.get() {
-                let _ = close_token.submit(WebSocketEvent::Close {
-                    generation,
-                    code: event.code(),
-                    reason: event.reason(),
-                });
+                submit_completion(
+                    &close_token,
+                    WebSocketEvent::Close {
+                        generation,
+                        code: event.code(),
+                        reason: event.reason(),
+                    },
+                    error_handler,
+                    Some(&close_gate),
+                );
             }
         }) as Box<dyn FnMut(web_sys::CloseEvent)>);
 
@@ -281,7 +342,12 @@ impl<'scope> WebSocketInner<'scope> {
                 return (Err(error.clone()), Some(self.defer_error(error)));
             }
         };
-        self.registration = Some(HostRegistration::new(socket, generation, &self.completion));
+        self.registration = Some(HostRegistration::new(
+            socket,
+            generation,
+            &self.completion,
+            erase_error_handler(self.error_handler),
+        ));
         (Ok(()), None)
     }
 
@@ -310,12 +376,18 @@ impl<'scope> WebSocketInner<'scope> {
         let delay = policy.delay_for_attempt(self.retry_attempt);
         let token = self.completion.clone();
         self.retry_generation = Some(generation);
+        let error_handler = erase_error_handler(self.error_handler);
         self.retry_task = Some(self.scope.spawn_scoped(
             async move {
                 if delay > Duration::from_millis(0) {
                     sleep(delay).await;
                 }
-                let _ = token.submit(WebSocketEvent::Retry { generation });
+                submit_completion(
+                    &token,
+                    WebSocketEvent::Retry { generation },
+                    error_handler,
+                    None,
+                );
             },
             self.error_handler,
         ));
@@ -611,6 +683,7 @@ impl<'scope> WebSocketBuilder<'scope> {
             {
                 callback();
             }
+            Ok(())
         }));
         let inner = scope.stored(WebSocketInner {
             url,

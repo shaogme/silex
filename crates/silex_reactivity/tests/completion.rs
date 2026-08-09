@@ -1,4 +1,6 @@
-use silex_reactivity::{CompletionOnce, Runtime, unwind_safe};
+use silex_reactivity::{
+    CallbackInvokeError, CompletionOnce, CompletionSender, ReactiveError, Runtime, unwind_safe,
+};
 use std::{
     cell::{Cell, RefCell},
     panic::{AssertUnwindSafe, catch_unwind},
@@ -21,10 +23,11 @@ fn completion_sender_submits_while_scope_is_active() {
         let received_by_callback = received.clone();
         let sender = scope.completion_sender(unwind_safe(move |value: i32| {
             received_by_callback.set(value);
+            Ok::<(), ()>(())
         }));
 
-        assert!(sender.submit(7));
-        assert!(sender.submit(9));
+        assert!(sender.submit(7).expect("completion submit"));
+        assert!(sender.submit(9).expect("completion submit"));
         assert_eq!(received.get(), 9);
     });
 }
@@ -37,10 +40,11 @@ fn unwind_safe_adapts_interior_mutable_repeating_callback() {
         let seen_in_callback = seen.clone();
         let sender = scope.completion_sender(unwind_safe(move |value: i32| {
             seen_in_callback.borrow_mut().push(value);
+            Ok::<(), ()>(())
         }));
 
-        assert!(sender.submit(3));
-        assert!(sender.submit(5));
+        assert!(sender.submit(3).expect("completion submit"));
+        assert!(sender.submit(5).expect("completion submit"));
     });
 
     assert_eq!(&*seen.borrow(), &[3, 5]);
@@ -54,9 +58,10 @@ fn completion_once_submits_once_and_reclaims_callback() {
         let probe = DropProbe(dropped.clone());
         let destination = scope.completion_once(unwind_safe(move |_: i32| {
             let _ = &probe;
+            Ok::<(), ()>(())
         }));
-        assert!(destination.submit(1));
-        assert!(!destination.submit(2));
+        assert!(destination.submit(1).expect("completion submit"));
+        assert!(!destination.submit(2).expect("stale completion submit"));
         assert_eq!(dropped.get(), 1);
     });
 
@@ -65,8 +70,9 @@ fn completion_once_submits_once_and_reclaims_callback() {
         let dropped_in_callback = dropped.clone();
         let destination = scope.completion_once(unwind_safe(move |_: i32| {
             let _ = dropped_in_callback;
+            Ok::<(), ()>(())
         }));
-        assert!(destination.submit(3));
+        assert!(destination.submit(3).expect("completion submit"));
     });
     assert_eq!(dropped.get(), 1);
 }
@@ -77,8 +83,10 @@ fn completion_once_drop_cancels_callback_without_invoking_it() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
         let called_in_callback = called.clone();
-        let destination =
-            scope.completion_once(unwind_safe(move |_: i32| called_in_callback.set(true)));
+        let destination = scope.completion_once(unwind_safe(move |_: i32| {
+            called_in_callback.set(true);
+            Ok::<(), ()>(())
+        }));
         drop(destination);
     });
     assert!(!called.get());
@@ -92,6 +100,7 @@ fn completion_sender_last_clone_drop_reclaims_callback() {
         let probe = DropProbe(dropped.clone());
         let sender = scope.completion_sender(unwind_safe(move |_: i32| {
             let _ = &probe;
+            Ok::<(), ()>(())
         }));
         let clone = sender.clone();
         drop(clone);
@@ -110,10 +119,12 @@ fn completion_once_panic_still_reclaims_callback() {
         let destination = scope.completion_once(unwind_safe(move |_: i32| {
             let _ = &probe;
             panic!("completion panic");
+            #[allow(unreachable_code)]
+            Ok::<(), ()>(())
         }));
         let result = catch_unwind(AssertUnwindSafe(|| destination.submit(1)));
         assert!(result.is_err());
-        assert!(!destination.submit(2));
+        assert!(!destination.submit(2).expect("stale completion submit"));
         assert_eq!(dropped.get(), 1);
     });
 }
@@ -127,11 +138,13 @@ fn completion_sender_panic_still_reclaims_callback_and_closes() {
         let destination = scope.completion_sender(unwind_safe(move |_: i32| {
             let _ = &probe;
             panic!("completion sender panic");
+            #[allow(unreachable_code)]
+            Ok::<(), ()>(())
         }));
         let result = catch_unwind(AssertUnwindSafe(|| destination.submit(1)));
 
         assert!(result.is_err());
-        assert!(!destination.submit(2));
+        assert!(!destination.submit(2).expect("stale completion submit"));
         assert_eq!(dropped.get(), 1);
     });
 }
@@ -139,19 +152,20 @@ fn completion_sender_panic_still_reclaims_callback_and_closes() {
 #[test]
 fn completion_once_is_invalid_after_child_scope_dispose() {
     let mut runtime = Runtime::new();
-    let token =
-        runtime.child(|scope| scope.child(|child| child.completion_once(unwind_safe(|_: i32| {}))));
+    let token = runtime.child(|scope| {
+        scope.child(|child| child.completion_once(unwind_safe(|_: i32| Ok::<(), ()>(()))))
+    });
 
-    assert!(!token.submit(1));
+    assert!(!token.submit(1).expect("stale completion submit"));
 }
 
 #[test]
 fn completion_once_is_invalid_after_run_returns() {
     let mut runtime = Runtime::new();
-    let token: CompletionOnce<i32> =
-        runtime.child(|scope| scope.completion_once(unwind_safe(|_: i32| {})));
+    let token: CompletionOnce<i32, ()> =
+        runtime.child(|scope| scope.completion_once(unwind_safe(|_: i32| Ok::<(), ()>(()))));
 
-    assert!(!token.submit(1));
+    assert!(!token.submit(1).expect("stale completion submit"));
 }
 
 #[test]
@@ -159,17 +173,19 @@ fn stale_completion_cannot_dispose_a_reused_scope_id() {
     let mut runtime = Runtime::new();
     let root = runtime.run();
     let first_owner = root.scope().owned_scope();
-    let stale = first_owner.completion_once(unwind_safe(|_: i32| {}));
+    let stale = first_owner.completion_once(unwind_safe(|_: i32| Ok::<(), ()>(())));
     first_owner.dispose();
 
     let called = Rc::new(Cell::new(false));
     let called_in_callback = called.clone();
     let second_owner = root.scope().owned_scope();
-    let current =
-        second_owner.completion_once(unwind_safe(move |_: i32| called_in_callback.set(true)));
+    let current = second_owner.completion_once(unwind_safe(move |_: i32| {
+        called_in_callback.set(true);
+        Ok::<(), ()>(())
+    }));
 
     drop(stale);
-    assert!(current.submit(1));
+    assert!(current.submit(1).expect("completion submit"));
     assert!(called.get());
 
     second_owner.dispose();
@@ -177,4 +193,104 @@ fn stale_completion_cannot_dispose_a_reused_scope_id() {
     drop(second_owner);
     drop(first_owner);
     root.dispose().expect("root cleanup");
+}
+
+#[test]
+fn repeating_completion_returns_user_error_and_remains_active() {
+    let mut runtime = Runtime::new();
+    runtime.child(|scope| {
+        let seen = Rc::new(Cell::new(0));
+        let seen_for_callback = seen.clone();
+        let sender = scope.completion_sender(unwind_safe(move |value: i32| {
+            seen_for_callback.set(value);
+            if value == 1 {
+                Err("invalid value")
+            } else {
+                Ok(())
+            }
+        }));
+
+        assert!(matches!(
+            sender.submit(1),
+            Err(CallbackInvokeError::User("invalid value"))
+        ));
+        assert_eq!(seen.get(), 1);
+        assert!(sender.submit(2).expect("completion retry"));
+        assert_eq!(seen.get(), 2);
+    });
+}
+
+#[test]
+fn repeating_completion_does_not_roll_back_callback_side_effects_on_error() {
+    let mut runtime = Runtime::new();
+    runtime.child(|scope| {
+        let (signal, set_signal) = scope.signal(0);
+        let sender = scope.completion_sender(unwind_safe(move |value: i32| {
+            set_signal.set(value);
+            Err::<(), &'static str>("rejected")
+        }));
+
+        assert!(matches!(
+            sender.submit(7),
+            Err(CallbackInvokeError::User("rejected"))
+        ));
+        assert_eq!(signal.get(), 7);
+    });
+}
+
+#[test]
+fn repeating_completion_reports_borrow_conflict_and_remains_active() {
+    let mut runtime = Runtime::new();
+    runtime.child(|scope| {
+        let nested = Rc::new(RefCell::new(None::<CompletionSender<i32, ()>>));
+        let nested_for_callback = nested.clone();
+        let sender = scope.completion_sender(unwind_safe(move |value: i32| {
+            if let Some(sender) = nested_for_callback.borrow().as_ref().cloned() {
+                assert!(matches!(
+                    sender.submit(value),
+                    Err(CallbackInvokeError::Runtime(ReactiveError::BorrowConflict))
+                ));
+            }
+            Ok::<(), ()>(())
+        }));
+        *nested.borrow_mut() = Some(sender.clone());
+
+        assert!(sender.submit(1).expect("outer completion submit"));
+        assert!(sender.submit(2).expect("completion remains active"));
+    });
+}
+
+#[test]
+fn once_completion_returns_user_error_and_closes() {
+    let mut runtime = Runtime::new();
+    runtime.child(|scope| {
+        let destination = scope.completion_once(unwind_safe(|_: i32| {
+            Err::<(), &'static str>("one shot failure")
+        }));
+
+        assert!(matches!(
+            destination.submit(1),
+            Err(CallbackInvokeError::User("one shot failure"))
+        ));
+        assert!(
+            !destination
+                .submit(2)
+                .expect("one-shot destination should be closed")
+        );
+    });
+}
+
+#[test]
+fn completion_error_can_borrow_scope_local_data() {
+    let mut runtime = Runtime::new();
+    runtime.child(|scope| {
+        let message = String::from("scope-local error");
+        let expected = message.as_str();
+        let sender = scope.completion_sender(unwind_safe(move |_: i32| Err::<(), &str>(expected)));
+
+        match sender.submit(1) {
+            Err(CallbackInvokeError::User(error)) => assert_eq!(error, expected),
+            other => panic!("unexpected completion result: {other:?}"),
+        }
+    });
 }

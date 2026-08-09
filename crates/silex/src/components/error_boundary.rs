@@ -1,12 +1,14 @@
 use std::{
     cell::RefCell,
-    panic::{AssertUnwindSafe, catch_unwind},
+    panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
     rc::Rc,
 };
 
 use wasm_bindgen_futures::spawn_local;
 
-use silex_core::{ErrorReporter, Scope, SilexError, rx, unwind_safe};
+use silex_core::{
+    CallbackInvokeError, CompletionSender, ErrorReporter, Scope, SilexError, rx, unwind_safe,
+};
 use silex_dom::prelude::*;
 use silex_dom::view::ViewOwner;
 use silex_macros::component;
@@ -14,6 +16,32 @@ use silex_macros::component;
 type ParentHandlerCell<'scope> = Rc<RefCell<Option<ErrorReporter<'scope>>>>;
 type ErrorFactory<'scope> = Rc<dyn Fn(SilexError) -> AnyView<'scope> + 'scope>;
 type RecordError<'scope> = Rc<dyn Fn(SilexError) + 'scope>;
+
+fn submit_boundary_error(
+    completion: &CompletionSender<SilexError>,
+    error: SilexError,
+    error_handler: ErrorReporter<'static>,
+) {
+    let result = completion.submit(error);
+    let Err(error) = result else {
+        return;
+    };
+    let error = match error {
+        CallbackInvokeError::Runtime(error) => SilexError::Reactivity(error),
+        CallbackInvokeError::User(error) => error,
+    };
+    let handler_result = catch_unwind(AssertUnwindSafe(|| error_handler.handle(error)));
+    if let Err(handler_panic) = handler_result {
+        let _ = catch_unwind(AssertUnwindSafe(|| completion.cancel()));
+        resume_unwind(handler_panic);
+    }
+}
+
+fn erase_error_handler<'scope>(handler: ErrorReporter<'scope>) -> ErrorReporter<'static> {
+    // SAFETY: the completion destination rejects stale submissions before
+    // this owner-bound handler is accessed after scope disposal.
+    unsafe { std::mem::transmute(handler) }
+}
 
 #[derive(Clone, Copy)]
 enum BoundaryPhase {
@@ -203,12 +231,18 @@ where
     V2: View<'scope> + 'scope,
 {
     let (error, set_error) = scope.signal(None::<SilexError>);
-    let completion = scope.completion_sender(unwind_safe(move |value| set_error.set(Some(value))));
+    let completion = scope.completion_sender(unwind_safe(move |value| {
+        set_error.set(Some(value));
+        Ok(())
+    }));
+    let completion_error_handler = scope.error_handler(move |error| set_error.set(Some(error)));
+    let completion_error_handler = erase_error_handler(completion_error_handler);
     let reporter_completion = completion.clone();
     let boundary_handler = scope.error_handler(move |error| {
         let completion = reporter_completion.clone();
+        let error_handler = completion_error_handler;
         spawn_local(async move {
-            let _ = completion.submit(error);
+            submit_boundary_error(&completion, error, error_handler);
         });
     });
 
@@ -269,8 +303,9 @@ where
                     };
                     let completion = completion.clone();
                     let error = SilexError::Javascript(message);
+                    let error_handler = completion_error_handler;
                     spawn_local(async move {
-                        let _ = completion.submit(error);
+                        submit_boundary_error(&completion, error, error_handler);
                     });
                     AnyView::Empty
                 }

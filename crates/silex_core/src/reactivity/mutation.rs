@@ -1,10 +1,10 @@
 use crate::{
-    ErrorReporter, ReactiveResult, Scope, SilexError,
+    CompletionSender, ErrorReporter, ReactiveResult, Scope, SilexError,
     reactivity::{ReadSignal, StoredValue, WriteSignal},
     traits::{RxBase, RxCloneData, RxData, RxError, RxRead, RxValue},
     unwind_safe,
 };
-use silex_reactivity::CompletionSender;
+use silex_reactivity::CallbackInvokeError;
 use std::{cell::Cell, future::Future, pin::Pin, rc::Rc};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -106,6 +106,7 @@ where
                 {
                     set_state_for_callback.set(next_state);
                 }
+                Ok(())
             }));
         let inner = scope.stored(MutationInner {
             action: MutationAction::Regular(Rc::new(move |arg| Box::pin(action(arg)))),
@@ -144,6 +145,7 @@ where
                 {
                     set_state_for_callback.set(next_state);
                 }
+                Ok(())
             }));
         let inner = scope.stored(MutationInner {
             action: MutationAction::Prepared(Rc::new(move |arg| {
@@ -206,9 +208,18 @@ where
                 (id, future)
             }
         };
+        // SAFETY: the completion destination rejects stale submissions before
+        // this erased handler can be accessed after owner disposal.
+        let error_handler = unsafe {
+            std::mem::transmute::<ErrorReporter<'scope>, ErrorReporter<'static>>(self.error_handler)
+        };
         self.scope.spawn_scoped(
             async move {
-                let _ = completion.submit((id, future.await));
+                match completion.submit((id, future.await)) {
+                    Ok(_) => {}
+                    Err(CallbackInvokeError::Runtime(error)) => error_handler.handle(error.into()),
+                    Err(CallbackInvokeError::User(error)) => error_handler.handle(error),
+                }
             },
             self.error_handler,
         );

@@ -348,8 +348,8 @@ async fn global_theme_stylesheets_are_isolated_per_owner() {
 
     first_root.with_scope(|first_scope| {
         second_root.with_scope(|second_scope| {
-            let first_owner = ScopedViewOwner::new(first_scope, test_handler());
-            let second_owner = ScopedViewOwner::new(second_scope, test_handler());
+            let first_owner = ScopedViewOwner::new(first_scope, test_handler(first_scope));
+            let second_owner = ScopedViewOwner::new(second_scope, test_handler(second_scope));
             set_global_theme(
                 &first_owner,
                 first_scope.stored(TestTheme {
@@ -392,7 +392,7 @@ fn theme_patch_removes_variables_that_disappear_from_the_next_round() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
         let (patch, set_patch) = scope.signal(TestPatch { alternate: false });
-        let owner = ScopedViewOwner::new(scope, test_handler());
+        let owner = ScopedViewOwner::new(scope, test_handler(scope));
         let token = owner.token();
         theme_patch(patch)
             .apply(&element, ApplyTarget::Apply, &token)
@@ -430,7 +430,7 @@ fn foreign_runtime_css_input_is_rejected_before_custom_callback() {
 
     let mut local_runtime = Runtime::new();
     local_runtime.child(|scope| {
-        let owner = ScopedViewOwner::new(scope, test_handler());
+        let owner = ScopedViewOwner::new(scope, test_handler(scope));
         let token = owner.token();
         let operation = AttrOp::custom_with_inputs(foreign_inputs, |element, _| {
             callback_runs.set(callback_runs.get() + 1);

@@ -1,7 +1,7 @@
 error[E0308]: mismatched types
- --> tests/ui/fail_completion_token_type.rs:7:26
+ --> tests/ui/fail_completion_token_type.rs:9:26
   |
-7 |     let _ = token.submit("wrong message type");
+9 |     assert!(token.submit("wrong message type").is_ok());
   |                   ------ ^^^^^^^^^^^^^^^^^^^^ expected `i32`, found `&str`
   |                   |
   |                   arguments to this method are incorrect
@@ -9,5 +9,5 @@ error[E0308]: mismatched types
 note: method defined here
  --> src/completion.rs
   |
-  |     pub fn submit(&self, value: T) -> bool {
+  |     pub fn submit<'scope>(&self, value: T) -> CompletionSubmitResult<E>
   |            ^^^^^^

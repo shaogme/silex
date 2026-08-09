@@ -1,8 +1,15 @@
-use std::{cell::Cell, marker::PhantomData, rc::Rc, time::Duration};
+use std::{
+    cell::Cell,
+    marker::PhantomData,
+    panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
+    rc::Rc,
+    time::Duration,
+};
 
 use gloo_timers::future::sleep;
 use silex_core::{
-    CompletionOnce, Mutation, ReactiveSource, Resource, RxGet, RxRead, SuspenseContext, unwind_safe,
+    CallbackInvokeError, CompletionOnce, ErrorReporter, Mutation, ReactiveSource, Resource, RxGet,
+    RxRead, SilexError, SuspenseContext, unwind_safe,
 };
 
 use crate::{
@@ -27,6 +34,32 @@ struct PreparedClient<T, C> {
     marker: PhantomData<fn() -> T>,
 }
 
+fn submit_once<T: 'static>(
+    token: &CompletionOnce<T>,
+    value: T,
+    error_handler: ErrorReporter<'static>,
+) {
+    let result = token.submit(value);
+    let Err(error) = result else {
+        return;
+    };
+    let error = match error {
+        CallbackInvokeError::Runtime(error) => SilexError::Reactivity(error),
+        CallbackInvokeError::User(error) => error,
+    };
+    let handler_result = catch_unwind(AssertUnwindSafe(|| error_handler.handle(error)));
+    if let Err(handler_panic) = handler_result {
+        let _ = catch_unwind(AssertUnwindSafe(|| token.cancel()));
+        resume_unwind(handler_panic);
+    }
+}
+
+fn erase_error_handler<'scope>(handler: ErrorReporter<'scope>) -> ErrorReporter<'static> {
+    // SAFETY: Completion destinations reject stale submissions before this
+    // owner-bound handler is accessed after scope disposal.
+    unsafe { std::mem::transmute(handler) }
+}
+
 impl<T, C> PreparedClient<T, C> {
     fn apply_interceptors(&self, spec: &mut RequestSpec) {
         for hook in &self.before_send {
@@ -40,6 +73,7 @@ async fn execute_prepared<T, C>(
     spec: RequestSpec,
     fallback: Option<T>,
     cache_token: Option<CompletionOnce<T>>,
+    error_handler: ErrorReporter<'static>,
 ) -> Result<T, NetError>
 where
     T: Clone + 'static,
@@ -103,7 +137,7 @@ where
             hook(&spec, &response);
         }
         if let Some(token) = &cache_token {
-            let _ = token.submit(value.clone());
+            submit_once(token, value.clone(), error_handler);
         }
         return Ok(value);
     }
@@ -160,6 +194,7 @@ macro_rules! impl_net_methods {
                 if generations.borrow().get(&key) == Some(&generation) {
                     binding.store.set(value);
                 }
+                Ok(())
             }))
         }
 
@@ -195,10 +230,17 @@ macro_rules! impl_net_methods {
                 let refresh_binding = self.cache_binding(&spec);
                 let cache_token =
                     refresh_binding.map(|binding| self.cache_completion_once_for_binding(binding));
+                let refresh_error_handler = erase_error_handler(self.error_handler);
                 self.scope.spawn_scoped(
                     async move {
-                        let _ =
-                            execute_prepared(refresh_client, refresh_spec, None, cache_token).await;
+                        let _ = execute_prepared(
+                            refresh_client,
+                            refresh_spec,
+                            None,
+                            cache_token,
+                            refresh_error_handler,
+                        )
+                        .await;
                     },
                     self.error_handler,
                 );
@@ -224,7 +266,14 @@ macro_rules! impl_net_methods {
                     None
                 }
             };
-            execute_prepared(client, spec, fallback, cache_token).await
+            execute_prepared(
+                client,
+                spec,
+                fallback,
+                cache_token,
+                erase_error_handler(self.error_handler),
+            )
+            .await
         }
 
         pub fn into_resource(
@@ -275,6 +324,7 @@ macro_rules! impl_net_methods {
             let fetch_client = self.prepared();
             let error_handler = self.error_handler;
             let fetch_error_handler = error_handler;
+            let completion_error_handler = erase_error_handler(fetch_error_handler);
             #[cfg(feature = "persist")]
             let fetch_builder = self.clone();
             let resource_generation = Rc::new(Cell::new(0usize));
@@ -341,8 +391,10 @@ macro_rules! impl_net_methods {
                                 {
                                     resource.set(value);
                                 }
+                                Ok(())
                             },
                         ));
+                        let refresh_error_handler = completion_error_handler;
                         scope.spawn_scoped(
                             async move {
                                 sleep(Duration::from_millis(0)).await;
@@ -351,9 +403,10 @@ macro_rules! impl_net_methods {
                                     refresh_spec,
                                     None,
                                     refresh_cache_token,
+                                    refresh_error_handler,
                                 )
                                 .await;
-                                let _ = completion.submit(result);
+                                submit_once(&completion, result, refresh_error_handler);
                             },
                             fetch_error_handler,
                         );
@@ -378,7 +431,14 @@ macro_rules! impl_net_methods {
                         if let Some(value) = cached {
                             Ok(value)
                         } else {
-                            execute_prepared(client, spec, fallback, cache_token).await
+                            execute_prepared(
+                                client,
+                                spec,
+                                fallback,
+                                cache_token,
+                                completion_error_handler,
+                            )
+                            .await
                         }
                     })
                 },
@@ -407,6 +467,7 @@ macro_rules! impl_net_methods {
         pub fn try_as_mutation(&self) -> Result<Mutation<'scope, (), T, NetError>, NetError> {
             self.validate_runtime_inputs()?;
             let builder = self.clone();
+            let completion_error_handler = erase_error_handler(self.error_handler);
             Ok(Mutation::new(
                 self.scope,
                 move |_| {
@@ -432,7 +493,16 @@ macro_rules! impl_net_methods {
                             None
                         }
                     };
-                    async move { execute_prepared(client, spec, fallback, cache_token).await }
+                    async move {
+                        execute_prepared(
+                            client,
+                            spec,
+                            fallback,
+                            cache_token,
+                            completion_error_handler,
+                        )
+                        .await
+                    }
                 },
                 self.error_handler,
             ))
@@ -449,6 +519,7 @@ macro_rules! impl_net_methods {
             Input: 'scope,
         {
             let scope = self.scope;
+            let completion_error_handler = erase_error_handler(self.error_handler);
             Mutation::new_with_prepare(
                 scope,
                 move |input: Input| {
@@ -476,7 +547,16 @@ macro_rules! impl_net_methods {
                             None
                         }
                     };
-                    Ok(async move { execute_prepared(client, spec, fallback, cache_token).await })
+                    Ok(async move {
+                        execute_prepared(
+                            client,
+                            spec,
+                            fallback,
+                            cache_token,
+                            completion_error_handler,
+                        )
+                        .await
+                    })
                 },
                 self.error_handler,
             )

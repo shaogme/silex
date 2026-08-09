@@ -838,13 +838,15 @@ fn bench_completion_message(c: &mut Criterion) {
         runtime.child(|scope| {
             let value = scope.rw_signal(0u32);
             let setter = value.write();
-            let token =
-                scope.completion_sender(unwind_safe(move |message: u32| setter.set(message)));
+            let token = scope.completion_sender(unwind_safe(move |message: u32| {
+                setter.set(message);
+                Ok::<(), ()>(())
+            }));
             let mut message = 0u32;
 
             bench.iter(|| {
                 message = message.wrapping_add(1);
-                black_box(token.submit(message));
+                black_box(token.submit(message).expect("completion submit"));
             });
         });
     });
@@ -861,10 +863,15 @@ fn bench_completion_message(c: &mut Criterion) {
                         buffer.drain(..buffer.len() - 64);
                     }
                 });
+                Ok::<(), ()>(())
             }));
 
             bench.iter(|| {
-                black_box(token.submit(String::from("message")));
+                black_box(
+                    token
+                        .submit(String::from("message"))
+                        .expect("completion submit"),
+                );
             });
         });
     });

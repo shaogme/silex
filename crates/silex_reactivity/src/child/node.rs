@@ -3,7 +3,8 @@
 use std::{cell::RefCell, fmt, marker::PhantomData, rc::Rc};
 
 use crate::{
-    CallbackInvokeError, CallbackInvokeResult, ErrorHandler, ReactiveError, ReactiveResult,
+    CallbackInvokeResult, ErrorHandler, ReactiveError, ReactiveResult,
+    error::map_callback_error,
     handle::{CallbackId, DerivedId, EffectId, MemoId, NodeRefId, SignalId, StoredId},
     internal::{
         RawId,
@@ -51,21 +52,9 @@ impl<T, E> Clone for Callback<'_, T, E> {
 }
 
 impl<'scope, T: 'scope, E: 'scope> Callback<'scope, T, E> {
-    fn map_error(error: CallbackThunkError<'scope>) -> CallbackInvokeError<E> {
-        match error {
-            CallbackThunkError::Runtime(error) => CallbackInvokeError::Runtime(error),
-            CallbackThunkError::User(value) => unsafe {
-                value
-                    .downcast::<E>()
-                    .map(CallbackInvokeError::User)
-                    .unwrap_or(CallbackInvokeError::Runtime(ReactiveError::TypeMismatch))
-            },
-        }
-    }
-
     pub fn invoke(&self, arg: T) -> CallbackInvokeResult<(), E> {
         runtime::invoke_callback(&self.handle.state(), self.handle.raw(), AnyValue::new(arg))
-            .map_err(Self::map_error)
+            .map_err(map_callback_error)
     }
 
     pub fn dispatch(&self, arg: T, error_handler: ErrorHandler<'scope, E>) -> ReactiveResult<()> {

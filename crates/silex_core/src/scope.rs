@@ -1,7 +1,8 @@
 //! High-level runtime and scope wrappers.
 
 use crate::{
-    Callback, ErrorHandler, ErrorReporter, NodeRef, Rx, SilexError, SilexResult, TaskHandle,
+    Callback, CompletionOnce, CompletionSender, ErrorHandler, ErrorReporter, NodeRef, Rx,
+    SilexError, SilexResult, TaskHandle,
     reactivity::{
         Effect, Memo, ReactiveSource, ReadSignal, RwSignal, StoredValue, WatchOptions, WriteSignal,
     },
@@ -374,10 +375,10 @@ impl<'scope> Scope<'scope> {
     ///
     /// Use [`crate::unwind_safe`] for callbacks that capture interior-mutable
     /// state.
-    pub fn completion_once<T, F>(self, callback: F) -> silex_reactivity::CompletionOnce<T>
+    pub fn completion_once<T, F>(self, callback: F) -> CompletionOnce<T>
     where
         T: 'static,
-        F: FnMut(T) + UnwindSafe + 'scope,
+        F: FnMut(T) -> SilexResult<()> + UnwindSafe + 'scope,
     {
         self.inner.completion_once(callback)
     }
@@ -386,10 +387,10 @@ impl<'scope> Scope<'scope> {
     ///
     /// Use [`crate::unwind_safe`] for callbacks that capture interior-mutable
     /// state.
-    pub fn completion_sender<T, F>(self, callback: F) -> silex_reactivity::CompletionSender<T>
+    pub fn completion_sender<T, F>(self, callback: F) -> CompletionSender<T>
     where
         T: 'static,
-        F: FnMut(T) + UnwindSafe + 'scope,
+        F: FnMut(T) -> SilexResult<()> + UnwindSafe + 'scope,
     {
         self.inner.completion_sender(callback)
     }
@@ -650,10 +651,10 @@ impl<'scope> OwnedScope<'scope> {
     ///
     /// Use [`crate::unwind_safe`] for callbacks that capture interior-mutable
     /// state.
-    pub fn completion_once<T, F>(&self, callback: F) -> silex_reactivity::CompletionOnce<T>
+    pub fn completion_once<T, F>(&self, callback: F) -> CompletionOnce<T>
     where
         T: 'static,
-        F: FnMut(T) + UnwindSafe + 'scope,
+        F: FnMut(T) -> SilexResult<()> + UnwindSafe + 'scope,
     {
         self.inner.completion_once(callback)
     }
@@ -662,10 +663,10 @@ impl<'scope> OwnedScope<'scope> {
     ///
     /// Use [`crate::unwind_safe`] for callbacks that capture interior-mutable
     /// state.
-    pub fn completion_sender<T, F>(&self, callback: F) -> silex_reactivity::CompletionSender<T>
+    pub fn completion_sender<T, F>(&self, callback: F) -> CompletionSender<T>
     where
         T: 'static,
-        F: FnMut(T) + UnwindSafe + 'scope,
+        F: FnMut(T) -> SilexResult<()> + UnwindSafe + 'scope,
     {
         self.inner.completion_sender(callback)
     }

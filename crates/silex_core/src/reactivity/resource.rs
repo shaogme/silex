@@ -5,7 +5,7 @@ use crate::{
     traits::{RxBase, RxCloneData, RxData, RxError, RxGet, RxRead, RxValue},
     unwind_safe,
 };
-use silex_reactivity::RuntimeInputs;
+use silex_reactivity::{CallbackInvokeError, RuntimeInputs};
 use std::{cell::Cell, future::Future, marker::PhantomData, rc::Rc};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -118,6 +118,11 @@ where
         R: RxRead<Value = S> + ReactiveSource<'scope> + Clone + 'scope,
         Fetcher: ResourceFetcher<S, Data = T, Error = E> + 'scope,
     {
+        // SAFETY: the completion destination is gated by the owning scope. A
+        // stale submit returns without touching the erased handler.
+        let completion_error_handler = unsafe {
+            std::mem::transmute::<ErrorReporter<'scope>, ErrorReporter<'static>>(error_handler)
+        };
         let mut inputs = source.clone().into_promotion_plan().inputs();
         if let Some(context) = suspense.as_ref() {
             inputs.push(context.count.inner.runtime_input());
@@ -133,7 +138,7 @@ where
         let completion =
             scope.completion_sender(unwind_safe(move |message: ResourceCompletion<T, E>| {
                 if message.settled.replace(true) {
-                    return;
+                    return Ok(());
                 }
                 if let Some(next_state) = resolve_resource_result(
                     request_id_for_callback.get(),
@@ -145,6 +150,7 @@ where
                 if let Some(context) = suspense_for_callback {
                     context.decrement();
                 }
+                Ok(())
             }));
 
         let source_for_effect = source.clone();
@@ -194,11 +200,20 @@ where
                     let completion = completion.clone();
                     scope.spawn_scoped(
                         async move {
-                            let _ = completion.submit(ResourceCompletion {
+                            let result = completion.submit(ResourceCompletion {
                                 id,
                                 result: future.await,
                                 settled,
                             });
+                            match result {
+                                Ok(_) => {}
+                                Err(CallbackInvokeError::Runtime(error)) => {
+                                    completion_error_handler.handle(error.into())
+                                }
+                                Err(CallbackInvokeError::User(error)) => {
+                                    completion_error_handler.handle(error)
+                                }
+                            }
                         },
                         error_handler,
                     );

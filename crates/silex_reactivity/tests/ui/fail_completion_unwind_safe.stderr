@@ -6,7 +6,8 @@ error[E0277]: the type `UnsafeCell<Vec<i32>>` may contain interior mutability an
    | |                             |
    | |                             required by a bound introduced by this call
 10 | |             values.borrow_mut().push(value);
-11 | |         });
+11 | |             Ok::<(), ()>(())
+12 | |         });
    | |_________^ `UnsafeCell<Vec<i32>>` may contain interior mutability and a reference may not be safely transferable across a catch_unwind boundary
    |
    = help: within `RefCell<Vec<i32>>`, the trait `RefUnwindSafe` is not implemented for `UnsafeCell<Vec<i32>>`
@@ -24,11 +25,11 @@ note: required because it's used within this closure
 note: required by a bound in `silex_reactivity::Scope::<'scope>::completion_sender`
   --> src/child/scope.rs
    |
-   |     pub fn completion_sender<T: 'static, F>(&self, callback: F) -> CompletionSender<T>
+   |     pub fn completion_sender<T: 'static, E, F>(&self, callback: F) -> CompletionSender<T, E>
    |            ----------------- required by a bound in this associated function
-   |     where
-   |         F: FnMut(T) + UnwindSafe + 'scope,
-   |                       ^^^^^^^^^^ required by this bound in `Scope::<'scope>::completion_sender`
+...
+   |         F: FnMut(T) -> Result<(), E> + UnwindSafe + 'scope,
+   |                                        ^^^^^^^^^^ required by this bound in `Scope::<'scope>::completion_sender`
 
 error[E0277]: the type `UnsafeCell<isize>` may contain interior mutability and a reference may not be safely transferable across a catch_unwind boundary
   --> tests/ui/fail_completion_unwind_safe.rs:9:47
@@ -38,7 +39,8 @@ error[E0277]: the type `UnsafeCell<isize>` may contain interior mutability and a
    | |                             |
    | |                             required by a bound introduced by this call
 10 | |             values.borrow_mut().push(value);
-11 | |         });
+11 | |             Ok::<(), ()>(())
+12 | |         });
    | |_________^ `UnsafeCell<isize>` may contain interior mutability and a reference may not be safely transferable across a catch_unwind boundary
    |
    = help: within `RefCell<Vec<i32>>`, the trait `RefUnwindSafe` is not implemented for `UnsafeCell<isize>`
@@ -61,8 +63,8 @@ note: required because it's used within this closure
 note: required by a bound in `silex_reactivity::Scope::<'scope>::completion_sender`
   --> src/child/scope.rs
    |
-   |     pub fn completion_sender<T: 'static, F>(&self, callback: F) -> CompletionSender<T>
+   |     pub fn completion_sender<T: 'static, E, F>(&self, callback: F) -> CompletionSender<T, E>
    |            ----------------- required by a bound in this associated function
-   |     where
-   |         F: FnMut(T) + UnwindSafe + 'scope,
-   |                       ^^^^^^^^^^ required by this bound in `Scope::<'scope>::completion_sender`
+...
+   |         F: FnMut(T) -> Result<(), E> + UnwindSafe + 'scope,
+   |                                        ^^^^^^^^^^ required by this bound in `Scope::<'scope>::completion_sender`

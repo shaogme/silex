@@ -24,10 +24,13 @@ pub use reactivity::{
     RwSignal, Signal, StoredValue, SuspenseContext, WatchOptions, WriteSignal, runtime_inputs_of,
 };
 pub use scope::{OwnedScope, RootHandle, Runtime, Scope};
+pub use silex_reactivity::CallbackInvokeError;
 pub use silex_reactivity::RuntimeInputs;
 #[cfg(feature = "test-support")]
 pub use silex_reactivity::RuntimeSnapshot;
-pub use silex_reactivity::{CompletionOnce, CompletionSender, unwind_safe};
+pub type CompletionOnce<T> = silex_reactivity::CompletionOnce<T, SilexError>;
+pub type CompletionSender<T> = silex_reactivity::CompletionSender<T, SilexError>;
+pub use silex_reactivity::unwind_safe;
 pub use store::StoreField;
 pub use task::TaskHandle;
 pub use traits::{

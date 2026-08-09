@@ -145,12 +145,13 @@ fn child_scope_is_inactive_after_scope_returns() {
         let cell_in_callback = cell.clone();
         let token = scope.completion_once(unwind_safe(move |val: i32| {
             cell_in_callback.set(val);
+            Ok::<(), ()>(())
         }));
         (token, cell)
     });
 
     assert_eq!(read_cell.get(), 10);
-    assert!(!token.submit(20));
+    assert!(!token.submit(20).expect("stale completion submit"));
     assert_eq!(read_cell.get(), 10);
 }
 
@@ -612,14 +613,16 @@ fn completion_token_accepts_active_submissions_and_rejects_after_scope() {
     let seen_in_scope = seen.clone();
     let token = runtime.child(|scope| {
         let seen_in_callback = seen_in_scope.clone();
-        let token =
-            scope.completion_sender(unwind_safe(move |value: i32| seen_in_callback.set(value)));
-        assert!(token.submit(1));
+        let token = scope.completion_sender(unwind_safe(move |value: i32| {
+            seen_in_callback.set(value);
+            Ok::<(), ()>(())
+        }));
+        assert!(token.submit(1).expect("completion submit"));
         token
     });
 
     assert_eq!(seen.get(), 1);
-    assert!(!token.submit(2));
+    assert!(!token.submit(2).expect("stale completion submit"));
     assert_eq!(seen.get(), 1);
 }
 
@@ -632,7 +635,8 @@ fn completion_token_rejects_submission_after_scope_deactivation() {
         scope.child(|child| {
             let callback_called_in_child = callback_called.clone();
             let token = child.completion_once(unwind_safe(move |_: i32| {
-                callback_called_in_child.set(true)
+                callback_called_in_child.set(true);
+                Ok::<(), ()>(())
             }));
             let child_scope = child;
             child
@@ -642,7 +646,11 @@ fn completion_token_rejects_submission_after_scope_deactivation() {
                         child_scope
                             .on_cleanup(
                                 move || {
-                                    assert!(!token_in_cleanup.submit(1));
+                                    assert!(
+                                        !token_in_cleanup
+                                            .submit(1)
+                                            .expect("stale completion submit")
+                                    );
                                     Ok(())
                                 },
                                 handler(child_scope),
@@ -670,8 +678,9 @@ fn lexical_completion_can_capture_scope_local_data() {
         let token = scope.completion_once(unwind_safe(move |value: i32| {
             assert_eq!(local, "scoped");
             seen_in_callback.set(value);
+            Ok::<(), ()>(())
         }));
-        assert!(token.submit(7));
+        assert!(token.submit(7).expect("completion submit"));
     });
 
     assert_eq!(seen.get(), 7);
@@ -698,9 +707,9 @@ fn handles_are_invalid_after_their_scope_and_runtimes_are_isolated() {
             let (signal, _) = child.signal(1i32);
             assert_eq!(signal.try_get(), Ok(1));
         });
-        scope.completion_once(unwind_safe(|_: i32| {}))
+        scope.completion_once(unwind_safe(|_: i32| Ok::<(), ()>(())))
     });
-    assert!(!token.submit(1));
+    assert!(!token.submit(1).expect("stale completion submit"));
 
     assert_eq!(
         ReactiveError::NoSuchNode.to_string(),

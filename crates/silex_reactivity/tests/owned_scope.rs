@@ -115,10 +115,11 @@ fn owned_scope_completion_can_capture_scope_local_data() {
         let token = owner.completion_once(unwind_safe(move |value: i32| {
             assert_eq!(local, "owned");
             seen_in_callback.set(value);
+            Ok::<(), ()>(())
         }));
-        assert!(token.submit(9));
+        assert!(token.submit(9).expect("completion submit"));
         owner.dispose();
-        assert!(!token.submit(10));
+        assert!(!token.submit(10).expect("stale completion submit"));
     });
 
     assert_eq!(seen.get(), 9);

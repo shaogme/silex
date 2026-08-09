@@ -1,9 +1,10 @@
 //! Scope-owned completion destinations for asynchronous tasks.
 
 use crate::{
+    error::{CallbackInvokeError, CompletionSubmitResult, ReactiveError, map_callback_error},
     internal::{
         RawId,
-        value::{AnyValue, CallbackThunk},
+        value::{AnyValue, CallbackThunk, CallbackThunkError},
     },
     runtime::{self, ScopeId, ScopeState},
     scope::{ErasedScopeState, ScopeStorage},
@@ -19,9 +20,9 @@ use std::{
 ///
 /// `AssertUnwindSafe` itself only implements `FnOnce`; this adapter preserves
 /// the `FnMut` contract required by repeating completion destinations.
-pub fn unwind_safe<T, F>(callback: F) -> impl FnMut(T) + UnwindSafe
+pub fn unwind_safe<T, E, F>(callback: F) -> impl FnMut(T) -> Result<(), E> + UnwindSafe
 where
-    F: FnMut(T),
+    F: FnMut(T) -> Result<(), E>,
 {
     let mut callback = AssertUnwindSafe(callback);
     move |value| (*callback)(value)
@@ -60,57 +61,72 @@ impl CompletionState {
         }
     }
 
-    fn current_state(&self) -> Option<Rc<RefCell<ScopeState<'_>>>> {
-        let erased_state = self.state.upgrade()?;
+    fn current_state<'scope>(
+        &self,
+    ) -> Result<Option<Rc<RefCell<ScopeState<'scope>>>>, ReactiveError> {
+        let Some(erased_state) = self.state.upgrade() else {
+            return Ok(None);
+        };
         let current = {
-            let state = erased_state.try_borrow().ok()?;
+            let state = erased_state
+                .try_borrow()
+                .map_err(|_| ReactiveError::BorrowConflict)?;
             state
                 .scheduler
                 .try_borrow()
-                .ok()?
+                .map_err(|_| ReactiveError::BorrowConflict)?
                 .is_scope_current(self.scope_id, &self.state)
         };
         if !current {
-            return None;
+            return Ok(None);
         }
 
         // SAFETY: the scheduler registry contains this exact state allocation,
         // and the caller only uses the restored lifetime while that state is
         // active. Scope disposal removes the registry entry before payloads
         // are dropped.
-        Some(unsafe {
-            std::mem::transmute::<Rc<ErasedScopeState>, Rc<RefCell<ScopeState<'_>>>>(erased_state)
-        })
+        Ok(Some(unsafe {
+            std::mem::transmute::<Rc<ErasedScopeState>, Rc<RefCell<ScopeState<'scope>>>>(
+                erased_state,
+            )
+        }))
     }
 
-    fn begin_once(&self) -> Option<Rc<RefCell<ScopeState<'_>>>> {
+    fn begin_once<'scope>(&self) -> Result<Option<Rc<RefCell<ScopeState<'scope>>>>, ReactiveError> {
         if self.phase.replace(CompletionPhase::Completing) != CompletionPhase::Active {
-            return None;
+            return Ok(None);
         }
-        let state = self.current_state();
-        if state.is_none() {
-            self.phase.set(CompletionPhase::Closed);
+        match self.current_state()? {
+            Some(state) => Ok(Some(state)),
+            None => {
+                self.phase.set(CompletionPhase::Closed);
+                Ok(None)
+            }
         }
-        state
     }
 
     fn close_and_dispose(&self) {
         if self.phase.replace(CompletionPhase::Closed) == CompletionPhase::Closed {
             return;
         }
-        if let Some(state) = self.current_state() {
+        if let Ok(Some(state)) = self.current_state() {
             runtime::dispose_nodes(&state, vec![self.callback]);
         }
     }
 
-    fn submit_repeating<T: 'static>(&self, value: T) -> bool {
+    fn submit_repeating<'scope, T: 'static>(
+        &self,
+        value: T,
+    ) -> Result<bool, CallbackThunkError<'scope>> {
         if self.phase.get() != CompletionPhase::Active {
-            return false;
+            return Ok(false);
         }
-        let Some(state) = self.current_state() else {
-            return false;
+        let state = match self.current_state() {
+            Ok(Some(state)) => state,
+            Ok(None) => return Ok(false),
+            Err(error) => return Err(CallbackThunkError::Runtime(error)),
         };
-        runtime::invoke_callback(&state, self.callback, AnyValue::new(value)).is_ok()
+        runtime::invoke_callback(&state, self.callback, AnyValue::new(value)).map(|()| true)
     }
 }
 
@@ -127,12 +143,12 @@ fn drop_completion_state(state: &CompletionState) {
 ///
 /// Clones share the same terminal state. Dropping the final active clone cancels
 /// the destination without invoking the user callback.
-pub struct CompletionOnce<T> {
+pub struct CompletionOnce<T, E> {
     state: Rc<CompletionState>,
-    marker: PhantomData<Rc<T>>,
+    marker: PhantomData<fn(T) -> E>,
 }
 
-impl<T> Clone for CompletionOnce<T> {
+impl<T, E> Clone for CompletionOnce<T, E> {
     fn clone(&self) -> Self {
         Self {
             state: self.state.clone(),
@@ -141,7 +157,7 @@ impl<T> Clone for CompletionOnce<T> {
     }
 }
 
-impl<T> Drop for CompletionOnce<T> {
+impl<T, E> Drop for CompletionOnce<T, E> {
     fn drop(&mut self) {
         if Rc::strong_count(&self.state) == 1 {
             drop_completion_state(&self.state);
@@ -149,7 +165,7 @@ impl<T> Drop for CompletionOnce<T> {
     }
 }
 
-impl<T: 'static> CompletionOnce<T> {
+impl<T: 'static, E> CompletionOnce<T, E> {
     pub(crate) fn inactive() -> Self {
         Self {
             state: Rc::new(CompletionState::inactive()),
@@ -157,9 +173,17 @@ impl<T: 'static> CompletionOnce<T> {
         }
     }
 
-    pub fn submit(&self, value: T) -> bool {
-        let Some(state) = self.state.begin_once() else {
-            return false;
+    pub fn submit<'scope>(&self, value: T) -> CompletionSubmitResult<E>
+    where
+        E: 'scope,
+    {
+        let state = match self.state.begin_once() {
+            Ok(Some(state)) => state,
+            Ok(None) => return Ok(false),
+            Err(error) => {
+                self.state.close_and_dispose();
+                return Err(CallbackInvokeError::Runtime(error));
+            }
         };
         let callback_result = catch_unwind(AssertUnwindSafe(|| {
             runtime::invoke_callback(&state, self.state.callback, AnyValue::new(value))
@@ -171,7 +195,8 @@ impl<T: 'static> CompletionOnce<T> {
         match (callback_result, dispose_result) {
             (Err(panic), _) => resume_unwind(panic),
             (Ok(_), Err(panic)) => resume_unwind(panic),
-            (Ok(result), Ok(())) => result.is_ok(),
+            (Ok(Ok(())), Ok(())) => Ok(true),
+            (Ok(Err(error)), Ok(())) => Err(map_callback_error(error)),
         }
     }
 
@@ -185,13 +210,13 @@ impl<T: 'static> CompletionOnce<T> {
 /// The final active clone cancels the callback node. Explicit cancellation is
 /// still required when a long-lived owner is replaced before all senders drop.
 /// A callback panic is terminal: the callback node is disposed before the panic
-/// is resumed, and later submissions return `false`.
-pub struct CompletionSender<T> {
+/// is resumed, and later submissions return `Ok(false)`.
+pub struct CompletionSender<T, E> {
     state: Rc<CompletionState>,
-    marker: PhantomData<Rc<T>>,
+    marker: PhantomData<fn(T) -> E>,
 }
 
-impl<T> Clone for CompletionSender<T> {
+impl<T, E> Clone for CompletionSender<T, E> {
     fn clone(&self) -> Self {
         Self {
             state: self.state.clone(),
@@ -200,7 +225,7 @@ impl<T> Clone for CompletionSender<T> {
     }
 }
 
-impl<T> Drop for CompletionSender<T> {
+impl<T, E> Drop for CompletionSender<T, E> {
     fn drop(&mut self) {
         if Rc::strong_count(&self.state) == 1 {
             drop_completion_state(&self.state);
@@ -208,7 +233,7 @@ impl<T> Drop for CompletionSender<T> {
     }
 }
 
-impl<T: 'static> CompletionSender<T> {
+impl<T: 'static, E> CompletionSender<T, E> {
     pub(crate) fn inactive() -> Self {
         Self {
             state: Rc::new(CompletionState::inactive()),
@@ -216,10 +241,13 @@ impl<T: 'static> CompletionSender<T> {
         }
     }
 
-    pub fn submit(&self, value: T) -> bool {
+    pub fn submit<'scope>(&self, value: T) -> CompletionSubmitResult<E>
+    where
+        E: 'scope,
+    {
         let callback_result = catch_unwind(AssertUnwindSafe(|| self.state.submit_repeating(value)));
         match callback_result {
-            Ok(result) => result,
+            Ok(result) => result.map_err(map_callback_error),
             Err(callback_panic) => {
                 let _ = catch_unwind(AssertUnwindSafe(|| self.state.close_and_dispose()));
                 resume_unwind(callback_panic)
@@ -232,13 +260,14 @@ impl<T: 'static> CompletionSender<T> {
     }
 }
 
-fn create_completion_state<'scope, T: 'static, F>(
+fn create_completion_state<'scope, T: 'static, E, F>(
     storage: &ScopeStorage,
     state: Rc<RefCell<ScopeState<'scope>>>,
     callback: F,
 ) -> Rc<CompletionState>
 where
-    F: FnMut(T) + 'scope,
+    E: 'scope,
+    F: FnMut(T) -> Result<(), E> + 'scope,
 {
     let active = {
         let state = state.borrow();
@@ -248,7 +277,7 @@ where
         return Rc::new(CompletionState::inactive());
     }
 
-    let thunk = CallbackThunk::new_typed_infallible(callback);
+    let thunk = CallbackThunk::new_typed_fallible(callback);
     let callback = {
         let mut state_ref = state
             .try_borrow_mut()
@@ -267,13 +296,14 @@ where
     Rc::new(CompletionState::new(weak, storage.scope_id, callback))
 }
 
-pub(crate) fn create_completion_once<'scope, T: 'static, F>(
+pub(crate) fn create_completion_once<'scope, T: 'static, E, F>(
     storage: &ScopeStorage,
     state: Rc<RefCell<ScopeState<'scope>>>,
     callback: F,
-) -> CompletionOnce<T>
+) -> CompletionOnce<T, E>
 where
-    F: FnMut(T) + 'scope,
+    E: 'scope,
+    F: FnMut(T) -> Result<(), E> + 'scope,
 {
     CompletionOnce {
         state: create_completion_state(storage, state, callback),
@@ -281,13 +311,14 @@ where
     }
 }
 
-pub(crate) fn create_completion_sender<'scope, T: 'static, F>(
+pub(crate) fn create_completion_sender<'scope, T: 'static, E, F>(
     storage: &ScopeStorage,
     state: Rc<RefCell<ScopeState<'scope>>>,
     callback: F,
-) -> CompletionSender<T>
+) -> CompletionSender<T, E>
 where
-    F: FnMut(T) + 'scope,
+    E: 'scope,
+    F: FnMut(T) -> Result<(), E> + 'scope,
 {
     CompletionSender {
         state: create_completion_state(storage, state, callback),

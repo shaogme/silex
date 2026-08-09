@@ -9,7 +9,8 @@ fn main() {
         let values_for_callback = values.clone();
         let sender = scope.completion_sender(unwind_safe(move |value: i32| {
             values_for_callback.borrow_mut().push(value);
+            Ok::<(), ()>(())
         }));
-        let _ = sender.submit(1);
+        assert!(sender.submit(1).expect("completion submit"));
     });
 }

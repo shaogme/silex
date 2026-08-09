@@ -11,13 +11,12 @@ pub use reactive::*;
 
 use crate::attribute::PendingAttribute;
 use silex_core::{
-    CompletionOnce, CompletionSender, ErrorReporter, OwnedScope, ReactiveError, RuntimeInputs,
-    Scope,
+    CallbackInvokeError, CompletionOnce, CompletionSender, ErrorReporter, OwnedScope,
+    ReactiveError, RuntimeInputs, Rx, Scope, SilexError, SilexResult,
     reactivity::ReactiveSource,
     traits::{RxData, RxValue},
     unwind_safe,
 };
-use silex_core::{Rx, SilexError, SilexResult};
 use std::{
     borrow::Cow,
     cell::{Cell, RefCell},
@@ -218,15 +217,15 @@ struct CompletionRegistrar<'scope> {
 
 type HostCallbackFn<'scope> = Box<dyn FnMut(JsValue) -> SilexResult<()> + 'scope>;
 type CompletionSenderFactory<'scope> =
-    Rc<dyn Fn(Box<dyn FnMut(JsValue) + 'scope>) -> CompletionSender<JsValue> + 'scope>;
+    Rc<dyn Fn(HostCallbackFn<'scope>) -> CompletionSender<JsValue> + 'scope>;
 type CompletionOnceFactory<'scope> =
-    Rc<dyn Fn(Box<dyn FnMut(JsValue) + 'scope>) -> CompletionOnce<JsValue> + 'scope>;
+    Rc<dyn Fn(HostCallbackFn<'scope>) -> CompletionOnce<JsValue> + 'scope>;
 
 impl<'scope> CompletionRegistrar<'scope> {
     fn new<FS, FO>(sender: FS, once: FO) -> Self
     where
-        FS: Fn(Box<dyn FnMut(JsValue) + 'scope>) -> CompletionSender<JsValue> + 'scope,
-        FO: Fn(Box<dyn FnMut(JsValue) + 'scope>) -> CompletionOnce<JsValue> + 'scope,
+        FS: Fn(HostCallbackFn<'scope>) -> CompletionSender<JsValue> + 'scope,
+        FO: Fn(HostCallbackFn<'scope>) -> CompletionOnce<JsValue> + 'scope,
     {
         Self {
             sender: Rc::new(sender),
@@ -234,28 +233,12 @@ impl<'scope> CompletionRegistrar<'scope> {
         }
     }
 
-    fn call_sender(
-        &self,
-        mut callback: HostCallbackFn<'scope>,
-        error_handler: ViewErrorHandler<'scope>,
-    ) -> CompletionSender<JsValue> {
-        (self.sender)(Box::new(move |payload| {
-            if let Err(error) = callback(payload) {
-                error_handler.handle(error);
-            }
-        }))
+    fn call_sender(&self, callback: HostCallbackFn<'scope>) -> CompletionSender<JsValue> {
+        (self.sender)(callback)
     }
 
-    fn call_once(
-        &self,
-        mut callback: HostCallbackFn<'scope>,
-        error_handler: ViewErrorHandler<'scope>,
-    ) -> CompletionOnce<JsValue> {
-        (self.once)(Box::new(move |payload| {
-            if let Err(error) = callback(payload) {
-                error_handler.handle(error);
-            }
-        }))
+    fn call_once(&self, callback: HostCallbackFn<'scope>) -> CompletionOnce<JsValue> {
+        (self.once)(callback)
     }
 }
 
@@ -330,7 +313,7 @@ enum HostDestination {
 }
 
 impl HostDestination {
-    fn dispatch(&self, payload: JsValue) -> bool {
+    fn dispatch(&self, payload: JsValue) -> Result<bool, CallbackInvokeError<SilexError>> {
         match self {
             Self::Once(destination) => destination.submit(payload),
             Self::Sender(destination) => destination.submit(payload),
@@ -350,6 +333,7 @@ impl HostDestination {
 pub(crate) struct HostCallback {
     destination: HostDestination,
     gate: ResourceGate,
+    error_handler: ErrorReporter<'static>,
 }
 
 // HostCallback only carries framework-owned gate and Completion state. User
@@ -357,11 +341,29 @@ pub(crate) struct HostCallback {
 impl UnwindSafe for HostCallback {}
 
 impl HostCallback {
+    fn report_error(&self, error: SilexError) {
+        let handler_result = catch_unwind(AssertUnwindSafe(|| self.error_handler.handle(error)));
+        if let Err(handler_panic) = handler_result {
+            let _ = catch_unwind(AssertUnwindSafe(|| self.cancel()));
+            resume_unwind(handler_panic);
+        }
+    }
+
     pub(crate) fn dispatch(&self, payload: JsValue) -> bool {
         if !self.gate.get() {
             return false;
         }
-        self.destination.dispatch(payload)
+        match self.destination.dispatch(payload) {
+            Ok(active) => active,
+            Err(CallbackInvokeError::User(error)) => {
+                self.report_error(error);
+                self.gate.get()
+            }
+            Err(CallbackInvokeError::Runtime(error)) => {
+                self.report_error(SilexError::Reactivity(error));
+                self.gate.get()
+            }
+        }
     }
 
     pub(crate) fn finish(&self) {
@@ -372,6 +374,12 @@ impl HostCallback {
         self.gate.set(false);
         self.destination.cancel();
     }
+}
+
+fn erase_error_handler<'scope>(handler: ErrorReporter<'scope>) -> ErrorReporter<'static> {
+    // SAFETY: HostCallback's gate is cleared by owner cleanup before the scoped
+    // storage can be dropped. Dispatch checks the gate before touching this key.
+    unsafe { std::mem::transmute(handler) }
 }
 
 #[derive(Clone)]
@@ -460,11 +468,9 @@ impl<'scope> ViewOwnerToken<'scope> {
         F: FnMut(JsValue) -> SilexResult<()> + 'scope,
     {
         HostCallback {
-            destination: HostDestination::Sender(
-                self.completion
-                    .call_sender(Box::new(callback), error_handler),
-            ),
+            destination: HostDestination::Sender(self.completion.call_sender(Box::new(callback))),
             gate: Rc::new(Cell::new(true)),
+            error_handler: erase_error_handler(error_handler),
         }
     }
 
@@ -477,10 +483,9 @@ impl<'scope> ViewOwnerToken<'scope> {
         F: FnMut(JsValue) -> SilexResult<()> + 'scope,
     {
         HostCallback {
-            destination: HostDestination::Once(
-                self.completion.call_once(Box::new(callback), error_handler),
-            ),
+            destination: HostDestination::Once(self.completion.call_once(Box::new(callback))),
             gate: Rc::new(Cell::new(true)),
+            error_handler: erase_error_handler(error_handler),
         }
     }
 
@@ -1818,6 +1823,7 @@ mod tests {
     use silex_core::{Runtime, SilexError};
     use std::{
         cell::{Cell, RefCell},
+        panic::{AssertUnwindSafe, catch_unwind},
         rc::Rc,
     };
     use wasm_bindgen::JsValue;
@@ -1847,6 +1853,52 @@ mod tests {
         root.dispose().expect("root cleanup should succeed");
         assert!(!bridge.dispatch(JsValue::UNDEFINED));
         assert_eq!(seen.get(), 1);
+    }
+
+    #[test]
+    fn host_callback_reports_completion_errors_after_callback_returns() {
+        let handled = Rc::new(Cell::new(0));
+        let mut runtime = Runtime::new();
+        let root = runtime.run();
+        let bridge = {
+            let scope = root.scope();
+            let (_, set_signal) = scope.signal(0);
+            let handled_in_handler = handled.clone();
+            let handler = scope.error_handler(move |error| {
+                assert!(matches!(error, SilexError::Framework(message) if message == "host"));
+                handled_in_handler.set(handled_in_handler.get() + 1);
+                set_signal.set(1);
+            });
+            let owner = ScopedViewOwner::new(scope, handler);
+            owner.token().host_callback(
+                |_| Err(SilexError::Framework(String::from("host"))),
+                handler,
+            )
+        };
+
+        assert!(bridge.dispatch(JsValue::UNDEFINED));
+        assert!(bridge.dispatch(JsValue::UNDEFINED));
+        assert_eq!(handled.get(), 2);
+    }
+
+    #[test]
+    fn host_callback_handler_panic_closes_the_destination() {
+        let mut runtime = Runtime::new();
+        let root = runtime.run();
+        let bridge = {
+            let scope = root.scope();
+            let handler = scope.error_handler(|_| panic!("host error handler panic"));
+            let owner = ScopedViewOwner::new(scope, handler);
+            owner.token().host_callback(
+                |_| Err(SilexError::Framework(String::from("host"))),
+                handler,
+            )
+        };
+
+        let result = catch_unwind(AssertUnwindSafe(|| bridge.dispatch(JsValue::UNDEFINED)));
+        assert!(result.is_err());
+        assert!(!bridge.dispatch(JsValue::UNDEFINED));
+        root.dispose().expect("root cleanup should succeed");
     }
 
     #[test]

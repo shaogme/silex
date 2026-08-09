@@ -483,9 +483,10 @@ impl<'scope> Scope<'scope> {
     ///
     /// Use [`crate::unwind_safe`] when the callback captures interior-mutable
     /// state such as `Rc<RefCell<_>>`.
-    pub fn completion_once<T: 'static, F>(&self, callback: F) -> CompletionOnce<T>
+    pub fn completion_once<T: 'static, E, F>(&self, callback: F) -> CompletionOnce<T, E>
     where
-        F: FnMut(T) + UnwindSafe + 'scope,
+        E: 'scope,
+        F: FnMut(T) -> Result<(), E> + UnwindSafe + 'scope,
     {
         create_completion_once(self.storage, self.state(), callback)
     }
@@ -494,9 +495,10 @@ impl<'scope> Scope<'scope> {
     ///
     /// Use [`crate::unwind_safe`] when the callback captures interior-mutable
     /// state such as `Rc<RefCell<_>>`.
-    pub fn completion_sender<T: 'static, F>(&self, callback: F) -> CompletionSender<T>
+    pub fn completion_sender<T: 'static, E, F>(&self, callback: F) -> CompletionSender<T, E>
     where
-        F: FnMut(T) + UnwindSafe + 'scope,
+        E: 'scope,
+        F: FnMut(T) -> Result<(), E> + UnwindSafe + 'scope,
     {
         create_completion_sender(self.storage, self.state(), callback)
     }
@@ -730,9 +732,10 @@ impl<'scope> OwnedScope<'scope> {
     ///
     /// Use [`crate::unwind_safe`] when the callback captures interior-mutable
     /// state such as `Rc<RefCell<_>>`.
-    pub fn completion_once<T: 'static, F>(&self, callback: F) -> CompletionOnce<T>
+    pub fn completion_once<T: 'static, E, F>(&self, callback: F) -> CompletionOnce<T, E>
     where
-        F: FnMut(T) + UnwindSafe + 'scope,
+        E: 'scope,
+        F: FnMut(T) -> Result<(), E> + UnwindSafe + 'scope,
     {
         if !self.is_active() {
             return CompletionOnce::inactive();
@@ -744,9 +747,10 @@ impl<'scope> OwnedScope<'scope> {
     ///
     /// Use [`crate::unwind_safe`] when the callback captures interior-mutable
     /// state such as `Rc<RefCell<_>>`.
-    pub fn completion_sender<T: 'static, F>(&self, callback: F) -> CompletionSender<T>
+    pub fn completion_sender<T: 'static, E, F>(&self, callback: F) -> CompletionSender<T, E>
     where
-        F: FnMut(T) + UnwindSafe + 'scope,
+        E: 'scope,
+        F: FnMut(T) -> Result<(), E> + UnwindSafe + 'scope,
     {
         if !self.is_active() {
             return CompletionSender::inactive();

@@ -15,13 +15,45 @@ use crate::{
 };
 use ref_str::LocalStaticRefStr;
 use silex_core::{
-    ErrorReporter, RxRead, Scope, SilexResult,
+    CallbackInvokeError, CompletionSender, ErrorReporter, RxRead, Scope, SilexError, SilexResult,
     traits::{RxGet, RxWrite},
     unwind_safe,
 };
 use silex_dom::helpers::set_timeout_with_handle;
 use silex_router::RouterContext;
-use std::{borrow::Cow, cell::RefCell, marker::PhantomData, rc::Rc};
+use std::{
+    borrow::Cow,
+    cell::RefCell,
+    marker::PhantomData,
+    panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
+    rc::Rc,
+};
+
+fn submit_completion<T: 'static>(
+    token: &CompletionSender<T>,
+    value: T,
+    error_handler: ErrorReporter<'static>,
+) {
+    let result = token.submit(value);
+    let Err(error) = result else {
+        return;
+    };
+    let error = match error {
+        CallbackInvokeError::Runtime(error) => SilexError::Reactivity(error),
+        CallbackInvokeError::User(error) => error,
+    };
+    let handler_result = catch_unwind(AssertUnwindSafe(|| error_handler.handle(error)));
+    if let Err(handler_panic) = handler_result {
+        let _ = catch_unwind(AssertUnwindSafe(|| token.cancel()));
+        resume_unwind(handler_panic);
+    }
+}
+
+fn erase_error_handler<'scope>(handler: ErrorReporter<'scope>) -> ErrorReporter<'static> {
+    // SAFETY: completion submissions are rejected once the owning scope is
+    // inactive, before this owner-bound handler can be accessed.
+    unsafe { std::mem::transmute(handler) }
+}
 
 /// Typestate marker used before a persistence backend has been selected.
 pub struct NoBackend;
@@ -569,13 +601,15 @@ where
         }
 
         if matches!(self.config.sync, SyncStrategy::CrossContext) {
+            let completion_error_handler = erase_error_handler(self.error_handler);
             let token = self.scope.completion_sender(unwind_safe({
                 move |event| {
                     apply_backend_event(controller, value, state, event);
+                    Ok(())
                 }
             }));
             let sink: BackendEventSink = Rc::new(move |event| {
-                let _ = token.submit(event);
+                submit_completion(&token, event, completion_error_handler);
             });
             *pending_sink.borrow_mut() = Some(sink.clone());
             let pending_events = std::mem::take(&mut *pending_events.borrow_mut());
@@ -591,11 +625,13 @@ where
                         .clone()
                         .expect("debounce state must exist for debounce mode");
                     let debounce_for_completion = debounce_state.clone();
+                    let completion_error_handler = erase_error_handler(self.error_handler);
                     let completion = self.scope.completion_sender(unwind_safe({
                         move |generation| {
                             if debounce_for_completion.borrow_mut().take_ready(generation) {
                                 let _ = flush_persistent_value(controller, value, state);
                             }
+                            Ok(())
                         }
                     }));
                     let debounce_for_cleanup = debounce_state.clone();
@@ -636,7 +672,11 @@ where
                                 let completion = completion.clone();
                                 match set_timeout_with_handle(
                                     move || {
-                                        let _ = completion.submit(generation);
+                                        submit_completion(
+                                            &completion,
+                                            generation,
+                                            completion_error_handler,
+                                        );
                                     },
                                     duration,
                                 ) {

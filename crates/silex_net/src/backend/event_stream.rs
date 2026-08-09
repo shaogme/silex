@@ -1,12 +1,16 @@
-use std::{cell::Cell, rc::Rc};
+use std::{
+    cell::Cell,
+    panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
+    rc::Rc,
+};
 
 use js_sys::Function;
 use wasm_bindgen::{JsCast, closure::Closure};
 use web_sys::{Event, EventSource as JsEventSource, MessageEvent};
 
 use silex_core::{
-    CompletionSender, ErrorReporter, Memo, ReactiveError, ReadSignal, RuntimeInputs, RwSignal,
-    Scope, SilexResult, StoredValue, WriteSignal, unwind_safe,
+    CallbackInvokeError, CompletionSender, ErrorReporter, Memo, ReactiveError, ReadSignal,
+    RuntimeInputs, RwSignal, Scope, SilexError, SilexResult, StoredValue, WriteSignal, unwind_safe,
 };
 
 use crate::{
@@ -86,12 +90,43 @@ fn create_source(url: &str) -> Result<JsEventSource, NetError> {
     JsEventSource::new(url).map_err(NetError::from)
 }
 
+fn submit_completion<T: 'static>(
+    token: &CompletionSender<T>,
+    value: T,
+    error_handler: ErrorReporter<'static>,
+    gate: Option<&Cell<bool>>,
+) {
+    let result = token.submit(value);
+    let Err(error) = result else {
+        return;
+    };
+    let error = match error {
+        CallbackInvokeError::Runtime(error) => SilexError::Reactivity(error),
+        CallbackInvokeError::User(error) => error,
+    };
+    let handler_result = catch_unwind(AssertUnwindSafe(|| error_handler.handle(error)));
+    if let Err(handler_panic) = handler_result {
+        if let Some(gate) = gate {
+            gate.set(false);
+        }
+        let _ = catch_unwind(AssertUnwindSafe(|| token.cancel()));
+        resume_unwind(handler_panic);
+    }
+}
+
+fn erase_error_handler<'scope>(handler: ErrorReporter<'scope>) -> ErrorReporter<'static> {
+    // SAFETY: the CompletionSender rejects stale submissions before this
+    // owner-bound handler is accessed after scope disposal.
+    unsafe { std::mem::transmute(handler) }
+}
+
 impl HostRegistration {
     fn new(
         source: JsEventSource,
         event_name: Option<String>,
         generation: u64,
         token: &CompletionSender<EventStreamEvent>,
+        error_handler: ErrorReporter<'static>,
     ) -> Result<Self, NetError> {
         let gate = Rc::new(Cell::new(true));
 
@@ -99,7 +134,12 @@ impl HostRegistration {
         let open_token = token.clone();
         let on_open = Closure::wrap(Box::new(move |_event: Event| {
             if open_gate.get() {
-                let _ = open_token.submit(EventStreamEvent::Open { generation });
+                submit_completion(
+                    &open_token,
+                    EventStreamEvent::Open { generation },
+                    error_handler,
+                    Some(&open_gate),
+                );
             }
         }) as Box<dyn FnMut(Event)>);
 
@@ -107,11 +147,16 @@ impl HostRegistration {
         let message_token = token.clone();
         let on_message = Closure::wrap(Box::new(move |event: MessageEvent| {
             if message_gate.get() {
-                let _ = message_token.submit(EventStreamEvent::Message {
-                    generation,
-                    event: Some(event.type_()),
-                    data: event.data().as_string().unwrap_or_default(),
-                });
+                submit_completion(
+                    &message_token,
+                    EventStreamEvent::Message {
+                        generation,
+                        event: Some(event.type_()),
+                        data: event.data().as_string().unwrap_or_default(),
+                    },
+                    error_handler,
+                    Some(&message_gate),
+                );
             }
         }) as Box<dyn FnMut(MessageEvent)>);
 
@@ -119,10 +164,15 @@ impl HostRegistration {
         let error_token = token.clone();
         let on_error = Closure::wrap(Box::new(move |_event: Event| {
             if error_gate.get() {
-                let _ = error_token.submit(EventStreamEvent::Error {
-                    generation,
-                    error: NetError::TransportUnavailable,
-                });
+                submit_completion(
+                    &error_token,
+                    EventStreamEvent::Error {
+                        generation,
+                        error: NetError::TransportUnavailable,
+                    },
+                    error_handler,
+                    Some(&error_gate),
+                );
             }
         }) as Box<dyn FnMut(Event)>);
 
@@ -182,6 +232,7 @@ struct EventStreamInner<'scope> {
     set_state: RwSignal<'scope, ConnectionState>,
     messages: RwSignal<'scope, Vec<EventMessage>>,
     set_error: WriteSignal<'scope, Option<NetError>>,
+    error_handler: ErrorReporter<'scope>,
     completion: CompletionSender<EventStreamEvent>,
     registration: Option<HostRegistration>,
     generation: u64,
@@ -255,6 +306,7 @@ impl<'scope> EventStreamInner<'scope> {
             self.event_name.clone(),
             generation,
             &self.completion,
+            erase_error_handler(self.error_handler),
         ) {
             Ok(registration) => {
                 self.registration = Some(registration);
@@ -528,6 +580,7 @@ impl<'scope> EventStreamBuilder<'scope> {
             {
                 callback();
             }
+            Ok(())
         }));
         let inner = scope.stored(EventStreamInner {
             url,
@@ -538,6 +591,7 @@ impl<'scope> EventStreamBuilder<'scope> {
             set_state: state,
             messages,
             set_error,
+            error_handler,
             completion,
             registration: None,
             generation: 0,

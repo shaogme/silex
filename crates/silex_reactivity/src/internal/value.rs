@@ -562,20 +562,6 @@ impl<'scope> CallbackThunk<'scope> {
         })
     }
 
-    pub(crate) fn new_typed_infallible<T, F>(callback: F) -> Self
-    where
-        T: 'scope,
-        F: FnMut(T) + 'scope,
-    {
-        let mut callback = callback;
-        Self::new(move |value| {
-            let value = unsafe { value.downcast::<T>() }
-                .ok_or(CallbackThunkError::Runtime(ReactiveError::TypeMismatch))?;
-            callback(value);
-            Ok(())
-        })
-    }
-
     pub(crate) fn call(&mut self, arg: AnyValue<'scope>) -> Result<(), CallbackThunkError<'scope>> {
         (self.callback)(arg)
     }

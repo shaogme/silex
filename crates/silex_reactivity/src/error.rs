@@ -1,6 +1,10 @@
 //! Explicit runtime operation errors.
 
-use crate::{internal::value::AnyValue, runtime::invoke_error_handler, scope::ScopeStorage};
+use crate::{
+    internal::value::{AnyValue, CallbackThunkError},
+    runtime::invoke_error_handler,
+    scope::ScopeStorage,
+};
 use std::{cell::RefCell, fmt, marker::PhantomData, rc::Rc};
 
 slotmap::new_key_type! {
@@ -62,6 +66,22 @@ pub enum CallbackInvokeError<E> {
 }
 
 pub type CallbackInvokeResult<T, E> = Result<T, CallbackInvokeError<E>>;
+
+pub type CompletionSubmitResult<E> = CallbackInvokeResult<bool, E>;
+
+pub(crate) fn map_callback_error<'scope, E: 'scope>(
+    error: CallbackThunkError<'scope>,
+) -> CallbackInvokeError<E> {
+    match error {
+        CallbackThunkError::Runtime(error) => CallbackInvokeError::Runtime(error),
+        CallbackThunkError::User(value) => unsafe {
+            value
+                .downcast::<E>()
+                .map(CallbackInvokeError::User)
+                .unwrap_or(CallbackInvokeError::Runtime(ReactiveError::TypeMismatch))
+        },
+    }
+}
 
 pub(crate) type ErasedErrorCallback<'scope> = dyn Fn(AnyValue<'scope>) + 'scope;
 

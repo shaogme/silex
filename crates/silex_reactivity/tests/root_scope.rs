@@ -44,17 +44,20 @@ fn root_completion_is_invalidated_by_dispose() {
     let mut runtime = Runtime::new();
     let seen = Rc::new(Cell::new(0));
     let root = runtime.run();
-    let token: CompletionOnce<i32> = {
+    let token: CompletionOnce<i32, ()> = {
         let scope = root.scope();
         let seen_for_callback = seen.clone();
-        scope.completion_once(unwind_safe(move |value: i32| seen_for_callback.set(value)))
+        scope.completion_once(unwind_safe(move |value: i32| {
+            seen_for_callback.set(value);
+            Ok::<(), ()>(())
+        }))
     };
 
-    assert!(token.submit(7));
+    assert!(token.submit(7).expect("completion submit"));
     assert_eq!(seen.get(), 7);
 
     root.dispose().expect("root disposal should succeed");
-    assert!(!token.submit(8));
+    assert!(!token.submit(8).expect("stale completion submit"));
     assert_eq!(seen.get(), 7);
 }
 

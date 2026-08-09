@@ -8,6 +8,7 @@ fn main() {
         let values = Rc::new(RefCell::new(Vec::<i32>::new()));
         let _sender = scope.completion_sender(move |value: i32| {
             values.borrow_mut().push(value);
+            Ok::<(), ()>(())
         });
     });
 }
