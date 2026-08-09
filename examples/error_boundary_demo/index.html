@@ -8,6 +8,28 @@
 
 <body>
     <div id="app"></div>
+
+    <script type="module">
+        let errorBoundaryDemoHost = null;
+
+        window.addEventListener("TrunkApplicationStarted", () => {
+            if (errorBoundaryDemoHost !== null) return;
+            try {
+                errorBoundaryDemoHost = window.wasmBindings.mountErrorBoundaryDemo();
+            } catch (error) {
+                console.error("Error boundary demo mount failed", error);
+            }
+        });
+
+        window.addEventListener("error-boundary-demo-unmount", () => {
+            if (errorBoundaryDemoHost === null) return;
+            try {
+                errorBoundaryDemoHost.unmount();
+            } catch (error) {
+                console.error("Error boundary demo unmount failed", error);
+            }
+        });
+    </script>
 </body>
 
 </html>

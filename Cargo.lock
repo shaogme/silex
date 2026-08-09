@@ -1708,8 +1708,10 @@ dependencies = [
 name = "silex_error_demo"
 version = "0.1.0-beta.9"
 dependencies = [
+ "gloo-timers",
  "silex",
- "silex_macros",
+ "wasm-bindgen",
+ "wasm-bindgen-test",
 ]
 
 [[package]]
