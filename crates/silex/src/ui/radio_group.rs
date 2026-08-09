@@ -40,7 +40,7 @@ pub fn RadioGroup<'scope>(
     div(children)
         .data_slot("radio-group")
         .data_orientation(orient)
-        .data_disabled(rx!(scope; if *$disabled { Some("") } else { None }))
+        .data_disabled(rx!(scope; *$disabled))
         .class(group_cls)
 }
 
@@ -124,16 +124,9 @@ pub fn RadioGroupItem<'scope>(
     } else {
         "unchecked"
     }))
-    .data_disabled(rx!(scope; if *$disabled { Some("") } else { None }))
+    .data_disabled(rx!(scope; *$disabled))
     .aria_checked(rx!(scope; if *$is_checked { "true" } else { "false" }))
-    .attr(
-        "disabled",
-        rx!(scope; if *$disabled {
-            Some("disabled")
-        } else {
-            None
-        }),
-    )
+    .disabled(disabled)
     .class(item_cls)
     .on_click(handle_click)
 }

@@ -244,7 +244,7 @@ pub fn Slider<'scope>(
     ))
     .attr("data-slot", "slider")
     .attr("data-orientation", orient)
-    .attr("data-disabled", rx!(scope; if *$disabled { Some("") } else { None }))
+    .attr("data-disabled", rx!(scope; *$disabled))
     .class(root_cls)
     .on_pointer_down(handle_down)
     .on_pointer_move(handle_move)

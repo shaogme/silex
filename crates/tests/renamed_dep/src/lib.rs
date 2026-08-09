@@ -128,6 +128,20 @@ styled! {
     }
 }
 
+#[component]
+fn RenamedReactiveInput<'scope>(
+    scope: my_silex::Scope<'scope>,
+    children: AnyView<'scope>,
+    #[chain(default)] value: my_silex::core::reactivity::Signal<'scope, String>,
+) -> impl View<'scope> {
+    let _ = (scope, value);
+    children
+}
+
+pub fn renamed_reactive_input<'scope>(scope: my_silex::Scope<'scope>) -> impl View<'scope> {
+    RenamedReactiveInput(scope, AnyView::Empty).value("renamed")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

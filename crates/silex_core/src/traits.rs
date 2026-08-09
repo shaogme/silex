@@ -31,6 +31,21 @@ pub trait RxFrom<'scope>: Sized {
         V: Into<Self::Value>;
 }
 
+/// Convert an existing scoped reactive source or an explicitly supported
+/// value into a target reactive wrapper.
+///
+/// Unlike [`Into`], this trait receives the [`Scope`] that owns a node created
+/// for a constant value. Existing sources are converted without materializing
+/// another node, so their runtime provenance remains attached to the original
+/// handle.
+#[diagnostic::on_unimplemented(
+    message = "reactive input must be an existing scoped source or an explicitly supported value",
+    note = "constant reactive inputs require a Scope<'scope> and only the framework-supported value types are accepted"
+)]
+pub trait ReactiveInput<'scope, Target>: Sized {
+    fn into_reactive_input(self, scope: Scope<'scope>) -> Target;
+}
+
 /// Construct a scope-owned reactive wrapper from its value's default.
 ///
 /// Every [`RxFrom`] implementation automatically implements this trait. The
@@ -173,6 +188,263 @@ impl<'scope, T: 'scope> RxFrom<'scope> for NodeRef<'scope, T> {
         scope.node_ref()
     }
 }
+
+impl<'scope, T: 'scope> ReactiveInput<'scope, Signal<'scope, T>> for Signal<'scope, T> {
+    fn into_reactive_input(self, _scope: Scope<'scope>) -> Signal<'scope, T> {
+        self
+    }
+}
+
+impl<'scope, T: 'scope> ReactiveInput<'scope, Signal<'scope, T>> for ReadSignal<'scope, T> {
+    fn into_reactive_input(self, _scope: Scope<'scope>) -> Signal<'scope, T> {
+        self.into()
+    }
+}
+
+impl<'scope, T: 'scope> ReactiveInput<'scope, Signal<'scope, T>> for RwSignal<'scope, T> {
+    fn into_reactive_input(self, _scope: Scope<'scope>) -> Signal<'scope, T> {
+        self.into()
+    }
+}
+
+impl<'scope, T: 'scope> ReactiveInput<'scope, Signal<'scope, T>> for Memo<'scope, T> {
+    fn into_reactive_input(self, _scope: Scope<'scope>) -> Signal<'scope, T> {
+        self.into()
+    }
+}
+
+impl<'scope, T: 'scope> ReactiveInput<'scope, Signal<'scope, T>> for StoredValue<'scope, T> {
+    fn into_reactive_input(self, _scope: Scope<'scope>) -> Signal<'scope, T> {
+        self.into()
+    }
+}
+
+impl<'scope, T: 'scope> ReactiveInput<'scope, Signal<'scope, T>> for Rx<'scope, T, RxValueKind> {
+    fn into_reactive_input(self, _scope: Scope<'scope>) -> Signal<'scope, T> {
+        self.into_signal()
+    }
+}
+
+impl<'scope, T: 'scope> ReactiveInput<'scope, ReadSignal<'scope, T>> for ReadSignal<'scope, T> {
+    fn into_reactive_input(self, _scope: Scope<'scope>) -> ReadSignal<'scope, T> {
+        self
+    }
+}
+
+impl<'scope, T: 'scope> ReactiveInput<'scope, ReadSignal<'scope, T>> for RwSignal<'scope, T> {
+    fn into_reactive_input(self, _scope: Scope<'scope>) -> ReadSignal<'scope, T> {
+        self.read_signal()
+    }
+}
+
+impl<'scope, T: 'scope> ReactiveInput<'scope, RwSignal<'scope, T>> for RwSignal<'scope, T> {
+    fn into_reactive_input(self, _scope: Scope<'scope>) -> RwSignal<'scope, T> {
+        self
+    }
+}
+
+impl<'scope, T: 'scope> ReactiveInput<'scope, Memo<'scope, T>> for Memo<'scope, T> {
+    fn into_reactive_input(self, _scope: Scope<'scope>) -> Memo<'scope, T> {
+        self
+    }
+}
+
+impl<'scope, T: 'scope> ReactiveInput<'scope, StoredValue<'scope, T>> for StoredValue<'scope, T> {
+    fn into_reactive_input(self, _scope: Scope<'scope>) -> StoredValue<'scope, T> {
+        self
+    }
+}
+
+impl<'scope, T: 'scope> ReactiveInput<'scope, Rx<'scope, T>> for Signal<'scope, T> {
+    fn into_reactive_input(self, _scope: Scope<'scope>) -> Rx<'scope, T> {
+        self.into_rx()
+    }
+}
+
+impl<'scope, T: 'scope> ReactiveInput<'scope, Rx<'scope, T>> for ReadSignal<'scope, T> {
+    fn into_reactive_input(self, _scope: Scope<'scope>) -> Rx<'scope, T> {
+        self.into_rx()
+    }
+}
+
+impl<'scope, T: 'scope> ReactiveInput<'scope, Rx<'scope, T>> for RwSignal<'scope, T> {
+    fn into_reactive_input(self, _scope: Scope<'scope>) -> Rx<'scope, T> {
+        self.into_rx()
+    }
+}
+
+impl<'scope, T: 'scope> ReactiveInput<'scope, Rx<'scope, T>> for Memo<'scope, T> {
+    fn into_reactive_input(self, _scope: Scope<'scope>) -> Rx<'scope, T> {
+        self.into_rx()
+    }
+}
+
+impl<'scope, T: 'scope> ReactiveInput<'scope, Rx<'scope, T>> for StoredValue<'scope, T> {
+    fn into_reactive_input(self, _scope: Scope<'scope>) -> Rx<'scope, T> {
+        self.into_rx()
+    }
+}
+
+impl<'scope, T: 'scope> ReactiveInput<'scope, Rx<'scope, T>> for Rx<'scope, T, RxValueKind> {
+    fn into_reactive_input(self, _scope: Scope<'scope>) -> Rx<'scope, T> {
+        self
+    }
+}
+
+macro_rules! impl_reactive_input_values {
+    ($($value:ty),* $(,)?) => {
+        $(
+            impl<'scope> ReactiveInput<'scope, Signal<'scope, $value>> for $value {
+                fn into_reactive_input(
+                    self,
+                    scope: Scope<'scope>,
+                ) -> Signal<'scope, $value> {
+                    <Signal<'scope, $value> as RxFrom<'scope>>::rx_from(scope, self)
+                }
+            }
+
+            impl<'scope> ReactiveInput<'scope, ReadSignal<'scope, $value>> for $value {
+                fn into_reactive_input(
+                    self,
+                    scope: Scope<'scope>,
+                ) -> ReadSignal<'scope, $value> {
+                    <ReadSignal<'scope, $value> as RxFrom<'scope>>::rx_from(scope, self)
+                }
+            }
+
+            impl<'scope> ReactiveInput<'scope, RwSignal<'scope, $value>> for $value {
+                fn into_reactive_input(
+                    self,
+                    scope: Scope<'scope>,
+                ) -> RwSignal<'scope, $value> {
+                    <RwSignal<'scope, $value> as RxFrom<'scope>>::rx_from(scope, self)
+                }
+            }
+
+            impl<'scope> ReactiveInput<'scope, Memo<'scope, $value>> for $value {
+                fn into_reactive_input(
+                    self,
+                    scope: Scope<'scope>,
+                ) -> Memo<'scope, $value> {
+                    <Memo<'scope, $value> as RxFrom<'scope>>::rx_from(scope, self)
+                }
+            }
+
+            impl<'scope> ReactiveInput<'scope, StoredValue<'scope, $value>> for $value {
+                fn into_reactive_input(
+                    self,
+                    scope: Scope<'scope>,
+                ) -> StoredValue<'scope, $value> {
+                    <StoredValue<'scope, $value> as RxFrom<'scope>>::rx_from(scope, self)
+                }
+            }
+
+            impl<'scope> ReactiveInput<'scope, Rx<'scope, $value>> for $value {
+                fn into_reactive_input(
+                    self,
+                    scope: Scope<'scope>,
+                ) -> Rx<'scope, $value> {
+                    <Rx<'scope, $value> as RxFrom<'scope>>::rx_from(scope, self)
+                }
+            }
+        )*
+    };
+}
+
+impl_reactive_input_values!(
+    (),
+    bool,
+    char,
+    u8,
+    u16,
+    u32,
+    u64,
+    u128,
+    usize,
+    i8,
+    i16,
+    i32,
+    i64,
+    i128,
+    isize,
+    f32,
+    f64,
+    String,
+);
+
+macro_rules! impl_reactive_input_str_values {
+    ($($target:ty),* $(,)?) => {
+        $(
+            impl<'scope, 'value> ReactiveInput<'scope, Signal<'scope, $target>>
+                for &'value str
+            {
+                fn into_reactive_input(
+                    self,
+                    scope: Scope<'scope>,
+                ) -> Signal<'scope, $target> {
+                    <Signal<'scope, $target> as RxFrom<'scope>>::rx_from(scope, self)
+                }
+            }
+
+            impl<'scope, 'value> ReactiveInput<'scope, ReadSignal<'scope, $target>>
+                for &'value str
+            {
+                fn into_reactive_input(
+                    self,
+                    scope: Scope<'scope>,
+                ) -> ReadSignal<'scope, $target> {
+                    <ReadSignal<'scope, $target> as RxFrom<'scope>>::rx_from(scope, self)
+                }
+            }
+
+            impl<'scope, 'value> ReactiveInput<'scope, RwSignal<'scope, $target>>
+                for &'value str
+            {
+                fn into_reactive_input(
+                    self,
+                    scope: Scope<'scope>,
+                ) -> RwSignal<'scope, $target> {
+                    <RwSignal<'scope, $target> as RxFrom<'scope>>::rx_from(scope, self)
+                }
+            }
+
+            impl<'scope, 'value> ReactiveInput<'scope, Memo<'scope, $target>>
+                for &'value str
+            {
+                fn into_reactive_input(
+                    self,
+                    scope: Scope<'scope>,
+                ) -> Memo<'scope, $target> {
+                    <Memo<'scope, $target> as RxFrom<'scope>>::rx_from(scope, self)
+                }
+            }
+
+            impl<'scope, 'value> ReactiveInput<'scope, StoredValue<'scope, $target>>
+                for &'value str
+            {
+                fn into_reactive_input(
+                    self,
+                    scope: Scope<'scope>,
+                ) -> StoredValue<'scope, $target> {
+                    <StoredValue<'scope, $target> as RxFrom<'scope>>::rx_from(scope, self)
+                }
+            }
+
+            impl<'scope, 'value> ReactiveInput<'scope, Rx<'scope, $target>>
+                for &'value str
+            {
+                fn into_reactive_input(
+                    self,
+                    scope: Scope<'scope>,
+                ) -> Rx<'scope, $target> {
+                    <Rx<'scope, $target> as RxFrom<'scope>>::rx_from(scope, self)
+                }
+            }
+        )*
+    };
+}
+
+impl_reactive_input_str_values!(String);
 
 /// Clone-based convenience access built on top of [`RxRead`].
 pub trait RxGet: RxRead

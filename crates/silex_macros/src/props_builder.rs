@@ -227,6 +227,30 @@ impl BuilderContext {
         self.scope.clone()
     }
 
+    fn reactive_input_generic_ident(&self) -> Ident {
+        let mut index = 0;
+        loop {
+            let suffix = if index == 0 {
+                String::new()
+            } else {
+                index.to_string()
+            };
+            let candidate = format_ident!("__SilexReactiveInput{}", suffix);
+            let used = self.generics.params.iter().any(|param| match param {
+                syn::GenericParam::Lifetime(param) => param.lifetime.ident == candidate,
+                syn::GenericParam::Type(param) => param.ident == candidate,
+                syn::GenericParam::Const(param) => param.ident == candidate,
+            }) || self
+                .prop_generic_idents
+                .iter()
+                .any(|ident| ident == &candidate);
+            if !used {
+                return candidate;
+            }
+            index += 1;
+        }
+    }
+
     fn pending_attribute_ty(&self) -> TokenStream2 {
         let __silex = crate::crate_path::silex();
         let scope = self.scope_lifetime();
@@ -401,10 +425,26 @@ impl BuilderContext {
         let ident = &field.ident;
         let ty = &field.ty;
         let scope = self.scope_lifetime();
+        let reactive_input = self.scope_field.is_some() && is_reactive_input_type(ty, &scope);
+        let scope_field = self.scope_field.as_ref();
+        let setter_generic = self.reactive_input_generic_ident();
+        let scope_expr = if reactive_input {
+            let scope_field =
+                scope_field.expect("reactive input setters were validated to have a scope field");
+            if field.required {
+                quote! { #scope_field }
+            } else {
+                quote! { self.#scope_field }
+            }
+        } else {
+            quote! {}
+        };
 
         let fields_destructure: Vec<_> = self.fields.iter().map(|f| &f.ident).collect();
 
-        let setter_param = if is_any_view_type(ty) {
+        let setter_param = if reactive_input {
+            quote! { #setter_generic }
+        } else if is_any_view_type(ty) {
             quote! { impl #__silex::dom::view::View<#scope> + #scope }
         } else if field.attrs.render {
             quote! { #ty }
@@ -414,7 +454,14 @@ impl BuilderContext {
             quote! { #ty }
         };
 
-        let setter_value = if is_any_view_type(ty) {
+        let setter_value = if reactive_input {
+            quote! {
+                <#setter_generic as #__silex::core::ReactiveInput<#scope, #ty>>::into_reactive_input(
+                    val,
+                    #scope_expr,
+                )
+            }
+        } else if is_any_view_type(ty) {
             quote! { val.into_any() }
         } else if field.attrs.into_trait || is_auto_into_type(ty) {
             quote! { val.into() }
@@ -445,9 +492,23 @@ impl BuilderContext {
             }
             let return_ty = self.get_builder_ty(&return_states);
 
+            let generic = if reactive_input {
+                quote! { <#setter_generic> }
+            } else {
+                quote! {}
+            };
+            let where_clause = if reactive_input {
+                quote! {
+                    where
+                        #setter_generic: #__silex::core::ReactiveInput<#scope, #ty>
+                }
+            } else {
+                quote! {}
+            };
+
             quote! {
                 #[allow(non_camel_case_types, unused_variables)]
-                pub fn #ident(self, val: #setter_param) -> #return_ty {
+                pub fn #ident #generic(self, val: #setter_param) -> #return_ty #where_clause {
                     let Self {
                         #(#fields_destructure,)*
                         _pending_attrs,
@@ -464,8 +525,22 @@ impl BuilderContext {
                 }
             }
         } else {
+            let generic = if reactive_input {
+                quote! { <#setter_generic> }
+            } else {
+                quote! {}
+            };
+            let where_clause = if reactive_input {
+                quote! {
+                    where
+                        #setter_generic: #__silex::core::ReactiveInput<#scope, #ty>
+                }
+            } else {
+                quote! {}
+            };
+
             quote! {
-                pub fn #ident(mut self, val: #setter_param) -> Self {
+                pub fn #ident #generic(mut self, val: #setter_param) -> Self #where_clause {
                     self.#ident = #final_value;
                     self
                 }
@@ -676,6 +751,24 @@ fn reactive_default_transform(
     let __silex = crate::crate_path::silex();
     let ty = &field.ty;
 
+    if let Some(value_ty) = reactive_input_value_type(ty, scope) {
+        return match default_value {
+            Some(value) => quote! {
+                {
+                    use #__silex::core::ReactiveInput as _;
+                    (#value).into_reactive_input(#scope_field)
+                }
+            },
+            None => quote! {
+                {
+                    use #__silex::core::ReactiveInput as _;
+                    <#value_ty as ::core::default::Default>::default()
+                        .into_reactive_input(#scope_field)
+                }
+            },
+        };
+    }
+
     match default_value {
         Some(value) => quote! {
             <#ty as #__silex::core::RxFrom<#scope>>::rx_from(#scope_field, #value)
@@ -779,6 +872,47 @@ fn is_reactive_wrapper_type(ty: &Type) -> bool {
             | Some("Callback")
             | Some("NodeRef")
     )
+}
+
+fn is_reactive_input_type(ty: &Type, scope: &syn::Lifetime) -> bool {
+    reactive_input_value_type(ty, scope).is_some()
+}
+
+fn reactive_input_value_type(ty: &Type, scope: &syn::Lifetime) -> Option<Type> {
+    let Type::Path(type_path) = ty else {
+        return None;
+    };
+    if type_path.qself.is_some() {
+        return None;
+    }
+
+    let segment = type_path.path.segments.last()?;
+    if !matches!(
+        segment.ident.to_string().as_str(),
+        "Signal" | "ReadSignal" | "RwSignal" | "Memo" | "StoredValue" | "Rx"
+    ) {
+        return None;
+    }
+
+    let PathArguments::AngleBracketed(arguments) = &segment.arguments else {
+        return None;
+    };
+    if arguments.args.len() != 2 {
+        return None;
+    }
+
+    let mut args = arguments.args.iter();
+    let Some(GenericArgument::Lifetime(lifetime)) = args.next() else {
+        return None;
+    };
+    if lifetime.ident != scope.ident {
+        return None;
+    }
+
+    match args.next() {
+        Some(GenericArgument::Type(value)) => Some(value.clone()),
+        _ => None,
+    }
 }
 
 fn is_reactive_default_field(field: &FieldSpec) -> bool {

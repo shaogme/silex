@@ -8,6 +8,29 @@
 </head>
 
 <body class="bg-slate-100 text-slate-900 dark:bg-slate-900 dark:text-slate-50 transition-colors duration-300">
+    <div id="app"></div>
+
+    <script type="module">
+        let uiHost = null;
+
+        window.addEventListener("TrunkApplicationStarted", () => {
+            if (uiHost !== null) return;
+            try {
+                uiHost = window.wasmBindings.mountUi();
+            } catch (error) {
+                console.error("UI showcase mount failed", error);
+            }
+        });
+
+        window.addEventListener("ui-unmount", () => {
+            if (uiHost === null) return;
+            try {
+                uiHost.unmount();
+            } catch (error) {
+                console.error("UI showcase unmount failed", error);
+            }
+        });
+    </script>
 </body>
 
 </html>

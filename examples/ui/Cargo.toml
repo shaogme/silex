@@ -5,4 +5,9 @@ edition.workspace = true
 publish = false
 
 [dependencies]
-silex = { workspace = true, features = ["tw", "persistence"] }
+silex = { workspace = true, features = ["bootstrap", "tw", "persistence"] }
+wasm-bindgen.workspace = true
+
+[dev-dependencies]
+gloo-timers.workspace = true
+wasm-bindgen-test.workspace = true
