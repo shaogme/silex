@@ -1,3 +1,7 @@
+use std::fmt;
+
+use silex_core::{ReactiveError, SilexError};
+
 mod backend;
 mod builder;
 mod codec;
@@ -23,7 +27,7 @@ pub enum PersistenceError {
     DecodeFailed { raw: String, message: String },
     EncodeFailed(String),
     InvalidConfiguration(String),
-    Reactivity(silex_core::ReactiveError),
+    Reactivity(ReactiveError),
 }
 
 impl PersistenceError {
@@ -41,9 +45,26 @@ impl PersistenceError {
     }
 }
 
-impl From<silex_core::ReactiveError> for PersistenceError {
-    fn from(error: silex_core::ReactiveError) -> Self {
+impl fmt::Display for PersistenceError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.message())
+    }
+}
+
+impl std::error::Error for PersistenceError {}
+
+impl From<ReactiveError> for PersistenceError {
+    fn from(error: ReactiveError) -> Self {
         Self::Reactivity(error)
+    }
+}
+
+impl From<PersistenceError> for SilexError {
+    fn from(error: PersistenceError) -> Self {
+        match error {
+            PersistenceError::Reactivity(error) => SilexError::Reactivity(error),
+            other => SilexError::Framework(other.message()),
+        }
     }
 }
 
@@ -77,4 +98,28 @@ pub enum SyncStrategy {
     None,
     CrossContext,
     Debounce(std::time::Duration),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_persistence_error_to_silex_error() {
+        let err = PersistenceError::BackendUnavailable;
+        let silex_err: SilexError = err.into();
+        assert!(matches!(silex_err, SilexError::Framework(msg) if msg == "backend unavailable"));
+
+        let err = PersistenceError::ReadFailed("read error".to_string());
+        let silex_err: SilexError = err.into();
+        assert!(matches!(silex_err, SilexError::Framework(msg) if msg == "read error"));
+
+        let reactive_err = ReactiveError::NoSuchNode;
+        let err = PersistenceError::Reactivity(reactive_err);
+        let silex_err: SilexError = err.into();
+        assert!(matches!(
+            silex_err,
+            SilexError::Reactivity(ReactiveError::NoSuchNode)
+        ));
+    }
 }
