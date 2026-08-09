@@ -8,6 +8,28 @@
 
 <body>
     <div id="app"></div>
+
+    <script type="module">
+        let routerHost = null;
+
+        window.addEventListener("TrunkApplicationStarted", () => {
+            if (routerHost !== null) return;
+            try {
+                routerHost = window.wasmBindings.mountRouter();
+            } catch (error) {
+                console.error("Router mount failed", error);
+            }
+        });
+
+        window.addEventListener("router-unmount", () => {
+            if (routerHost === null) return;
+            try {
+                routerHost.unmount();
+            } catch (error) {
+                console.error("Router unmount failed", error);
+            }
+        });
+    </script>
 </body>
 
 </html>
