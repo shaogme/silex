@@ -421,11 +421,38 @@ pub(crate) fn raw_path_segments(path: &str) -> Result<Vec<RawPathSegment<'_>>, P
     Ok(segments)
 }
 
+pub(crate) fn strip_path_prefix(prefix: &str, path: &str) -> Option<String> {
+    let prefix_segments = raw_path_segments(prefix).ok()?;
+    let path_segments = raw_path_segments(path).ok()?;
+
+    if prefix_segments.len() > path_segments.len() {
+        return None;
+    }
+
+    for (prefix_segment, path_segment) in prefix_segments.iter().zip(&path_segments) {
+        let prefix_value = percent_decode_segment(prefix_segment.raw).ok()?;
+        let path_value = percent_decode_segment(path_segment.raw).ok()?;
+        if prefix_value != path_value {
+            return None;
+        }
+    }
+
+    let remaining = &path_segments[prefix_segments.len()..];
+    if remaining.is_empty() {
+        return Some(String::from("/"));
+    }
+
+    Some(format!(
+        "/{}",
+        &path[remaining[0].start..remaining.last()?.end]
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         PathParam, PathParamError, PathTail, RoutePath, normalize_path, percent_decode_segment,
-        percent_encode_segment,
+        percent_encode_segment, strip_path_prefix,
     };
 
     #[test]
@@ -481,5 +508,22 @@ mod tests {
         assert!(RoutePath::new("https://example.test").is_err());
         assert!(RoutePath::new("/users/%GG").is_err());
         assert!(RoutePath::new("/users?tab=all").is_err());
+    }
+
+    #[test]
+    fn nested_prefix_stripping_respects_segment_boundaries_and_encoding() {
+        assert_eq!(
+            strip_path_prefix("/users", "/users/42"),
+            Some(String::from("/42"))
+        );
+        assert_eq!(strip_path_prefix("/users", "/username/42"), None);
+        assert_eq!(
+            strip_path_prefix("/a%2Fb", "/a%2Fb/c"),
+            Some(String::from("/c"))
+        );
+        assert_eq!(
+            strip_path_prefix("/users", "/users/"),
+            Some(String::from("/"))
+        );
     }
 }

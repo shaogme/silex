@@ -1259,7 +1259,7 @@ where
         } = args;
         renderer(key, (parent, attrs))
     });
-    mount_keyed_dynamic_view(owner, parent, attrs, inputs, key_fn, render)
+    mount_keyed_dynamic_view(owner, parent, attrs, inputs, key_fn, render, true)
 }
 
 pub fn mount_branch_cached<'scope, K, KeyFn, BranchFn>(
@@ -1285,7 +1285,34 @@ where
         } = args;
         branch_fn(key).mount_owned(&token, &parent, attrs)
     });
-    mount_keyed_dynamic_view(owner, parent, attrs, inputs, key_fn, render)
+    mount_keyed_dynamic_view(owner, parent, attrs, inputs, key_fn, render, true)
+}
+
+/// Mount a branch that is replaced only when its route identity changes.
+pub fn mount_branch_stable_cached<'scope, K, KeyFn, BranchFn>(
+    owner: &dyn ViewOwner<'scope>,
+    parent: &Node,
+    attrs: Vec<PendingAttribute<'scope>>,
+    inputs: RuntimeInputs,
+    key_fn: KeyFn,
+    branch_fn: BranchFn,
+) -> SilexResult<()>
+where
+    K: PartialEq + Clone + 'scope,
+    KeyFn: Fn() -> K + Clone + 'scope,
+    BranchFn: Fn(K) -> AnyView<'scope> + 'scope,
+{
+    let render = RowRender::new(move |args: RowRenderArgs<'scope, K>| {
+        let RowRenderArgs {
+            item: key,
+            parent,
+            attrs,
+            owner: token,
+            ..
+        } = args;
+        branch_fn(key).mount_owned(&token, &parent, attrs)
+    });
+    mount_keyed_dynamic_view(owner, parent, attrs, inputs, key_fn, render, false)
 }
 
 struct BranchState<'scope, K> {
@@ -1303,6 +1330,7 @@ fn mount_keyed_dynamic_view<'scope, K, KeyFn>(
     inputs: RuntimeInputs,
     key_fn: KeyFn,
     render: RowRender<'scope, K>,
+    update_same_key: bool,
 ) -> SilexResult<()>
 where
     K: PartialEq + Clone + 'scope,
@@ -1358,16 +1386,22 @@ where
                     .as_ref()
                     .is_some_and(|current| current == &key);
                 if same_key {
-                    effect_state
-                        .borrow_mut()
-                        .row
-                        .as_mut()
-                        .ok_or_else(|| {
-                            SilexError::Framework(
-                                "dynamic row is missing for current key".to_string(),
-                            )
-                        })?
-                        .update(key, 0)?;
+                    if update_same_key {
+                        effect_state
+                            .borrow_mut()
+                            .row
+                            .as_mut()
+                            .ok_or_else(|| {
+                                SilexError::Framework(
+                                    "dynamic row is missing for current key".to_string(),
+                                )
+                            })?
+                            .update(key, 0)?;
+                    } else if effect_state.borrow().row.is_none() {
+                        return Err(SilexError::Framework(
+                            "dynamic row is missing for current key".to_string(),
+                        ));
+                    }
                     return Ok(());
                 }
 

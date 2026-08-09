@@ -1,8 +1,11 @@
 use crate::{
-    RouterContext,
-    path::{PathError, PathParam, RawPathSegment, percent_decode_segment, raw_path_segments},
+    RouteOutlet, RouterContext,
+    path::{
+        PathError, PathParam, RawPathSegment, normalize_path, percent_decode_segment,
+        raw_path_segments,
+    },
 };
-use silex_dom::view::AnyView;
+use silex_dom::view::{AnyView, View};
 use std::{
     collections::{BTreeMap, HashSet},
     error::Error,
@@ -12,6 +15,15 @@ use std::{
 
 /// The position of a route in a route table.
 pub type RouteId = usize;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum RouteBranchKey {
+    Empty,
+    Matched {
+        route_id: RouteId,
+        params: Vec<String>,
+    },
+}
 
 /// A raw route parameter captured from a pathname.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -410,6 +422,12 @@ impl RouteMatcher {
         self.try_matches(path).ok()?.into_iter().next()
     }
 
+    pub(crate) fn branch_key(&self, path: &str) -> RouteBranchKey {
+        self.match_path(path)
+            .map(|matched| route_branch_key(&matched))
+            .unwrap_or(RouteBranchKey::Empty)
+    }
+
     pub fn resolve<'path, T, F>(&self, path: &'path str, handler: F) -> Option<T>
     where
         F: FnMut(RouteMatch<'path>) -> Option<T>,
@@ -428,6 +446,17 @@ impl RouteMatcher {
         self.root.insert(&route.segments, route_id);
         self.routes.push(route);
         Ok(route_id)
+    }
+}
+
+fn route_branch_key(matched: &RouteMatch<'_>) -> RouteBranchKey {
+    RouteBranchKey::Matched {
+        route_id: matched.route_id(),
+        params: matched
+            .params()
+            .iter()
+            .map(|param| param.raw().to_string())
+            .collect(),
     }
 }
 
@@ -510,18 +539,92 @@ impl<'scope> RouteTable<'scope> {
         self.matcher.match_path(path)
     }
 
-    pub fn resolve(&self, path: &str, context: RouterContext<'scope>) -> Option<AnyView<'scope>> {
-        self.matcher.resolve(path, |matched| {
-            let entry = self.entries.get(matched.route_id())?;
-            (entry.handler)(matched, context)
-        })
+    pub(crate) fn branch_key(&self, path: &str) -> RouteBranchKey {
+        self.matcher.branch_key(path)
     }
+
+    /// Compose a child route table below a static path prefix.
+    pub fn nest<F, V>(self, prefix: impl AsRef<str>, child: RouteTable<'scope>, layout: F) -> Self
+    where
+        F: Fn(RouterContext<'scope>, AnyView<'scope>) -> V + 'scope,
+        V: View<'scope> + 'scope,
+    {
+        self.try_nest(prefix, child, layout)
+            .unwrap_or_else(|error| panic!("failed to nest route table: {error}"))
+    }
+
+    /// Fallible form of [`RouteTable::nest`] for callers that validate route
+    /// composition during setup instead of panicking.
+    pub fn try_nest<F, V>(
+        mut self,
+        prefix: impl AsRef<str>,
+        child: RouteTable<'scope>,
+        layout: F,
+    ) -> Result<Self, RoutePatternError>
+    where
+        F: Fn(RouterContext<'scope>, AnyView<'scope>) -> V + 'scope,
+        V: View<'scope> + 'scope,
+    {
+        let prefix = normalize_nest_prefix(prefix.as_ref())?;
+        let pattern = if prefix == "/" {
+            String::from("/*")
+        } else {
+            format!("{prefix}/*")
+        };
+        let entry = RouteEntry::new(pattern, move |_, context| {
+            let outlet = RouteOutlet::nested(context, child.clone(), prefix.clone()).into_any();
+            Some(layout(context, outlet).into_any())
+        })?;
+        self.add_entry(entry)?;
+        Ok(self)
+    }
+
+    pub fn resolve(&self, path: &str, context: RouterContext<'scope>) -> Option<AnyView<'scope>> {
+        self.resolve_branch(path, context).map(|(_, view)| view)
+    }
+
+    pub(crate) fn resolve_branch(
+        &self,
+        path: &str,
+        context: RouterContext<'scope>,
+    ) -> Option<(RouteBranchKey, AnyView<'scope>)> {
+        self.matcher
+            .try_matches(path)
+            .ok()?
+            .into_iter()
+            .find_map(|matched| {
+                let entry = self.entries.get(matched.route_id())?;
+                let key = route_branch_key(&matched);
+                (entry.handler)(matched, context).map(|view| (key, view))
+            })
+    }
+
+    fn add_entry(&mut self, entry: RouteEntry<'scope>) -> Result<RouteId, RoutePatternError> {
+        let route_id = self.matcher.add_compiled(entry.route.clone())?;
+        debug_assert_eq!(route_id, self.entries.len());
+        self.entries.push(entry);
+        Ok(route_id)
+    }
+}
+
+fn normalize_nest_prefix(prefix: &str) -> Result<String, RoutePatternError> {
+    let normalized = normalize_path(prefix)?;
+    for segment in raw_path_segments(&normalized)? {
+        if segment.raw.starts_with([':', '*']) {
+            return Err(RoutePatternError::InvalidPattern {
+                pattern: normalized,
+                reason: "nested route prefixes must contain only static segments".to_string(),
+            });
+        }
+    }
+    Ok(normalized)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{RouteMatcher, RoutePatternError};
+    use super::{RouteEntry, RouteMatcher, RoutePatternError, RouteTable};
     use crate::path::PathTail;
+    use silex_dom::view::AnyView;
 
     #[test]
     fn matcher_uses_static_then_param_then_wildcard_priority() {
@@ -596,5 +699,33 @@ mod tests {
         assert_eq!(matcher.match_path("/users/").unwrap().route_id(), 0);
         assert!(matcher.match_path("/users//").is_none());
         assert!(matcher.try_matches("/users//").is_err());
+    }
+
+    #[test]
+    fn nested_tables_match_the_prefix_and_keep_the_nested_branch_key_stable() {
+        let child = RouteTable::from_entries(vec![
+            RouteEntry::new("/", |_, _| Some(AnyView::from("child"))).unwrap(),
+        ])
+        .unwrap();
+        let parent = RouteTable::from_entries(vec![
+            RouteEntry::new("/", |_, _| Some(AnyView::from("home"))).unwrap(),
+        ])
+        .unwrap();
+
+        let nested = parent.nest("/users", child, |_, outlet| outlet);
+        assert_eq!(nested.matcher().pattern(1), Some("/users/*"));
+        assert_eq!(nested.match_path("/users/42").unwrap().route_id(), 1);
+        assert_eq!(nested.branch_key("/users/1"), nested.branch_key("/users/2"));
+    }
+
+    #[test]
+    fn nested_prefixes_reject_dynamic_segments() {
+        let child = RouteTable::from_entries(Vec::<RouteEntry<'static>>::new()).unwrap();
+        let parent = RouteTable::from_entries(Vec::<RouteEntry<'static>>::new()).unwrap();
+        assert!(
+            parent
+                .try_nest("/:tenant", child, |_, outlet| outlet)
+                .is_err()
+        );
     }
 }

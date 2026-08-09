@@ -285,6 +285,61 @@ fn router_layout_is_created_once_while_outlet_changes() {
 }
 
 #[wasm_bindgen_test]
+fn nested_outlet_keeps_parent_layout_while_child_route_changes() {
+    set_url("/app/users/1");
+    let host = mount_host();
+    let layouts = Rc::new(Cell::new(0));
+    let navigator = Rc::new(RefCell::new(None));
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+
+    root.with_scope(|scope| {
+        let navigator_for_detail = navigator.clone();
+        let child = RouteTable::from_entries(vec![
+            RouteEntry::new("/:id", move |matched, context| {
+                *navigator_for_detail.borrow_mut() = Some(context.navigator);
+                let id = matched.parse::<u32>("id").ok()?;
+                Some(AnyView::from(id.to_string()))
+            })
+            .expect("nested detail route should compile"),
+        ])
+        .expect("nested table should compile");
+        let layouts_for_view = layouts.clone();
+        let table = RouteTable::from_entries(vec![
+            RouteEntry::new("/", |_, _| Some(AnyView::from("home")))
+                .expect("home route should compile"),
+        ])
+        .expect("parent table should compile")
+        .nest("/users", child, move |_, outlet| {
+            layouts_for_view.set(layouts_for_view.get() + 1);
+            AnyView::from(vec![AnyView::from("users:"), outlet])
+        });
+        let view = Router(scope).base("/app").routes(table);
+        let owner = ScopedViewOwner::new(scope, test_handler(scope));
+        view.mount_owned(&owner, &host, Vec::new())
+            .expect("nested router should mount");
+    });
+
+    assert_eq!(host.text_content().as_deref(), Some("users:1"));
+    assert_eq!(layouts.get(), 1);
+    let navigator = navigator
+        .borrow()
+        .as_ref()
+        .copied()
+        .expect("nested route should expose navigator");
+    navigator.push(RoutePath::new("/users/2").expect("nested path should be valid"));
+    assert_eq!(host.text_content().as_deref(), Some("users:2"));
+    assert_eq!(layouts.get(), 1);
+
+    root.dispose().expect("root cleanup should succeed");
+    host.parent_node()
+        .expect("host has a parent")
+        .remove_child(&host)
+        .expect("host can be removed");
+    set_url("/");
+}
+
+#[wasm_bindgen_test]
 fn link_requires_context_and_tracks_active_path() {
     set_url("/");
     let host = mount_host();
