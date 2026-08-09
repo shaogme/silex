@@ -49,7 +49,7 @@ pub fn store_impl(mut model: ItemStruct) -> Result<TokenStream> {
     let fields_name = format_ident!("{model_name}StoreFields");
     let model_type = model_type(&model_name, &model_generics);
 
-    let mut alias_generics = alias_generics(&model_generics);
+    let mut alias_generics = alias_generics(&model_generics, &field_infos, &core);
     add_scope_bounds_to_parameters(&mut alias_generics);
     let impl_generics = impl_generics(&model_generics);
     let mut fields_generics = fields_generics(&model_generics, &field_infos);
@@ -61,6 +61,10 @@ pub fn store_impl(mut model: ItemStruct) -> Result<TokenStream> {
     let default_fields_args = type_arguments(&model_generics, &field_infos, |field| {
         let ty = &field.ty;
         quote!(#core::RwSignal<'scope, #ty>)
+    });
+    let alias_fields_args = type_arguments(&model_generics, &field_infos, |field| {
+        let handle = &field.handle_ident;
+        quote!(#handle)
     });
     let model_fields = field_infos.iter().map(|field| {
         let ident = &field.ident;
@@ -122,7 +126,7 @@ pub fn store_impl(mut model: ItemStruct) -> Result<TokenStream> {
             #(#model_fields),*
         }
 
-        #model_visibility type #store_name #alias_generics = #fields_name #default_fields_args;
+        #model_visibility type #store_name #alias_generics = #fields_name #alias_fields_args;
 
         impl #default_impl_generics_tokens #fields_name #default_fields_args #default_impl_where
         {
@@ -232,11 +236,33 @@ fn model_expression(model_name: &Ident, generics: &Generics) -> TokenStream {
     }
 }
 
-fn alias_generics(model_generics: &Generics) -> Generics {
-    let mut generics = model_generics.clone();
-    generics.params.insert(0, parse_quote!('scope));
-    generics.where_clause = None;
-    generics
+fn alias_generics(
+    model_generics: &Generics,
+    fields: &[StoreFieldInfo],
+    core: &TokenStream,
+) -> Generics {
+    let mut params = syn::punctuated::Punctuated::new();
+    params.push(parse_quote!('scope));
+    params.extend(model_generics.params.iter().cloned());
+
+    for field in fields {
+        let ty = &field.ty;
+        params.push(GenericParam::Type(syn::TypeParam {
+            attrs: Vec::new(),
+            ident: field.handle_ident.clone(),
+            colon_token: None,
+            bounds: syn::punctuated::Punctuated::new(),
+            eq_token: Some(Default::default()),
+            default: Some(parse_quote!(#core::RwSignal<'scope, #ty>)),
+        }));
+    }
+
+    Generics {
+        lt_token: Some(Default::default()),
+        params,
+        gt_token: Some(Default::default()),
+        where_clause: None,
+    }
 }
 
 fn impl_generics(model_generics: &Generics) -> Generics {
@@ -250,7 +276,6 @@ fn fields_generics(model_generics: &Generics, fields: &[StoreFieldInfo]) -> Gene
     let mut params = syn::punctuated::Punctuated::new();
     params.push(parse_quote!('scope));
 
-    let mut const_params = Vec::new();
     for parameter in &model_generics.params {
         match parameter {
             GenericParam::Lifetime(parameter) => {
@@ -266,7 +291,7 @@ fn fields_generics(model_generics: &Generics, fields: &[StoreFieldInfo]) -> Gene
                 let mut parameter = parameter.clone();
                 parameter.eq_token = None;
                 parameter.default = None;
-                const_params.push(GenericParam::Const(parameter));
+                params.push(GenericParam::Const(parameter));
             }
         }
     }
@@ -281,8 +306,6 @@ fn fields_generics(model_generics: &Generics, fields: &[StoreFieldInfo]) -> Gene
             default: None,
         }));
     }
-
-    params.extend(const_params);
 
     Generics {
         lt_token: Some(Default::default()),
@@ -365,8 +388,6 @@ where
     F: Fn(&StoreFieldInfo) -> TokenStream,
 {
     let mut arguments = vec![quote!('scope)];
-    let mut const_arguments = Vec::new();
-
     for parameter in &model_generics.params {
         match parameter {
             GenericParam::Lifetime(parameter) => {
@@ -379,13 +400,12 @@ where
             }
             GenericParam::Const(parameter) => {
                 let ident = &parameter.ident;
-                const_arguments.push(quote!(#ident));
+                arguments.push(quote!(#ident));
             }
         }
     }
 
     arguments.extend(fields.iter().map(field_argument));
-    arguments.extend(const_arguments);
 
     quote!(<#(#arguments),*>)
 }

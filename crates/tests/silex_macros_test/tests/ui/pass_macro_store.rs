@@ -4,6 +4,7 @@ include!("../../src/lib.rs");
 
 use silex_core::prelude::*;
 use silex_macros::store;
+use silex_persist::Persistent;
 
 #[derive(Clone, Debug, PartialEq)]
 #[store]
@@ -20,6 +21,27 @@ where
 {
     value: T,
     label: &'model str,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+#[store]
+struct Settings {
+    pub theme: String,
+    pub notifications: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+#[store]
+struct Fixed<const N: usize> {
+    values: [u8; N],
+}
+
+fn persistent_field_store<'scope>(
+    scope: Scope<'scope>,
+    theme: Persistent<'scope, String>,
+    notifications: RwSignal<'scope, bool>,
+) {
+    let _settings = SettingsStore::try_from_handles(scope, theme, notifications).unwrap();
 }
 
 fn main() {
@@ -57,5 +79,9 @@ fn main() {
             },
         );
         let _ = (value, generic.snapshot());
+
+        let fixed = FixedStore::new(scope, Fixed { values: [1, 2] });
+        assert_eq!(fixed.snapshot().values, [1, 2]);
+        let _ = persistent_field_store;
     });
 }

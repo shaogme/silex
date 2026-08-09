@@ -1792,6 +1792,7 @@ dependencies = [
  "silex_dom",
  "silex_html",
  "silex_macros",
+ "silex_persist",
  "trybuild",
  "wasm-bindgen",
  "wasm-bindgen-futures",

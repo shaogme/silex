@@ -25,6 +25,8 @@ fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
 }
 
 const STORAGE_KEY: &str = "silex-persist-runtime-refactor";
+const LOCAL_ROUNDTRIP_KEY: &str = "silex-persist-runtime-refactor-local-roundtrip";
+const SESSION_EVENT_KEY: &str = "silex-persist-runtime-refactor-session-event";
 const DEBOUNCE_KEY: &str = "silex-persist-runtime-refactor-debounce";
 const DEBOUNCE_REMOVE_KEY: &str = "silex-persist-runtime-refactor-debounce-remove";
 const LISTENER_CLEANUP_KEY: &str = "silex-persist-runtime-refactor-listener-cleanup";
@@ -280,6 +282,14 @@ fn local_storage() -> web_sys::Storage {
         .expect("localStorage available")
 }
 
+fn session_storage() -> web_sys::Storage {
+    window()
+        .expect("window")
+        .session_storage()
+        .expect("sessionStorage access")
+        .expect("sessionStorage available")
+}
+
 fn set_url(path: &str) {
     window()
         .expect("window is available")
@@ -439,6 +449,138 @@ fn local_storage_event_updates_bindings_and_scope_cleanup() {
     root.dispose().expect("dispose root");
 
     storage.remove_item(STORAGE_KEY).expect("cleanup key");
+}
+
+#[wasm_bindgen_test]
+fn local_storage_binding_round_trip_uses_explicit_scope() {
+    let storage = local_storage();
+    storage
+        .set_item(LOCAL_ROUNDTRIP_KEY, "saved")
+        .expect("seed localStorage key");
+
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    root.with_scope(|scope| {
+        let binding = Persistent::builder(scope, LOCAL_ROUNDTRIP_KEY, test_handler(scope))
+            .local()
+            .string()
+            .write_default(WriteDefault::Never)
+            .default("fallback".to_string())
+            .build();
+
+        assert_eq!(binding.get_untracked(), "saved");
+        assert_eq!(
+            binding.state().get_untracked(),
+            PersistenceState::Ready("saved".to_string())
+        );
+
+        binding.set("updated".to_string());
+        assert_eq!(
+            storage.get_item(LOCAL_ROUNDTRIP_KEY).expect("read key"),
+            Some("updated".to_string())
+        );
+
+        binding.remove().expect("remove localStorage key");
+        assert_eq!(
+            storage
+                .get_item(LOCAL_ROUNDTRIP_KEY)
+                .expect("read removed key"),
+            None
+        );
+        assert_eq!(
+            binding.state().get_untracked(),
+            PersistenceState::Ready(String::new())
+        );
+    });
+    root.dispose().expect("dispose root");
+
+    storage
+        .remove_item(LOCAL_ROUNDTRIP_KEY)
+        .expect("cleanup localStorage key");
+}
+
+#[wasm_bindgen_test]
+fn session_storage_binding_reads_writes_and_reacts_to_storage_events() {
+    let window = window().expect("window");
+    let storage = session_storage();
+    storage
+        .set_item(SESSION_EVENT_KEY, "saved")
+        .expect("seed sessionStorage key");
+
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    root.with_scope(|scope| {
+        let first = Persistent::builder(scope, SESSION_EVENT_KEY, test_handler(scope))
+            .session()
+            .string()
+            .write_default(WriteDefault::Never)
+            .default("fallback".to_string())
+            .build();
+        let second = Persistent::builder(scope, SESSION_EVENT_KEY, test_handler(scope))
+            .session()
+            .string()
+            .write_default(WriteDefault::Never)
+            .default("fallback".to_string())
+            .build();
+
+        assert_eq!(first.get_untracked(), "saved");
+        assert_eq!(second.get_untracked(), "saved");
+
+        first.set("updated".to_string());
+        assert_eq!(
+            storage
+                .get_item(SESSION_EVENT_KEY)
+                .expect("read sessionStorage key"),
+            Some("updated".to_string())
+        );
+
+        let set_event = StorageEvent::new("storage").expect("storage event");
+        set_event.init_storage_event_with_can_bubble_and_cancelable_and_key_and_old_value_and_new_value_and_url_and_storage_area(
+            "storage",
+            false,
+            false,
+            Some(SESSION_EVENT_KEY),
+            Some("updated"),
+            Some("external"),
+            Some("https://example.test/"),
+            Some(&storage),
+        );
+        window
+            .dispatch_event(set_event.as_ref())
+            .expect("dispatch sessionStorage set event");
+        assert_eq!(first.get_untracked(), "external");
+        assert_eq!(second.get_untracked(), "external");
+
+        first.remove().expect("remove sessionStorage key");
+        assert_eq!(
+            storage
+                .get_item(SESSION_EVENT_KEY)
+                .expect("read removed sessionStorage key"),
+            None
+        );
+
+        let remove_event = StorageEvent::new("storage").expect("storage event");
+        remove_event.init_storage_event_with_can_bubble_and_cancelable_and_key_and_old_value_and_new_value_and_url_and_storage_area(
+            "storage",
+            false,
+            false,
+            Some(SESSION_EVENT_KEY),
+            Some("external"),
+            None,
+            Some("https://example.test/"),
+            Some(&storage),
+        );
+        window
+            .dispatch_event(remove_event.as_ref())
+            .expect("dispatch sessionStorage remove event");
+        assert_eq!(first.get_untracked(), "fallback");
+        assert_eq!(second.get_untracked(), "fallback");
+    });
+    root.dispose().expect("dispose root");
+
+    storage
+        .remove_item(SESSION_EVENT_KEY)
+        .expect("cleanup sessionStorage key");
 }
 
 #[wasm_bindgen_test]
