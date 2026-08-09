@@ -248,7 +248,7 @@ where
         return Rc::new(CompletionState::inactive());
     }
 
-    let thunk = CallbackThunk::new_typed(callback);
+    let thunk = CallbackThunk::new_typed_infallible(callback);
     let callback = {
         let mut state_ref = state
             .try_borrow_mut()

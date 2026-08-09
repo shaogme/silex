@@ -32,6 +32,7 @@ pub use store::StoreField;
 pub use task::TaskHandle;
 pub use traits::{
     ReactiveInput, RxBase, RxData, RxDefault, RxFrom, RxGet, RxRead, RxValue, RxWrite,
+    TryRxDefault, TryRxFrom,
 };
 
 pub use silex_reactivity::{CleanupDiagnostic, CleanupError, CleanupPayloadKind};

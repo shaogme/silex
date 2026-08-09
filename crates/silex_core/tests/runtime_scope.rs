@@ -1,6 +1,6 @@
 use silex_core::{
     Callback, ErrorHandler, Memo, NodeRef, ReactiveError, ReadSignal, Runtime, RwSignal, Rx,
-    RxDefault, RxFrom, Scope, Signal, SilexError, StoredValue, rx,
+    RxDefault, RxFrom, Scope, Signal, SilexError, SilexResult, StoredValue, TryRxDefault, rx,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -163,9 +163,12 @@ fn callbacks_and_node_refs_are_scope_owned() {
     runtime.child(|scope| {
         let called = std::rc::Rc::new(std::cell::Cell::new(0));
         let called_by_callback = called.clone();
-        let callback = scope.callback(move |value: i32| {
-            called_by_callback.set(value);
-        });
+        let callback = scope
+            .callback(move |value: i32| {
+                called_by_callback.set(value);
+                Ok(())
+            })
+            .expect("callback should register");
         callback.invoke(11).expect("callback should be alive");
         callback.call(12).expect("callback should remain alive");
         assert_eq!(called.get(), 12);
@@ -198,6 +201,59 @@ fn rx_macro_treats_parameterless_closures_as_derived_values() {
         set_count.set(6);
         assert_eq!(value.get(), 9);
     });
+}
+
+#[test]
+fn rx_macro_parameterized_closures_return_fallible_callbacks() {
+    let mut runtime = Runtime::new();
+    let seen = Rc::new(Cell::new(0));
+    let seen_in_callback = seen.clone();
+
+    runtime.child(|scope| {
+        let callback = rx!(scope; move |value: i32| -> SilexResult<()> {
+            seen_in_callback.set(value);
+            Ok(())
+        })
+        .expect("rx callback should register");
+
+        callback.invoke(7).expect("rx callback should be callable");
+    });
+
+    assert_eq!(seen.get(), 7);
+}
+
+#[test]
+fn callback_errors_preserve_user_and_runtime_variants() {
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    let stale = Rc::new(Cell::new(false));
+    let stale_after_cleanup = stale.clone();
+
+    root.with_scope(|scope| {
+        let callback = scope
+            .callback(|_: ()| Err(SilexError::Framework(String::from("user error"))))
+            .expect("callback should register");
+        assert!(matches!(
+            callback.invoke(()),
+            Err(SilexError::Framework(message)) if message == "user error"
+        ));
+
+        scope
+            .on_cleanup(
+                move || {
+                    stale_after_cleanup.set(matches!(
+                        callback.invoke(()),
+                        Err(SilexError::Reactivity(ReactiveError::NoSuchNode))
+                    ));
+                    Ok(())
+                },
+                handler(scope),
+            )
+            .expect("cleanup should register");
+    });
+
+    root.dispose().expect("root should dispose");
+    assert!(stale.get());
 }
 
 #[test]
@@ -243,7 +299,8 @@ fn rx_default_creates_supported_wrappers_from_the_current_scope() {
         let memo = <Memo<'_, i32> as RxDefault<'_>>::rx_default(scope);
         let stored = <StoredValue<'_, i32> as RxDefault<'_>>::rx_default(scope);
         let rx = <Rx<'_, i32> as RxDefault<'_>>::rx_default(scope);
-        let callback = <Callback<'_, i32> as RxDefault<'_>>::rx_default(scope);
+        let callback = <Callback<'_, i32> as TryRxDefault<'_>>::try_rx_default(scope)
+            .expect("callback default should register");
         let node_ref = <NodeRef<'_, String> as RxDefault<'_>>::rx_default(scope);
 
         assert_eq!(signal.get(), 0);
@@ -253,7 +310,9 @@ fn rx_default_creates_supported_wrappers_from_the_current_scope() {
         assert_eq!(memo.get(), 0);
         assert_eq!(stored.with(|value| *value), 0);
         assert_eq!(rx.get(), 0);
-        assert!(callback.invoke(1).is_ok());
+        callback
+            .invoke(1)
+            .expect("callback default should be callable");
         assert_eq!(node_ref.try_get(), Ok(None));
     });
 }
@@ -286,7 +345,8 @@ fn rx_default_handles_are_inactive_after_root_disposal() {
 
     root.with_scope(|scope| {
         let signal = <Signal<'_, i32> as RxDefault<'_>>::rx_default(scope);
-        let callback = <Callback<'_, ()> as RxDefault<'_>>::rx_default(scope);
+        let callback = <Callback<'_, ()> as TryRxDefault<'_>>::try_rx_default(scope)
+            .expect("callback default should register");
         let node_ref = <NodeRef<'_, String> as RxDefault<'_>>::rx_default(scope);
 
         scope

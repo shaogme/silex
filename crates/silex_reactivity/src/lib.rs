@@ -28,7 +28,10 @@ mod scope;
 pub use crate::{
     child::*,
     completion::{CompletionOnce, CompletionSender, unwind_safe},
-    error::{EffectInitError, EffectInitResult, ErrorHandler, ReactiveError, ReactiveResult},
+    error::{
+        CallbackInvokeError, CallbackInvokeResult, EffectInitError, EffectInitResult, ErrorHandler,
+        ReactiveError, ReactiveResult,
+    },
     handle::{
         CallbackId, DerivedId, EffectId, Handle, MemoId, NodeKind, NodeKindTag, NodeRefId,
         SignalId, StoredId, kind,

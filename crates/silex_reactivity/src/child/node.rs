@@ -3,9 +3,12 @@
 use std::{cell::RefCell, fmt, marker::PhantomData, rc::Rc};
 
 use crate::{
-    ReactiveError, ReactiveResult,
+    CallbackInvokeError, CallbackInvokeResult, ErrorHandler, ReactiveError, ReactiveResult,
     handle::{CallbackId, DerivedId, EffectId, MemoId, NodeRefId, SignalId, StoredId},
-    internal::{RawId, value::AnyValue},
+    internal::{
+        RawId,
+        value::{AnyValue, CallbackThunkError},
+    },
     runtime::{self, RuntimeInput, ScopeState},
 };
 
@@ -34,22 +37,47 @@ impl WatchOptions {
 // =============================================================================
 
 /// Scope-owned typed callbacks.
-pub struct Callback<'scope, T> {
+pub struct Callback<'scope, T, E = ReactiveError> {
     pub(crate) handle: CallbackId<'scope>,
-    pub(crate) marker: PhantomData<fn(T)>,
+    pub(crate) marker: PhantomData<fn(T) -> E>,
 }
 
-impl<T> Copy for Callback<'_, T> {}
+impl<T, E> Copy for Callback<'_, T, E> {}
 
-impl<T> Clone for Callback<'_, T> {
+impl<T, E> Clone for Callback<'_, T, E> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<'scope, T: 'scope> Callback<'scope, T> {
-    pub fn invoke(&self, arg: T) -> ReactiveResult<()> {
+impl<'scope, T: 'scope, E: 'scope> Callback<'scope, T, E> {
+    fn map_error(error: CallbackThunkError<'scope>) -> CallbackInvokeError<E> {
+        match error {
+            CallbackThunkError::Runtime(error) => CallbackInvokeError::Runtime(error),
+            CallbackThunkError::User(value) => unsafe {
+                value
+                    .downcast::<E>()
+                    .map(CallbackInvokeError::User)
+                    .unwrap_or(CallbackInvokeError::Runtime(ReactiveError::TypeMismatch))
+            },
+        }
+    }
+
+    pub fn invoke(&self, arg: T) -> CallbackInvokeResult<(), E> {
         runtime::invoke_callback(&self.handle.state(), self.handle.raw(), AnyValue::new(arg))
+            .map_err(Self::map_error)
+    }
+
+    pub fn dispatch(&self, arg: T, error_handler: ErrorHandler<'scope, E>) -> ReactiveResult<()> {
+        match runtime::invoke_callback(&self.handle.state(), self.handle.raw(), AnyValue::new(arg))
+        {
+            Ok(()) => Ok(()),
+            Err(CallbackThunkError::Runtime(error)) => Err(error),
+            Err(CallbackThunkError::User(value)) => {
+                let error = unsafe { value.downcast::<E>() }.ok_or(ReactiveError::TypeMismatch)?;
+                error_handler.try_handle(error)
+            }
+        }
     }
 }
 

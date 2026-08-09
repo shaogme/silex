@@ -1,6 +1,6 @@
 use silex_reactivity::{
-    Callback, Derived, Effect, ErrorHandler, Memo, NodeRef, ReactiveError, ReadSignal, Runtime,
-    Scope, StoredValue, WriteSignal,
+    Callback, CallbackInvokeError, Derived, Effect, ErrorHandler, Memo, NodeRef, ReactiveError,
+    ReadSignal, Runtime, Scope, StoredValue, WriteSignal,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -41,6 +41,11 @@ struct DropEvent {
     events: Rc<RefCell<Vec<&'static str>>>,
 }
 
+#[derive(Debug)]
+enum CallbackError {
+    Rejected,
+}
+
 impl Drop for DropEvent {
     fn drop(&mut self) {
         self.events.borrow_mut().push(self.label);
@@ -69,7 +74,9 @@ fn all_public_node_capabilities_are_copy() {
             .effect(|| Ok(()), handler(scope))
             .expect("effect should initialize");
         let stored = scope.stored(1i32);
-        let callback = scope.callback(|_: ()| {});
+        let callback = scope
+            .callback(|_: ()| Ok::<(), ReactiveError>(()))
+            .expect("callback should initialize");
         let node_ref = scope.node_ref::<i32>();
 
         assert_copy(read);
@@ -103,9 +110,12 @@ fn stored_callback_and_node_ref_are_scope_owned() {
 
         let called = Rc::new(Cell::new(0));
         let called_in_callback = called.clone();
-        let callback = scope.callback(move |_: ()| {
-            called_in_callback.set(called_in_callback.get() + 1);
-        });
+        let callback = scope
+            .callback(move |_: ()| {
+                called_in_callback.set(called_in_callback.get() + 1);
+                Ok::<(), ReactiveError>(())
+            })
+            .expect("callback should initialize");
         callback.invoke(()).expect("callback should be alive");
         assert_eq!(called.get(), 1);
 
@@ -119,19 +129,109 @@ fn stored_callback_and_node_ref_are_scope_owned() {
 }
 
 #[test]
+fn callback_user_error_is_returned_and_callback_remains_reusable() {
+    let mut runtime = Runtime::new();
+    let calls = Rc::new(Cell::new(0));
+    let seen = Rc::new(Cell::new(0));
+
+    runtime.child(|scope| {
+        let calls_in_callback = calls.clone();
+        let seen_in_callback = seen.clone();
+        let callback = scope
+            .callback(move |value: i32| {
+                calls_in_callback.set(calls_in_callback.get() + 1);
+                if value == 0 {
+                    Err(CallbackError::Rejected)
+                } else {
+                    seen_in_callback.set(value);
+                    Ok(())
+                }
+            })
+            .expect("callback should initialize");
+
+        assert!(matches!(
+            callback.invoke(0),
+            Err(CallbackInvokeError::User(CallbackError::Rejected))
+        ));
+        assert_eq!(calls.get(), 1);
+        assert_eq!(seen.get(), 0);
+
+        callback.invoke(7).expect("callback should remain reusable");
+        assert_eq!(calls.get(), 2);
+        assert_eq!(seen.get(), 7);
+    });
+}
+
+#[test]
+fn callback_runtime_error_and_user_reactive_error_are_distinct() {
+    let mut runtime = Runtime::new();
+
+    runtime.child(|scope| {
+        let callback = scope
+            .callback(|_: ()| Err::<(), ReactiveError>(ReactiveError::NoSuchNode))
+            .expect("callback should initialize");
+
+        assert!(matches!(
+            callback.invoke(()),
+            Err(CallbackInvokeError::User(ReactiveError::NoSuchNode))
+        ));
+    });
+}
+
+#[test]
+fn callback_dispatches_user_error_once_after_releasing_its_lease() {
+    let mut runtime = Runtime::new();
+    let handler_calls = Rc::new(Cell::new(0));
+    let observed = Rc::new(Cell::new(0));
+
+    runtime.child(|scope| {
+        let (signal, set_signal) = scope.signal(0_i32);
+        let handler_calls_in_handler = handler_calls.clone();
+        let handler = scope.error_handler(move |_: &'static str| {
+            handler_calls_in_handler.set(handler_calls_in_handler.get() + 1);
+            set_signal.set(1);
+        });
+        let callback = scope
+            .callback(|_: ()| Err::<(), &'static str>("callback failed"))
+            .expect("callback should initialize");
+
+        assert!(matches!(
+            callback.invoke(()),
+            Err(CallbackInvokeError::User("callback failed"))
+        ));
+        assert_eq!(handler_calls.get(), 0);
+
+        callback
+            .dispatch((), handler)
+            .expect("error handler should consume the callback error");
+        observed.set(signal.get());
+    });
+
+    assert_eq!(handler_calls.get(), 1);
+    assert_eq!(observed.get(), 1);
+}
+
+#[test]
 fn recursive_callback_invocation_reports_borrow_conflict() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
-        let slot: Rc<RefCell<Option<Callback<'_, ()>>>> = Rc::new(RefCell::new(None));
+        let slot: Rc<RefCell<Option<Callback<'_, (), ReactiveError>>>> =
+            Rc::new(RefCell::new(None));
         let slot_in_callback = slot.clone();
-        let callback = scope.callback(move |_: ()| {
-            let nested = slot_in_callback
-                .borrow()
-                .as_ref()
-                .copied()
-                .expect("callback should be initialized");
-            assert_eq!(nested.invoke(()), Err(ReactiveError::BorrowConflict));
-        });
+        let callback = scope
+            .callback(move |_: ()| {
+                let nested = slot_in_callback
+                    .borrow()
+                    .as_ref()
+                    .copied()
+                    .expect("callback should be initialized");
+                assert!(matches!(
+                    nested.invoke(()),
+                    Err(CallbackInvokeError::Runtime(ReactiveError::BorrowConflict))
+                ));
+                Ok::<(), ReactiveError>(())
+            })
+            .expect("callback should initialize");
         *slot.borrow_mut() = Some(callback);
         callback.invoke(()).expect("outer callback should succeed");
     });
@@ -146,12 +246,15 @@ fn callback_panic_keeps_callback_available_for_the_next_invoke() {
     runtime.child(|scope| {
         let called_in_callback = called.clone();
         let panic_in_callback = should_panic.clone();
-        let callback = scope.callback(move |_: ()| {
-            if panic_in_callback.replace(false) {
-                panic!("callback panic");
-            }
-            called_in_callback.set(called_in_callback.get() + 1);
-        });
+        let callback = scope
+            .callback(move |_: ()| {
+                if panic_in_callback.replace(false) {
+                    panic!("callback panic");
+                }
+                called_in_callback.set(called_in_callback.get() + 1);
+                Ok::<(), ReactiveError>(())
+            })
+            .expect("callback should initialize");
 
         let panic = catch_unwind(AssertUnwindSafe(|| {
             callback.invoke(()).expect("callback exists");
@@ -416,9 +519,12 @@ fn child_payloads_drop_before_parent_computation_payload() {
                         label: "callback",
                         events: child_events.clone(),
                     };
-                    let _ = scope_copy.callback(move |_: ()| {
-                        let _ = &callback_event;
-                    });
+                    let _ = scope_copy
+                        .callback(move |_: ()| {
+                            let _ = &callback_event;
+                            Ok::<(), ReactiveError>(())
+                        })
+                        .expect("callback should initialize");
 
                     let node_ref = scope_copy.node_ref::<DropEvent>();
                     node_ref
@@ -475,9 +581,12 @@ fn child_callback_payload_drop_can_schedule_an_active_parent_effect() {
                 called: called.clone(),
                 error: error.clone(),
             };
-            let _callback = child.callback(move |_: ()| {
-                let _ = &drop_probe;
-            });
+            let _callback = child
+                .callback(move |_: ()| {
+                    let _ = &drop_probe;
+                    Ok::<(), ReactiveError>(())
+                })
+                .expect("callback should initialize");
         });
 
         assert_eq!(seen.get(), 1);

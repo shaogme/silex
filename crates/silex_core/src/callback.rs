@@ -1,10 +1,11 @@
 use std::{fmt, marker::PhantomData};
 
 use crate::{SilexError, SilexResult};
+use silex_reactivity::CallbackInvokeError;
 
 /// A typed callback owned by a scope.
 pub struct Callback<'scope, T = ()> {
-    pub(crate) inner: silex_reactivity::Callback<'scope, T>,
+    pub(crate) inner: silex_reactivity::Callback<'scope, T, SilexError>,
     marker: PhantomData<fn(T)>,
 }
 
@@ -23,7 +24,7 @@ impl<T> fmt::Debug for Callback<'_, T> {
 }
 
 impl<'scope, T: 'scope> Callback<'scope, T> {
-    pub(crate) fn from_inner(inner: silex_reactivity::Callback<'scope, T>) -> Self {
+    pub(crate) fn from_inner(inner: silex_reactivity::Callback<'scope, T, SilexError>) -> Self {
         Self {
             inner,
             marker: PhantomData,
@@ -32,7 +33,10 @@ impl<'scope, T: 'scope> Callback<'scope, T> {
 
     /// Invoke the callback and preserve the underlying reactive error.
     pub fn invoke(&self, value: T) -> SilexResult<()> {
-        self.inner.invoke(value).map_err(SilexError::from)
+        self.inner.invoke(value).map_err(|error| match error {
+            CallbackInvokeError::Runtime(error) => SilexError::Reactivity(error),
+            CallbackInvokeError::User(error) => error,
+        })
     }
 
     /// Invoke the callback using the legacy method spelling.

@@ -1,0 +1,8 @@
+error[E0308]: mismatched types
+ --> tests/ui/fail_callback_infallible.rs:6:49
+  |
+6 |         let _callback = scope.callback(|_: i32| {});
+  |                                                 ^^ expected `Result<(), _>`, found `()`
+  |
+  = note:   expected enum `Result<(), _>`
+          found unit type `()`

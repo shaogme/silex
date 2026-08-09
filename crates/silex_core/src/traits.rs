@@ -1,7 +1,8 @@
 //! Lifetime-aware reactive traits.
 
 use crate::{
-    Callback, NodeRef, ReactiveError, ReactiveResult, Rx, RxInner, RxValueKind, Scope, SilexResult,
+    Callback, NodeRef, ReactiveError, ReactiveResult, Rx, RxInner, RxValueKind, Scope, SilexError,
+    SilexResult,
     reactivity::{Memo, ReactiveSource, ReadSignal, RwSignal, Signal, StoredValue, WriteSignal},
 };
 use silex_reactivity::try_notify as raw_try_notify;
@@ -27,6 +28,19 @@ pub trait RxFrom<'scope>: Sized {
     type Value: 'scope;
 
     fn rx_from<V>(scope: Scope<'scope>, value: V) -> Self
+    where
+        V: Into<Self::Value>;
+}
+
+/// Fallible construction of a scope-owned reactive wrapper.
+///
+/// This trait is used by wrappers whose node registration can fail and whose
+/// error must remain visible to the caller. Infallible value conversions keep
+/// using [`RxFrom`].
+pub trait TryRxFrom<'scope>: Sized {
+    type Value: 'scope;
+
+    fn try_rx_from<V>(scope: Scope<'scope>, value: V) -> SilexResult<Self>
     where
         V: Into<Self::Value>;
 }
@@ -61,6 +75,18 @@ pub trait RxDefault<'scope>: RxFrom<'scope> {
 }
 
 impl<'scope, T> RxDefault<'scope> for T where T: RxFrom<'scope> {}
+
+/// Fallible default construction for wrappers implementing [`TryRxFrom`].
+pub trait TryRxDefault<'scope>: TryRxFrom<'scope> {
+    fn try_rx_default(scope: Scope<'scope>) -> SilexResult<Self>
+    where
+        Self::Value: Default,
+    {
+        Self::try_rx_from(scope, Self::Value::default())
+    }
+}
+
+impl<'scope, T> TryRxDefault<'scope> for T where T: TryRxFrom<'scope> {}
 
 impl<'scope, T: 'scope> RxFrom<'scope> for Signal<'scope, T> {
     type Value = T;
@@ -167,14 +193,14 @@ impl<'scope, T: 'scope> RxFrom<'scope> for Rx<'scope, T, RxValueKind> {
     }
 }
 
-impl<'scope, T: 'scope> RxFrom<'scope> for Callback<'scope, T> {
+impl<'scope, T: 'scope> TryRxFrom<'scope> for Callback<'scope, T> {
     type Value = ();
 
-    fn rx_from<V>(scope: Scope<'scope>, _value: V) -> Self
+    fn try_rx_from<V>(scope: Scope<'scope>, _value: V) -> SilexResult<Self>
     where
         V: Into<Self::Value>,
     {
-        scope.callback(|_: T| {})
+        scope.callback(|_: T| Ok::<(), SilexError>(()))
     }
 }
 

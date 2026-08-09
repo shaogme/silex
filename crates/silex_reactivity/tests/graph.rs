@@ -384,14 +384,17 @@ fn cross_scope_silent_notify_from_callback_waits_for_value_borrow() {
                 .expect("effect should initialize");
 
             let runs_in_callback = runs.clone();
-            let callback = child.callback(move |_: ()| {
-                let runs_before = runs_in_callback.get();
-                source.with(|value| {
-                    *value.borrow_mut() += 1;
-                    notify(&set_source);
-                    assert_eq!(runs_in_callback.get(), runs_before);
-                });
-            });
+            let callback = child
+                .callback(move |_: ()| {
+                    let runs_before = runs_in_callback.get();
+                    source.with(|value| {
+                        *value.borrow_mut() += 1;
+                        notify(&set_source);
+                        assert_eq!(runs_in_callback.get(), runs_before);
+                    });
+                    Ok::<(), ()>(())
+                })
+                .expect("callback should initialize");
 
             assert_eq!(runs.get(), 1);
             callback.invoke(()).expect("callback should be alive");

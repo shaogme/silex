@@ -3,7 +3,10 @@
 //! Values are optimized with `InlineStorage` (SOO) for small payloads (<=24 bytes),
 //! eliminating heap allocations for standard reactive types (`i32`, `bool`, `f64`, etc.).
 
-use crate::error::{ErrorEvent, ErrorHandler, InitialErrorSlot};
+use crate::{
+    ReactiveError,
+    error::{ErrorEvent, ErrorHandler, InitialErrorSlot},
+};
 use silex_vtable::{any_box::InlineStorage, func_ptr::FuncPtr};
 use std::{marker::PhantomData, ptr};
 
@@ -526,37 +529,55 @@ impl<'scope> CleanupThunk<'scope> {
     }
 }
 
+pub(crate) enum CallbackThunkError<'scope> {
+    Runtime(ReactiveError),
+    User(AnyValue<'scope>),
+}
+
 pub(crate) struct CallbackThunk<'scope> {
-    callback: Box<dyn FnMut(AnyValue<'scope>) + 'scope>,
+    callback: Box<dyn FnMut(AnyValue<'scope>) -> Result<(), CallbackThunkError<'scope>> + 'scope>,
 }
 
 impl<'scope> CallbackThunk<'scope> {
-    pub(crate) fn new<F>(callback: F) -> Self
+    fn new<F>(callback: F) -> Self
     where
-        F: FnMut(AnyValue<'scope>) + 'scope,
+        F: FnMut(AnyValue<'scope>) -> Result<(), CallbackThunkError<'scope>> + 'scope,
     {
         Self {
             callback: Box::new(callback),
         }
     }
 
-    pub(crate) fn new_typed<T, F>(callback: F) -> Self
+    pub(crate) fn new_typed_fallible<T, E, F>(callback: F) -> Self
+    where
+        T: 'scope,
+        E: 'scope,
+        F: FnMut(T) -> Result<(), E> + 'scope,
+    {
+        let mut callback = callback;
+        Self::new(move |value| {
+            let value = unsafe { value.downcast::<T>() }
+                .ok_or(CallbackThunkError::Runtime(ReactiveError::TypeMismatch))?;
+            callback(value).map_err(|error| CallbackThunkError::User(AnyValue::new(error)))
+        })
+    }
+
+    pub(crate) fn new_typed_infallible<T, F>(callback: F) -> Self
     where
         T: 'scope,
         F: FnMut(T) + 'scope,
     {
         let mut callback = callback;
         Self::new(move |value| {
-            // SAFETY: every value submitted to this thunk is constructed by
-            // the matching typed callback or completion token.
-            if let Some(value) = unsafe { value.downcast::<T>() } {
-                callback(value);
-            }
+            let value = unsafe { value.downcast::<T>() }
+                .ok_or(CallbackThunkError::Runtime(ReactiveError::TypeMismatch))?;
+            callback(value);
+            Ok(())
         })
     }
 
-    pub(crate) fn call(&mut self, arg: AnyValue<'scope>) {
-        (self.callback)(arg);
+    pub(crate) fn call(&mut self, arg: AnyValue<'scope>) -> Result<(), CallbackThunkError<'scope>> {
+        (self.callback)(arg)
     }
 }
 

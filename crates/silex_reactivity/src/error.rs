@@ -52,6 +52,17 @@ impl std::error::Error for ReactiveError {}
 
 pub type ReactiveResult<T> = Result<T, ReactiveError>;
 
+/// Distinguishes runtime failures from errors returned by a user callback.
+#[derive(Debug)]
+pub enum CallbackInvokeError<E> {
+    /// The callback could not be entered because the runtime operation failed.
+    Runtime(ReactiveError),
+    /// The callback was entered and returned this user-defined error.
+    User(E),
+}
+
+pub type CallbackInvokeResult<T, E> = Result<T, CallbackInvokeError<E>>;
+
 pub(crate) type ErasedErrorCallback<'scope> = dyn Fn(AnyValue<'scope>) + 'scope;
 
 pub(crate) struct ErrorHandlerEntry<'scope> {

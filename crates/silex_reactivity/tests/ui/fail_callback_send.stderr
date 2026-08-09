@@ -19,7 +19,7 @@ note: required because it appears within the type `Handle<'static, silex_reactiv
 note: required because it appears within the type `silex_reactivity::Callback<'static, ()>`
  --> src/child/node.rs
   |
-  | pub struct Callback<'scope, T> {
+  | pub struct Callback<'scope, T, E = ReactiveError> {
   |            ^^^^^^^^
 note: required by a bound in `require_send`
  --> tests/ui/fail_callback_send.rs:3:20

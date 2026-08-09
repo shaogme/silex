@@ -187,21 +187,13 @@ impl<'scope> Scope<'scope> {
     }
 
     /// Register a typed callback under this scope.
-    pub fn callback<T, F>(&self, f: F) -> Callback<'scope, T>
+    pub fn callback<T, E, F>(&self, f: F) -> ReactiveResult<Callback<'scope, T, E>>
     where
         T: 'scope,
-        F: FnMut(T) + 'scope,
+        E: 'scope,
+        F: FnMut(T) -> Result<(), E> + 'scope,
     {
-        self.try_callback(f)
-            .unwrap_or_else(|error| panic!("创建 scoped callback 失败: {error}"))
-    }
-
-    pub fn try_callback<T, F>(&self, f: F) -> ReactiveResult<Callback<'scope, T>>
-    where
-        T: 'scope,
-        F: FnMut(T) + 'scope,
-    {
-        let thunk = CallbackThunk::new_typed(f);
+        let thunk = CallbackThunk::new_typed_fallible(f);
         let state = self.state();
         let raw = state
             .try_borrow_mut()
@@ -781,7 +773,10 @@ impl Drop for OwnedScope<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::{GlobalScheduler, ScopeState};
+    use crate::{
+        CallbackInvokeError,
+        runtime::{GlobalScheduler, ScopeState},
+    };
     use std::{cell::RefCell, rc::Rc};
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -809,7 +804,7 @@ mod tests {
         vec![
             scope.try_signal(0_i32).map(|_| ()),
             scope.try_stored(()).map(|_| ()),
-            scope.try_callback(|_: ()| {}).map(|_| ()),
+            scope.callback(|_: ()| Ok::<(), ()>(())).map(|_| ()),
             scope.try_node_ref::<()>().map(|_| ()),
         ]
     }
@@ -920,9 +915,12 @@ mod tests {
             },
             observations.clone(),
         );
-        let _callback = scope.callback(move |_: ()| {
-            let _ = &callback_probe;
-        });
+        let _callback = scope
+            .callback(move |_: ()| {
+                let _ = &callback_probe;
+                Ok::<(), ()>(())
+            })
+            .expect("callback should register");
 
         let stored_probe = drop_probe(
             scope,
@@ -1053,6 +1051,25 @@ mod tests {
         assert_eq!(replacement.state.borrow().nodes.len(), 0);
 
         replacement.dispose_untracked();
+    }
+
+    #[test]
+    fn disposed_callback_returns_a_runtime_error() {
+        let storage = ScopeStorage::new(GlobalScheduler::new());
+        let scope = Scope {
+            storage: &storage,
+            _marker: PhantomData,
+        };
+        let callback = scope
+            .callback(|_: ()| Ok::<(), ()>(()))
+            .expect("callback should register");
+
+        storage.dispose_untracked();
+
+        assert!(matches!(
+            callback.invoke(()),
+            Err(CallbackInvokeError::Runtime(ReactiveError::NoSuchNode))
+        ));
     }
 
     #[test]

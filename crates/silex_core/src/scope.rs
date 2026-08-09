@@ -355,13 +355,15 @@ impl<'scope> Scope<'scope> {
         StoredValue::from_inner(self.inner.stored(value), self)
     }
 
-    pub fn callback<T, F>(self, callback: F) -> Callback<'scope, T>
+    pub fn callback<T, F>(self, callback: F) -> SilexResult<Callback<'scope, T>>
     where
         T: 'scope,
-        F: FnMut(T) + 'scope,
+        F: FnMut(T) -> SilexResult<()> + 'scope,
     {
-        let callback = self.inner.callback(callback);
-        Callback::from_inner(callback)
+        self.inner
+            .callback(callback)
+            .map(Callback::from_inner)
+            .map_err(SilexError::from)
     }
 
     pub fn node_ref<T: 'scope>(self) -> NodeRef<'scope, T> {

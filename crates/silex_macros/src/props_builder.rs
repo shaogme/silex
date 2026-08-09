@@ -257,6 +257,10 @@ impl BuilderContext {
         quote! { #__silex::dom::attribute::PendingAttribute<#scope> }
     }
 
+    fn has_fallible_reactive_defaults(&self) -> bool {
+        self.fields.iter().any(is_fallible_reactive_default_field)
+    }
+
     fn generate_builder_struct(&self) -> TokenStream2 {
         let __silex = crate::crate_path::silex();
         let vis = &self.vis;
@@ -324,6 +328,7 @@ impl BuilderContext {
             .map(|_| quote! { #__silex::dom::view::PropMissing })
             .collect();
         let builder_ty_initial = self.get_builder_ty(&initial_states);
+        let fallible_defaults = self.has_fallible_reactive_defaults();
 
         let standalone_fields: Vec<_> = self.fields.iter().filter(|f| !f.attrs.chained).collect();
         let builder_new_params = standalone_fields.iter().map(|field| {
@@ -346,6 +351,11 @@ impl BuilderContext {
                     scope_field,
                     field.attrs.default_value.as_ref(),
                 );
+                let init_expr = if is_fallible_reactive_default_field(field) {
+                    quote! { #init_expr? }
+                } else {
+                    init_expr
+                };
                 quote! { #ident: #init_expr }
             } else if let Some(default_expr) = &field.attrs.default_value {
                 let init_expr = field_value_transform(field, quote! { #default_expr });
@@ -358,6 +368,24 @@ impl BuilderContext {
                 quote! { #ident: ::core::default::Default::default() }
             }
         });
+
+        let builder_value = quote! {
+            #builder_name {
+                #(#builder_field_inits,)*
+                _pending_attrs: ::std::vec::Vec::new(),
+                _markers: ::core::marker::PhantomData,
+            }
+        };
+        let builder_new_return = if fallible_defaults {
+            quote! { #__silex::core::SilexResult<#builder_ty_initial> }
+        } else {
+            quote! { #builder_ty_initial }
+        };
+        let builder_new_value = if fallible_defaults {
+            quote! { ::core::result::Result::Ok(#builder_value) }
+        } else {
+            builder_value
+        };
 
         let fields_destructure = self.fields.iter().map(|f| &f.ident);
         let props_field_inits = self.fields.iter().map(|field| {
@@ -387,12 +415,8 @@ impl BuilderContext {
 
         quote! {
             impl #builder_generics_decl #builder_name #builder_generics_type #where_clause {
-                pub fn new(#(#builder_new_params),*) -> #builder_ty_initial {
-                    #builder_name {
-                        #(#builder_field_inits,)*
-                        _pending_attrs: ::std::vec::Vec::new(),
-                        _markers: ::core::marker::PhantomData,
-                    }
+                pub fn new(#(#builder_new_params),*) -> #builder_new_return {
+                    #builder_new_value
                 }
 
                 pub fn into_parts(self) -> (#props_name #ty_generics, ::std::vec::Vec<#pending_attribute_ty>) {
@@ -665,6 +689,7 @@ impl BuilderContext {
             .map(|_| quote! { #__silex::dom::view::PropMissing })
             .collect();
         let builder_ty_initial = self.get_builder_ty(&initial_states);
+        let fallible_defaults = self.has_fallible_reactive_defaults();
 
         let fixed_states: Vec<_> = self
             .prop_generic_idents
@@ -699,13 +724,19 @@ impl BuilderContext {
             }
         });
 
+        let constructor_return = if fallible_defaults {
+            quote! { #__silex::core::SilexResult<#builder_ty_initial> }
+        } else {
+            quote! { #builder_ty_initial }
+        };
+
         quote! {
             #[allow(non_camel_case_types)]
             #[allow(type_alias_bounds)]
             #vis type #component_component_alias #impl_generics = #builder_ty_fixed;
 
             #[allow(non_snake_case, unused_variables, unused_mut)]
-            #vis fn #component_name #impl_generics(#(#constructor_params),*) -> #builder_ty_initial #where_clause {
+            #vis fn #component_name #impl_generics(#(#constructor_params),*) -> #constructor_return #where_clause {
                 <#builder_ty_initial>::new(#(#constructor_args),*)
             }
         }
@@ -765,6 +796,20 @@ fn reactive_default_transform(
                     <#value_ty as ::core::default::Default>::default()
                         .into_reactive_input(#scope_field)
                 }
+            },
+        };
+    }
+
+    if is_fallible_reactive_default_field(field) {
+        return match default_value {
+            Some(value) => quote! {
+                <#ty as #__silex::core::TryRxFrom<#scope>>::try_rx_from(
+                    #scope_field,
+                    #value,
+                )
+            },
+            None => quote! {
+                <#ty as #__silex::core::TryRxDefault<#scope>>::try_rx_default(#scope_field)
             },
         };
     }
@@ -919,6 +964,11 @@ fn is_reactive_default_field(field: &FieldSpec) -> bool {
     field.attrs.chained
         && (field.attrs.default || field.attrs.default_value.is_some())
         && is_reactive_wrapper_type(&field.ty)
+}
+
+fn is_fallible_reactive_default_field(field: &FieldSpec) -> bool {
+    is_reactive_default_field(field)
+        && type_last_segment_name(&field.ty).is_some_and(|ident| ident == "Callback")
 }
 
 fn is_scope_marker_field(field: &FieldSpec) -> bool {

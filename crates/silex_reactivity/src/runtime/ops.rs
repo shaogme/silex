@@ -11,7 +11,10 @@ use crate::{
     ReactiveError, ReactiveResult,
     error::ErrorHandlerKey,
     handle::NodeKindTag,
-    internal::{RawId, value::AnyValue},
+    internal::{
+        RawId,
+        value::{AnyValue, CallbackThunkError},
+    },
     scope::ScopeStorage,
 };
 use std::{
@@ -186,16 +189,20 @@ pub(crate) fn invoke_callback<'scope>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     id: RawId,
     arg: AnyValue<'scope>,
-) -> ReactiveResult<()> {
-    let (storage, scheduler) = lookup_callback_storage(state, id)?;
+) -> Result<(), CallbackThunkError<'scope>> {
+    let (storage, scheduler) =
+        lookup_callback_storage(state, id).map_err(CallbackThunkError::Runtime)?;
     let NodeStorage::Callback(cell) = storage.as_ref() else {
-        return Err(ReactiveError::WrongKind);
+        return Err(CallbackThunkError::Runtime(ReactiveError::WrongKind));
     };
-    let mut lease = cell.try_write(scheduler)?;
-    lease.call(arg);
-    drop(lease);
+    let result = {
+        let mut lease = cell
+            .try_write(scheduler)
+            .map_err(CallbackThunkError::Runtime)?;
+        lease.call(arg)
+    };
     flush_if_idle(state);
-    Ok(())
+    result
 }
 
 pub(crate) fn stop_effect<'scope>(
