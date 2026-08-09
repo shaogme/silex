@@ -103,10 +103,13 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
         let css_block = build_css_block_from_rules(rules)?;
         let compile_result =
             crate::css::compiler::CssCompiler::compile_block(&css_block, span, false)?;
-        if !compile_result.expressions.is_empty() || !compile_result.dynamic_rules.is_empty() {
+        if !compile_result.expressions.is_empty()
+            || !compile_result.static_expressions.is_empty()
+            || !compile_result.dynamic_rules.is_empty()
+        {
             return Err(Error::new(
                 span,
-                "条件 `tw!` 的 then/else utility 必须是静态 CSS；动态 arbitrary value 请移到条件外的 `css!`/`tw!` 路径。",
+                "条件 `tw!` 的 then/else utility 必须是静态 CSS；动态 arbitrary value 或静态插值请移到条件外的 `css!`/`tw!` 路径。",
             ));
         }
         let cls_name = compile_result.class_name.clone();

@@ -17,7 +17,7 @@ pub mod prelude {
     #[cfg(feature = "tw")]
     pub use crate::declare_variants;
     pub use crate::runtime::{DynamicCss, DynamicStyleManager, inject_style};
-    pub use crate::source::{CssSource, IntoCssReactive, IntoCssSource};
+    pub use crate::source::{CssSource, IntoCssReactive, IntoCssSource, StaticCssValue};
     pub use crate::theme::{
         ThemePatchToCss, ThemeToCss, ThemeType, ThemeVariables, set_global_theme, theme_patch,
         theme_variables,
@@ -36,10 +36,11 @@ pub use class::IntoClass;
 pub use codegen::properties;
 pub use runtime::{
     CssPart, DynamicCss, DynamicStyleManager, GlobalStyleBinding, GlobalStyleView,
-    StyledDynamicRule, StyledVariantBinding, StyledVariantGroup, dynamic_rule_class,
-    inject_managed_dynamic_style, inject_style, make_property_val,
+    StaticStyleTemplate, StyledDynamicRule, StyledVariantBinding, StyledVariantGroup,
+    dynamic_rule_class, dynamic_rule_class_with_static, inject_managed_dynamic_style, inject_style,
+    make_property_val, render_static_template,
 };
-pub use source::{CssSource, IntoCssReactive, IntoCssSource};
+pub use source::{CssSource, IntoCssReactive, IntoCssSource, StaticCssValue, static_css_value};
 pub use theme::{ThemePatchToCss, ThemeToCss, ThemeType};
 #[cfg(feature = "tw")]
 pub use tw::VariantSchema;

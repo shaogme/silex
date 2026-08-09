@@ -4,6 +4,53 @@ use syn::ext::IdentExt;
 use syn::parse::{Parse, ParseStream};
 use syn::{Ident, Result, Token, token};
 
+/// CSS 插值的语义类别。
+///
+/// 两种插值都使用 `$(...)` 外壳，但只有响应式插值可以进入 runtime source
+/// 列表。`static` 插值会在宏展开的构造阶段渲染，并且必须是一个 Rust 路径，
+/// 这样类名身份不会依赖不可观察的任意运行时计算。
+#[derive(Clone)]
+pub enum CssInterpolation {
+    Reactive(TokenStream),
+    Static(TokenStream),
+}
+
+/// 解析 `$(...)` 内部的语义标记。
+///
+/// `static` 不是普通 Rust 表达式的一部分，而是 CSS 宏的显式前缀。静态表达式
+/// 暂时只接受路径（例如 `AppTheme::PRIMARY`）；值本身还会在生成代码中经过
+/// `StaticCssValue` 和 `ValidFor` 约束。
+pub fn parse_interpolation(group: &proc_macro2::Group) -> Result<CssInterpolation> {
+    let mut iter = group.stream().into_iter();
+    let Some(first) = iter.next() else {
+        return Err(syn::Error::new(group.span(), "CSS 插值表达式不能为空"));
+    };
+
+    if let TokenTree::Ident(id) = &first
+        && id == "static"
+    {
+        let expression: TokenStream = iter.collect();
+        if expression.is_empty() {
+            return Err(syn::Error::new(
+                id.span(),
+                "静态 CSS 插值需要一个路径，例如 `$(static AppTheme::PRIMARY)`",
+            ));
+        }
+        syn::parse2::<syn::ExprPath>(expression.clone()).map_err(|_| {
+            syn::Error::new(
+                id.span(),
+                "静态 CSS 插值只接受 Rust 路径，例如 `$(static AppTheme::PRIMARY)`；复杂表达式请先定义静态常量",
+            )
+        })?;
+        return Ok(CssInterpolation::Static(expression));
+    }
+
+    let mut expression = TokenStream::new();
+    expression.extend(std::iter::once(first));
+    expression.extend(iter);
+    Ok(CssInterpolation::Reactive(expression))
+}
+
 /// Represents an entire block of CSS rules.
 #[derive(Clone)]
 pub struct CssBlock {

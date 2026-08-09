@@ -30,6 +30,21 @@ pub trait IntoCssReactive<'scope> {
     fn into_css_reactive(self) -> Rx<'scope, Self::Value>;
 }
 
+/// 显式静态 CSS 值的标记 trait。
+///
+/// `css!` 的 `$(static path)` 入口不会接受任意 `Display` 类型。调用方可以为自定义
+/// 的、可在 const 上下文中取得的 CSS 值显式实现此 trait；内置 CSS 值由本 crate
+/// 提供实现。宏展开仍会额外检查该值对当前属性满足 `ValidFor`。
+pub trait StaticCssValue: Display + Clone + 'static {}
+
+/// 对静态插值做类型约束并原样返回值。
+pub fn static_css_value<P, T>(value: T) -> T
+where
+    T: StaticCssValue + ValidFor<P>,
+{
+    value
+}
+
 macro_rules! impl_static_source {
     ($($ty:ty),* $(,)?) => {
         $(
@@ -69,8 +84,8 @@ impl_static_source!(
     f64,
     Percent,
     Fr,
-    Rgba,
     Auto,
+    Rgba,
     Hex,
     Hsl,
     ColorFn,
@@ -120,6 +135,91 @@ impl_static_source!(
     Sec,
     Ms,
 );
+
+macro_rules! impl_static_css_value {
+    ($($ty:ty),* $(,)?) => {
+        $(impl StaticCssValue for $ty {})*
+    };
+}
+
+impl_static_css_value!(
+    &'static str,
+    Cow<'static, str>,
+    bool,
+    char,
+    u8,
+    u16,
+    u32,
+    u64,
+    u128,
+    usize,
+    i8,
+    i16,
+    i32,
+    i64,
+    i128,
+    isize,
+    f32,
+    f64,
+    Percent,
+    Fr,
+    Auto,
+    Rgba,
+    Hex,
+    Hsl,
+    ColorFn,
+    ColorName,
+    NoneValue,
+    CssWide,
+    Url,
+    BorderValue,
+    MarginValue,
+    PaddingValue,
+    FlexValue,
+    TransitionValue,
+    BackgroundValue,
+    CssUnsafe,
+    TransformValue,
+    TransformBuilder,
+    GridTemplateAreasValue,
+    FontVariationSettingsValue,
+    CalcValue<LengthMark>,
+    CalcValue<AngleMark>,
+    CalcValue<TimeMark>,
+    GradientValue,
+    Px,
+    Rem,
+    Em,
+    Ch,
+    Ex,
+    Vw,
+    Vh,
+    Vmin,
+    Vmax,
+    Dvw,
+    Dvh,
+    Svw,
+    Svh,
+    Lvw,
+    Lvh,
+    Pt,
+    Pc,
+    Cm,
+    Mm,
+    In,
+    Qmm,
+    Deg,
+    Rad,
+    Turn,
+    Sec,
+    Ms,
+);
+
+crate::register_generated_keywords!(impl_static_css_value);
+
+impl<T> StaticCssValue for CssVar<T> where T: Clone + 'static {}
+
+impl<T> StaticCssValue for CssOption<T> where T: StaticCssValue {}
 
 impl<'scope, T> IntoCssSource<'scope> for CssVar<T>
 where

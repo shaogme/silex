@@ -4,7 +4,7 @@ use syn::Result;
 
 use super::tokens::*;
 use super::types::*;
-use crate::css::ast::{CssBlock, CssDeclaration, CssRule};
+use crate::css::ast::{CssBlock, CssDeclaration, CssInterpolation, CssRule, parse_interpolation};
 
 fn validate_declaration_property(
     decl: &CssDeclaration,
@@ -18,16 +18,22 @@ fn validate_declaration_property(
     Ok(validate)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn validate_static_declaration_value(
     decl: &CssDeclaration,
     val: &str,
     expr_count_before: usize,
     expr_count_after: usize,
+    static_expr_count_before: usize,
+    static_expr_count_after: usize,
     validate: bool,
     warnings: &mut Vec<CssWarning>,
     assertions: &mut Vec<StaticAssertion>,
 ) -> Result<()> {
-    if !validate || expr_count_after != expr_count_before {
+    if !validate
+        || expr_count_after != expr_count_before
+        || static_expr_count_after != static_expr_count_before
+    {
         return Ok(());
     }
 
@@ -78,12 +84,15 @@ pub(crate) fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Re
                     &decl.property
                 };
                 let expr_count_before = state.expressions.len();
+                let static_expr_count_before = state.static_expressions.len();
                 let val = extract_dynamic_value(
                     &decl.values,
                     &mut state.expressions,
+                    &mut state.static_expressions,
                     &mut state.warnings,
                     prop_for_expr,
                     &ctx,
+                    false,
                 )?;
 
                 validate_static_declaration_value(
@@ -91,6 +100,8 @@ pub(crate) fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Re
                     &val,
                     expr_count_before,
                     state.expressions.len(),
+                    static_expr_count_before,
+                    state.static_expressions.len(),
                     validate,
                     &mut state.warnings,
                     &mut state.assertions,
@@ -139,6 +150,7 @@ pub(crate) fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Re
                         nested,
                         &mut selector_exprs,
                         &mut state.expressions,
+                        &mut state.static_expressions,
                         &mut state.warnings,
                         &ctx,
                         &mut state.assertions,
@@ -187,6 +199,7 @@ pub(crate) fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Re
                     static_css: String::new(),
                     lifted_css: String::new(),
                     expressions: state.expressions.clone(),
+                    static_expressions: state.static_expressions.clone(),
                     dynamic_rules: Vec::new(),
                     warnings: state.warnings.clone(),
                     assertions: Vec::new(),
@@ -203,6 +216,7 @@ pub(crate) fn process_css_block(block: &CssBlock, state: &mut ParserState) -> Re
 
                 // Sync back state
                 state.expressions = inner_state.expressions;
+                state.static_expressions = inner_state.static_expressions;
                 state.warnings = inner_state.warnings;
                 state.assertions.extend(inner_state.assertions);
                 // Dynamic rules inside @-rules is collected
@@ -243,6 +257,7 @@ pub(crate) fn build_dynamic_template(
     nested: &crate::css::ast::CssNested,
     selector_exprs: &mut Vec<(String, TokenStream)>,
     global_expressions: &mut Vec<(String, TokenStream)>,
+    static_expressions: &mut Vec<(String, TokenStream)>,
     warnings: &mut Vec<CssWarning>,
     ctx: &DynamicContext,
     assertions: &mut Vec<StaticAssertion>,
@@ -254,6 +269,7 @@ pub(crate) fn build_dynamic_template(
         &mut template,
         selector_exprs,
         global_expressions,
+        static_expressions,
         warnings,
         ctx,
         assertions,
@@ -262,11 +278,13 @@ pub(crate) fn build_dynamic_template(
     Ok(template)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn build_dynamic_block_recursive(
     block: &CssBlock,
     template: &mut String,
     selector_exprs: &mut Vec<(String, TokenStream)>,
     global_expressions: &mut Vec<(String, TokenStream)>,
+    static_expressions: &mut Vec<(String, TokenStream)>,
     warnings: &mut Vec<CssWarning>,
     ctx: &DynamicContext,
     assertions: &mut Vec<StaticAssertion>,
@@ -279,18 +297,23 @@ pub(crate) fn build_dynamic_block_recursive(
                 template.push_str(": ");
                 let prop_for_expr = if ctx.is_unsafe { "any" } else { &decl.property };
                 let expr_count_before = global_expressions.len();
+                let static_expr_count_before = static_expressions.len();
                 let val = extract_dynamic_value(
                     &decl.values,
                     global_expressions,
+                    static_expressions,
                     warnings,
                     prop_for_expr,
                     ctx,
+                    true,
                 )?;
                 validate_static_declaration_value(
                     decl,
                     &val,
                     expr_count_before,
                     global_expressions.len(),
+                    static_expr_count_before,
+                    static_expressions.len(),
                     validate,
                     warnings,
                     assertions,
@@ -316,6 +339,7 @@ pub(crate) fn build_dynamic_block_recursive(
                     template,
                     selector_exprs,
                     global_expressions,
+                    static_expressions,
                     warnings,
                     ctx,
                     assertions,
@@ -345,6 +369,7 @@ pub(crate) fn build_dynamic_block_recursive(
                     template,
                     selector_exprs,
                     global_expressions,
+                    static_expressions,
                     warnings,
                     &DynamicContext {
                         validate: ctx.validate && !is_descriptor_at_rule(&at.name),
@@ -366,6 +391,7 @@ pub(crate) fn build_dynamic_block_recursive(
                         template,
                         selector_exprs,
                         global_expressions,
+                        static_expressions,
                         warnings,
                         &DynamicContext {
                             validate: false,
@@ -388,6 +414,7 @@ pub(crate) fn build_dynamic_block_recursive(
                     template,
                     selector_exprs,
                     global_expressions,
+                    static_expressions,
                     warnings,
                     &DynamicContext {
                         is_unsafe: true,
@@ -438,10 +465,19 @@ pub(crate) fn extract_at_rule_params(
     if let Some(raw) = lone_string_literal(ts) {
         return Ok(raw);
     }
-    process_tokens(ts, region, warnings, &mut |tt, _iter, _out, _space| {
+    process_tokens(ts, region, warnings, &mut |tt, iter, _out, _space| {
         if let TokenTree::Punct(p) = tt
             && p.as_char() == '$'
         {
+            if let Some(TokenTree::Group(group)) = iter.peek()
+                && group.delimiter() == Delimiter::Parenthesis
+                && matches!(parse_interpolation(group)?, CssInterpolation::Static(_))
+            {
+                return Err(syn::Error::new(
+                    group.span(),
+                    "静态 CSS 插值只允许出现在声明值中，不能用于 at-rule 参数",
+                ));
+            }
             return Err(syn::Error::new(
                 p.span(),
                 format!(
@@ -477,11 +513,18 @@ pub(crate) fn extract_dynamic_selector(
                     if let Some(TokenTree::Group(g)) = iter.peek()
                         && g.delimiter() == Delimiter::Parenthesis
                     {
+                        let interpolation = parse_interpolation(g)?;
+                        let CssInterpolation::Reactive(expression) = interpolation else {
+                            return Err(syn::Error::new(
+                                g.span(),
+                                "静态 CSS 插值只允许出现在声明值中，不能用于选择器",
+                            ));
+                        };
                         if space_before {
                             out.push(' ');
                         }
                         out.push(PLACEHOLDER_SELECTOR_VALUE);
-                        exprs.push(("any".to_string(), g.stream()));
+                        exprs.push(("any".to_string(), expression));
                         iter.next();
                         return Ok(true);
                     }
@@ -525,9 +568,11 @@ pub(crate) fn extract_dynamic_selector(
 pub(crate) fn extract_dynamic_value(
     ts: &TokenStream,
     exprs: &mut Vec<(String, TokenStream)>,
+    static_exprs: &mut Vec<(String, TokenStream)>,
     warnings: &mut Vec<CssWarning>,
     prop_name: &str,
     ctx: &DynamicContext,
+    template_mode: bool,
 ) -> Result<String> {
     let placeholder = |idx: usize| {
         if ctx.class_name.is_empty() {
@@ -536,7 +581,18 @@ pub(crate) fn extract_dynamic_value(
             format!("var(--{}-{})", ctx.class_name, idx)
         }
     };
+    let static_placeholder = |idx: usize| {
+        if template_mode {
+            format!(
+                "{}{}{}",
+                PLACEHOLDER_STATIC_VALUE, idx, PLACEHOLDER_STATIC_END
+            )
+        } else {
+            format!("var(--slx-static-{})", idx)
+        }
+    };
     let first_expr = exprs.len();
+    let first_static_expr = static_exprs.len();
     let value = process_tokens(
         ts,
         ctx.region.clone(),
@@ -548,12 +604,22 @@ pub(crate) fn extract_dynamic_value(
                 if let Some(TokenTree::Group(g)) = iter.peek()
                     && g.delimiter() == Delimiter::Parenthesis
                 {
+                    let interpolation = parse_interpolation(g)?;
                     if space_before {
                         out.push(' ');
                     }
-                    let idx = exprs.len();
-                    exprs.push((prop_name.to_string(), g.stream()));
-                    out.push_str(&placeholder(idx));
+                    match interpolation {
+                        CssInterpolation::Reactive(expression) => {
+                            let idx = exprs.len();
+                            exprs.push((prop_name.to_string(), expression));
+                            out.push_str(&placeholder(idx));
+                        }
+                        CssInterpolation::Static(expression) => {
+                            let idx = static_exprs.len();
+                            static_exprs.push((prop_name.to_string(), expression));
+                            out.push_str(&static_placeholder(idx));
+                        }
+                    }
                     iter.next();
                     return Ok(true);
                 }
@@ -580,10 +646,18 @@ pub(crate) fn extract_dynamic_value(
     // `grid-template-columns: repeat($(columns), minmax(0, 1fr))` 里的
     // `$(columns)` 是取值里的一个片段，它的类型跟属性本身的取值类型没有关系，
     // 拿属性去卡它只会报出无从下手的错误。片段一律按 `props::Any` 处理。
-    let sole_value =
-        exprs.len() == first_expr + 1 && value.trim() == placeholder(first_expr).as_str();
+    let sole_value = if exprs.len() == first_expr + 1 && static_exprs.len() == first_static_expr {
+        value.trim() == placeholder(first_expr).as_str()
+    } else if exprs.len() == first_expr && static_exprs.len() == first_static_expr + 1 {
+        value.trim() == static_placeholder(first_static_expr)
+    } else {
+        false
+    };
     if !sole_value {
         for (prop, _) in exprs.iter_mut().skip(first_expr) {
+            "any".clone_into(prop);
+        }
+        for (prop, _) in static_exprs.iter_mut().skip(first_static_expr) {
             "any".clone_into(prop);
         }
     }

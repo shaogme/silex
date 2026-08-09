@@ -192,8 +192,41 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
 
     // 静态声明的编译期类型断言：属性名与「一眼能定型」的字面量取值
     let mut assertions = crate::css::generate_static_assertions(&compile_result.assertions)?;
-    let base_style_inits = compile_result.generate_inits();
-    let mut deferred_style_descriptors = style_descriptors(&compile_result);
+    let mut static_value_decls = Vec::new();
+    let mut static_value_inits = Vec::new();
+    let (base_static_values_ident, base_static_values_tokens) =
+        if compile_result.static_expressions.is_empty() {
+            (None, None)
+        } else {
+            let (decls, values) = crate::css::generate_static_value_bindings(
+                &compile_result.static_expressions,
+                tag.span(),
+                "__slx_styled_base_static",
+            )?;
+            static_value_decls.push(decls);
+            (
+                Some(quote::format_ident!("__slx_styled_base_values")),
+                Some(crate::css::static_values_tokens(&values)),
+            )
+        };
+    let base_style_inits = if let Some(values) = &base_static_values_ident {
+        crate::css::generate_static_style_inits(&compile_result, Some(values))
+    } else {
+        compile_result.generate_inits()
+    };
+    if let (Some(ident), Some(values)) = (&base_static_values_ident, &base_static_values_tokens) {
+        static_value_inits.push(quote! {
+            let #ident: ::std::vec::Vec<::std::string::String> = #values;
+        });
+    }
+    let mut deferred_style_descriptors = Vec::new();
+    let mut deferred_style_templates = Vec::new();
+    append_style_descriptors(
+        &compile_result,
+        base_static_values_ident.as_ref(),
+        &mut deferred_style_descriptors,
+        &mut deferred_style_templates,
+    );
     let layer = compile_result.layer;
 
     let mut var_decls = Vec::new();
@@ -222,6 +255,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
             &mut dynamic_rule_descriptors,
             &mut var_decls,
             None,
+            base_static_values_ident.as_ref(),
         )?;
     }
 
@@ -247,8 +281,43 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
             )?;
             let v_class = res.class_name.clone();
             assertions.extend(crate::css::generate_static_assertions(&res.assertions)?);
-            variant_injections.push(res.generate_inits());
-            deferred_style_descriptors.extend(style_descriptors(&res));
+            let (variant_static_values_ident, variant_static_values_tokens) =
+                if res.static_expressions.is_empty() {
+                    (None, None)
+                } else {
+                    let (decls, values) = crate::css::generate_static_value_bindings(
+                        &res.static_expressions,
+                        v_name.span(),
+                        &format!("__slx_styled_{}_{}_static", prop, v_name),
+                    )?;
+                    static_value_decls.push(decls);
+                    (
+                        Some(quote::format_ident!(
+                            "__slx_styled_{}_{}_values",
+                            prop,
+                            v_name
+                        )),
+                        Some(crate::css::static_values_tokens(&values)),
+                    )
+                };
+            if let (Some(ident), Some(values)) =
+                (&variant_static_values_ident, &variant_static_values_tokens)
+            {
+                static_value_inits.push(quote! {
+                    let #ident: ::std::vec::Vec<::std::string::String> = #values;
+                });
+            }
+            variant_injections.push(if let Some(values) = &variant_static_values_ident {
+                crate::css::generate_static_style_inits(&res, Some(values))
+            } else {
+                res.generate_inits()
+            });
+            append_style_descriptors(
+                &res,
+                variant_static_values_ident.as_ref(),
+                &mut deferred_style_descriptors,
+                &mut deferred_style_templates,
+            );
 
             process_dynamic_entries(
                 &res.expressions,
@@ -269,6 +338,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
                     &mut dynamic_rule_descriptors,
                     &mut var_decls,
                     Some((group_index, &sig_ident, &v_name.to_string().to_lowercase())),
+                    variant_static_values_ident.as_ref(),
                 )?;
             }
 
@@ -368,6 +438,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
                 ::std::vec![ #(#deferred_style_descriptors),* ],
                 ::std::vec![ #(#style_getters.clone()),* ],
             )
+            .with_static_templates(::std::vec![ #(#deferred_style_templates),* ])
             .into_op())
         }
     };
@@ -382,6 +453,8 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
         {
             #assertions
 
+            #(#static_value_decls)*
+            #(#static_value_inits)*
             #(#var_decls)*
             #(#prop_sig_bindings)*
 
@@ -451,21 +524,46 @@ fn process_dynamic_entries(
     Ok(())
 }
 
-fn style_descriptors(result: &crate::css::compiler::CssCompileResult) -> Vec<TokenStream> {
-    let mut descriptors = Vec::new();
+fn append_style_descriptors(
+    result: &crate::css::compiler::CssCompileResult,
+    static_values: Option<&Ident>,
+    descriptors: &mut Vec<TokenStream>,
+    templates: &mut Vec<TokenStream>,
+) {
+    let __silex = crate::crate_path::silex();
     if !result.static_css.is_empty() {
         let style_id = &result.static_id;
         let css = &result.static_css;
-        descriptors.push(quote! { (#style_id, #css) });
+        if let Some(values) = static_values {
+            templates.push(quote! {
+                #__silex::css::StaticStyleTemplate::new(
+                    #style_id,
+                    #css,
+                    #values.clone(),
+                )
+            });
+        } else {
+            descriptors.push(quote! { (#style_id, #css) });
+        }
     }
     if !result.component_css.is_empty() {
         let style_id = &result.style_id;
         let css = &result.component_css;
-        descriptors.push(quote! { (#style_id, #css) });
+        if let Some(values) = static_values {
+            templates.push(quote! {
+                #__silex::css::StaticStyleTemplate::new(
+                    #style_id,
+                    #css,
+                    #values.clone(),
+                )
+            });
+        } else {
+            descriptors.push(quote! { (#style_id, #css) });
+        }
     }
-    descriptors
 }
 
+#[allow(clippy::too_many_arguments)]
 fn expand_dynamic_rule(
     idx: usize,
     rule: DynamicRule,
@@ -474,6 +572,7 @@ fn expand_dynamic_rule(
     descriptors: &mut Vec<TokenStream>,
     var_decls: &mut Vec<TokenStream>,
     variant_info: Option<(usize, &Ident, &str)>, // (group_index, sig_ident, name_lower)
+    static_values: Option<&Ident>,
 ) -> Result<()> {
     let __silex = crate::crate_path::silex();
     let parts = crate::css::compiler::template_parts_tokens(&rule.template);
@@ -498,6 +597,10 @@ fn expand_dynamic_rule(
         Some((group_index, _, value)) => (quote! { Some(#group_index) }, quote! { Some(#value) }),
         None => (quote! { None }, quote! { None }),
     };
+    let static_value_call = match static_values {
+        Some(values) => quote! { .with_static_values(#values.clone()) },
+        None => quote! {},
+    };
     descriptors.push(quote! {
         #__silex::css::StyledDynamicRule::new(
             #variant_group,
@@ -506,6 +609,7 @@ fn expand_dynamic_rule(
             #parts,
             ::std::vec![ #(#getters),* ],
         )
+        #static_value_call
     });
     Ok(())
 }
@@ -726,6 +830,27 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
     }
 
     let assertions = crate::css::generate_static_assertions(&res.assertions)?;
+    let (static_value_decls, static_value_ids) = crate::css::generate_static_value_bindings(
+        &res.static_expressions,
+        c_name.span(),
+        "__slx_global_static",
+    )?;
+    let static_values_ident = quote::format_ident!("__slx_global_static_values");
+    let static_value_tokens = crate::css::static_values_tokens(&static_value_ids);
+    let static_replacement_tokens = static_value_ids.iter().enumerate().map(|(index, value)| {
+        let pattern = format!("var(--slx-static-{index})");
+        quote! {
+            (::std::string::String::from(#pattern), #value.to_string())
+        }
+    });
+    let static_binding_methods = if static_value_ids.is_empty() {
+        quote! {}
+    } else {
+        quote! {
+            .with_static_values(#static_values_ident.clone())
+            .with_static_replacements(::std::vec![ #(#static_replacement_tokens),* ])
+        }
+    };
     let static_id = &res.static_id;
     let static_css = &res.static_css;
     let style_id = &res.style_id;
@@ -748,7 +873,8 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
         });
     }
 
-    let has_dynamic_placeholder = |css: &str| css.contains("var(--slx-dyn-");
+    let has_dynamic_placeholder =
+        |css: &str| css.contains("var(--slx-dyn-") || css.contains("var(--slx-static-");
     let mut static_styles = Vec::new();
     let mut bindings = Vec::new();
 
@@ -760,7 +886,7 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
                     &[#__silex::css::CssPart::Lit(#static_css)],
                     ::std::vec![],
                     ::std::vec![ #(#replacement_getters),* ],
-                )
+                ) #static_binding_methods
             });
         } else {
             static_styles.push(quote! { (#static_id, #static_css) });
@@ -775,7 +901,7 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
                     &[#__silex::css::CssPart::Lit(#component_css)],
                     ::std::vec![],
                     ::std::vec![ #(#replacement_getters),* ],
-                )
+                ) #static_binding_methods
             });
         } else {
             static_styles.push(quote! { (#style_id, #component_css) });
@@ -800,7 +926,7 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
                 #parts,
                 ::std::vec![ #(#positional),* ],
                 ::std::vec![ #(#replacement_getters),* ],
-            ).with_layer(#layer)
+            ).with_layer(#layer) #static_binding_methods
         });
     }
 
@@ -814,6 +940,9 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
             #params
         ) -> #__silex::css::GlobalStyleView<#scope> #where_clause {
             #assertions
+            #static_value_decls
+            let #static_values_ident: ::std::vec::Vec<::std::string::String> =
+                #static_value_tokens;
             #(#getter_decls)*
             #__silex::css::GlobalStyleView::new(
                 ::std::vec![ #(#static_styles),* ],
@@ -835,7 +964,18 @@ fn generate_static_global(
     res: &crate::css::compiler::CssCompileResult,
 ) -> Result<TokenStream> {
     let assertions = crate::css::generate_static_assertions(&res.assertions)?;
-    let static_inits = res.generate_inits();
+    let static_values_ident = quote::format_ident!("__slx_global_static_values");
+    let (static_value_decls, static_value_ids) = crate::css::generate_static_value_bindings(
+        &res.static_expressions,
+        name.span(),
+        "__slx_global_static",
+    )?;
+    let static_value_tokens = crate::css::static_values_tokens(&static_value_ids);
+    let static_inits = if res.static_expressions.is_empty() {
+        res.generate_inits()
+    } else {
+        crate::css::generate_static_style_inits(res, Some(&static_values_ident))
+    };
     let _ = is_unsafe;
     let mut fn_generics = generics;
     let where_clause = fn_generics.where_clause.take();
@@ -851,6 +991,9 @@ fn generate_static_global(
             #where_clause
         {
             #assertions
+            #static_value_decls
+            let #static_values_ident: ::std::vec::Vec<::std::string::String> =
+                #static_value_tokens;
             #static_inits
             use #__silex::dom::view::View;
             #__silex::dom::view::View::into_any(())
@@ -939,5 +1082,20 @@ mod tests {
         let code = styled_impl(input).unwrap().to_string();
         assert!(code.contains("StyledVariantBinding"), "{code}");
         assert!(!code.contains("DynamicStyleManager :: new"), "{code}");
+    }
+
+    #[test]
+    fn mixed_global_styles_use_static_replacements() {
+        let input = quote::quote! {
+            pub Global<'scope>(color: Signal<'scope, Hex>) {
+                body {
+                    color: $(static AppTheme::PRIMARY);
+                    border-color: $(color);
+                }
+            }
+        };
+        let code = global_impl(input).unwrap().to_string();
+        assert!(code.contains("with_static_replacements"), "{code}");
+        assert!(code.contains("with_static_values"), "{code}");
     }
 }

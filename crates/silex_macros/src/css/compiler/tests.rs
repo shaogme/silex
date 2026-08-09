@@ -269,6 +269,27 @@ fn template_tokens_preserve_selector_and_declaration_contexts() {
 }
 
 #[test]
+fn static_template_parts_keep_their_global_expression_index() {
+    let template = format!(
+        "{}{}{} {}{}{}",
+        PLACEHOLDER_STATIC_VALUE,
+        3,
+        PLACEHOLDER_STATIC_END,
+        PLACEHOLDER_STATIC_VALUE,
+        7,
+        PLACEHOLDER_STATIC_END
+    );
+    assert_eq!(
+        template_parts(&template),
+        [
+            TemplatePart::StaticVal(3),
+            TemplatePart::Lit(" ".into()),
+            TemplatePart::StaticVal(7)
+        ]
+    );
+}
+
+#[test]
 fn dynamic_selector_validates_property_names() {
     let err = compile_err("$selector { colr: red; }");
     assert!(err.contains("`colr` 不存在"), "{err}");
@@ -374,6 +395,8 @@ fn control_characters_in_string_literals_cannot_forge_a_placeholder() {
     assert!(!css.contains(PLACEHOLDER_CLASS), "{css:?}");
     assert!(!css.contains(PLACEHOLDER_VALUE), "{css:?}");
     assert!(!css.contains(PLACEHOLDER_SELECTOR_VALUE), "{css:?}");
+    assert!(!css.contains(PLACEHOLDER_STATIC_VALUE), "{css:?}");
+    assert!(!css.contains(PLACEHOLDER_STATIC_END), "{css:?}");
 }
 
 /// 紧贴的 `.` 仍然是字段访问，必须写成 `$(…)`
@@ -649,6 +672,58 @@ fn interpolated_expressions_do_not_change_the_class_name() {
     assert_eq!(class_of("color: $(a);"), class_of("color: $(b);"));
     // 但插值的**位置**变了就是另一段 CSS
     assert_ne!(class_of("color: $(a);"), class_of("width: $(a);"));
+}
+
+#[test]
+fn static_interpolations_use_a_separate_value_list_and_placeholder() {
+    let res = CssCompiler::compile_with_source(
+        "color: $(static AppTheme::PRIMARY); width: $(dynamic_width);",
+        Span::call_site(),
+        false,
+    )
+    .unwrap();
+
+    assert_eq!(res.expressions.len(), 1);
+    assert_eq!(res.static_expressions.len(), 1);
+    assert!(res.component_css.contains("var(--slx-static-0)"), "{res:?}");
+    assert!(res.component_css.contains("var(--"), "{res:?}");
+}
+
+#[test]
+fn static_expression_identity_participates_in_the_class_name() {
+    assert_ne!(
+        class_of("color: $(static AppTheme::PRIMARY);"),
+        class_of("color: $(static AppTheme::SECONDARY);")
+    );
+}
+
+#[test]
+fn static_interpolations_are_rejected_in_selectors_and_at_rule_parameters() {
+    let selector = compile_err("$(static AppTheme::SELECTOR) { color: red; }");
+    assert!(selector.contains("只允许出现在声明值中"), "{selector}");
+
+    let at_rule = compile_err("@media (min-width: $(static AppTheme::WIDTH)) { color: red; }");
+    assert!(at_rule.contains("只允许出现在声明值中"), "{at_rule}");
+}
+
+#[test]
+fn static_interpolations_reject_non_path_expressions() {
+    let err = compile_err("color: $(static hex(\"#fff\"));");
+    assert!(err.contains("只接受 Rust 路径"), "{err}");
+}
+
+#[test]
+fn static_values_inside_dynamic_rules_keep_their_global_index() {
+    let res = CssCompiler::compile_with_source(
+        "color: $(static AppTheme::BASE); $selector { color: $(static AppTheme::HOVER); }",
+        Span::call_site(),
+        false,
+    )
+    .unwrap();
+    assert_eq!(res.static_expressions.len(), 2);
+    let parts = template_parts(&res.dynamic_rules[0].template);
+    assert_eq!(parts[0], TemplatePart::SelectorVal(0), "{parts:?}");
+    assert!(parts.contains(&TemplatePart::StaticVal(1)), "{parts:?}");
 }
 
 /// 层不同就是两段不同的样式：同样的声明落进 components 与 utilities

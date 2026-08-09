@@ -31,11 +31,23 @@ pub enum CssPart {
     ///
     /// 与声明值分开建模，避免把动态值中的逗号、空白或伪类语法带出原选择器。
     SelectorVal(usize),
+    /// 第 n 个构造阶段静态声明值。
+    StaticVal(usize),
 }
 
 /// 把模板拼成一条完整的 CSS 规则。
 pub fn render(parts: &[CssPart], class: &str, vals: &[String]) -> String {
-    render_with(parts, class, vals, false)
+    render_with(parts, class, vals, &[], false)
+}
+
+/// 把模板拼成一条完整的 CSS 规则，并填入构造阶段静态值。
+pub fn render_with_static(
+    parts: &[CssPart],
+    class: &str,
+    vals: &[String],
+    static_vals: &[String],
+) -> String {
+    render_with(parts, class, vals, static_vals, false)
 }
 
 /// 把模板拼成一条以动态选择器片段为主的 CSS 规则。
@@ -43,13 +55,25 @@ pub fn render(parts: &[CssPart], class: &str, vals: &[String]) -> String {
 /// `inject_managed_dynamic_style` 的 positional getter 历史上使用 `Val` 表示选择器
 /// 片段。该入口保留这一形状，新的调用点可使用 `SelectorVal` 获得同样的显式语义。
 pub fn render_selector(parts: &[CssPart], class: &str, vals: &[String]) -> String {
-    render_with(parts, class, vals, true)
+    render_with(parts, class, vals, &[], true)
+}
+
+/// 选择器模板的静态值版本。静态插值仍然只能出现在声明位置，因此使用声明值
+/// 转义；selector positional getter 继续使用选择器片段转义。
+pub fn render_selector_with_static(
+    parts: &[CssPart],
+    class: &str,
+    vals: &[String],
+    static_vals: &[String],
+) -> String {
+    render_with(parts, class, vals, static_vals, true)
 }
 
 fn render_with(
     parts: &[CssPart],
     class: &str,
     vals: &[String],
+    static_vals: &[String],
     positional_values_are_selectors: bool,
 ) -> String {
     let capacity = parts
@@ -58,6 +82,7 @@ fn render_with(
             CssPart::Lit(s) => s.len(),
             CssPart::Class => class.len(),
             CssPart::Val(i) | CssPart::SelectorVal(i) => vals.get(*i).map_or(0, String::len),
+            CssPart::StaticVal(i) => static_vals.get(*i).map_or(0, String::len),
         })
         .sum();
     let mut out = String::with_capacity(capacity);
@@ -79,6 +104,11 @@ fn render_with(
                     out.push_str(&selector_fragment(v));
                 }
             }
+            CssPart::StaticVal(i) => {
+                if let Some(v) = static_vals.get(*i) {
+                    out.push_str(&declaration_value(v));
+                }
+            }
         }
     }
     out
@@ -90,6 +120,16 @@ fn render_with(
 /// 拿它参与哈希就成了循环依赖（此前是先用基类名渲染一遍、哈希、再把基类名
 /// 文本替换成动态类名，绕的正是这个圈）。
 pub fn dynamic_class(base: &str, parts: &[CssPart], vals: &[String]) -> String {
+    dynamic_class_with_static(base, parts, vals, &[])
+}
+
+/// 计算带静态值的动态规则类名。
+pub fn dynamic_class_with_static(
+    base: &str,
+    parts: &[CssPart],
+    vals: &[String],
+    static_vals: &[String],
+) -> String {
     let mut hasher = css_hasher!();
     b"silex-dyn-v4".hash(&mut hasher);
     for part in parts {
@@ -107,14 +147,41 @@ pub fn dynamic_class(base: &str, parts: &[CssPart], vals: &[String]) -> String {
                 4u8.hash(&mut hasher);
                 i.hash(&mut hasher);
             }
+            CssPart::StaticVal(i) => {
+                5u8.hash(&mut hasher);
+                i.hash(&mut hasher);
+            }
         }
     }
     for v in vals {
         3u8.hash(&mut hasher);
         Normalized(v).hash(&mut hasher);
     }
+    for v in static_vals {
+        5u8.hash(&mut hasher);
+        Normalized(v).hash(&mut hasher);
+    }
     let mut buf = [0u8; 13];
     format!("{}-d{}", base, encode_base36(hasher.finish(), &mut buf))
+}
+
+/// 渲染经过 lightningcss 压缩后的静态 CSS 模板。
+///
+/// 静态表达式先以 `var(--slx-static-N)` 作为可被 CSS parser 接受的占位符进入
+/// 模板，真正输出时只扫描一次并对每个值执行声明值转义。替换结果不会再次被
+/// 当作占位符扫描，因此值内容里的 `var(--slx-static-1)` 也不会发生二次替换。
+pub fn render_static_template(template: &str, values: &[String]) -> String {
+    let pairs: Vec<(String, String)> = values
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            (
+                format!("var(--slx-static-{index})"),
+                declaration_value(value).into_owned(),
+            )
+        })
+        .collect();
+    replace_placeholders(template, &pairs)
 }
 
 /// 一遍扫描完成多组「模式 → 取值」替换。
@@ -225,5 +292,31 @@ mod tests {
         let out = render(&parts, "base", &[", body:hover".to_string()]);
         assert!(!out.contains(','), "{out}");
         assert!(!out.contains(":hover"), "{out}");
+    }
+
+    #[test]
+    fn static_values_are_rendered_in_declaration_context() {
+        let parts = [
+            CssPart::Lit(".base{color:"),
+            CssPart::StaticVal(0),
+            CssPart::Lit("}"),
+        ];
+        let out = render_with_static(
+            &parts,
+            "base",
+            &[],
+            &["red; } body { display: none".to_string()],
+        );
+        assert!(!out.contains("body { display"), "{out}");
+        assert!(!out.contains(';') || out.ends_with('}'), "{out}");
+    }
+
+    #[test]
+    fn static_template_replacement_is_not_rescanned() {
+        let out = render_static_template(
+            "a:var(--slx-static-0);b:var(--slx-static-1)",
+            &["var(--slx-static-1)".to_string(), "red".to_string()],
+        );
+        assert_eq!(out, "a:var(--slx-static-1);b:red");
     }
 }

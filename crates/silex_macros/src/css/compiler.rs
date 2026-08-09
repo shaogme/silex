@@ -225,6 +225,7 @@ impl CssCompiler {
             static_css: String::new(),
             lifted_css: String::new(),
             expressions: Vec::new(),
+            static_expressions: Vec::new(),
             dynamic_rules: Vec::new(),
             warnings: Vec::new(),
             assertions: Vec::new(),
@@ -353,7 +354,10 @@ impl CssCompiler {
         };
 
         let static_id = if !final_static_css.is_empty() {
-            format!("static-{}", silex_hash::css::hash_one(&final_static_css))
+            format!(
+                "static-{}",
+                static_style_identity(&final_static_css, &state.static_expressions)
+            )
         } else {
             "".to_string()
         };
@@ -366,6 +370,7 @@ impl CssCompiler {
             static_css: final_static_css,
             component_css: final_component_css,
             expressions: state.expressions,
+            static_expressions: state.static_expressions,
             dynamic_rules: state.dynamic_rules,
             warnings: state.warnings,
             assertions: state.assertions,
@@ -378,9 +383,13 @@ impl CssCompiler {
 /// 喂进去的是「这次编译会产出什么」的全部：静态 CSS、提升出去的 CSS、每条动态
 /// 规则的模板。三者里的类名此时都还是占位符，所以指纹与类名之间没有循环。
 ///
-/// **不喂**插值表达式的文本。`css!{ color: $(a) }` 与 `css!{ color: $(b) }` 的产物
+/// **不喂**响应式插值表达式的文本。`css!{ color: $(a) }` 与 `css!{ color: $(b) }` 的产物
 /// 都是 `.slx-x { color: var(--slx-x-0) }`——差别由各自元素上的行内自定义属性承担，
 /// 共用一个类名是对的，也正是这条口径能省下最多的重复注入。
+///
+/// 静态插值相反：它会在构造阶段写入 CSS 文本，因此表达式路径是产物身份的一部分。
+/// 只哈希模板会让 `$(static A::COLOR)` 与 `$(static B::COLOR)` 共用同一个类名，
+/// 后注入的样式会被 registry 按 id 丢弃。
 ///
 /// `prefix` 参与哈希：它决定产物落进哪个 `@layer`（见 `compile_block_internal`
 /// 里的 `layer_name`），同样的声明在 components 层和 utilities 层不是一回事。
@@ -391,8 +400,28 @@ fn fingerprint(prefix: &str, state: &ParserState) -> String {
     prefix.hash(&mut hasher);
     state.static_css.hash(&mut hasher);
     state.lifted_css.hash(&mut hasher);
+    for (property, expression) in &state.static_expressions {
+        b"static-expression".hash(&mut hasher);
+        property.hash(&mut hasher);
+        expression.to_string().hash(&mut hasher);
+    }
     for rule in &state.dynamic_rules {
         rule.template.hash(&mut hasher);
+    }
+    let mut buf = [0u8; 13];
+    silex_hash::css::encode_base36(hasher.finish(), &mut buf).to_string()
+}
+
+/// 静态提升样式没有组件类名可复用，因此其 registry id 也必须带上静态表达式身份。
+fn static_style_identity(css: &str, expressions: &[(String, TokenStream)]) -> String {
+    use core::hash::{Hash, Hasher};
+
+    let mut hasher = silex_hash::css::CssHasher::new();
+    css.hash(&mut hasher);
+    for (property, expression) in expressions {
+        b"static-expression".hash(&mut hasher);
+        property.hash(&mut hasher);
+        expression.to_string().hash(&mut hasher);
     }
     let mut buf = [0u8; 13];
     silex_hash::css::encode_base36(hasher.finish(), &mut buf).to_string()

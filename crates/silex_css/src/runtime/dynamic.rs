@@ -4,7 +4,10 @@ use crate::{
         backend::{ActiveSheet, SheetBackend},
         platform::report,
         registry::{DocOp, apply_doc_op},
-        template::{CssPart, dynamic_class, render_selector, replace_placeholders},
+        template::{
+            CssPart, dynamic_class_with_static, render_selector_with_static,
+            render_static_template, replace_placeholders,
+        },
     },
     source::IntoCssReactive,
     types,
@@ -24,6 +27,25 @@ use wasm_bindgen::JsCast;
 use web_sys::{Element, HtmlElement, SvgElement};
 
 pub type CssVariableGetter<'scope> = Rx<'scope, String>;
+
+/// 一个需要在 owner 验证通过后注入的静态 CSS 模板。
+#[doc(hidden)]
+#[derive(Clone)]
+pub struct StaticStyleTemplate {
+    pub style_id: &'static str,
+    pub template: &'static str,
+    pub values: Vec<String>,
+}
+
+impl StaticStyleTemplate {
+    pub fn new(style_id: &'static str, template: &'static str, values: Vec<String>) -> Self {
+        Self {
+            style_id,
+            template,
+            values,
+        }
+    }
+}
 
 /// 退休样式表的缓存上限。
 ///
@@ -306,6 +328,7 @@ pub struct DynamicCss<'scope> {
     pub vars: Vec<(&'static str, CssVariableGetter<'scope>)>,
     pub rules: Vec<(&'static [CssPart], Vec<CssVariableGetter<'scope>>)>,
     static_styles: Vec<(&'static str, &'static str)>,
+    static_values: Vec<String>,
     layer: &'static str,
 }
 
@@ -316,6 +339,7 @@ impl<'scope> DynamicCss<'scope> {
             vars: Vec::new(),
             rules: Vec::new(),
             static_styles: Vec::new(),
+            static_values: Vec::new(),
             layer: layers::UTILITIES,
         }
     }
@@ -335,6 +359,12 @@ impl<'scope> DynamicCss<'scope> {
         if !style_id.is_empty() && !css.is_empty() {
             self.static_styles.push((style_id, css));
         }
+        self
+    }
+
+    /// Set the values used by all static placeholders in this payload.
+    pub fn with_static_values(mut self, values: Vec<String>) -> Self {
+        self.static_values = values;
         self
     }
 
@@ -378,7 +408,8 @@ impl<'scope> DynamicCss<'scope> {
         owner.validate_inputs(&all_inputs)?;
 
         for (style_id, css) in &self.static_styles {
-            crate::inject_style(style_id, css);
+            let rendered = render_static_template(css, &self.static_values);
+            crate::inject_style(style_id, &rendered);
         }
 
         el.class_list().add_1(self.class_name)?;
@@ -435,6 +466,7 @@ impl<'scope> DynamicCss<'scope> {
             )?;
         }
 
+        let static_values = self.static_values.clone();
         for (parts, getters) in self.rules.clone() {
             let mut inputs = RuntimeInputs::new();
             for getter in &getters {
@@ -447,6 +479,7 @@ impl<'scope> DynamicCss<'scope> {
             let el_clone = el.clone();
             let base_class = self.class_name;
             let layer = self.layer;
+            let static_values_for_effect = static_values.clone();
             let error_handler = owner.token().error_handler();
             owner.effect_from(
                 inputs,
@@ -455,13 +488,24 @@ impl<'scope> DynamicCss<'scope> {
                         .iter()
                         .map(|getter| getter.try_get().map_err(SilexError::from))
                         .collect::<SilexResult<_>>()?;
-                    let dyn_class = dynamic_class(base_class, parts, &current_vals);
+                    let dyn_class = dynamic_class_with_static(
+                        base_class,
+                        parts,
+                        &current_vals,
+                        &static_values_for_effect,
+                    );
                     let mut current_class = current_class_for_effect.borrow_mut();
                     if current_class.as_deref() == Some(dyn_class.as_str()) {
                         return Ok(());
                     }
 
-                    let rule = render_layered_selector(layer, parts, &dyn_class, &current_vals);
+                    let rule = render_layered_selector(
+                        layer,
+                        parts,
+                        &dyn_class,
+                        &current_vals,
+                        &static_values_for_effect,
+                    );
                     if !manager_for_effect.update(&dyn_class, &rule) {
                         return Err(SilexError::Dom("无法更新动态样式表".into()));
                     }
@@ -538,6 +582,7 @@ pub struct StyledDynamicRule<'scope> {
     class_name: &'static str,
     parts: &'static [CssPart],
     getters: Vec<CssVariableGetter<'scope>>,
+    static_values: Vec<String>,
 }
 
 impl<'scope> StyledDynamicRule<'scope> {
@@ -554,7 +599,13 @@ impl<'scope> StyledDynamicRule<'scope> {
             class_name,
             parts,
             getters,
+            static_values: Vec::new(),
         }
+    }
+
+    pub fn with_static_values(mut self, values: Vec<String>) -> Self {
+        self.static_values = values;
+        self
     }
 }
 
@@ -581,6 +632,7 @@ pub struct StyledVariantBinding<'scope> {
     rules: Vec<StyledDynamicRule<'scope>>,
     groups: Vec<StyledVariantGroup<'scope>>,
     static_styles: Vec<(&'static str, &'static str)>,
+    static_templates: Vec<StaticStyleTemplate>,
     property_getters: Vec<CssVariableGetter<'scope>>,
 }
 
@@ -600,6 +652,7 @@ impl<'scope> StyledVariantBinding<'scope> {
             rules,
             groups,
             static_styles: Vec::new(),
+            static_templates: Vec::new(),
             property_getters: Vec::new(),
         }
     }
@@ -613,6 +666,12 @@ impl<'scope> StyledVariantBinding<'scope> {
     ) -> Self {
         self.static_styles = static_styles;
         self.property_getters = property_getters;
+        self
+    }
+
+    /// Attach static templates whose values are evaluated at component construction.
+    pub fn with_static_templates(mut self, templates: Vec<StaticStyleTemplate>) -> Self {
+        self.static_templates = templates;
         self
     }
 
@@ -650,6 +709,12 @@ impl<'scope> StyledVariantBinding<'scope> {
         for (style_id, css) in &self.static_styles {
             if !style_id.is_empty() && !css.is_empty() {
                 crate::inject_style(style_id, css);
+            }
+        }
+        for template in &self.static_templates {
+            if !template.style_id.is_empty() && !template.template.is_empty() {
+                let css = render_static_template(template.template, &template.values);
+                crate::inject_style(template.style_id, &css);
             }
         }
 
@@ -800,8 +865,14 @@ fn update_styled_dynamic_rules(
                 .get_or_insert_with(|| Rc::new(DynamicStyleManager::new()))
                 .clone()
         };
-        let Some(next_class) =
-            dynamic_rule_class(&manager, layer, rule.class_name, rule.parts, &rule.getters)?
+        let Some(next_class) = dynamic_rule_class_with_static(
+            &manager,
+            layer,
+            rule.class_name,
+            rule.parts,
+            &rule.getters,
+            &rule.static_values,
+        )?
         else {
             return Err(SilexError::Dom("无法更新动态样式表".into()));
         };
@@ -833,6 +904,8 @@ pub struct GlobalStyleBinding<'scope> {
     pub layer: Option<&'static str>,
     pub positional: Vec<CssVariableGetter<'scope>>,
     pub replacements: Vec<(String, CssVariableGetter<'scope>)>,
+    pub static_values: Vec<String>,
+    pub static_replacements: Vec<(String, String)>,
 }
 
 impl<'scope> GlobalStyleBinding<'scope> {
@@ -848,12 +921,24 @@ impl<'scope> GlobalStyleBinding<'scope> {
             layer: None,
             positional,
             replacements,
+            static_values: Vec::new(),
+            static_replacements: Vec::new(),
         }
     }
 
     /// Mark this binding as a raw dynamic rule that needs a runtime layer wrapper.
     pub fn with_layer(mut self, layer: &'static str) -> Self {
         self.layer = Some(layer);
+        self
+    }
+
+    pub fn with_static_values(mut self, values: Vec<String>) -> Self {
+        self.static_values = values;
+        self
+    }
+
+    pub fn with_static_replacements(mut self, replacements: Vec<(String, String)>) -> Self {
+        self.static_replacements = replacements;
         self
     }
 
@@ -914,6 +999,8 @@ impl<'scope> GlobalStyleView<'scope> {
                 binding.parts,
                 binding.positional.clone(),
                 binding.replacements.clone(),
+                binding.static_values.clone(),
+                binding.static_replacements.clone(),
             )?;
         }
         Ok(())
@@ -965,12 +1052,23 @@ pub fn dynamic_rule_class(
     parts: &'static [CssPart],
     getters: &[CssVariableGetter<'_>],
 ) -> SilexResult<Option<String>> {
+    dynamic_rule_class_with_static(manager, layer, base_class, parts, getters, &[])
+}
+
+pub fn dynamic_rule_class_with_static(
+    manager: &DynamicStyleManager,
+    layer: &'static str,
+    base_class: &str,
+    parts: &'static [CssPart],
+    getters: &[CssVariableGetter<'_>],
+    static_values: &[String],
+) -> SilexResult<Option<String>> {
     let vals: Vec<String> = getters
         .iter()
         .map(|getter| getter.try_get().map_err(SilexError::from))
         .collect::<SilexResult<_>>()?;
-    let dyn_class = dynamic_class(base_class, parts, &vals);
-    let rule = render_layered_selector(layer, parts, &dyn_class, &vals);
+    let dyn_class = dynamic_class_with_static(base_class, parts, &vals, static_values);
+    let rule = render_layered_selector(layer, parts, &dyn_class, &vals, static_values);
     Ok(manager.update(&dyn_class, &rule).then_some(dyn_class))
 }
 
@@ -979,8 +1077,9 @@ fn render_layered_selector(
     parts: &[CssPart],
     class: &str,
     vals: &[String],
+    static_values: &[String],
 ) -> String {
-    let rule = render_selector(parts, class, vals);
+    let rule = render_selector_with_static(parts, class, vals, static_values);
     layers::wrap_dynamic(layer, &rule)
 }
 
@@ -994,6 +1093,7 @@ fn render_layered_selector(
 /// - `replacements`：具名的 `var(--slx-dyn-N)`，用于**声明值**里的片段。这段
 ///   模板要先过一遍 lightningcss，位置信息在那之后不复存在，只能按文本找；但
 ///   替换是一遍扫描完成的，写进去的值不会再被当成占位符。
+#[allow(clippy::too_many_arguments)]
 pub fn inject_managed_dynamic_style<'scope>(
     owner: &dyn ViewOwner<'scope>,
     style_id: impl Into<String>,
@@ -1001,6 +1101,8 @@ pub fn inject_managed_dynamic_style<'scope>(
     parts: &'static [CssPart],
     positional: Vec<CssVariableGetter<'scope>>,
     replacements: Vec<(String, CssVariableGetter<'scope>)>,
+    static_values: Vec<String>,
+    static_replacements: Vec<(String, String)>,
 ) -> SilexResult<()> {
     let mut inputs = RuntimeInputs::new();
     for getter in &positional {
@@ -1033,21 +1135,32 @@ pub fn inject_managed_dynamic_style<'scope>(
                     .map(|getter| getter.try_get().map_err(SilexError::from))
                     .collect::<SilexResult<_>>()?;
                 // 全局样式没有组件类名，`CssPart::Class` 不会出现在这类模板里
-                let res = render_selector(parts, "", &vals);
-                let pairs: Vec<(String, String)> = replacements
+                let res = render_selector_with_static(parts, "", &vals, &static_values);
+                let mut pairs = static_replacements
                     .iter()
-                    .map(|(pattern, getter)| {
-                        getter
-                            .try_get()
-                            .map(|value| {
-                                (
-                                    pattern.clone(),
-                                    crate::escape::declaration_value(&value).into_owned(),
-                                )
-                            })
-                            .map_err(SilexError::from)
+                    .map(|(pattern, value)| {
+                        (
+                            pattern.clone(),
+                            crate::escape::declaration_value(value).into_owned(),
+                        )
                     })
-                    .collect::<SilexResult<_>>()?;
+                    .collect::<Vec<_>>();
+                pairs.extend(
+                    replacements
+                        .iter()
+                        .map(|(pattern, getter)| {
+                            getter
+                                .try_get()
+                                .map(|value| {
+                                    (
+                                        pattern.clone(),
+                                        crate::escape::declaration_value(&value).into_owned(),
+                                    )
+                                })
+                                .map_err(SilexError::from)
+                        })
+                        .collect::<SilexResult<Vec<_>>>()?,
+                );
                 let res = replace_placeholders(&res, &pairs);
                 let res = match layer {
                     Some(layer) => layers::wrap_dynamic(layer, &res),

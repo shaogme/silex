@@ -1,0 +1,51 @@
+#![allow(unused_extern_crates)]
+
+include!("../../src/lib.rs");
+
+use silex_macros::{css, global, styled, theme};
+use silex_css::types::Hex;
+use silex_dom::attribute::{AttributeBuilder, GlobalAttributes};
+
+theme! {
+    pub struct StaticTheme {
+        pub primary: Hex,
+    }
+}
+
+global! {
+    pub StaticGlobal {
+        body { color: $(static StaticTheme::PRIMARY); }
+    }
+}
+
+global! {
+    pub MixedGlobal<'scope>(
+        color: silex_core::reactivity::Signal<'scope, Hex>,
+    ) {
+        body {
+            color: $(static StaticTheme::PRIMARY);
+            border-color: $(color);
+        }
+    }
+}
+
+styled! {
+    pub StaticStyled<div>(children: silex_dom::view::AnyView) {
+        color: $(static StaticTheme::PRIMARY);
+    }
+}
+
+styled! {
+    pub MixedStyled<'scope><div>(
+        children: silex_dom::view::AnyView<'scope>,
+        color: silex_core::reactivity::Signal<'scope, Hex>,
+    ) {
+        color: $(static StaticTheme::PRIMARY);
+        border-color: $(color);
+    }
+}
+
+fn main() {
+    let _ = css! { color: $(static StaticTheme::PRIMARY); };
+    let _ = StaticGlobal();
+}

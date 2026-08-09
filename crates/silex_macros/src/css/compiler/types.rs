@@ -30,6 +30,10 @@ pub(crate) const PLACEHOLDER_VALUE: char = '\u{2}';
 /// 选择器片段专用占位符。它不能与声明值共用，否则运行时无法选择正确的
 /// CSS 转义上下文。
 pub(crate) const PLACEHOLDER_SELECTOR_VALUE: char = '\u{4}';
+/// 构造阶段静态声明值专用占位符。它与响应式值分开，运行时只进行一次声明值
+/// 转义，不会把静态值误当成 CSS 变量或 reactive getter。
+pub(crate) const PLACEHOLDER_STATIC_VALUE: char = '\u{5}';
+pub(crate) const PLACEHOLDER_STATIC_END: char = '\u{6}';
 
 /// 类名在编译期的占位。
 ///
@@ -48,6 +52,7 @@ pub enum TemplatePart {
     Class,
     Val(usize),
     SelectorVal(usize),
+    StaticVal(usize),
 }
 
 /// 把带占位符的模板切成片段。
@@ -55,7 +60,9 @@ pub fn template_parts(template: &str) -> Vec<TemplatePart> {
     let mut parts = Vec::new();
     let mut lit = String::new();
     let mut next_val = 0;
-    for ch in template.chars() {
+    let mut next_static = 0;
+    let mut chars = template.chars().peekable();
+    while let Some(ch) = chars.next() {
         match ch {
             PLACEHOLDER_CLASS => {
                 if !lit.is_empty() {
@@ -73,6 +80,25 @@ pub fn template_parts(template: &str) -> Vec<TemplatePart> {
                     parts.push(TemplatePart::Val(next_val));
                 }
                 next_val += 1;
+            }
+            PLACEHOLDER_STATIC_VALUE => {
+                if !lit.is_empty() {
+                    parts.push(TemplatePart::Lit(std::mem::take(&mut lit)));
+                }
+                let mut digits = String::new();
+                while chars.peek().is_some_and(char::is_ascii_digit) {
+                    if let Some(digit) = chars.next() {
+                        digits.push(digit);
+                    }
+                }
+                let index = if chars.peek() == Some(&PLACEHOLDER_STATIC_END) {
+                    chars.next();
+                    digits.parse().unwrap_or(next_static)
+                } else {
+                    next_static
+                };
+                parts.push(TemplatePart::StaticVal(index));
+                next_static += 1;
             }
             c => lit.push(c),
         }
@@ -93,6 +119,7 @@ pub fn template_parts_tokens(template: &str) -> TokenStream {
         TemplatePart::SelectorVal(i) => {
             quote::quote! { #__silex::css::CssPart::SelectorVal(#i) }
         }
+        TemplatePart::StaticVal(i) => quote::quote! { #__silex::css::CssPart::StaticVal(#i) },
     });
     quote::quote! { &[ #(#items),* ] }
 }
@@ -127,6 +154,9 @@ pub struct CssCompileResult {
     pub static_css: String,    // Fully static CSS (font-face, etc.)
     pub component_css: String, // CSS scoped to this component (with dynamic vars)
     pub expressions: Vec<(String, TokenStream)>,
+    /// 构造阶段渲染的静态表达式。它们不能与 reactive expressions 共用哈希规则：
+    /// 同一模板使用不同静态路径时，最终 CSS 的身份也不同。
+    pub static_expressions: Vec<(String, TokenStream)>,
     pub dynamic_rules: Vec<DynamicRule>,
     pub warnings: Vec<CssWarning>,
     pub assertions: Vec<StaticAssertion>,
@@ -156,6 +186,7 @@ pub(crate) struct ParserState {
     pub static_css: String,
     pub lifted_css: String,
     pub expressions: Vec<(String, TokenStream)>,
+    pub static_expressions: Vec<(String, TokenStream)>,
     pub dynamic_rules: Vec<DynamicRule>,
     pub warnings: Vec<CssWarning>,
     pub assertions: Vec<StaticAssertion>,

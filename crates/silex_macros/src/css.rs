@@ -65,6 +65,82 @@ pub(crate) fn generate_static_assertions(
     Ok(out)
 }
 
+/// 生成静态插值的值绑定。
+///
+/// 静态插值必须同时满足三条边界：表达式在 const 上下文中可求值、结果实现
+/// `StaticCssValue`，并且结果类型满足当前 CSS 属性的 `ValidFor`。绑定只求值一次，
+/// 后续模板渲染和 global replacement 都复用同一份字符串。
+pub(crate) fn generate_static_value_bindings(
+    expressions: &[(String, TokenStream)],
+    span: Span,
+    prefix: &str,
+) -> Result<(TokenStream, Vec<syn::Ident>)> {
+    let __silex = crate::crate_path::silex();
+    let mut declarations = TokenStream::new();
+    let mut values = Vec::with_capacity(expressions.len());
+
+    for (index, (property, expression)) in expressions.iter().enumerate() {
+        let value_ident = quote::format_ident!("{prefix}_{index}");
+        let prop_type = get_prop_type(property, span)?;
+        let expression_span = expression
+            .clone()
+            .into_iter()
+            .next()
+            .map(|token| token.span())
+            .unwrap_or(span);
+
+        declarations.extend(quote_spanned! { expression_span =>
+            const _: () = {
+                let _ = #expression;
+            };
+            let #value_ident = #__silex::css::static_css_value::<#prop_type, _>(#expression);
+        });
+        values.push(value_ident);
+    }
+
+    Ok((declarations, values))
+}
+
+pub(crate) fn static_values_tokens(values: &[syn::Ident]) -> TokenStream {
+    let rendered = values.iter().map(|value| quote! { #value.to_string() });
+    quote! { ::std::vec![ #(#rendered),* ] }
+}
+
+/// 生成静态 stylesheet 的注入代码。
+pub(crate) fn generate_static_style_inits(
+    result: &compiler::CssCompileResult,
+    static_values: Option<&syn::Ident>,
+) -> TokenStream {
+    let __silex = crate::crate_path::silex();
+    let static_id = &result.static_id;
+    let static_css = &result.static_css;
+    let style_id = &result.style_id;
+    let component_css = &result.component_css;
+
+    match static_values {
+        Some(values) => quote! {
+            if !#static_css.is_empty() {
+                let __slx_rendered_static_css =
+                    #__silex::css::render_static_template(#static_css, &#values);
+                #__silex::css::inject_style(#static_id, &__slx_rendered_static_css);
+            }
+            if !#component_css.is_empty() {
+                let __slx_rendered_component_css =
+                    #__silex::css::render_static_template(#component_css, &#values);
+                #__silex::css::inject_style(#style_id, &__slx_rendered_component_css);
+            }
+        },
+        None => quote! {
+            if !#static_css.is_empty() {
+                #__silex::css::inject_style(#static_id, #static_css);
+            }
+            if !#component_css.is_empty() {
+                #__silex::css::inject_style(#style_id, #component_css);
+            }
+        },
+    }
+}
+
 pub fn inject_css_impl(ts: TokenStream) -> Result<TokenStream> {
     let __silex = crate::crate_path::silex();
     let span = Span::call_site();
@@ -112,18 +188,34 @@ pub fn inject_css_impl(ts: TokenStream) -> Result<TokenStream> {
     let static_css = &compile_result.static_css;
     let style_id = &compile_result.style_id;
     let component_css = &compile_result.component_css;
+    let (static_value_decls, static_values) = generate_static_value_bindings(
+        &compile_result.static_expressions,
+        span,
+        "__slx_inject_static",
+    )?;
+    let static_value_tokens = static_values_tokens(&static_values);
 
     Ok(quote! {
         {
             #assertions
             const __STATIC_CSS: &str = #static_css;
             const __COMPONENT_CSS: &str = #component_css;
+            #static_value_decls
+            let __STATIC_VALUES: ::std::vec::Vec<::std::string::String> = #static_value_tokens;
 
             if !__STATIC_CSS.is_empty() {
-                #__silex::css::inject_style(#static_id, __STATIC_CSS);
+                let __rendered = #__silex::css::render_static_template(
+                    __STATIC_CSS,
+                    &__STATIC_VALUES,
+                );
+                #__silex::css::inject_style(#static_id, &__rendered);
             }
             if !__COMPONENT_CSS.is_empty() {
-                #__silex::css::inject_style(#style_id, __COMPONENT_CSS);
+                let __rendered = #__silex::css::render_static_template(
+                    __COMPONENT_CSS,
+                    &__STATIC_VALUES,
+                );
+                #__silex::css::inject_style(#style_id, &__rendered);
             }
         }
     })
@@ -138,7 +230,7 @@ pub(crate) fn reject_dynamic_global(
     for rule in &block.rules {
         match rule {
             CssRule::Declaration(decl) => {
-                if let Some(span) = first_dynamic_token_span(&decl.values) {
+                if let Some(span) = first_reactive_token_span(&decl.values) {
                     return Err(syn::Error::new(span, value_message));
                 }
             }
@@ -200,6 +292,35 @@ fn first_dynamic_token_span(ts: &TokenStream) -> Option<Span> {
     None
 }
 
+fn first_reactive_token_span(ts: &TokenStream) -> Option<Span> {
+    let mut iter = ts.clone().into_iter().peekable();
+    while let Some(token) = iter.next() {
+        if let TokenTree::Punct(punct) = &token
+            && punct.as_char() == '$'
+        {
+            match iter.peek() {
+                Some(TokenTree::Group(group))
+                    if group.delimiter() == Delimiter::Parenthesis
+                        && matches!(
+                            crate::css::ast::parse_interpolation(group),
+                            Ok(crate::css::ast::CssInterpolation::Static(_))
+                        ) => {}
+                Some(TokenTree::Ident(_))
+                | Some(TokenTree::Group(_))
+                | Some(TokenTree::Literal(_))
+                | Some(TokenTree::Punct(_)) => return Some(punct.span()),
+                None => return Some(punct.span()),
+            }
+        }
+        if let TokenTree::Group(group) = token
+            && let Some(span) = first_reactive_token_span(&group.stream())
+        {
+            return Some(span);
+        }
+    }
+    None
+}
+
 pub fn css_impl(ts: TokenStream) -> Result<TokenStream> {
     let span = Span::call_site(); // Use call site for better error reporting in blocks
     let compile_result = CssCompiler::compile(ts, span, false)?;
@@ -220,6 +341,14 @@ pub(crate) fn generate_css_output(
     let style_id = &compile_result.style_id;
     let component_css = &compile_result.component_css;
     let layer = compile_result.layer;
+    let has_static_values = !compile_result.static_expressions.is_empty();
+    let static_values_ident = quote::format_ident!("__slx_static_values");
+    let (static_value_decls, static_value_ids) = generate_static_value_bindings(
+        &compile_result.static_expressions,
+        span,
+        "__slx_css_static",
+    )?;
+    let static_value_tokens = static_values_tokens(&static_value_ids);
 
     let warning_tokens = warnings.iter().map(|w| {
         let msg = &w.message;
@@ -238,13 +367,24 @@ pub(crate) fn generate_css_output(
         #(#warning_tokens)*
         #assertions
     };
-    let static_inits = quote! {
-        if !#static_css.is_empty() {
-            #__silex::css::inject_style(#static_id, #static_css);
+    let static_value_inits = if has_static_values {
+        quote! {
+            #static_value_decls
+            let #static_values_ident: ::std::vec::Vec<::std::string::String> =
+                #static_value_tokens;
         }
-        if !#component_css.is_empty() {
-            #__silex::css::inject_style(#style_id, #component_css);
-        }
+    } else {
+        quote! {}
+    };
+    let static_inits = if has_static_values {
+        generate_static_style_inits(&compile_result, Some(&static_values_ident))
+    } else {
+        generate_static_style_inits(&compile_result, None)
+    };
+    let dynamic_static_values = if has_static_values {
+        quote! { .with_static_values(#static_values_ident) }
+    } else {
+        quote! {}
     };
 
     // Generate Rust Code
@@ -252,6 +392,7 @@ pub(crate) fn generate_css_output(
         Ok(quote! {
             {
                 #common_inits
+                #static_value_inits
                 #static_inits
                 #class_name
             }
@@ -283,8 +424,10 @@ pub(crate) fn generate_css_output(
         Ok(quote! {
             {
                 #common_inits
+                #static_value_inits
                 #__silex::css::DynamicCss::new(#class_name)
                     .with_layer(#layer)
+                    #dynamic_static_values
                     .with_static_style(#static_id, #static_css)
                     .with_static_style(#style_id, #component_css)
                     #(#var_calls)*
@@ -416,6 +559,28 @@ mod tests {
         let output = css_impl(quote! { color: $(color); }).unwrap().to_string();
         assert!(output.contains("with_static_style"), "{output}");
         assert!(!output.contains("inject_style"), "{output}");
+    }
+
+    #[test]
+    fn static_interpolation_generates_a_rendered_template_and_type_bound() {
+        let output = css_impl(quote! { color: $(static AppTheme::PRIMARY); })
+            .unwrap()
+            .to_string();
+        assert!(output.contains("render_static_template"), "{output}");
+        assert!(output.contains("static_css_value"), "{output}");
+        assert!(!output.contains("DynamicCss"), "{output}");
+    }
+
+    #[test]
+    fn dynamic_css_carries_static_values_with_its_template() {
+        let output = css_impl(quote! {
+            color: $(static AppTheme::PRIMARY);
+            width: $(color);
+        })
+        .unwrap()
+        .to_string();
+        assert!(output.contains("with_static_values"), "{output}");
+        assert!(output.contains("with_static_style"), "{output}");
     }
 
     #[test]
