@@ -14,7 +14,7 @@ fn UserView<'scope>(
 fn main() {
     let routes = routes!(AppRoutes {
         user "/users/:id" => move |ctx, id: u32| {
-            UserView(ctx, id).label("detail")
+            UserView(ctx, id).label("detail").build()
         },
     });
 

@@ -22,11 +22,12 @@ fn compile_scoped_api<'scope>(scope: Scope<'scope>) {
     let _link = Link(context, RoutePath::new("/").unwrap())
         .children(text)
         .active_class("active")
-        .on_click(|_| Ok(()));
+        .on_click(|_| Ok(()))
+        .build();
     let routes = routes!(AppRoutes {
         home "/" => move |_ctx| AnyView::from("home"),
     });
-    let _router = Router(scope).base("/app").routes(routes.table());
+    let _router = Router(scope).base("/app").routes(routes.table()).build();
 }
 
 fn main() {

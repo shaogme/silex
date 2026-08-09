@@ -242,16 +242,19 @@ fn App<'scope>(scope: Scope<'scope>, error_handler: ErrorReporter<'scope>) -> im
             UsersLayout(ctx).children(outlet).build()
         });
 
-    Router(scope).routes(table).layout(move |ctx, outlet| {
-        MainLayout(
-            ctx,
-            home_path.clone(),
-            users_path.clone(),
-            search_path.clone(),
-        )
-        .children(outlet)
+    Router(scope)
+        .routes(table)
+        .layout(move |ctx, outlet| {
+            MainLayout(
+                ctx,
+                home_path.clone(),
+                users_path.clone(),
+                search_path.clone(),
+            )
+            .children(outlet)
+            .build()
+        })
         .build()
-    })
 }
 
 /// Mount the Router demo into the conventional `#app` target.

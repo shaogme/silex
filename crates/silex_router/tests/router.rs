@@ -177,7 +177,8 @@ fn router_navigation_uses_required_table_and_updates_outlet() {
     root.with_scope(|scope| {
         let view = Router(scope)
             .base("/app")
-            .routes(navigation_table(navigator.clone()));
+            .routes(navigation_table(navigator.clone()))
+            .build();
         let owner = ScopedViewOwner::new(scope, test_handler(scope));
         view.mount_owned(&owner, &host, Vec::new())
             .expect("router view should mount");
@@ -260,7 +261,8 @@ fn router_layout_is_created_once_while_outlet_changes() {
             .layout(move |_context, outlet| {
                 layouts_for_view.set(layouts_for_view.get() + 1);
                 outlet
-            });
+            })
+            .build();
         let owner = ScopedViewOwner::new(scope, test_handler(scope));
         view.mount_owned(&owner, &host, Vec::new())
             .expect("router view should mount");
@@ -309,7 +311,7 @@ fn nested_outlet_keeps_parent_layout_while_child_route_changes() {
                 },
             },
         });
-        let view = Router(scope).base("/app").routes(routes.table());
+        let view = Router(scope).base("/app").routes(routes.table()).build();
         let owner = ScopedViewOwner::new(scope, test_handler(scope));
         view.mount_owned(&owner, &host, Vec::new())
             .expect("nested router should mount");
@@ -357,7 +359,8 @@ fn link_requires_context_and_tracks_active_path() {
         .expect("router context should be created");
         let link = Link(context, RoutePath::new("/users").unwrap())
             .children("users")
-            .active_class("active");
+            .active_class("active")
+            .build();
         let owner = ScopedViewOwner::new(scope, test_handler(scope));
         link.mount_owned(&owner, &host, Vec::new())
             .expect("link should mount");
@@ -503,7 +506,7 @@ fn router_owner_dispose_removes_listener_and_ignores_late_popstate() {
             .expect("route should compile"),
         ])
         .expect("route table should compile");
-        let view = Router(scope).base("/app").routes(table);
+        let view = Router(scope).base("/app").routes(table).build();
         let owner = ScopedViewOwner::new(scope, test_handler(scope));
         view.mount_owned(&owner, &host, Vec::new())
             .expect("router view should mount");
@@ -548,7 +551,7 @@ fn router_does_not_mount_outlet_when_listener_registration_fails() {
             .expect("route should compile"),
         ])
         .expect("route table should compile");
-        let view = Router(scope).base("/app").routes(table);
+        let view = Router(scope).base("/app").routes(table).build();
         let owner = ScopedViewOwner::new(scope, test_handler(scope));
         assert!(matches!(
             view.mount_owned(&owner, &host, Vec::new()),

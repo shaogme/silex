@@ -32,6 +32,7 @@ use silex_core::{Scope, SilexResult, reactivity::runtime_inputs_of};
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::helpers::window_event_listener_untyped_owned;
 use silex_dom::view::{AnyView, ApplyAttributes, View, ViewOwner};
+use silex_macros::component;
 use std::{cell::RefCell, rc::Rc};
 
 /// 能够转换为本地路由路径的值。
@@ -63,40 +64,6 @@ impl ToRoute for RoutePath {
     }
 }
 
-/// Router 的初始 builder。只有调用 [`RouterBuilder::routes`] 后才会得到可挂载的
-/// Router 组件，因此 route table 是必填输入。
-pub struct RouterBuilder<'scope> {
-    scope: Scope<'scope>,
-    base: String,
-}
-
-/// 路由器组件入口。
-#[allow(non_snake_case)]
-pub fn Router<'scope>(scope: Scope<'scope>) -> RouterBuilder<'scope> {
-    RouterBuilder {
-        scope,
-        base: String::from("/"),
-    }
-}
-
-impl<'scope> RouterBuilder<'scope> {
-    /// 设置应用的 base path。
-    pub fn base(mut self, base: impl Into<String>) -> Self {
-        self.base = base.into();
-        self
-    }
-
-    /// 提供必需的路由表。
-    pub fn routes(self, routes: RouteTable<'scope>) -> RouterComponent<'scope> {
-        let context = create_router_context(self.scope, &self.base);
-        RouterComponent {
-            context,
-            routes,
-            layout: None,
-        }
-    }
-}
-
 fn create_router_context<'scope>(
     scope: Scope<'scope>,
     base: &str,
@@ -122,61 +89,51 @@ fn create_router_context<'scope>(
     )
 }
 
-/// Router 的可挂载 builder。route table 已在 [`RouterBuilder::routes`] 中固定。
-#[derive(Clone)]
-pub struct RouterComponent<'scope> {
-    context: SilexResult<RouterContext<'scope>>,
-    routes: RouteTable<'scope>,
-    layout: Option<RouterLayout<'scope>>,
-}
-
 /// Router layout 的类型擦除闭包。
 pub type RouterLayout<'scope> =
     Rc<dyn Fn(RouterContext<'scope>, AnyView<'scope>) -> AnyView<'scope> + 'scope>;
 
-impl<'scope> RouterComponent<'scope> {
-    /// 设置只创建一次的 layout；outlet 会随当前路径更新。
-    pub fn layout<F, V>(mut self, layout: F) -> Self
-    where
-        F: Fn(RouterContext<'scope>, AnyView<'scope>) -> V + 'scope,
-        V: View<'scope> + 'scope,
-    {
-        self.layout = Some(Rc::new(move |context, outlet| {
+/// Router layout 的链式输入，默认表示不使用外壳。
+#[derive(Clone, Default)]
+pub struct RouterLayoutInput<'scope>(Option<RouterLayout<'scope>>);
+
+impl<'scope, F, V> From<F> for RouterLayoutInput<'scope>
+where
+    F: Fn(RouterContext<'scope>, AnyView<'scope>) -> V + 'scope,
+    V: View<'scope> + 'scope,
+{
+    fn from(layout: F) -> Self {
+        Self(Some(Rc::new(move |context, outlet| {
             layout(context, outlet).into_any()
-        }));
-        self
+        })))
     }
 }
 
-impl<'scope> ApplyAttributes<'scope> for RouterComponent<'scope> {}
-
-impl<'scope> View<'scope> for RouterComponent<'scope> {
-    fn mount(
-        &self,
-        owner: &dyn ViewOwner<'scope>,
-        parent: &web_sys::Node,
-        attrs: Vec<PendingAttribute<'scope>>,
-    ) -> SilexResult<()> {
-        self.clone().mount_owned(owner, parent, attrs)
+impl<'scope> RouterLayoutInput<'scope> {
+    fn into_option(self) -> Option<RouterLayout<'scope>> {
+        self.0
     }
+}
 
-    fn mount_owned(
-        self,
-        owner: &dyn ViewOwner<'scope>,
-        parent: &web_sys::Node,
-        attrs: Vec<PendingAttribute<'scope>>,
-    ) -> SilexResult<()>
-    where
-        Self: Sized,
-    {
-        let context = self.context?;
-        RouterView {
-            context,
-            routes: self.routes,
-            layout: self.layout,
-        }
-        .mount_internal(owner, parent, attrs)
-    }
+/// Router 组件。`routes` 是 required chain prop，其余配置由 PropsBuilder 延迟到
+/// `.build()` 处理。
+#[component]
+pub fn Router<'scope>(
+    scope: Scope<'scope>,
+    #[chain] routes: RouteTable<'scope>,
+    #[prop(into)]
+    #[chain(default = String::from("/"))]
+    base: String,
+    #[prop(into)]
+    #[chain(default)]
+    layout: RouterLayoutInput<'scope>,
+) -> SilexResult<RouterView<'scope>> {
+    let context = create_router_context(scope, &base)?;
+    Ok(RouterView {
+        context,
+        routes,
+        layout: layout.into_option(),
+    })
 }
 
 /// Router 的实际 view，负责注册 popstate listener 并挂载 layout/outlet。

@@ -259,11 +259,12 @@ fn App<'scope>(
                 about "/about" => move |_ctx| AboutView().build(),
                 not_found "/*" => move |_ctx| NotFound().build(),
             });
-            div!(
-                Router(scope)
-                    .routes(routes.table())
-                    .layout(move |ctx, outlet| div!(NavBar(ctx).build(), outlet))
-            )
+                div!(
+                    Router(scope)
+                        .routes(routes.table())
+                        .layout(move |ctx, outlet| div!(NavBar(ctx).build(), outlet))
+                        .build()
+                )
             .class("app-container")
             .style("font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;")
         },

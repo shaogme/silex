@@ -15,9 +15,9 @@ fn App<'scope>(scope: Scope<'scope>, user: UserStore<'scope>) -> impl View<'scop
     div!(
         h1("Silex Store Demo"),
         p("This example demonstrates fine-grained reactivity using the #[store] macro."),
-        UserDisplay(scope, user),
-        UserEditor(scope, user),
-        DebugPanel(scope, user),
+        UserDisplay(scope, user).build(),
+        UserEditor(scope, user).build(),
+        DebugPanel(scope, user).build(),
     )
     .style(
         "padding: 20px; font-family: sans-serif; max-width: 500px; margin: 0 auto; border: 1px solid #ccc; border-radius: 8px;",
@@ -110,5 +110,5 @@ fn mount_store_view<'scope>(context: &MountContext<'scope>) -> SilexResult<()> {
         },
     );
 
-    context.mount(App(scope, user), error_handler)
+    context.mount(App(scope, user).build(), error_handler)
 }
