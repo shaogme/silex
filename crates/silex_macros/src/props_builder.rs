@@ -298,7 +298,7 @@ impl BuilderContext {
         let builder_fields = self.fields.iter().map(|field| {
             let ident = &field.ident;
             let ty = &field.ty;
-            if field.required {
+            if field.attrs.chained {
                 quote! { #ident: ::core::option::Option<#ty> }
             } else {
                 quote! { #ident: #ty }
@@ -370,7 +370,6 @@ impl BuilderContext {
             .map(|_| quote! { #__silex::dom::view::PropMissing })
             .collect();
         let builder_ty_initial = self.get_builder_ty(&initial_states);
-        let fallible_defaults = self.has_fallible_reactive_defaults();
 
         let standalone_fields: Vec<_> = self.fields.iter().filter(|f| !f.attrs.chained).collect();
         let builder_new_params = standalone_fields.iter().map(|field| {
@@ -379,35 +378,12 @@ impl BuilderContext {
             quote! { #ident: #ty }
         });
 
-        let scope_field = self.scope_field.as_ref();
         let builder_field_inits = self.fields.iter().map(|field| {
             let ident = &field.ident;
             if !field.attrs.chained {
                 quote! { #ident }
-            } else if is_reactive_default_field(field) {
-                let scope_field =
-                    scope_field.expect("reactive defaults were validated to have a scope field");
-                let init_expr = reactive_default_transform(
-                    field,
-                    &self.scope,
-                    scope_field,
-                    field.attrs.default_value.as_ref(),
-                );
-                let init_expr = if is_fallible_reactive_default_field(field) {
-                    quote! { #init_expr? }
-                } else {
-                    init_expr
-                };
-                quote! { #ident: #init_expr }
-            } else if let Some(default_expr) = &field.attrs.default_value {
-                let init_expr = field_value_transform(field, quote! { #default_expr });
-                quote! { #ident: #init_expr }
-            } else if field.attrs.default {
-                quote! { #ident: ::core::default::Default::default() }
-            } else if field.required {
-                quote! { #ident: ::core::option::Option::None }
             } else {
-                quote! { #ident: ::core::default::Default::default() }
+                quote! { #ident: ::core::option::Option::None }
             }
         });
 
@@ -417,16 +393,6 @@ impl BuilderContext {
                 _pending_attrs: ::std::vec::Vec::new(),
                 _markers: ::core::marker::PhantomData,
             }
-        };
-        let builder_new_return = if fallible_defaults {
-            quote! { #__silex::core::SilexResult<#builder_ty_initial> }
-        } else {
-            quote! { #builder_ty_initial }
-        };
-        let builder_new_value = if fallible_defaults {
-            quote! { ::core::result::Result::Ok(#builder_value) }
-        } else {
-            builder_value
         };
 
         let builder_setters = self
@@ -444,8 +410,8 @@ impl BuilderContext {
 
         quote! {
             impl #builder_generics_decl #builder_name #builder_generics_type #where_clause {
-                pub fn new(#(#builder_new_params),*) -> #builder_new_return {
-                    #builder_new_value
+                pub fn new(#(#builder_new_params),*) -> #builder_ty_initial {
+                    #builder_value
                 }
 
                 #(#builder_setters)*
@@ -503,7 +469,7 @@ impl BuilderContext {
             quote! { val }
         };
 
-        let final_value = if !field.attrs.chained || !field.required {
+        let final_value = if !field.attrs.chained {
             setter_value.clone()
         } else {
             quote! { ::core::option::Option::Some(#setter_value) }
@@ -587,6 +553,8 @@ impl BuilderContext {
         let (impl_generics, ty_generics, where_clause) = self.generics.split_for_impl();
         let product_name = &self.product_name;
         let props_name = &self.props_name;
+        let product_ty = quote! { #product_name #ty_generics };
+        let fallible_defaults = self.has_fallible_reactive_defaults();
 
         let fixed_states: Vec<_> = self
             .prop_generic_idents
@@ -594,34 +562,93 @@ impl BuilderContext {
             .map(|_| quote! { #__silex::dom::view::PropFixed })
             .collect();
         let builder_ty_fixed = self.get_builder_ty(&fixed_states);
-        let fields_destructure = self.fields.iter().map(|field| &field.ident);
-        let props_field_inits = self.fields.iter().map(|field| {
+        let fields_destructure: Vec<_> = self.fields.iter().map(|field| &field.ident).collect();
+
+        let field_initializers = self.fields.iter().filter_map(|field| {
             let ident = &field.ident;
+
             if field.required {
                 let name_str = ident.to_string();
-                quote! {
-                    #ident: #ident.expect(concat!("Component '", stringify!(#props_name), "' missing required prop: '", #name_str, "'"))
-                }
-            } else {
-                quote! { #ident }
+                return Some(quote! {
+                    let #ident = #ident.expect(concat!(
+                        "Component '",
+                        stringify!(#props_name),
+                        "' missing required prop: '",
+                        #name_str,
+                        "'",
+                    ));
+                });
             }
+
+            if !field.attrs.chained {
+                return None;
+            }
+
+            let default_value = if is_reactive_default_field(field) {
+                let scope_field = self
+                    .scope_field
+                    .as_ref()
+                    .expect("reactive defaults were validated to have a scope field");
+                let init_expr = reactive_default_transform(
+                    field,
+                    &self.scope,
+                    scope_field,
+                    field.attrs.default_value.as_ref(),
+                );
+                if is_fallible_reactive_default_field(field) {
+                    quote! { #init_expr? }
+                } else {
+                    init_expr
+                }
+            } else if let Some(default_expr) = &field.attrs.default_value {
+                field_value_transform(field, quote! { #default_expr })
+            } else {
+                quote! { ::core::default::Default::default() }
+            };
+
+            Some(quote! {
+                let #ident = match #ident {
+                    Some(value) => value,
+                    None => #default_value,
+                };
+            })
         });
+        let props_field_inits = self.fields.iter().map(|field| {
+            let ident = &field.ident;
+            quote! { #ident }
+        });
+        let product_value = quote! {
+            #product_name {
+                props: #props_name {
+                    #(#props_field_inits,)*
+                },
+                _pending_attrs,
+            }
+        };
+        let build_return = if fallible_defaults {
+            quote! { #__silex::core::SilexResult<#product_ty> }
+        } else {
+            product_ty.clone()
+        };
+        let build_value = if fallible_defaults {
+            quote! {
+                ::core::result::Result::Ok(#product_value)
+            }
+        } else {
+            product_value
+        };
 
         quote! {
             impl #impl_generics #builder_ty_fixed #where_clause {
-                pub fn build(self) -> #product_name #ty_generics {
+                pub fn build(self) -> #build_return {
                     let Self {
                         #(#fields_destructure,)*
                         _pending_attrs,
                         ..
                     } = self;
 
-                    #product_name {
-                        props: #props_name {
-                            #(#props_field_inits,)*
-                        },
-                        _pending_attrs,
-                    }
+                    #(#field_initializers)*
+                    #build_value
                 }
             }
         }
@@ -761,7 +788,6 @@ impl BuilderContext {
             .map(|_| quote! { #__silex::dom::view::PropMissing })
             .collect();
         let builder_ty_initial = self.get_builder_ty(&initial_states);
-        let fallible_defaults = self.has_fallible_reactive_defaults();
 
         let standalone_fields: Vec<_> = self.fields.iter().filter(|f| !f.attrs.chained).collect();
 
@@ -789,15 +815,9 @@ impl BuilderContext {
             }
         });
 
-        let constructor_return = if fallible_defaults {
-            quote! { #__silex::core::SilexResult<#builder_ty_initial> }
-        } else {
-            quote! { #builder_ty_initial }
-        };
-
         quote! {
             #[allow(non_snake_case, unused_variables, unused_mut)]
-            #vis fn #component_name #impl_generics(#(#constructor_params),*) -> #constructor_return #where_clause {
+            #vis fn #component_name #impl_generics(#(#constructor_params),*) -> #builder_ty_initial #where_clause {
                 <#builder_ty_initial>::new(#(#constructor_args),*)
             }
         }

@@ -19,10 +19,10 @@ fn FallibleBuilder<'scope>(
 
 fn build_view<'scope>(scope: Scope<'scope>) -> SilexResult<impl View<'scope>> {
     let callback = scope.callback(|_: String| Ok(()))?;
-    Ok(FallibleBuilder(scope, AnyView::Empty)?
+    Ok(FallibleBuilder(scope, AnyView::Empty)
         .value(String::from("ready"))
         .callback(callback)
-        .build())
+        .build()?)
 }
 
 fn main() {

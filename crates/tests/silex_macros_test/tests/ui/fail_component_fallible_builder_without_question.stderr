@@ -1,16 +1,14 @@
-error[E0599]: no method named `build` found for enum `Result<T, E>` in the current scope
-  --> tests/ui/fail_component_fallible_builder_without_question.rs:22:64
+error[E0308]: mismatched types
+  --> tests/ui/fail_component_fallible_builder_without_question.rs:23:13
    |
-22 |         let _ = FallibleWithoutQuestion(scope, AnyView::Empty).build();
-   |                                                                ^^^^^ method not found in `Result<FallibleWithoutQuestionBuilder<'_>, SilexError>`
+22 |         let _view: FallibleWithoutQuestionComponent =
+   |                    -------------------------------- expected due to this
+23 |             FallibleWithoutQuestion(scope, AnyView::Empty).build();
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `FallibleWithoutQuestionComponent<'_>`, found `Result<..., ...>`
    |
-note: the method `build` exists on the type `FallibleWithoutQuestionBuilder<'_>`
-  --> tests/ui/fail_component_fallible_builder_without_question.rs:9:1
+   = note: expected struct `FallibleWithoutQuestionComponent<'_>`
+                found enum `Result<FallibleWithoutQuestionComponent<'_>, SilexError>`
+help: consider using `Result::expect` to unwrap the `Result<FallibleWithoutQuestionComponent<'_>, SilexError>` value, panicking if the value is a `Result::Err`
    |
- 9 | #[component]
-   | ^^^^^^^^^^^^
-   = note: this error originates in the derive macro `::silex::macros::PropsBuilder` (in Nightly builds, run with -Z macro-backtrace for more info)
-help: consider using `Result::expect` to unwrap the `FallibleWithoutQuestionBuilder<'_>` value, panicking if the value is a `Result::Err`
-   |
-22 |         let _ = FallibleWithoutQuestion(scope, AnyView::Empty).expect("REASON").build();
-   |                                                               +++++++++++++++++
+23 |             FallibleWithoutQuestion(scope, AnyView::Empty).build().expect("REASON");
+   |                                                                   +++++++++++++++++

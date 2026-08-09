@@ -19,6 +19,7 @@ fn FallibleWithoutQuestion<'scope>(
 fn main() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
-        let _ = FallibleWithoutQuestion(scope, AnyView::Empty).build();
+        let _view: FallibleWithoutQuestionComponent =
+            FallibleWithoutQuestion(scope, AnyView::Empty).build();
     });
 }
