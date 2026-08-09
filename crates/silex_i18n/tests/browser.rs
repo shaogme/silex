@@ -157,7 +157,7 @@ fn query_binding_follows_router_search_signal() {
         )
         .expect("valid router context");
         let binding = silex_i18n::Persistent::builder(scope, "lang", test_handler(scope))
-            .query(&ctx)
+            .query(ctx)
             .parse::<Locale>()
             .default(Locale::new("en-US"))
             .build();

@@ -756,7 +756,8 @@ impl Parse for GlobalStyle {
 
         // `body { ... }` is a CSS nested rule, not a named macro declaration.
         // A named global has either visibility, generics, or an argument list,
-        // so those tokens provide an unambiguous header lookahead.
+        // so those tokens provide an unambiguous header lookahead. A visibility
+        // without a name uses the generated `GlobalStyles` name.
         let has_header = input.peek(Token![pub])
             || (input.peek(Ident) && (input.peek2(Token![<]) || input.peek2(syn::token::Paren)));
         let mut vis = Visibility::Inherited;
@@ -767,17 +768,19 @@ impl Parse for GlobalStyle {
 
         if has_header {
             vis = input.parse()?;
-            name = Some(input.parse()?);
-            if input.peek(Token![<]) {
-                generics = input.parse()?;
-            }
-            if input.peek(syn::token::Paren) {
-                let params_content;
-                syn::parenthesized!(params_content in input);
-                params = params_content.parse_terminated(FnArg::parse, Token![,])?;
-            }
-            if input.peek(Token![where]) {
-                generics.where_clause = Some(input.parse()?);
+            if !input.peek(syn::token::Brace) {
+                name = Some(input.parse()?);
+                if input.peek(Token![<]) {
+                    generics = input.parse()?;
+                }
+                if input.peek(syn::token::Paren) {
+                    let params_content;
+                    syn::parenthesized!(params_content in input);
+                    params = params_content.parse_terminated(FnArg::parse, Token![,])?;
+                }
+                if input.peek(Token![where]) {
+                    generics.where_clause = Some(input.parse()?);
+                }
             }
             let css_content;
             syn::braced!(css_content in input);
@@ -1136,5 +1139,22 @@ mod tests {
         let code = global_impl(input).unwrap().to_string();
         assert!(code.contains("with_static_replacements"), "{code}");
         assert!(code.contains("with_static_values"), "{code}");
+    }
+
+    #[test]
+    fn visibility_only_global_uses_generated_name() {
+        let input = quote::quote! {
+            pub(crate) {
+                body { color: red; }
+            }
+        };
+        let parsed: GlobalStyle = syn::parse2(input.clone()).unwrap();
+
+        assert!(parsed.name.is_none());
+        assert!(matches!(parsed.vis, Visibility::Restricted(_)));
+
+        let code = global_impl(input).unwrap().to_string();
+        assert!(code.contains("GlobalStyles"), "{code}");
+        assert!(code.contains("pub (crate) fn"), "{code}");
     }
 }

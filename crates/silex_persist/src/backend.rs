@@ -173,7 +173,7 @@ pub struct QueryBackend<'scope> {
 }
 
 impl<'scope> QueryBackend<'scope> {
-    pub fn new(ctx: &RouterContext<'scope>) -> Self {
+    pub fn new(ctx: RouterContext<'scope>) -> Self {
         let navigator = ctx.navigator;
         let query_map = ctx.query_map();
         let mut inputs = RuntimeInputs::new();

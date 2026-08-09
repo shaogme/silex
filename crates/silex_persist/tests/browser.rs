@@ -602,7 +602,7 @@ fn query_binding_uses_target_scope_and_updates_only_its_key() {
         )
         .expect("router context should be created");
         let page = Persistent::builder(scope, "page", test_handler(scope))
-            .query(&context)
+            .query(context)
             .parse::<u32>()
             .default(1)
             .build();
@@ -648,7 +648,7 @@ fn query_backend_writes_one_push_and_one_url_update_per_change() {
         let initial_search_updates = search_updates.get();
 
         let binding = Persistent::builder(scope, QUERY_HISTORY_KEY, test_handler(scope))
-            .query(&context)
+            .query(context)
             .parse::<u32>()
             .write_default(WriteDefault::Never)
             .default(1)

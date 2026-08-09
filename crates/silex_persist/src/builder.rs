@@ -164,7 +164,7 @@ where
 
     pub fn query(
         self,
-        ctx: &RouterContext<'scope>,
+        ctx: RouterContext<'scope>,
     ) -> PersistentBuilder<'scope, QueryBackend<'scope>, C, T, D> {
         PersistentBuilder {
             scope: self.scope,
@@ -225,7 +225,7 @@ where
         }
     }
 
-    pub fn cow(self) -> PersistentBuilder<'scope, B, StringCodec, Cow<'static, str>, D> {
+    pub fn cow(self) -> PersistentBuilder<'scope, B, StringCodec, Cow<'scope, str>, D> {
         PersistentBuilder {
             scope: self.scope,
             error_handler: self.error_handler,

@@ -45,7 +45,7 @@ fn SearchPage<'scope>(
 ) -> impl View<'scope> {
     let scope = ctx.scope();
     let search_term = Persistent::builder(scope, "q", error_handler)
-        .query(&ctx)
+        .query(ctx)
         .string()
         .default(String::new())
         .build();
