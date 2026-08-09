@@ -9,6 +9,7 @@ struct StoreFieldInfo {
     ty: Type,
     visibility: Visibility,
     handle_ident: Ident,
+    input_ident: Ident,
 }
 
 pub fn store_impl(mut model: ItemStruct) -> Result<TokenStream> {
@@ -42,6 +43,7 @@ pub fn store_impl(mut model: ItemStruct) -> Result<TokenStream> {
             ty: field.ty.clone(),
             visibility: field.vis.clone(),
             handle_ident: format_ident!("__SilexStoreField{index}"),
+            input_ident: format_ident!("__SilexStoreInput{index}"),
         })
         .collect::<Vec<_>>();
 
@@ -96,10 +98,56 @@ pub fn store_impl(mut model: ItemStruct) -> Result<TokenStream> {
         })
         .collect::<Vec<_>>();
     let handle_names_for_from = handle_names.clone();
-    let input_collection = field_infos.iter().map(|field| {
-        let ident = &field.ident;
-        quote!(inputs.extend(&#core::runtime_inputs_of(#ident));)
-    });
+    let input_handle_arguments = field_infos
+        .iter()
+        .map(|field| {
+            let ident = &field.ident;
+            let input = &field.input_ident;
+            quote!(#ident: #input)
+        })
+        .collect::<Vec<_>>();
+    let input_generics = field_infos
+        .iter()
+        .map(|field| {
+            let input = &field.input_ident;
+            quote!(#input)
+        })
+        .collect::<Vec<_>>();
+    let input_constraints = field_infos
+        .iter()
+        .map(|field| {
+            let input = &field.input_ident;
+            let ty = &field.ty;
+            quote!(
+                #input: #core::StoreField<'scope, #ty>
+                    + Into<#core::RwSignal<'scope, #ty>>
+            )
+        })
+        .collect::<Vec<_>>();
+    let input_conversion_fields = field_infos
+        .iter()
+        .map(|field| {
+            let ident = &field.ident;
+            quote!(#ident: #ident.into())
+        })
+        .collect::<Vec<_>>();
+    let input_method_generics = if input_generics.is_empty() {
+        quote!()
+    } else {
+        quote!(<#(#input_generics),*>)
+    };
+    let input_method_where = if input_constraints.is_empty() {
+        quote!()
+    } else {
+        quote!(where #(#input_constraints),*)
+    };
+    let input_collection = field_infos
+        .iter()
+        .map(|field| {
+            let ident = &field.ident;
+            quote!(inputs.extend(&#core::runtime_inputs_of(#ident));)
+        })
+        .collect::<Vec<_>>();
     let snapshot_fields = field_infos.iter().map(|field| {
         let ident = &field.ident;
         quote!(#ident: #core::RxGet::get(&self.#ident))
@@ -137,6 +185,37 @@ pub fn store_impl(mut model: ItemStruct) -> Result<TokenStream> {
                     #(#new_fields),*
                 }
             }
+
+            /// Builds the default Store type from compatible scoped handles.
+            ///
+            /// Runtime validation happens before any handle conversion so a
+            /// foreign handle cannot be accepted accidentally.
+            pub fn try_from_handles #input_method_generics (
+                scope: #core::Scope<'scope>,
+                #(#input_handle_arguments),*
+            ) -> #core::SilexResult<Self>
+            #input_method_where
+            {
+                let mut inputs = #core::RuntimeInputs::new();
+                #(#input_collection)*
+                scope.try_validate_inputs(&inputs)?;
+
+                Ok(Self {
+                    scope,
+                    _marker: ::std::marker::PhantomData,
+                    #(#input_conversion_fields),*
+                })
+            }
+
+            pub fn from_handles #input_method_generics (
+                scope: #core::Scope<'scope>,
+                #(#input_handle_arguments),*
+            ) -> Self
+            #input_method_where
+            {
+                Self::try_from_handles(scope, #(#handle_names_for_from),*)
+                    .unwrap_or_else(|error| panic!("创建 scoped Store 失败: {error}"))
+            }
         }
 
         impl #fields_impl_generics #fields_name #fields_ty_generics #fields_where {
@@ -144,7 +223,7 @@ pub fn store_impl(mut model: ItemStruct) -> Result<TokenStream> {
                 self.scope
             }
 
-            pub fn try_from_handles(
+            pub fn try_from_typed_handles(
                 scope: #core::Scope<'scope>,
                 #(#handle_arguments),*
             ) -> #core::SilexResult<Self> {
@@ -159,11 +238,11 @@ pub fn store_impl(mut model: ItemStruct) -> Result<TokenStream> {
                 })
             }
 
-            pub fn from_handles(
+            pub fn from_typed_handles(
                 scope: #core::Scope<'scope>,
                 #(#handle_arguments_for_from),*
             ) -> Self {
-                Self::try_from_handles(scope, #(#handle_names_for_from),*)
+                Self::try_from_typed_handles(scope, #(#handle_names_for_from),*)
                     .unwrap_or_else(|error| panic!("创建 scoped Store 失败: {error}"))
             }
 

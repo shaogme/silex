@@ -41,7 +41,24 @@ fn persistent_field_store<'scope>(
     theme: Persistent<'scope, String>,
     notifications: RwSignal<'scope, bool>,
 ) {
-    let _settings = SettingsStore::try_from_handles(scope, theme, notifications).unwrap();
+    let _settings: SettingsStore<'scope> =
+        SettingsStore::try_from_handles(scope, theme, notifications).unwrap();
+    let _settings: SettingsStore<'scope> =
+        SettingsStore::from_handles(scope, theme, notifications);
+}
+
+fn typed_persistent_field_store<'scope>(
+    scope: Scope<'scope>,
+    theme: Persistent<'scope, String>,
+    notifications: RwSignal<'scope, bool>,
+) {
+    let _settings: SettingsStore<
+        'scope,
+        Persistent<'scope, String>,
+        RwSignal<'scope, bool>,
+    > = SettingsStore::try_from_typed_handles(scope, theme, notifications).unwrap();
+    let _settings: SettingsStore<'scope, Persistent<'scope, String>, RwSignal<'scope, bool>> =
+        SettingsStore::from_typed_handles(scope, theme, notifications);
 }
 
 fn main() {
@@ -66,7 +83,7 @@ fn main() {
 
         let name = scope.rw_signal("Carol".to_string());
         let age = scope.rw_signal(30);
-        let from_handles = UserStore::try_from_handles(scope, name, age).unwrap();
+        let from_handles: UserStore<'_> = UserStore::try_from_handles(scope, name, age).unwrap();
         assert_eq!(from_handles.snapshot().name, "Carol");
 
         let value = scope.rw_signal(7u32);
@@ -82,6 +99,6 @@ fn main() {
 
         let fixed = FixedStore::new(scope, Fixed { values: [1, 2] });
         assert_eq!(fixed.snapshot().values, [1, 2]);
-        let _ = persistent_field_store;
+        let _ = (persistent_field_store, typed_persistent_field_store);
     });
 }
