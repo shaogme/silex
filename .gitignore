@@ -3,3 +3,4 @@
 /**/node_modules
 /shadcn-ui
 /tools/geckodriver/
+.env
