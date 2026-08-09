@@ -1,6 +1,6 @@
 use crate::{
     ErrorReporter, ReactiveResult, Scope, SilexError,
-    reactivity::{ReadSignal, WriteSignal},
+    reactivity::{ReadSignal, StoredValue, WriteSignal},
     traits::{RxBase, RxCloneData, RxData, RxError, RxRead, RxValue},
     unwind_safe,
 };
@@ -58,33 +58,31 @@ impl<'scope, Arg, T, E> Clone for MutationAction<'scope, Arg, T, E> {
     }
 }
 
-pub struct Mutation<'scope, Arg, T, E = SilexError> {
-    pub state: ReadSignal<'scope, MutationState<T, E>>,
-    set_state: WriteSignal<'scope, MutationState<T, E>>,
+struct MutationInner<'scope, Arg, T, E> {
     action: MutationAction<'scope, Arg, T, E>,
     last_id: Rc<Cell<usize>>,
     completion: CompletionSender<(usize, Result<T, E>)>,
+}
+
+pub struct Mutation<'scope, Arg, T, E = SilexError> {
+    pub state: ReadSignal<'scope, MutationState<T, E>>,
+    set_state: WriteSignal<'scope, MutationState<T, E>>,
+    inner: StoredValue<'scope, MutationInner<'scope, Arg, T, E>>,
     scope: Scope<'scope>,
     error_handler: ErrorReporter<'scope>,
 }
 
+impl<'scope, Arg, T, E> Copy for Mutation<'scope, Arg, T, E> {}
+
 impl<'scope, Arg, T, E> Clone for Mutation<'scope, Arg, T, E> {
     fn clone(&self) -> Self {
-        Self {
-            state: self.state,
-            set_state: self.set_state,
-            action: self.action.clone(),
-            last_id: self.last_id.clone(),
-            completion: self.completion.clone(),
-            scope: self.scope,
-            error_handler: self.error_handler,
-        }
+        *self
     }
 }
 
 impl<'scope, Arg, T, E> Mutation<'scope, Arg, T, E>
 where
-    Arg: RxData,
+    Arg: RxData + 'scope,
     T: RxData + 'static,
     E: RxError + 'static,
 {
@@ -109,13 +107,16 @@ where
                     set_state_for_callback.set(next_state);
                 }
             }));
+        let inner = scope.stored(MutationInner {
+            action: MutationAction::Regular(Rc::new(move |arg| Box::pin(action(arg)))),
+            last_id,
+            completion,
+        });
 
         Self {
             state,
             set_state,
-            action: MutationAction::Regular(Rc::new(move |arg| Box::pin(action(arg)))),
-            last_id,
-            completion,
+            inner,
             scope,
             error_handler,
         }
@@ -144,15 +145,18 @@ where
                     set_state_for_callback.set(next_state);
                 }
             }));
-
-        Self {
-            state,
-            set_state,
+        let inner = scope.stored(MutationInner {
             action: MutationAction::Prepared(Rc::new(move |arg| {
                 prepare(arg).map(|future| Box::pin(future) as MutationFuture<T, E>)
             })),
             last_id,
             completion,
+        });
+
+        Self {
+            state,
+            set_state,
+            inner,
             scope,
             error_handler,
         }
@@ -163,14 +167,20 @@ where
             return;
         }
 
-        let (id, future) = match &self.action {
+        let (action, last_id, completion) = self.inner.with(|inner| {
+            (
+                inner.action.clone(),
+                inner.last_id.clone(),
+                inner.completion.clone(),
+            )
+        });
+        let (id, future) = match &action {
             MutationAction::Regular(action) => {
-                let id = self
-                    .last_id
+                let id = last_id
                     .get()
                     .checked_add(1)
                     .expect("Mutation request id exhausted");
-                self.last_id.set(id);
+                last_id.set(id);
                 self.set_state.set(MutationState::Pending);
                 (id, action(arg))
             }
@@ -178,27 +188,24 @@ where
                 let future = match prepare(arg) {
                     Ok(future) => future,
                     Err(error) => {
-                        let id = self
-                            .last_id
+                        let id = last_id
                             .get()
                             .checked_add(1)
                             .expect("Mutation request id exhausted");
-                        self.last_id.set(id);
+                        last_id.set(id);
                         self.set_state.set(MutationState::Error(error));
                         return;
                     }
                 };
-                let id = self
-                    .last_id
+                let id = last_id
                     .get()
                     .checked_add(1)
                     .expect("Mutation request id exhausted");
-                self.last_id.set(id);
+                last_id.set(id);
                 self.set_state.set(MutationState::Pending);
                 (id, future)
             }
         };
-        let completion = self.completion.clone();
         self.scope.spawn_scoped(
             async move {
                 let _ = completion.submit((id, future.await));

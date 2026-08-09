@@ -5,7 +5,7 @@ error: lifetime may not live long enough
   |                      ------ return type of closure is Resource<'2, std::string::String, NetError>
   |                      |
   |                      has type `silex_core::Scope<'1>`
-6 | /         HttpClient::get(scope, "https://example.test", silex_core::ErrorReporter::new(|_| {}))
+6 | /         HttpClient::get(scope, "https://example.test", scope.error_handler(|_| {}))
 7 | |             .into_resource(None)
   | |________________________________^ returning this value requires that `'1` must outlive `'2`
   |

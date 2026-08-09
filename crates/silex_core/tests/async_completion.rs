@@ -199,14 +199,52 @@ async fn mutation_future_is_cancelled_after_scope_dispose() {
             },
             handler(scope),
         );
+        let copied = mutation;
 
         mutation.mutate(1);
-        mutation.mutate(2);
+        copied.mutate(2);
         assert!(matches!(mutation.state.get(), MutationState::Pending));
     });
     wait_for_tasks(20).await;
     assert_eq!(calls.get(), 2);
     assert_eq!(dropped.get(), 2);
+}
+
+#[wasm_bindgen_test(async)]
+async fn mutation_prepare_error_invalidates_previous_completion() {
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    root.with_scope(|scope| async move {
+        let mutation = Mutation::new_with_prepare(
+            scope,
+            |value: u32| {
+                if value == 1 {
+                    Ok(async {
+                        TimeoutFuture::new(10).await;
+                        Ok::<u32, &'static str>(1)
+                    })
+                } else {
+                    Err("prepare failed")
+                }
+            },
+            handler(scope),
+        );
+
+        mutation.mutate(1);
+        mutation.mutate(2);
+        assert!(matches!(
+            mutation.state.get(),
+            MutationState::Error("prepare failed")
+        ));
+
+        wait_for_tasks(20).await;
+        assert!(matches!(
+            mutation.state.get(),
+            MutationState::Error("prepare failed")
+        ));
+    })
+    .await;
+    root.dispose().expect("root cleanup");
 }
 
 #[wasm_bindgen_test(async)]
