@@ -1,0 +1,5 @@
+error: global! requires an explicit visibility and name; use `pub Name { ... }`
+ --> tests/ui/fail_macro_global_missing_name.rs:8:5
+  |
+8 |     body {
+  |     ^^^^

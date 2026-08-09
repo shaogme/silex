@@ -5,10 +5,8 @@ include!("../../src/lib.rs");
 use silex_macros::global;
 
 global! {
-    pub DynamicGlobal<'scope>() {
-        body {
-            color: $(color);
-        }
+    body {
+        color: red;
     }
 }
 

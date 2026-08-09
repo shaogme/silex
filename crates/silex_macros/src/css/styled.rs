@@ -3,6 +3,7 @@ use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
+use syn::visit::Visit;
 use syn::{
     Attribute, FnArg, GenericArgument, Generics, Ident, PathArguments, Result, Token, Type,
     Visibility,
@@ -640,11 +641,38 @@ fn expand_dynamic_rule(input: DynamicRuleExpansion<'_>) -> Result<()> {
 }
 
 fn has_scope_lifetime(generics: &Generics) -> bool {
-    generics.params.iter().any(|param| {
-        matches!(
-            param,
-            syn::GenericParam::Lifetime(lifetime) if lifetime.lifetime.ident == "scope"
-        )
+    scope_lifetime(generics).is_some()
+}
+
+fn scope_lifetime(generics: &Generics) -> Option<syn::Lifetime> {
+    generics.params.iter().find_map(|param| match param {
+        syn::GenericParam::Lifetime(lifetime) if lifetime.lifetime.ident == "scope" => {
+            Some(lifetime.lifetime.clone())
+        }
+        _ => None,
+    })
+}
+
+struct ScopeLifetimeVisitor {
+    found: bool,
+}
+
+impl<'ast> Visit<'ast> for ScopeLifetimeVisitor {
+    fn visit_lifetime(&mut self, lifetime: &'ast syn::Lifetime) {
+        if lifetime.ident == "scope" {
+            self.found = true;
+        }
+    }
+}
+
+fn has_scope_parameter(params: &Punctuated<FnArg, Token![,]>) -> bool {
+    params.iter().any(|param| {
+        let FnArg::Typed(arg) = param else {
+            return false;
+        };
+        let mut visitor = ScopeLifetimeVisitor { found: false };
+        visitor.visit_type(&arg.ty);
+        visitor.found
     })
 }
 
@@ -739,7 +767,7 @@ fn get_tag_return_type(
 pub struct GlobalStyle {
     pub attrs: Vec<Attribute>,
     pub vis: Visibility,
-    pub name: Option<Ident>,
+    pub name: Ident,
     pub generics: Generics,
     pub params: Punctuated<FnArg, Token![,]>,
     pub css_block: TokenStream,
@@ -754,40 +782,29 @@ impl Parse for GlobalStyle {
             input.parse::<Token![unsafe]>()?;
         }
 
-        // `body { ... }` is a CSS nested rule, not a named macro declaration.
-        // A named global has either visibility, generics, or an argument list,
-        // so those tokens provide an unambiguous header lookahead. A visibility
-        // without a name uses the generated `GlobalStyles` name.
-        let has_header = input.peek(Token![pub])
-            || (input.peek(Ident) && (input.peek2(Token![<]) || input.peek2(syn::token::Paren)));
-        let mut vis = Visibility::Inherited;
-        let mut name = None;
+        let vis: Visibility = input.parse()?;
+        if matches!(vis, Visibility::Inherited) {
+            return Err(input.error(
+                "global! requires an explicit visibility and name; use `pub Name { ... }`",
+            ));
+        }
+        let name: Ident = input.parse()?;
         let mut generics = Generics::default();
         let mut params = Punctuated::new();
-        let css_block;
-
-        if has_header {
-            vis = input.parse()?;
-            if !input.peek(syn::token::Brace) {
-                name = Some(input.parse()?);
-                if input.peek(Token![<]) {
-                    generics = input.parse()?;
-                }
-                if input.peek(syn::token::Paren) {
-                    let params_content;
-                    syn::parenthesized!(params_content in input);
-                    params = params_content.parse_terminated(FnArg::parse, Token![,])?;
-                }
-                if input.peek(Token![where]) {
-                    generics.where_clause = Some(input.parse()?);
-                }
-            }
-            let css_content;
-            syn::braced!(css_content in input);
-            css_block = css_content.parse()?;
-        } else {
-            css_block = input.parse()?;
+        if input.peek(Token![<]) {
+            generics = input.parse()?;
         }
+        if input.peek(syn::token::Paren) {
+            let params_content;
+            syn::parenthesized!(params_content in input);
+            params = params_content.parse_terminated(FnArg::parse, Token![,])?;
+        }
+        if input.peek(Token![where]) {
+            generics.where_clause = Some(input.parse()?);
+        }
+        let css_content;
+        syn::braced!(css_content in input);
+        let css_block = css_content.parse()?;
 
         Ok(GlobalStyle {
             attrs,
@@ -814,25 +831,21 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
         css_block,
         is_unsafe,
     } = parsed;
-    let c_name = name.unwrap_or_else(|| quote::format_ident!("GlobalStyles"));
-    let block: crate::css::ast::CssBlock = syn::parse2(css_block.clone())?;
-    if !has_scope_lifetime(&generics) {
-        crate::css::reject_dynamic_global(
-            &block,
+    let c_name = name;
+    let scope = scope_lifetime(&generics).ok_or_else(|| {
+        syn::Error::new(
             c_name.span(),
-            "global! 的零参数形式只接受纯静态 CSS；动态内容请改用显式的 `<'scope>` source 参数。",
-            "global! 的零参数形式只接受纯静态 CSS；动态选择器请改用显式的 `<'scope>` source 参数。",
-        )?;
+            "global! requires an explicit `<'scope>` lifetime parameter.",
+        )
+    })?;
+    if !has_scope_parameter(&params) {
+        return Err(syn::Error::new(
+            c_name.span(),
+            "global! requires an explicit parameter bound to 'scope; use `scope: Scope<'scope>` or a scoped source parameter.",
+        ));
     }
     let res = CssCompiler::compile_global(css_block, c_name.span(), is_unsafe)?;
     let has_dynamic = !res.expressions.is_empty() || !res.dynamic_rules.is_empty();
-
-    if has_dynamic && params.is_empty() {
-        return Err(syn::Error::new(
-            c_name.span(),
-            "global! 的动态形式必须声明显式 source 参数；宏不会从 CSS 表达式推断函数签名。",
-        ));
-    }
 
     if !has_dynamic {
         return generate_static_global(StaticGlobalExpansion {
@@ -842,20 +855,10 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
             name: c_name,
             generics,
             params,
+            scope,
             result: &res,
         });
     }
-
-    let scope = generics
-        .params
-        .iter()
-        .find_map(|param| match param {
-            syn::GenericParam::Lifetime(lifetime) if lifetime.lifetime.ident == "scope" => {
-                Some(lifetime.lifetime.clone())
-            }
-            _ => None,
-        })
-        .expect("dynamic global scope was checked above");
 
     for arg in &mut params {
         if let FnArg::Typed(arg) = arg {
@@ -972,7 +975,11 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
         #[allow(non_snake_case, unused_variables)]
         #vis fn #c_name #fn_generics(
             #params
-        ) -> #__silex::css::GlobalStyleView<#scope> #where_clause {
+        ) -> impl #__silex::dom::view::View<#scope>
+            + #__silex::dom::view::ApplyAttributes<#scope>
+            + #scope
+            #where_clause
+        {
             #assertions
             #static_value_decls
             let #static_values_ident: ::std::vec::Vec<::std::string::String> =
@@ -993,6 +1000,7 @@ struct StaticGlobalExpansion<'a> {
     name: Ident,
     generics: Generics,
     params: Punctuated<FnArg, Token![,]>,
+    scope: syn::Lifetime,
     result: &'a CssCompileResult,
 }
 
@@ -1004,6 +1012,7 @@ fn generate_static_global(input: StaticGlobalExpansion<'_>) -> Result<TokenStrea
         name,
         generics,
         params,
+        scope,
         result: res,
     } = input;
     let assertions = crate::css::generate_static_assertions(&res.assertions)?;
@@ -1027,9 +1036,9 @@ fn generate_static_global(input: StaticGlobalExpansion<'_>) -> Result<TokenStrea
         #[allow(non_snake_case, unused_variables)]
         #vis fn #name #fn_generics(
             #params
-        ) -> impl #__silex::dom::view::View<'static>
-            + #__silex::dom::view::ApplyAttributes<'static>
-            + 'static
+        ) -> impl #__silex::dom::view::View<#scope>
+            + #__silex::dom::view::ApplyAttributes<#scope>
+            + #scope
             #where_clause
         {
             #assertions
@@ -1142,19 +1151,61 @@ mod tests {
     }
 
     #[test]
-    fn visibility_only_global_uses_generated_name() {
+    fn global_requires_explicit_name() {
         let input = quote::quote! {
-            pub(crate) {
+            body {
+                body { color: red; }
+            }
+        };
+        let error = match syn::parse2::<GlobalStyle>(input) {
+            Ok(_) => panic!("an unnamed global must be rejected"),
+            Err(error) => error,
+        };
+
+        assert!(error.to_string().contains("explicit visibility and name"));
+    }
+
+    #[test]
+    fn explicit_visibility_and_name_are_preserved() {
+        let input = quote::quote! {
+            pub(crate) GlobalStyles<'scope>(scope: Scope<'scope>) {
                 body { color: red; }
             }
         };
         let parsed: GlobalStyle = syn::parse2(input.clone()).unwrap();
 
-        assert!(parsed.name.is_none());
+        assert_eq!(parsed.name, "GlobalStyles");
         assert!(matches!(parsed.vis, Visibility::Restricted(_)));
 
         let code = global_impl(input).unwrap().to_string();
         assert!(code.contains("GlobalStyles"), "{code}");
         assert!(code.contains("pub (crate) fn"), "{code}");
+        assert!(code.contains("'scope"), "{code}");
+        assert!(!code.contains("'static"), "{code}");
+    }
+
+    #[test]
+    fn global_requires_scope_lifetime_and_parameter_binding() {
+        let missing_lifetime = quote::quote! {
+            pub Global(scope: Scope<'scope>) {
+                body { color: red; }
+            }
+        };
+        let error = match global_impl(missing_lifetime) {
+            Ok(_) => panic!("a global without an explicit scope lifetime must be rejected"),
+            Err(error) => error,
+        };
+        assert!(error.to_string().contains("explicit `<'scope>` lifetime"));
+
+        let missing_parameter = quote::quote! {
+            pub Global<'scope> {
+                body { color: red; }
+            }
+        };
+        let error = match global_impl(missing_parameter) {
+            Ok(_) => panic!("a global without a scoped parameter must be rejected"),
+            Err(error) => error,
+        };
+        assert!(error.to_string().contains("parameter bound to 'scope"));
     }
 }

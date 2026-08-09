@@ -570,7 +570,7 @@ pub(crate) fn extract_dynamic_selector(
 /// 元素，改用 `var(--slx-dyn-N)` 作为**文本占位符**，由 `global_impl` 直接替换。
 /// 注意 `$(expr)` 与 `$path` 两条分支必须产出同一种占位符——此前 `$(expr)` 在
 /// 全局模式下吐的是 `{}`，而 `global_impl` 只替换 `var(--slx-dyn-N)`，
-/// 于是 `global!{ body { color: $(c); } }` 编译直接失败。
+/// 于是 `global!{ pub GlobalStyles { body { color: $(c); } } }` 编译直接失败。
 pub(crate) fn extract_dynamic_value(
     ts: &TokenStream,
     exprs: &mut Vec<(String, TokenStream)>,

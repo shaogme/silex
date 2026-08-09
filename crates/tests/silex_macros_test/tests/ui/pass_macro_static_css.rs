@@ -18,7 +18,9 @@ tw_variants! {
 }
 
 global! {
-    body { color: red; }
+    pub StaticGlobal<'scope>(scope: silex_core::Scope<'scope>) {
+        body { color: red; }
+    }
 }
 
 fn main() {

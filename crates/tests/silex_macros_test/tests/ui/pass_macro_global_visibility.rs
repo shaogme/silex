@@ -8,7 +8,7 @@ mod public_global {
     use super::global;
 
     global! {
-        pub {
+        pub PublicGlobal<'scope>(scope: silex_core::Scope<'scope>) {
             body { color: red; }
         }
     }
@@ -18,7 +18,7 @@ mod crate_global {
     use super::global;
 
     global! {
-        pub(crate) {
+        pub(crate) CrateGlobal<'scope>(scope: silex_core::Scope<'scope>) {
             body { color: green; }
         }
     }
@@ -28,14 +28,17 @@ mod super_global {
     use super::global;
 
     global! {
-        pub(super) {
+        pub(super) SuperGlobal<'scope>(scope: silex_core::Scope<'scope>) {
             body { color: blue; }
         }
     }
 }
 
 fn main() {
-    let _ = public_global::GlobalStyles();
-    let _ = crate_global::GlobalStyles();
-    let _ = super_global::GlobalStyles();
+    let mut runtime = silex_core::Runtime::new();
+    runtime.child(|scope| {
+        let _ = public_global::PublicGlobal(scope);
+        let _ = crate_global::CrateGlobal(scope);
+        let _ = super_global::SuperGlobal(scope);
+    });
 }

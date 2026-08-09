@@ -13,7 +13,7 @@ theme! {
 }
 
 global! {
-    pub StaticGlobal {
+    pub StaticGlobal<'scope>(scope: silex_core::Scope<'scope>) {
         body { color: $(static StaticTheme::PRIMARY); }
     }
 }
@@ -47,5 +47,8 @@ styled! {
 
 fn main() {
     let _ = css! { color: $(static StaticTheme::PRIMARY); };
-    let _ = StaticGlobal();
+    let mut runtime = silex_core::Runtime::new();
+    runtime.child(|scope| {
+        let _ = StaticGlobal(scope);
+    });
 }

@@ -2,7 +2,7 @@
 
 extern crate silex_macros_test as silex;
 
-use silex::core::{Runtime, Rx};
+use silex::core::{Runtime, Rx, Scope};
 use silex::css::types::Hex;
 use silex::dom::attribute::{AttrOp, AttributeBuilder, AttributeGroup, GlobalAttributes};
 use silex::dom::prelude::AnyView;
@@ -51,7 +51,9 @@ styled! {
 }
 
 global! {
-    body { color: red; }
+    pub StaticGlobal<'scope>(scope: Scope<'scope>) {
+        body { color: red; }
+    }
 }
 
 global! {
