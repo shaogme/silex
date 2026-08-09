@@ -155,8 +155,8 @@ pub(crate) fn reject_dynamic_global(
                 )?;
             }
             CssRule::AtRule(at) => {
-                if first_dynamic_token_span(&at.params).is_some() {
-                    return Err(syn::Error::new(at.span, value_message));
+                if let Some(span) = first_dynamic_token_span(&at.params) {
+                    return Err(syn::Error::new(span, value_message));
                 }
                 if let Some(block) = &at.block {
                     reject_dynamic_global(block, fallback_span, value_message, selector_message)?;
@@ -363,12 +363,52 @@ mod tests {
     }
 
     #[test]
+    fn inject_css_rejects_dynamic_identifier() {
+        let err = inject_css_impl(quote! { color: $color; })
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("只接受纯静态 CSS"), "{err}");
+        assert!(err.contains("动态插值"), "{err}");
+    }
+
+    #[test]
     fn inject_css_rejects_dynamic_selector() {
         let err = inject_css_impl(quote! { $selector { color: red; } })
             .unwrap_err()
             .to_string();
         assert!(err.contains("只接受纯静态 CSS"), "{err}");
         assert!(err.contains("动态选择器"), "{err}");
+    }
+
+    #[test]
+    fn inject_css_rejects_dynamic_selector_expression() {
+        let err = inject_css_impl(quote! { $(selector) { color: red; } })
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("只接受纯静态 CSS"), "{err}");
+        assert!(err.contains("动态选择器"), "{err}");
+    }
+
+    #[test]
+    fn inject_css_rejects_dynamic_at_rule_parameter() {
+        let err = inject_css_impl(quote! {
+            @media (min-width: $width) { color: red; }
+        })
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("只接受纯静态 CSS"), "{err}");
+        assert!(err.contains("动态插值"), "{err}");
+    }
+
+    #[test]
+    fn inject_css_static_output_has_no_dynamic_runtime_payload() {
+        let output = inject_css_impl(quote! { :root { color: red; } })
+            .unwrap()
+            .to_string();
+        assert!(output.contains("inject_style"), "{output}");
+        assert!(!output.contains("DynamicCss"), "{output}");
+        assert!(!output.contains("RuntimeInputs"), "{output}");
+        assert!(!output.contains("ViewOwner"), "{output}");
     }
 
     #[test]

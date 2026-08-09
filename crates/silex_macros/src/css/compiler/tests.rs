@@ -253,6 +253,22 @@ fn dynamic_selector_can_be_followed_by_a_descendant() {
 }
 
 #[test]
+fn template_tokens_preserve_selector_and_declaration_contexts() {
+    let template = format!(
+        "color: {} ; .scope {} {{ color: {} }}",
+        PLACEHOLDER_VALUE, PLACEHOLDER_SELECTOR_VALUE, PLACEHOLDER_VALUE
+    );
+    let tokens = template_parts_tokens(&template).to_string();
+
+    assert!(tokens.contains("CssPart :: Val (0usize)"), "{tokens}");
+    assert!(
+        tokens.contains("CssPart :: SelectorVal (1usize)"),
+        "{tokens}"
+    );
+    assert!(tokens.contains("CssPart :: Val (2usize)"), "{tokens}");
+}
+
+#[test]
 fn dynamic_selector_validates_property_names() {
     let err = compile_err("$selector { colr: red; }");
     assert!(err.contains("`colr` 不存在"), "{err}");

@@ -1,0 +1,7 @@
+error: inject_css! 只接受纯静态 CSS；动态选择器不能在文档级样式中使用。
+ --> tests/ui/fail_macro_inject_css_dynamic_selector.rs:8:5
+  |
+8 |     inject_css! { $(selector) { color: red; } };
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the macro `inject_css` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -1,0 +1,5 @@
+error: inject_css! 只接受纯静态 CSS；动态插值不能在文档级样式中使用。
+ --> tests/ui/fail_macro_inject_css_dynamic_identifier.rs:8:26
+  |
+8 |     inject_css! { color: $color; };
+  |                          ^
