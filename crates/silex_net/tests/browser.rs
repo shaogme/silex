@@ -1,7 +1,7 @@
 #![cfg(target_arch = "wasm32")]
 
 use std::{
-    cell::Cell,
+    cell::{Cell, RefCell},
     future::Future,
     pin::Pin,
     rc::Rc,
@@ -322,6 +322,24 @@ impl Transport for ScriptedTransport {
 }
 
 #[derive(Clone)]
+struct RecordingTransport {
+    urls: Rc<RefCell<Vec<String>>>,
+}
+
+impl Transport for RecordingTransport {
+    fn send(&self, spec: RequestSpec) -> TransportFuture<'_> {
+        self.urls.borrow_mut().push(spec.url.clone());
+        let response = HttpResponse {
+            url: spec.url,
+            status: 200,
+            status_text: String::new(),
+            raw_body: "ok".to_string(),
+        };
+        Box::pin(async move { Ok(response) })
+    }
+}
+
+#[derive(Clone)]
 struct ReplacementTransport {
     calls: Rc<Cell<usize>>,
 }
@@ -441,6 +459,33 @@ async fn http_resource_resolves_owned_request() {
             resource.state.get(),
             ResourceState::Ready(value) if value == "hello"
         ));
+    })
+    .await;
+    root.dispose().expect("root cleanup");
+}
+
+#[wasm_bindgen_test(async)]
+async fn transport_receives_query_before_url_fragment() {
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    root.with_scope(|scope| async move {
+        let urls = Rc::new(RefCell::new(Vec::new()));
+        let result = silex_net::HttpClient::get(
+            scope,
+            "https://example.test/path#fragment?not-a-query",
+            test_handler(scope),
+        )
+        .query("q", "one")
+        .transport(RecordingTransport { urls: urls.clone() })
+        .send()
+        .await
+        .expect("recording transport should succeed");
+
+        assert_eq!(result, "ok");
+        assert_eq!(
+            urls.borrow().as_slice(),
+            ["https://example.test/path?q=one#fragment?not-a-query"]
+        );
     })
     .await;
     root.dispose().expect("root cleanup");
@@ -572,12 +617,12 @@ async fn mutation_preflight_error_does_not_enter_pending() {
                     || "foreign".to_string(),
                     inputs,
                 );
-                silex_net::HttpClient::post(
+                Ok(silex_net::HttpClient::post(
                     target_scope,
                     "https://example.test/mutate",
                     test_handler(target_scope),
                 )
-                .text_body(body)
+                .text_body(body))
             });
             mutation.mutate(());
             assert!(matches!(
@@ -601,7 +646,7 @@ async fn mutation_commits_only_the_latest_completion() {
                 .as_mutation_with({
                     let calls = calls.clone();
                     move |id: u32| {
-                        silex_net::HttpClient::get(
+                        Ok(silex_net::HttpClient::get(
                             scope,
                             "https://example.test/mutation",
                             test_handler(scope),
@@ -609,7 +654,7 @@ async fn mutation_commits_only_the_latest_completion() {
                         .query("id", id)
                         .transport(MutationTransport {
                             calls: calls.clone(),
-                        })
+                        }))
                     }
                 });
         mutation.mutate(1);

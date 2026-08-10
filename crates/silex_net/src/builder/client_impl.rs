@@ -473,7 +473,7 @@ macro_rules! impl_net_methods {
 
         pub fn as_mutation_with<Input, F>(self, factory: F) -> Mutation<'scope, Input, T, NetError>
         where
-            F: Fn(Input) -> Self + 'scope,
+            F: Fn(Input) -> Result<Self, NetError> + 'scope,
             Input: 'scope,
         {
             let scope = self.scope;
@@ -481,7 +481,7 @@ macro_rules! impl_net_methods {
             Mutation::new_with_prepare(
                 scope,
                 move |input: Input| {
-                    let builder = factory(input);
+                    let builder = factory(input)?;
                     builder.validate_runtime_inputs_for(scope)?;
                     let mut spec = builder.resolve_spec();
                     let client = builder.prepared();

@@ -237,13 +237,11 @@ fn url_contains_userinfo(url: &str) -> bool {
 }
 
 fn url_contains_sensitive_query(url: &str) -> bool {
+    let (url, _) = split_fragment(url);
     let Some((_, query)) = url.split_once('?') else {
         return false;
     };
     query
-        .split('#')
-        .next()
-        .unwrap_or_default()
         .split('&')
         .filter_map(|pair| pair.split_once('=').map(|(name, _)| name))
         .any(is_sensitive_parameter_name)
@@ -278,15 +276,32 @@ fn structured_key<'a>(segments: impl IntoIterator<Item = (&'a str, &'a str)>) ->
     key
 }
 
+fn split_fragment(url: &str) -> (&str, Option<&str>) {
+    match url.split_once('#') {
+        Some((url, fragment)) => (url, Some(fragment)),
+        None => (url, None),
+    }
+}
+
 fn canonical_url(url: &str) -> String {
+    let (url, fragment) = split_fragment(url);
     let Some((path, query)) = url.split_once('?') else {
-        return url.to_string();
+        let mut canonical = url.to_string();
+        if let Some(fragment) = fragment {
+            canonical.push('#');
+            canonical.push_str(fragment);
+        }
+        return canonical;
     };
     let mut pairs = query.split('&').collect::<Vec<_>>();
     pairs.sort_unstable();
     let mut canonical = path.to_string();
     canonical.push('?');
     canonical.push_str(&pairs.join("&"));
+    if let Some(fragment) = fragment {
+        canonical.push('#');
+        canonical.push_str(fragment);
+    }
     canonical
 }
 
@@ -456,6 +471,42 @@ mod tests {
     }
 
     #[test]
+    fn cache_key_normalizes_query_without_crossing_url_fragment() {
+        let first = request(
+            "https://example.test/path?b=2&a=1#fragment",
+            vec![],
+            RequestBody::Empty,
+        );
+        let second = request(
+            "https://example.test/path?a=1&b=2#fragment",
+            vec![],
+            RequestBody::Empty,
+        );
+        let different_fragment = request(
+            "https://example.test/path?a=1&b=2#other",
+            vec![],
+            RequestBody::Empty,
+        );
+        let no_query_fragment = request(
+            "https://example.test/path#fragment",
+            vec![],
+            RequestBody::Empty,
+        );
+        let other_no_query_fragment = request(
+            "https://example.test/path#other",
+            vec![],
+            RequestBody::Empty,
+        );
+
+        assert_eq!(first.cache_key(), second.cache_key());
+        assert_ne!(first.cache_key(), different_fragment.cache_key());
+        assert_ne!(
+            no_query_fragment.cache_key(),
+            other_no_query_fragment.cache_key()
+        );
+    }
+
+    #[test]
     fn cache_key_does_not_contain_request_secrets() {
         let request = request(
             "https://example.test",
@@ -503,6 +554,9 @@ mod tests {
 
         request.url = "https://example.test/data?access_token=opaque-value".to_string();
         assert!(!request.is_persistent_cache_safe());
+
+        request.url = "https://example.test/data#fragment?access_token=opaque-value".to_string();
+        assert!(request.is_persistent_cache_safe());
 
         request.url = "https://example.test/data".to_string();
         request.body = RequestBody::Text("opaque-value".to_string());

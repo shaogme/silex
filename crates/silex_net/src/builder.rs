@@ -556,17 +556,13 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
     }
 
     #[cfg(feature = "json")]
-    pub fn json_body<TBody>(mut self, value: TBody) -> Self
+    pub fn try_json_body<TBody>(mut self, value: TBody) -> Result<Self, NetError>
     where
         TBody: serde::Serialize,
     {
-        self.body = match serde_json::to_string(&value) {
-            Ok(raw) => BodyResolver::Json(ValueResolver::static_value(raw)),
-            Err(error) => BodyResolver::Json(ValueResolver::static_value(format!(
-                "{{\"serialize_error\":\"{}\"}}",
-                error
-            ))),
-        };
+        let raw = serde_json::to_string(&value)
+            .map_err(|error| NetError::SerializeError(error.to_string()))?;
+        self.body = BodyResolver::Json(ValueResolver::static_value(raw));
         if !self
             .headers
             .iter()
@@ -577,7 +573,7 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
                 "application/json".into_net_value(),
             ));
         }
-        self
+        Ok(self)
     }
 
     #[cfg(feature = "json")]
@@ -779,6 +775,11 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
             url = url.replace(&needle, &encode_component(&resolve(value)));
         }
 
+        let (mut url, fragment) = match url.split_once('#') {
+            Some((url, fragment)) => (url.to_string(), Some(fragment)),
+            None => (url, None),
+        };
+
         let mut query_parts = Vec::with_capacity(self.query.len());
         for (key, value) in &self.query {
             query_parts.push(format!(
@@ -790,6 +791,10 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
         if !query_parts.is_empty() {
             url.push(if url.contains('?') { '&' } else { '?' });
             url.push_str(&query_parts.join("&"));
+        }
+        if let Some(fragment) = fragment {
+            url.push('#');
+            url.push_str(fragment);
         }
 
         let headers = self
@@ -867,6 +872,26 @@ mod tests {
     use crate::state::RequestBody;
     use silex_core::{ErrorReporter, Runtime, Scope, runtime_inputs_of};
 
+    #[cfg(feature = "json")]
+    use crate::NetError;
+    #[cfg(feature = "json")]
+    use silex_core::reactivity::MutationState;
+
+    #[cfg(feature = "json")]
+    struct FailingSerialize;
+
+    #[cfg(feature = "json")]
+    impl serde::Serialize for FailingSerialize {
+        fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            Err(<S::Error as serde::ser::Error>::custom(
+                "serialization failed: \"quoted\"",
+            ))
+        }
+    }
+
     fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
         scope.error_handler(|_| {})
     }
@@ -894,6 +919,34 @@ mod tests {
             assert_eq!(
                 builder.resolve_spec().body,
                 RequestBody::Text("payload".to_string())
+            );
+        });
+    }
+
+    #[test]
+    fn query_is_inserted_before_url_fragment() {
+        let mut runtime = Runtime::new();
+        runtime.child(|scope| {
+            let builder = HttpClient::get(
+                scope,
+                "https://example.test/path#fragment?not-a-query",
+                test_handler(scope),
+            )
+            .query("q", "one");
+            assert_eq!(
+                builder.resolve_spec().url,
+                "https://example.test/path?q=one#fragment?not-a-query"
+            );
+
+            let builder = HttpClient::get(
+                scope,
+                "https://example.test/path?existing=1#fragment",
+                test_handler(scope),
+            )
+            .query("q", "two");
+            assert_eq!(
+                builder.resolve_spec().url,
+                "https://example.test/path?existing=1&q=two#fragment"
             );
         });
     }
@@ -954,6 +1007,42 @@ mod tests {
                 assert!(builder.validate_runtime_inputs().is_err());
                 assert!(builder.try_as_mutation().is_err());
             });
+        });
+    }
+
+    #[cfg(feature = "json")]
+    #[test]
+    fn json_body_serialization_failure_returns_net_error() {
+        let mut runtime = Runtime::new();
+        runtime.child(|scope| {
+            let result = HttpClient::post(scope, "https://example.test", test_handler(scope))
+                .try_json_body(FailingSerialize);
+            assert!(matches!(
+                result,
+                Err(NetError::SerializeError(message))
+                    if message.contains("serialization failed")
+            ));
+        });
+    }
+
+    #[cfg(feature = "json")]
+    #[test]
+    fn mutation_reports_json_serialization_failure_before_pending() {
+        let mut runtime = Runtime::new();
+        runtime.child(|scope| {
+            let mutation = HttpClient::post(scope, "https://example.test", test_handler(scope))
+                .as_mutation_with(move |_| {
+                    let builder =
+                        HttpClient::post(scope, "https://example.test", test_handler(scope))
+                            .try_json_body(FailingSerialize)?;
+                    Ok(builder)
+                });
+
+            mutation.mutate(());
+            assert!(matches!(
+                mutation.state.get(),
+                MutationState::Error(NetError::SerializeError(_))
+            ));
         });
     }
 

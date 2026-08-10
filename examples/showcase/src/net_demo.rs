@@ -64,17 +64,17 @@ pub fn HttpClientDemo<'scope>(
     .json::<Post>();
     let create_post_mutation =
         create_post_builder.as_mutation_with(move |input: CreatePostInput| {
-            HttpClient::post(
+            let builder = HttpClient::post(
                 scope,
                 "https://jsonplaceholder.typicode.com/posts",
                 error_handler,
             )
-            .json_body(serde_json::json!({
+            .try_json_body(serde_json::json!({
                 "title": input.title,
                 "body": input.body,
                 "userId": 1
-            }))
-            .json::<Post>()
+            }))?;
+            Ok(builder.json::<Post>())
         });
 
     div![
