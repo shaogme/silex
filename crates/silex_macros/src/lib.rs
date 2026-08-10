@@ -16,7 +16,6 @@ mod crate_path;
 mod css;
 #[cfg(feature = "component")]
 mod props_builder;
-mod render;
 #[cfg(feature = "route")]
 mod route;
 #[cfg(feature = "store")]
@@ -191,14 +190,6 @@ pub fn derive_props_builder(input: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn routes(input: TokenStream) -> TokenStream {
     match route::routes_impl(input.into()) {
-        Ok(tokens) => tokens.into(),
-        Err(e) => e.to_compile_error().into(),
-    }
-}
-
-#[proc_macro]
-pub fn render(input: TokenStream) -> TokenStream {
-    match render::render_impl(input.into()) {
         Ok(tokens) => tokens.into(),
         Err(e) => e.to_compile_error().into(),
     }
