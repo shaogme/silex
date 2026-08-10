@@ -25,7 +25,7 @@ use std::{
     panic::{AssertUnwindSafe, UnwindSafe, catch_unwind, resume_unwind},
     rc::Rc,
 };
-use wasm_bindgen::JsValue;
+use wasm_bindgen::{JsCast, JsValue};
 use web_sys::Node;
 
 pub use owner::RowUpdater;
@@ -247,12 +247,96 @@ impl<'scope> CompletionRegistrar<'scope> {
 /// The handle deliberately exposes no reactive capability. Cancellation is
 /// idempotent and the owner retains a clone so dropping this value early does
 /// not transfer lifecycle ownership away from the view.
-type CancelAction<'scope> = Rc<RefCell<Option<Box<dyn FnOnce() + 'scope>>>>;
 type ResourceGate = Rc<Cell<bool>>;
+
+/// Shared mutable state used by generated code and host resources.
+#[doc(hidden)]
+pub struct SharedSlot<T> {
+    inner: Rc<RefCell<T>>,
+}
+
+impl<T> Clone for SharedSlot<T> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
+    }
+}
+
+impl<T> SharedSlot<T> {
+    pub fn new(value: T) -> Self {
+        Self {
+            inner: Rc::new(RefCell::new(value)),
+        }
+    }
+
+    pub fn with<R>(&self, callback: impl FnOnce(&T) -> R) -> R {
+        callback(&self.inner.borrow())
+    }
+
+    pub fn with_mut<R>(&self, callback: impl FnOnce(&mut T) -> R) -> R {
+        callback(&mut self.inner.borrow_mut())
+    }
+
+    pub fn replace(&self, value: T) -> T {
+        self.inner.replace(value)
+    }
+
+    pub fn set(&self, value: T) {
+        drop(self.replace(value));
+    }
+
+    pub fn take(&self) -> T
+    where
+        T: Default,
+    {
+        self.replace(T::default())
+    }
+}
+
+type CancelAction<'scope> = SharedSlot<Option<Box<dyn FnOnce() + 'scope>>>;
+
+#[derive(Clone)]
+pub(crate) struct JsCallbackResource {
+    callback: SharedSlot<Option<JsValue>>,
+    active: ResourceGate,
+}
+
+impl JsCallbackResource {
+    fn new(active: ResourceGate, callback: Option<JsValue>) -> Self {
+        Self {
+            callback: SharedSlot::new(callback),
+            active,
+        }
+    }
+
+    fn set_callback(&self, callback: JsValue) {
+        self.callback.with_mut(|current| {
+            debug_assert!(current.is_none());
+            *current = Some(callback);
+        });
+    }
+
+    fn callback_function(&self) -> js_sys::Function {
+        self.callback.with(|callback| {
+            callback
+                .as_ref()
+                .expect("host callback is present")
+                .unchecked_ref::<js_sys::Function>()
+                .clone()
+        })
+    }
+
+    pub(crate) fn cancel_once(&self) {
+        self.active.set(false);
+        let _ = self.callback.take();
+    }
+}
 
 pub struct HostResourceHandle<'scope> {
     cancel: CancelAction<'scope>,
     active: ResourceGate,
+    callback: Option<JsCallbackResource>,
 }
 
 impl<'scope> Clone for HostResourceHandle<'scope> {
@@ -260,37 +344,89 @@ impl<'scope> Clone for HostResourceHandle<'scope> {
         Self {
             cancel: self.cancel.clone(),
             active: self.active.clone(),
+            callback: self.callback.clone(),
         }
     }
 }
 
 impl<'scope> HostResourceHandle<'scope> {
     pub(crate) fn inactive() -> Self {
-        Self {
-            cancel: Rc::new(RefCell::new(None)),
-            active: Rc::new(Cell::new(false)),
-        }
+        Self::with_parts(Rc::new(Cell::new(false)), None, None)
     }
 
     fn with_gate<F>(active: ResourceGate, cancel: F) -> Self
     where
         F: FnOnce() + 'scope,
     {
+        Self::with_parts(active, Some(Box::new(cancel)), None)
+    }
+
+    pub(crate) fn from_js_callback(callback: &HostCallback, value: JsValue) -> Self {
+        Self::with_parts(
+            callback.gate.clone(),
+            None,
+            Some(JsCallbackResource::new(callback.gate.clone(), Some(value))),
+        )
+    }
+
+    pub(crate) fn empty_js_callback(callback: &HostCallback) -> Self {
+        Self::with_parts(
+            callback.gate.clone(),
+            None,
+            Some(JsCallbackResource::new(callback.gate.clone(), None)),
+        )
+    }
+
+    fn with_parts(
+        active: ResourceGate,
+        cancel: Option<Box<dyn FnOnce() + 'scope>>,
+        callback: Option<JsCallbackResource>,
+    ) -> Self {
         Self {
-            cancel: Rc::new(RefCell::new(Some(Box::new(cancel)))),
+            cancel: SharedSlot::new(cancel),
             active,
+            callback,
+        }
+    }
+
+    pub(crate) fn set_js_callback(&self, callback: JsValue) {
+        self.callback_resource().set_callback(callback);
+    }
+
+    pub(crate) fn js_callback_function(&self) -> js_sys::Function {
+        self.callback_resource().callback_function()
+    }
+
+    pub(crate) fn callback_resource(&self) -> JsCallbackResource {
+        self.callback
+            .clone()
+            .expect("host callback resource is present")
+    }
+
+    fn install_cancel<F>(&self, cancel: F)
+    where
+        F: FnOnce() + 'scope,
+    {
+        self.cancel.with_mut(|current| {
+            debug_assert!(current.is_none());
+            *current = Some(Box::new(cancel));
+        });
+    }
+
+    pub(crate) fn cancel_once(&self) {
+        let was_active = self.active.replace(false);
+        if let Some(callback) = &self.callback {
+            callback.cancel_once();
+        }
+        let cancel = self.cancel.take();
+        if was_active && let Some(cancel) = cancel {
+            cancel();
         }
     }
 
     /// Cancel the host resource. Repeated calls are harmless.
     pub fn cancel(&self) {
-        if !self.active.replace(false) {
-            let _ = self.cancel.borrow_mut().take();
-            return;
-        }
-        if let Some(cancel) = self.cancel.borrow_mut().take() {
-            cancel();
-        }
+        self.cancel_once();
     }
 
     pub fn is_active(&self) -> bool {
@@ -300,8 +436,8 @@ impl<'scope> HostResourceHandle<'scope> {
 
 impl Drop for HostResourceHandle<'_> {
     fn drop(&mut self) {
-        if Rc::strong_count(&self.cancel) == 1 {
-            self.cancel();
+        if Rc::strong_count(&self.cancel.inner) == 1 {
+            self.cancel_once();
         }
     }
 }
@@ -508,6 +644,22 @@ impl<'scope> ViewOwnerToken<'scope> {
             })
     }
 
+    pub(crate) fn host_resource_for_js_callback<F>(
+        &self,
+        callback: &HostCallback,
+        resource: HostResourceHandle<'scope>,
+        cancel: F,
+    ) -> HostResourceHandle<'scope>
+    where
+        F: FnOnce() + 'scope,
+    {
+        self.try_host_resource_for_js_callback(callback, resource, cancel)
+            .unwrap_or_else(|error| {
+                self.handle_error(error);
+                HostResourceHandle::inactive()
+            })
+    }
+
     pub(crate) fn try_host_resource_for_callback<F>(
         &self,
         callback: &HostCallback,
@@ -517,34 +669,47 @@ impl<'scope> ViewOwnerToken<'scope> {
         F: FnOnce() + 'scope,
     {
         let callback_for_cancel = callback.clone();
-        self.try_register_host_resource(callback.gate.clone(), move || {
+        let resource = HostResourceHandle::with_gate(callback.gate.clone(), move || {
             callback_for_cancel.cancel();
             cancel();
-        })
+        });
+        self.try_register_host_resource(resource)
     }
 
-    fn try_register_host_resource<F>(
+    pub(crate) fn try_host_resource_for_js_callback<F>(
         &self,
-        gate: ResourceGate,
+        callback: &HostCallback,
+        resource: HostResourceHandle<'scope>,
         cancel: F,
     ) -> SilexResult<HostResourceHandle<'scope>>
     where
         F: FnOnce() + 'scope,
     {
-        let resource = HostResourceHandle::with_gate(gate, cancel);
+        let callback_for_cancel = callback.clone();
+        resource.install_cancel(move || {
+            callback_for_cancel.cancel();
+            cancel();
+        });
+        self.try_register_host_resource(resource)
+    }
+
+    fn try_register_host_resource(
+        &self,
+        resource: HostResourceHandle<'scope>,
+    ) -> SilexResult<HostResourceHandle<'scope>> {
         if !self.is_active() {
-            resource.cancel();
+            resource.cancel_once();
             return Err(SilexError::Reactivity(ReactiveError::NoSuchNode));
         }
         let owner_resource = resource.clone();
         if let Err(error) = self.on_cleanup(
             Box::new(move || {
-                owner_resource.cancel();
+                owner_resource.cancel_once();
                 Ok(())
             }),
             self.error_handler(),
         ) {
-            resource.cancel();
+            resource.cancel_once();
             return Err(error);
         }
         Ok(resource)

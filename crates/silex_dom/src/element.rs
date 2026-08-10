@@ -1,7 +1,8 @@
 use crate::attribute::{ApplyTarget, AttributeBuilder, IntoStorable, PendingAttribute};
 use crate::event::{EventDescriptor, EventHandler};
-use crate::view::{AnyView, ApplyAttributes, OwnedViewOwner, View, ViewOwner, ViewOwnerToken};
-use std::cell::RefCell;
+use crate::view::{
+    AnyView, ApplyAttributes, HostResourceHandle, OwnedViewOwner, View, ViewOwner, ViewOwnerToken,
+};
 use std::marker::PhantomData;
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::rc::Rc;
@@ -391,30 +392,23 @@ where
     let closure: Closure<dyn FnMut(E)> = Closure::wrap(Box::new(move |event: E| {
         let _ = destination_for_closure.dispatch(event.unchecked_into::<JsValue>());
     }));
-    let closure = Rc::new(RefCell::new(Some(closure.into_js_value())));
-    let js_fn = closure
-        .borrow()
-        .as_ref()
-        .expect("element event callback is present")
-        .unchecked_ref::<js_sys::Function>()
-        .clone();
+    let resource = HostResourceHandle::from_js_callback(&destination, closure.into_js_value());
+    let js_fn = resource.js_callback_function();
     if let Err(error) = dom_element
         .add_event_listener_with_callback(&event_name, &js_fn)
         .map_err(SilexError::from)
     {
         destination.cancel();
-        let _ = closure.borrow_mut().take();
+        resource.cancel_once();
         return Err(error);
     }
 
     let target = dom_element.clone();
     let event_name_for_cleanup = event_name.clone();
-    let closure_for_cleanup = closure.clone();
     let js_fn_for_cleanup = js_fn.clone();
-    owner.try_host_resource_for_callback(&destination, move || {
+    owner.try_host_resource_for_js_callback(&destination, resource, move || {
         let _ =
             target.remove_event_listener_with_callback(&event_name_for_cleanup, &js_fn_for_cleanup);
-        let _ = closure_for_cleanup.borrow_mut().take();
     })?;
     Ok(())
 }
