@@ -1,7 +1,6 @@
 use silex_core::RuntimeInputs;
 use silex_core::prelude::*;
 use std::borrow::Cow;
-use std::cell::RefCell;
 use std::collections::HashSet;
 use std::rc::Rc;
 use wasm_bindgen::{JsCast, JsValue};
@@ -554,6 +553,11 @@ fn apply_update_internal<'scope>(
 
 // --- Kernel Implementation Functions for Combined Op ---
 
+struct CombinedStylePrevious {
+    properties: Vec<Option<String>>,
+    sheet_keys: HashSet<String>,
+}
+
 fn apply_combined_classes_internal<'scope>(
     el: &Element,
     statics: Vec<Cow<'scope, str>>,
@@ -584,59 +588,60 @@ fn apply_combined_classes_internal<'scope>(
     }
 
     // 2. 建立单 Effect 追踪所有响应式部分
-    let prev_dynamic_tokens = Rc::new(RefCell::new(HashSet::<String>::new()));
-    let prev_dynamic_tokens_for_cleanup = prev_dynamic_tokens.clone();
+    let prev_dynamic_tokens = owner.owner_state(HashSet::<String>::new())?;
+    let prev_dynamic_tokens_for_effect = prev_dynamic_tokens.clone();
     let static_tokens_for_update = static_tokens.clone();
     let static_tokens_for_cleanup = static_tokens.clone();
     let el_clone = el.clone();
     let el_for_cleanup = el.clone();
-    owner.effect_from(
+    owner.effect_with_previous_from(
         inputs,
-        Box::new(move || -> SilexResult<()> {
-            let list = el_clone.class_list();
+        Box::new(
+            move |previous: Option<&HashSet<String>>| -> SilexResult<HashSet<String>> {
+                let list = el_clone.class_list();
 
-            // 先合并所有动态来源。一个 token 可能同时来自 toggle 与 reactive
-            // class，只有它不再被任何动态来源提供时才能从 DOM 中移除。
-            let mut new_dynamic_tokens = HashSet::new();
-            for (name, rx) in &toggles {
-                if rx.try_get()? {
-                    new_dynamic_tokens.insert(name.to_string());
+                // 先合并所有动态来源。一个 token 可能同时来自 toggle 与 reactive
+                // class，只有它不再被任何动态来源提供时才能从 DOM 中移除。
+                let mut new_dynamic_tokens = HashSet::new();
+                for (name, rx) in &toggles {
+                    if rx.try_get()? {
+                        new_dynamic_tokens.insert(name.to_string());
+                    }
                 }
-            }
 
-            for rx in &reactives {
-                let value = rx.try_get()?;
-                for token in value.split_whitespace() {
-                    new_dynamic_tokens.insert(token.to_string());
+                for rx in &reactives {
+                    let value = rx.try_get()?;
+                    for token in value.split_whitespace() {
+                        new_dynamic_tokens.insert(token.to_string());
+                    }
                 }
-            }
 
-            let mut prev = prev_dynamic_tokens.borrow_mut();
-            let previous = prev.clone();
+                let previous = previous.cloned().unwrap_or_default();
 
-            // 先添加新增加的 Class，确保样式/过渡声明（transition）无缝连接，
-            // 不因无类中间态产生闪烁或动画打断。
-            for token in new_dynamic_tokens.difference(&previous) {
-                list.add_1(token)?;
-            }
-
-            // 只删除已经不再由任何动态来源提供的旧 Class；静态 Class 即使
-            // 同名，也必须继续保留。
-            for token in previous.difference(&new_dynamic_tokens) {
-                if !static_tokens_for_update.contains(token) {
-                    list.remove_1(token)?;
+                // 先添加新增加的 Class，确保样式/过渡声明（transition）无缝连接，
+                // 不因无类中间态产生闪烁或动画打断。
+                for token in new_dynamic_tokens.difference(&previous) {
+                    list.add_1(token)?;
                 }
-            }
 
-            *prev = new_dynamic_tokens;
-            Ok(())
-        }),
+                // 只删除已经不再由任何动态来源提供的旧 Class；静态 Class 即使
+                // 同名，也必须继续保留。
+                for token in previous.difference(&new_dynamic_tokens) {
+                    if !static_tokens_for_update.contains(token) {
+                        list.remove_1(token)?;
+                    }
+                }
+
+                prev_dynamic_tokens_for_effect.replace(new_dynamic_tokens.clone())?;
+                Ok(new_dynamic_tokens)
+            },
+        ),
         owner.error_handler(),
     )?;
 
     owner.on_cleanup(
         Box::new(move || -> SilexResult<()> {
-            let dynamic_tokens = prev_dynamic_tokens_for_cleanup.borrow().clone();
+            let dynamic_tokens = prev_dynamic_tokens.take_for_cleanup().unwrap_or_default();
             let list = el_for_cleanup.class_list();
             for token in dynamic_tokens {
                 if !static_tokens_for_cleanup.contains(&token) {
@@ -678,65 +683,75 @@ fn apply_combined_styles_internal<'scope>(
     }
 
     // 2. 建立单 Effect 追踪所有响应式样式
-    let prev_props = Rc::new(RefCell::new(vec![None::<String>; properties.len()]));
-    let prev_sheet_keys = Rc::new(RefCell::new(HashSet::<String>::new()));
+    let sheet_keys = owner.owner_state(HashSet::<String>::new())?;
+    let sheet_keys_for_effect = sheet_keys.clone();
     let el_clone = el.clone();
     let property_names: Vec<String> = properties
         .iter()
         .map(|(name, _)| name.to_string())
         .collect();
-    let prev_sheet_keys_for_cleanup = prev_sheet_keys.clone();
     let el_for_cleanup = el.clone();
 
-    owner.effect_from(
+    owner.effect_with_previous_from(
         inputs,
-        Box::new(move || -> SilexResult<()> {
-            let style = get_style_decl(&el_clone).ok_or_else(|| {
-                SilexError::Dom("element does not expose a style declaration".into())
-            })?;
+        Box::new(
+            move |previous: Option<&CombinedStylePrevious>| -> SilexResult<CombinedStylePrevious> {
+                let style = get_style_decl(&el_clone).ok_or_else(|| {
+                    SilexError::Dom("element does not expose a style declaration".into())
+                })?;
 
-            // 处理单项 Property 绑定 (仅在值发生变化时更新 DOM)
-            let mut prev_p = prev_props.borrow_mut();
-            for (i, (name, rx)) in properties.iter().enumerate() {
-                let val = rx.try_get()?;
-                if prev_p[i].as_deref() != Some(&val) {
-                    style.set_property(name, &val)?;
-                    prev_p[i] = Some(val);
+                // 处理单项 Property 绑定 (仅在值发生变化时更新 DOM)
+                let mut next_props = Vec::with_capacity(properties.len());
+                for (i, (name, rx)) in properties.iter().enumerate() {
+                    let val = rx.try_get()?;
+                    let previous_value = previous
+                        .and_then(|previous| previous.properties.get(i))
+                        .and_then(Option::as_deref);
+                    if previous_value != Some(val.as_str()) {
+                        style.set_property(name, &val)?;
+                    }
+                    next_props.push(Some(val));
                 }
-            }
-            drop(prev_p);
 
-            // 处理整块响应式样式字符串 (Diff 处理)
-            if !sheets.is_empty() {
-                let sheet_strings: Vec<String> = sheets
-                    .iter()
-                    .map(|rx| rx.try_get().map_err(SilexError::from))
-                    .collect::<SilexResult<_>>()?;
-                let mut new_style_map = std::collections::HashMap::new();
-                for s in &sheet_strings {
-                    for (k, v) in parse_style_str(s) {
-                        new_style_map.insert(k.into_owned(), v.into_owned());
+                // 处理整块响应式样式字符串 (Diff 处理)
+                let mut next_sheet_keys = HashSet::new();
+                if !sheets.is_empty() {
+                    let sheet_strings: Vec<String> = sheets
+                        .iter()
+                        .map(|rx| rx.try_get().map_err(SilexError::from))
+                        .collect::<SilexResult<_>>()?;
+                    let mut new_style_map = std::collections::HashMap::new();
+                    for s in &sheet_strings {
+                        for (k, v) in parse_style_str(s) {
+                            new_style_map.insert(k.into_owned(), v.into_owned());
+                        }
+                    }
+
+                    let previous_keys = previous
+                        .map(|previous| &previous.sheet_keys)
+                        .cloned()
+                        .unwrap_or_default();
+                    let stale = previous_keys
+                        .iter()
+                        .filter(|key| !new_style_map.contains_key(*key))
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    for key in stale {
+                        style.remove_property(&key)?;
+                    }
+
+                    for (key, value) in new_style_map {
+                        style.set_property(&key, &value)?;
+                        next_sheet_keys.insert(key);
                     }
                 }
-
-                let mut prev = prev_sheet_keys.borrow_mut();
-                let stale = prev
-                    .iter()
-                    .filter(|key| !new_style_map.contains_key(*key))
-                    .cloned()
-                    .collect::<Vec<_>>();
-                for key in stale {
-                    style.remove_property(&key)?;
-                    prev.remove(&key);
-                }
-
-                for (key, value) in new_style_map {
-                    style.set_property(&key, &value)?;
-                    prev.insert(key);
-                }
-            }
-            Ok(())
-        }),
+                sheet_keys_for_effect.replace(next_sheet_keys.clone())?;
+                Ok(CombinedStylePrevious {
+                    properties: next_props,
+                    sheet_keys: next_sheet_keys,
+                })
+            },
+        ),
         owner.error_handler(),
     )?;
 
@@ -746,7 +761,8 @@ fn apply_combined_styles_internal<'scope>(
                 for name in property_names {
                     let _ = style.remove_property(&name);
                 }
-                for name in prev_sheet_keys_for_cleanup.borrow().iter() {
+                let sheet_keys = sheet_keys.take_for_cleanup().unwrap_or_default();
+                for name in &sheet_keys {
                     let _ = style.remove_property(name);
                 }
             }

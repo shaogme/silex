@@ -1,5 +1,5 @@
 use crate::attribute::PendingAttribute;
-use crate::view::{OwnedViewOwner, ViewOwner, ViewOwnerToken};
+use crate::view::{OwnedViewOwner, OwnerState, ViewOwner, ViewOwnerToken};
 use silex_core::{
     ErrorReporter, OwnedScope, ReactiveError, RuntimeInputs, SilexError, SilexResult,
 };
@@ -256,8 +256,8 @@ pub(crate) struct RowController<'scope, T> {
     range: DomRange,
     row_scope: Rc<OwnedScope<'scope>>,
     render_scope: Option<Rc<OwnedScope<'scope>>>,
-    render_content_scope: Option<Rc<RefCell<Option<Rc<OwnedScope<'scope>>>>>>,
-    render_nodes: Rc<RefCell<Vec<Node>>>,
+    render_content_scope: Option<OwnerState<'scope, Option<Rc<OwnedScope<'scope>>>>>,
+    render_nodes: Option<OwnerState<'scope, Vec<Node>>>,
     render: RowRender<'scope, T>,
     render_inputs: RuntimeInputs,
     attrs: Vec<PendingAttribute<'scope>>,
@@ -304,7 +304,7 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
             row_scope: Rc::new(row_scope),
             render_scope: None,
             render_content_scope: None,
-            render_nodes: Rc::new(RefCell::new(Vec::new())),
+            render_nodes: None,
             render,
             render_inputs,
             attrs,
@@ -361,7 +361,11 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
     fn mount_render(&mut self, item: T, index: usize) -> SilexResult<()> {
         let previous_scope = self.render_scope.take();
         let previous_content_scope = self.render_content_scope.take();
-        let previous_nodes = self.render_nodes.borrow().clone();
+        let previous_nodes = self
+            .render_nodes
+            .as_ref()
+            .and_then(|nodes| nodes.with(Clone::clone).ok())
+            .unwrap_or_default();
         let render_scope = match self.row_scope.try_child() {
             Ok(scope) => Rc::new(scope),
             Err(error) => {
@@ -371,24 +375,24 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
             }
         };
         let render_owner = OwnedViewOwner::new(render_scope.clone(), self.error_handler);
+        let render_token = render_owner.token();
+        let rendered_nodes = render_owner.owner_state(previous_nodes)?;
+        let rendered_scope = render_owner.owner_state(None::<Rc<OwnedScope<'scope>>>)?;
         let row_scope = self.row_scope.clone();
         let range = self.range.clone();
         let render = self.render.clone();
         let attrs = self.attrs.clone();
         let updater = self.updater.clone();
-        let rendered_nodes = Rc::new(RefCell::new(previous_nodes));
         let rendered_nodes_for_effect = rendered_nodes.clone();
-        let rendered_scope = Rc::new(RefCell::new(None::<Rc<OwnedScope<'scope>>>));
         let rendered_scope_for_effect = rendered_scope.clone();
         let error_handler = self.error_handler;
         let document = crate::document();
-        let render_token = render_owner.token();
         let render_handler = render_token.error_handler();
         let registration = catch_unwind(AssertUnwindSafe(|| {
             render_scope.effect_from(
                 self.render_inputs.clone(),
                 move || -> SilexResult<()> {
-                    let old_nodes = rendered_nodes_for_effect.borrow().clone();
+                    let old_nodes = rendered_nodes_for_effect.with(Clone::clone)?;
                     let candidate_scope = match row_scope.try_child() {
                         Ok(scope) => Rc::new(scope),
                         Err(error) => return Err(error),
@@ -419,14 +423,14 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
                                 let _ = parent.remove_child(&node);
                             }
                         }
-                        *rendered_nodes_for_effect.borrow_mut() = new_nodes;
+                        rendered_nodes_for_effect.replace(new_nodes)?;
                         Ok(())
                     }));
                     match result {
                         Ok(Ok(())) => {
                             let previous = rendered_scope_for_effect
-                                .borrow_mut()
-                                .replace(candidate_scope);
+                                .replace(Some(candidate_scope))?
+                                .flatten();
                             if let Some(scope) = previous {
                                 dispose_scope_or_resume(scope);
                             }
@@ -473,7 +477,7 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
         }
         self.render_scope = Some(render_scope);
         self.render_content_scope = Some(rendered_scope);
-        self.render_nodes = rendered_nodes;
+        self.render_nodes = Some(rendered_nodes);
         Ok(())
     }
 }
@@ -529,8 +533,8 @@ fn dispose_scope_or_resume<'scope>(scope: Rc<OwnedScope<'scope>>) {
     }
 }
 
-fn dispose_render_candidate<'scope>(scope: &Rc<RefCell<Option<Rc<OwnedScope<'scope>>>>>) {
-    if let Some(scope) = scope.borrow_mut().take() {
+fn dispose_render_candidate<'scope>(scope: &OwnerState<'scope, Option<Rc<OwnedScope<'scope>>>>) {
+    if let Some(scope) = scope.take_for_cleanup().flatten() {
         dispose_scope_or_resume(scope);
     }
 }

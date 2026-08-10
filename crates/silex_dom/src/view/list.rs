@@ -7,7 +7,6 @@ use silex_core::reactivity::{ReactiveSource, runtime_inputs_of};
 use silex_core::traits::{ForLoopSource, RxRead};
 use silex_core::{ErrorHandler, RuntimeInputs, SilexError, SilexResult};
 use std::{
-    cell::RefCell,
     collections::{HashMap, HashSet},
     mem,
     panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
@@ -179,14 +178,16 @@ where
             .render(item, index, updater)
             .mount_owned(&token, &parent, attrs)
     });
-    let rows = Rc::new(RefCell::new(Vec::<RowController<'scope, T>>::new()));
+    let rows = local_owner
+        .token()
+        .owner_state(Vec::<RowController<'scope, T>>::new())?;
 
     let cleanup_rows = rows.clone();
     let cleanup_range = range.clone();
     let error_handler = local_owner.token().error_handler();
     if let Err(error) = local_owner.on_cleanup(
         Box::new(move || {
-            let mut rows = mem::take(&mut *cleanup_rows.borrow_mut());
+            let mut rows = cleanup_rows.take_for_cleanup().unwrap_or_default();
             let panic = dispose_rows(&mut rows);
             cleanup_range.remove();
             if let Some(panic) = panic {
@@ -210,7 +211,7 @@ where
                 .try_with(|items| items.as_slice().map(|values| values.to_vec()))
                 .map_err(SilexError::from)
                 .and_then(|result| result)?;
-            let mut rows = mem::take(&mut *effect_rows.borrow_mut());
+            let mut rows = effect_rows.take()?;
             let old_len = rows.len();
             let new_len = values.len();
             let mut pending = Vec::new();
@@ -252,7 +253,7 @@ where
                     };
                     rows.append(&mut pending);
                     let cleanup_panic = dispose_rows(&mut removed);
-                    *effect_rows.borrow_mut() = rows;
+                    effect_rows.replace(rows)?;
                     if let Some(panic) = cleanup_panic {
                         resume_unwind(panic);
                     }
@@ -261,7 +262,7 @@ where
                 Ok(Err(error)) => {
                     let restore_panic = restore_indexed_rows(&mut rows, &updated);
                     let cleanup_panic = dispose_rows(&mut pending);
-                    *effect_rows.borrow_mut() = rows;
+                    effect_rows.replace(rows)?;
                     if let Some(panic) = restore_panic {
                         resume_unwind(panic);
                     }
@@ -273,7 +274,7 @@ where
                 Err(panic) => {
                     let restore_panic = restore_indexed_rows(&mut rows, &updated);
                     let cleanup_panic = dispose_rows(&mut pending);
-                    *effect_rows.borrow_mut() = rows;
+                    effect_rows.replace(rows)?;
                     if let Some(panic) = restore_panic {
                         resume_unwind(panic);
                     }
@@ -347,20 +348,20 @@ where
             .render(item, index, updater)
             .mount_owned(&token, &parent, attrs)
     });
-    let state = Rc::new(RefCell::new(KeyedRows {
+    let state = local_owner.token().owner_state(KeyedRows {
         rows: HashMap::new(),
         order: Vec::new(),
-    }));
+    })?;
 
     let cleanup_state = state.clone();
     let cleanup_range = range.clone();
     let effect_handler = local_owner.token().error_handler();
     if let Err(error) = local_owner.on_cleanup(
         Box::new(move || {
-            let mut state = cleanup_state.borrow_mut();
+            let Some(mut state) = cleanup_state.take_for_cleanup() else {
+                return Ok(());
+            };
             let mut rows = mem::take(&mut state.rows).into_values().collect::<Vec<_>>();
-            state.order.clear();
-            drop(state);
             let panic = dispose_rows(&mut rows);
             cleanup_range.remove();
             if let Some(panic) = panic {
@@ -407,14 +408,9 @@ where
                 }
             };
 
-            let mut old_rows = {
-                let mut state = effect_state.borrow_mut();
-                mem::take(&mut state.rows)
-            };
-            let old_order = {
-                let mut state = effect_state.borrow_mut();
-                mem::take(&mut state.order)
-            };
+            let mut state = effect_state.take()?;
+            let mut old_rows = mem::take(&mut state.rows);
+            let old_order = mem::take(&mut state.order);
             let mut pending = HashMap::with_capacity(keys.len());
             let mut seen = HashSet::with_capacity(keys.len());
             let mut next_order = Vec::with_capacity(keys.len());
@@ -449,7 +445,7 @@ where
                 Ok(())
             }));
 
-            match result {
+            let result = match result {
                 Ok(Ok(())) => {
                     let move_result = (|| -> SilexResult<()> {
                         for key in &next_order {
@@ -469,10 +465,8 @@ where
                         restore_keyed_order(&old_rows, &old_order, &end);
                         let restore_panic = restore_keyed_rows(&mut old_rows, &updated);
                         let cleanup_panic = dispose_map(&mut pending);
-                        let mut state = effect_state.borrow_mut();
                         state.rows = old_rows;
                         state.order = old_order;
-                        drop(state);
                         if let Some(panic) = restore_panic {
                             resume_unwind(panic);
                         }
@@ -492,10 +486,8 @@ where
                     }
                     old_rows.extend(pending.drain());
                     let cleanup_panic = dispose_rows(&mut removed);
-                    let mut state = effect_state.borrow_mut();
                     state.rows = old_rows;
                     state.order = next_order;
-                    drop(state);
                     if let Some(panic) = cleanup_panic {
                         resume_unwind(panic);
                     }
@@ -505,10 +497,8 @@ where
                     restore_keyed_order(&old_rows, &old_order, &end);
                     let restore_panic = restore_keyed_rows(&mut old_rows, &updated);
                     let cleanup_panic = dispose_map(&mut pending);
-                    let mut state = effect_state.borrow_mut();
                     state.rows = old_rows;
                     state.order = old_order;
-                    drop(state);
                     if let Some(panic) = restore_panic {
                         resume_unwind(panic);
                     }
@@ -521,10 +511,8 @@ where
                     restore_keyed_order(&old_rows, &old_order, &end);
                     let restore_panic = restore_keyed_rows(&mut old_rows, &updated);
                     let cleanup_panic = dispose_map(&mut pending);
-                    let mut state = effect_state.borrow_mut();
                     state.rows = old_rows;
                     state.order = old_order;
-                    drop(state);
                     if let Some(panic) = restore_panic {
                         resume_unwind(panic);
                     }
@@ -533,7 +521,9 @@ where
                     }
                     Err(panic_error("Keyed list", panic))
                 }
-            }
+            };
+            effect_state.replace(state)?;
+            result
         }),
         effect_handler,
     ) {

@@ -1,12 +1,10 @@
 pub mod any;
 pub mod list;
-pub mod logic;
 pub(crate) mod owner;
 pub mod reactive;
 
 pub use any::*;
 pub use list::*;
-pub use logic::*;
 pub use reactive::*;
 
 use crate::attribute::PendingAttribute;
@@ -242,6 +240,34 @@ impl<'scope> CompletionRegistrar<'scope> {
     }
 }
 
+#[derive(Clone)]
+enum PreviousEffectOwner<'scope> {
+    Scoped(Scope<'scope>),
+    Owned(Rc<OwnedScope<'scope>>),
+}
+
+impl<'scope> PreviousEffectOwner<'scope> {
+    fn register<T, F>(
+        &self,
+        inputs: RuntimeInputs,
+        callback: F,
+        error_handler: ViewErrorHandler<'scope>,
+    ) -> SilexResult<()>
+    where
+        T: 'scope,
+        F: FnMut(Option<&T>) -> SilexResult<T> + 'scope,
+    {
+        match self {
+            Self::Scoped(scope) => scope
+                .effect_with_previous_from(inputs, callback, error_handler)
+                .map(|_| ()),
+            Self::Owned(scope) => scope
+                .effect_with_previous_from(inputs, callback, error_handler)
+                .map(|_| ()),
+        }
+    }
+}
+
 /// A host resource cancellation handle owned by a view scope.
 ///
 /// The handle deliberately exposes no reactive capability. Cancellation is
@@ -291,6 +317,83 @@ impl<T> SharedSlot<T> {
         T: Default,
     {
         self.replace(T::default())
+    }
+}
+
+/// Owner-bound mutable state that can only be accessed through closures.
+///
+/// The state rejects access after its owner becomes inactive. The framework
+/// uses the cleanup-only methods while an owner is being disposed so cleanup
+/// can still take the final value after the runtime has rejected new work.
+pub struct OwnerState<'scope, T> {
+    value: SharedSlot<Option<T>>,
+    active: ActiveRegistrar<'scope>,
+}
+
+impl<'scope, T> Clone for OwnerState<'scope, T> {
+    fn clone(&self) -> Self {
+        Self {
+            value: self.value.clone(),
+            active: self.active.clone(),
+        }
+    }
+}
+
+impl<'scope, T> OwnerState<'scope, T> {
+    fn new(value: T, active: ActiveRegistrar<'scope>) -> Self {
+        Self {
+            value: SharedSlot::new(Some(value)),
+            active,
+        }
+    }
+
+    fn ensure_access(&self) -> SilexResult<()> {
+        if self.active.get() {
+            Ok(())
+        } else {
+            Err(SilexError::Reactivity(ReactiveError::NoSuchNode))
+        }
+    }
+
+    pub fn with<R>(&self, callback: impl FnOnce(&T) -> R) -> SilexResult<R> {
+        self.ensure_access()?;
+        self.value.with(|value| {
+            value
+                .as_ref()
+                .map(callback)
+                .ok_or(SilexError::Reactivity(ReactiveError::NoSuchNode))
+        })
+    }
+
+    pub fn update<R>(&self, callback: impl FnOnce(&mut T) -> R) -> SilexResult<R> {
+        self.ensure_access()?;
+        self.value.with_mut(|value| {
+            value
+                .as_mut()
+                .map(callback)
+                .ok_or(SilexError::Reactivity(ReactiveError::NoSuchNode))
+        })
+    }
+
+    pub fn take(&self) -> SilexResult<T> {
+        self.ensure_access()?;
+        self.value
+            .with_mut(Option::take)
+            .ok_or(SilexError::Reactivity(ReactiveError::NoSuchNode))
+    }
+
+    pub fn replace(&self, value: T) -> SilexResult<Option<T>> {
+        self.ensure_access()?;
+        Ok(self.value.with_mut(|current| current.replace(value)))
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.active.get()
+    }
+
+    #[doc(hidden)]
+    pub fn take_for_cleanup(&self) -> Option<T> {
+        self.value.with_mut(Option::take)
     }
 }
 
@@ -521,6 +624,7 @@ fn erase_error_handler<'scope>(handler: ErrorReporter<'scope>) -> ErrorReporter<
 #[derive(Clone)]
 pub struct ViewOwnerToken<'scope> {
     effect: EffectRegistrar<'scope>,
+    previous_effect: PreviousEffectOwner<'scope>,
     validate: ValidationRegistrar<'scope>,
     cleanup: CleanupRegistrar<'scope>,
     owned_scope: OwnedScopeRegistrar<'scope>,
@@ -532,6 +636,7 @@ pub struct ViewOwnerToken<'scope> {
 impl<'scope> ViewOwnerToken<'scope> {
     fn new(
         effect: EffectRegistrar<'scope>,
+        previous_effect: PreviousEffectOwner<'scope>,
         validate: ValidationRegistrar<'scope>,
         cleanup: CleanupRegistrar<'scope>,
         owned_scope: OwnedScopeRegistrar<'scope>,
@@ -541,6 +646,7 @@ impl<'scope> ViewOwnerToken<'scope> {
     ) -> Self {
         Self {
             effect,
+            previous_effect,
             validate,
             cleanup,
             owned_scope,
@@ -557,6 +663,39 @@ impl<'scope> ViewOwnerToken<'scope> {
         error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
         self.effect.call(inputs, callback, error_handler)
+    }
+
+    pub fn effect_with_previous<T, F>(
+        &self,
+        callback: F,
+        error_handler: ViewErrorHandler<'scope>,
+    ) -> SilexResult<()>
+    where
+        T: 'scope,
+        F: FnMut(Option<&T>) -> SilexResult<T> + 'scope,
+    {
+        self.effect_with_previous_from(RuntimeInputs::new(), callback, error_handler)
+    }
+
+    pub fn effect_with_previous_from<T, F>(
+        &self,
+        inputs: RuntimeInputs,
+        callback: F,
+        error_handler: ViewErrorHandler<'scope>,
+    ) -> SilexResult<()>
+    where
+        T: 'scope,
+        F: FnMut(Option<&T>) -> SilexResult<T> + 'scope,
+    {
+        self.previous_effect
+            .register(inputs, callback, error_handler)
+    }
+
+    pub fn owner_state<T>(&self, value: T) -> SilexResult<OwnerState<'scope, T>> {
+        if !self.is_active() {
+            return Err(SilexError::Reactivity(ReactiveError::NoSuchNode));
+        }
+        Ok(OwnerState::new(value, self.active.clone()))
     }
 
     pub fn validate_inputs(&self, inputs: &RuntimeInputs) -> SilexResult<()> {
@@ -586,6 +725,7 @@ impl<'scope> ViewOwnerToken<'scope> {
     pub fn with_error_handler(&self, error_handler: ErrorReporter<'scope>) -> Self {
         Self {
             effect: self.effect.clone(),
+            previous_effect: self.previous_effect.clone(),
             validate: self.validate.clone(),
             cleanup: self.cleanup.clone(),
             owned_scope: self.owned_scope.clone(),
@@ -787,6 +927,25 @@ impl<'scope> ScopedViewOwner<'scope> {
             error_handler,
         }
     }
+
+    pub fn effect_with_previous_from<T, F>(
+        &self,
+        inputs: RuntimeInputs,
+        callback: F,
+        error_handler: ViewErrorHandler<'scope>,
+    ) -> SilexResult<()>
+    where
+        T: 'scope,
+        F: FnMut(Option<&T>) -> SilexResult<T> + 'scope,
+    {
+        self.scope
+            .effect_with_previous_from(inputs, callback, error_handler)
+            .map(|_| ())
+    }
+
+    pub fn owner_state<T>(&self, value: T) -> SilexResult<OwnerState<'scope, T>> {
+        self.token().owner_state(value)
+    }
 }
 
 impl<'scope> ViewOwner<'scope> for ScopedViewOwner<'scope> {
@@ -815,6 +974,7 @@ impl<'scope> ViewOwner<'scope> for ScopedViewOwner<'scope> {
 
     fn token(&self) -> ViewOwnerToken<'scope> {
         let scope_for_effect = self.scope;
+        let scope_for_previous = self.scope;
         let scope_for_cleanup = self.scope;
         let scope_for_owned = self.scope;
         let scope_for_sender = self.scope;
@@ -828,6 +988,7 @@ impl<'scope> ViewOwner<'scope> for ScopedViewOwner<'scope> {
                     .effect_from(inputs, callback, error_handler)
                     .map(|_| ())
             }),
+            PreviousEffectOwner::Scoped(scope_for_previous),
             ValidationRegistrar::new(move |inputs| scope_for_validate.try_validate_inputs(inputs)),
             CleanupRegistrar::new(move |cleanup, error_handler| {
                 scope_for_cleanup.on_cleanup(cleanup, error_handler)
@@ -859,6 +1020,10 @@ impl<'scope> OwnedViewOwner<'scope> {
             error_handler,
         }
     }
+
+    pub(crate) fn owner_state<T>(&self, value: T) -> SilexResult<OwnerState<'scope, T>> {
+        self.token().owner_state(value)
+    }
 }
 
 impl<'scope> ViewOwner<'scope> for OwnedViewOwner<'scope> {
@@ -887,6 +1052,7 @@ impl<'scope> ViewOwner<'scope> for OwnedViewOwner<'scope> {
 
     fn token(&self) -> ViewOwnerToken<'scope> {
         let scope_for_effect = self.scope.clone();
+        let scope_for_previous = self.scope.clone();
         let scope_for_cleanup = self.scope.clone();
         let scope_for_owned = self.scope.clone();
         let scope_for_sender = self.scope.clone();
@@ -900,6 +1066,7 @@ impl<'scope> ViewOwner<'scope> for OwnedViewOwner<'scope> {
                     .effect_from(inputs, callback, error_handler)
                     .map(|_| ())
             }),
+            PreviousEffectOwner::Owned(scope_for_previous),
             ValidationRegistrar::new(move |inputs| scope_for_validate.try_validate_inputs(inputs)),
             CleanupRegistrar::new(move |cleanup, error_handler| {
                 scope_for_cleanup.on_cleanup(cleanup, error_handler)
@@ -1411,18 +1578,18 @@ pub(crate) fn mount_dynamic_view_universal_from<'scope>(
             stateful: false,
         },
     )?;
-    let row_state = Rc::new(RefCell::new(Some(row)));
+    let row_state = owner.token().owner_state(Some(row))?;
     let cleanup_state = row_state.clone();
     if let Err(error) = owner.on_cleanup(
         Box::new(move || {
-            if let Some(mut row) = cleanup_state.borrow_mut().take() {
+            if let Some(mut row) = cleanup_state.take_for_cleanup().flatten() {
                 row.dispose();
             }
             Ok(())
         }),
         owner.token().error_handler(),
     ) {
-        if let Some(mut row) = row_state.borrow_mut().take() {
+        if let Some(mut row) = row_state.take_for_cleanup().flatten() {
             row.dispose();
         }
         return Err(error);
@@ -1534,23 +1701,24 @@ where
     let scope = Rc::new(owner.try_owned_scope()?);
     let local_owner = OwnedViewOwner::new(scope.clone(), owner.token().error_handler());
     let range = DomRange::append(parent, "branch")?;
-    let state = Rc::new(RefCell::new(BranchState {
+    let state = local_owner.token().owner_state(BranchState {
         range,
         row: None,
         key: None,
         render,
         attrs,
-    }));
+    })?;
     let cleanup_state = state.clone();
-    let cleanup_range = state.borrow().range.clone();
+    let cleanup_range = state.with(|state| state.range.clone())?;
     let error_handler = local_owner.token().error_handler();
     if let Err(error) = local_owner.on_cleanup(
         Box::new(move || {
-            let (row, range) = {
-                let mut state = cleanup_state.borrow_mut();
-                state.key = None;
-                (state.row.take(), state.range.clone())
+            let Some(mut state) = cleanup_state.take_for_cleanup() else {
+                return Ok(());
             };
+            state.key = None;
+            let row = state.row.take();
+            let range = state.range.clone();
             let panic = row
                 .map(|mut row| catch_unwind(AssertUnwindSafe(move || row.dispose())))
                 .and_then(Result::err);
@@ -1572,17 +1740,13 @@ where
     if let Err(error) = local_owner.effect_from(
         inputs,
         Box::new(move || -> SilexResult<()> {
+            let mut state = effect_state.take()?;
             let result = catch_unwind(AssertUnwindSafe(|| -> SilexResult<()> {
                 let key = key_fn();
-                let same_key = effect_state
-                    .borrow()
-                    .key
-                    .as_ref()
-                    .is_some_and(|current| current == &key);
+                let same_key = state.key.as_ref().is_some_and(|current| current == &key);
                 if same_key {
                     if update_same_key {
-                        effect_state
-                            .borrow_mut()
+                        state
                             .row
                             .as_mut()
                             .ok_or_else(|| {
@@ -1591,7 +1755,7 @@ where
                                 )
                             })?
                             .update(key, 0)?;
-                    } else if effect_state.borrow().row.is_none() {
+                    } else if state.row.is_none() {
                         return Err(SilexError::Framework(
                             "dynamic row is missing for current key".to_string(),
                         ));
@@ -1600,7 +1764,6 @@ where
                 }
 
                 let (outer_range, render, attrs, old_row, old_key) = {
-                    let mut state = effect_state.borrow_mut();
                     (
                         state.range.clone(),
                         state.render.clone(),
@@ -1612,7 +1775,6 @@ where
                 let row_range = match DomRange::before(&outer_range.end, "branch-row") {
                     Ok(row_range) => row_range,
                     Err(error) => {
-                        let mut state = effect_state.borrow_mut();
                         state.row = old_row;
                         state.key = old_key;
                         return Err(error);
@@ -1632,7 +1794,6 @@ where
                 ) {
                     Ok(row) => row,
                     Err(error) => {
-                        let mut state = effect_state.borrow_mut();
                         state.row = old_row;
                         state.key = old_key;
                         return Err(error);
@@ -1642,15 +1803,14 @@ where
                 let old_panic = old_row
                     .map(|mut row| catch_unwind(AssertUnwindSafe(move || row.dispose())))
                     .and_then(Result::err);
-                let mut state = effect_state.borrow_mut();
                 state.key = Some(key);
                 state.row = Some(row);
-                drop(state);
                 if let Some(panic) = old_panic {
                     resume_unwind(panic);
                 }
                 Ok(())
             }));
+            effect_state.replace(state)?;
             match result {
                 Ok(result) => result,
                 Err(panic) => {
@@ -2188,5 +2348,45 @@ mod tests {
             ["Framework Error: outer", "Framework Error: outer-again"]
         );
         assert_eq!(inner_errors.borrow().as_slice(), ["Framework Error: inner"]);
+    }
+
+    #[test]
+    fn owner_state_rejects_late_access_but_cleanup_can_take_value() {
+        let late_access_rejected = Rc::new(Cell::new(false));
+        let cleanup_value = Rc::new(Cell::new(0));
+        let late_access_rejected_for_cleanup = late_access_rejected.clone();
+        let cleanup_value_for_cleanup = cleanup_value.clone();
+        let mut runtime = Runtime::new();
+        let root = runtime.run();
+
+        {
+            let scope = root.scope();
+            let owner = ScopedViewOwner::new(scope, scope.error_handler(|_| {}));
+            let token = owner.token();
+            let state = token.owner_state(41).expect("owner state should be active");
+            assert_eq!(
+                state
+                    .with(|value| *value)
+                    .expect("state should be readable"),
+                41
+            );
+
+            owner
+                .on_cleanup(
+                    Box::new(move || {
+                        late_access_rejected_for_cleanup.set(state.with(|_| ()).is_err());
+                        if let Some(value) = state.take_for_cleanup() {
+                            cleanup_value_for_cleanup.set(value);
+                        }
+                        Ok(())
+                    }),
+                    token.error_handler(),
+                )
+                .expect("cleanup should register");
+        }
+
+        root.dispose().expect("root cleanup should succeed");
+        assert!(late_access_rejected.get());
+        assert_eq!(cleanup_value.get(), 41);
     }
 }

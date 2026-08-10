@@ -316,14 +316,3 @@ macro_rules! view_match {
         }
     };
 }
-
-#[macro_export]
-macro_rules! any_view_match {
-    ($target:expr, { $($pat:pat $(if $guard:expr)? => $val:expr),* $(,)? }) => {
-        match $target {
-            $(
-                $pat $(if $guard)? => $val.into_any(),
-            )*
-        }
-    };
-}

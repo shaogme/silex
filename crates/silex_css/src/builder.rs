@@ -18,10 +18,8 @@ use silex_hash::{
 };
 use std::{
     borrow::Cow,
-    cell::RefCell,
     fmt::{Display, Write},
     hash::{Hash, Hasher},
-    rc::Rc,
 };
 use wasm_bindgen::JsCast;
 use web_sys::{Element, HtmlElement, SvgElement};
@@ -368,31 +366,34 @@ impl<'scope> Style<'scope> {
             .map(|(var_name, _)| var_name.clone())
             .collect();
         if !dyn_bindings.is_empty() {
-            let previous = Rc::new(RefCell::new(vec![None::<String>; dyn_bindings.len()]));
             let el_clone = el.clone();
             let bindings = dyn_bindings;
-            let previous_for_effect = previous.clone();
             let error_handler = owner.error_handler();
-            owner.effect_from(
+            owner.effect_with_previous_from(
                 inputs.clone(),
-                Box::new(move || -> SilexResult<()> {
-                    let values: Vec<String> = bindings
-                        .iter()
-                        .map(|(_, source)| source.try_get().map_err(SilexError::from))
-                        .collect::<SilexResult<_>>()?;
-                    let mut previous = previous_for_effect.borrow_mut();
-                    if let Some(style) = element_style(&el_clone) {
-                        for (index, ((name, _), value)) in
-                            bindings.iter().zip(values.iter()).enumerate()
-                        {
-                            if previous[index].as_deref() != Some(value) {
-                                style.set_property(name, value)?;
+                Box::new(
+                    move |previous: Option<&Vec<Option<String>>>| -> SilexResult<
+                        Vec<Option<String>>,
+                    > {
+                        let values: Vec<String> = bindings
+                            .iter()
+                            .map(|(_, source)| source.try_get().map_err(SilexError::from))
+                            .collect::<SilexResult<_>>()?;
+                        if let Some(style) = element_style(&el_clone) {
+                            for (index, ((name, _), value)) in
+                                bindings.iter().zip(values.iter()).enumerate()
+                            {
+                                let old_value = previous
+                                    .and_then(|values| values.get(index))
+                                    .and_then(Option::as_deref);
+                                if old_value != Some(value.as_str()) {
+                                    style.set_property(name, value)?;
+                                }
                             }
                         }
-                    }
-                    *previous = values.into_iter().map(Some).collect();
-                    Ok(())
-                }),
+                        Ok(values.into_iter().map(Some).collect())
+                    },
+                ),
                 error_handler,
             )?;
             let el_clone = el.clone();
@@ -560,21 +561,20 @@ impl<'scope> ReactiveApply<'scope> for Style<'scope> {
     ) -> SilexResult<()> {
         let el = el.clone();
         let owner = owner.clone();
-        let previous_class = Rc::new(RefCell::new(None::<String>));
-        let previous_class_for_effect = previous_class.clone();
         let owner_for_callback = owner.clone();
         let error_handler = owner.error_handler();
-        owner.effect_from(
+        owner.effect_with_previous_from(
             rx.runtime_inputs(),
-            Box::new(move || -> SilexResult<()> {
+            Box::new(move |previous: Option<&String>| -> SilexResult<String> {
                 let style = rx.try_get()?;
                 owner_for_callback.validate_inputs(&style.runtime_inputs())?;
-                if let Some(class_name) = previous_class_for_effect.borrow_mut().take() {
-                    el.class_list().remove_1(&class_name)?;
-                }
                 let class_name = style.apply_to_element(&el, &owner_for_callback)?;
-                *previous_class_for_effect.borrow_mut() = Some(class_name);
-                Ok(())
+                if let Some(previous) = previous
+                    && previous != &class_name
+                {
+                    el.class_list().remove_1(previous)?;
+                }
+                Ok(class_name)
             }),
             error_handler,
         )

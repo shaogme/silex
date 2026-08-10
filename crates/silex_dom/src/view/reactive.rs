@@ -8,7 +8,7 @@ use silex_core::reactivity::{Memo, ReadSignal, RwSignal, Signal, StoredValue};
 use silex_core::traits::RxCloneData;
 use silex_core::{Rx, RxValueKind, SilexError, SilexResult};
 use std::fmt::Display;
-use std::{borrow::Cow, cell::RefCell, rc::Rc};
+use std::{borrow::Cow, rc::Rc};
 use web_sys::Node;
 
 pub(crate) fn mount_reactive_text<'scope, T>(
@@ -24,20 +24,22 @@ where
     let scope = Rc::new(owner.try_owned_scope()?);
     let local_owner = OwnedViewOwner::new(scope.clone(), owner.token().error_handler());
     let parent = parent.clone();
-    let node = Rc::new(RefCell::new(None::<Node>));
+    let node: Node = crate::document().create_text_node("").into();
+    parent.append_child(&node)?;
     let node_for_cleanup = node.clone();
     let error_handler = local_owner.token().error_handler();
     if let Err(error) = local_owner.on_cleanup(
         Box::new(move || {
-            if let Some(node) = node_for_cleanup.borrow_mut().take()
-                && let Some(parent) = node.parent_node()
-            {
-                let _ = parent.remove_child(&node);
+            if let Some(parent) = node_for_cleanup.parent_node() {
+                let _ = parent.remove_child(&node_for_cleanup);
             }
             Ok(())
         }),
         error_handler,
     ) {
+        if let Some(parent) = node.parent_node() {
+            let _ = parent.remove_child(&node);
+        }
         scope.dispose();
         return Err(error);
     }
@@ -46,17 +48,8 @@ where
     if let Err(error) = local_owner.effect_from(
         inputs,
         Box::new(move || -> SilexResult<()> {
-            let node = if let Some(node) = node_for_effect.borrow().clone() {
-                node
-            } else {
-                let node = crate::document().create_text_node("");
-                parent.append_child(&node)?;
-                let node: Node = node.into();
-                *node_for_effect.borrow_mut() = Some(node.clone());
-                node
-            };
             let value = rx.try_with(|value| value.to_string())?;
-            node.set_node_value(Some(&value));
+            node_for_effect.set_node_value(Some(&value));
             Ok(())
         }),
         error_handler,

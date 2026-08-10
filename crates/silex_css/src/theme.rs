@@ -8,7 +8,6 @@ use silex_dom::{
     view::{ViewOwner, ViewOwnerToken},
 };
 use std::{
-    cell::RefCell,
     fmt::{Display, Write},
     rc::Rc,
 };
@@ -148,12 +147,13 @@ where
         owner.validate_inputs(&inputs)?;
         let el = el.clone();
         let effect_el = el.clone();
-        let previous = Rc::new(RefCell::new(None::<Vec<(&'static str, Option<String>)>>));
-        let previous_for_effect = previous.clone();
         let error_handler = owner.error_handler();
-        owner.effect_from(
+        owner.effect_with_previous_from(
             inputs,
-            Box::new(move || -> SilexResult<()> {
+            Box::new(
+                move |previous: Option<&Vec<(&'static str, Option<String>)>>| -> SilexResult<
+                    Vec<(&'static str, Option<String>)>,
+                > {
                 let theme = match &theme {
                     CssSource::Static(theme) => theme.clone(),
                     CssSource::Reactive(rx) => rx.try_get()?,
@@ -164,13 +164,9 @@ where
                     ));
                 };
                 let entries = theme_entries(&theme)?;
-                let next = {
-                    let previous = previous_for_effect.borrow();
-                    apply_var_diff(&style, &entries, previous.as_ref())?
-                };
-                *previous_for_effect.borrow_mut() = Some(next);
-                Ok(())
-            }),
+                apply_var_diff(&style, &entries, previous)
+            },
+            ),
             error_handler,
         )?;
         let names = T::get_variable_names().to_vec();
@@ -220,28 +216,26 @@ where
     let source = theme.into_css_source();
     let inputs = source_inputs(&source);
     owner.validate_inputs(&inputs)?;
+    let token = owner.token();
     let manager = Rc::new(DynamicStyleManager::new());
     let manager_for_effect = manager.clone();
     let style_id = unique_dynamic_style_id("slx-global-theme");
-    let previous = Rc::new(RefCell::new(None::<String>));
-    let previous_for_effect = previous.clone();
-    let error_handler = owner.token().error_handler();
-    owner
-        .effect_from(
+    let error_handler = token.error_handler();
+    token
+        .effect_with_previous_from(
             inputs,
-            Box::new(move || -> SilexResult<()> {
+            Box::new(move |previous: Option<&String>| -> SilexResult<String> {
                 let theme = match &source {
                     CssSource::Static(theme) => theme.clone(),
                     CssSource::Reactive(rx) => rx.try_get()?,
                 };
                 let css = global_theme_css(&theme)?;
-                if previous_for_effect.borrow().as_deref() != Some(css.as_str())
+                if previous.map(String::as_str) != Some(css.as_str())
                     && !manager_for_effect.update(&style_id, &css)
                 {
                     return Err(SilexError::Dom("无法更新全局主题样式表".into()));
                 }
-                *previous_for_effect.borrow_mut() = Some(css);
-                Ok(())
+                Ok(css)
             }),
             error_handler,
         )
@@ -309,39 +303,40 @@ where
         owner.validate_inputs(&inputs)?;
         let el = el.clone();
         let effect_el = el.clone();
-        let previous = Rc::new(RefCell::new(None::<Vec<(&'static str, Option<String>)>>));
-        let names = Rc::new(RefCell::new(Vec::<&'static str>::new()));
-        let previous_for_effect = previous.clone();
+        let names = owner.owner_state(Vec::<&'static str>::new())?;
         let names_for_effect = names.clone();
         let error_handler = owner.error_handler();
-        owner.effect_from(
+        owner.effect_with_previous_from(
             inputs,
-            Box::new(move || -> SilexResult<()> {
+            Box::new(
+                move |previous: Option<&Vec<(&'static str, Option<String>)>>| -> SilexResult<
+                    Vec<(&'static str, Option<String>)>,
+                > {
                 let patch = match &patch {
                     CssSource::Static(patch) => patch.clone(),
                     CssSource::Reactive(rx) => rx.try_get()?,
                 };
                 let entries = patch.get_patch_entries();
-                {
-                    let mut names = names_for_effect.borrow_mut();
-                    for (name, _) in &entries {
-                        if !names.contains(name) {
-                            names.push(*name);
-                        }
-                    }
-                }
-                let Some(style) = element_style(&effect_el) else {
-                    return Err(SilexError::Dom(
-                        "element does not expose a style declaration".into(),
-                    ));
-                };
                 let next = {
-                    let previous = previous_for_effect.borrow();
-                    apply_var_diff(&style, &entries, previous.as_ref())?
+                    let previous = previous;
+                    let Some(style) = element_style(&effect_el) else {
+                        return Err(SilexError::Dom(
+                            "element does not expose a style declaration".into(),
+                        ));
+                    };
+                    let next = apply_var_diff(&style, &entries, previous)?;
+                    names_for_effect.update(|names| {
+                        for (name, _) in &entries {
+                            if !names.contains(name) {
+                                names.push(*name);
+                            }
+                        }
+                    })?;
+                    next
                 };
-                *previous_for_effect.borrow_mut() = Some(next);
-                Ok(())
-            }),
+                Ok(next)
+            },
+            ),
             error_handler,
         )?;
         let names_for_cleanup = names.clone();
@@ -350,7 +345,8 @@ where
             Box::new(move || -> SilexResult<()> {
                 let mut first_error = None;
                 if let Some(style) = element_style(&el_clone) {
-                    for name in names_for_cleanup.borrow().iter() {
+                    let names = names_for_cleanup.take_for_cleanup().unwrap_or_default();
+                    for name in &names {
                         if let Err(error) = style.remove_property(name) {
                             first_error.get_or_insert_with(|| SilexError::from(error));
                         }

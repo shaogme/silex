@@ -316,27 +316,30 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
                     let __slx_conditions_for_effect = __slx_conditions.clone();
                     let __slx_element = element.clone();
                     let __slx_current_class =
-                        #__silex::dom::view::SharedSlot::new(None::<::std::string::String>);
+                        owner.owner_state(None::<::std::string::String>)?;
                     let __slx_current_class_for_effect = __slx_current_class.clone();
 
-                    owner.effect_from(
+                    owner.effect_with_previous_from(
                         __slx_effect_inputs,
-                        ::std::boxed::Box::new(move || -> #__silex::core::SilexResult<()> {
+                        ::std::boxed::Box::new(move |
+                            __slx_previous_class: ::std::option::Option<
+                                &::std::string::String,
+                            >| -> #__silex::core::SilexResult<::std::string::String> {
                             #(#condition_reads)*
                             let __slx_next_class = #__silex::css::cx!(
                                 #(#cx_items),*
                             );
-                            let __slx_previous_class = __slx_current_class_for_effect.take();
-                            if __slx_previous_class.as_deref()
-                                == Some(__slx_next_class.as_str())
+                            if __slx_previous_class
+                                .is_some_and(|class| class == &__slx_next_class)
                             {
-                                __slx_current_class_for_effect.set(__slx_previous_class);
-                                return Ok(());
+                                return Ok(__slx_next_class);
                             }
 
                             let __slx_update_result = (|| -> #__silex::core::SilexResult<::std::string::String> {
                                 let __slx_old_class =
-                                    __slx_previous_class.as_deref().unwrap_or("");
+                                    __slx_previous_class
+                                        .map(::std::string::String::as_str)
+                                        .unwrap_or("");
                                 for __slx_token in __slx_next_class.split_whitespace() {
                                     if !__slx_old_class
                                         .split_whitespace()
@@ -363,14 +366,15 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
                             })();
                             match __slx_update_result {
                                 Ok(__slx_next_class) => {
-                                    __slx_current_class_for_effect.set(Some(__slx_next_class));
+                                    __slx_current_class_for_effect.update(|class| {
+                                        *class = Some(__slx_next_class.clone());
+                                    })?;
+                                    Ok(__slx_next_class)
                                 }
                                 Err(error) => {
-                                    __slx_current_class_for_effect.set(__slx_previous_class);
                                     return Err(error);
                                 }
                             }
-                            Ok(())
                         }),
                         owner.error_handler(),
                     )?;
@@ -378,7 +382,7 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
                     let __slx_element_for_cleanup = element.clone();
                     owner.on_cleanup(
                         ::std::boxed::Box::new(move || -> #__silex::core::SilexResult<()> {
-                            if let Some(__slx_class) = __slx_current_class.take() {
+                            if let Some(__slx_class) = __slx_current_class.take_for_cleanup().flatten() {
                                 for __slx_token in __slx_class.split_whitespace() {
                                     __slx_element_for_cleanup
                                         .class_list()

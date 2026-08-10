@@ -1,5 +1,4 @@
 use std::{
-    cell::RefCell,
     panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
     rc::Rc,
 };
@@ -7,13 +6,14 @@ use std::{
 use wasm_bindgen_futures::spawn_local;
 
 use silex_core::{
-    CallbackInvokeError, CompletionSender, ErrorReporter, Scope, SilexError, rx, unwind_safe,
+    CallbackInvokeError, CompletionSender, ErrorReporter, Scope, SilexError, SilexResult, rx,
+    unwind_safe,
 };
 use silex_dom::prelude::*;
-use silex_dom::view::ViewOwner;
+use silex_dom::view::{OwnerState, SharedSlot, ViewOwner};
 use silex_macros::component;
 
-type ParentHandlerCell<'scope> = Rc<RefCell<Option<ErrorReporter<'scope>>>>;
+type ParentHandlerCell<'scope> = SharedSlot<Option<OwnerState<'scope, ErrorReporter<'scope>>>>;
 type ErrorFactory<'scope> = Rc<dyn Fn(SilexError) -> AnyView<'scope> + 'scope>;
 type RecordError<'scope> = Rc<dyn Fn(SilexError) + 'scope>;
 
@@ -94,12 +94,17 @@ impl<'scope> ErrorBoundaryBranch<'scope> {
         }
     }
 
-    fn parent_handler(&self) -> ErrorReporter<'scope> {
-        *self
-            .parent_handler
-            .borrow()
-            .as_ref()
-            .expect("ErrorBoundary parent handler must be resolved during mount")
+    fn parent_handler(&self) -> SilexResult<ErrorReporter<'scope>> {
+        let handler = self.parent_handler.with(|state| {
+            state
+                .as_ref()
+                .and_then(|state| state.with(|handler| *handler).ok())
+        });
+        handler.ok_or_else(|| {
+            SilexError::Framework(
+                "ErrorBoundary parent handler must be resolved during mount".to_string(),
+            )
+        })
     }
 
     fn mount_inner(
@@ -110,7 +115,7 @@ impl<'scope> ErrorBoundaryBranch<'scope> {
     ) -> silex_core::SilexResult<()> {
         let phase = self.phase;
         let child_handler = self.boundary_handler;
-        let parent_handler = self.parent_handler();
+        let parent_handler = self.parent_handler()?;
         let fallback = self.fallback.clone();
         let record_error = self.record_error.clone();
         let fallback_attrs = attrs.clone();
@@ -190,8 +195,10 @@ impl<'scope> View<'scope> for ErrorBoundaryView<'scope> {
         let parent_handler = self
             .parent_handler_override
             .unwrap_or_else(|| owner.token().error_handler());
-        *self.parent_handler.borrow_mut() = Some(parent_handler);
-        let token = owner.token().with_error_handler(self.phase_handler);
+        let token = owner.token();
+        let parent_state = token.owner_state(parent_handler)?;
+        self.parent_handler.set(Some(parent_state));
+        let token = token.with_error_handler(self.phase_handler);
         self.view.mount(&token, parent, attrs)
     }
 
@@ -207,8 +214,10 @@ impl<'scope> View<'scope> for ErrorBoundaryView<'scope> {
         let parent_handler = self
             .parent_handler_override
             .unwrap_or_else(|| owner.token().error_handler());
-        *self.parent_handler.borrow_mut() = Some(parent_handler);
-        let token = owner.token().with_error_handler(self.phase_handler);
+        let token = owner.token();
+        let parent_state = token.owner_state(parent_handler)?;
+        self.parent_handler.set(Some(parent_state));
+        let token = token.with_error_handler(self.phase_handler);
         self.view.mount_owned(&token, parent, attrs)
     }
 }
@@ -246,18 +255,23 @@ where
         });
     });
 
-    let parent_handler: ParentHandlerCell<'scope> = Rc::new(RefCell::new(None));
+    let parent_handler: ParentHandlerCell<'scope> = SharedSlot::new(None);
     let fallback = Rc::new(move |error: SilexError| fallback(error).into_any());
     let record_error = Rc::new(move |error: SilexError| set_error.set(Some(error)));
     let phase_handler = {
         let parent_handler = parent_handler.clone();
         scope.error_handler(move |error_value| {
             if error.try_get_untracked().ok().flatten().is_some() {
-                parent_handler
-                    .borrow()
-                    .as_ref()
-                    .expect("ErrorBoundary parent handler must be resolved during mount")
-                    .handle(error_value);
+                let parent = parent_handler.with(|state| {
+                    state
+                        .as_ref()
+                        .and_then(|state| state.with(|handler| *handler).ok())
+                });
+                if let Some(parent) = parent {
+                    parent.handle(error_value);
+                } else {
+                    boundary_handler.handle(error_value);
+                }
             } else {
                 boundary_handler.handle(error_value);
             }
