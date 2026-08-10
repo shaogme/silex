@@ -12,7 +12,6 @@ use silex_core::{
     },
 };
 use std::{
-    cell::RefCell,
     collections::{HashMap, HashSet},
     fmt::Debug,
     future::Future,
@@ -99,7 +98,7 @@ pub struct I18nStore<'scope> {
     error_handler: StoredValue<'scope, ErrorReporter<'scope>>,
     locale: RwSignal<'scope, Locale>,
     fallback_locale: RwSignal<'scope, Locale>,
-    catalog_cache: StoredValue<'scope, Rc<RefCell<CatalogRegistry>>>,
+    catalog_cache: StoredValue<'scope, CatalogRegistry>,
     catalog_revision: RwSignal<'scope, u64>,
     missing_key: MissingKeyPolicy,
     missing_argument: MissingArgumentPolicy,
@@ -224,7 +223,7 @@ impl<'scope> I18nBuilder<'scope> {
             .or(catalog_locale)
             .unwrap_or_else(|| Locale::new("en"));
         let fallback_locale = fallback_locale.unwrap_or_else(|| locale.clone());
-        let catalog_cache = scope.stored(Rc::new(RefCell::new(registry)));
+        let catalog_cache = scope.stored(registry);
         let error_handler = scope.stored(error_handler);
 
         let store = I18nStore {
@@ -305,12 +304,11 @@ impl<'scope> I18nStore<'scope> {
 
     pub fn has_catalog(&self, locale: &Locale) -> bool {
         self.catalog_cache
-            .with(|cache| cache.borrow().has_catalog(locale))
+            .with(|registry| registry.has_catalog(locale))
     }
 
     pub fn insert_catalog(&self, catalog: Catalog) {
-        let changed = self.catalog_cache.with(|cache| {
-            let mut registry = cache.borrow_mut();
+        let changed = self.catalog_cache.update(|registry| {
             let locale = catalog.locale().clone();
             if registry.catalogs.get(&locale) == Some(&catalog) {
                 return false;
@@ -328,7 +326,7 @@ impl<'scope> I18nStore<'scope> {
     pub fn remove_catalog(&self, locale: &Locale) {
         let removed = self
             .catalog_cache
-            .with(|cache| cache.borrow_mut().catalogs.remove(locale).is_some());
+            .update(|registry| registry.catalogs.remove(locale).is_some());
         if removed {
             self.catalog_revision.update(|revision| {
                 *revision = revision.wrapping_add(1);
@@ -368,16 +366,15 @@ impl<'scope> I18nStore<'scope> {
         }
         validate_inputs(self.scope, &inputs)?;
 
-        let cache = self.catalog_cache.with(Rc::clone);
+        let cache = self.catalog_cache;
         let loader = Rc::new(loader);
         let resource = Resource::new(
             self.scope,
             self.locale(),
             move |locale: Locale| {
-                let cache = cache.clone();
+                let cached = cache.with(|registry| registry.catalog(&locale));
                 let loader = loader.clone();
                 async move {
-                    let cached = { cache.borrow().catalog(&locale) };
                     if let Some(catalog) = cached {
                         return Ok(catalog);
                     }
@@ -452,8 +449,7 @@ impl<'scope> I18nStore<'scope> {
         let fallback_locale = self.fallback_locale.get();
         let _revision = self.catalog_revision.get();
 
-        let translation = self.catalog_cache.with(|cache| {
-            let registry = cache.borrow();
+        let translation = self.catalog_cache.with(|registry| {
             let mut visited = HashSet::new();
             for candidate in locale
                 .fallback_chain()

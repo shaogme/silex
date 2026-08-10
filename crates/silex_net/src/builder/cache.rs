@@ -1,11 +1,6 @@
-use std::{
-    cell::{Cell, RefCell},
-    collections::HashMap,
-    marker::PhantomData,
-    rc::Rc,
-};
+use std::{collections::HashMap, rc::Rc};
 
-use silex_core::{CompletionOnce, ErrorReporter, Scope, SilexError, SilexResult, unwind_safe};
+use silex_core::{CompletionOnce, Scope, SilexError, StoredValue, unwind_safe};
 use silex_persist::{LocalStorageBackend, PersistCodec, PersistenceBackend};
 
 use crate::{
@@ -16,79 +11,65 @@ use crate::{
 #[derive(Clone)]
 pub(crate) struct CacheBinding<T> {
     pub(crate) key: String,
-    pub(crate) token: Rc<Cell<bool>>,
+    pub(crate) generation: u64,
     pub(crate) snapshot: Option<T>,
 }
 
 struct CacheEntry<T> {
     snapshot: Option<T>,
-    token: Rc<Cell<bool>>,
+    generation: u64,
     last_access: u64,
     last_access_at: f64,
 }
 
-type CacheEntries<T> = Rc<RefCell<HashMap<String, CacheEntry<T>>>>;
 type CacheEncode<T> = Rc<dyn Fn(&T) -> Result<String, String>>;
 type CacheDecode<T> = Rc<dyn Fn(&str) -> Result<T, String>>;
 
-pub(crate) trait CacheRuntime<'scope, T>: 'scope {
-    fn binding(&self, spec: &RequestSpec) -> Option<CacheBinding<T>>;
-
-    fn cached_value(&self, spec: &RequestSpec) -> Option<T>;
-
-    fn completion_once_for_binding(
-        &self,
-        scope: Scope<'scope>,
-        binding: CacheBinding<T>,
-    ) -> CompletionOnce<T>;
-}
-
-pub(crate) struct CacheRuntimeImpl<'scope, T> {
+struct CacheState<T> {
     config: CacheConfig,
-    entries: CacheEntries<T>,
-    next_access: Cell<u64>,
+    entries: HashMap<String, CacheEntry<T>>,
+    next_access: u64,
+    next_generation: u64,
     backend: LocalStorageBackend,
     encode: CacheEncode<T>,
     decode: CacheDecode<T>,
-    _scope: PhantomData<&'scope ()>,
 }
 
-impl<'scope, T> CacheRuntimeImpl<'scope, T>
+/// A cache whose state and completion tickets belong to one reactive scope.
+///
+/// The handle is separate from `HttpClientBuilder`: several builders can
+/// share it, while a builder cannot create a second cache with a different
+/// codec or lifecycle by accident.
+#[derive(Clone, Copy)]
+pub struct HttpCache<'scope, T> {
+    state: StoredValue<'scope, CacheState<T>>,
+    scope: Scope<'scope>,
+}
+
+impl<'scope, T> HttpCache<'scope, T>
 where
-    T: Clone + PartialEq + 'static,
+    T: Clone + 'static,
 {
-    pub(crate) fn new<C>(config: CacheConfig, codec: C) -> Self
+    pub fn new<C>(scope: Scope<'scope>, config: CacheConfig, codec: C) -> Self
     where
         C: CacheCodec<T>,
     {
         let encoder = codec.clone();
         let decoder = codec;
-        Self {
+        let state = scope.stored(CacheState {
             config,
-            entries: Rc::new(RefCell::new(HashMap::new())),
-            next_access: Cell::new(0),
+            entries: HashMap::new(),
+            next_access: 0,
+            next_generation: 0,
             backend: LocalStorageBackend::default(),
             encode: Rc::new(move |value| encoder.encode(value)),
             decode: Rc::new(move |raw| PersistCodec::decode(&decoder, raw)),
-            _scope: PhantomData,
-        }
+        });
+        Self { state, scope }
     }
 
-    pub(crate) fn register_cleanup(
-        &self,
-        scope: Scope<'scope>,
-        error_handler: ErrorReporter<'scope>,
-    ) -> SilexResult<()> {
-        let entries = self.entries.clone();
-        scope.on_cleanup(
-            move || {
-                for entry in entries.borrow_mut().drain().map(|(_, entry)| entry) {
-                    entry.token.set(false);
-                }
-                Ok(())
-            },
-            error_handler,
-        )
+    pub(crate) fn belongs_to(&self, scope: Scope<'scope>) -> bool {
+        self.scope == scope
     }
 
     fn key(spec: &RequestSpec) -> String {
@@ -99,168 +80,170 @@ where
         js_sys::Date::now()
     }
 
-    fn touch(&self, entry: &mut CacheEntry<T>) {
-        let access = self
-            .next_access
-            .get()
+    fn touch(entry: &mut CacheEntry<T>, next_access: &mut u64) {
+        let access = next_access
             .checked_add(1)
             .expect("HTTP cache access counter exhausted");
-        self.next_access.set(access);
+        *next_access = access;
         entry.last_access = access;
         entry.last_access_at = Self::now();
     }
 
-    fn expired(&self, entry: &CacheEntry<T>) -> bool {
-        self.config
+    fn expired(config: CacheConfig, entry: &CacheEntry<T>) -> bool {
+        config
             .ttl
             .is_some_and(|ttl| Self::now() - entry.last_access_at >= ttl.as_millis() as f64)
     }
 
-    fn remove_persisted(&self, key: &str) {
-        if matches!(self.config.eviction, CacheEviction::RemovePersisted) {
-            let _ = self.backend.remove(key);
+    fn remove_persisted(config: CacheConfig, backend: &LocalStorageBackend, key: &str) {
+        if matches!(config.eviction, CacheEviction::RemovePersisted) {
+            let _ = backend.remove(key);
         }
     }
 
-    fn evict_one(&self) {
-        let key = {
-            let entries = self.entries.borrow();
-            entries
-                .iter()
-                .min_by_key(|(_, entry)| entry.last_access)
-                .map(|(key, _)| key.clone())
-        };
+    fn evict_one(state: &mut CacheState<T>) {
+        let key = state
+            .entries
+            .iter()
+            .min_by_key(|(_, entry)| entry.last_access)
+            .map(|(key, _)| key.clone());
         let Some(key) = key else {
             return;
         };
-        if let Some(entry) = self.entries.borrow_mut().remove(&key) {
-            entry.token.set(false);
-            self.remove_persisted(&key);
-        }
+        state.entries.remove(&key);
+        Self::remove_persisted(state.config, &state.backend, &key);
     }
 
-    fn load_snapshot(&self, key: &str) -> Option<T> {
-        let raw = match self.backend.get(key) {
+    fn load_snapshot(state: &CacheState<T>, key: &str) -> Option<T> {
+        let raw = match state.backend.get(key) {
             Ok(Some(raw)) => raw,
             Ok(None) | Err(_) => return None,
         };
-        match (self.decode)(&raw) {
+        match (state.decode)(&raw) {
             Ok(value) => Some(value),
             Err(_) => {
-                self.remove_persisted(key);
+                Self::remove_persisted(state.config, &state.backend, key);
                 None
             }
         }
     }
 
-    fn ensure_entry(&self, key: &str) -> Option<Option<T>> {
-        if self.config.capacity == 0 {
+    fn ensure_entry(state: &mut CacheState<T>, key: &str) -> Option<Option<T>> {
+        if state.config.capacity == 0 {
             return None;
         }
 
-        let expired = self
+        let expired = state
             .entries
-            .borrow()
             .get(key)
-            .is_some_and(|entry| self.expired(entry));
-        if expired && let Some(entry) = self.entries.borrow_mut().remove(key) {
-            entry.token.set(false);
-            self.remove_persisted(key);
+            .is_some_and(|entry| Self::expired(state.config, entry));
+        if expired {
+            state.entries.remove(key);
+            Self::remove_persisted(state.config, &state.backend, key);
         }
 
-        if self.entries.borrow().contains_key(key) {
-            let mut entries = self.entries.borrow_mut();
-            let entry = entries
-                .get_mut(key)
-                .expect("cache entry exists while mutably borrowed");
-            self.touch(entry);
+        if let Some(entry) = state.entries.get_mut(key) {
+            Self::touch(entry, &mut state.next_access);
             return Some(entry.snapshot.clone());
         }
 
-        if self.entries.borrow().len() >= self.config.capacity {
-            self.evict_one();
+        if state.entries.len() >= state.config.capacity {
+            Self::evict_one(state);
         }
 
-        let access = self
+        let access = state
             .next_access
-            .get()
             .checked_add(1)
             .expect("HTTP cache access counter exhausted");
-        self.next_access.set(access);
+        state.next_access = access;
         let entry = CacheEntry {
-            snapshot: self.load_snapshot(key),
-            token: Rc::new(Cell::new(true)),
+            snapshot: Self::load_snapshot(state, key),
+            generation: 0,
             last_access: access,
             last_access_at: Self::now(),
         };
         let snapshot = entry.snapshot.clone();
-        let mut entries = self.entries.borrow_mut();
-        entries.insert(key.to_string(), entry);
+        state.entries.insert(key.to_string(), entry);
         Some(snapshot)
     }
 
-    fn begin_binding(&self, key: &str, snapshot: Option<T>) -> CacheBinding<T> {
-        let token = Rc::new(Cell::new(true));
-        let mut entries = self.entries.borrow_mut();
-        let entry = entries
+    fn begin_binding(state: &mut CacheState<T>, key: &str, snapshot: Option<T>) -> CacheBinding<T> {
+        let generation = state
+            .next_generation
+            .checked_add(1)
+            .expect("HTTP cache generation exhausted");
+        state.next_generation = generation;
+        let entry = state
+            .entries
             .get_mut(key)
             .expect("cache entry must exist before binding");
-        entry.token.set(false);
-        entry.token = token.clone();
-        self.touch(entry);
+        entry.generation = generation;
+        Self::touch(entry, &mut state.next_access);
         CacheBinding {
             key: key.to_string(),
-            token,
+            generation,
             snapshot,
         }
     }
-}
 
-impl<'scope, T> CacheRuntime<'scope, T> for CacheRuntimeImpl<'scope, T>
-where
-    T: Clone + PartialEq + 'static,
-{
-    fn binding(&self, spec: &RequestSpec) -> Option<CacheBinding<T>> {
+    pub(crate) fn binding(&self, spec: &RequestSpec) -> Option<CacheBinding<T>> {
         let key = Self::key(spec);
-        let snapshot = self.ensure_entry(&key)?;
-        let binding = self.begin_binding(&key, snapshot);
-        Some(binding)
+        self.state
+            .try_update(|state| {
+                let snapshot = Self::ensure_entry(state, &key)?;
+                Some(Self::begin_binding(state, &key, snapshot))
+            })
+            .ok()
+            .flatten()
     }
 
-    fn cached_value(&self, spec: &RequestSpec) -> Option<T> {
-        self.ensure_entry(&Self::key(spec))?
+    pub(crate) fn cached_value(&self, spec: &RequestSpec) -> Option<T> {
+        let key = Self::key(spec);
+        self.state
+            .try_update(|state| Self::ensure_entry(state, &key).flatten())
+            .ok()
+            .flatten()
     }
 
-    fn completion_once_for_binding(
+    pub(crate) fn completion_once_for_binding(
         &self,
         scope: Scope<'scope>,
         binding: CacheBinding<T>,
     ) -> CompletionOnce<T> {
-        let entries = self.entries.clone();
-        let backend = self.backend.clone();
-        let encode = self.encode.clone();
+        let state = self.state;
         let key = binding.key;
-        let token = binding.token;
+        let generation = binding.generation;
+        let encode = state.with(|state| state.encode.clone());
+        let backend = state.with(|state| state.backend.clone());
         scope.completion_once(unwind_safe(move |value: T| {
-            if !token.get() {
+            let active = state
+                .try_with(|state| {
+                    state
+                        .entries
+                        .get(&key)
+                        .is_some_and(|entry| entry.generation == generation)
+                })
+                .map_err(SilexError::Reactivity)?;
+            if !active {
                 return Ok(());
             }
+
             let raw = encode(&value).map_err(|error| {
                 SilexError::Framework(format!("encode HTTP cache value failed: {error}"))
             })?;
-            {
-                let mut entries = entries.borrow_mut();
-                let Some(entry) = entries.get_mut(&key) else {
-                    return Ok(());
-                };
-                if !Rc::ptr_eq(&entry.token, &token) || !token.get() {
-                    return Ok(());
-                }
-                entry.snapshot = Some(value);
-            }
             backend.set(&key, &raw).map_err(|error| {
                 SilexError::Framework(format!("write HTTP cache value failed: {error}"))
             })?;
+
+            state
+                .try_update(|state| {
+                    if let Some(entry) = state.entries.get_mut(&key)
+                        && entry.generation == generation
+                    {
+                        entry.snapshot = Some(value);
+                    }
+                })
+                .map_err(SilexError::Reactivity)?;
             Ok(())
         }))
     }

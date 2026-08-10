@@ -532,6 +532,16 @@ impl<'scope> HostResourceHandle<'scope> {
         self.cancel_once();
     }
 
+    /// Mark a one-shot host resource as completed without running its physical
+    /// cancellation action.
+    pub fn finish(&self) {
+        self.active.set(false);
+        if let Some(callback) = &self.callback {
+            callback.cancel_once();
+        }
+        let _ = self.cancel.take();
+    }
+
     pub fn is_active(&self) -> bool {
         self.active.get()
     }
@@ -633,26 +643,28 @@ pub struct ViewOwnerToken<'scope> {
     error_handler: ErrorReporter<'scope>,
 }
 
+struct ViewOwnerTokenParts<'scope> {
+    effect: EffectRegistrar<'scope>,
+    previous_effect: PreviousEffectOwner<'scope>,
+    validate: ValidationRegistrar<'scope>,
+    cleanup: CleanupRegistrar<'scope>,
+    owned_scope: OwnedScopeRegistrar<'scope>,
+    completion: CompletionRegistrar<'scope>,
+    active: ActiveRegistrar<'scope>,
+    error_handler: ErrorReporter<'scope>,
+}
+
 impl<'scope> ViewOwnerToken<'scope> {
-    fn new(
-        effect: EffectRegistrar<'scope>,
-        previous_effect: PreviousEffectOwner<'scope>,
-        validate: ValidationRegistrar<'scope>,
-        cleanup: CleanupRegistrar<'scope>,
-        owned_scope: OwnedScopeRegistrar<'scope>,
-        completion: CompletionRegistrar<'scope>,
-        active: ActiveRegistrar<'scope>,
-        error_handler: ErrorReporter<'scope>,
-    ) -> Self {
+    fn new(parts: ViewOwnerTokenParts<'scope>) -> Self {
         Self {
-            effect,
-            previous_effect,
-            validate,
-            cleanup,
-            owned_scope,
-            completion,
-            active,
-            error_handler,
+            effect: parts.effect,
+            previous_effect: parts.previous_effect,
+            validate: parts.validate,
+            cleanup: parts.cleanup,
+            owned_scope: parts.owned_scope,
+            completion: parts.completion,
+            active: parts.active,
+            error_handler: parts.error_handler,
         }
     }
 
@@ -982,25 +994,27 @@ impl<'scope> ViewOwner<'scope> for ScopedViewOwner<'scope> {
         let scope_for_active = self.scope;
         let scope_for_validate = self.scope;
         let error_handler = self.error_handler;
-        ViewOwnerToken::new(
-            EffectRegistrar::new(move |inputs, callback, error_handler| {
+        ViewOwnerToken::new(ViewOwnerTokenParts {
+            effect: EffectRegistrar::new(move |inputs, callback, error_handler| {
                 scope_for_effect
                     .effect_from(inputs, callback, error_handler)
                     .map(|_| ())
             }),
-            PreviousEffectOwner::Scoped(scope_for_previous),
-            ValidationRegistrar::new(move |inputs| scope_for_validate.try_validate_inputs(inputs)),
-            CleanupRegistrar::new(move |cleanup, error_handler| {
+            previous_effect: PreviousEffectOwner::Scoped(scope_for_previous),
+            validate: ValidationRegistrar::new(move |inputs| {
+                scope_for_validate.try_validate_inputs(inputs)
+            }),
+            cleanup: CleanupRegistrar::new(move |cleanup, error_handler| {
                 scope_for_cleanup.on_cleanup(cleanup, error_handler)
             }),
-            OwnedScopeRegistrar::new(move || scope_for_owned.try_owned_scope()),
-            CompletionRegistrar::new(
+            owned_scope: OwnedScopeRegistrar::new(move || scope_for_owned.try_owned_scope()),
+            completion: CompletionRegistrar::new(
                 move |callback| scope_for_sender.completion_sender(unwind_safe(callback)),
                 move |callback| scope_for_once.completion_once(unwind_safe(callback)),
             ),
-            ActiveRegistrar::new(move || scope_for_active.is_active()),
+            active: ActiveRegistrar::new(move || scope_for_active.is_active()),
             error_handler,
-        )
+        })
     }
 
     fn try_owned_scope(&self) -> SilexResult<OwnedScope<'scope>> {
@@ -1060,25 +1074,27 @@ impl<'scope> ViewOwner<'scope> for OwnedViewOwner<'scope> {
         let scope_for_active = self.scope.clone();
         let scope_for_validate = self.scope.clone();
         let error_handler = self.error_handler;
-        ViewOwnerToken::new(
-            EffectRegistrar::new(move |inputs, callback, error_handler| {
+        ViewOwnerToken::new(ViewOwnerTokenParts {
+            effect: EffectRegistrar::new(move |inputs, callback, error_handler| {
                 scope_for_effect
                     .effect_from(inputs, callback, error_handler)
                     .map(|_| ())
             }),
-            PreviousEffectOwner::Owned(scope_for_previous),
-            ValidationRegistrar::new(move |inputs| scope_for_validate.try_validate_inputs(inputs)),
-            CleanupRegistrar::new(move |cleanup, error_handler| {
+            previous_effect: PreviousEffectOwner::Owned(scope_for_previous),
+            validate: ValidationRegistrar::new(move |inputs| {
+                scope_for_validate.try_validate_inputs(inputs)
+            }),
+            cleanup: CleanupRegistrar::new(move |cleanup, error_handler| {
                 scope_for_cleanup.on_cleanup(cleanup, error_handler)
             }),
-            OwnedScopeRegistrar::new(move || scope_for_owned.try_child()),
-            CompletionRegistrar::new(
+            owned_scope: OwnedScopeRegistrar::new(move || scope_for_owned.try_child()),
+            completion: CompletionRegistrar::new(
                 move |callback| scope_for_sender.completion_sender(unwind_safe(callback)),
                 move |callback| scope_for_once.completion_once(unwind_safe(callback)),
             ),
-            ActiveRegistrar::new(move || scope_for_active.is_active()),
+            active: ActiveRegistrar::new(move || scope_for_active.is_active()),
             error_handler,
-        )
+        })
     }
 
     fn try_owned_scope(&self) -> SilexResult<OwnedScope<'scope>> {
@@ -1649,8 +1665,40 @@ where
     mount_keyed_dynamic_view(owner, parent, attrs, inputs, key_fn, render, true)
 }
 
+/// The identity and render snapshot produced by one stable branch evaluation.
+///
+/// Stable branches compare only `key`; the snapshot is delivered to the branch
+/// renderer when a new row is mounted.
+#[derive(Clone)]
+pub struct BranchEvaluation<K, S> {
+    key: K,
+    snapshot: S,
+}
+
+impl<K, S> BranchEvaluation<K, S> {
+    pub fn new(key: K, snapshot: S) -> Self {
+        Self { key, snapshot }
+    }
+
+    pub fn key(&self) -> &K {
+        &self.key
+    }
+
+    pub fn into_parts(self) -> (K, S) {
+        (self.key, self.snapshot)
+    }
+}
+
+impl<K: PartialEq, S> PartialEq for BranchEvaluation<K, S> {
+    fn eq(&self, other: &Self) -> bool {
+        self.key == other.key
+    }
+}
+
+impl<K: Eq, S> Eq for BranchEvaluation<K, S> {}
+
 /// Mount a branch that is replaced only when its route identity changes.
-pub fn mount_branch_stable_cached<'scope, K, KeyFn, BranchFn>(
+pub fn mount_branch_stable_cached<'scope, K, S, KeyFn, BranchFn>(
     owner: &dyn ViewOwner<'scope>,
     parent: &Node,
     attrs: Vec<PendingAttribute<'scope>>,
@@ -1660,10 +1708,11 @@ pub fn mount_branch_stable_cached<'scope, K, KeyFn, BranchFn>(
 ) -> SilexResult<()>
 where
     K: PartialEq + Clone + 'scope,
-    KeyFn: Fn() -> K + Clone + 'scope,
-    BranchFn: Fn(K) -> AnyView<'scope> + 'scope,
+    S: Clone + 'scope,
+    KeyFn: Fn() -> BranchEvaluation<K, S> + Clone + 'scope,
+    BranchFn: Fn(BranchEvaluation<K, S>) -> AnyView<'scope> + 'scope,
 {
-    let render = RowRender::new(move |args: RowRenderArgs<'scope, K>| {
+    let render = RowRender::new(move |args: RowRenderArgs<'scope, BranchEvaluation<K, S>>| {
         let RowRenderArgs {
             item: key,
             parent,

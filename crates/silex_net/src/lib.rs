@@ -7,6 +7,8 @@ pub use backend::{
     BrowserTransport, EventStream, EventStreamBuilder, EventStreamConnection, HttpBackend,
     Transport, TransportFuture, WebSocket, WebSocketBuilder, WebSocketConnection,
 };
+#[cfg(feature = "persist")]
+pub use builder::HttpCache;
 pub use builder::{HttpClient, HttpClientBuilder, IntoNetValue, ValueResolver};
 #[cfg(feature = "persist")]
 pub use codec::CacheCodec;

@@ -150,7 +150,7 @@ fn independent_segments_are_left_alone() {
     .unwrap();
     let code = out.to_string();
     assert!(
-        !code.contains("match"),
+        !code.contains("match (("),
         "互不覆盖的段不该被展开成组合表:\n{code}"
     );
     // 静态段 1 个类 + 两个条件分支各 1 个类

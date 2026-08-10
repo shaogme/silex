@@ -328,7 +328,18 @@ fn resolve_catalog_path(path: &LitStr) -> Result<PathBuf> {
             "CARGO_MANIFEST_DIR is unavailable while expanding I18nKeys",
         )
     })?;
-    Ok(PathBuf::from(manifest_dir).join(path.value()))
+    let requested_path = PathBuf::from(path.value());
+    let manifest_path = PathBuf::from(manifest_dir).join(&requested_path);
+    if manifest_path.is_file() {
+        return Ok(manifest_path);
+    }
+
+    let source_path = path.span().local_file().and_then(|source_file| {
+        source_file
+            .parent()
+            .map(|parent| parent.join(&requested_path))
+    });
+    Ok(source_path.unwrap_or(manifest_path))
 }
 
 fn visit_json_value(

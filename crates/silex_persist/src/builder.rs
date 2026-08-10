@@ -1,7 +1,7 @@
 use crate::{
     DecodePolicy, PersistMode, PersistenceError, RemovePolicy, SyncStrategy, WriteDefault,
     backend::{
-        BackendEvent, BackendEventSink, LocalStorageBackend, PersistenceBackend, QueryBackend,
+        BackendEventSink, LocalStorageBackend, PersistenceBackend, QueryBackend,
         SessionStorageBackend,
     },
     codec::{
@@ -9,8 +9,8 @@ use crate::{
     },
     state::{
         PersistenceController, PersistenceState, Persistent, ScopedDebounceState,
-        apply_backend_event, flush_persistent_value, take_skip_next_auto_flush,
-        take_suppress_manual_state,
+        apply_backend_event, flush_persistent_value, invalidate_debounce,
+        take_controller_resources, take_skip_next_auto_flush, take_suppress_manual_state,
     },
 };
 use ref_str::LocalStaticRefStr;
@@ -24,7 +24,6 @@ use silex_dom::view::{ScopedViewOwner, ViewOwner};
 use silex_router::RouterContext;
 use std::{
     borrow::Cow,
-    cell::RefCell,
     marker::PhantomData,
     panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
     rc::Rc,
@@ -412,59 +411,19 @@ where
             .map_err(|error| PersistenceError::InvalidConfiguration(error.to_string()))?;
 
         let key = self.key.clone();
-        let subscription = Rc::new(RefCell::new(None));
-        let pending_events = Rc::new(RefCell::new(Vec::<BackendEvent>::new()));
-        let pending_sink = Rc::new(RefCell::new(None::<BackendEventSink>));
-        let mut subscription_error = None;
-        if matches!(self.config.sync, SyncStrategy::CrossContext) {
-            let pending_events_for_sink = pending_events.clone();
-            let pending_sink_for_sink = pending_sink.clone();
-            let sink: BackendEventSink = Rc::new(move |event| {
-                let sink = pending_sink_for_sink.borrow().clone();
-                if let Some(sink) = sink {
-                    sink(event);
-                } else {
-                    pending_events_for_sink.borrow_mut().push(event);
-                }
-            });
-            match self
-                .backend
-                .subscribe(self.scope, key.clone(), sink, self.error_handler)
-            {
-                Ok(binding) => *subscription.borrow_mut() = Some(binding),
-                Err(error) => match error.into_error() {
-                    PersistenceError::BackendUnavailable => {}
-                    PersistenceError::InvalidConfiguration(message) => {
-                        return Err(PersistenceError::InvalidConfiguration(message));
-                    }
-                    error => subscription_error = Some(error.message()),
-                },
-            }
-        }
-
-        let subscription_for_cleanup = subscription.clone();
-        self.scope
-            .on_cleanup(
-                move || -> SilexResult<()> {
-                    subscription_for_cleanup.borrow_mut().take();
-                    Ok(())
-                },
-                self.error_handler,
-            )
-            .map_err(|error| PersistenceError::InvalidConfiguration(error.to_string()))?;
-
         let default = self
             .config
             .default
             .expect("Default status verified by typestate");
-        let value = self.scope.rw_signal(default());
+        let initial_default = default();
+        let value = self.scope.rw_signal(initial_default.clone());
         let state = self.scope.rw_signal(PersistenceState::Ready(String::new()));
         let backend = self.backend.clone();
         let codec = self.codec.clone();
         let debounce = if matches!(self.config.mode, PersistMode::Immediate)
-            && let SyncStrategy::Debounce(_) = self.config.sync
+            && matches!(self.config.sync, SyncStrategy::Debounce(_))
         {
-            Some(Rc::new(RefCell::new(ScopedDebounceState::new())))
+            Some(ScopedDebounceState::new())
         } else {
             None
         };
@@ -505,8 +464,25 @@ where
                 let codec = self.codec.clone();
                 move |value| codec.should_remove(value)
             }),
-            debounce: debounce.clone(),
+            debounce,
+            subscription: None,
         });
+
+        let cleanup_controller = controller;
+        self.scope
+            .on_cleanup(
+                move || -> SilexResult<()> {
+                    let (subscription, timer) = take_controller_resources(cleanup_controller);
+                    if let Some(timer) = &timer {
+                        timer.cancel();
+                    }
+                    drop(timer);
+                    drop(subscription);
+                    Ok(())
+                },
+                self.error_handler,
+            )
+            .map_err(|error| PersistenceError::InvalidConfiguration(error.to_string()))?;
 
         let mut had_missing_value = false;
         let mut initial_error = false;
@@ -597,10 +573,7 @@ where
             });
         }
 
-        if let Some(message) = subscription_error {
-            state.set_untracked(PersistenceState::WriteError(message));
-        }
-
+        let mut subscription_error = None;
         if matches!(self.config.sync, SyncStrategy::CrossContext) {
             let completion_error_handler = erase_error_handler(self.error_handler);
             let token = self.scope.completion_sender(unwind_safe({
@@ -612,41 +585,51 @@ where
             let sink: BackendEventSink = Rc::new(move |event| {
                 submit_completion(&token, event, completion_error_handler);
             });
-            *pending_sink.borrow_mut() = Some(sink.clone());
-            let pending_events = std::mem::take(&mut *pending_events.borrow_mut());
-            for event in pending_events {
-                sink(event);
+            match self
+                .backend
+                .subscribe(self.scope, key.clone(), sink, self.error_handler)
+            {
+                Ok(binding) => {
+                    controller
+                        .try_update_untracked(|controller| {
+                            controller.subscription = Some(binding);
+                        })
+                        .map_err(PersistenceError::from)?;
+                }
+                Err(error) => match error.into_error() {
+                    PersistenceError::BackendUnavailable => {}
+                    PersistenceError::InvalidConfiguration(message) => {
+                        let fallback_default = initial_default.clone();
+                        let _ = controller.try_update_untracked(|controller| {
+                            controller.default = Rc::new(move || fallback_default.clone());
+                        });
+                        return Err(PersistenceError::InvalidConfiguration(message));
+                    }
+                    error => subscription_error = Some(error.message()),
+                },
             }
         }
 
         match self.config.mode {
             PersistMode::Immediate => {
                 if let SyncStrategy::Debounce(duration) = self.config.sync {
-                    let debounce_state = debounce
-                        .clone()
-                        .expect("debounce state must exist for debounce mode");
-                    let debounce_for_completion = debounce_state.clone();
                     let completion_error_handler = erase_error_handler(self.error_handler);
                     let completion = self.scope.completion_sender(unwind_safe({
                         move |generation| {
-                            if debounce_for_completion.borrow_mut().take_ready(generation) {
+                            let ready = controller
+                                .try_update_untracked(|controller| {
+                                    controller
+                                        .debounce
+                                        .as_mut()
+                                        .is_some_and(|debounce| debounce.take_ready(generation))
+                                })
+                                .unwrap_or(false);
+                            if ready {
                                 let _ = flush_persistent_value(controller, value, state);
                             }
                             Ok(())
                         }
                     }));
-                    let debounce_for_cleanup = debounce_state.clone();
-                    self.scope
-                        .on_cleanup(
-                            move || -> SilexResult<()> {
-                                debounce_for_cleanup.borrow_mut().invalidate();
-                                Ok(())
-                            },
-                            self.error_handler,
-                        )
-                        .map_err(|error| {
-                            PersistenceError::InvalidConfiguration(error.to_string())
-                        })?;
                     let _effect = self
                         .scope
                         .effect(
@@ -666,14 +649,24 @@ where
                                     let raw = match raw {
                                         Ok(raw) => raw,
                                         Err(error) => {
-                                            debounce_state.borrow_mut().invalidate();
+                                            invalidate_debounce(controller);
                                             state
                                                 .set(PersistenceState::WriteError(error.message()));
                                             return Ok(());
                                         }
                                     };
                                     state.set(PersistenceState::Syncing(raw));
-                                    let generation = debounce_state.borrow_mut().begin();
+                                    let (generation, timer) = controller.try_update(|controller| {
+                                        controller
+                                            .debounce
+                                            .as_mut()
+                                            .expect("debounce state must exist for debounce mode")
+                                            .begin_with_previous_timer()
+                                    })?;
+                                    if let Some(timer) = &timer {
+                                        timer.cancel();
+                                    }
+                                    drop(timer);
                                     let completion = completion.clone();
                                     let owner =
                                         ScopedViewOwner::new(owner_scope, owner_error_handler);
@@ -691,12 +684,17 @@ where
                                         duration,
                                     ) {
                                         Ok(timer) => {
-                                            let _ = debounce_state
-                                                .borrow_mut()
-                                                .set_timer(generation, timer);
+                                            let stale_timer = controller.try_update(|controller| {
+                                                controller
+                                                    .debounce
+                                                    .as_mut()
+                                                    .expect("debounce state must exist for debounce mode")
+                                                    .set_timer(generation, timer)
+                                            })?;
+                                            drop(stale_timer);
                                         }
                                         Err(error) => {
-                                            debounce_state.borrow_mut().invalidate();
+                                            invalidate_debounce(controller);
                                             state.set(PersistenceState::WriteError(format!(
                                                 "schedule persistence timeout failed: {:?}",
                                                 error
@@ -781,6 +779,10 @@ where
                     )
                     .map_err(|error| PersistenceError::InvalidConfiguration(error.to_string()))?;
             }
+        }
+
+        if let Some(message) = subscription_error {
+            state.set_untracked(PersistenceState::WriteError(message));
         }
 
         Ok(Persistent {

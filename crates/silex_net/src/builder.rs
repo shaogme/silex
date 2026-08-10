@@ -1,13 +1,10 @@
+#[cfg(feature = "persist")]
+use crate::state::CachePolicy;
 use crate::{
     NetError,
     backend::{HttpBackend, Transport},
     codec::{ResponseCodec, TextCodec},
     state::{CredentialsMode, HttpMethod, HttpResponse, RequestBody, RequestSpec, RetryPolicy},
-};
-#[cfg(feature = "persist")]
-use crate::{
-    codec::CacheCodec,
-    state::{CacheConfig, CachePolicy},
 };
 #[cfg(feature = "persist")]
 use silex_core::CompletionOnce;
@@ -28,7 +25,9 @@ pub use resolver::{IntoNetValue, ValueResolver};
 use crate::codec::NetJsonCodec;
 
 #[cfg(feature = "persist")]
-use cache::{CacheBinding, CacheRuntime, CacheRuntimeImpl};
+use cache::CacheBinding;
+#[cfg(feature = "persist")]
+pub use cache::HttpCache;
 
 pub type BeforeSendHook = Rc<dyn Fn(&mut RequestSpec)>;
 pub type AfterResponseHook = Rc<dyn Fn(&RequestSpec, &HttpResponse)>;
@@ -39,8 +38,7 @@ pub type OnErrorHook = Rc<dyn Fn(&RequestSpec, &NetError)>;
 #[derive(Clone)]
 struct CacheSpec<'scope, T> {
     policy: CachePolicy,
-    _scope: PhantomData<&'scope ()>,
-    runtime: Rc<dyn CacheRuntime<'scope, T>>,
+    cache: HttpCache<'scope, T>,
 }
 
 #[derive(Clone)]
@@ -462,31 +460,30 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
     }
 
     #[cfg(feature = "persist")]
-    pub fn cache_with_default(self, policy: CachePolicy, _default: T) -> Self
+    pub fn try_cache(
+        mut self,
+        policy: CachePolicy,
+        cache: HttpCache<'scope, T>,
+    ) -> Result<Self, crate::NetError>
     where
-        C: CacheCodec<T>,
-        T: Clone + PartialEq + 'static,
+        T: Clone + 'static,
     {
-        self.cache_with_config(policy, CacheConfig::default())
+        if !cache.belongs_to(self.scope) {
+            return Err(crate::NetError::InvalidConfiguration(
+                "HTTP cache scope does not match its builder scope".to_string(),
+            ));
+        }
+        self.cache = Some(CacheSpec { policy, cache });
+        Ok(self)
     }
 
     #[cfg(feature = "persist")]
-    pub fn cache_with_config(mut self, policy: CachePolicy, config: CacheConfig) -> Self
+    pub fn cache(self, policy: CachePolicy, cache: HttpCache<'scope, T>) -> Self
     where
-        C: CacheCodec<T>,
-        T: Clone + PartialEq + 'static,
+        T: Clone + 'static,
     {
-        let concrete = CacheRuntimeImpl::new(config, self.response_codec.clone());
-        concrete
-            .register_cleanup(self.scope, self.error_handler)
-            .unwrap_or_else(|error| panic!("注册 HTTP cache cleanup 失败: {error}"));
-        let runtime: Rc<dyn CacheRuntime<'scope, T>> = Rc::new(concrete);
-        self.cache = Some(CacheSpec {
-            policy,
-            _scope: PhantomData,
-            runtime,
-        });
-        self
+        self.try_cache(policy, cache)
+            .unwrap_or_else(|error| panic!("配置 HTTP cache 失败: {error:?}"))
     }
 
     #[cfg(feature = "persist")]
@@ -502,7 +499,7 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
     #[cfg(feature = "persist")]
     pub(crate) fn cached_value(&self, spec: &RequestSpec) -> Option<T>
     where
-        T: 'scope,
+        T: Clone + 'static,
     {
         let cache = self.cache.as_ref()?;
         if matches!(cache.policy, CachePolicy::None) {
@@ -512,13 +509,13 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
         if !self.persistent_cache_allowed(spec) {
             return None;
         }
-        cache.runtime.cached_value(spec)
+        cache.cache.cached_value(spec)
     }
 
     #[cfg(feature = "persist")]
     pub(crate) fn cache_binding(&self, spec: &RequestSpec) -> Option<CacheBinding<T>>
     where
-        T: 'scope,
+        T: Clone + 'static,
     {
         let cache = self.cache.as_ref()?;
         if matches!(cache.policy, CachePolicy::None) {
@@ -528,7 +525,7 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
         if !self.persistent_cache_allowed(spec) {
             return None;
         }
-        cache.runtime.binding(spec)
+        cache.cache.binding(spec)
     }
 
     #[cfg(feature = "persist")]
@@ -537,12 +534,12 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
         binding: CacheBinding<T>,
     ) -> CompletionOnce<T>
     where
-        T: 'scope,
+        T: Clone + 'static,
     {
         self.cache
             .as_ref()
             .expect("cache binding requires cache configuration")
-            .runtime
+            .cache
             .completion_once_for_binding(self.scope, binding)
     }
 

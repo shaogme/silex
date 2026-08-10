@@ -27,13 +27,12 @@ pub use route_table::*;
 
 use crate::path::strip_path_prefix;
 use crate::route_table::RouteBranchKey;
-use silex_core::traits::RxGet;
 use silex_core::{Scope, SilexResult, reactivity::runtime_inputs_of};
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::helpers::window_event_listener_untyped;
-use silex_dom::view::{AnyView, ApplyAttributes, View, ViewOwner};
+use silex_dom::view::{AnyView, ApplyAttributes, BranchEvaluation, View, ViewOwner};
 use silex_macros::component;
-use std::{cell::RefCell, rc::Rc};
+use std::rc::Rc;
 
 /// 能够转换为本地路由路径的值。
 pub trait ToRoute {
@@ -256,9 +255,6 @@ impl<'scope> View<'scope> for RouteOutlet<'scope> {
         let routes_for_key = routes.clone();
         let prefix = self.prefix;
         let prefix_for_key = prefix.clone();
-        let current_path = Rc::new(RefCell::new(None::<String>));
-        let current_path_for_key = current_path.clone();
-        let current_path_for_branch = current_path;
         let inputs = runtime_inputs_of(path_signal);
 
         silex_dom::view::mount_branch_stable_cached(
@@ -268,17 +264,16 @@ impl<'scope> View<'scope> for RouteOutlet<'scope> {
             inputs,
             move || {
                 let path = path_signal.get();
-                *current_path_for_key.borrow_mut() = Some(path.clone());
-                nested_outlet_path(prefix_for_key.as_deref(), &path)
-                    .map(|path| routes_for_key.branch_key(&path))
-                    .unwrap_or(RouteBranchKey::Empty)
+                let snapshot = nested_outlet_path(prefix_for_key.as_deref(), &path);
+                let key = snapshot
+                    .as_deref()
+                    .map(|path| routes_for_key.branch_key(path))
+                    .unwrap_or(RouteBranchKey::Empty);
+                BranchEvaluation::new(key, snapshot)
             },
-            move |_| {
-                let path = current_path_for_branch
-                    .borrow_mut()
-                    .take()
-                    .unwrap_or_else(|| path_signal.get_untracked());
-                let Some(path) = nested_outlet_path(prefix.as_deref(), &path) else {
+            move |evaluation| {
+                let (_, path) = evaluation.into_parts();
+                let Some(path) = path else {
                     return AnyView::Empty;
                 };
                 routes

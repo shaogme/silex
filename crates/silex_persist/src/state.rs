@@ -1,4 +1,4 @@
-use crate::backend::BackendEvent;
+use crate::backend::{BackendEvent, BackendSubscription};
 use crate::builder::PersistentBuilder;
 use crate::{DecodePolicy, NoBackend, NoCodec, PersistenceError, RemovePolicy};
 use ref_str::LocalStaticRefStr;
@@ -9,7 +9,6 @@ use silex_core::{
 };
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::view::{ApplyAttributes, HostResourceHandle, View, ViewOwner};
-use std::cell::RefCell;
 use std::rc::Rc;
 use web_sys::Node;
 
@@ -53,19 +52,25 @@ impl<'scope> ScopedDebounceState<'scope> {
         }
     }
 
-    pub(crate) fn begin(&mut self) -> u64 {
-        self.invalidate();
+    pub(crate) fn begin_with_previous_timer(
+        &mut self,
+    ) -> (u64, Option<HostResourceHandle<'scope>>) {
+        let timer = self.timer.take();
         self.pending = true;
-        self.generation
+        self.generation = self.generation.wrapping_add(1);
+        (self.generation, timer)
     }
 
-    pub(crate) fn set_timer(&mut self, generation: u64, timer: HostResourceHandle<'scope>) -> bool {
+    pub(crate) fn set_timer(
+        &mut self,
+        generation: u64,
+        timer: HostResourceHandle<'scope>,
+    ) -> Option<HostResourceHandle<'scope>> {
         if self.pending && self.generation == generation {
             self.timer = Some(timer);
-            true
+            None
         } else {
-            timer.cancel();
-            false
+            Some(timer)
         }
     }
 
@@ -74,16 +79,17 @@ impl<'scope> ScopedDebounceState<'scope> {
             return false;
         }
         self.pending = false;
-        self.timer = None;
+        if let Some(timer) = self.timer.take() {
+            timer.finish();
+        }
         true
     }
 
-    pub(crate) fn invalidate(&mut self) {
-        if let Some(timer) = self.timer.take() {
-            timer.cancel();
-        }
+    pub(crate) fn invalidate(&mut self) -> Option<HostResourceHandle<'scope>> {
+        let timer = self.timer.take();
         self.pending = false;
         self.generation = self.generation.wrapping_add(1);
+        timer
     }
 }
 
@@ -102,7 +108,8 @@ pub(crate) struct PersistenceController<'scope, T: 'scope> {
     pub encode: PersistenceEncodeFn<'scope, T>,
     pub decode: PersistenceDecodeFn<'scope, T>,
     pub should_remove: Rc<dyn Fn(&T) -> bool + 'scope>,
-    pub debounce: Option<Rc<RefCell<ScopedDebounceState<'scope>>>>,
+    pub debounce: Option<ScopedDebounceState<'scope>>,
+    pub subscription: Option<BackendSubscription<'scope>>,
 }
 
 pub struct Persistent<'scope, T> {
@@ -585,13 +592,40 @@ where
     Ok(())
 }
 
-fn invalidate_debounce<'scope, T>(
+pub(crate) fn invalidate_debounce<'scope, T>(
     controller: StoredValue<'scope, PersistenceController<'scope, T>>,
 ) {
-    let debounce = controller.with_untracked(|controller| controller.debounce.clone());
-    if let Some(debounce) = debounce {
-        debounce.borrow_mut().invalidate();
+    let timer = controller
+        .try_update_untracked(|controller| {
+            controller
+                .debounce
+                .as_mut()
+                .and_then(ScopedDebounceState::invalidate)
+        })
+        .ok()
+        .flatten();
+    if let Some(timer) = &timer {
+        timer.cancel();
     }
+    drop(timer);
+}
+
+pub(crate) fn take_controller_resources<'scope, T>(
+    controller: StoredValue<'scope, PersistenceController<'scope, T>>,
+) -> (
+    Option<BackendSubscription<'scope>>,
+    Option<HostResourceHandle<'scope>>,
+) {
+    let resources = controller
+        .try_update_untracked(|controller| {
+            let timer = controller
+                .debounce
+                .as_mut()
+                .and_then(ScopedDebounceState::invalidate);
+            (controller.subscription.take(), timer)
+        })
+        .ok();
+    resources.unwrap_or((None, None))
 }
 
 pub(crate) fn mark_local_value_write<'scope, T>(

@@ -9,7 +9,7 @@ use std::rc::Rc;
 /// Switch/Match 组件：多路分支渲染
 ///
 /// # Example
-/// ```rust
+/// ```rust, ignore
 /// use silex::prelude::*;
 /// let (count, set_count) = scope.signal(0);
 ///

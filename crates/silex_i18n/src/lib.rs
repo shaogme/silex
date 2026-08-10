@@ -510,8 +510,9 @@ mod tests {
             );
 
             target_root.with_scope(|target_scope| {
+                let handler = test_handler(target_scope);
                 let before = target_scope.runtime_snapshot();
-                let result = I18nBuilder::new(target_scope, test_handler(target_scope))
+                let result = I18nBuilder::new(target_scope, handler)
                     .locale_binding(binding)
                     .build();
 

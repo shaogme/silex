@@ -681,7 +681,14 @@ async fn cache_first_does_not_treat_default_as_history() {
         let resource =
             silex_net::HttpClient::get(scope, "data:text/plain,cache", test_handler(scope))
                 .credentials(silex_net::CredentialsMode::Omit)
-                .cache_with_default(silex_net::CachePolicy::CacheFirst, "default".to_string())
+                .cache(
+                    silex_net::CachePolicy::CacheFirst,
+                    silex_net::HttpCache::new(
+                        scope,
+                        silex_net::CacheConfig::default(),
+                        silex_net::TextCodec,
+                    ),
+                )
                 .as_resource(source, None);
         TimeoutFuture::new(10).await;
         assert!(matches!(
@@ -732,9 +739,13 @@ async fn cache_controller_bounds_dynamic_keys_and_removes_evicted_history() {
         let client = silex_net::HttpClient::get(scope, url, test_handler(scope))
             .query("value", query)
             .credentials(silex_net::CredentialsMode::Omit)
-            .cache_with_config(
+            .cache(
                 silex_net::CachePolicy::CacheFirst,
-                silex_net::CacheConfig::default().capacity(2),
+                silex_net::HttpCache::new(
+                    scope,
+                    silex_net::CacheConfig::default().capacity(2),
+                    silex_net::TextCodec,
+                ),
             )
             .transport(ScriptedTransport {
                 calls: calls.clone(),
@@ -816,11 +827,15 @@ async fn cache_controller_expires_scope_entries_with_ttl() {
         let calls = Rc::new(Cell::new(0));
         let client = silex_net::HttpClient::get(scope, url, test_handler(scope))
             .credentials(silex_net::CredentialsMode::Omit)
-            .cache_with_config(
+            .cache(
                 silex_net::CachePolicy::CacheFirst,
-                silex_net::CacheConfig::default()
-                    .capacity(1)
-                    .ttl(std::time::Duration::ZERO),
+                silex_net::HttpCache::new(
+                    scope,
+                    silex_net::CacheConfig::default()
+                        .capacity(1)
+                        .ttl(std::time::Duration::ZERO),
+                    silex_net::TextCodec,
+                ),
             )
             .transport(ScriptedTransport {
                 calls: calls.clone(),
@@ -875,7 +890,14 @@ async fn json_cache_codec_round_trips_persisted_values() {
         let result = silex_net::HttpClient::get(scope, url, test_handler(scope))
             .credentials(silex_net::CredentialsMode::Omit)
             .json::<u32>()
-            .cache_with_default(silex_net::CachePolicy::CacheFirst, 0)
+            .cache(
+                silex_net::CachePolicy::CacheFirst,
+                silex_net::HttpCache::new(
+                    scope,
+                    silex_net::CacheConfig::default(),
+                    silex_net::NetJsonCodec::<u32>::new(),
+                ),
+            )
             .transport(ScriptedTransport {
                 calls: calls.clone(),
                 status: 200,
@@ -933,9 +955,13 @@ async fn cache_completion_cannot_recreate_an_evicted_key() {
         let resource = silex_net::HttpClient::get(scope, url, test_handler(scope))
             .query("value", query)
             .credentials(silex_net::CredentialsMode::Omit)
-            .cache_with_config(
+            .cache(
                 silex_net::CachePolicy::StaleWhileRevalidate,
-                silex_net::CacheConfig::default().capacity(1),
+                silex_net::HttpCache::new(
+                    scope,
+                    silex_net::CacheConfig::default().capacity(1),
+                    silex_net::TextCodec,
+                ),
             )
             .transport(GenerationTransport {
                 calls: calls.clone(),
@@ -1003,7 +1029,14 @@ async fn credentialed_request_skips_persistent_history() {
     root.with_scope(|scope| async move {
         let calls = Rc::new(Cell::new(0));
         let result = silex_net::HttpClient::get(scope, url, test_handler(scope))
-            .cache_with_default(silex_net::CachePolicy::CacheFirst, "default".to_string())
+            .cache(
+                silex_net::CachePolicy::CacheFirst,
+                silex_net::HttpCache::new(
+                    scope,
+                    silex_net::CacheConfig::default(),
+                    silex_net::TextCodec,
+                ),
+            )
             .transport(ScriptedTransport {
                 calls: calls.clone(),
                 status: 200,
@@ -1051,7 +1084,14 @@ async fn non_idempotent_request_does_not_create_persistent_cache() {
         let calls = Rc::new(Cell::new(0));
         let result = silex_net::HttpClient::post(scope, url, test_handler(scope))
             .credentials(silex_net::CredentialsMode::Omit)
-            .cache_with_default(silex_net::CachePolicy::CacheFirst, "default".to_string())
+            .cache(
+                silex_net::CachePolicy::CacheFirst,
+                silex_net::HttpCache::new(
+                    scope,
+                    silex_net::CacheConfig::default(),
+                    silex_net::TextCodec,
+                ),
+            )
             .transport(ScriptedTransport {
                 calls: calls.clone(),
                 status: 200,
@@ -1102,7 +1142,14 @@ async fn custom_transport_must_opt_into_persistent_cache() {
         let calls = Rc::new(Cell::new(0));
         let result = silex_net::HttpClient::get(scope, url, test_handler(scope))
             .credentials(silex_net::CredentialsMode::Omit)
-            .cache_with_default(silex_net::CachePolicy::CacheFirst, "default".to_string())
+            .cache(
+                silex_net::CachePolicy::CacheFirst,
+                silex_net::HttpCache::new(
+                    scope,
+                    silex_net::CacheConfig::default(),
+                    silex_net::TextCodec,
+                ),
+            )
             .transport(MutationTransport {
                 calls: calls.clone(),
             })
@@ -1150,7 +1197,14 @@ async fn cache_first_reloads_history_when_request_key_changes() {
         let resource = silex_net::HttpClient::get(scope, url, test_handler(scope))
             .query("value", query)
             .credentials(silex_net::CredentialsMode::Omit)
-            .cache_with_default(silex_net::CachePolicy::CacheFirst, "default".to_string())
+            .cache(
+                silex_net::CachePolicy::CacheFirst,
+                silex_net::HttpCache::new(
+                    scope,
+                    silex_net::CacheConfig::default(),
+                    silex_net::TextCodec,
+                ),
+            )
             .transport(ScriptedTransport {
                 calls: calls.clone(),
                 status: 200,
@@ -1217,9 +1271,13 @@ async fn swr_rejects_stale_same_key_cache_write() {
         let calls = Rc::new(Cell::new(0));
         let resource = silex_net::HttpClient::get(scope, url, test_handler(scope))
             .credentials(silex_net::CredentialsMode::Omit)
-            .cache_with_default(
+            .cache(
                 silex_net::CachePolicy::StaleWhileRevalidate,
-                "default".to_string(),
+                silex_net::HttpCache::new(
+                    scope,
+                    silex_net::CacheConfig::default(),
+                    silex_net::TextCodec,
+                ),
             )
             .transport(GenerationTransport {
                 calls: calls.clone(),
@@ -1286,7 +1344,14 @@ async fn network_first_uses_history_after_retryable_failure() {
         let calls = Rc::new(Cell::new(0));
         let resource = silex_net::HttpClient::get(scope, url, test_handler(scope))
             .credentials(silex_net::CredentialsMode::Omit)
-            .cache_with_default(silex_net::CachePolicy::NetworkFirst, "default".to_string())
+            .cache(
+                silex_net::CachePolicy::NetworkFirst,
+                silex_net::HttpCache::new(
+                    scope,
+                    silex_net::CacheConfig::default(),
+                    silex_net::TextCodec,
+                ),
+            )
             .transport(ScriptedTransport {
                 calls: calls.clone(),
                 status: 503,

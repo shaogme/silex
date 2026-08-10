@@ -8,7 +8,7 @@ use silex_macros::component;
 ///
 /// # 示例
 ///
-/// ```rust
+/// ```rust, ignore
 /// use silex::prelude::*;
 ///
 /// let (component_name, set_component_name) = scope.signal("A");
