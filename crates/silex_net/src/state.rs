@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use sha2::{Digest, Sha256};
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HttpMethod {
     Get,
@@ -21,6 +23,28 @@ impl HttpMethod {
             Self::Delete => "DELETE",
             Self::Head => "HEAD",
             Self::Options => "OPTIONS",
+        }
+    }
+
+    pub fn supports_persistent_cache(&self) -> bool {
+        matches!(self, Self::Get | Self::Head)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CredentialsMode {
+    Omit,
+    #[default]
+    SameOrigin,
+    Include,
+}
+
+impl CredentialsMode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Omit => "omit",
+            Self::SameOrigin => "same-origin",
+            Self::Include => "include",
         }
     }
 }
@@ -63,12 +87,14 @@ pub struct RequestSpec {
     pub method: HttpMethod,
     pub url: String,
     pub headers: Vec<(String, String)>,
+    pub credentials: CredentialsMode,
     pub timeout: Option<Duration>,
     pub body: RequestBody,
 }
 
 impl RequestSpec {
-    pub fn cache_key(&self) -> String {
+    #[cfg(feature = "persist")]
+    pub(crate) fn legacy_cache_key(&self) -> String {
         let mut headers = self
             .headers
             .iter()
@@ -94,6 +120,147 @@ impl RequestSpec {
         append_segment(&mut key, &self.body.fingerprint());
         key
     }
+
+    pub fn cache_key(&self) -> String {
+        let mut headers = self
+            .headers
+            .iter()
+            .map(|(name, value)| (name.to_ascii_lowercase(), value.clone()))
+            .collect::<Vec<_>>();
+        headers.sort();
+
+        let mut identity = String::from("net-request-v2");
+        append_segment(&mut identity, self.method.as_str());
+        append_segment(&mut identity, &canonical_url(&self.url));
+        append_segment(&mut identity, self.credentials.as_str());
+        append_segment(&mut identity, &headers.len().to_string());
+        for (name, value) in headers {
+            append_segment(&mut identity, &name);
+            append_segment(&mut identity, &value);
+        }
+        if let Some(timeout) = self.timeout {
+            append_segment(&mut identity, "timeout");
+            append_segment(&mut identity, &timeout.as_secs().to_string());
+            append_segment(&mut identity, &timeout.subsec_nanos().to_string());
+        } else {
+            append_segment(&mut identity, "no-timeout");
+        }
+        append_segment(&mut identity, &self.body.fingerprint());
+
+        let digest = Sha256::digest(identity.as_bytes());
+        let mut key = String::with_capacity("net-request-v2-".len() + digest.len() * 2);
+        key.push_str("net-request-v2-");
+        for byte in digest {
+            key.push(hex_digit(byte >> 4));
+            key.push(hex_digit(byte & 0x0f));
+        }
+        key
+    }
+
+    pub fn persistent_cache_rejection(&self) -> Option<&'static str> {
+        if !self.method.supports_persistent_cache() {
+            return Some("only GET and HEAD requests may use persistent cache");
+        }
+        if !matches!(self.credentials, CredentialsMode::Omit) {
+            return Some("credentialed requests may not use persistent cache");
+        }
+        if url_contains_userinfo(&self.url) {
+            return Some("URLs with embedded credentials may not use persistent cache");
+        }
+        if url_contains_sensitive_query(&self.url) {
+            return Some("URLs with credential query parameters may not use persistent cache");
+        }
+        if !self.body.is_empty() {
+            return Some("GET and HEAD requests with a body may not use persistent cache");
+        }
+        if self
+            .headers
+            .iter()
+            .any(|(name, value)| is_sensitive_header_name(name) || is_credential_value(value))
+        {
+            return Some("requests with credential headers may not use persistent cache");
+        }
+        None
+    }
+
+    pub fn is_persistent_cache_safe(&self) -> bool {
+        self.persistent_cache_rejection().is_none()
+    }
+}
+
+fn hex_digit(value: u8) -> char {
+    match value {
+        0..=9 => (b'0' + value) as char,
+        10..=15 => (b'a' + value - 10) as char,
+        _ => unreachable!("hex digit is limited to four bits"),
+    }
+}
+
+fn is_sensitive_header_name(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    name == "authorization"
+        || name == "proxy-authorization"
+        || name == "cookie"
+        || name == "set-cookie"
+        || name == "www-authenticate"
+        || name == "api-key"
+        || name == "x-api-key"
+        || name.contains("auth")
+        || name.contains("token")
+        || name.contains("secret")
+        || name.contains("password")
+        || name.contains("credential")
+        || name.contains("session")
+        || name.contains("csrf")
+}
+
+fn is_credential_value(value: &str) -> bool {
+    let mut parts = value.split_whitespace();
+    let Some(scheme) = parts.next() else {
+        return false;
+    };
+    parts.next().is_some()
+        && (scheme.eq_ignore_ascii_case("basic")
+            || scheme.eq_ignore_ascii_case("bearer")
+            || scheme.eq_ignore_ascii_case("digest")
+            || scheme.eq_ignore_ascii_case("token"))
+}
+
+fn url_contains_userinfo(url: &str) -> bool {
+    let Some((_, remainder)) = url.split_once("://") else {
+        return false;
+    };
+    remainder
+        .split(['/', '?', '#'])
+        .next()
+        .is_some_and(|authority| authority.contains('@'))
+}
+
+fn url_contains_sensitive_query(url: &str) -> bool {
+    let Some((_, query)) = url.split_once('?') else {
+        return false;
+    };
+    query
+        .split('#')
+        .next()
+        .unwrap_or_default()
+        .split('&')
+        .filter_map(|pair| pair.split_once('=').map(|(name, _)| name))
+        .any(is_sensitive_parameter_name)
+}
+
+fn is_sensitive_parameter_name(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    name.contains("auth")
+        || name.contains("token")
+        || name.contains("secret")
+        || name.contains("password")
+        || name.contains("credential")
+        || name.contains("session")
+        || name.contains("cookie")
+        || name.contains("csrf")
+        || name == "key"
+        || name.ends_with("_key")
 }
 
 fn append_segment(output: &mut String, value: &str) {
@@ -241,7 +408,10 @@ impl RetryPolicy {
 mod tests {
     use std::time::Duration;
 
-    use super::{ConnectionState, HttpMethod, HttpResponse, RequestBody, RequestSpec, RetryPolicy};
+    use super::{
+        ConnectionState, CredentialsMode, HttpMethod, HttpResponse, RequestBody, RequestSpec,
+        RetryPolicy,
+    };
 
     fn request(url: &str, headers: Vec<(&str, &str)>, body: RequestBody) -> RequestSpec {
         RequestSpec {
@@ -251,6 +421,7 @@ mod tests {
                 .into_iter()
                 .map(|(name, value)| (name.to_string(), value.to_string()))
                 .collect(),
+            credentials: CredentialsMode::Omit,
             timeout: None,
             body,
         }
@@ -282,6 +453,69 @@ mod tests {
         );
 
         assert_eq!(first.cache_key(), second.cache_key());
+    }
+
+    #[test]
+    fn cache_key_does_not_contain_request_secrets() {
+        let request = request(
+            "https://example.test",
+            vec![("Authorization", "Bearer very-secret-token")],
+            RequestBody::Text("private body".into()),
+        );
+        let key = request.cache_key();
+
+        assert!(key.starts_with("net-request-v2-"));
+        assert!(!key.contains("very-secret-token"));
+        assert!(!key.contains("private body"));
+        assert_eq!(key.len(), "net-request-v2-".len() + 64);
+    }
+
+    #[test]
+    fn persistent_cache_requires_anonymous_safe_requests() {
+        let mut request = request("https://example.test", vec![], RequestBody::Empty);
+        assert!(request.is_persistent_cache_safe());
+
+        request.credentials = CredentialsMode::SameOrigin;
+        assert!(!request.is_persistent_cache_safe());
+
+        request.credentials = CredentialsMode::Omit;
+        request.method = HttpMethod::Post;
+        assert!(!request.is_persistent_cache_safe());
+
+        request.method = HttpMethod::Get;
+        request
+            .headers
+            .push(("X-Session-Token".to_string(), "opaque-value".to_string()));
+        assert!(!request.is_persistent_cache_safe());
+
+        request.headers = vec![(
+            "Authorization".to_string(),
+            "Bearer opaque-value".to_string(),
+        )];
+        assert!(!request.is_persistent_cache_safe());
+
+        request.headers = vec![("Cookie".to_string(), "session=opaque-value".to_string())];
+        assert!(!request.is_persistent_cache_safe());
+
+        request.headers.clear();
+        request.url = "https://user:password@example.test/data".to_string();
+        assert!(!request.is_persistent_cache_safe());
+
+        request.url = "https://example.test/data?access_token=opaque-value".to_string();
+        assert!(!request.is_persistent_cache_safe());
+
+        request.url = "https://example.test/data".to_string();
+        request.body = RequestBody::Text("opaque-value".to_string());
+        assert!(!request.is_persistent_cache_safe());
+    }
+
+    #[test]
+    fn credentials_mode_is_part_of_cache_identity() {
+        let first = request("https://example.test", vec![], RequestBody::Empty);
+        let mut second = first.clone();
+        second.credentials = CredentialsMode::Include;
+
+        assert_ne!(first.cache_key(), second.cache_key());
     }
 
     #[test]

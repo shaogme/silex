@@ -314,6 +314,11 @@ impl Transport for ScriptedTransport {
             Ok(response)
         })
     }
+
+    #[cfg(feature = "persist")]
+    fn supports_persistent_cache(&self) -> bool {
+        true
+    }
 }
 
 #[derive(Clone)]
@@ -372,6 +377,10 @@ impl Transport for GenerationTransport {
             Ok(response)
         })
     }
+
+    fn supports_persistent_cache(&self) -> bool {
+        true
+    }
 }
 
 #[derive(Clone)]
@@ -408,6 +417,7 @@ async fn browser_transport_fetches_data_url() {
         method: HttpMethod::Get,
         url: "data:text/plain,hello".to_string(),
         headers: Vec::new(),
+        credentials: silex_net::CredentialsMode::SameOrigin,
         timeout: None,
         body: RequestBody::Empty,
     })
@@ -624,6 +634,7 @@ async fn cache_first_does_not_treat_default_as_history() {
         let (source, _) = scope.signal(1_u32);
         let resource =
             silex_net::HttpClient::get(scope, "data:text/plain,cache", test_handler(scope))
+                .credentials(silex_net::CredentialsMode::Omit)
                 .cache_with_default(silex_net::CachePolicy::CacheFirst, "default".to_string())
                 .as_resource(source, None);
         TimeoutFuture::new(10).await;
@@ -638,12 +649,156 @@ async fn cache_first_does_not_treat_default_as_history() {
 
 #[cfg(feature = "persist")]
 #[wasm_bindgen_test(async)]
+async fn credentialed_request_skips_persistent_history() {
+    let url = "https://example.test/credentialed-cache";
+    let spec = RequestSpec {
+        method: HttpMethod::Get,
+        url: url.to_string(),
+        headers: Vec::new(),
+        credentials: silex_net::CredentialsMode::SameOrigin,
+        timeout: None,
+        body: RequestBody::Empty,
+    };
+    let storage_key = format!("__net_cache_{}__", spec.cache_key());
+    let storage = web_sys::window()
+        .expect("browser window")
+        .local_storage()
+        .expect("localStorage access")
+        .expect("localStorage");
+    storage
+        .set_item(&storage_key, "history")
+        .expect("seed cache history");
+
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    root.with_scope(|scope| async move {
+        let calls = Rc::new(Cell::new(0));
+        let result = silex_net::HttpClient::get(scope, url, test_handler(scope))
+            .cache_with_default(silex_net::CachePolicy::CacheFirst, "default".to_string())
+            .transport(ScriptedTransport {
+                calls: calls.clone(),
+                status: 200,
+                body: "network",
+                delay_ms: 0,
+            })
+            .send()
+            .await
+            .expect("credentialed request should use network");
+        assert_eq!(result, "network");
+        assert_eq!(calls.get(), 1);
+    })
+    .await;
+    root.dispose().expect("root cleanup");
+    storage
+        .remove_item(&storage_key)
+        .expect("remove cache history");
+}
+
+#[cfg(feature = "persist")]
+#[wasm_bindgen_test(async)]
+async fn non_idempotent_request_does_not_create_persistent_cache() {
+    let url = "https://example.test/non-idempotent-cache";
+    let spec = RequestSpec {
+        method: HttpMethod::Post,
+        url: url.to_string(),
+        headers: Vec::new(),
+        credentials: silex_net::CredentialsMode::Omit,
+        timeout: None,
+        body: RequestBody::Empty,
+    };
+    let storage_key = format!("__net_cache_{}__", spec.cache_key());
+    let storage = web_sys::window()
+        .expect("browser window")
+        .local_storage()
+        .expect("localStorage access")
+        .expect("localStorage");
+    storage
+        .remove_item(&storage_key)
+        .expect("clear cache history");
+
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    root.with_scope(|scope| async move {
+        let calls = Rc::new(Cell::new(0));
+        let result = silex_net::HttpClient::post(scope, url, test_handler(scope))
+            .credentials(silex_net::CredentialsMode::Omit)
+            .cache_with_default(silex_net::CachePolicy::CacheFirst, "default".to_string())
+            .transport(ScriptedTransport {
+                calls: calls.clone(),
+                status: 200,
+                body: "network",
+                delay_ms: 0,
+            })
+            .send()
+            .await
+            .expect("non-idempotent request should use network");
+        assert_eq!(result, "network");
+        assert_eq!(calls.get(), 1);
+    })
+    .await;
+    root.dispose().expect("root cleanup");
+    assert!(
+        storage
+            .get_item(&storage_key)
+            .expect("read cache history")
+            .is_none()
+    );
+}
+
+#[cfg(feature = "persist")]
+#[wasm_bindgen_test(async)]
+async fn custom_transport_must_opt_into_persistent_cache() {
+    let url = "https://example.test/custom-transport-cache";
+    let spec = RequestSpec {
+        method: HttpMethod::Get,
+        url: url.to_string(),
+        headers: Vec::new(),
+        credentials: silex_net::CredentialsMode::Omit,
+        timeout: None,
+        body: RequestBody::Empty,
+    };
+    let storage_key = format!("__net_cache_{}__", spec.cache_key());
+    let storage = web_sys::window()
+        .expect("browser window")
+        .local_storage()
+        .expect("localStorage access")
+        .expect("localStorage");
+    storage
+        .set_item(&storage_key, "history")
+        .expect("seed cache history");
+
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    root.with_scope(|scope| async move {
+        let calls = Rc::new(Cell::new(0));
+        let result = silex_net::HttpClient::get(scope, url, test_handler(scope))
+            .credentials(silex_net::CredentialsMode::Omit)
+            .cache_with_default(silex_net::CachePolicy::CacheFirst, "default".to_string())
+            .transport(MutationTransport {
+                calls: calls.clone(),
+            })
+            .send()
+            .await
+            .expect("untrusted transport should use network");
+        assert_eq!(result, "two");
+        assert_eq!(calls.get(), 1);
+    })
+    .await;
+    root.dispose().expect("root cleanup");
+    storage
+        .remove_item(&storage_key)
+        .expect("remove cache history");
+}
+
+#[cfg(feature = "persist")]
+#[wasm_bindgen_test(async)]
 async fn cache_first_reloads_history_when_request_key_changes() {
     let url = "https://example.test/cache-key";
     let first_spec = RequestSpec {
         method: HttpMethod::Get,
         url: format!("{url}?value=first"),
         headers: Vec::new(),
+        credentials: silex_net::CredentialsMode::Omit,
         timeout: None,
         body: RequestBody::Empty,
     };
@@ -665,6 +820,7 @@ async fn cache_first_reloads_history_when_request_key_changes() {
         let calls = Rc::new(Cell::new(0));
         let resource = silex_net::HttpClient::get(scope, url, test_handler(scope))
             .query("value", query)
+            .credentials(silex_net::CredentialsMode::Omit)
             .cache_with_default(silex_net::CachePolicy::CacheFirst, "default".to_string())
             .transport(ScriptedTransport {
                 calls: calls.clone(),
@@ -711,6 +867,7 @@ async fn swr_rejects_stale_same_key_cache_write() {
         method: HttpMethod::Get,
         url: url.to_string(),
         headers: Vec::new(),
+        credentials: silex_net::CredentialsMode::Omit,
         timeout: None,
         body: RequestBody::Empty,
     };
@@ -730,6 +887,7 @@ async fn swr_rejects_stale_same_key_cache_write() {
         let (source, set_source) = scope.signal(1_u32);
         let calls = Rc::new(Cell::new(0));
         let resource = silex_net::HttpClient::get(scope, url, test_handler(scope))
+            .credentials(silex_net::CredentialsMode::Omit)
             .cache_with_default(
                 silex_net::CachePolicy::StaleWhileRevalidate,
                 "default".to_string(),
@@ -778,6 +936,7 @@ async fn network_first_uses_history_after_retryable_failure() {
         method: HttpMethod::Get,
         url: url.to_string(),
         headers: Vec::new(),
+        credentials: silex_net::CredentialsMode::Omit,
         timeout: None,
         body: RequestBody::Empty,
     };
@@ -797,6 +956,7 @@ async fn network_first_uses_history_after_retryable_failure() {
         let (source, _) = scope.signal(1_u32);
         let calls = Rc::new(Cell::new(0));
         let resource = silex_net::HttpClient::get(scope, url, test_handler(scope))
+            .credentials(silex_net::CredentialsMode::Omit)
             .cache_with_default(silex_net::CachePolicy::NetworkFirst, "default".to_string())
             .transport(ScriptedTransport {
                 calls: calls.clone(),

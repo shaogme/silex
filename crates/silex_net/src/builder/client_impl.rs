@@ -9,23 +9,20 @@ use std::{
 use gloo_timers::future::sleep;
 use silex_core::{
     CallbackInvokeError, CompletionOnce, ErrorReporter, Mutation, ReactiveSource, Resource, RxGet,
-    RxRead, SilexError, SuspenseContext, unwind_safe,
+    RxRead, SilexError, SuspenseContext, runtime_inputs_of, unwind_safe,
 };
 
 use crate::{
-    NetError,
+    NetError, Transport,
     builder::HttpClientBuilder,
     codec::ResponseCodec,
     state::{CachePolicy, RequestSpec, RetryPolicy},
 };
 
-#[cfg(feature = "persist")]
-use crate::{builder::CacheBinding, codec::CacheCodec};
-
 #[derive(Clone)]
 struct PreparedClient<T, C> {
     response_codec: C,
-    transport: Rc<dyn crate::Transport>,
+    transport: Rc<dyn Transport>,
     before_send: Vec<crate::builder::BeforeSendHook>,
     after_response: Vec<crate::builder::AfterResponseHook>,
     on_retry: Vec<crate::builder::OnRetryHook>,
@@ -163,41 +160,6 @@ macro_rules! impl_net_methods {
             }
         }
 
-        #[cfg(feature = "persist")]
-        fn cache_completion_once(&self, spec: &RequestSpec) -> Option<CompletionOnce<T>>
-        where
-            C: CacheCodec<T>,
-            T: Clone + PartialEq + 'static,
-        {
-            self.cache_binding(spec)
-                .map(|binding| self.cache_completion_once_for_binding(binding))
-        }
-
-        #[cfg(feature = "persist")]
-        fn cache_completion_once_for_binding(
-            &self,
-            binding: CacheBinding<'scope, T>,
-        ) -> CompletionOnce<T>
-        where
-            C: CacheCodec<T>,
-            T: Clone + PartialEq + 'static,
-        {
-            let generations = self
-                .cache
-                .as_ref()
-                .expect("cache binding requires cache configuration")
-                .generations
-                .clone();
-            let key = binding.key;
-            let generation = binding.generation;
-            self.scope.completion_once(unwind_safe(move |value: T| {
-                if generations.borrow().get(&key) == Some(&generation) {
-                    binding.store.set(value);
-                }
-                Ok(())
-            }))
-        }
-
         pub async fn send(&self) -> Result<T, NetError> {
             self.validate_runtime_inputs()?;
             let mut spec = self.resolve_spec();
@@ -207,12 +169,9 @@ macro_rules! impl_net_methods {
             #[cfg(feature = "persist")]
             let cache_binding = self.cache_binding(&spec);
             #[cfg(feature = "persist")]
-            let cache_snapshot = cache_binding.as_ref().and_then(|binding| {
-                binding
-                    .store
-                    .has_persisted_value()
-                    .then(|| binding.store.get_untracked())
-            });
+            let cache_snapshot = cache_binding
+                .as_ref()
+                .and_then(|binding| binding.snapshot.clone());
 
             #[cfg(feature = "persist")]
             if matches!(self.cache_policy(), Some(CachePolicy::CacheFirst))
@@ -305,7 +264,7 @@ macro_rules! impl_net_methods {
             let scope = self.scope;
             let request_inputs = self.runtime_inputs();
             let mut inputs = request_inputs.clone();
-            inputs.extend(&silex_core::runtime_inputs_of(source.clone()));
+            inputs.extend(&runtime_inputs_of(source.clone()));
             scope
                 .try_validate_inputs(&inputs)
                 .map_err(|error| NetError::InvalidConfiguration(error.to_string()))?;
@@ -349,12 +308,9 @@ macro_rules! impl_net_methods {
                     #[cfg(feature = "persist")]
                     let cache_binding = fetch_builder.cache_binding(&spec);
                     #[cfg(feature = "persist")]
-                    let cache_snapshot = cache_binding.as_ref().and_then(|binding| {
-                        binding
-                            .store
-                            .has_persisted_value()
-                            .then(|| binding.store.get_untracked())
-                    });
+                    let cache_snapshot = cache_binding
+                        .as_ref()
+                        .and_then(|binding| binding.snapshot.clone());
                     #[cfg(not(feature = "persist"))]
                     let cache_snapshot = None;
 
@@ -486,7 +442,9 @@ macro_rules! impl_net_methods {
                     let cache_token = {
                         #[cfg(feature = "persist")]
                         {
-                            builder.cache_completion_once(&spec)
+                            builder
+                                .cache_binding(&spec)
+                                .map(|binding| builder.cache_completion_once_for_binding(binding))
                         }
                         #[cfg(not(feature = "persist"))]
                         {
@@ -540,7 +498,9 @@ macro_rules! impl_net_methods {
                     let cache_token = {
                         #[cfg(feature = "persist")]
                         {
-                            builder.cache_completion_once(&spec)
+                            builder
+                                .cache_binding(&spec)
+                                .map(|binding| builder.cache_completion_once_for_binding(binding))
                         }
                         #[cfg(not(feature = "persist"))]
                         {
@@ -567,8 +527,8 @@ macro_rules! impl_net_methods {
 #[cfg(all(feature = "json", feature = "persist"))]
 impl<'scope, T, C> HttpClientBuilder<'scope, T, C>
 where
-    T: Clone + PartialEq + serde::Serialize + serde::de::DeserializeOwned + 'static,
-    C: ResponseCodec<T> + CacheCodec<T> + Clone + 'static,
+    T: Clone + 'static,
+    C: ResponseCodec<T> + Clone + 'static,
 {
     impl_net_methods!();
 }
@@ -576,7 +536,7 @@ where
 #[cfg(all(feature = "json", not(feature = "persist")))]
 impl<'scope, T, C> HttpClientBuilder<'scope, T, C>
 where
-    T: Clone + PartialEq + serde::Serialize + serde::de::DeserializeOwned + 'static,
+    T: Clone + 'static,
     C: ResponseCodec<T> + Clone + 'static,
 {
     impl_net_methods!();
@@ -585,8 +545,8 @@ where
 #[cfg(all(not(feature = "json"), feature = "persist"))]
 impl<'scope, T, C> HttpClientBuilder<'scope, T, C>
 where
-    T: Clone + PartialEq + 'static,
-    C: ResponseCodec<T> + CacheCodec<T> + Clone + 'static,
+    T: Clone + 'static,
+    C: ResponseCodec<T> + Clone + 'static,
 {
     impl_net_methods!();
 }

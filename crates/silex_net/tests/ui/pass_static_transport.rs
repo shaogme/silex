@@ -1,4 +1,4 @@
-use silex_net::{HttpMethod, RequestBody, RequestSpec, Transport};
+use silex_net::{CredentialsMode, HttpMethod, RequestBody, RequestSpec, Transport};
 
 fn main() {
     let transport = silex_net::BrowserTransport;
@@ -6,6 +6,7 @@ fn main() {
         method: HttpMethod::Post,
         url: "https://example.test".to_string(),
         headers: Vec::new(),
+        credentials: CredentialsMode::SameOrigin,
         timeout: None,
         body: RequestBody::Text("body".to_string()),
     };

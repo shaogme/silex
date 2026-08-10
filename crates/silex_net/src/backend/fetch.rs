@@ -3,16 +3,23 @@ use std::{cell::Cell, rc::Rc};
 use js_sys::Reflect;
 use wasm_bindgen::{JsCast, JsValue, closure::Closure};
 use wasm_bindgen_futures::JsFuture;
-use web_sys::{AbortController, Headers, Request, RequestInit, Response, Window};
+use web_sys::{
+    AbortController, Headers, Request, RequestCredentials, RequestInit, Response, Window,
+};
 
 use crate::{
     NetError,
     backend::TransportFuture,
-    state::{HttpResponse, RequestBody, RequestSpec},
+    state::{CredentialsMode, HttpResponse, RequestBody, RequestSpec},
 };
 
 pub trait Transport: 'static {
     fn send(&self, spec: RequestSpec) -> TransportFuture<'_>;
+
+    /// Opt in only when this transport has no hidden request credentials.
+    fn supports_persistent_cache(&self) -> bool {
+        false
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -76,11 +83,19 @@ impl Transport for BrowserTransport {
     fn send(&self, spec: RequestSpec) -> TransportFuture<'_> {
         Box::pin(async move { Self::send(spec).await })
     }
+
+    fn supports_persistent_cache(&self) -> bool {
+        true
+    }
 }
 
 impl Transport for HttpBackend {
     fn send(&self, spec: RequestSpec) -> TransportFuture<'_> {
         Box::pin(async move { Self::send(spec).await })
+    }
+
+    fn supports_persistent_cache(&self) -> bool {
+        true
     }
 }
 
@@ -96,6 +111,11 @@ impl BrowserTransport {
 
         let init = RequestInit::new();
         init.set_method(spec.method.as_str());
+        init.set_credentials(match spec.credentials {
+            CredentialsMode::Omit => RequestCredentials::Omit,
+            CredentialsMode::SameOrigin => RequestCredentials::SameOrigin,
+            CredentialsMode::Include => RequestCredentials::Include,
+        });
 
         let controller = AbortController::new().map_err(NetError::from)?;
         let signal = controller.signal();

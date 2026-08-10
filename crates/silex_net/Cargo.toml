@@ -29,12 +29,15 @@ web-sys = { workspace = true, features = [
     "Headers",
     "MessageEvent",
     "Request",
+    "RequestCredentials",
     "RequestInit",
     "Response",
+    "Storage",
     "WebSocket",
     "Window"
 ] }
 js-sys.workspace = true
+sha2.workspace = true
 wasm-bindgen-futures.workspace = true
 gloo-timers.workspace = true
 serde = { workspace = true, optional = true }

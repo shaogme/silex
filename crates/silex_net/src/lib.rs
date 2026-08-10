@@ -8,13 +8,20 @@ pub use backend::{
     Transport, TransportFuture, WebSocket, WebSocketBuilder, WebSocketConnection,
 };
 pub use builder::{HttpClient, HttpClientBuilder, IntoNetValue, ValueResolver};
+#[cfg(feature = "persist")]
+pub use codec::CacheCodec;
 #[cfg(feature = "json")]
 pub use codec::NetJsonCodec;
 pub use codec::{ResponseCodec, TextCodec};
 pub use state::{
-    CachePolicy, ConnectionState, EventMessage, HttpMethod, HttpResponse, RequestBody, RequestSpec,
-    RetryPolicy,
+    CachePolicy, ConnectionState, CredentialsMode, EventMessage, HttpMethod, HttpResponse,
+    RequestBody, RequestSpec, RetryPolicy,
 };
+
+#[cfg(feature = "persist")]
+pub mod persist {
+    pub use silex_persist::*;
+}
 
 pub mod reexports {
     pub use gloo_timers;

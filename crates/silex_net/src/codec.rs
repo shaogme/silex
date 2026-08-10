@@ -1,5 +1,7 @@
 use crate::NetError;
 #[cfg(feature = "persist")]
+use crate::persist::Persistent;
+#[cfg(feature = "persist")]
 use silex_core::{ErrorReporter, Scope};
 #[cfg(feature = "json")]
 use std::marker::PhantomData;
@@ -15,7 +17,7 @@ pub trait CacheCodec<T>: ResponseCodec<T> {
         key: String,
         default: T,
         error_handler: ErrorReporter<'scope>,
-    ) -> silex_persist::Persistent<'scope, T>;
+    ) -> Persistent<'scope, T>;
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
