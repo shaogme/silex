@@ -1,8 +1,7 @@
 use crate::NetError;
 #[cfg(feature = "persist")]
-use crate::persist::Persistent;
-#[cfg(feature = "persist")]
-use silex_core::{ErrorReporter, Scope};
+use silex_persist::PersistCodec;
+
 #[cfg(feature = "json")]
 use std::marker::PhantomData;
 
@@ -11,14 +10,10 @@ pub trait ResponseCodec<T>: Clone + 'static {
 }
 
 #[cfg(feature = "persist")]
-pub trait CacheCodec<T>: ResponseCodec<T> {
-    fn build_cache<'scope>(
-        scope: Scope<'scope>,
-        key: String,
-        default: T,
-        error_handler: ErrorReporter<'scope>,
-    ) -> Persistent<'scope, T>;
-}
+pub trait CacheCodec<T>: ResponseCodec<T> + PersistCodec<T> {}
+
+#[cfg(feature = "persist")]
+impl<T, C> CacheCodec<T> for C where C: ResponseCodec<T> + PersistCodec<T> {}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct TextCodec;
@@ -37,23 +32,6 @@ impl silex_persist::PersistCodec<String> for TextCodec {
 
     fn decode(&self, raw: &str) -> Result<String, String> {
         Ok(raw.to_string())
-    }
-}
-
-#[cfg(feature = "persist")]
-impl CacheCodec<String> for TextCodec {
-    fn build_cache<'scope>(
-        scope: Scope<'scope>,
-        key: String,
-        default: String,
-        error_handler: ErrorReporter<'scope>,
-    ) -> silex_persist::Persistent<'scope, String> {
-        silex_persist::Persistent::builder(scope, key, error_handler)
-            .local()
-            .string()
-            .write_default(silex_persist::WriteDefault::Never)
-            .default(default)
-            .build()
     }
 }
 
@@ -79,7 +57,7 @@ where
 }
 
 #[cfg(all(feature = "json", feature = "persist"))]
-impl<T> silex_persist::PersistCodec<T> for NetJsonCodec<T>
+impl<T> PersistCodec<T> for NetJsonCodec<T>
 where
     T: serde::Serialize + serde::de::DeserializeOwned + Clone + 'static,
 {
@@ -89,26 +67,6 @@ where
 
     fn decode(&self, raw: &str) -> Result<T, String> {
         serde_json::from_str(raw).map_err(|err| err.to_string())
-    }
-}
-
-#[cfg(all(feature = "json", feature = "persist"))]
-impl<T> CacheCodec<T> for NetJsonCodec<T>
-where
-    T: serde::Serialize + serde::de::DeserializeOwned + Clone + PartialEq + 'static,
-{
-    fn build_cache<'scope>(
-        scope: Scope<'scope>,
-        key: String,
-        default: T,
-        error_handler: ErrorReporter<'scope>,
-    ) -> silex_persist::Persistent<'scope, T> {
-        silex_persist::Persistent::builder(scope, key, error_handler)
-            .local()
-            .json::<T>()
-            .write_default(silex_persist::WriteDefault::Never)
-            .default(default)
-            .build()
     }
 }
 

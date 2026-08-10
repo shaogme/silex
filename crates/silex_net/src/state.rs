@@ -346,7 +346,7 @@ impl ConnectionState {
     }
 
     pub fn is_active(&self) -> bool {
-        matches!(self, Self::Connecting | Self::Connected)
+        matches!(self, Self::Connecting | Self::Connected | Self::Closing)
     }
 }
 
@@ -362,6 +362,55 @@ pub enum CachePolicy {
     NetworkFirst,
     CacheFirst,
     StaleWhileRevalidate,
+}
+
+#[cfg(feature = "persist")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CacheEviction {
+    RemovePersisted,
+    KeepPersisted,
+}
+
+#[cfg(feature = "persist")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CacheConfig {
+    pub capacity: usize,
+    pub ttl: Option<Duration>,
+    pub eviction: CacheEviction,
+}
+
+#[cfg(feature = "persist")]
+impl Default for CacheConfig {
+    fn default() -> Self {
+        Self {
+            capacity: 32,
+            ttl: None,
+            eviction: CacheEviction::RemovePersisted,
+        }
+    }
+}
+
+#[cfg(feature = "persist")]
+impl CacheConfig {
+    pub fn capacity(mut self, capacity: usize) -> Self {
+        self.capacity = capacity;
+        self
+    }
+
+    pub fn ttl(mut self, ttl: Duration) -> Self {
+        self.ttl = Some(ttl);
+        self
+    }
+
+    pub fn without_ttl(mut self) -> Self {
+        self.ttl = None;
+        self
+    }
+
+    pub fn eviction(mut self, eviction: CacheEviction) -> Self {
+        self.eviction = eviction;
+        self
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -611,6 +660,7 @@ mod tests {
         assert!(response.ok());
         assert!(!ConnectionState::Connecting.is_connected());
         assert!(ConnectionState::Connected.is_active());
+        assert!(ConnectionState::Closing.is_active());
         assert!(ConnectionState::Closed.as_str().contains("Closed"));
     }
 

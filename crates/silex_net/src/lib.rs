@@ -13,6 +13,8 @@ pub use codec::CacheCodec;
 #[cfg(feature = "json")]
 pub use codec::NetJsonCodec;
 pub use codec::{ResponseCodec, TextCodec};
+#[cfg(feature = "persist")]
+pub use state::{CacheConfig, CacheEviction};
 pub use state::{
     CachePolicy, ConnectionState, CredentialsMode, EventMessage, HttpMethod, HttpResponse,
     RequestBody, RequestSpec, RetryPolicy,
@@ -44,7 +46,8 @@ pub enum NetError {
     HttpStatus { status: u16, body: String },
     DecodeError(String),
     SerializeError(String),
-    ConnectionClosed(String),
+    ConnectionNotReady { state: ConnectionState },
+    ConnectionClosed,
     JsError(String),
     InvalidConfiguration(String),
 }

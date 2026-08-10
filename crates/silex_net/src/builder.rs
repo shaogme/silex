@@ -2,19 +2,24 @@ use crate::{
     NetError,
     backend::{HttpBackend, Transport},
     codec::{ResponseCodec, TextCodec},
-    state::{
-        CachePolicy, CredentialsMode, HttpMethod, HttpResponse, RequestBody, RequestSpec,
-        RetryPolicy,
-    },
+    state::{CredentialsMode, HttpMethod, HttpResponse, RequestBody, RequestSpec, RetryPolicy},
 };
 #[cfg(feature = "persist")]
-use silex_core::{CompletionOnce, SilexResult, unwind_safe};
+use crate::{
+    codec::CacheCodec,
+    state::{CacheConfig, CachePolicy},
+};
+#[cfg(feature = "persist")]
+use silex_core::CompletionOnce;
 use silex_core::{ErrorReporter, RuntimeInputs, Scope};
 use std::{marker::PhantomData, rc::Rc, time::Duration};
 
 pub mod client_impl;
 pub mod helper;
 pub mod resolver;
+
+#[cfg(feature = "persist")]
+mod cache;
 
 use helper::{base64_encode, encode_component};
 pub use resolver::{IntoNetValue, ValueResolver};
@@ -23,187 +28,19 @@ pub use resolver::{IntoNetValue, ValueResolver};
 use crate::codec::NetJsonCodec;
 
 #[cfg(feature = "persist")]
-use crate::codec::CacheCodec;
-#[cfg(feature = "persist")]
-use silex_persist::Persistent;
-#[cfg(feature = "persist")]
-use std::{
-    cell::{Cell, RefCell},
-    collections::HashMap,
-};
-
-#[cfg(feature = "persist")]
-struct CacheEntry<'scope, T> {
-    store: Persistent<'scope, T>,
-    valid: Rc<Cell<bool>>,
-}
-
-#[cfg(feature = "persist")]
-type CacheStores<'scope, T> = Rc<RefCell<Vec<(String, CacheEntry<'scope, T>)>>>;
-
-#[cfg(feature = "persist")]
-type CacheFactory<'scope, T> =
-    Rc<dyn Fn(Scope<'scope>, String, T, ErrorReporter<'scope>) -> Persistent<'scope, T> + 'scope>;
-
-#[cfg(feature = "persist")]
-#[derive(Clone)]
-pub(crate) struct CacheBinding<'scope, T> {
-    pub(crate) key: String,
-    pub(crate) generation: u64,
-    pub(crate) store: Persistent<'scope, T>,
-    pub(crate) snapshot: Option<T>,
-}
-
-#[cfg(feature = "persist")]
-trait CacheRuntime<'scope, T>: 'scope {
-    fn binding(
-        &self,
-        scope: Scope<'scope>,
-        error_handler: ErrorReporter<'scope>,
-        spec: &RequestSpec,
-    ) -> Option<CacheBinding<'scope, T>>;
-
-    fn cached_value(
-        &self,
-        scope: Scope<'scope>,
-        error_handler: ErrorReporter<'scope>,
-        spec: &RequestSpec,
-    ) -> Option<T>;
-
-    fn completion_once_for_binding(
-        &self,
-        scope: Scope<'scope>,
-        binding: CacheBinding<'scope, T>,
-    ) -> CompletionOnce<T>;
-}
-
-#[cfg(feature = "persist")]
-struct CacheRuntimeImpl<'scope, T> {
-    default: T,
-    stores: CacheStores<'scope, T>,
-    generations: Rc<RefCell<HashMap<String, u64>>>,
-    next_generation: Rc<Cell<u64>>,
-    factory: CacheFactory<'scope, T>,
-}
+use cache::{CacheBinding, CacheRuntime, CacheRuntimeImpl};
 
 pub type BeforeSendHook = Rc<dyn Fn(&mut RequestSpec)>;
 pub type AfterResponseHook = Rc<dyn Fn(&RequestSpec, &HttpResponse)>;
 pub type OnRetryHook = Rc<dyn Fn(&RequestSpec, u32, Duration, &NetError)>;
 pub type OnErrorHook = Rc<dyn Fn(&RequestSpec, &NetError)>;
 
+#[cfg(feature = "persist")]
 #[derive(Clone)]
 struct CacheSpec<'scope, T> {
-    #[cfg(feature = "persist")]
     policy: CachePolicy,
     _scope: PhantomData<&'scope ()>,
-    #[cfg(feature = "persist")]
     runtime: Rc<dyn CacheRuntime<'scope, T>>,
-    #[cfg(not(feature = "persist"))]
-    _marker: PhantomData<T>,
-}
-
-#[cfg(feature = "persist")]
-impl<'scope, T> CacheRuntime<'scope, T> for CacheRuntimeImpl<'scope, T>
-where
-    T: Clone + PartialEq + 'static,
-{
-    fn binding(
-        &self,
-        scope: Scope<'scope>,
-        error_handler: ErrorReporter<'scope>,
-        spec: &RequestSpec,
-    ) -> Option<CacheBinding<'scope, T>> {
-        let key = format!("__net_cache_{}__", spec.cache_key());
-        let store = self.ensure_cache_key(scope, error_handler, &key)?;
-        let generation = self
-            .next_generation
-            .get()
-            .checked_add(1)
-            .expect("HTTP cache generation exhausted");
-        self.next_generation.set(generation);
-        self.generations
-            .borrow_mut()
-            .insert(key.clone(), generation);
-        Some(CacheBinding {
-            key,
-            generation,
-            store,
-            snapshot: store.has_persisted_value().then(|| store.get_untracked()),
-        })
-    }
-
-    fn cached_value(
-        &self,
-        scope: Scope<'scope>,
-        error_handler: ErrorReporter<'scope>,
-        spec: &RequestSpec,
-    ) -> Option<T> {
-        let key = format!("__net_cache_{}__", spec.cache_key());
-        let store = self.ensure_cache_key(scope, error_handler, &key)?;
-        store.has_persisted_value().then(|| store.get_untracked())
-    }
-
-    fn completion_once_for_binding(
-        &self,
-        scope: Scope<'scope>,
-        binding: CacheBinding<'scope, T>,
-    ) -> CompletionOnce<T> {
-        let generations = self.generations.clone();
-        let key = binding.key;
-        let generation = binding.generation;
-        scope.completion_once(unwind_safe(move |value: T| {
-            if generations.borrow().get(&key) == Some(&generation) {
-                binding.store.set(value);
-            }
-            Ok(())
-        }))
-    }
-}
-
-#[cfg(feature = "persist")]
-impl<'scope, T> CacheRuntimeImpl<'scope, T>
-where
-    T: Clone + PartialEq + 'static,
-{
-    fn ensure_cache_key(
-        &self,
-        scope: Scope<'scope>,
-        error_handler: ErrorReporter<'scope>,
-        key: &str,
-    ) -> Option<Persistent<'scope, T>> {
-        if let Some(store) = self
-            .stores
-            .borrow()
-            .iter()
-            .find(|(stored_key, entry)| stored_key == key && entry.valid.get())
-            .map(|(_, entry)| entry.store)
-        {
-            return Some(store);
-        }
-
-        self.stores
-            .borrow_mut()
-            .retain(|(_, entry)| entry.valid.get());
-        let store = (self.factory)(scope, key.to_string(), self.default.clone(), error_handler);
-        let valid = Rc::new(Cell::new(true));
-        let valid_for_cleanup = valid.clone();
-        if scope
-            .on_cleanup(
-                move || -> SilexResult<()> {
-                    valid_for_cleanup.set(false);
-                    Ok(())
-                },
-                error_handler,
-            )
-            .is_err()
-        {
-            return None;
-        }
-        self.stores
-            .borrow_mut()
-            .push((key.to_string(), CacheEntry { store, valid }));
-        Some(store)
-    }
 }
 
 #[derive(Clone)]
@@ -263,6 +100,7 @@ pub struct HttpClientBuilder<'scope, T, C> {
     body: BodyResolver<'scope>,
     pub(crate) response_codec: C,
     pub(crate) transport: Rc<dyn Transport>,
+    #[cfg(feature = "persist")]
     cache: Option<CacheSpec<'scope, T>>,
     pub(crate) before_send: Vec<BeforeSendHook>,
     pub(crate) after_response: Vec<AfterResponseHook>,
@@ -371,6 +209,7 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
             body: BodyResolver::Static(RequestBody::Empty),
             response_codec,
             transport: Rc::new(HttpBackend),
+            #[cfg(feature = "persist")]
             cache: None,
             before_send: Vec::new(),
             after_response: Vec::new(),
@@ -623,39 +462,29 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
     }
 
     #[cfg(feature = "persist")]
-    pub fn cache_with_default(mut self, policy: CachePolicy, default: T) -> Self
+    pub fn cache_with_default(self, policy: CachePolicy, _default: T) -> Self
     where
         C: CacheCodec<T>,
         T: Clone + PartialEq + 'static,
     {
-        let factory = Rc::new(
-            |scope: Scope<'scope>,
-             key: String,
-             default: T,
-             error_handler: ErrorReporter<'scope>| {
-                C::build_cache(scope, key, default, error_handler)
-            },
-        );
-        let runtime: Rc<dyn CacheRuntime<'scope, T>> = Rc::new(CacheRuntimeImpl {
-            default,
-            stores: Rc::new(RefCell::new(Vec::new())),
-            generations: Rc::new(RefCell::new(HashMap::new())),
-            next_generation: Rc::new(Cell::new(0)),
-            factory,
-        });
+        self.cache_with_config(policy, CacheConfig::default())
+    }
+
+    #[cfg(feature = "persist")]
+    pub fn cache_with_config(mut self, policy: CachePolicy, config: CacheConfig) -> Self
+    where
+        C: CacheCodec<T>,
+        T: Clone + PartialEq + 'static,
+    {
+        let concrete = CacheRuntimeImpl::new(config, self.response_codec.clone());
+        concrete
+            .register_cleanup(self.scope, self.error_handler)
+            .unwrap_or_else(|error| panic!("注册 HTTP cache cleanup 失败: {error}"));
+        let runtime: Rc<dyn CacheRuntime<'scope, T>> = Rc::new(concrete);
         self.cache = Some(CacheSpec {
             policy,
             _scope: PhantomData,
             runtime,
-        });
-        self
-    }
-
-    #[cfg(not(feature = "persist"))]
-    pub fn cache_with_default(mut self, _policy: CachePolicy, _default: T) -> Self {
-        self.cache = Some(CacheSpec {
-            _scope: PhantomData,
-            _marker: PhantomData,
         });
         self
     }
@@ -683,13 +512,14 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
         if !self.persistent_cache_allowed(spec) {
             return None;
         }
-        cache
-            .runtime
-            .cached_value(self.scope, self.error_handler, spec)
+        cache.runtime.cached_value(spec)
     }
 
     #[cfg(feature = "persist")]
-    pub(crate) fn cache_binding(&self, spec: &RequestSpec) -> Option<CacheBinding<'scope, T>> {
+    pub(crate) fn cache_binding(&self, spec: &RequestSpec) -> Option<CacheBinding<T>>
+    where
+        T: 'scope,
+    {
         let cache = self.cache.as_ref()?;
         if matches!(cache.policy, CachePolicy::None) {
             return None;
@@ -698,13 +528,13 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
         if !self.persistent_cache_allowed(spec) {
             return None;
         }
-        cache.runtime.binding(self.scope, self.error_handler, spec)
+        cache.runtime.binding(spec)
     }
 
     #[cfg(feature = "persist")]
     pub(crate) fn cache_completion_once_for_binding(
         &self,
-        binding: CacheBinding<'scope, T>,
+        binding: CacheBinding<T>,
     ) -> CompletionOnce<T>
     where
         T: 'scope,
@@ -827,6 +657,7 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
             body: self.body,
             response_codec: TextCodec,
             transport: self.transport,
+            #[cfg(feature = "persist")]
             cache: None,
             before_send: self.before_send,
             after_response: self.after_response,
@@ -855,6 +686,7 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
             body: self.body,
             response_codec: NetJsonCodec::new(),
             transport: self.transport,
+            #[cfg(feature = "persist")]
             cache: None,
             before_send: self.before_send,
             after_response: self.after_response,

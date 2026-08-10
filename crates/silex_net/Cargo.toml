@@ -45,7 +45,7 @@ serde_json = { workspace = true, optional = true }
 
 [features]
 default = []
-json = ["dep:serde", "dep:serde_json", "silex_persist/json"]
+json = ["dep:serde", "dep:serde_json", "silex_persist?/json"]
 persist = ["dep:silex_persist"]
 
 [dev-dependencies]

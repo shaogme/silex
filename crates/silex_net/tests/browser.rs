@@ -84,21 +84,21 @@ impl MockHost {
                     closeCalls: 0,
                     onopen: null,
                     onmessage: null,
-                    onerror: null,
-                    onclose: null,
-                    send: function (data) {
-                        this.sent.push(data);
-                    },
-                    close: function () {
-                        this.closeCalls += 1;
-                        this.readyState = 3;
-                        if (this.onclose) {
-                            this.onclose(new CloseEvent("close", {
-                                code: 1000,
-                                reason: "closed"
-                            }));
-                        }
-                    },
+                     onerror: null,
+                     onclose: null,
+                     send: function (data) {
+                         if (this.readyState === 0) {
+                             throw new Error("InvalidStateError");
+                         }
+                         if (this.readyState === 2 || this.readyState === 3) {
+                             return;
+                         }
+                         this.sent.push(data);
+                     },
+                     close: function () {
+                         this.closeCalls += 1;
+                         this.readyState = 2;
+                     },
                     emitOpen: function () {
                         this.readyState = 1;
                         if (this.onopen) {
@@ -671,6 +671,7 @@ async fn mutation_commits_only_the_latest_completion() {
     root.dispose().expect("root cleanup");
 }
 
+#[cfg(feature = "persist")]
 #[wasm_bindgen_test(async)]
 async fn cache_first_does_not_treat_default_as_history() {
     let mut runtime = Runtime::new();
@@ -690,6 +691,289 @@ async fn cache_first_does_not_treat_default_as_history() {
     })
     .await;
     root.dispose().expect("root cleanup");
+}
+
+#[cfg(feature = "persist")]
+#[wasm_bindgen_test(async)]
+async fn cache_controller_bounds_dynamic_keys_and_removes_evicted_history() {
+    let url = "https://example.test/bounded-cache";
+    let storage = web_sys::window()
+        .expect("browser window")
+        .local_storage()
+        .expect("localStorage access")
+        .expect("localStorage");
+    let storage_key = |value: &str| {
+        let spec = RequestSpec {
+            method: HttpMethod::Get,
+            url: format!("{url}?value={value}"),
+            headers: Vec::new(),
+            credentials: silex_net::CredentialsMode::Omit,
+            timeout: None,
+            body: RequestBody::Empty,
+        };
+        format!("__net_cache_{}__", spec.cache_key())
+    };
+    let first_key = storage_key("first");
+    let second_key = storage_key("second");
+    let third_key = storage_key("third");
+    for key in [&first_key, &second_key, &third_key] {
+        storage.remove_item(key).expect("clear cache key");
+    }
+
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    let storage_for_scope = storage.clone();
+    let first_key_for_scope = first_key.clone();
+    let second_key_for_scope = second_key.clone();
+    let third_key_for_scope = third_key.clone();
+    root.with_scope(|scope| async move {
+        let (query, set_query) = scope.signal(String::new());
+        let calls = Rc::new(Cell::new(0));
+        let client = silex_net::HttpClient::get(scope, url, test_handler(scope))
+            .query("value", query)
+            .credentials(silex_net::CredentialsMode::Omit)
+            .cache_with_config(
+                silex_net::CachePolicy::CacheFirst,
+                silex_net::CacheConfig::default().capacity(2),
+            )
+            .transport(ScriptedTransport {
+                calls: calls.clone(),
+                status: 200,
+                body: "network",
+                delay_ms: 0,
+            });
+
+        for value in ["first", "second", "third"] {
+            set_query.set(value.to_string());
+            assert_eq!(
+                client.send().await.expect("bounded cache request"),
+                "network"
+            );
+        }
+        assert_eq!(calls.get(), 3);
+        assert!(
+            storage_for_scope
+                .get_item(&first_key_for_scope)
+                .expect("read evicted key")
+                .is_none()
+        );
+        assert_eq!(
+            storage_for_scope
+                .get_item(&second_key_for_scope)
+                .expect("read second key"),
+            Some("network".to_string())
+        );
+        assert_eq!(
+            storage_for_scope
+                .get_item(&third_key_for_scope)
+                .expect("read third key"),
+            Some("network".to_string())
+        );
+    })
+    .await;
+    root.dispose().expect("root cleanup");
+
+    assert!(
+        storage
+            .get_item(&first_key)
+            .expect("read first key")
+            .is_none()
+    );
+    storage
+        .remove_item(&second_key)
+        .expect("cleanup second key");
+    storage.remove_item(&third_key).expect("cleanup third key");
+}
+
+#[cfg(feature = "persist")]
+#[wasm_bindgen_test(async)]
+async fn cache_controller_expires_scope_entries_with_ttl() {
+    let url = "https://example.test/ttl-cache";
+    let spec = RequestSpec {
+        method: HttpMethod::Get,
+        url: url.to_string(),
+        headers: Vec::new(),
+        credentials: silex_net::CredentialsMode::Omit,
+        timeout: None,
+        body: RequestBody::Empty,
+    };
+    let storage_key = format!("__net_cache_{}__", spec.cache_key());
+    let storage = web_sys::window()
+        .expect("browser window")
+        .local_storage()
+        .expect("localStorage access")
+        .expect("localStorage");
+    storage.remove_item(&storage_key).expect("clear ttl key");
+    storage
+        .set_item(&storage_key, "history")
+        .expect("seed ttl history");
+
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    let storage_for_scope = storage.clone();
+    let storage_key_for_scope = storage_key.clone();
+    root.with_scope(|scope| async move {
+        let calls = Rc::new(Cell::new(0));
+        let client = silex_net::HttpClient::get(scope, url, test_handler(scope))
+            .credentials(silex_net::CredentialsMode::Omit)
+            .cache_with_config(
+                silex_net::CachePolicy::CacheFirst,
+                silex_net::CacheConfig::default()
+                    .capacity(1)
+                    .ttl(std::time::Duration::ZERO),
+            )
+            .transport(ScriptedTransport {
+                calls: calls.clone(),
+                status: 200,
+                body: "network",
+                delay_ms: 0,
+            });
+
+        assert_eq!(client.send().await.expect("history request"), "history");
+        assert_eq!(calls.get(), 0);
+        assert_eq!(client.send().await.expect("expired request"), "network");
+        assert_eq!(calls.get(), 1);
+        assert_eq!(
+            storage_for_scope
+                .get_item(&storage_key_for_scope)
+                .expect("read refreshed ttl key"),
+            Some("network".to_string())
+        );
+    })
+    .await;
+    root.dispose().expect("root cleanup");
+    storage.remove_item(&storage_key).expect("cleanup ttl key");
+}
+
+#[cfg(all(feature = "json", feature = "persist"))]
+#[wasm_bindgen_test(async)]
+async fn json_cache_codec_round_trips_persisted_values() {
+    let url = "https://example.test/json-cache";
+    let spec = RequestSpec {
+        method: HttpMethod::Get,
+        url: url.to_string(),
+        headers: Vec::new(),
+        credentials: silex_net::CredentialsMode::Omit,
+        timeout: None,
+        body: RequestBody::Empty,
+    };
+    let storage_key = format!("__net_cache_{}__", spec.cache_key());
+    let storage = web_sys::window()
+        .expect("browser window")
+        .local_storage()
+        .expect("localStorage access")
+        .expect("localStorage");
+    storage.remove_item(&storage_key).expect("clear json key");
+    storage
+        .set_item(&storage_key, "7")
+        .expect("seed json history");
+
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    root.with_scope(|scope| async move {
+        let calls = Rc::new(Cell::new(0));
+        let result = silex_net::HttpClient::get(scope, url, test_handler(scope))
+            .credentials(silex_net::CredentialsMode::Omit)
+            .json::<u32>()
+            .cache_with_default(silex_net::CachePolicy::CacheFirst, 0)
+            .transport(ScriptedTransport {
+                calls: calls.clone(),
+                status: 200,
+                body: "42",
+                delay_ms: 0,
+            })
+            .send()
+            .await
+            .expect("json cache request");
+        assert_eq!(result, 7);
+        assert_eq!(calls.get(), 0);
+    })
+    .await;
+    root.dispose().expect("root cleanup");
+    storage.remove_item(&storage_key).expect("cleanup json key");
+}
+
+#[cfg(feature = "persist")]
+#[wasm_bindgen_test(async)]
+async fn cache_completion_cannot_recreate_an_evicted_key() {
+    let url = "https://example.test/evicted-completion";
+    let storage = web_sys::window()
+        .expect("browser window")
+        .local_storage()
+        .expect("localStorage access")
+        .expect("localStorage");
+    let storage_key = |value: &str| {
+        let spec = RequestSpec {
+            method: HttpMethod::Get,
+            url: format!("{url}?value={value}"),
+            headers: Vec::new(),
+            credentials: silex_net::CredentialsMode::Omit,
+            timeout: None,
+            body: RequestBody::Empty,
+        };
+        format!("__net_cache_{}__", spec.cache_key())
+    };
+    let first_key = storage_key("first");
+    let second_key = storage_key("second");
+    storage.remove_item(&first_key).expect("clear first key");
+    storage.remove_item(&second_key).expect("clear second key");
+    storage
+        .set_item(&first_key, "history")
+        .expect("seed first history");
+
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    let storage_for_scope = storage.clone();
+    let first_key_for_scope = first_key.clone();
+    let second_key_for_scope = second_key.clone();
+    root.with_scope(|scope| async move {
+        let (query, set_query) = scope.signal("first".to_string());
+        let (source, _) = scope.signal(1_u32);
+        let calls = Rc::new(Cell::new(0));
+        let resource = silex_net::HttpClient::get(scope, url, test_handler(scope))
+            .query("value", query)
+            .credentials(silex_net::CredentialsMode::Omit)
+            .cache_with_config(
+                silex_net::CachePolicy::StaleWhileRevalidate,
+                silex_net::CacheConfig::default().capacity(1),
+            )
+            .transport(GenerationTransport {
+                calls: calls.clone(),
+            })
+            .as_resource(source, None);
+        TimeoutFuture::new(10).await;
+        assert!(matches!(
+            resource.state.get(),
+            ResourceState::Ready(value) if value == "history"
+        ));
+        assert_eq!(calls.get(), 1);
+
+        set_query.set("second".to_string());
+        TimeoutFuture::new(30).await;
+        assert_eq!(
+            resource.state.get(),
+            ResourceState::Ready("fresh".to_string())
+        );
+        assert_eq!(calls.get(), 2);
+        assert!(
+            storage_for_scope
+                .get_item(&first_key_for_scope)
+                .expect("read evicted completion key")
+                .is_none()
+        );
+        assert_eq!(
+            storage_for_scope
+                .get_item(&second_key_for_scope)
+                .expect("read current completion key"),
+            Some("fresh".to_string())
+        );
+    })
+    .await;
+    root.dispose().expect("root cleanup");
+    storage.remove_item(&first_key).expect("cleanup first key");
+    storage
+        .remove_item(&second_key)
+        .expect("cleanup second key");
 }
 
 #[cfg(feature = "persist")]
@@ -1093,6 +1377,12 @@ async fn websocket_host_bridge_covers_events_retry_and_manual_close() {
 
         socket.reconnect();
         assert_eq!(mock_instance_count("__silex_test_socket_instances"), 1);
+        assert_eq!(
+            socket.send_text("too-early"),
+            Err(NetError::ConnectionNotReady {
+                state: silex_net::ConnectionState::Connecting
+            })
+        );
         mock_call0("__silex_test_socket", "emitOpen");
         TimeoutFuture::new(0).await;
         assert_eq!(socket.state().get(), silex_net::ConnectionState::Connected);
@@ -1134,7 +1424,21 @@ async fn websocket_host_bridge_covers_events_retry_and_manual_close() {
         assert_eq!(socket.error().get(), None);
 
         socket.close().expect("manual close");
+        assert_eq!(socket.state().get(), silex_net::ConnectionState::Closing);
+        assert_eq!(
+            socket.send_text("during-close"),
+            Err(NetError::ConnectionNotReady {
+                state: silex_net::ConnectionState::Closing
+            })
+        );
+        assert!(!mock_property_is_cleared("__silex_test_socket", "onclose"));
+        mock_call0("__silex_test_socket", "emitClose");
+        assert_eq!(closed.get(), 3);
         assert_eq!(socket.state().get(), silex_net::ConnectionState::Closed);
+        assert_eq!(
+            socket.send_text("after-close"),
+            Err(NetError::ConnectionClosed)
+        );
         assert!(mock_property_is_cleared("__silex_test_socket", "onopen"));
         assert!(mock_property_is_cleared("__silex_test_socket", "onmessage"));
         assert!(mock_property_is_cleared("__silex_test_socket", "onerror"));
