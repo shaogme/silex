@@ -808,6 +808,53 @@ impl_tuple_rx_value!(A, B, C, D);
 impl_tuple_rx_value!(A, B, C, D, E);
 impl_tuple_rx_value!(A, B, C, D, E, F);
 
+/// Aggregate dependency tracking and clone-backed reads for reactive tuples.
+///
+/// Tracking only borrows each member briefly and therefore does not require the
+/// member values to implement [`Clone`]. Aggregate reads materialize an owned
+/// tuple before invoking the callback, so those implementations intentionally
+/// require cloneable member values. [`RxGet`] is provided automatically by its
+/// blanket implementation; tuples are not [`RxWrite`] values because updating
+/// multiple independent sources cannot provide a transactional mutation.
+macro_rules! impl_tuple_rx_traits {
+    ($($name:ident : $index:tt),+ $(,)?) => {
+        impl<$($name),+> RxBase for ($($name,)+)
+        where
+            $($name: RxBase, $name::Value: Sized + RxData),+
+        {
+            fn try_track(&self) -> ReactiveResult<()> {
+                $(self.$index.try_track()?;)+
+                Ok(())
+            }
+        }
+
+        impl<$($name),+> RxRead for ($($name,)+)
+        where
+            $($name: RxRead, $name::Value: Sized + Clone + RxData),+
+        {
+            fn try_with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> ReactiveResult<U> {
+                let value = ($(self.$index.try_with(|value| value.clone())?,)+);
+                Ok(f(&value))
+            }
+
+            fn try_with_untracked<U>(
+                &self,
+                f: impl FnOnce(&Self::Value) -> U,
+            ) -> ReactiveResult<U> {
+                let value = ($(self.$index.try_with_untracked(|value| value.clone())?,)+);
+                Ok(f(&value))
+            }
+        }
+    };
+}
+
+impl_tuple_rx_traits!(A: 0);
+impl_tuple_rx_traits!(A: 0, B: 1);
+impl_tuple_rx_traits!(A: 0, B: 1, C: 2);
+impl_tuple_rx_traits!(A: 0, B: 1, C: 2, D: 3);
+impl_tuple_rx_traits!(A: 0, B: 1, C: 2, D: 3, E: 4);
+impl_tuple_rx_traits!(A: 0, B: 1, C: 2, D: 3, E: 4, F: 5);
+
 /// Reactive helpers for `Option<T>` values.
 pub trait RxOptionExt<T>: RxRead<Value = Option<T>> + Clone {
     fn map_or<'scope, U>(
