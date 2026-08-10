@@ -36,13 +36,13 @@ Silex 不仅仅是一个视图库，它提供了构建现代 Web 应用所需的
 
 ```toml
 [dependencies]
-silex = "0.1.0-beta.9" # 请使用最新版本
+silex = { version = "0.1.0-beta.9", features = ["bootstrap"] } # 请使用最新版本
 ```
 
 ### 2. 编写你的第一个应用
 
 ```rust
-use silex::prelude::*;
+use silex::{bootstrap::{BootstrapError, BrowserBootstrap}, prelude::*};
 
 #[component]
 fn Counter() -> impl View {
@@ -74,9 +74,14 @@ fn Counter() -> impl View {
     .style("padding: 20px; text-align: center;")
 }
 
-fn main() {
-    // 挂载应用到 Body
-    mount_to_body(|| Counter());
+fn main() -> Result<(), BootstrapError> {
+    let mut bootstrap = BrowserBootstrap::from_id("app")?;
+    bootstrap.mount(Runtime::new(), |context| {
+        let scope = context.scope();
+        let error_handler = scope.error_handler(|_| {});
+        context.mount(Counter().build(), error_handler)
+    })?;
+    Ok(())
 }
 ```
 

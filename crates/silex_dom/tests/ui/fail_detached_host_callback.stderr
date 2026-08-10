@@ -5,7 +5,7 @@ error[E0597]: `borrowed` does not live long enough
    |               -------- binding `borrowed` declared here
  8 |           let borrowed_ref = borrowed.as_str();
    |                              ^^^^^^^^ borrowed value does not live long enough
- 9 |           let _ = window_event_listener_untyped_detached("click", move |_| {
+ 9 |           let _ = window_event_listener_untyped("click", move |_| {
    |  _________________-
 10 | |             assert!(!borrowed_ref.is_empty());
 11 | |         });
@@ -14,7 +14,7 @@ error[E0597]: `borrowed` does not live long enough
    |       - `borrowed` dropped here while still borrowed
    |
 note: requirement that the value outlives `'static` introduced here
-  --> src/helpers.rs
+  --> src/helpers/detached.rs
    |
    |     cb: impl FnMut(web_sys::Event) + 'static,
    |                                      ^^^^^^^

@@ -1,8 +1,6 @@
 use crate::attribute::{ApplyTarget, AttributeBuilder, IntoStorable, PendingAttribute};
 use crate::event::{EventDescriptor, EventHandler};
-use crate::view::{
-    AnyView, ApplyAttributes, OwnedViewOwner, ScopedViewOwner, View, ViewOwner, ViewOwnerToken,
-};
+use crate::view::{AnyView, ApplyAttributes, OwnedViewOwner, View, ViewOwner, ViewOwnerToken};
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
@@ -10,7 +8,7 @@ use std::rc::Rc;
 use wasm_bindgen::{JsCast, JsValue, convert::FromWasmAbi, prelude::*};
 use web_sys::Element as WebElem;
 
-use silex_core::{ErrorReporter, ReactiveError, RuntimeInputs, Scope, SilexError, SilexResult};
+use silex_core::{ReactiveError, RuntimeInputs, SilexError, SilexResult};
 
 pub mod tags;
 pub use tags::*;
@@ -196,22 +194,6 @@ impl<'scope> View<'scope> for Element<'scope> {
     {
         self.mount_inner(owner, parent, attrs)
     }
-}
-
-/// Mount a view using the caller-owned scope.
-pub fn mount_to_body<'scope, V>(
-    scope: Scope<'scope>,
-    view: V,
-    error_handler: ErrorReporter<'scope>,
-) -> SilexResult<()>
-where
-    V: View<'scope> + 'scope,
-{
-    let document = crate::document();
-    let body = document.body().expect("No body element");
-    let node: web_sys::Node = body.into();
-    let owner = ScopedViewOwner::new(scope, error_handler);
-    view.mount_owned(&owner, &node, Vec::new())
 }
 
 pub struct TypedElement<'scope, T: Tag> {
