@@ -1,7 +1,7 @@
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use std::collections::HashSet;
-use syn::{FnArg, GenericParam, ItemFn, Pat, visit::Visit};
+use syn::{FnArg, GenericArgument, GenericParam, ItemFn, Pat, PathArguments, Type, visit::Visit};
 
 struct GenericUsage {
     type_and_const_names: HashSet<String>,
@@ -66,9 +66,14 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
     let vis = input_fn.vis.clone();
     let generics = input_fn.sig.generics.clone();
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    let scope_lifetime = generics.params.iter().find_map(|param| match param {
+        GenericParam::Lifetime(def) if def.lifetime.ident == "scope" => Some(def.lifetime.clone()),
+        _ => None,
+    });
 
     let mut field_defs = Vec::new();
     let mut prop_arg_names = Vec::new();
+    let mut owner_arg: Option<(syn::Ident, Type)> = None;
 
     for arg in input_fn.sig.inputs.iter() {
         let fn_arg = match arg {
@@ -95,8 +100,36 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
             }
         };
 
+        if has_owner_injection(attrs)? {
+            let Some(scope) = scope_lifetime.as_ref() else {
+                return Err(syn::Error::new_spanned(
+                    ty,
+                    "#[inject(owner)] requires a component lifetime named 'scope",
+                ));
+            };
+            if !is_view_owner_token_type(ty, scope) {
+                return Err(syn::Error::new_spanned(
+                    ty,
+                    "#[inject(owner)] requires ViewOwnerToken<'scope>",
+                ));
+            }
+            if owner_arg.is_some() {
+                return Err(syn::Error::new_spanned(
+                    pat,
+                    "a component can inject only one view owner",
+                ));
+            }
+            owner_arg = Some((param_name, ty.as_ref().clone()));
+            continue;
+        }
+
+        let prop_attrs: Vec<_> = attrs
+            .iter()
+            .filter(|attr| !attr.path().is_ident("inject"))
+            .collect();
+
         field_defs.push(quote! {
-            #(#attrs)*
+            #(#prop_attrs)*
             pub #param_name: #ty
         });
         prop_arg_names.push(param_name);
@@ -190,7 +223,12 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
     let mut hidden_fn = input_fn.clone();
     hidden_fn.sig.ident = hidden_name.clone();
     hidden_fn.vis = syn::Visibility::Inherited;
-    hidden_fn.sig.inputs = syn::parse_quote!(props: #props_name #ty_generics);
+    hidden_fn.sig.inputs = match &owner_arg {
+        Some((owner_name, owner_ty)) => {
+            syn::parse_quote!(props: #props_name #ty_generics, #owner_name: #owner_ty)
+        }
+        None => syn::parse_quote!(props: #props_name #ty_generics),
+    };
     hidden_fn
         .attrs
         .retain(|attr| !attr.path().is_ident("component"));
@@ -206,13 +244,19 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
     hidden_stmts.extend(hidden_fn.block.stmts);
     hidden_fn.block.stmts = hidden_stmts;
 
+    let owner_metadata = if owner_arg.is_some() {
+        quote! { , owner }
+    } else {
+        quote! {}
+    };
+
     Ok(quote! {
         #[derive(Clone, #__silex::macros::PropsBuilder)]
         #[silex_component(
             builder = #builder_name,
             product = #product_name,
             render = #hidden_name,
-            constructor = #fn_name,
+            constructor = #fn_name #owner_metadata
         )]
         #vis struct #props_name #impl_generics #where_clause {
             #(#field_defs,)*
@@ -220,4 +264,51 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
 
         #hidden_fn
     })
+}
+
+fn has_owner_injection(attrs: &[syn::Attribute]) -> syn::Result<bool> {
+    let mut found = false;
+    let mut owner = false;
+    for attr in attrs {
+        if !attr.path().is_ident("inject") {
+            continue;
+        }
+        found = true;
+        attr.parse_nested_meta(|meta| {
+            if !meta.path.is_ident("owner") {
+                return Err(meta.error("expected `#[inject(owner)]`"));
+            }
+            if owner {
+                return Err(meta.error("duplicate `owner` injection"));
+            }
+            owner = true;
+            Ok(())
+        })?;
+    }
+    if found && !owner {
+        return Err(syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "expected `#[inject(owner)]`",
+        ));
+    }
+    Ok(owner)
+}
+
+fn is_view_owner_token_type(ty: &Type, scope: &syn::Lifetime) -> bool {
+    let Type::Path(type_path) = ty else {
+        return false;
+    };
+    let Some(segment) = type_path.path.segments.last() else {
+        return false;
+    };
+    if segment.ident != "ViewOwnerToken" {
+        return false;
+    }
+    let PathArguments::AngleBracketed(arguments) = &segment.arguments else {
+        return false;
+    };
+    matches!(
+        arguments.args.first(),
+        Some(GenericArgument::Lifetime(lifetime)) if lifetime.ident == scope.ident
+    ) && arguments.args.len() == 1
 }

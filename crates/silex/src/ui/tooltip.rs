@@ -64,7 +64,7 @@ impl<'scope> TooltipContext<'scope> {
         };
         let open = self.open;
         let timer = self.timer;
-        if let Ok(handle) = set_timeout_owned(
+        if let Ok(handle) = set_timeout(
             &owner,
             move || -> SilexResult<()> {
                 timer.try_update(|slot| *slot = None)?;

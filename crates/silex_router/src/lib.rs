@@ -30,7 +30,7 @@ use crate::route_table::RouteBranchKey;
 use silex_core::traits::RxGet;
 use silex_core::{Scope, SilexResult, reactivity::runtime_inputs_of};
 use silex_dom::attribute::PendingAttribute;
-use silex_dom::helpers::window_event_listener_untyped_owned;
+use silex_dom::helpers::window_event_listener_untyped;
 use silex_dom::view::{AnyView, ApplyAttributes, View, ViewOwner};
 use silex_macros::component;
 use std::{cell::RefCell, rc::Rc};
@@ -156,7 +156,7 @@ impl<'scope> RouterView<'scope> {
 
         let token = owner.token();
         let navigator = self.context.navigator;
-        let listener = window_event_listener_untyped_owned(&token, "popstate", move |_| {
+        let listener = window_event_listener_untyped(&token, "popstate", move |_| {
             navigator.refresh_location();
             Ok(())
         })?;

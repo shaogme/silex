@@ -8,8 +8,7 @@ use silex_core::{
     traits::{RxBase, RxCloneData, RxData, RxRead, RxValue, RxWrite},
 };
 use silex_dom::attribute::PendingAttribute;
-use silex_dom::helpers::TimeoutHandle;
-use silex_dom::view::{ApplyAttributes, View, ViewOwner};
+use silex_dom::view::{ApplyAttributes, HostResourceHandle, View, ViewOwner};
 use std::cell::RefCell;
 use std::rc::Rc;
 use web_sys::Node;
@@ -39,13 +38,13 @@ pub enum PersistenceState {
     WriteError(String),
 }
 
-pub(crate) struct ScopedDebounceState {
+pub(crate) struct ScopedDebounceState<'scope> {
     pending: bool,
     generation: u64,
-    timer: Option<TimeoutHandle>,
+    timer: Option<HostResourceHandle<'scope>>,
 }
 
-impl ScopedDebounceState {
+impl<'scope> ScopedDebounceState<'scope> {
     pub(crate) fn new() -> Self {
         Self {
             pending: false,
@@ -60,12 +59,12 @@ impl ScopedDebounceState {
         self.generation
     }
 
-    pub(crate) fn set_timer(&mut self, generation: u64, timer: TimeoutHandle) -> bool {
+    pub(crate) fn set_timer(&mut self, generation: u64, timer: HostResourceHandle<'scope>) -> bool {
         if self.pending && self.generation == generation {
             self.timer = Some(timer);
             true
         } else {
-            timer.clear();
+            timer.cancel();
             false
         }
     }
@@ -81,7 +80,7 @@ impl ScopedDebounceState {
 
     pub(crate) fn invalidate(&mut self) {
         if let Some(timer) = self.timer.take() {
-            timer.clear();
+            timer.cancel();
         }
         self.pending = false;
         self.generation = self.generation.wrapping_add(1);
@@ -103,7 +102,7 @@ pub(crate) struct PersistenceController<'scope, T: 'scope> {
     pub encode: PersistenceEncodeFn<'scope, T>,
     pub decode: PersistenceDecodeFn<'scope, T>,
     pub should_remove: Rc<dyn Fn(&T) -> bool + 'scope>,
-    pub debounce: Option<Rc<RefCell<ScopedDebounceState>>>,
+    pub debounce: Option<Rc<RefCell<ScopedDebounceState<'scope>>>>,
 }
 
 pub struct Persistent<'scope, T> {

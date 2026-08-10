@@ -19,7 +19,8 @@ use silex_core::{
     traits::{RxGet, RxWrite},
     unwind_safe,
 };
-use silex_dom::helpers::set_timeout_with_handle;
+use silex_dom::helpers::set_timeout;
+use silex_dom::view::{ScopedViewOwner, ViewOwner};
 use silex_router::RouterContext;
 use std::{
     borrow::Cow,
@@ -649,51 +650,61 @@ where
                     let _effect = self
                         .scope
                         .effect(
-                            move || -> SilexResult<()> {
-                                let current = value.try_get()?;
-                                let should_skip = take_skip_next_auto_flush(controller);
-                                if should_skip {
-                                    return Ok(());
-                                }
-
-                                let encode = controller
-                                    .with_untracked(|controller| controller.encode.clone());
-                                let raw = encode(&current);
-                                let raw = match raw {
-                                    Ok(raw) => raw,
-                                    Err(error) => {
-                                        debounce_state.borrow_mut().invalidate();
-                                        state.set(PersistenceState::WriteError(error.message()));
+                            {
+                                let owner_scope = self.scope;
+                                let owner_error_handler = self.error_handler;
+                                move || -> SilexResult<()> {
+                                    let current = value.try_get()?;
+                                    let should_skip = take_skip_next_auto_flush(controller);
+                                    if should_skip {
                                         return Ok(());
                                     }
-                                };
-                                state.set(PersistenceState::Syncing(raw));
-                                let generation = debounce_state.borrow_mut().begin();
-                                let completion = completion.clone();
-                                match set_timeout_with_handle(
-                                    move || {
-                                        submit_completion(
-                                            &completion,
-                                            generation,
-                                            completion_error_handler,
-                                        );
-                                    },
-                                    duration,
-                                ) {
-                                    Ok(timer) => {
-                                        let _ = debounce_state
-                                            .borrow_mut()
-                                            .set_timer(generation, timer);
+
+                                    let encode = controller
+                                        .with_untracked(|controller| controller.encode.clone());
+                                    let raw = encode(&current);
+                                    let raw = match raw {
+                                        Ok(raw) => raw,
+                                        Err(error) => {
+                                            debounce_state.borrow_mut().invalidate();
+                                            state
+                                                .set(PersistenceState::WriteError(error.message()));
+                                            return Ok(());
+                                        }
+                                    };
+                                    state.set(PersistenceState::Syncing(raw));
+                                    let generation = debounce_state.borrow_mut().begin();
+                                    let completion = completion.clone();
+                                    let owner =
+                                        ScopedViewOwner::new(owner_scope, owner_error_handler);
+                                    let owner_token = owner.token();
+                                    match set_timeout(
+                                        &owner_token,
+                                        move || {
+                                            submit_completion(
+                                                &completion,
+                                                generation,
+                                                completion_error_handler,
+                                            );
+                                            Ok(())
+                                        },
+                                        duration,
+                                    ) {
+                                        Ok(timer) => {
+                                            let _ = debounce_state
+                                                .borrow_mut()
+                                                .set_timer(generation, timer);
+                                        }
+                                        Err(error) => {
+                                            debounce_state.borrow_mut().invalidate();
+                                            state.set(PersistenceState::WriteError(format!(
+                                                "schedule persistence timeout failed: {:?}",
+                                                error
+                                            )));
+                                        }
                                     }
-                                    Err(error) => {
-                                        debounce_state.borrow_mut().invalidate();
-                                        state.set(PersistenceState::WriteError(format!(
-                                            "schedule persistence timeout failed: {:?}",
-                                            error
-                                        )));
-                                    }
+                                    Ok(())
                                 }
-                                Ok(())
                             },
                             self.error_handler,
                         )

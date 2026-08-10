@@ -3,9 +3,8 @@ use silex_dom::{
     attribute::GlobalEventAttributes,
     element::Element,
     helpers::{
-        debounce_owned, queue_microtask_owned, request_animation_frame_owned,
-        request_idle_callback_owned, set_interval_owned, set_timeout_owned,
-        window_event_listener_owned,
+        debounce, queue_microtask, request_animation_frame, request_idle_callback, set_interval,
+        set_timeout, window_event_listener_untyped,
     },
     view::ViewOwnerToken,
 };
@@ -31,7 +30,7 @@ fn compile_owned<'scope>(
     write: WriteSignal<'scope, i32>,
     borrowed_ref: &'scope str,
 ) {
-    let _timeout = set_timeout_owned(
+    let _timeout = set_timeout(
         token,
         move || {
             write.set(read.get() + borrowed_ref.len() as i32);
@@ -39,7 +38,7 @@ fn compile_owned<'scope>(
         },
         Duration::from_millis(1),
     );
-    let _interval = set_interval_owned(
+    let _interval = set_interval(
         token,
         move || {
             write.set(read.get() + borrowed_ref.len() as i32);
@@ -47,24 +46,24 @@ fn compile_owned<'scope>(
         },
         Duration::from_millis(1),
     );
-    let _frame = request_animation_frame_owned(token, move || {
+    let _frame = request_animation_frame(token, move || {
         write.set(read.get() + borrowed_ref.len() as i32);
         Ok(())
     });
-    let _idle = request_idle_callback_owned(token, move || {
+    let _idle = request_idle_callback(token, move || {
         write.set(read.get() + borrowed_ref.len() as i32);
         Ok(())
     });
-    let _microtask = queue_microtask_owned(token, move || {
+    let _microtask = queue_microtask(token, move || {
         write.set(read.get() + borrowed_ref.len() as i32);
         Ok(())
     });
-    let _listener = window_event_listener_owned(token, silex_dom::event::click, move |_| {
+    let _listener = window_event_listener_untyped(token, "click", move |_| {
         let _ = borrowed_ref;
         write.set(read.get() + 1);
         Ok(())
     });
-    let _debounced = debounce_owned(token, Duration::from_millis(1), move |_: i32| {
+    let _debounced = debounce(token, Duration::from_millis(1), move |_: i32| {
         write.set(read.get() + 1);
         Ok(())
     });

@@ -7,9 +7,8 @@ use silex_dom::{
     element::{Element, bind_event},
     event::click,
     helpers::{
-        debounce_owned, queue_microtask_owned, request_animation_frame_owned,
-        request_idle_callback_owned, set_interval_owned, set_timeout_owned,
-        window_event_listener_untyped_owned,
+        debounce, queue_microtask, request_animation_frame, request_idle_callback, set_interval,
+        set_timeout, window_event_listener_untyped,
     },
     view::{AnyView, KeyedLoopView, ScopedViewOwner, View, ViewOwner, mount_text_node},
 };
@@ -250,7 +249,7 @@ impl<'scope> View<'scope> for WindowResourceView {
     ) -> silex_core::SilexResult<()> {
         let calls = self.calls.clone();
         let id = self.id;
-        window_event_listener_untyped_owned(&owner.token(), "silex-window-resource", move |_| {
+        window_event_listener_untyped(&owner.token(), "silex-window-resource", move |_| {
             calls.borrow_mut().push(id);
             Ok(())
         })?;
@@ -503,7 +502,7 @@ fn lexical_owner_disposes_window_listener_on_scope_exit() {
     runtime.child(|scope| {
         let owner = ScopedViewOwner::new(scope, test_handler(scope));
         let calls_for_handler = calls.clone();
-        window_event_listener_untyped_owned(&owner.token(), "silex-lexical-resource", move |_| {
+        window_event_listener_untyped(&owner.token(), "silex-lexical-resource", move |_| {
             calls_for_handler.set(calls_for_handler.get() + 1);
             Ok(())
         })
@@ -581,13 +580,12 @@ fn window_listener_cancel_is_idempotent_and_owner_keeps_final_control() {
         let owner = ScopedViewOwner::new(scope, test_handler(scope));
         let calls_for_handler = calls.clone();
         let probe = DropProbe::new(drops.clone());
-        let handle =
-            window_event_listener_untyped_owned(&owner.token(), "silex-resize", move |_| {
-                calls_for_handler.set(calls_for_handler.get() + 1);
-                let _ = &probe;
-                Ok(())
-            })
-            .expect("window listener should register");
+        let handle = window_event_listener_untyped(&owner.token(), "silex-resize", move |_| {
+            calls_for_handler.set(calls_for_handler.get() + 1);
+            let _ = &probe;
+            Ok(())
+        })
+        .expect("window listener should register");
         *handle_slot.borrow_mut() = Some(handle);
     }
 
@@ -637,7 +635,7 @@ async fn cancelable_host_tasks_are_cleared_before_dispatch() {
 
         let timeout_calls_for_callback = timeout_calls.clone();
         let timeout_probe = DropProbe::new(drops.clone());
-        set_timeout_owned(
+        set_timeout(
             &owner.token(),
             move || {
                 timeout_calls_for_callback.set(timeout_calls_for_callback.get() + 1);
@@ -650,7 +648,7 @@ async fn cancelable_host_tasks_are_cleared_before_dispatch() {
 
         let interval_calls_for_callback = interval_calls.clone();
         let interval_probe = DropProbe::new(drops.clone());
-        set_interval_owned(
+        set_interval(
             &owner.token(),
             move || {
                 interval_calls_for_callback.set(interval_calls_for_callback.get() + 1);
@@ -663,7 +661,7 @@ async fn cancelable_host_tasks_are_cleared_before_dispatch() {
 
         let frame_calls_for_callback = frame_calls.clone();
         let frame_probe = DropProbe::new(drops.clone());
-        request_animation_frame_owned(&owner.token(), move || {
+        request_animation_frame(&owner.token(), move || {
             frame_calls_for_callback.set(frame_calls_for_callback.get() + 1);
             let _ = &frame_probe;
             Ok(())
@@ -672,7 +670,7 @@ async fn cancelable_host_tasks_are_cleared_before_dispatch() {
 
         let idle_calls_for_callback = idle_calls.clone();
         let idle_probe = DropProbe::new(drops.clone());
-        request_idle_callback_owned(&owner.token(), move || {
+        request_idle_callback(&owner.token(), move || {
             idle_calls_for_callback.set(idle_calls_for_callback.get() + 1);
             let _ = &idle_probe;
             Ok(())
@@ -716,7 +714,7 @@ async fn active_host_tasks_execute_and_interval_cancel_is_idempotent() {
         let scope = root.scope();
         let owner = ScopedViewOwner::new(scope, test_handler(scope));
         let timeout_calls_for_callback = timeout_calls.clone();
-        set_timeout_owned(
+        set_timeout(
             &owner.token(),
             move || {
                 timeout_calls_for_callback.set(timeout_calls_for_callback.get() + 1);
@@ -727,7 +725,7 @@ async fn active_host_tasks_execute_and_interval_cancel_is_idempotent() {
         .expect("timeout should register");
 
         let interval_calls_for_callback = interval_calls.clone();
-        let interval = set_interval_owned(
+        let interval = set_interval(
             &owner.token(),
             move || {
                 interval_calls_for_callback.set(interval_calls_for_callback.get() + 1);
@@ -739,14 +737,14 @@ async fn active_host_tasks_execute_and_interval_cancel_is_idempotent() {
         *interval_slot.borrow_mut() = Some(interval);
 
         let frame_calls_for_callback = frame_calls.clone();
-        request_animation_frame_owned(&owner.token(), move || {
+        request_animation_frame(&owner.token(), move || {
             frame_calls_for_callback.set(frame_calls_for_callback.get() + 1);
             Ok(())
         })
         .expect("animation frame should register");
 
         let idle_calls_for_callback = idle_calls.clone();
-        request_idle_callback_owned(&owner.token(), move || {
+        request_idle_callback(&owner.token(), move || {
             idle_calls_for_callback.set(idle_calls_for_callback.get() + 1);
             Ok(())
         })
@@ -793,14 +791,14 @@ async fn microtask_cancel_and_owner_dispose_only_gate_user_callbacks() {
         let scope = root.scope();
         let owner = ScopedViewOwner::new(scope, test_handler(scope));
         let canceled_calls_for_task = canceled_calls.clone();
-        let canceled = queue_microtask_owned(&owner.token(), move || {
+        let canceled = queue_microtask(&owner.token(), move || {
             canceled_calls_for_task.set(canceled_calls_for_task.get() + 1);
             Ok(())
         });
         *canceled_slot.borrow_mut() = Some(canceled);
 
         let disposed_calls_for_task = disposed_calls.clone();
-        queue_microtask_owned(&owner.token(), move || {
+        queue_microtask(&owner.token(), move || {
             disposed_calls_for_task.set(disposed_calls_for_task.get() + 1);
             Ok(())
         });
@@ -833,7 +831,7 @@ async fn debounce_clears_replaced_timer_and_blocks_dispose_completion() {
         let owner = ScopedViewOwner::new(scope, test_handler(scope));
         let token = owner.token();
         let values_for_callback = values.clone();
-        let debounce = debounce_owned(&token, Duration::from_millis(10), move |value: i32| {
+        let debounce = debounce(&token, Duration::from_millis(10), move |value: i32| {
             values_for_callback.borrow_mut().push(value);
             Ok(())
         });
@@ -876,7 +874,7 @@ fn debounce_timeout_creation_failure_reaches_owner_handler() {
             scope.error_handler(move |error| errors_for_reporter.borrow_mut().push(error)),
         );
         let token = owner.token();
-        let mut debounce = debounce_owned(&token, Duration::from_millis(0), |_| Ok(()));
+        let mut debounce = debounce(&token, Duration::from_millis(0), |_| Ok(()));
         spy.fail_next_timeout();
         debounce(1_i32);
     });
@@ -902,7 +900,7 @@ async fn timer_callback_can_reenter_root_dispose_without_late_registration() {
 
         let calls_for_callback = calls.clone();
         let dispose_for_callback = dispose_slot.clone();
-        set_timeout_owned(
+        set_timeout(
             &token,
             move || {
                 calls_for_callback.set(calls_for_callback.get() + 1);
@@ -944,7 +942,7 @@ fn timeout_lifecycle_handles_creation_failure_repeated_cancel_reentry_and_stale_
         let failed_calls_for_callback = failed_calls.clone();
         let failed_probe = DropProbe::new(drops.clone());
         assert!(
-            set_timeout_owned(
+            set_timeout(
                 &owner.token(),
                 move || {
                     failed_calls_for_callback.set(failed_calls_for_callback.get() + 1);
@@ -960,7 +958,7 @@ fn timeout_lifecycle_handles_creation_failure_repeated_cancel_reentry_and_stale_
 
         let canceled_calls_for_callback = canceled_calls.clone();
         let canceled_probe = DropProbe::new(drops.clone());
-        let canceled = set_timeout_owned(
+        let canceled = set_timeout(
             &owner.token(),
             move || {
                 canceled_calls_for_callback.set(canceled_calls_for_callback.get() + 1);
@@ -976,7 +974,7 @@ fn timeout_lifecycle_handles_creation_failure_repeated_cancel_reentry_and_stale_
         assert_eq!(canceled_calls.get(), 0);
 
         let values_for_debounce = values.clone();
-        let mut debounce = debounce_owned(&owner.token(), Duration::from_millis(0), move |value| {
+        let mut debounce = debounce(&owner.token(), Duration::from_millis(0), move |value| {
             values_for_debounce.borrow_mut().push(value);
             Ok(())
         });
@@ -985,7 +983,7 @@ fn timeout_lifecycle_handles_creation_failure_repeated_cancel_reentry_and_stale_
 
         let reentrant_calls_for_callback = reentrant_calls.clone();
         let dispose_for_callback = dispose_slot.clone();
-        set_timeout_owned(
+        set_timeout(
             &owner.token(),
             move || {
                 reentrant_calls_for_callback.set(reentrant_calls_for_callback.get() + 1);

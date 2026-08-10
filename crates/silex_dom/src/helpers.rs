@@ -12,6 +12,8 @@ use silex_core::{SilexError, SilexResult};
 
 use crate::view::{HostCallback, HostResourceHandle, ViewOwnerToken};
 
+pub mod detached;
+
 fn host_resource_error(error: SilexError) -> JsValue {
     JsValue::from_str(&error.to_string())
 }
@@ -116,64 +118,7 @@ where
         .is_some_and(|input| input.checked())
 }
 
-/// Adds an event listener to the `Window`, returning a cancelable handle that automatically
-/// unbinds the listener when dropped (RAII). Call `.forget()` to keep it alive indefinitely.
-pub fn window_event_listener_untyped_detached(
-    event_name: &str,
-    cb: impl FnMut(web_sys::Event) + 'static,
-) -> WindowListenerHandle {
-    let mut cb = AssertUnwindSafe(cb);
-    let cb: Closure<dyn FnMut(web_sys::Event)> = Closure::wrap(Box::new(move |event| (*cb)(event)));
-    let cb = cb.into_js_value();
-
-    let _ = window().add_event_listener_with_callback(event_name, cb.as_ref().unchecked_ref());
-
-    let event_name = event_name.to_string();
-    let cb_clone = cb.clone();
-
-    WindowListenerHandle::new(move || {
-        let _ = window()
-            .remove_event_listener_with_callback(&event_name, cb_clone.as_ref().unchecked_ref());
-    })
-}
-
-/// Fallibly adds an event listener to the `Window`, returning an owned RAII handle.
-pub fn try_window_event_listener_untyped_detached(
-    event_name: &str,
-    cb: impl FnMut(web_sys::Event) + 'static,
-) -> Result<WindowListenerHandle, JsValue> {
-    let mut cb = AssertUnwindSafe(cb);
-    let cb: Closure<dyn FnMut(web_sys::Event)> = Closure::wrap(Box::new(move |event| (*cb)(event)));
-    let cb = cb.into_js_value();
-
-    let window = try_window().ok_or_else(|| JsValue::from_str("Window not found"))?;
-    window.add_event_listener_with_callback(event_name, cb.as_ref().unchecked_ref())?;
-
-    let event_name = event_name.to_string();
-    let cb_clone = cb.clone();
-
-    Ok(WindowListenerHandle::new(move || {
-        if let Some(window) = try_window() {
-            let _ = window.remove_event_listener_with_callback(
-                &event_name,
-                cb_clone.as_ref().unchecked_ref(),
-            );
-        }
-    }))
-}
-
-/// Adds a typed event listener to the `Window`, returning a cancelable handle.
-pub fn window_event_listener_detached<E, F>(event: E, mut cb: F) -> WindowListenerHandle
-where
-    E: crate::event::EventDescriptor + 'static,
-    F: FnMut(E::EventType) + 'static,
-{
-    window_event_listener_untyped_detached(&event.name(), move |e| {
-        cb(e.unchecked_into());
-    })
-}
-
-pub fn window_event_listener_untyped_owned<'scope>(
+pub fn window_event_listener_untyped<'scope>(
     owner: &ViewOwnerToken<'scope>,
     event_name: &str,
     mut cb: impl FnMut(web_sys::Event) -> SilexResult<()> + 'scope,
@@ -219,99 +164,25 @@ pub fn window_event_listener_untyped_owned<'scope>(
     }
 }
 
-pub fn window_event_listener_owned<'scope, E, F>(
+pub fn window_event_listener<'scope, E, F>(
     owner: &ViewOwnerToken<'scope>,
     event: E,
     mut cb: F,
 ) -> Result<HostResourceHandle<'scope>, JsValue>
 where
-    E: crate::event::EventDescriptor + 'static,
+    E: crate::event::EventDescriptor,
     F: FnMut(E::EventType) -> SilexResult<()> + 'scope,
 {
-    window_event_listener_untyped_owned(owner, &event.name(), move |event| {
-        cb(event.unchecked_into())
-    })
-}
-
-/// Compatibility wrapper for the detached/manual listener API.
-pub fn window_event_listener_untyped(
-    event_name: &str,
-    cb: impl FnMut(web_sys::Event) + 'static,
-) -> WindowListenerHandle {
-    window_event_listener_untyped_detached(event_name, cb)
-}
-
-/// Compatibility wrapper for the detached/manual listener API.
-pub fn window_event_listener<E, F>(event: E, cb: F) -> WindowListenerHandle
-where
-    E: crate::event::EventDescriptor + 'static,
-    F: FnMut(E::EventType) + 'static,
-{
-    window_event_listener_detached(event, cb)
-}
-
-/// A RAII handle for window event listeners. Automatically unbinds the listener on `Drop`
-/// unless `.forget()` is explicitly called.
-pub struct WindowListenerHandle {
-    cleanup: Option<Box<dyn FnOnce()>>,
-}
-
-impl WindowListenerHandle {
-    pub fn new(cleanup: impl FnOnce() + 'static) -> Self {
-        Self {
-            cleanup: Some(Box::new(cleanup)),
-        }
-    }
-
-    /// Manually remove the event listener immediately.
-    pub fn remove(mut self) {
-        if let Some(f) = self.cleanup.take() {
-            f();
-        }
-    }
-
-    /// Disables automatic removal on Drop, keeping the listener active indefinitely.
-    pub fn forget(mut self) {
-        self.cleanup = None;
-    }
-}
-
-impl Drop for WindowListenerHandle {
-    fn drop(&mut self) {
-        if let Some(f) = self.cleanup.take() {
-            f();
-        }
-    }
+    window_event_listener_untyped(
+        owner,
+        &event.name(),
+        move |event| cb(event.unchecked_into()),
+    )
 }
 
 // --- Timer & Animation Frame Helpers ---
 
-fn closure_once(cb: impl FnOnce() + 'static) -> JsValue {
-    Closure::once_into_js(AssertUnwindSafe(cb))
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct AnimationFrameRequestHandle(i32);
-
-impl AnimationFrameRequestHandle {
-    pub fn cancel(&self) {
-        let _ = window().cancel_animation_frame(self.0);
-    }
-}
-
-pub fn request_animation_frame(cb: impl FnOnce() + 'static) {
-    let _ = request_animation_frame_with_handle(cb);
-}
-
-pub fn request_animation_frame_with_handle(
-    cb: impl FnOnce() + 'static,
-) -> Result<AnimationFrameRequestHandle, JsValue> {
-    window()
-        .request_animation_frame(closure_once(cb).as_ref().unchecked_ref())
-        .map(AnimationFrameRequestHandle)
-}
-
-fn duration_millis(duration: Duration) -> i32 {
+pub(super) fn duration_millis(duration: Duration) -> i32 {
     duration.as_millis().try_into().unwrap_or(i32::MAX)
 }
 
@@ -358,7 +229,7 @@ fn owned_once_callback<'scope>(
     destination
 }
 
-pub fn request_animation_frame_owned<'scope>(
+pub fn request_animation_frame<'scope>(
     owner: &ViewOwnerToken<'scope>,
     cb: impl FnOnce() -> SilexResult<()> + 'scope,
 ) -> Result<HostResourceHandle<'scope>, JsValue> {
@@ -394,28 +265,7 @@ pub fn request_animation_frame_owned<'scope>(
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct IdleCallbackHandle(u32);
-
-impl IdleCallbackHandle {
-    pub fn cancel(&self) {
-        window().cancel_idle_callback(self.0);
-    }
-}
-
-pub fn request_idle_callback(cb: impl FnOnce() + 'static) {
-    let _ = request_idle_callback_with_handle(cb);
-}
-
-pub fn request_idle_callback_with_handle(
-    cb: impl FnOnce() + 'static,
-) -> Result<IdleCallbackHandle, JsValue> {
-    window()
-        .request_idle_callback(closure_once(cb).as_ref().unchecked_ref())
-        .map(IdleCallbackHandle)
-}
-
-pub fn request_idle_callback_owned<'scope>(
+pub fn request_idle_callback<'scope>(
     owner: &ViewOwnerToken<'scope>,
     cb: impl FnOnce() -> SilexResult<()> + 'scope,
 ) -> Result<HostResourceHandle<'scope>, JsValue> {
@@ -451,12 +301,7 @@ pub fn request_idle_callback_owned<'scope>(
     }
 }
 
-pub fn queue_microtask(task: impl FnOnce() + 'static) {
-    let task = Closure::once_into_js(AssertUnwindSafe(task));
-    window().queue_microtask(&task.unchecked_into());
-}
-
-pub fn queue_microtask_owned<'scope>(
+pub fn queue_microtask<'scope>(
     owner: &ViewOwnerToken<'scope>,
     task: impl FnOnce() -> SilexResult<()> + 'scope,
 ) -> HostResourceHandle<'scope> {
@@ -481,32 +326,7 @@ pub fn queue_microtask_owned<'scope>(
     })
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct TimeoutHandle(i32);
-
-impl TimeoutHandle {
-    pub fn clear(&self) {
-        window().clear_timeout_with_handle(self.0);
-    }
-}
-
-pub fn set_timeout(cb: impl FnOnce() + 'static, duration: Duration) {
-    let _ = set_timeout_with_handle(cb, duration);
-}
-
-pub fn set_timeout_with_handle(
-    cb: impl FnOnce() + 'static,
-    duration: Duration,
-) -> Result<TimeoutHandle, JsValue> {
-    window()
-        .set_timeout_with_callback_and_timeout_and_arguments_0(
-            closure_once(cb).as_ref().unchecked_ref(),
-            duration.as_millis().try_into().unwrap_or(0),
-        )
-        .map(TimeoutHandle)
-}
-
-pub fn set_timeout_owned<'scope>(
+pub fn set_timeout<'scope>(
     owner: &ViewOwnerToken<'scope>,
     cb: impl FnOnce() -> SilexResult<()> + 'scope,
     duration: Duration,
@@ -545,35 +365,7 @@ pub fn set_timeout_owned<'scope>(
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct IntervalHandle(i32);
-
-impl IntervalHandle {
-    pub fn clear(&self) {
-        window().clear_interval_with_handle(self.0);
-    }
-}
-
-pub fn set_interval(cb: impl Fn() + 'static, duration: Duration) {
-    let _ = set_interval_with_handle(cb, duration);
-}
-
-pub fn set_interval_with_handle(
-    cb: impl Fn() + 'static,
-    duration: Duration,
-) -> Result<IntervalHandle, JsValue> {
-    let cb = AssertUnwindSafe(cb);
-    let cb: Closure<dyn FnMut()> = Closure::wrap(Box::new(move || (*cb)()));
-    let cb = cb.into_js_value();
-    window()
-        .set_interval_with_callback_and_timeout_and_arguments_0(
-            cb.as_ref().unchecked_ref(),
-            duration.as_millis().try_into().unwrap_or(0),
-        )
-        .map(IntervalHandle)
-}
-
-pub fn set_interval_owned<'scope>(
+pub fn set_interval<'scope>(
     owner: &ViewOwnerToken<'scope>,
     mut cb: impl FnMut() -> SilexResult<()> + 'scope,
     duration: Duration,
@@ -617,32 +409,6 @@ pub fn set_interval_owned<'scope>(
 
 // --- Debounce ---
 
-/// Debounce a callback function.
-pub fn debounce<T: 'static>(delay: Duration, cb: impl FnMut(T) + 'static) -> impl FnMut(T) {
-    let cb = Rc::new(RefCell::new(cb));
-    let timer = Rc::new(RefCell::new(None::<TimeoutHandle>));
-
-    move |arg| {
-        if let Some(timer) = timer.borrow_mut().take() {
-            timer.clear();
-        }
-        let handle = set_timeout_with_handle(
-            {
-                let cb = Rc::clone(&cb);
-                let timer = Rc::clone(&timer);
-                move || {
-                    let _ = timer.borrow_mut().take();
-                    cb.borrow_mut()(arg);
-                }
-            },
-            delay,
-        );
-        if let Ok(handle) = handle {
-            *timer.borrow_mut() = Some(handle);
-        }
-    }
-}
-
 struct DebounceTimer {
     id: i32,
     callback: JsValue,
@@ -664,7 +430,7 @@ impl<T> DebounceState<T> {
     }
 }
 
-pub fn debounce_owned<'scope, T, F>(
+pub fn debounce<'scope, T, F>(
     owner: &ViewOwnerToken<'scope>,
     delay: Duration,
     mut cb: F,
@@ -738,40 +504,4 @@ where
             }
         }
     }
-}
-
-// --- Explicit owner and detached helpers ---
-
-pub fn use_interval_owned<'scope>(
-    owner: &ViewOwnerToken<'scope>,
-    duration: Duration,
-    cb: impl FnMut() -> SilexResult<()> + 'scope,
-) -> Result<HostResourceHandle<'scope>, JsValue> {
-    set_interval_owned(owner, cb, duration)
-}
-
-pub fn use_timeout_owned<'scope>(
-    owner: &ViewOwnerToken<'scope>,
-    duration: Duration,
-    cb: impl FnOnce() -> SilexResult<()> + 'scope,
-) -> Result<HostResourceHandle<'scope>, JsValue> {
-    set_timeout_owned(owner, cb, duration)
-}
-
-/// Detached/manual interval helper. It is not associated with a view owner.
-pub fn use_interval(
-    duration: Duration,
-    cb: impl Fn() + 'static,
-) -> Result<IntervalHandle, JsValue> {
-    let handle = set_interval_with_handle(cb, duration)?;
-    Ok(handle)
-}
-
-/// Detached/manual timeout helper. It is not associated with a view owner.
-pub fn use_timeout(
-    duration: Duration,
-    cb: impl FnOnce() + 'static,
-) -> Result<TimeoutHandle, JsValue> {
-    let handle = set_timeout_with_handle(cb, duration)?;
-    Ok(handle)
 }

@@ -984,6 +984,19 @@ where
     Ok(())
 }
 
+#[doc(hidden)]
+pub fn mount_component<'scope, F>(
+    owner: &dyn ViewOwner<'scope>,
+    parent: &Node,
+    attrs: Vec<PendingAttribute<'scope>>,
+    mount: F,
+) -> SilexResult<()>
+where
+    F: FnOnce(&dyn ViewOwner<'scope>, &Node, Vec<PendingAttribute<'scope>>) -> SilexResult<()>,
+{
+    mount_composite(owner, parent, attrs, mount)
+}
+
 fn rollback_composite_scope<'scope>(scope: &Rc<OwnedScope<'scope>>) {
     if let Err(panic) = catch_unwind(AssertUnwindSafe(|| scope.dispose())) {
         resume_unwind(panic);

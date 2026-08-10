@@ -2,7 +2,7 @@ use crate::{AppHost, AppHostError, BootstrapError, HostState, UnmountOutcome};
 use silex_core::{Runtime, SilexError, SilexResult};
 use silex_dom::{
     CleanupSink, MountContext,
-    helpers::{self, WindowListenerHandle},
+    helpers::{self, detached::WindowListenerHandle},
 };
 use std::{
     cell::RefCell,
@@ -121,7 +121,7 @@ impl PageController {
             let reporter = reporter.clone();
             let document = document.clone();
             let listener =
-                helpers::try_window_event_listener_untyped_detached(event_name, move |_event| {
+                helpers::detached::try_window_event_listener_untyped(event_name, move |_event| {
                     if only_when_hidden
                         && document.as_ref().is_some_and(|document| !document.hidden())
                     {

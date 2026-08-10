@@ -44,6 +44,7 @@ struct ComponentMetadata {
     product_name: Ident,
     render_fn_name: Ident,
     constructor_name: Option<Ident>,
+    inject_owner: bool,
 }
 
 struct BuilderContext {
@@ -59,6 +60,7 @@ struct BuilderContext {
     required_fields: Vec<FieldSpec>,
     scope: syn::Lifetime,
     scope_field: Option<Ident>,
+    inject_owner: bool,
 }
 
 impl BuilderContext {
@@ -75,7 +77,7 @@ impl BuilderContext {
         let inferred_component_name = strip_props_suffix(&props_name);
         let metadata = parse_component_metadata(&attrs, &props_name)?;
         // Component metadata is authoritative; only standalone derives use the legacy naming fallback.
-        let (builder_name, product_name, render_fn_name, component_name) =
+        let (builder_name, product_name, render_fn_name, component_name, inject_owner) =
             if let Some(metadata) = metadata {
                 (
                     metadata.builder_name,
@@ -84,6 +86,7 @@ impl BuilderContext {
                     metadata
                         .constructor_name
                         .unwrap_or_else(|| inferred_component_name.clone()),
+                    metadata.inject_owner,
                 )
             } else {
                 (
@@ -91,6 +94,7 @@ impl BuilderContext {
                     format_ident!("{}Component", inferred_component_name),
                     format_ident!("__silex_render_{}", inferred_component_name),
                     inferred_component_name,
+                    false,
                 )
             };
         let scope = generics
@@ -164,6 +168,7 @@ impl BuilderContext {
             required_fields,
             scope,
             scope_field,
+            inject_owner,
         })
     }
 
@@ -672,6 +677,37 @@ impl BuilderContext {
             .predicates
             .push(syn::parse_quote!(#product_ty: ::core::clone::Clone));
 
+        let mount_body = if self.inject_owner {
+            quote! {
+                #__silex::dom::view::mount_component(
+                    owner,
+                    parent,
+                    pending_attrs,
+                    move |component_owner, component_parent, component_attrs| {
+                        let owner_token =
+                            #__silex::dom::view::ViewOwner::token(component_owner);
+                        let view_instance = #render_fn_name(self.props, owner_token);
+                        #__silex::dom::view::View::mount_owned(
+                            view_instance,
+                            component_owner,
+                            component_parent,
+                            component_attrs,
+                        )
+                    },
+                )
+            }
+        } else {
+            quote! {
+                let view_instance = #render_fn_name(self.props);
+                #__silex::dom::view::View::mount_owned(
+                    view_instance,
+                    owner,
+                    parent,
+                    pending_attrs,
+                )
+            }
+        };
+
         quote! {
             impl #impl_generics #__silex::dom::view::View<#scope> for #product_ty #view_where_clause {
                 fn mount(
@@ -694,13 +730,7 @@ impl BuilderContext {
                 {
                     self._pending_attrs.extend(attrs);
                     let pending_attrs = self._pending_attrs;
-                    let view_instance = #render_fn_name(self.props);
-                    #__silex::dom::view::View::mount_owned(
-                        view_instance,
-                        owner,
-                        parent,
-                        pending_attrs,
-                    )
+                    #mount_body
                 }
             }
         }
@@ -934,6 +964,7 @@ fn parse_component_metadata(
     let mut product_name = None;
     let mut render_fn_name = None;
     let mut constructor_name = None;
+    let mut inject_owner = false;
 
     attr.parse_nested_meta(|meta| {
         if meta.path.is_ident("builder") {
@@ -956,8 +987,15 @@ fn parse_component_metadata(
                 return Err(meta.error("duplicate `constructor` metadata entry"));
             }
             constructor_name = Some(meta.value()?.parse::<Ident>()?);
+        } else if meta.path.is_ident("owner") {
+            if inject_owner {
+                return Err(meta.error("duplicate `owner` metadata entry"));
+            }
+            inject_owner = true;
         } else {
-            return Err(meta.error("expected `builder`, `product`, `render`, or `constructor`"));
+            return Err(
+                meta.error("expected `builder`, `product`, `render`, `constructor`, or `owner`")
+            );
         }
         Ok(())
     })?;
@@ -992,6 +1030,7 @@ fn parse_component_metadata(
         product_name,
         render_fn_name,
         constructor_name,
+        inject_owner,
     }))
 }
 

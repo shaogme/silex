@@ -1,11 +1,11 @@
 use silex_core::Runtime;
-use silex_dom::helpers::window_event_listener_untyped_detached;
+use silex_dom::helpers::detached::window_event_listener_untyped;
 
 fn main() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
         let (value, _) = scope.signal(1_i32);
-        let _ = window_event_listener_untyped_detached("popstate", move |_| {
+        let _ = window_event_listener_untyped("popstate", move |_| {
             let _ = value.get();
         });
     });
