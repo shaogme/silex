@@ -2,46 +2,56 @@ use silex_core::reactivity::ReactiveSource;
 use silex_core::traits::{ForLoopSource, RxRead};
 use silex_core::{ErrorHandler, SilexError};
 use silex_dom::prelude::*;
-use silex_dom::view::RowUpdater;
+use silex_dom::view::{AnyView, RowUpdater};
 use silex_macros::component;
 use std::hash::Hash;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
-pub trait ForChildren<'scope, Item> {
-    type View: View<'scope> + 'scope;
-
-    fn render(&self, item: Item, index: usize, updater: RowUpdater<'scope, Item>) -> Self::View;
+/// 类型擦除的 keyed 列表行渲染器。
+#[derive(Clone)]
+pub struct ForRenderer<'scope, Item: 'scope> {
+    render: Rc<dyn Fn(Item, usize, RowUpdater<'scope, Item>) -> AnyView<'scope> + 'scope>,
 }
 
-impl<'scope, Item, F, V> ForChildren<'scope, Item> for F
-where
-    F: Fn(Item, usize, RowUpdater<'scope, Item>) -> V,
-    V: View<'scope> + 'scope,
-{
-    type View = V;
+impl<'scope, Item: 'scope> ForRenderer<'scope, Item> {
+    pub fn from_fn<F, V>(render: F) -> Self
+    where
+        F: Fn(Item, usize, RowUpdater<'scope, Item>) -> V + 'scope,
+        V: View<'scope> + 'scope,
+    {
+        Self {
+            render: Rc::new(move |item, index, updater| render(item, index, updater).into_any()),
+        }
+    }
 
-    fn render(&self, item: Item, index: usize, updater: RowUpdater<'scope, Item>) -> Self::View {
-        self(item, index, updater)
+    fn render(
+        &self,
+        item: Item,
+        index: usize,
+        updater: RowUpdater<'scope, Item>,
+    ) -> AnyView<'scope> {
+        (self.render)(item, index, updater)
     }
 }
 
-/// 标准 component 化的 For 组件。
+/// 标准 component 化的 keyed `For` 组件。
 ///
-/// 使用方式：
+/// `children` 的闭包参数在调用点直接推导为 `Item`、`usize` 和 `RowUpdater`。
+///
 /// ```rust,ignore
 /// For(list, |item| item.id)
 ///     .children(|item, idx, updater| li(format!("{}: {}", idx, item.name)))
-///     .error(|err| log_error(err))
+///     .error_handler(list_handler)
 ///     .build()
 /// ```
 #[component]
-pub fn For<'scope, ItemsFn, IS, Item, Key, KF, MF>(
+pub fn For<'scope, ItemsFn, IS, Item, Key, KF>(
     each: ItemsFn,
     key: KF,
-    #[prop(render)]
+    #[prop(render_fn(Item, usize, RowUpdater<'scope, Item>))]
     #[chain]
-    children: MF,
+    children: ForRenderer<'scope, Item>,
     #[prop(into)]
     #[chain(default)]
     error_handler: Option<ErrorHandler<'scope, SilexError>>,
@@ -53,10 +63,12 @@ where
     Item: Clone + 'scope,
     Key: Hash + Eq + Clone + 'scope,
     KF: Fn(&Item) -> Key + 'scope,
-    MF: ForChildren<'scope, Item> + Clone + 'scope,
 {
-    let view_fn =
-        Rc::new(move |item, index, updater| children.render(item, index, updater).into_any());
+    let view_fn = Rc::new(
+        move |item: Item, index: usize, updater: RowUpdater<'scope, Item>| {
+            children.render(item, index, updater)
+        },
+    );
 
     silex_dom::view::list::KeyedLoopView {
         each,

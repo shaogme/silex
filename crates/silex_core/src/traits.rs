@@ -940,7 +940,7 @@ pub trait ForLoopSource {
     fn as_slice(&self) -> SilexResult<&[Self::Item]>;
 }
 
-impl<T: Clone + 'static> ForLoopSource for Vec<T> {
+impl<T: Clone> ForLoopSource for Vec<T> {
     type Item = T;
 
     fn as_slice(&self) -> SilexResult<&[T]> {
@@ -948,10 +948,21 @@ impl<T: Clone + 'static> ForLoopSource for Vec<T> {
     }
 }
 
-impl<T: Clone + 'static> ForLoopSource for Option<Vec<T>> {
+impl<T: Clone> ForLoopSource for Option<Vec<T>> {
     type Item = T;
 
     fn as_slice(&self) -> SilexResult<&[T]> {
         Ok(self.as_deref().unwrap_or_default())
+    }
+}
+
+impl<T: Clone> ForLoopSource for SilexResult<Vec<T>> {
+    type Item = T;
+
+    fn as_slice(&self) -> SilexResult<&[T]> {
+        match self {
+            Ok(items) => Ok(items.as_slice()),
+            Err(error) => Err(error.clone()),
+        }
     }
 }

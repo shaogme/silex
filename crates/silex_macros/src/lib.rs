@@ -131,6 +131,8 @@ pub fn tw_verbose(input: TokenStream) -> TokenStream {
 /// - `#[chain(default)]`: 普通字段使用 `Default::default()`；scoped reactive wrapper
 ///   使用当前显式 `Scope<'scope>` 创建默认值，并启用链式调用
 /// - `#[prop(into)]`: 该属性将使用 `Into<T>` 转换输入
+/// - `#[prop(render_fn(T, ...))]`: 将闭包参数直接约束为给定类型；字段类型通过
+///   `from_fn` 将闭包转换为存储的渲染器
 /// - `#[chain(default), prop(into)]`: 可以组合使用
 #[cfg(feature = "component")]
 #[proc_macro_attribute]

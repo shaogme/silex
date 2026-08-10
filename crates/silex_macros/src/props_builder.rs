@@ -2,6 +2,7 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use syn::{
     Attribute, Data, DeriveInput, Fields, GenericArgument, Ident, PathArguments, Type, Visibility,
+    parse::Parse,
 };
 
 #[derive(Clone, Default)]
@@ -10,6 +11,7 @@ struct FieldAttrs {
     default_value: Option<TokenStream2>,
     into_trait: bool,
     render: bool,
+    render_fn_args: Option<Vec<Type>>,
     chained: bool,
 }
 
@@ -282,6 +284,30 @@ impl BuilderContext {
         }
     }
 
+    fn fresh_generic_ident(&self, prefix: &str, reserved: &[&Ident]) -> Ident {
+        let mut index = 0usize;
+        loop {
+            let candidate = if index == 0 {
+                format_ident!("{}", prefix)
+            } else {
+                format_ident!("{}{}", prefix, index)
+            };
+            let used = self.generics.params.iter().any(|param| match param {
+                syn::GenericParam::Lifetime(param) => param.lifetime.ident == candidate,
+                syn::GenericParam::Type(param) => param.ident == candidate,
+                syn::GenericParam::Const(param) => param.ident == candidate,
+            }) || self
+                .prop_generic_idents
+                .iter()
+                .any(|ident| ident == &candidate)
+                || reserved.contains(&&candidate);
+            if !used {
+                return candidate;
+            }
+            index += 1;
+        }
+    }
+
     fn pending_attribute_ty(&self) -> TokenStream2 {
         let __silex = crate::crate_path::silex();
         let scope = self.scope_lifetime();
@@ -447,31 +473,54 @@ impl BuilderContext {
 
         let fields_destructure: Vec<_> = self.fields.iter().map(|f| &f.ident).collect();
 
-        let setter_param = if reactive_input {
-            quote! { #setter_generic }
-        } else if is_any_view_type(ty) {
-            quote! { impl #__silex::dom::view::View<#scope> + #scope }
-        } else if field.attrs.render {
-            quote! { #ty }
-        } else if field.attrs.into_trait || is_auto_into_type(ty) {
-            quote! { impl ::core::convert::Into<#ty> }
+        let (setter_param, setter_value, generic, where_clause) = if let Some(render_fn_args) =
+            field.attrs.render_fn_args.as_deref()
+        {
+            let render_fn = self.fresh_generic_ident("__SilexRenderFn", &[]);
+            let render_view = self.fresh_generic_ident("__SilexRenderView", &[&render_fn]);
+            (
+                quote! { #render_fn },
+                quote! { <#ty>::from_fn(val) },
+                quote! { <#render_fn, #render_view> },
+                quote! {
+                    where
+                        #render_fn: Fn(#(#render_fn_args),*) -> #render_view + #scope,
+                        #render_view: #__silex::dom::view::View<#scope> + #scope,
+                },
+            )
+        } else if reactive_input {
+            (
+                quote! { #setter_generic },
+                quote! {
+                    <#setter_generic as #__silex::core::ReactiveInput<#scope, #ty>>::into_reactive_input(
+                        val,
+                        #scope_expr,
+                    )
+                },
+                quote! { <#setter_generic> },
+                quote! {
+                    where
+                        #setter_generic: #__silex::core::ReactiveInput<#scope, #ty>
+                },
+            )
         } else {
-            quote! { #ty }
-        };
-
-        let setter_value = if reactive_input {
-            quote! {
-                <#setter_generic as #__silex::core::ReactiveInput<#scope, #ty>>::into_reactive_input(
-                    val,
-                    #scope_expr,
-                )
-            }
-        } else if is_any_view_type(ty) {
-            quote! { val.into_any() }
-        } else if field.attrs.into_trait || is_auto_into_type(ty) {
-            quote! { val.into() }
-        } else {
-            quote! { val }
+            let setter_param = if is_any_view_type(ty) {
+                quote! { impl #__silex::dom::view::View<#scope> + #scope }
+            } else if field.attrs.render {
+                quote! { #ty }
+            } else if field.attrs.into_trait || is_auto_into_type(ty) {
+                quote! { impl ::core::convert::Into<#ty> }
+            } else {
+                quote! { #ty }
+            };
+            let setter_value = if is_any_view_type(ty) {
+                quote! { val.into_any() }
+            } else if field.attrs.into_trait || is_auto_into_type(ty) {
+                quote! { val.into() }
+            } else {
+                quote! { val }
+            };
+            (setter_param, setter_value, quote! {}, quote! {})
         };
 
         let final_value = if !field.attrs.chained {
@@ -497,20 +546,6 @@ impl BuilderContext {
             }
             let return_ty = self.get_builder_ty(&return_states);
 
-            let generic = if reactive_input {
-                quote! { <#setter_generic> }
-            } else {
-                quote! {}
-            };
-            let where_clause = if reactive_input {
-                quote! {
-                    where
-                        #setter_generic: #__silex::core::ReactiveInput<#scope, #ty>
-                }
-            } else {
-                quote! {}
-            };
-
             quote! {
                 #[allow(non_camel_case_types, unused_variables)]
                 pub fn #ident #generic(self, val: #setter_param) -> #return_ty #where_clause {
@@ -530,20 +565,6 @@ impl BuilderContext {
                 }
             }
         } else {
-            let generic = if reactive_input {
-                quote! { <#setter_generic> }
-            } else {
-                quote! {}
-            };
-            let where_clause = if reactive_input {
-                quote! {
-                    where
-                        #setter_generic: #__silex::core::ReactiveInput<#scope, #ty>
-                }
-            } else {
-                quote! {}
-            };
-
             quote! {
                 pub fn #ident #generic(mut self, val: #setter_param) -> Self #where_clause {
                     self.#ident = #final_value;
@@ -1046,10 +1067,22 @@ fn parse_field_attrs(attrs: &[Attribute]) -> syn::Result<FieldAttrs> {
                 } else if meta.path.is_ident("render") {
                     result.render = true;
                     Ok(())
+                } else if meta.path.is_ident("render_fn") {
+                    if result.render_fn_args.is_some() {
+                        return Err(meta.error("duplicate `render_fn`"));
+                    }
+                    let content;
+                    syn::parenthesized!(content in meta.input);
+                    let args = content.parse_terminated(Type::parse, syn::Token![,])?;
+                    if args.is_empty() {
+                        return Err(meta.error("`render_fn` requires closure parameter types"));
+                    }
+                    result.render_fn_args = Some(args.into_iter().collect());
+                    Ok(())
                 } else if meta.path.is_ident("default") {
                     Err(meta.error("`default` is no longer supported in `#[prop]`, please use `#[chain(default)]` or `#[chain(default = ...)]` instead"))
                 } else {
-                    Err(meta.error("expected `into` or `render`"))
+                    Err(meta.error("expected `into`, `render`, or `render_fn`"))
                 }
             })?;
         } else if attr.path().is_ident("chain") {
@@ -1070,6 +1103,13 @@ fn parse_field_attrs(attrs: &[Attribute]) -> syn::Result<FieldAttrs> {
                 })?;
             }
         }
+    }
+
+    if result.render_fn_args.is_some() && (result.into_trait || result.render) {
+        return Err(syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "`render_fn` cannot be combined with `into` or `render`",
+        ));
     }
 
     Ok(result)
