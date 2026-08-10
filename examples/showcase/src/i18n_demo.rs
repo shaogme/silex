@@ -14,10 +14,10 @@ enum DemoText {
     CartItems { count: u32 },
 }
 
-fn panel<T, U>(title: T, content: U) -> AnyView
+fn panel<'scope, T, U>(title: T, content: U) -> AnyView<'scope>
 where
-    T: View,
-    U: View,
+    T: View<'scope> + 'scope,
+    U: View<'scope> + 'scope,
 {
     div![
         h3(title).style(
@@ -34,21 +34,22 @@ where
     .into_any()
 }
 
-fn control_row<T: View>(content: T) -> impl View {
+fn control_row<'scope, T: View<'scope> + 'scope>(content: T) -> impl View<'scope> {
     div(content).style("display: flex; flex-wrap: wrap; align-items: center; gap: 8px;")
 }
 
-fn locale_button(
-    i18n: I18nStore,
-    loader_store: I18nStore,
+fn locale_button<'scope>(
+    i18n: I18nStore<'scope>,
+    loader_store: I18nStore<'scope>,
     locale: &'static str,
     label: &'static str,
-) -> impl View {
+) -> impl View<'scope> {
     button(label)
         .on_click(move |_| {
             let locale = Locale::new(locale);
             i18n.set_locale(locale.clone());
             loader_store.set_locale(locale);
+            Ok(())
         })
         .style(
             "padding: 7px 11px; border: 1px solid var(--slx-theme-border); border-radius: 5px; background: var(--slx-theme-surface-alt); color: var(--slx-theme-text); cursor: pointer;",
@@ -56,7 +57,12 @@ fn locale_button(
 }
 
 #[component]
-pub fn I18nPage(i18n: I18nStore, ctx: RouterContext) -> impl View {
+pub fn I18nPage<'scope>(
+    i18n: I18nStore<'scope>,
+    ctx: RouterContext<'scope>,
+    error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
+    let scope = ctx.scope();
     let available_locales = [
         Locale::new("en-US"),
         Locale::new("zh-CN"),
@@ -65,8 +71,8 @@ pub fn I18nPage(i18n: I18nStore, ctx: RouterContext) -> impl View {
     ];
     let fallback_locale = Locale::new("en-US");
 
-    let query_locale = Persistent::builder("silex-showcase-query-locale")
-        .query(&ctx)
+    let query_locale = Persistent::builder(scope, "silex-showcase-query-locale", error_handler)
+        .query(ctx)
         .parse::<Locale>()
         .default(i18n.locale().get_untracked())
         .build();
@@ -88,7 +94,7 @@ pub fn I18nPage(i18n: I18nStore, ctx: RouterContext) -> impl View {
     );
     let browser_match_label = browser_match.to_string();
 
-    let loader_store = I18nBuilder::new()
+    let loader_store = I18nBuilder::new(scope, error_handler)
         .locale(i18n.locale().get_untracked())
         .fallback_locale(fallback_locale.clone())
         .build()
@@ -107,8 +113,8 @@ pub fn I18nPage(i18n: I18nStore, ctx: RouterContext) -> impl View {
         None,
     );
 
-    let name = RwSignal::new("Ada".to_string());
-    let count = RwSignal::new(1u32);
+    let name = scope.rw_signal("Ada".to_string());
+    let count = scope.rw_signal(1u32);
 
     let resource_for_view = catalog_resource.clone();
     let resource_for_reload = catalog_resource.clone();
@@ -213,6 +219,7 @@ pub fn I18nPage(i18n: I18nStore, ctx: RouterContext) -> impl View {
                 control_row(button(t!(i18n, "demo.locale.use_browser")).on_click(move |_| {
                     i18n_for_browser.set_locale(browser_match_for_click.clone());
                     loader_for_browser.set_locale(browser_match_for_click.clone());
+                    Ok(())
                 })),
                 p(query_locale_text).style("margin-bottom: 8px; opacity: 0.75;"),
                 control_row(div![
@@ -220,9 +227,11 @@ pub fn I18nPage(i18n: I18nStore, ctx: RouterContext) -> impl View {
                         let locale = query_for_apply.get();
                         current_for_query.set_locale(locale.clone());
                         loader_store.set_locale(locale);
+                        Ok(())
                     }),
                     button(t!(i18n, "demo.locale.write_query")).on_click(move |_| {
                         query_for_write.set(current_for_query.locale().get_untracked());
+                        Ok(())
                     }),
                 ]),
             ]
@@ -246,11 +255,13 @@ pub fn I18nPage(i18n: I18nStore, ctx: RouterContext) -> impl View {
                     control_row(div![
                         button("-").on_click(move |_| {
                             count.update(|value| *value = value.saturating_sub(1));
+                            Ok(())
                         }),
-                        span(count.map_fn(|value| value.to_string()))
+                        span(count.map_fn(scope, |value| value.to_string()))
                             .style("min-width: 30px; text-align: center;"),
                         button("+").on_click(move |_| {
                             count.update(|value| *value = value.saturating_add(1));
+                            Ok(())
                         }),
                     ]),
                     p(t!(i18n, "demo.messages.literal", value = count.get())),
@@ -289,6 +300,7 @@ pub fn I18nPage(i18n: I18nStore, ctx: RouterContext) -> impl View {
                     let locale = reload_store.locale().get_untracked();
                     reload_store.remove_catalog(&locale);
                     resource_for_reload.refetch();
+                    Ok(())
                 })),
                 div(resource_state).style(
                     "min-height: 42px; padding: 10px; border-left: 3px solid var(--slx-theme-primary); background: var(--slx-theme-surface-alt);",

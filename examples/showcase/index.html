@@ -32,6 +32,28 @@
 
 <body>
     <div id="app"></div>
+
+    <script type="module">
+        let showcaseHost = null;
+
+        window.addEventListener("TrunkApplicationStarted", () => {
+            if (showcaseHost !== null) return;
+            try {
+                showcaseHost = window.wasmBindings.mountShowcase();
+            } catch (error) {
+                console.error("Showcase mount failed", error);
+            }
+        });
+
+        window.addEventListener("showcase-unmount", () => {
+            if (showcaseHost === null) return;
+            try {
+                showcaseHost.unmount();
+            } catch (error) {
+                console.error("Showcase unmount failed", error);
+            }
+        });
+    </script>
 </body>
 
 </html>

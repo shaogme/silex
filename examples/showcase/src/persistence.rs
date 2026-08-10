@@ -19,7 +19,11 @@ impl Default for Settings {
 }
 
 #[component]
-pub fn PersistencePage(ctx: RouterContext) -> impl View {
+pub fn PersistencePage<'scope>(
+    ctx: RouterContext<'scope>,
+    error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
+    let scope = ctx.scope();
     div![
         h2("Comprehensive Persistence Demo")
             .style(sty().color(AppTheme::PRIMARY).margin_bottom(px(10))),
@@ -27,23 +31,23 @@ pub fn PersistencePage(ctx: RouterContext) -> impl View {
 
         div![
             // 1. Storage Backends Comparison
-            BackendGrid(ctx),
+            BackendGrid(ctx, error_handler).build(),
 
             // 2. Manual Control & Flash
-            ManualFlushDemo(),
+            ManualFlushDemo(scope, error_handler).build(),
 
             // 3. Debounced Persistence
-            DebounceDemo(),
+            DebounceDemo(scope, error_handler).build(),
 
             // 4. Error Handling & JSON
-            ErrorHandlingDemo(),
+            ErrorHandlingDemo(scope, error_handler).build(),
         ].style("display: flex; flex-direction: column; gap: 30px; margin-top: 20px;")
     ]
     .style("max-width: 1000px; margin: 0 auto; padding: 20px;")
 }
 
 #[component]
-fn Card(children: AnyView, #[chain] title: &'static str) -> impl View {
+fn Card<'scope>(children: AnyView<'scope>, #[chain] title: &'static str) -> impl View<'scope> {
     div![
         h3(title).style(
             sty()
@@ -66,21 +70,25 @@ fn Card(children: AnyView, #[chain] title: &'static str) -> impl View {
 }
 
 #[component]
-fn BackendGrid(ctx: RouterContext) -> impl View {
-    let local = Persistent::builder("demo-local")
+fn BackendGrid<'scope>(
+    ctx: RouterContext<'scope>,
+    error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
+    let scope = ctx.scope();
+    let local = Persistent::builder(scope, "demo-local", error_handler)
         .local()
         .string()
         .default("Stored in LocalStorage".to_string())
         .build();
 
-    let session = Persistent::builder("demo-session")
+    let session = Persistent::builder(scope, "demo-session", error_handler)
         .session()
         .string()
         .default("Stored in SessionStorage".to_string())
         .build();
 
-    let query = Persistent::builder("demo-query")
-        .query(&ctx)
+    let query = Persistent::builder(scope, "demo-query", error_handler)
+        .query(ctx)
         .string()
         .default("Stored in URL Query".to_string())
         .build();
@@ -138,11 +146,15 @@ fn BackendGrid(ctx: RouterContext) -> impl View {
         )
     ))
     .title("1. Backends Comparison")
+    .build()
 }
 
 #[component]
-fn ManualFlushDemo() -> impl View {
-    let draft = Persistent::builder("demo-draft")
+fn ManualFlushDemo<'scope>(
+    scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
+    let draft = Persistent::builder(scope, "demo-draft", error_handler)
         .local()
         .string()
         .mode(PersistMode::Manual)
@@ -159,17 +171,20 @@ fn ManualFlushDemo() -> impl View {
             div![
                 button("💾 Save to Storage")
                     .on(event::click, move |_| {
-                        let _ = draft.flush();
+                        draft.flush()?;
+                        Ok(())
                     })
                     .style(sty().background(AppTheme::PRIMARY).color(ColorName::White).border(NONE).padding(padding::block_inline(px(8), px(16))).border_radius(px(6)).cursor(CursorKeyword::Pointer).transition("opacity 0.2s")),
                 button("🔄 Reload from Storage")
                     .on(event::click, move |_| {
-                        let _ = draft.reload();
+                        draft.reload()?;
+                        Ok(())
                     })
                     .style(sty().background(AppTheme::SURFACE).color(AppTheme::TEXT).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).padding(padding::block_inline(px(8), px(16))).border_radius(px(6)).cursor(CursorKeyword::Pointer)),
                 button("🗑️ Forget")
                     .on(event::click, move |_| {
-                        let _ = draft.remove();
+                        draft.remove()?;
+                        Ok(())
                     })
                     .style("background: transparent; color: var(--slx-theme-error, #f44336); border: 1px solid currentColor; padding: 8px 16px; border-radius: 6px; cursor: pointer; margin-left: auto;"),
             ].style("display: flex; gap: 10px; margin-top: 10px;"),
@@ -181,12 +196,15 @@ fn ManualFlushDemo() -> impl View {
                 }
             ].style("margin-top: 15px; font-size: 0.9em;")
         ]
-    )).title("2. Manual Persistence (Draft Mode)")
+    )).title("2. Manual Persistence (Draft Mode)").build()
 }
 
 #[component]
-fn DebounceDemo() -> impl View {
-    let debounced = Persistent::builder("demo-debounced")
+fn DebounceDemo<'scope>(
+    scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
+    let debounced = Persistent::builder(scope, "demo-debounced", error_handler)
         .local()
         .string()
         .sync(SyncStrategy::Debounce(std::time::Duration::from_millis(
@@ -230,12 +248,15 @@ fn DebounceDemo() -> impl View {
                 }
             ].style("margin-top: 15px; background: rgba(0,0,0,0.05); padding: 12px; border-radius: 6px; font-family: monospace;")
         ]
-    )).title("3. Debounced Syncing")
+    )).title("3. Debounced Syncing").build()
 }
 
 #[component]
-fn ErrorHandlingDemo() -> impl View {
-    let settings = Persistent::builder("demo-complex-settings")
+fn ErrorHandlingDemo<'scope>(
+    scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
+    let settings = Persistent::builder(scope, "demo-complex-settings", error_handler)
         .local()
         .json::<Settings>()
         .on_decode_error(DecodePolicy::UseDefault)
@@ -248,21 +269,23 @@ fn ErrorHandlingDemo() -> impl View {
             div![
                 label("Username").style("display: block; margin-bottom: 5px;"),
                 input()
-                    .prop("value", settings.map_fn(|s| s.username.clone()))
+                    .prop("value", settings.map(scope, |s| s.username.clone()))
                     .on(event::input, move |e| {
-                         settings.update(|s| s.username = event_target_value(&e));
+                        settings.update(|s| s.username = event_target_value(&e));
+                        Ok(())
                     })
                     .style(sty().width(pct(100)).padding(px(8)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).border_radius(px(4)).background(AppTheme::SURFACE_ALT).color(AppTheme::TEXT))
             ],
             div![
-                label(rx!(format!("Volume Level: {}%", settings.get().volume)))
+                label(rx!(scope; format!("Volume Level: {}%", $settings.volume)))
                     .style("display: block; margin-top: 15px; margin-bottom: 5px;"),
                 input().attr("type", "range").attr("min", "0").attr("max", "100")
-                    .prop("value", settings.map_fn(|s| s.volume))
+                    .prop("value", settings.map(scope, |s| s.volume))
                     .on(event::input, move |e| {
                         if let Ok(v) = event_target_value(&e).parse::<u32>() {
                             settings.update(|s| s.volume = v);
                         }
+                        Ok(())
                     })
                     .style("width: 100%; accent-color: var(--slx-theme-primary);")
             ],
@@ -281,8 +304,11 @@ fn ErrorHandlingDemo() -> impl View {
                 }
             },
             button("Reset to Factory Defaults")
-                .on(event::click, move |_| settings.reset())
+                .on(event::click, move |_| {
+                    settings.reset();
+                    Ok(())
+                })
                 .style(sty().margin_top(px(15)).background(ColorKeyword::Transparent).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).padding(padding::block_inline(px(6), px(12))).border_radius(px(4)).cursor(CursorKeyword::Pointer).color(AppTheme::TEXT))
         ].style(sty().margin_top(px(25)).padding(px(15)).background(AppTheme::SURFACE_ALT).border_radius(px(8)).border(border(px(1), BorderStyleKeyword::Dashed, AppTheme::BORDER)))
-    )).title("4. Error Handling & JSON")
+    )).title("4. Error Handling & JSON").build()
 }

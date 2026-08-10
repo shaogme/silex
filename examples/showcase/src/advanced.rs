@@ -1,29 +1,24 @@
 use std::borrow::Cow;
 
 use crate::css::AppTheme;
+use silex::core::log::console_log;
 use silex::prelude::*;
 use silex::reexports::web_sys;
 
 // --- Store Definition ---
-#[derive(Clone, Default, Store, serde::Serialize, serde::Deserialize)]
-#[store(name = "use_user_settings")]
-#[persist(prefix = "showcase-settings-")]
-pub struct UserSettings {
-    #[persist(local, codec = "string")]
+#[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
+#[store]
+pub struct UserSettings<'s> {
     pub theme: String,
-    #[persist(local, key = "notif_enabled", codec = "parse")]
     pub notifications: bool,
-    #[persist(local, codec = "cow")]
-    pub username: Cow<'static, str>,
+    pub username: Cow<'s, str>,
 }
 
 #[component]
-pub fn StoreDemo() -> impl View {
-    // Access global store provided in main via thread local
-    // Note: `UserSettingsStore::try_get()` and `UserSettingsStore::get()` are also available.
-    // Access global store using the generated helper
-    let settings = use_user_settings();
-
+pub fn StoreDemo<'scope>(
+    scope: Scope<'scope>,
+    settings: UserSettingsStore<'scope, 'scope>,
+) -> impl View<'scope> {
     div![
         h3("Global Store Demo"),
         div![
@@ -34,7 +29,7 @@ pub fn StoreDemo() -> impl View {
                 text(
                     settings
                         .notifications
-                        .map_fn(|n| if *n { "On" } else { "Off" })
+                        .map_fn(scope, |n| if *n { "On" } else { "Off" })
                 ),
             ],
         ]
@@ -49,11 +44,13 @@ pub fn StoreDemo() -> impl View {
         div![
             button("Toggle Theme").on(
                 event::click,
-                rx! {
-                    settings.theme.update(|t| {
-                        *t = if t == "Light" { "Dark".to_string() } else { "Light".to_string() }
-                    })
-                }
+                settings.theme.updater(|t| {
+                    *t = if t == "Light" {
+                        "Dark".to_string()
+                    } else {
+                        "Light".to_string()
+                    }
+                })
             ),
             button("Toggle Notifications")
                 .on(event::click, settings.notifications.updater(|n| *n = !*n)),
@@ -83,8 +80,11 @@ impl Default for ComplexState {
 }
 
 #[component]
-pub fn JsonStorageDemo() -> impl View {
-    let state = Persistent::builder("showcase-json-state")
+pub fn JsonStorageDemo<'scope>(
+    scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
+    let state = Persistent::builder(scope, "showcase-json-state", error_handler)
         .local()
         .json::<ComplexState>()
         .default(ComplexState::default())
@@ -96,9 +96,12 @@ pub fn JsonStorageDemo() -> impl View {
             "This demo uses the JSON codec to persist a complex struct via browser-native `JSON.stringify/parse`."
         ),
         div![
-            p![strong("Hero: "), rx!(state.get().name)],
-            p![strong("Level: "), rx!(state.get().level.to_string())],
-            p![strong("Inventory: "), rx!(state.get().inventory.join(", "))],
+            p![strong("Hero: "), rx!(scope; $state.name.clone())],
+            p![strong("Level: "), rx!(scope; $state.level.to_string())],
+            p![
+                strong("Inventory: "),
+                rx!(scope; $state.inventory.join(", "))
+            ],
         ]
         .style(
             sty()
@@ -110,17 +113,19 @@ pub fn JsonStorageDemo() -> impl View {
         ),
         div![
             button("Level Up").on(event::click, move |_| {
-                state.update(|s| s.level += 1);
+                state.try_update(|s| s.level += 1).map_err(Into::into)
             }),
             button("Add Shield").on(event::click, move |_| {
-                state.update(|s| {
-                    if !s.inventory.contains(&"Shield".to_string()) {
-                        s.inventory.push("Shield".to_string());
-                    }
-                });
+                state
+                    .try_update(|s| {
+                        if !s.inventory.contains(&"Shield".to_string()) {
+                            s.inventory.push("Shield".to_string());
+                        }
+                    })
+                    .map_err(Into::into)
             }),
             button("Reset").on(event::click, move |_| {
-                state.set(ComplexState::default());
+                state.try_set(ComplexState::default()).map_err(Into::into)
             }),
         ]
         .style("display: flex; gap: 10px;"),
@@ -128,8 +133,11 @@ pub fn JsonStorageDemo() -> impl View {
 }
 
 #[component]
-pub fn StorageDemo() -> impl View {
-    let count = Persistent::builder("showcase-counter")
+pub fn StorageDemo<'scope>(
+    scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
+    let count = Persistent::builder(scope, "showcase-counter", error_handler)
         .local()
         .parse::<i32>()
         .default(0)
@@ -151,7 +159,7 @@ pub fn StorageDemo() -> impl View {
         ].style(sty().padding(px(15)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).border_radius(px(4)).margin_bottom(px(20))),
 
         // 2. 复杂类型持久化
-        JsonStorageDemo(),
+        JsonStorageDemo(scope, error_handler).build(),
 
         p![
             "Try opening this page in ",
@@ -163,14 +171,19 @@ pub fn StorageDemo() -> impl View {
 }
 
 #[component]
-pub fn QueryDemo(ctx: RouterContext) -> impl View {
-    let val = Persistent::builder("demo_val")
-        .query(&ctx)
+pub fn QueryDemo<'scope>(
+    ctx: RouterContext<'scope>,
+    settings: UserSettingsStore<'scope, 'scope>,
+    error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
+    let scope = ctx.scope();
+    let val = Persistent::builder(scope, "demo_val", error_handler)
+        .query(ctx)
         .cow()
         .default("".into())
         .build();
 
-    div![
+    let page = div![
         h3("Query Signal Demo"),
         p(
             "This input is synced with the URL query parameter 'demo_val' using `Persistent::builder(...).query()`."
@@ -199,16 +212,21 @@ pub fn QueryDemo(ctx: RouterContext) -> impl View {
                 .padding(px(10))
                 .border_radius(px(4))
         )
-    ]
+    ];
+
+    AuthGuard(scope, settings, page.into_any()).build()
 }
 
 #[component]
-pub fn AuthGuard(children: AnyView) -> impl View {
-    let settings = use_user_settings();
+pub fn AuthGuard<'scope>(
+    scope: Scope<'scope>,
+    settings: UserSettingsStore<'scope, 'scope>,
+    children: AnyView<'scope>,
+) -> impl View<'scope> {
     let children = children.clone();
 
-    rx! {
-        if settings.username.get() != "Guest" {
+    rx!(scope;
+        if $(settings.username) != "Guest" {
             children.clone()
         } else {
             div![
@@ -217,7 +235,7 @@ pub fn AuthGuard(children: AnyView) -> impl View {
             ].style("padding: 20px; background: #fff0f0; border: 1px solid #ffcccc; color: #cc0000;")
             .into_any()
         }
-    }
+    )
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -247,11 +265,14 @@ async fn mock_fetch_user(id: i32) -> Result<UserProfile, String> {
 }
 
 #[component]
-pub fn ResourceDemo() -> impl View {
-    let (user_id, set_user_id) = Signal::pair(1);
+pub fn ResourceDemo<'scope>(
+    scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
+    let (user_id, set_user_id) = scope.signal(1);
 
     // Create Resource: triggers when user_id changes
-    let user_resource = Resource::new(user_id, mock_fetch_user, None);
+    let user_resource = Resource::new(scope, user_id, mock_fetch_user, None, error_handler);
 
     div![
         h3("Resource & Optimistic UI"),
@@ -261,7 +282,10 @@ pub fn ResourceDemo() -> impl View {
             button("User 1").on(event::click, set_user_id.setter(1)),
             button("User 2").on(event::click, set_user_id.setter(2)),
             button("Invalid User").on(event::click, set_user_id.setter(-1)),
-            button("Refetch").on(event::click, move |_| user_resource.refetch()),
+            button("Refetch").on(event::click, move |_| {
+                user_resource.refetch();
+                Ok(())
+            }),
         ].style("display: flex; gap: 10px; margin-bottom: 15px;"),
 
         div![
@@ -294,6 +318,7 @@ pub fn ResourceDemo() -> impl View {
                                 user_resource.update(|u| {
                                     u.name = "Modified Name".to_string();
                                 });
+                                Ok(())
                             }),
                     ].style("margin-top: 15px; border-top: 1px solid #eee; padding-top: 10px;")
                 ],
@@ -314,22 +339,29 @@ pub fn ResourceDemo() -> impl View {
 }
 
 #[component]
-pub fn MutationDemo() -> impl View {
+pub fn MutationDemo<'scope>(
+    scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
     // Simulate a login mutation
     // Takes (username, password) and returns a Result<String, String> token
-    let login_mutation = Mutation::new(|(user, pass): (String, String)| async move {
-        console_log(format!("Logging in as {}...", user));
-        gloo_timers::future::TimeoutFuture::new(1500).await;
+    let login_mutation = Mutation::new(
+        scope,
+        |(user, pass): (String, String)| async move {
+            console_log(format!("Logging in as {}...", user));
+            gloo_timers::future::TimeoutFuture::new(1500).await;
 
-        if user == "admin" && pass == "password" {
-            Ok("fake_jwt_token_12345".to_string())
-        } else {
-            Err("Invalid credentials".to_string())
-        }
-    });
+            if user == "admin" && pass == "password" {
+                Ok("fake_jwt_token_12345".to_string())
+            } else {
+                Err("Invalid credentials".to_string())
+            }
+        },
+        error_handler,
+    );
 
-    let username = RwSignal::new("".to_string());
-    let password = RwSignal::new("".to_string());
+    let username = scope.rw_signal("".to_string());
+    let password = scope.rw_signal("".to_string());
 
     div![
         h3("Mutation Demo (Async Write)"),
@@ -350,9 +382,10 @@ pub fn MutationDemo() -> impl View {
                     e.prevent_default();
 
                     // Note: "login_mutation.mutate((username.get(), password.get()));" is the same as "login_mutation.mutate_with((username, password));"
-                    login_mutation.mutate_with((username, password).into_rx());
+                    login_mutation.mutate((username.get(), password.get()));
+                    Ok(())
                 })
-                .attr("disabled", rx!(@fn login_mutation.loading())) // Optimized: No closure capture
+                .attr("disabled", rx!(scope; login_mutation.loading()))
                 .style("padding: 5px 10px;"),
         ]
         .style("margin-bottom: 10px;"),
@@ -386,14 +419,17 @@ pub fn MutationDemo() -> impl View {
 }
 
 #[component]
-pub fn SuspenseDemo() -> impl View {
+pub fn SuspenseDemo<'scope>(
+    scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
     use silex::components::SuspenseMode;
 
-    let (show_content, set_show_content) = Signal::pair(false);
-    let (mode, set_mode) = Signal::pair(SuspenseMode::KeepAlive);
+    let (show_content, set_show_content) = scope.signal(false);
+    let (mode, set_mode) = scope.signal(SuspenseMode::KeepAlive);
 
     // Trigger for reloading the resource
-    let (trigger, set_trigger) = Signal::pair(0);
+    let (trigger, set_trigger) = scope.signal(0);
 
     // Mock heavy resource
     async fn heavy_work(id: i32) -> Result<String, String> {
@@ -410,7 +446,7 @@ pub fn SuspenseDemo() -> impl View {
                 input()
                     .attr("type", "radio")
                     .attr("name", "suspense_mode")
-                    .attr("checked", rx!(*$mode == SuspenseMode::KeepAlive))
+                    .attr("checked", rx!(scope; *$mode == SuspenseMode::KeepAlive))
                     .on(event::change, set_mode.setter(SuspenseMode::KeepAlive)),
                 " KeepAlive (CSS Hide)"
             ]
@@ -419,14 +455,14 @@ pub fn SuspenseDemo() -> impl View {
                 input()
                     .attr("type", "radio")
                     .attr("name", "suspense_mode")
-                    .attr("checked", rx!(*$mode == SuspenseMode::Unmount))
+                    .attr("checked", rx!(scope; *$mode == SuspenseMode::Unmount))
                     .on(event::change, set_mode.setter(SuspenseMode::Unmount)),
                 " Unmount (DOM Remove)"
             ]
         ]
         .style("margin-bottom: 15px;"),
         div![
-            button(show_content.map_fn(|s| if *s {
+            button(show_content.map_fn(scope, |s| if *s {
                 "Destroy Component"
             } else {
                 "Create Component"
@@ -436,15 +472,21 @@ pub fn SuspenseDemo() -> impl View {
             button("Reload Resource").on(event::click, set_trigger.updater(|n| *n += 1))
         ]
         .style("margin-bottom: 15px;"),
-        div![rx! {
-            if show_content.get() {
-                Suspense(move |cx| {
-                    let resource = Resource::new(trigger, heavy_work, cx);
+        div![rx!(scope;
+            if *$show_content {
+                Suspense(scope, move |cx| {
+                    let resource = Resource::new(
+                        scope,
+                        trigger,
+                        heavy_work,
+                        Some(cx),
+                        error_handler,
+                    );
                     div![
                         div![
                             "Resource Data: ",
                             // Fine-grained reading: Only this text node updates
-                            rx!(resource.get().unwrap_or_else(|| "Waiting...".to_string()))
+                            rx!(scope; resource.get_data().unwrap_or_else(|| "Waiting...".to_string()))
                         ],
                         div("1. Type something below."),
                         div("2. Click 'Reload Resource'."),
@@ -457,11 +499,12 @@ pub fn SuspenseDemo() -> impl View {
                 })
                 .fallback(div("Loading... (2s)").style("color: blue; font-weight: bold;"))
                 .mode(mode.get())
+                .build()
                 .into_any()
             } else {
                 ().into_any()
             }
-        }]
+        )]
         .style("min-height: 150px; border: 1px dashed #ccc; padding: 10px;")
     ]
     .style("padding: 20px; border: 1px solid #ccc; border-radius: 8px; margin-top: 20px;")
@@ -470,10 +513,10 @@ pub fn SuspenseDemo() -> impl View {
 // --- Generics Demo ---
 
 #[component]
-pub fn GenericMessage<'a, T: std::fmt::Display + Clone + 'static>(
+pub fn GenericMessage<'scope, T: std::fmt::Display + Clone + 'scope>(
     value: T,
-    #[chain] title: &'a str,
-) -> impl View {
+    #[chain] title: &'scope str,
+) -> impl View<'scope> {
     div![h4(title.to_string()), p(format!("Value: {}", value)),].style(
         sty()
             .padding(px(10))
@@ -484,12 +527,14 @@ pub fn GenericMessage<'a, T: std::fmt::Display + Clone + 'static>(
 }
 
 #[component]
-pub fn GenericsDemo() -> impl View {
+pub fn GenericsDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
     div![
         h3("Generics & Lifetimes Demo"),
         p("This demonstrates how #[component] macro supports generics and lifetimes natively."),
-        GenericMessage(42).title("Integer Message"),
-        GenericMessage("Hello Silex!").title("String Message"),
+        GenericMessage(42).title("Integer Message").build(),
+        GenericMessage("Hello Silex!")
+            .title("String Message")
+            .build(),
     ]
     .style(
         sty()
@@ -527,36 +572,45 @@ impl std::fmt::Display for QuantumIdentity {
 }
 
 #[component]
-pub fn AdaptiveReadDemo() -> impl View {
-    let system_name = RwSignal::new(Cow::Borrowed("Nebula-1"));
-    let (stability, set_stability) = Signal::pair(0.85); // 0.0 to 1.0
+pub fn AdaptiveReadDemo<'scope>(
+    scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
+    let system_name = scope.rw_signal(Cow::Borrowed("Nebula-1"));
+    let (stability, set_stability) = scope.signal(0.85); // 0.0 to 1.0
 
     // Create a non-cloneable resource
-    let (identity, _) = Signal::pair(QuantumIdentity::new(0xDEADBEEF));
+    let (identity, _) = scope.signal(QuantumIdentity::new(0xDEADBEEF));
 
     // 1. REACTIVE TUPLE: Used for organizational grouping and tracking.
     // Note: (RwSignal<String>, ReadSignal<f64>, ReadSignal<QuantumIdentity>)
-    // implements RxInternal, allowing tracking even with non-cloneable items.
+    // implements RxBase, allowing tracking even with non-cloneable items.
     let core_vitals = (system_name, stability, identity);
 
-    Effect::new(move |_| {
-        core_vitals.track(); // Track the whole group at once
-        console_log("Quantum Core Vitals updated.");
-    });
+    scope
+        .effect(
+            move || -> SilexResult<()> {
+                core_vitals.track(); // Track the whole group at once
+                console_log("Quantum Core Vitals updated.");
+                Ok(())
+            },
+            error_handler,
+        )
+        .expect("adaptive read effect should initialize");
 
     // 2. SEGMENTED ACCESS (Recommended):
     // Using $ syntax on individual signals is ALWAYS zero-copy and
     // works even if the types are NOT Clone.
-    let status_bar = rx!(format!(
+    let status_bar = rx!(scope; format!(
         "System: {} | Stability: {:.0}% | {}",
         $system_name,
-        $stability * 100.0,
+        *$stability * 100.0,
         $identity
     ));
 
     // 3. FINE-GRAINED REACTIVITY:
     // Only the specific parts of the UI update when their respective signals change.
-    let detail_metrics = rx! {
+    let detail_metrics = rx!(scope; {
         div![
             div![
                 strong("CORE NAME: "),
@@ -567,7 +621,7 @@ pub fn AdaptiveReadDemo() -> impl View {
                 i($identity.signature.clone())
             ].style("margin-top: 5px; color: #7f8c8d;"),
         ]
-    };
+    });
 
     div![
         h3("Adaptive Read & Segmented Access")
@@ -594,11 +648,12 @@ pub fn AdaptiveReadDemo() -> impl View {
                         .prop("value", stability)
                         .on(event::input, move |e| {
                             if let Ok(val) = event_target_value(&e).parse::<f64>() {
-                                set_stability.set(val);
+                                set_stability.try_set(val)?;
                             }
+                            Ok(())
                         })
                         .style("flex-grow: 1; accent-color: #e74c3c;"),
-                    span(rx!(format!("{:.0}%", *$stability * 100.0)))
+                    span(rx!(scope; format!("{:.0}%", *$stability * 100.0)))
                         .style("width: 50px; text-align: right; font-weight: bold; color: #e74c3c;"),
                 ].style("margin-top: 20px; display: flex; align-items: center; gap: 15px;"),
 

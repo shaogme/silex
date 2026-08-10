@@ -1,291 +1,191 @@
-use crate::advanced;
-use crate::advanced::use_user_settings;
-use crate::basics;
-use crate::css;
-use crate::flow_control;
-use crate::net_demo;
-use crate::persistence;
-
+use crate::advanced::UserSettingsStore;
 use crate::css::AppTheme;
 use silex::prelude::*;
-use silex::reexports::web_sys::{HtmlElement, MouseEvent};
 
 #[component]
-fn SelectDemo() -> impl View {
+pub fn SelectDemo<'scope>() -> impl View<'scope> {
     div("Select a demo above.")
 }
 
-#[derive(Route, Clone, PartialEq)]
-pub enum AdvancedRoute {
-    #[route("/", view = SelectDemo)]
-    Index,
-    #[route("/store", view = advanced::StoreDemo)]
-    Store,
-    #[route("/query", view = advanced::QueryDemo, pass_ctx = true, guard = advanced::AuthGuard)]
-    Query,
-    #[route("/storage", view = advanced::StorageDemo)]
-    Storage,
-    #[route("/resource", view = advanced::ResourceDemo)]
-    Resource,
-    #[route("/mutation", view = advanced::MutationDemo)]
-    Mutation,
-    #[route("/suspense", view = advanced::SuspenseDemo)]
-    Suspense,
-    #[route("/generics", view = advanced::GenericsDemo)]
-    Generics,
-    #[route("/adaptive", view = advanced::AdaptiveReadDemo)]
-    Adaptive,
-    #[route("/*", view = NotFoundPage)]
-    NotFound,
-}
-
-#[derive(Route, Clone, PartialEq)]
-pub enum CssRoute {
-    #[route("/", view = css::StylingBasics)]
-    Basics,
-    #[route("/theming", view = css::Theming)]
-    Theming,
-    #[route("/advanced", view = css::AdvancedStyling)]
-    Advanced,
-    #[route("/*", view = NotFoundPage)]
-    NotFound,
-}
-
-#[derive(Route, Clone, PartialEq)]
-pub enum AppRoute {
-    #[route("/", view = HomePage)]
-    Home,
-    #[route("/basics", view = basics::BasicsPage)]
-    Basics,
-    #[route("/flow", view = flow_control::FlowPage)]
-    Flow,
-    #[route("/i18n")]
-    I18n,
-    #[route("/net", view = net_demo::NetDemoPage)]
-    Net,
-    #[route("/persistence", view = persistence::PersistencePage, pass_ctx = true)]
-    Persistence,
-    #[route("/css/*", view = CssLayout, pass_ctx = true)]
-    Css {
-        #[nested]
-        route: CssRoute,
-    },
-    #[route("/advanced/*", view = AdvancedLayout, pass_ctx = true)]
-    Advanced {
-        #[nested]
-        route: AdvancedRoute,
-    },
-    #[route("/*", view = NotFoundPage)]
-    NotFound,
-}
-
-// --- Layout & App ---
-
-styled! {
-    #[theme(AppTheme)]
-    pub StyledNav<nav> (
-        children: AnyView,
-        #[chain(default = "horizontal")] direction: &'static str
-    ) {
-        background: $AppTheme::SURFACE;
-        color: $AppTheme::TEXT;
-        border-bottom: 1px solid $AppTheme::BORDER;
-        padding: 12px 24px;
-        margin-bottom: 20px;
-        display: flex;
-        gap: 15px;
-        align-items: center;
-
-        & a {
-            color: $AppTheme::TEXT;
-            opacity: 0.8;
-            padding: 8px 12px;
-            border-radius: 4px;
-            transition: background-color 0.2s;
-
-            &:hover {
-                background-color: $AppTheme::PRIMARY;
-                color: white;
-            }
-
-            &.active {
-                background-color: $AppTheme::PRIMARY;
-                color: white;
-                font-weight: bold;
-            }
-        }
-
-        variants: {
-            direction: {
-                horizontal: { flex-direction: row; }
-                vertical: { flex-direction: column; align-items: flex-start; }
-            }
-        }
-    }
-}
-
 #[component]
-pub fn NavBar() -> impl View {
-    let settings = use_user_settings();
-
-    StyledNav(chain!(
-        Link(AppRoute::Home).children("Home").active_class("active"),
-        Link(AppRoute::Basics)
+pub fn NavBar<'scope>(
+    ctx: RouterContext<'scope>,
+    settings: UserSettingsStore<'scope, 'scope>,
+) -> impl View<'scope> {
+    nav!(
+        Link(ctx, "/").children("Home").active_class("active").build(),
+        Link(ctx, "/basics")
             .children("Basics")
-            .active_class("active"),
-        Link(AppRoute::Flow).children("Flow").active_class("active"),
-        Link(AppRoute::I18n).children("I18n").active_class("active"),
-        Link(AppRoute::Net).children("Net").active_class("active"),
-        Link(AppRoute::Persistence)
+            .active_class("active")
+            .build(),
+        Link(ctx, "/flow")
+            .children("Flow")
+            .active_class("active")
+            .build(),
+        Link(ctx, "/i18n")
+            .children("I18n")
+            .active_class("active")
+            .build(),
+        Link(ctx, "/net")
+            .children("Net")
+            .active_class("active")
+            .build(),
+        Link(ctx, "/persistence")
             .children("Persistence")
-            .active_class("active"),
-        Link(AppRoute::Css {
-            route: CssRoute::Basics,
-        },)
-        .children("CSS")
-        .active_class("active"),
-        Link(AppRoute::Advanced {
-            route: AdvancedRoute::Index,
-        },)
-        .children("Advanced")
-        .active_class("active"),
-        button(
-            settings
-                .theme
-                .map_fn(|t| if t == "Light" { "🌙" } else { "🌞" })
-        )
-        .on(event::click, move |_| {
-            settings.theme.update(|t| {
-                let new_theme = if t == "Light" {
-                    "Dark".to_string()
-                } else {
-                    "Light".to_string()
-                };
-                console_log(format!("Button Click: switching to {}", new_theme));
-                *t = new_theme;
+            .active_class("active")
+            .build(),
+        Link(ctx, "/css/")
+            .children("CSS")
+            .active_class("active")
+            .build(),
+        Link(ctx, "/advanced/")
+            .children("Advanced")
+            .active_class("active")
+            .build(),
+        button(rx!(ctx.scope(); if $(settings.theme) == "Light" { "Dark" } else { "Light" }))
+            .on_click(move |_| {
+                settings.theme.update(|theme| {
+                    *theme = if theme == "Light" {
+                        "Dark".to_string()
+                    } else {
+                        "Light".to_string()
+                    };
+                });
+                Ok(())
             })
-        })
-        .style(
-            sty()
-                .margin_left(AUTO)
-                .cursor(CursorKeyword::Pointer)
-                .background(AppTheme::BORDER)
-                .border(NONE)
-                .padding(padding::block_inline(px(8), px(12)))
-                .border_radius(pct(50))
-                .font_size(em_unit(1.2))
-                .transition("all 0.3s")
-                .color(AppTheme::TEXT)
-        )
-        .on(event::mouseover, move |e: MouseEvent| {
-            let target = event_target::<HtmlElement>(&e);
-            let _ = target
-                .style()
-                .set_property("background", "rgba(255,255,255,0.2)");
-        })
-        .on(event::mouseout, move |e: MouseEvent| {
-            let target = event_target::<HtmlElement>(&e);
-            let _ = target
-                .style()
-                .set_property("background", "rgba(255,255,255,0.1)");
-        }),
-    ))
-    .direction("horizontal")
+            .style(
+                sty()
+                    .margin_left(AUTO)
+                    .cursor(CursorKeyword::Pointer)
+                    .background(AppTheme::BORDER)
+                    .border(NONE)
+                    .padding(padding::block_inline(px(8), px(12)))
+                    .border_radius(px(6))
+                    .color(AppTheme::TEXT),
+            ),
+    )
+    .style(
+        "display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 24px; margin-bottom: 20px; background: var(--slx-theme-surface); color: var(--slx-theme-text); border-bottom: 1px solid var(--slx-theme-border);",
+    )
 }
 
 #[component]
-fn AdvancedLayout(ctx: RouterContext, route: AdvancedRoute) -> impl View {
-    div![
+pub fn AppLayout<'scope>(
+    ctx: RouterContext<'scope>,
+    outlet: AnyView<'scope>,
+    settings: UserSettingsStore<'scope, 'scope>,
+) -> impl View<'scope> {
+    div!(
+        NavBar(ctx, settings).build(),
+        main(outlet).style("max-width: 1200px; margin: 0 auto; padding: 0 20px 40px;"),
+    )
+}
+
+#[component]
+pub fn AdvancedLayout<'scope>(
+    ctx: RouterContext<'scope>,
+    outlet: AnyView<'scope>,
+) -> impl View<'scope> {
+    div!(
         h2("Advanced Features"),
-        div![
-            Link(AppRoute::Advanced {
-                route: AdvancedRoute::Store,
-            },)
-            .children("Store Demo")
-            .class("tab"),
-            Link(AppRoute::Advanced {
-                route: AdvancedRoute::Query,
-            },)
-            .children("Query Param")
-            .class("tab"),
-            Link(AppRoute::Advanced {
-                route: AdvancedRoute::Storage,
-            },)
-            .children("Storage")
-            .class("tab"),
-            Link(AppRoute::Advanced {
-                route: AdvancedRoute::Resource,
-            },)
-            .children("Resource")
-            .class("tab"),
-            Link(AppRoute::Advanced {
-                route: AdvancedRoute::Mutation,
-            },)
-            .children("Mutation")
-            .class("tab"),
-            Link(AppRoute::Advanced {
-                route: AdvancedRoute::Suspense,
-            },)
-            .children("Suspense")
-            .class("tab"),
-            Link(AppRoute::Advanced {
-                route: AdvancedRoute::Generics,
-            },)
-            .children("Generics")
-            .class("tab"),
-            Link(AppRoute::Advanced {
-                route: AdvancedRoute::Adaptive,
-            },)
-            .children("Adaptive Read")
-            .class("tab"),
-        ]
-        .style("display: flex; gap: 10px; margin-bottom: 20px;"),
-        route.render(ctx),
-    ]
+        div!(
+            Link(ctx, "/advanced/store")
+                .children("Store Demo")
+                .class("tab")
+                .build(),
+            Link(ctx, "/advanced/query")
+                .children("Query Param")
+                .class("tab")
+                .build(),
+            Link(ctx, "/advanced/storage")
+                .children("Storage")
+                .class("tab")
+                .build(),
+            Link(ctx, "/advanced/resource")
+                .children("Resource")
+                .class("tab")
+                .build(),
+            Link(ctx, "/advanced/mutation")
+                .children("Mutation")
+                .class("tab")
+                .build(),
+            Link(ctx, "/advanced/suspense")
+                .children("Suspense")
+                .class("tab")
+                .build(),
+            Link(ctx, "/advanced/generics")
+                .children("Generics")
+                .class("tab")
+                .build(),
+            Link(ctx, "/advanced/adaptive")
+                .children("Adaptive Read")
+                .class("tab")
+                .build(),
+        )
+        .style("display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px;"),
+        outlet,
+    )
 }
 
 #[component]
-fn CssLayout(ctx: RouterContext, route: CssRoute) -> impl View {
-    div![
+pub fn CssLayout<'scope>(ctx: RouterContext<'scope>, outlet: AnyView<'scope>) -> impl View<'scope> {
+    div!(
         h2("CSS & Styling"),
         p(
             "Silex provides multiple ways to style your applications, from CSS-in-Rust to type-safe builders."
         ),
-        div![
-            Link("/css/").children("Basics").class("tab"),
-            Link("/css/theming").children("Theme Engine").class("tab"),
-            Link("/css/advanced").children("Advanced CSS").class("tab"),
-        ]
-        .style("display: flex; gap: 10px; margin-bottom: 20px;"),
-        route.render(ctx),
-    ]
+        div!(
+            Link(ctx, "/css/").children("Basics").class("tab").build(),
+            Link(ctx, "/css/theming")
+                .children("Theme Engine")
+                .class("tab")
+                .build(),
+            Link(ctx, "/css/advanced")
+                .children("Advanced CSS")
+                .class("tab")
+                .build(),
+        )
+        .style("display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px;"),
+        outlet,
+    )
 }
 
 #[component]
-fn NotFoundPage() -> impl View {
-    div("404 - Page Not Found").style("color: red; padding: 20px;")
+pub fn NotFoundPage<'scope>(ctx: RouterContext<'scope>) -> impl View<'scope> {
+    div!(
+        h1("404 - Page Not Found"),
+        Link(ctx, "/").children("Return Home").class("tab").build(),
+    )
+    .style("color: red; padding: 20px;")
 }
 
 #[component]
-fn HomePage() -> impl View {
-    div![
+pub fn HomePage<'scope>(ctx: RouterContext<'scope>) -> impl View<'scope> {
+    div!(
         h1("Welcome to Silex Showcase"),
         p("This example application demonstrates the core features of the Silex framework."),
-        ul![
-            li(Link(AppRoute::Basics).children("Basics: Components, Props, Signals")),
-            li(Link(AppRoute::Flow).children("Flow Control: Loops, Conditions")),
-            li(Link(AppRoute::I18n).children("I18n: Locale, fallback, and plural messages")),
-            li(Link(AppRoute::Css {
-                route: CssRoute::Basics,
-            },)
-            .children("CSS: CSS-in-Rust, Themes, and Style Comparison")),
-            li(Link(AppRoute::Net,).children("Net: HttpClient, WebSocket, EventStream")),
-            li(Link(AppRoute::Persistence,)
-                .children("Persistence: WebStorage, Query, Sync, Codecs")),
-            li(Link(AppRoute::Advanced {
-                route: AdvancedRoute::Index,
-            },)
-            .children("Advanced: Store, Router, Resource, Mutation")),
-        ],
-    ]
+        ul!(
+            li(Link(ctx, "/basics")
+                .children("Basics: Components, Props, Signals")
+                .build()),
+            li(Link(ctx, "/flow")
+                .children("Flow Control: Loops, Conditions")
+                .build()),
+            li(Link(ctx, "/i18n")
+                .children("I18n: Locale, fallback, and plural messages")
+                .build()),
+            li(Link(ctx, "/css/")
+                .children("CSS: CSS-in-Rust, Themes, and Style Comparison")
+                .build()),
+            li(Link(ctx, "/net")
+                .children("Net: HttpClient, WebSocket, EventStream")
+                .build()),
+            li(Link(ctx, "/persistence")
+                .children("Persistence: WebStorage, Query, Sync, Codecs")
+                .build()),
+            li(Link(ctx, "/advanced/")
+                .children("Advanced: Store, Router, Resource, Mutation")
+                .build()),
+        ),
+    )
 }

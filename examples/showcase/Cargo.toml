@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 silex = { workspace = true, features = [
+    "bootstrap",
     "persistence",
     "json",
     "net",
@@ -19,3 +20,4 @@ silex_macros.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 gloo-timers.workspace = true
+wasm-bindgen.workspace = true

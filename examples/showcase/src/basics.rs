@@ -1,9 +1,12 @@
 use crate::css::AppTheme;
-use silex::prelude::*;
+use silex::{core::log::console_log, prelude::*};
 use std::time::Duration;
 
 #[component]
-pub fn Greeting(name: Signal<String>, #[chain(default)] punctuation: String) -> impl View {
+pub fn Greeting<'scope>(
+    name: Signal<'scope, String>,
+    #[chain(default)] punctuation: String,
+) -> impl View<'scope> {
     let full_punctuation = if punctuation.is_empty() {
         "!".to_string()
     } else {
@@ -27,32 +30,36 @@ pub fn Greeting(name: Signal<String>, #[chain(default)] punctuation: String) -> 
 }
 
 #[component]
-pub fn Counter() -> impl View {
-    let (count, set_count) = Signal::pair(0);
-    let double_count = count * 2; // Operator overloading creates a Memo automatically
+pub fn Counter<'scope>(
+    scope: Scope<'scope>,
+    #[inject(owner)] owner: ViewOwnerToken<'scope>,
+) -> impl View<'scope> {
+    let (count, set_count) = scope.signal(0);
+    let double_count = count.into_rx() * 2;
 
     // Timer Handle for Auto Increment (StoredValue: doesn't trigger UI updates itself)
-    let timer = StoredValue::new(None::<IntervalHandle>);
+    let timer = scope.stored(None::<HostResourceHandle<'scope>>);
+    let owner_for_timer = owner.clone();
     // UI State for the timer
-    let (is_running, set_is_running) = Signal::pair(false);
+    let (is_running, set_is_running) = scope.signal(false);
 
     div![
         h3("Interactive Counter"),
         div![
             button("-")
-                .attr("disabled", count.less_than_or_equals(0)) // New: Directly pass Signal<bool> to attribute
+                .attr("disabled", count.less_than_or_equals(scope, 0))
                 .on(event::click, set_count.updater(|n| *n -= 1)),
             strong(count).classes(classes![
                 "counter-val",
-                "positive" => count.greater_than(0),
-                "negative" => count.less_than(0)
+                "positive" => count.greater_than(scope, 0),
+                "negative" => count.less_than(scope, 0)
             ]),
             button("+").on(event::click, set_count.updater(|n| *n += 1)),
         ]
         .style("display: flex; gap: 10px; align-items: center;"),
         // Auto Increment Demo using set_interval and StoredValue
         div![
-            button(rx!(if *$is_running {
+            button(rx!(scope; if *$is_running {
                 "Stop Auto Inc"
             } else {
                 "Start Auto Inc"
@@ -60,19 +67,22 @@ pub fn Counter() -> impl View {
             .on(event::click, move |_| {
                 if is_running.get() {
                     if let Some(handle) = timer.get_untracked() {
-                        handle.clear();
+                        handle.cancel();
                     }
                     timer.set_untracked(None);
                     set_is_running.set(false);
-                } else if let Ok(handle) = set_interval_with_handle(
-                    move || {
+                } else if let Ok(handle) = set_interval(
+                    &owner_for_timer,
+                    move || -> SilexResult<()> {
                         set_count.update(|n| *n += 1);
+                        Ok(())
                     },
                     Duration::from_millis(1000),
                 ) {
                     timer.set_untracked(Some(handle));
                     set_is_running.set(true);
                 }
+                Ok(())
             })
         ]
         .style("margin: 10px 0;"),
@@ -86,19 +96,20 @@ pub fn Counter() -> impl View {
                     if let Ok(n) = val_str.parse::<i32>() {
                         set_count.set(n);
                     }
+                    Ok(())
                 })
         ]
         .style("margin-bottom: 10px;"),
         div!["Double: ", double_count]
-            .classes(rx!(@fn if *$count % 2 == 0 { "even" } else { "odd" }))
+            .classes(rx!(scope; if *$count % 2 == 0 { "even" } else { "odd" }))
             .style("margin-top: 5px; color: #666; font-size: 0.9em;"),
     ]
 }
 
 #[component]
-pub fn NodeRefDemo() -> impl View {
+pub fn NodeRefDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
     use silex::reexports::web_sys::HtmlInputElement;
-    let input_ref = NodeRef::<HtmlInputElement>::new();
+    let input_ref = scope.node_ref::<HtmlInputElement>();
 
     div![
         h3("NodeRef Demo"),
@@ -111,6 +122,7 @@ pub fn NodeRefDemo() -> impl View {
             if let Some(el) = input_ref.get() {
                 let _ = el.focus();
             }
+            Ok(())
         })
     ]
     .style(
@@ -121,9 +133,9 @@ pub fn NodeRefDemo() -> impl View {
     )
 }
 #[component]
-pub fn SvgIconDemo() -> impl View {
+pub fn SvgIconDemo<'scope>() -> impl View<'scope> {
     #[component]
-    fn ShieldCheck() -> impl View + AttributeBuilder {
+    fn ShieldCheck<'scope>() -> impl View<'scope> {
         svg(path()
             .attr("stroke-linecap", "round")
             .attr("stroke-linejoin", "round")
@@ -140,13 +152,20 @@ pub fn SvgIconDemo() -> impl View {
         h3("SVG Icon forwarding"),
         p("SVG icons with attribute forwarding."),
         div![
-            ShieldCheck().style("width: 32px; height: 32px; color: green;"),
             ShieldCheck()
+                .build()
+                .style("width: 32px; height: 32px; color: green;"),
+            ShieldCheck()
+                .build()
                 .style(
                     "width: 48px; height: 48px; color: blue; margin-left: 10px; cursor: pointer;"
                 )
-                .on(event::click, |_| console_log("Icon Clicked!")),
+                .on(event::click, |_| {
+                    console_log("Icon Clicked!");
+                    Ok(())
+                }),
             ShieldCheck()
+                .build()
                 .attr("width", "50")
                 .attr("height", "50")
                 .style("color: red; margin-left: 10px;"),
@@ -164,11 +183,11 @@ pub fn SvgIconDemo() -> impl View {
 }
 
 #[component]
-pub fn EventDemo() -> impl View {
-    let (name, set_name) = Signal::pair("Silex".to_string());
-    let (count, set_count) = Signal::pair(0);
+pub fn EventDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
+    let (name, set_name) = scope.signal("Silex".to_string());
+    let (count, set_count) = scope.signal(0);
 
-    let (logs, set_logs) = Signal::pair(Vec::<String>::new());
+    let (logs, set_logs) = scope.signal(Vec::<String>::new());
     let payload = "DataPayload".to_string();
 
     // Since Signal is Copy, we can just move it directly into closures without cloning!
@@ -180,6 +199,7 @@ pub fn EventDemo() -> impl View {
         ));
         set_count.update(|n| *n += 1);
         set_name.update(|n| *n = format!("Silex {}", count.get() + 1));
+        Ok(())
     };
 
     let on_click_inner = move |_| {
@@ -192,14 +212,15 @@ pub fn EventDemo() -> impl View {
             }
             l.push(format!("Consumed: {}", owned_data));
         });
+        Ok(())
     };
 
     div![
         h3("Event & Closure Demo"),
         p("1. Signals are Copy: You can directly move them into closures without cloning."),
         div![
-            p(name.map_fn(|n| format!("Current Name: {}", n))), // map_fn: zero-allocation, no monomorphization bloat
-            p(count.map(|c| format!("Current Count: {}", c))), // map: traditional closure, still works for all cases
+            p(name.map_fn(scope, |n| format!("Current Name: {}", n))),
+            p(count.map(scope, |c| format!("Current Count: {}", c))),
         ]
         .style("margin-bottom: 10px; font-family: monospace;"),
         button("Log & Update (Standard)")
@@ -208,7 +229,10 @@ pub fn EventDemo() -> impl View {
         div![].style("height: 1px; background: #ccc; margin: 15px 0;"),
         p("2. Non-Copy types: Clone manually inside the closure."),
         button("Consume Payload").on(event::click, on_click_inner),
-        ul(For(logs, |l| l.clone()).children(|l, _idx| li(l).style("font-size: 0.8em;"))).style(
+        ul(For(logs, |l| l.clone())
+            .children(|l, _idx, _updater| li(l).style("font-size: 0.8em;"))
+            .build())
+        .style(
             sty()
                 .margin_top(px(10))
                 .background(AppTheme::BORDER)
@@ -226,8 +250,8 @@ pub fn EventDemo() -> impl View {
 }
 
 #[component]
-pub fn BasicsPage() -> impl View {
-    let name_signal = RwSignal::new("Developer".to_string());
+pub fn BasicsPage<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
+    let name_signal = scope.rw_signal("Developer".to_string());
 
     div![
         h2("Basics"),
@@ -236,7 +260,7 @@ pub fn BasicsPage() -> impl View {
             "Reactive Greeting Name: ",
             input().bind_value(name_signal),
             button("Submit")
-                .attr("disabled", name_signal.read_signal().equals(""))
+                .attr("disabled", name_signal.read_signal().equals(scope, ""))
                 .style("margin-left: 10px;")
         ]
         .style(
@@ -247,11 +271,11 @@ pub fn BasicsPage() -> impl View {
                 .border_radius(px(4))
                 .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))
         ),
-        Greeting(name_signal),
-        Counter(),
-        EventDemo(),
-        NodeRefDemo(),
-        SvgIconDemo(),
+        Greeting(name_signal).build(),
+        Counter(scope).build(),
+        EventDemo(scope).build(),
+        NodeRefDemo(scope).build(),
+        SvgIconDemo::<'scope>().build(),
         // AttributeDemo omitted for brevity, logic is same as previous
     ]
 }

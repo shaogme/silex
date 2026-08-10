@@ -4,34 +4,38 @@ use crate::css::AppTheme;
 use silex::prelude::*;
 
 #[component]
-pub fn ListDemo() -> impl View {
-    let (list, set_list) = Signal::pair(Ok(vec![
+pub fn ListDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
+    let (list, set_list) = scope.signal(Ok(vec![
         Cow::Borrowed("Apple"),
         Cow::Borrowed("Banana"),
         Cow::Borrowed("Cherry"),
     ]));
-    let (error_msg, set_error_msg) = Signal::pair(None::<String>);
+    let (error_msg, set_error_msg) = scope.signal(None::<String>);
+    let list_error_handler = scope.error_handler(move |err: SilexError| {
+        set_error_msg.set(Some(format!("捕获到错误: {}", err)));
+    });
 
     div![
         h3("List Rendering with Error Handling"),
         p("Demonstrates explicit error handling in For component to avoid crashes."),
         // Error display
-        Show(error_msg.map(|e| e.is_some())).children(move || {
-            div(error_msg.get().unwrap_or_default()).style(
-                sty()
-                    .color(hex("#d32f2f"))
-                    .background(hex("#ffebee"))
-                    .padding(px(10))
-                    .border_radius(px(4))
-                    .margin_bottom(px(10))
-                    .border(format!("1px solid {}", hex("#ef9a9a"))),
-            )
-        }),
+        Show(scope, error_msg.map(scope, |e| e.is_some()))
+            .children(move || {
+                div(error_msg.get().unwrap_or_default()).style(
+                    sty()
+                        .color(hex("#d32f2f"))
+                        .background(hex("#ffebee"))
+                        .padding(px(10))
+                        .border_radius(px(4))
+                        .margin_bottom(px(10))
+                        .border(format!("1px solid {}", hex("#ef9a9a"))),
+                )
+            })
+            .build(),
         ul(For(list, |item| item.clone())
-            .children(|item, _idx| li(item))
-            .error(move |err| {
-                set_error_msg.set(Some(format!("捕获到错误: {}", err)));
-            })),
+            .children(|item, _idx, _updater| li(item))
+            .error_handler(list_error_handler)
+            .build()),
         div![
             button("Add Item").on(event::click, move |_| {
                 set_error_msg.set(None);
@@ -42,6 +46,7 @@ pub fn ListDemo() -> impl View {
                         *l = Ok(vec!["Apple".into(), "Banana".into(), "Cherry".into()]);
                     }
                 });
+                Ok(())
             }),
             button("Duplicate Key").on(event::click, move |_| {
                 set_error_msg.set(None);
@@ -51,9 +56,11 @@ pub fn ListDemo() -> impl View {
                         v.push("Duplicate".into());
                     }
                 });
+                Ok(())
             }),
             button("Simulate Error").on(event::click, move |_| {
                 set_list.set(Err(SilexError::Javascript("模拟数据加载失败".to_string())));
+                Ok(())
             }),
         ]
         .style("display: flex; gap: 10px; margin-top: 10px;"),
@@ -61,14 +68,14 @@ pub fn ListDemo() -> impl View {
 }
 
 #[component]
-pub fn ShowDemo() -> impl View {
-    let (visible, set_visible) = Signal::pair(true);
+pub fn ShowDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
+    let (visible, set_visible) = scope.signal(true);
 
     div![
         h3("Conditional Rendering with Show"),
         p("Demonstrates passing a Signal directly to Show as condition."),
         button("Toggle Visibility").on(event::click, set_visible.updater(|v| *v = !*v)),
-        Show(visible)
+        Show(scope, visible)
             .children(
                 div("✅ Content is visible!").style(
                     sty()
@@ -84,13 +91,14 @@ pub fn ShowDemo() -> impl View {
                         .padding(px(10))
                         .background(hex("#ffebee"))
                 )
-            ),
+            )
+            .build(),
     ]
 }
 
 #[component]
-pub fn DynamicDemo() -> impl View {
-    let (mode, set_mode) = Signal::pair("A");
+pub fn DynamicDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
+    let (mode, set_mode) = scope.signal("A");
 
     div![
         h3("Dynamic Component Switching"),
@@ -102,22 +110,26 @@ pub fn DynamicDemo() -> impl View {
         ]
         .style("display: flex; gap: 10px; margin-bottom: 10px;"),
         // You can also use Dynamic(mode.map(|m| { view_match!(m, { ... }) })).
-        Dynamic(mode.map(|m| {
-            view_match!(*m, {
-                "A" => div("🅰️ Component A")
-                    .style(sty().padding(px(20)).background(hex("#e3f2fd"))),
-                "B" => div("🅱️ Component B")
-                    .style(sty().padding(px(20)).background(hex("#fff3e0"))),
-                _ => div("©️ Component C")
-                    .style(sty().padding(px(20)).background(hex("#f3e5f5"))),
+        Dynamic(
+            scope,
+            mode.map(scope, |m| {
+                view_match!(*m, {
+                    "A" => div("🅰️ Component A")
+                        .style(sty().padding(px(20)).background(hex("#e3f2fd"))),
+                    "B" => div("🅱️ Component B")
+                        .style(sty().padding(px(20)).background(hex("#fff3e0"))),
+                    _ => div("©️ Component C")
+                        .style(sty().padding(px(20)).background(hex("#f3e5f5"))),
+                })
             })
-        })),
+        )
+        .build(),
     ]
 }
 
 #[component]
-pub fn SwitchDemo() -> impl View {
-    let (tab, set_tab) = Signal::pair(0);
+pub fn SwitchDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
+    let (tab, set_tab) = scope.signal(0);
 
     div![
         h3("Switch (Match) Demo"),
@@ -127,8 +139,9 @@ pub fn SwitchDemo() -> impl View {
             button("Tab 3").on(event::click, set_tab.setter(2)),
         ]
         .style("display: flex; gap: 10px; margin-bottom: 10px;"),
-        Switch(tab)
+        Switch(scope, tab)
             .fallback(div("Fallback (Should not happen)"))
+            .build()
             .try_case(
                 0,
                 div("Content for Tab 1")
@@ -154,71 +167,79 @@ pub fn SwitchDemo() -> impl View {
 }
 
 #[component]
-pub fn IndexDemo() -> impl View {
-    let (items, set_items) = Signal::pair(vec!["Item A", "Item B", "Item C"]);
+pub fn IndexDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
+    let (items, set_items) = scope.signal(vec!["Item A", "Item B", "Item C"]);
 
     div![
         h3("Index For Loop Demo"),
         p("Optimized for list updates by index."),
-        Index(items).children(|item, idx| { div![strong(format!("{}: ", idx.get())), item] }),
+        Index(items)
+            .children(|item, idx| div![strong(format!("{}: ", idx)), item])
+            .build(),
         button("Append Item")
             .on(event::click, move |_| {
                 set_items.update(|list| list.push("New Item"));
+                Ok(())
             })
             .style("margin-top: 10px;")
     ]
 }
 
 #[component]
-pub fn PortalDemo() -> impl View {
-    let (show_modal, set_show_modal) = Signal::pair(false);
+pub fn PortalDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
+    let (show_modal, set_show_modal) = scope.signal(false);
 
     div![
         h3("Portal Demo"),
         button("Toggle Modal").on(event::click, set_show_modal.updater(|v| *v = !*v)),
-        Show(show_modal).children(Portal(
-            div![
-                div![
-                    h4("I am a Modal!"),
-                    p("I am rendered via Portal directly into the body, but I share context!"),
-                    button("Close").on(event::click, set_show_modal.setter(false))
-                ]
-                .style(
-                    sty()
-                        .background(AppTheme::SURFACE)
-                        .padding(px(20))
-                        .border_radius(px(8))
-                        .box_shadow("0 4px 12px rgba(0,0,0,0.2)")
-                        .min_width(px(300))
+        Show(scope, show_modal)
+            .children(
+                Portal(
+                    div![
+                        div![
+                            h4("I am a Modal!"),
+                            p("I am rendered via Portal directly into the body, but I share context!"),
+                            button("Close").on(event::click, set_show_modal.setter(false))
+                        ]
+                        .style(
+                            sty()
+                                .background(AppTheme::SURFACE)
+                                .padding(px(20))
+                                .border_radius(px(8))
+                                .box_shadow("0 4px 12px rgba(0,0,0,0.2)")
+                                .min_width(px(300))
+                        )
+                    ]
+                    .style(
+                        sty()
+                            .position(PositionKeyword::Fixed)
+                            .top(px(0))
+                            .left(px(0))
+                            .width(vw(100))
+                            .height(vh(100))
+                            .background(rgba(0, 0, 0, 0.5))
+                            .display(DisplayKeyword::Flex)
+                            .justify_content(JustifyContentKeyword::Center)
+                            .align_items(AlignItemsKeyword::Center)
+                            .z_index(9999)
+                    )
                 )
-            ]
-            .style(
-                sty()
-                    .position(PositionKeyword::Fixed)
-                    .top(px(0))
-                    .left(px(0))
-                    .width(vw(100))
-                    .height(vh(100))
-                    .background(rgba(0, 0, 0, 0.5))
-                    .display(DisplayKeyword::Flex)
-                    .justify_content(JustifyContentKeyword::Center)
-                    .align_items(AlignItemsKeyword::Center)
-                    .z_index(9999)
+                .build()
             )
-        ))
+            .build(),
     ]
 }
 
 #[component]
-pub fn FlowPage() -> impl View {
+pub fn FlowPage<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
     div![
         h2("Control Flow"),
-        ListDemo(),
-        ShowDemo(),
-        DynamicDemo(),
-        SwitchDemo(),
-        IndexDemo(),
-        PortalDemo(),
+        ListDemo(scope).build(),
+        ShowDemo(scope).build(),
+        DynamicDemo(scope).build(),
+        SwitchDemo(scope).build(),
+        IndexDemo(scope).build(),
+        PortalDemo(scope).build(),
     ]
     .style("display: flex; flex-direction: column; gap: 20px;")
 }
