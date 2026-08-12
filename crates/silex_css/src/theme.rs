@@ -318,7 +318,6 @@ where
                 };
                 let entries = patch.get_patch_entries();
                 let next = {
-                    let previous = previous;
                     let Some(style) = element_style(&effect_el) else {
                         return Err(SilexError::Dom(
                             "element does not expose a style declaration".into(),

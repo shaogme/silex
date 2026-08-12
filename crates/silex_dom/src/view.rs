@@ -10,7 +10,7 @@ pub use reactive::*;
 use crate::attribute::PendingAttribute;
 use silex_core::{
     CallbackInvokeError, CompletionOnce, CompletionSender, ErrorReporter, OwnedScope,
-    ReactiveError, RuntimeInputs, Rx, Scope, SilexError, SilexResult,
+    ReactiveError, RuntimeInputs, Rx, Scope, SilexError, SilexResult, StoredValue,
     reactivity::ReactiveSource,
     traits::{RxData, RxValue},
     unwind_safe,
@@ -325,9 +325,26 @@ impl<T> SharedSlot<T> {
 /// The state rejects access after its owner becomes inactive. The framework
 /// uses the cleanup-only methods while an owner is being disposed so cleanup
 /// can still take the final value after the runtime has rejected new work.
+/// States created for a lexical `Scope` are backed by that scope's
+/// `StoredValue`, while states created for an `OwnedScope` use the local
+/// fallback because an owned view owner intentionally cannot create nodes.
 pub struct OwnerState<'scope, T> {
-    value: SharedSlot<Option<T>>,
+    value: OwnerStateValue<'scope, T>,
     active: ActiveRegistrar<'scope>,
+}
+
+enum OwnerStateValue<'scope, T> {
+    Shared(SharedSlot<Option<T>>),
+    Stored(StoredValue<'scope, Option<T>>),
+}
+
+impl<'scope, T> Clone for OwnerStateValue<'scope, T> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Shared(value) => Self::Shared(value.clone()),
+            Self::Stored(value) => Self::Stored(*value),
+        }
+    }
 }
 
 impl<'scope, T> Clone for OwnerState<'scope, T> {
@@ -339,10 +356,17 @@ impl<'scope, T> Clone for OwnerState<'scope, T> {
     }
 }
 
-impl<'scope, T> OwnerState<'scope, T> {
+impl<'scope, T: 'scope> OwnerState<'scope, T> {
     fn new(value: T, active: ActiveRegistrar<'scope>) -> Self {
         Self {
-            value: SharedSlot::new(Some(value)),
+            value: OwnerStateValue::Shared(SharedSlot::new(Some(value))),
+            active,
+        }
+    }
+
+    fn new_stored(value: StoredValue<'scope, Option<T>>, active: ActiveRegistrar<'scope>) -> Self {
+        Self {
+            value: OwnerStateValue::Stored(value),
             active,
         }
     }
@@ -357,34 +381,59 @@ impl<'scope, T> OwnerState<'scope, T> {
 
     pub fn with<R>(&self, callback: impl FnOnce(&T) -> R) -> SilexResult<R> {
         self.ensure_access()?;
-        self.value.with(|value| {
-            value
-                .as_ref()
-                .map(callback)
-                .ok_or(SilexError::Reactivity(ReactiveError::NoSuchNode))
-        })
+        match &self.value {
+            OwnerStateValue::Shared(value) => value.with(|value| {
+                value
+                    .as_ref()
+                    .map(callback)
+                    .ok_or(SilexError::Reactivity(ReactiveError::NoSuchNode))
+            }),
+            OwnerStateValue::Stored(value) => value
+                .try_with(|value| value.as_ref().map(callback))
+                .map_err(SilexError::from)?
+                .ok_or(SilexError::Reactivity(ReactiveError::NoSuchNode)),
+        }
     }
 
     pub fn update<R>(&self, callback: impl FnOnce(&mut T) -> R) -> SilexResult<R> {
         self.ensure_access()?;
-        self.value.with_mut(|value| {
-            value
-                .as_mut()
-                .map(callback)
-                .ok_or(SilexError::Reactivity(ReactiveError::NoSuchNode))
-        })
+        match &self.value {
+            OwnerStateValue::Shared(value) => value.with_mut(|value| {
+                value
+                    .as_mut()
+                    .map(callback)
+                    .ok_or(SilexError::Reactivity(ReactiveError::NoSuchNode))
+            }),
+            OwnerStateValue::Stored(value) => value
+                .try_update(|value| value.as_mut().map(callback))
+                .map_err(SilexError::from)?
+                .ok_or(SilexError::Reactivity(ReactiveError::NoSuchNode)),
+        }
     }
 
     pub fn take(&self) -> SilexResult<T> {
         self.ensure_access()?;
-        self.value
-            .with_mut(Option::take)
-            .ok_or(SilexError::Reactivity(ReactiveError::NoSuchNode))
+        match &self.value {
+            OwnerStateValue::Shared(value) => value
+                .with_mut(Option::take)
+                .ok_or(SilexError::Reactivity(ReactiveError::NoSuchNode)),
+            OwnerStateValue::Stored(value) => value
+                .try_update(Option::take)
+                .map_err(SilexError::from)?
+                .ok_or(SilexError::Reactivity(ReactiveError::NoSuchNode)),
+        }
     }
 
     pub fn replace(&self, value: T) -> SilexResult<Option<T>> {
         self.ensure_access()?;
-        Ok(self.value.with_mut(|current| current.replace(value)))
+        match &self.value {
+            OwnerStateValue::Shared(current) => {
+                Ok(current.with_mut(|current| current.replace(value)))
+            }
+            OwnerStateValue::Stored(current) => current
+                .try_update(|current| current.replace(value))
+                .map_err(SilexError::from),
+        }
     }
 
     pub fn is_active(&self) -> bool {
@@ -393,7 +442,10 @@ impl<'scope, T> OwnerState<'scope, T> {
 
     #[doc(hidden)]
     pub fn take_for_cleanup(&self) -> Option<T> {
-        self.value.with_mut(Option::take)
+        match &self.value {
+            OwnerStateValue::Shared(value) => value.with_mut(Option::take),
+            OwnerStateValue::Stored(value) => value.try_update(Option::take).ok().flatten(),
+        }
     }
 }
 
@@ -640,6 +692,7 @@ pub struct ViewOwnerToken<'scope> {
     owned_scope: OwnedScopeRegistrar<'scope>,
     completion: CompletionRegistrar<'scope>,
     active: ActiveRegistrar<'scope>,
+    state_scope: Option<Scope<'scope>>,
     error_handler: ErrorReporter<'scope>,
 }
 
@@ -651,6 +704,7 @@ struct ViewOwnerTokenParts<'scope> {
     owned_scope: OwnedScopeRegistrar<'scope>,
     completion: CompletionRegistrar<'scope>,
     active: ActiveRegistrar<'scope>,
+    state_scope: Option<Scope<'scope>>,
     error_handler: ErrorReporter<'scope>,
 }
 
@@ -664,6 +718,7 @@ impl<'scope> ViewOwnerToken<'scope> {
             owned_scope: parts.owned_scope,
             completion: parts.completion,
             active: parts.active,
+            state_scope: parts.state_scope,
             error_handler: parts.error_handler,
         }
     }
@@ -703,11 +758,14 @@ impl<'scope> ViewOwnerToken<'scope> {
             .register(inputs, callback, error_handler)
     }
 
-    pub fn owner_state<T>(&self, value: T) -> SilexResult<OwnerState<'scope, T>> {
+    pub fn owner_state<T: 'scope>(&self, value: T) -> SilexResult<OwnerState<'scope, T>> {
         if !self.is_active() {
             return Err(SilexError::Reactivity(ReactiveError::NoSuchNode));
         }
-        Ok(OwnerState::new(value, self.active.clone()))
+        Ok(match self.state_scope {
+            Some(scope) => OwnerState::new_stored(scope.stored(Some(value)), self.active.clone()),
+            None => OwnerState::new(value, self.active.clone()),
+        })
     }
 
     pub fn validate_inputs(&self, inputs: &RuntimeInputs) -> SilexResult<()> {
@@ -743,6 +801,7 @@ impl<'scope> ViewOwnerToken<'scope> {
             owned_scope: self.owned_scope.clone(),
             completion: self.completion.clone(),
             active: self.active.clone(),
+            state_scope: self.state_scope,
             error_handler,
         }
     }
@@ -955,7 +1014,7 @@ impl<'scope> ScopedViewOwner<'scope> {
             .map(|_| ())
     }
 
-    pub fn owner_state<T>(&self, value: T) -> SilexResult<OwnerState<'scope, T>> {
+    pub fn owner_state<T: 'scope>(&self, value: T) -> SilexResult<OwnerState<'scope, T>> {
         self.token().owner_state(value)
     }
 }
@@ -1013,6 +1072,7 @@ impl<'scope> ViewOwner<'scope> for ScopedViewOwner<'scope> {
                 move |callback| scope_for_once.completion_once(unwind_safe(callback)),
             ),
             active: ActiveRegistrar::new(move || scope_for_active.is_active()),
+            state_scope: Some(self.scope),
             error_handler,
         })
     }
@@ -1035,7 +1095,7 @@ impl<'scope> OwnedViewOwner<'scope> {
         }
     }
 
-    pub(crate) fn owner_state<T>(&self, value: T) -> SilexResult<OwnerState<'scope, T>> {
+    pub(crate) fn owner_state<T: 'scope>(&self, value: T) -> SilexResult<OwnerState<'scope, T>> {
         self.token().owner_state(value)
     }
 }
@@ -1093,6 +1153,7 @@ impl<'scope> ViewOwner<'scope> for OwnedViewOwner<'scope> {
                 move |callback| scope_for_once.completion_once(unwind_safe(callback)),
             ),
             active: ActiveRegistrar::new(move || scope_for_active.is_active()),
+            state_scope: None,
             error_handler,
         })
     }
