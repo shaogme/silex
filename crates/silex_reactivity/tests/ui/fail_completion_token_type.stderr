@@ -1,13 +1,13 @@
 error[E0308]: mismatched types
- --> tests/ui/fail_completion_token_type.rs:9:26
-  |
-9 |     assert!(token.submit("wrong message type").is_ok());
-  |                   ------ ^^^^^^^^^^^^^^^^^^^^ expected `i32`, found `&str`
-  |                   |
-  |                   arguments to this method are incorrect
-  |
+  --> tests/ui/fail_completion_token_type.rs:10:26
+   |
+10 |     assert!(token.submit("wrong message type").is_ok());
+   |                   ------ ^^^^^^^^^^^^^^^^^^^^ expected `i32`, found `&str`
+   |                   |
+   |                   arguments to this method are incorrect
+   |
 note: method defined here
- --> src/completion.rs
-  |
-  |     pub fn submit<'scope>(&self, value: T) -> CompletionSubmitResult<E>
-  |            ^^^^^^
+  --> src/completion.rs
+   |
+   |     pub fn submit<'scope>(&self, value: T) -> CompletionSubmitResult<E>
+   |            ^^^^^^

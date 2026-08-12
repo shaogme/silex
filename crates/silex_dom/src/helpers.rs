@@ -446,7 +446,7 @@ where
             }
             Err(error) => {
                 let _ = state.borrow_mut().pending.take();
-                error_handler.handle(error.into());
+                let _ = error_handler.handle(error.into());
             }
         }
     }

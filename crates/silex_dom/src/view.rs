@@ -785,7 +785,7 @@ impl<'scope> ViewOwnerToken<'scope> {
     }
 
     pub fn handle_error(&self, error: SilexError) {
-        self.error_handler.handle(error);
+        let _ = self.error_handler.handle(error);
     }
 
     pub fn error_handler(&self) -> ViewErrorHandler<'scope> {
@@ -1377,7 +1377,7 @@ where
     let scope_for_cleanup = scope.clone();
     if let Err(error) = owner.on_cleanup(
         Box::new(move || {
-            scope_for_cleanup.dispose();
+            let _ = scope_for_cleanup.dispose();
             Ok(())
         }),
         owner.token().error_handler(),
@@ -1840,7 +1840,7 @@ where
         }),
         error_handler,
     ) {
-        scope.dispose();
+        let _ = scope.dispose();
         cleanup_range.remove();
         return Err(error);
     }
@@ -1937,18 +1937,18 @@ where
         }),
         error_handler,
     ) {
-        scope.dispose();
+        let _ = scope.dispose();
         return Err(error);
     }
     let scope_for_cleanup = scope.clone();
     if let Err(error) = owner.on_cleanup(
         Box::new(move || {
-            scope_for_cleanup.dispose();
+            let _ = scope_for_cleanup.dispose();
             Ok(())
         }),
         owner.token().error_handler(),
     ) {
-        scope.dispose();
+        let _ = scope.dispose();
         return Err(error);
     }
     Ok(())

@@ -6,6 +6,7 @@ use syn::{Expr, Result, Token};
 
 // --- classes! [...] implementation ---
 
+#[allow(clippy::large_enum_variant)]
 enum ClassItem {
     Simple(Expr),
     Conditional(Expr, Expr),

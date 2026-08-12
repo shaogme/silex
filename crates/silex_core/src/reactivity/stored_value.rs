@@ -49,23 +49,26 @@ impl<'scope, T: 'scope> StoredValue<'scope, T> {
     }
 
     pub fn with<U>(&self, f: impl FnOnce(&T) -> U) -> U {
-        self.inner.with(f)
+        self.try_with(f)
+            .unwrap_or_else(|error| panic!("读取 StoredValue 失败: {error}"))
     }
 
     pub fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
-        self.inner.try_with(f)
+        self.inner.with(f)
     }
 
     pub fn update<U>(&self, f: impl FnOnce(&mut T) -> U) -> U {
-        self.inner.update(f)
+        self.try_update(f)
+            .unwrap_or_else(|error| panic!("更新 StoredValue 失败: {error}"))
     }
 
     pub fn try_update<U>(&self, f: impl FnOnce(&mut T) -> U) -> ReactiveResult<U> {
-        self.inner.try_update(f)
+        self.inner.update(f)
     }
 
     pub fn set(&self, value: T) {
-        self.update(|stored| *stored = value);
+        self.try_update(|stored| *stored = value)
+            .unwrap_or_else(|error| panic!("写入 StoredValue 失败: {error}"));
     }
 
     pub fn into_rx(self) -> Rx<'scope, T, RxValueKind> {

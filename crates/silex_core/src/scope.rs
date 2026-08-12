@@ -34,19 +34,24 @@ impl Runtime {
     }
 
     pub fn run(&mut self) -> RootHandle {
-        let handle = self.inner.run();
+        let handle = self
+            .inner
+            .run()
+            .unwrap_or_else(|error| panic!("启动 reactive runtime 失败: {error}"));
         RootHandle { inner: handle }
     }
 
     pub fn try_run(&mut self) -> SilexResult<RootHandle> {
         self.inner
-            .try_run()
+            .run()
             .map(|handle| RootHandle { inner: handle })
             .map_err(SilexError::from)
     }
 
     pub fn child<R>(&mut self, f: impl for<'scope> FnOnce(Scope<'scope>) -> R) -> R {
-        self.inner.child(|s| f(Scope { inner: s }))
+        self.inner
+            .child(|s| f(Scope { inner: s }))
+            .unwrap_or_else(|error| panic!("创建 child scope 失败: {error}"))
     }
 }
 
@@ -102,7 +107,9 @@ impl<'scope> Scope<'scope> {
     where
         F: Fn(SilexError) + 'scope,
     {
-        self.inner.error_handler(handler)
+        self.inner
+            .error_handler(handler)
+            .unwrap_or_else(|error| panic!("注册 error handler 失败: {error}"))
     }
 
     pub fn owned_scope(self) -> OwnedScope<'scope> {
@@ -112,7 +119,7 @@ impl<'scope> Scope<'scope> {
 
     pub fn try_owned_scope(self) -> SilexResult<OwnedScope<'scope>> {
         self.inner
-            .try_owned_scope()
+            .owned_scope()
             .map(|inner| OwnedScope { inner })
             .map_err(SilexError::from)
     }
@@ -122,7 +129,10 @@ impl<'scope> Scope<'scope> {
     }
 
     pub fn signal<T: 'scope>(self, value: T) -> (ReadSignal<'scope, T>, WriteSignal<'scope, T>) {
-        let (read, write) = self.inner.signal(value);
+        let (read, write) = self
+            .inner
+            .signal(value)
+            .unwrap_or_else(|error| panic!("创建 scoped signal 失败: {error}"));
         (
             ReadSignal::from_inner(read, self),
             WriteSignal::from_inner(write),
@@ -160,7 +170,7 @@ impl<'scope> Scope<'scope> {
         F: FnMut(Option<&T>) -> T + 'scope,
     {
         self.inner
-            .try_memo_from(inputs, f)
+            .memo_from(inputs, f)
             .map(|memo| Memo::from_inner(memo, self))
             .map_err(SilexError::from)
     }
@@ -180,7 +190,12 @@ impl<'scope> Scope<'scope> {
         T: 'scope,
         F: FnMut() -> T + 'scope,
     {
-        Rx::from_derived(self.inner.derived_from(inputs, f), self)
+        Rx::from_derived(
+            self.inner
+                .derived_from(inputs, f)
+                .unwrap_or_else(|error| panic!("创建 scoped derived 失败: {error}")),
+            self,
+        )
     }
 
     #[doc(hidden)]
@@ -190,7 +205,7 @@ impl<'scope> Scope<'scope> {
         F: FnMut() -> T + 'scope,
     {
         self.inner
-            .try_derived_from(inputs, f)
+            .derived_from(inputs, f)
             .map(|derived| Rx::from_derived(derived, self))
             .map_err(SilexError::from)
     }
@@ -353,7 +368,12 @@ impl<'scope> Scope<'scope> {
     }
 
     pub fn stored<T: 'scope>(self, value: T) -> StoredValue<'scope, T> {
-        StoredValue::from_inner(self.inner.stored(value), self)
+        StoredValue::from_inner(
+            self.inner
+                .stored(value)
+                .unwrap_or_else(|error| panic!("创建 StoredValue 失败: {error}")),
+            self,
+        )
     }
 
     pub fn callback<T, F>(self, callback: F) -> SilexResult<Callback<'scope, T>>
@@ -368,7 +388,11 @@ impl<'scope> Scope<'scope> {
     }
 
     pub fn node_ref<T: 'scope>(self) -> NodeRef<'scope, T> {
-        NodeRef::from_inner(self.inner.node_ref())
+        NodeRef::from_inner(
+            self.inner
+                .node_ref()
+                .unwrap_or_else(|error| panic!("创建 NodeRef 失败: {error}")),
+        )
     }
 
     /// Create a one-shot completion destination.
@@ -380,7 +404,9 @@ impl<'scope> Scope<'scope> {
         T: 'static,
         F: FnMut(T) -> SilexResult<()> + UnwindSafe + 'scope,
     {
-        self.inner.completion_once(callback)
+        self.inner
+            .completion_once(callback)
+            .unwrap_or_else(|error| panic!("创建 completion once 失败: {error}"))
     }
 
     /// Create a reusable completion destination.
@@ -392,7 +418,9 @@ impl<'scope> Scope<'scope> {
         T: 'static,
         F: FnMut(T) -> SilexResult<()> + UnwindSafe + 'scope,
     {
-        self.inner.completion_sender(callback)
+        self.inner
+            .completion_sender(callback)
+            .unwrap_or_else(|error| panic!("创建 completion sender 失败: {error}"))
     }
 
     /// Spawn a task owned by this persistent scope or the currently running computation.
@@ -441,9 +469,7 @@ impl<'scope> Scope<'scope> {
 
     #[doc(hidden)]
     pub fn try_validate_inputs(self, inputs: &RuntimeInputs) -> SilexResult<()> {
-        self.inner
-            .try_validate_inputs(inputs)
-            .map_err(SilexError::from)
+        self.inner.validate_inputs(inputs).map_err(SilexError::from)
     }
 
     #[cfg(feature = "test-support")]
@@ -464,7 +490,9 @@ impl<'scope> Scope<'scope> {
     }
 
     pub fn child<R>(self, f: impl for<'child> FnOnce(Scope<'child>) -> R) -> R {
-        self.inner.child(|scope| f(Scope { inner: scope }))
+        self.inner
+            .child(|scope| f(Scope { inner: scope }))
+            .unwrap_or_else(|error| panic!("创建 child scope 失败: {error}"))
     }
 
     pub fn untrack<R>(self, f: impl FnOnce() -> R) -> R {
@@ -514,7 +542,7 @@ impl<'scope> OwnedScope<'scope> {
 
     pub fn try_child(&self) -> SilexResult<Self> {
         self.inner
-            .try_child()
+            .child()
             .map(|inner| Self { inner })
             .map_err(SilexError::from)
     }
@@ -525,9 +553,7 @@ impl<'scope> OwnedScope<'scope> {
 
     #[doc(hidden)]
     pub fn try_validate_inputs(&self, inputs: &RuntimeInputs) -> SilexResult<()> {
-        self.inner
-            .try_validate_inputs(inputs)
-            .map_err(SilexError::from)
+        self.inner.validate_inputs(inputs).map_err(SilexError::from)
     }
 
     /// Register and immediately run an owner-bound effect without extra
@@ -670,7 +696,9 @@ impl<'scope> OwnedScope<'scope> {
         T: 'static,
         F: FnMut(T) -> SilexResult<()> + UnwindSafe + 'scope,
     {
-        self.inner.completion_once(callback)
+        self.inner
+            .completion_once(callback)
+            .unwrap_or_else(|error| panic!("创建 completion once 失败: {error}"))
     }
 
     /// Create a reusable completion destination.
@@ -682,7 +710,9 @@ impl<'scope> OwnedScope<'scope> {
         T: 'static,
         F: FnMut(T) -> SilexResult<()> + UnwindSafe + 'scope,
     {
-        self.inner.completion_sender(callback)
+        self.inner
+            .completion_sender(callback)
+            .unwrap_or_else(|error| panic!("创建 completion sender 失败: {error}"))
     }
 
     /// Spawn a task owned by this persistent scope or the currently running computation.
@@ -705,7 +735,7 @@ impl<'scope> OwnedScope<'scope> {
         task
     }
 
-    pub fn dispose(&self) {
-        self.inner.dispose();
+    pub fn dispose(&self) -> Result<(), silex_reactivity::CleanupError> {
+        self.inner.dispose()
     }
 }

@@ -208,10 +208,10 @@ where
                             match result {
                                 Ok(_) => {}
                                 Err(CallbackInvokeError::Runtime(error)) => {
-                                    completion_error_handler.handle(error.into())
+                                    let _ = completion_error_handler.handle(error.into());
                                 }
                                 Err(CallbackInvokeError::User(error)) => {
-                                    completion_error_handler.handle(error)
+                                    let _ = completion_error_handler.handle(error);
                                 }
                             }
                         },

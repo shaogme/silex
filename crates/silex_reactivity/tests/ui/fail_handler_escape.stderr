@@ -1,22 +1,26 @@
 error: lifetime may not live long enough
-  --> tests/ui/fail_handler_escape.rs:8:9
+  --> tests/ui/fail_handler_escape.rs:9:13
    |
- 5 |       let handler = runtime.child(|scope| {
-   |                                    ------ return type of closure is ErrorHandler<'2, ()>
-   |                                    |
-   |                                    has type `silex_reactivity::Scope<'1>`
+ 6 |           .child(|scope| {
+   |                   ------ return type of closure is ErrorHandler<'2, ()>
+   |                   |
+   |                   has type `silex_reactivity::Scope<'1>`
 ...
- 8 | /         scope.error_handler(move |_: ()| {
- 9 | |             assert_eq!(value.as_str(), "scoped");
-10 | |         })
-   | |__________^ returning this value requires that `'1` must outlive `'2`
+ 9 | /             scope
+10 | |                 .error_handler(move |_: ()| {
+11 | |                     assert_eq!(value.as_str(), "scoped");
+12 | |                 })
+13 | |                 .expect("error handler registration should succeed")
+   | |____________________________________________________________________^ returning this value requires that `'1` must outlive `'2`
 
 error[E0515]: cannot return value referencing local variable `local`
-  --> tests/ui/fail_handler_escape.rs:8:9
+  --> tests/ui/fail_handler_escape.rs:9:13
    |
- 7 |           let value = &local;
-   |                       ------ `local` is borrowed here
- 8 | /         scope.error_handler(move |_: ()| {
- 9 | |             assert_eq!(value.as_str(), "scoped");
-10 | |         })
-   | |__________^ returns a value referencing data owned by the current function
+ 8 |               let value = &local;
+   |                           ------ `local` is borrowed here
+ 9 | /             scope
+10 | |                 .error_handler(move |_: ()| {
+11 | |                     assert_eq!(value.as_str(), "scoped");
+12 | |                 })
+13 | |                 .expect("error handler registration should succeed")
+   | |____________________________________________________________________^ returns a value referencing data owned by the current function

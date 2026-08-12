@@ -5,7 +5,9 @@ fn main() {
     runtime.child(|scope| {
         let _ = scope.effect_with_previous(
             |previous: Option<i32>| Ok::<i32, ()>(previous.unwrap_or_default()),
-            scope.error_handler(|_| {}),
+            scope
+                .error_handler(|_| {})
+                .expect("error handler registration should succeed"),
         );
     });
 }

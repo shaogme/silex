@@ -41,7 +41,7 @@ impl<'scope, T: 'scope> Memo<'scope, T> {
     where
         T: Clone,
     {
-        self.inner.try_get()
+        self.inner.get()
     }
 
     pub fn get(&self) -> T
@@ -56,7 +56,7 @@ impl<'scope, T: 'scope> Memo<'scope, T> {
     where
         T: Clone,
     {
-        self.inner.try_get_untracked()
+        self.inner.get_untracked()
     }
 
     pub fn get_untracked(&self) -> T
@@ -68,7 +68,7 @@ impl<'scope, T: 'scope> Memo<'scope, T> {
     }
 
     pub fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
-        self.inner.try_with(f)
+        self.inner.with(f)
     }
 
     pub fn with<U>(&self, f: impl FnOnce(&T) -> U) -> U {
@@ -77,7 +77,7 @@ impl<'scope, T: 'scope> Memo<'scope, T> {
     }
 
     pub fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
-        self.inner.try_with_untracked(f)
+        self.inner.with_untracked(f)
     }
 
     pub fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> U {

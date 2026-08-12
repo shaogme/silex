@@ -83,7 +83,7 @@ impl<'scope, T: 'scope> PromotionPlan<'scope, T> {
     }
 
     pub(crate) fn materialize(self, scope: Scope<'scope>) -> ReactiveResult<Rx<'scope, T>> {
-        scope.inner.try_validate_inputs(&self.inputs)?;
+        scope.inner.validate_inputs(&self.inputs)?;
         Ok(self.materialize_unchecked(scope))
     }
 

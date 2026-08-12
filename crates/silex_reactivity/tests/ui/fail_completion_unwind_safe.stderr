@@ -22,7 +22,7 @@ note: required because it's used within this closure
 note: required by a bound in `silex_reactivity::Scope::<'scope>::completion_sender`
   --> src/child/scope.rs
    |
-   |     pub fn completion_sender<T: 'static, E, F>(&self, callback: F) -> CompletionSender<T, E>
+   |     pub fn completion_sender<T: 'static, E, F>(
    |            ----------------- required by a bound in this associated function
 ...
    |         F: FnMut(T) -> Result<(), E> + UnwindSafe + 'scope,
@@ -54,7 +54,7 @@ note: required because it's used within this closure
 note: required by a bound in `silex_reactivity::Scope::<'scope>::completion_sender`
   --> src/child/scope.rs
    |
-   |     pub fn completion_sender<T: 'static, E, F>(&self, callback: F) -> CompletionSender<T, E>
+   |     pub fn completion_sender<T: 'static, E, F>(
    |            ----------------- required by a bound in this associated function
 ...
    |         F: FnMut(T) -> Result<(), E> + UnwindSafe + 'scope,

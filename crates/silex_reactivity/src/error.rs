@@ -136,21 +136,11 @@ impl<'scope, E> ErrorHandler<'scope, E> {
     }
 
     /// Dispatch one error and report a stale or invalid registry key.
-    pub fn try_handle(&self, error: E) -> ReactiveResult<()>
+    pub fn handle(&self, error: E) -> ReactiveResult<()>
     where
         E: 'scope,
     {
         invoke_error_handler(self.storage, self.key, error)
-    }
-
-    /// Dispatch one error, panicking if the owning scope no longer has the
-    /// registered handler.
-    pub fn handle(&self, error: E)
-    where
-        E: 'scope,
-    {
-        self.try_handle(error)
-            .expect("派发 scoped error handler 失败");
     }
 }
 
@@ -194,7 +184,9 @@ impl<'scope> ErrorEvent<'scope> {
                 let error = error.take().expect("callback error event dispatched twice");
                 match phase {
                     ErrorPhase::Initial => initial_slot.store(error),
-                    ErrorPhase::Deferred => handler.handle(error),
+                    ErrorPhase::Deferred => {
+                        let _ = handler.handle(error);
+                    }
                 }
             })),
         }
@@ -205,7 +197,7 @@ impl<'scope> ErrorEvent<'scope> {
         Self {
             dispatch: Some(Box::new(move |_| {
                 let error = error.take().expect("callback error event dispatched twice");
-                handler.handle(error);
+                let _ = handler.handle(error);
             })),
         }
     }
@@ -265,9 +257,11 @@ mod tests {
             _marker: PhantomData,
         };
         let first_calls = Cell::new(0);
-        let first_handler = first_scope.error_handler(|_: &'static str| {
-            first_calls.set(first_calls.get() + 1);
-        });
+        let first_handler = first_scope
+            .error_handler(|_: &'static str| {
+                first_calls.set(first_calls.get() + 1);
+            })
+            .expect("handler registration");
         let first_state = unsafe { first_storage.typed_state() };
         assert_eq!(first_state.borrow().error_handlers.len(), 1);
         assert_eq!(first_state.borrow().nodes.len(), 0);
@@ -275,7 +269,7 @@ mod tests {
         first_storage.dispose_untracked();
         assert_eq!(first_state.borrow().error_handlers.len(), 0);
         assert_eq!(
-            first_handler.try_handle("stale"),
+            first_handler.handle("stale"),
             Err(ReactiveError::NoSuchNode)
         );
         assert_eq!(first_calls.get(), 0);
@@ -286,15 +280,17 @@ mod tests {
             _marker: PhantomData,
         };
         let second_calls = Cell::new(0);
-        let second_handler = second_scope.error_handler(|_: &'static str| {
-            second_calls.set(second_calls.get() + 1);
-        });
+        let second_handler = second_scope
+            .error_handler(|_: &'static str| {
+                second_calls.set(second_calls.get() + 1);
+            })
+            .expect("handler registration");
 
         assert_eq!(
-            first_handler.try_handle("still stale"),
+            first_handler.handle("still stale"),
             Err(ReactiveError::NoSuchNode)
         );
-        second_handler.handle("current");
+        second_handler.handle("current").expect("handler dispatch");
         assert_eq!(second_calls.get(), 1);
 
         second_storage.dispose_untracked();
@@ -318,9 +314,11 @@ mod tests {
         };
         let drops = Rc::new(Cell::new(0));
         let drop_probe = PanicOnDrop(drops.clone());
-        let _handler = scope.error_handler(move |_: ()| {
-            let _ = &drop_probe;
-        });
+        let _handler = scope
+            .error_handler(move |_: ()| {
+                let _ = &drop_probe;
+            })
+            .expect("handler registration");
         let state = unsafe { storage.typed_state() };
 
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -344,7 +342,7 @@ mod tests {
                 let Some(handler) = *self.handler.borrow() else {
                     return;
                 };
-                *self.result.borrow_mut() = Some(handler.try_handle(()));
+                *self.result.borrow_mut() = Some(handler.handle(()));
             }
         }
 
@@ -359,9 +357,11 @@ mod tests {
             handler: saved_handler.clone(),
             result: result.clone(),
         };
-        let handler = scope.error_handler(move |_: ()| {
-            let _ = &probe;
-        });
+        let handler = scope
+            .error_handler(move |_: ()| {
+                let _ = &probe;
+            })
+            .expect("handler registration");
         *saved_handler.borrow_mut() = Some(handler);
 
         storage.dispose_untracked();

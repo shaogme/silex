@@ -40,7 +40,7 @@ where
         if let Some(parent) = node.parent_node() {
             let _ = parent.remove_child(&node);
         }
-        scope.dispose();
+        let _ = scope.dispose();
         return Err(error);
     }
 
@@ -54,18 +54,18 @@ where
         }),
         error_handler,
     ) {
-        scope.dispose();
+        let _ = scope.dispose();
         return Err(error);
     }
     let scope_for_cleanup = scope.clone();
     if let Err(error) = owner.on_cleanup(
         Box::new(move || {
-            scope_for_cleanup.dispose();
+            let _ = scope_for_cleanup.dispose();
             Ok(())
         }),
         owner.token().error_handler(),
     ) {
-        scope.dispose();
+        let _ = scope.dispose();
         return Err(error);
     }
     Ok(())

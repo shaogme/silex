@@ -1,12 +1,16 @@
 error: lifetime may not live long enough
- --> tests/ui/fail_child_handle_escape.rs:5:61
-  |
-5 |     let _signal = runtime.child(|scope| scope.child(|child| child.signal(0i32).0));
-  |                                                      ------ ^^^^^^^^^^^^^^^^^^^^ returning this value requires that `'1` must outlive `'2`
-  |                                                      |    |
-  |                                                      |    return type of closure is ReadSignal<'2, i32>
-  |                                                      has type `silex_reactivity::Scope<'1>`
-  |
-  = note: requirement occurs because of the type `ReadSignal<'_, i32>`, which makes the generic argument `'_` invariant
-  = note: the struct `ReadSignal<'scope, T>` is invariant over the parameter `'scope`
-  = help: see <https://doc.rust-lang.org/nomicon/subtyping.html> for more information about variance
+  --> tests/ui/fail_child_handle_escape.rs:7:13
+   |
+ 6 |           scope.child(|child| {
+   |                        ------ return type of closure is ReadSignal<'2, i32>
+   |                        |
+   |                        has type `silex_reactivity::Scope<'1>`
+ 7 | /             child
+ 8 | |                 .signal(0i32)
+ 9 | |                 .expect("signal creation should succeed")
+10 | |                 .0
+   | |__________________^ returning this value requires that `'1` must outlive `'2`
+   |
+   = note: requirement occurs because of the type `ReadSignal<'_, i32>`, which makes the generic argument `'_` invariant
+   = note: the struct `ReadSignal<'scope, T>` is invariant over the parameter `'scope`
+   = help: see <https://doc.rust-lang.org/nomicon/subtyping.html> for more information about variance

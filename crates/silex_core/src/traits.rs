@@ -5,7 +5,7 @@ use crate::{
     SilexResult,
     reactivity::{Memo, ReactiveSource, ReadSignal, RwSignal, Signal, StoredValue, WriteSignal},
 };
-use silex_reactivity::try_notify as raw_try_notify;
+use silex_reactivity::notify as raw_notify;
 use std::fmt::Debug;
 
 /// Values accepted by the scoped runtime.
@@ -579,17 +579,17 @@ impl<'scope, T: 'scope> RxValue for ReadSignal<'scope, T> {
 
 impl<'scope, T: 'scope> RxBase for ReadSignal<'scope, T> {
     fn try_track(&self) -> ReactiveResult<()> {
-        self.inner.try_with(|_| ()).map(|_| ())
+        self.inner.with(|_| ()).map(|_| ())
     }
 }
 
 impl<'scope, T: 'scope> RxRead for ReadSignal<'scope, T> {
     fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
-        self.inner.try_with(f)
+        self.inner.with(f)
     }
 
     fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
-        self.inner.try_with_untracked(f)
+        self.inner.with_untracked(f)
     }
 }
 
@@ -605,11 +605,11 @@ impl<'scope, T: 'scope> RxBase for WriteSignal<'scope, T> {
 
 impl<'scope, T: 'scope> RxWrite for WriteSignal<'scope, T> {
     fn rx_try_update_untracked<U>(&self, f: impl FnOnce(&mut T) -> U) -> ReactiveResult<U> {
-        self.inner.try_update(f)
+        self.inner.update(f)
     }
 
     fn rx_try_notify(&self) -> ReactiveResult<()> {
-        raw_try_notify(&self.inner)
+        raw_notify(&self.inner)
     }
 }
 
@@ -670,10 +670,10 @@ impl<'scope, T: 'scope> RxValue for Rx<'scope, T, RxValueKind> {
 impl<'scope, T: 'scope> RxBase for Rx<'scope, T, RxValueKind> {
     fn try_track(&self) -> ReactiveResult<()> {
         match &self.inner {
-            RxInner::Signal(signal) => signal.try_with(|_| ()).map(|_| ()),
-            RxInner::Memo(memo) => memo.try_with(|_| ()).map(|_| ()),
-            RxInner::Derived(derived) => derived.try_with(|_| ()).map(|_| ()),
-            RxInner::Stored(stored) => stored.try_with(|_| ()).map(|_| ()),
+            RxInner::Signal(signal) => signal.with(|_| ()).map(|_| ()),
+            RxInner::Memo(memo) => memo.with(|_| ()).map(|_| ()),
+            RxInner::Derived(derived) => derived.with(|_| ()).map(|_| ()),
+            RxInner::Stored(stored) => stored.with(|_| ()).map(|_| ()),
         }
     }
 }
@@ -681,19 +681,19 @@ impl<'scope, T: 'scope> RxBase for Rx<'scope, T, RxValueKind> {
 impl<'scope, T: 'scope> RxRead for Rx<'scope, T, RxValueKind> {
     fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
         match &self.inner {
-            RxInner::Signal(signal) => signal.try_with(f),
-            RxInner::Memo(memo) => memo.try_with(f),
-            RxInner::Derived(derived) => derived.try_with(f),
-            RxInner::Stored(stored) => stored.try_with(f),
+            RxInner::Signal(signal) => signal.with(f),
+            RxInner::Memo(memo) => memo.with(f),
+            RxInner::Derived(derived) => derived.with(f),
+            RxInner::Stored(stored) => stored.with(f),
         }
     }
 
     fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
         match &self.inner {
-            RxInner::Signal(signal) => signal.try_with_untracked(f),
-            RxInner::Memo(memo) => memo.try_with_untracked(f),
-            RxInner::Derived(derived) => derived.try_with_untracked(f),
-            RxInner::Stored(stored) => stored.try_with(f),
+            RxInner::Signal(signal) => signal.with_untracked(f),
+            RxInner::Memo(memo) => memo.with_untracked(f),
+            RxInner::Derived(derived) => derived.with_untracked(f),
+            RxInner::Stored(stored) => stored.with(f),
         }
     }
 }
@@ -710,17 +710,17 @@ impl<'scope, T: 'scope> RxBase for StoredValue<'scope, T> {
 
 impl<'scope, T: 'scope> RxRead for StoredValue<'scope, T> {
     fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
-        self.inner.try_with(f)
+        self.inner.with(f)
     }
 
     fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
-        self.inner.try_with(f)
+        self.inner.with(f)
     }
 }
 
 impl<'scope, T: 'scope> RxWrite for StoredValue<'scope, T> {
     fn rx_try_update_untracked<U>(&self, f: impl FnOnce(&mut T) -> U) -> ReactiveResult<U> {
-        self.inner.try_update(f)
+        self.inner.update(f)
     }
 
     fn rx_try_notify(&self) -> ReactiveResult<()> {
@@ -769,17 +769,17 @@ impl RxValue for &str {
 
 impl<'scope, T: 'scope> RxBase for Memo<'scope, T> {
     fn try_track(&self) -> ReactiveResult<()> {
-        self.inner.try_with(|_| ()).map(|_| ())
+        self.inner.with(|_| ()).map(|_| ())
     }
 }
 
 impl<'scope, T: 'scope> RxRead for Memo<'scope, T> {
     fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
-        self.inner.try_with(f)
+        self.inner.with(f)
     }
 
     fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
-        self.inner.try_with_untracked(f)
+        self.inner.with_untracked(f)
     }
 }
 

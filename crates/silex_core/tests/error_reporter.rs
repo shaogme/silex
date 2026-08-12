@@ -14,8 +14,12 @@ fn reporter_delivers_errors_without_shared_context() {
         let second_reporter =
             scope.error_handler(move |error| second_for_reporter.borrow_mut().push(error));
 
-        first_reporter.handle(SilexError::Framework("first".to_string()));
-        second_reporter.handle(SilexError::Framework("second".to_string()));
+        first_reporter
+            .handle(SilexError::Framework("first".to_string()))
+            .expect("first reporter should handle the error");
+        second_reporter
+            .handle(SilexError::Framework("second".to_string()))
+            .expect("second reporter should handle the error");
     });
 
     assert!(matches!(
@@ -38,7 +42,9 @@ fn reporter_can_capture_a_scoped_value() {
         let reporter = scope.error_handler(move |error| {
             *observed_for_reporter.borrow_mut() = Some(error.to_string());
         });
-        reporter.handle(SilexError::Javascript("scoped".to_string()));
+        reporter
+            .handle(SilexError::Javascript("scoped".to_string()))
+            .expect("reporter should handle the error");
         assert!(scope.is_active());
     });
 
@@ -55,6 +61,8 @@ fn error_reporter_is_the_reactivity_handler_alias() {
         let handler: ErrorHandler<'_, SilexError> = scope.error_handler(|_| {});
         let reporter: ErrorReporter<'_> = handler;
 
-        reporter.handle(SilexError::Framework("alias".to_string()));
+        reporter
+            .handle(SilexError::Framework("alias".to_string()))
+            .expect("reporter should handle the error");
     });
 }

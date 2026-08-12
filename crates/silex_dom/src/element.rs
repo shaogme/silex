@@ -111,7 +111,7 @@ impl<'scope> Element<'scope> {
             let scope_for_cleanup = provisional_scope.clone();
             owner.on_cleanup(
                 Box::new(move || {
-                    scope_for_cleanup.dispose();
+                    let _ = scope_for_cleanup.dispose();
                     Ok(())
                 }),
                 owner.token().error_handler(),

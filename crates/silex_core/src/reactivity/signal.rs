@@ -5,7 +5,7 @@ use crate::{
 };
 use silex_reactivity::{
     ReactiveResult, ReadSignal as RawReadSignal, WriteSignal as RawWriteSignal,
-    try_notify as raw_try_notify,
+    notify as raw_notify,
 };
 use std::fmt;
 
@@ -174,21 +174,22 @@ impl<'scope, T: 'scope> ReadSignal<'scope, T> {
     where
         T: Clone,
     {
-        self.inner.try_get()
+        self.inner.get()
     }
 
     pub fn get(&self) -> T
     where
         T: Clone,
     {
-        self.inner.get()
+        self.try_get()
+            .unwrap_or_else(|error| panic!("读取 scoped signal 失败: {error}"))
     }
 
     pub fn try_get_untracked(&self) -> ReactiveResult<T>
     where
         T: Clone,
     {
-        self.inner.try_get_untracked()
+        self.inner.get_untracked()
     }
 
     pub fn with<U>(&self, f: impl FnOnce(&T) -> U) -> U {
@@ -197,7 +198,7 @@ impl<'scope, T: 'scope> ReadSignal<'scope, T> {
     }
 
     pub fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
-        self.inner.try_with(f)
+        self.inner.with(f)
     }
 
     pub fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> U {
@@ -206,7 +207,7 @@ impl<'scope, T: 'scope> ReadSignal<'scope, T> {
     }
 
     pub fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
-        self.inner.try_with_untracked(f)
+        self.inner.with_untracked(f)
     }
 
     pub fn into_rx(self) -> Rx<'scope, T> {
@@ -232,23 +233,25 @@ impl<'scope, T: 'scope> WriteSignal<'scope, T> {
     }
 
     pub fn try_set(&self, value: T) -> ReactiveResult<()> {
-        self.inner.try_set(value)
-    }
-
-    pub fn set(&self, value: T) {
         self.inner.set(value)
     }
 
-    pub fn try_update<U>(&self, f: impl FnOnce(&mut T) -> U) -> ReactiveResult<U> {
-        self.inner.try_update(f)
+    pub fn set(&self, value: T) {
+        self.try_set(value)
+            .unwrap_or_else(|error| panic!("写入 scoped signal 失败: {error}"));
     }
 
-    pub fn update(&self, f: impl FnOnce(&mut T)) {
+    pub fn try_update<U>(&self, f: impl FnOnce(&mut T) -> U) -> ReactiveResult<U> {
         self.inner.update(f)
     }
 
+    pub fn update(&self, f: impl FnOnce(&mut T)) {
+        self.try_update(f)
+            .unwrap_or_else(|error| panic!("更新 scoped signal 失败: {error}"));
+    }
+
     pub fn try_notify(&self) -> ReactiveResult<()> {
-        raw_try_notify(&self.inner)
+        raw_notify(&self.inner)
     }
 
     pub fn notify(&self) {

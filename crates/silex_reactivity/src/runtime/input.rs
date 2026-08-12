@@ -396,7 +396,7 @@ mod tests {
             storage,
             _marker: PhantomData,
         };
-        scope.error_handler(|_| {})
+        scope.error_handler(|_| {}).expect("handler registration")
     }
 
     #[test]

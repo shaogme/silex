@@ -25,8 +25,8 @@ pub(crate) use input::{
 pub use model::RuntimeSnapshot;
 pub(crate) use model::ScopeState;
 pub(crate) use ops::{
-    invoke_callback, invoke_error_handler, node_ref_clear, node_ref_get, node_ref_set, stop_effect,
-    try_notify, try_track, try_track_many, update_signal, update_stored, with_batch, with_signal,
+    invoke_callback, invoke_error_handler, node_ref_clear, node_ref_get, node_ref_set, notify,
+    stop_effect, track, track_many, update_signal, update_stored, with_batch, with_signal,
     with_stored, with_untracked,
 };
 pub(crate) use scheduler::{GlobalScheduler, ObserverFrame, ScopeId};
@@ -56,14 +56,7 @@ impl Runtime {
     }
 
     /// Create one long-lived root owned by the returned handle.
-    pub fn run(&mut self) -> RootHandle {
-        self.try_run()
-            .unwrap_or_else(|_| panic!("一个 Runtime 只能同时拥有一个 root"))
-    }
-
-    /// Try to create one long-lived root without converting a predictable
-    /// runtime conflict into a panic.
-    pub fn try_run(&mut self) -> Result<RootHandle, ReactiveError> {
+    pub fn run(&mut self) -> Result<RootHandle, ReactiveError> {
         if self.root_active.get() {
             return Err(ReactiveError::RuntimeAlreadyRunning);
         }
@@ -72,11 +65,13 @@ impl Runtime {
         Ok(RootHandle::new(self.root_active.clone()))
     }
 
-    pub fn child<R>(&mut self, f: impl for<'scope> FnOnce(Scope<'scope>) -> R) -> R {
-        assert!(
-            !self.root_active.get(),
-            "长期 root 存活期间不能运行词法测试 scope"
-        );
+    pub fn child<R>(
+        &mut self,
+        f: impl for<'scope> FnOnce(Scope<'scope>) -> R,
+    ) -> Result<R, ReactiveError> {
+        if self.root_active.get() {
+            return Err(ReactiveError::RuntimeAlreadyRunning);
+        }
         let scheduler = GlobalScheduler::new();
         let storage = ScopeStorage::new(scheduler.clone());
         let scope = Scope {
@@ -88,7 +83,7 @@ impl Runtime {
         let dispose_result = catch_unwind(AssertUnwindSafe(|| storage.dispose_untracked()));
         drop(observer_frame);
         match (result, dispose_result) {
-            (Ok(value), Ok(())) => value,
+            (Ok(value), Ok(())) => Ok(value),
             (Err(panic), _) => resume_unwind(panic),
             (Ok(_), Err(panic)) => resume_unwind(panic),
         }

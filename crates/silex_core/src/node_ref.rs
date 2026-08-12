@@ -38,7 +38,7 @@ impl<'scope, T: 'scope> NodeRef<'scope, T> {
     where
         T: Clone,
     {
-        self.inner.try_get()
+        self.inner.get()
     }
 
     pub fn try_load(&self, value: T) -> ReactiveResult<()> {

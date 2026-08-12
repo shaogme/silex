@@ -466,11 +466,11 @@ mod tests {
     use std::{panic::AssertUnwindSafe, panic::catch_unwind};
 
     fn child(runtime: &mut Runtime, f: impl for<'scope> FnOnce(Scope<'scope>)) {
-        runtime.child(f);
+        let _ = runtime.child(f);
     }
 
     fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, ()> {
-        scope.error_handler(|_| {})
+        scope.error_handler(|_| {}).expect("handler registration")
     }
 
     #[test]
@@ -481,12 +481,13 @@ mod tests {
             let effect = scope
                 .effect(
                     move || {
-                        parent_scope.child(|child| {
-                            let (local, _) = child.signal(0i32);
+                        let _ = parent_scope.child(|child| {
+                            let (local, _) =
+                                child.signal(0i32).expect("fallible reactive creation");
                             let local_state = local.handle.state();
                             let local_raw = local.handle.raw();
 
-                            assert_eq!(local.get(), 0);
+                            assert_eq!(local.get(), Ok(0));
                             assert_eq!(
                                 local_state.borrow().subscriber_edges_of(local_raw).count(),
                                 0
@@ -514,11 +515,11 @@ mod tests {
     fn disposing_source_removes_cross_scope_observer_dependency() {
         let mut runtime = Runtime::new();
         child(&mut runtime, |scope| {
-            let (source, _) = scope.signal(0i32);
+            let (source, _) = scope.signal(0i32).expect("fallible reactive creation");
             let source_state = source.handle.state();
             let source_raw = source.handle.raw();
 
-            scope.child(|child| {
+            let _ = scope.child(|child| {
                 let effect = child
                     .effect(
                         move || {
@@ -563,12 +564,12 @@ mod tests {
     fn track_conflict_does_not_leave_a_subscriber_half_edge() {
         let mut runtime = Runtime::new();
         child(&mut runtime, |scope| {
-            let (source, _) = scope.signal(0i32);
-            let (target, _) = scope.signal(1i32);
+            let (source, _) = scope.signal(0i32).expect("fallible reactive creation");
+            let (target, _) = scope.signal(1i32).expect("fallible reactive creation");
             let source_state = source.handle.state();
 
-            scope.child(|child| {
-                let (local, _) = child.signal(0i32);
+            let _ = scope.child(|child| {
+                let (local, _) = child.signal(0i32).expect("fallible reactive creation");
                 let effect = child
                     .effect(
                         move || {
@@ -647,12 +648,12 @@ mod tests {
     fn clear_dependencies_conflict_preserves_both_sides_of_the_edge() {
         let mut runtime = Runtime::new();
         child(&mut runtime, |scope| {
-            let (source, _) = scope.signal(0i32);
+            let (source, _) = scope.signal(0i32).expect("fallible reactive creation");
             let source_state = source.handle.state();
             let source_raw = source.handle.raw();
 
-            scope.child(|child| {
-                let (local, _) = child.signal(0i32);
+            let _ = scope.child(|child| {
+                let (local, _) = child.signal(0i32).expect("fallible reactive creation");
                 let effect = child
                     .effect(
                         move || {
@@ -734,7 +735,9 @@ mod tests {
             storage: &observer_storage,
             _marker: std::marker::PhantomData,
         };
-        let (source, _) = source_scope.signal(0_i32);
+        let (source, _) = source_scope
+            .signal(0_i32)
+            .expect("fallible reactive creation");
         let effect = observer_scope
             .effect(
                 move || {

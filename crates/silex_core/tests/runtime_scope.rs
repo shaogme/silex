@@ -71,7 +71,7 @@ fn owned_scope_exposes_an_owner_bound_effect_only() {
 
         set_source.set(2);
         assert_eq!(runs.get(), 2);
-        owner.dispose();
+        owner.dispose().expect("owned scope should dispose");
         set_source.set(3);
         assert_eq!(runs.get(), 2);
     });
@@ -325,7 +325,7 @@ fn owned_scope_cleanup_can_update_a_facade_stored_value_before_dispose() {
             )
             .expect("owner cleanup should register");
 
-        owner.dispose();
+        owner.dispose().expect("owned scope should dispose");
         assert!(!owner.is_active());
     });
 

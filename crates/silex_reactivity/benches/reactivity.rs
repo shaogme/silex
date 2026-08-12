@@ -12,27 +12,27 @@ const GRAPH_SIZES: &[usize] = &[1, 8, 32, 128];
 const OWNER_SIZES: &[usize] = &[1, 16, 128, 512];
 
 fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, ()> {
-    scope.error_handler(|_| {})
+    scope.error_handler(|_| {}).expect("handler registration")
 }
 
 fn scoped_signal_round_trip(c: &mut Criterion) {
     c.bench_function("scoped signal round trip", |bench| {
         bench.iter(|| {
             let mut runtime = Runtime::new();
-            let root = runtime.run();
+            let root = runtime.run().expect("runtime root creation");
             {
                 let scope = root.scope();
-                let (read, write) = scope.signal(0i32);
+                let (read, write) = scope.signal(0i32).expect("fallible reactive creation");
                 let _effect = scope
                     .effect(
                         move || {
-                            black_box(read.get());
+                            black_box(read.get().expect("benchmark read"));
                             Ok(())
                         },
                         handler(scope),
                     )
                     .expect("benchmark effect should initialize");
-                write.set(black_box(1));
+                write.set(black_box(1)).expect("benchmark signal update");
             }
         });
     });
@@ -49,12 +49,14 @@ fn bench_signal_create(c: &mut Criterion) {
 
                 for iteration in 0..iterations {
                     let mut runtime = Runtime::new();
-                    let root = runtime.run();
+                    let root = runtime.run().expect("runtime root creation");
                     let start = Instant::now();
 
                     root.with_scope(|scope| {
                         for index in 0..size {
-                            let signal = scope.signal((iteration as i32) ^ (index as i32));
+                            let signal = scope
+                                .signal((iteration as i32) ^ (index as i32))
+                                .expect("fallible reactive creation");
                             black_box(signal);
                         }
                     });
@@ -82,13 +84,13 @@ fn bench_signal_create_heap(c: &mut Criterion) {
 
                 for iteration in 0..iterations {
                     let mut runtime = Runtime::new();
-                    let root = runtime.run();
+                    let root = runtime.run().expect("runtime root creation");
                     let start = Instant::now();
 
                     root.with_scope(|scope| {
                         for index in 0..size {
                             let value = [(iteration as u8) ^ (index as u8); 32];
-                            black_box(scope.signal(value));
+                            black_box(scope.signal(value).expect("benchmark signal creation"));
                         }
                     });
 
@@ -111,20 +113,29 @@ fn bench_signal_read_untracked(c: &mut Criterion) {
         group.throughput(Throughput::Elements(size as u64));
         group.bench_with_input(BenchmarkId::from_parameter(size), &size, |bench, &size| {
             let mut runtime = Runtime::new();
-            runtime.child(|scope| {
-                let mut signals = Vec::with_capacity(size);
-                for index in 0..size {
-                    signals.push(scope.signal(index as i32).0);
-                }
-
-                bench.iter(|| {
-                    let mut observed = 0i32;
-                    for signal in &signals {
-                        observed = observed.wrapping_add(black_box(signal.get_untracked()));
+            runtime
+                .child(|scope| {
+                    let mut signals = Vec::with_capacity(size);
+                    for index in 0..size {
+                        signals.push(
+                            scope
+                                .signal(index as i32)
+                                .expect("benchmark signal creation")
+                                .0,
+                        );
                     }
-                    black_box(observed);
-                });
-            });
+
+                    bench.iter(|| {
+                        let mut observed = 0i32;
+                        for signal in &signals {
+                            observed = observed.wrapping_add(black_box(
+                                signal.get_untracked().expect("benchmark read"),
+                            ));
+                        }
+                        black_box(observed);
+                    });
+                })
+                .expect("benchmark scope execution");
         });
     }
 
@@ -138,39 +149,49 @@ fn bench_signal_read_tracked(c: &mut Criterion) {
         group.throughput(Throughput::Elements(size as u64));
         group.bench_with_input(BenchmarkId::from_parameter(size), &size, |bench, &size| {
             let mut runtime = Runtime::new();
-            runtime.child(|scope| {
-                let mut signals = Vec::with_capacity(size);
-                for index in 0..size {
-                    signals.push(scope.signal(index as i32));
-                }
+            runtime
+                .child(|scope| {
+                    let mut signals = Vec::with_capacity(size);
+                    for index in 0..size {
+                        signals.push(
+                            scope
+                                .signal(index as i32)
+                                .expect("benchmark signal creation"),
+                        );
+                    }
 
-                let reads: Vec<_> = signals.iter().map(|(read, _)| *read).collect();
-                let trigger = signals[0].1;
-                let runs = Rc::new(Cell::new(0usize));
-                let reads_in_effect = reads.clone();
-                let runs_in_effect = runs.clone();
-                let _effect = scope
-                    .effect(
-                        move || {
-                            let mut observed = 0i32;
-                            for signal in &reads_in_effect {
-                                observed = observed.wrapping_add(black_box(signal.get()));
-                            }
-                            black_box(observed);
-                            runs_in_effect.set(runs_in_effect.get().wrapping_add(1));
-                            Ok(())
-                        },
-                        handler(scope),
-                    )
-                    .expect("benchmark effect should initialize");
+                    let reads: Vec<_> = signals.iter().map(|(read, _)| *read).collect();
+                    let trigger = signals[0].1;
+                    let runs = Rc::new(Cell::new(0usize));
+                    let reads_in_effect = reads.clone();
+                    let runs_in_effect = runs.clone();
+                    let _effect = scope
+                        .effect(
+                            move || {
+                                let mut observed = 0i32;
+                                for signal in &reads_in_effect {
+                                    observed = observed.wrapping_add(black_box(
+                                        signal.get().expect("benchmark read"),
+                                    ));
+                                }
+                                black_box(observed);
+                                runs_in_effect.set(runs_in_effect.get().wrapping_add(1));
+                                Ok(())
+                            },
+                            handler(scope),
+                        )
+                        .expect("benchmark effect should initialize");
 
-                let mut value = 0i32;
-                bench.iter(|| {
-                    value = value.wrapping_add(1);
-                    trigger.set(black_box(value));
-                    black_box(runs.get());
-                });
-            });
+                    let mut value = 0i32;
+                    bench.iter(|| {
+                        value = value.wrapping_add(1);
+                        trigger
+                            .set(black_box(value))
+                            .expect("benchmark signal update");
+                        black_box(runs.get());
+                    });
+                })
+                .expect("benchmark scope execution");
         });
     }
 
@@ -184,21 +205,28 @@ fn bench_signal_write(c: &mut Criterion) {
         group.throughput(Throughput::Elements(size as u64));
         group.bench_with_input(BenchmarkId::from_parameter(size), &size, |bench, &size| {
             let mut runtime = Runtime::new();
-            runtime.child(|scope| {
-                let mut signals = Vec::with_capacity(size);
-                for index in 0..size {
-                    signals.push(scope.signal(index as i32).1);
-                }
-
-                bench.iter(|| {
-                    for signal in &signals {
-                        let result = signal.try_update(|value| {
-                            *value = black_box(value.wrapping_add(1));
-                        });
-                        result.expect("benchmark signal update");
+            runtime
+                .child(|scope| {
+                    let mut signals = Vec::with_capacity(size);
+                    for index in 0..size {
+                        signals.push(
+                            scope
+                                .signal(index as i32)
+                                .expect("benchmark signal creation")
+                                .1,
+                        );
                     }
-                });
-            });
+
+                    bench.iter(|| {
+                        for signal in &signals {
+                            let result = signal.update(|value| {
+                                *value = black_box(value.wrapping_add(1));
+                            });
+                            result.expect("benchmark signal update");
+                        }
+                    });
+                })
+                .expect("benchmark scope execution");
         });
     }
 
@@ -216,12 +244,14 @@ fn bench_stored_create(c: &mut Criterion) {
 
                 for iteration in 0..iterations {
                     let mut runtime = Runtime::new();
-                    let root = runtime.run();
+                    let root = runtime.run().expect("runtime root creation");
                     let start = Instant::now();
 
                     root.with_scope(|scope| {
                         for index in 0..size {
-                            let stored = scope.stored((iteration as u32) ^ (index as u32));
+                            let stored = scope
+                                .stored((iteration as u32) ^ (index as u32))
+                                .expect("fallible reactive creation");
                             black_box(stored);
                         }
                     });
@@ -249,11 +279,15 @@ fn bench_stored_dispose(c: &mut Criterion) {
 
                 for iteration in 0..iterations {
                     let mut runtime = Runtime::new();
-                    let root = runtime.run();
+                    let root = runtime.run().expect("runtime root creation");
                     let stored = root.with_scope(|scope| {
                         let mut stored = Vec::with_capacity(size);
                         for index in 0..size {
-                            stored.push(scope.stored((iteration as u32) ^ (index as u32)));
+                            stored.push(
+                                scope
+                                    .stored((iteration as u32) ^ (index as u32))
+                                    .expect("benchmark stored creation"),
+                            );
                         }
                         stored
                     });
@@ -280,21 +314,27 @@ fn bench_stored_update(c: &mut Criterion) {
         group.throughput(Throughput::Elements(size as u64));
         group.bench_with_input(BenchmarkId::from_parameter(size), &size, |bench, &size| {
             let mut runtime = Runtime::new();
-            runtime.child(|scope| {
-                let mut stored_values = Vec::with_capacity(size);
-                for index in 0..size {
-                    stored_values.push(scope.stored(index as i32));
-                }
-
-                bench.iter(|| {
-                    for stored in &stored_values {
-                        let result = stored.try_update(|value| {
-                            *value = black_box(value.wrapping_add(1));
-                        });
-                        result.expect("benchmark stored update");
+            runtime
+                .child(|scope| {
+                    let mut stored_values = Vec::with_capacity(size);
+                    for index in 0..size {
+                        stored_values.push(
+                            scope
+                                .stored(index as i32)
+                                .expect("benchmark stored creation"),
+                        );
                     }
-                });
-            });
+
+                    bench.iter(|| {
+                        for stored in &stored_values {
+                            let result = stored.update(|value| {
+                                *value = black_box(value.wrapping_add(1));
+                            });
+                            result.expect("benchmark stored update");
+                        }
+                    });
+                })
+                .expect("benchmark scope execution");
         });
     }
 
@@ -312,12 +352,16 @@ fn bench_node_ref_create(c: &mut Criterion) {
 
                 for _ in 0..iterations {
                     let mut runtime = Runtime::new();
-                    let root = runtime.run();
+                    let root = runtime.run().expect("runtime root creation");
                     let start = Instant::now();
 
                     root.with_scope(|scope| {
                         for _ in 0..size {
-                            black_box(scope.node_ref::<u32>());
+                            black_box(
+                                scope
+                                    .node_ref::<u32>()
+                                    .expect("benchmark node ref creation"),
+                            );
                         }
                     });
 
@@ -344,11 +388,15 @@ fn bench_node_ref_dispose(c: &mut Criterion) {
 
                 for _ in 0..iterations {
                     let mut runtime = Runtime::new();
-                    let root = runtime.run();
+                    let root = runtime.run().expect("runtime root creation");
                     let node_refs = root.with_scope(|scope| {
                         let mut node_refs = Vec::with_capacity(size);
                         for _ in 0..size {
-                            node_refs.push(scope.node_ref::<u32>());
+                            node_refs.push(
+                                scope
+                                    .node_ref::<u32>()
+                                    .expect("benchmark node ref creation"),
+                            );
                         }
                         node_refs
                     });
@@ -375,19 +423,25 @@ fn bench_node_ref_update(c: &mut Criterion) {
         group.throughput(Throughput::Elements(size as u64));
         group.bench_with_input(BenchmarkId::from_parameter(size), &size, |bench, &size| {
             let mut runtime = Runtime::new();
-            runtime.child(|scope| {
-                let mut node_refs = Vec::with_capacity(size);
-                for _ in 0..size {
-                    node_refs.push(scope.node_ref::<u32>());
-                }
-
-                bench.iter(|| {
-                    for (index, node_ref) in node_refs.iter().enumerate() {
-                        node_ref.set(index as u32).expect("benchmark node ref set");
-                        node_ref.clear().expect("benchmark node ref clear");
+            runtime
+                .child(|scope| {
+                    let mut node_refs = Vec::with_capacity(size);
+                    for _ in 0..size {
+                        node_refs.push(
+                            scope
+                                .node_ref::<u32>()
+                                .expect("benchmark node ref creation"),
+                        );
                     }
-                });
-            });
+
+                    bench.iter(|| {
+                        for (index, node_ref) in node_refs.iter().enumerate() {
+                            node_ref.set(index as u32).expect("benchmark node ref set");
+                            node_ref.clear().expect("benchmark node ref clear");
+                        }
+                    });
+                })
+                .expect("benchmark scope execution");
         });
     }
 
@@ -404,31 +458,36 @@ fn bench_graph_effect_fanout(c: &mut Criterion) {
             &fanout,
             |bench, &fanout| {
                 let mut runtime = Runtime::new();
-                runtime.child(|scope| {
-                    let (source, set_source) = scope.signal(0i32);
-                    let notifications = Rc::new(Cell::new(0usize));
+                runtime
+                    .child(|scope| {
+                        let (source, set_source) =
+                            scope.signal(0i32).expect("fallible reactive creation");
+                        let notifications = Rc::new(Cell::new(0usize));
 
-                    for _ in 0..fanout {
-                        let notifications = notifications.clone();
-                        scope
-                            .effect(
-                                move || {
-                                    black_box(source.get());
-                                    notifications.set(notifications.get().wrapping_add(1));
-                                    Ok(())
-                                },
-                                handler(scope),
-                            )
-                            .expect("benchmark effect should initialize");
-                    }
+                        for _ in 0..fanout {
+                            let notifications = notifications.clone();
+                            scope
+                                .effect(
+                                    move || {
+                                        black_box(source.get().expect("benchmark read"));
+                                        notifications.set(notifications.get().wrapping_add(1));
+                                        Ok(())
+                                    },
+                                    handler(scope),
+                                )
+                                .expect("benchmark effect should initialize");
+                        }
 
-                    let mut value = 0i32;
-                    bench.iter(|| {
-                        value = value.wrapping_add(1);
-                        set_source.set(black_box(value));
-                        black_box(notifications.get());
-                    });
-                });
+                        let mut value = 0i32;
+                        bench.iter(|| {
+                            value = value.wrapping_add(1);
+                            set_source
+                                .set(black_box(value))
+                                .expect("benchmark signal update");
+                            black_box(notifications.get());
+                        });
+                    })
+                    .expect("benchmark scope execution");
             },
         );
     }
@@ -446,36 +505,50 @@ fn bench_graph_memo_chain(c: &mut Criterion) {
             &depth,
             |bench, &depth| {
                 let mut runtime = Runtime::new();
-                runtime.child(|scope| {
-                    let (source, set_source) = scope.signal(0i32);
-                    let first_source = source;
-                    let mut tail = scope.memo(move |_| first_source.get().wrapping_add(1));
+                runtime
+                    .child(|scope| {
+                        let (source, set_source) =
+                            scope.signal(0i32).expect("fallible reactive creation");
+                        let first_source = source;
+                        let mut tail = scope
+                            .memo(move |_| {
+                                first_source.get().expect("benchmark read").wrapping_add(1)
+                            })
+                            .expect("benchmark memo creation");
 
-                    for _ in 1..depth {
-                        let upstream = tail;
-                        tail = scope.memo(move |_| upstream.get().wrapping_add(1));
-                    }
+                        for _ in 1..depth {
+                            let upstream = tail;
+                            tail = scope
+                                .memo(move |_| {
+                                    upstream.get().expect("benchmark read").wrapping_add(1)
+                                })
+                                .expect("benchmark memo creation");
+                        }
 
-                    let observed = Rc::new(Cell::new(0i32));
-                    let observed_in_effect = observed.clone();
-                    let tail_in_effect = tail;
-                    scope
-                        .effect(
-                            move || {
-                                observed_in_effect.set(tail_in_effect.get());
-                                Ok(())
-                            },
-                            handler(scope),
-                        )
-                        .expect("benchmark effect should initialize");
+                        let observed = Rc::new(Cell::new(0i32));
+                        let observed_in_effect = observed.clone();
+                        let tail_in_effect = tail;
+                        scope
+                            .effect(
+                                move || {
+                                    observed_in_effect
+                                        .set(tail_in_effect.get().expect("benchmark read"));
+                                    Ok(())
+                                },
+                                handler(scope),
+                            )
+                            .expect("benchmark effect should initialize");
 
-                    let mut value = 0i32;
-                    bench.iter(|| {
-                        value = value.wrapping_add(1);
-                        set_source.set(black_box(value));
-                        black_box(observed.get());
-                    });
-                });
+                        let mut value = 0i32;
+                        bench.iter(|| {
+                            value = value.wrapping_add(1);
+                            set_source
+                                .set(black_box(value))
+                                .expect("benchmark signal update");
+                            black_box(observed.get());
+                        });
+                    })
+                    .expect("benchmark scope execution");
             },
         );
     }
@@ -493,37 +566,52 @@ fn bench_graph_memo_diamond(c: &mut Criterion) {
             &width,
             |bench, &width| {
                 let mut runtime = Runtime::new();
-                runtime.child(|scope| {
-                    let (source, set_source) = scope.signal(0i32);
-                    let mut memos = Vec::with_capacity(width);
-                    for index in 0..width {
-                        memos.push(scope.memo(move |_| source.get().wrapping_add(index as i32)));
-                    }
+                runtime
+                    .child(|scope| {
+                        let (source, set_source) =
+                            scope.signal(0i32).expect("fallible reactive creation");
+                        let mut memos = Vec::with_capacity(width);
+                        for index in 0..width {
+                            memos.push(
+                                scope
+                                    .memo(move |_| {
+                                        source
+                                            .get()
+                                            .expect("benchmark read")
+                                            .wrapping_add(index as i32)
+                                    })
+                                    .expect("benchmark memo creation"),
+                            );
+                        }
 
-                    let observed = Rc::new(Cell::new(0i32));
-                    let memos_in_effect = memos.clone();
-                    let observed_in_effect = observed.clone();
-                    scope
-                        .effect(
-                            move || {
-                                let mut value = 0i32;
-                                for memo in &memos_in_effect {
-                                    value = value.wrapping_add(memo.get());
-                                }
-                                observed_in_effect.set(value);
-                                Ok(())
-                            },
-                            handler(scope),
-                        )
-                        .expect("benchmark effect should initialize");
+                        let observed = Rc::new(Cell::new(0i32));
+                        let memos_in_effect = memos.clone();
+                        let observed_in_effect = observed.clone();
+                        scope
+                            .effect(
+                                move || {
+                                    let mut value = 0i32;
+                                    for memo in &memos_in_effect {
+                                        value =
+                                            value.wrapping_add(memo.get().expect("benchmark read"));
+                                    }
+                                    observed_in_effect.set(value);
+                                    Ok(())
+                                },
+                                handler(scope),
+                            )
+                            .expect("benchmark effect should initialize");
 
-                    let mut value = 0i32;
-                    bench.iter(|| {
-                        value = value.wrapping_add(1);
-                        set_source.set(black_box(value));
-                        black_box(observed.get());
-                    });
-                });
+                        let mut value = 0i32;
+                        bench.iter(|| {
+                            value = value.wrapping_add(1);
+                            set_source
+                                .set(black_box(value))
+                                .expect("benchmark signal update");
+                            black_box(observed.get());
+                        });
+                    })
+                    .expect("benchmark scope execution");
             },
         );
     }
@@ -541,32 +629,40 @@ fn bench_graph_effect_fanout_cross_scope(c: &mut Criterion) {
             &fanout,
             |bench, &fanout| {
                 let mut runtime = Runtime::new();
-                runtime.child(|scope| {
-                    let (source, set_source) = scope.signal(0i32);
-                    scope.child(|child| {
-                        let notifications = Rc::new(Cell::new(0usize));
-                        for _ in 0..fanout {
-                            let notifications = notifications.clone();
-                            child
-                                .effect(
-                                    move || {
-                                        black_box(source.get());
-                                        notifications.set(notifications.get().wrapping_add(1));
-                                        Ok(())
-                                    },
-                                    handler(scope),
-                                )
-                                .expect("benchmark effect should initialize");
-                        }
+                runtime
+                    .child(|scope| {
+                        let (source, set_source) =
+                            scope.signal(0i32).expect("fallible reactive creation");
+                        scope
+                            .child(|child| {
+                                let notifications = Rc::new(Cell::new(0usize));
+                                for _ in 0..fanout {
+                                    let notifications = notifications.clone();
+                                    child
+                                        .effect(
+                                            move || {
+                                                black_box(source.get().expect("benchmark read"));
+                                                notifications
+                                                    .set(notifications.get().wrapping_add(1));
+                                                Ok(())
+                                            },
+                                            handler(scope),
+                                        )
+                                        .expect("benchmark effect should initialize");
+                                }
 
-                        let mut value = 0i32;
-                        bench.iter(|| {
-                            value = value.wrapping_add(1);
-                            set_source.set(black_box(value));
-                            black_box(notifications.get());
-                        });
-                    });
-                });
+                                let mut value = 0i32;
+                                bench.iter(|| {
+                                    value = value.wrapping_add(1);
+                                    set_source
+                                        .set(black_box(value))
+                                        .expect("benchmark signal update");
+                                    black_box(notifications.get());
+                                });
+                            })
+                            .expect("benchmark scope execution");
+                    })
+                    .expect("benchmark scope execution");
             },
         );
     }
@@ -584,36 +680,52 @@ fn bench_graph_memo_chain_cross_scope(c: &mut Criterion) {
             &depth,
             |bench, &depth| {
                 let mut runtime = Runtime::new();
-                runtime.child(|scope| {
-                    let (source, set_source) = scope.signal(0i32);
-                    scope.child(|child| {
-                        let mut tail = child.memo(move |_| source.get().wrapping_add(1));
-                        for _ in 1..depth {
-                            let upstream = tail;
-                            tail = child.memo(move |_| upstream.get().wrapping_add(1));
-                        }
+                runtime
+                    .child(|scope| {
+                        let (source, set_source) =
+                            scope.signal(0i32).expect("fallible reactive creation");
+                        scope
+                            .child(|child| {
+                                let mut tail = child
+                                    .memo(move |_| {
+                                        source.get().expect("benchmark read").wrapping_add(1)
+                                    })
+                                    .expect("benchmark memo creation");
+                                for _ in 1..depth {
+                                    let upstream = tail;
+                                    tail = child
+                                        .memo(move |_| {
+                                            upstream.get().expect("benchmark read").wrapping_add(1)
+                                        })
+                                        .expect("benchmark memo creation");
+                                }
 
-                        let observed = Rc::new(Cell::new(0i32));
-                        let observed_in_effect = observed.clone();
-                        let tail_in_effect = tail;
-                        child
-                            .effect(
-                                move || {
-                                    observed_in_effect.set(tail_in_effect.get());
-                                    Ok(())
-                                },
-                                handler(scope),
-                            )
-                            .expect("benchmark effect should initialize");
+                                let observed = Rc::new(Cell::new(0i32));
+                                let observed_in_effect = observed.clone();
+                                let tail_in_effect = tail;
+                                child
+                                    .effect(
+                                        move || {
+                                            observed_in_effect
+                                                .set(tail_in_effect.get().expect("benchmark read"));
+                                            Ok(())
+                                        },
+                                        handler(scope),
+                                    )
+                                    .expect("benchmark effect should initialize");
 
-                        let mut value = 0i32;
-                        bench.iter(|| {
-                            value = value.wrapping_add(1);
-                            set_source.set(black_box(value));
-                            black_box(observed.get());
-                        });
-                    });
-                });
+                                let mut value = 0i32;
+                                bench.iter(|| {
+                                    value = value.wrapping_add(1);
+                                    set_source
+                                        .set(black_box(value))
+                                        .expect("benchmark signal update");
+                                    black_box(observed.get());
+                                });
+                            })
+                            .expect("benchmark scope execution");
+                    })
+                    .expect("benchmark scope execution");
             },
         );
     }
@@ -631,40 +743,57 @@ fn bench_graph_memo_diamond_cross_scope(c: &mut Criterion) {
             &width,
             |bench, &width| {
                 let mut runtime = Runtime::new();
-                runtime.child(|scope| {
-                    let (source, set_source) = scope.signal(0i32);
-                    scope.child(|child| {
-                        let mut memos = Vec::with_capacity(width);
-                        for index in 0..width {
-                            memos
-                                .push(child.memo(move |_| source.get().wrapping_add(index as i32)));
-                        }
+                runtime
+                    .child(|scope| {
+                        let (source, set_source) =
+                            scope.signal(0i32).expect("fallible reactive creation");
+                        scope
+                            .child(|child| {
+                                let mut memos = Vec::with_capacity(width);
+                                for index in 0..width {
+                                    memos.push(
+                                        child
+                                            .memo(move |_| {
+                                                source
+                                                    .get()
+                                                    .expect("benchmark read")
+                                                    .wrapping_add(index as i32)
+                                            })
+                                            .expect("benchmark memo creation"),
+                                    );
+                                }
 
-                        let observed = Rc::new(Cell::new(0i32));
-                        let memos_in_effect = memos.clone();
-                        let observed_in_effect = observed.clone();
-                        child
-                            .effect(
-                                move || {
-                                    let mut value = 0i32;
-                                    for memo in &memos_in_effect {
-                                        value = value.wrapping_add(memo.get());
-                                    }
-                                    observed_in_effect.set(value);
-                                    Ok(())
-                                },
-                                handler(scope),
-                            )
-                            .expect("benchmark effect should initialize");
+                                let observed = Rc::new(Cell::new(0i32));
+                                let memos_in_effect = memos.clone();
+                                let observed_in_effect = observed.clone();
+                                child
+                                    .effect(
+                                        move || {
+                                            let mut value = 0i32;
+                                            for memo in &memos_in_effect {
+                                                value = value.wrapping_add(
+                                                    memo.get().expect("benchmark read"),
+                                                );
+                                            }
+                                            observed_in_effect.set(value);
+                                            Ok(())
+                                        },
+                                        handler(scope),
+                                    )
+                                    .expect("benchmark effect should initialize");
 
-                        let mut value = 0i32;
-                        bench.iter(|| {
-                            value = value.wrapping_add(1);
-                            set_source.set(black_box(value));
-                            black_box(observed.get());
-                        });
-                    });
-                });
+                                let mut value = 0i32;
+                                bench.iter(|| {
+                                    value = value.wrapping_add(1);
+                                    set_source
+                                        .set(black_box(value))
+                                        .expect("benchmark signal update");
+                                    black_box(observed.get());
+                                });
+                            })
+                            .expect("benchmark scope execution");
+                    })
+                    .expect("benchmark scope execution");
             },
         );
     }
@@ -682,55 +811,62 @@ fn bench_graph_memo_equal_write(c: &mut Criterion) {
             &width,
             |bench, &width| {
                 let mut runtime = Runtime::new();
-                runtime.child(|scope| {
-                    let (source, set_source) = scope.signal(0i32);
-                    let memo_runs = Rc::new(Cell::new(0usize));
-                    let mut memos = Vec::with_capacity(width);
-                    for _ in 0..width {
-                        let memo_runs = memo_runs.clone();
-                        memos.push(scope.memo(move |_| {
-                            memo_runs.set(memo_runs.get().wrapping_add(1));
-                            source.get()
-                        }));
-                    }
-
-                    let effect_runs = Rc::new(Cell::new(0usize));
-                    let memos_in_effect = memos.clone();
-                    let effect_runs_in_effect = effect_runs.clone();
-                    scope
-                        .effect(
-                            move || {
-                                for memo in &memos_in_effect {
-                                    black_box(memo.get());
-                                }
-                                effect_runs_in_effect
-                                    .set(effect_runs_in_effect.get().wrapping_add(1));
-                                Ok(())
-                            },
-                            handler(scope),
-                        )
-                        .expect("benchmark effect should initialize");
-
-                    bench.iter_custom(|iterations| {
-                        let start = Instant::now();
-                        for _ in 0..iterations {
-                            set_source.set(0);
-                            black_box((memo_runs.get(), effect_runs.get()));
+                runtime
+                    .child(|scope| {
+                        let (source, set_source) =
+                            scope.signal(0i32).expect("fallible reactive creation");
+                        let memo_runs = Rc::new(Cell::new(0usize));
+                        let mut memos = Vec::with_capacity(width);
+                        for _ in 0..width {
+                            let memo_runs = memo_runs.clone();
+                            memos.push(
+                                scope
+                                    .memo(move |_| {
+                                        memo_runs.set(memo_runs.get().wrapping_add(1));
+                                        source.get().expect("benchmark read")
+                                    })
+                                    .expect("benchmark memo creation"),
+                            );
                         }
-                        let elapsed = start.elapsed();
-                        assert_eq!(
-                            effect_runs.get(),
-                            1,
-                            "equal memo writes must not rerun the effect",
-                        );
-                        assert_eq!(
-                            memo_runs.get(),
-                            width * (iterations as usize + 1),
-                            "equal memo writes must still reevaluate each memo",
-                        );
-                        elapsed
-                    });
-                });
+
+                        let effect_runs = Rc::new(Cell::new(0usize));
+                        let memos_in_effect = memos.clone();
+                        let effect_runs_in_effect = effect_runs.clone();
+                        scope
+                            .effect(
+                                move || {
+                                    for memo in &memos_in_effect {
+                                        black_box(memo.get().expect("benchmark read"));
+                                    }
+                                    effect_runs_in_effect
+                                        .set(effect_runs_in_effect.get().wrapping_add(1));
+                                    Ok(())
+                                },
+                                handler(scope),
+                            )
+                            .expect("benchmark effect should initialize");
+
+                        bench.iter_custom(|iterations| {
+                            let start = Instant::now();
+                            for _ in 0..iterations {
+                                set_source.set(0).expect("benchmark signal update");
+                                black_box((memo_runs.get(), effect_runs.get()));
+                            }
+                            let elapsed = start.elapsed();
+                            assert_eq!(
+                                effect_runs.get(),
+                                1,
+                                "equal memo writes must not rerun the effect",
+                            );
+                            assert_eq!(
+                                memo_runs.get(),
+                                width * (iterations as usize + 1),
+                                "equal memo writes must still reevaluate each memo",
+                            );
+                            elapsed
+                        });
+                    })
+                    .expect("benchmark scope execution");
             },
         );
     }
@@ -745,22 +881,22 @@ fn bench_owner_churn(c: &mut Criterion) {
         group.throughput(Throughput::Elements(rows as u64));
         group.bench_with_input(BenchmarkId::from_parameter(rows), &rows, |bench, &rows| {
             let mut runtime = Runtime::new();
-            let root = runtime.run();
+            let root = runtime.run().expect("runtime root creation");
             root.with_scope(|scope| {
-                let (source, _) = scope.signal(0i32);
+                let (source, _) = scope.signal(0i32).expect("fallible reactive creation");
                 let cleanup_count = Rc::new(Cell::new(0usize));
                 let effect_handler = handler(scope);
                 let cleanup_handler = handler(scope);
                 let mut owners = Vec::with_capacity(rows);
 
                 for _ in 0..rows {
-                    let row_scope = scope.owned_scope();
-                    let render_scope = row_scope.child();
+                    let row_scope = scope.owned_scope().expect("fallible reactive creation");
+                    let render_scope = row_scope.child().expect("benchmark child scope");
                     let source_in_effect = source;
                     render_scope
                         .effect(
                             move || {
-                                black_box(source_in_effect.get());
+                                black_box(source_in_effect.get().expect("benchmark read"));
                                 Ok(())
                             },
                             effect_handler,
@@ -782,18 +918,18 @@ fn bench_owner_churn(c: &mut Criterion) {
 
                 bench.iter(|| {
                     for (row_scope, render_scope) in owners.drain(..) {
-                        render_scope.dispose();
-                        row_scope.dispose();
+                        render_scope.dispose().expect("benchmark render disposal");
+                        row_scope.dispose().expect("benchmark row disposal");
                     }
 
                     for _ in 0..rows {
-                        let row_scope = scope.owned_scope();
-                        let render_scope = row_scope.child();
+                        let row_scope = scope.owned_scope().expect("fallible reactive creation");
+                        let render_scope = row_scope.child().expect("benchmark child scope");
                         let source_in_effect = source;
                         render_scope
                             .effect(
                                 move || {
-                                    black_box(source_in_effect.get());
+                                    black_box(source_in_effect.get().expect("benchmark read"));
                                     Ok(())
                                 },
                                 effect_handler,
@@ -817,8 +953,8 @@ fn bench_owner_churn(c: &mut Criterion) {
                 });
 
                 for (row_scope, render_scope) in owners.drain(..) {
-                    render_scope.dispose();
-                    row_scope.dispose();
+                    render_scope.dispose().expect("benchmark render disposal");
+                    row_scope.dispose().expect("benchmark row disposal");
                 }
                 black_box(cleanup_count.get());
             });
@@ -835,45 +971,57 @@ fn bench_completion_message(c: &mut Criterion) {
 
     group.bench_function("u32", |bench| {
         let mut runtime = Runtime::new();
-        runtime.child(|scope| {
-            let value = scope.rw_signal(0u32);
-            let setter = value.write();
-            let token = scope.completion_sender(unwind_safe(move |message: u32| {
-                setter.set(message);
-                Ok::<(), ()>(())
-            }));
-            let mut message = 0u32;
+        runtime
+            .child(|scope| {
+                let value = scope.rw_signal(0u32).expect("fallible reactive creation");
+                let setter = value.write();
+                let token = scope
+                    .completion_sender(unwind_safe(move |message: u32| {
+                        setter.set(message).expect("benchmark signal update");
+                        Ok::<(), ()>(())
+                    }))
+                    .expect("benchmark completion creation");
+                let mut message = 0u32;
 
-            bench.iter(|| {
-                message = message.wrapping_add(1);
-                black_box(token.submit(message).expect("completion submit"));
-            });
-        });
+                bench.iter(|| {
+                    message = message.wrapping_add(1);
+                    black_box(token.submit(message).expect("completion submit"));
+                });
+            })
+            .expect("benchmark scope execution");
     });
 
     group.bench_function("String", |bench| {
         let mut runtime = Runtime::new();
-        runtime.child(|scope| {
-            let messages = scope.rw_signal(Vec::<String>::with_capacity(64));
-            let setter = messages.write();
-            let token = scope.completion_sender(unwind_safe(move |message: String| {
-                setter.update(|buffer| {
-                    buffer.push(message);
-                    if buffer.len() > 64 {
-                        buffer.drain(..buffer.len() - 64);
-                    }
-                });
-                Ok::<(), ()>(())
-            }));
+        runtime
+            .child(|scope| {
+                let messages = scope
+                    .rw_signal(Vec::<String>::with_capacity(64))
+                    .expect("fallible reactive creation");
+                let setter = messages.write();
+                let token = scope
+                    .completion_sender(unwind_safe(move |message: String| {
+                        setter
+                            .update(|buffer| {
+                                buffer.push(message);
+                                if buffer.len() > 64 {
+                                    buffer.drain(..buffer.len() - 64);
+                                }
+                            })
+                            .expect("benchmark signal update");
+                        Ok::<(), ()>(())
+                    }))
+                    .expect("benchmark completion creation");
 
-            bench.iter(|| {
-                black_box(
-                    token
-                        .submit(String::from("message"))
-                        .expect("completion submit"),
-                );
-            });
-        });
+                bench.iter(|| {
+                    black_box(
+                        token
+                            .submit(String::from("message"))
+                            .expect("completion submit"),
+                    );
+                });
+            })
+            .expect("benchmark scope execution");
     });
 
     group.finish();

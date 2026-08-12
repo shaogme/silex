@@ -8,7 +8,7 @@ use std::{
 };
 
 fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, ()> {
-    scope.error_handler(|_| {})
+    scope.error_handler(|_| {}).expect("handler registration")
 }
 
 struct CleanupStoredProbe {
@@ -29,27 +29,33 @@ fn runtime_run_provides_scoped_signal_and_effect() {
     let mut runtime = Runtime::new();
     let runs = Rc::new(Cell::new(0));
 
-    runtime.child(|scope| {
-        let (count, set_count) = scope.signal(0i32);
-        let doubled = scope.memo(move |_| count.get() * 2);
-        let runs_in_effect = runs.clone();
-        let doubled_in_effect = doubled;
-        let _effect = scope
-            .effect(
-                move || {
-                    let _ = doubled_in_effect.get();
-                    runs_in_effect.set(runs_in_effect.get() + 1);
-                    Ok(())
-                },
-                handler(scope),
-            )
-            .expect("effect should initialize");
+    runtime
+        .child(|scope| {
+            let (count, set_count) = scope.signal(0i32).expect("fallible reactive creation");
+            let doubled = scope
+                .memo(move |_| count.get().expect("reactive read") * 2)
+                .expect("memo creation");
+            let runs_in_effect = runs.clone();
+            let doubled_in_effect = doubled;
+            let _effect = scope
+                .effect(
+                    move || {
+                        doubled_in_effect
+                            .get()
+                            .expect("test operation should succeed");
+                        runs_in_effect.set(runs_in_effect.get() + 1);
+                        Ok(())
+                    },
+                    handler(scope),
+                )
+                .expect("effect should initialize");
 
-        assert_eq!(runs.get(), 1);
-        set_count.set(1);
-        assert_eq!(doubled.get(), 2);
-        assert_eq!(runs.get(), 2);
-    });
+            assert_eq!(runs.get(), 1);
+            set_count.set(1).expect("test operation should succeed");
+            assert_eq!(doubled.get(), Ok(2));
+            assert_eq!(runs.get(), 2);
+        })
+        .expect("test operation should succeed");
 
     assert_eq!(runs.get(), 2);
 }
@@ -59,20 +65,23 @@ fn non_static_effect_can_capture_data_and_scoped_signal() {
     let mut runtime = Runtime::new();
     let external = Rc::new(Cell::new(0));
 
-    runtime.child(|scope| {
-        let (signal, set_signal) = scope.signal(1i32);
-        let external_in_effect = external.clone();
-        scope
-            .effect(
-                move || {
-                    external_in_effect.set(external_in_effect.get() + signal.get());
-                    Ok(())
-                },
-                handler(scope),
-            )
-            .expect("effect should initialize");
-        set_signal.set(2);
-    });
+    runtime
+        .child(|scope| {
+            let (signal, set_signal) = scope.signal(1i32).expect("fallible reactive creation");
+            let external_in_effect = external.clone();
+            scope
+                .effect(
+                    move || {
+                        external_in_effect
+                            .set(external_in_effect.get() + signal.get().expect("reactive read"));
+                        Ok(())
+                    },
+                    handler(scope),
+                )
+                .expect("effect should initialize");
+            set_signal.set(2).expect("test operation should succeed");
+        })
+        .expect("test operation should succeed");
 
     assert_eq!(external.get(), 3);
 }
@@ -82,25 +91,30 @@ fn child_scope_is_lexical_and_cleans_up_its_nodes() {
     let mut runtime = Runtime::new();
     let cleaned = Rc::new(Cell::new(0));
 
-    runtime.child(|scope| {
-        scope.child(|child| {
-            let (local, set_local) = child.signal(0i32);
-            let runs = cleaned.clone();
-            let _effect = child
-                .effect(
-                    move || {
-                        let _ = local.get();
-                        runs.set(runs.get() + 1);
-                        Ok(())
-                    },
-                    handler(child),
-                )
-                .expect("effect should initialize");
-            set_local.set(1);
+    runtime
+        .child(|scope| {
+            scope
+                .child(|child| {
+                    let (local, set_local) =
+                        child.signal(0i32).expect("fallible reactive creation");
+                    let runs = cleaned.clone();
+                    let _effect = child
+                        .effect(
+                            move || {
+                                local.get().expect("test operation should succeed");
+                                runs.set(runs.get() + 1);
+                                Ok(())
+                            },
+                            handler(child),
+                        )
+                        .expect("effect should initialize");
+                    set_local.set(1).expect("test operation should succeed");
+                    assert_eq!(cleaned.get(), 2);
+                })
+                .expect("test operation should succeed");
             assert_eq!(cleaned.get(), 2);
-        });
-        assert_eq!(cleaned.get(), 2);
-    });
+        })
+        .expect("test operation should succeed");
 }
 
 #[test]
@@ -108,28 +122,32 @@ fn child_effect_reacts_to_parent_signal_and_detaches_on_exit() {
     let mut runtime = Runtime::new();
     let runs = Rc::new(Cell::new(0));
 
-    runtime.child(|scope| {
-        let (parent, set_parent) = scope.signal(0i32);
-        scope.child(|child| {
-            let runs_in_effect = runs.clone();
-            child
-                .effect(
-                    move || {
-                        let _ = parent.get();
-                        runs_in_effect.set(runs_in_effect.get() + 1);
-                        Ok(())
-                    },
-                    handler(child),
-                )
-                .expect("effect should initialize");
-            assert_eq!(runs.get(), 1);
-            set_parent.set(1);
-            assert_eq!(runs.get(), 2);
-        });
+    runtime
+        .child(|scope| {
+            let (parent, set_parent) = scope.signal(0i32).expect("fallible reactive creation");
+            scope
+                .child(|child| {
+                    let runs_in_effect = runs.clone();
+                    child
+                        .effect(
+                            move || {
+                                parent.get().expect("test operation should succeed");
+                                runs_in_effect.set(runs_in_effect.get() + 1);
+                                Ok(())
+                            },
+                            handler(child),
+                        )
+                        .expect("effect should initialize");
+                    assert_eq!(runs.get(), 1);
+                    set_parent.set(1).expect("test operation should succeed");
+                    assert_eq!(runs.get(), 2);
+                })
+                .expect("test operation should succeed");
 
-        set_parent.set(2);
-        assert_eq!(runs.get(), 2);
-    });
+            set_parent.set(2).expect("test operation should succeed");
+            assert_eq!(runs.get(), 2);
+        })
+        .expect("test operation should succeed");
 }
 
 #[test]
@@ -137,18 +155,20 @@ fn child_cleanup_runs_when_scoped_run_ends() {
     let mut runtime = Runtime::new();
     let cleaned = Rc::new(Cell::new(false));
     let cleaned_in_scope = cleaned.clone();
-    runtime.child(|scope| {
-        scope
-            .on_cleanup(
-                move || {
-                    cleaned_in_scope.set(true);
-                    Ok(())
-                },
-                handler(scope),
-            )
-            .expect("cleanup should register");
-        assert!(!cleaned.get());
-    });
+    runtime
+        .child(|scope| {
+            scope
+                .on_cleanup(
+                    move || {
+                        cleaned_in_scope.set(true);
+                        Ok(())
+                    },
+                    handler(scope),
+                )
+                .expect("cleanup should register");
+            assert!(!cleaned.get());
+        })
+        .expect("test operation should succeed");
     assert!(cleaned.get());
 }
 
@@ -159,38 +179,38 @@ fn final_cleanup_updates_stored_value_before_payload_drop() {
     let drops = Rc::new(Cell::new(0));
     let dropped_value = Rc::new(Cell::new(0));
 
-    runtime.child(|scope| {
-        let value = Rc::new(Cell::new(1));
-        let stored = scope.stored(CleanupStoredProbe {
-            value: value.clone(),
-            drops: drops.clone(),
-            dropped_value: dropped_value.clone(),
-        });
-        let observed_in_cleanup = observed.clone();
-        let scope_in_cleanup = scope;
-        scope
-            .on_cleanup(
-                move || {
-                    assert!(!scope_in_cleanup.is_active());
-                    observed_in_cleanup.borrow_mut().push(
+    runtime
+        .child(|scope| {
+            let value = Rc::new(Cell::new(1));
+            let stored = scope
+                .stored(CleanupStoredProbe {
+                    value: value.clone(),
+                    drops: drops.clone(),
+                    dropped_value: dropped_value.clone(),
+                })
+                .expect("stored creation");
+            let observed_in_cleanup = observed.clone();
+            let scope_in_cleanup = scope;
+            scope
+                .on_cleanup(
+                    move || {
+                        assert!(!scope_in_cleanup.is_active());
+                        observed_in_cleanup
+                            .borrow_mut()
+                            .push(stored.with(|probe| probe.value.get()).expect("stored read"));
                         stored
-                            .try_with(|probe| probe.value.get())
-                            .expect("stored read"),
-                    );
-                    stored
-                        .try_update(|probe| probe.value.set(2))
-                        .expect("stored update");
-                    observed_in_cleanup.borrow_mut().push(
-                        stored
-                            .try_with(|probe| probe.value.get())
-                            .expect("stored read"),
-                    );
-                    Ok(())
-                },
-                handler(scope),
-            )
-            .expect("cleanup should register");
-    });
+                            .update(|probe| probe.value.set(2))
+                            .expect("stored update");
+                        observed_in_cleanup
+                            .borrow_mut()
+                            .push(stored.with(|probe| probe.value.get()).expect("stored read"));
+                        Ok(())
+                    },
+                    handler(scope),
+                )
+                .expect("cleanup should register");
+        })
+        .expect("test operation should succeed");
 
     assert_eq!(observed.borrow().as_slice(), &[1, 2]);
     assert_eq!(drops.get(), 1);
@@ -205,57 +225,61 @@ fn computation_cleanup_can_access_its_child_stored_value_before_root_cleanup() {
     let drops = Rc::new(Cell::new(0));
     let dropped_value = Rc::new(Cell::new(0));
 
-    runtime.child(|scope| {
-        let scope_in_effect = scope;
-        let events_in_effect = events.clone();
-        let observed_value_in_effect = observed_value.clone();
-        let drops_in_effect = drops.clone();
-        let dropped_value_in_effect = dropped_value.clone();
-        scope
-            .effect(
-                move || {
-                    let value = Rc::new(Cell::new(3));
-                    let stored = scope_in_effect.stored(CleanupStoredProbe {
-                        value: value.clone(),
-                        drops: drops_in_effect.clone(),
-                        dropped_value: dropped_value_in_effect.clone(),
-                    });
-                    let events_in_cleanup = events_in_effect.clone();
-                    let observed_value_in_cleanup = observed_value_in_effect.clone();
-                    scope_in_effect
-                        .on_cleanup(
-                            move || {
-                                stored
-                                    .try_update(|probe| probe.value.set(4))
-                                    .expect("stored update");
-                                observed_value_in_cleanup.set(
+    runtime
+        .child(|scope| {
+            let scope_in_effect = scope;
+            let events_in_effect = events.clone();
+            let observed_value_in_effect = observed_value.clone();
+            let drops_in_effect = drops.clone();
+            let dropped_value_in_effect = dropped_value.clone();
+            scope
+                .effect(
+                    move || {
+                        let value = Rc::new(Cell::new(3));
+                        let stored = scope_in_effect
+                            .stored(CleanupStoredProbe {
+                                value: value.clone(),
+                                drops: drops_in_effect.clone(),
+                                dropped_value: dropped_value_in_effect.clone(),
+                            })
+                            .expect("stored creation");
+                        let events_in_cleanup = events_in_effect.clone();
+                        let observed_value_in_cleanup = observed_value_in_effect.clone();
+                        scope_in_effect
+                            .on_cleanup(
+                                move || {
                                     stored
-                                        .try_with(|probe| probe.value.get())
-                                        .expect("stored read"),
-                                );
-                                events_in_cleanup.borrow_mut().push("node");
-                                Ok(())
-                            },
-                            handler(scope_in_effect),
-                        )
-                        .expect("effect cleanup should register");
-                    Ok(())
-                },
-                handler(scope),
-            )
-            .expect("effect should initialize");
+                                        .update(|probe| probe.value.set(4))
+                                        .expect("stored update");
+                                    observed_value_in_cleanup.set(
+                                        stored
+                                            .with(|probe| probe.value.get())
+                                            .expect("stored read"),
+                                    );
+                                    events_in_cleanup.borrow_mut().push("node");
+                                    Ok(())
+                                },
+                                handler(scope_in_effect),
+                            )
+                            .expect("effect cleanup should register");
+                        Ok(())
+                    },
+                    handler(scope),
+                )
+                .expect("effect should initialize");
 
-        let events_in_root_cleanup = events.clone();
-        scope
-            .on_cleanup(
-                move || {
-                    events_in_root_cleanup.borrow_mut().push("root");
-                    Ok(())
-                },
-                handler(scope),
-            )
-            .expect("root cleanup should register");
-    });
+            let events_in_root_cleanup = events.clone();
+            scope
+                .on_cleanup(
+                    move || {
+                        events_in_root_cleanup.borrow_mut().push("root");
+                        Ok(())
+                    },
+                    handler(scope),
+                )
+                .expect("root cleanup should register");
+        })
+        .expect("test operation should succeed");
 
     assert_eq!(events.borrow().as_slice(), &["node", "root"]);
     assert_eq!(observed_value.get(), 4);
@@ -268,47 +292,51 @@ fn final_cleanup_keeps_only_stored_value_access_available() {
     let mut runtime = Runtime::new();
     let observed = Rc::new(Cell::new(false));
 
-    runtime.child(|scope| {
-        let (signal, setter) = scope.signal(1_i32);
-        let stored = scope.stored(1_i32);
-        let node_ref = scope.node_ref::<i32>();
-        let callback = scope
-            .callback(|_: ()| Ok::<(), ()>(()))
-            .expect("callback should initialize");
-        let completion = scope.completion_once(unwind_safe(|_: ()| Ok::<(), ()>(())));
-        let late_cleanup_handler = handler(scope);
-        let observed_in_cleanup = observed.clone();
-        let scope_in_cleanup = scope;
-        scope
-            .on_cleanup(
-                move || {
-                    assert!(!scope_in_cleanup.is_active());
-                    assert_eq!(stored.try_update(|value| *value = 2), Ok(()));
-                    assert_eq!(stored.try_with(|value| *value), Ok(2));
-                    assert_eq!(signal.try_get(), Err(ReactiveError::NoSuchNode));
-                    assert_eq!(setter.try_set(2), Err(ReactiveError::NoSuchNode));
-                    assert_eq!(node_ref.try_get(), Err(ReactiveError::NoSuchNode));
-                    assert_eq!(node_ref.set(2), Err(ReactiveError::NoSuchNode));
-                    assert!(matches!(
-                        callback.invoke(()),
-                        Err(CallbackInvokeError::Runtime(ReactiveError::NoSuchNode))
-                    ));
-                    assert!(matches!(
-                        scope_in_cleanup.try_stored(()),
-                        Err(ReactiveError::NoSuchNode)
-                    ));
-                    assert_eq!(
-                        scope_in_cleanup.on_cleanup(|| Ok(()), late_cleanup_handler),
-                        Err(ReactiveError::NoSuchNode)
-                    );
-                    assert!(!completion.submit(()).expect("stale completion submit"));
-                    observed_in_cleanup.set(true);
-                    Ok(())
-                },
-                handler(scope),
-            )
-            .expect("cleanup should register");
-    });
+    runtime
+        .child(|scope| {
+            let (signal, setter) = scope.signal(1_i32).expect("fallible reactive creation");
+            let stored = scope.stored(1_i32).expect("fallible reactive creation");
+            let node_ref = scope.node_ref::<i32>().expect("node ref creation");
+            let callback = scope
+                .callback(|_: ()| Ok::<(), ()>(()))
+                .expect("callback should initialize");
+            let completion = scope
+                .completion_once(unwind_safe(|_: ()| Ok::<(), ()>(())))
+                .expect("completion registration");
+            let late_cleanup_handler = handler(scope);
+            let observed_in_cleanup = observed.clone();
+            let scope_in_cleanup = scope;
+            scope
+                .on_cleanup(
+                    move || {
+                        assert!(!scope_in_cleanup.is_active());
+                        assert_eq!(stored.update(|value| *value = 2), Ok(()));
+                        assert_eq!(stored.with(|value| *value), Ok(2));
+                        assert_eq!(signal.get(), Err(ReactiveError::NoSuchNode));
+                        assert_eq!(setter.set(2), Err(ReactiveError::NoSuchNode));
+                        assert_eq!(node_ref.get(), Err(ReactiveError::NoSuchNode));
+                        assert_eq!(node_ref.set(2), Err(ReactiveError::NoSuchNode));
+                        assert!(matches!(
+                            callback.invoke(()),
+                            Err(CallbackInvokeError::Runtime(ReactiveError::NoSuchNode))
+                        ));
+                        assert!(matches!(
+                            scope_in_cleanup.stored(()),
+                            Err(ReactiveError::NoSuchNode)
+                        ));
+                        assert_eq!(
+                            scope_in_cleanup.on_cleanup(|| Ok(()), late_cleanup_handler),
+                            Err(ReactiveError::NoSuchNode)
+                        );
+                        assert!(!completion.submit(()).expect("stale completion submit"));
+                        observed_in_cleanup.set(true);
+                        Ok(())
+                    },
+                    handler(scope),
+                )
+                .expect("cleanup should register");
+        })
+        .expect("test operation should succeed");
 
     assert!(observed.get());
 }
@@ -318,26 +346,28 @@ fn final_cleanup_releases_stored_value_lease_after_panic() {
     let mut runtime = Runtime::new();
     let updated = Rc::new(Cell::new(false));
 
-    runtime.child(|scope| {
-        let stored = scope.stored(1_i32);
-        let updated_in_cleanup = updated.clone();
-        scope
-            .on_cleanup(
-                move || {
-                    let panic = catch_unwind(AssertUnwindSafe(|| {
-                        stored.with(|_| panic!("cleanup read panic"));
-                    }));
-                    assert!(panic.is_err());
-                    stored
-                        .try_update(|value| *value = 2)
-                        .expect("stored update");
-                    updated_in_cleanup.set(true);
-                    Ok(())
-                },
-                handler(scope),
-            )
-            .expect("cleanup should register");
-    });
+    runtime
+        .child(|scope| {
+            let stored = scope.stored(1_i32).expect("fallible reactive creation");
+            let updated_in_cleanup = updated.clone();
+            scope
+                .on_cleanup(
+                    move || {
+                        let panic = catch_unwind(AssertUnwindSafe(|| {
+                            stored
+                                .with(|_| panic!("cleanup read panic"))
+                                .expect("test operation should succeed");
+                        }));
+                        assert!(panic.is_err());
+                        stored.update(|value| *value = 2).expect("stored update");
+                        updated_in_cleanup.set(true);
+                        Ok(())
+                    },
+                    handler(scope),
+                )
+                .expect("cleanup should register");
+        })
+        .expect("test operation should succeed");
 
     assert!(updated.get());
 }
@@ -345,15 +375,19 @@ fn final_cleanup_releases_stored_value_lease_after_panic() {
 #[test]
 fn child_scope_is_inactive_after_scope_returns() {
     let mut runtime = Runtime::new();
-    let (token, read_cell) = runtime.child(|scope| {
-        let cell = Rc::new(Cell::new(10));
-        let cell_in_callback = cell.clone();
-        let token = scope.completion_once(unwind_safe(move |val: i32| {
-            cell_in_callback.set(val);
-            Ok::<(), ()>(())
-        }));
-        (token, cell)
-    });
+    let (token, read_cell) = runtime
+        .child(|scope| {
+            let cell = Rc::new(Cell::new(10));
+            let cell_in_callback = cell.clone();
+            let token = scope
+                .completion_once(unwind_safe(move |val: i32| {
+                    cell_in_callback.set(val);
+                    Ok::<(), ()>(())
+                }))
+                .expect("completion registration");
+            (token, cell)
+        })
+        .expect("runtime child");
 
     assert_eq!(read_cell.get(), 10);
     assert!(!token.submit(20).expect("stale completion submit"));
@@ -365,33 +399,37 @@ fn cleanup_order_follows_lexical_scope_order() {
     let mut runtime = Runtime::new();
     let events = Rc::new(RefCell::new(Vec::new()));
 
-    runtime.child(|scope| {
-        let parent_events = events.clone();
-        scope
-            .on_cleanup(
-                move || {
-                    parent_events.borrow_mut().push("parent");
-                    Ok(())
-                },
-                handler(scope),
-            )
-            .expect("cleanup should register");
-
-        scope.child(|child| {
-            let child_events = events.clone();
-            child
+    runtime
+        .child(|scope| {
+            let parent_events = events.clone();
+            scope
                 .on_cleanup(
                     move || {
-                        child_events.borrow_mut().push("child");
+                        parent_events.borrow_mut().push("parent");
                         Ok(())
                     },
-                    handler(child),
+                    handler(scope),
                 )
                 .expect("cleanup should register");
-        });
 
-        assert_eq!(events.borrow().as_slice(), &["child"]);
-    });
+            scope
+                .child(|child| {
+                    let child_events = events.clone();
+                    child
+                        .on_cleanup(
+                            move || {
+                                child_events.borrow_mut().push("child");
+                                Ok(())
+                            },
+                            handler(child),
+                        )
+                        .expect("cleanup should register");
+                })
+                .expect("test operation should succeed");
+
+            assert_eq!(events.borrow().as_slice(), &["child"]);
+        })
+        .expect("test operation should succeed");
 
     assert_eq!(events.borrow().as_slice(), &["child", "parent"]);
 }
@@ -402,27 +440,31 @@ fn child_scope_panic_cleans_up_before_parent_continues() {
     let cleaned = Rc::new(Cell::new(false));
     let parent_continued = Rc::new(Cell::new(false));
 
-    runtime.child(|scope| {
-        let cleaned_in_child = cleaned.clone();
-        let panic = catch_unwind(AssertUnwindSafe(|| {
-            scope.child(|child| {
-                child
-                    .on_cleanup(
-                        move || {
-                            cleaned_in_child.set(true);
-                            Ok(())
-                        },
-                        handler(child),
-                    )
-                    .expect("cleanup should register");
-                panic!("child callback panic");
-            });
-        }));
+    runtime
+        .child(|scope| {
+            let cleaned_in_child = cleaned.clone();
+            let panic = catch_unwind(AssertUnwindSafe(|| {
+                scope
+                    .child(|child| {
+                        child
+                            .on_cleanup(
+                                move || {
+                                    cleaned_in_child.set(true);
+                                    Ok(())
+                                },
+                                handler(child),
+                            )
+                            .expect("cleanup should register");
+                        panic!("child callback panic");
+                    })
+                    .expect("test operation should succeed");
+            }));
 
-        assert!(panic.is_err());
-        assert!(cleaned.get());
-        parent_continued.set(true);
-    });
+            assert!(panic.is_err());
+            assert!(cleaned.get());
+            parent_continued.set(true);
+        })
+        .expect("test operation should succeed");
 
     assert!(parent_continued.get());
 }
@@ -430,19 +472,23 @@ fn child_scope_panic_cleans_up_before_parent_continues() {
 #[test]
 fn child_callback_panic_is_not_replaced_by_cleanup_panic() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let panic = catch_unwind(AssertUnwindSafe(|| {
-            scope.child(|child| {
-                child
-                    .on_cleanup(|| panic!("cleanup panic"), handler(child))
-                    .expect("cleanup should register");
-                panic!("callback panic");
-            });
-        }))
-        .expect_err("child callback should panic");
+    runtime
+        .child(|scope| {
+            let panic = catch_unwind(AssertUnwindSafe(|| {
+                scope
+                    .child(|child| {
+                        child
+                            .on_cleanup(|| panic!("cleanup panic"), handler(child))
+                            .expect("cleanup should register");
+                        panic!("callback panic");
+                    })
+                    .expect("test operation should succeed");
+            }))
+            .expect_err("child callback should panic");
 
-        assert_eq!(panic.downcast_ref::<&str>(), Some(&"callback panic"));
-    });
+            assert_eq!(panic.downcast_ref::<&str>(), Some(&"callback panic"));
+        })
+        .expect("test operation should succeed");
 }
 
 #[test]
@@ -450,27 +496,31 @@ fn parent_effect_tracks_reads_inside_child_callback() {
     let mut runtime = Runtime::new();
     let runs = Rc::new(Cell::new(0));
 
-    runtime.child(|scope| {
-        let (source, set_source) = scope.signal(0i32);
-        let parent_scope = scope;
-        let runs_in_effect = runs.clone();
-        scope
-            .effect(
-                move || {
-                    parent_scope.child(|_| {
-                        let _ = source.get();
-                    });
-                    runs_in_effect.set(runs_in_effect.get() + 1);
-                    Ok(())
-                },
-                handler(scope),
-            )
-            .expect("effect should initialize");
+    runtime
+        .child(|scope| {
+            let (source, set_source) = scope.signal(0i32).expect("fallible reactive creation");
+            let parent_scope = scope;
+            let runs_in_effect = runs.clone();
+            scope
+                .effect(
+                    move || {
+                        parent_scope
+                            .child(|_| {
+                                source.get().expect("test operation should succeed");
+                            })
+                            .expect("test operation should succeed");
+                        runs_in_effect.set(runs_in_effect.get() + 1);
+                        Ok(())
+                    },
+                    handler(scope),
+                )
+                .expect("effect should initialize");
 
-        assert_eq!(runs.get(), 1);
-        set_source.set(1);
-        assert_eq!(runs.get(), 2);
-    });
+            assert_eq!(runs.get(), 1);
+            set_source.set(1).expect("test operation should succeed");
+            assert_eq!(runs.get(), 2);
+        })
+        .expect("test operation should succeed");
 }
 
 #[test]
@@ -478,29 +528,34 @@ fn child_local_signal_does_not_keep_parent_effect_queued_after_exit() {
     let mut runtime = Runtime::new();
     let runs = Rc::new(Cell::new(0));
 
-    runtime.child(|scope| {
-        let parent_scope = scope;
-        let runs_in_effect = runs.clone();
-        let result = catch_unwind(AssertUnwindSafe(|| {
-            scope
-                .effect(
-                    move || {
-                        runs_in_effect.set(runs_in_effect.get() + 1);
-                        parent_scope.child(|child| {
-                            let (local, set_local) = child.signal(0i32);
-                            let _ = local.get();
-                            set_local.set(1);
-                        });
-                        Ok(())
-                    },
-                    handler(scope),
-                )
-                .expect("effect should initialize");
-        }));
+    runtime
+        .child(|scope| {
+            let parent_scope = scope;
+            let runs_in_effect = runs.clone();
+            let result = catch_unwind(AssertUnwindSafe(|| {
+                scope
+                    .effect(
+                        move || {
+                            runs_in_effect.set(runs_in_effect.get() + 1);
+                            parent_scope
+                                .child(|child| {
+                                    let (local, set_local) =
+                                        child.signal(0i32).expect("fallible reactive creation");
+                                    local.get().expect("test operation should succeed");
+                                    set_local.set(1).expect("test operation should succeed");
+                                })
+                                .expect("test operation should succeed");
+                            Ok(())
+                        },
+                        handler(scope),
+                    )
+                    .expect("effect should initialize");
+            }));
 
-        assert!(result.is_ok());
-        assert_eq!(runs.get(), 1);
-    });
+            assert!(result.is_ok());
+            assert_eq!(runs.get(), 1);
+        })
+        .expect("test operation should succeed");
 }
 
 #[test]
@@ -508,33 +563,37 @@ fn cleanup_can_reenter_an_active_parent_scope() {
     let mut runtime = Runtime::new();
     let seen = Rc::new(Cell::new(0));
 
-    runtime.child(|scope| {
-        let (source, set_source) = scope.signal(0i32);
-        let seen_in_effect = seen.clone();
-        scope
-            .effect(
-                move || {
-                    seen_in_effect.set(source.get());
-                    Ok(())
-                },
-                handler(scope),
-            )
-            .expect("effect should initialize");
-
-        scope.child(|child| {
-            child
-                .on_cleanup(
+    runtime
+        .child(|scope| {
+            let (source, set_source) = scope.signal(0i32).expect("fallible reactive creation");
+            let seen_in_effect = seen.clone();
+            scope
+                .effect(
                     move || {
-                        set_source.set(1);
+                        seen_in_effect.set(source.get().expect("reactive read"));
                         Ok(())
                     },
-                    handler(child),
+                    handler(scope),
                 )
-                .expect("cleanup should register");
-        });
+                .expect("effect should initialize");
 
-        assert_eq!(seen.get(), 1);
-    });
+            scope
+                .child(|child| {
+                    child
+                        .on_cleanup(
+                            move || {
+                                set_source.set(1).expect("test operation should succeed");
+                                Ok(())
+                            },
+                            handler(child),
+                        )
+                        .expect("cleanup should register");
+                })
+                .expect("test operation should succeed");
+
+            assert_eq!(seen.get(), 1);
+        })
+        .expect("test operation should succeed");
 }
 
 #[test]
@@ -543,46 +602,54 @@ fn panic_in_scoped_run_still_drops_the_scope() {
     let cleaned = Rc::new(Cell::new(false));
     let cleaned_in_scope = cleaned.clone();
     let panic = catch_unwind(AssertUnwindSafe(|| {
-        runtime.child(|scope| {
-            scope
-                .on_cleanup(
-                    move || {
-                        cleaned_in_scope.set(true);
-                        Ok(())
-                    },
-                    handler(scope),
-                )
-                .expect("cleanup should register");
-            panic!("run panic");
-        });
+        runtime
+            .child(|scope| {
+                scope
+                    .on_cleanup(
+                        move || {
+                            cleaned_in_scope.set(true);
+                            Ok(())
+                        },
+                        handler(scope),
+                    )
+                    .expect("cleanup should register");
+                panic!("run panic");
+            })
+            .expect("test operation should succeed");
     }));
     assert!(panic.is_err());
     assert!(cleaned.get());
 
-    runtime.child(|scope| {
-        let (signal, set_signal) = scope.signal(1i32);
-        set_signal.set(2);
-        assert_eq!(signal.get(), 2);
-    });
+    runtime
+        .child(|scope| {
+            let (signal, set_signal) = scope.signal(1i32).expect("fallible reactive creation");
+            set_signal.set(2).expect("test operation should succeed");
+            assert_eq!(signal.get(), Ok(2));
+        })
+        .expect("test operation should succeed");
 }
 
 #[test]
 fn cleanup_panic_does_not_poison_runtime() {
     let mut runtime = Runtime::new();
     let panic = catch_unwind(AssertUnwindSafe(|| {
-        runtime.child(|scope| {
-            scope
-                .on_cleanup(|| panic!("cleanup panic"), handler(scope))
-                .expect("cleanup should register");
-        });
+        runtime
+            .child(|scope| {
+                scope
+                    .on_cleanup(|| panic!("cleanup panic"), handler(scope))
+                    .expect("cleanup should register");
+            })
+            .expect("test operation should succeed");
     }));
     assert!(panic.is_err());
 
-    runtime.child(|scope| {
-        let (signal, set_signal) = scope.signal(1i32);
-        set_signal.set(2);
-        assert_eq!(signal.get(), 2);
-    });
+    runtime
+        .child(|scope| {
+            let (signal, set_signal) = scope.signal(1i32).expect("fallible reactive creation");
+            set_signal.set(2).expect("test operation should succeed");
+            assert_eq!(signal.get(), Ok(2));
+        })
+        .expect("test operation should succeed");
 }
 
 #[test]
@@ -592,20 +659,22 @@ fn cleanup_panic_does_not_skip_remaining_cleanups() {
     let remaining_cleanup_ran_in_scope = remaining_cleanup_ran.clone();
 
     let panic = catch_unwind(AssertUnwindSafe(|| {
-        runtime.child(|scope| {
-            scope
-                .on_cleanup(|| panic!("first cleanup panic"), handler(scope))
-                .expect("cleanup should register");
-            scope
-                .on_cleanup(
-                    move || {
-                        remaining_cleanup_ran_in_scope.set(true);
-                        Ok(())
-                    },
-                    handler(scope),
-                )
-                .expect("cleanup should register");
-        });
+        runtime
+            .child(|scope| {
+                scope
+                    .on_cleanup(|| panic!("first cleanup panic"), handler(scope))
+                    .expect("cleanup should register");
+                scope
+                    .on_cleanup(
+                        move || {
+                            remaining_cleanup_ran_in_scope.set(true);
+                            Ok(())
+                        },
+                        handler(scope),
+                    )
+                    .expect("cleanup should register");
+            })
+            .expect("test operation should succeed");
     }));
 
     assert!(panic.is_err());
@@ -621,50 +690,55 @@ fn cleanup_panic_does_not_skip_other_nodes_or_root_cleanup() {
     let root_cleaned_in_scope = root_cleaned.clone();
 
     let panic = catch_unwind(AssertUnwindSafe(|| {
-        runtime.child(|scope| {
-            let scope_copy = scope;
-            scope
-                .effect(
-                    move || {
-                        scope_copy
-                            .on_cleanup(|| panic!("first node cleanup panic"), handler(scope_copy))
-                            .expect("cleanup should register");
-                        Ok(())
-                    },
-                    handler(scope),
-                )
-                .expect("effect should initialize");
+        runtime
+            .child(|scope| {
+                let scope_copy = scope;
+                scope
+                    .effect(
+                        move || {
+                            scope_copy
+                                .on_cleanup(
+                                    || panic!("first node cleanup panic"),
+                                    handler(scope_copy),
+                                )
+                                .expect("cleanup should register");
+                            Ok(())
+                        },
+                        handler(scope),
+                    )
+                    .expect("effect should initialize");
 
-            let scope_copy = scope;
-            scope
-                .effect(
-                    move || {
-                        let cleaned = other_node_cleaned_in_scope.clone();
-                        scope_copy
-                            .on_cleanup(
-                                move || {
-                                    cleaned.set(true);
-                                    Ok(())
-                                },
-                                handler(scope_copy),
-                            )
-                            .expect("cleanup should register");
-                        Ok(())
-                    },
-                    handler(scope),
-                )
-                .expect("effect should initialize");
+                let scope_copy = scope;
+                scope
+                    .effect(
+                        move || {
+                            let cleaned = other_node_cleaned_in_scope.clone();
+                            scope_copy
+                                .on_cleanup(
+                                    move || {
+                                        cleaned.set(true);
+                                        Ok(())
+                                    },
+                                    handler(scope_copy),
+                                )
+                                .expect("cleanup should register");
+                            Ok(())
+                        },
+                        handler(scope),
+                    )
+                    .expect("effect should initialize");
 
-            scope
-                .on_cleanup(
-                    move || {
-                        root_cleaned_in_scope.set(true);
-                        Ok(())
-                    },
-                    handler(scope),
-                )
-                .expect("cleanup should register");
-        });
+                scope
+                    .on_cleanup(
+                        move || {
+                            root_cleaned_in_scope.set(true);
+                            Ok(())
+                        },
+                        handler(scope),
+                    )
+                    .expect("cleanup should register");
+            })
+            .expect("test operation should succeed");
     }));
 
     assert!(panic.is_err());
@@ -680,30 +754,32 @@ fn scope_cleanup_can_register_another_cleanup() {
     let first_ran_in_scope = first_ran.clone();
     let second_ran_in_scope = second_ran.clone();
 
-    runtime.child(|scope| {
-        let scope_copy = scope;
-        let second_cleanup_handler = handler(scope);
-        scope
-            .on_cleanup(
-                move || {
-                    first_ran_in_scope.set(true);
-                    let second_ran = second_ran_in_scope.clone();
-                    assert_eq!(
-                        scope_copy.on_cleanup(
-                            move || {
-                                second_ran.set(true);
-                                Ok(())
-                            },
-                            second_cleanup_handler,
-                        ),
-                        Err(ReactiveError::NoSuchNode)
-                    );
-                    Ok(())
-                },
-                handler(scope),
-            )
-            .expect("cleanup should register");
-    });
+    runtime
+        .child(|scope| {
+            let scope_copy = scope;
+            let second_cleanup_handler = handler(scope);
+            scope
+                .on_cleanup(
+                    move || {
+                        first_ran_in_scope.set(true);
+                        let second_ran = second_ran_in_scope.clone();
+                        assert_eq!(
+                            scope_copy.on_cleanup(
+                                move || {
+                                    second_ran.set(true);
+                                    Ok(())
+                                },
+                                second_cleanup_handler,
+                            ),
+                            Err(ReactiveError::NoSuchNode)
+                        );
+                        Ok(())
+                    },
+                    handler(scope),
+                )
+                .expect("cleanup should register");
+        })
+        .expect("test operation should succeed");
 
     assert!(first_ran.get());
     assert!(!second_ran.get());
@@ -715,52 +791,54 @@ fn effect_cleanup_can_register_cleanup_for_the_next_run() {
     let first_cleanup_ran = Rc::new(Cell::new(false));
     let second_cleanup_ran = Rc::new(Cell::new(false));
 
-    runtime.child(|scope| {
-        let (source, set_source) = scope.signal(0i32);
-        let scope_copy = scope;
-        let register_initial_cleanup = Rc::new(Cell::new(true));
-        let first_cleanup_ran_in_effect = first_cleanup_ran.clone();
-        let second_cleanup_ran_in_effect = second_cleanup_ran.clone();
-        scope
-            .effect(
-                move || {
-                    let _ = source.get();
-                    if register_initial_cleanup.replace(false) {
-                        let scope_for_cleanup = scope_copy;
-                        let first_cleanup = first_cleanup_ran_in_effect.clone();
-                        let second_cleanup = second_cleanup_ran_in_effect.clone();
-                        scope_copy
-                            .on_cleanup(
-                                move || {
-                                    first_cleanup.set(true);
-                                    scope_for_cleanup
-                                        .on_cleanup(
-                                            move || {
-                                                second_cleanup.set(true);
-                                                Ok(())
-                                            },
-                                            handler(scope_for_cleanup),
-                                        )
-                                        .expect("cleanup should register");
-                                    Ok(())
-                                },
-                                handler(scope_for_cleanup),
-                            )
-                            .expect("cleanup should register");
-                    }
-                    Ok(())
-                },
-                handler(scope),
-            )
-            .expect("effect should initialize");
+    runtime
+        .child(|scope| {
+            let (source, set_source) = scope.signal(0i32).expect("fallible reactive creation");
+            let scope_copy = scope;
+            let register_initial_cleanup = Rc::new(Cell::new(true));
+            let first_cleanup_ran_in_effect = first_cleanup_ran.clone();
+            let second_cleanup_ran_in_effect = second_cleanup_ran.clone();
+            scope
+                .effect(
+                    move || {
+                        source.get().expect("test operation should succeed");
+                        if register_initial_cleanup.replace(false) {
+                            let scope_for_cleanup = scope_copy;
+                            let first_cleanup = first_cleanup_ran_in_effect.clone();
+                            let second_cleanup = second_cleanup_ran_in_effect.clone();
+                            scope_copy
+                                .on_cleanup(
+                                    move || {
+                                        first_cleanup.set(true);
+                                        scope_for_cleanup
+                                            .on_cleanup(
+                                                move || {
+                                                    second_cleanup.set(true);
+                                                    Ok(())
+                                                },
+                                                handler(scope_for_cleanup),
+                                            )
+                                            .expect("cleanup should register");
+                                        Ok(())
+                                    },
+                                    handler(scope_for_cleanup),
+                                )
+                                .expect("cleanup should register");
+                        }
+                        Ok(())
+                    },
+                    handler(scope),
+                )
+                .expect("effect should initialize");
 
-        set_source.set(1);
-        assert!(first_cleanup_ran.get());
-        assert!(!second_cleanup_ran.get());
+            set_source.set(1).expect("test operation should succeed");
+            assert!(first_cleanup_ran.get());
+            assert!(!second_cleanup_ran.get());
 
-        set_source.set(2);
-        assert!(second_cleanup_ran.get());
-    });
+            set_source.set(2).expect("test operation should succeed");
+            assert!(second_cleanup_ran.get());
+        })
+        .expect("test operation should succeed");
 }
 
 #[test]
@@ -768,47 +846,58 @@ fn child_cleanup_panic_still_flushes_parent_queue() {
     let mut runtime = Runtime::new();
     let runs = Rc::new(Cell::new(0));
 
-    runtime.child(|scope| {
-        let (source, set_source) = scope.signal(RefCell::new(0i32));
-        let runs_in_effect = runs.clone();
-        scope
-            .effect(
-                move || {
-                    source.with(|value| {
-                        let _ = *value.borrow();
-                        runs_in_effect.set(runs_in_effect.get() + 1);
-                    });
-                    Ok(())
-                },
-                handler(scope),
-            )
-            .expect("effect should initialize");
-        assert_eq!(runs.get(), 1);
+    runtime
+        .child(|scope| {
+            let (source, set_source) = scope
+                .signal(RefCell::new(0i32))
+                .expect("fallible reactive creation");
+            let runs_in_effect = runs.clone();
+            scope
+                .effect(
+                    move || {
+                        source
+                            .with(|value| {
+                                std::hint::black_box(*value.borrow());
+                                runs_in_effect.set(runs_in_effect.get() + 1);
+                            })
+                            .expect("test operation should succeed");
+                        Ok(())
+                    },
+                    handler(scope),
+                )
+                .expect("effect should initialize");
+            assert_eq!(runs.get(), 1);
 
-        let panic = catch_unwind(AssertUnwindSafe(|| {
-            scope.child(|child| {
-                let source_in_cleanup = source;
-                let setter_in_cleanup = set_source;
-                let runs_in_cleanup = runs.clone();
-                child
-                    .on_cleanup(
-                        move || {
-                            source_in_cleanup.with(|_| {
-                                notify(&setter_in_cleanup);
-                                assert_eq!(runs_in_cleanup.get(), 1);
-                                panic!("child cleanup panic");
-                            });
-                            Ok(())
-                        },
-                        handler(child),
-                    )
-                    .expect("cleanup should register");
-            });
-        }));
+            let panic = catch_unwind(AssertUnwindSafe(|| {
+                scope
+                    .child(|child| {
+                        let source_in_cleanup = source;
+                        let setter_in_cleanup = set_source;
+                        let runs_in_cleanup = runs.clone();
+                        child
+                            .on_cleanup(
+                                move || {
+                                    source_in_cleanup
+                                        .with(|_| {
+                                            notify(&setter_in_cleanup)
+                                                .expect("test operation should succeed");
+                                            assert_eq!(runs_in_cleanup.get(), 1);
+                                            panic!("child cleanup panic");
+                                        })
+                                        .expect("test operation should succeed");
+                                    Ok(())
+                                },
+                                handler(child),
+                            )
+                            .expect("cleanup should register");
+                    })
+                    .expect("test operation should succeed");
+            }));
 
-        assert!(panic.is_err());
-        assert_eq!(runs.get(), 2);
-    });
+            assert!(panic.is_err());
+            assert_eq!(runs.get(), 2);
+        })
+        .expect("test operation should succeed");
 }
 
 #[test]
@@ -816,15 +905,19 @@ fn completion_token_accepts_active_submissions_and_rejects_after_scope() {
     let mut runtime = Runtime::new();
     let seen = Rc::new(Cell::new(0));
     let seen_in_scope = seen.clone();
-    let token = runtime.child(|scope| {
-        let seen_in_callback = seen_in_scope.clone();
-        let token = scope.completion_sender(unwind_safe(move |value: i32| {
-            seen_in_callback.set(value);
-            Ok::<(), ()>(())
-        }));
-        assert!(token.submit(1).expect("completion submit"));
-        token
-    });
+    let token = runtime
+        .child(|scope| {
+            let seen_in_callback = seen_in_scope.clone();
+            let token = scope
+                .completion_sender(unwind_safe(move |value: i32| {
+                    seen_in_callback.set(value);
+                    Ok::<(), ()>(())
+                }))
+                .expect("completion registration");
+            assert!(token.submit(1).expect("completion submit"));
+            token
+        })
+        .expect("runtime child");
 
     assert_eq!(seen.get(), 1);
     assert!(!token.submit(2).expect("stale completion submit"));
@@ -836,38 +929,44 @@ fn completion_token_rejects_submission_after_scope_deactivation() {
     let mut runtime = Runtime::new();
     let callback_called = Rc::new(Cell::new(false));
 
-    runtime.child(|scope| {
-        scope.child(|child| {
-            let callback_called_in_child = callback_called.clone();
-            let token = child.completion_once(unwind_safe(move |_: i32| {
-                callback_called_in_child.set(true);
-                Ok::<(), ()>(())
-            }));
-            let child_scope = child;
-            child
-                .effect(
-                    move || {
-                        let token_in_cleanup = token.clone();
-                        child_scope
-                            .on_cleanup(
-                                move || {
-                                    assert!(
-                                        !token_in_cleanup
-                                            .submit(1)
-                                            .expect("stale completion submit")
-                                    );
-                                    Ok(())
-                                },
-                                handler(child_scope),
-                            )
-                            .expect("cleanup should register");
-                        Ok(())
-                    },
-                    handler(child),
-                )
-                .expect("effect should initialize");
-        });
-    });
+    runtime
+        .child(|scope| {
+            scope
+                .child(|child| {
+                    let callback_called_in_child = callback_called.clone();
+                    let token = child
+                        .completion_once(unwind_safe(move |_: i32| {
+                            callback_called_in_child.set(true);
+                            Ok::<(), ()>(())
+                        }))
+                        .expect("completion registration");
+                    let child_scope = child;
+                    child
+                        .effect(
+                            move || {
+                                let token_in_cleanup = token.clone();
+                                child_scope
+                                    .on_cleanup(
+                                        move || {
+                                            assert!(
+                                                !token_in_cleanup
+                                                    .submit(1)
+                                                    .expect("stale completion submit")
+                                            );
+                                            Ok(())
+                                        },
+                                        handler(child_scope),
+                                    )
+                                    .expect("cleanup should register");
+                                Ok(())
+                            },
+                            handler(child),
+                        )
+                        .expect("effect should initialize");
+                })
+                .expect("test operation should succeed");
+        })
+        .expect("test operation should succeed");
 
     assert!(!callback_called.get());
 }
@@ -877,16 +976,20 @@ fn lexical_completion_can_capture_scope_local_data() {
     let mut runtime = Runtime::new();
     let seen = Rc::new(Cell::new(0));
 
-    runtime.child(|scope| {
-        let local = String::from("scoped");
-        let seen_in_callback = seen.clone();
-        let token = scope.completion_once(unwind_safe(move |value: i32| {
-            assert_eq!(local, "scoped");
-            seen_in_callback.set(value);
-            Ok::<(), ()>(())
-        }));
-        assert!(token.submit(7).expect("completion submit"));
-    });
+    runtime
+        .child(|scope| {
+            let local = String::from("scoped");
+            let seen_in_callback = seen.clone();
+            let token = scope
+                .completion_once(unwind_safe(move |value: i32| {
+                    assert_eq!(local, "scoped");
+                    seen_in_callback.set(value);
+                    Ok::<(), ()>(())
+                }))
+                .expect("completion registration");
+            assert!(token.submit(7).expect("completion submit"));
+        })
+        .expect("test operation should succeed");
 
     assert_eq!(seen.get(), 7);
 }
@@ -895,25 +998,35 @@ fn lexical_completion_can_capture_scope_local_data() {
 fn handles_are_invalid_after_their_scope_and_runtimes_are_isolated() {
     let mut first = Runtime::new();
     let mut second = Runtime::new();
-    first.child(|scope| {
-        let (signal, _) = scope.signal(1i32);
-        assert_eq!(signal.try_get(), Ok(1));
-        second.child(|other| {
-            let (other_signal, _) = other.signal(2i32);
-            assert_eq!(other_signal.get(), 2);
-            assert_eq!(signal.get(), 1);
-        });
-        assert_eq!(signal.try_get(), Ok(1));
-    });
+    first
+        .child(|scope| {
+            let (signal, _) = scope.signal(1i32).expect("fallible reactive creation");
+            assert_eq!(signal.get(), Ok(1));
+            second
+                .child(|other| {
+                    let (other_signal, _) = other.signal(2i32).expect("fallible reactive creation");
+                    assert_eq!(other_signal.get(), Ok(2));
+                    assert_eq!(signal.get(), Ok(1));
+                })
+                .expect("test operation should succeed");
+            assert_eq!(signal.get(), Ok(1));
+        })
+        .expect("test operation should succeed");
 
     let mut gone = Runtime::new();
-    let token = gone.child(|scope| {
-        scope.child(|child| {
-            let (signal, _) = child.signal(1i32);
-            assert_eq!(signal.try_get(), Ok(1));
-        });
-        scope.completion_once(unwind_safe(|_: i32| Ok::<(), ()>(())))
-    });
+    let token = gone
+        .child(|scope| {
+            scope
+                .child(|child| {
+                    let (signal, _) = child.signal(1i32).expect("fallible reactive creation");
+                    assert_eq!(signal.get(), Ok(1));
+                })
+                .expect("test operation should succeed");
+            scope
+                .completion_once(unwind_safe(|_: i32| Ok::<(), ()>(())))
+                .expect("completion registration")
+        })
+        .expect("runtime child");
     assert!(!token.submit(1).expect("stale completion submit"));
 
     assert_eq!(

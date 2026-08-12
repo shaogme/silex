@@ -328,7 +328,7 @@ pub(crate) fn node_ref_clear<'scope, T>(
     })?
 }
 
-pub(crate) fn try_notify<'scope>(
+pub(crate) fn notify<'scope>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     id: RawId,
 ) -> ReactiveResult<()> {
@@ -353,7 +353,7 @@ pub(crate) fn try_notify<'scope>(
     Ok(())
 }
 
-pub(crate) fn try_track<'scope>(
+pub(crate) fn track<'scope>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     id: RawId,
 ) -> ReactiveResult<()> {
@@ -370,7 +370,7 @@ pub(crate) fn try_track<'scope>(
     Ok(())
 }
 
-pub(crate) fn try_track_many<'scope>(
+pub(crate) fn track_many<'scope>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     ids: &[RawId],
 ) -> ReactiveResult<()> {
@@ -466,7 +466,9 @@ mod tests {
             storage: &disposing_storage,
             _marker: PhantomData,
         };
-        let (source, _) = active_scope.signal(0_i32);
+        let (source, _) = active_scope
+            .signal(0_i32)
+            .expect("fallible reactive creation");
         let runs = Rc::new(std::cell::Cell::new(0));
         let runs_in_effect = runs.clone();
         let effect = active_scope
@@ -476,7 +478,9 @@ mod tests {
                     runs_in_effect.set(runs_in_effect.get() + 1);
                     Ok(())
                 },
-                active_scope.error_handler(|_: ()| {}),
+                active_scope
+                    .error_handler(|_: ()| {})
+                    .expect("handler registration"),
             )
             .expect("effect should initialize");
         assert_eq!(runs.get(), 1);
@@ -498,19 +502,23 @@ mod tests {
             });
         }
 
-        let stored = disposing_scope.stored(1_i32);
+        let stored = disposing_scope
+            .stored(1_i32)
+            .expect("fallible reactive creation");
         let runs_in_cleanup = runs.clone();
         disposing_scope
             .on_cleanup(
                 move || {
                     assert_eq!(runs_in_cleanup.get(), 1);
                     stored
-                        .try_update(|value| *value = 2)
+                        .update(|value| *value = 2)
                         .expect("stored value should be writable during final cleanup");
                     assert_eq!(runs_in_cleanup.get(), 1);
                     Ok(())
                 },
-                disposing_scope.error_handler(|_: ()| {}),
+                disposing_scope
+                    .error_handler(|_: ()| {})
+                    .expect("handler registration"),
             )
             .expect("cleanup should register");
 
@@ -528,14 +536,13 @@ mod tests {
             storage: &first_storage,
             _marker: PhantomData,
         };
-        let stored = first_scope.stored(1_i32);
+        let stored = first_scope
+            .stored(1_i32)
+            .expect("fallible reactive creation");
         first_storage.dispose_untracked();
 
         let replacement = ScopeStorage::new(scheduler);
-        assert_eq!(
-            stored.try_with(|value| *value),
-            Err(ReactiveError::NoSuchNode)
-        );
+        assert_eq!(stored.with(|value| *value), Err(ReactiveError::NoSuchNode));
         replacement.dispose_untracked();
     }
 }

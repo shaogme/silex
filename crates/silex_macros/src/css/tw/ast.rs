@@ -62,6 +62,7 @@ pub enum Modifier {
 
 /// Utility 规则值类型
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum UtilityValue {
     /// 关键字值, 如 flex, block, auto, transparent, space-between
     Keyword(&'static str),
@@ -227,6 +228,7 @@ impl Hash for UtilityRule {
 
 /// `tw!` 宏的片段规则类型
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum TwSegment {
     /// 静态 Utility 规则段 (例: "p-4 rounded-xl")
     Static(Vec<UtilityRule>),

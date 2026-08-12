@@ -217,8 +217,12 @@ where
             async move {
                 match completion.submit((id, future.await)) {
                     Ok(_) => {}
-                    Err(CallbackInvokeError::Runtime(error)) => error_handler.handle(error.into()),
-                    Err(CallbackInvokeError::User(error)) => error_handler.handle(error),
+                    Err(CallbackInvokeError::Runtime(error)) => {
+                        let _ = error_handler.handle(error.into());
+                    }
+                    Err(CallbackInvokeError::User(error)) => {
+                        let _ = error_handler.handle(error);
+                    }
                 }
             },
             self.error_handler,

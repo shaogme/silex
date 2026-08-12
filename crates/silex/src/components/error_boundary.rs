@@ -268,12 +268,12 @@ where
                         .and_then(|state| state.with(|handler| *handler).ok())
                 });
                 if let Some(parent) = parent {
-                    parent.handle(error_value);
+                    let _ = parent.handle(error_value);
                 } else {
-                    boundary_handler.handle(error_value);
+                    let _ = boundary_handler.handle(error_value);
                 }
             } else {
-                boundary_handler.handle(error_value);
+                let _ = boundary_handler.handle(error_value);
             }
         })
     };

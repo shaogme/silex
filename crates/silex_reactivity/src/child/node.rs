@@ -64,7 +64,7 @@ impl<'scope, T: 'scope, E: 'scope> Callback<'scope, T, E> {
             Err(CallbackThunkError::Runtime(error)) => Err(error),
             Err(CallbackThunkError::User(value)) => {
                 let error = unsafe { value.downcast::<E>() }.ok_or(ReactiveError::TypeMismatch)?;
-                error_handler.try_handle(error)
+                error_handler.handle(error)
             }
         }
     }
@@ -102,13 +102,8 @@ impl<'scope> PartialEq for Effect<'scope> {
 impl<'scope> Eq for Effect<'scope> {}
 
 impl<'scope> Effect<'scope> {
-    pub fn try_stop(&self) -> ReactiveResult<bool> {
+    pub fn stop(&self) -> ReactiveResult<bool> {
         runtime::stop_effect(&self.handle.state(), self.handle.raw())
-    }
-
-    pub fn stop(&self) {
-        self.try_stop()
-            .unwrap_or_else(|error| panic!("停止 scoped effect 失败: {error}"));
     }
 }
 
@@ -145,7 +140,7 @@ impl<'scope, T> Clone for Derived<'scope, T> {
 }
 
 impl<'scope, T: 'scope> Memo<'scope, T> {
-    pub fn try_get(&self) -> ReactiveResult<T>
+    pub fn get(&self) -> ReactiveResult<T>
     where
         T: Clone,
     {
@@ -156,28 +151,14 @@ impl<'scope, T: 'scope> Memo<'scope, T> {
         })?
     }
 
-    pub fn get(&self) -> T
+    pub fn get_untracked(&self) -> ReactiveResult<T>
     where
         T: Clone,
     {
-        self.try_get().expect("读取 scoped memo 失败")
+        self.with_untracked(Clone::clone)
     }
 
-    pub fn try_get_untracked(&self) -> ReactiveResult<T>
-    where
-        T: Clone,
-    {
-        self.try_with_untracked(Clone::clone)
-    }
-
-    pub fn get_untracked(&self) -> T
-    where
-        T: Clone,
-    {
-        self.try_get_untracked().expect("读取 scoped memo 失败")
-    }
-
-    pub fn try_with<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
+    pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
         runtime::with_signal(&self.handle.state(), self.handle.raw(), true, |value| {
             unsafe { value.downcast_ref::<T>() }
                 .map(f)
@@ -185,21 +166,12 @@ impl<'scope, T: 'scope> Memo<'scope, T> {
         })?
     }
 
-    pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> R {
-        self.try_with(f).expect("读取 scoped memo 失败")
-    }
-
-    pub fn try_with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
+    pub fn with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
         runtime::with_signal(&self.handle.state(), self.handle.raw(), false, |value| {
             unsafe { value.downcast_ref::<T>() }
                 .map(f)
                 .ok_or(ReactiveError::TypeMismatch)
         })?
-    }
-
-    pub fn with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> R {
-        self.try_with_untracked(f)
-            .unwrap_or_else(|error| panic!("读取 scoped memo 失败: {error}"))
     }
 
     #[doc(hidden)]
@@ -209,7 +181,7 @@ impl<'scope, T: 'scope> Memo<'scope, T> {
 }
 
 impl<'scope, T: 'scope> Derived<'scope, T> {
-    pub fn try_get(&self) -> ReactiveResult<T>
+    pub fn get(&self) -> ReactiveResult<T>
     where
         T: Clone,
     {
@@ -220,28 +192,14 @@ impl<'scope, T: 'scope> Derived<'scope, T> {
         })?
     }
 
-    pub fn get(&self) -> T
+    pub fn get_untracked(&self) -> ReactiveResult<T>
     where
         T: Clone,
     {
-        self.try_get().expect("读取 scoped derived 失败")
+        self.with_untracked(Clone::clone)
     }
 
-    pub fn try_get_untracked(&self) -> ReactiveResult<T>
-    where
-        T: Clone,
-    {
-        self.try_with_untracked(Clone::clone)
-    }
-
-    pub fn get_untracked(&self) -> T
-    where
-        T: Clone,
-    {
-        self.try_get_untracked().expect("读取 scoped derived 失败")
-    }
-
-    pub fn try_with<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
+    pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
         runtime::with_signal(&self.handle.state(), self.handle.raw(), true, |value| {
             unsafe { value.downcast_ref::<T>() }
                 .map(f)
@@ -249,22 +207,12 @@ impl<'scope, T: 'scope> Derived<'scope, T> {
         })?
     }
 
-    pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> R {
-        self.try_with(f)
-            .unwrap_or_else(|error| panic!("读取 scoped derived 失败: {error}"))
-    }
-
-    pub fn try_with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
+    pub fn with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
         runtime::with_signal(&self.handle.state(), self.handle.raw(), false, |value| {
             unsafe { value.downcast_ref::<T>() }
                 .map(f)
                 .ok_or(ReactiveError::TypeMismatch)
         })?
-    }
-
-    pub fn with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> R {
-        self.try_with_untracked(f)
-            .unwrap_or_else(|error| panic!("读取 scoped derived 失败: {error}"))
     }
 
     #[doc(hidden)]
@@ -292,13 +240,8 @@ impl<'scope, T> Clone for NodeRef<'scope, T> {
 }
 
 impl<'scope, T: Clone + 'scope> NodeRef<'scope, T> {
-    pub fn try_get(&self) -> ReactiveResult<Option<T>> {
+    pub fn get(&self) -> ReactiveResult<Option<T>> {
         runtime::node_ref_get(&self.handle.state(), self.handle.raw())
-    }
-
-    pub fn get(&self) -> Option<T> {
-        self.try_get()
-            .unwrap_or_else(|error| panic!("读取 scoped node ref 失败: {error}"))
     }
 }
 
@@ -359,7 +302,7 @@ impl<'scope, T> Clone for RwSignal<'scope, T> {
 }
 
 impl<'scope, T: 'scope> ReadSignal<'scope, T> {
-    pub fn try_get(&self) -> ReactiveResult<T>
+    pub fn get(&self) -> ReactiveResult<T>
     where
         T: Clone,
     {
@@ -370,21 +313,7 @@ impl<'scope, T: 'scope> ReadSignal<'scope, T> {
         })?
     }
 
-    pub fn get(&self) -> T
-    where
-        T: Clone,
-    {
-        self.try_get().expect("读取 scoped signal 失败")
-    }
-
-    pub fn get_untracked(&self) -> T
-    where
-        T: Clone,
-    {
-        self.try_get_untracked().expect("读取 scoped signal 失败")
-    }
-
-    pub fn try_get_untracked(&self) -> ReactiveResult<T>
+    pub fn get_untracked(&self) -> ReactiveResult<T>
     where
         T: Clone,
     {
@@ -395,11 +324,7 @@ impl<'scope, T: 'scope> ReadSignal<'scope, T> {
         })?
     }
 
-    pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> R {
-        self.try_with(f).expect("读取 scoped signal 失败")
-    }
-
-    pub fn try_with<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
+    pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
         runtime::with_signal(&self.handle.state(), self.handle.raw(), true, |value| {
             unsafe { value.downcast_ref::<T>() }
                 .map(f)
@@ -407,17 +332,12 @@ impl<'scope, T: 'scope> ReadSignal<'scope, T> {
         })?
     }
 
-    pub fn try_with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
+    pub fn with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
         runtime::with_signal(&self.handle.state(), self.handle.raw(), false, |value| {
             unsafe { value.downcast_ref::<T>() }
                 .map(f)
                 .ok_or(ReactiveError::TypeMismatch)
         })?
-    }
-
-    pub fn with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> R {
-        self.try_with_untracked(f)
-            .unwrap_or_else(|error| panic!("读取 scoped signal 失败: {error}"))
     }
 
     #[doc(hidden)]
@@ -427,7 +347,7 @@ impl<'scope, T: 'scope> ReadSignal<'scope, T> {
 }
 
 impl<'scope, T: 'scope> WriteSignal<'scope, T> {
-    pub fn try_set(&self, value: T) -> ReactiveResult<()> {
+    pub fn set(&self, value: T) -> ReactiveResult<()> {
         runtime::update_signal(&self.handle.state(), self.handle.raw(), |stored| {
             let incoming = value;
             let Some(stored) = (unsafe { stored.downcast_mut::<T>() }) else {
@@ -438,30 +358,20 @@ impl<'scope, T: 'scope> WriteSignal<'scope, T> {
         })?
     }
 
-    pub fn set(&self, value: T) {
-        self.try_set(value)
-            .unwrap_or_else(|error| panic!("写入 scoped signal 失败: {error}"));
-    }
-
-    pub fn try_update<R>(&self, f: impl FnOnce(&mut T) -> R) -> ReactiveResult<R> {
+    pub fn update<R>(&self, f: impl FnOnce(&mut T) -> R) -> ReactiveResult<R> {
         let mut f = Some(f);
         runtime::update_signal(&self.handle.state(), self.handle.raw(), |stored| {
             let Some(stored) = (unsafe { stored.downcast_mut::<T>() }) else {
                 return (Err(ReactiveError::TypeMismatch), false);
             };
-            (
-                Ok(f.take().expect("signal updater 只调用一次")(stored)),
-                true,
-            )
+            let Some(f) = f.take() else {
+                return (Err(ReactiveError::Reentrant), false);
+            };
+            (Ok(f(stored)), true)
         })?
     }
 
-    pub fn update(&self, f: impl FnOnce(&mut T)) {
-        self.try_update(f)
-            .unwrap_or_else(|error| panic!("更新 scoped signal 失败: {error}"));
-    }
-
-    pub fn try_set_if_changed(&self, value: T) -> ReactiveResult<bool>
+    pub fn set_if_changed(&self, value: T) -> ReactiveResult<bool>
     where
         T: PartialEq,
     {
@@ -478,14 +388,6 @@ impl<'scope, T: 'scope> WriteSignal<'scope, T> {
         })?
     }
 
-    pub fn set_if_changed(&self, value: T)
-    where
-        T: PartialEq,
-    {
-        self.try_set_if_changed(value)
-            .unwrap_or_else(|error| panic!("写入 scoped signal 失败: {error}"));
-    }
-
     #[doc(hidden)]
     pub fn runtime_input(&self) -> RuntimeInput {
         self.handle.runtime_input()
@@ -493,58 +395,29 @@ impl<'scope, T: 'scope> WriteSignal<'scope, T> {
 }
 
 impl<'scope, T: 'scope> RwSignal<'scope, T> {
-    pub fn try_get(&self) -> ReactiveResult<T>
-    where
-        T: Clone,
-    {
-        self.read.try_get()
-    }
-
-    pub fn get(&self) -> T
+    pub fn get(&self) -> ReactiveResult<T>
     where
         T: Clone,
     {
         self.read.get()
     }
 
-    pub fn try_get_untracked(&self) -> ReactiveResult<T>
-    where
-        T: Clone,
-    {
-        self.read.try_get_untracked()
-    }
-
-    pub fn get_untracked(&self) -> T
+    pub fn get_untracked(&self) -> ReactiveResult<T>
     where
         T: Clone,
     {
         self.read.get_untracked()
     }
 
-    pub fn try_set(&self, value: T) -> ReactiveResult<()> {
-        self.write.try_set(value)
-    }
-
-    pub fn set(&self, value: T) {
+    pub fn set(&self, value: T) -> ReactiveResult<()> {
         self.write.set(value)
     }
 
-    pub fn try_update<R>(&self, f: impl FnOnce(&mut T) -> R) -> ReactiveResult<R> {
-        self.write.try_update(f)
-    }
-
-    pub fn update(&self, f: impl FnOnce(&mut T)) {
+    pub fn update<R>(&self, f: impl FnOnce(&mut T) -> R) -> ReactiveResult<R> {
         self.write.update(f)
     }
 
-    pub fn try_set_if_changed(&self, value: T) -> ReactiveResult<bool>
-    where
-        T: PartialEq,
-    {
-        self.write.try_set_if_changed(value)
-    }
-
-    pub fn set_if_changed(&self, value: T)
+    pub fn set_if_changed(&self, value: T) -> ReactiveResult<bool>
     where
         T: PartialEq,
     {
@@ -565,26 +438,16 @@ impl<'scope, T: 'scope> RwSignal<'scope, T> {
     }
 }
 
-/// Try to notify dependents after a silent update.
-pub fn try_notify<'scope, T>(signal: &WriteSignal<'scope, T>) -> ReactiveResult<()> {
+/// Notify dependents after a silent update.
+pub fn notify<'scope, T>(signal: &WriteSignal<'scope, T>) -> ReactiveResult<()> {
     let state = signal.handle.state();
-    runtime::try_notify(&state, signal.handle.raw())
-}
-
-/// Explicitly notify dependents after a silent update.
-pub fn notify<'scope, T>(signal: &WriteSignal<'scope, T>) {
-    try_notify(signal).unwrap_or_else(|error| panic!("通知 scoped signal 失败: {error}"));
-}
-
-/// Try to track a read capability without reading its value.
-pub fn try_track<'scope, T>(signal: &ReadSignal<'scope, T>) -> ReactiveResult<()> {
-    let state = signal.handle.state();
-    runtime::try_track(&state, signal.handle.raw())
+    runtime::notify(&state, signal.handle.raw())
 }
 
 /// Track a read capability without reading its value.
-pub fn track<'scope, T>(signal: &ReadSignal<'scope, T>) {
-    try_track(signal).unwrap_or_else(|error| panic!("追踪 scoped signal 失败: {error}"));
+pub fn track<'scope, T>(signal: &ReadSignal<'scope, T>) -> ReactiveResult<()> {
+    let state = signal.handle.state();
+    runtime::track(&state, signal.handle.raw())
 }
 
 /// Track multiple read capabilities in one call.
@@ -592,7 +455,7 @@ pub fn track<'scope, T>(signal: &ReadSignal<'scope, T>) {
 /// Handles from different `Runtime::run` or child-scope runs cannot be mixed in
 /// one batch because their scope lifetimes are intentionally distinct. The
 /// compile-fail case is covered by `tests/ui/fail_mixed_track_batch.rs`.
-pub fn try_track_batch<'scope, T>(signals: &[ReadSignal<'scope, T>]) -> ReactiveResult<()> {
+pub fn track_batch<'scope, T>(signals: &[ReadSignal<'scope, T>]) -> ReactiveResult<()> {
     let mut groups: Vec<(Rc<RefCell<ScopeState<'scope>>>, Vec<RawId>)> = Vec::new();
 
     for signal in signals {
@@ -608,15 +471,10 @@ pub fn try_track_batch<'scope, T>(signals: &[ReadSignal<'scope, T>]) -> Reactive
     }
 
     for (state, ids) in groups {
-        runtime::try_track_many(&state, &ids)?;
+        runtime::track_many(&state, &ids)?;
     }
 
     Ok(())
-}
-
-/// Track multiple read capabilities in one call.
-pub fn track_batch<'scope, T>(signals: &[ReadSignal<'scope, T>]) {
-    try_track_batch(signals).unwrap_or_else(|error| panic!("批量追踪 scoped signal 失败: {error}"));
 }
 
 // =============================================================================
@@ -626,8 +484,8 @@ pub fn track_batch<'scope, T>(signals: &[ReadSignal<'scope, T>]) {
 /// Scope-owned, non-reactive values.
 ///
 /// During final disposal of the owning scope, this is the only node capability
-/// that remains synchronously accessible: `try_with`, `with`, `try_update`,
-/// and `update` may be used by a pending cleanup before the payload is dropped.
+/// that remains synchronously accessible: `with` and `update` may be used by a
+/// pending cleanup before the payload is dropped.
 /// The scope is still inactive, and the exception does not apply to effect
 /// reruns, single-node stops, or asynchronous use after the cleanup returns.
 pub struct StoredValue<'scope, T> {
@@ -644,7 +502,7 @@ impl<'scope, T> Clone for StoredValue<'scope, T> {
 }
 
 impl<'scope, T: 'scope> StoredValue<'scope, T> {
-    pub fn try_with<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
+    pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
         runtime::with_stored(&self.handle.state(), self.handle.raw(), |value| {
             unsafe { value.downcast_ref::<T>() }
                 .map(f)
@@ -652,20 +510,12 @@ impl<'scope, T: 'scope> StoredValue<'scope, T> {
         })?
     }
 
-    pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> R {
-        self.try_with(f).expect("读取 scoped stored value 失败")
-    }
-
-    pub fn try_update<R>(&self, f: impl FnOnce(&mut T) -> R) -> ReactiveResult<R> {
+    pub fn update<R>(&self, f: impl FnOnce(&mut T) -> R) -> ReactiveResult<R> {
         runtime::update_stored(&self.handle.state(), self.handle.raw(), |value| {
             unsafe { value.downcast_mut::<T>() }
                 .map(f)
                 .ok_or(ReactiveError::TypeMismatch)
         })?
-    }
-
-    pub fn update<R>(&self, f: impl FnOnce(&mut T) -> R) -> R {
-        self.try_update(f).expect("更新 scoped stored value 失败")
     }
 
     #[doc(hidden)]

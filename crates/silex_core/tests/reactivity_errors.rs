@@ -113,7 +113,7 @@ fn core_owner_registration_exposes_inactive_errors() {
         assert!(scope.on_cleanup(|| Ok(()), handler(scope)).is_ok());
         let owner = scope.try_owned_scope().expect("owner is active");
         assert!(owner.on_cleanup(|| Ok(()), handler(scope)).is_ok());
-        owner.dispose();
+        owner.dispose().expect("owned scope should dispose");
 
         assert!(matches!(
             owner.on_cleanup(|| Ok(()), handler(scope)),

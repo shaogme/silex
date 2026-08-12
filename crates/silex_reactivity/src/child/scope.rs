@@ -12,7 +12,7 @@ use super::node::{
     WriteSignal,
 };
 use crate::{
-    EffectInitError, EffectInitResult, ErrorHandler, ReactiveError, ReactiveResult,
+    CleanupError, EffectInitError, EffectInitResult, ErrorHandler, ReactiveError, ReactiveResult,
     completion::{
         CompletionOnce, CompletionSender, create_completion_once, create_completion_sender,
     },
@@ -62,14 +62,7 @@ impl<'scope> Scope<'scope> {
     /// Unlike [`Scope::child`], the returned owner is not tied to a callback
     /// stack frame. Its caller must dispose it when the owned object is
     /// removed; the DOM owner adapters use this as the row lifetime boundary.
-    pub fn owned_scope(&self) -> OwnedScope<'scope> {
-        self.try_owned_scope()
-            .unwrap_or_else(|error| panic!("创建 owned scope 失败: {error}"))
-    }
-
-    /// Create a persistent owner without converting an inactive or borrowed
-    /// scope into a panic.
-    pub fn try_owned_scope(&self) -> ReactiveResult<OwnedScope<'scope>> {
+    pub fn owned_scope(&self) -> ReactiveResult<OwnedScope<'scope>> {
         let state = self.state();
         let state = state
             .try_borrow()
@@ -89,16 +82,7 @@ impl<'scope> Scope<'scope> {
     /// The callback remains in the scope registry until disposal. Creating a
     /// handler in a frequently rerun reactive callback therefore grows the
     /// registry until the owning scope ends.
-    pub fn error_handler<E, F>(&self, handler: F) -> ErrorHandler<'scope, E>
-    where
-        E: 'scope,
-        F: Fn(E) + 'scope,
-    {
-        self.try_error_handler(handler)
-            .unwrap_or_else(|error| panic!("创建 scoped error handler 失败: {error}"))
-    }
-
-    pub fn try_error_handler<E, F>(&self, handler: F) -> ReactiveResult<ErrorHandler<'scope, E>>
+    pub fn error_handler<E, F>(&self, handler: F) -> ReactiveResult<ErrorHandler<'scope, E>>
     where
         E: 'scope,
         F: Fn(E) + 'scope,
@@ -114,7 +98,7 @@ impl<'scope> Scope<'scope> {
 
     /// Validate opaque source provenance for a framework-owned registration.
     #[doc(hidden)]
-    pub fn try_validate_inputs(&self, inputs: &RuntimeInputs) -> ReactiveResult<()> {
+    pub fn validate_inputs(&self, inputs: &RuntimeInputs) -> ReactiveResult<()> {
         runtime::validate_inputs(&self.state(), inputs)
     }
 
@@ -126,12 +110,10 @@ impl<'scope> Scope<'scope> {
 
     /// Execute a child scope. All child nodes and computations are destroyed
     /// before this method returns, including during panic unwinding.
-    pub fn child<R>(&self, f: impl for<'child> FnOnce(Scope<'child>) -> R) -> R {
-        assert!(
-            self.storage.is_active(),
-            "创建 child scope 失败: {}",
-            ReactiveError::NoSuchNode
-        );
+    pub fn child<R>(&self, f: impl for<'child> FnOnce(Scope<'child>) -> R) -> ReactiveResult<R> {
+        if !self.storage.is_active() {
+            return Err(ReactiveError::NoSuchNode);
+        }
         let state = self.state();
         let scheduler = state.borrow().scheduler.clone();
         let storage = ScopeStorage::new(scheduler.clone());
@@ -144,7 +126,7 @@ impl<'scope> Scope<'scope> {
         let dispose_result = catch_unwind(AssertUnwindSafe(|| storage.dispose_untracked()));
         drop(observer_frame);
         match (result, dispose_result) {
-            (Ok(value), Ok(())) => value,
+            (Ok(value), Ok(())) => Ok(value),
             (Err(panic), _) => resume_unwind(panic),
             (Ok(_), Err(panic)) => resume_unwind(panic),
         }
@@ -338,7 +320,7 @@ impl<'scope> Scope<'scope> {
 
     /// Create a lazy memo whose dependents are notified only when its value
     /// changes according to `PartialEq`.
-    pub fn memo<T, F>(&self, f: F) -> Memo<'scope, T>
+    pub fn memo<T, F>(&self, f: F) -> ReactiveResult<Memo<'scope, T>>
     where
         T: PartialEq + 'scope,
         F: FnMut(Option<&T>) -> T + 'scope,
@@ -348,21 +330,7 @@ impl<'scope> Scope<'scope> {
 
     /// Create a memo after validating all declared reactive inputs.
     #[doc(hidden)]
-    pub fn memo_from<T, F>(&self, inputs: RuntimeInputs, f: F) -> Memo<'scope, T>
-    where
-        T: PartialEq + 'scope,
-        F: FnMut(Option<&T>) -> T + 'scope,
-    {
-        self.try_memo_from(inputs, f)
-            .unwrap_or_else(|error| panic!("创建 scoped memo 失败: {error}"))
-    }
-
-    #[doc(hidden)]
-    pub fn try_memo_from<T, F>(
-        &self,
-        inputs: RuntimeInputs,
-        f: F,
-    ) -> ReactiveResult<Memo<'scope, T>>
+    pub fn memo_from<T, F>(&self, inputs: RuntimeInputs, f: F) -> ReactiveResult<Memo<'scope, T>>
     where
         T: PartialEq + 'scope,
         F: FnMut(Option<&T>) -> T + 'scope,
@@ -377,7 +345,7 @@ impl<'scope> Scope<'scope> {
     }
 
     /// Create a lazy derived value without equality gating.
-    pub fn derived<T, F>(&self, f: F) -> Derived<'scope, T>
+    pub fn derived<T, F>(&self, f: F) -> ReactiveResult<Derived<'scope, T>>
     where
         T: 'scope,
         F: FnMut() -> T + 'scope,
@@ -387,17 +355,7 @@ impl<'scope> Scope<'scope> {
 
     /// Create a derived value after validating all declared reactive inputs.
     #[doc(hidden)]
-    pub fn derived_from<T, F>(&self, inputs: RuntimeInputs, f: F) -> Derived<'scope, T>
-    where
-        T: 'scope,
-        F: FnMut() -> T + 'scope,
-    {
-        self.try_derived_from(inputs, f)
-            .unwrap_or_else(|error| panic!("创建 scoped derived 失败: {error}"))
-    }
-
-    #[doc(hidden)]
-    pub fn try_derived_from<T, F>(
+    pub fn derived_from<T, F>(
         &self,
         inputs: RuntimeInputs,
         f: F,
@@ -416,12 +374,7 @@ impl<'scope> Scope<'scope> {
     }
 
     /// Create an empty host reference.
-    pub fn node_ref<T: 'scope>(&self) -> NodeRef<'scope, T> {
-        self.try_node_ref()
-            .unwrap_or_else(|error| panic!("创建 scoped node_ref 失败: {error}"))
-    }
-
-    pub fn try_node_ref<T: 'scope>(&self) -> ReactiveResult<NodeRef<'scope, T>> {
+    pub fn node_ref<T: 'scope>(&self) -> ReactiveResult<NodeRef<'scope, T>> {
         let state = self.state();
         let raw = state
             .try_borrow_mut()
@@ -434,12 +387,7 @@ impl<'scope> Scope<'scope> {
     }
 
     /// Create a signal owned by this scope.
-    pub fn signal<T: 'scope>(&self, value: T) -> (ReadSignal<'scope, T>, WriteSignal<'scope, T>) {
-        self.try_signal(value)
-            .unwrap_or_else(|error| panic!("创建 scoped signal 失败: {error}"))
-    }
-
-    pub fn try_signal<T: 'scope>(
+    pub fn signal<T: 'scope>(
         &self,
         value: T,
     ) -> ReactiveResult<(ReadSignal<'scope, T>, WriteSignal<'scope, T>)> {
@@ -463,18 +411,13 @@ impl<'scope> Scope<'scope> {
 
     /// Create the paired form of a signal for callers that want one copyable
     /// capability instead of separate read/write values.
-    pub fn rw_signal<T: 'scope>(&self, value: T) -> RwSignal<'scope, T> {
-        let (read, write) = self.signal(value);
-        RwSignal { read, write }
+    pub fn rw_signal<T: 'scope>(&self, value: T) -> ReactiveResult<RwSignal<'scope, T>> {
+        let (read, write) = self.signal(value)?;
+        Ok(RwSignal { read, write })
     }
 
     /// Store a non-reactive value under this scope.
-    pub fn stored<T: 'scope>(&self, value: T) -> StoredValue<'scope, T> {
-        self.try_stored(value)
-            .unwrap_or_else(|error| panic!("创建 scoped stored value 失败: {error}"))
-    }
-
-    pub fn try_stored<T: 'scope>(&self, value: T) -> ReactiveResult<StoredValue<'scope, T>> {
+    pub fn stored<T: 'scope>(&self, value: T) -> ReactiveResult<StoredValue<'scope, T>> {
         let state = self.state();
         let raw = state
             .try_borrow_mut()
@@ -490,7 +433,10 @@ impl<'scope> Scope<'scope> {
     ///
     /// Use [`crate::unwind_safe`] when the callback captures interior-mutable
     /// state such as `Rc<RefCell<_>>`.
-    pub fn completion_once<T: 'static, E, F>(&self, callback: F) -> CompletionOnce<T, E>
+    pub fn completion_once<T: 'static, E, F>(
+        &self,
+        callback: F,
+    ) -> ReactiveResult<CompletionOnce<T, E>>
     where
         E: 'scope,
         F: FnMut(T) -> Result<(), E> + UnwindSafe + 'scope,
@@ -502,7 +448,10 @@ impl<'scope> Scope<'scope> {
     ///
     /// Use [`crate::unwind_safe`] when the callback captures interior-mutable
     /// state such as `Rc<RefCell<_>>`.
-    pub fn completion_sender<T: 'static, E, F>(&self, callback: F) -> CompletionSender<T, E>
+    pub fn completion_sender<T: 'static, E, F>(
+        &self,
+        callback: F,
+    ) -> ReactiveResult<CompletionSender<T, E>>
     where
         E: 'scope,
         F: FnMut(T) -> Result<(), E> + UnwindSafe + 'scope,
@@ -542,14 +491,7 @@ impl<'scope> OwnedScope<'scope> {
     }
 
     /// Create a nested persistent owner using the same scheduler.
-    pub fn child(&self) -> Self {
-        self.try_child()
-            .unwrap_or_else(|error| panic!("创建 owned child scope 失败: {error}"))
-    }
-
-    /// Create a nested persistent owner without panicking on an inactive
-    /// owner or a conflicting scope borrow.
-    pub fn try_child(&self) -> ReactiveResult<Self> {
+    pub fn child(&self) -> ReactiveResult<Self> {
         if !self.active.get() {
             return Err(ReactiveError::NoSuchNode);
         }
@@ -568,7 +510,7 @@ impl<'scope> OwnedScope<'scope> {
     }
 
     #[doc(hidden)]
-    pub fn try_validate_inputs(&self, inputs: &RuntimeInputs) -> ReactiveResult<()> {
+    pub fn validate_inputs(&self, inputs: &RuntimeInputs) -> ReactiveResult<()> {
         if !self.active.get() {
             return Err(ReactiveError::NoSuchNode);
         }
@@ -746,13 +688,16 @@ impl<'scope> OwnedScope<'scope> {
     ///
     /// Use [`crate::unwind_safe`] when the callback captures interior-mutable
     /// state such as `Rc<RefCell<_>>`.
-    pub fn completion_once<T: 'static, E, F>(&self, callback: F) -> CompletionOnce<T, E>
+    pub fn completion_once<T: 'static, E, F>(
+        &self,
+        callback: F,
+    ) -> ReactiveResult<CompletionOnce<T, E>>
     where
         E: 'scope,
         F: FnMut(T) -> Result<(), E> + UnwindSafe + 'scope,
     {
         if !self.is_active() {
-            return CompletionOnce::inactive();
+            return Err(ReactiveError::NoSuchNode);
         }
         create_completion_once(&self.storage, self.state(), callback)
     }
@@ -761,30 +706,36 @@ impl<'scope> OwnedScope<'scope> {
     ///
     /// Use [`crate::unwind_safe`] when the callback captures interior-mutable
     /// state such as `Rc<RefCell<_>>`.
-    pub fn completion_sender<T: 'static, E, F>(&self, callback: F) -> CompletionSender<T, E>
+    pub fn completion_sender<T: 'static, E, F>(
+        &self,
+        callback: F,
+    ) -> ReactiveResult<CompletionSender<T, E>>
     where
         E: 'scope,
         F: FnMut(T) -> Result<(), E> + UnwindSafe + 'scope,
     {
         if !self.is_active() {
-            return CompletionSender::inactive();
+            return Err(ReactiveError::NoSuchNode);
         }
         create_completion_sender(&self.storage, self.state(), callback)
     }
 
     /// Dispose this owner exactly once. Cleanup panics follow the same
     /// propagation rules as lexical scope disposal.
-    pub fn dispose(&self) {
+    pub fn dispose(&self) -> Result<(), CleanupError> {
         if !self.active.replace(false) {
-            return;
+            return Ok(());
         }
-        self.storage.dispose_untracked();
+        match catch_unwind(AssertUnwindSafe(|| self.storage.dispose_untracked())) {
+            Ok(()) => Ok(()),
+            Err(panic) => Err(CleanupError::from_panic(panic)),
+        }
     }
 }
 
 impl Drop for OwnedScope<'_> {
     fn drop(&mut self) {
-        self.dispose();
+        let _ = self.dispose();
     }
 }
 
@@ -820,15 +771,15 @@ mod tests {
 
     fn rejected_creations(scope: Scope<'_>) -> Vec<ReactiveResult<()>> {
         vec![
-            scope.try_signal(0_i32).map(|_| ()),
-            scope.try_stored(()).map(|_| ()),
+            scope.signal(0_i32).map(|_| ()),
+            scope.stored(()).map(|_| ()),
             scope.callback(|_: ()| Ok::<(), ()>(())).map(|_| ()),
-            scope.try_node_ref::<()>().map(|_| ()),
+            scope.node_ref::<()>().map(|_| ()),
         ]
     }
 
     fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, ()> {
-        scope.error_handler(|_| {})
+        scope.error_handler(|_| {}).expect("handler registration")
     }
 
     #[test]
@@ -920,7 +871,7 @@ mod tests {
         let state = scope.state();
         let observations = Rc::new(RefCell::new(Vec::new()));
 
-        let _sentinel = scope.signal(());
+        let _sentinel = scope.signal(()).expect("fallible reactive creation");
         let callback_probe = drop_probe(
             scope,
             state.clone(),
@@ -952,9 +903,13 @@ mod tests {
             },
             observations.clone(),
         );
-        let _stored = scope.stored(stored_probe);
+        let _stored = scope
+            .stored(stored_probe)
+            .expect("fallible reactive creation");
 
-        let node_ref = scope.node_ref::<DropProbe<'_>>();
+        let node_ref = scope
+            .node_ref::<DropProbe<'_>>()
+            .expect("node ref creation");
         node_ref
             .set(drop_probe(
                 scope,
@@ -1028,16 +983,8 @@ mod tests {
         scope
             .on_cleanup(
                 move || {
-                    *child_rejected_in_cleanup.borrow_mut() =
-                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            scope_copy.child(|_| ())
-                        }))
-                        .is_err();
-                    *owned_rejected_in_cleanup.borrow_mut() =
-                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            scope_copy.owned_scope()
-                        }))
-                        .is_err();
+                    *child_rejected_in_cleanup.borrow_mut() = scope_copy.child(|_| ()).is_err();
+                    *owned_rejected_in_cleanup.borrow_mut() = scope_copy.owned_scope().is_err();
                     Ok(())
                 },
                 handler(scope),
@@ -1062,7 +1009,7 @@ mod tests {
 
         let replacement = ScopeStorage::new(scheduler);
         assert!(matches!(
-            scope.try_signal(0_i32),
+            scope.signal(0_i32),
             Err(ReactiveError::NoSuchNode)
         ));
         assert!(replacement.is_active());
@@ -1097,7 +1044,7 @@ mod tests {
             storage: &storage,
             _marker: PhantomData,
         };
-        let owner = scope.owned_scope();
+        let owner = scope.owned_scope().expect("fallible reactive creation");
         let state = owner.state();
         let state_borrow = state.borrow_mut();
 
@@ -1107,7 +1054,7 @@ mod tests {
         ));
 
         drop(state_borrow);
-        owner.dispose();
+        owner.dispose().expect("owner disposal");
         storage.dispose_untracked();
     }
 }

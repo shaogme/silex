@@ -9,7 +9,7 @@ use std::{
 };
 
 fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, ()> {
-    scope.error_handler(|_| {})
+    scope.error_handler(|_| {}).expect("handler registration")
 }
 
 struct ReenterOnDrop<'scope> {
@@ -32,7 +32,10 @@ impl PartialEq for ReadOnDrop<'_> {
 impl Drop for ReadOnDrop<'_> {
     fn drop(&mut self) {
         self.drops.set(self.drops.get() + 1);
-        let _ = self.probe.try_get();
+        assert!(matches!(
+            self.probe.get(),
+            Ok(_) | Err(ReactiveError::NoSuchNode)
+        ));
     }
 }
 
@@ -55,7 +58,7 @@ impl Drop for DropEvent {
 impl Drop for ReenterOnDrop<'_> {
     fn drop(&mut self) {
         self.called.set(true);
-        self.error.set(self.setter.try_set(1).err());
+        self.error.set(self.setter.set(1).err());
     }
 }
 
@@ -64,68 +67,82 @@ fn all_public_node_capabilities_are_copy() {
     fn assert_copy<T: Copy>(_: T) {}
 
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let signal = scope.rw_signal(0i32);
-        let read = signal.read();
-        let write = signal.write();
-        let memo = scope.memo(move |_| read.get());
-        let derived = scope.derived(move || 1i32);
-        let effect = scope
-            .effect(|| Ok(()), handler(scope))
-            .expect("effect should initialize");
-        let stored = scope.stored(1i32);
-        let callback = scope
-            .callback(|_: ()| Ok::<(), ReactiveError>(()))
-            .expect("callback should initialize");
-        let node_ref = scope.node_ref::<i32>();
+    runtime
+        .child(|scope| {
+            let signal = scope.rw_signal(0i32).expect("fallible reactive creation");
+            let read = signal.read();
+            let write = signal.write();
+            let memo = scope
+                .memo(move |_| read.get().expect("reactive read"))
+                .expect("memo creation");
+            let derived = scope.derived(move || 1i32).expect("derived creation");
+            let effect = scope
+                .effect(|| Ok(()), handler(scope))
+                .expect("effect should initialize");
+            let stored = scope.stored(1i32).expect("fallible reactive creation");
+            let callback = scope
+                .callback(|_: ()| Ok::<(), ReactiveError>(()))
+                .expect("callback should initialize");
+            let node_ref = scope.node_ref::<i32>().expect("fallible reactive creation");
 
-        assert_copy(read);
-        assert_copy(write);
-        assert_copy(signal);
-        assert_copy(memo);
-        assert_copy(derived);
-        assert_copy(effect);
-        assert_copy(stored);
-        assert_copy(callback);
-        assert_copy(node_ref);
+            assert_copy(read);
+            assert_copy(write);
+            assert_copy(signal);
+            assert_copy(memo);
+            assert_copy(derived);
+            assert_copy(effect);
+            assert_copy(stored);
+            assert_copy(callback);
+            assert_copy(node_ref);
 
-        let _: Option<ReadSignal<'_, i32>> = Some(read);
-        let _: Option<WriteSignal<'_, i32>> = Some(write);
-        let _: Option<Memo<'_, i32>> = Some(memo);
-        let _: Option<Derived<'_, i32>> = Some(derived);
-        let _: Option<Effect<'_>> = Some(effect);
-        let _: Option<StoredValue<'_, i32>> = Some(stored);
-        let _: Option<Callback<'_, ()>> = Some(callback);
-        let _: Option<NodeRef<'_, i32>> = Some(node_ref);
-    });
+            let _: Option<ReadSignal<'_, i32>> = Some(read);
+            let _: Option<WriteSignal<'_, i32>> = Some(write);
+            let _: Option<Memo<'_, i32>> = Some(memo);
+            let _: Option<Derived<'_, i32>> = Some(derived);
+            let _: Option<Effect<'_>> = Some(effect);
+            let _: Option<StoredValue<'_, i32>> = Some(stored);
+            let _: Option<Callback<'_, ()>> = Some(callback);
+            let _: Option<NodeRef<'_, i32>> = Some(node_ref);
+        })
+        .expect("test operation should succeed");
 }
 
 #[test]
 fn stored_callback_and_node_ref_are_scope_owned() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let stored = scope.stored(String::from("before"));
-        stored.update(|value| value.push_str(" after"));
-        assert!(stored.with(|value| value == "before after"));
+    runtime
+        .child(|scope| {
+            let stored = scope
+                .stored(String::from("before"))
+                .expect("fallible reactive creation");
+            stored
+                .update(|value| value.push_str(" after"))
+                .expect("test operation should succeed");
+            assert!(
+                stored
+                    .with(|value| value == "before after")
+                    .expect("stored read")
+            );
 
-        let called = Rc::new(Cell::new(0));
-        let called_in_callback = called.clone();
-        let callback = scope
-            .callback(move |_: ()| {
-                called_in_callback.set(called_in_callback.get() + 1);
-                Ok::<(), ReactiveError>(())
-            })
-            .expect("callback should initialize");
-        callback.invoke(()).expect("callback should be alive");
-        assert_eq!(called.get(), 1);
+            let called = Rc::new(Cell::new(0));
+            let called_in_callback = called.clone();
+            let callback = scope
+                .callback(move |_: ()| {
+                    called_in_callback.set(called_in_callback.get() + 1);
+                    Ok::<(), ReactiveError>(())
+                })
+                .expect("callback should initialize");
+            callback.invoke(()).expect("callback should be alive");
+            assert_eq!(called.get(), 1);
 
-        let reference = scope.node_ref::<u32>();
-        assert_eq!(reference.get(), None);
-        reference.set(7).expect("node ref should be writable");
-        assert_eq!(reference.get(), Some(7));
-        reference.clear().expect("node ref should be clearable");
-        assert_eq!(reference.get(), None);
-    });
+            let reference = scope.node_ref::<u32>().expect("fallible reactive creation");
+            assert_eq!(reference.get(), Ok(None));
+            reference.set(7).expect("node ref should be writable");
+            assert_eq!(reference.get(), Ok(Some(7)));
+            reference.clear().expect("node ref should be clearable");
+            assert_eq!(reference.get(), Ok(None));
+        })
+        .expect("test operation should succeed");
 }
 
 #[test]
@@ -134,48 +151,52 @@ fn callback_user_error_is_returned_and_callback_remains_reusable() {
     let calls = Rc::new(Cell::new(0));
     let seen = Rc::new(Cell::new(0));
 
-    runtime.child(|scope| {
-        let calls_in_callback = calls.clone();
-        let seen_in_callback = seen.clone();
-        let callback = scope
-            .callback(move |value: i32| {
-                calls_in_callback.set(calls_in_callback.get() + 1);
-                if value == 0 {
-                    Err(CallbackError::Rejected)
-                } else {
-                    seen_in_callback.set(value);
-                    Ok(())
-                }
-            })
-            .expect("callback should initialize");
+    runtime
+        .child(|scope| {
+            let calls_in_callback = calls.clone();
+            let seen_in_callback = seen.clone();
+            let callback = scope
+                .callback(move |value: i32| {
+                    calls_in_callback.set(calls_in_callback.get() + 1);
+                    if value == 0 {
+                        Err(CallbackError::Rejected)
+                    } else {
+                        seen_in_callback.set(value);
+                        Ok(())
+                    }
+                })
+                .expect("callback should initialize");
 
-        assert!(matches!(
-            callback.invoke(0),
-            Err(CallbackInvokeError::User(CallbackError::Rejected))
-        ));
-        assert_eq!(calls.get(), 1);
-        assert_eq!(seen.get(), 0);
+            assert!(matches!(
+                callback.invoke(0),
+                Err(CallbackInvokeError::User(CallbackError::Rejected))
+            ));
+            assert_eq!(calls.get(), 1);
+            assert_eq!(seen.get(), 0);
 
-        callback.invoke(7).expect("callback should remain reusable");
-        assert_eq!(calls.get(), 2);
-        assert_eq!(seen.get(), 7);
-    });
+            callback.invoke(7).expect("callback should remain reusable");
+            assert_eq!(calls.get(), 2);
+            assert_eq!(seen.get(), 7);
+        })
+        .expect("test operation should succeed");
 }
 
 #[test]
 fn callback_runtime_error_and_user_reactive_error_are_distinct() {
     let mut runtime = Runtime::new();
 
-    runtime.child(|scope| {
-        let callback = scope
-            .callback(|_: ()| Err::<(), ReactiveError>(ReactiveError::NoSuchNode))
-            .expect("callback should initialize");
+    runtime
+        .child(|scope| {
+            let callback = scope
+                .callback(|_: ()| Err::<(), ReactiveError>(ReactiveError::NoSuchNode))
+                .expect("callback should initialize");
 
-        assert!(matches!(
-            callback.invoke(()),
-            Err(CallbackInvokeError::User(ReactiveError::NoSuchNode))
-        ));
-    });
+            assert!(matches!(
+                callback.invoke(()),
+                Err(CallbackInvokeError::User(ReactiveError::NoSuchNode))
+            ));
+        })
+        .expect("test operation should succeed");
 }
 
 #[test]
@@ -184,28 +205,32 @@ fn callback_dispatches_user_error_once_after_releasing_its_lease() {
     let handler_calls = Rc::new(Cell::new(0));
     let observed = Rc::new(Cell::new(0));
 
-    runtime.child(|scope| {
-        let (signal, set_signal) = scope.signal(0_i32);
-        let handler_calls_in_handler = handler_calls.clone();
-        let handler = scope.error_handler(move |_: &'static str| {
-            handler_calls_in_handler.set(handler_calls_in_handler.get() + 1);
-            set_signal.set(1);
-        });
-        let callback = scope
-            .callback(|_: ()| Err::<(), &'static str>("callback failed"))
-            .expect("callback should initialize");
+    runtime
+        .child(|scope| {
+            let (signal, set_signal) = scope.signal(0_i32).expect("fallible reactive creation");
+            let handler_calls_in_handler = handler_calls.clone();
+            let handler = scope
+                .error_handler(move |_: &'static str| {
+                    handler_calls_in_handler.set(handler_calls_in_handler.get() + 1);
+                    set_signal.set(1).expect("signal update");
+                })
+                .expect("handler registration");
+            let callback = scope
+                .callback(|_: ()| Err::<(), &'static str>("callback failed"))
+                .expect("callback should initialize");
 
-        assert!(matches!(
-            callback.invoke(()),
-            Err(CallbackInvokeError::User("callback failed"))
-        ));
-        assert_eq!(handler_calls.get(), 0);
+            assert!(matches!(
+                callback.invoke(()),
+                Err(CallbackInvokeError::User("callback failed"))
+            ));
+            assert_eq!(handler_calls.get(), 0);
 
-        callback
-            .dispatch((), handler)
-            .expect("error handler should consume the callback error");
-        observed.set(signal.get());
-    });
+            callback
+                .dispatch((), handler)
+                .expect("error handler should consume the callback error");
+            observed.set(signal.get().expect("reactive read"));
+        })
+        .expect("test operation should succeed");
 
     assert_eq!(handler_calls.get(), 1);
     assert_eq!(observed.get(), 1);
@@ -214,27 +239,29 @@ fn callback_dispatches_user_error_once_after_releasing_its_lease() {
 #[test]
 fn recursive_callback_invocation_reports_borrow_conflict() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let slot: Rc<RefCell<Option<Callback<'_, (), ReactiveError>>>> =
-            Rc::new(RefCell::new(None));
-        let slot_in_callback = slot.clone();
-        let callback = scope
-            .callback(move |_: ()| {
-                let nested = slot_in_callback
-                    .borrow()
-                    .as_ref()
-                    .copied()
-                    .expect("callback should be initialized");
-                assert!(matches!(
-                    nested.invoke(()),
-                    Err(CallbackInvokeError::Runtime(ReactiveError::BorrowConflict))
-                ));
-                Ok::<(), ReactiveError>(())
-            })
-            .expect("callback should initialize");
-        *slot.borrow_mut() = Some(callback);
-        callback.invoke(()).expect("outer callback should succeed");
-    });
+    runtime
+        .child(|scope| {
+            let slot: Rc<RefCell<Option<Callback<'_, (), ReactiveError>>>> =
+                Rc::new(RefCell::new(None));
+            let slot_in_callback = slot.clone();
+            let callback = scope
+                .callback(move |_: ()| {
+                    let nested = slot_in_callback
+                        .borrow()
+                        .as_ref()
+                        .copied()
+                        .expect("callback should be initialized");
+                    assert!(matches!(
+                        nested.invoke(()),
+                        Err(CallbackInvokeError::Runtime(ReactiveError::BorrowConflict))
+                    ));
+                    Ok::<(), ReactiveError>(())
+                })
+                .expect("callback should initialize");
+            *slot.borrow_mut() = Some(callback);
+            callback.invoke(()).expect("outer callback should succeed");
+        })
+        .expect("test operation should succeed");
 }
 
 #[test]
@@ -243,25 +270,27 @@ fn callback_panic_keeps_callback_available_for_the_next_invoke() {
     let called = Rc::new(Cell::new(0));
     let should_panic = Rc::new(Cell::new(true));
 
-    runtime.child(|scope| {
-        let called_in_callback = called.clone();
-        let panic_in_callback = should_panic.clone();
-        let callback = scope
-            .callback(move |_: ()| {
-                if panic_in_callback.replace(false) {
-                    panic!("callback panic");
-                }
-                called_in_callback.set(called_in_callback.get() + 1);
-                Ok::<(), ReactiveError>(())
-            })
-            .expect("callback should initialize");
+    runtime
+        .child(|scope| {
+            let called_in_callback = called.clone();
+            let panic_in_callback = should_panic.clone();
+            let callback = scope
+                .callback(move |_: ()| {
+                    if panic_in_callback.replace(false) {
+                        panic!("callback panic");
+                    }
+                    called_in_callback.set(called_in_callback.get() + 1);
+                    Ok::<(), ReactiveError>(())
+                })
+                .expect("callback should initialize");
 
-        let panic = catch_unwind(AssertUnwindSafe(|| {
-            callback.invoke(()).expect("callback exists");
-        }));
-        assert!(panic.is_err());
-        callback.invoke(()).expect("callback should be restored");
-    });
+            let panic = catch_unwind(AssertUnwindSafe(|| {
+                callback.invoke(()).expect("callback exists");
+            }));
+            assert!(panic.is_err());
+            callback.invoke(()).expect("callback should be restored");
+        })
+        .expect("test operation should succeed");
 
     assert_eq!(called.get(), 1);
 }
@@ -269,36 +298,52 @@ fn callback_panic_keeps_callback_available_for_the_next_invoke() {
 #[test]
 fn stored_update_panic_keeps_the_stored_value_and_releases_the_lease() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let stored = scope.stored(String::from("before"));
-        let panic = catch_unwind(AssertUnwindSafe(|| {
-            stored.update(|_| panic!("stored update panic"));
-        }));
-        assert!(panic.is_err());
-        assert!(stored.with(|value| value == "before"));
+    runtime
+        .child(|scope| {
+            let stored = scope
+                .stored(String::from("before"))
+                .expect("fallible reactive creation");
+            let panic = catch_unwind(AssertUnwindSafe(|| {
+                stored
+                    .update(|_| panic!("stored update panic"))
+                    .expect("test operation should succeed");
+            }));
+            assert!(panic.is_err());
+            assert!(stored.with(|value| value == "before").expect("stored read"));
 
-        stored.update(|value| value.push_str(" after"));
-        assert!(stored.with(|value| value == "before after"));
-    });
+            stored
+                .update(|value| value.push_str(" after"))
+                .expect("test operation should succeed");
+            assert!(
+                stored
+                    .with(|value| value == "before after")
+                    .expect("stored read")
+            );
+        })
+        .expect("test operation should succeed");
 }
 
 #[test]
 fn updating_one_signal_can_read_another_signal() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let (source, set_source) = scope.signal(1i32);
-        let (other, set_other) = scope.signal(2i32);
-        set_source
-            .try_update(|value| {
-                *value += other.get();
-            })
-            .expect("updating one signal should release state borrow");
-        assert_eq!(source.get(), 3);
+    runtime
+        .child(|scope| {
+            let (source, set_source) = scope.signal(1i32).expect("fallible reactive creation");
+            let (other, set_other) = scope.signal(2i32).expect("fallible reactive creation");
+            set_source
+                .update(|value| {
+                    *value += other.get().expect("reactive read");
+                })
+                .expect("updating one signal should release state borrow");
+            assert_eq!(source.get(), Ok(3));
 
-        set_other.set(4);
-        set_source.update(|value| *value += other.get());
-        assert_eq!(source.get(), 7);
-    });
+            set_other.set(4).expect("test operation should succeed");
+            set_source
+                .update(|value| *value += other.get().expect("reactive read"))
+                .expect("signal update");
+            assert_eq!(source.get(), Ok(7));
+        })
+        .expect("test operation should succeed");
 }
 
 #[test]
@@ -306,29 +351,33 @@ fn updating_another_signal_during_read_defers_effect_flush() {
     let mut runtime = Runtime::new();
     let runs = Rc::new(Cell::new(0));
 
-    runtime.child(|scope| {
-        let (source, _set_source) = scope.signal(0i32);
-        let (other, set_other) = scope.signal(0i32);
-        let runs_in_effect = runs.clone();
-        scope
-            .effect(
-                move || {
-                    let _ = source.get();
-                    let _ = other.get();
-                    runs_in_effect.set(runs_in_effect.get() + 1);
-                    Ok(())
-                },
-                handler(scope),
-            )
-            .expect("effect should initialize");
+    runtime
+        .child(|scope| {
+            let (source, _set_source) = scope.signal(0i32).expect("fallible reactive creation");
+            let (other, set_other) = scope.signal(0i32).expect("fallible reactive creation");
+            let runs_in_effect = runs.clone();
+            scope
+                .effect(
+                    move || {
+                        source.get().expect("test operation should succeed");
+                        other.get().expect("test operation should succeed");
+                        runs_in_effect.set(runs_in_effect.get() + 1);
+                        Ok(())
+                    },
+                    handler(scope),
+                )
+                .expect("effect should initialize");
 
-        let result = catch_unwind(AssertUnwindSafe(|| {
-            source.with(|_| set_other.set(1));
-        }));
+            let result = catch_unwind(AssertUnwindSafe(|| {
+                source
+                    .with(|_| set_other.set(1).expect("signal update"))
+                    .expect("reactive read");
+            }));
 
-        assert!(result.is_ok());
-        assert_eq!(runs.get(), 2);
-    });
+            assert!(result.is_ok());
+            assert_eq!(runs.get(), 2);
+        })
+        .expect("test operation should succeed");
 }
 
 #[test]
@@ -337,34 +386,37 @@ fn computation_payload_drop_observes_disposed_scope() {
     let called = Rc::new(Cell::new(false));
     let error = Rc::new(Cell::new(None));
 
-    runtime.child(|scope| {
-        let scope_copy = scope;
-        let called_in_outer = called.clone();
-        let error_in_outer = error.clone();
-        scope
-            .effect(
-                move || {
-                    let (_source, set_source) = scope_copy.signal(0i32);
-                    let guard = ReenterOnDrop {
-                        setter: set_source,
-                        called: called_in_outer.clone(),
-                        error: error_in_outer.clone(),
-                    };
-                    scope_copy
-                        .effect(
-                            move || {
-                                let _ = &guard;
-                                Ok(())
-                            },
-                            handler(scope_copy),
-                        )
-                        .expect("nested effect should initialize");
-                    Ok(())
-                },
-                handler(scope),
-            )
-            .expect("effect should initialize");
-    });
+    runtime
+        .child(|scope| {
+            let scope_copy = scope;
+            let called_in_outer = called.clone();
+            let error_in_outer = error.clone();
+            scope
+                .effect(
+                    move || {
+                        let (_source, set_source) =
+                            scope_copy.signal(0i32).expect("fallible reactive creation");
+                        let guard = ReenterOnDrop {
+                            setter: set_source,
+                            called: called_in_outer.clone(),
+                            error: error_in_outer.clone(),
+                        };
+                        scope_copy
+                            .effect(
+                                move || {
+                                    std::hint::black_box(&guard);
+                                    Ok(())
+                                },
+                                handler(scope_copy),
+                            )
+                            .expect("nested effect should initialize");
+                        Ok(())
+                    },
+                    handler(scope),
+                )
+                .expect("effect should initialize");
+        })
+        .expect("test operation should succeed");
     assert!(called.get());
     assert_eq!(error.get(), Some(ReactiveError::NoSuchNode));
 }
@@ -372,119 +424,145 @@ fn computation_payload_drop_observes_disposed_scope() {
 #[test]
 fn nested_memo_child_payload_drop_does_not_track_the_outer_observer() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let (outer_source, set_outer_source) = scope.signal(0i32);
-        let (inner_source, set_inner_source) = scope.signal(0i32);
-        let (probe, set_probe) = scope.signal(0i32);
-        let drops = Rc::new(Cell::new(0));
-        let first_inner_run = Rc::new(Cell::new(true));
-        let scope_for_child = scope;
-        let probe_for_child = probe;
-        let drops_in_child = drops.clone();
-        let inner = scope.memo(move |_| {
-            let value = inner_source.get();
-            if first_inner_run.replace(false) {
-                let _ = scope_for_child.signal(ReadOnDrop {
-                    probe: probe_for_child,
-                    drops: drops_in_child.clone(),
-                });
-            }
-            value
-        });
-
-        let outer_runs = Rc::new(Cell::new(0));
-        let refresh_inner = Rc::new(Cell::new(false));
-        let outer_inner = inner;
-        let outer_source_in_effect = outer_source;
-        let set_inner_source_in_effect = set_inner_source;
-        let outer_runs_in_effect = outer_runs.clone();
-        let refresh_inner_in_effect = refresh_inner.clone();
-        scope
-            .effect(
-                move || {
-                    let _ = outer_source_in_effect.get();
-                    outer_runs_in_effect.set(outer_runs_in_effect.get() + 1);
-                    if refresh_inner_in_effect.replace(false) {
-                        set_inner_source_in_effect.set(1);
+    runtime
+        .child(|scope| {
+            let (outer_source, set_outer_source) =
+                scope.signal(0i32).expect("fallible reactive creation");
+            let (inner_source, set_inner_source) =
+                scope.signal(0i32).expect("fallible reactive creation");
+            let (probe, set_probe) = scope.signal(0i32).expect("fallible reactive creation");
+            let drops = Rc::new(Cell::new(0));
+            let first_inner_run = Rc::new(Cell::new(true));
+            let scope_for_child = scope;
+            let probe_for_child = probe;
+            let drops_in_child = drops.clone();
+            let inner = scope
+                .memo(move |_| {
+                    let value = inner_source.get().expect("reactive read");
+                    if first_inner_run.replace(false) {
+                        scope_for_child
+                            .signal(ReadOnDrop {
+                                probe: probe_for_child,
+                                drops: drops_in_child.clone(),
+                            })
+                            .expect("test operation should succeed");
                     }
-                    outer_inner
-                        .try_with_untracked(|_| ())
-                        .expect("inner memo should remain readable");
-                    Ok(())
-                },
-                handler(scope),
-            )
-            .expect("effect should initialize");
+                    value
+                })
+                .expect("memo creation");
 
-        assert_eq!(outer_runs.get(), 1);
-        assert_eq!(drops.get(), 0);
+            let outer_runs = Rc::new(Cell::new(0));
+            let refresh_inner = Rc::new(Cell::new(false));
+            let outer_inner = inner;
+            let outer_source_in_effect = outer_source;
+            let set_inner_source_in_effect = set_inner_source;
+            let outer_runs_in_effect = outer_runs.clone();
+            let refresh_inner_in_effect = refresh_inner.clone();
+            scope
+                .effect(
+                    move || {
+                        outer_source_in_effect
+                            .get()
+                            .expect("test operation should succeed");
+                        outer_runs_in_effect.set(outer_runs_in_effect.get() + 1);
+                        if refresh_inner_in_effect.replace(false) {
+                            set_inner_source_in_effect
+                                .set(1)
+                                .expect("test operation should succeed");
+                        }
+                        outer_inner
+                            .with_untracked(|_| ())
+                            .expect("inner memo should remain readable");
+                        Ok(())
+                    },
+                    handler(scope),
+                )
+                .expect("effect should initialize");
 
-        refresh_inner.set(true);
-        set_outer_source.set(1);
+            assert_eq!(outer_runs.get(), 1);
+            assert_eq!(drops.get(), 0);
 
-        assert_eq!(outer_runs.get(), 2);
-        assert_eq!(drops.get(), 1);
+            refresh_inner.set(true);
+            set_outer_source
+                .set(1)
+                .expect("test operation should succeed");
 
-        set_probe.set(1);
-        assert_eq!(outer_runs.get(), 2);
-    });
+            assert_eq!(outer_runs.get(), 2);
+            assert_eq!(drops.get(), 1);
+
+            set_probe.set(1).expect("test operation should succeed");
+            assert_eq!(outer_runs.get(), 2);
+        })
+        .expect("test operation should succeed");
 }
 
 #[test]
 fn nested_memo_result_drop_does_not_track_the_outer_observer() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let (outer_source, set_outer_source) = scope.signal(0i32);
-        let (inner_source, set_inner_source) = scope.signal(0i32);
-        let (probe, set_probe) = scope.signal(0i32);
-        let drops = Rc::new(Cell::new(0));
-        let inner = scope.memo({
-            let drops = drops.clone();
-            move |_| {
-                let _ = inner_source.get();
-                ReadOnDrop {
-                    probe,
-                    drops: drops.clone(),
-                }
-            }
-        });
-
-        let outer_runs = Rc::new(Cell::new(0));
-        let refresh_inner = Rc::new(Cell::new(false));
-        let outer_inner = inner;
-        let outer_source_in_effect = outer_source;
-        let set_inner_source_in_effect = set_inner_source;
-        let outer_runs_in_effect = outer_runs.clone();
-        let refresh_inner_in_effect = refresh_inner.clone();
-        scope
-            .effect(
-                move || {
-                    let _ = outer_source_in_effect.get();
-                    outer_runs_in_effect.set(outer_runs_in_effect.get() + 1);
-                    if refresh_inner_in_effect.replace(false) {
-                        set_inner_source_in_effect.set(1);
+    runtime
+        .child(|scope| {
+            let (outer_source, set_outer_source) =
+                scope.signal(0i32).expect("fallible reactive creation");
+            let (inner_source, set_inner_source) =
+                scope.signal(0i32).expect("fallible reactive creation");
+            let (probe, set_probe) = scope.signal(0i32).expect("fallible reactive creation");
+            let drops = Rc::new(Cell::new(0));
+            let inner = scope
+                .memo({
+                    let drops = drops.clone();
+                    move |_| {
+                        inner_source.get().expect("reactive read");
+                        ReadOnDrop {
+                            probe,
+                            drops: drops.clone(),
+                        }
                     }
-                    outer_inner
-                        .try_with_untracked(|_| ())
-                        .expect("inner memo should remain readable");
-                    Ok(())
-                },
-                handler(scope),
-            )
-            .expect("effect should initialize");
+                })
+                .expect("memo creation");
 
-        assert_eq!(outer_runs.get(), 1);
-        assert_eq!(drops.get(), 0);
+            let outer_runs = Rc::new(Cell::new(0));
+            let refresh_inner = Rc::new(Cell::new(false));
+            let outer_inner = inner;
+            let outer_source_in_effect = outer_source;
+            let set_inner_source_in_effect = set_inner_source;
+            let outer_runs_in_effect = outer_runs.clone();
+            let refresh_inner_in_effect = refresh_inner.clone();
+            scope
+                .effect(
+                    move || {
+                        outer_source_in_effect
+                            .get()
+                            .expect("test operation should succeed");
+                        outer_runs_in_effect.set(outer_runs_in_effect.get() + 1);
+                        if refresh_inner_in_effect.replace(false) {
+                            set_inner_source_in_effect
+                                .set(1)
+                                .expect("test operation should succeed");
+                        }
+                        outer_inner
+                            .with_untracked(|_| ())
+                            .expect("inner memo should remain readable");
+                        Ok(())
+                    },
+                    handler(scope),
+                )
+                .expect("effect should initialize");
 
-        refresh_inner.set(true);
-        set_outer_source.set(1);
+            assert_eq!(outer_runs.get(), 1);
+            assert_eq!(drops.get(), 0);
 
-        assert_eq!(outer_runs.get(), 2);
-        assert_eq!(drops.get(), 1);
+            refresh_inner.set(true);
+            set_outer_source
+                .set(1)
+                .expect("test operation should succeed");
 
-        set_probe.set(1);
-        assert_eq!(outer_runs.get(), 2);
-    });
+            assert_eq!(outer_runs.get(), 2);
+            assert_eq!(drops.get(), 1);
+
+            set_probe.set(1).expect("test operation should succeed");
+            assert_eq!(outer_runs.get(), 2);
+        })
+        .expect("test operation should succeed");
 }
 
 #[test]
@@ -492,53 +570,61 @@ fn child_payloads_drop_before_parent_computation_payload() {
     let events = Rc::new(RefCell::new(Vec::new()));
     let mut runtime = Runtime::new();
 
-    runtime.child(|scope| {
-        let scope_copy = scope;
-        let parent_event = DropEvent {
-            label: "parent",
-            events: events.clone(),
-        };
-        let child_events = events.clone();
-        scope
-            .effect(
-                move || {
-                    let _ = &parent_event;
-                    let signal_event = DropEvent {
-                        label: "signal",
-                        events: child_events.clone(),
-                    };
-                    let _ = scope_copy.signal(signal_event);
-
-                    let stored_event = DropEvent {
-                        label: "stored",
-                        events: child_events.clone(),
-                    };
-                    let _ = scope_copy.stored(stored_event);
-
-                    let callback_event = DropEvent {
-                        label: "callback",
-                        events: child_events.clone(),
-                    };
-                    let _ = scope_copy
-                        .callback(move |_: ()| {
-                            let _ = &callback_event;
-                            Ok::<(), ReactiveError>(())
-                        })
-                        .expect("callback should initialize");
-
-                    let node_ref = scope_copy.node_ref::<DropEvent>();
-                    node_ref
-                        .set(DropEvent {
-                            label: "node_ref",
+    runtime
+        .child(|scope| {
+            let scope_copy = scope;
+            let parent_event = DropEvent {
+                label: "parent",
+                events: events.clone(),
+            };
+            let child_events = events.clone();
+            scope
+                .effect(
+                    move || {
+                        std::hint::black_box(&parent_event);
+                        let signal_event = DropEvent {
+                            label: "signal",
                             events: child_events.clone(),
-                        })
-                        .expect("node ref type should match");
-                    Ok(())
-                },
-                handler(scope),
-            )
-            .expect("effect should initialize");
-    });
+                        };
+                        scope_copy
+                            .signal(signal_event)
+                            .expect("fallible reactive creation");
+
+                        let stored_event = DropEvent {
+                            label: "stored",
+                            events: child_events.clone(),
+                        };
+                        scope_copy
+                            .stored(stored_event)
+                            .expect("fallible reactive creation");
+
+                        let callback_event = DropEvent {
+                            label: "callback",
+                            events: child_events.clone(),
+                        };
+                        scope_copy
+                            .callback(move |_: ()| {
+                                std::hint::black_box(&callback_event);
+                                Ok::<(), ReactiveError>(())
+                            })
+                            .expect("callback should initialize");
+
+                        let node_ref = scope_copy
+                            .node_ref::<DropEvent>()
+                            .expect("node ref creation");
+                        node_ref
+                            .set(DropEvent {
+                                label: "node_ref",
+                                events: child_events.clone(),
+                            })
+                            .expect("node ref type should match");
+                        Ok(())
+                    },
+                    handler(scope),
+                )
+                .expect("effect should initialize");
+        })
+        .expect("test operation should succeed");
     let events = events.borrow();
     assert_eq!(events.len(), 5);
     let parent_position = events
@@ -561,36 +647,40 @@ fn child_callback_payload_drop_can_schedule_an_active_parent_effect() {
     let called = Rc::new(Cell::new(false));
     let error = Rc::new(Cell::new(None));
 
-    runtime.child(|scope| {
-        let (source, set_source) = scope.signal(0i32);
-        let seen_in_effect = seen.clone();
-        scope
-            .effect(
-                move || {
-                    seen_in_effect.set(source.get());
-                    Ok(())
-                },
-                handler(scope),
-            )
-            .expect("effect should initialize");
+    runtime
+        .child(|scope| {
+            let (source, set_source) = scope.signal(0i32).expect("fallible reactive creation");
+            let seen_in_effect = seen.clone();
+            scope
+                .effect(
+                    move || {
+                        seen_in_effect.set(source.get().expect("reactive read"));
+                        Ok(())
+                    },
+                    handler(scope),
+                )
+                .expect("effect should initialize");
 
-        let setter = set_source;
-        scope.child(|child| {
-            let drop_probe = ReenterOnDrop {
-                setter,
-                called: called.clone(),
-                error: error.clone(),
-            };
-            let _callback = child
-                .callback(move |_: ()| {
-                    let _ = &drop_probe;
-                    Ok::<(), ReactiveError>(())
+            let setter = set_source;
+            scope
+                .child(|child| {
+                    let drop_probe = ReenterOnDrop {
+                        setter,
+                        called: called.clone(),
+                        error: error.clone(),
+                    };
+                    let _callback = child
+                        .callback(move |_: ()| {
+                            std::hint::black_box(&drop_probe);
+                            Ok::<(), ReactiveError>(())
+                        })
+                        .expect("callback should initialize");
                 })
-                .expect("callback should initialize");
-        });
+                .expect("test operation should succeed");
 
-        assert_eq!(seen.get(), 1);
-    });
+            assert_eq!(seen.get(), 1);
+        })
+        .expect("test operation should succeed");
 
     assert!(called.get());
     assert_eq!(error.get(), None);
@@ -601,25 +691,29 @@ fn stored_value_update_flushes_after_the_write_lease_is_released() {
     let mut runtime = Runtime::new();
     let seen = Rc::new(Cell::new(0));
 
-    runtime.child(|scope| {
-        let (source, set_source) = scope.signal(0i32);
-        let stored = scope.stored(0i32);
-        let seen_in_effect = seen.clone();
-        scope
-            .effect(
-                move || {
-                    seen_in_effect.set(source.get());
-                    Ok(())
-                },
-                handler(scope),
-            )
-            .expect("effect should initialize");
+    runtime
+        .child(|scope| {
+            let (source, set_source) = scope.signal(0i32).expect("fallible reactive creation");
+            let stored = scope.stored(0i32).expect("fallible reactive creation");
+            let seen_in_effect = seen.clone();
+            scope
+                .effect(
+                    move || {
+                        seen_in_effect.set(source.get().expect("reactive read"));
+                        Ok(())
+                    },
+                    handler(scope),
+                )
+                .expect("effect should initialize");
 
-        stored.update(|value| {
-            *value = 1;
-            set_source.set(1);
-        });
+            stored
+                .update(|value| {
+                    *value = 1;
+                    set_source.set(1).expect("test operation should succeed");
+                })
+                .expect("test operation should succeed");
 
-        assert_eq!(seen.get(), 1);
-    });
+            assert_eq!(seen.get(), 1);
+        })
+        .expect("test operation should succeed");
 }
