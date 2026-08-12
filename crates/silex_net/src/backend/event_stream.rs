@@ -9,8 +9,8 @@ use wasm_bindgen::{JsCast, closure::Closure};
 use web_sys::{Event, EventSource as JsEventSource, MessageEvent};
 
 use silex_core::{
-    CallbackInvokeError, CompletionSender, ErrorReporter, Memo, ReactiveError, ReadSignal,
-    RuntimeInputs, RwSignal, Scope, SilexError, SilexResult, StoredValue, WriteSignal, unwind_safe,
+    CallbackInvokeError, CompletionSender, ErrorReporter, Memo, ReadSignal, RuntimeInputs,
+    RwSignal, Scope, SilexError, SilexResult, StoredValue, WriteSignal, unwind_safe,
 };
 
 use crate::{
@@ -239,10 +239,9 @@ struct EventStreamInner<'scope> {
 }
 
 fn cleanup_stored_inner<'scope>(inner: StoredValue<'scope, EventStreamInner<'scope>>) {
-    match inner.try_update(EventStreamInner::cleanup) {
-        Ok(()) | Err(ReactiveError::NoSuchNode) => {}
-        Err(error) => panic!("EventStream cleanup failed: {error}"),
-    }
+    inner
+        .try_update(EventStreamInner::cleanup)
+        .unwrap_or_else(|error| panic!("EventStream cleanup failed: {error}"));
 }
 
 impl Drop for EventStreamInner<'_> {

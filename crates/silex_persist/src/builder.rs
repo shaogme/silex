@@ -472,7 +472,7 @@ where
         self.scope
             .on_cleanup(
                 move || -> SilexResult<()> {
-                    let (subscription, timer) = take_controller_resources(cleanup_controller);
+                    let (subscription, timer) = take_controller_resources(cleanup_controller)?;
                     if let Some(timer) = &timer {
                         timer.cancel();
                     }

@@ -11,9 +11,8 @@ use wasm_bindgen::{JsCast, closure::Closure};
 use web_sys::{Event, MessageEvent, WebSocket as JsWebSocket};
 
 use silex_core::{
-    CallbackInvokeError, CompletionSender, ErrorReporter, Memo, ReactiveError, ReadSignal,
-    RuntimeInputs, Scope, SilexError, SilexResult, StoredValue, TaskHandle, WriteSignal,
-    unwind_safe,
+    CallbackInvokeError, CompletionSender, ErrorReporter, Memo, ReadSignal, RuntimeInputs, Scope,
+    SilexError, SilexResult, StoredValue, TaskHandle, WriteSignal, unwind_safe,
 };
 
 use crate::{
@@ -255,10 +254,9 @@ struct WebSocketInner<'scope> {
 }
 
 fn cleanup_stored_inner<'scope>(inner: StoredValue<'scope, WebSocketInner<'scope>>) {
-    match inner.try_update(WebSocketInner::cleanup) {
-        Ok(()) | Err(ReactiveError::NoSuchNode) => {}
-        Err(error) => panic!("WebSocket cleanup failed: {error}"),
-    }
+    inner
+        .try_update(WebSocketInner::cleanup)
+        .unwrap_or_else(|error| panic!("WebSocket cleanup failed: {error}"));
 }
 
 impl Drop for WebSocketInner<'_> {

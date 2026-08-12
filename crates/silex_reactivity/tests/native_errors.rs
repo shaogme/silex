@@ -336,3 +336,29 @@ fn cleanup_errors_do_not_skip_the_remaining_cleanup_batch() {
     assert_eq!(errors.borrow().as_slice(), &["cleanup"]);
     assert!(second_cleanup_ran.get());
 }
+
+#[test]
+fn final_cleanup_error_dispatch_can_access_a_stored_value() {
+    let mut runtime = Runtime::new();
+    let observed = Rc::new(Cell::new(0));
+
+    runtime.child(|scope| {
+        let stored = scope.stored(1_i32);
+        let observed_in_handler = observed.clone();
+        let handler = scope.error_handler(move |_: &'static str| {
+            observed_in_handler.set(
+                stored
+                    .try_update(|value| {
+                        *value = 2;
+                        *value
+                    })
+                    .expect("stored value should survive error dispatch"),
+            );
+        });
+        scope
+            .on_cleanup(|| Err("final cleanup"), handler)
+            .expect("cleanup should register");
+    });
+
+    assert_eq!(observed.get(), 2);
+}

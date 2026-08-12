@@ -1,4 +1,6 @@
-use silex_reactivity::{ErrorHandler, ReactiveError, Runtime, Scope, notify, unwind_safe};
+use silex_reactivity::{
+    CallbackInvokeError, ErrorHandler, ReactiveError, Runtime, Scope, notify, unwind_safe,
+};
 use std::{
     cell::{Cell, RefCell},
     panic::{AssertUnwindSafe, catch_unwind},
@@ -7,6 +9,19 @@ use std::{
 
 fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, ()> {
     scope.error_handler(|_| {})
+}
+
+struct CleanupStoredProbe {
+    value: Rc<Cell<i32>>,
+    drops: Rc<Cell<usize>>,
+    dropped_value: Rc<Cell<i32>>,
+}
+
+impl Drop for CleanupStoredProbe {
+    fn drop(&mut self) {
+        self.drops.set(self.drops.get() + 1);
+        self.dropped_value.set(self.value.get());
+    }
 }
 
 #[test]
@@ -135,6 +150,196 @@ fn child_cleanup_runs_when_scoped_run_ends() {
         assert!(!cleaned.get());
     });
     assert!(cleaned.get());
+}
+
+#[test]
+fn final_cleanup_updates_stored_value_before_payload_drop() {
+    let mut runtime = Runtime::new();
+    let observed = Rc::new(RefCell::new(Vec::new()));
+    let drops = Rc::new(Cell::new(0));
+    let dropped_value = Rc::new(Cell::new(0));
+
+    runtime.child(|scope| {
+        let value = Rc::new(Cell::new(1));
+        let stored = scope.stored(CleanupStoredProbe {
+            value: value.clone(),
+            drops: drops.clone(),
+            dropped_value: dropped_value.clone(),
+        });
+        let observed_in_cleanup = observed.clone();
+        let scope_in_cleanup = scope;
+        scope
+            .on_cleanup(
+                move || {
+                    assert!(!scope_in_cleanup.is_active());
+                    observed_in_cleanup.borrow_mut().push(
+                        stored
+                            .try_with(|probe| probe.value.get())
+                            .expect("stored read"),
+                    );
+                    stored
+                        .try_update(|probe| probe.value.set(2))
+                        .expect("stored update");
+                    observed_in_cleanup.borrow_mut().push(
+                        stored
+                            .try_with(|probe| probe.value.get())
+                            .expect("stored read"),
+                    );
+                    Ok(())
+                },
+                handler(scope),
+            )
+            .expect("cleanup should register");
+    });
+
+    assert_eq!(observed.borrow().as_slice(), &[1, 2]);
+    assert_eq!(drops.get(), 1);
+    assert_eq!(dropped_value.get(), 2);
+}
+
+#[test]
+fn computation_cleanup_can_access_its_child_stored_value_before_root_cleanup() {
+    let mut runtime = Runtime::new();
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let observed_value = Rc::new(Cell::new(0));
+    let drops = Rc::new(Cell::new(0));
+    let dropped_value = Rc::new(Cell::new(0));
+
+    runtime.child(|scope| {
+        let scope_in_effect = scope;
+        let events_in_effect = events.clone();
+        let observed_value_in_effect = observed_value.clone();
+        let drops_in_effect = drops.clone();
+        let dropped_value_in_effect = dropped_value.clone();
+        scope
+            .effect(
+                move || {
+                    let value = Rc::new(Cell::new(3));
+                    let stored = scope_in_effect.stored(CleanupStoredProbe {
+                        value: value.clone(),
+                        drops: drops_in_effect.clone(),
+                        dropped_value: dropped_value_in_effect.clone(),
+                    });
+                    let events_in_cleanup = events_in_effect.clone();
+                    let observed_value_in_cleanup = observed_value_in_effect.clone();
+                    scope_in_effect
+                        .on_cleanup(
+                            move || {
+                                stored
+                                    .try_update(|probe| probe.value.set(4))
+                                    .expect("stored update");
+                                observed_value_in_cleanup.set(
+                                    stored
+                                        .try_with(|probe| probe.value.get())
+                                        .expect("stored read"),
+                                );
+                                events_in_cleanup.borrow_mut().push("node");
+                                Ok(())
+                            },
+                            handler(scope_in_effect),
+                        )
+                        .expect("effect cleanup should register");
+                    Ok(())
+                },
+                handler(scope),
+            )
+            .expect("effect should initialize");
+
+        let events_in_root_cleanup = events.clone();
+        scope
+            .on_cleanup(
+                move || {
+                    events_in_root_cleanup.borrow_mut().push("root");
+                    Ok(())
+                },
+                handler(scope),
+            )
+            .expect("root cleanup should register");
+    });
+
+    assert_eq!(events.borrow().as_slice(), &["node", "root"]);
+    assert_eq!(observed_value.get(), 4);
+    assert_eq!(drops.get(), 1);
+    assert_eq!(dropped_value.get(), 4);
+}
+
+#[test]
+fn final_cleanup_keeps_only_stored_value_access_available() {
+    let mut runtime = Runtime::new();
+    let observed = Rc::new(Cell::new(false));
+
+    runtime.child(|scope| {
+        let (signal, setter) = scope.signal(1_i32);
+        let stored = scope.stored(1_i32);
+        let node_ref = scope.node_ref::<i32>();
+        let callback = scope
+            .callback(|_: ()| Ok::<(), ()>(()))
+            .expect("callback should initialize");
+        let completion = scope.completion_once(unwind_safe(|_: ()| Ok::<(), ()>(())));
+        let late_cleanup_handler = handler(scope);
+        let observed_in_cleanup = observed.clone();
+        let scope_in_cleanup = scope;
+        scope
+            .on_cleanup(
+                move || {
+                    assert!(!scope_in_cleanup.is_active());
+                    assert_eq!(stored.try_update(|value| *value = 2), Ok(()));
+                    assert_eq!(stored.try_with(|value| *value), Ok(2));
+                    assert_eq!(signal.try_get(), Err(ReactiveError::NoSuchNode));
+                    assert_eq!(setter.try_set(2), Err(ReactiveError::NoSuchNode));
+                    assert_eq!(node_ref.try_get(), Err(ReactiveError::NoSuchNode));
+                    assert_eq!(node_ref.set(2), Err(ReactiveError::NoSuchNode));
+                    assert!(matches!(
+                        callback.invoke(()),
+                        Err(CallbackInvokeError::Runtime(ReactiveError::NoSuchNode))
+                    ));
+                    assert!(matches!(
+                        scope_in_cleanup.try_stored(()),
+                        Err(ReactiveError::NoSuchNode)
+                    ));
+                    assert_eq!(
+                        scope_in_cleanup.on_cleanup(|| Ok(()), late_cleanup_handler),
+                        Err(ReactiveError::NoSuchNode)
+                    );
+                    assert!(!completion.submit(()).expect("stale completion submit"));
+                    observed_in_cleanup.set(true);
+                    Ok(())
+                },
+                handler(scope),
+            )
+            .expect("cleanup should register");
+    });
+
+    assert!(observed.get());
+}
+
+#[test]
+fn final_cleanup_releases_stored_value_lease_after_panic() {
+    let mut runtime = Runtime::new();
+    let updated = Rc::new(Cell::new(false));
+
+    runtime.child(|scope| {
+        let stored = scope.stored(1_i32);
+        let updated_in_cleanup = updated.clone();
+        scope
+            .on_cleanup(
+                move || {
+                    let panic = catch_unwind(AssertUnwindSafe(|| {
+                        stored.with(|_| panic!("cleanup read panic"));
+                    }));
+                    assert!(panic.is_err());
+                    stored
+                        .try_update(|value| *value = 2)
+                        .expect("stored update");
+                    updated_in_cleanup.set(true);
+                    Ok(())
+                },
+                handler(scope),
+            )
+            .expect("cleanup should register");
+    });
+
+    assert!(updated.get());
 }
 
 #[test]

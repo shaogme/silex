@@ -65,6 +65,10 @@ pub struct RwSignal<'scope, T> {
 }
 
 /// A read-only union of the typed high-level node wrappers.
+///
+/// Access keeps the wrapped source kind intact. During final scope disposal,
+/// raw signal-like sources follow their own inactive-node semantics, while a
+/// `StoredValue`-backed instance follows the final-cleanup StoredValue path.
 pub struct Signal<'scope, T> {
     pub(crate) rx: Rx<'scope, T, RxValueKind>,
 }

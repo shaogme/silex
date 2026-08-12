@@ -9,6 +9,41 @@ pub(crate) struct ScopeStorage {
     pub(crate) state: Rc<ErasedScopeState>,
 }
 
+struct DisposePhaseGuard {
+    state: Rc<ErasedScopeState>,
+    finished: bool,
+}
+
+impl DisposePhaseGuard {
+    fn new(state: Rc<ErasedScopeState>) -> Self {
+        Self {
+            state,
+            finished: false,
+        }
+    }
+
+    fn finish(&mut self) -> Result<(), Box<dyn std::any::Any + Send>> {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.state.borrow_mut().finish_dispose();
+        }));
+        if result.is_ok() {
+            self.finished = true;
+        }
+        result
+    }
+}
+
+impl Drop for DisposePhaseGuard {
+    fn drop(&mut self) {
+        if self.finished {
+            return;
+        }
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.state.borrow_mut().finish_dispose();
+        }));
+    }
+}
+
 impl ScopeStorage {
     pub(crate) fn new(scheduler: Rc<RefCell<GlobalScheduler>>) -> Self {
         let state: Rc<ErasedScopeState> =
@@ -39,16 +74,19 @@ impl ScopeStorage {
     pub(crate) fn dispose(&self) {
         let scheduler = {
             let mut state = self.state.borrow_mut();
-            if !state.active {
+            if !state.begin_final_cleanup() {
                 return;
             }
-            state.active = false;
             state.scheduler.clone()
         };
-        scheduler.borrow_mut().deactivate_scope(self.scope_id);
+        let mut phase_guard = DisposePhaseGuard::new(self.state.clone());
+        let deactivate_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            scheduler.borrow_mut().deactivate_scope(self.scope_id);
+        }));
         let dispose_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             runtime::dispose_all(&self.state);
         }));
+        let finish_result = phase_guard.finish();
         let flush_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let should_flush = scheduler.borrow().should_flush();
             if should_flush {
@@ -64,7 +102,17 @@ impl ScopeStorage {
         let release_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             scheduler.borrow_mut().release_scope_id(self.scope_id);
         }));
-        let mut first_panic = dispose_result.err();
+        let mut first_panic = deactivate_result.err();
+        if let Err(panic) = dispose_result
+            && first_panic.is_none()
+        {
+            first_panic = Some(panic);
+        }
+        if let Err(panic) = finish_result
+            && first_panic.is_none()
+        {
+            first_panic = Some(panic);
+        }
         if let Err(panic) = flush_result
             && first_panic.is_none()
         {

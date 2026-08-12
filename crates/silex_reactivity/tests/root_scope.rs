@@ -83,6 +83,40 @@ fn root_cleanup_runs_once_on_drop() {
 }
 
 #[test]
+fn root_final_cleanup_can_update_a_stored_value_before_drop() {
+    let mut runtime = Runtime::new();
+    let observed = Rc::new(Cell::new(0));
+    let root = runtime.run();
+
+    root.with_scope(|scope| {
+        let stored = scope.stored(1_i32);
+        let observed_in_cleanup = observed.clone();
+        let scope_in_cleanup = scope;
+        scope
+            .on_cleanup(
+                move || {
+                    assert!(!scope_in_cleanup.is_active());
+                    observed_in_cleanup.set(
+                        stored
+                            .try_with(|value| *value)
+                            .expect("stored value should survive until cleanup"),
+                    );
+                    stored
+                        .try_update(|value| *value = 2)
+                        .expect("stored value should be writable during cleanup");
+                    assert_eq!(stored.try_with(|value| *value), Ok(2));
+                    Ok(())
+                },
+                handler(scope),
+            )
+            .expect("cleanup should register");
+    });
+
+    root.dispose().expect("root disposal should succeed");
+    assert_eq!(observed.get(), 1);
+}
+
+#[test]
 fn root_cleanup_panic_is_reported_by_explicit_dispose() {
     let mut runtime = Runtime::new();
     let root = runtime.run();

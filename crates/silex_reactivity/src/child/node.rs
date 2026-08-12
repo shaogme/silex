@@ -624,6 +624,12 @@ pub fn track_batch<'scope, T>(signals: &[ReadSignal<'scope, T>]) {
 // =============================================================================
 
 /// Scope-owned, non-reactive values.
+///
+/// During final disposal of the owning scope, this is the only node capability
+/// that remains synchronously accessible: `try_with`, `with`, `try_update`,
+/// and `update` may be used by a pending cleanup before the payload is dropped.
+/// The scope is still inactive, and the exception does not apply to effect
+/// reruns, single-node stops, or asynchronous use after the cleanup returns.
 pub struct StoredValue<'scope, T> {
     pub(crate) handle: StoredId<'scope>,
     pub(crate) marker: PhantomData<fn() -> T>,

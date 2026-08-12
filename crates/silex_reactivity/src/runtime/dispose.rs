@@ -83,13 +83,113 @@ fn drop_node_data<'scope>(
     outcome
 }
 
+pub(crate) struct FinalCleanupPlan<'scope> {
+    node_batches: Vec<Vec<CleanupThunk<'scope>>>,
+    root_cleanups: Vec<CleanupThunk<'scope>>,
+}
+
+enum CleanupPlanStep {
+    Enter(RawId),
+    Exit(RawId),
+}
+
+fn collect_final_cleanup_plan<'scope>(
+    state: &Rc<RefCell<ScopeState<'scope>>>,
+) -> FinalCleanupPlan<'scope> {
+    let roots = state
+        .try_borrow()
+        .expect("ScopeState borrow failed during cleanup plan collection")
+        .roots
+        .clone();
+    let mut stack = Vec::with_capacity(roots.len());
+    stack.extend(roots.into_iter().rev().map(CleanupPlanStep::Enter));
+    let mut node_batches = Vec::new();
+
+    while let Some(step) = stack.pop() {
+        match step {
+            CleanupPlanStep::Enter(id) => {
+                let children = {
+                    let state_ref = state
+                        .try_borrow()
+                        .expect("ScopeState borrow failed during cleanup plan collection");
+                    let Some(node) = state_ref.nodes.get(id).copied() else {
+                        continue;
+                    };
+                    state_ref
+                        .children_of_head(node.first_child)
+                        .collect::<Vec<_>>()
+                };
+                stack.push(CleanupPlanStep::Exit(id));
+                stack.extend(children.into_iter().rev().map(CleanupPlanStep::Enter));
+            }
+            CleanupPlanStep::Exit(id) => {
+                let cleanups = state
+                    .try_borrow_mut()
+                    .expect("ScopeState borrow_mut failed during cleanup plan collection")
+                    .data
+                    .get_mut(id)
+                    .map(|data| mem::take(&mut data.cleanups))
+                    .unwrap_or_default();
+                if !cleanups.is_empty() {
+                    node_batches.push(cleanups);
+                }
+            }
+        }
+    }
+
+    let root_cleanups = mem::take(
+        &mut state
+            .try_borrow_mut()
+            .expect("ScopeState borrow_mut failed during cleanup plan collection")
+            .root_cleanups,
+    );
+    FinalCleanupPlan {
+        node_batches,
+        root_cleanups,
+    }
+}
+
+fn run_final_cleanup_plan<'scope>(
+    scheduler: Rc<RefCell<GlobalScheduler>>,
+    plan: FinalCleanupPlan<'scope>,
+) -> Option<PanicData> {
+    let mut first_panic = None;
+    let mut node_errors = Vec::new();
+    for cleanups in plan.node_batches {
+        let outcome = run_cleanups(scheduler.clone(), cleanups);
+        node_errors.extend(outcome.errors);
+        if let Some(panic) = outcome.panic {
+            remember_panic(&mut first_panic, panic);
+        }
+    }
+    if let Some(panic) = dispatch_cleanup_errors(scheduler.clone(), node_errors) {
+        remember_panic(&mut first_panic, panic);
+    }
+
+    let root_outcome = run_cleanups(scheduler.clone(), plan.root_cleanups);
+    if let Some(panic) = root_outcome.panic {
+        remember_panic(&mut first_panic, panic);
+    }
+    if let Some(panic) = dispatch_cleanup_errors(scheduler, root_outcome.errors) {
+        remember_panic(&mut first_panic, panic);
+    }
+    first_panic
+}
+
 pub(crate) fn dispose_all<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>) {
     let scheduler = state
         .try_borrow()
         .expect("ScopeState borrow failed during dispose_all")
         .scheduler
         .clone();
-    let mut first_panic = None;
+    let plan = collect_final_cleanup_plan(state);
+    let mut first_panic = run_final_cleanup_plan(scheduler.clone(), plan);
+
+    state
+        .try_borrow_mut()
+        .expect("ScopeState borrow_mut failed during dispose_all")
+        .begin_node_disposal();
+
     loop {
         let roots = state
             .try_borrow()
@@ -103,25 +203,6 @@ pub(crate) fn dispose_all<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>) {
         if let Err(panic) = result {
             remember_panic(&mut first_panic, panic);
             break;
-        }
-    }
-
-    loop {
-        let cleanups = mem::take(
-            &mut state
-                .try_borrow_mut()
-                .expect("ScopeState borrow_mut failed during dispose_all")
-                .root_cleanups,
-        );
-        if cleanups.is_empty() {
-            break;
-        }
-        let outcome = run_cleanups(scheduler.clone(), cleanups);
-        if let Some(panic) = outcome.panic {
-            remember_panic(&mut first_panic, panic);
-        }
-        if let Some(panic) = dispatch_cleanup_errors(scheduler.clone(), outcome.errors) {
-            remember_panic(&mut first_panic, panic);
         }
     }
 

@@ -165,6 +165,13 @@ impl<'scope> Scope<'scope> {
 
     /// Register cleanup on the current effect, or on this scope when no
     /// computation is active.
+    ///
+    /// During final disposal of this scope, the cleanup runs while nodes and
+    /// payloads still exist. It may synchronously read or update a
+    /// [`StoredValue`](super::node::StoredValue) from this same scope even
+    /// though the ordinary scope capability is already inactive. This window
+    /// applies only to final scope disposal, not to an effect rerun or a
+    /// single-node stop; other scope APIs remain unavailable.
     pub fn on_cleanup<E, F>(
         &self,
         f: F,
@@ -704,6 +711,13 @@ impl<'scope> OwnedScope<'scope> {
         })
     }
 
+    /// Register cleanup for this persistent owner.
+    ///
+    /// During final disposal of the owner, the cleanup runs before its nodes
+    /// and payloads are dropped. A `StoredValue` belonging to the same storage
+    /// remains synchronously accessible in that window, while the owner is
+    /// still inactive for all ordinary APIs. This guarantee is limited to
+    /// final owner disposal and does not apply to effect reruns or node stops.
     pub fn on_cleanup<E, F>(
         &self,
         f: F,

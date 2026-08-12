@@ -612,20 +612,17 @@ pub(crate) fn invalidate_debounce<'scope, T>(
 
 pub(crate) fn take_controller_resources<'scope, T>(
     controller: StoredValue<'scope, PersistenceController<'scope, T>>,
-) -> (
+) -> ReactiveResult<(
     Option<BackendSubscription<'scope>>,
     Option<HostResourceHandle<'scope>>,
-) {
-    let resources = controller
-        .try_update_untracked(|controller| {
-            let timer = controller
-                .debounce
-                .as_mut()
-                .and_then(ScopedDebounceState::invalidate);
-            (controller.subscription.take(), timer)
-        })
-        .ok();
-    resources.unwrap_or((None, None))
+)> {
+    controller.try_update_untracked(|controller| {
+        let timer = controller
+            .debounce
+            .as_mut()
+            .and_then(ScopedDebounceState::invalidate);
+        (controller.subscription.take(), timer)
+    })
 }
 
 pub(crate) fn mark_local_value_write<'scope, T>(

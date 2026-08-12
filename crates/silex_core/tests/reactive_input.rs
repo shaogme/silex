@@ -2,7 +2,7 @@ use silex_core::{
     ErrorHandler, Memo, ReactiveError, ReactiveInput, ReadSignal, Runtime, RwSignal, Rx, Scope,
     Signal, SilexError, StoredValue,
 };
-use std::{cell::Cell, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
 fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, SilexError> {
     scope.error_handler(|_| {})
@@ -97,17 +97,27 @@ fn foreign_sources_are_not_materialized_as_local_constants() {
 }
 
 #[test]
-fn constant_nodes_are_cleaned_up_with_their_scope() {
+fn signal_and_stored_value_keep_source_specific_cleanup_access() {
     let mut runtime = Runtime::new();
-    let stale = Rc::new(Cell::new(false));
-    let stale_for_cleanup = stale.clone();
+    let observed = Rc::new(RefCell::new((None, None)));
 
     runtime.child(|scope| {
-        let signal: Signal<'_, i32> = 9.into_reactive_input(scope);
+        let (read, _) = scope.signal(7_i32);
+        let signal_from_read: Signal<'_, i32> = read.into();
+        let signal_from_stored: Signal<'_, i32> = 9.into_reactive_input(scope);
+        let observed_for_cleanup = observed.clone();
         scope
             .on_cleanup(
                 move || {
-                    stale_for_cleanup.set(signal.try_get() == Err(ReactiveError::NoSuchNode));
+                    let signal_error = signal_from_read
+                        .try_get()
+                        .expect_err("raw signal should be inactive during cleanup");
+                    let stored_value = signal_from_stored
+                        .try_get()
+                        .expect("stored-backed signal should remain available during cleanup");
+                    let mut observed = observed_for_cleanup.borrow_mut();
+                    observed.0 = Some(signal_error);
+                    observed.1 = Some(stored_value);
                     Ok(())
                 },
                 handler(scope),
@@ -115,5 +125,8 @@ fn constant_nodes_are_cleaned_up_with_their_scope() {
             .expect("cleanup should register");
     });
 
-    assert!(stale.get());
+    assert_eq!(
+        *observed.borrow(),
+        (Some(ReactiveError::NoSuchNode), Some(9))
+    );
 }

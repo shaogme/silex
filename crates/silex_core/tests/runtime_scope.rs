@@ -1,6 +1,7 @@
 use silex_core::{
     Callback, ErrorHandler, Memo, NodeRef, ReactiveError, ReadSignal, Runtime, RwSignal, Rx,
-    RxDefault, RxFrom, Scope, Signal, SilexError, SilexResult, StoredValue, TryRxDefault, rx,
+    RxDefault, RxFrom, RxRead, Scope, Signal, SilexError, SilexResult, StoredValue, TryRxDefault,
+    rx,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -257,6 +258,81 @@ fn callback_errors_preserve_user_and_runtime_variants() {
 }
 
 #[test]
+fn stored_value_facade_and_rx_remain_available_during_final_cleanup() {
+    let mut runtime = Runtime::new();
+    let root = runtime.run();
+    let observed = Rc::new(RefCell::new(Vec::new()));
+
+    root.with_scope(|scope| {
+        let stored = scope.stored(1_i32);
+        let rx = stored.into_rx();
+        let observed_in_cleanup = observed.clone();
+        let scope_in_cleanup = scope;
+        scope
+            .on_cleanup(
+                move || -> SilexResult<()> {
+                    assert!(!scope_in_cleanup.is_active());
+                    observed_in_cleanup.borrow_mut().push(
+                        stored
+                            .try_with(|value| *value)
+                            .expect("stored value should be readable during cleanup"),
+                    );
+                    observed_in_cleanup.borrow_mut().push(
+                        RxRead::try_with(&rx, |value| *value)
+                            .expect("stored value rx should be readable during cleanup"),
+                    );
+                    stored
+                        .try_update(|value| *value = 2)
+                        .expect("stored value should be writable during cleanup");
+                    observed_in_cleanup.borrow_mut().push(
+                        RxRead::try_with(&rx, |value| *value)
+                            .expect("stored value rx should observe the update"),
+                    );
+                    Ok(())
+                },
+                handler(scope),
+            )
+            .expect("cleanup should register");
+    });
+
+    root.dispose().expect("root should dispose");
+    assert_eq!(observed.borrow().as_slice(), &[1, 1, 2]);
+}
+
+#[test]
+fn owned_scope_cleanup_can_update_a_facade_stored_value_before_dispose() {
+    let mut runtime = Runtime::new();
+    let observed = Rc::new(Cell::new(0));
+
+    runtime.child(|scope| {
+        let stored = scope.stored(1_i32);
+        let owner = scope.owned_scope();
+        let observed_in_cleanup = observed.clone();
+        owner
+            .on_cleanup(
+                move || -> SilexResult<()> {
+                    observed_in_cleanup.set(
+                        stored
+                            .try_update(|value| {
+                                *value = 2;
+                                *value
+                            })
+                            .expect("stored value should survive owner cleanup"),
+                    );
+                    Ok(())
+                },
+                handler(scope),
+            )
+            .expect("owner cleanup should register");
+
+        owner.dispose();
+        assert!(!owner.is_active());
+    });
+
+    assert_eq!(observed.get(), 2);
+}
+
+#[test]
 fn child_scope_completes_lexically() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
@@ -337,14 +413,15 @@ fn rx_default_nodes_keep_runtime_provenance() {
 }
 
 #[test]
-fn rx_default_handles_are_inactive_after_root_disposal() {
+fn signal_source_and_other_handles_are_inactive_after_root_disposal() {
     let mut runtime = Runtime::new();
     let root = runtime.run();
     let stale = Rc::new(Cell::new(false));
     let stale_for_cleanup = stale.clone();
 
     root.with_scope(|scope| {
-        let signal = <Signal<'_, i32> as RxDefault<'_>>::rx_default(scope);
+        let (read, _) = scope.signal(0_i32);
+        let signal: Signal<'_, i32> = read.into();
         let callback = <Callback<'_, ()> as TryRxDefault<'_>>::try_rx_default(scope)
             .expect("callback default should register");
         let node_ref = <NodeRef<'_, String> as RxDefault<'_>>::rx_default(scope);

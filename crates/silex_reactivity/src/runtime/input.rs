@@ -124,7 +124,7 @@ pub(crate) fn validate_inputs<'scope>(
         let state = state
             .try_borrow()
             .map_err(|_| ReactiveError::BorrowConflict)?;
-        (state.scheduler.clone(), state.scope_id, state.active)
+        (state.scheduler.clone(), state.scope_id, state.is_active())
     };
     let scheduler_ref = scheduler
         .try_borrow()

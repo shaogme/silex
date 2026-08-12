@@ -60,6 +60,39 @@ fn owned_scope_keeps_effects_until_explicit_dispose() {
 }
 
 #[test]
+fn owned_scope_cleanup_can_release_captured_stored_value() {
+    let mut runtime = Runtime::new();
+    let observed = Rc::new(Cell::new(0));
+
+    runtime.child(|scope| {
+        let stored = scope.stored(1_i32);
+        let owner = scope.owned_scope();
+        let observed_in_cleanup = observed.clone();
+        owner
+            .on_cleanup(
+                move || {
+                    observed_in_cleanup.set(
+                        stored
+                            .try_update(|value| {
+                                *value = 2;
+                                *value
+                            })
+                            .expect("captured stored value should be available"),
+                    );
+                    Ok(())
+                },
+                handler(scope),
+            )
+            .expect("owner cleanup should register");
+
+        owner.dispose();
+        assert!(!owner.is_active());
+    });
+
+    assert_eq!(observed.get(), 2);
+}
+
+#[test]
 fn lexical_owned_scope_supports_borrowed_callbacks_and_nested_dispose() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {

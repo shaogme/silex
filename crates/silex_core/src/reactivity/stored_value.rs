@@ -3,6 +3,16 @@ use silex_reactivity::ReactiveResult;
 use std::fmt;
 
 /// A non-reactive value owned by a scope.
+///
+/// During final disposal of the owning scope, `try_with`, `with`, `try_update`,
+/// and `update` remain available until this value's payload is dropped. The
+/// owner is still inactive in that window, so raw signals, callbacks, node
+/// refs, node creation, and other scope APIs remain unavailable. A
+/// `Signal` facade created from this value preserves this StoredValue source
+/// kind and therefore follows the same exception. This exception only applies
+/// to final scope disposal; it does not apply to effect reruns or single-node
+/// stops, and a handle must not be used asynchronously after the cleanup
+/// callback returns.
 pub struct StoredValue<'scope, T> {
     pub(crate) inner: silex_reactivity::StoredValue<'scope, T>,
     pub(crate) scope: Scope<'scope>,

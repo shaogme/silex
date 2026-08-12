@@ -55,6 +55,20 @@ pub(crate) enum NodeState {
     Dirty = 2,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ScopePhase {
+    Active,
+    FinalCleanup,
+    DisposingNodes,
+    Disposed,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum StoredAccessMode {
+    Active,
+    FinalCleanup,
+}
+
 #[derive(Clone, Copy)]
 #[repr(C)]
 pub(crate) struct NodeCore {
@@ -170,7 +184,7 @@ impl Iterator for EdgeIter<'_, '_> {
 pub(crate) struct ScopeState<'scope> {
     pub(crate) scope_id: ScopeId,
     pub(crate) scheduler: Rc<RefCell<GlobalScheduler>>,
-    pub(crate) active: bool,
+    pub(crate) phase: ScopePhase,
     pub(crate) nodes: SlotMap<RawId, NodeCore>,
     pub(crate) data: SecondaryMap<RawId, NodeData<'scope>>,
     pub(crate) edges: SlotMap<EdgeId, ReactiveEdge>,
@@ -201,7 +215,7 @@ impl<'scope> ScopeState<'scope> {
         Self {
             scope_id,
             scheduler,
-            active: true,
+            phase: ScopePhase::Active,
             nodes: SlotMap::with_key(),
             data: SecondaryMap::new(),
             edges: SlotMap::with_key(),
@@ -335,7 +349,44 @@ impl<'scope> ScopeState<'scope> {
     }
 
     pub(crate) fn is_active(&self) -> bool {
-        self.active && self.scheduler.borrow().is_scope_active(self.scope_id)
+        self.phase == ScopePhase::Active && self.scheduler.borrow().is_scope_active(self.scope_id)
+    }
+
+    pub(crate) fn try_is_active(&self) -> ReactiveResult<bool> {
+        if self.phase != ScopePhase::Active {
+            return Ok(false);
+        }
+        Ok(self
+            .scheduler
+            .try_borrow()
+            .map_err(|_| ReactiveError::BorrowConflict)?
+            .is_scope_active(self.scope_id))
+    }
+
+    pub(crate) fn begin_final_cleanup(&mut self) -> bool {
+        if self.phase != ScopePhase::Active {
+            return false;
+        }
+        self.phase = ScopePhase::FinalCleanup;
+        true
+    }
+
+    pub(crate) fn begin_node_disposal(&mut self) {
+        assert_eq!(
+            self.phase,
+            ScopePhase::FinalCleanup,
+            "node disposal must begin after final cleanup",
+        );
+        self.phase = ScopePhase::DisposingNodes;
+    }
+
+    pub(crate) fn finish_dispose(&mut self) {
+        self.current_owner = None;
+        self.phase = ScopePhase::Disposed;
+    }
+
+    pub(crate) fn allows_final_cleanup_stored_access(&self) -> bool {
+        self.phase == ScopePhase::FinalCleanup
     }
 
     pub(crate) fn node_exists(&self, id: RawId) -> bool {
@@ -471,15 +522,7 @@ impl<'scope> ScopeState<'scope> {
         &mut self,
         entry: ErrorHandlerEntry<'scope>,
     ) -> ReactiveResult<ErrorHandlerKey> {
-        if !self.active {
-            return Err(ReactiveError::NoSuchNode);
-        }
-        if !self
-            .scheduler
-            .try_borrow()
-            .map_err(|_| ReactiveError::BorrowConflict)?
-            .is_scope_active(self.scope_id)
-        {
+        if !self.try_is_active()? {
             return Err(ReactiveError::NoSuchNode);
         }
         Ok(self.error_handlers.insert(entry))
@@ -565,10 +608,32 @@ impl<'scope> ScopeState<'scope> {
         Ok(data.storage.clone())
     }
 
-    pub(crate) fn stored_storage(&self, id: RawId) -> ReactiveResult<Rc<NodeStorage<'scope>>> {
+    pub(crate) fn stored_value_storage(
+        &self,
+        id: RawId,
+    ) -> ReactiveResult<(Rc<NodeStorage<'scope>>, StoredAccessMode)> {
+        let mode = if self.is_active() {
+            StoredAccessMode::Active
+        } else if self.allows_final_cleanup_stored_access() {
+            StoredAccessMode::FinalCleanup
+        } else {
+            return Err(ReactiveError::NoSuchNode);
+        };
+        let node = self.nodes.get(id).ok_or(ReactiveError::NoSuchNode)?;
+        if node.kind != NodeKindTag::Stored {
+            return Err(ReactiveError::WrongKind);
+        }
+        let data = self.data.get(id).ok_or(ReactiveError::NoSuchNode)?;
+        if !matches!(data.storage.as_ref(), NodeStorage::Value(_)) {
+            return Err(ReactiveError::WrongKind);
+        }
+        Ok((data.storage.clone(), mode))
+    }
+
+    pub(crate) fn node_ref_storage(&self, id: RawId) -> ReactiveResult<Rc<NodeStorage<'scope>>> {
         self.ensure_active()?;
         let node = self.nodes.get(id).ok_or(ReactiveError::NoSuchNode)?;
-        if !matches!(node.kind, NodeKindTag::Stored | NodeKindTag::NodeRef) {
+        if node.kind != NodeKindTag::NodeRef {
             return Err(ReactiveError::WrongKind);
         }
         let data = self.data.get(id).ok_or(ReactiveError::NoSuchNode)?;

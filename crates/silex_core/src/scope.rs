@@ -475,6 +475,14 @@ impl<'scope> Scope<'scope> {
         self.inner.batch(f)
     }
 
+    /// Register a cleanup callback for this scope or the current computation.
+    ///
+    /// During final disposal of the owning scope, pending cleanup callbacks run
+    /// before their nodes and payloads are dropped. A callback may synchronously
+    /// read or update a [`StoredValue`] from the same scope during that window,
+    /// even though [`Scope::is_active`] is already `false`. Other scope APIs
+    /// remain unavailable. This guarantee applies only to final scope disposal,
+    /// not to effect reruns or single-node stops.
     pub fn on_cleanup<F>(
         &self,
         f: F,
@@ -634,6 +642,12 @@ impl<'scope> OwnedScope<'scope> {
             .map_err(map_effect_init_error)
     }
 
+    /// Register a cleanup callback for this persistent owner.
+    ///
+    /// During final owner disposal, a callback may synchronously read or update
+    /// a same-scope [`StoredValue`] before the payload is dropped. The owner is
+    /// still inactive for ordinary APIs, and this guarantee does not apply to
+    /// effect reruns or single-node stops.
     pub fn on_cleanup<F>(
         &self,
         f: F,

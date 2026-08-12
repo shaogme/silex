@@ -3,7 +3,7 @@
 use super::{
     dispose::dispose_nodes,
     eval::{flush_if_idle, prepare_read},
-    model::ScopeState,
+    model::{ScopeState, StoredAccessMode},
     scheduler::{GlobalScheduler, TargetNode},
     storage::NodeStorage,
 };
@@ -35,14 +35,29 @@ fn lookup_value_storage<'scope>(
     Ok((storage, state_ref.scheduler.clone()))
 }
 
-fn lookup_stored_storage<'scope>(
+fn lookup_stored_value_storage<'scope>(
+    state: &Rc<RefCell<ScopeState<'scope>>>,
+    id: RawId,
+) -> ReactiveResult<(
+    Rc<NodeStorage<'scope>>,
+    Rc<RefCell<GlobalScheduler>>,
+    StoredAccessMode,
+)> {
+    let state_ref = state
+        .try_borrow()
+        .map_err(|_| ReactiveError::BorrowConflict)?;
+    let (storage, mode) = state_ref.stored_value_storage(id)?;
+    Ok((storage, state_ref.scheduler.clone(), mode))
+}
+
+fn lookup_node_ref_storage<'scope>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     id: RawId,
 ) -> ReactiveResult<(Rc<NodeStorage<'scope>>, Rc<RefCell<GlobalScheduler>>)> {
     let state_ref = state
         .try_borrow()
         .map_err(|_| ReactiveError::BorrowConflict)?;
-    let storage = state_ref.stored_storage(id)?;
+    let storage = state_ref.node_ref_storage(id)?;
     Ok((storage, state_ref.scheduler.clone()))
 }
 
@@ -158,7 +173,43 @@ pub(crate) fn with_stored<'scope, R>(
     id: RawId,
     f: impl FnOnce(&AnyValue<'scope>) -> R,
 ) -> ReactiveResult<R> {
-    let (storage, scheduler) = lookup_stored_storage(state, id)?;
+    let (storage, scheduler, mode) = lookup_stored_value_storage(state, id)?;
+    let NodeStorage::Value(cell) = storage.as_ref() else {
+        return Err(ReactiveError::WrongKind);
+    };
+    let lease = cell.try_read(scheduler)?;
+    let result = f(&lease);
+    drop(lease);
+    if mode == StoredAccessMode::Active {
+        flush_if_idle(state);
+    }
+    Ok(result)
+}
+
+pub(crate) fn update_stored<'scope, R>(
+    state: &Rc<RefCell<ScopeState<'scope>>>,
+    id: RawId,
+    f: impl FnOnce(&mut AnyValue<'scope>) -> R,
+) -> ReactiveResult<R> {
+    let (storage, scheduler, mode) = lookup_stored_value_storage(state, id)?;
+    let NodeStorage::Value(cell) = storage.as_ref() else {
+        return Err(ReactiveError::WrongKind);
+    };
+    let mut lease = cell.try_write(scheduler)?;
+    let result = f(&mut lease);
+    drop(lease);
+    if mode == StoredAccessMode::Active {
+        flush_if_idle(state);
+    }
+    Ok(result)
+}
+
+fn with_node_ref<'scope, R>(
+    state: &Rc<RefCell<ScopeState<'scope>>>,
+    id: RawId,
+    f: impl FnOnce(&AnyValue<'scope>) -> R,
+) -> ReactiveResult<R> {
+    let (storage, scheduler) = lookup_node_ref_storage(state, id)?;
     let NodeStorage::Value(cell) = storage.as_ref() else {
         return Err(ReactiveError::WrongKind);
     };
@@ -169,12 +220,12 @@ pub(crate) fn with_stored<'scope, R>(
     Ok(result)
 }
 
-pub(crate) fn update_stored<'scope, R>(
+fn update_node_ref<'scope, R>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     id: RawId,
     f: impl FnOnce(&mut AnyValue<'scope>) -> R,
 ) -> ReactiveResult<R> {
-    let (storage, scheduler) = lookup_stored_storage(state, id)?;
+    let (storage, scheduler) = lookup_node_ref_storage(state, id)?;
     let NodeStorage::Value(cell) = storage.as_ref() else {
         return Err(ReactiveError::WrongKind);
     };
@@ -247,7 +298,7 @@ pub(crate) fn node_ref_get<'scope, T: Clone>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     id: RawId,
 ) -> ReactiveResult<Option<T>> {
-    with_stored(state, id, |value| {
+    with_node_ref(state, id, |value| {
         unsafe { value.downcast_ref::<Option<T>>() }
             .cloned()
             .ok_or(ReactiveError::TypeMismatch)
@@ -259,7 +310,7 @@ pub(crate) fn node_ref_set<'scope, T>(
     id: RawId,
     value: T,
 ) -> ReactiveResult<()> {
-    update_stored(state, id, |stored| {
+    update_node_ref(state, id, |stored| {
         unsafe { stored.downcast_mut::<Option<T>>() }
             .map(|slot| *slot = Some(value))
             .ok_or(ReactiveError::TypeMismatch)
@@ -270,7 +321,7 @@ pub(crate) fn node_ref_clear<'scope, T>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     id: RawId,
 ) -> ReactiveResult<()> {
-    update_stored(state, id, |stored| {
+    update_node_ref(state, id, |stored| {
         unsafe { stored.downcast_mut::<Option<T>>() }
             .map(|slot| *slot = None)
             .ok_or(ReactiveError::TypeMismatch)
@@ -372,10 +423,16 @@ pub(crate) fn with_batch<'scope, R>(
 mod tests {
     use super::*;
     use crate::{
+        Scope,
         internal::value::AnyValue,
-        runtime::{dispose_nodes, scheduler::GlobalScheduler},
+        runtime::{
+            dispose_nodes,
+            model::NodeState,
+            scheduler::{GlobalScheduler, ScheduledTask},
+        },
         scope::ScopeStorage,
     };
+    use std::{marker::PhantomData, rc::Rc};
 
     #[test]
     fn disposing_a_node_during_a_read_does_not_require_put_back() {
@@ -394,5 +451,91 @@ mod tests {
         assert!(result.is_ok());
         assert!(!state.borrow().node_exists(raw));
         storage.dispose();
+    }
+
+    #[test]
+    fn final_cleanup_stored_access_does_not_flush_another_scope() {
+        let scheduler = GlobalScheduler::new();
+        let active_storage = ScopeStorage::new(scheduler.clone());
+        let disposing_storage = ScopeStorage::new(scheduler.clone());
+        let active_scope = Scope {
+            storage: &active_storage,
+            _marker: PhantomData,
+        };
+        let disposing_scope = Scope {
+            storage: &disposing_storage,
+            _marker: PhantomData,
+        };
+        let (source, _) = active_scope.signal(0_i32);
+        let runs = Rc::new(std::cell::Cell::new(0));
+        let runs_in_effect = runs.clone();
+        let effect = active_scope
+            .effect(
+                move || {
+                    let _ = source.get();
+                    runs_in_effect.set(runs_in_effect.get() + 1);
+                    Ok(())
+                },
+                active_scope.error_handler(|_: ()| {}),
+            )
+            .expect("effect should initialize");
+        assert_eq!(runs.get(), 1);
+
+        {
+            let state = effect.handle.state();
+            let mut state_ref = state.borrow_mut();
+            let scope_id = state_ref.scope_id;
+            let node = state_ref
+                .nodes
+                .get_mut(effect.handle.raw())
+                .expect("effect node should exist");
+            node.state = NodeState::Dirty;
+            node.queued = true;
+            drop(state_ref);
+            scheduler.borrow_mut().enqueue_effect(ScheduledTask {
+                scope_id,
+                node: effect.handle.raw(),
+            });
+        }
+
+        let stored = disposing_scope.stored(1_i32);
+        let runs_in_cleanup = runs.clone();
+        disposing_scope
+            .on_cleanup(
+                move || {
+                    assert_eq!(runs_in_cleanup.get(), 1);
+                    stored
+                        .try_update(|value| *value = 2)
+                        .expect("stored value should be writable during final cleanup");
+                    assert_eq!(runs_in_cleanup.get(), 1);
+                    Ok(())
+                },
+                disposing_scope.error_handler(|_: ()| {}),
+            )
+            .expect("cleanup should register");
+
+        disposing_storage.dispose_untracked();
+        assert_eq!(runs.get(), 2);
+
+        active_storage.dispose_untracked();
+    }
+
+    #[test]
+    fn disposed_stored_value_cannot_access_a_reused_scope_id() {
+        let scheduler = GlobalScheduler::new();
+        let first_storage = ScopeStorage::new(scheduler.clone());
+        let first_scope = Scope {
+            storage: &first_storage,
+            _marker: PhantomData,
+        };
+        let stored = first_scope.stored(1_i32);
+        first_storage.dispose_untracked();
+
+        let replacement = ScopeStorage::new(scheduler);
+        assert_eq!(
+            stored.try_with(|value| *value),
+            Err(ReactiveError::NoSuchNode)
+        );
+        replacement.dispose_untracked();
     }
 }
