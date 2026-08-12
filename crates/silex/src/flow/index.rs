@@ -1,3 +1,4 @@
+use silex_core::ErrorReporter;
 use silex_core::reactivity::ReactiveSource;
 use silex_core::traits::{ForLoopSource, RxRead};
 use silex_dom::prelude::*;
@@ -41,6 +42,7 @@ impl<'scope, Item: 'scope> IndexRenderer<'scope, Item> {
 #[component]
 pub fn Index<'scope, IF, I, IS>(
     each: IF,
+    #[chain] error_handler: ErrorReporter<'scope>,
     #[prop(render_fn(I, usize))]
     #[chain]
     children: IndexRenderer<'scope, I>,

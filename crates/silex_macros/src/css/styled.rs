@@ -170,11 +170,13 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
     let parsed: StyledComponent = syn::parse2(input)?;
     let tag = &parsed.tag;
     let name = &parsed.name;
-    let explicit_error_handler = find_error_handler_parameter(&parsed.props);
-    let dynamic_error_handler = explicit_error_handler
-        .as_ref()
-        .map(|ident| quote! { #ident })
-        .unwrap_or_else(|| quote! { __silex_owner.error_handler() });
+    let explicit_error_handler = find_error_handler_parameter(&parsed.props).ok_or_else(|| {
+        syn::Error::new(
+            name.span(),
+            "styled! components must declare an explicit error_handler parameter",
+        )
+    })?;
+    let dynamic_error_handler = quote! { #explicit_error_handler };
 
     let compile_result = CssCompiler::compile_with_prefix(
         parsed.css_block,
@@ -394,14 +396,6 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
     }
 
     let needs_result = !var_decls.is_empty();
-    let needs_owner = needs_result && explicit_error_handler.is_none();
-    if needs_owner {
-        all_fn_args.push(syn::parse_quote! {
-            #[inject(owner)]
-            __silex_owner: #__silex::dom::view::ViewOwnerToken<#scope>
-        });
-    }
-
     for arg in &mut all_fn_args {
         if let syn::FnArg::Typed(arg) = arg {
             normalize_scoped_type(&mut arg.ty, &scope);
@@ -1170,7 +1164,11 @@ mod tests {
     #[cfg(feature = "tw")]
     fn test_styled_inline_tailwind_variants() {
         let input = quote::quote! {
-            Card<'scope><button>(id: String, children: AnyView<'scope>) {
+            Card<'scope><button>(
+                error_handler: ErrorReporter<'scope>,
+                id: String,
+                children: AnyView<'scope>,
+            ) {
                 padding: 1rem;
 
                 variants: {
@@ -1190,6 +1188,7 @@ mod tests {
     fn dynamic_styled_styles_are_injected_by_an_owner_bound_attribute() {
         let input = quote::quote! {
             Panel<'scope><div>(
+                error_handler: ErrorReporter<'scope>,
                 children: AnyView<'scope>,
                 color: Signal<'scope, Hex>,
             ) {
@@ -1223,6 +1222,7 @@ mod tests {
     fn dynamic_styled_rules_use_one_runtime_binding() {
         let input = quote::quote! {
             Panel<'scope><div>(
+                error_handler: ErrorReporter<'scope>,
                 children: AnyView<'scope>,
                 selector: Signal<'scope, String>,
             ) {

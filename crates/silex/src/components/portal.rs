@@ -1,5 +1,6 @@
+use silex_core::ErrorReporter;
 use silex_dom::prelude::*;
-use silex_dom::view::ViewOwner;
+use silex_dom::view::{ViewErrorHandler, ViewOwner};
 use silex_macros::component;
 use std::{
     cell::Cell,
@@ -20,6 +21,7 @@ impl<'scope> PortalView<'scope> {
         owner: &dyn ViewOwner<'scope>,
         _parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> silex_core::SilexResult<()> {
         let document = silex_dom::document();
         let target = match self.mount_to {
@@ -59,7 +61,7 @@ impl<'scope> PortalView<'scope> {
                 }
                 Ok(())
             }),
-            owner.token().error_handler(),
+            error_handler,
         ) {
             active.set(false);
             let _ = rollback_target.remove_child(&rollback_container);
@@ -67,7 +69,8 @@ impl<'scope> PortalView<'scope> {
         }
 
         let result = catch_unwind(AssertUnwindSafe(|| {
-            self.children.mount_owned(owner, &container, attrs)
+            self.children
+                .mount_owned(owner, &container, attrs, error_handler)
         }));
         match result {
             Err(panic) => {
@@ -94,8 +97,10 @@ impl<'scope> View<'scope> for PortalView<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> silex_core::SilexResult<()> {
-        self.clone().mount_inner(owner, parent, attrs)
+        self.clone()
+            .mount_inner(owner, parent, attrs, error_handler)
     }
 
     fn mount_owned(
@@ -103,11 +108,12 @@ impl<'scope> View<'scope> for PortalView<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> silex_core::SilexResult<()>
     where
         Self: Sized,
     {
-        self.mount_inner(owner, parent, attrs)
+        self.mount_inner(owner, parent, attrs, error_handler)
     }
 }
 
@@ -117,6 +123,7 @@ impl<'scope> ApplyAttributes<'scope> for PortalView<'scope> {}
 /// 但保持响应式上下文（Context）的连通性。
 #[component]
 pub fn Portal<'scope>(
+    error_handler: ErrorReporter<'scope>,
     #[prop(into)] children: AnyView<'scope>,
     #[chain(default)] mount_to: Option<Node>,
 ) -> impl View<'scope> {

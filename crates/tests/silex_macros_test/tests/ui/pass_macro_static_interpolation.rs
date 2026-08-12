@@ -31,13 +31,17 @@ global! {
 }
 
 styled! {
-    pub StaticStyled<div>(children: silex_dom::view::AnyView) {
+    pub StaticStyled<'scope><div>(
+        error_handler: silex_core::ErrorReporter<'scope>,
+        children: silex_dom::view::AnyView<'scope>,
+    ) {
         color: $(static StaticTheme::PRIMARY);
     }
 }
 
 styled! {
     pub MixedStyled<'scope><div>(
+        error_handler: silex_core::ErrorReporter<'scope>,
         children: silex_dom::view::AnyView<'scope>,
         color: silex_core::reactivity::Signal<'scope, Hex>,
     ) {

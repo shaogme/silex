@@ -8,7 +8,10 @@ use silex::reexports::*;
 
 /// 一个简单的卡片容器
 #[component]
-fn Card<'scope>(children: AnyView<'scope>) -> impl View<'scope> {
+fn Card<'scope>(
+    children: AnyView<'scope>,
+    #[chain] error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
     Ok(div(children).style(
         sty()
             .border("1px solid #ddd")?
@@ -24,10 +27,12 @@ fn Card<'scope>(children: AnyView<'scope>) -> impl View<'scope> {
 #[component]
 fn NavLink<'scope, T: ToRoute + Clone + 'scope>(
     ctx: RouterContext<'scope>,
+    #[chain] error_handler: ErrorReporter<'scope>,
     to: T,
     #[chain] children: AnyView<'scope>,
 ) -> impl View<'scope> {
     Ok(Link(ctx, to)
+        .error_handler(error_handler)
         .children(children)
         .style(
             sty()
@@ -45,7 +50,7 @@ fn NavLink<'scope, T: ToRoute + Clone + 'scope>(
 // ==========================================
 
 #[component]
-fn Home<'scope>() -> impl View<'scope> {
+fn Home<'scope>(#[chain] error_handler: ErrorReporter<'scope>) -> impl View<'scope> {
     div!(
         h2("🏠 Home Page"),
         p("Welcome to the Router Test Suite."),
@@ -110,27 +115,35 @@ fn SearchPage<'scope>(
             .style(sty().color(hex("#e91e63"))?.font_family("monospace")?),
         ),
     ))
+    .error_handler(error_handler)
     .build())
 }
 
 // --- 用户模块 (嵌套路由中的共享布局) ---
 
 #[component]
-fn CreateUser<'scope>() -> impl View<'scope> {
-    Card(h3("🆕 Create New User Form")).build()
+fn CreateUser<'scope>(#[chain] error_handler: ErrorReporter<'scope>) -> impl View<'scope> {
+    Card(h3("🆕 Create New User Form"))
+        .error_handler(error_handler)
+        .build()
 }
 
 #[component]
 fn UsersLayout<'scope>(
     ctx: RouterContext<'scope>,
+    #[chain] error_handler: ErrorReporter<'scope>,
     #[chain] children: AnyView<'scope>,
 ) -> impl View<'scope> {
     Ok(div!(
         h2("👥 Users Module"),
         div!(
-            NavLink(ctx, "/users").children("User List").build(),
+            NavLink(ctx, "/users")
+                .error_handler(error_handler)
+                .children("User List")
+                .build(),
             span("|").style(sty().margin("0 10px")?.color(hex("#ccc"))?),
             NavLink(ctx, "/users/new")
+                .error_handler(error_handler)
                 .children("Create User (Static)")
                 .build(),
         )
@@ -152,7 +165,10 @@ fn user_detail_path(id: u32) -> SilexResult<RoutePath> {
 }
 
 #[component]
-fn UserList<'scope>(ctx: RouterContext<'scope>) -> impl View<'scope> {
+fn UserList<'scope>(
+    ctx: RouterContext<'scope>,
+    #[chain] error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
     let users = vec![
         (1, "Alice"),
         (2, "Bob"),
@@ -165,6 +181,7 @@ fn UserList<'scope>(ctx: RouterContext<'scope>) -> impl View<'scope> {
         .map(|(id, name)| {
             let path = user_detail_path(id)?;
             Ok(li(Link(ctx, path)
+                .error_handler(error_handler)
                 .children(format!("👤 {} (ID: {})", name, id))
                 .style(sty().text_decoration("none")?.color(hex("#2196f3"))?)
                 .active_class("active-user")
@@ -180,7 +197,11 @@ fn UserList<'scope>(ctx: RouterContext<'scope>) -> impl View<'scope> {
 }
 
 #[component]
-fn UserDetail<'scope>(ctx: RouterContext<'scope>, id: u32) -> impl View<'scope> {
+fn UserDetail<'scope>(
+    ctx: RouterContext<'scope>,
+    id: u32,
+    #[chain] error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
     let navigator = ctx.navigator;
     let path = ctx.path;
 
@@ -227,15 +248,20 @@ fn UserDetail<'scope>(ctx: RouterContext<'scope>, id: u32) -> impl View<'scope> 
                 .margin_top(px(10))?
         ),
     ))
+    .error_handler(error_handler)
     .build())
 }
 
 #[component]
-fn NotFound<'scope>(ctx: RouterContext<'scope>) -> impl View<'scope> {
+fn NotFound<'scope>(
+    ctx: RouterContext<'scope>,
+    #[chain] error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
     Ok(div!(
         h1("404"),
         p("Page not found."),
         Link(ctx, "/")
+            .error_handler(error_handler)
             .children("Return Home")
             .style(sty().color(hex("#2196f3"))?.text_decoration("underline")?)
             .build(),
@@ -253,6 +279,7 @@ fn NotFound<'scope>(ctx: RouterContext<'scope>) -> impl View<'scope> {
 #[component]
 fn MainLayout<'scope>(
     ctx: RouterContext<'scope>,
+    #[chain] error_handler: ErrorReporter<'scope>,
     home_path: RoutePath,
     users_path: RoutePath,
     search_path: RoutePath,
@@ -267,10 +294,22 @@ fn MainLayout<'scope>(
                     .color(hex("#2c3e50"))?
             ),
             nav!(
-                NavLink(ctx, home_path).children("Home").build(),
-                NavLink(ctx, users_path).children("Users").build(),
-                NavLink(ctx, search_path).children("Search").build(),
-                NavLink(ctx, "/nowhere").children("404 Test").build(),
+                NavLink(ctx, home_path)
+                    .error_handler(error_handler)
+                    .children("Home")
+                    .build(),
+                NavLink(ctx, users_path)
+                    .error_handler(error_handler)
+                    .children("Users")
+                    .build(),
+                NavLink(ctx, search_path)
+                    .error_handler(error_handler)
+                    .children("Search")
+                    .build(),
+                NavLink(ctx, "/nowhere")
+                    .error_handler(error_handler)
+                    .children("404 Test")
+                    .build(),
             )
         )
         .style(
@@ -308,17 +347,17 @@ fn MainLayout<'scope>(
 #[component]
 fn App<'scope>(scope: Scope<'scope>, error_handler: ErrorReporter<'scope>) -> impl View<'scope> {
     let users = routes!(UsersRoutes {
-        list "/" => move |ctx| UserList(ctx).build(),
-        create "/new" => move |_ctx| CreateUser().build(),
-        detail "/:id" => move |ctx, id: u32| UserDetail(ctx, id).build(),
+        list "/" => move |ctx| UserList(ctx).error_handler(error_handler).build(),
+        create "/new" => move |_ctx| CreateUser().error_handler(error_handler).build(),
+        detail "/:id" => move |ctx, id: u32| UserDetail(ctx, id).error_handler(error_handler).build(),
     })
     .map_err(|error| SilexError::Framework(error.to_string()))?
     .at("/users")
     .map_err(|error| SilexError::Framework(error.to_string()))?;
     let routes = routes!(AppRoutes {
-        home "/" => move |_ctx| Home().build(),
+        home "/" => move |_ctx| Home().error_handler(error_handler).build(),
         search "/search" => move |ctx| SearchPage(ctx).error_handler(error_handler).build(),
-        not_found "/*" => move |ctx| NotFound(ctx).build(),
+        not_found "/*" => move |ctx| NotFound(ctx).error_handler(error_handler).build(),
     })
     .map_err(|error| SilexError::Framework(error.to_string()))?;
 
@@ -334,7 +373,10 @@ fn App<'scope>(scope: Scope<'scope>, error_handler: ErrorReporter<'scope>) -> im
     let table = routes
         .table()
         .nest(users.prefix(), users.table(), move |ctx, outlet| {
-            UsersLayout(ctx).children(outlet).build()
+            UsersLayout(ctx)
+                .error_handler(error_handler)
+                .children(outlet)
+                .build()
         })
         .map_err(|error| SilexError::Framework(error.to_string()))?;
 
@@ -347,6 +389,7 @@ fn App<'scope>(scope: Scope<'scope>, error_handler: ErrorReporter<'scope>) -> im
                 users_path.clone(),
                 search_path.clone(),
             )
+            .error_handler(error_handler)
             .children(outlet)
             .build()
         })

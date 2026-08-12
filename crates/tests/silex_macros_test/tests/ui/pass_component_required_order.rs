@@ -10,6 +10,7 @@ use silex_macros::component;
 fn RequiredOrder<'scope>(
     scope: Scope<'scope>,
     children: AnyView<'scope>,
+    #[chain] error_handler: ErrorReporter<'scope>,
     #[chain] first: String,
     #[chain] second: String,
 ) -> impl View<'scope> {
@@ -20,7 +21,9 @@ fn RequiredOrder<'scope>(
 fn main() {
     let mut runtime = Runtime::new();
     let _ = runtime.child(|scope| {
+        let error_handler = scope.error_handler(|_| {}).expect("handler");
         let view = RequiredOrder(scope, AnyView::Empty)
+            .error_handler(error_handler)
             .second(String::from("second"))
             .first(String::from("first"))
             .second(String::from("override"))

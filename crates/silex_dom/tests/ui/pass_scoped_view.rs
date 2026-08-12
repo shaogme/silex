@@ -11,7 +11,7 @@ fn main() {
             let (read, _) = scope.signal(borrowed_view.as_str()).expect("signal");
             let _view: AnyView<'_> = AnyView::new(read);
 
-            let owner = ScopedViewOwner::new(scope, scope.error_handler(|_| {}).expect("handler"));
+            let owner = ScopedViewOwner::new(scope);
             let _token = owner.token();
 
             let borrowed_attr = String::from("borrowed-attribute");

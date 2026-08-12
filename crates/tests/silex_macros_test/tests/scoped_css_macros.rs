@@ -23,6 +23,7 @@ tw_variants! {
 
 styled! {
     pub ScopedPanel<'scope><div>(
+        #[chain] error_handler: ErrorReporter<'scope>,
         children: AnyView<'scope>,
         color: silex::core::reactivity::Signal<'scope, Hex>,
     ) {
@@ -32,6 +33,7 @@ styled! {
 
 styled! {
     pub ScopedSelector<'scope><div>(
+        #[chain] error_handler: ErrorReporter<'scope>,
         children: AnyView<'scope>,
         selector: silex::core::reactivity::Signal<'scope, String>,
     ) {
@@ -40,7 +42,10 @@ styled! {
 }
 
 styled! {
-    pub VariantPanel<'scope><div>(children: AnyView<'scope>) {
+    pub VariantPanel<'scope><div>(
+        #[chain] error_handler: ErrorReporter<'scope>,
+        children: AnyView<'scope>,
+    ) {
         variants: {
             mode: {
                 light: { color: red; },

@@ -7,7 +7,11 @@ use silex_dom::prelude::*;
 use silex_macros::component;
 
 #[component]
-fn BuilderAsView<'scope>(scope: Scope<'scope>, children: AnyView<'scope>) -> impl View<'scope> {
+fn BuilderAsView<'scope>(
+    scope: Scope<'scope>,
+    children: AnyView<'scope>,
+    #[chain] error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
     let _ = scope;
     children
 }
@@ -15,6 +19,10 @@ fn BuilderAsView<'scope>(scope: Scope<'scope>, children: AnyView<'scope>) -> imp
 fn main() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
-        let _ = AnyView::new(BuilderAsView(scope, AnyView::Empty));
+        let error_handler = scope.error_handler(|_| {}).expect("handler");
+        let _ = AnyView::new(
+            BuilderAsView(scope, AnyView::Empty)
+                .error_handler(error_handler),
+        );
     });
 }

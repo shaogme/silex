@@ -5,7 +5,7 @@ use crate::{
 use silex_core::{RuntimeInputs, SilexError, SilexResult};
 use silex_dom::{
     attribute::{ApplyTarget, ApplyToDom, AttrOp, IntoStorable},
-    view::{ViewOwner, ViewOwnerToken},
+    view::{ViewErrorHandler, ViewOwner, ViewOwnerToken},
 };
 use std::{
     fmt::{Display, Write},
@@ -141,13 +141,13 @@ where
         el: &Element,
         _target: ApplyTarget,
         owner: &ViewOwnerToken<'scope>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
         let theme = self.0.clone();
         let inputs = source_inputs(&theme);
         owner.validate_inputs(&inputs)?;
         let el = el.clone();
         let effect_el = el.clone();
-        let error_handler = owner.error_handler();
         owner.effect_with_previous_from(
             inputs,
             Box::new(
@@ -190,8 +190,8 @@ where
 
     fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope> {
         let inputs = source_inputs(&self.0);
-        AttrOp::custom_with_inputs(inputs, move |el, owner| {
-            self.apply(el, ApplyTarget::Apply, owner)
+        AttrOp::custom_with_inputs(inputs, move |el, owner, error_handler| {
+            self.apply(el, ApplyTarget::Apply, owner, error_handler)
         })
     }
 }
@@ -208,7 +208,11 @@ where
 
 /// 全局主题下 `:root{}` 规则所用的样式表 id。
 /// Sets a global theme that applies to the entire document (:root).
-pub fn set_global_theme<'scope, S>(owner: &dyn ViewOwner<'scope>, theme: S) -> SilexResult<()>
+pub fn set_global_theme<'scope, S>(
+    owner: &dyn ViewOwner<'scope>,
+    theme: S,
+    error_handler: ViewErrorHandler<'scope>,
+) -> SilexResult<()>
 where
     S: IntoCssSource<'scope>,
     S::Value: ThemeType + ThemeToCss + Clone + 'scope,
@@ -220,7 +224,6 @@ where
     let manager = Rc::new(DynamicStyleManager::new());
     let manager_for_effect = manager.clone();
     let style_id = unique_dynamic_style_id("slx-global-theme");
-    let error_handler = token.error_handler();
     token
         .effect_with_previous_from(
             inputs,
@@ -297,6 +300,7 @@ where
         el: &Element,
         _target: ApplyTarget,
         owner: &ViewOwnerToken<'scope>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
         let patch = self.0.clone();
         let inputs = source_inputs(&patch);
@@ -305,7 +309,6 @@ where
         let effect_el = el.clone();
         let names = owner.owner_state(Vec::<&'static str>::new())?;
         let names_for_effect = names.clone();
-        let error_handler = owner.error_handler();
         owner.effect_with_previous_from(
             inputs,
             Box::new(
@@ -360,8 +363,8 @@ where
 
     fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope> {
         let inputs = source_inputs(&self.0);
-        AttrOp::custom_with_inputs(inputs, move |el, owner| {
-            self.apply(el, ApplyTarget::Apply, owner)
+        AttrOp::custom_with_inputs(inputs, move |el, owner, error_handler| {
+            self.apply(el, ApplyTarget::Apply, owner, error_handler)
         })
     }
 }

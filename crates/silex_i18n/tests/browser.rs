@@ -19,6 +19,11 @@ fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
     scope.error_handler(|_| {}).expect("error handler")
 }
 
+fn test_owner<'scope>(scope: Scope<'scope>) -> (ScopedViewOwner<'scope>, ErrorReporter<'scope>) {
+    let error_handler = test_handler(scope);
+    (ScopedViewOwner::new(scope), error_handler)
+}
+
 #[cfg(feature = "persist")]
 const BINDING_KEY: &str = "silex-i18n-wasm-binding";
 #[cfg(feature = "persist")]
@@ -263,10 +268,10 @@ async fn translated_memo_updates_the_existing_text_node() {
             .expect("document")
             .create_element("div")
             .expect("parent element");
-        let owner = ScopedViewOwner::new(scope, test_handler(scope));
+        let (owner, error_handler) = test_owner(scope);
         t!(i18n, "title")
             .expect("translation")
-            .mount_owned(&owner, parent.as_ref(), Vec::new())
+            .mount_owned(&owner, parent.as_ref(), Vec::new(), error_handler)
             .expect("translation should mount");
 
         assert_eq!(parent.text_content(), Some("English".to_string()));
@@ -302,10 +307,10 @@ fn translated_memo_is_removed_when_its_root_is_disposed() {
             .catalog(catalog)
             .build()
             .expect("valid i18n store");
-        let owner = ScopedViewOwner::new(scope, test_handler(scope));
+        let (owner, error_handler) = test_owner(scope);
         t!(i18n, "title")
             .expect("translation")
-            .mount_owned(&owner, parent.as_ref(), Vec::new())
+            .mount_owned(&owner, parent.as_ref(), Vec::new(), error_handler)
             .expect("translation should mount");
         assert_eq!(parent.text_content(), Some("English".to_string()));
         assert_eq!(parent.child_nodes().length(), 1);
@@ -341,10 +346,10 @@ fn foreign_translation_source_does_not_mount_or_allocate_foreign_owner_nodes() {
     {
         let foreign_scope = foreign_root.scope();
         let translation = t!(i18n, "title").expect("translation");
-        let owner = ScopedViewOwner::new(foreign_scope, test_handler(foreign_scope));
+        let (owner, error_handler) = test_owner(foreign_scope);
         assert!(
             translation
-                .mount_owned(&owner, parent.as_ref(), Vec::new())
+                .mount_owned(&owner, parent.as_ref(), Vec::new(), error_handler)
                 .is_err()
         );
     }

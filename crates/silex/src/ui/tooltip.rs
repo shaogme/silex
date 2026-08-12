@@ -31,6 +31,7 @@ pub struct TooltipContext<'scope> {
     pub anchor: RwSignal<'scope, (f64, f64, f64, f64)>,
     timer: StoredValue<'scope, Option<HostResourceHandle<'scope>>>,
     owner: StoredValue<'scope, Option<ViewOwnerToken<'scope>>>,
+    error_handler: StoredValue<'scope, Option<ErrorReporter<'scope>>>,
 }
 
 impl<'scope> TooltipContext<'scope> {
@@ -40,11 +41,17 @@ impl<'scope> TooltipContext<'scope> {
             anchor: scope.rw_signal((0.0, 0.0, 0.0, 0.0))?,
             timer: scope.stored(None)?,
             owner: scope.stored(None)?,
+            error_handler: scope.stored(None)?,
         })
     }
 
-    fn set_owner(&self, owner: ViewOwnerToken<'scope>) -> ReactiveResult<()> {
-        self.owner.set(Some(owner))
+    fn set_owner(
+        &self,
+        owner: ViewOwnerToken<'scope>,
+        error_handler: ErrorReporter<'scope>,
+    ) -> ReactiveResult<()> {
+        self.owner.set(Some(owner))?;
+        self.error_handler.set(Some(error_handler))
     }
 
     /// Cancels any pending close timeout.
@@ -64,6 +71,9 @@ impl<'scope> TooltipContext<'scope> {
         let Some(owner) = self.owner.with(Clone::clone)? else {
             return Ok(());
         };
+        let Some(error_handler) = self.error_handler.with(Clone::clone)? else {
+            return Ok(());
+        };
         let open = self.open;
         let timer = self.timer;
         let handle = set_timeout(
@@ -74,6 +84,7 @@ impl<'scope> TooltipContext<'scope> {
                 Ok(())
             },
             Duration::from_millis(delay_ms.max(0) as u64),
+            error_handler,
         )?;
         self.timer.set(Some(handle))?;
         Ok(())
@@ -109,8 +120,8 @@ impl<'scope> TooltipContext<'scope> {
 }
 
 fn owner_binding<'scope>(ctx: TooltipContext<'scope>) -> AttrOp<'scope> {
-    AttrOp::custom_with_inputs(RuntimeInputs::new(), move |_, owner| {
-        ctx.set_owner(owner.clone())?;
+    AttrOp::custom_with_inputs(RuntimeInputs::new(), move |_, owner, error_handler| {
+        ctx.set_owner(owner.clone(), error_handler)?;
         Ok(())
     })
 }
@@ -347,6 +358,7 @@ pub fn TooltipContent<'scope>(
             };
 
             crate::components::Portal(
+                error_handler,
                 div(div(chain!(children_view, arrow_view))
                     .attr("data-slot", "tooltip-content")
                     .attr("data-side", side_val)

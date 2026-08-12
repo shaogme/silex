@@ -10,9 +10,14 @@ fn ButtonShowcase<'scope>(
 ) -> impl View<'scope> {
     Ok(Card(chain!(
         CardHeader(chain!(
-            CardTitle("Button & Badge System").build(),
-            CardDescription("Standard variants and sizes ported from shadcn/ui.").build()
+            CardTitle("Button & Badge System")
+                .error_handler(error_handler)
+                .build(),
+            CardDescription("Standard variants and sizes ported from shadcn/ui.")
+                .error_handler(error_handler)
+                .build()
         ))
+        .error_handler(error_handler)
         .build(),
         CardContent(chain!(
             // Variants
@@ -95,8 +100,10 @@ fn ButtonShowcase<'scope>(
             ))
             .class(tw!("flex flex-wrap items-center gap-2"))
         ))
+        .error_handler(error_handler)
         .build()
     ))
+    .error_handler(error_handler)
     .build())
 }
 
@@ -111,9 +118,15 @@ fn FormControlsShowcase<'scope>(
 
     Ok(Card(chain!(
         CardHeader(chain!(
-            CardTitle("Form & Interactive Controls").build(),
-            CardDescription("Reactive Input, Textarea, Checkbox and Switch components.").build()
-        )).build(),
+            CardTitle("Form & Interactive Controls")
+                .error_handler(error_handler)
+                .build(),
+            CardDescription("Reactive Input, Textarea, Checkbox and Switch components.")
+                .error_handler(error_handler)
+                .build()
+        ))
+        .error_handler(error_handler)
+        .build(),
         CardContent(chain!(
             // Input
             div(chain!(
@@ -130,6 +143,7 @@ fn FormControlsShowcase<'scope>(
             div(chain!(
                 span("Textarea").class(tw!("text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1")),
                 Textarea(scope)
+                    .error_handler(error_handler)
                     .value("Multi-line textarea component styling ported straight from shadcn/ui v4.")
                     .placeholder("Write a description...")
                     .build()
@@ -151,8 +165,10 @@ fn FormControlsShowcase<'scope>(
                     span("Airplane Mode").class(tw!("text-sm font-medium text-slate-900 dark:text-slate-100"))
                 )).class(tw!("flex items-center gap-2"))
             )).class(tw!("flex flex-wrap items-center justify-between gap-4 p-4 bg-slate-50 dark:bg-slate-900 rounded-lg border border-solid border-slate-200 dark:border-slate-800"))
-        )).build()
-    )).build())
+        )).error_handler(error_handler).build()
+    ))
+    .error_handler(error_handler)
+    .build())
 }
 
 #[component]
@@ -165,9 +181,15 @@ fn TabsAndDialogShowcase<'scope>(
 
     Ok(Card(chain!(
         CardHeader(chain!(
-            CardTitle("Tabs & Modal Dialog").build(),
-            CardDescription("Seamless tab switching and portal-rendered modal dialogs.").build()
-        )).build(),
+            CardTitle("Tabs & Modal Dialog")
+                .error_handler(error_handler)
+                .build(),
+            CardDescription("Seamless tab switching and portal-rendered modal dialogs.")
+                .error_handler(error_handler)
+                .build()
+        ))
+        .error_handler(error_handler)
+        .build(),
         CardContent(chain!(
             // Tabs
             div(chain!(
@@ -249,11 +271,17 @@ fn TabsAndDialogShowcase<'scope>(
                     .build(),
                 Dialog(scope, error_handler, chain!(
                     DialogHeader(chain!(
-                        DialogTitle("Edit Profile").build(),
+                        DialogTitle("Edit Profile")
+                            .error_handler(error_handler)
+                            .build(),
                         DialogDescription(
                             "Make changes to your profile here. Click save when you're done."
-                        ).build()
-                    )).build(),
+                        )
+                            .error_handler(error_handler)
+                            .build()
+                    ))
+                    .error_handler(error_handler)
+                    .build(),
                     div(chain!(
                         Input(scope, error_handler).value("Shao G.")?.placeholder("Name")?.build(),
                         Input(scope, error_handler)
@@ -277,7 +305,9 @@ fn TabsAndDialogShowcase<'scope>(
                                 Ok(())
                             })
                             .build()
-                    )).build()
+                    ))
+                    .error_handler(error_handler)
+                    .build()
                 ))
                 .open(dialog_open)?
                 .on_close(scope.callback(move |_| {
@@ -288,8 +318,10 @@ fn TabsAndDialogShowcase<'scope>(
             ))
             .class(tw!("flex items-center justify-between"))
         ))
+        .error_handler(error_handler)
         .build()
     ))
+    .error_handler(error_handler)
     .build())
 }
 
@@ -302,14 +334,24 @@ fn FeedbackAndDataShowcase<'scope>(
 
     Ok(Card(chain!(
         CardHeader(chain!(
-            CardTitle("Avatars, Progress & Feedback").build(),
-            CardDescription("Progress indicators, Avatar fallback, Alert banners and Skeletons.").build()
-        )).build(),
+            CardTitle("Avatars, Progress & Feedback")
+                .error_handler(error_handler)
+                .build(),
+            CardDescription("Progress indicators, Avatar fallback, Alert banners and Skeletons.")
+                .error_handler(error_handler)
+                .build()
+        ))
+        .error_handler(error_handler)
+        .build(),
         CardContent(chain!(
             // Alert
             Alert(scope, error_handler, chain!(
-                AlertTitle("System Update Complete").build(),
-                AlertDescription("All shadcn/ui components have been successfully compiled into Silex zero-runtime AST.").build()
+                AlertTitle("System Update Complete")
+                    .error_handler(error_handler)
+                    .build(),
+                AlertDescription("All shadcn/ui components have been successfully compiled into Silex zero-runtime AST.")
+                    .error_handler(error_handler)
+                    .build()
             )).variant("default")?.class(tw!("mb-6"))?.build(),
 
             // Progress Bar
@@ -348,13 +390,21 @@ fn FeedbackAndDataShowcase<'scope>(
 
                 // Skeletons
                 div(chain!(
-                    Skeleton(scope).class(tw!("h-4 w-32")).build(),
-                    Skeleton(scope).class(tw!("h-4 w-20")).build()
+                    Skeleton(scope)
+                        .error_handler(error_handler)
+                        .class(tw!("h-4 w-32"))
+                        .build(),
+                    Skeleton(scope)
+                        .error_handler(error_handler)
+                        .class(tw!("h-4 w-20"))
+                        .build()
                 )).class(tw!("flex flex-col gap-2"))
             )).class(tw!("flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900 rounded-lg border border-solid border-slate-200 dark:border-slate-800"))
         ))
+        .error_handler(error_handler)
         .build()
     ))
+    .error_handler(error_handler)
     .build())
 }
 
@@ -471,9 +521,15 @@ fn NewComponentsShowcase<'scope>(
 
     Ok(Card(chain!(
         CardHeader(chain!(
-            CardTitle("Extended shadcn/ui Components").build(),
-            CardDescription("1:1 ported Slider, Tooltip, Toggle, RadioGroup, Accordion & Popover.").build()
-        )).build(),
+            CardTitle("Extended shadcn/ui Components")
+                .error_handler(error_handler)
+                .build(),
+            CardDescription("1:1 ported Slider, Tooltip, Toggle, RadioGroup, Accordion & Popover.")
+                .error_handler(error_handler)
+                .build()
+        ))
+        .error_handler(error_handler)
+        .build(),
         CardContent(chain!(
             // Slider & Toggle
             div(chain!(
@@ -559,8 +615,10 @@ fn NewComponentsShowcase<'scope>(
                 )).class(tw!("flex-1"))
             )).class(tw!("flex flex-col sm:flex-row gap-6 p-4 bg-slate-50 dark:bg-slate-900 rounded-lg border border-solid border-slate-200 dark:border-slate-800"))
         ))
+        .error_handler(error_handler)
         .build()
     ))
+    .error_handler(error_handler)
     .build())
 }
 

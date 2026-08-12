@@ -25,6 +25,11 @@ fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
         .expect("error handler should register")
 }
 
+fn test_owner<'scope>(scope: Scope<'scope>) -> (ScopedViewOwner<'scope>, ErrorReporter<'scope>) {
+    let error_handler = test_handler(scope);
+    (ScopedViewOwner::new(scope), error_handler)
+}
+
 struct CleanupProbe {
     text: String,
     cleanups: Rc<Cell<usize>>,
@@ -38,6 +43,7 @@ impl<'scope> View<'scope> for CleanupProbe {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ErrorReporter<'scope>,
     ) -> silex_core::SilexResult<()> {
         let cleanups = self.cleanups.clone();
         owner.on_cleanup(
@@ -45,7 +51,7 @@ impl<'scope> View<'scope> for CleanupProbe {
                 cleanups.set(cleanups.get() + 1);
                 Ok(())
             }),
-            owner.token().error_handler(),
+            error_handler,
         )?;
         mount_text_node(parent, &self.text)?;
         Ok(())
@@ -56,11 +62,12 @@ impl<'scope> View<'scope> for CleanupProbe {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ErrorReporter<'scope>,
     ) -> silex_core::SilexResult<()>
     where
         Self: Sized,
     {
-        self.mount(owner, parent, attrs)
+        self.mount(owner, parent, attrs, error_handler)
     }
 }
 
@@ -76,6 +83,7 @@ impl<'scope> View<'scope> for FailingChild {
         owner: &dyn ViewOwner<'scope>,
         _parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ErrorReporter<'scope>,
     ) -> silex_core::SilexResult<()> {
         let cleanups = self.cleanups.clone();
         owner.on_cleanup(
@@ -83,7 +91,7 @@ impl<'scope> View<'scope> for FailingChild {
                 cleanups.set(cleanups.get() + 1);
                 Ok(())
             }),
-            owner.token().error_handler(),
+            error_handler,
         )?;
         Err(SilexError::Framework("child mount rejected".to_string()))
     }
@@ -93,11 +101,12 @@ impl<'scope> View<'scope> for FailingChild {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ErrorReporter<'scope>,
     ) -> silex_core::SilexResult<()>
     where
         Self: Sized,
     {
-        self.mount(owner, parent, attrs)
+        self.mount(owner, parent, attrs, error_handler)
     }
 }
 
@@ -114,6 +123,7 @@ impl<'scope> View<'scope> for ConditionalRow {
         _owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
+        _error_handler: ErrorReporter<'scope>,
     ) -> SilexResult<()> {
         if self.fail == Some(self.value) {
             return Err(SilexError::Framework(format!(
@@ -129,11 +139,12 @@ impl<'scope> View<'scope> for ConditionalRow {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ErrorReporter<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized,
     {
-        self.mount(owner, parent, attrs)
+        self.mount(owner, parent, attrs, error_handler)
     }
 }
 
@@ -152,6 +163,7 @@ impl<'scope> View<'scope> for StatefulProbe {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ErrorReporter<'scope>,
     ) -> silex_core::SilexResult<()> {
         self.mounts.set(self.mounts.get() + 1);
         let node: Node = web_sys::window()
@@ -173,7 +185,7 @@ impl<'scope> View<'scope> for StatefulProbe {
                 cleanups.set(cleanups.get() + 1);
                 Ok(())
             }),
-            owner.token().error_handler(),
+            error_handler,
         )?;
         Ok(())
     }
@@ -183,11 +195,12 @@ impl<'scope> View<'scope> for StatefulProbe {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ErrorReporter<'scope>,
     ) -> silex_core::SilexResult<()>
     where
         Self: Sized,
     {
-        self.mount(owner, parent, attrs)
+        self.mount(owner, parent, attrs, error_handler)
     }
 }
 
@@ -223,18 +236,16 @@ fn native_owner_error_handler_separates_initial_deferred_and_cleanup_errors() {
     let mut runtime = Runtime::new();
     runtime
         .child(|scope| {
-            let owner = ScopedViewOwner::new(
-                scope,
-                scope
-                    .error_handler(move |_| {
-                        initial_reports_for_owner.set(initial_reports_for_owner.get() + 1);
-                    })
-                    .expect("error handler should register"),
-            );
+            let error_handler = scope
+                .error_handler(move |_| {
+                    initial_reports_for_owner.set(initial_reports_for_owner.get() + 1);
+                })
+                .expect("error handler should register");
+            let owner = ScopedViewOwner::new(scope);
             let result = owner.effect_from(
                 RuntimeInputs::new(),
                 Box::new(|| Err(SilexError::Framework("initial effect failure".to_string()))),
-                owner.token().error_handler(),
+                error_handler,
             );
             assert!(matches!(
                 result,
@@ -255,9 +266,8 @@ fn native_owner_error_handler_separates_initial_deferred_and_cleanup_errors() {
         let runs_for_effect = runs.clone();
         let deferred_reports_for_owner = deferred_reports.clone();
         let cleanup_reports_for_owner = cleanup_reports.clone();
-        let owner = ScopedViewOwner::new(
-            scope,
-            scope.error_handler(move |error| {
+        let error_handler = scope
+            .error_handler(move |error| {
                 if matches!(&error, SilexError::Framework(message) if message == "deferred effect failure")
                 {
                     deferred_reports_for_owner.set(deferred_reports_for_owner.get() + 1);
@@ -266,8 +276,9 @@ fn native_owner_error_handler_separates_initial_deferred_and_cleanup_errors() {
                 {
                     cleanup_reports_for_owner.set(cleanup_reports_for_owner.get() + 1);
                 }
-            }).expect("error handler should register"),
-        );
+            })
+            .expect("error handler should register");
+        let owner = ScopedViewOwner::new(scope);
         owner
             .effect_from(
                 runtime_inputs_of(should_fail),
@@ -278,7 +289,7 @@ fn native_owner_error_handler_separates_initial_deferred_and_cleanup_errors() {
                     runs_for_effect.set(runs_for_effect.get() + 1);
                     Ok(())
                 }),
-                owner.token().error_handler(),
+                error_handler,
             )
             .expect("initial effect run should succeed");
         assert_eq!(runs.get(), 1);
@@ -286,7 +297,7 @@ fn native_owner_error_handler_separates_initial_deferred_and_cleanup_errors() {
         owner
             .on_cleanup(
                 Box::new(|| Err(SilexError::Framework("cleanup failure".to_string()))),
-                owner.token().error_handler(),
+                error_handler,
             )
             .expect("cleanup registration should succeed");
 
@@ -313,7 +324,7 @@ fn element_child_failure_rolls_back_provisional_owner_and_dom() {
     let mut runtime = Runtime::new();
     runtime
         .child(|scope| {
-            let owner = ScopedViewOwner::new(scope, test_handler(scope));
+            let (owner, error_handler) = test_owner(scope);
             let view = Element::with_child(
                 "section",
                 FailingChild {
@@ -322,7 +333,7 @@ fn element_child_failure_rolls_back_provisional_owner_and_dom() {
             );
 
             assert!(matches!(
-                view.mount_owned(&owner, &host, Vec::new()),
+                view.mount_owned(&owner, &host, Vec::new(), error_handler),
                 Err(SilexError::Framework(message)) if message == "child mount rejected"
             ));
         })
@@ -344,7 +355,7 @@ fn composite_view_failure_rolls_back_only_its_mount_transaction() {
 
     runtime
         .child(|scope| {
-            let owner = ScopedViewOwner::new(scope, test_handler(scope));
+            let (owner, error_handler) = test_owner(scope);
             let view = vec![
                 AnyView::new(CleanupProbe {
                     text: "kept out of the document".to_string(),
@@ -356,7 +367,7 @@ fn composite_view_failure_rolls_back_only_its_mount_transaction() {
             ];
 
             assert!(matches!(
-            view.mount_owned(&owner, &host.clone(), Vec::new()),
+            view.mount_owned(&owner, &host.clone(), Vec::new(), error_handler),
                 Err(SilexError::Framework(message)) if message == "child mount rejected"
             ));
         })
@@ -382,14 +393,12 @@ fn indexed_list_failure_restores_previous_rows_and_can_retry() {
             .signal(vec![1_i32, 2])
             .expect("signal should initialize");
         let reports_for_handler = reports.clone();
-        let owner = ScopedViewOwner::new(
-            scope,
-            scope
-                .error_handler(move |_| {
-                    reports_for_handler.set(reports_for_handler.get() + 1);
-                })
-                .expect("error handler should register"),
-        );
+        let error_handler = scope
+            .error_handler(move |_| {
+                reports_for_handler.set(reports_for_handler.get() + 1);
+            })
+            .expect("error handler should register");
+        let owner = ScopedViewOwner::new(scope);
         let list = IndexedLoopView {
             each: items,
             view_fn: Rc::new(|value: i32, _| {
@@ -401,7 +410,7 @@ fn indexed_list_failure_restores_previous_rows_and_can_retry() {
             _marker: PhantomData,
         };
 
-        list.mount_owned(&owner, &host.clone(), Vec::new())
+        list.mount_owned(&owner, &host.clone(), Vec::new(), error_handler)
             .expect("indexed list should mount");
         assert_eq!(host.text_content().as_deref(), Some("1;2;"));
 
@@ -435,14 +444,12 @@ fn deferred_row_render_failure_keeps_previous_content_and_recovers() {
         let scope = root.scope();
         let (value, set_value) = scope.signal(1_i32).expect("signal should initialize");
         let reports_for_handler = reports.clone();
-        let owner = ScopedViewOwner::new(
-            scope,
-            scope
-                .error_handler(move |_| {
-                    reports_for_handler.set(reports_for_handler.get() + 1);
-                })
-                .expect("error handler should register"),
-        );
+        let error_handler = scope
+            .error_handler(move |_| {
+                reports_for_handler.set(reports_for_handler.get() + 1);
+            })
+            .expect("error handler should register");
+        let owner = ScopedViewOwner::new(scope);
         let view = move || {
             value.get().map(|value| {
                 AnyView::new(ConditionalRow {
@@ -452,7 +459,7 @@ fn deferred_row_render_failure_keeps_previous_content_and_recovers() {
             })
         };
 
-        view.mount_owned(&owner, &host.clone(), Vec::new())
+        view.mount_owned(&owner, &host.clone(), Vec::new(), error_handler)
             .expect("dynamic view should mount");
         assert_eq!(host.text_content().as_deref(), Some("1;"));
 
@@ -497,10 +504,10 @@ fn keyed_list_initial_duplicate_key_is_a_mount_error() {
                 ),
                 _marker: PhantomData,
             };
-            let owner = ScopedViewOwner::new(scope, test_handler(scope));
+            let (owner, error_handler) = test_owner(scope);
 
             assert!(matches!(
-                list.mount_owned(&owner, &host, Vec::new()),
+                list.mount_owned(&owner, &host, Vec::new(), error_handler),
                 Err(SilexError::Framework(message)) if message == "duplicate key in keyed list"
             ));
         })
@@ -532,8 +539,8 @@ fn dynamic_render_owner_cleans_children_on_rerun_and_root_dispose() {
                 })
             })
         };
-        let owner = ScopedViewOwner::new(scope, test_handler(scope));
-        view.mount_owned(&owner, &host, Vec::new())
+        let (owner, error_handler) = test_owner(scope);
+        view.mount_owned(&owner, &host, Vec::new(), error_handler)
             .expect("dynamic view should mount");
         assert_eq!(host.text_content().as_deref(), Some("0"));
 
@@ -569,7 +576,7 @@ fn combined_reactive_styles_clean_up_properties_on_scope_dispose() {
             let (color, set_color) = scope
                 .signal(String::from("red"))
                 .expect("signal should initialize");
-            let owner = ScopedViewOwner::new(scope, test_handler(scope));
+            let (owner, error_handler) = test_owner(scope);
             let token = owner.token();
             let operation = AttrOp::CombinedStyles(CombinedStyles {
                 statics: Vec::new(),
@@ -578,7 +585,7 @@ fn combined_reactive_styles_clean_up_properties_on_scope_dispose() {
             });
 
             operation
-                .apply(&element, &token)
+                .apply(&element, &token, error_handler)
                 .expect("combined styles can be applied");
             assert!(
                 element
@@ -622,7 +629,7 @@ fn branch_replaces_row_owner_and_keyed_list_reorders_ranges() {
     {
         let scope = root.scope();
         let (key, set_key) = scope.signal(0i32).expect("signal should initialize");
-        let owner = ScopedViewOwner::new(scope, test_handler(scope));
+        let (owner, error_handler) = test_owner(scope);
         let branch_cleanups_for_view = branch_cleanups.clone();
         let key_inputs = scope
             .promote(key, test_handler(scope))
@@ -633,6 +640,7 @@ fn branch_replaces_row_owner_and_keyed_list_reorders_ranges() {
             &host,
             Vec::new(),
             key_inputs,
+            error_handler,
             move || key.get().expect("signal should be readable"),
             move |key| {
                 AnyView::new(CleanupProbe {
@@ -685,8 +693,8 @@ fn branch_replaces_row_owner_and_keyed_list_reorders_ranges() {
                     ),
                     _marker: PhantomData,
                 };
-                let list_owner = ScopedViewOwner::new(child, test_handler(child));
-                list.mount_owned(&list_owner, &host, Vec::new())
+                let (list_owner, error_handler) = test_owner(child);
+                list.mount_owned(&list_owner, &host, Vec::new(), error_handler)
                     .expect("keyed list should mount");
                 assert_eq!(host.text_content().as_deref(), Some("b11:0;2:1;3:2;"));
 
@@ -732,8 +740,8 @@ fn indexed_list_preserves_position_identity_across_diff() {
                     view_fn: Rc::new(|item: i32, index| format!("{item}:{index};").into_any()),
                     _marker: PhantomData,
                 };
-                let owner = ScopedViewOwner::new(child, test_handler(child));
-                list.mount_owned(&owner, &host, Vec::new())
+                let (owner, error_handler) = test_owner(child);
+                list.mount_owned(&owner, &host, Vec::new(), error_handler)
                     .expect("indexed list should mount");
                 assert_eq!(host.text_content().as_deref(), Some("1:0;2:1;"));
 
@@ -764,7 +772,7 @@ fn repeated_branch_and_list_replacement_keeps_owner_lifecycle_stable() {
     {
         let scope = root.scope();
         let (key, set_key) = scope.signal(0i32).expect("signal should initialize");
-        let owner = ScopedViewOwner::new(scope, test_handler(scope));
+        let (owner, error_handler) = test_owner(scope);
         let branch_cleanups_for_view = branch_cleanups.clone();
         mount_branch_cached(
             &owner,
@@ -774,6 +782,7 @@ fn repeated_branch_and_list_replacement_keeps_owner_lifecycle_stable() {
                 .promote(key, test_handler(scope))
                 .expect("signal promotion should succeed")
                 .runtime_inputs(),
+            error_handler,
             move || key.get().expect("signal should be readable"),
             move |key| {
                 AnyView::new(CleanupProbe {
@@ -801,8 +810,8 @@ fn repeated_branch_and_list_replacement_keeps_owner_lifecycle_stable() {
                     view_fn: Rc::new(|item: i32, index| format!("{item}:{index};").into_any()),
                     _marker: PhantomData,
                 };
-                let list_owner = ScopedViewOwner::new(child, test_handler(child));
-                list.mount_owned(&list_owner, &host, Vec::new())
+                let (list_owner, error_handler) = test_owner(child);
+                list.mount_owned(&list_owner, &host, Vec::new(), error_handler)
                     .expect("indexed list should mount");
 
                 for values in [vec![1, 2, 3], vec![3], vec![4, 5], vec![6, 7, 8, 9]] {
@@ -885,8 +894,8 @@ fn stateful_keyed_rows_preserve_mounts_and_invalidate_old_updaters() {
                     ),
                     _marker: PhantomData,
                 };
-                let owner = ScopedViewOwner::new(child, test_handler(child));
-                view.mount_owned(&owner, &host, Vec::new())
+                let (owner, error_handler) = test_owner(child);
+                view.mount_owned(&owner, &host, Vec::new(), error_handler)
                     .expect("branch view should mount");
                 assert_eq!(host.text_content().as_deref(), Some("1:0;2:1;"));
                 assert_eq!(mounts.get(), 2);
@@ -975,8 +984,8 @@ fn rejected_stateful_factory_cleans_uncommitted_row_range() {
                     ),
                     _marker: PhantomData,
                 };
-                let owner = ScopedViewOwner::new(child, test_handler(child));
-                list.mount_owned(&owner, &host, Vec::new())
+                let (owner, error_handler) = test_owner(child);
+                list.mount_owned(&owner, &host, Vec::new(), error_handler)
                     .expect("keyed list should mount");
                 assert_eq!(host.text_content().as_deref(), Some("1:0;"));
                 assert_eq!(comment_count(&host), 4);

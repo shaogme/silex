@@ -4,25 +4,25 @@ use silex_html::{button, div};
 use silex_macros::{component, styled, tw};
 
 styled! {
-    pub DialogHeader<'scope><div>(children: AnyView<'scope>) {
+    pub DialogHeader<'scope><div>(#[chain] error_handler: ErrorReporter<'scope>, children: AnyView<'scope>) {
         @apply flex flex-col gap-2 text-center sm:text-left;
     }
 }
 
 styled! {
-    pub DialogTitle<'scope><h2>(children: AnyView<'scope>) {
+    pub DialogTitle<'scope><h2>(#[chain] error_handler: ErrorReporter<'scope>, children: AnyView<'scope>) {
         @apply text-lg leading-none font-semibold;
     }
 }
 
 styled! {
-    pub DialogDescription<'scope><p>(children: AnyView<'scope>) {
+    pub DialogDescription<'scope><p>(#[chain] error_handler: ErrorReporter<'scope>, children: AnyView<'scope>) {
         @apply text-sm text-slate-500 dark:text-slate-400;
     }
 }
 
 styled! {
-    pub DialogFooter<'scope><div>(children: AnyView<'scope>) {
+    pub DialogFooter<'scope><div>(#[chain] error_handler: ErrorReporter<'scope>, children: AnyView<'scope>) {
         @apply flex flex-col-reverse gap-2 sm:flex-row sm:justify-end;
     }
 }
@@ -58,7 +58,7 @@ pub fn Dialog<'scope>(
 
     Ok(rx!(scope; error_handler; {
         if *$open {
-            crate::components::Portal(chain!(
+            crate::components::Portal(error_handler, chain!(
                 // Overlay 遮罩
                 div(())
                     .class(tw!("fixed inset-0 z-50 bg-black/50 backdrop-blur-xs"))

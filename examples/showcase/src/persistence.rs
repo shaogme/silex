@@ -47,7 +47,11 @@ pub fn PersistencePage<'scope>(
 }
 
 #[component]
-fn Card<'scope>(children: AnyView<'scope>, #[chain] title: &'static str) -> impl View<'scope> {
+fn Card<'scope>(
+    children: AnyView<'scope>,
+    #[chain] title: &'static str,
+    #[chain] error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
     Ok(div![
         h3(title).style(
             sty()
@@ -161,6 +165,7 @@ fn BackendGrid<'scope>(
                 .gap(px(20))?
         )
     ))
+    .error_handler(error_handler)
     .title("1. Backends Comparison")
     .build())
 }
@@ -214,7 +219,7 @@ fn ManualFlushDemo<'scope>(
                 }
             ].style(sty().margin_top(px(15))?.font_size(em_unit(0.9))?)
         ]
-    )).title("2. Manual Persistence (Draft Mode)").build())
+    )).error_handler(error_handler).title("2. Manual Persistence (Draft Mode)").build())
 }
 
 #[component]
@@ -267,7 +272,7 @@ fn DebounceDemo<'scope>(
                 }
             ].style(sty().margin_top(px(15))?.background("rgba(0,0,0,0.05)")?.padding("12px")?.border_radius(px(6))?.font_family("monospace")?)
         ]
-    )).title("3. Debounced Syncing").build())
+    )).error_handler(error_handler).title("3. Debounced Syncing").build())
 }
 
 #[component]
@@ -380,6 +385,7 @@ fn ErrorHandlingDemo<'scope>(
                 .border(border(px(1), BorderStyleKeyword::Dashed, AppTheme::BORDER))?
         )
     ))
+    .error_handler(error_handler)
     .title("4. Error Handling & JSON")
     .build())
 }

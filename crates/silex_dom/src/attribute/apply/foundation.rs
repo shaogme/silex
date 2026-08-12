@@ -9,7 +9,7 @@ use crate::attribute::op::{
     apply_attr_with_target_internal, apply_immediate_bool_internal, get_style_decl,
     parse_style_str, set_string_property_internal,
 };
-use crate::view::ViewOwnerToken;
+use crate::view::{ViewErrorHandler, ViewOwnerToken};
 
 // --- Unified Apply Target Enum ---
 
@@ -89,14 +89,15 @@ pub trait ApplyToDom<'scope> {
         el: &WebElem,
         target: ApplyTarget,
         owner: &ViewOwnerToken<'scope>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()>;
 
     fn into_op(self, target: ApplyTarget) -> AttrOp<'scope>
     where
         Self: Sized + 'scope,
     {
-        AttrOp::Custom(Rc::new(move |el, owner| {
-            self.apply(el, target.clone(), owner)
+        AttrOp::Custom(Rc::new(move |el, owner, error_handler| {
+            self.apply(el, target.clone(), owner, error_handler)
         }))
     }
 }
@@ -107,6 +108,7 @@ pub trait ReactiveApply<'scope> {
         el: WebElem,
         target: ApplyTarget,
         _owner: &ViewOwnerToken<'scope>,
+        _error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized;
@@ -117,6 +119,7 @@ pub trait ReactiveApply<'scope> {
         el: WebElem,
         target: ApplyTarget,
         _owner: &ViewOwnerToken<'scope>,
+        _error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized,
@@ -157,8 +160,9 @@ impl<'scope> ApplyToDom<'scope> for AttrOp<'scope> {
         el: &WebElem,
         _target: ApplyTarget,
         owner: &ViewOwnerToken<'scope>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
-        self.clone().apply(el, owner)
+        self.clone().apply(el, owner, error_handler)
     }
 
     fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope> {
@@ -172,13 +176,14 @@ impl<'scope> ApplyToDom<'scope> for fn(&WebElem) {
         el: &WebElem,
         _target: ApplyTarget,
         _owner: &ViewOwnerToken<'scope>,
+        _error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
         (self)(el);
         Ok(())
     }
 
     fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope> {
-        AttrOp::Custom(Rc::new(move |el, _| {
+        AttrOp::Custom(Rc::new(move |el, _, _| {
             self(el);
             Ok(())
         }))
@@ -191,13 +196,14 @@ impl<'scope> ApplyToDom<'scope> for Rc<dyn Fn(&WebElem)> {
         el: &WebElem,
         _target: ApplyTarget,
         _owner: &ViewOwnerToken<'scope>,
+        _error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
         (self)(el);
         Ok(())
     }
 
     fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope> {
-        AttrOp::Custom(Rc::new(move |el, _| {
+        AttrOp::Custom(Rc::new(move |el, _, _| {
             self(el);
             Ok(())
         }))
@@ -280,6 +286,7 @@ impl<'scope, 'a: 'scope> ApplyToDom<'scope> for &'a str {
         el: &WebElem,
         target: ApplyTarget,
         _owner: &ViewOwnerToken<'scope>,
+        _error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
         apply_immediate_string(el, &target, self)
     }
@@ -299,7 +306,7 @@ impl<'scope, 'a: 'scope> ApplyToDom<'scope> for &'a str {
             ApplyTarget::Style => {
                 AttrOp::static_styles(parse_style_str(self).into_iter().collect())
             }
-            ApplyTarget::Apply => AttrOp::Custom(Rc::new(move |el, _| {
+            ApplyTarget::Apply => AttrOp::Custom(Rc::new(move |el, _, _| {
                 apply_immediate_string(el, &ApplyTarget::Apply, self)
             })),
         }
@@ -312,6 +319,7 @@ impl<'scope> ApplyToDom<'scope> for String {
         el: &WebElem,
         target: ApplyTarget,
         _owner: &ViewOwnerToken<'scope>,
+        _error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
         apply_immediate_string(el, &target, self)
     }
@@ -339,7 +347,7 @@ impl<'scope> ApplyToDom<'scope> for String {
             ),
             ApplyTarget::Apply => {
                 let self_clone = self;
-                AttrOp::Custom(Rc::new(move |el, _| {
+                AttrOp::Custom(Rc::new(move |el, _, _| {
                     apply_immediate_string(el, &ApplyTarget::Apply, &self_clone)
                 }))
             }
@@ -353,6 +361,7 @@ impl<'scope> ApplyToDom<'scope> for &String {
         el: &WebElem,
         target: ApplyTarget,
         _owner: &ViewOwnerToken<'scope>,
+        _error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
         apply_immediate_string(el, &target, self)
     }
@@ -368,6 +377,7 @@ impl<'scope, 'a: 'scope> ApplyToDom<'scope> for Cow<'a, str> {
         el: &WebElem,
         target: ApplyTarget,
         _owner: &ViewOwnerToken<'scope>,
+        _error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
         apply_immediate_string(el, &target, self.as_ref())
     }
@@ -386,6 +396,7 @@ impl<'scope> ApplyToDom<'scope> for Attr<'scope> {
         el: &WebElem,
         target: ApplyTarget,
         _owner: &ViewOwnerToken<'scope>,
+        _error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
         if let Some(name) = target.name() {
             apply_attr_with_target_internal(el, &name, target, self)?;
@@ -403,7 +414,7 @@ impl<'scope> ApplyToDom<'scope> for Attr<'scope> {
             }
             _ => {
                 let attr = self;
-                AttrOp::Custom(Rc::new(move |el, _| apply_attr_internal(el, "", &attr)))
+                AttrOp::Custom(Rc::new(move |el, _, _| apply_attr_internal(el, "", &attr)))
             }
         }
     }
@@ -415,6 +426,7 @@ impl<'scope> ApplyToDom<'scope> for bool {
         el: &WebElem,
         target: ApplyTarget,
         _owner: &ViewOwnerToken<'scope>,
+        _error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
         apply_immediate_bool(el, &target, *self)
     }
@@ -430,7 +442,7 @@ impl<'scope> ApplyToDom<'scope> for bool {
             }
             _ => {
                 let val = self;
-                AttrOp::Custom(Rc::new(move |el, _| {
+                AttrOp::Custom(Rc::new(move |el, _, _| {
                     apply_immediate_bool(el, &ApplyTarget::Apply, val)
                 }))
             }
@@ -444,9 +456,10 @@ impl<'scope, V: ApplyToDom<'scope> + 'scope> ApplyToDom<'scope> for Option<V> {
         el: &WebElem,
         target: ApplyTarget,
         owner: &ViewOwnerToken<'scope>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
         if let Some(v) = self {
-            v.apply(el, target, owner)?;
+            v.apply(el, target, owner, error_handler)?;
         }
         Ok(())
     }
@@ -466,9 +479,10 @@ impl<'scope, V: ApplyToDom<'scope> + 'scope> ApplyToDom<'scope> for Vec<V> {
         el: &WebElem,
         target: ApplyTarget,
         owner: &ViewOwnerToken<'scope>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
         for v in self {
-            v.apply(el, target.clone(), owner)?;
+            v.apply(el, target.clone(), owner, error_handler)?;
         }
         Ok(())
     }
@@ -488,9 +502,10 @@ impl<'scope, V: ApplyToDom<'scope> + 'scope, const N: usize> ApplyToDom<'scope> 
         el: &WebElem,
         target: ApplyTarget,
         owner: &ViewOwnerToken<'scope>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
         for v in self {
-            v.apply(el, target.clone(), owner)?;
+            v.apply(el, target.clone(), owner, error_handler)?;
         }
         Ok(())
     }
@@ -513,6 +528,7 @@ macro_rules! impl_apply_to_dom_for_primitive {
                     el: &WebElem,
                     target: ApplyTarget,
                     _owner: &ViewOwnerToken<'scope>,
+                    _error_handler: ViewErrorHandler<'scope>,
                 ) -> SilexResult<()> {
                     apply_primitive_static_internal(el, target, self.to_string())
                 }
@@ -541,10 +557,11 @@ where
         el: &WebElem,
         target: ApplyTarget,
         owner: &ViewOwnerToken<'scope>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
         let (key, rx) = self.clone();
         let el = el.clone();
-        T::apply_pair(rx, key.into(), el, target, owner)
+        T::apply_pair(rx, key.into(), el, target, owner, error_handler)
     }
 
     fn into_op(self, target: ApplyTarget) -> AttrOp<'scope> {
@@ -561,13 +578,14 @@ where
             if let Some(op) = T::into_op_reactive(rx, target_effective.clone()) {
                 op
             } else {
-                AttrOp::Custom(Rc::new(move |el, owner| {
+                AttrOp::Custom(Rc::new(move |el, owner, error_handler| {
                     T::apply_pair(
                         rx,
                         key_cow.clone(),
                         el.clone(),
                         target_effective.clone(),
                         owner,
+                        error_handler,
                     )
                 }))
             }
@@ -585,6 +603,7 @@ where
         el: &WebElem,
         target: ApplyTarget,
         _owner: &ViewOwnerToken<'scope>,
+        _error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
         let key_cow: Cow<'static, str> = self.0.clone().into();
         apply_static_pair(el, &target, key_cow.as_ref(), &self.1)
@@ -620,6 +639,7 @@ where
         el: &WebElem,
         target: ApplyTarget,
         _owner: &ViewOwnerToken<'scope>,
+        _error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
         let key_cow: Cow<'static, str> = self.0.clone().into();
         apply_static_pair(el, &target, key_cow.as_ref(), self.1)
@@ -655,6 +675,7 @@ where
         el: &WebElem,
         target: ApplyTarget,
         _owner: &ViewOwnerToken<'scope>,
+        _error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
         let (key, value) = self.clone();
         let key_cow: Cow<'static, str> = key.into();
@@ -729,9 +750,10 @@ impl<'scope> ApplyToDom<'scope> for AttributeGroup<'scope> {
         el: &WebElem,
         _target: ApplyTarget,
         owner: &ViewOwnerToken<'scope>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
         for op in &self.0 {
-            op.clone().apply(el, owner)?;
+            op.clone().apply(el, owner, error_handler)?;
         }
         Ok(())
     }

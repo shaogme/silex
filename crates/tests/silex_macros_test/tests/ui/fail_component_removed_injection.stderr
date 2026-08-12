@@ -1,0 +1,19 @@
+error: component parameters no longer support #[inject(...)]; declare error_handler explicitly
+  --> tests/ui/fail_component_removed_injection.rs:12:5
+   |
+12 |     #[inject(owner)] owner: (),
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `ErrorReporter` and `Scope`
+ --> tests/ui/fail_component_removed_injection.rs:5:18
+  |
+5 | use silex_core::{ErrorReporter, Scope};
+  |                  ^^^^^^^^^^^^^  ^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `silex_dom::view::View`
+ --> tests/ui/fail_component_removed_injection.rs:6:5
+  |
+6 | use silex_dom::view::View;
+  |     ^^^^^^^^^^^^^^^^^^^^^

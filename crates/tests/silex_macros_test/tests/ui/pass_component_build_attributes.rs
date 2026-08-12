@@ -10,6 +10,7 @@ use silex_macros::component;
 fn BuildAttributes<'scope>(
     scope: Scope<'scope>,
     children: AnyView<'scope>,
+    #[chain] error_handler: ErrorReporter<'scope>,
 ) -> impl View<'scope> {
     let _ = scope;
     children
@@ -18,7 +19,9 @@ fn BuildAttributes<'scope>(
 fn main() {
     let mut runtime = Runtime::new();
     let _ = runtime.child(|scope| {
+        let error_handler = scope.error_handler(|_| {}).expect("handler");
         let mut view = BuildAttributes(scope, AnyView::Empty)
+            .error_handler(error_handler)
             .class("before")
             .build()
             .class("after");

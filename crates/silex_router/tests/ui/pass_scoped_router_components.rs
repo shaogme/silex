@@ -32,6 +32,11 @@ fn compile_scoped_api<'scope>(scope: Scope<'scope>) {
         context,
         RoutePath::new("/").expect("route path should be valid"),
     )
+    .error_handler(
+        scope
+            .error_handler(|_| {})
+            .expect("error handler should be registered"),
+    )
     .children(text)
     .active_class("active")
     .on_click(|_| Ok(()))

@@ -10,6 +10,7 @@ use silex_macros::styled;
 
 styled! {
     pub StaticValuePanel<'scope><div>(
+        error_handler: silex_core::ErrorReporter<'scope>,
         children: AnyView<'scope>,
         source: Signal<'scope, Hex>,
     ) {

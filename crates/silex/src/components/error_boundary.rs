@@ -112,6 +112,7 @@ impl<'scope> ErrorBoundaryBranch<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        _error_handler: ErrorReporter<'scope>,
     ) -> silex_core::SilexResult<()> {
         let phase = self.phase;
         let child_handler = self.boundary_handler;
@@ -119,25 +120,18 @@ impl<'scope> ErrorBoundaryBranch<'scope> {
         let fallback = self.fallback.clone();
         let record_error = self.record_error.clone();
         let fallback_attrs = attrs.clone();
-        let owner_token = owner.token();
-
         match phase {
             BoundaryPhase::Child => {
-                let child_owner = owner_token.with_error_handler(child_handler);
-                let result = self.view.mount(&child_owner, parent, attrs);
+                let result = self.view.mount(owner, parent, attrs, child_handler);
                 match result {
                     Ok(()) => Ok(()),
                     Err(error) => {
                         record_error(error.clone());
-                        let fallback_owner = owner_token.with_error_handler(parent_handler);
-                        fallback(error).mount_owned(&fallback_owner, parent, fallback_attrs)
+                        fallback(error).mount_owned(owner, parent, fallback_attrs, parent_handler)
                     }
                 }
             }
-            BoundaryPhase::Fallback => {
-                let fallback_owner = owner_token.with_error_handler(parent_handler);
-                self.view.mount(&fallback_owner, parent, attrs)
-            }
+            BoundaryPhase::Fallback => self.view.mount(owner, parent, attrs, parent_handler),
         }
     }
 }
@@ -154,8 +148,10 @@ impl<'scope> View<'scope> for ErrorBoundaryBranch<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ErrorReporter<'scope>,
     ) -> silex_core::SilexResult<()> {
-        self.clone().mount_inner(owner, parent, attrs)
+        self.clone()
+            .mount_inner(owner, parent, attrs, error_handler)
     }
 
     fn mount_owned(
@@ -163,11 +159,12 @@ impl<'scope> View<'scope> for ErrorBoundaryBranch<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ErrorReporter<'scope>,
     ) -> silex_core::SilexResult<()>
     where
         Self: Sized,
     {
-        self.mount_inner(owner, parent, attrs)
+        self.mount_inner(owner, parent, attrs, error_handler)
     }
 }
 
@@ -191,15 +188,13 @@ impl<'scope> View<'scope> for ErrorBoundaryView<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ErrorReporter<'scope>,
     ) -> silex_core::SilexResult<()> {
-        let parent_handler = self
-            .parent_handler_override
-            .unwrap_or_else(|| owner.token().error_handler());
+        let parent_handler = self.parent_handler_override.unwrap_or(error_handler);
         let token = owner.token();
         let parent_state = token.owner_state(parent_handler)?;
         self.parent_handler.set(Some(parent_state));
-        let token = token.with_error_handler(self.phase_handler);
-        self.view.mount(&token, parent, attrs)
+        self.view.mount(owner, parent, attrs, self.phase_handler)
     }
 
     fn mount_owned(
@@ -207,18 +202,17 @@ impl<'scope> View<'scope> for ErrorBoundaryView<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ErrorReporter<'scope>,
     ) -> silex_core::SilexResult<()>
     where
         Self: Sized,
     {
-        let parent_handler = self
-            .parent_handler_override
-            .unwrap_or_else(|| owner.token().error_handler());
+        let parent_handler = self.parent_handler_override.unwrap_or(error_handler);
         let token = owner.token();
         let parent_state = token.owner_state(parent_handler)?;
         self.parent_handler.set(Some(parent_state));
-        let token = token.with_error_handler(self.phase_handler);
-        self.view.mount_owned(&token, parent, attrs)
+        self.view
+            .mount_owned(owner, parent, attrs, self.phase_handler)
     }
 }
 
@@ -229,6 +223,7 @@ impl<'scope> View<'scope> for ErrorBoundaryView<'scope> {
 #[component]
 pub fn ErrorBoundary<'scope, FB, CH, V1, V2>(
     scope: Scope<'scope>,
+    #[chain] error_handler: ErrorReporter<'scope>,
     children: CH,
     #[chain] fallback: FB,
     #[chain(default)] parent_error_handler: Option<ErrorReporter<'scope>>,

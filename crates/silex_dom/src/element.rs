@@ -87,10 +87,10 @@ impl<'scope> Element<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: crate::view::ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
         let provisional_scope = Rc::new(owner.owned_scope()?);
-        let provisional_owner =
-            OwnedViewOwner::new(provisional_scope.clone(), owner.token().error_handler());
+        let provisional_owner = OwnedViewOwner::new(provisional_scope.clone());
         let token = provisional_owner.token();
         let mut appended = false;
         let result = (|| -> SilexResult<()> {
@@ -101,12 +101,17 @@ impl<'scope> Element<'scope> {
             }
             token.validate_inputs(&inputs)?;
             for attr in attrs {
-                attr.apply(&self.dom_element, &token)?;
+                attr.apply(&self.dom_element, &token, error_handler)?;
             }
             parent.append_child(&self.dom_element)?;
             appended = true;
             for child in &self.children {
-                child.mount(&provisional_owner, self.dom_element.as_ref(), Vec::new())?;
+                child.mount(
+                    &provisional_owner,
+                    self.dom_element.as_ref(),
+                    Vec::new(),
+                    error_handler,
+                )?;
             }
             let scope_for_cleanup = provisional_scope.clone();
             owner.on_cleanup(
@@ -114,7 +119,7 @@ impl<'scope> Element<'scope> {
                     let _ = scope_for_cleanup.dispose();
                     Ok(())
                 }),
-                owner.token().error_handler(),
+                error_handler,
             )?;
             Ok(())
         })();
@@ -156,10 +161,11 @@ impl<'scope> AttributeBuilder<'scope> for Element<'scope> {
         E: EventDescriptor + 'static,
         F: EventHandler<'scope, E::EventType, M> + Clone + 'scope,
     {
-        self.pending_attrs
-            .push(PendingAttribute::new_scoped(move |element, owner| {
-                bind_event(element, event, callback.clone(), owner)
-            }));
+        self.pending_attrs.push(PendingAttribute::new_scoped(
+            move |element, owner, error_handler| {
+                bind_event(element, event, callback.clone(), owner, error_handler)
+            },
+        ));
         self
     }
 }
@@ -180,8 +186,9 @@ impl<'scope> View<'scope> for Element<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: crate::view::ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
-        self.mount_inner(owner, parent, attrs)
+        self.mount_inner(owner, parent, attrs, error_handler)
     }
 
     fn mount_owned(
@@ -189,11 +196,12 @@ impl<'scope> View<'scope> for Element<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: crate::view::ViewErrorHandler<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized,
     {
-        self.mount_inner(owner, parent, attrs)
+        self.mount_inner(owner, parent, attrs, error_handler)
     }
 }
 
@@ -295,10 +303,11 @@ impl<'scope, T: Tag> AttributeBuilder<'scope> for TypedElement<'scope, T> {
         E: EventDescriptor + 'static,
         F: EventHandler<'scope, E::EventType, M> + Clone + 'scope,
     {
-        self.pending_attrs
-            .push(PendingAttribute::new_scoped(move |element, owner| {
-                bind_event(element, event, callback.clone(), owner)
-            }));
+        self.pending_attrs.push(PendingAttribute::new_scoped(
+            move |element, owner, error_handler| {
+                bind_event(element, event, callback.clone(), owner, error_handler)
+            },
+        ));
         self
     }
 }
@@ -317,9 +326,10 @@ impl<'scope, T: Tag> View<'scope> for TypedElement<'scope, T> {
         owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: crate::view::ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
         let element = self.clone().into_untyped();
-        element.mount_inner(owner, parent, attrs)
+        element.mount_inner(owner, parent, attrs, error_handler)
     }
 
     fn mount_owned(
@@ -327,12 +337,13 @@ impl<'scope, T: Tag> View<'scope> for TypedElement<'scope, T> {
         owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: crate::view::ViewErrorHandler<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized,
     {
         let element = self.into_untyped();
-        element.mount_inner(owner, parent, attrs)
+        element.mount_inner(owner, parent, attrs, error_handler)
     }
 }
 
@@ -363,13 +374,20 @@ pub fn bind_event<'scope, E, F, M>(
     event: E,
     callback: F,
     owner: &ViewOwnerToken<'scope>,
+    error_handler: crate::view::ViewErrorHandler<'scope>,
 ) -> SilexResult<()>
 where
     E: crate::event::EventDescriptor + 'static,
     F: EventHandler<'scope, E::EventType, M> + 'scope,
 {
     let handler = callback.into_handler();
-    bind_event_impl(dom_element, event.name().to_string(), handler, owner)
+    bind_event_impl(
+        dom_element,
+        event.name().to_string(),
+        handler,
+        owner,
+        error_handler,
+    )
 }
 
 pub fn bind_event_impl<'scope, E>(
@@ -377,6 +395,7 @@ pub fn bind_event_impl<'scope, E>(
     event_name: String,
     mut handler: Box<dyn FnMut(E) -> SilexResult<()> + 'scope>,
     owner: &ViewOwnerToken<'scope>,
+    error_handler: crate::view::ViewErrorHandler<'scope>,
 ) -> SilexResult<()>
 where
     E: FromWasmAbi + JsCast + 'static,
@@ -386,7 +405,7 @@ where
     }
     let destination = owner.host_callback(
         move |payload| handler(payload.unchecked_into::<E>()),
-        owner.error_handler(),
+        error_handler,
     )?;
     let destination_for_closure = std::panic::AssertUnwindSafe(destination.clone());
     let closure: Closure<dyn FnMut(E)> = Closure::wrap(Box::new(move |event: E| {
@@ -406,9 +425,14 @@ where
     let target = dom_element.clone();
     let event_name_for_cleanup = event_name.clone();
     let js_fn_for_cleanup = js_fn.clone();
-    owner.host_resource_for_js_callback(&destination, resource, move || {
-        let _ =
-            target.remove_event_listener_with_callback(&event_name_for_cleanup, &js_fn_for_cleanup);
-    })?;
+    owner.host_resource_for_js_callback(
+        &destination,
+        resource,
+        move || {
+            let _ = target
+                .remove_event_listener_with_callback(&event_name_for_cleanup, &js_fn_for_cleanup);
+        },
+        error_handler,
+    )?;
     Ok(())
 }

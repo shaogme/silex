@@ -4,13 +4,19 @@ use silex_html::div;
 use silex_macros::{component, styled, tw_variants};
 
 styled! {
-    pub AlertTitle<'scope><div>(children: AnyView<'scope>) {
+    pub AlertTitle<'scope><div>(
+        #[chain] error_handler: ErrorReporter<'scope>,
+        children: AnyView<'scope>,
+    ) {
         @apply col-start-2 line-clamp-1 min-h-4 font-medium tracking-tight;
     }
 }
 
 styled! {
-    pub AlertDescription<'scope><div>(children: AnyView<'scope>) {
+    pub AlertDescription<'scope><div>(
+        #[chain] error_handler: ErrorReporter<'scope>,
+        children: AnyView<'scope>,
+    ) {
         @apply col-start-2 grid justify-items-start gap-1 text-sm text-muted-foreground [&_p]:leading-relaxed;
     }
 }

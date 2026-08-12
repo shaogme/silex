@@ -1,7 +1,7 @@
 error[E0277]: the trait bound `RawPropsAsViewProps<'_>: silex_dom::view::View<'_>` is not satisfied
-  --> tests/ui/fail_component_raw_props_as_view.rs:24:30
+  --> tests/ui/fail_component_raw_props_as_view.rs:29:30
    |
-24 |         let _ = AnyView::new(props);
+29 |         let _ = AnyView::new(props);
    |                 ------------ ^^^^^ unsatisfied trait bound
    |                 |
    |                 required by a bound introduced by this call

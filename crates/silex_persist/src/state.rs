@@ -9,7 +9,7 @@ use silex_core::{
     traits::{RxBase, RxCloneData, RxData, RxRead, RxValue, RxWrite},
 };
 use silex_dom::attribute::PendingAttribute;
-use silex_dom::view::{ApplyAttributes, HostResourceHandle, View, ViewOwner};
+use silex_dom::view::{ApplyAttributes, HostResourceHandle, View, ViewErrorHandler, ViewOwner};
 use std::rc::Rc;
 use web_sys::Node;
 
@@ -325,8 +325,11 @@ where
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> silex_core::SilexResult<()> {
-        self.value.into_rx().mount(owner, parent, attrs)
+        self.value
+            .into_rx()
+            .mount(owner, parent, attrs, error_handler)
     }
 
     fn mount_owned(
@@ -334,11 +337,14 @@ where
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> silex_core::SilexResult<()>
     where
         Self: Sized,
     {
-        self.value.into_rx().mount_owned(owner, parent, attrs)
+        self.value
+            .into_rx()
+            .mount_owned(owner, parent, attrs, error_handler)
     }
 }
 

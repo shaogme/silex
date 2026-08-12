@@ -122,8 +122,11 @@ pub fn PopoverDescription<'scope>(
 }
 
 #[component]
-pub fn PopoverPortal<'scope>(children: AnyView<'scope>) -> impl View<'scope> {
-    crate::components::Portal(children).build()
+pub fn PopoverPortal<'scope>(
+    error_handler: ErrorReporter<'scope>,
+    children: AnyView<'scope>,
+) -> impl View<'scope> {
+    crate::components::Portal(error_handler, children).build()
 }
 
 #[component]
@@ -342,7 +345,7 @@ pub fn PopoverContent<'scope>(
 
     Ok(rx!(scope; error_handler; {
         if *$is_open {
-            crate::components::Portal(chain!(
+            crate::components::Portal(error_handler, chain!(
                 // Overlay for click-outside
                 div(()).class(tw!("fixed inset-0 z-50 bg-transparent")).on(
                     event::click,

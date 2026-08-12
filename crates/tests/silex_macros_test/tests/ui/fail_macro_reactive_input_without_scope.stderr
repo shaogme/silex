@@ -1,7 +1,7 @@
 error[E0308]: mismatched types
-  --> tests/ui/fail_macro_reactive_input_without_scope.rs:19:40
+  --> tests/ui/fail_macro_reactive_input_without_scope.rs:20:40
    |
-19 |         let source: Signal<'_, bool> = true.into_reactive_input(scope);
+20 |         let source: Signal<'_, bool> = true.into_reactive_input(scope);
    |                     ----------------   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Signal<'_, bool>`, found `Result<_, SilexError>`
    |                     |
    |                     expected due to this
@@ -10,16 +10,16 @@ error[E0308]: mismatched types
                 found enum `Result<_, SilexError>`
 help: consider using `Result::expect` to unwrap the `Result<_, SilexError>` value, panicking if the value is a `Result::Err`
    |
-19 |         let source: Signal<'_, bool> = true.into_reactive_input(scope).expect("REASON");
+20 |         let source: Signal<'_, bool> = true.into_reactive_input(scope).expect("REASON");
    |                                                                       +++++++++++++++++
 
 error[E0277]: the trait bound `silex_core::Signal<'_, bool>: From<bool>` is not satisfied
-  --> tests/ui/fail_macro_reactive_input_without_scope.rs:20:62
+  --> tests/ui/fail_macro_reactive_input_without_scope.rs:25:21
    |
-20 |         let _ = NoReactiveInputScope().source(source).source(true);
-   |                                                       ------ ^^^^ the trait `From<bool>` is not implemented for `silex_core::Signal<'_, bool>`
-   |                                                       |
-   |                                                       required by a bound introduced by this call
+25 |             .source(true);
+   |              ------ ^^^^ the trait `From<bool>` is not implemented for `silex_core::Signal<'_, bool>`
+   |              |
+   |              required by a bound introduced by this call
    |
 help: `silex_core::Signal<'_, T>` implements trait `From<T>`
   --> $WORKSPACE/crates/silex_core/src/reactivity/signal.rs
@@ -36,11 +36,11 @@ help: `silex_core::Signal<'_, T>` implements trait `From<T>`
    | impl<'scope, T: 'scope> From<StoredValue<'scope, T>> for Signal<'scope, T> {
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<StoredValue<'_, T>>`
    = note: required for `bool` to implement `Into<silex_core::Signal<'_, bool>>`
-note: required by a bound in `NoReactiveInputScopeBuilder::<'scope, PSource>::source`
+note: required by a bound in `NoReactiveInputScopeBuilder::<'scope, PSource, PErrorHandler>::source`
   --> tests/ui/fail_macro_reactive_input_without_scope.rs:9:1
    |
  9 | #[component]
-   | ^^^^^^^^^^^^ required by this bound in `NoReactiveInputScopeBuilder::<'scope, PSource>::source`
+   | ^^^^^^^^^^^^ required by this bound in `NoReactiveInputScopeBuilder::<'scope, PSource, PErrorHandler>::source`
 10 | fn NoReactiveInputScope<'scope>(
 11 |     #[chain] source: Signal<'scope, bool>,
    |              ------ required by a bound in this associated function

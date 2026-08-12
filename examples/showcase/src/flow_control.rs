@@ -189,7 +189,7 @@ pub fn SwitchDemo<'scope>(
 #[component]
 pub fn IndexDemo<'scope>(
     scope: Scope<'scope>,
-    _error_handler: ErrorReporter<'scope>,
+    error_handler: ErrorReporter<'scope>,
 ) -> impl View<'scope> {
     let (items, set_items) = scope.signal(vec!["Item A", "Item B", "Item C"])?;
 
@@ -197,6 +197,7 @@ pub fn IndexDemo<'scope>(
         h3("Index For Loop Demo"),
         p("Optimized for list updates by index."),
         Index(items)
+            .error_handler(error_handler)
             .children(|item, idx| div![strong(format!("{}: ", idx)), item])
             .build(),
         button("Append Item")
@@ -221,6 +222,7 @@ pub fn PortalDemo<'scope>(
         Show(scope, error_handler, show_modal)
             .children(
                 Portal(
+                    error_handler,
                     div![
                         div![
                             h4("I am a Modal!"),

@@ -1,14 +1,49 @@
-error: lifetime may not live long enough
-  --> tests/ui/fail_macro_styled_child_escape.rs:24:9
+error[E0277]: the trait bound `ReadSignal<'_, Hex>: silex_dom::view::View<'_>` is not satisfied
+  --> tests/ui/fail_macro_styled_child_escape.rs:25:39
    |
-22 |     let view = runtime.child(|scope| {
-   |                               ------ return type of closure is ScopedPanelBuilder<'2>
-   |                               |
-   |                               has type `silex_core::Scope<'1>`
-23 |         let (color, _) = scope.signal(silex_css::types::hex("#fff")).unwrap();
-24 |         ScopedPanel(AnyView::new(()), color)
-   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ returning this value requires that `'1` must outlive `'2`
+25 |         ScopedPanel(AnyView::new(()), color)
+   |         -----------                   ^^^^^ the trait `silex_dom::view::View<'_>` is not implemented for `ReadSignal<'_, Hex>`
+   |         |
+   |         required by a bound introduced by this call
    |
-   = note: requirement occurs because of the type `ScopedPanelBuilder<'_>`, which makes the generic argument `'_` invariant
-   = note: the struct `ScopedPanelBuilder<'scope>` is invariant over the parameter `'scope`
-   = help: see <https://doc.rust-lang.org/nomicon/subtyping.html> for more information about variance
+help: the trait `silex_dom::view::View<'_>` is implemented for `ReadSignal<'_, T>`
+  --> $WORKSPACE/crates/silex_dom/src/view/reactive.rs
+   |
+   | /             impl<'scope, T: 'scope> View<'scope> for $ty<'scope, T>
+   | |             where
+   | |                 T: RxCloneData + 'scope,
+   | |                 Rx<'scope, T>: View<'scope>,
+   | |____________________________________________^
+...
+   |   impl_view_forward_to_rx!(ReadSignal, RwSignal, Signal, Memo, StoredValue);
+   |   ------------------------------------------------------------------------- in this macro invocation
+note: required by a bound in `ScopedPanel`
+  --> tests/ui/fail_macro_styled_child_escape.rs:11:1
+   |
+11 | / styled! {
+12 | |     pub ScopedPanel<'scope><div>(
+13 | |         error_handler: silex_core::ErrorReporter<'scope>,
+14 | |         children: AnyView<'scope>,
+...  |
+19 | | }
+   | |_^ required by this bound in `ScopedPanel`
+   = note: this error originates in the macro `impl_view_forward_to_rx` which comes from the expansion of the derive macro `::silex::macros::PropsBuilder` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0061]: this function takes 3 arguments but 2 arguments were supplied
+  --> tests/ui/fail_macro_styled_child_escape.rs:25:9
+   |
+25 |         ScopedPanel(AnyView::new(()), color)
+   |         ^^^^^^^^^^^ ---------------- argument #1 of type `ErrorHandler<'_, SilexError>` is missing
+   |
+note: function defined here
+  --> tests/ui/fail_macro_styled_child_escape.rs:12:9
+   |
+12 |     pub ScopedPanel<'scope><div>(
+   |         ^^^^^^^^^^^
+13 |         error_handler: silex_core::ErrorReporter<'scope>,
+   |         ------------------------------------------------
+help: provide the argument
+   |
+25 -         ScopedPanel(AnyView::new(()), color)
+25 +         ScopedPanel(/* ErrorHandler<'_, SilexError> */, color, AnyView::new(()))
+   |

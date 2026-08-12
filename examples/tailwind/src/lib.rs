@@ -59,7 +59,11 @@ fn CategoryTab<'scope>(
 }
 
 #[component]
-fn FeatureBadge<'scope>(label: &'static str, theme: &'static str) -> impl View<'scope> {
+fn FeatureBadge<'scope>(
+    label: &'static str,
+    theme: &'static str,
+    #[chain] error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
     let cls = match theme {
         "emerald" => tw!(
             "text-xs font-semibold text-white bg-emerald-600 px-3 py-1.5 rounded-lg border border-solid border-emerald-700"
@@ -117,10 +121,13 @@ fn Header<'scope>(
             .class(tw!("text-sm sm:text-base text-slate-600 dark:text-slate-300 max-w-3xl text-center leading-relaxed mb-8 transition-colors duration-300")),
 
         // Dashboard Category Tabs rendered via Index component
-        div(Index(categories).children(move |item, _| {
-            let (label, target) = item;
-            CategoryTab(scope, label, target, category, error_handler).build()
-        }).build())
+        div(Index(categories)
+            .error_handler(error_handler)
+            .children(move |item, _| {
+                let (label, target) = item;
+                CategoryTab(scope, label, target, category, error_handler).build()
+            })
+            .build())
         .class(tw!("flex flex-wrap items-center justify-center gap-2 p-1.5 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-solid border-slate-200 dark:border-slate-800"))
     ))
     .class(tw!("w-full max-w-6xl mx-auto mb-10 p-8 sm:p-10 bg-white dark:bg-slate-850 rounded-3xl border border-solid border-slate-200 dark:border-slate-800 shadow-xl transition-colors duration-300 flex flex-col items-center text-center")))
@@ -134,7 +141,10 @@ fn card_container_cls() -> &'static str {
 }
 
 #[component]
-fn TailwindMergeDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
+fn TailwindMergeDemo<'scope>(
+    scope: Scope<'scope>,
+    #[chain] error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
     // 示范编译期智能消解: p-2 被 p-6 覆盖, bg-red-500 被 bg-white/dark:bg-slate-800 覆盖
     div(chain!(
         div(chain!(
@@ -156,7 +166,10 @@ fn TailwindMergeDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
 }
 
 #[component]
-fn KeyframesDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
+fn KeyframesDemo<'scope>(
+    scope: Scope<'scope>,
+    #[chain] error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
     div(chain!(
         div(chain!(
             span("2. Preset Keyframes Engine").class(tw!("text-xs font-black text-purple-600 dark:text-purple-400 uppercase tracking-widest")),
@@ -193,7 +206,10 @@ fn KeyframesDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
 }
 
 #[component]
-fn GroupAndPeerDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
+fn GroupAndPeerDemo<'scope>(
+    scope: Scope<'scope>,
+    #[chain] error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
     div(chain!(
         div(chain!(
             span("3. Compound State Selectors").class(tw!("text-xs font-black text-pink-600 dark:text-pink-400 uppercase tracking-widest")),
@@ -225,7 +241,7 @@ fn GroupAndPeerDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
 #[component]
 fn FiltersAndReactivityDemo<'scope>(
     scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+    #[chain] error_handler: ErrorReporter<'scope>,
 ) -> impl View<'scope> {
     let (count, set_count) = scope.signal(16)?;
     let pad_val = rx!(scope; error_handler; format!("{}px", $count));
@@ -262,7 +278,10 @@ fn FiltersAndReactivityDemo<'scope>(
 }
 
 #[component]
-fn ThemeSystemAndDiagnosticsDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
+fn ThemeSystemAndDiagnosticsDemo<'scope>(
+    scope: Scope<'scope>,
+    #[chain] error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
     let theme_box_cls = tw_verbose!(
         "p-4 bg-theme(primary/50) text-theme(border/80) border border-solid border-slate-300 dark:border-slate-700 rounded-2xl shadow-sm transition-colors duration-300"
     );
@@ -288,7 +307,10 @@ fn ThemeSystemAndDiagnosticsDemo<'scope>(scope: Scope<'scope>) -> impl View<'sco
 }
 
 #[component]
-fn ContainerQueriesAndDceDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
+fn ContainerQueriesAndDceDemo<'scope>(
+    scope: Scope<'scope>,
+    #[chain] error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
     div(chain!(
         div(chain!(
             span("6. Container Queries & DCE").class(tw!("text-xs font-black text-emerald-600 dark:text-emerald-500 uppercase tracking-widest")),
@@ -314,7 +336,10 @@ fn ContainerQueriesAndDceDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope>
 }
 
 #[component]
-fn StandardColorPaletteDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
+fn StandardColorPaletteDemo<'scope>(
+    scope: Scope<'scope>,
+    #[chain] error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
     div(chain!(
         div(chain!(
             span("7. Standard Color Palette System").class(tw!("text-xs font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest")),
@@ -349,7 +374,7 @@ fn StandardColorPaletteDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
 #[component]
 fn ReactiveConditionalTwDemo<'scope>(
     scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+    #[chain] error_handler: ErrorReporter<'scope>,
 ) -> impl View<'scope> {
     let (is_active, set_is_active) = scope.signal(false)?;
 
@@ -398,7 +423,10 @@ fn ReactiveConditionalTwDemo<'scope>(
 }
 
 #[component]
-fn NewSyntaxExpansionDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
+fn NewSyntaxExpansionDemo<'scope>(
+    scope: Scope<'scope>,
+    #[chain] error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
     div(chain!(
         div(chain!(
             span("9. Extended Utilities System").class(tw!("text-xs font-black text-amber-600 dark:text-amber-400 uppercase tracking-widest")),
@@ -448,7 +476,10 @@ fn NewSyntaxExpansionDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
 }
 
 #[component]
-fn FractionalAndDirectionalDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
+fn FractionalAndDirectionalDemo<'scope>(
+    scope: Scope<'scope>,
+    #[chain] error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
     div(chain!(
         div(chain!(
             span("10. Fractional Sizing & Inset Positioning").class(tw!("text-xs font-black text-teal-600 dark:text-teal-400 uppercase tracking-widest")),
@@ -494,7 +525,7 @@ fn FractionalAndDirectionalDemo<'scope>(scope: Scope<'scope>) -> impl View<'scop
 #[component]
 fn TailwindVariantsCvaDemo<'scope>(
     scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+    #[chain] error_handler: ErrorReporter<'scope>,
 ) -> impl View<'scope> {
     let (intent, set_intent) = scope.signal("primary".to_string())?;
     let (size, set_size) = scope.signal("md".to_string())?;
@@ -587,7 +618,10 @@ fn TailwindVariantsCvaDemo<'scope>(
 }
 
 #[component]
-fn SilexTomlDesignTokensDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
+fn SilexTomlDesignTokensDemo<'scope>(
+    scope: Scope<'scope>,
+    #[chain] error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
     div(chain!(
         div(chain!(
             span("12. silex.toml & Design Tokens").class(tw!("text-xs font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest")),
@@ -693,27 +727,29 @@ fn render_card<'scope>(
     id: usize,
     error_handler: ErrorReporter<'scope>,
 ) -> AnyView<'scope> {
-    match id {
-        1 => TailwindMergeDemo(scope).build().into_any(),
-        2 => KeyframesDemo(scope).build().into_any(),
-        3 => GroupAndPeerDemo(scope).build().into_any(),
-        4 => FiltersAndReactivityDemo(scope, error_handler)
-            .build()
-            .into_any(),
-        5 => ThemeSystemAndDiagnosticsDemo(scope).build().into_any(),
-        6 => ContainerQueriesAndDceDemo(scope).build().into_any(),
-        7 => StandardColorPaletteDemo(scope).build().into_any(),
-        8 => ReactiveConditionalTwDemo(scope, error_handler)
-            .build()
-            .into_any(),
-        9 => NewSyntaxExpansionDemo(scope).build().into_any(),
-        10 => FractionalAndDirectionalDemo(scope).build().into_any(),
-        11 => TailwindVariantsCvaDemo(scope, error_handler)
-            .build()
-            .into_any(),
-        12 => SilexTomlDesignTokensDemo(scope).build().into_any(),
-        _ => ().into_any(),
+    macro_rules! render_card {
+        ($card_id:expr, { $($id:literal => $builder:expr),+ $(,)? }) => {
+            match $card_id {
+                $($id => $builder.build().into_any(),)+
+                _ => ().into_any(),
+            }
+        };
     }
+
+    render_card!(id, {
+        1 => TailwindMergeDemo(scope).error_handler(error_handler),
+        2 => KeyframesDemo(scope).error_handler(error_handler),
+        3 => GroupAndPeerDemo(scope).error_handler(error_handler),
+        4 => FiltersAndReactivityDemo(scope).error_handler(error_handler),
+        5 => ThemeSystemAndDiagnosticsDemo(scope).error_handler(error_handler),
+        6 => ContainerQueriesAndDceDemo(scope).error_handler(error_handler),
+        7 => StandardColorPaletteDemo(scope).error_handler(error_handler),
+        8 => ReactiveConditionalTwDemo(scope).error_handler(error_handler),
+        9 => NewSyntaxExpansionDemo(scope).error_handler(error_handler),
+        10 => FractionalAndDirectionalDemo(scope).error_handler(error_handler),
+        11 => TailwindVariantsCvaDemo(scope).error_handler(error_handler),
+        12 => SilexTomlDesignTokensDemo(scope).error_handler(error_handler),
+    })
 }
 
 fn is_in_left_column(target_id: usize, current_cat: DemoCategory) -> bool {
@@ -760,6 +796,7 @@ fn render_column<'scope>(
     )?;
 
     Ok(Index(visible_card_ids)
+        .error_handler(error_handler)
         .children(move |id, _| render_card(scope, id, error_handler))
         .build())
 }

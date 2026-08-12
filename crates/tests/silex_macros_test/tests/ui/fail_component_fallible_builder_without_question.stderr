@@ -1,14 +1,19 @@
 error[E0308]: mismatched types
-  --> tests/ui/fail_component_fallible_builder_without_question.rs:23:13
+  --> tests/ui/fail_component_fallible_builder_without_question.rs:24:55
    |
-22 |         let _view: FallibleWithoutQuestionComponent =
-   |                    -------------------------------- expected due to this
-23 |             FallibleWithoutQuestion(scope, AnyView::Empty).build();
-   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `FallibleWithoutQuestionComponent<'_>`, found `Result<..., ...>`
+24 |           let _view: FallibleWithoutQuestionComponent = FallibleWithoutQuestion(
+   |  ____________________--------------------------------___^
+   | |                    |
+   | |                    expected due to this
+25 | |             scope,
+26 | |             AnyView::Empty,
+...  |
+29 | |         .build();
+   | |________________^ expected `FallibleWithoutQuestionComponent<'_>`, found `Result<..., ...>`
    |
    = note: expected struct `FallibleWithoutQuestionComponent<'_>`
                 found enum `Result<FallibleWithoutQuestionComponent<'_>, SilexError>`
 help: consider using `Result::expect` to unwrap the `Result<FallibleWithoutQuestionComponent<'_>, SilexError>` value, panicking if the value is a `Result::Err`
    |
-23 |             FallibleWithoutQuestion(scope, AnyView::Empty).build().expect("REASON");
-   |                                                                   +++++++++++++++++
+29 |         .build().expect("REASON");
+   |                 +++++++++++++++++

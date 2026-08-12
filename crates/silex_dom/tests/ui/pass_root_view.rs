@@ -12,7 +12,7 @@ fn main() {
     let root = runtime.run().expect("root should start");
     {
         let scope = root.scope();
-        let owner = ScopedViewOwner::new(scope, scope.error_handler(|_| {}).expect("handler"));
+        let owner = ScopedViewOwner::new(scope);
         let _token = owner.token();
 
         let borrowed_view = String::from("borrowed-view");

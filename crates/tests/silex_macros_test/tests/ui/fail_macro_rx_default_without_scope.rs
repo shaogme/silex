@@ -10,6 +10,7 @@ use silex_macros::component;
 fn MissingRxDefaultScope<'scope>(
     children: AnyView<'scope>,
     #[chain(default)] value: Signal<'scope, i32>,
+    #[chain] error_handler: ErrorReporter<'scope>,
 ) -> impl View<'scope> {
     let _ = value;
     children

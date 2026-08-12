@@ -5,7 +5,7 @@ use silex_core::{
     traits::RxGet,
 };
 use silex_dom::attribute::PendingAttribute;
-use silex_dom::view::{AnyView, ApplyAttributes, View, ViewOwner};
+use silex_dom::view::{AnyView, ApplyAttributes, View, ViewErrorHandler, ViewOwner};
 use std::collections::HashMap;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
@@ -29,8 +29,10 @@ impl<'scope> View<'scope> for RouterViewFactory<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
-        self.clone().mount_owned(owner, parent, attrs)
+        self.clone()
+            .mount_owned(owner, parent, attrs, error_handler)
     }
 
     fn mount_owned(
@@ -38,12 +40,13 @@ impl<'scope> View<'scope> for RouterViewFactory<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized,
     {
         let factory = self.0;
-        (move || (factory)()).mount_owned(owner, parent, attrs)
+        (move || (factory)()).mount_owned(owner, parent, attrs, error_handler)
     }
 }
 
@@ -59,7 +62,6 @@ pub struct RouterContext<'scope> {
     /// 导航控制器
     pub navigator: Navigator<'scope>,
     scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
     query: Rx<'scope, HashMap<String, String>>,
 }
 
@@ -107,7 +109,6 @@ impl<'scope> RouterContext<'scope> {
             search,
             navigator,
             scope,
-            error_handler,
             query,
         })
     }
@@ -119,10 +120,6 @@ impl<'scope> RouterContext<'scope> {
     /// 获取解析后的查询参数 Memo
     pub fn query_map(self) -> Rx<'scope, HashMap<String, String>> {
         self.query
-    }
-
-    pub(crate) fn error_handler(self) -> ErrorReporter<'scope> {
-        self.error_handler
     }
 
     pub(crate) fn runtime_inputs(self) -> RuntimeInputs {

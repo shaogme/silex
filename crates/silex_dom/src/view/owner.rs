@@ -1,8 +1,6 @@
 use crate::attribute::PendingAttribute;
-use crate::view::{OwnedViewOwner, OwnerState, ViewOwner, ViewOwnerToken};
-use silex_core::{
-    ErrorReporter, OwnedScope, ReactiveError, RuntimeInputs, SilexError, SilexResult,
-};
+use crate::view::{OwnedViewOwner, OwnerState, ViewErrorHandler, ViewOwner, ViewOwnerToken};
+use silex_core::{OwnedScope, ReactiveError, RuntimeInputs, SilexError, SilexResult};
 use std::{
     cell::{Cell, RefCell},
     marker::PhantomData,
@@ -105,6 +103,7 @@ pub(crate) struct RowRenderArgs<'scope, T> {
     pub(crate) parent: Node,
     pub(crate) attrs: Vec<PendingAttribute<'scope>>,
     pub(crate) owner: ViewOwnerToken<'scope>,
+    pub(crate) error_handler: ViewErrorHandler<'scope>,
     pub(crate) updater: RowUpdater<'scope, T>,
 }
 
@@ -261,7 +260,7 @@ pub(crate) struct RowController<'scope, T> {
     render: RowRender<'scope, T>,
     render_inputs: RuntimeInputs,
     attrs: Vec<PendingAttribute<'scope>>,
-    error_handler: ErrorReporter<'scope>,
+    error_handler: ViewErrorHandler<'scope>,
     updater: RowUpdater<'scope, T>,
     stateful: bool,
     active: Cell<bool>,
@@ -279,6 +278,7 @@ pub(crate) struct RowControllerConfig<'scope, T> {
     pub(crate) item: T,
     pub(crate) index: usize,
     pub(crate) stateful: bool,
+    pub(crate) error_handler: ViewErrorHandler<'scope>,
 }
 
 impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
@@ -294,10 +294,10 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
             item,
             index,
             stateful,
+            error_handler,
         } = config;
         let mut range_guard = RangeGuard::new(range.clone());
         let updater = RowUpdater::new();
-        let error_handler = owner.token().error_handler();
         let row_scope = owner.owned_scope()?;
         let mut controller = Self {
             range,
@@ -374,8 +374,7 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
                 return Err(error);
             }
         };
-        let render_owner = OwnedViewOwner::new(render_scope.clone(), self.error_handler);
-        let render_token = render_owner.token();
+        let render_owner = OwnedViewOwner::new(render_scope.clone());
         let rendered_nodes = render_owner.owner_state(previous_nodes)?;
         let rendered_scope = render_owner.owner_state(None::<Rc<OwnedScope<'scope>>>)?;
         let row_scope = self.row_scope.clone();
@@ -387,7 +386,7 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
         let rendered_scope_for_effect = rendered_scope.clone();
         let error_handler = self.error_handler;
         let document = crate::document();
-        let render_handler = render_token.error_handler();
+        let render_handler = self.error_handler;
         let registration = catch_unwind(AssertUnwindSafe(|| {
             render_scope.effect_from(
                 self.render_inputs.clone(),
@@ -397,8 +396,7 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
                         Ok(scope) => Rc::new(scope),
                         Err(error) => return Err(error),
                     };
-                    let candidate_owner =
-                        OwnedViewOwner::new(candidate_scope.clone(), error_handler);
+                    let candidate_owner = OwnedViewOwner::new(candidate_scope.clone());
                     let candidate_token = candidate_owner.token();
                     let result = catch_unwind(AssertUnwindSafe(|| -> SilexResult<()> {
                         let fragment = document.create_document_fragment();
@@ -409,6 +407,7 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
                             parent: fragment_node.clone(),
                             attrs: attrs.clone(),
                             owner: candidate_token,
+                            error_handler,
                             updater: updater.clone(),
                         })?;
                         let new_nodes = child_nodes(&fragment_node);

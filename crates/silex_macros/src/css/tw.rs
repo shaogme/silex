@@ -307,7 +307,7 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
 
             #__silex::dom::attribute::AttrOp::custom_with_inputs(
                 __slx_inputs,
-                move |element, owner| {
+                move |element, owner, error_handler| {
                     #(#inits_tokens)*
                     let mut __slx_effect_inputs = #__silex::core::RuntimeInputs::new();
                     for __slx_condition in &__slx_conditions {
@@ -377,7 +377,7 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
                                 }
                             }
                         }),
-                        owner.error_handler(),
+                        error_handler,
                     )?;
 
                     let __slx_element_for_cleanup = element.clone();
@@ -393,7 +393,7 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
                             }
                             Ok(())
                         }),
-                        owner.error_handler(),
+                        error_handler,
                     )?;
                     Ok(())
                 },

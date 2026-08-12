@@ -46,6 +46,7 @@ impl<'scope> View<'scope> for CleanupProbe {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ErrorReporter<'scope>,
     ) -> SilexResult<()> {
         let cleanups = self.cleanups.clone();
         owner.on_cleanup(
@@ -53,7 +54,7 @@ impl<'scope> View<'scope> for CleanupProbe {
                 cleanups.set(cleanups.get() + 1);
                 Ok(())
             }),
-            owner.token().error_handler(),
+            error_handler,
         )?;
         let document = web_sys::window()
             .expect("window is available")
@@ -69,11 +70,12 @@ impl<'scope> View<'scope> for CleanupProbe {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ErrorReporter<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized,
     {
-        self.mount(owner, parent, attrs)
+        self.mount(owner, parent, attrs, error_handler)
     }
 }
 

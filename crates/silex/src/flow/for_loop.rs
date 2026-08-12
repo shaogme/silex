@@ -1,8 +1,8 @@
 use silex_core::reactivity::ReactiveSource;
 use silex_core::traits::{ForLoopSource, RxRead};
-use silex_core::{ErrorHandler, SilexError};
+use silex_core::{ErrorHandler, ErrorReporter, SilexError};
 use silex_dom::prelude::*;
-use silex_dom::view::{AnyView, RowUpdater};
+use silex_dom::view::{AnyView, KeyedLoopView, RowUpdater};
 use silex_macros::component;
 use std::hash::Hash;
 use std::marker::PhantomData;
@@ -54,9 +54,10 @@ pub fn For<'scope, ItemsFn, IS, Item, Key, KF>(
     children: ForRenderer<'scope, Item>,
     #[prop(into)]
     #[chain(default)]
-    error_handler: Option<ErrorHandler<'scope, SilexError>>,
+    row_error_handler: Option<ErrorHandler<'scope, SilexError>>,
+    #[chain] error_handler: ErrorReporter<'scope>,
     #[chain(default)] _scope: PhantomData<&'scope ()>,
-) -> silex_dom::view::list::KeyedLoopView<'scope, ItemsFn, IS, Item, Key>
+) -> KeyedLoopView<'scope, ItemsFn, IS, Item, Key>
 where
     ItemsFn: RxRead<Value = IS> + ReactiveSource<'scope> + Clone + 'scope,
     IS: ForLoopSource<Item = Item> + Sized + 'scope,
@@ -70,11 +71,11 @@ where
         },
     );
 
-    silex_dom::view::list::KeyedLoopView {
+    KeyedLoopView {
         each,
         key_fn: Rc::new(key),
         view_fn,
-        error_handler,
+        error_handler: row_error_handler.or(Some(error_handler)),
         _marker: std::marker::PhantomData,
     }
 }

@@ -3,10 +3,10 @@ error[E0277]: CSS 动态插值只能接受带当前生命周期的响应式 sour
    |
 11 | / styled! {
 12 | |     pub StaticValuePanel<'scope><div>(
-13 | |         children: AnyView<'scope>,
-14 | |         source: Signal<'scope, Hex>,
+13 | |         error_handler: silex_core::ErrorReporter<'scope>,
+14 | |         children: AnyView<'scope>,
 ...  |
-18 | | }
+19 | | }
    | |_^ 此值不是 scoped reactive source
    |
    = help: the trait `IntoCssReactive<'_>` is not implemented for `&str`

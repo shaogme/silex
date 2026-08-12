@@ -10,6 +10,7 @@ use silex_macros::component;
 fn ReactiveInputComponent<'scope>(
     scope: Scope<'scope>,
     children: AnyView<'scope>,
+    #[chain] error_handler: ErrorReporter<'scope>,
     #[chain(default)] signal: Signal<'scope, String>,
     #[chain(default)] read: ReadSignal<'scope, i32>,
     #[chain(default)] rw: RwSignal<'scope, bool>,
@@ -32,7 +33,9 @@ fn main() {
             let stored_char = scope.stored('s')?;
             let rx_usize = scope.constant(1_usize)?;
 
+            let error_handler = scope.error_handler(|_| {})?;
             let _builder = ReactiveInputComponent(scope, AnyView::Empty)
+                .error_handler(error_handler)
                 .signal("constant")?
                 .signal(read_string)?
                 .read(2_i32)?

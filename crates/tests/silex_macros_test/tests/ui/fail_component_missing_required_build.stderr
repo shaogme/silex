@@ -1,10 +1,15 @@
-error[E0599]: no method named `build` found for struct `MissingRequiredBuildBuilder<'_, PropMissing>` in the current scope
-  --> tests/ui/fail_component_missing_required_build.rs:22:61
+error[E0599]: no method named `build` found for struct `MissingRequiredBuildBuilder<'_, PropFixed, PropMissing>` in the current scope
+  --> tests/ui/fail_component_missing_required_build.rs:26:14
    |
- 9 | #[component]
-   | ------------ method `build` not found for this struct
+ 9 |   #[component]
+   |   ------------ method `build` not found for this struct
 ...
-22 |         let _ = MissingRequiredBuild(scope, AnyView::Empty).build();
-   |                                                             ^^^^^ method not found in `MissingRequiredBuildBuilder<'_, PropMissing>`
+24 |           let _ = MissingRequiredBuild(scope, AnyView::Empty)
+   |  _________________-
+25 | |             .error_handler(error_handler)
+26 | |             .build();
+   | |             -^^^^^ method not found in `MissingRequiredBuildBuilder<'_, PropFixed, PropMissing>`
+   | |_____________|
    |
-   = note: the method was found for `MissingRequiredBuildBuilder<'scope, PropFixed>`
+   |
+   = note: the method was found for `MissingRequiredBuildBuilder<'scope, PropFixed, PropFixed>`

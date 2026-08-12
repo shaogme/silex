@@ -11,7 +11,7 @@ use crate::{
 };
 use silex_core::{ErrorReporter, Rx, RxValueKind, SilexError, SilexResult};
 use silex_dom::attribute::{ApplyTarget, ApplyToDom, IntoStorable, ReactiveApply};
-use silex_dom::view::ViewOwnerToken;
+use silex_dom::view::{ViewErrorHandler, ViewOwnerToken};
 use silex_hash::{
     css::{CssHasher, Normalized, encode_base36},
     css_hasher,
@@ -311,14 +311,15 @@ impl<'scope> ApplyToDom<'scope> for Style<'scope> {
         el: &Element,
         _target: ApplyTarget,
         owner: &ViewOwnerToken<'scope>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
-        self.apply_to_element(el, owner).map(|_| ())
+        self.apply_to_element(el, owner, error_handler).map(|_| ())
     }
 
     fn into_op(self, _target: ApplyTarget) -> silex_dom::attribute::AttrOp<'scope> {
         let inputs = self.runtime_inputs();
-        silex_dom::attribute::AttrOp::custom_with_inputs(inputs, move |el, owner| {
-            self.apply_to_element(el, owner).map(|_| ())
+        silex_dom::attribute::AttrOp::custom_with_inputs(inputs, move |el, owner, error_handler| {
+            self.apply_to_element(el, owner, error_handler).map(|_| ())
         })
     }
 }
@@ -372,6 +373,7 @@ impl<'scope> Style<'scope> {
         &self,
         el: &Element,
         owner: &ViewOwnerToken<'scope>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<String> {
         let RenderedStyle {
             class_base,
@@ -397,7 +399,6 @@ impl<'scope> Style<'scope> {
         if !dyn_bindings.is_empty() {
             let el_clone = el.clone();
             let bindings = dyn_bindings;
-            let error_handler = owner.error_handler();
             owner.effect_with_previous_from(
                 inputs.clone(),
                 Box::new(
@@ -445,7 +446,6 @@ impl<'scope> Style<'scope> {
                 error_handler,
             )?;
         } else {
-            let error_handler = owner.error_handler();
             let el_clone = el.clone();
             let class_name = class_base.clone();
             owner.on_cleanup(
@@ -587,17 +587,17 @@ impl<'scope> ReactiveApply<'scope> for Style<'scope> {
         el: Element,
         _target: ApplyTarget,
         owner: &ViewOwnerToken<'scope>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
         let el = el.clone();
         let owner = owner.clone();
         let owner_for_callback = owner.clone();
-        let error_handler = owner.error_handler();
         owner.effect_with_previous_from(
             rx.runtime_inputs(),
             Box::new(move |previous: Option<&String>| -> SilexResult<String> {
                 let style = rx.get()?;
                 owner_for_callback.validate_inputs(&style.runtime_inputs())?;
-                let class_name = style.apply_to_element(&el, &owner_for_callback)?;
+                let class_name = style.apply_to_element(&el, &owner_for_callback, error_handler)?;
                 if let Some(previous) = previous
                     && previous != &class_name
                 {

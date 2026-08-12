@@ -10,6 +10,7 @@ use silex_macros::component;
 fn WithoutRequired<'scope>(
     scope: Scope<'scope>,
     children: AnyView<'scope>,
+    #[chain] error_handler: ErrorReporter<'scope>,
     #[chain(default)] disabled: bool,
 ) -> impl View<'scope> {
     let _ = (scope, disabled);
@@ -19,7 +20,10 @@ fn WithoutRequired<'scope>(
 fn main() {
     let mut runtime = Runtime::new();
     let _ = runtime.child(|scope| {
-        let view = WithoutRequired(scope, AnyView::Empty).build();
+        let error_handler = scope.error_handler(|_| {}).expect("handler");
+        let view = WithoutRequired(scope, AnyView::Empty)
+            .error_handler(error_handler)
+            .build();
         let _ = AnyView::new(view);
     });
 }

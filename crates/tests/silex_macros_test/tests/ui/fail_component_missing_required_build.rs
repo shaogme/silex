@@ -10,6 +10,7 @@ use silex_macros::component;
 fn MissingRequiredBuild<'scope>(
     scope: Scope<'scope>,
     children: AnyView<'scope>,
+    #[chain] error_handler: ErrorReporter<'scope>,
     #[chain] required: String,
 ) -> impl View<'scope> {
     let _ = (scope, required);
@@ -19,6 +20,9 @@ fn MissingRequiredBuild<'scope>(
 fn main() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
-        let _ = MissingRequiredBuild(scope, AnyView::Empty).build();
+        let error_handler = scope.error_handler(|_| {}).expect("handler");
+        let _ = MissingRequiredBuild(scope, AnyView::Empty)
+            .error_handler(error_handler)
+            .build();
     });
 }

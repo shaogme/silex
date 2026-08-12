@@ -1,8 +1,8 @@
 use crate::{ToRoute, context::RouterContext};
-use silex_core::SilexResult;
 use silex_core::traits::RxGet;
+use silex_core::{ErrorReporter, SilexResult};
 use silex_dom::prelude::*;
-use silex_dom::view::ViewOwner;
+use silex_dom::view::{ViewErrorHandler, ViewOwner};
 use silex_html::a;
 use silex_macros::component;
 
@@ -31,9 +31,10 @@ impl<'scope> View<'scope> for LinkView<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
         match &self.view {
-            Ok(view) => view.mount(owner, parent, attrs),
+            Ok(view) => view.mount(owner, parent, attrs, error_handler),
             Err(error) => Err(error.clone()),
         }
     }
@@ -43,11 +44,12 @@ impl<'scope> View<'scope> for LinkView<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized,
     {
-        self.mount(owner, parent, attrs)
+        self.mount(owner, parent, attrs, error_handler)
     }
 }
 
@@ -57,6 +59,7 @@ impl<'scope> View<'scope> for LinkView<'scope> {
 #[component]
 pub fn Link<'scope, T: ToRoute + Clone + 'scope>(
     router_ctx: RouterContext<'scope>,
+    #[chain] error_handler: ErrorReporter<'scope>,
     to: T,
     #[chain] children: AnyView<'scope>,
     #[prop(into)]
@@ -81,7 +84,7 @@ pub fn Link<'scope, T: ToRoute + Clone + 'scope>(
             let href_for_rx = href.clone();
             let class_name = active_class.clone();
 
-            let is_active = silex_core::rx!(router_ctx.scope(); router_ctx.error_handler(); {
+            let is_active = silex_core::rx!(router_ctx.scope(); error_handler; {
                 let current_path = $path_signal;
                 is_active_path(current_path, &href_for_rx)
             });

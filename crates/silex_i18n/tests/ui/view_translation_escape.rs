@@ -12,6 +12,7 @@ fn escaped() -> AnyView<'static> {
             .expect("valid store");
         AnyView::new(t!(store, "missing.key").expect("translation"))
     })
+    .expect("child scope should initialize")
 }
 
 fn main() {

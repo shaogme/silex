@@ -461,14 +461,16 @@ pub fn EventStreamDemo<'scope>(
 
         div![
             h4("Stream Log (Wikipedia Edits):"),
-                ul(For(logs, |item| item.id.unwrap_or(0).to_string() + &item.title).children(move |change, _idx, _updater| {
+                ul(For(logs, |item| item.id.unwrap_or(0).to_string() + &item.title)
+                    .error_handler(error_handler)
+                    .children(move |change, _idx, _updater| {
                 li(div![
                     span(format!("[{}] ", change.wiki)).style(stream_wiki_style.clone()),
                     span(format!("{} ", change.title)).style(stream_title_style.clone()),
                     span(format!("by {}", change.user)).style(stream_user_style.clone()),
                     span(format!(" ({})", change.change_type)).style(stream_type_style.clone())
                 ]).style(stream_row_style.clone())
-            }).build())
+                }).build())
             .style(sty().max_height(px(320))?.overflow_y(OverflowKeyword::Auto)?.background(AppTheme::SURFACE)?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?.padding("15px")?.border_radius(px(8))?)
         ]
     ])

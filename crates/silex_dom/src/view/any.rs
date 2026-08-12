@@ -1,7 +1,8 @@
 use crate::attribute::PendingAttribute;
 use crate::element::Element;
 use crate::view::{
-    ApplyAttributes, View, ViewCons, ViewNil, ViewOwner, ViewOwnerToken, mount_composite,
+    ApplyAttributes, View, ViewCons, ViewErrorHandler, ViewNil, ViewOwner, ViewOwnerToken,
+    mount_composite,
 };
 use silex_core::SilexResult;
 use std::rc::Rc;
@@ -11,6 +12,7 @@ pub struct RenderArgs<'scope> {
     pub(crate) parent: Node,
     pub(crate) attrs: Vec<PendingAttribute<'scope>>,
     pub(crate) owner: ViewOwnerToken<'scope>,
+    pub(crate) error_handler: ViewErrorHandler<'scope>,
 }
 
 impl<'scope> RenderArgs<'scope> {
@@ -18,11 +20,13 @@ impl<'scope> RenderArgs<'scope> {
         parent: Node,
         attrs: Vec<PendingAttribute<'scope>>,
         owner: ViewOwnerToken<'scope>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> Self {
         Self {
             parent,
             attrs,
             owner,
+            error_handler,
         }
     }
 }
@@ -83,12 +87,14 @@ fn mount_list<'scope>(
     owner: &dyn ViewOwner<'scope>,
     parent: &Node,
     attrs: Vec<PendingAttribute<'scope>>,
+    error_handler: ViewErrorHandler<'scope>,
 ) -> SilexResult<()> {
     mount_composite(
         owner,
         parent,
         attrs,
-        move |transaction_owner, fragment, attrs| {
+        error_handler,
+        move |transaction_owner, fragment, attrs, error_handler| {
             for (index, child) in list.iter().enumerate() {
                 child.mount(
                     transaction_owner,
@@ -98,6 +104,7 @@ fn mount_list<'scope>(
                     } else {
                         Vec::new()
                     },
+                    error_handler,
                 )?;
             }
             Ok(())
@@ -110,12 +117,14 @@ fn mount_list_owned<'scope>(
     owner: &dyn ViewOwner<'scope>,
     parent: &Node,
     attrs: Vec<PendingAttribute<'scope>>,
+    error_handler: ViewErrorHandler<'scope>,
 ) -> SilexResult<()> {
     mount_composite(
         owner,
         parent,
         attrs,
-        move |transaction_owner, fragment, attrs| {
+        error_handler,
+        move |transaction_owner, fragment, attrs, error_handler| {
             for (index, child) in list.into_iter().enumerate() {
                 child.mount_owned(
                     transaction_owner,
@@ -125,6 +134,7 @@ fn mount_list_owned<'scope>(
                     } else {
                         Vec::new()
                     },
+                    error_handler,
                 )?;
             }
             Ok(())
@@ -160,15 +170,19 @@ impl<'scope> View<'scope> for AnyView<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
         match self {
             Self::Empty => Ok(()),
-            Self::Text(text) => text.mount(owner, parent, attrs),
-            Self::Element(element) => element.mount(owner, parent, attrs),
-            Self::List(list) => mount_list(list, owner, parent, attrs),
-            Self::Boxed(view, inner_attrs) => {
-                view.mount(owner, parent, merge_attrs(inner_attrs.clone(), attrs))
-            }
+            Self::Text(text) => text.mount(owner, parent, attrs, error_handler),
+            Self::Element(element) => element.mount(owner, parent, attrs, error_handler),
+            Self::List(list) => mount_list(list, owner, parent, attrs, error_handler),
+            Self::Boxed(view, inner_attrs) => view.mount(
+                owner,
+                parent,
+                merge_attrs(inner_attrs.clone(), attrs),
+                error_handler,
+            ),
         }
     }
 
@@ -177,18 +191,22 @@ impl<'scope> View<'scope> for AnyView<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized,
     {
         match self {
             Self::Empty => Ok(()),
-            Self::Text(text) => text.mount_owned(owner, parent, attrs),
-            Self::Element(element) => element.mount_owned(owner, parent, attrs),
-            Self::List(list) => mount_list_owned(list, owner, parent, attrs),
-            Self::Boxed(view, inner_attrs) => {
-                view.mount(owner, parent, merge_attrs(inner_attrs, attrs))
-            }
+            Self::Text(text) => text.mount_owned(owner, parent, attrs, error_handler),
+            Self::Element(element) => element.mount_owned(owner, parent, attrs, error_handler),
+            Self::List(list) => mount_list_owned(list, owner, parent, attrs, error_handler),
+            Self::Boxed(view, inner_attrs) => view.mount(
+                owner,
+                parent,
+                merge_attrs(inner_attrs, attrs),
+                error_handler,
+            ),
         }
     }
 }

@@ -251,9 +251,9 @@ impl<'scope> MountContext<'scope> {
         &self.parent
     }
 
-    /// Create an owner adapter for a handler explicitly owned by this scope.
-    pub fn owner(&self, error_handler: ErrorReporter<'scope>) -> ScopedViewOwner<'scope> {
-        ScopedViewOwner::new(self.scope, error_handler)
+    /// Create an owner adapter for this mount scope.
+    pub fn owner(&self) -> ScopedViewOwner<'scope> {
+        ScopedViewOwner::new(self.scope)
     }
 
     /// Mount one owned view into the transaction staging parent.
@@ -274,8 +274,8 @@ impl<'scope> MountContext<'scope> {
     where
         V: View<'scope> + 'scope,
     {
-        let owner = self.owner(error_handler);
-        view.mount_owned(&owner, &self.parent, attrs)
+        let owner = self.owner();
+        view.mount_owned(&owner, &self.parent, attrs, error_handler)
     }
 }
 

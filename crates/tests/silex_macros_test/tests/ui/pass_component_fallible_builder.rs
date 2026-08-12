@@ -10,6 +10,7 @@ use silex_macros::component;
 fn FallibleBuilder<'scope>(
     scope: Scope<'scope>,
     children: AnyView<'scope>,
+    #[chain] error_handler: ErrorReporter<'scope>,
     #[chain] value: String,
     #[chain(default)] callback: Callback<'scope, String>,
 ) -> impl View<'scope> {
@@ -19,7 +20,9 @@ fn FallibleBuilder<'scope>(
 
 fn build_view<'scope>(scope: Scope<'scope>) -> SilexResult<impl View<'scope>> {
     let callback = scope.callback(|_: String| Ok(()))?;
+    let error_handler = scope.error_handler(|_| {})?;
     Ok(FallibleBuilder(scope, AnyView::Empty)
+        .error_handler(error_handler)
         .value(String::from("ready"))
         .callback(callback)
         .build()?)

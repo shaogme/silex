@@ -2,7 +2,7 @@ use super::owner::{
     DomRange, RowController, RowControllerConfig, RowRender, RowRenderArgs, RowUpdater,
 };
 use crate::attribute::PendingAttribute;
-use crate::view::{AnyView, ApplyAttributes, OwnedViewOwner, View, ViewOwner};
+use crate::view::{AnyView, ApplyAttributes, OwnedViewOwner, View, ViewErrorHandler, ViewOwner};
 use silex_core::reactivity::{ReactiveSource, runtime_inputs_of};
 use silex_core::traits::{ForLoopSource, RxRead};
 use silex_core::{ErrorHandler, RuntimeInputs, SilexError, SilexResult};
@@ -64,16 +64,19 @@ where
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
-        mount_keyed_list(
+        mount_keyed_list(KeyedListMountArgs {
             owner,
             parent,
-            self.each.clone(),
-            self.key_fn.clone(),
-            RowFactory::Stateful(self.view_fn.clone()),
-            self.error_handler,
+            source: self.each.clone(),
+            key_fn: self.key_fn.clone(),
+            factory: RowFactory::Stateful(self.view_fn.clone()),
+            error_handler: self.error_handler,
             attrs,
-        )
+            parent_error_handler: error_handler,
+            _marker: std::marker::PhantomData,
+        })
     }
 
     fn mount_owned(
@@ -81,19 +84,22 @@ where
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized,
     {
-        mount_keyed_list(
+        mount_keyed_list(KeyedListMountArgs {
             owner,
             parent,
-            self.each,
-            self.key_fn,
-            RowFactory::Stateful(self.view_fn),
-            self.error_handler,
+            source: self.each,
+            key_fn: self.key_fn,
+            factory: RowFactory::Stateful(self.view_fn),
+            error_handler: self.error_handler,
             attrs,
-        )
+            parent_error_handler: error_handler,
+            _marker: std::marker::PhantomData,
+        })
     }
 }
 
@@ -116,6 +122,7 @@ where
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
         mount_indexed_list(
             owner,
@@ -123,6 +130,7 @@ where
             self.each.clone(),
             RowFactory::RenderOnly(self.view_fn.clone()),
             attrs,
+            error_handler,
         )
     }
 
@@ -131,6 +139,7 @@ where
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized,
@@ -141,6 +150,7 @@ where
             self.each,
             RowFactory::RenderOnly(self.view_fn),
             attrs,
+            error_handler,
         )
     }
 }
@@ -151,6 +161,7 @@ fn mount_indexed_list<'scope, IF, IS, T>(
     source: IF,
     factory: RowFactory<'scope, T>,
     attrs: Vec<PendingAttribute<'scope>>,
+    error_handler: ViewErrorHandler<'scope>,
 ) -> SilexResult<()>
 where
     IF: RxRead<Value = IS> + ReactiveSource<'scope> + Clone + 'scope,
@@ -160,7 +171,7 @@ where
     let inputs = runtime_inputs_of(source.clone());
     owner.validate_inputs(&inputs)?;
     let scope = Rc::new(owner.owned_scope()?);
-    let local_owner = OwnedViewOwner::new(scope.clone(), owner.token().error_handler());
+    let local_owner = OwnedViewOwner::new(scope.clone());
     let range = DomRange::append(parent, "for")?;
     let token = local_owner.token();
     let stateful = factory.is_stateful();
@@ -172,11 +183,15 @@ where
             parent,
             attrs,
             owner: token,
+            error_handler,
             updater,
         } = args;
-        render_factory
-            .render(item, index, updater)
-            .mount_owned(&token, &parent, attrs)
+        render_factory.render(item, index, updater).mount_owned(
+            &token,
+            &parent,
+            attrs,
+            error_handler,
+        )
     });
     let rows = local_owner
         .token()
@@ -184,7 +199,6 @@ where
 
     let cleanup_rows = rows.clone();
     let cleanup_range = range.clone();
-    let error_handler = local_owner.token().error_handler();
     if let Err(error) = local_owner.on_cleanup(
         Box::new(move || {
             let mut rows = cleanup_rows.take_for_cleanup().unwrap_or_default();
@@ -236,6 +250,7 @@ where
                             item,
                             index,
                             stateful,
+                            error_handler,
                         },
                     )?;
                     pending.push(row);
@@ -297,7 +312,7 @@ where
             let _ = scope_for_cleanup.dispose();
             Ok(())
         }),
-        owner.token().error_handler(),
+        error_handler,
     ) {
         let _ = scope.dispose();
         return Err(error);
@@ -310,14 +325,20 @@ struct KeyedRows<'scope, T, K> {
     order: Vec<K>,
 }
 
-fn mount_keyed_list<'scope, IF, IS, T, K>(
-    owner: &dyn ViewOwner<'scope>,
-    parent: &Node,
+struct KeyedListMountArgs<'owner, 'scope, IF, IS, T, K> {
+    owner: &'owner dyn ViewOwner<'scope>,
+    parent: &'owner Node,
     source: IF,
     key_fn: Rc<dyn Fn(&T) -> K + 'scope>,
     factory: RowFactory<'scope, T>,
     error_handler: Option<ErrorHandler<'scope, SilexError>>,
     attrs: Vec<PendingAttribute<'scope>>,
+    parent_error_handler: ViewErrorHandler<'scope>,
+    _marker: std::marker::PhantomData<IS>,
+}
+
+fn mount_keyed_list<'owner, 'scope, IF, IS, T, K>(
+    args: KeyedListMountArgs<'owner, 'scope, IF, IS, T, K>,
 ) -> SilexResult<()>
 where
     IF: RxRead<Value = IS> + ReactiveSource<'scope> + Clone + 'scope,
@@ -325,11 +346,22 @@ where
     T: Clone + 'scope,
     K: std::hash::Hash + Eq + Clone + 'scope,
 {
+    let KeyedListMountArgs {
+        owner,
+        parent,
+        source,
+        key_fn,
+        factory,
+        error_handler,
+        attrs,
+        parent_error_handler,
+        ..
+    } = args;
     let inputs = runtime_inputs_of(source.clone());
     owner.validate_inputs(&inputs)?;
     let scope = Rc::new(owner.owned_scope()?);
-    let error_handler = error_handler.unwrap_or_else(|| owner.token().error_handler());
-    let local_owner = OwnedViewOwner::new(scope.clone(), error_handler);
+    let error_handler = error_handler.unwrap_or(parent_error_handler);
+    let local_owner = OwnedViewOwner::new(scope.clone());
     let token = local_owner.token();
     let range = DomRange::append(parent, "for")?;
     let stateful = factory.is_stateful();
@@ -341,11 +373,15 @@ where
             parent,
             attrs,
             owner: token,
+            error_handler,
             updater,
         } = args;
-        render_factory
-            .render(item, index, updater)
-            .mount_owned(&token, &parent, attrs)
+        render_factory.render(item, index, updater).mount_owned(
+            &token,
+            &parent,
+            attrs,
+            error_handler,
+        )
     });
     let state = local_owner.token().owner_state(KeyedRows {
         rows: HashMap::new(),
@@ -354,7 +390,6 @@ where
 
     let cleanup_state = state.clone();
     let cleanup_range = range.clone();
-    let effect_handler = local_owner.token().error_handler();
     if let Err(error) = local_owner.on_cleanup(
         Box::new(move || {
             let Some(mut state) = cleanup_state.take_for_cleanup() else {
@@ -368,7 +403,7 @@ where
             }
             Ok(())
         }),
-        effect_handler,
+        error_handler,
     ) {
         let _ = scope.dispose();
         range.remove();
@@ -434,6 +469,7 @@ where
                             item,
                             index,
                             stateful,
+                            error_handler,
                         },
                     )?;
                     seen.insert(key.clone());
@@ -523,7 +559,7 @@ where
             effect_state.replace(state)?;
             result
         }),
-        effect_handler,
+        error_handler,
     ) {
         let _ = scope.dispose();
         return Err(error);
@@ -535,7 +571,7 @@ where
             let _ = scope_for_cleanup.dispose();
             Ok(())
         }),
-        owner.token().error_handler(),
+        parent_error_handler,
     ) {
         let _ = scope.dispose();
         return Err(error);

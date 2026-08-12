@@ -122,14 +122,18 @@ global! {
 // --- Styled Components ---
 
 styled! {
-    pub DemoCard<'scope><div>(scope: Scope<'scope>, children: AnyView<'scope>) {
+    pub DemoCard<'scope><div>(
+        scope: Scope<'scope>,
+        children: AnyView<'scope>,
+        #[chain] error_handler: ErrorReporter<'scope>,
+    ) {
         background: $(static AppTheme::SURFACE);
         color: $(static AppTheme::TEXT);
         border: 1px solid $(static AppTheme::BORDER);
         border-radius: 16px;
         padding: 32px;
         margin: 24px 0;
-        box-shadow: 0 10px 40px $(rx!{ scope; __silex_owner.error_handler(); AppTheme::TEXT.alpha(0.15) });
+        box-shadow: 0 10px 40px $(rx!{ scope; error_handler; AppTheme::TEXT.alpha(0.15) });
         backdrop-filter: blur(12px);
         transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         animation: fade_in 0.8s ease-out;
@@ -151,6 +155,7 @@ styled! {
     pub ApplyDemoButton<'scope><button>(
         scope: Scope<'scope>,
         children: AnyView<'scope>,
+        #[chain] error_handler: ErrorReporter<'scope>,
         #[chain] #[prop(into)] variant: Signal<'scope, String>,
     ) {
         @apply flex items-center justify-center px-5 py-2.5 rounded-xl font-semibold transition-all duration-300 shadow-md cursor-pointer;
@@ -173,6 +178,7 @@ styled! {
     pub StyledButton<'scope><button>(
         scope: Scope<'scope>,
         children: AnyView<'scope>,
+        #[chain] error_handler: ErrorReporter<'scope>,
         #[chain] #[prop(into)] color: Signal<'scope, CssVar<Hex>>,
         #[chain] #[prop(into)] size: Signal<'scope, String>,
         #[chain] #[prop(into)] hover_color: Signal<'scope, CssVar<Hex>>,
@@ -218,7 +224,11 @@ styled! {
 
 styled! {
     #[theme(prefix = "slx-theme")]
-    pub ThemePreviewCard<'scope><div>(scope: Scope<'scope>, children: AnyView<'scope>) {
+    pub ThemePreviewCard<'scope><div>(
+        scope: Scope<'scope>,
+        children: AnyView<'scope>,
+        #[chain] error_handler: ErrorReporter<'scope>,
+    ) {
         background-color: $(static AppTheme::SURFACE);
         color: $(static AppTheme::TEXT);
         border-radius: $(static AppTheme::RADIUS);
@@ -338,7 +348,7 @@ pub fn StylingBasics<'scope>(
                         .font_weight(600)?
                 )
             ].style(sty().margin_top(px(16))?)
-        )).build(),
+        )).error_handler(error_handler).build(),
 
         DemoCard(scope, chain!(
             h3("1. Atomic & Scoped Styles (styled!)"),
@@ -348,6 +358,7 @@ pub fn StylingBasics<'scope>(
                 StyledButton(scope, chain!(
                     "Interactive Scoped Button"
                 ))
+                .error_handler(error_handler)
                 .color(color)?
                 .size(size)?
                 .hover_color(hover_color)?
@@ -377,7 +388,7 @@ pub fn StylingBasics<'scope>(
                     Ok(())
                 })
                 .build(),
-        )).build(),
+        )).error_handler(error_handler).build(),
 
         DemoCard(scope, chain!(
             h3("1.5 Dynamic Variants & Attribute Passthrough"),
@@ -407,7 +418,7 @@ pub fn StylingBasics<'scope>(
                         .style(sty().font_size(em_unit(0.9))?.opacity(0.8)?)
                 )).gap(16)?.build()
             }
-        )).build(),
+        )).error_handler(error_handler).build(),
 
         DemoCard(scope, chain!(
             h3("2. Type-Safe Style Builder (sty)"),
@@ -478,7 +489,7 @@ pub fn StylingBasics<'scope>(
                     )
                 )).build()
             }
-        )).build(),
+        )).error_handler(error_handler).build(),
 
         DemoCard(scope, chain!(
             h3("3. Layout Primitives"),
@@ -495,10 +506,11 @@ pub fn StylingBasics<'scope>(
                 Center(scope, chain!(
                     "I am perfectly centered"
                 ))
+                    .error_handler(error_handler)
                     .style(sty().background_color(hex("#4f46e5"))?.padding(px(12))?.border_radius(px(8))?)?
                     .build(),
             )).gap(16)?.build()
-        )).build(),
+        )).error_handler(error_handler).build(),
     ])
 }
 
@@ -554,7 +566,7 @@ pub fn Theming<'scope>(
             ThemeButton(scope, "Themed Scoped Button", error_handler)
                 .active(false)?
                 .build()
-        )).build().apply(theme_variables(theme)),
+        )).error_handler(error_handler).build().apply(theme_variables(theme)),
 
         h3("Incremental Patching (New)").style(sty().margin("40px 0 16px")?),
         p("Only override specific variables (like 'primary') while inheriting the rest from the environment via CSS inheritance.")
@@ -570,7 +582,7 @@ pub fn Theming<'scope>(
                         .build(),
                     span(" (Variable inheritance in action!) ").style(sty().font_size(em_unit(0.8))?.opacity(0.6)?)
                 ]
-            )).build()
+            )).error_handler(error_handler).build()
             .apply(theme_patch(rx!(scope; error_handler; AppThemePatch::default().primary(hex("#ff69b4"))))),
         ].apply(theme_variables(theme)),
 
@@ -587,7 +599,7 @@ pub fn Theming<'scope>(
                 div("Themed Row 2").style(sty().background(AppTheme::SURFACE_ALT)?.padding("10px")?.margin("4px")?.border_radius(px(4))?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::SECONDARY))?)
                     .apply(theme_variables(theme)),
             )).style(sty().border(border(px(2), BorderStyleKeyword::Solid, hex("#ef4444")))?.padding(px(8))?)?.build()
-        )).build(),
+        )).error_handler(error_handler).build(),
 
         DemoCard(scope, chain!(
             h4("2. Nested Layout Stability"),
@@ -599,7 +611,7 @@ pub fn Theming<'scope>(
                 )).gap(4)?.build()?.apply(theme_variables(theme)),
                 div("Sibling of Nested Stack").style(sty().background(AppTheme::SURFACE_ALT)?.color(AppTheme::TEXT)?.padding("10px")?.margin_top(px(4))?.border_radius(px(4))?),
             )).style(sty().border(border(px(2), BorderStyleKeyword::Solid, hex("#3b82f6")))?.padding(px(8))?)?.build()
-        )).build(),
+        )).error_handler(error_handler).build(),
     ]
     .style(sty().padding(px(24))?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?.border_radius(px(12))?.background(AppTheme::SURFACE)?.transition("all 0.3s")?))
 }
@@ -640,7 +652,7 @@ pub fn AdvancedStyling<'scope>(
                             .padding_left(px(12))?
                     ),
                 )).gap(12)?.build()
-            )).build(),
+        )).error_handler(error_handler).build(),
             DemoCard(scope, chain!(
                 h4("2. Gradients DSL"),
                 p("Declarative API for complex linear and radial gradients.").style(sty().margin_bottom(px(16))?.font_size(em_unit(0.9))?.opacity(0.7)?),
@@ -662,7 +674,7 @@ pub fn AdvancedStyling<'scope>(
                         div(()).style(sty().height(px(100))?.border_radius(px(12))?.background_image(linear_gradient().repeating().to(Direction::ToBottomRight).stop_at(hex("#1e1e24"), pct(0)).stop_at(hex("#1e1e24"), px(10)).stop_at(hex("#312e81"), px(10)).stop_at(hex("#312e81"), px(20)).build())?)
                     ],
                 )).columns(2)?.gap(16)?.build()
-            )).build(),
+        )).error_handler(error_handler).build(),
             DemoCard(scope, chain!(
                 h4("3. Responsive & Nested (Style Builder)"),
                 p("The enhanced `sty()` API now supports `@media` and complex nesting, just like the `styled!` macro.").style(sty().margin_bottom(px(16))?.font_size(em_unit(0.9))?.opacity(0.7)?),
@@ -698,7 +710,7 @@ pub fn AdvancedStyling<'scope>(
                             })?
                     ),
                 ].style(sty().position(PositionKeyword::Relative)?)
-            )).build(),
+        )).error_handler(error_handler).build(),
             DemoCard(scope, chain!(
                 h4("4. Complex DSLs (Grid Areas & Font Variations)"),
                 p("Specialized support for complex grid layouts and variable fonts.").style(sty().margin_bottom(px(24))?.color(hex("#9ca3af"))?),
@@ -727,7 +739,7 @@ pub fn AdvancedStyling<'scope>(
                             )
                     ]
                 )).gap(24)?.build()
-            )).build()
+            )).error_handler(error_handler).build()
         )).gap(24)?.build(),
 
         h2("🎨 Deep Integration with `@apply` & Inline Tailwind Mixins").style(sty().margin_top(px(48))?),
@@ -738,11 +750,20 @@ pub fn AdvancedStyling<'scope>(
             h4("1. `@apply` Directives & Inline Tailwind String Variants"),
             p("Compose complex styles seamlessly using Tailwind utilities within standard styled! components.").style(sty().margin_bottom(px(16))?.font_size(em_unit(0.9))?.opacity(0.7)?),
             div![
-                ApplyDemoButton(scope, "Primary Variant").variant("primary")?.build(),
-                ApplyDemoButton(scope, "Secondary Variant").variant("secondary")?.build(),
-                ApplyDemoButton(scope, "Outline Variant").variant("outline")?.build(),
+                ApplyDemoButton(scope, "Primary Variant")
+                    .error_handler(error_handler)
+                    .variant("primary")?
+                    .build(),
+                ApplyDemoButton(scope, "Secondary Variant")
+                    .error_handler(error_handler)
+                    .variant("secondary")?
+                    .build(),
+                ApplyDemoButton(scope, "Outline Variant")
+                    .error_handler(error_handler)
+                    .variant("outline")?
+                    .build(),
             ].style(sty().display(DisplayKeyword::Flex)?.gap(px(16))?)
-        )).build(),
+        )).error_handler(error_handler).build(),
 
         h2("🔒 Unsafe Styles & Escape Hatches").style(sty().margin_top(px(48))?),
         p("Bypass compile-time property and type validation for non-standard CSS or raw value injection.")
@@ -752,13 +773,19 @@ pub fn AdvancedStyling<'scope>(
             DemoCard(scope, chain!(
                 h4("1. Local Unsafe Blocks"),
                 p("Use `unsafe { ... }` blocks to inject raw properties or bypass type checks locally.").style(sty().margin_bottom(px(16))?.font_size(em_unit(0.9))?.opacity(0.7)?),
-                UnsafeBlockDemo(scope, "I have a raw orange glow").build().style(sty().margin_bottom(px(16))?)
-            )).build(),
+                UnsafeBlockDemo(scope, "I have a raw orange glow")
+                    .error_handler(error_handler)
+                    .build()
+                    .style(sty().margin_bottom(px(16))?)
+        )).error_handler(error_handler).build(),
             DemoCard(scope, chain!(
                 h4("2. Global Unsafe Component"),
                 p("Marking a styled component as `unsafe` disables all validation for its entire CSS block.").style(sty().margin_bottom(px(16))?.font_size(em_unit(0.9))?.opacity(0.7)?),
-                UnsafeCompDemo(scope, "Everything here is raw").build().style(sty().width(pct(100))?)
-            )).build()
+                UnsafeCompDemo(scope, "Everything here is raw")
+                    .error_handler(error_handler)
+                    .build()
+                    .style(sty().width(pct(100))?)
+            )).error_handler(error_handler).build()
         )).gap(24)?.build()
     ])
 }
@@ -766,7 +793,11 @@ pub fn AdvancedStyling<'scope>(
 // --- Unsafe Demos ---
 
 styled! {
-    pub UnsafeBlockDemo<'scope><div>(scope: Scope<'scope>, children: AnyView<'scope>) {
+    pub UnsafeBlockDemo<'scope><div>(
+        scope: Scope<'scope>,
+        children: AnyView<'scope>,
+        #[chain] error_handler: ErrorReporter<'scope>,
+    ) {
         padding: 24px;
         border-radius: 12px;
         background: #1e1e24;
@@ -789,7 +820,11 @@ styled! {
 }
 
 styled! {
-    pub unsafe UnsafeCompDemo<'scope><div>(scope: Scope<'scope>, children: AnyView<'scope>) {
+    pub unsafe UnsafeCompDemo<'scope><div>(
+        scope: Scope<'scope>,
+        children: AnyView<'scope>,
+        #[chain] error_handler: ErrorReporter<'scope>,
+    ) {
         // Enire component is unsafe
         padding: 32px;
         border: 2px dashed #f43f5e;
@@ -799,7 +834,7 @@ styled! {
         // No type checking here - passing a raw string for color
         color: rgb(244, 63, 94);
 
-        font-family: $(rx!(scope; __silex_owner.error_handler(); "'Courier New', monospace".to_string()));
+        font-family: $(rx!(scope; error_handler; "'Courier New', monospace".to_string()));
         cursor: help;
 
         &:hover {

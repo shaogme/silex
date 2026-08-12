@@ -5,6 +5,7 @@ use silex::reexports::*;
 #[component]
 fn Card<'scope>(
     scope: Scope<'scope>,
+    #[chain] error_handler: ErrorReporter<'scope>,
     #[prop(into)] title: String,
     #[chain(default = 1)] elevation: u8,
     #[chain(default)] child: AnyView<'scope>,
@@ -90,6 +91,7 @@ fn CounterDisplay<'scope>(
 fn CounterControls<'scope>(
     count: ReadSignal<'scope, i32>,
     set_count: WriteSignal<'scope, i32>,
+    #[chain] error_handler: ErrorReporter<'scope>,
 ) -> impl View<'scope> {
     // Demo: Style Array
     let btn_style = sty()
@@ -123,9 +125,13 @@ fn CounterControls<'scope>(
 // --- Views ---
 
 #[component]
-fn NavBar<'scope>(ctx: RouterContext<'scope>) -> impl View<'scope> {
+fn NavBar<'scope>(
+    ctx: RouterContext<'scope>,
+    #[chain] error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
     Ok(div!(
         Link(ctx, "/")
+            .error_handler(error_handler)
             .children("Home")
             .style(
                 sty()
@@ -136,6 +142,7 @@ fn NavBar<'scope>(ctx: RouterContext<'scope>) -> impl View<'scope> {
             )
             .build(),
         Link(ctx, "/about")
+            .error_handler(error_handler)
             .children("About")
             .style(
                 sty()
@@ -188,13 +195,16 @@ fn HomeView<'scope>(
         ),
         // Card 1: Explicit Parameter Counter
         Card(scope, "Explicit Counter")
+            .error_handler(error_handler)
             .elevation(3)
             .on_hover(scope.callback(|_| {
                 web_sys::console::log_1(&"Card Hovered!".into());
                 Ok(())
             })?)
             .child(chain!(
-                CounterControls(count, set_count).build(),
+                CounterControls(count, set_count)
+                    .error_handler(error_handler)
+                    .build(),
                 CounterDisplay(scope, count)
                     .error_handler(error_handler)
                     .build(),
@@ -202,6 +212,7 @@ fn HomeView<'scope>(
             .build(),
         // Card 2: Input & Local State
         Card(scope, "Local State (Resets on Nav)")
+            .error_handler(error_handler)
             .child(div!(div!(
                 div!(
                     span("Hello, "),
@@ -232,6 +243,7 @@ fn HomeView<'scope>(
             .build(),
         // Card 3: Control Flow
         Card(scope, "Control Flow")
+            .error_handler(error_handler)
             .child(
                 is_high
                     .when(
@@ -259,6 +271,7 @@ fn HomeView<'scope>(
             .build(),
         // Card 4: Suspense
         Card(scope, "Suspense (Async Loading)")
+            .error_handler(error_handler)
             .child(
                 Suspense(scope, error_handler, move |cx| {
                     match Resource::new(
@@ -285,7 +298,10 @@ fn HomeView<'scope>(
                         }
                         Err(error) => {
                             let _ = error_handler.handle(error.clone());
-                            Ok(ErrorPage(error).build().into_any())
+                            Ok(ErrorPage(error)
+                                .error_handler(error_handler)
+                                .build()
+                                .into_any())
                         }
                     }
                 })
@@ -300,7 +316,7 @@ fn HomeView<'scope>(
 }
 
 #[component]
-fn AboutView<'scope>() -> AnyView<'scope> {
+fn AboutView<'scope>(#[chain] error_handler: ErrorReporter<'scope>) -> AnyView<'scope> {
     Ok(div!(
         h1("About"),
         p("This is the About Page to demonstrate Silex Router."),
@@ -309,14 +325,17 @@ fn AboutView<'scope>() -> AnyView<'scope> {
 }
 
 #[component]
-fn NotFound<'scope>() -> AnyView<'scope> {
+fn NotFound<'scope>(#[chain] error_handler: ErrorReporter<'scope>) -> AnyView<'scope> {
     Ok(div(h1("404 - Page Not Found"))
         .style(sty().color(ColorName::Red)?.padding("20px")?)
         .into_any())
 }
 
 #[component]
-fn ErrorPage<'scope>(error: SilexError) -> AnyView<'scope> {
+fn ErrorPage<'scope>(
+    error: SilexError,
+    #[chain] error_handler: ErrorReporter<'scope>,
+) -> AnyView<'scope> {
     Ok(div!(
         h1("Silex Application Error"),
         p(error.to_string()),
@@ -359,30 +378,40 @@ fn App<'scope>(
                     .error_handler(boundary_error_handler)
                     .build()
             },
-            about "/about" => move |_ctx| AboutView().build(),
-            not_found "/*" => move |_ctx| NotFound().build(),
+            about "/about" => move |_ctx| AboutView().error_handler(boundary_error_handler).build(),
+            not_found "/*" => move |_ctx| NotFound().error_handler(boundary_error_handler).build(),
         }) {
             Ok(routes) => div!(
                 Router(scope, boundary_error_handler)
                     .routes(routes.table())
-                    .layout(move |ctx, outlet| div!(NavBar(ctx).build(), outlet))
+                    .layout(move |ctx, outlet| {
+                        div!(
+                            NavBar(ctx).error_handler(boundary_error_handler).build(),
+                            outlet
+                        )
+                    })
                     .build()
             )
             .class("app-container")
             .style(app_style.clone())
             .into_any(),
             Err(error) => ErrorPage(SilexError::Framework(error.to_string()))
+                .error_handler(boundary_error_handler)
                 .build()
                 .into_any(),
         }
     })
-    .fallback(|e| ErrorPage(e).build())
+    .error_handler(error_handler)
+    .fallback(move |e| ErrorPage(e).error_handler(error_handler).build())
     .build()
     .into_any();
 
     Ok(rx!(scope; error_handler; {
         if let Some(error) = (*$root_error).clone() {
-            ErrorPage(error).build().into_any()
+            ErrorPage(error)
+                .error_handler(error_handler)
+                .build()
+                .into_any()
         } else {
             boundary.clone()
         }

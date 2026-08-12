@@ -29,6 +29,7 @@ styled! {
     /// 居中容器
     pub Center<'scope> <div> (
         scope: Scope<'scope>,
+        #[chain] error_handler: ErrorReporter<'scope>,
         children: AnyView<'scope>,
         #[prop(into)] #[chain(default)]
         style: Signal<'scope, Style<'scope>>,

@@ -15,7 +15,7 @@ use crate::{
 use silex_core::{ErrorReporter, RuntimeInputs, Rx, SilexError, SilexResult};
 use silex_dom::{
     attribute::{ApplyTarget, ApplyToDom, AttrOp, IntoStorable, PendingAttribute},
-    view::{ApplyAttributes, OwnerState, View, ViewOwner, ViewOwnerToken},
+    view::{ApplyAttributes, OwnerState, View, ViewErrorHandler, ViewOwner, ViewOwnerToken},
 };
 use std::{
     cell::{Cell, RefCell},
@@ -408,7 +408,12 @@ impl<'scope> DynamicCss<'scope> {
         inputs
     }
 
-    fn apply_to_element(&self, el: &Element, owner: &dyn ViewOwner<'scope>) -> SilexResult<()> {
+    fn apply_to_element(
+        &self,
+        el: &Element,
+        owner: &dyn ViewOwner<'scope>,
+        error_handler: ViewErrorHandler<'scope>,
+    ) -> SilexResult<()> {
         let all_inputs = self.runtime_inputs();
         owner.validate_inputs(&all_inputs)?;
         let token = owner.token();
@@ -428,7 +433,6 @@ impl<'scope> DynamicCss<'scope> {
                 inputs.extend(&getter.runtime_inputs());
             }
             let el_clone = el.clone();
-            let error_handler = token.error_handler();
             token.effect_with_previous_from(
                 inputs,
                 Box::new(
@@ -489,7 +493,6 @@ impl<'scope> DynamicCss<'scope> {
             let base_class = self.class_name;
             let layer = self.layer;
             let static_values_for_effect = static_values.clone();
-            let error_handler = token.error_handler();
             token.effect_with_previous_from(
                 inputs,
                 Box::new(move |previous: Option<&String>| -> SilexResult<String> {
@@ -554,7 +557,7 @@ impl<'scope> DynamicCss<'scope> {
                     .remove_1(class_name)
                     .map_err(SilexError::from)
             }),
-            owner.token().error_handler(),
+            error_handler,
         )?;
         Ok(())
     }
@@ -566,13 +569,16 @@ impl<'scope> ApplyToDom<'scope> for DynamicCss<'scope> {
         el: &Element,
         _target: ApplyTarget,
         owner: &ViewOwnerToken<'scope>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
-        self.apply_to_element(el, owner)
+        self.apply_to_element(el, owner, error_handler)
     }
 
     fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope> {
         let inputs = self.runtime_inputs();
-        AttrOp::custom_with_inputs(inputs, move |el, owner| self.apply_to_element(el, owner))
+        AttrOp::custom_with_inputs(inputs, move |el, owner, error_handler| {
+            self.apply_to_element(el, owner, error_handler)
+        })
     }
 }
 
@@ -686,8 +692,8 @@ impl<'scope> StyledVariantBinding<'scope> {
 
     pub fn into_op(self) -> AttrOp<'scope> {
         let inputs = self.runtime_inputs();
-        AttrOp::custom_with_inputs(inputs, move |element, owner| {
-            self.mount_to_element(element, owner)
+        AttrOp::custom_with_inputs(inputs, move |element, owner, error_handler| {
+            self.mount_to_element(element, owner, error_handler)
         })
     }
 
@@ -711,6 +717,7 @@ impl<'scope> StyledVariantBinding<'scope> {
         &self,
         element: &Element,
         owner: &ViewOwnerToken<'scope>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
         let inputs = self.runtime_inputs();
         owner.validate_inputs(&inputs)?;
@@ -746,7 +753,6 @@ impl<'scope> StyledVariantBinding<'scope> {
         let states_for_effect = states.clone();
         let variant_classes_for_effect = variant_classes.clone();
         let element_for_effect = element.clone();
-        let error_handler = owner.error_handler();
         owner.effect_from(
             inputs,
             Box::new(move || -> SilexResult<()> {
@@ -996,7 +1002,11 @@ impl<'scope> GlobalStyleView<'scope> {
         }
     }
 
-    fn mount_inner(&self, owner: &dyn ViewOwner<'scope>) -> SilexResult<()> {
+    fn mount_inner(
+        &self,
+        owner: &dyn ViewOwner<'scope>,
+        error_handler: ViewErrorHandler<'scope>,
+    ) -> SilexResult<()> {
         let mut inputs = RuntimeInputs::new();
         for binding in &self.bindings {
             inputs.extend(&binding.runtime_inputs());
@@ -1013,6 +1023,7 @@ impl<'scope> GlobalStyleView<'scope> {
             let style_id = unique_dynamic_style_id(binding.style_id);
             inject_managed_dynamic_style(
                 owner,
+                error_handler,
                 ManagedDynamicStyle {
                     style_id,
                     layer: binding.layer,
@@ -1036,8 +1047,9 @@ impl<'scope> View<'scope> for GlobalStyleView<'scope> {
         owner: &dyn ViewOwner<'scope>,
         _parent: &web_sys::Node,
         _attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
-        self.mount_inner(owner)
+        self.mount_inner(owner, error_handler)
     }
 
     fn mount_owned(
@@ -1045,11 +1057,12 @@ impl<'scope> View<'scope> for GlobalStyleView<'scope> {
         owner: &dyn ViewOwner<'scope>,
         _parent: &web_sys::Node,
         _attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized,
     {
-        self.mount_inner(owner)
+        self.mount_inner(owner, error_handler)
     }
 }
 
@@ -1120,6 +1133,7 @@ fn render_layered_selector(
 ///   替换是一遍扫描完成的，写进去的值不会再被当成占位符。
 pub fn inject_managed_dynamic_style<'scope>(
     owner: &dyn ViewOwner<'scope>,
+    error_handler: ViewErrorHandler<'scope>,
     style: ManagedDynamicStyle<'scope>,
 ) -> SilexResult<()> {
     let ManagedDynamicStyle {
@@ -1143,7 +1157,6 @@ pub fn inject_managed_dynamic_style<'scope>(
     let manager = Rc::new(DynamicStyleManager::new());
     let style_id_str = style_id;
     let manager_for_cleanup = manager.clone();
-    let error_handler = owner.token().error_handler();
     owner.on_cleanup(
         Box::new(move || {
             manager_for_cleanup.dispose();

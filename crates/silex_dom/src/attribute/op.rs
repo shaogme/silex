@@ -7,10 +7,11 @@ use wasm_bindgen::{JsCast, JsValue};
 use web_sys::{CssStyleDeclaration, Element, HtmlElement, SvgElement};
 
 use crate::attribute::apply::ApplyTarget;
-use crate::view::ViewOwnerToken;
+use crate::view::{ViewErrorHandler, ViewOwnerToken};
 
-type CustomAttribute<'scope> =
-    Rc<dyn Fn(&Element, &ViewOwnerToken<'scope>) -> SilexResult<()> + 'scope>;
+type CustomAttribute<'scope> = Rc<
+    dyn Fn(&Element, &ViewOwnerToken<'scope>, ViewErrorHandler<'scope>) -> SilexResult<()> + 'scope,
+>;
 
 /// 预定义的 DOM 强类型 Property (Fast-Path)
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -372,7 +373,12 @@ impl<'scope> AttrOp<'scope> {
 
     pub fn custom_with_inputs(
         inputs: RuntimeInputs,
-        callback: impl Fn(&Element, &ViewOwnerToken<'scope>) -> SilexResult<()> + 'scope,
+        callback: impl Fn(
+            &Element,
+            &ViewOwnerToken<'scope>,
+            ViewErrorHandler<'scope>,
+        ) -> SilexResult<()>
+        + 'scope,
     ) -> Self {
         Self::CustomWithInputs {
             inputs,
@@ -426,41 +432,65 @@ impl<'scope> AttrOp<'scope> {
         inputs
     }
 
-    pub fn apply(self, el: &Element, owner: &ViewOwnerToken<'scope>) -> SilexResult<()> {
+    pub fn apply(
+        self,
+        el: &Element,
+        owner: &ViewOwnerToken<'scope>,
+        error_handler: ViewErrorHandler<'scope>,
+    ) -> SilexResult<()> {
         let inputs = self.runtime_inputs();
         owner.validate_inputs(&inputs)?;
-        self.apply_unchecked(el, owner)
+        self.apply_unchecked(el, owner, error_handler)
     }
 
-    fn apply_unchecked(self, el: &Element, owner: &ViewOwnerToken<'scope>) -> SilexResult<()> {
+    fn apply_unchecked(
+        self,
+        el: &Element,
+        owner: &ViewOwnerToken<'scope>,
+        error_handler: ViewErrorHandler<'scope>,
+    ) -> SilexResult<()> {
         match self {
             AttrOp::Update(AttrUpdate { target, data }) => {
-                apply_update_internal(el, target, data, owner)?;
+                apply_update_internal(el, target, data, owner, error_handler)?;
             }
             AttrOp::CombinedClasses(CombinedClasses {
                 statics,
                 toggles,
                 reactives,
             }) => {
-                apply_combined_classes_internal(el, statics, toggles, reactives, owner)?;
+                apply_combined_classes_internal(
+                    el,
+                    statics,
+                    toggles,
+                    reactives,
+                    owner,
+                    error_handler,
+                )?;
             }
             AttrOp::CombinedStyles(CombinedStyles {
                 statics,
                 properties,
                 sheets,
             }) => {
-                apply_combined_styles_internal(el, statics, properties, sheets, owner)?;
+                apply_combined_styles_internal(
+                    el,
+                    statics,
+                    properties,
+                    sheets,
+                    owner,
+                    error_handler,
+                )?;
             }
             AttrOp::Sequence(ops) => {
                 for op in ops {
-                    op.apply_unchecked(el, owner)?;
+                    op.apply_unchecked(el, owner, error_handler)?;
                 }
             }
             AttrOp::Custom(f) => {
-                f(el, owner)?;
+                f(el, owner, error_handler)?;
             }
             AttrOp::CustomWithInputs { callback, .. } => {
-                callback(el, owner)?;
+                callback(el, owner, error_handler)?;
             }
             AttrOp::Noop => {}
         }
@@ -473,6 +503,7 @@ fn apply_update_internal<'scope>(
     target: ApplyTarget,
     data: AttrData<'scope>,
     owner: &ViewOwnerToken<'scope>,
+    error_handler: ViewErrorHandler<'scope>,
 ) -> SilexResult<()> {
     let name = target.attr_name().to_string();
     match data {
@@ -491,7 +522,7 @@ fn apply_update_internal<'scope>(
                     let value = rx.get()?;
                     apply_attr_with_target_internal(&el, name, target.clone(), &value)
                 }),
-                owner.error_handler(),
+                error_handler,
             )?;
         }
         AttrData::ReactiveString(rx) => {
@@ -503,7 +534,7 @@ fn apply_update_internal<'scope>(
                     let val = rx.get()?;
                     apply_attr_with_target_internal(&el, name, target.clone(), &Attr::from(val))
                 }),
-                owner.error_handler(),
+                error_handler,
             )?;
         }
         AttrData::ReactiveBool(rx) => {
@@ -515,7 +546,7 @@ fn apply_update_internal<'scope>(
                     let val = rx.get()?;
                     apply_attr_with_target_internal(&el, name, target.clone(), &Attr::from(val))
                 }),
-                owner.error_handler(),
+                error_handler,
             )?;
         }
         AttrData::ReactiveOptionString(rx) => {
@@ -531,7 +562,7 @@ fn apply_update_internal<'scope>(
                     };
                     apply_attr_with_target_internal(&el, name, target.clone(), &attr)
                 }),
-                owner.error_handler(),
+                error_handler,
             )?;
         }
         AttrData::ReactiveJs(rx) => {
@@ -544,7 +575,7 @@ fn apply_update_internal<'scope>(
                         .map(|_| ())
                         .map_err(SilexError::from)
                 }),
-                owner.error_handler(),
+                error_handler,
             )?;
         }
     }
@@ -564,6 +595,7 @@ fn apply_combined_classes_internal<'scope>(
     toggles: Vec<(Cow<'scope, str>, Rx<'scope, bool>)>,
     reactives: Vec<Rx<'scope, String>>,
     owner: &ViewOwnerToken<'scope>,
+    error_handler: ViewErrorHandler<'scope>,
 ) -> SilexResult<()> {
     let list = el.class_list();
     // 1. 立即应用所有静态类（非响应式，仅执行一次）
@@ -636,7 +668,7 @@ fn apply_combined_classes_internal<'scope>(
                 Ok(new_dynamic_tokens)
             },
         ),
-        owner.error_handler(),
+        error_handler,
     )?;
 
     owner.on_cleanup(
@@ -650,7 +682,7 @@ fn apply_combined_classes_internal<'scope>(
             }
             Ok(())
         }),
-        owner.error_handler(),
+        error_handler,
     )?;
     Ok(())
 }
@@ -661,6 +693,7 @@ fn apply_combined_styles_internal<'scope>(
     properties: Vec<(Cow<'scope, str>, Rx<'scope, String>)>,
     sheets: Vec<Rx<'scope, String>>,
     owner: &ViewOwnerToken<'scope>,
+    error_handler: ViewErrorHandler<'scope>,
 ) -> SilexResult<()> {
     let style = get_style_decl(el)
         .ok_or_else(|| SilexError::Dom("element does not expose a style declaration".into()))?;
@@ -752,7 +785,7 @@ fn apply_combined_styles_internal<'scope>(
                 })
             },
         ),
-        owner.error_handler(),
+        error_handler,
     )?;
 
     owner.on_cleanup(
@@ -768,7 +801,7 @@ fn apply_combined_styles_internal<'scope>(
             }
             Ok(())
         }),
-        owner.error_handler(),
+        error_handler,
     )?;
     Ok(())
 }

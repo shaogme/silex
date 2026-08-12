@@ -30,6 +30,11 @@ fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
         .expect("test error handler should register")
 }
 
+fn test_owner<'scope>(scope: Scope<'scope>) -> (ScopedViewOwner<'scope>, ErrorReporter<'scope>) {
+    let error_handler = test_handler(scope);
+    (ScopedViewOwner::new(scope), error_handler)
+}
+
 fn document() -> web_sys::Document {
     web_sys::window()
         .expect("browser tests have a window")
@@ -147,13 +152,13 @@ fn style_updates_inline_values_and_cleans_on_scope_dispose() {
             let (value, set_value) = scope
                 .signal(String::from("red"))
                 .expect("signal should initialize");
-            let owner = ScopedViewOwner::new(scope, test_handler(scope));
+            let (owner, error_handler) = test_owner(scope);
             let token = owner.token();
             let class_name = Style::new()
                 .with_error_handler(test_handler(scope))
                 .raw("--test-color", value)
                 .expect("style should build")
-                .apply_to_element(&element, &token)
+                .apply_to_element(&element, &token, error_handler)
                 .expect("style can be applied");
 
             assert!(element.class_list().contains(&class_name));
@@ -202,10 +207,10 @@ fn theme_updates_variables_and_cleans_on_scope_dispose() {
                     color: String::from("red"),
                 })
                 .expect("theme signal should initialize");
-            let owner = ScopedViewOwner::new(scope, test_handler(scope));
+            let (owner, error_handler) = test_owner(scope);
             let token = owner.token();
             theme_variables(theme)
-                .apply(&element, ApplyTarget::Apply, &token)
+                .apply(&element, ApplyTarget::Apply, &token, error_handler)
                 .expect("theme variables can be applied");
 
             assert!(
@@ -252,13 +257,13 @@ fn svg_style_updates_inline_values_and_cleans_on_scope_dispose() {
             let (value, set_value) = scope
                 .signal(String::from("red"))
                 .expect("signal should initialize");
-            let owner = ScopedViewOwner::new(scope, test_handler(scope));
+            let (owner, error_handler) = test_owner(scope);
             let token = owner.token();
             Style::new()
                 .with_error_handler(test_handler(scope))
                 .raw("--svg-color", value)
                 .expect("style should build")
-                .apply_to_element(&element, &token)
+                .apply_to_element(&element, &token, error_handler)
                 .expect("svg style can be applied");
             assert!(
                 element
@@ -302,7 +307,7 @@ fn dynamic_css_replaces_rule_class_and_cleans_on_scope_dispose() {
             let (value, set_value) = scope
                 .signal(String::from("red"))
                 .expect("signal should initialize");
-            let owner = ScopedViewOwner::new(scope, test_handler(scope));
+            let (owner, error_handler) = test_owner(scope);
             let token = owner.token();
             let dynamic = DynamicCss::new("slx-owner-test").with_rule(
                 &[
@@ -316,7 +321,7 @@ fn dynamic_css_replaces_rule_class_and_cleans_on_scope_dispose() {
             );
 
             dynamic
-                .apply(&element, ApplyTarget::Class, &token)
+                .apply(&element, ApplyTarget::Class, &token, error_handler)
                 .expect("dynamic style can be applied");
             let first_class = element.class_name();
             assert!(first_class.contains("slx-owner-test"));
@@ -349,7 +354,7 @@ async fn pending_dynamic_sheet_operations_do_not_survive_owner_dispose() {
             let (value, _) = scope
                 .signal(String::from("red"))
                 .expect("signal should initialize");
-            let owner = ScopedViewOwner::new(scope, test_handler(scope));
+            let (owner, error_handler) = test_owner(scope);
             let token = owner.token();
             let dynamic = DynamicCss::new("slx-pending-owner").with_rule(
                 &[
@@ -362,7 +367,7 @@ async fn pending_dynamic_sheet_operations_do_not_survive_owner_dispose() {
                 vec![value.into_css_reactive()],
             );
             dynamic
-                .apply(&element, ApplyTarget::Class, &token)
+                .apply(&element, ApplyTarget::Class, &token, error_handler)
                 .expect("dynamic style can be applied");
             assert!(element.class_name().contains("slx-pending-owner"));
         })
@@ -382,8 +387,8 @@ async fn global_theme_stylesheets_are_isolated_per_owner() {
 
     first_root.with_scope(|first_scope| {
         second_root.with_scope(|second_scope| {
-            let first_owner = ScopedViewOwner::new(first_scope, test_handler(first_scope));
-            let second_owner = ScopedViewOwner::new(second_scope, test_handler(second_scope));
+            let (first_owner, first_error_handler) = test_owner(first_scope);
+            let (second_owner, second_error_handler) = test_owner(second_scope);
             set_global_theme(
                 &first_owner,
                 first_scope
@@ -391,6 +396,7 @@ async fn global_theme_stylesheets_are_isolated_per_owner() {
                         color: String::from("owner-red"),
                     })
                     .expect("first theme should initialize"),
+                first_error_handler,
             )
             .expect("first global theme can be registered");
             set_global_theme(
@@ -400,6 +406,7 @@ async fn global_theme_stylesheets_are_isolated_per_owner() {
                         color: String::from("owner-blue"),
                     })
                     .expect("second theme should initialize"),
+                second_error_handler,
             )
             .expect("second global theme can be registered");
         });
@@ -433,10 +440,10 @@ fn theme_patch_removes_variables_that_disappear_from_the_next_round() {
             let (patch, set_patch) = scope
                 .signal(TestPatch { alternate: false })
                 .expect("patch signal should initialize");
-            let owner = ScopedViewOwner::new(scope, test_handler(scope));
+            let (owner, error_handler) = test_owner(scope);
             let token = owner.token();
             theme_patch(patch)
-                .apply(&element, ApplyTarget::Apply, &token)
+                .apply(&element, ApplyTarget::Apply, &token, error_handler)
                 .expect("theme patch can be applied");
             let initial = element.get_attribute("style").unwrap_or_default();
             assert!(initial.contains("--patch-old"), "{initial}");
@@ -482,15 +489,15 @@ fn foreign_runtime_css_input_is_rejected_before_custom_callback() {
     let mut local_runtime = Runtime::new();
     local_runtime
         .child(|scope| {
-            let owner = ScopedViewOwner::new(scope, test_handler(scope));
+            let (owner, error_handler) = test_owner(scope);
             let token = owner.token();
-            let operation = AttrOp::custom_with_inputs(foreign_inputs, |element, _| {
+            let operation = AttrOp::custom_with_inputs(foreign_inputs, |element, _, _| {
                 callback_runs.set(callback_runs.get() + 1);
                 let _ = element.set_attribute("data-foreign", "unexpected");
                 Ok(())
             });
             operation
-                .apply(&element, &token)
+                .apply(&element, &token, error_handler)
                 .expect_err("foreign runtime input should be rejected");
         })
         .expect("local child scope should initialize");

@@ -10,7 +10,9 @@ use web_sys::Window;
 
 use silex_core::{SilexError, SilexResult};
 
-use crate::view::{HostCallback, HostResourceHandle, JsCallbackResource, ViewOwnerToken};
+use crate::view::{
+    HostCallback, HostResourceHandle, JsCallbackResource, ViewErrorHandler, ViewOwnerToken,
+};
 
 pub mod detached;
 
@@ -122,6 +124,7 @@ pub fn window_event_listener_untyped<'scope>(
     owner: &ViewOwnerToken<'scope>,
     event_name: &str,
     mut cb: impl FnMut(web_sys::Event) -> SilexResult<()> + 'scope,
+    error_handler: ViewErrorHandler<'scope>,
 ) -> Result<HostResourceHandle<'scope>, JsValue> {
     if !owner.is_active() {
         return Err(JsValue::from_str("view owner is inactive"));
@@ -129,7 +132,7 @@ pub fn window_event_listener_untyped<'scope>(
     let destination = owner
         .host_callback(
             move |payload| cb(payload.unchecked_into::<web_sys::Event>()),
-            owner.error_handler(),
+            error_handler,
         )
         .map_err(host_resource_error)?;
     let destination_for_closure = AssertUnwindSafe(destination.clone());
@@ -150,10 +153,15 @@ pub fn window_event_listener_untyped<'scope>(
     let event_name_for_cleanup = event_name.clone();
     let js_fn_for_cleanup = js_fn.clone();
     let window_for_cleanup = window.clone();
-    match owner.host_resource_for_js_callback(&destination, resource, move || {
-        let _ = window_for_cleanup
-            .remove_event_listener_with_callback(&event_name_for_cleanup, &js_fn_for_cleanup);
-    }) {
+    match owner.host_resource_for_js_callback(
+        &destination,
+        resource,
+        move || {
+            let _ = window_for_cleanup
+                .remove_event_listener_with_callback(&event_name_for_cleanup, &js_fn_for_cleanup);
+        },
+        error_handler,
+    ) {
         Ok(resource) => Ok(resource),
         Err(error) => Err(host_resource_error(error)),
     }
@@ -163,6 +171,7 @@ pub fn window_event_listener<'scope, E, F>(
     owner: &ViewOwnerToken<'scope>,
     event: E,
     mut cb: F,
+    error_handler: ViewErrorHandler<'scope>,
 ) -> Result<HostResourceHandle<'scope>, JsValue>
 where
     E: crate::event::EventDescriptor,
@@ -172,6 +181,7 @@ where
         owner,
         &event.name(),
         move |event| cb(event.unchecked_into()),
+        error_handler,
     )
 }
 
@@ -196,6 +206,7 @@ impl Drop for OnceCallbackGuard {
 fn owned_once_callback<'scope>(
     owner: &ViewOwnerToken<'scope>,
     cb: impl FnOnce() -> SilexResult<()> + 'scope,
+    error_handler: ViewErrorHandler<'scope>,
 ) -> Result<(HostCallback, HostResourceHandle<'scope>), JsValue> {
     let mut cb = Some(cb);
     let destination = owner
@@ -207,7 +218,7 @@ fn owned_once_callback<'scope>(
                     Ok(())
                 }
             },
-            owner.error_handler(),
+            error_handler,
         )
         .map_err(host_resource_error)?;
     let resource = HostResourceHandle::empty_js_callback(&destination);
@@ -227,11 +238,12 @@ fn owned_once_callback<'scope>(
 pub fn request_animation_frame<'scope>(
     owner: &ViewOwnerToken<'scope>,
     cb: impl FnOnce() -> SilexResult<()> + 'scope,
+    error_handler: ViewErrorHandler<'scope>,
 ) -> Result<HostResourceHandle<'scope>, JsValue> {
     if !owner.is_active() {
         return Err(JsValue::from_str("view owner is inactive"));
     }
-    let (destination, callback) = owned_once_callback(owner, cb)?;
+    let (destination, callback) = owned_once_callback(owner, cb, error_handler)?;
     let callback_function = callback.js_callback_function();
     let frame = window().request_animation_frame(&callback_function);
     let frame = match frame {
@@ -242,9 +254,14 @@ pub fn request_animation_frame<'scope>(
             return Err(error);
         }
     };
-    match owner.host_resource_for_js_callback(&destination, callback, move || {
-        let _ = window().cancel_animation_frame(frame);
-    }) {
+    match owner.host_resource_for_js_callback(
+        &destination,
+        callback,
+        move || {
+            let _ = window().cancel_animation_frame(frame);
+        },
+        error_handler,
+    ) {
         Ok(resource) => Ok(resource),
         Err(error) => Err(host_resource_error(error)),
     }
@@ -253,11 +270,12 @@ pub fn request_animation_frame<'scope>(
 pub fn request_idle_callback<'scope>(
     owner: &ViewOwnerToken<'scope>,
     cb: impl FnOnce() -> SilexResult<()> + 'scope,
+    error_handler: ViewErrorHandler<'scope>,
 ) -> Result<HostResourceHandle<'scope>, JsValue> {
     if !owner.is_active() {
         return Err(JsValue::from_str("view owner is inactive"));
     }
-    let (destination, callback) = owned_once_callback(owner, cb)?;
+    let (destination, callback) = owned_once_callback(owner, cb, error_handler)?;
     let callback_function = callback.js_callback_function();
     let idle = window().request_idle_callback(&callback_function);
     let idle = match idle {
@@ -268,9 +286,14 @@ pub fn request_idle_callback<'scope>(
             return Err(error);
         }
     };
-    match owner.host_resource_for_js_callback(&destination, callback, move || {
-        window().cancel_idle_callback(idle);
-    }) {
+    match owner.host_resource_for_js_callback(
+        &destination,
+        callback,
+        move || {
+            window().cancel_idle_callback(idle);
+        },
+        error_handler,
+    ) {
         Ok(resource) => Ok(resource),
         Err(error) => Err(host_resource_error(error)),
     }
@@ -279,17 +302,18 @@ pub fn request_idle_callback<'scope>(
 pub fn queue_microtask<'scope>(
     owner: &ViewOwnerToken<'scope>,
     task: impl FnOnce() -> SilexResult<()> + 'scope,
+    error_handler: ViewErrorHandler<'scope>,
 ) -> Result<HostResourceHandle<'scope>, JsValue> {
     if !owner.is_active() {
         return Ok(HostResourceHandle::inactive());
     }
-    let (destination, callback) = owned_once_callback(owner, task)?;
+    let (destination, callback) = owned_once_callback(owner, task, error_handler)?;
     let task = callback.js_callback_function();
     window().queue_microtask(&task);
     // Microtasks cannot be physically removed. The destination gate still
     // prevents user code after owner disposal.
     owner
-        .host_resource_for_js_callback(&destination, callback, || {})
+        .host_resource_for_js_callback(&destination, callback, || {}, error_handler)
         .map_err(host_resource_error)
 }
 
@@ -297,11 +321,12 @@ pub fn set_timeout<'scope>(
     owner: &ViewOwnerToken<'scope>,
     cb: impl FnOnce() -> SilexResult<()> + 'scope,
     duration: Duration,
+    error_handler: ViewErrorHandler<'scope>,
 ) -> Result<HostResourceHandle<'scope>, JsValue> {
     if !owner.is_active() {
         return Err(JsValue::from_str("view owner is inactive"));
     }
-    let (destination, callback) = owned_once_callback(owner, cb)?;
+    let (destination, callback) = owned_once_callback(owner, cb, error_handler)?;
     let callback_function = callback.js_callback_function();
     let timeout = window().set_timeout_with_callback_and_timeout_and_arguments_0(
         &callback_function,
@@ -316,9 +341,14 @@ pub fn set_timeout<'scope>(
         }
     };
     let window_for_cleanup = window();
-    match owner.host_resource_for_js_callback(&destination, callback, move || {
-        window_for_cleanup.clear_timeout_with_handle(timeout);
-    }) {
+    match owner.host_resource_for_js_callback(
+        &destination,
+        callback,
+        move || {
+            window_for_cleanup.clear_timeout_with_handle(timeout);
+        },
+        error_handler,
+    ) {
         Ok(resource) => Ok(resource),
         Err(error) => Err(host_resource_error(error)),
     }
@@ -328,12 +358,13 @@ pub fn set_interval<'scope>(
     owner: &ViewOwnerToken<'scope>,
     mut cb: impl FnMut() -> SilexResult<()> + 'scope,
     duration: Duration,
+    error_handler: ViewErrorHandler<'scope>,
 ) -> Result<HostResourceHandle<'scope>, JsValue> {
     if !owner.is_active() {
         return Err(JsValue::from_str("view owner is inactive"));
     }
     let destination = owner
-        .host_callback(move |_| cb(), owner.error_handler())
+        .host_callback(move |_| cb(), error_handler)
         .map_err(host_resource_error)?;
     let destination_for_closure = AssertUnwindSafe(destination.clone());
     let closure: Closure<dyn FnMut()> = Closure::wrap(Box::new(move || {
@@ -353,9 +384,14 @@ pub fn set_interval<'scope>(
         }
     };
     let window_for_cleanup = window.clone();
-    match owner.host_resource_for_js_callback(&destination, resource, move || {
-        window_for_cleanup.clear_interval_with_handle(interval);
-    }) {
+    match owner.host_resource_for_js_callback(
+        &destination,
+        resource,
+        move || {
+            window_for_cleanup.clear_interval_with_handle(interval);
+        },
+        error_handler,
+    ) {
         Ok(resource) => Ok(resource),
         Err(error) => Err(host_resource_error(error)),
     }
@@ -388,6 +424,7 @@ pub fn debounce<'scope, T, F>(
     owner: &ViewOwnerToken<'scope>,
     delay: Duration,
     mut cb: F,
+    error_handler: ViewErrorHandler<'scope>,
 ) -> Result<Box<dyn FnMut(T) + 'scope>, JsValue>
 where
     T: 'scope,
@@ -402,7 +439,6 @@ where
         generation: 0,
     }));
     let state_for_callback = state.clone();
-    let error_handler = owner.error_handler();
     let destination = owner
         .host_callback(
             move |payload| {
@@ -424,17 +460,21 @@ where
                 }
                 Ok(())
             },
-            owner.error_handler(),
+            error_handler,
         )
         .map_err(host_resource_error)?;
 
     let state_for_cleanup = state.clone();
     let resource = owner
-        .host_resource_for_callback(&destination, move || {
-            let mut state = state_for_cleanup.borrow_mut();
-            state.clear_timer();
-            let _ = state.pending.take();
-        })
+        .host_resource_for_callback(
+            &destination,
+            move || {
+                let mut state = state_for_cleanup.borrow_mut();
+                state.clear_timer();
+                let _ = state.pending.take();
+            },
+            error_handler,
+        )
         .map_err(host_resource_error)?;
 
     Ok(Box::new(move |arg| {

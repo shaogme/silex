@@ -25,6 +25,13 @@ fn test_handler<'scope>(scope: silex_core::Scope<'scope>) -> ErrorReporter<'scop
         .expect("test error handler should be registered")
 }
 
+fn test_owner<'scope>(
+    scope: silex_core::Scope<'scope>,
+) -> (ScopedViewOwner<'scope>, ErrorReporter<'scope>) {
+    let error_handler = test_handler(scope);
+    (ScopedViewOwner::new(scope), error_handler)
+}
+
 #[wasm_bindgen(inline_js = r#"
 export function installRouterListenerSpy() {
     const spy = {
@@ -181,8 +188,8 @@ fn router_navigation_uses_required_table_and_updates_outlet() {
             .base("/app")
             .routes(navigation_table(navigator.clone()))
             .build();
-        let owner = ScopedViewOwner::new(scope, test_handler(scope));
-        view.mount_owned(&owner, &host, Vec::new())
+        let (owner, error_handler) = test_owner(scope);
+        view.mount_owned(&owner, &host, Vec::new(), error_handler)
             .expect("router view should mount");
 
         assert_eq!(host.text_content().as_deref(), Some("7"));
@@ -269,8 +276,8 @@ fn router_layout_is_created_once_while_outlet_changes() {
                 outlet
             })
             .build();
-        let owner = ScopedViewOwner::new(scope, test_handler(scope));
-        view.mount_owned(&owner, &host, Vec::new())
+        let (owner, error_handler) = test_owner(scope);
+        view.mount_owned(&owner, &host, Vec::new(), error_handler)
             .expect("router view should mount");
     });
 
@@ -324,8 +331,8 @@ fn nested_outlet_keeps_parent_layout_while_child_route_changes() {
             .base("/app")
             .routes(routes.table())
             .build();
-        let owner = ScopedViewOwner::new(scope, test_handler(scope));
-        view.mount_owned(&owner, &host, Vec::new())
+        let (owner, error_handler) = test_owner(scope);
+        view.mount_owned(&owner, &host, Vec::new(), error_handler)
             .expect("nested router should mount");
     });
 
@@ -376,15 +383,16 @@ fn link_requires_context_and_tracks_active_path() {
             test_handler(scope),
         )
         .expect("router context should be created");
+        let (owner, error_handler) = test_owner(scope);
         let link = Link(
             context,
             RoutePath::new("/users").expect("route path should be valid"),
         )
+        .error_handler(error_handler)
         .children("users")
         .active_class("active")
         .build();
-        let owner = ScopedViewOwner::new(scope, test_handler(scope));
-        link.mount_owned(&owner, &host, Vec::new())
+        link.mount_owned(&owner, &host, Vec::new(), error_handler)
             .expect("link should mount");
 
         let element: web_sys::Element = host
@@ -496,6 +504,7 @@ impl<'scope> View<'scope> for RouterCleanupView {
         owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
         _attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
+        error_handler: ErrorReporter<'scope>,
     ) -> SilexResult<()> {
         let cleanups = self.cleanups.clone();
         owner.on_cleanup(
@@ -503,7 +512,7 @@ impl<'scope> View<'scope> for RouterCleanupView {
                 cleanups.set(cleanups.get() + 1);
                 Ok(())
             }),
-            owner.token().error_handler(),
+            error_handler,
         )?;
         mount_text_node(parent, &self.text)?;
         Ok(())
@@ -514,11 +523,12 @@ impl<'scope> View<'scope> for RouterCleanupView {
         owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
+        error_handler: ErrorReporter<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized,
     {
-        self.mount(owner, parent, attrs)
+        self.mount(owner, parent, attrs, error_handler)
     }
 }
 
@@ -547,8 +557,8 @@ fn router_owner_dispose_removes_listener_and_ignores_late_popstate() {
                 .base("/app")
                 .routes(table)
                 .build();
-            let owner = ScopedViewOwner::new(scope, test_handler(scope));
-            view.mount_owned(&owner, &host, Vec::new())
+            let (owner, error_handler) = test_owner(scope);
+            view.mount_owned(&owner, &host, Vec::new(), error_handler)
                 .expect("router view should mount");
 
             assert_eq!(host.text_content().as_deref(), Some("lexical"));
@@ -596,9 +606,9 @@ fn router_does_not_mount_outlet_when_listener_registration_fails() {
             .base("/app")
             .routes(table)
             .build();
-        let owner = ScopedViewOwner::new(scope, test_handler(scope));
+        let (owner, error_handler) = test_owner(scope);
         assert!(matches!(
-            view.mount_owned(&owner, &host, Vec::new()),
+            view.mount_owned(&owner, &host, Vec::new(), error_handler),
             Err(SilexError::Javascript(_))
         ));
     });
@@ -629,6 +639,7 @@ impl<'scope> View<'scope> for FactoryTextView<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
         _attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
+        error_handler: ErrorReporter<'scope>,
     ) -> SilexResult<()> {
         let cleanups = self.cleanups.clone();
         owner.on_cleanup(
@@ -636,7 +647,7 @@ impl<'scope> View<'scope> for FactoryTextView<'scope> {
                 cleanups.set(cleanups.get() + 1);
                 Ok(())
             }),
-            owner.token().error_handler(),
+            error_handler,
         )?;
         let text = self.text.get()?;
         mount_text_node(parent, &text)?;
@@ -648,11 +659,12 @@ impl<'scope> View<'scope> for FactoryTextView<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
+        error_handler: ErrorReporter<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized,
     {
-        self.mount(owner, parent, attrs)
+        self.mount(owner, parent, attrs, error_handler)
     }
 }
 
@@ -678,9 +690,9 @@ fn router_view_factory_keeps_scoped_dynamic_owner_cleanup() {
                 cleanups: cleanups_for_factory.clone(),
             })
         }));
-        let owner = ScopedViewOwner::new(scope, test_handler(scope));
+        let (owner, error_handler) = test_owner(scope);
         factory
-            .mount_owned(&owner, &host, Vec::new())
+            .mount_owned(&owner, &host, Vec::new(), error_handler)
             .expect("router factory should mount");
 
         assert_eq!(host.text_content().as_deref(), Some("factory-one"));

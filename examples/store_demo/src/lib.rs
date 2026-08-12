@@ -11,13 +11,19 @@ struct User {
 }
 
 #[component]
-fn App<'scope>(scope: Scope<'scope>, user: UserStore<'scope>) -> impl View<'scope> {
+fn App<'scope>(
+    scope: Scope<'scope>,
+    user: UserStore<'scope>,
+    #[chain] error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
     Ok(div!(
         h1("Silex Store Demo"),
         p("This example demonstrates fine-grained reactivity using the #[store] macro."),
-        UserDisplay(scope, user).build(),
-        UserEditor(scope, user).build(),
-        DebugPanel(scope, user).build(),
+        UserDisplay(scope, user)
+            .error_handler(error_handler)
+            .build(),
+        UserEditor(scope, user).error_handler(error_handler).build(),
+        DebugPanel(scope, user).error_handler(error_handler).build(),
     )
     .style(
         sty()
@@ -31,7 +37,11 @@ fn App<'scope>(scope: Scope<'scope>, user: UserStore<'scope>) -> impl View<'scop
 }
 
 #[component]
-fn UserDisplay<'scope>(_scope: Scope<'scope>, user: UserStore<'scope>) -> impl View<'scope> {
+fn UserDisplay<'scope>(
+    _scope: Scope<'scope>,
+    user: UserStore<'scope>,
+    #[chain] error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
     Ok(div!(
         div!(
             span("Name: ").style(sty().font_weight(FontWeightKeyword::Bold)?),
@@ -56,7 +66,11 @@ fn UserDisplay<'scope>(_scope: Scope<'scope>, user: UserStore<'scope>) -> impl V
 }
 
 #[component]
-fn UserEditor<'scope>(_scope: Scope<'scope>, user: UserStore<'scope>) -> impl View<'scope> {
+fn UserEditor<'scope>(
+    _scope: Scope<'scope>,
+    user: UserStore<'scope>,
+    #[chain] error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
     Ok(div!(
         div!(
             label("Change Name: "),
@@ -96,7 +110,11 @@ fn UserEditor<'scope>(_scope: Scope<'scope>, user: UserStore<'scope>) -> impl Vi
 }
 
 #[component]
-fn DebugPanel<'scope>(_scope: Scope<'scope>, user: UserStore<'scope>) -> impl View<'scope> {
+fn DebugPanel<'scope>(
+    _scope: Scope<'scope>,
+    user: UserStore<'scope>,
+    #[chain] error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
     Ok(
         div!(button("Log Current State to Console").on_click(move |_| {
             let current_state = user.snapshot_untracked()?;
@@ -140,5 +158,8 @@ fn mount_store_view<'scope>(context: &MountContext<'scope>) -> SilexResult<()> {
         },
     )?;
 
-    context.mount(App(scope, user).build(), error_handler)
+    context.mount(
+        App(scope, user).error_handler(error_handler).build(),
+        error_handler,
+    )
 }

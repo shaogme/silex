@@ -702,8 +702,7 @@ where
                                     }
                                     drop(timer);
                                     let completion = completion.clone();
-                                    let owner =
-                                        ScopedViewOwner::new(owner_scope, owner_error_handler);
+                                    let owner = ScopedViewOwner::new(owner_scope);
                                     let owner_token = owner.token();
                                     match set_timeout(
                                         &owner_token,
@@ -716,6 +715,7 @@ where
                                             Ok(())
                                         },
                                         duration,
+                                        owner_error_handler,
                                     ) {
                                         Ok(timer) => {
                                             let stale_timer =

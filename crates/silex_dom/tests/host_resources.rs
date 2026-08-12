@@ -31,6 +31,11 @@ fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
         .expect("error handler should register")
 }
 
+fn test_owner<'scope>(scope: Scope<'scope>) -> (ScopedViewOwner<'scope>, ErrorReporter<'scope>) {
+    let error_handler = test_handler(scope);
+    (ScopedViewOwner::new(scope), error_handler)
+}
+
 #[wasm_bindgen(inline_js = r#"
 export function installHostSpy() {
     const spy = {
@@ -248,13 +253,19 @@ impl<'scope> View<'scope> for WindowResourceView {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         _attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
+        error_handler: ErrorReporter<'scope>,
     ) -> silex_core::SilexResult<()> {
         let calls = self.calls.clone();
         let id = self.id;
-        window_event_listener_untyped(&owner.token(), "silex-window-resource", move |_| {
-            calls.borrow_mut().push(id);
-            Ok(())
-        })?;
+        window_event_listener_untyped(
+            &owner.token(),
+            "silex-window-resource",
+            move |_| {
+                calls.borrow_mut().push(id);
+                Ok(())
+            },
+            error_handler,
+        )?;
         mount_text_node(parent, &self.id.to_string())?;
         Ok(())
     }
@@ -264,11 +275,12 @@ impl<'scope> View<'scope> for WindowResourceView {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
+        error_handler: ErrorReporter<'scope>,
     ) -> silex_core::SilexResult<()>
     where
         Self: Sized,
     {
-        self.mount(owner, parent, attrs)
+        self.mount(owner, parent, attrs, error_handler)
     }
 }
 
@@ -319,13 +331,17 @@ fn fallible_dom_primitives_and_attribute_mount_failures_are_observable() {
     let mut runtime = Runtime::new();
     runtime
         .child(|scope| {
-            let owner = ScopedViewOwner::new(scope, test_handler(scope));
+            let (owner, error_handler) = test_owner(scope);
             let token = owner.token();
             let element = document()
                 .create_element("div")
                 .expect("test element can be created");
             let invalid_class = AttrOp::static_class("invalid token".into());
-            assert!(invalid_class.apply(&element, &token).is_err());
+            assert!(
+                invalid_class
+                    .apply(&element, &token, error_handler)
+                    .is_err()
+            );
         })
         .expect("child scope should initialize");
 
@@ -334,19 +350,17 @@ fn fallible_dom_primitives_and_attribute_mount_failures_are_observable() {
     let mut runtime = Runtime::new();
     runtime
         .child(|scope| {
-            let owner = ScopedViewOwner::new(
-                scope,
-                scope
-                    .error_handler(move |error| {
-                        reported_for_owner.set(matches!(error, SilexError::Framework(_)));
-                    })
-                    .expect("error handler should register"),
-            );
-            let view = Element::new("div").apply(PendingAttribute::new_scoped(|_, _| {
+            let error_handler = scope
+                .error_handler(move |error| {
+                    reported_for_owner.set(matches!(error, SilexError::Framework(_)));
+                })
+                .expect("error handler should register");
+            let owner = ScopedViewOwner::new(scope);
+            let view = Element::new("div").apply(PendingAttribute::new_scoped(|_, _, _| {
                 Err(SilexError::Framework("attribute rejected".to_string()))
             }));
             assert!(matches!(
-                view.mount_owned(&owner, &host.clone().into(), Vec::new()),
+                view.mount_owned(&owner, &host.clone().into(), Vec::new(), error_handler),
                 Err(SilexError::Framework(message)) if message == "attribute rejected"
             ));
         })
@@ -368,7 +382,7 @@ fn element_listener_removes_physically_and_drops_on_root_dispose() {
     let root = runtime.run().expect("root should start");
     {
         let scope = root.scope();
-        let owner = ScopedViewOwner::new(scope, test_handler(scope));
+        let (owner, error_handler) = test_owner(scope);
         let token = owner.token();
         let element = Element::new("button");
         spy.spy_target(element.dom_element.as_ref());
@@ -389,6 +403,7 @@ fn element_listener_removes_physically_and_drops_on_root_dispose() {
                 Ok(())
             },
             &token,
+            error_handler,
         )
         .expect("element listener can be registered");
 
@@ -396,7 +411,7 @@ fn element_listener_removes_physically_and_drops_on_root_dispose() {
             .load(element.dom_element.clone())
             .expect("node ref should load");
         element
-            .mount_owned(&owner, &host.clone().into(), Vec::new())
+            .mount_owned(&owner, &host.clone().into(), Vec::new(), error_handler)
             .expect("element should mount");
         assert!(
             node_ref
@@ -436,7 +451,7 @@ fn element_listener_panic_closes_destination_before_owner_cleanup() {
 
     {
         let scope = root.scope();
-        let owner = ScopedViewOwner::new(scope, test_handler(scope));
+        let (owner, error_handler) = test_owner(scope);
         let token = owner.token();
         let element = Element::new("button");
         spy.spy_target(element.dom_element.as_ref());
@@ -453,6 +468,7 @@ fn element_listener_panic_closes_destination_before_owner_cleanup() {
                 panic!("element callback panic");
             },
             &token,
+            error_handler,
         )
         .expect("element listener should register");
     }
@@ -486,13 +502,13 @@ fn render_rerun_replaces_old_window_listener() {
     {
         let scope = root.scope();
         let (value, set_value) = scope.signal(0i32).expect("signal should initialize");
-        let owner = ScopedViewOwner::new(scope, test_handler(scope));
+        let (owner, error_handler) = test_owner(scope);
         let calls_for_view = calls.clone();
         let view = move || WindowResourceView {
             id: value.get().expect("signal should be readable"),
             calls: calls_for_view.clone(),
         };
-        view.mount_owned(&owner, &host_node, Vec::new())
+        view.mount_owned(&owner, &host_node, Vec::new(), error_handler)
             .expect("view should mount");
 
         let window = web_sys::window().expect("window is available");
@@ -521,12 +537,17 @@ fn lexical_owner_disposes_window_listener_on_scope_exit() {
 
     runtime
         .child(|scope| {
-            let owner = ScopedViewOwner::new(scope, test_handler(scope));
+            let (owner, error_handler) = test_owner(scope);
             let calls_for_handler = calls.clone();
-            window_event_listener_untyped(&owner.token(), "silex-lexical-resource", move |_| {
-                calls_for_handler.set(calls_for_handler.get() + 1);
-                Ok(())
-            })
+            window_event_listener_untyped(
+                &owner.token(),
+                "silex-lexical-resource",
+                move |_| {
+                    calls_for_handler.set(calls_for_handler.get() + 1);
+                    Ok(())
+                },
+                error_handler,
+            )
             .expect("lexical window listener should register");
             let window = web_sys::window().expect("window is available");
             window
@@ -574,8 +595,8 @@ fn keyed_reorder_keeps_window_resources_until_row_delete() {
                     error_handler: None,
                     _marker: PhantomData,
                 };
-                let owner = ScopedViewOwner::new(child, test_handler(child));
-                list.mount_owned(&owner, &host_node, Vec::new())
+                let (owner, error_handler) = test_owner(child);
+                list.mount_owned(&owner, &host_node, Vec::new(), error_handler)
                     .expect("keyed list should mount");
                 assert_eq!(spy.count("event_add:silex-window-resource"), 2);
 
@@ -605,14 +626,19 @@ fn window_listener_cancel_is_idempotent_and_owner_keeps_final_control() {
     let handle_slot = Rc::new(RefCell::new(None));
     {
         let scope = root.scope();
-        let owner = ScopedViewOwner::new(scope, test_handler(scope));
+        let (owner, error_handler) = test_owner(scope);
         let calls_for_handler = calls.clone();
         let probe = DropProbe::new(drops.clone());
-        let handle = window_event_listener_untyped(&owner.token(), "silex-resize", move |_| {
-            calls_for_handler.set(calls_for_handler.get() + 1);
-            let _ = &probe;
-            Ok(())
-        })
+        let handle = window_event_listener_untyped(
+            &owner.token(),
+            "silex-resize",
+            move |_| {
+                calls_for_handler.set(calls_for_handler.get() + 1);
+                let _ = &probe;
+                Ok(())
+            },
+            error_handler,
+        )
         .expect("window listener should register");
         *handle_slot.borrow_mut() = Some(handle);
     }
@@ -659,7 +685,7 @@ async fn cancelable_host_tasks_are_cleared_before_dispatch() {
     let root = runtime.run().expect("root should start");
     {
         let scope = root.scope();
-        let owner = ScopedViewOwner::new(scope, test_handler(scope));
+        let (owner, error_handler) = test_owner(scope);
 
         let timeout_calls_for_callback = timeout_calls.clone();
         let timeout_probe = DropProbe::new(drops.clone());
@@ -671,6 +697,7 @@ async fn cancelable_host_tasks_are_cleared_before_dispatch() {
                 Ok(())
             },
             Duration::from_millis(100),
+            error_handler,
         )
         .expect("timeout should register");
 
@@ -684,25 +711,34 @@ async fn cancelable_host_tasks_are_cleared_before_dispatch() {
                 Ok(())
             },
             Duration::from_millis(100),
+            error_handler,
         )
         .expect("interval should register");
 
         let frame_calls_for_callback = frame_calls.clone();
         let frame_probe = DropProbe::new(drops.clone());
-        request_animation_frame(&owner.token(), move || {
-            frame_calls_for_callback.set(frame_calls_for_callback.get() + 1);
-            let _ = &frame_probe;
-            Ok(())
-        })
+        request_animation_frame(
+            &owner.token(),
+            move || {
+                frame_calls_for_callback.set(frame_calls_for_callback.get() + 1);
+                let _ = &frame_probe;
+                Ok(())
+            },
+            error_handler,
+        )
         .expect("animation frame should register");
 
         let idle_calls_for_callback = idle_calls.clone();
         let idle_probe = DropProbe::new(drops.clone());
-        request_idle_callback(&owner.token(), move || {
-            idle_calls_for_callback.set(idle_calls_for_callback.get() + 1);
-            let _ = &idle_probe;
-            Ok(())
-        })
+        request_idle_callback(
+            &owner.token(),
+            move || {
+                idle_calls_for_callback.set(idle_calls_for_callback.get() + 1);
+                let _ = &idle_probe;
+                Ok(())
+            },
+            error_handler,
+        )
         .expect("idle callback should register");
     }
 
@@ -740,7 +776,7 @@ async fn active_host_tasks_execute_and_interval_cancel_is_idempotent() {
     let interval_slot = Rc::new(RefCell::new(None));
     {
         let scope = root.scope();
-        let owner = ScopedViewOwner::new(scope, test_handler(scope));
+        let (owner, error_handler) = test_owner(scope);
         let timeout_calls_for_callback = timeout_calls.clone();
         set_timeout(
             &owner.token(),
@@ -749,6 +785,7 @@ async fn active_host_tasks_execute_and_interval_cancel_is_idempotent() {
                 Ok(())
             },
             Duration::from_millis(0),
+            error_handler,
         )
         .expect("timeout should register");
 
@@ -760,22 +797,31 @@ async fn active_host_tasks_execute_and_interval_cancel_is_idempotent() {
                 Ok(())
             },
             Duration::from_millis(5),
+            error_handler,
         )
         .expect("interval should register");
         *interval_slot.borrow_mut() = Some(interval);
 
         let frame_calls_for_callback = frame_calls.clone();
-        request_animation_frame(&owner.token(), move || {
-            frame_calls_for_callback.set(frame_calls_for_callback.get() + 1);
-            Ok(())
-        })
+        request_animation_frame(
+            &owner.token(),
+            move || {
+                frame_calls_for_callback.set(frame_calls_for_callback.get() + 1);
+                Ok(())
+            },
+            error_handler,
+        )
         .expect("animation frame should register");
 
         let idle_calls_for_callback = idle_calls.clone();
-        request_idle_callback(&owner.token(), move || {
-            idle_calls_for_callback.set(idle_calls_for_callback.get() + 1);
-            Ok(())
-        })
+        request_idle_callback(
+            &owner.token(),
+            move || {
+                idle_calls_for_callback.set(idle_calls_for_callback.get() + 1);
+                Ok(())
+            },
+            error_handler,
+        )
         .expect("idle callback should register");
     }
 
@@ -817,20 +863,28 @@ async fn microtask_cancel_and_owner_dispose_only_gate_user_callbacks() {
     let canceled_slot = Rc::new(RefCell::new(None));
     {
         let scope = root.scope();
-        let owner = ScopedViewOwner::new(scope, test_handler(scope));
+        let (owner, error_handler) = test_owner(scope);
         let canceled_calls_for_task = canceled_calls.clone();
-        let canceled = queue_microtask(&owner.token(), move || {
-            canceled_calls_for_task.set(canceled_calls_for_task.get() + 1);
-            Ok(())
-        })
+        let canceled = queue_microtask(
+            &owner.token(),
+            move || {
+                canceled_calls_for_task.set(canceled_calls_for_task.get() + 1);
+                Ok(())
+            },
+            error_handler,
+        )
         .expect("microtask should queue");
         *canceled_slot.borrow_mut() = Some(canceled);
 
         let disposed_calls_for_task = disposed_calls.clone();
-        queue_microtask(&owner.token(), move || {
-            disposed_calls_for_task.set(disposed_calls_for_task.get() + 1);
-            Ok(())
-        })
+        queue_microtask(
+            &owner.token(),
+            move || {
+                disposed_calls_for_task.set(disposed_calls_for_task.get() + 1);
+                Ok(())
+            },
+            error_handler,
+        )
         .expect("microtask should queue");
     }
 
@@ -858,13 +912,18 @@ async fn debounce_clears_replaced_timer_and_blocks_dispose_completion() {
     let debounce_slot = Rc::new(RefCell::new(None));
     {
         let scope = root.scope();
-        let owner = ScopedViewOwner::new(scope, test_handler(scope));
+        let (owner, error_handler) = test_owner(scope);
         let token = owner.token();
         let values_for_callback = values.clone();
-        let debounce = debounce(&token, Duration::from_millis(10), move |value: i32| {
-            values_for_callback.borrow_mut().push(value);
-            Ok(())
-        })
+        let debounce = debounce(
+            &token,
+            Duration::from_millis(10),
+            move |value: i32| {
+                values_for_callback.borrow_mut().push(value);
+                Ok(())
+            },
+            error_handler,
+        )
         .expect("debounce should initialize");
         *debounce_slot.borrow_mut() = Some(debounce);
     }
@@ -901,15 +960,14 @@ fn debounce_timeout_creation_failure_reaches_owner_handler() {
 
     runtime
         .child(|scope| {
-            let owner = silex_dom::view::ScopedViewOwner::new(
-                scope,
-                scope
-                    .error_handler(move |error| errors_for_reporter.borrow_mut().push(error))
-                    .expect("error handler should register"),
-            );
+            let error_handler = scope
+                .error_handler(move |error| errors_for_reporter.borrow_mut().push(error))
+                .expect("error handler should register");
+            let owner = silex_dom::view::ScopedViewOwner::new(scope);
             let token = owner.token();
-            let mut debounce = debounce(&token, Duration::from_millis(0), |_| Ok(()))
-                .expect("debounce should initialize");
+            let mut debounce =
+                debounce(&token, Duration::from_millis(0), |_| Ok(()), error_handler)
+                    .expect("debounce should initialize");
             spy.fail_next_timeout();
             debounce(1_i32);
         })
@@ -931,7 +989,7 @@ async fn timer_callback_can_reenter_root_dispose_without_late_registration() {
     let root = runtime.run().expect("root should start");
     {
         let scope = root.scope();
-        let owner = ScopedViewOwner::new(scope, test_handler(scope));
+        let (owner, error_handler) = test_owner(scope);
         let token = owner.token();
 
         let calls_for_callback = calls.clone();
@@ -947,6 +1005,7 @@ async fn timer_callback_can_reenter_root_dispose_without_late_registration() {
                 Ok(())
             },
             Duration::from_millis(0),
+            error_handler,
         )
         .expect("reentrant timeout should register");
     }
@@ -972,7 +1031,7 @@ fn timeout_lifecycle_handles_creation_failure_repeated_cancel_reentry_and_stale_
     let root = runtime.run().expect("root should start");
     {
         let scope = root.scope();
-        let owner = ScopedViewOwner::new(scope, test_handler(scope));
+        let (owner, error_handler) = test_owner(scope);
 
         spy.fail_next_timeout();
         let failed_calls_for_callback = failed_calls.clone();
@@ -986,6 +1045,7 @@ fn timeout_lifecycle_handles_creation_failure_repeated_cancel_reentry_and_stale_
                     Ok(())
                 },
                 Duration::from_millis(0),
+                error_handler,
             )
             .is_err()
         );
@@ -1002,6 +1062,7 @@ fn timeout_lifecycle_handles_creation_failure_repeated_cancel_reentry_and_stale_
                 Ok(())
             },
             Duration::from_millis(0),
+            error_handler,
         )
         .expect("cancelable timeout should register");
         canceled.cancel();
@@ -1010,10 +1071,15 @@ fn timeout_lifecycle_handles_creation_failure_repeated_cancel_reentry_and_stale_
         assert_eq!(canceled_calls.get(), 0);
 
         let values_for_debounce = values.clone();
-        let mut debounce = debounce(&owner.token(), Duration::from_millis(0), move |value| {
-            values_for_debounce.borrow_mut().push(value);
-            Ok(())
-        })
+        let mut debounce = debounce(
+            &owner.token(),
+            Duration::from_millis(0),
+            move |value| {
+                values_for_debounce.borrow_mut().push(value);
+                Ok(())
+            },
+            error_handler,
+        )
         .expect("debounce should initialize");
         debounce(1);
         debounce(2);
@@ -1031,6 +1097,7 @@ fn timeout_lifecycle_handles_creation_failure_repeated_cancel_reentry_and_stale_
                 Ok(())
             },
             Duration::from_millis(0),
+            error_handler,
         )
         .expect("reentrant timeout should register");
     }

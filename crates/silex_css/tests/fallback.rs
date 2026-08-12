@@ -16,7 +16,14 @@ use web_sys::{Document, Element, HtmlStyleElement, Node};
 wasm_bindgen_test_configure!(run_in_browser);
 
 fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
-    scope.error_handler(|_| {})
+    scope
+        .error_handler(|_| {})
+        .expect("test error handler should register")
+}
+
+fn test_owner<'scope>(scope: Scope<'scope>) -> (ScopedViewOwner<'scope>, ErrorReporter<'scope>) {
+    let error_handler = test_handler(scope);
+    (ScopedViewOwner::new(scope), error_handler)
 }
 
 fn document() -> Document {
@@ -122,31 +129,39 @@ async fn style_tag_fallback_injects_updates_and_detaches_on_owner_dispose() {
     host.append_child(&element).expect("element can be mounted");
 
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let (value, set_value) = scope.signal(String::from("red"));
-        let owner = ScopedViewOwner::new(scope, test_handler(scope));
-        let token = owner.token();
-        let dynamic = DynamicCss::new("slx-fallback-dynamic").with_rule(
-            &[
-                CssPart::Lit("."),
-                CssPart::Class,
-                CssPart::Lit(" "),
-                CssPart::SelectorVal(0),
-                CssPart::Lit("{color:red}"),
-            ],
-            vec![value.into_css_reactive()],
-        );
-        dynamic
-            .apply(&element, ApplyTarget::Class, &token)
-            .expect("dynamic style can be applied");
-        let initial = style_text_containing("slx-fallback-dynamic").expect("fallback style exists");
-        assert!(initial.contains("red"), "{initial}");
-        assert!(initial.contains("@layer utilities"), "{initial}");
+    runtime
+        .child(|scope| {
+            let (value, set_value) = scope
+                .signal(String::from("red"))
+                .expect("signal should initialize");
+            let (owner, error_handler) = test_owner(scope);
+            let token = owner.token();
+            let dynamic = DynamicCss::new("slx-fallback-dynamic").with_rule(
+                &[
+                    CssPart::Lit("."),
+                    CssPart::Class,
+                    CssPart::Lit(" "),
+                    CssPart::SelectorVal(0),
+                    CssPart::Lit("{color:red}"),
+                ],
+                vec![value.into_css_reactive()],
+            );
+            dynamic
+                .apply(&element, ApplyTarget::Class, &token, error_handler)
+                .expect("dynamic style can be applied");
+            let initial =
+                style_text_containing("slx-fallback-dynamic").expect("fallback style exists");
+            assert!(initial.contains("red"), "{initial}");
+            assert!(initial.contains("@layer utilities"), "{initial}");
 
-        set_value.set(String::from("blue"));
-        let updated = style_text_containing("slx-fallback-dynamic").expect("fallback style exists");
-        assert!(updated.contains("blue"), "{updated}");
-    });
+            set_value
+                .set(String::from("blue"))
+                .expect("signal should update");
+            let updated =
+                style_text_containing("slx-fallback-dynamic").expect("fallback style exists");
+            assert!(updated.contains("blue"), "{updated}");
+        })
+        .expect("child scope should initialize");
 
     flush_style_microtasks().await;
     assert!(style_text_containing("slx-fallback-dynamic").is_none());

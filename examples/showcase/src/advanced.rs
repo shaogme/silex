@@ -557,6 +557,7 @@ pub fn SuspenseDemo<'scope>(
 pub fn GenericMessage<'scope, T: std::fmt::Display + Clone + 'scope>(
     value: T,
     #[chain] title: &'scope str,
+    #[chain] error_handler: ErrorReporter<'scope>,
 ) -> impl View<'scope> {
     Ok(
         div![h4(title.to_string()), p(format!("Value: {}", value)),].style(
@@ -570,13 +571,20 @@ pub fn GenericMessage<'scope, T: std::fmt::Display + Clone + 'scope>(
 }
 
 #[component]
-pub fn GenericsDemo<'scope>(_scope: Scope<'scope>) -> impl View<'scope> {
+pub fn GenericsDemo<'scope>(
+    _scope: Scope<'scope>,
+    #[chain] error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
     Ok(div![
         h3("Generics & Lifetimes Demo"),
         p("This demonstrates how #[component] macro supports generics and lifetimes natively."),
-        GenericMessage(42).title("Integer Message").build(),
+        GenericMessage(42)
+            .title("Integer Message")
+            .error_handler(error_handler)
+            .build(),
         GenericMessage("Hello Silex!")
             .title("String Message")
+            .error_handler(error_handler)
             .build(),
     ]
     .style(

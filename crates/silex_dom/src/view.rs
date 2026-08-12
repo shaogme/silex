@@ -695,7 +695,6 @@ pub struct ViewOwnerToken<'scope> {
     completion: CompletionRegistrar<'scope>,
     active: ActiveRegistrar<'scope>,
     state_scope: Option<Scope<'scope>>,
-    error_handler: ErrorReporter<'scope>,
 }
 
 struct ViewOwnerTokenParts<'scope> {
@@ -707,7 +706,6 @@ struct ViewOwnerTokenParts<'scope> {
     completion: CompletionRegistrar<'scope>,
     active: ActiveRegistrar<'scope>,
     state_scope: Option<Scope<'scope>>,
-    error_handler: ErrorReporter<'scope>,
 }
 
 impl<'scope> ViewOwnerToken<'scope> {
@@ -721,7 +719,6 @@ impl<'scope> ViewOwnerToken<'scope> {
             completion: parts.completion,
             active: parts.active,
             state_scope: parts.state_scope,
-            error_handler: parts.error_handler,
         }
     }
 
@@ -786,28 +783,6 @@ impl<'scope> ViewOwnerToken<'scope> {
         self.owned_scope.call()
     }
 
-    pub fn handle_error(&self, error: SilexError) {
-        let _ = self.error_handler.handle(error);
-    }
-
-    pub fn error_handler(&self) -> ViewErrorHandler<'scope> {
-        self.error_handler
-    }
-
-    pub fn with_error_handler(&self, error_handler: ErrorReporter<'scope>) -> Self {
-        Self {
-            effect: self.effect.clone(),
-            previous_effect: self.previous_effect.clone(),
-            validate: self.validate.clone(),
-            cleanup: self.cleanup.clone(),
-            owned_scope: self.owned_scope.clone(),
-            completion: self.completion.clone(),
-            active: self.active.clone(),
-            state_scope: self.state_scope,
-            error_handler,
-        }
-    }
-
     pub(crate) fn host_callback<F>(
         &self,
         callback: F,
@@ -846,6 +821,7 @@ impl<'scope> ViewOwnerToken<'scope> {
         &self,
         callback: &HostCallback,
         cancel: F,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<HostResourceHandle<'scope>>
     where
         F: FnOnce() + 'scope,
@@ -855,7 +831,7 @@ impl<'scope> ViewOwnerToken<'scope> {
             callback_for_cancel.cancel();
             cancel();
         });
-        self.register_host_resource(resource)
+        self.register_host_resource(resource, error_handler)
     }
 
     pub(crate) fn host_resource_for_js_callback<F>(
@@ -863,6 +839,7 @@ impl<'scope> ViewOwnerToken<'scope> {
         callback: &HostCallback,
         resource: HostResourceHandle<'scope>,
         cancel: F,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<HostResourceHandle<'scope>>
     where
         F: FnOnce() + 'scope,
@@ -872,12 +849,13 @@ impl<'scope> ViewOwnerToken<'scope> {
             callback_for_cancel.cancel();
             cancel();
         });
-        self.register_host_resource(resource)
+        self.register_host_resource(resource, error_handler)
     }
 
     fn register_host_resource(
         &self,
         resource: HostResourceHandle<'scope>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<HostResourceHandle<'scope>> {
         if !self.is_active() {
             resource.cancel_once();
@@ -889,7 +867,7 @@ impl<'scope> ViewOwnerToken<'scope> {
                 owner_resource.cancel_once();
                 Ok(())
             }),
-            self.error_handler(),
+            error_handler,
         ) {
             resource.cancel_once();
             return Err(error);
@@ -914,10 +892,6 @@ pub trait ViewOwner<'scope> {
     ) -> SilexResult<()>;
     fn token(&self) -> ViewOwnerToken<'scope>;
     fn owned_scope(&self) -> SilexResult<OwnedScope<'scope>>;
-
-    fn handle_error(&self, error: SilexError) {
-        self.token().handle_error(error);
-    }
 }
 
 impl<'scope> ViewOwner<'scope> for ViewOwnerToken<'scope> {
@@ -949,25 +923,17 @@ impl<'scope> ViewOwner<'scope> for ViewOwnerToken<'scope> {
     fn owned_scope(&self) -> SilexResult<OwnedScope<'scope>> {
         ViewOwnerToken::owned_scope(self)
     }
-
-    fn handle_error(&self, error: SilexError) {
-        ViewOwnerToken::handle_error(self, error);
-    }
 }
 
 /// Adapter for a lexical child scope.
 #[derive(Clone)]
 pub struct ScopedViewOwner<'scope> {
     scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
 }
 
 impl<'scope> ScopedViewOwner<'scope> {
-    pub fn new(scope: Scope<'scope>, error_handler: ErrorReporter<'scope>) -> Self {
-        Self {
-            scope,
-            error_handler,
-        }
+    pub fn new(scope: Scope<'scope>) -> Self {
+        Self { scope }
     }
 
     pub fn effect_with_previous_from<T, F>(
@@ -1023,7 +989,6 @@ impl<'scope> ViewOwner<'scope> for ScopedViewOwner<'scope> {
         let scope_for_once = self.scope;
         let scope_for_active = self.scope;
         let scope_for_validate = self.scope;
-        let error_handler = self.error_handler;
         ViewOwnerToken::new(ViewOwnerTokenParts {
             effect: EffectRegistrar::new(move |inputs, callback, error_handler| {
                 scope_for_effect
@@ -1044,7 +1009,6 @@ impl<'scope> ViewOwner<'scope> for ScopedViewOwner<'scope> {
             ),
             active: ActiveRegistrar::new(move || scope_for_active.is_active()),
             state_scope: Some(self.scope),
-            error_handler,
         })
     }
 
@@ -1055,15 +1019,11 @@ impl<'scope> ViewOwner<'scope> for ScopedViewOwner<'scope> {
 
 pub(crate) struct OwnedViewOwner<'scope> {
     scope: Rc<OwnedScope<'scope>>,
-    error_handler: ErrorReporter<'scope>,
 }
 
 impl<'scope> OwnedViewOwner<'scope> {
-    pub(crate) fn new(scope: Rc<OwnedScope<'scope>>, error_handler: ErrorReporter<'scope>) -> Self {
-        Self {
-            scope,
-            error_handler,
-        }
+    pub(crate) fn new(scope: Rc<OwnedScope<'scope>>) -> Self {
+        Self { scope }
     }
 
     pub(crate) fn owner_state<T: 'scope>(&self, value: T) -> SilexResult<OwnerState<'scope, T>> {
@@ -1104,7 +1064,6 @@ impl<'scope> ViewOwner<'scope> for OwnedViewOwner<'scope> {
         let scope_for_once = self.scope.clone();
         let scope_for_active = self.scope.clone();
         let scope_for_validate = self.scope.clone();
-        let error_handler = self.error_handler;
         ViewOwnerToken::new(ViewOwnerTokenParts {
             effect: EffectRegistrar::new(move |inputs, callback, error_handler| {
                 scope_for_effect
@@ -1125,7 +1084,6 @@ impl<'scope> ViewOwner<'scope> for OwnedViewOwner<'scope> {
             ),
             active: ActiveRegistrar::new(move || scope_for_active.is_active()),
             state_scope: None,
-            error_handler,
         })
     }
 
@@ -1220,10 +1178,11 @@ where
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
         match self {
-            Self::Owned(value) => value.mount(owner, parent, attrs),
-            Self::Borrowed(value) => value.mount(owner, parent, attrs),
+            Self::Owned(value) => value.mount(owner, parent, attrs, error_handler),
+            Self::Borrowed(value) => value.mount(owner, parent, attrs, error_handler),
         }
     }
 
@@ -1232,13 +1191,14 @@ where
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized,
     {
         match self {
-            Self::Owned(value) => value.mount_owned(owner, parent, attrs),
-            Self::Borrowed(value) => value.mount(owner, parent, attrs),
+            Self::Owned(value) => value.mount_owned(owner, parent, attrs, error_handler),
+            Self::Borrowed(value) => value.mount(owner, parent, attrs, error_handler),
         }
     }
 }
@@ -1319,6 +1279,7 @@ pub trait View<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()>;
 
     fn mount_owned(
@@ -1326,6 +1287,7 @@ pub trait View<'scope> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized;
@@ -1335,16 +1297,22 @@ pub(crate) fn mount_composite<'scope, F>(
     owner: &dyn ViewOwner<'scope>,
     parent: &Node,
     attrs: Vec<PendingAttribute<'scope>>,
+    error_handler: ViewErrorHandler<'scope>,
     mount: F,
 ) -> SilexResult<()>
 where
-    F: FnOnce(&dyn ViewOwner<'scope>, &Node, Vec<PendingAttribute<'scope>>) -> SilexResult<()>,
+    F: FnOnce(
+        &dyn ViewOwner<'scope>,
+        &Node,
+        Vec<PendingAttribute<'scope>>,
+        ViewErrorHandler<'scope>,
+    ) -> SilexResult<()>,
 {
     let scope = Rc::new(owner.owned_scope()?);
-    let provisional_owner = OwnedViewOwner::new(scope.clone(), owner.token().error_handler());
+    let provisional_owner = OwnedViewOwner::new(scope.clone());
     let fragment: Node = crate::document().create_document_fragment().into();
 
-    if let Err(error) = mount(&provisional_owner, &fragment, attrs) {
+    if let Err(error) = mount(&provisional_owner, &fragment, attrs, error_handler) {
         rollback_composite_scope(&scope);
         return Err(error);
     }
@@ -1355,7 +1323,7 @@ where
             let _ = scope_for_cleanup.dispose();
             Ok(())
         }),
-        owner.token().error_handler(),
+        error_handler,
     ) {
         rollback_composite_scope(&scope);
         return Err(error);
@@ -1373,12 +1341,18 @@ pub fn mount_component<'scope, F>(
     owner: &dyn ViewOwner<'scope>,
     parent: &Node,
     attrs: Vec<PendingAttribute<'scope>>,
+    error_handler: ViewErrorHandler<'scope>,
     mount: F,
 ) -> SilexResult<()>
 where
-    F: FnOnce(&dyn ViewOwner<'scope>, &Node, Vec<PendingAttribute<'scope>>) -> SilexResult<()>,
+    F: FnOnce(
+        &dyn ViewOwner<'scope>,
+        &Node,
+        Vec<PendingAttribute<'scope>>,
+        ViewErrorHandler<'scope>,
+    ) -> SilexResult<()>,
 {
-    mount_composite(owner, parent, attrs, mount)
+    mount_composite(owner, parent, attrs, error_handler, mount)
 }
 
 fn rollback_composite_scope<'scope>(scope: &Rc<OwnedScope<'scope>>) {
@@ -1404,6 +1378,7 @@ macro_rules! impl_text_view {
                 owner: &dyn ViewOwner<'scope>,
                 parent: &Node,
                 _attrs: Vec<PendingAttribute<'scope>>,
+                _error_handler: ViewErrorHandler<'scope>,
             ) -> SilexResult<()> {
                 let _ = owner;
                 mount_text_node(parent, self)
@@ -1414,6 +1389,7 @@ macro_rules! impl_text_view {
                 owner: &dyn ViewOwner<'scope>,
                 parent: &Node,
                 _attrs: Vec<PendingAttribute<'scope>>,
+                _error_handler: ViewErrorHandler<'scope>,
             ) -> SilexResult<()>
             where
                 Self: Sized,
@@ -1435,6 +1411,7 @@ impl<'scope> View<'scope> for &'scope str {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
+        _error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
         let _ = owner;
         mount_text_node(parent, self)
@@ -1445,6 +1422,7 @@ impl<'scope> View<'scope> for &'scope str {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
+        _error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized,
@@ -1462,6 +1440,7 @@ impl<'scope> View<'scope> for Cow<'scope, str> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
+        _error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
         let _ = owner;
         mount_text_node(parent, self.as_ref())
@@ -1472,6 +1451,7 @@ impl<'scope> View<'scope> for Cow<'scope, str> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
+        _error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized,
@@ -1492,6 +1472,7 @@ macro_rules! impl_primitive_view {
                     owner: &dyn ViewOwner<'scope>,
                     parent: &Node,
                     _attrs: Vec<PendingAttribute<'scope>>,
+                    _error_handler: ViewErrorHandler<'scope>,
                 ) -> SilexResult<()> {
                     let _ = owner;
                     mount_text_node(parent, &self.to_string())
@@ -1502,6 +1483,7 @@ macro_rules! impl_primitive_view {
                     owner: &dyn ViewOwner<'scope>,
                     parent: &Node,
                     _attrs: Vec<PendingAttribute<'scope>>,
+                    _error_handler: ViewErrorHandler<'scope>,
                 ) -> SilexResult<()> where
                     Self: Sized,
                 {
@@ -1525,6 +1507,7 @@ impl<'scope> View<'scope> for () {
         _owner: &dyn ViewOwner<'scope>,
         _parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
+        _error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
         Ok(())
     }
@@ -1534,6 +1517,7 @@ impl<'scope> View<'scope> for () {
         _owner: &dyn ViewOwner<'scope>,
         _parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
+        _error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized,
@@ -1559,8 +1543,10 @@ where
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
-        self.clone().mount_owned(owner, parent, attrs)
+        self.clone()
+            .mount_owned(owner, parent, attrs, error_handler)
     }
 
     fn mount_owned(
@@ -1568,6 +1554,7 @@ where
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized,
@@ -1576,14 +1563,16 @@ where
             owner,
             parent,
             attrs,
+            error_handler,
             RenderThunk::new(move |args| {
                 let RenderArgs {
                     parent,
                     attrs,
                     owner: token,
+                    error_handler,
                 } = args;
                 let view = self();
-                view.mount_owned(&token, &parent, attrs)
+                view.mount_owned(&token, &parent, attrs, error_handler)
             }),
         )
     }
@@ -1594,9 +1583,17 @@ pub fn mount_dynamic_view_universal<'scope>(
     owner: &dyn ViewOwner<'scope>,
     parent: &Node,
     attrs: Vec<PendingAttribute<'scope>>,
+    error_handler: ViewErrorHandler<'scope>,
     renderer: RenderThunk<'scope>,
 ) -> SilexResult<()> {
-    mount_dynamic_view_universal_from(owner, parent, attrs, RuntimeInputs::new(), renderer)
+    mount_dynamic_view_universal_from(
+        owner,
+        parent,
+        attrs,
+        RuntimeInputs::new(),
+        error_handler,
+        renderer,
+    )
 }
 
 pub(crate) fn mount_dynamic_view_universal_from<'scope>(
@@ -1604,6 +1601,7 @@ pub(crate) fn mount_dynamic_view_universal_from<'scope>(
     parent: &Node,
     attrs: Vec<PendingAttribute<'scope>>,
     inputs: RuntimeInputs,
+    error_handler: ViewErrorHandler<'scope>,
     renderer: RenderThunk<'scope>,
 ) -> SilexResult<()> {
     owner.validate_inputs(&inputs)?;
@@ -1613,9 +1611,10 @@ pub(crate) fn mount_dynamic_view_universal_from<'scope>(
             parent,
             attrs,
             owner: token,
+            error_handler,
             ..
         } = args;
-        renderer.call(RenderArgs::new(parent, attrs, token))
+        renderer.call(RenderArgs::new(parent, attrs, token, error_handler))
     });
     let token = owner.token();
     let row = RowController::new(
@@ -1628,6 +1627,7 @@ pub(crate) fn mount_dynamic_view_universal_from<'scope>(
             item: (),
             index: 0,
             stateful: false,
+            error_handler,
         },
     )?;
     let row_state = owner.token().owner_state(Some(row))?;
@@ -1639,7 +1639,7 @@ pub(crate) fn mount_dynamic_view_universal_from<'scope>(
             }
             Ok(())
         }),
-        owner.token().error_handler(),
+        error_handler,
     ) {
         if let Some(mut row) = row_state.take_for_cleanup().flatten() {
             row.dispose();
@@ -1655,6 +1655,7 @@ pub fn mount_dynamic_view_cached<'scope, K, KeyFn, RenderFn>(
     parent: &Node,
     attrs: Vec<PendingAttribute<'scope>>,
     inputs: RuntimeInputs,
+    error_handler: ViewErrorHandler<'scope>,
     key_fn: KeyFn,
     renderer: RenderFn,
 ) -> SilexResult<()>
@@ -1672,7 +1673,16 @@ where
         } = args;
         renderer(key, (parent, attrs))
     });
-    mount_keyed_dynamic_view(owner, parent, attrs, inputs, key_fn, render, true)
+    mount_keyed_dynamic_view(KeyedDynamicMountArgs {
+        owner,
+        parent,
+        attrs,
+        inputs,
+        error_handler,
+        key_fn,
+        render,
+        update_same_key: true,
+    })
 }
 
 pub fn mount_branch_cached<'scope, K, KeyFn, BranchFn>(
@@ -1680,6 +1690,7 @@ pub fn mount_branch_cached<'scope, K, KeyFn, BranchFn>(
     parent: &Node,
     attrs: Vec<PendingAttribute<'scope>>,
     inputs: RuntimeInputs,
+    error_handler: ViewErrorHandler<'scope>,
     key_fn: KeyFn,
     branch_fn: BranchFn,
 ) -> SilexResult<()>
@@ -1694,11 +1705,21 @@ where
             parent,
             attrs,
             owner: token,
+            error_handler,
             ..
         } = args;
-        branch_fn(key).mount_owned(&token, &parent, attrs)
+        branch_fn(key).mount_owned(&token, &parent, attrs, error_handler)
     });
-    mount_keyed_dynamic_view(owner, parent, attrs, inputs, key_fn, render, true)
+    mount_keyed_dynamic_view(KeyedDynamicMountArgs {
+        owner,
+        parent,
+        attrs,
+        inputs,
+        error_handler,
+        key_fn,
+        render,
+        update_same_key: true,
+    })
 }
 
 /// The identity and render snapshot produced by one stable branch evaluation.
@@ -1739,6 +1760,7 @@ pub fn mount_branch_stable_cached<'scope, K, S, KeyFn, BranchFn>(
     parent: &Node,
     attrs: Vec<PendingAttribute<'scope>>,
     inputs: RuntimeInputs,
+    error_handler: ViewErrorHandler<'scope>,
     key_fn: KeyFn,
     branch_fn: BranchFn,
 ) -> SilexResult<()>
@@ -1754,11 +1776,21 @@ where
             parent,
             attrs,
             owner: token,
+            error_handler,
             ..
         } = args;
-        branch_fn(key).mount_owned(&token, &parent, attrs)
+        branch_fn(key).mount_owned(&token, &parent, attrs, error_handler)
     });
-    mount_keyed_dynamic_view_result(owner, parent, attrs, inputs, key_fn, render, false)
+    mount_keyed_dynamic_view_result(KeyedDynamicMountArgs {
+        owner,
+        parent,
+        attrs,
+        inputs,
+        error_handler,
+        key_fn,
+        render,
+        update_same_key: false,
+    })
 }
 
 struct BranchState<'scope, K> {
@@ -1769,46 +1801,66 @@ struct BranchState<'scope, K> {
     attrs: Vec<PendingAttribute<'scope>>,
 }
 
-fn mount_keyed_dynamic_view<'scope, K, KeyFn>(
-    owner: &dyn ViewOwner<'scope>,
-    parent: &Node,
+struct KeyedDynamicMountArgs<'owner, 'scope, K, KeyFn> {
+    owner: &'owner dyn ViewOwner<'scope>,
+    parent: &'owner Node,
     attrs: Vec<PendingAttribute<'scope>>,
     inputs: RuntimeInputs,
+    error_handler: ViewErrorHandler<'scope>,
     key_fn: KeyFn,
     render: RowRender<'scope, K>,
     update_same_key: bool,
+}
+
+fn mount_keyed_dynamic_view<'owner, 'scope, K, KeyFn>(
+    args: KeyedDynamicMountArgs<'owner, 'scope, K, KeyFn>,
 ) -> SilexResult<()>
 where
     K: PartialEq + Clone + 'scope,
     KeyFn: Fn() -> K + Clone + 'scope,
 {
-    mount_keyed_dynamic_view_result(
+    let KeyedDynamicMountArgs {
         owner,
         parent,
         attrs,
         inputs,
-        move || Ok(key_fn()),
+        error_handler,
+        key_fn,
         render,
         update_same_key,
-    )
+    } = args;
+    mount_keyed_dynamic_view_result(KeyedDynamicMountArgs {
+        owner,
+        parent,
+        attrs,
+        inputs,
+        error_handler,
+        key_fn: move || Ok(key_fn()),
+        render,
+        update_same_key,
+    })
 }
 
 fn mount_keyed_dynamic_view_result<'scope, K, KeyFn>(
-    owner: &dyn ViewOwner<'scope>,
-    parent: &Node,
-    attrs: Vec<PendingAttribute<'scope>>,
-    inputs: RuntimeInputs,
-    key_fn: KeyFn,
-    render: RowRender<'scope, K>,
-    update_same_key: bool,
+    args: KeyedDynamicMountArgs<'_, 'scope, K, KeyFn>,
 ) -> SilexResult<()>
 where
     K: PartialEq + Clone + 'scope,
     KeyFn: Fn() -> SilexResult<K> + Clone + 'scope,
 {
+    let KeyedDynamicMountArgs {
+        owner,
+        parent,
+        attrs,
+        inputs,
+        error_handler,
+        key_fn,
+        render,
+        update_same_key,
+    } = args;
     owner.validate_inputs(&inputs)?;
     let scope = Rc::new(owner.owned_scope()?);
-    let local_owner = OwnedViewOwner::new(scope.clone(), owner.token().error_handler());
+    let local_owner = OwnedViewOwner::new(scope.clone());
     let range = DomRange::append(parent, "branch")?;
     let state = local_owner.token().owner_state(BranchState {
         range,
@@ -1819,7 +1871,6 @@ where
     })?;
     let cleanup_state = state.clone();
     let cleanup_range = state.with(|state| state.range.clone())?;
-    let error_handler = local_owner.token().error_handler();
     if let Err(error) = local_owner.on_cleanup(
         Box::new(move || {
             let Some(mut state) = cleanup_state.take_for_cleanup() else {
@@ -1899,6 +1950,7 @@ where
                         item: key.clone(),
                         index: 0,
                         stateful: false,
+                        error_handler,
                     },
                 ) {
                     Ok(row) => row,
@@ -1945,7 +1997,7 @@ where
             let _ = scope_for_cleanup.dispose();
             Ok(())
         }),
-        owner.token().error_handler(),
+        error_handler,
     ) {
         let _ = scope.dispose();
         return Err(error);
@@ -1967,9 +2019,10 @@ impl<'scope, V: View<'scope>> View<'scope> for Option<V> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
         if let Some(value) = self {
-            value.mount(owner, parent, attrs)
+            value.mount(owner, parent, attrs, error_handler)
         } else {
             Ok(())
         }
@@ -1980,12 +2033,13 @@ impl<'scope, V: View<'scope>> View<'scope> for Option<V> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized,
     {
         if let Some(value) = self {
-            value.mount_owned(owner, parent, attrs)
+            value.mount_owned(owner, parent, attrs, error_handler)
         } else {
             Ok(())
         }
@@ -2006,12 +2060,14 @@ impl<'scope, V: View<'scope>> View<'scope> for Vec<V> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
         mount_composite(
             owner,
             parent,
             attrs,
-            move |transaction_owner, fragment, attrs| {
+            error_handler,
+            move |transaction_owner, fragment, attrs, error_handler| {
                 for (index, value) in self.iter().enumerate() {
                     value.mount(
                         transaction_owner,
@@ -2021,6 +2077,7 @@ impl<'scope, V: View<'scope>> View<'scope> for Vec<V> {
                         } else {
                             Vec::new()
                         },
+                        error_handler,
                     )?;
                 }
                 Ok(())
@@ -2033,6 +2090,7 @@ impl<'scope, V: View<'scope>> View<'scope> for Vec<V> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized,
@@ -2041,7 +2099,8 @@ impl<'scope, V: View<'scope>> View<'scope> for Vec<V> {
             owner,
             parent,
             attrs,
-            move |transaction_owner, fragment, attrs| {
+            error_handler,
+            move |transaction_owner, fragment, attrs, error_handler| {
                 for (index, value) in self.into_iter().enumerate() {
                     value.mount_owned(
                         transaction_owner,
@@ -2051,6 +2110,7 @@ impl<'scope, V: View<'scope>> View<'scope> for Vec<V> {
                         } else {
                             Vec::new()
                         },
+                        error_handler,
                     )?;
                 }
                 Ok(())
@@ -2075,12 +2135,14 @@ impl<'scope, V: View<'scope>, const N: usize> View<'scope> for [V; N] {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
         mount_composite(
             owner,
             parent,
             attrs,
-            move |transaction_owner, fragment, attrs| {
+            error_handler,
+            move |transaction_owner, fragment, attrs, error_handler| {
                 for (index, value) in self.iter().enumerate() {
                     value.mount(
                         transaction_owner,
@@ -2090,6 +2152,7 @@ impl<'scope, V: View<'scope>, const N: usize> View<'scope> for [V; N] {
                         } else {
                             Vec::new()
                         },
+                        error_handler,
                     )?;
                 }
                 Ok(())
@@ -2102,6 +2165,7 @@ impl<'scope, V: View<'scope>, const N: usize> View<'scope> for [V; N] {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized,
@@ -2110,7 +2174,8 @@ impl<'scope, V: View<'scope>, const N: usize> View<'scope> for [V; N] {
             owner,
             parent,
             attrs,
-            move |transaction_owner, fragment, attrs| {
+            error_handler,
+            move |transaction_owner, fragment, attrs, error_handler| {
                 for (index, value) in self.into_iter().enumerate() {
                     value.mount_owned(
                         transaction_owner,
@@ -2120,6 +2185,7 @@ impl<'scope, V: View<'scope>, const N: usize> View<'scope> for [V; N] {
                         } else {
                             Vec::new()
                         },
+                        error_handler,
                     )?;
                 }
                 Ok(())
@@ -2148,6 +2214,7 @@ impl<'scope> View<'scope> for ViewNil {
         _owner: &dyn ViewOwner<'scope>,
         _parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
+        _error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
         Ok(())
     }
@@ -2157,6 +2224,7 @@ impl<'scope> View<'scope> for ViewNil {
         _owner: &dyn ViewOwner<'scope>,
         _parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
+        _error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized,
@@ -2180,14 +2248,18 @@ impl<'scope, H: View<'scope>, T: View<'scope>> View<'scope> for ViewCons<H, T> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
         mount_composite(
             owner,
             parent,
             attrs,
-            move |transaction_owner, fragment, attrs| {
-                self.0.mount(transaction_owner, fragment, attrs)?;
-                self.1.mount(transaction_owner, fragment, Vec::new())
+            error_handler,
+            move |transaction_owner, fragment, attrs, error_handler| {
+                self.0
+                    .mount(transaction_owner, fragment, attrs, error_handler)?;
+                self.1
+                    .mount(transaction_owner, fragment, Vec::new(), error_handler)
             },
         )
     }
@@ -2197,6 +2269,7 @@ impl<'scope, H: View<'scope>, T: View<'scope>> View<'scope> for ViewCons<H, T> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized,
@@ -2206,9 +2279,10 @@ impl<'scope, H: View<'scope>, T: View<'scope>> View<'scope> for ViewCons<H, T> {
             owner,
             parent,
             attrs,
-            move |transaction_owner, fragment, attrs| {
-                head.mount_owned(transaction_owner, fragment, attrs)?;
-                tail.mount_owned(transaction_owner, fragment, Vec::new())
+            error_handler,
+            move |transaction_owner, fragment, attrs, error_handler| {
+                head.mount_owned(transaction_owner, fragment, attrs, error_handler)?;
+                tail.mount_owned(transaction_owner, fragment, Vec::new(), error_handler)
             },
         )
     }
@@ -2241,9 +2315,10 @@ impl<'scope, V: View<'scope>> View<'scope> for SilexResult<V> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()> {
         match self {
-            Ok(value) => value.mount(owner, parent, attrs),
+            Ok(value) => value.mount(owner, parent, attrs, error_handler),
             Err(error) => Err(error.clone()),
         }
     }
@@ -2253,12 +2328,13 @@ impl<'scope, V: View<'scope>> View<'scope> for SilexResult<V> {
         owner: &dyn ViewOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized,
     {
         match self {
-            Ok(value) => value.mount_owned(owner, parent, attrs),
+            Ok(value) => value.mount_owned(owner, parent, attrs, error_handler),
             Err(error) => Err(error),
         }
     }
@@ -2283,20 +2359,18 @@ mod tests {
         let root = runtime.run().expect("root should start");
         let bridge = {
             let scope = root.scope();
-            let owner = ScopedViewOwner::new(
-                scope,
-                scope
-                    .error_handler(|_| {})
-                    .expect("error handler should register"),
-            );
+            let owner = ScopedViewOwner::new(scope);
             let token = owner.token();
+            let handler = scope
+                .error_handler(|_| {})
+                .expect("error handler should register");
             let bridge = token
                 .host_callback(
                     move |_| {
                         seen_in_callback.set(seen_in_callback.get() + 1);
                         Ok(())
                     },
-                    token.error_handler(),
+                    handler,
                 )
                 .expect("host callback should register");
             assert!(bridge.dispatch(JsValue::UNDEFINED));
@@ -2325,7 +2399,7 @@ mod tests {
                     set_signal.set(1).expect("signal should be writable");
                 })
                 .expect("error handler should register");
-            let owner = ScopedViewOwner::new(scope, handler);
+            let owner = ScopedViewOwner::new(scope);
             owner
                 .token()
                 .host_callback(
@@ -2349,7 +2423,7 @@ mod tests {
             let handler = scope
                 .error_handler(|_| panic!("host error handler panic"))
                 .expect("error handler should register");
-            let owner = ScopedViewOwner::new(scope, handler);
+            let owner = ScopedViewOwner::new(scope);
             owner
                 .token()
                 .host_callback(
@@ -2390,20 +2464,22 @@ mod tests {
         let root = runtime.run().expect("root should start");
         {
             let scope = root.scope();
-            let owner = ScopedViewOwner::new(
-                scope,
-                scope
-                    .error_handler(|_| {})
-                    .expect("error handler should register"),
-            );
+            let owner = ScopedViewOwner::new(scope);
             let token = owner.token();
+            let handler = scope
+                .error_handler(|_| {})
+                .expect("error handler should register");
             let callback = token
-                .host_callback(|_| Ok(()), token.error_handler())
+                .host_callback(|_| Ok(()), handler)
                 .expect("host callback should register");
             let handle = token
-                .host_resource_for_callback(&callback, move || {
-                    cancelled_in_cleanup.set(cancelled_in_cleanup.get() + 1);
-                })
+                .host_resource_for_callback(
+                    &callback,
+                    move || {
+                        cancelled_in_cleanup.set(cancelled_in_cleanup.get() + 1);
+                    },
+                    handler,
+                )
                 .expect("host resource should register");
             drop(handle);
         }
@@ -2437,12 +2513,10 @@ mod tests {
             .child(|scope| {
                 let errors = Rc::new(RefCell::new(Vec::new()));
                 let errors_for_reporter = errors.clone();
-                let owner = ScopedViewOwner::new(
-                    scope,
-                    scope
-                        .error_handler(move |error| errors_for_reporter.borrow_mut().push(error))
-                        .expect("error handler should register"),
-                );
+                let handler = scope
+                    .error_handler(move |error| errors_for_reporter.borrow_mut().push(error))
+                    .expect("error handler should register");
+                let owner = ScopedViewOwner::new(scope);
                 assert!(owner.validate_inputs(&inputs).is_err());
                 assert!(
                     owner
@@ -2452,7 +2526,7 @@ mod tests {
                                 runs_for_effect.set(runs_for_effect.get() + 1);
                                 Ok(())
                             }),
-                            owner.token().error_handler(),
+                            handler,
                         )
                         .is_err()
                 );
@@ -2464,7 +2538,7 @@ mod tests {
     }
 
     #[test]
-    fn owner_handlers_are_local_and_token_scoped() {
+    fn explicit_handlers_route_errors_locally() {
         let outer_errors = Rc::new(RefCell::new(Vec::<String>::new()));
         let inner_errors = Rc::new(RefCell::new(Vec::<String>::new()));
         let outer_errors_for_reporter = outer_errors.clone();
@@ -2473,30 +2547,29 @@ mod tests {
 
         runtime
             .child(|scope| {
-                let owner = ScopedViewOwner::new(
-                    scope,
-                    scope
-                        .error_handler(move |error| {
-                            outer_errors_for_reporter
-                                .borrow_mut()
-                                .push(error.to_string());
-                        })
-                        .expect("error handler should register"),
-                );
-                let token = owner.token();
-                token.handle_error(SilexError::Framework("outer".to_string()));
-
-                let nested = token.with_error_handler(
-                    scope
-                        .error_handler(move |error| {
-                            inner_errors_for_reporter
-                                .borrow_mut()
-                                .push(error.to_string());
-                        })
-                        .expect("error handler should register"),
-                );
-                nested.handle_error(SilexError::Framework("inner".to_string()));
-                token.handle_error(SilexError::Framework("outer-again".to_string()));
+                let outer_handler = scope
+                    .error_handler(move |error| {
+                        outer_errors_for_reporter
+                            .borrow_mut()
+                            .push(error.to_string());
+                    })
+                    .expect("error handler should register");
+                let inner_handler = scope
+                    .error_handler(move |error| {
+                        inner_errors_for_reporter
+                            .borrow_mut()
+                            .push(error.to_string());
+                    })
+                    .expect("error handler should register");
+                outer_handler
+                    .handle(SilexError::Framework("outer".to_string()))
+                    .expect("outer handler should be active");
+                inner_handler
+                    .handle(SilexError::Framework("inner".to_string()))
+                    .expect("inner handler should be active");
+                outer_handler
+                    .handle(SilexError::Framework("outer-again".to_string()))
+                    .expect("outer handler should be active");
             })
             .expect("child scope should initialize");
 
@@ -2518,12 +2591,7 @@ mod tests {
 
         {
             let scope = root.scope();
-            let owner = ScopedViewOwner::new(
-                scope,
-                scope
-                    .error_handler(|_| {})
-                    .expect("error handler should register"),
-            );
+            let owner = ScopedViewOwner::new(scope);
             let token = owner.token();
             let state = token.owner_state(41).expect("owner state should be active");
             assert_eq!(
@@ -2542,7 +2610,9 @@ mod tests {
                         }
                         Ok(())
                     }),
-                    token.error_handler(),
+                    scope
+                        .error_handler(|_| {})
+                        .expect("error handler should register"),
                 )
                 .expect("cleanup should register");
         }

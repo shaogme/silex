@@ -8,7 +8,11 @@ use silex_macros::component;
 use std::marker::PhantomData;
 
 #[component]
-fn RawPropsAsView<'scope>(scope: Scope<'scope>, children: AnyView<'scope>) -> impl View<'scope> {
+fn RawPropsAsView<'scope>(
+    scope: Scope<'scope>,
+    children: AnyView<'scope>,
+    #[chain] error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
     let _ = scope;
     children
 }
@@ -19,6 +23,7 @@ fn main() {
         let props = RawPropsAsViewProps {
             scope,
             children: AnyView::Empty,
+            error_handler: scope.error_handler(|_| {}).expect("handler"),
             __silex_scope_marker: PhantomData,
         };
         let _ = AnyView::new(props);

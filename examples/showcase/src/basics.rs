@@ -1,4 +1,5 @@
 use crate::css::AppTheme;
+use silex::dom::view::{ScopedViewOwner, ViewOwner};
 use silex::{core::log::console_log, prelude::*};
 use std::time::Duration;
 
@@ -6,6 +7,7 @@ use std::time::Duration;
 pub fn Greeting<'scope>(
     name: Signal<'scope, String>,
     #[chain(default)] punctuation: String,
+    #[chain] error_handler: ErrorReporter<'scope>,
 ) -> impl View<'scope> {
     let full_punctuation = if punctuation.is_empty() {
         "!".to_string()
@@ -33,14 +35,13 @@ pub fn Greeting<'scope>(
 pub fn Counter<'scope>(
     scope: Scope<'scope>,
     error_handler: ErrorReporter<'scope>,
-    #[inject(owner)] owner: ViewOwnerToken<'scope>,
 ) -> impl View<'scope> {
     let (count, set_count) = scope.signal(0)?;
     let double_count = rx!(scope; error_handler; $count * 2);
+    let owner_for_timer = ScopedViewOwner::new(scope).token();
 
     // Timer Handle for Auto Increment (StoredValue: doesn't trigger UI updates itself)
     let timer = scope.stored(None::<HostResourceHandle<'scope>>)?;
-    let owner_for_timer = owner.clone();
     // UI State for the timer
     let (is_running, set_is_running) = scope.signal(false)?;
 
@@ -83,6 +84,7 @@ pub fn Counter<'scope>(
                             Ok(())
                         },
                         Duration::from_millis(1000),
+                        error_handler,
                     )?;
                     timer.set_untracked(Some(handle))?;
                     set_is_running.set(true)?;
@@ -117,7 +119,10 @@ pub fn Counter<'scope>(
 }
 
 #[component]
-pub fn NodeRefDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
+pub fn NodeRefDemo<'scope>(
+    scope: Scope<'scope>,
+    #[chain] error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
     use silex::reexports::web_sys::HtmlInputElement;
     let input_ref = scope.node_ref::<HtmlInputElement>()?;
 
@@ -143,9 +148,9 @@ pub fn NodeRefDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
     ))
 }
 #[component]
-pub fn SvgIconDemo<'scope>() -> impl View<'scope> {
+pub fn SvgIconDemo<'scope>(#[chain] error_handler: ErrorReporter<'scope>) -> impl View<'scope> {
     #[component]
-    fn ShieldCheck<'scope>() -> impl View<'scope> {
+    fn ShieldCheck<'scope>(#[chain] error_handler: ErrorReporter<'scope>) -> impl View<'scope> {
         svg(path()
             .attr("stroke-linecap", "round")
             .attr("stroke-linejoin", "round")
@@ -162,13 +167,14 @@ pub fn SvgIconDemo<'scope>() -> impl View<'scope> {
         h3("SVG Icon forwarding"),
         p("SVG icons with attribute forwarding."),
         div![
-            ShieldCheck().build().style(
+            ShieldCheck().error_handler(error_handler).build().style(
                 sty()
                     .width(px(32))?
                     .height(px(32))?
                     .color(ColorName::Green)?
             ),
             ShieldCheck()
+                .error_handler(error_handler)
                 .build()
                 .style(
                     sty()
@@ -183,6 +189,7 @@ pub fn SvgIconDemo<'scope>() -> impl View<'scope> {
                     Ok(())
                 }),
             ShieldCheck()
+                .error_handler(error_handler)
                 .build()
                 .attr("width", "50")
                 .attr("height", "50")
@@ -253,6 +260,7 @@ pub fn EventDemo<'scope>(
         p("2. Non-Copy types: Clone manually inside the closure."),
         button("Consume Payload").on(event::click, on_click_inner),
         ul(For(logs, |l| l.clone())
+            .error_handler(error_handler)
             .children(move |l, _idx, _updater| li(l).style(log_item_style.clone()))
             .build())
         .style(
@@ -300,11 +308,11 @@ pub fn BasicsPage<'scope>(
                 .border_radius(px(4))?
                 .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
         ),
-        Greeting(name_signal).build(),
+        Greeting(name_signal).error_handler(error_handler).build(),
         Counter(scope, error_handler).build(),
         EventDemo(scope, error_handler).build(),
-        NodeRefDemo(scope).build(),
-        SvgIconDemo::<'scope>().build(),
+        NodeRefDemo(scope).error_handler(error_handler).build(),
+        SvgIconDemo::<'scope>().error_handler(error_handler).build(),
         // AttributeDemo omitted for brevity, logic is same as previous
     ])
 }

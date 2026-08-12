@@ -238,23 +238,25 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
     where
         N: JsCast + Clone + 'scope,
     {
-        self.apply(PendingAttribute::new_scoped(move |el: &Element, owner| {
-            let typed = el.clone().dyn_into::<N>().map_err(|_| {
-                SilexError::Dom("NodeRef type mismatch: failed to cast element".to_string())
-            })?;
+        self.apply(PendingAttribute::new_scoped(
+            move |el: &Element, owner, error_handler| {
+                let typed = el.clone().dyn_into::<N>().map_err(|_| {
+                    SilexError::Dom("NodeRef type mismatch: failed to cast element".to_string())
+                })?;
 
-            let node_ref_for_cleanup = node_ref;
-            owner.on_cleanup(
-                Box::new(move || -> SilexResult<()> {
-                    match node_ref_for_cleanup.clear() {
-                        Ok(()) | Err(ReactiveError::NoSuchNode) => Ok(()),
-                        Err(error) => Err(error.into()),
-                    }
-                }),
-                owner.error_handler(),
-            )?;
-            node_ref.load(typed).map_err(SilexError::from)
-        }))
+                let node_ref_for_cleanup = node_ref;
+                owner.on_cleanup(
+                    Box::new(move || -> SilexResult<()> {
+                        match node_ref_for_cleanup.clear() {
+                            Ok(()) | Err(ReactiveError::NoSuchNode) => Ok(()),
+                            Err(error) => Err(error.into()),
+                        }
+                    }),
+                    error_handler,
+                )?;
+                node_ref.load(typed).map_err(SilexError::from)
+            },
+        ))
     }
 
     // --- Event API ---
@@ -298,40 +300,46 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
     where
         F: EventHandler<'scope, String, M> + Clone + 'scope,
     {
-        self.apply(PendingAttribute::new_scoped(move |el: &Element, owner| {
-            bind_event_impl(
-                el,
-                "input".to_string(),
-                Box::new({
-                    let mut handler = callback.clone().into_handler();
-                    move |e: InputEvent| {
-                        let value = event_target_value_result(&e)?;
-                        handler(value)
-                    }
-                }),
-                owner,
-            )
-        }))
+        self.apply(PendingAttribute::new_scoped(
+            move |el: &Element, owner, error_handler| {
+                bind_event_impl(
+                    el,
+                    "input".to_string(),
+                    Box::new({
+                        let mut handler = callback.clone().into_handler();
+                        move |e: InputEvent| {
+                            let value = event_target_value_result(&e)?;
+                            handler(value)
+                        }
+                    }),
+                    owner,
+                    error_handler,
+                )
+            },
+        ))
     }
 
     fn on_change<F, M>(self, callback: F) -> Self
     where
         F: EventHandler<'scope, String, M> + Clone + 'scope,
     {
-        self.apply(PendingAttribute::new_scoped(move |el: &Element, owner| {
-            bind_event_impl(
-                el,
-                "change".to_string(),
-                Box::new({
-                    let mut handler = callback.clone().into_handler();
-                    move |e: Event| {
-                        let value = event_target_value_result(&e)?;
-                        handler(value)
-                    }
-                }),
-                owner,
-            )
-        }))
+        self.apply(PendingAttribute::new_scoped(
+            move |el: &Element, owner, error_handler| {
+                bind_event_impl(
+                    el,
+                    "change".to_string(),
+                    Box::new({
+                        let mut handler = callback.clone().into_handler();
+                        move |e: Event| {
+                            let value = event_target_value_result(&e)?;
+                            handler(value)
+                        }
+                    }),
+                    owner,
+                    error_handler,
+                )
+            },
+        ))
     }
 
     fn bind_value<T, S>(self, signal: S) -> Self
@@ -345,24 +353,26 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
             Ok(())
         });
 
-        this.apply(PendingAttribute::new_scoped(move |el: &Element, owner| {
-            let dom_element = el.clone();
-            let signal = signal.clone();
-            owner.effect_from(
-                runtime_inputs_of(signal.clone()),
-                Box::new(move || -> SilexResult<()> {
-                    let value = signal.get()?;
-                    let str_val = value.as_ref();
-                    apply_attr_with_target_internal(
-                        &dom_element,
-                        "value",
-                        ApplyTarget::Known(KnownProp::Value),
-                        &Attr::from(str_val.to_string()),
-                    )
-                }),
-                owner.error_handler(),
-            )
-        }))
+        this.apply(PendingAttribute::new_scoped(
+            move |el: &Element, owner, error_handler| {
+                let dom_element = el.clone();
+                let signal = signal.clone();
+                owner.effect_from(
+                    runtime_inputs_of(signal.clone()),
+                    Box::new(move || -> SilexResult<()> {
+                        let value = signal.get()?;
+                        let str_val = value.as_ref();
+                        apply_attr_with_target_internal(
+                            &dom_element,
+                            "value",
+                            ApplyTarget::Known(KnownProp::Value),
+                            &Attr::from(str_val.to_string()),
+                        )
+                    }),
+                    error_handler,
+                )
+            },
+        ))
     }
 
     fn on_untyped<E, F>(self, event_type: &str, callback: F) -> Self
@@ -372,14 +382,17 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
     {
         let event_type_str = event_type.to_string();
         let cb_template = callback.clone();
-        self.apply(PendingAttribute::new_scoped(move |el: &Element, owner| {
-            bind_event_impl(
-                el,
-                event_type_str.clone(),
-                Box::new(cb_template.clone()),
-                owner,
-            )
-        }))
+        self.apply(PendingAttribute::new_scoped(
+            move |el: &Element, owner, error_handler| {
+                bind_event_impl(
+                    el,
+                    event_type_str.clone(),
+                    Box::new(cb_template.clone()),
+                    owner,
+                    error_handler,
+                )
+            },
+        ))
     }
 }
 
@@ -402,9 +415,11 @@ impl<'scope> AttributeBuilder<'scope> for AnyView<'scope> {
         E: EventDescriptor + 'static,
         F: EventHandler<'scope, E::EventType, M> + Clone + 'scope,
     {
-        self.apply_attributes(vec![PendingAttribute::new_scoped(move |el, owner| {
-            crate::element::bind_event(el, event, callback.clone(), owner)
-        })]);
+        self.apply_attributes(vec![PendingAttribute::new_scoped(
+            move |el, owner, error_handler| {
+                crate::element::bind_event(el, event, callback.clone(), owner, error_handler)
+            },
+        )]);
         self
     }
 }
@@ -534,7 +549,7 @@ mod tests {
                     .rw_signal(1i32)
                     .expect("signal should initialize")
                     .into_rx();
-                let op = AttrOp::custom_with_inputs(source.runtime_inputs(), |_, _| Ok(()));
+                let op = AttrOp::custom_with_inputs(source.runtime_inputs(), |_, _, _| Ok(()));
 
                 assert_eq!(op.runtime_inputs().len(), 1);
                 assert!(format!("{op:?}").contains("CustomWithInputs"));

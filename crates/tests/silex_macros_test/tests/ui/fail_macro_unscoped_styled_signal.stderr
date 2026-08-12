@@ -1,4 +1,4 @@
-error: styled! 的动态 CSS 或 variants 必须声明 `<'scope>`；宏不会创建隐式 Runtime。
+error: styled! components must declare an explicit error_handler parameter
  --> tests/ui/fail_macro_unscoped_styled_signal.rs:8:9
   |
 8 |     pub UnscopedPanel<div>(
