@@ -1,4 +1,4 @@
-use crate::{Rx, RxValueKind, reactivity::ReactiveSource};
+use crate::{Rx, RxValueKind, SilexError, reactivity::ReactiveSource};
 use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Not, Rem, Shl, Shr, Sub};
 
 #[doc(hidden)]
@@ -57,9 +57,13 @@ where
     inputs.extend(&right.inputs());
     scope.assert_inputs(&inputs);
     let right = right.materialize_unchecked(scope);
-    scope.derived_from(inputs, move || {
-        left.with(|left| right.with(|right| op(left, right)))
-    })
+    scope
+        .derived_from(
+            inputs,
+            move || Ok(left.with(|left| right.with(|right| op(left, right)))),
+            scope.error_handler(|error| panic!("reactive arithmetic failed: {error}")),
+        )
+        .unwrap_or_else(|error: SilexError| panic!("创建 reactive arithmetic 失败: {error}"))
 }
 
 fn unary_op<'scope, T>(value: Rx<'scope, T>, op: fn(&T) -> T) -> Rx<'scope, T>
@@ -67,7 +71,13 @@ where
     T: 'scope,
 {
     let scope = value.scope();
-    scope.derived_from(value.runtime_inputs(), move || value.with(op))
+    scope
+        .derived_from(
+            value.runtime_inputs(),
+            move || Ok(value.with(op)),
+            scope.error_handler(|error| panic!("reactive arithmetic failed: {error}")),
+        )
+        .unwrap_or_else(|error: SilexError| panic!("创建 reactive arithmetic 失败: {error}"))
 }
 
 macro_rules! impl_rx_binary {

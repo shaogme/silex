@@ -50,7 +50,7 @@ pub struct RxEffectKind;
 pub(crate) enum RxInner<'scope, T> {
     Signal(RxReadSignal<'scope, T>),
     Memo(RxMemo<'scope, T>),
-    Derived(Derived<'scope, T>),
+    Derived(Derived<'scope, T, SilexError>),
     Stored(RxStoredValue<'scope, T>),
 }
 
@@ -116,7 +116,10 @@ impl<'scope, T: 'scope> Rx<'scope, T, RxValueKind> {
         }
     }
 
-    pub(crate) fn from_derived(derived: Derived<'scope, T>, scope: Scope<'scope>) -> Self {
+    pub(crate) fn from_derived(
+        derived: Derived<'scope, T, SilexError>,
+        scope: Scope<'scope>,
+    ) -> Self {
         Self {
             inner: RxInner::Derived(derived),
             scope,
@@ -132,17 +135,25 @@ impl<'scope, T: 'scope> Rx<'scope, T, RxValueKind> {
         }
     }
 
-    pub(crate) fn scope(&self) -> Scope<'scope> {
+    pub fn scope(&self) -> Scope<'scope> {
         self.scope
     }
 
-    pub fn map<U, F>(self, f: F) -> Rx<'scope, U>
+    pub fn map<U, F>(
+        self,
+        f: F,
+        error_handler: ErrorHandler<'scope, SilexError>,
+    ) -> SilexResult<Rx<'scope, U>>
     where
         U: 'scope,
         F: Fn(&T) -> U + 'scope,
     {
         let scope = self.scope;
-        scope.derived_from(self.runtime_inputs(), move || self.with(|value| f(value)))
+        scope.derived_from(
+            self.runtime_inputs(),
+            move || self.try_with(|value| f(value)),
+            error_handler,
+        )
     }
 
     pub fn get(&self) -> T
@@ -152,14 +163,14 @@ impl<'scope, T: 'scope> Rx<'scope, T, RxValueKind> {
         RxGet::get(self)
     }
 
-    pub fn try_get(&self) -> ReactiveResult<T>
+    pub fn try_get(&self) -> SilexResult<T>
     where
         T: Clone,
     {
         RxGet::try_get(self)
     }
 
-    pub fn try_get_untracked(&self) -> ReactiveResult<T>
+    pub fn try_get_untracked(&self) -> SilexResult<T>
     where
         T: Clone,
     {
@@ -170,7 +181,7 @@ impl<'scope, T: 'scope> Rx<'scope, T, RxValueKind> {
         RxRead::with(self, f)
     }
 
-    pub fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
+    pub fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         RxRead::try_with(self, f)
     }
 
@@ -178,7 +189,7 @@ impl<'scope, T: 'scope> Rx<'scope, T, RxValueKind> {
         RxRead::with_untracked(self, f)
     }
 
-    pub fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
+    pub fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         RxRead::try_with_untracked(self, f)
     }
 

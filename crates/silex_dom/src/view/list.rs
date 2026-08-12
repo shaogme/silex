@@ -209,7 +209,6 @@ where
         Box::new(move || -> SilexResult<()> {
             let values = source
                 .try_with(|items| items.as_slice().map(|values| values.to_vec()))
-                .map_err(SilexError::from)
                 .and_then(|result| result)?;
             let mut rows = effect_rows.take()?;
             let old_len = rows.len();
@@ -383,7 +382,6 @@ where
         Box::new(move || -> SilexResult<()> {
             let values = source
                 .try_with(|items| items.as_slice().map(|values| values.to_vec()))
-                .map_err(SilexError::from)
                 .and_then(|result| result)?;
 
             let key_result = catch_unwind(AssertUnwindSafe(|| -> SilexResult<Vec<K>> {

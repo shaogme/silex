@@ -125,8 +125,10 @@ fn signal_and_stored_value_keep_source_specific_cleanup_access() {
             .expect("cleanup should register");
     });
 
-    assert_eq!(
-        *observed.borrow(),
-        (Some(ReactiveError::NoSuchNode), Some(9))
-    );
+    let observed = observed.borrow();
+    assert!(matches!(
+        observed.0,
+        Some(SilexError::Reactivity(ReactiveError::NoSuchNode))
+    ));
+    assert_eq!(observed.1, Some(9));
 }

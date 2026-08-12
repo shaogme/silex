@@ -1,5 +1,5 @@
 use crate::{
-    RuntimeInputs, Rx, RxValueKind, Scope,
+    RuntimeInputs, Rx, RxValueKind, Scope, SilexError, SilexResult,
     reactivity::{Memo, SignalSlice, StoredValue},
     traits::{RxBase, RxRead, RxValue},
 };
@@ -32,17 +32,17 @@ impl<T> RxValue for Constant<T> {
 }
 
 impl<T> RxBase for Constant<T> {
-    fn try_track(&self) -> ReactiveResult<()> {
+    fn try_track(&self) -> SilexResult<()> {
         Ok(())
     }
 }
 
 impl<T> RxRead for Constant<T> {
-    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
+    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         Ok(f(&self.0))
     }
 
-    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
+    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         Ok(f(&self.0))
     }
 }
@@ -170,11 +170,11 @@ impl<'scope, T: 'scope> ReadSignal<'scope, T> {
         self
     }
 
-    pub fn try_get(&self) -> ReactiveResult<T>
+    pub fn try_get(&self) -> SilexResult<T>
     where
         T: Clone,
     {
-        self.inner.get()
+        self.inner.get().map_err(SilexError::from)
     }
 
     pub fn get(&self) -> T
@@ -185,11 +185,11 @@ impl<'scope, T: 'scope> ReadSignal<'scope, T> {
             .unwrap_or_else(|error| panic!("读取 scoped signal 失败: {error}"))
     }
 
-    pub fn try_get_untracked(&self) -> ReactiveResult<T>
+    pub fn try_get_untracked(&self) -> SilexResult<T>
     where
         T: Clone,
     {
-        self.inner.get_untracked()
+        self.inner.get_untracked().map_err(SilexError::from)
     }
 
     pub fn with<U>(&self, f: impl FnOnce(&T) -> U) -> U {
@@ -197,8 +197,8 @@ impl<'scope, T: 'scope> ReadSignal<'scope, T> {
             .unwrap_or_else(|error| panic!("读取 scoped signal 失败: {error}"))
     }
 
-    pub fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
-        self.inner.with(f)
+    pub fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+        self.inner.with(f).map_err(SilexError::from)
     }
 
     pub fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> U {
@@ -206,8 +206,8 @@ impl<'scope, T: 'scope> ReadSignal<'scope, T> {
             .unwrap_or_else(|error| panic!("读取 scoped signal 失败: {error}"))
     }
 
-    pub fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
-        self.inner.with_untracked(f)
+    pub fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+        self.inner.with_untracked(f).map_err(SilexError::from)
     }
 
     pub fn into_rx(self) -> Rx<'scope, T> {
@@ -333,7 +333,7 @@ impl<'scope, T: 'scope> Signal<'scope, T> {
         self.rx.get()
     }
 
-    pub fn try_get(&self) -> ReactiveResult<T>
+    pub fn try_get(&self) -> SilexResult<T>
     where
         T: Clone,
     {
@@ -344,7 +344,7 @@ impl<'scope, T: 'scope> Signal<'scope, T> {
         self.rx.with(f)
     }
 
-    pub fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
+    pub fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         self.rx.try_with(f)
     }
 
@@ -352,7 +352,7 @@ impl<'scope, T: 'scope> Signal<'scope, T> {
         self.rx.with_untracked(f)
     }
 
-    pub fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
+    pub fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         self.rx.try_with_untracked(f)
     }
 

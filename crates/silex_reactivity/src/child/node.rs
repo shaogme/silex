@@ -117,10 +117,10 @@ pub struct Memo<'scope, T> {
     pub(crate) marker: PhantomData<fn() -> T>,
 }
 
-/// Scoped derived value.
-pub struct Derived<'scope, T> {
+/// Scoped derived value whose callback may return a user-defined error.
+pub struct Derived<'scope, T, E> {
     pub(crate) handle: DerivedId<'scope>,
-    pub(crate) marker: PhantomData<fn() -> T>,
+    pub(crate) marker: PhantomData<fn() -> (T, E)>,
 }
 
 impl<'scope, T> Copy for Memo<'scope, T> {}
@@ -131,9 +131,9 @@ impl<'scope, T> Clone for Memo<'scope, T> {
     }
 }
 
-impl<'scope, T> Copy for Derived<'scope, T> {}
+impl<'scope, T, E> Copy for Derived<'scope, T, E> {}
 
-impl<'scope, T> Clone for Derived<'scope, T> {
+impl<'scope, T, E> Clone for Derived<'scope, T, E> {
     fn clone(&self) -> Self {
         *self
     }
@@ -180,39 +180,35 @@ impl<'scope, T: 'scope> Memo<'scope, T> {
     }
 }
 
-impl<'scope, T: 'scope> Derived<'scope, T> {
-    pub fn get(&self) -> ReactiveResult<T>
+impl<'scope, T: 'scope, E: 'scope> Derived<'scope, T, E> {
+    pub fn get(&self) -> CallbackInvokeResult<T, E>
     where
         T: Clone,
     {
-        runtime::with_signal(&self.handle.state(), self.handle.raw(), true, |value| {
-            unsafe { value.downcast_ref::<T>() }
-                .cloned()
-                .ok_or(ReactiveError::TypeMismatch)
-        })?
+        self.with(Clone::clone)
     }
 
-    pub fn get_untracked(&self) -> ReactiveResult<T>
+    pub fn get_untracked(&self) -> CallbackInvokeResult<T, E>
     where
         T: Clone,
     {
         self.with_untracked(Clone::clone)
     }
 
-    pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
-        runtime::with_signal(&self.handle.state(), self.handle.raw(), true, |value| {
+    pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> CallbackInvokeResult<R, E> {
+        runtime::with_fallible_signal(&self.handle.state(), self.handle.raw(), true, |value| {
             unsafe { value.downcast_ref::<T>() }
                 .map(f)
                 .ok_or(ReactiveError::TypeMismatch)
-        })?
+        })
     }
 
-    pub fn with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
-        runtime::with_signal(&self.handle.state(), self.handle.raw(), false, |value| {
+    pub fn with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> CallbackInvokeResult<R, E> {
+        runtime::with_fallible_signal(&self.handle.state(), self.handle.raw(), false, |value| {
             unsafe { value.downcast_ref::<T>() }
                 .map(f)
                 .ok_or(ReactiveError::TypeMismatch)
-        })?
+        })
     }
 
     #[doc(hidden)]
@@ -531,12 +527,12 @@ impl<'scope, T> PartialEq for Memo<'scope, T> {
 }
 impl<'scope, T> Eq for Memo<'scope, T> {}
 
-impl<'scope, T> PartialEq for Derived<'scope, T> {
+impl<'scope, T, E> PartialEq for Derived<'scope, T, E> {
     fn eq(&self, other: &Self) -> bool {
         self.handle == other.handle
     }
 }
-impl<'scope, T> Eq for Derived<'scope, T> {}
+impl<'scope, T, E> Eq for Derived<'scope, T, E> {}
 
 impl<'scope, T> PartialEq for ReadSignal<'scope, T> {
     fn eq(&self, other: &Self) -> bool {

@@ -3,7 +3,8 @@ use crate::builder::PersistentBuilder;
 use crate::{DecodePolicy, NoBackend, NoCodec, PersistenceError, RemovePolicy};
 use ref_str::LocalStaticRefStr;
 use silex_core::{
-    ErrorReporter, ReactiveError, ReactiveResult, Rx, RxGet, Scope, StoreField,
+    ErrorReporter, ReactiveError, ReactiveResult, Rx, RxGet, Scope, SilexError, SilexResult,
+    StoreField,
     reactivity::{PromotionPlan, ReactiveSource, ReadSignal, RwSignal, StoredValue},
     traits::{RxBase, RxCloneData, RxData, RxRead, RxValue, RxWrite},
 };
@@ -216,7 +217,7 @@ where
             .try_with(|controller| controller.default.clone())
         {
             Ok(default) => default,
-            Err(ReactiveError::NoSuchNode) => return,
+            Err(SilexError::Reactivity(ReactiveError::NoSuchNode)) => return,
             Err(error) => panic!("读取 persistent default 失败: {error}"),
         };
         if let Err(error) = self.try_set(default())
@@ -273,17 +274,17 @@ impl<'scope, T: RxData> RxValue for Persistent<'scope, T> {
 }
 
 impl<'scope, T: RxData> RxBase for Persistent<'scope, T> {
-    fn try_track(&self) -> ReactiveResult<()> {
+    fn try_track(&self) -> SilexResult<()> {
         self.value.try_track()
     }
 }
 
 impl<'scope, T: RxData> RxRead for Persistent<'scope, T> {
-    fn try_with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> ReactiveResult<U> {
+    fn try_with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> SilexResult<U> {
         self.value.try_with(f)
     }
 
-    fn try_with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> ReactiveResult<U> {
+    fn try_with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> SilexResult<U> {
         self.value.try_with_untracked(f)
     }
 }

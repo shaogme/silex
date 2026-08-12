@@ -75,7 +75,9 @@ fn all_public_node_capabilities_are_copy() {
             let memo = scope
                 .memo(move |_| read.get().expect("reactive read"))
                 .expect("memo creation");
-            let derived = scope.derived(move || 1i32).expect("derived creation");
+            let derived = scope
+                .derived(move || Ok(1i32), handler(scope))
+                .expect("derived creation");
             let effect = scope
                 .effect(|| Ok(()), handler(scope))
                 .expect("effect should initialize");
@@ -98,7 +100,7 @@ fn all_public_node_capabilities_are_copy() {
             let _: Option<ReadSignal<'_, i32>> = Some(read);
             let _: Option<WriteSignal<'_, i32>> = Some(write);
             let _: Option<Memo<'_, i32>> = Some(memo);
-            let _: Option<Derived<'_, i32>> = Some(derived);
+            let _: Option<Derived<'_, i32, ()>> = Some(derived);
             let _: Option<Effect<'_>> = Some(effect);
             let _: Option<StoredValue<'_, i32>> = Some(stored);
             let _: Option<Callback<'_, ()>> = Some(callback);

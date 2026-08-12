@@ -11,8 +11,8 @@ use crate::{
     internal::{
         RawId,
         value::{
-            AnyValue, CallbackThunk, CleanupThunk, Computation, EffectThunk, MemoThunk,
-            PreviousThunk, WatchThunk,
+            AnyValue, CallbackThunk, CleanupThunk, Computation, DerivedThunk, EffectThunk,
+            MemoThunk, PreviousThunk, WatchThunk,
         },
     },
 };
@@ -479,6 +479,21 @@ impl<'scope> ScopeState<'scope> {
                 Computation::Memo(callback),
             ))))
         })
+    }
+
+    pub(super) fn register_derived(
+        &mut self,
+        callback: DerivedThunk<'scope>,
+    ) -> ReactiveResult<RawId> {
+        let parent = self.parent_for_new_node();
+        self.register(
+            NodeCore::new(NodeKindTag::Derived, parent, NodeState::Dirty),
+            move || {
+                NodeData::new(Rc::new(NodeStorage::Computation(ComputationStorage::new(
+                    Computation::Derived(callback),
+                ))))
+            },
+        )
     }
 
     pub(crate) fn create_stored(&mut self, value: AnyValue<'scope>) -> ReactiveResult<RawId> {

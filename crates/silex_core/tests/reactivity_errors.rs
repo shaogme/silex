@@ -13,15 +13,24 @@ fn core_try_operations_preserve_borrow_conflicts() {
         let (read, write) = scope.signal(1_i32);
 
         let read_then_write = read.try_with(|_| write.try_set(2));
-        assert_eq!(read_then_write, Ok(Err(ReactiveError::BorrowConflict)),);
+        assert!(matches!(
+            read_then_write,
+            Ok(Err(ReactiveError::BorrowConflict))
+        ));
 
         let write_then_read = write.try_update(|_| read.try_get());
-        assert_eq!(write_then_read, Ok(Err(ReactiveError::BorrowConflict)),);
+        assert!(matches!(
+            write_then_read,
+            Ok(Err(SilexError::Reactivity(ReactiveError::BorrowConflict)))
+        ));
 
         let write_then_write = write.try_update(|_| write.try_set(2));
-        assert_eq!(write_then_write, Ok(Err(ReactiveError::BorrowConflict)),);
+        assert!(matches!(
+            write_then_write,
+            Ok(Err(ReactiveError::BorrowConflict))
+        ));
 
-        assert_eq!(read.try_get(), Ok(1));
+        assert!(matches!(read.try_get(), Ok(1)));
     });
 }
 
@@ -31,12 +40,18 @@ fn core_try_operations_preserve_stored_and_rx_errors() {
     runtime.child(|scope| {
         let stored = scope.stored(1_i32);
         let stored_conflict = stored.try_with(|_| stored.try_update(|_| ()));
-        assert_eq!(stored_conflict, Ok(Err(ReactiveError::BorrowConflict)),);
+        assert!(matches!(
+            stored_conflict,
+            Ok(Err(ReactiveError::BorrowConflict))
+        ));
 
         let (read, write) = scope.signal(1_i32);
         let rx = read.into_rx();
         let rx_conflict = rx.try_with(|_| write.try_set(2));
-        assert_eq!(rx_conflict, Ok(Err(ReactiveError::BorrowConflict)));
+        assert!(matches!(
+            rx_conflict,
+            Ok(Err(ReactiveError::BorrowConflict))
+        ));
     });
 }
 
@@ -68,7 +83,10 @@ fn node_ref_keeps_empty_value_separate_from_runtime_errors() {
             .expect("cleanup should register");
     });
 
-    assert_eq!(stale_error.get(), Some(ReactiveError::NoSuchNode));
+    assert!(matches!(
+        stale_error.take(),
+        Some(ReactiveError::NoSuchNode)
+    ));
 }
 
 #[test]
@@ -82,10 +100,16 @@ fn stale_core_trait_access_returns_no_such_node() {
         scope
             .on_cleanup(
                 move || {
-                    assert_eq!(read.try_get(), Err(ReactiveError::NoSuchNode));
-                    assert_eq!(read.try_track(), Err(ReactiveError::NoSuchNode));
-                    assert_eq!(write.try_set(2), Err(ReactiveError::NoSuchNode));
-                    assert_eq!(write.try_notify(), Err(ReactiveError::NoSuchNode));
+                    assert!(matches!(
+                        read.try_get(),
+                        Err(SilexError::Reactivity(ReactiveError::NoSuchNode))
+                    ));
+                    assert!(matches!(
+                        read.try_track(),
+                        Err(SilexError::Reactivity(ReactiveError::NoSuchNode))
+                    ));
+                    assert!(matches!(write.try_set(2), Err(ReactiveError::NoSuchNode)));
+                    assert!(matches!(write.try_notify(), Err(ReactiveError::NoSuchNode)));
                     stale_error_for_cleanup.set(read.try_get().err());
                     Ok(())
                 },
@@ -94,7 +118,10 @@ fn stale_core_trait_access_returns_no_such_node() {
             .expect("cleanup should register");
     });
 
-    assert_eq!(stale_error.get(), Some(ReactiveError::NoSuchNode));
+    assert!(matches!(
+        stale_error.take(),
+        Some(SilexError::Reactivity(ReactiveError::NoSuchNode))
+    ));
 }
 
 #[test]

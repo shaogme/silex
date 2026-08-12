@@ -4,7 +4,7 @@ error: lifetime may not live long enough
  6 |     runtime.child(|scope| {
    |                    ------ return type of closure is AnyView<'2>
    |                    |
-   |                    has type `silex_core::Scope<'1>`
+   |                    has type `silex_i18n::Scope<'1>`
 ...
 10 |         AnyView::new(t!(store, "missing.key"))
    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ returning this value requires that `'1` must outlive `'2`

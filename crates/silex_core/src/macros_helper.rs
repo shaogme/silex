@@ -1,4 +1,8 @@
-use crate::{Rx, Scope, reactivity::ReactiveSource, traits::RxRead};
+use crate::{Rx, Scope, SilexError, reactivity::ReactiveSource, traits::RxRead};
+
+fn derived_error_handler<'scope>(scope: Scope<'scope>) -> crate::ErrorReporter<'scope> {
+    scope.error_handler(|error| panic!("reactive derived value failed: {error}"))
+}
 
 #[inline]
 pub fn map1_static<'scope, S, U>(
@@ -15,7 +19,13 @@ where
     let inputs = source.inputs();
     scope.assert_inputs(&inputs);
     let source = source.materialize_unchecked(scope);
-    scope.derived_from(inputs, move || source.with(f))
+    scope
+        .derived_from(
+            inputs,
+            move || Ok(source.with(f)),
+            derived_error_handler(scope),
+        )
+        .unwrap_or_else(|error: SilexError| panic!("创建 reactive derived 失败: {error}"))
 }
 
 #[inline]
@@ -39,9 +49,13 @@ where
     scope.assert_inputs(&inputs);
     let left = left.materialize_unchecked(scope);
     let right = right.materialize_unchecked(scope);
-    scope.derived_from(inputs, move || {
-        left.with(|left| right.with(|right| f(left, right)))
-    })
+    scope
+        .derived_from(
+            inputs,
+            move || Ok(left.with(|left| right.with(|right| f(left, right)))),
+            derived_error_handler(scope),
+        )
+        .unwrap_or_else(|error: SilexError| panic!("创建 reactive derived 失败: {error}"))
 }
 
 #[inline]
@@ -71,7 +85,15 @@ where
     let first = first.materialize_unchecked(scope);
     let second = second.materialize_unchecked(scope);
     let third = third.materialize_unchecked(scope);
-    scope.derived_from(inputs, move || {
-        first.with(|first| second.with(|second| third.with(|third| f(first, second, third))))
-    })
+    scope
+        .derived_from(
+            inputs,
+            move || {
+                Ok(first.with(|first| {
+                    second.with(|second| third.with(|third| f(first, second, third)))
+                }))
+            },
+            derived_error_handler(scope),
+        )
+        .unwrap_or_else(|error: SilexError| panic!("创建 reactive derived 失败: {error}"))
 }

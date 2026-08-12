@@ -315,6 +315,7 @@ pub(crate) enum Computation<'scope> {
     Previous(PreviousThunk<'scope>),
     Watch(WatchThunk<'scope>),
     Memo(MemoThunk<'scope>),
+    Derived(DerivedThunk<'scope>),
 }
 
 pub(crate) struct EffectThunk<'scope> {
@@ -474,6 +475,36 @@ pub(crate) struct MemoThunk<'scope> {
     callback: MemoCallback<'scope>,
 }
 
+pub(crate) struct DerivedThunk<'scope> {
+    callback: Box<dyn FnMut() -> Result<AnyValue<'scope>, ErrorEvent<'scope>> + 'scope>,
+}
+
+impl<'scope> DerivedThunk<'scope> {
+    pub(crate) fn new<T, E, F>(
+        callback: F,
+        handler: ErrorHandler<'scope, E>,
+        initial_slot: InitialErrorSlot<E>,
+    ) -> Self
+    where
+        T: 'scope,
+        E: 'scope,
+        F: FnMut() -> Result<T, E> + 'scope,
+    {
+        let mut callback = callback;
+        Self {
+            callback: Box::new(move || {
+                callback()
+                    .map(AnyValue::new)
+                    .map_err(|error| ErrorEvent::new(error, handler, initial_slot.clone()))
+            }),
+        }
+    }
+
+    pub(crate) fn compute(&mut self) -> Result<AnyValue<'scope>, ErrorEvent<'scope>> {
+        (self.callback)()
+    }
+}
+
 type MemoCallback<'scope> = Box<dyn FnMut(Option<&AnyValue<'scope>>) -> AnyValue<'scope> + 'scope>;
 
 impl<'scope> MemoThunk<'scope> {
@@ -488,17 +519,6 @@ impl<'scope> MemoThunk<'scope> {
                 let old = old.and_then(|value| unsafe { value.downcast_ref::<T>() });
                 AnyValue::new_reactive(callback(old))
             }),
-        }
-    }
-
-    pub(crate) fn new_derived<T, F>(callback: F) -> Self
-    where
-        T: 'scope,
-        F: FnMut() -> T + 'scope,
-    {
-        let mut callback = callback;
-        Self {
-            callback: Box::new(move |_| AnyValue::new(callback())),
         }
     }
 

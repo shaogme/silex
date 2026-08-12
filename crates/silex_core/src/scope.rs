@@ -21,6 +21,13 @@ fn map_effect_init_error(error: EffectInitError<SilexError>) -> SilexError {
     }
 }
 
+fn map_derived_init_error(error: EffectInitError<SilexError>) -> SilexError {
+    match error {
+        EffectInitError::Registration(error) => SilexError::from(error),
+        EffectInitError::Initial(error) => error,
+    }
+}
+
 /// User-owned high-level runtime.
 pub struct Runtime {
     inner: silex_reactivity::Runtime,
@@ -176,38 +183,33 @@ impl<'scope> Scope<'scope> {
     }
 
     /// Create a derived value without additional framework-declared inputs.
-    pub fn derived<T, F>(self, f: F) -> Rx<'scope, T>
+    pub fn derived<T, F>(
+        self,
+        f: F,
+        error_handler: ErrorHandler<'scope, SilexError>,
+    ) -> SilexResult<Rx<'scope, T>>
     where
         T: 'scope,
-        F: FnMut() -> T + 'scope,
+        F: FnMut() -> SilexResult<T> + 'scope,
     {
-        self.derived_from(RuntimeInputs::new(), f)
+        self.derived_from(RuntimeInputs::new(), f, error_handler)
     }
 
     #[doc(hidden)]
-    pub fn derived_from<T, F>(self, inputs: RuntimeInputs, f: F) -> Rx<'scope, T>
+    pub fn derived_from<T, F>(
+        self,
+        inputs: RuntimeInputs,
+        f: F,
+        error_handler: ErrorHandler<'scope, SilexError>,
+    ) -> SilexResult<Rx<'scope, T>>
     where
         T: 'scope,
-        F: FnMut() -> T + 'scope,
-    {
-        Rx::from_derived(
-            self.inner
-                .derived_from(inputs, f)
-                .unwrap_or_else(|error| panic!("创建 scoped derived 失败: {error}")),
-            self,
-        )
-    }
-
-    #[doc(hidden)]
-    pub fn try_derived_from<T, F>(self, inputs: RuntimeInputs, f: F) -> SilexResult<Rx<'scope, T>>
-    where
-        T: 'scope,
-        F: FnMut() -> T + 'scope,
+        F: FnMut() -> SilexResult<T> + 'scope,
     {
         self.inner
-            .derived_from(inputs, f)
+            .derived_from(inputs, f, error_handler)
+            .map_err(map_derived_init_error)
             .map(|derived| Rx::from_derived(derived, self))
-            .map_err(SilexError::from)
     }
 
     pub fn effect<F>(
@@ -305,7 +307,7 @@ impl<'scope> Scope<'scope> {
         let source = plan.materialize_unchecked(self);
         self.watch_getter_from(
             inputs,
-            move || source.try_get().map_err(SilexError::from),
+            move || source.try_get(),
             callback,
             error_handler,
             options,

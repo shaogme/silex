@@ -2,13 +2,13 @@
 
 use super::{
     dispose::dispose_nodes,
-    eval::{flush_if_idle, prepare_read},
+    eval::{EvaluationError, flush_if_idle, prepare_fallible_read, prepare_read},
     model::{ScopeState, StoredAccessMode},
     scheduler::{GlobalScheduler, TargetNode},
     storage::NodeStorage,
 };
 use crate::{
-    ReactiveError, ReactiveResult,
+    CallbackInvokeError, CallbackInvokeResult, ReactiveError, ReactiveResult,
     error::ErrorHandlerKey,
     handle::NodeKindTag,
     internal::{
@@ -129,6 +129,41 @@ pub(crate) fn with_signal<'scope, R>(
     let result = read_value(&storage, scheduler, f)?;
     flush_if_idle(state);
     Ok(result)
+}
+
+pub(crate) fn with_fallible_signal<'scope, R, E>(
+    state: &Rc<RefCell<ScopeState<'scope>>>,
+    id: RawId,
+    track: bool,
+    f: impl FnOnce(&AnyValue<'scope>) -> Result<R, ReactiveError>,
+) -> CallbackInvokeResult<R, E>
+where
+    E: 'scope,
+{
+    if let Err(error) = prepare_fallible_read(state, id, track) {
+        return Err(match error {
+            EvaluationError::Runtime(error) => CallbackInvokeError::Runtime(error),
+            EvaluationError::User(value) => unsafe {
+                value
+                    .downcast::<E>()
+                    .map(CallbackInvokeError::User)
+                    .unwrap_or(CallbackInvokeError::Runtime(ReactiveError::TypeMismatch))
+            },
+            EvaluationError::Callback(_) => {
+                CallbackInvokeError::Runtime(ReactiveError::TypeMismatch)
+            }
+        });
+    }
+    let (storage, scheduler) = match lookup_value_storage(state, id, true) {
+        Ok(value) => value,
+        Err(error) => return Err(CallbackInvokeError::Runtime(error)),
+    };
+    let result = match read_value(&storage, scheduler, f) {
+        Ok(result) => result,
+        Err(error) => return Err(CallbackInvokeError::Runtime(error)),
+    };
+    flush_if_idle(state);
+    result.map_err(CallbackInvokeError::Runtime)
 }
 
 fn commit_signal<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> ReactiveResult<()> {

@@ -718,7 +718,7 @@ fn apply_combined_styles_internal<'scope>(
                 if !sheets.is_empty() {
                     let sheet_strings: Vec<String> = sheets
                         .iter()
-                        .map(|rx| rx.try_get().map_err(SilexError::from))
+                        .map(|rx| rx.try_get())
                         .collect::<SilexResult<_>>()?;
                     let mut new_style_map = std::collections::HashMap::new();
                     for s in &sheet_strings {

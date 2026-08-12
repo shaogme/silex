@@ -12,7 +12,7 @@ use crate::{
     error::{ErrorPhase, InitialErrorSlot},
     internal::{
         RawId,
-        value::{Computation, EffectThunk, MemoThunk, PreviousThunk, WatchThunk},
+        value::{Computation, DerivedThunk, EffectThunk, MemoThunk, PreviousThunk, WatchThunk},
     },
 };
 use smallvec::SmallVec;
@@ -180,8 +180,8 @@ pub(crate) fn create_computation<'scope>(
             (ComputationKind::Memo, Computation::Memo(callback)) => state
                 .register_memo(callback, false)
                 .map_err(EvaluationError::Runtime)?,
-            (ComputationKind::Derived, Computation::Memo(callback)) => state
-                .register_memo(callback, true)
+            (ComputationKind::Derived, Computation::Derived(callback)) => state
+                .register_derived(callback)
                 .map_err(EvaluationError::Runtime)?,
             _ => return Err(EvaluationError::Runtime(ReactiveError::WrongKind)),
         }
@@ -229,6 +229,9 @@ fn finish_creation<'scope, E>(
             flush_if_idle(state);
             Err(EffectInitError::Initial(initial))
         }
+        Err(EvaluationError::User(_)) => {
+            Err(EffectInitError::Registration(ReactiveError::TypeMismatch))
+        }
     }
 }
 
@@ -238,6 +241,9 @@ fn finish_infallible_creation(result: Result<RawId, EvaluationError<'_>>) -> Rea
         Err(EvaluationError::Runtime(error)) => Err(error),
         Err(EvaluationError::Callback(_)) => {
             unreachable!("infallible computations cannot return callback errors")
+        }
+        Err(EvaluationError::User(_)) => {
+            unreachable!("infallible computations cannot return user errors")
         }
     }
 }
@@ -347,23 +353,31 @@ where
     ))
 }
 
-pub(crate) fn create_derived<'scope, T, F>(
+pub(crate) fn create_derived<'scope, T, E, F>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     inputs: RuntimeInputs,
     callback: F,
-) -> ReactiveResult<RawId>
+    handler: ErrorHandler<'scope, E>,
+) -> EffectInitResult<RawId, E>
 where
     T: 'scope,
-    F: FnMut() -> T + 'scope,
+    E: 'scope,
+    F: FnMut() -> Result<T, E> + 'scope,
 {
-    finish_infallible_creation(create_computation(
+    let initial_slot = InitialErrorSlot::new();
+    let result = create_computation(
         state,
         ComputationSpec {
             kind: ComputationKind::Derived,
             inputs,
-            computation: Computation::Memo(MemoThunk::new_derived::<T, F>(callback)),
+            computation: Computation::Derived(DerivedThunk::new(
+                callback,
+                handler,
+                initial_slot.clone(),
+            )),
         },
-    ))
+    );
+    finish_creation(state, result, &initial_slot)
 }
 
 #[cfg(test)]

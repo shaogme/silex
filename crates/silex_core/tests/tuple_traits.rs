@@ -1,5 +1,5 @@
 use silex_core::{
-    ErrorHandler, ReactiveError, ReactiveResult, Runtime, Scope, SilexError, SilexResult,
+    ErrorHandler, Runtime, Scope, SilexError, SilexResult,
     traits::{RxBase, RxGet, RxRead},
 };
 use std::{cell::Cell, rc::Rc};
@@ -41,7 +41,7 @@ fn tuple_tracking_accepts_non_cloneable_members() {
 }
 
 #[test]
-fn cloneable_tuple_supports_tracked_and_untracked_reads() -> ReactiveResult<()> {
+fn cloneable_tuple_supports_tracked_and_untracked_reads() -> SilexResult<()> {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
         let (first, set_first) = scope.signal(1_i32);
@@ -54,6 +54,6 @@ fn cloneable_tuple_supports_tracked_and_untracked_reads() -> ReactiveResult<()> 
 
         set_first.set(7);
         assert_eq!(sources.try_with(|value| value.0 + value.1)?, 9);
-        Ok::<(), ReactiveError>(())
+        Ok(())
     })
 }

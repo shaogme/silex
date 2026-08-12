@@ -59,6 +59,15 @@ impl From<ReactiveError> for PersistenceError {
     }
 }
 
+impl From<SilexError> for PersistenceError {
+    fn from(error: SilexError) -> Self {
+        match error {
+            SilexError::Reactivity(error) => Self::Reactivity(error),
+            other => Self::InvalidConfiguration(other.to_string()),
+        }
+    }
+}
+
 impl From<PersistenceError> for SilexError {
     fn from(error: PersistenceError) -> Self {
         match error {

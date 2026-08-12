@@ -1,4 +1,4 @@
-use crate::{Rx, RxValueKind, Scope};
+use crate::{Rx, RxValueKind, Scope, SilexError, SilexResult};
 use silex_reactivity::ReactiveResult;
 use std::fmt;
 
@@ -53,8 +53,8 @@ impl<'scope, T: 'scope> StoredValue<'scope, T> {
             .unwrap_or_else(|error| panic!("读取 StoredValue 失败: {error}"))
     }
 
-    pub fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
-        self.inner.with(f)
+    pub fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+        self.inner.with(f).map_err(SilexError::from)
     }
 
     pub fn update<U>(&self, f: impl FnOnce(&mut T) -> U) -> U {

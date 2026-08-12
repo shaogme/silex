@@ -338,13 +338,17 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
         let closure_body = quote! { #closure_body };
         let reads = nested_reads(&bindings, &closure_body, false);
         closure.capture = Some(Move::default());
-        *closure.body = parse2(reads)?;
+        *closure.body = parse2(quote! { Ok(#reads) })?;
         let constructor = if closure.inputs.is_empty() {
             let setup = source_setup(&bindings);
             let inputs = input_set(&prefix, &bindings);
             quote! {
                 #setup
-                __silex_scope.derived_from(#inputs, #closure)
+                __silex_scope.derived_from(
+                    #inputs,
+                    #closure,
+                    __silex_scope.error_handler(|error| panic!("rx! derived failed: {error}")),
+                ).unwrap_or_else(|error| panic!("创建 rx! derived 失败: {error}"))
             }
         } else {
             quote! { __silex_scope.callback(#closure) }
@@ -371,7 +375,11 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
     Ok(quote! {{
         #scope_binding
         #setup
-        __silex_scope.derived_from(#inputs, move || #reads)
+        __silex_scope.derived_from(
+            #inputs,
+            move || Ok(#reads),
+            __silex_scope.error_handler(|error| panic!("rx! derived failed: {error}")),
+        ).unwrap_or_else(|error| panic!("创建 rx! derived 失败: {error}"))
     }})
 }
 

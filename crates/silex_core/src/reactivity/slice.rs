@@ -1,5 +1,5 @@
 use crate::{
-    ReactiveResult,
+    SilexResult,
     traits::{RxBase, RxData, RxRead, RxValue},
 };
 use std::marker::PhantomData;
@@ -33,7 +33,7 @@ where
     S: RxBase,
     O: ?Sized + RxData,
 {
-    fn try_track(&self) -> ReactiveResult<()> {
+    fn try_track(&self) -> SilexResult<()> {
         self.source.try_track()
     }
 }
@@ -44,11 +44,11 @@ where
     F: Fn(&S::Value) -> &O,
     O: ?Sized + RxData,
 {
-    fn try_with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> ReactiveResult<U> {
+    fn try_with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> SilexResult<U> {
         self.source.try_with(|value| f((self.getter)(value)))
     }
 
-    fn try_with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> ReactiveResult<U> {
+    fn try_with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> SilexResult<U> {
         self.source
             .try_with_untracked(|value| f((self.getter)(value)))
     }

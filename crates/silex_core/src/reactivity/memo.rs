@@ -1,4 +1,4 @@
-use crate::{ReactiveResult, Rx, RxValueKind, Scope};
+use crate::{ErrorHandler, Rx, RxValueKind, Scope, SilexError, SilexResult};
 use std::fmt;
 
 /// Equality-gated computed value.
@@ -37,11 +37,11 @@ impl<'scope, T: 'scope> Memo<'scope, T> {
         Self { inner, scope }
     }
 
-    pub fn try_get(&self) -> ReactiveResult<T>
+    pub fn try_get(&self) -> SilexResult<T>
     where
         T: Clone,
     {
-        self.inner.get()
+        self.inner.get().map_err(SilexError::from)
     }
 
     pub fn get(&self) -> T
@@ -52,11 +52,11 @@ impl<'scope, T: 'scope> Memo<'scope, T> {
             .unwrap_or_else(|error| panic!("读取 scoped memo 失败: {error}"))
     }
 
-    pub fn try_get_untracked(&self) -> ReactiveResult<T>
+    pub fn try_get_untracked(&self) -> SilexResult<T>
     where
         T: Clone,
     {
-        self.inner.get_untracked()
+        self.inner.get_untracked().map_err(SilexError::from)
     }
 
     pub fn get_untracked(&self) -> T
@@ -67,8 +67,8 @@ impl<'scope, T: 'scope> Memo<'scope, T> {
             .unwrap_or_else(|error| panic!("读取 scoped memo 失败: {error}"))
     }
 
-    pub fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
-        self.inner.with(f)
+    pub fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+        self.inner.with(f).map_err(SilexError::from)
     }
 
     pub fn with<U>(&self, f: impl FnOnce(&T) -> U) -> U {
@@ -76,8 +76,8 @@ impl<'scope, T: 'scope> Memo<'scope, T> {
             .unwrap_or_else(|error| panic!("读取 scoped memo 失败: {error}"))
     }
 
-    pub fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
-        self.inner.with_untracked(f)
+    pub fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+        self.inner.with_untracked(f).map_err(SilexError::from)
     }
 
     pub fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> U {
@@ -85,14 +85,22 @@ impl<'scope, T: 'scope> Memo<'scope, T> {
             .unwrap_or_else(|error| panic!("读取 scoped memo 失败: {error}"))
     }
 
-    pub fn map<U, F>(self, f: F) -> Rx<'scope, U>
+    pub fn map<U, F>(
+        self,
+        f: F,
+        error_handler: ErrorHandler<'scope, SilexError>,
+    ) -> SilexResult<Rx<'scope, U>>
     where
         U: 'scope,
         F: Fn(&T) -> U + 'scope,
     {
         let scope = self.scope;
         let inputs = silex_reactivity::RuntimeInputs::single(self.inner.runtime_input());
-        scope.derived_from(inputs, move || self.with(|value| f(value)))
+        scope.derived_from(
+            inputs,
+            move || self.try_with(|value| f(value)),
+            error_handler,
+        )
     }
 
     pub fn into_rx(self) -> Rx<'scope, T, RxValueKind> {

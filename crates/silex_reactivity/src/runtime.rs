@@ -26,8 +26,8 @@ pub use model::RuntimeSnapshot;
 pub(crate) use model::ScopeState;
 pub(crate) use ops::{
     invoke_callback, invoke_error_handler, node_ref_clear, node_ref_get, node_ref_set, notify,
-    stop_effect, track, track_many, update_signal, update_stored, with_batch, with_signal,
-    with_stored, with_untracked,
+    stop_effect, track, track_many, update_signal, update_stored, with_batch, with_fallible_signal,
+    with_signal, with_stored, with_untracked,
 };
 pub(crate) use scheduler::{GlobalScheduler, ObserverFrame, ScopeId};
 

@@ -37,6 +37,7 @@ struct ComputationResult<'scope> {
 pub(crate) enum EvaluationError<'scope> {
     Runtime(ReactiveError),
     Callback(ErrorEvent<'scope>),
+    User(AnyValue<'scope>),
 }
 
 impl<'scope> From<ReactiveError> for EvaluationError<'scope> {
@@ -50,6 +51,7 @@ impl fmt::Display for EvaluationError<'_> {
         match self {
             Self::Runtime(error) => error.fmt(f),
             Self::Callback(_) => f.write_str("callback returned an error"),
+            Self::User(_) => f.write_str("callback returned a user error"),
         }
     }
 }
@@ -59,6 +61,7 @@ type EvaluationResult<'scope, T> = Result<T, EvaluationError<'scope>>;
 #[derive(Clone, Copy)]
 enum EvaluationMode {
     Initial,
+    Read,
     Deferred,
 }
 
@@ -81,10 +84,13 @@ pub(crate) fn prepare_read<'scope>(
         return Err(ReactiveError::Reentrant);
     }
     if !settled {
-        evaluate_root(state, id).map_err(|error| match error {
+        evaluate_root(state, id, EvaluationMode::Deferred).map_err(|error| match error {
             EvaluationError::Runtime(error) => error,
             EvaluationError::Callback(_) => {
                 unreachable!("deferred callback errors are consumed by their handler")
+            }
+            EvaluationError::User(_) => {
+                unreachable!("user errors are only produced by fallible reads")
             }
         })?;
     }
@@ -98,9 +104,44 @@ pub(crate) fn prepare_read<'scope>(
     Ok(())
 }
 
+pub(crate) fn prepare_fallible_read<'scope>(
+    state: &Rc<RefCell<ScopeState<'scope>>>,
+    id: RawId,
+    track: bool,
+) -> EvaluationResult<'scope, ()> {
+    let (settled, running) = {
+        let state_ref = state
+            .try_borrow()
+            .map_err(|_| EvaluationError::Runtime(ReactiveError::BorrowConflict))?;
+        if !state_ref.is_active() {
+            return Err(EvaluationError::Runtime(ReactiveError::NoSuchNode));
+        }
+        let node = state_ref
+            .nodes
+            .get(id)
+            .ok_or(EvaluationError::Runtime(ReactiveError::NoSuchNode))?;
+        (state_ref.is_settled(id), node.running)
+    };
+    if running {
+        return Err(EvaluationError::Runtime(ReactiveError::Reentrant));
+    }
+    if !settled {
+        evaluate_root(state, id, EvaluationMode::Read)?;
+    }
+    if track {
+        state
+            .try_borrow_mut()
+            .map_err(|_| EvaluationError::Runtime(ReactiveError::BorrowConflict))?
+            .track(id);
+    }
+    flush_if_idle(state);
+    Ok(())
+}
+
 fn evaluate_root<'scope>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     id: RawId,
+    mode: EvaluationMode,
 ) -> EvaluationResult<'scope, ()> {
     let scheduler = {
         let state_ref = state
@@ -112,7 +153,7 @@ fn evaluate_root<'scope>(
         scheduler.clone()
     };
     let mut stack = Vec::new();
-    let result = catch_unwind(AssertUnwindSafe(|| evaluate(state, id, &mut stack)));
+    let result = catch_unwind(AssertUnwindSafe(|| evaluate(state, id, &mut stack, mode)));
     {
         let mut sched = scheduler.borrow_mut();
         sched.evaluating = sched.evaluating.saturating_sub(1);
@@ -130,6 +171,7 @@ fn evaluate<'scope>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     id: RawId,
     stack: &mut Vec<TargetNode>,
+    mode: EvaluationMode,
 ) -> EvaluationResult<'scope, ()> {
     let target = {
         let state_ref = state
@@ -167,7 +209,7 @@ fn evaluate<'scope>(
                 .get(dep.node)
                 .map(|node| node.state);
             if dependency_state.is_some_and(|state| state != NodeState::Clean) {
-                evaluate(state, dep.node, stack)?;
+                evaluate(state, dep.node, stack, mode)?;
             }
         } else {
             let scheduler = state.borrow().scheduler.clone();
@@ -180,7 +222,7 @@ fn evaluate<'scope>(
                     .get(dep.node)
                     .map(|node| node.state);
                 if dependency_state.is_some_and(|state| state != NodeState::Clean) {
-                    evaluate(&dep_scope, dep.node, stack)?;
+                    evaluate(&dep_scope, dep.node, stack, mode)?;
                 }
             }
         }
@@ -240,7 +282,7 @@ fn evaluate<'scope>(
         }
         return Ok(());
     }
-    if run_node(state, id, EvaluationMode::Deferred)? {
+    if run_node(state, id, mode)? {
         Ok(())
     } else {
         Err(EvaluationError::Runtime(ReactiveError::NoSuchNode))
@@ -340,6 +382,16 @@ fn execute_computation<'scope>(
                 produced_value: Some(new_value),
                 commit_value: changed,
                 notify: changed,
+                stop_after_run: false,
+                initialize_watch: false,
+            }
+        }
+        Computation::Derived(callback) => {
+            let new_value = callback.compute().map_err(EvaluationError::Callback)?;
+            ComputationResult {
+                produced_value: Some(new_value),
+                commit_value: true,
+                notify: true,
                 stop_after_run: false,
                 initialize_watch: false,
             }
@@ -703,6 +755,12 @@ fn run_node<'scope>(
                 flush_if_idle(state);
                 return Ok(true);
             }
+            (EvaluationMode::Read, EvaluationError::Callback(error)) => {
+                let value = error
+                    .dispatch(ErrorPhase::Read)
+                    .expect("read callback error must retain its payload");
+                return Err(EvaluationError::User(value));
+            }
             (_, error) => return Err(error),
         }
     }
@@ -766,7 +824,8 @@ pub(crate) fn run_global_queue(scheduler: &Rc<RefCell<GlobalScheduler>>) {
                         node.queued = false;
                     }
                 }
-                if let Err(error) = evaluate_root(&scope_state, task.node) {
+                if let Err(error) = evaluate_root(&scope_state, task.node, EvaluationMode::Deferred)
+                {
                     panic!("silex_reactivity: effect queue evaluation failed: {error}");
                 }
             }

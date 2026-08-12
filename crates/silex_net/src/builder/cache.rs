@@ -216,14 +216,12 @@ where
         let encode = state.with(|state| state.encode.clone());
         let backend = state.with(|state| state.backend.clone());
         scope.completion_once(unwind_safe(move |value: T| {
-            let active = state
-                .try_with(|state| {
-                    state
-                        .entries
-                        .get(&key)
-                        .is_some_and(|entry| entry.generation == generation)
-                })
-                .map_err(SilexError::Reactivity)?;
+            let active = state.try_with(|state| {
+                state
+                    .entries
+                    .get(&key)
+                    .is_some_and(|entry| entry.generation == generation)
+            })?;
             if !active {
                 return Ok(());
             }

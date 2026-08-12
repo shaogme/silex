@@ -44,7 +44,16 @@ impl<'scope> StyleValue<'scope> {
     {
         match value.into_css_source() {
             CssSource::Static(value) => Self::Static(Cow::Owned(value.to_string())),
-            CssSource::Reactive(source) => Self::Dynamic(source.map(|value| value.to_string())),
+            CssSource::Reactive(source) => {
+                let handler = source
+                    .scope()
+                    .error_handler(|error| panic!("reactive CSS mapping failed: {error}"));
+                Self::Dynamic(
+                    source
+                        .map(|value| value.to_string(), handler)
+                        .unwrap_or_else(|error| panic!("创建 reactive CSS mapping 失败: {error}")),
+                )
+            }
         }
     }
 }
@@ -377,7 +386,7 @@ impl<'scope> Style<'scope> {
                     > {
                         let values: Vec<String> = bindings
                             .iter()
-                            .map(|(_, source)| source.try_get().map_err(SilexError::from))
+                            .map(|(_, source)| source.try_get())
                             .collect::<SilexResult<_>>()?;
                         if let Some(style) = element_style(&el_clone) {
                             for (index, ((name, _), value)) in

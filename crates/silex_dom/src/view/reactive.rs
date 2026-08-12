@@ -6,7 +6,7 @@ use crate::view::{
 };
 use silex_core::reactivity::{Memo, ReadSignal, RwSignal, Signal, StoredValue};
 use silex_core::traits::RxCloneData;
-use silex_core::{Rx, RxValueKind, SilexError, SilexResult};
+use silex_core::{Rx, RxValueKind, SilexResult};
 use std::fmt::Display;
 use std::{borrow::Cow, rc::Rc};
 use web_sys::Node;
@@ -94,7 +94,6 @@ where
                 owner: token,
             } = args;
             rx.try_with(|view| view.mount(&token, &parent, attrs))
-                .map_err(SilexError::from)
                 .and_then(|result| result)
         }),
     )

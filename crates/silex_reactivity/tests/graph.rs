@@ -27,10 +27,13 @@ fn memo_and_derived_keep_their_notification_rules() {
             let derived_runs_in_callback = derived_runs.clone();
             let derived_source = source;
             let derived = scope
-                .derived(move || {
-                    derived_runs_in_callback.set(derived_runs_in_callback.get() + 1);
-                    derived_source.get().expect("reactive read") / 10
-                })
+                .derived(
+                    move || {
+                        derived_runs_in_callback.set(derived_runs_in_callback.get() + 1);
+                        Ok(derived_source.get().expect("reactive read") / 10)
+                    },
+                    handler(scope),
+                )
                 .expect("derived creation");
 
             assert_eq!(memo.get(), Ok(0));
@@ -528,7 +531,10 @@ fn cross_scope_derived_reacts_and_detaches_on_exit() {
                 .child(|child| {
                     let child_source = source;
                     let derived = child
-                        .derived(move || child_source.get().expect("reactive read") * 2)
+                        .derived(
+                            move || Ok(child_source.get().expect("reactive read") * 2),
+                            handler(child),
+                        )
                         .expect("derived creation");
                     let seen_in_effect = seen.clone();
                     child

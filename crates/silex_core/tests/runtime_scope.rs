@@ -18,7 +18,10 @@ fn scoped_primitives_propagate_without_raw_handles() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
         let (count, set_count) = scope.signal(1i32);
-        let doubled = scope.promote(count).map(|value| value * 2);
+        let doubled = scope
+            .promote(count)
+            .map(|value| value * 2, handler(scope))
+            .expect("derived map should initialize");
         let memo = scope.memo_from(doubled.runtime_inputs(), move |_| doubled.get() + 1);
 
         assert_eq!(doubled.get(), 2);
@@ -39,7 +42,9 @@ fn scope_memo_and_derived_have_no_input_convenience_entries() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
         let (source, set_source) = scope.signal(2i32);
-        let derived = scope.derived(move || source.get() * 2);
+        let derived = scope
+            .derived(move || Ok(source.get() * 2), handler(scope))
+            .expect("derived should initialize");
         let memo = scope.memo(move |_| derived.get() + 1);
 
         assert_eq!(derived.get(), 4);
@@ -211,9 +216,8 @@ fn rx_macro_parameterized_closures_return_fallible_callbacks() {
     let seen_in_callback = seen.clone();
 
     runtime.child(|scope| {
-        let callback = rx!(scope; move |value: i32| -> SilexResult<()> {
+        let callback = rx!(scope; move |value: i32| {
             seen_in_callback.set(value);
-            Ok(())
         })
         .expect("rx callback should register");
 
@@ -430,14 +434,15 @@ fn signal_source_and_other_handles_are_inactive_after_root_disposal() {
             .on_cleanup(
                 move || {
                     stale_for_cleanup.set(
-                        matches!(signal.try_get(), Err(ReactiveError::NoSuchNode))
-                            && matches!(
-                                callback.invoke(()),
-                                Err(silex_core::SilexError::Reactivity(
-                                    ReactiveError::NoSuchNode
-                                ))
-                            )
-                            && matches!(node_ref.try_get(), Err(ReactiveError::NoSuchNode)),
+                        matches!(
+                            signal.try_get(),
+                            Err(SilexError::Reactivity(ReactiveError::NoSuchNode))
+                        ) && matches!(
+                            callback.invoke(()),
+                            Err(silex_core::SilexError::Reactivity(
+                                ReactiveError::NoSuchNode
+                            ))
+                        ) && matches!(node_ref.try_get(), Err(ReactiveError::NoSuchNode)),
                     );
                     Ok(())
                 },

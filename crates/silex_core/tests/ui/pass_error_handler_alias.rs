@@ -7,6 +7,6 @@ fn main() {
             let _ = error;
         });
         let reporter: ErrorReporter<'_> = handler;
-        reporter.handle(SilexError::Framework("compile-pass".to_string()));
+        let _ = reporter.handle(SilexError::Framework("compile-pass".to_string()));
     });
 }

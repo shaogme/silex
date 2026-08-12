@@ -28,7 +28,9 @@ impl<'scope> ReactiveSource<'scope> for DeclaredExternalSource {
         let materialized = self.materialized;
         PromotionPlan::derived(self.inputs, move |scope, inputs| {
             materialized.set(true);
-            scope.derived_from(inputs, || 1i32)
+            scope
+                .derived_from(inputs, || Ok(1i32), handler(scope))
+                .unwrap_or_else(|error| panic!("derived should initialize: {error}"))
         })
     }
 }
@@ -39,7 +41,9 @@ fn same_runtime_parent_child_promotion_and_propagation_are_valid() {
     runtime.child(|scope| {
         let (source, set_source) = scope.signal(2i32);
         let promoted = scope.promote(source);
-        let mapped = promoted.map(|value| value + 1);
+        let mapped = promoted
+            .map(|value| value + 1, handler(scope))
+            .expect("derived map should initialize");
 
         assert_eq!(mapped.get(), 3);
         set_source.set(7);
@@ -50,7 +54,13 @@ fn same_runtime_parent_child_promotion_and_propagation_are_valid() {
             let local = child.promote(local);
             let mut inputs = promoted.runtime_inputs();
             inputs.extend(&local.runtime_inputs());
-            let derived = child.derived_from(inputs, move || promoted.get() + local.get());
+            let derived = child
+                .derived_from(
+                    inputs,
+                    move || Ok(promoted.get() + local.get()),
+                    handler(child),
+                )
+                .expect("derived should initialize");
             assert_eq!(derived.get(), 11);
             set_source.set(9);
             assert_eq!(derived.get(), 13);
@@ -68,7 +78,11 @@ fn foreign_inputs_are_rejected_before_target_derived_creation() {
         let (source, _) = scope.signal(1i32);
         scope.promote(source).runtime_inputs()
     });
-    let result = second.child(|scope| scope.try_derived_from(foreign_inputs, || 1i32).map(|_| ()));
+    let result = second.child(|scope| {
+        scope
+            .derived_from(foreign_inputs, || Ok(1i32), handler(scope))
+            .map(|_| ())
+    });
 
     assert!(matches!(
         result,

@@ -1,4 +1,4 @@
-use crate::{Rx, Scope, reactivity::ReactiveSource, traits::RxRead};
+use crate::{Rx, Scope, SilexError, reactivity::ReactiveSource, traits::RxRead};
 
 fn compare<'scope, A, B, F>(scope: Scope<'scope>, left: A, right: B, compare: F) -> Rx<'scope, bool>
 where
@@ -15,9 +15,13 @@ where
     scope.assert_inputs(&inputs);
     let left = left.materialize_unchecked(scope);
     let right = right.materialize_unchecked(scope);
-    scope.derived_from(inputs, move || {
-        left.with(|left| right.with(|right| compare(left, right)))
-    })
+    scope
+        .derived_from(
+            inputs,
+            move || Ok(left.with(|left| right.with(|right| compare(left, right)))),
+            scope.error_handler(|error| panic!("reactive comparison failed: {error}")),
+        )
+        .unwrap_or_else(|error: SilexError| panic!("创建 reactive comparison 失败: {error}"))
 }
 
 pub trait ReactivePartialEq: RxRead + Clone {

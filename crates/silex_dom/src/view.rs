@@ -389,8 +389,7 @@ impl<'scope, T: 'scope> OwnerState<'scope, T> {
                     .ok_or(SilexError::Reactivity(ReactiveError::NoSuchNode))
             }),
             OwnerStateValue::Stored(value) => value
-                .try_with(|value| value.as_ref().map(callback))
-                .map_err(SilexError::from)?
+                .try_with(|value| value.as_ref().map(callback))?
                 .ok_or(SilexError::Reactivity(ReactiveError::NoSuchNode)),
         }
     }

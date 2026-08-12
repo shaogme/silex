@@ -1,13 +1,17 @@
 //! Reactive-source promotion and input aggregation.
 
 use crate::{
-    Rx, RxValueKind, Scope,
+    Rx, RxValueKind, Scope, SilexError,
     reactivity::{
         Constant, Memo, Mutation, ReadSignal, Resource, RwSignal, Signal, SignalSlice, StoredValue,
     },
     traits::{RxCloneData, RxData, RxError, RxRead, RxValue},
 };
 use silex_reactivity::{ReactiveResult, RuntimeInputs};
+
+fn derived_error_handler<'scope>(scope: Scope<'scope>) -> crate::ErrorReporter<'scope> {
+    scope.error_handler(|error| panic!("reactive promotion failed: {error}"))
+}
 
 /// A source description that can be materialized in a target scope after one
 /// complete input validation.
@@ -256,9 +260,15 @@ macro_rules! impl_tuple_sources {
                 $(inputs.extend(&$name.inputs());)+
                 PromotionPlan::derived(inputs, move |scope, inputs| {
                     $(let $name = $name.materialize_unchecked(scope);)+
-                    scope.derived_from(inputs, move || {
-                        ($($name.get(),)+)
-                    })
+                    scope
+                        .derived_from(
+                            inputs,
+                            move || Ok(($($name.try_get()?,)+)),
+                            derived_error_handler(scope),
+                        )
+                        .unwrap_or_else(|error: SilexError| {
+                            panic!("创建 tuple reactive source 失败: {error}")
+                        })
                 })
             }
         }
@@ -289,7 +299,15 @@ where
         let getter = self.getter;
         PromotionPlan::derived(inputs, move |scope, inputs| {
             let source = source.materialize_unchecked(scope);
-            scope.derived_from(inputs, move || source.with(|value| getter(value).clone()))
+            scope
+                .derived_from(
+                    inputs,
+                    move || Ok(source.with(|value| getter(value).clone())),
+                    derived_error_handler(scope),
+                )
+                .unwrap_or_else(|error: SilexError| {
+                    panic!("创建 signal slice reactive source 失败: {error}")
+                })
         })
     }
 }
@@ -306,7 +324,15 @@ where
     {
         let inputs = RuntimeInputs::single(self.state.inner.runtime_input());
         PromotionPlan::derived(inputs, move |scope, inputs| {
-            scope.derived_from(inputs, move || self.value())
+            scope
+                .derived_from(
+                    inputs,
+                    move || Ok(self.value()),
+                    derived_error_handler(scope),
+                )
+                .unwrap_or_else(|error: SilexError| {
+                    panic!("创建 resource reactive source 失败: {error}")
+                })
         })
     }
 }
@@ -324,7 +350,15 @@ where
     {
         let inputs = RuntimeInputs::single(self.state.inner.runtime_input());
         PromotionPlan::derived(inputs, move |scope, inputs| {
-            scope.derived_from(inputs, move || self.value())
+            scope
+                .derived_from(
+                    inputs,
+                    move || Ok(self.value()),
+                    derived_error_handler(scope),
+                )
+                .unwrap_or_else(|error: SilexError| {
+                    panic!("创建 mutation reactive source 失败: {error}")
+                })
         })
     }
 }

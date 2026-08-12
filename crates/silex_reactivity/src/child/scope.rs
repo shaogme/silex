@@ -345,27 +345,34 @@ impl<'scope> Scope<'scope> {
     }
 
     /// Create a lazy derived value without equality gating.
-    pub fn derived<T, F>(&self, f: F) -> ReactiveResult<Derived<'scope, T>>
+    pub fn derived<T, E, F>(
+        &self,
+        f: F,
+        error_handler: ErrorHandler<'scope, E>,
+    ) -> EffectInitResult<Derived<'scope, T, E>, E>
     where
         T: 'scope,
-        F: FnMut() -> T + 'scope,
+        E: 'scope,
+        F: FnMut() -> Result<T, E> + 'scope,
     {
-        self.derived_from(RuntimeInputs::new(), f)
+        self.derived_from(RuntimeInputs::new(), f, error_handler)
     }
 
     /// Create a derived value after validating all declared reactive inputs.
     #[doc(hidden)]
-    pub fn derived_from<T, F>(
+    pub fn derived_from<T, E, F>(
         &self,
         inputs: RuntimeInputs,
         f: F,
-    ) -> ReactiveResult<Derived<'scope, T>>
+        error_handler: ErrorHandler<'scope, E>,
+    ) -> EffectInitResult<Derived<'scope, T, E>, E>
     where
         T: 'scope,
-        F: FnMut() -> T + 'scope,
+        E: 'scope,
+        F: FnMut() -> Result<T, E> + 'scope,
     {
         let state = self.state();
-        let raw = runtime::create_derived(&state, inputs, f)?;
+        let raw = runtime::create_derived(&state, inputs, f, error_handler)?;
         let handle = Handle::new(self.storage, raw);
         Ok(Derived {
             handle,

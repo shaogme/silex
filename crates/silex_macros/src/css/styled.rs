@@ -950,9 +950,18 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
         let mut positional = Vec::new();
         for (expression_index, (_, expression)) in rule.expressions.iter().enumerate() {
             let getter = quote::format_ident!("__slx_global_selector_{index}_{expression_index}");
+            let source =
+                quote::format_ident!("__slx_global_selector_source_{index}_{expression_index}");
             getter_decls.push(quote! {
-                let #getter = #__silex::css::IntoCssReactive::into_css_reactive(#expression)
-                    .map(|value| value.to_string());
+                let #source = #__silex::css::IntoCssReactive::into_css_reactive(#expression);
+                let #getter = #source
+                    .map(
+                        |value| value.to_string(),
+                        #source.scope().error_handler(|error| {
+                            panic!("global! 动态选择器计算失败: {error}")
+                        }),
+                    )
+                    .unwrap_or_else(|error| panic!("创建 global! 动态选择器失败: {error}"));
             });
             positional.push(quote! { #getter.clone() });
         }

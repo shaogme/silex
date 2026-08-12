@@ -1,4 +1,4 @@
-use crate::{Rx, Scope, reactivity::Memo, reactivity::ReactiveSource, traits::RxRead};
+use crate::{Rx, Scope, SilexError, reactivity::Memo, reactivity::ReactiveSource, traits::RxRead};
 
 /// Create a typed derived node in an explicit scope.
 pub trait Map: RxRead + Clone {
@@ -28,9 +28,13 @@ where
         F: Fn(&Self::Value) -> U + 'scope,
     {
         let source = scope.promote(self);
-        scope.derived_from(source.runtime_inputs(), move || {
-            source.with(|value| f(value))
-        })
+        scope
+            .derived_from(
+                source.runtime_inputs(),
+                move || Ok(source.with(|value| f(value))),
+                scope.error_handler(|error| panic!("reactive map failed: {error}")),
+            )
+            .unwrap_or_else(|error: SilexError| panic!("创建 reactive map 失败: {error}"))
     }
 
     fn map_fn<'scope, U>(self, scope: Scope<'scope>, f: fn(&Self::Value) -> U) -> Rx<'scope, U>
@@ -40,7 +44,13 @@ where
         U: 'scope,
     {
         let source = scope.promote(self);
-        scope.derived_from(source.runtime_inputs(), move || source.with(f))
+        scope
+            .derived_from(
+                source.runtime_inputs(),
+                move || Ok(source.with(f)),
+                scope.error_handler(|error| panic!("reactive map failed: {error}")),
+            )
+            .unwrap_or_else(|error: SilexError| panic!("创建 reactive map 失败: {error}"))
     }
 }
 

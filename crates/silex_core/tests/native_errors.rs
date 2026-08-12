@@ -150,7 +150,7 @@ fn watch_error_preserves_the_previous_snapshot_for_retry() {
         let fail_next_in_callback = fail_next.clone();
         scope
             .watch_getter_with_options(
-                move || -> SilexResult<i32> { Ok(source.try_get()?) },
+                move || -> SilexResult<i32> { source.try_get() },
                 move |new, old| {
                     if fail_next_in_callback.replace(false) {
                         Err(SilexError::Framework("watch".to_string()))

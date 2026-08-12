@@ -57,7 +57,7 @@ impl std::error::Error for ReactiveError {}
 pub type ReactiveResult<T> = Result<T, ReactiveError>;
 
 /// Distinguishes runtime failures from errors returned by a user callback.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum CallbackInvokeError<E> {
     /// The callback could not be entered because the runtime operation failed.
     Runtime(ReactiveError),
@@ -160,6 +160,7 @@ pub type EffectInitResult<T, E> = Result<T, EffectInitError<E>>;
 #[derive(Clone, Copy)]
 pub(crate) enum ErrorPhase {
     Initial,
+    Read,
     Deferred,
 }
 
@@ -169,7 +170,7 @@ pub(crate) enum ErrorPhase {
 /// inside the closure, while the registration adapter retains a typed slot for
 /// the initial error result.
 pub(crate) struct ErrorEvent<'scope> {
-    dispatch: Option<Box<dyn FnOnce(ErrorPhase) + 'scope>>,
+    dispatch: Option<Box<dyn FnOnce(ErrorPhase) -> Option<AnyValue<'scope>> + 'scope>>,
 }
 
 impl<'scope> ErrorEvent<'scope> {
@@ -183,9 +184,14 @@ impl<'scope> ErrorEvent<'scope> {
             dispatch: Some(Box::new(move |phase| {
                 let error = error.take().expect("callback error event dispatched twice");
                 match phase {
-                    ErrorPhase::Initial => initial_slot.store(error),
+                    ErrorPhase::Initial => {
+                        initial_slot.store(error);
+                        None
+                    }
+                    ErrorPhase::Read => Some(AnyValue::new(error)),
                     ErrorPhase::Deferred => {
                         let _ = handler.handle(error);
+                        None
                     }
                 }
             })),
@@ -198,16 +204,17 @@ impl<'scope> ErrorEvent<'scope> {
             dispatch: Some(Box::new(move |_| {
                 let error = error.take().expect("callback error event dispatched twice");
                 let _ = handler.handle(error);
+                None
             })),
         }
     }
 
-    pub(crate) fn dispatch(mut self, phase: ErrorPhase) {
+    pub(crate) fn dispatch(mut self, phase: ErrorPhase) -> Option<AnyValue<'scope>> {
         let dispatch = self
             .dispatch
             .take()
             .expect("callback error event dispatched twice");
-        dispatch(phase);
+        dispatch(phase)
     }
 }
 

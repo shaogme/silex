@@ -1,8 +1,8 @@
 //! Lifetime-aware reactive traits.
 
 use crate::{
-    Callback, NodeRef, ReactiveError, ReactiveResult, Rx, RxInner, RxValueKind, Scope, SilexError,
-    SilexResult,
+    Callback, CallbackInvokeError, NodeRef, ReactiveError, ReactiveResult, Rx, RxInner,
+    RxValueKind, Scope, SilexError, SilexResult,
     reactivity::{Memo, ReactiveSource, ReadSignal, RwSignal, Signal, StoredValue, WriteSignal},
 };
 use silex_reactivity::notify as raw_notify;
@@ -105,7 +105,7 @@ pub trait RxValue {
 
 /// Common diagnostics and dependency tracking for a reactive value.
 pub trait RxBase: RxValue {
-    fn try_track(&self) -> ReactiveResult<()>;
+    fn try_track(&self) -> SilexResult<()>;
 
     fn track(&self) {
         self.try_track().unwrap_or_else(panic_reactive);
@@ -119,13 +119,13 @@ pub trait RxBase: RxValue {
 /// Closure-based tracked and untracked access. No reference can outlive the
 /// callback supplied to these methods.
 pub trait RxRead: RxBase {
-    fn try_with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> ReactiveResult<U>;
+    fn try_with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> SilexResult<U>;
 
     fn with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> U {
         self.try_with(f).unwrap_or_else(panic_reactive)
     }
 
-    fn try_with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> ReactiveResult<U>;
+    fn try_with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> SilexResult<U>;
 
     fn with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> U {
         self.try_with_untracked(f).unwrap_or_else(panic_reactive)
@@ -133,8 +133,20 @@ pub trait RxRead: RxBase {
 }
 
 #[cold]
-fn panic_reactive<T>(error: ReactiveError) -> T {
+fn panic_reactive<T>(error: SilexError) -> T {
     panic!("reactive operation failed: {error}")
+}
+
+#[cold]
+fn panic_raw_reactive<T>(error: ReactiveError) -> T {
+    panic!("reactive operation failed: {error}")
+}
+
+fn map_read_error(error: CallbackInvokeError<SilexError>) -> SilexError {
+    match error {
+        CallbackInvokeError::Runtime(error) => SilexError::from(error),
+        CallbackInvokeError::User(error) => error,
+    }
 }
 
 impl<'scope, T: 'scope> RxFrom<'scope> for ReadSignal<'scope, T> {
@@ -477,7 +489,7 @@ pub trait RxGet: RxRead
 where
     Self::Value: Sized + Clone,
 {
-    fn try_get_untracked(&self) -> ReactiveResult<Self::Value> {
+    fn try_get_untracked(&self) -> SilexResult<Self::Value> {
         self.try_with_untracked(Clone::clone)
     }
 
@@ -485,7 +497,7 @@ where
         self.try_get_untracked().unwrap_or_else(panic_reactive)
     }
 
-    fn try_get(&self) -> ReactiveResult<Self::Value> {
+    fn try_get(&self) -> SilexResult<Self::Value> {
         self.try_with(Clone::clone)
     }
 
@@ -511,7 +523,7 @@ pub trait RxWrite: RxBase {
     fn rx_try_notify(&self) -> ReactiveResult<()>;
 
     fn update(&self, f: impl FnOnce(&mut Self::Value)) {
-        self.try_update(f).unwrap_or_else(panic_reactive);
+        self.try_update(f).unwrap_or_else(panic_raw_reactive);
     }
 
     fn try_update<U>(&self, f: impl FnOnce(&mut Self::Value) -> U) -> ReactiveResult<U> {
@@ -537,7 +549,8 @@ pub trait RxWrite: RxBase {
     }
 
     fn update_untracked<U>(&self, f: impl FnOnce(&mut Self::Value) -> U) -> U {
-        self.try_update_untracked(f).unwrap_or_else(panic_reactive)
+        self.try_update_untracked(f)
+            .unwrap_or_else(panic_raw_reactive)
     }
 
     fn set_untracked(&self, value: Self::Value)
@@ -552,7 +565,7 @@ pub trait RxWrite: RxBase {
     }
 
     fn notify(&self) {
-        self.try_notify().unwrap_or_else(panic_reactive);
+        self.try_notify().unwrap_or_else(panic_raw_reactive);
     }
 
     fn setter(self, value: Self::Value) -> impl Fn() -> SilexResult<()> + Clone
@@ -578,18 +591,21 @@ impl<'scope, T: 'scope> RxValue for ReadSignal<'scope, T> {
 }
 
 impl<'scope, T: 'scope> RxBase for ReadSignal<'scope, T> {
-    fn try_track(&self) -> ReactiveResult<()> {
-        self.inner.with(|_| ()).map(|_| ())
+    fn try_track(&self) -> SilexResult<()> {
+        self.inner
+            .with(|_| ())
+            .map(|_| ())
+            .map_err(SilexError::from)
     }
 }
 
 impl<'scope, T: 'scope> RxRead for ReadSignal<'scope, T> {
-    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
-        self.inner.with(f)
+    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+        self.inner.with(f).map_err(SilexError::from)
     }
 
-    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
-        self.inner.with_untracked(f)
+    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+        self.inner.with_untracked(f).map_err(SilexError::from)
     }
 }
 
@@ -598,7 +614,7 @@ impl<'scope, T: 'scope> RxValue for WriteSignal<'scope, T> {
 }
 
 impl<'scope, T: 'scope> RxBase for WriteSignal<'scope, T> {
-    fn try_track(&self) -> ReactiveResult<()> {
+    fn try_track(&self) -> SilexResult<()> {
         Ok(())
     }
 }
@@ -618,17 +634,17 @@ impl<'scope, T: 'scope> RxValue for RwSignal<'scope, T> {
 }
 
 impl<'scope, T: 'scope> RxBase for RwSignal<'scope, T> {
-    fn try_track(&self) -> ReactiveResult<()> {
+    fn try_track(&self) -> SilexResult<()> {
         self.read.try_track()
     }
 }
 
 impl<'scope, T: 'scope> RxRead for RwSignal<'scope, T> {
-    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
+    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         self.read.try_with(f)
     }
 
-    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
+    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         self.read.try_with_untracked(f)
     }
 }
@@ -648,17 +664,17 @@ impl<'scope, T: 'scope> RxValue for Signal<'scope, T> {
 }
 
 impl<'scope, T: 'scope> RxBase for Signal<'scope, T> {
-    fn try_track(&self) -> ReactiveResult<()> {
+    fn try_track(&self) -> SilexResult<()> {
         self.rx.try_track()
     }
 }
 
 impl<'scope, T: 'scope> RxRead for Signal<'scope, T> {
-    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
+    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         self.rx.try_with(f)
     }
 
-    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
+    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         self.rx.try_with_untracked(f)
     }
 }
@@ -668,32 +684,32 @@ impl<'scope, T: 'scope> RxValue for Rx<'scope, T, RxValueKind> {
 }
 
 impl<'scope, T: 'scope> RxBase for Rx<'scope, T, RxValueKind> {
-    fn try_track(&self) -> ReactiveResult<()> {
+    fn try_track(&self) -> SilexResult<()> {
         match &self.inner {
-            RxInner::Signal(signal) => signal.with(|_| ()).map(|_| ()),
-            RxInner::Memo(memo) => memo.with(|_| ()).map(|_| ()),
-            RxInner::Derived(derived) => derived.with(|_| ()).map(|_| ()),
-            RxInner::Stored(stored) => stored.with(|_| ()).map(|_| ()),
+            RxInner::Signal(signal) => signal.with(|_| ()).map_err(SilexError::from),
+            RxInner::Memo(memo) => memo.with(|_| ()).map_err(SilexError::from),
+            RxInner::Derived(derived) => derived.with(|_| ()).map_err(map_read_error),
+            RxInner::Stored(stored) => stored.with(|_| ()).map_err(SilexError::from),
         }
     }
 }
 
 impl<'scope, T: 'scope> RxRead for Rx<'scope, T, RxValueKind> {
-    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
+    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         match &self.inner {
-            RxInner::Signal(signal) => signal.with(f),
-            RxInner::Memo(memo) => memo.with(f),
-            RxInner::Derived(derived) => derived.with(f),
-            RxInner::Stored(stored) => stored.with(f),
+            RxInner::Signal(signal) => signal.with(f).map_err(SilexError::from),
+            RxInner::Memo(memo) => memo.with(f).map_err(SilexError::from),
+            RxInner::Derived(derived) => derived.with(f).map_err(map_read_error),
+            RxInner::Stored(stored) => stored.with(f).map_err(SilexError::from),
         }
     }
 
-    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
+    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         match &self.inner {
-            RxInner::Signal(signal) => signal.with_untracked(f),
-            RxInner::Memo(memo) => memo.with_untracked(f),
-            RxInner::Derived(derived) => derived.with_untracked(f),
-            RxInner::Stored(stored) => stored.with(f),
+            RxInner::Signal(signal) => signal.with_untracked(f).map_err(SilexError::from),
+            RxInner::Memo(memo) => memo.with_untracked(f).map_err(SilexError::from),
+            RxInner::Derived(derived) => derived.with_untracked(f).map_err(map_read_error),
+            RxInner::Stored(stored) => stored.with(f).map_err(SilexError::from),
         }
     }
 }
@@ -703,18 +719,18 @@ impl<'scope, T: 'scope> RxValue for StoredValue<'scope, T> {
 }
 
 impl<'scope, T: 'scope> RxBase for StoredValue<'scope, T> {
-    fn try_track(&self) -> ReactiveResult<()> {
+    fn try_track(&self) -> SilexResult<()> {
         Ok(())
     }
 }
 
 impl<'scope, T: 'scope> RxRead for StoredValue<'scope, T> {
-    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
-        self.inner.with(f)
+    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+        self.inner.with(f).map_err(SilexError::from)
     }
 
-    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
-        self.inner.with(f)
+    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+        self.inner.with(f).map_err(SilexError::from)
     }
 }
 
@@ -768,18 +784,21 @@ impl RxValue for &str {
 }
 
 impl<'scope, T: 'scope> RxBase for Memo<'scope, T> {
-    fn try_track(&self) -> ReactiveResult<()> {
-        self.inner.with(|_| ()).map(|_| ())
+    fn try_track(&self) -> SilexResult<()> {
+        self.inner
+            .with(|_| ())
+            .map(|_| ())
+            .map_err(SilexError::from)
     }
 }
 
 impl<'scope, T: 'scope> RxRead for Memo<'scope, T> {
-    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
-        self.inner.with(f)
+    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+        self.inner.with(f).map_err(SilexError::from)
     }
 
-    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> ReactiveResult<U> {
-        self.inner.with_untracked(f)
+    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+        self.inner.with_untracked(f).map_err(SilexError::from)
     }
 }
 
@@ -822,7 +841,7 @@ macro_rules! impl_tuple_rx_traits {
         where
             $($name: RxBase, $name::Value: Sized + RxData),+
         {
-            fn try_track(&self) -> ReactiveResult<()> {
+            fn try_track(&self) -> SilexResult<()> {
                 $(self.$index.try_track()?;)+
                 Ok(())
             }
@@ -832,7 +851,7 @@ macro_rules! impl_tuple_rx_traits {
         where
             $($name: RxRead, $name::Value: Sized + Clone + RxData),+
         {
-            fn try_with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> ReactiveResult<U> {
+            fn try_with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> SilexResult<U> {
                 let value = ($(self.$index.try_with(|value| value.clone())?,)+);
                 Ok(f(&value))
             }
@@ -840,7 +859,7 @@ macro_rules! impl_tuple_rx_traits {
             fn try_with_untracked<U>(
                 &self,
                 f: impl FnOnce(&Self::Value) -> U,
-            ) -> ReactiveResult<U> {
+            ) -> SilexResult<U> {
                 let value = ($(self.$index.try_with_untracked(|value| value.clone())?,)+);
                 Ok(f(&value))
             }

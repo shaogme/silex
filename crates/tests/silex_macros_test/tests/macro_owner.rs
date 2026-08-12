@@ -644,7 +644,10 @@ fn styled_static_descriptor_rejects_foreign_inputs_without_outer_mount_aggregati
     let local_scope = local_root.scope();
     let foreign_scope = foreign_root.scope();
     let (color, _) = foreign_scope.signal(hex("#123456"));
-    let getter = color.into_rx().map(|value| value.to_string());
+    let getter = color
+        .into_rx()
+        .map(|value| value.to_string(), test_handler(local_scope))
+        .expect("CSS getter should initialize");
     let operation = silex::css::StyledVariantBinding::new(
         silex::css::layers::COMPONENTS,
         Vec::new(),

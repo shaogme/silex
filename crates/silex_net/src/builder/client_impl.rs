@@ -269,11 +269,14 @@ macro_rules! impl_net_methods {
                 .try_validate_inputs(&inputs)
                 .map_err(|error| NetError::InvalidConfiguration(error.to_string()))?;
 
+            let error_handler = self.error_handler;
             let request_builder = self.clone();
             let request_source = scope
-                .try_derived_from(request_inputs, move || {
-                    request_builder.resolve_spec_tracked()
-                })
+                .derived_from(
+                    request_inputs,
+                    move || Ok(request_builder.resolve_spec_tracked()),
+                    error_handler,
+                )
                 .map_err(|error| NetError::InvalidConfiguration(error.to_string()))?;
 
             #[cfg(feature = "persist")]
@@ -281,7 +284,6 @@ macro_rules! impl_net_methods {
             #[cfg(not(feature = "persist"))]
             let cache_policy = None;
             let fetch_client = self.prepared();
-            let error_handler = self.error_handler;
             let fetch_error_handler = error_handler;
             let completion_error_handler = erase_error_handler(fetch_error_handler);
             #[cfg(feature = "persist")]
@@ -291,7 +293,11 @@ macro_rules! impl_net_methods {
             let resource_generation_for_fetcher = resource_generation.clone();
             let resource_slot_for_fetcher = resource_slot.clone();
             let combined_source = scope
-                .try_derived_from(inputs, move || (source.get(), request_source.get()))
+                .derived_from(
+                    inputs,
+                    move || Ok((source.try_get()?, request_source.try_get()?)),
+                    error_handler,
+                )
                 .map_err(|error| NetError::InvalidConfiguration(error.to_string()))?;
             let resource = Resource::new(
                 scope,

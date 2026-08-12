@@ -373,7 +373,12 @@ fn map_string_like_rx<'scope, T>(rx: Rx<'scope, T>) -> Rx<'scope, String>
 where
     T: ToString + 'scope,
 {
-    rx.map(|value| value.to_string())
+    rx.map(
+        |value| value.to_string(),
+        rx.scope()
+            .error_handler(|error| panic!("reactive attribute mapping failed: {error}")),
+    )
+    .unwrap_or_else(|error| panic!("创建 reactive attribute mapping 失败: {error}"))
 }
 
 macro_rules! impl_reactive_apply_string_like {
