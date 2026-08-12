@@ -156,7 +156,7 @@ where
                 > {
                 let theme = match &theme {
                     CssSource::Static(theme) => theme.clone(),
-                    CssSource::Reactive(rx) => rx.try_get()?,
+                    CssSource::Reactive(rx) => rx.get()?,
                 };
                 let Some(style) = element_style(&effect_el) else {
                     return Err(SilexError::Dom(
@@ -227,7 +227,7 @@ where
             Box::new(move |previous: Option<&String>| -> SilexResult<String> {
                 let theme = match &source {
                     CssSource::Static(theme) => theme.clone(),
-                    CssSource::Reactive(rx) => rx.try_get()?,
+                    CssSource::Reactive(rx) => rx.get()?,
                 };
                 let css = global_theme_css(&theme)?;
                 if previous.map(String::as_str) != Some(css.as_str())
@@ -314,7 +314,7 @@ where
                 > {
                 let patch = match &patch {
                     CssSource::Static(patch) => patch.clone(),
-                    CssSource::Reactive(rx) => rx.try_get()?,
+                    CssSource::Reactive(rx) => rx.get()?,
                 };
                 let entries = patch.get_patch_entries();
                 let next = {

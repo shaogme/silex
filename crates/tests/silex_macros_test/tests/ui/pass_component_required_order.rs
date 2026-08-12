@@ -19,7 +19,7 @@ fn RequiredOrder<'scope>(
 
 fn main() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    let _ = runtime.child(|scope| {
         let view = RequiredOrder(scope, AnyView::Empty)
             .second(String::from("second"))
             .first(String::from("first"))

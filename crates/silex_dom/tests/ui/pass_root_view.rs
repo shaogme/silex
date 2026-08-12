@@ -9,10 +9,10 @@ where
 
 fn main() {
     let mut runtime = Runtime::new();
-    let root = runtime.run();
+    let root = runtime.run().expect("root should start");
     {
         let scope = root.scope();
-        let owner = ScopedViewOwner::new(scope, scope.error_handler(|_| {}));
+        let owner = ScopedViewOwner::new(scope, scope.error_handler(|_| {}).expect("handler"));
         let _token = owner.token();
 
         let borrowed_view = String::from("borrowed-view");

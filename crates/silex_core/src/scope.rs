@@ -40,25 +40,17 @@ impl Runtime {
         }
     }
 
-    pub fn run(&mut self) -> RootHandle {
-        let handle = self
-            .inner
-            .run()
-            .unwrap_or_else(|error| panic!("启动 reactive runtime 失败: {error}"));
-        RootHandle { inner: handle }
-    }
-
-    pub fn try_run(&mut self) -> SilexResult<RootHandle> {
+    pub fn run(&mut self) -> SilexResult<RootHandle> {
         self.inner
             .run()
             .map(|handle| RootHandle { inner: handle })
             .map_err(SilexError::from)
     }
 
-    pub fn child<R>(&mut self, f: impl for<'scope> FnOnce(Scope<'scope>) -> R) -> R {
+    pub fn child<R>(&mut self, f: impl for<'scope> FnOnce(Scope<'scope>) -> R) -> SilexResult<R> {
         self.inner
             .child(|s| f(Scope { inner: s }))
-            .unwrap_or_else(|error| panic!("创建 child scope 失败: {error}"))
+            .map_err(SilexError::from)
     }
 }
 
@@ -110,21 +102,14 @@ impl<'scope> Eq for Scope<'scope> {}
 
 impl<'scope> Scope<'scope> {
     /// Register an application error destination owned by this scope.
-    pub fn error_handler<F>(self, handler: F) -> ErrorReporter<'scope>
+    pub fn error_handler<F>(self, handler: F) -> SilexResult<ErrorReporter<'scope>>
     where
         F: Fn(SilexError) + 'scope,
     {
-        self.inner
-            .error_handler(handler)
-            .unwrap_or_else(|error| panic!("注册 error handler 失败: {error}"))
+        self.inner.error_handler(handler).map_err(SilexError::from)
     }
 
-    pub fn owned_scope(self) -> OwnedScope<'scope> {
-        self.try_owned_scope()
-            .unwrap_or_else(|error| panic!("创建 owned scope 失败: {error}"))
-    }
-
-    pub fn try_owned_scope(self) -> SilexResult<OwnedScope<'scope>> {
+    pub fn owned_scope(self) -> SilexResult<OwnedScope<'scope>> {
         self.inner
             .owned_scope()
             .map(|inner| OwnedScope { inner })
@@ -135,24 +120,24 @@ impl<'scope> Scope<'scope> {
         self.inner.is_active()
     }
 
-    pub fn signal<T: 'scope>(self, value: T) -> (ReadSignal<'scope, T>, WriteSignal<'scope, T>) {
-        let (read, write) = self
-            .inner
-            .signal(value)
-            .unwrap_or_else(|error| panic!("创建 scoped signal 失败: {error}"));
-        (
+    pub fn signal<T: 'scope>(
+        self,
+        value: T,
+    ) -> SilexResult<(ReadSignal<'scope, T>, WriteSignal<'scope, T>)> {
+        let (read, write) = self.inner.signal(value).map_err(SilexError::from)?;
+        Ok((
             ReadSignal::from_inner(read, self),
             WriteSignal::from_inner(write),
-        )
+        ))
     }
 
-    pub fn rw_signal<T: 'scope>(self, value: T) -> RwSignal<'scope, T> {
-        let (read, write) = self.signal(value);
-        RwSignal::from_parts(read, write)
+    pub fn rw_signal<T: 'scope>(self, value: T) -> SilexResult<RwSignal<'scope, T>> {
+        let (read, write) = self.signal(value)?;
+        Ok(RwSignal::from_parts(read, write))
     }
 
     /// Create a memo without additional framework-declared inputs.
-    pub fn memo<T, F>(self, f: F) -> Memo<'scope, T>
+    pub fn memo<T, F>(self, f: F) -> SilexResult<Memo<'scope, T>>
     where
         T: PartialEq + 'scope,
         F: FnMut(Option<&T>) -> T + 'scope,
@@ -161,17 +146,7 @@ impl<'scope> Scope<'scope> {
     }
 
     #[doc(hidden)]
-    pub fn memo_from<T, F>(self, inputs: RuntimeInputs, f: F) -> Memo<'scope, T>
-    where
-        T: PartialEq + 'scope,
-        F: FnMut(Option<&T>) -> T + 'scope,
-    {
-        self.try_memo_from(inputs, f)
-            .unwrap_or_else(|error| panic!("创建 scoped memo 失败: {error}"))
-    }
-
-    #[doc(hidden)]
-    pub fn try_memo_from<T, F>(self, inputs: RuntimeInputs, f: F) -> SilexResult<Memo<'scope, T>>
+    pub fn memo_from<T, F>(self, inputs: RuntimeInputs, f: F) -> SilexResult<Memo<'scope, T>>
     where
         T: PartialEq + 'scope,
         F: FnMut(Option<&T>) -> T + 'scope,
@@ -303,11 +278,11 @@ impl<'scope> Scope<'scope> {
     {
         let plan = source.into_promotion_plan();
         let inputs = plan.inputs();
-        self.try_validate_inputs(&inputs)?;
-        let source = plan.materialize_unchecked(self);
+        self.validate_inputs(&inputs)?;
+        let source = plan.materialize(self, error_handler)?;
         self.watch_getter_from(
             inputs,
-            move || source.try_get(),
+            move || source.get(),
             callback,
             error_handler,
             options,
@@ -369,13 +344,11 @@ impl<'scope> Scope<'scope> {
             .map(Effect::from_inner)
     }
 
-    pub fn stored<T: 'scope>(self, value: T) -> StoredValue<'scope, T> {
-        StoredValue::from_inner(
-            self.inner
-                .stored(value)
-                .unwrap_or_else(|error| panic!("创建 StoredValue 失败: {error}")),
-            self,
-        )
+    pub fn stored<T: 'scope>(self, value: T) -> SilexResult<StoredValue<'scope, T>> {
+        self.inner
+            .stored(value)
+            .map(|inner| StoredValue::from_inner(inner, self))
+            .map_err(SilexError::from)
     }
 
     pub fn callback<T, F>(self, callback: F) -> SilexResult<Callback<'scope, T>>
@@ -389,49 +362,52 @@ impl<'scope> Scope<'scope> {
             .map_err(SilexError::from)
     }
 
-    pub fn node_ref<T: 'scope>(self) -> NodeRef<'scope, T> {
-        NodeRef::from_inner(
-            self.inner
-                .node_ref()
-                .unwrap_or_else(|error| panic!("创建 NodeRef 失败: {error}")),
-        )
+    pub fn node_ref<T: 'scope>(self) -> SilexResult<NodeRef<'scope, T>> {
+        self.inner
+            .node_ref()
+            .map(NodeRef::from_inner)
+            .map_err(SilexError::from)
     }
 
     /// Create a one-shot completion destination.
     ///
     /// Use [`crate::unwind_safe`] for callbacks that capture interior-mutable
     /// state.
-    pub fn completion_once<T, F>(self, callback: F) -> CompletionOnce<T>
+    pub fn completion_once<T, F>(self, callback: F) -> SilexResult<CompletionOnce<T>>
     where
         T: 'static,
         F: FnMut(T) -> SilexResult<()> + UnwindSafe + 'scope,
     {
         self.inner
             .completion_once(callback)
-            .unwrap_or_else(|error| panic!("创建 completion once 失败: {error}"))
+            .map_err(SilexError::from)
     }
 
     /// Create a reusable completion destination.
     ///
     /// Use [`crate::unwind_safe`] for callbacks that capture interior-mutable
     /// state.
-    pub fn completion_sender<T, F>(self, callback: F) -> CompletionSender<T>
+    pub fn completion_sender<T, F>(self, callback: F) -> SilexResult<CompletionSender<T>>
     where
         T: 'static,
         F: FnMut(T) -> SilexResult<()> + UnwindSafe + 'scope,
     {
         self.inner
             .completion_sender(callback)
-            .unwrap_or_else(|error| panic!("创建 completion sender 失败: {error}"))
+            .map_err(SilexError::from)
     }
 
     /// Spawn a task owned by this persistent scope or the currently running computation.
-    pub fn spawn_scoped<F>(self, future: F, error_handler: ErrorReporter<'scope>) -> TaskHandle
+    pub fn spawn_scoped<F>(
+        self,
+        future: F,
+        error_handler: ErrorReporter<'scope>,
+    ) -> SilexResult<TaskHandle>
     where
         F: Future<Output = ()> + 'static,
     {
         if !self.is_active() {
-            return TaskHandle::inactive();
+            return Ok(TaskHandle::inactive());
         }
         let (task, cancel) = task::start(future);
         self.on_cleanup(
@@ -440,37 +416,28 @@ impl<'scope> Scope<'scope> {
                 Ok::<(), SilexError>(())
             },
             error_handler,
-        )
-        .unwrap_or_else(|error| panic!("注册 scoped task cleanup 失败: {error}"));
-        task
+        )?;
+        Ok(task)
     }
 
     /// Promote a source after validating its complete opaque input set.
     ///
     /// Plan materialization is the only step allowed to register target
     /// nodes, so a foreign input fails before any target mutation.
-    pub fn try_promote<T>(self, value: T) -> SilexResult<Rx<'scope, T::Value>>
+    pub fn promote<T>(
+        self,
+        value: T,
+        error_handler: ErrorReporter<'scope>,
+    ) -> SilexResult<Rx<'scope, T::Value>>
     where
         T: ReactiveSource<'scope>,
         T::Value: Sized + RxData + 'scope,
     {
-        value
-            .into_promotion_plan()
-            .materialize(self)
-            .map_err(SilexError::from)
-    }
-
-    pub fn promote<T>(self, value: T) -> Rx<'scope, T::Value>
-    where
-        T: ReactiveSource<'scope>,
-        T::Value: Sized + RxData + 'scope,
-    {
-        self.try_promote(value)
-            .unwrap_or_else(|error| panic!("reactive promotion failed: {error}"))
+        value.into_promotion_plan().materialize(self, error_handler)
     }
 
     #[doc(hidden)]
-    pub fn try_validate_inputs(self, inputs: &RuntimeInputs) -> SilexResult<()> {
+    pub fn validate_inputs(self, inputs: &RuntimeInputs) -> SilexResult<()> {
         self.inner.validate_inputs(inputs).map_err(SilexError::from)
     }
 
@@ -480,21 +447,15 @@ impl<'scope> Scope<'scope> {
         self.inner.runtime_snapshot()
     }
 
-    pub(crate) fn assert_inputs(self, inputs: &RuntimeInputs) {
-        if let Err(error) = self.try_validate_inputs(inputs) {
-            panic!("reactive input validation failed: {error}");
-        }
+    pub fn constant<T: 'scope>(self, value: T) -> SilexResult<Rx<'scope, T>> {
+        let stored = self.stored(value)?;
+        Ok(Rx::from_stored(stored))
     }
 
-    pub fn constant<T: 'scope>(self, value: T) -> Rx<'scope, T> {
-        let stored = self.stored(value);
-        Rx::from_stored(stored)
-    }
-
-    pub fn child<R>(self, f: impl for<'child> FnOnce(Scope<'child>) -> R) -> R {
+    pub fn child<R>(self, f: impl for<'child> FnOnce(Scope<'child>) -> R) -> SilexResult<R> {
         self.inner
             .child(|scope| f(Scope { inner: scope }))
-            .unwrap_or_else(|error| panic!("创建 child scope 失败: {error}"))
+            .map_err(SilexError::from)
     }
 
     pub fn untrack<R>(self, f: impl FnOnce() -> R) -> R {
@@ -537,12 +498,7 @@ pub struct OwnedScope<'scope> {
 }
 
 impl<'scope> OwnedScope<'scope> {
-    pub fn child(&self) -> Self {
-        self.try_child()
-            .unwrap_or_else(|error| panic!("创建 owned child scope 失败: {error}"))
-    }
-
-    pub fn try_child(&self) -> SilexResult<Self> {
+    pub fn child(&self) -> SilexResult<Self> {
         self.inner
             .child()
             .map(|inner| Self { inner })
@@ -554,7 +510,7 @@ impl<'scope> OwnedScope<'scope> {
     }
 
     #[doc(hidden)]
-    pub fn try_validate_inputs(&self, inputs: &RuntimeInputs) -> SilexResult<()> {
+    pub fn validate_inputs(&self, inputs: &RuntimeInputs) -> SilexResult<()> {
         self.inner.validate_inputs(inputs).map_err(SilexError::from)
     }
 
@@ -693,37 +649,41 @@ impl<'scope> OwnedScope<'scope> {
     ///
     /// Use [`crate::unwind_safe`] for callbacks that capture interior-mutable
     /// state.
-    pub fn completion_once<T, F>(&self, callback: F) -> CompletionOnce<T>
+    pub fn completion_once<T, F>(&self, callback: F) -> SilexResult<CompletionOnce<T>>
     where
         T: 'static,
         F: FnMut(T) -> SilexResult<()> + UnwindSafe + 'scope,
     {
         self.inner
             .completion_once(callback)
-            .unwrap_or_else(|error| panic!("创建 completion once 失败: {error}"))
+            .map_err(SilexError::from)
     }
 
     /// Create a reusable completion destination.
     ///
     /// Use [`crate::unwind_safe`] for callbacks that capture interior-mutable
     /// state.
-    pub fn completion_sender<T, F>(&self, callback: F) -> CompletionSender<T>
+    pub fn completion_sender<T, F>(&self, callback: F) -> SilexResult<CompletionSender<T>>
     where
         T: 'static,
         F: FnMut(T) -> SilexResult<()> + UnwindSafe + 'scope,
     {
         self.inner
             .completion_sender(callback)
-            .unwrap_or_else(|error| panic!("创建 completion sender 失败: {error}"))
+            .map_err(SilexError::from)
     }
 
     /// Spawn a task owned by this persistent scope or the currently running computation.
-    pub fn spawn_scoped<F>(&self, future: F, error_handler: ErrorReporter<'scope>) -> TaskHandle
+    pub fn spawn_scoped<F>(
+        &self,
+        future: F,
+        error_handler: ErrorReporter<'scope>,
+    ) -> SilexResult<TaskHandle>
     where
         F: Future<Output = ()> + 'static,
     {
         if !self.is_active() {
-            return TaskHandle::inactive();
+            return Ok(TaskHandle::inactive());
         }
         let (task, cancel) = task::start(future);
         self.on_cleanup(
@@ -732,9 +692,8 @@ impl<'scope> OwnedScope<'scope> {
                 Ok::<(), SilexError>(())
             },
             error_handler,
-        )
-        .unwrap_or_else(|error| panic!("注册 owned task cleanup 失败: {error}"));
-        task
+        )?;
+        Ok(task)
     }
 
     pub fn dispose(&self) -> Result<(), silex_reactivity::CleanupError> {

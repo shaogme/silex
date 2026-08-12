@@ -1,6 +1,6 @@
+use silex_router::PathTail;
 use silex_router::dom::view::AnyView;
 use silex_router::macros::routes;
-use silex_router::PathTail;
 
 fn main() {
     let routes = routes!(AppRoutes {
@@ -12,7 +12,8 @@ fn main() {
                 AnyView::from(rest.into_inner())
             },
         },
-    });
+    })
+    .expect("route catalog should compile");
 
     let _ = routes.table();
     let _ = routes.users().list();

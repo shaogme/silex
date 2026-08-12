@@ -9,8 +9,15 @@ use silex::reexports::*;
 /// 一个简单的卡片容器
 #[component]
 fn Card<'scope>(children: AnyView<'scope>) -> impl View<'scope> {
-    div(children)
-        .style("border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin: 10px 0; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.05);")
+    Ok(div(children).style(
+        sty()
+            .border("1px solid #ddd")?
+            .border_radius(px(8))?
+            .padding("20px")?
+            .margin("10px 0")?
+            .background("white")?
+            .box_shadow("0 2px 4px rgba(0,0,0,0.05)")?,
+    ))
 }
 
 /// 导航链接样式封装
@@ -20,11 +27,19 @@ fn NavLink<'scope, T: ToRoute + Clone + 'scope>(
     to: T,
     #[chain] children: AnyView<'scope>,
 ) -> impl View<'scope> {
-    Link(ctx, to)
+    Ok(Link(ctx, to)
         .children(children)
-        .style("margin-right: 15px; text-decoration: none; color: #666; padding: 5px 10px; border-radius: 4px; transition: all 0.2s;")
+        .style(
+            sty()
+                .margin_right(px(15))?
+                .text_decoration("none")?
+                .color(hex("#666"))?
+                .padding("5px 10px")?
+                .border_radius(px(4))?
+                .transition("all 0.2s")?,
+        )
         .active_class("nav-active")
-        .build()
+        .build())
 }
 
 // ==========================================
@@ -48,10 +63,10 @@ fn SearchPage<'scope>(
         .query(ctx)
         .string()
         .default(String::new())
-        .build();
+        .build()?;
     let display_term = search_term;
 
-    Card(div!(
+    Ok(Card(div!(
         h2("🔍 Search Query Test"),
         p("Type in the input below. The URL query parameter 'q' will update automatically!"),
         div!(
@@ -59,18 +74,32 @@ fn SearchPage<'scope>(
                 .attr("type", "text")
                 .placeholder("Type search term...")
                 .bind_value(search_term)
-                .style("padding: 8px; border: 1px solid #ccc; border-radius: 4px; flex: 1;"),
+                .style(
+                    sty()
+                        .padding("8px")?
+                        .border("1px solid #ccc")?
+                        .border_radius(px(4))?
+                        .flex("1")?
+                ),
             button("Clear")
                 .on_click(move |_| {
-                    search_term.set(String::new());
+                    search_term.set(String::new())?;
                     Ok(())
                 })
-                .style("padding: 8px 16px; background: #f44336; color: white; border: none; border-radius: 4px; cursor: pointer;"),
+                .style(
+                    sty()
+                        .padding("8px 16px")?
+                        .background("#f44336")?
+                        .color(ColorName::White)?
+                        .border("none")?
+                        .border_radius(px(4))?
+                        .cursor("pointer")?
+                ),
         )
-        .style("display: flex; gap: 10px; margin-bottom: 20px;"),
+        .style(sty().display("flex")?.gap(px(10))?.margin_bottom(px(20))?),
         div!(
             strong("Current Query Parameter (q): "),
-            span(rx!(scope; {
+            span(rx!(scope; error_handler; {
                 let value = $display_term.clone();
                 if value.is_empty() {
                     "None".to_string()
@@ -78,10 +107,10 @@ fn SearchPage<'scope>(
                     value
                 }
             }))
-            .style("color: #e91e63; font-family: monospace;"),
+            .style(sty().color(hex("#e91e63"))?.font_family("monospace")?),
         ),
     ))
-    .build()
+    .build())
 }
 
 // --- 用户模块 (嵌套路由中的共享布局) ---
@@ -96,25 +125,30 @@ fn UsersLayout<'scope>(
     ctx: RouterContext<'scope>,
     #[chain] children: AnyView<'scope>,
 ) -> impl View<'scope> {
-    div!(
+    Ok(div!(
         h2("👥 Users Module"),
         div!(
             NavLink(ctx, "/users").children("User List").build(),
-            span("|").style("margin: 0 10px; color: #ccc;"),
+            span("|").style(sty().margin("0 10px")?.color(hex("#ccc"))?),
             NavLink(ctx, "/users/new")
                 .children("Create User (Static)")
                 .build(),
         )
-        .style("border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 20px;"),
+        .style(
+            sty()
+                .border_bottom("2px solid #eee")?
+                .padding_bottom(px(10))?
+                .margin_bottom(px(20))?
+        ),
         children,
-    )
+    ))
 }
 
-fn user_detail_path(id: u32) -> RoutePath {
+fn user_detail_path(id: u32) -> SilexResult<RoutePath> {
     let encoded = <u32 as PathParam>::encode_segment(&id)
-        .unwrap_or_else(|error| panic!("failed to encode user id: {error}"));
+        .map_err(|error| SilexError::Framework(error.to_string()))?;
     RoutePath::new(format!("/users/{encoded}"))
-        .unwrap_or_else(|error| panic!("failed to build user route: {error}"))
+        .map_err(|error| SilexError::Framework(error.to_string()))
 }
 
 #[component]
@@ -126,21 +160,23 @@ fn UserList<'scope>(ctx: RouterContext<'scope>) -> impl View<'scope> {
         (42, "Silex Expert"),
     ];
 
-    div!(
+    let user_links = users
+        .into_iter()
+        .map(|(id, name)| {
+            let path = user_detail_path(id)?;
+            Ok(li(Link(ctx, path)
+                .children(format!("👤 {} (ID: {})", name, id))
+                .style(sty().text_decoration("none")?.color(hex("#2196f3"))?)
+                .active_class("active-user")
+                .build())
+            .style(sty().margin("5px 0")?))
+        })
+        .collect::<SilexResult<Vec<_>>>()?;
+
+    Ok(div!(
         h3("Select a User:"),
-        ul(users
-            .into_iter()
-            .map(|(id, name)| {
-                li(Link(ctx, user_detail_path(id))
-                    .children(format!("👤 {} (ID: {})", name, id))
-                    .style("text-decoration: none; color: #2196f3;")
-                    .active_class("active-user")
-                    .build())
-                .style("margin: 5px 0;")
-            })
-            .collect::<Vec<_>>())
-        .style("list-style: none; padding: 0;"),
-    )
+        ul(user_links).style(sty().list_style("none")?.padding("0")?),
+    ))
 }
 
 #[component]
@@ -148,42 +184,68 @@ fn UserDetail<'scope>(ctx: RouterContext<'scope>, id: u32) -> impl View<'scope> 
     let navigator = ctx.navigator;
     let path = ctx.path;
 
-    Card(div!(
+    Ok(Card(div!(
         div!(
             h3(format!("User Profile: #{}", id)),
             button("Go Back")
                 .on_click(move |_| {
-                    navigator.push("/users");
+                    navigator.push("/users")?;
                     Ok(())
                 })
-                .style("font-size: 0.8rem; padding: 5px 10px; cursor: pointer;"),
+                .style(
+                    sty()
+                        .font_size(rem(0.8))?
+                        .padding("5px 10px")?
+                        .cursor("pointer")?
+                ),
         )
-        .style("display: flex; justify-content: space-between; align-items: center;"),
-        hr().style("border: 0; border-top: 1px solid #eee; margin: 15px 0;"),
+        .style(
+            sty()
+                .display("flex")?
+                .justify_content("space-between")?
+                .align_items("center")?
+        ),
+        hr().style(
+            sty()
+                .border("0")?
+                .border_top("1px solid #eee")?
+                .margin("15px 0")?
+        ),
         p!(
             strong("Current Path: "),
-            span(path).style("font-family: monospace;"),
+            span(path).style(sty().font_family("monospace")?),
         ),
         div!(p(format!(
             "This component is rendered with strict prop id: {}",
             id
         )))
-        .style("background: #f5f5f5; padding: 10px; border-radius: 4px; margin-top: 10px;"),
+        .style(
+            sty()
+                .background("#f5f5f5")?
+                .padding("10px")?
+                .border_radius(px(4))?
+                .margin_top(px(10))?
+        ),
     ))
-    .build()
+    .build())
 }
 
 #[component]
 fn NotFound<'scope>(ctx: RouterContext<'scope>) -> impl View<'scope> {
-    div!(
+    Ok(div!(
         h1("404"),
         p("Page not found."),
         Link(ctx, "/")
             .children("Return Home")
-            .style("color: #2196f3; text-decoration: underline;")
+            .style(sty().color(hex("#2196f3"))?.text_decoration("underline")?)
             .build(),
     )
-    .style("text-align: center; padding: 50px; color: #d32f2f;")
+    .style(
+        sty()
+            .text_align(TextAlignKeyword::Center)?
+            .padding("50px")?
+            .color(hex("#d32f2f"))?,
+    ))
 }
 
 // --- 主布局 ---
@@ -196,9 +258,14 @@ fn MainLayout<'scope>(
     search_path: RoutePath,
     #[chain] children: AnyView<'scope>,
 ) -> impl View<'scope> {
-    div!(
+    Ok(div!(
         header!(
-            h1("🚀 Silex Router").style("margin: 0; font-size: 1.5rem; color: #2c3e50;"),
+            h1("🚀 Silex Router").style(
+                sty()
+                    .margin("0")?
+                    .font_size(rem(1.5))?
+                    .color(hex("#2c3e50"))?
+            ),
             nav!(
                 NavLink(ctx, home_path).children("Home").build(),
                 NavLink(ctx, users_path).children("Users").build(),
@@ -206,13 +273,32 @@ fn MainLayout<'scope>(
                 NavLink(ctx, "/nowhere").children("404 Test").build(),
             )
         )
-        .style("display: flex; align-items: center; justify-content: space-between; padding: 20px 0; border-bottom: 1px solid #eee;"),
-        ::silex::html::main(children).style("padding: 20px 0;"),
+        .style(
+            sty()
+                .display("flex")?
+                .align_items("center")?
+                .justify_content("space-between")?
+                .padding("20px 0")?
+                .border_bottom("1px solid #eee")?
+        ),
+        ::silex::html::main(children).style(sty().padding("20px 0")?),
         footer!(p("Built with Silex & Rust")).style(
-            "margin-top: 50px; padding-top: 20px; border-top: 1px solid #eee; text-align: center; color: #999; font-size: 0.8rem;",
+            sty()
+                .margin_top(px(50))?
+                .padding_top(px(20))?
+                .border_top("1px solid #eee")?
+                .text_align(TextAlignKeyword::Center)?
+                .color(hex("#999"))?
+                .font_size(rem(0.8))?
         ),
     )
-    .style("font-family: sans-serif; max-width: 800px; margin: 0 auto; color: #333;")
+    .style(
+        sty()
+            .font_family("sans-serif")?
+            .max_width(px(800))?
+            .margin("0 auto")?
+            .color(hex("#333"))?,
+    ))
 }
 
 // ==========================================
@@ -226,23 +312,33 @@ fn App<'scope>(scope: Scope<'scope>, error_handler: ErrorReporter<'scope>) -> im
         create "/new" => move |_ctx| CreateUser().build(),
         detail "/:id" => move |ctx, id: u32| UserDetail(ctx, id).build(),
     })
-    .at("/users");
+    .map_err(|error| SilexError::Framework(error.to_string()))?
+    .at("/users")
+    .map_err(|error| SilexError::Framework(error.to_string()))?;
     let routes = routes!(AppRoutes {
         home "/" => move |_ctx| Home().build(),
         search "/search" => move |ctx| SearchPage(ctx).error_handler(error_handler).build(),
         not_found "/*" => move |ctx| NotFound(ctx).build(),
-    });
+    })
+    .map_err(|error| SilexError::Framework(error.to_string()))?;
 
-    let home_path = routes.home();
-    let users_path = users.list();
-    let search_path = routes.search();
+    let home_path = routes
+        .home()
+        .map_err(|error| SilexError::Framework(error.to_string()))?;
+    let users_path = users
+        .list()
+        .map_err(|error| SilexError::Framework(error.to_string()))?;
+    let search_path = routes
+        .search()
+        .map_err(|error| SilexError::Framework(error.to_string()))?;
     let table = routes
         .table()
         .nest(users.prefix(), users.table(), move |ctx, outlet| {
             UsersLayout(ctx).children(outlet).build()
-        });
+        })
+        .map_err(|error| SilexError::Framework(error.to_string()))?;
 
-    Router(scope)
+    Ok(Router(scope, error_handler)
         .routes(table)
         .layout(move |ctx, outlet| {
             MainLayout(
@@ -254,7 +350,7 @@ fn App<'scope>(scope: Scope<'scope>, error_handler: ErrorReporter<'scope>) -> im
             .children(outlet)
             .build()
         })
-        .build()
+        .build())
 }
 
 /// Mount the Router demo into the conventional `#app` target.
@@ -287,6 +383,6 @@ fn mount_router_view<'scope>(context: &MountContext<'scope>) -> SilexResult<()> 
     let scope = context.scope();
     let error_handler = scope.error_handler(|error: SilexError| {
         web_sys::console::error_1(&error.to_string().into());
-    });
+    })?;
     context.mount(App(scope, error_handler).build(), error_handler)
 }

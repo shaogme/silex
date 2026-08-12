@@ -1,8 +1,8 @@
 error[E0061]: this method takes 2 arguments but 1 argument was supplied
- --> tests/ui/fail_missing_owner_apply.rs:4:40
+ --> tests/ui/fail_missing_owner_apply.rs:7:10
   |
-4 |     Style::new().raw("--color", "red").apply_to_element(element);
-  |                                        ^^^^^^^^^^^^^^^^--------- argument #2 of type `&silex_dom::view::ViewOwnerToken<'_>` is missing
+7 |         .apply_to_element(element);
+  |          ^^^^^^^^^^^^^^^^--------- argument #2 of type `&silex_dom::view::ViewOwnerToken<'_>` is missing
   |
 note: method defined here
  --> src/builder.rs
@@ -11,5 +11,5 @@ note: method defined here
   |            ^^^^^^^^^^^^^^^^
 help: provide the argument
   |
-4 |     Style::new().raw("--color", "red").apply_to_element(element, /* &silex_dom::view::ViewOwnerToken<'_> */);
-  |                                                                ++++++++++++++++++++++++++++++++++++++++++++
+7 |         .apply_to_element(element, /* &silex_dom::view::ViewOwnerToken<'_> */);
+  |                                  ++++++++++++++++++++++++++++++++++++++++++++

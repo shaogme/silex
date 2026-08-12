@@ -5,7 +5,7 @@ use crate::{
 #[cfg(feature = "browser")]
 use silex_core::Effect;
 use silex_core::{
-    ErrorReporter, Memo, Scope, SilexError, SilexResult,
+    ErrorReporter, Rx, Scope, SilexError, SilexResult,
     reactivity::{
         ReadSignal, Resource, ResourceState, RwSignal, StoredValue, SuspenseContext,
         runtime_inputs_of,
@@ -95,7 +95,7 @@ impl CatalogRegistry {
 #[derive(Clone, Copy)]
 pub struct I18nStore<'scope> {
     scope: Scope<'scope>,
-    error_handler: StoredValue<'scope, ErrorReporter<'scope>>,
+    error_handler: ErrorReporter<'scope>,
     locale: RwSignal<'scope, Locale>,
     fallback_locale: RwSignal<'scope, Locale>,
     catalog_cache: StoredValue<'scope, CatalogRegistry>,
@@ -214,25 +214,25 @@ impl<'scope> I18nBuilder<'scope> {
         #[cfg(feature = "persist")]
         let binding_locale = binding_inputs
             .as_ref()
-            .map(|(binding, _)| binding.get_untracked());
+            .map(|(binding, _)| binding.get_untracked())
+            .transpose()?;
         #[cfg(not(feature = "persist"))]
         let binding_locale: Option<Locale> = None;
 
         let locale = binding_locale
             .or(locale)
             .or(catalog_locale)
-            .unwrap_or_else(|| Locale::new("en"));
+            .unwrap_or(Locale::new("en")?);
         let fallback_locale = fallback_locale.unwrap_or_else(|| locale.clone());
-        let catalog_cache = scope.stored(registry);
-        let error_handler = scope.stored(error_handler);
+        let catalog_cache = scope.stored(registry)?;
 
         let store = I18nStore {
             scope,
             error_handler,
-            locale: scope.rw_signal(locale),
-            fallback_locale: scope.rw_signal(fallback_locale),
+            locale: scope.rw_signal(locale)?,
+            fallback_locale: scope.rw_signal(fallback_locale)?,
             catalog_cache,
-            catalog_revision: scope.rw_signal(0),
+            catalog_revision: scope.rw_signal(0)?,
             missing_key,
             missing_argument,
         };
@@ -246,9 +246,9 @@ impl<'scope> I18nBuilder<'scope> {
                 .effect_from(
                     binding_inputs,
                     move || -> SilexResult<()> {
-                        let locale = binding.signal().try_get()?;
-                        if store_for_binding.locale.get_untracked() != locale {
-                            store_for_binding.locale.set(locale);
+                        let locale = binding.signal().get()?;
+                        if store_for_binding.locale.get_untracked()? != locale {
+                            store_for_binding.locale.set(locale)?;
                         }
                         Ok(())
                     },
@@ -261,9 +261,9 @@ impl<'scope> I18nBuilder<'scope> {
                 .effect_from(
                     locale_inputs,
                     move || -> SilexResult<()> {
-                        let locale = store_for_locale.locale.try_get()?;
-                        if binding.get_untracked() != locale {
-                            binding.set(locale);
+                        let locale = store_for_locale.locale.get()?;
+                        if binding.get_untracked().map_err(SilexError::from)? != locale {
+                            binding.set(locale).map_err(SilexError::from)?;
                         }
                         Ok(())
                     },
@@ -278,11 +278,11 @@ impl<'scope> I18nBuilder<'scope> {
 
 impl<'scope> I18nStore<'scope> {
     pub(crate) fn error_handler(&self) -> ErrorReporter<'scope> {
-        self.error_handler.with(Clone::clone)
+        self.error_handler
     }
 
-    pub fn set_locale(&self, locale: Locale) {
-        self.locale.set(locale);
+    pub fn set_locale(&self, locale: Locale) -> SilexResult<()> {
+        self.locale.set(locale).map_err(SilexError::from)
     }
 
     #[cfg(feature = "browser")]
@@ -298,16 +298,16 @@ impl<'scope> I18nStore<'scope> {
         self.fallback_locale.read_signal()
     }
 
-    pub fn set_fallback_locale(&self, locale: Locale) {
-        self.fallback_locale.set(locale);
+    pub fn set_fallback_locale(&self, locale: Locale) -> SilexResult<()> {
+        self.fallback_locale.set(locale).map_err(SilexError::from)
     }
 
-    pub fn has_catalog(&self, locale: &Locale) -> bool {
+    pub fn has_catalog(&self, locale: &Locale) -> SilexResult<bool> {
         self.catalog_cache
             .with(|registry| registry.has_catalog(locale))
     }
 
-    pub fn insert_catalog(&self, catalog: Catalog) {
+    pub fn insert_catalog(&self, catalog: Catalog) -> SilexResult<()> {
         let changed = self.catalog_cache.update(|registry| {
             let locale = catalog.locale().clone();
             if registry.catalogs.get(&locale) == Some(&catalog) {
@@ -315,41 +315,28 @@ impl<'scope> I18nStore<'scope> {
             }
             registry.catalogs.insert(locale, catalog);
             true
-        });
+        })?;
         if changed {
             self.catalog_revision.update(|revision| {
                 *revision = revision.wrapping_add(1);
-            });
+            })?;
         }
+        Ok(())
     }
 
-    pub fn remove_catalog(&self, locale: &Locale) {
+    pub fn remove_catalog(&self, locale: &Locale) -> SilexResult<()> {
         let removed = self
             .catalog_cache
-            .update(|registry| registry.catalogs.remove(locale).is_some());
+            .update(|registry| registry.catalogs.remove(locale).is_some())?;
         if removed {
             self.catalog_revision.update(|revision| {
                 *revision = revision.wrapping_add(1);
-            });
+            })?;
         }
+        Ok(())
     }
 
     pub fn catalog_resource<F, Fut, E>(
-        &self,
-        loader: F,
-        suspense_ctx: impl Into<Option<SuspenseContext<'scope>>>,
-    ) -> CatalogResource<'scope, E>
-    where
-        F: Fn(Locale) -> Fut + 'static,
-        Fut: Future<Output = Result<Catalog, E>> + 'static,
-        E: Clone + Debug + 'static,
-    {
-        self.try_catalog_resource(loader, suspense_ctx)
-            .unwrap_or_else(|error| panic!("创建 catalog resource 失败: {error}"))
-    }
-
-    #[doc(hidden)]
-    pub fn try_catalog_resource<F, Fut, E>(
         &self,
         loader: F,
         suspense_ctx: impl Into<Option<SuspenseContext<'scope>>>,
@@ -372,10 +359,12 @@ impl<'scope> I18nStore<'scope> {
             self.scope,
             self.locale(),
             move |locale: Locale| {
-                let cached = cache.with(|registry| registry.catalog(&locale));
+                let cached = cache
+                    .with(|registry| registry.catalog(&locale))
+                    .map_err(|error| CatalogLoadError::Runtime(error.to_string()));
                 let loader = loader.clone();
                 async move {
-                    if let Some(catalog) = cached {
+                    if let Some(catalog) = cached? {
                         return Ok(catalog);
                     }
 
@@ -393,7 +382,7 @@ impl<'scope> I18nStore<'scope> {
             },
             suspense,
             self.error_handler(),
-        );
+        )?;
 
         let state = resource.state;
         let state_inputs = runtime_inputs_of(state);
@@ -402,8 +391,8 @@ impl<'scope> I18nStore<'scope> {
             .effect_from(
                 state_inputs,
                 move || -> SilexResult<()> {
-                    if let ResourceState::Ready(catalog) = state.try_get()? {
-                        store.insert_catalog(catalog);
+                    if let ResourceState::Ready(catalog) = state.get()? {
+                        store.insert_catalog(catalog)?;
                     }
                     Ok(())
                 },
@@ -420,18 +409,18 @@ impl<'scope> I18nStore<'scope> {
     }
 
     #[doc(hidden)]
-    pub fn __memo<F>(self, mut f: F) -> Memo<'scope, String>
+    pub fn __memo<F>(self, f: F) -> SilexResult<Rx<'scope, String>>
     where
-        F: FnMut() -> String + 'scope,
+        F: FnMut() -> SilexResult<String> + 'scope,
     {
-        self.scope.memo(move |_| f())
+        self.scope.derived(f, self.error_handler())
     }
 
-    pub fn translate_now(&self, key: &str, arguments: &[Argument]) -> String {
+    pub fn translate_now(&self, key: &str, arguments: &[Argument]) -> SilexResult<String> {
         self.translate_now_with_count_name(key, arguments, None)
     }
 
-    pub fn translate_variant_now<V>(&self, variant: &V) -> String
+    pub fn translate_variant_now<V>(&self, variant: &V) -> SilexResult<String>
     where
         V: I18nVariant,
     {
@@ -444,10 +433,10 @@ impl<'scope> I18nStore<'scope> {
         key: &str,
         arguments: &[Argument],
         count_name: Option<&str>,
-    ) -> String {
-        let locale = self.locale.get();
-        let fallback_locale = self.fallback_locale.get();
-        let _revision = self.catalog_revision.get();
+    ) -> SilexResult<String> {
+        let locale = self.locale.get()?;
+        let fallback_locale = self.fallback_locale.get()?;
+        let _revision = self.catalog_revision.get()?;
 
         let translation = self.catalog_cache.with(|registry| {
             let mut visited = HashSet::new();
@@ -468,31 +457,21 @@ impl<'scope> I18nStore<'scope> {
                 }
             }
             None
-        });
+        })?;
 
-        translation.unwrap_or_else(|| match self.missing_key {
+        Ok(translation.unwrap_or_else(|| match self.missing_key {
             MissingKeyPolicy::ReturnKey => key.to_string(),
             MissingKeyPolicy::Empty => String::new(),
-        })
+        }))
     }
 }
 
 fn validate_inputs(scope: Scope<'_>, inputs: &RuntimeInputs) -> Result<(), I18nError> {
-    scope
-        .try_validate_inputs(inputs)
-        .map_err(|error| match error {
-            SilexError::Reactivity(error) => I18nError::from(error),
-            error => {
-                unreachable!("scope input validation returned a non-reactivity error: {error}")
-            }
-        })
+    scope.validate_inputs(inputs).map_err(I18nError::from)
 }
 
 fn map_silex_error(error: SilexError) -> I18nError {
-    match error {
-        SilexError::Reactivity(error) => I18nError::from(error),
-        error => I18nError::InvalidCatalog(error.to_string()),
-    }
+    I18nError::from(error)
 }
 
 fn render_message(

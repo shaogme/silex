@@ -21,7 +21,7 @@ where
 {
     let inputs = rx.runtime_inputs();
     owner.validate_inputs(&inputs)?;
-    let scope = Rc::new(owner.try_owned_scope()?);
+    let scope = Rc::new(owner.owned_scope()?);
     let local_owner = OwnedViewOwner::new(scope.clone(), owner.token().error_handler());
     let parent = parent.clone();
     let node: Node = crate::document().create_text_node("").into();
@@ -48,7 +48,7 @@ where
     if let Err(error) = local_owner.effect_from(
         inputs,
         Box::new(move || -> SilexResult<()> {
-            let value = rx.try_with(|value| value.to_string())?;
+            let value = rx.with(|value| value.to_string())?;
             node_for_effect.set_node_value(Some(&value));
             Ok(())
         }),
@@ -93,8 +93,7 @@ where
                 attrs,
                 owner: token,
             } = args;
-            rx.try_with(|view| view.mount(&token, &parent, attrs))
-                .and_then(|result| result)
+            rx.with(|view| view.mount(&token, &parent, attrs))?
         }),
     )
 }

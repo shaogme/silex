@@ -26,7 +26,9 @@ use web_sys::{Element as WebElement, Event, MouseEvent, Node};
 wasm_bindgen_test_configure!(run_in_browser);
 
 fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
-    scope.error_handler(|_| {})
+    scope
+        .error_handler(|_| {})
+        .expect("error handler should register")
 }
 
 #[wasm_bindgen(inline_js = r#"
@@ -315,34 +317,40 @@ fn fallible_dom_primitives_and_attribute_mount_failures_are_observable() {
     assert!(mount_text_node(&text_parent, "rejected").is_err());
 
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let owner = ScopedViewOwner::new(scope, test_handler(scope));
-        let token = owner.token();
-        let element = document()
-            .create_element("div")
-            .expect("test element can be created");
-        let invalid_class = AttrOp::static_class("invalid token".into());
-        assert!(invalid_class.apply(&element, &token).is_err());
-    });
+    runtime
+        .child(|scope| {
+            let owner = ScopedViewOwner::new(scope, test_handler(scope));
+            let token = owner.token();
+            let element = document()
+                .create_element("div")
+                .expect("test element can be created");
+            let invalid_class = AttrOp::static_class("invalid token".into());
+            assert!(invalid_class.apply(&element, &token).is_err());
+        })
+        .expect("child scope should initialize");
 
     let reported = Rc::new(Cell::new(false));
     let reported_for_owner = reported.clone();
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let owner = ScopedViewOwner::new(
-            scope,
-            scope.error_handler(move |error| {
-                reported_for_owner.set(matches!(error, SilexError::Framework(_)));
-            }),
-        );
-        let view = Element::new("div").apply(PendingAttribute::new_scoped(|_, _| {
-            Err(SilexError::Framework("attribute rejected".to_string()))
-        }));
-        assert!(matches!(
-            view.mount_owned(&owner, &host.clone().into(), Vec::new()),
-            Err(SilexError::Framework(message)) if message == "attribute rejected"
-        ));
-    });
+    runtime
+        .child(|scope| {
+            let owner = ScopedViewOwner::new(
+                scope,
+                scope
+                    .error_handler(move |error| {
+                        reported_for_owner.set(matches!(error, SilexError::Framework(_)));
+                    })
+                    .expect("error handler should register"),
+            );
+            let view = Element::new("div").apply(PendingAttribute::new_scoped(|_, _| {
+                Err(SilexError::Framework("attribute rejected".to_string()))
+            }));
+            assert!(matches!(
+                view.mount_owned(&owner, &host.clone().into(), Vec::new()),
+                Err(SilexError::Framework(message)) if message == "attribute rejected"
+            ));
+        })
+        .expect("child scope should initialize");
     assert!(!reported.get());
     assert!(host.first_child().is_none());
     remove_mount_point(&host);
@@ -357,7 +365,7 @@ fn element_listener_removes_physically_and_drops_on_root_dispose() {
     let drops = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
 
-    let root = runtime.run();
+    let root = runtime.run().expect("root should start");
     {
         let scope = root.scope();
         let owner = ScopedViewOwner::new(scope, test_handler(scope));
@@ -367,7 +375,9 @@ fn element_listener_removes_physically_and_drops_on_root_dispose() {
         let element_node: Node = element.dom_element.clone().into();
         *element_slot.borrow_mut() = Some(element.dom_element.clone());
 
-        let node_ref = scope.node_ref::<WebElement>();
+        let node_ref = scope
+            .node_ref::<WebElement>()
+            .expect("node ref should initialize");
         let calls_for_handler = calls.clone();
         let probe = DropProbe::new(drops.clone());
         bind_event(
@@ -382,11 +392,18 @@ fn element_listener_removes_physically_and_drops_on_root_dispose() {
         )
         .expect("element listener can be registered");
 
-        node_ref.load(element.dom_element.clone());
+        node_ref
+            .load(element.dom_element.clone())
+            .expect("node ref should load");
         element
             .mount_owned(&owner, &host.clone().into(), Vec::new())
             .expect("element should mount");
-        assert!(node_ref.get().is_some());
+        assert!(
+            node_ref
+                .get()
+                .expect("node ref should be readable")
+                .is_some()
+        );
         dispatch(&element_node, MouseEvent::new("click").unwrap().into());
         assert_eq!(calls.get(), 1);
     }
@@ -414,7 +431,7 @@ fn element_listener_panic_closes_destination_before_owner_cleanup() {
     let calls = Rc::new(Cell::new(0));
     let drops = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
-    let root = runtime.run();
+    let root = runtime.run().expect("root should start");
     let element_node: Node;
 
     {
@@ -440,8 +457,11 @@ fn element_listener_panic_closes_destination_before_owner_cleanup() {
         .expect("element listener should register");
     }
 
-    let first_dispatch = element_node.dispatch_event(&MouseEvent::new("click").unwrap());
-    assert!(first_dispatch.is_err());
+    // DOM dispatch reports whether the event was canceled; exceptions thrown by
+    // listeners are reported separately and do not turn dispatch into an error.
+    element_node
+        .dispatch_event(&MouseEvent::new("click").unwrap())
+        .expect("event dispatch should succeed");
     assert_eq!(calls.get(), 1);
     assert_eq!(drops.get(), 1);
 
@@ -462,14 +482,14 @@ fn render_rerun_replaces_old_window_listener() {
     let calls = Rc::new(RefCell::new(Vec::<i32>::new()));
     let mut runtime = Runtime::new();
 
-    let root = runtime.run();
+    let root = runtime.run().expect("root should start");
     {
         let scope = root.scope();
-        let (value, set_value) = scope.signal(0i32);
+        let (value, set_value) = scope.signal(0i32).expect("signal should initialize");
         let owner = ScopedViewOwner::new(scope, test_handler(scope));
         let calls_for_view = calls.clone();
         let view = move || WindowResourceView {
-            id: value.get(),
+            id: value.get().expect("signal should be readable"),
             calls: calls_for_view.clone(),
         };
         view.mount_owned(&owner, &host_node, Vec::new())
@@ -479,7 +499,7 @@ fn render_rerun_replaces_old_window_listener() {
         window
             .dispatch_event(&Event::new("silex-window-resource").unwrap())
             .expect("window event dispatch should succeed");
-        set_value.set(1);
+        set_value.set(1).expect("signal should be writable");
         assert_eq!(spy.count("event_add:silex-window-resource"), 2);
         assert_eq!(spy.count("event_remove:silex-window-resource"), 1);
         window
@@ -499,19 +519,21 @@ fn lexical_owner_disposes_window_listener_on_scope_exit() {
     let calls = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
 
-    runtime.child(|scope| {
-        let owner = ScopedViewOwner::new(scope, test_handler(scope));
-        let calls_for_handler = calls.clone();
-        window_event_listener_untyped(&owner.token(), "silex-lexical-resource", move |_| {
-            calls_for_handler.set(calls_for_handler.get() + 1);
-            Ok(())
+    runtime
+        .child(|scope| {
+            let owner = ScopedViewOwner::new(scope, test_handler(scope));
+            let calls_for_handler = calls.clone();
+            window_event_listener_untyped(&owner.token(), "silex-lexical-resource", move |_| {
+                calls_for_handler.set(calls_for_handler.get() + 1);
+                Ok(())
+            })
+            .expect("lexical window listener should register");
+            let window = web_sys::window().expect("window is available");
+            window
+                .dispatch_event(&Event::new("silex-lexical-resource").unwrap())
+                .expect("window event dispatch should succeed");
         })
-        .expect("lexical window listener should register");
-        let window = web_sys::window().expect("window is available");
-        window
-            .dispatch_event(&Event::new("silex-lexical-resource").unwrap())
-            .expect("window event dispatch should succeed");
-    });
+        .expect("child scope should initialize");
 
     let window = web_sys::window().expect("window is available");
     window
@@ -530,35 +552,41 @@ fn keyed_reorder_keeps_window_resources_until_row_delete() {
     let calls = Rc::new(RefCell::new(Vec::<i32>::new()));
     let mut runtime = Runtime::new();
 
-    let root = runtime.run();
+    let root = runtime.run().expect("root should start");
     {
         let scope = root.scope();
-        scope.child(|child| {
-            let (items, set_items) = child.signal(vec![1i32, 2]);
-            let calls_for_factory = calls.clone();
-            let list = KeyedLoopView {
-                each: items,
-                key_fn: Rc::new(|item: &i32| *item),
-                view_fn: Rc::new(move |item: i32, _, updater| {
-                    assert!(updater.bind(|_, _| {}));
-                    AnyView::new(WindowResourceView {
-                        id: item,
-                        calls: calls_for_factory.clone(),
-                    })
-                }),
-                error_handler: None,
-                _marker: PhantomData,
-            };
-            let owner = ScopedViewOwner::new(child, test_handler(child));
-            list.mount_owned(&owner, &host_node, Vec::new())
-                .expect("keyed list should mount");
-            assert_eq!(spy.count("event_add:silex-window-resource"), 2);
+        scope
+            .child(|child| {
+                let (items, set_items) = child
+                    .signal(vec![1i32, 2])
+                    .expect("signal should initialize");
+                let calls_for_factory = calls.clone();
+                let list = KeyedLoopView {
+                    each: items,
+                    key_fn: Rc::new(|item: &i32| *item),
+                    view_fn: Rc::new(move |item: i32, _, updater| {
+                        assert!(updater.bind(|_, _| {}));
+                        AnyView::new(WindowResourceView {
+                            id: item,
+                            calls: calls_for_factory.clone(),
+                        })
+                    }),
+                    error_handler: None,
+                    _marker: PhantomData,
+                };
+                let owner = ScopedViewOwner::new(child, test_handler(child));
+                list.mount_owned(&owner, &host_node, Vec::new())
+                    .expect("keyed list should mount");
+                assert_eq!(spy.count("event_add:silex-window-resource"), 2);
 
-            set_items.set(vec![2, 1]);
-            assert_eq!(spy.count("event_remove:silex-window-resource"), 0);
-            set_items.set(vec![2]);
-            assert_eq!(spy.count("event_remove:silex-window-resource"), 1);
-        });
+                set_items
+                    .set(vec![2, 1])
+                    .expect("signal should be writable");
+                assert_eq!(spy.count("event_remove:silex-window-resource"), 0);
+                set_items.set(vec![2]).expect("signal should be writable");
+                assert_eq!(spy.count("event_remove:silex-window-resource"), 1);
+            })
+            .expect("child scope should initialize");
     }
 
     assert_eq!(spy.count("event_remove:silex-window-resource"), 2);
@@ -573,7 +601,7 @@ fn window_listener_cancel_is_idempotent_and_owner_keeps_final_control() {
     let calls = Rc::new(Cell::new(0));
     let drops = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
-    let root = runtime.run();
+    let root = runtime.run().expect("root should start");
     let handle_slot = Rc::new(RefCell::new(None));
     {
         let scope = root.scope();
@@ -628,7 +656,7 @@ async fn cancelable_host_tasks_are_cleared_before_dispatch() {
     let drops = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
 
-    let root = runtime.run();
+    let root = runtime.run().expect("root should start");
     {
         let scope = root.scope();
         let owner = ScopedViewOwner::new(scope, test_handler(scope));
@@ -708,7 +736,7 @@ async fn active_host_tasks_execute_and_interval_cancel_is_idempotent() {
     let frame_calls = Rc::new(Cell::new(0));
     let idle_calls = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
-    let root = runtime.run();
+    let root = runtime.run().expect("root should start");
     let interval_slot = Rc::new(RefCell::new(None));
     {
         let scope = root.scope();
@@ -785,7 +813,7 @@ async fn microtask_cancel_and_owner_dispose_only_gate_user_callbacks() {
     let queued_before = spy.count("microtask_queue");
     let invoked_before = spy.count("microtask_invoke");
     let mut runtime = Runtime::new();
-    let root = runtime.run();
+    let root = runtime.run().expect("root should start");
     let canceled_slot = Rc::new(RefCell::new(None));
     {
         let scope = root.scope();
@@ -794,14 +822,16 @@ async fn microtask_cancel_and_owner_dispose_only_gate_user_callbacks() {
         let canceled = queue_microtask(&owner.token(), move || {
             canceled_calls_for_task.set(canceled_calls_for_task.get() + 1);
             Ok(())
-        });
+        })
+        .expect("microtask should queue");
         *canceled_slot.borrow_mut() = Some(canceled);
 
         let disposed_calls_for_task = disposed_calls.clone();
         queue_microtask(&owner.token(), move || {
             disposed_calls_for_task.set(disposed_calls_for_task.get() + 1);
             Ok(())
-        });
+        })
+        .expect("microtask should queue");
     }
 
     canceled_slot
@@ -824,7 +854,7 @@ async fn debounce_clears_replaced_timer_and_blocks_dispose_completion() {
     let spy = Spy::new();
     let values = Rc::new(RefCell::new(Vec::<i32>::new()));
     let mut runtime = Runtime::new();
-    let root = runtime.run();
+    let root = runtime.run().expect("root should start");
     let debounce_slot = Rc::new(RefCell::new(None));
     {
         let scope = root.scope();
@@ -834,7 +864,8 @@ async fn debounce_clears_replaced_timer_and_blocks_dispose_completion() {
         let debounce = debounce(&token, Duration::from_millis(10), move |value: i32| {
             values_for_callback.borrow_mut().push(value);
             Ok(())
-        });
+        })
+        .expect("debounce should initialize");
         *debounce_slot.borrow_mut() = Some(debounce);
     }
 
@@ -868,16 +899,21 @@ fn debounce_timeout_creation_failure_reaches_owner_handler() {
     let errors_for_reporter = errors.clone();
     let mut runtime = Runtime::new();
 
-    runtime.child(|scope| {
-        let owner = silex_dom::view::ScopedViewOwner::new(
-            scope,
-            scope.error_handler(move |error| errors_for_reporter.borrow_mut().push(error)),
-        );
-        let token = owner.token();
-        let mut debounce = debounce(&token, Duration::from_millis(0), |_| Ok(()));
-        spy.fail_next_timeout();
-        debounce(1_i32);
-    });
+    runtime
+        .child(|scope| {
+            let owner = silex_dom::view::ScopedViewOwner::new(
+                scope,
+                scope
+                    .error_handler(move |error| errors_for_reporter.borrow_mut().push(error))
+                    .expect("error handler should register"),
+            );
+            let token = owner.token();
+            let mut debounce = debounce(&token, Duration::from_millis(0), |_| Ok(()))
+                .expect("debounce should initialize");
+            spy.fail_next_timeout();
+            debounce(1_i32);
+        })
+        .expect("child scope should initialize");
 
     assert!(matches!(
         errors.borrow().as_slice(),
@@ -892,7 +928,7 @@ async fn timer_callback_can_reenter_root_dispose_without_late_registration() {
     let dispose_slot = Rc::new(RefCell::new(None::<RootHandle>));
     let mut runtime = Runtime::new();
 
-    let root = runtime.run();
+    let root = runtime.run().expect("root should start");
     {
         let scope = root.scope();
         let owner = ScopedViewOwner::new(scope, test_handler(scope));
@@ -933,7 +969,7 @@ fn timeout_lifecycle_handles_creation_failure_repeated_cancel_reentry_and_stale_
     let values = Rc::new(RefCell::new(Vec::<i32>::new()));
     let mut runtime = Runtime::new();
 
-    let root = runtime.run();
+    let root = runtime.run().expect("root should start");
     {
         let scope = root.scope();
         let owner = ScopedViewOwner::new(scope, test_handler(scope));
@@ -977,7 +1013,8 @@ fn timeout_lifecycle_handles_creation_failure_repeated_cancel_reentry_and_stale_
         let mut debounce = debounce(&owner.token(), Duration::from_millis(0), move |value| {
             values_for_debounce.borrow_mut().push(value);
             Ok(())
-        });
+        })
+        .expect("debounce should initialize");
         debounce(1);
         debounce(2);
 

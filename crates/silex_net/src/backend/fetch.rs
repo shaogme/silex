@@ -202,7 +202,15 @@ impl BrowserTransport {
             }
         };
         let raw_body = match JsFuture::from(body_promise).await {
-            Ok(value) => value.as_string().unwrap_or_default(),
+            Ok(value) => match value.as_string() {
+                Some(body) => body,
+                None => {
+                    abort_guard.complete();
+                    return Err(NetError::JsError(
+                        "fetch response body is not a string".to_string(),
+                    ));
+                }
+            },
             Err(error) => {
                 let timed_out = abort_guard.timed_out();
                 let aborted = is_abort_error(&error);

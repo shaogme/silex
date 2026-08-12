@@ -30,6 +30,7 @@ styled! {
 #[component]
 pub fn Dialog<'scope>(
     scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
@@ -41,7 +42,7 @@ pub fn Dialog<'scope>(
     #[chain(default)]
     on_close: Callback<'scope, ()>,
 ) -> impl View<'scope> {
-    let content_cls = rx!(scope; {
+    let content_cls = rx!(scope; error_handler; {
         let base = tw!(
             "fixed left-[50%] top-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border border-solid border-slate-200 bg-white p-6 shadow-lg sm:max-w-lg dark:border-slate-800 dark:bg-slate-950 text-slate-950 dark:text-slate-50"
         );
@@ -53,9 +54,9 @@ pub fn Dialog<'scope>(
         }
     });
 
-    let stored_children = scope.stored(children);
+    let stored_children = scope.stored(children)?;
 
-    rx!(scope; {
+    Ok(rx!(scope; error_handler; {
         if *$open {
             crate::components::Portal(chain!(
                 // Overlay 遮罩
@@ -73,5 +74,5 @@ pub fn Dialog<'scope>(
         } else {
             ().into_any()
         }
-    })
+    }))
 }

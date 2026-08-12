@@ -4,8 +4,11 @@ use silex::reexports::*;
 use silex::ui::{Button, Dialog, Input, Progress, Switch, Textarea, *};
 
 #[component]
-fn ButtonShowcase<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
-    Card(chain!(
+fn ButtonShowcase<'scope>(
+    scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
+    Ok(Card(chain!(
         CardHeader(chain!(
             CardTitle("Button & Badge System").build(),
             CardDescription("Standard variants and sizes ported from shadcn/ui.").build()
@@ -17,12 +20,24 @@ fn ButtonShowcase<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
                 span("Variants").class(tw!(
                     "text-xs font-semibold text-slate-500 dark:text-slate-400 w-full mb-1"
                 )),
-                Button(scope, "Default").variant("default").build(),
-                Button(scope, "Destructive").variant("destructive").build(),
-                Button(scope, "Outline").variant("outline").build(),
-                Button(scope, "Secondary").variant("secondary").build(),
-                Button(scope, "Ghost").variant("ghost").build(),
-                Button(scope, "Link").variant("link").build()
+                Button(scope, error_handler, "Default")
+                    .variant("default")?
+                    .build(),
+                Button(scope, error_handler, "Destructive")
+                    .variant("destructive")?
+                    .build(),
+                Button(scope, error_handler, "Outline")
+                    .variant("outline")?
+                    .build(),
+                Button(scope, error_handler, "Secondary")
+                    .variant("secondary")?
+                    .build(),
+                Button(scope, error_handler, "Ghost")
+                    .variant("ghost")?
+                    .build(),
+                Button(scope, error_handler, "Link")
+                    .variant("link")?
+                    .build()
             ))
             .class(tw!("flex flex-wrap items-center gap-2 mb-6")),
             // Sizes
@@ -30,17 +45,29 @@ fn ButtonShowcase<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
                 span("Sizes").class(tw!(
                     "text-xs font-semibold text-slate-500 dark:text-slate-400 w-full mb-1"
                 )),
-                Button(scope, "XS").variant("outline").size("xs").build(),
-                Button(scope, "Small").variant("outline").size("sm").build(),
-                Button(scope, "Default")
-                    .variant("outline")
-                    .size("default")
+                Button(scope, error_handler, "XS")
+                    .variant("outline")?
+                    .size("xs")?
                     .build(),
-                Button(scope, "Large").variant("outline").size("lg").build(),
-                Button(scope, "★").variant("outline").size("icon").build(),
-                Button(scope, "⚡")
-                    .variant("default")
-                    .size("icon-sm")
+                Button(scope, error_handler, "Small")
+                    .variant("outline")?
+                    .size("sm")?
+                    .build(),
+                Button(scope, error_handler, "Default")
+                    .variant("outline")?
+                    .size("default")?
+                    .build(),
+                Button(scope, error_handler, "Large")
+                    .variant("outline")?
+                    .size("lg")?
+                    .build(),
+                Button(scope, error_handler, "★")
+                    .variant("outline")?
+                    .size("icon")?
+                    .build(),
+                Button(scope, error_handler, "⚡")
+                    .variant("default")?
+                    .size("icon-sm")?
                     .build()
             ))
             .class(tw!("flex flex-wrap items-center gap-2 mb-6")),
@@ -49,25 +76,38 @@ fn ButtonShowcase<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
                 span("Badges").class(tw!(
                     "text-xs font-semibold text-slate-500 dark:text-slate-400 w-full mb-1"
                 )),
-                Badge(scope, "Default").variant("default").build(),
-                Badge(scope, "Secondary").variant("secondary").build(),
-                Badge(scope, "Destructive").variant("destructive").build(),
-                Badge(scope, "Outline").variant("outline").build(),
-                Badge(scope, "Ghost").variant("ghost").build(),
-                Badge(scope, "Link").variant("link").build()
+                Badge(scope, error_handler, "Default")
+                    .variant("default")?
+                    .build(),
+                Badge(scope, error_handler, "Secondary")
+                    .variant("secondary")?
+                    .build(),
+                Badge(scope, error_handler, "Destructive")
+                    .variant("destructive")?
+                    .build(),
+                Badge(scope, error_handler, "Outline")
+                    .variant("outline")?
+                    .build(),
+                Badge(scope, error_handler, "Ghost")
+                    .variant("ghost")?
+                    .build(),
+                Badge(scope, error_handler, "Link").variant("link")?.build()
             ))
             .class(tw!("flex flex-wrap items-center gap-2"))
         ))
         .build()
     ))
-    .build()
+    .build())
 }
 
 #[component]
-fn FormControlsShowcase<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
-    let (text_val, set_text_val) = scope.signal("Hello Silex UI!".to_string());
-    let (checked_val, set_checked_val) = scope.signal(true);
-    let (switch_val, set_switch_val) = scope.signal(true);
+fn FormControlsShowcase<'scope>(
+    scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
+    let (text_val, set_text_val) = scope.signal("Hello Silex UI!".to_string())?;
+    let (checked_val, set_checked_val) = scope.signal(true)?;
+    let (switch_val, set_switch_val) = scope.signal(true)?;
 
     Ok(Card(chain!(
         CardHeader(chain!(
@@ -78,11 +118,11 @@ fn FormControlsShowcase<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
             // Input
             div(chain!(
                 span("Text Input").class(tw!("text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1")),
-                Input(scope)
-                    .value(text_val)
-                    .placeholder("Type something...")
-                    .on_input(scope.callback(move |v| Ok(set_text_val.try_set(v)?))?).build(),
-                p(rx!(scope; format!("Live Bound Value: '{}'", $text_val)))
+                Input(scope, error_handler)
+                    .value(text_val)?
+                    .placeholder("Type something...")?
+                    .on_input(scope.callback(move |v| Ok(set_text_val.set(v)?))?).build(),
+                p(rx!(scope; error_handler; format!("Live Bound Value: '{}'", $text_val)))
                     .class(tw!("text-xs text-slate-500 mt-1.5 font-mono"))
             )).class(tw!("flex flex-col mb-6")),
 
@@ -91,22 +131,23 @@ fn FormControlsShowcase<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
                 span("Textarea").class(tw!("text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1")),
                 Textarea(scope)
                     .value("Multi-line textarea component styling ported straight from shadcn/ui v4.")
-                    .placeholder("Write a description...").build()
+                    .placeholder("Write a description...")
+                    .build()
             )).class(tw!("flex flex-col mb-6")),
 
             // Checkbox & Switch
             div(chain!(
                 div(chain!(
-                Checkbox(scope)
-                    .checked(checked_val)
-                    .on_change(scope.callback(move |v| Ok(set_checked_val.try_set(v)?))?).build(),
+                Checkbox(scope, error_handler)
+                    .checked(checked_val)?
+                    .on_change(scope.callback(move |v| Ok(set_checked_val.set(v)?))?).build(),
                     span("Enable Notifications").class(tw!("text-sm font-medium text-slate-900 dark:text-slate-100"))
                 )).class(tw!("flex items-center gap-2")),
 
                 div(chain!(
-                Switch(scope)
-                    .checked(switch_val)
-                    .on_change(scope.callback(move |v| Ok(set_switch_val.try_set(v)?))?).build(),
+                Switch(scope, error_handler)
+                    .checked(switch_val)?
+                    .on_change(scope.callback(move |v| Ok(set_switch_val.set(v)?))?).build(),
                     span("Airplane Mode").class(tw!("text-sm font-medium text-slate-900 dark:text-slate-100"))
                 )).class(tw!("flex items-center gap-2"))
             )).class(tw!("flex flex-wrap items-center justify-between gap-4 p-4 bg-slate-50 dark:bg-slate-900 rounded-lg border border-solid border-slate-200 dark:border-slate-800"))
@@ -115,9 +156,12 @@ fn FormControlsShowcase<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
 }
 
 #[component]
-fn TabsAndDialogShowcase<'scope>(scope: Scope<'scope>) -> SilexResult<impl View<'scope>> {
-    let (active_tab, set_active_tab) = scope.signal("account".to_string());
-    let (dialog_open, set_dialog_open) = scope.signal(false);
+fn TabsAndDialogShowcase<'scope>(
+    scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
+    let (active_tab, set_active_tab) = scope.signal("account".to_string())?;
+    let (dialog_open, set_dialog_open) = scope.signal(false)?;
 
     Ok(Card(chain!(
         CardHeader(chain!(
@@ -127,51 +171,51 @@ fn TabsAndDialogShowcase<'scope>(scope: Scope<'scope>) -> SilexResult<impl View<
         CardContent(chain!(
             // Tabs
             div(chain!(
-                Tabs(scope, chain!(
-                    TabsList(scope, chain!(
-                        TabsTrigger(scope, "Account", "account")
-                            .active_tab(active_tab)
+                Tabs(scope, error_handler, chain!(
+                    TabsList(scope, error_handler, chain!(
+                        TabsTrigger(scope, error_handler, "Account", "account")
+                            .active_tab(active_tab)?
                             .on_select(scope.callback(move |tab: &'static str| {
-                                set_active_tab.try_set(tab.to_string())?;
+                                set_active_tab.set(tab.to_string())?;
                                 Ok(())
                             })?)
                             .build(),
-                        TabsTrigger(scope, "Password", "password")
-                            .active_tab(active_tab)
+                        TabsTrigger(scope, error_handler, "Password", "password")
+                            .active_tab(active_tab)?
                             .on_select(scope.callback(move |tab: &'static str| {
-                                set_active_tab.try_set(tab.to_string())?;
+                                set_active_tab.set(tab.to_string())?;
                                 Ok(())
                             })?)
                             .build(),
-                        TabsTrigger(scope, "Settings", "settings")
-                            .active_tab(active_tab)
+                        TabsTrigger(scope, error_handler, "Settings", "settings")
+                            .active_tab(active_tab)?
                             .on_select(scope.callback(move |tab: &'static str| {
-                                set_active_tab.try_set(tab.to_string())?;
+                                set_active_tab.set(tab.to_string())?;
                                 Ok(())
                             })?)
                             .build()
                     ))
-                    .class(tw!("grid w-full grid-cols-3"))
+                    .class(tw!("grid w-full grid-cols-3"))?
                     .build(),
-                    rx!(scope; {
+                    rx!(scope; error_handler; {
                         match $active_tab.as_str() {
                             "account" => {
-                                TabsContent(scope, p("Manage your account details and profile preferences.").class(tw!("p-4 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-sm text-slate-700 dark:text-slate-300")))
+                                TabsContent(scope, error_handler, p("Manage your account details and profile preferences.").class(tw!("p-4 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-sm text-slate-700 dark:text-slate-300")))
                                     .value("account")
-                                    .active_tab(active_tab)
+                                    .active_tab(active_tab)?
                                     .build()
                                     .into_any()
                             }
                             "password" => {
-                                TabsContent(scope, p("Change your password and configure 2FA security.").class(tw!("p-4 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-sm text-slate-700 dark:text-slate-300")))
+                                TabsContent(scope, error_handler, p("Change your password and configure 2FA security.").class(tw!("p-4 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-sm text-slate-700 dark:text-slate-300")))
                                     .value("password")
-                                    .active_tab(active_tab)
+                                    .active_tab(active_tab)?
                                     .build()
                                     .into_any()
                             }
-                            _ => TabsContent(scope, p("Customize system settings and notification channels.").class(tw!("p-4 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-sm text-slate-700 dark:text-slate-300")))
+                            _ => TabsContent(scope, error_handler, p("Customize system settings and notification channels.").class(tw!("p-4 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-sm text-slate-700 dark:text-slate-300")))
                                 .value("settings")
-                                .active_tab(active_tab)
+                                .active_tab(active_tab)?
                                 .build()
                                 .into_any(),
                         }
@@ -179,31 +223,31 @@ fn TabsAndDialogShowcase<'scope>(scope: Scope<'scope>) -> SilexResult<impl View<
                 )).build()
             ))
             .class(tw!("mb-6")),
-            Separator(scope).class(tw!("my-4")).build(),
+            Separator(scope, error_handler).class(tw!("my-4"))?.build(),
             div(chain!(
                 span("Silex UI"),
-                Separator(scope)
-                    .orientation("vertical")
-                    .class(tw!("h-4 mx-2"))
+                Separator(scope, error_handler)
+                    .orientation("vertical")?
+                    .class(tw!("h-4 mx-2"))?
                     .build(),
                 span("Docs"),
-                Separator(scope)
-                    .orientation("vertical")
-                    .class(tw!("h-4 mx-2"))
+                Separator(scope, error_handler)
+                    .orientation("vertical")?
+                    .class(tw!("h-4 mx-2"))?
                     .build(),
                 span("GitHub")
             ))
             .class(tw!("flex items-center text-xs font-medium text-slate-500 dark:text-slate-400 mb-4")),
             // Dialog Trigger
             div(chain!(
-                Button(scope, "Open Modal Dialog")
-                    .variant("default")
+                Button(scope, error_handler, "Open Modal Dialog")
+                    .variant("default")?
                     .on_click(move |_| {
-                        set_dialog_open.try_set(true)?;
+                        set_dialog_open.set(true)?;
                         Ok(())
                     })
                     .build(),
-                Dialog(scope, chain!(
+                Dialog(scope, error_handler, chain!(
                     DialogHeader(chain!(
                         DialogTitle("Edit Profile").build(),
                         DialogDescription(
@@ -211,33 +255,33 @@ fn TabsAndDialogShowcase<'scope>(scope: Scope<'scope>) -> SilexResult<impl View<
                         ).build()
                     )).build(),
                     div(chain!(
-                        Input(scope).value("Shao G.").placeholder("Name").build(),
-                        Input(scope)
-                            .value("shaog.me@gmail.com")
-                            .placeholder("Email")
+                        Input(scope, error_handler).value("Shao G.")?.placeholder("Name")?.build(),
+                        Input(scope, error_handler)
+                            .value("shaog.me@gmail.com")?
+                            .placeholder("Email")?
                             .build()
                     ))
                     .class(tw!("grid gap-3 py-4")),
                     DialogFooter(chain!(
-                        Button(scope, "Cancel")
-                            .variant("outline")
+                        Button(scope, error_handler, "Cancel")
+                            .variant("outline")?
                             .on_click(move |_| {
-                                set_dialog_open.try_set(false)?;
+                                set_dialog_open.set(false)?;
                                 Ok(())
                             })
                             .build(),
-                        Button(scope, "Save Changes")
-                            .variant("default")
+                        Button(scope, error_handler, "Save Changes")
+                            .variant("default")?
                             .on_click(move |_| {
-                                set_dialog_open.try_set(false)?;
+                                set_dialog_open.set(false)?;
                                 Ok(())
                             })
                             .build()
                     )).build()
                 ))
-                .open(dialog_open)
+                .open(dialog_open)?
                 .on_close(scope.callback(move |_| {
-                    set_dialog_open.try_set(false)?;
+                    set_dialog_open.set(false)?;
                     Ok(())
                 })?)
                 .build()
@@ -250,35 +294,38 @@ fn TabsAndDialogShowcase<'scope>(scope: Scope<'scope>) -> SilexResult<impl View<
 }
 
 #[component]
-fn FeedbackAndDataShowcase<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
-    let (progress_val, set_progress_val) = scope.signal(45u32);
+fn FeedbackAndDataShowcase<'scope>(
+    scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
+    let (progress_val, set_progress_val) = scope.signal(45u32)?;
 
-    Card(chain!(
+    Ok(Card(chain!(
         CardHeader(chain!(
             CardTitle("Avatars, Progress & Feedback").build(),
             CardDescription("Progress indicators, Avatar fallback, Alert banners and Skeletons.").build()
         )).build(),
         CardContent(chain!(
             // Alert
-            Alert(scope, chain!(
+            Alert(scope, error_handler, chain!(
                 AlertTitle("System Update Complete").build(),
                 AlertDescription("All shadcn/ui components have been successfully compiled into Silex zero-runtime AST.").build()
-            )).variant("default").class(tw!("mb-6")).build(),
+            )).variant("default")?.class(tw!("mb-6"))?.build(),
 
             // Progress Bar
             div(chain!(
                 div(chain!(
                     span("Progress").class(tw!("text-xs font-semibold text-slate-500 dark:text-slate-400")),
-                    span(rx!(scope; format!("{}%", $progress_val))).class(tw!("text-xs font-bold text-indigo-600 dark:text-indigo-400"))
+                    span(rx!(scope; error_handler; format!("{}%", $progress_val))).class(tw!("text-xs font-bold text-indigo-600 dark:text-indigo-400"))
                 )).class(tw!("flex justify-between items-center mb-1.5")),
-                Progress(scope).value(progress_val).class(tw!("mb-3")).build(),
+                Progress(scope, error_handler).value(progress_val)?.class(tw!("mb-3"))?.build(),
                 div(chain!(
-                    Button(scope, "-10%").variant("outline").size("xs").on_click(move |_| {
-                        set_progress_val.update(|v| *v = v.saturating_sub(10));
+                    Button(scope, error_handler, "-10%").variant("outline")?.size("xs")?.on_click(move |_| {
+                        set_progress_val.update(|v| *v = v.saturating_sub(10))?;
                         Ok(())
                     }).build(),
-                    Button(scope, "+10%").variant("outline").size("xs").on_click(move |_| {
-                        set_progress_val.update(|v| *v = (*v + 10).min(100));
+                    Button(scope, error_handler, "+10%").variant("outline")?.size("xs")?.on_click(move |_| {
+                        set_progress_val.update(|v| *v = (*v + 10).min(100))?;
                         Ok(())
                     }).build()
                 )).class(tw!("flex justify-end gap-2"))
@@ -288,15 +335,15 @@ fn FeedbackAndDataShowcase<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
             div(chain!(
                 // Avatars
                 div(chain!(
-                    Avatar(scope, chain!(
-                        AvatarFallback(scope, "SG").build()
+                    Avatar(scope, error_handler, chain!(
+                        AvatarFallback(scope, error_handler, "SG").build()
                     )).build(),
-                    Avatar(scope, chain!(
-                        AvatarFallback(scope, "UI").variant("indigo").build()
-                    )).class(tw!("bg-indigo-600 text-white")).build(),
-                    Avatar(scope, chain!(
-                        AvatarFallback(scope, "SX").variant("emerald").build()
-                    )).class(tw!("bg-emerald-600 text-white")).build()
+                    Avatar(scope, error_handler, chain!(
+                        AvatarFallback(scope, error_handler, "UI").variant("indigo")?.build()
+                    )).class(tw!("bg-indigo-600 text-white"))?.build(),
+                    Avatar(scope, error_handler, chain!(
+                        AvatarFallback(scope, error_handler, "SX").variant("emerald")?.build()
+                    )).class(tw!("bg-emerald-600 text-white"))?.build()
                 )).class(tw!("flex items-center gap-3")),
 
                 // Skeletons
@@ -308,16 +355,119 @@ fn FeedbackAndDataShowcase<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
         ))
         .build()
     ))
-    .build()
+    .build())
+}
+
+fn build_tooltip_content<'scope>(
+    scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
+    ctx: TooltipContext<'scope>,
+) -> SilexResult<AnyView<'scope>> {
+    Ok(chain!(
+        TooltipTrigger(
+            scope,
+            error_handler,
+            Button(scope, error_handler, "Hover for Tooltip")
+                .variant("outline")?
+                .size("sm")?
+                .on_click(move |_| {
+                    web_sys::console::log_1(&"Tooltip button clicked!".into());
+                    Ok(())
+                })
+                .build()?
+        )
+        .ctx(ctx)
+        .build()?,
+        TooltipContent(
+            scope,
+            error_handler,
+            span("This tooltip was ported from shadcn/ui!")
+        )
+        .ctx(ctx)
+        .side("top")?
+        .build()?
+    )
+    .into_any())
+}
+
+fn build_popover_content<'scope>(
+    scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
+    ctx: PopoverContext<'scope>,
+) -> SilexResult<AnyView<'scope>> {
+    Ok(chain!(
+        PopoverTrigger(
+            scope,
+            error_handler,
+            Button(scope, error_handler, "Open Popover")
+                .variant("default")?
+                .size("sm")?
+                .build()?
+        )
+        .ctx(ctx)
+        .build()?,
+        PopoverContent(
+            scope,
+            error_handler,
+            chain!(
+                PopoverHeader(
+                    scope,
+                    error_handler,
+                    chain!(
+                        PopoverTitle(scope, error_handler, "Dimensions").build()?,
+                        PopoverDescription(
+                            scope,
+                            error_handler,
+                            "Set the height and width for the layer."
+                        )
+                        .build()?
+                    )
+                    .into_any()
+                )
+                .build()?,
+                div(chain!(
+                    Input(scope, error_handler)
+                        .value("100%")?
+                        .placeholder("Width")?
+                        .build()?,
+                    Input(scope, error_handler)
+                        .value("300px")?
+                        .placeholder("Height")?
+                        .build()?
+                ))
+                .class(tw!("grid gap-2 py-2")),
+                div(chain!(
+                    PopoverClose(
+                        scope,
+                        error_handler,
+                        Button(scope, error_handler, "Close")
+                            .variant("outline")?
+                            .size("sm")?
+                            .build()?
+                    )
+                    .ctx(ctx)
+                    .build()?
+                ))
+                .class(tw!("flex justify-end pt-2"))
+            )
+            .into_any()
+        )
+        .ctx(ctx)
+        .build()?
+    )
+    .into_any())
 }
 
 #[component]
-fn NewComponentsShowcase<'scope>(scope: Scope<'scope>) -> SilexResult<impl View<'scope>> {
-    let (slider_val, set_slider_val) = scope.signal(65.0f64);
-    let (toggle_pressed, set_toggle_pressed) = scope.signal(true);
-    let (radio_val, set_radio_val) = scope.signal("option-1".to_string());
-    let (popover_open, set_popover_open) = scope.signal(false);
-    let (accordion_open, set_accordion_open) = scope.signal(true);
+fn NewComponentsShowcase<'scope>(
+    scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
+    let (slider_val, set_slider_val) = scope.signal(65.0f64)?;
+    let (toggle_pressed, set_toggle_pressed) = scope.signal(true)?;
+    let (radio_val, set_radio_val) = scope.signal("option-1".to_string())?;
+    let (popover_open, set_popover_open) = scope.signal(false)?;
+    let (accordion_open, set_accordion_open) = scope.signal(true)?;
 
     Ok(Card(chain!(
         CardHeader(chain!(
@@ -330,14 +480,14 @@ fn NewComponentsShowcase<'scope>(scope: Scope<'scope>) -> SilexResult<impl View<
                 div(chain!(
                     div(chain!(
                         span("Volume Slider").class(tw!("text-xs font-semibold text-slate-500 dark:text-slate-400")),
-                        span(rx!(scope; format!("{:.0}%", $slider_val))).class(tw!("text-xs font-bold text-indigo-600 dark:text-indigo-400"))
+                        span(rx!(scope; error_handler; format!("{:.0}%", $slider_val))).class(tw!("text-xs font-bold text-indigo-600 dark:text-indigo-400"))
                     )).class(tw!("flex justify-between items-center mb-2")),
-                    Slider(scope)
-                        .value(slider_val)
-                        .min(0.0)
-                        .max(100.0)
+                    Slider(scope, error_handler)
+                        .value(slider_val)?
+                        .min(0.0)?
+                        .max(100.0)?
                         .on_change(scope.callback(move |v| {
-                            set_slider_val.try_set(v)?;
+                            set_slider_val.set(v)?;
                             Ok(())
                         })?)
                         .build()
@@ -345,11 +495,11 @@ fn NewComponentsShowcase<'scope>(scope: Scope<'scope>) -> SilexResult<impl View<
 
                 div(chain!(
                     span("Bold Toggle").class(tw!("text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1 block")),
-                    Toggle(scope, span("B").class(tw!("font-bold")))
-                        .variant("outline")
-                        .pressed(toggle_pressed)
+                    Toggle(scope, error_handler, span("B").class(tw!("font-bold")))
+                        .variant("outline")?
+                        .pressed(toggle_pressed)?
                         .on_change(scope.callback(move |p| {
-                            set_toggle_pressed.try_set(p)?;
+                            set_toggle_pressed.set(p)?;
                             Ok(())
                         })?)
                         .build()
@@ -358,79 +508,30 @@ fn NewComponentsShowcase<'scope>(scope: Scope<'scope>) -> SilexResult<impl View<
 
             // Tooltip & Popover
             div(chain!(
-                Tooltip(scope, move |ctx| chain!(
-                    TooltipTrigger(scope,
-                        Button(scope, "Hover for Tooltip")
-                            .variant("outline")
-                            .size("sm")
-                            .on_click(move |_| {
-                                web_sys::console::log_1(&"Tooltip button clicked!".into());
-                                Ok(())
-                            })
-                            .build()
-                    )
-                    .ctx(ctx)
-                    .build(),
-                    TooltipContent(scope, span("This tooltip was ported from shadcn/ui!"))
-                        .ctx(ctx)
-                        .side("top")
-                        .build()
-                )).build(),
-
-                Popover(scope, move |ctx| chain!(
-                    PopoverTrigger(scope,
-                        Button(scope, "Open Popover")
-                            .variant("default")
-                            .size("sm")
-                            .build()
-                    )
-                    .ctx(ctx)
-                    .build(),
-                    PopoverContent(scope, chain!(
-                        PopoverHeader(scope, chain!(
-                            PopoverTitle(scope, "Dimensions").build(),
-                            PopoverDescription(scope, "Set the height and width for the layer.").build()
-                        )).build(),
-                        div(chain!(
-                            Input(scope).value("100%").placeholder("Width").build(),
-                            Input(scope).value("300px").placeholder("Height").build()
-                        )).class(tw!("grid gap-2 py-2")),
-                        div(chain!(
-                            PopoverClose(scope,
-                                Button(scope, "Close")
-                                    .variant("outline")
-                                    .size("sm")
-                                    .build()
-                            )
-                            .ctx(ctx)
-                            .build()
-                        )).class(tw!("flex justify-end pt-2"))
-                    ))
-                    .ctx(ctx)
-                    .build()
-                )).build()
+                Tooltip(scope, error_handler, move |ctx| build_tooltip_content(scope, error_handler, ctx)).build()?,
+                Popover(scope, error_handler, move |ctx| build_popover_content(scope, error_handler, ctx)).build()?
             )).class(tw!("flex items-center gap-4 mb-6")),
 
             // RadioGroup & Accordion
             div(chain!(
                 div(chain!(
                     span("Theme Style").class(tw!("text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2 block")),
-                    RadioGroup(scope, chain!(
+                    RadioGroup(scope, error_handler, chain!(
                         div(chain!(
-                            RadioGroupItem(scope, "option-1")
-                                .selected_value(radio_val)
+                            RadioGroupItem(scope, error_handler, "option-1")
+                                .selected_value(radio_val)?
                                 .on_select(scope.callback(move |v: &'static str| {
-                                    set_radio_val.try_set(v.to_string())?;
+                                    set_radio_val.set(v.to_string())?;
                                     Ok(())
                                 })?)
                                 .build(),
                             span("Default").class(tw!("text-xs font-medium text-slate-900 dark:text-slate-100"))
                         )).class(tw!("flex items-center gap-2")),
                         div(chain!(
-                            RadioGroupItem(scope, "option-2")
-                                .selected_value(radio_val)
+                            RadioGroupItem(scope, error_handler, "option-2")
+                                .selected_value(radio_val)?
                                 .on_select(scope.callback(move |v: &'static str| {
-                                    set_radio_val.try_set(v.to_string())?;
+                                    set_radio_val.set(v.to_string())?;
                                     Ok(())
                                 })?)
                                 .build(),
@@ -441,17 +542,17 @@ fn NewComponentsShowcase<'scope>(scope: Scope<'scope>) -> SilexResult<impl View<
 
                 div(chain!(
                     span("Accordion").class(tw!("text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2 block")),
-                    Accordion(scope, chain!(
-                        AccordionItem(scope, chain!(
-                            AccordionTrigger(scope, "Is Silex 1:1 compatible?")
-                                .open(accordion_open)
+                    Accordion(scope, error_handler, chain!(
+                        AccordionItem(scope, error_handler, chain!(
+                            AccordionTrigger(scope, error_handler, "Is Silex 1:1 compatible?")
+                                .open(accordion_open)?
                                 .on_click(scope.callback(move |_| {
-                                    set_accordion_open.try_update(|v| *v = !*v)?;
+                                    set_accordion_open.update(|v| *v = !*v)?;
                                     Ok(())
                                 })?)
                                 .build(),
-                            AccordionContent(scope, "Yes! Every layout, utility class and reactivity behavior matches shadcn/ui React components.")
-                                .open(accordion_open)
+                            AccordionContent(scope, error_handler, "Yes! Every layout, utility class and reactivity behavior matches shadcn/ui React components.")
+                                .open(accordion_open)?
                                 .build()
                         ), "item-1").build()
                     )).build()
@@ -464,19 +565,16 @@ fn NewComponentsShowcase<'scope>(scope: Scope<'scope>) -> SilexResult<impl View<
 }
 
 #[component]
-fn App<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
-) -> SilexResult<impl View<'scope>> {
+fn App<'scope>(scope: Scope<'scope>, error_handler: ErrorReporter<'scope>) -> impl View<'scope> {
     let is_dark = Persistent::builder(scope, "silex-ui-dark", error_handler)
         .local()
         .parse::<bool>()
         .default(true)
-        .build();
+        .build()?;
 
     let _effect = scope.effect(
         move || -> SilexResult<()> {
-            let dark = is_dark.get();
+            let dark = is_dark.get()?;
             if let Some(doc) = window().document()
                 && let Some(el) = doc.document_element()
             {
@@ -503,12 +601,12 @@ fn App<'scope>(
                 ))
             )).class(tw!("flex items-center gap-3")),
 
-            button(rx!(scope; if *$is_dark { "🌙 Dark Mode" } else { "☀️ Light Mode" }))
+            button(rx!(scope; error_handler; if *$is_dark { "🌙 Dark Mode" } else { "☀️ Light Mode" }))
                 .class(tw!(
                     "flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-amber-300 font-bold text-xs rounded-full cursor-pointer border border-solid border-slate-300 dark:border-slate-700 transition-all duration-300 hover:scale-105 shadow-sm"
                 ))
                 .on_click(move |_| -> SilexResult<()> {
-                    is_dark.update(|d| *d = !*d);
+                    is_dark.update(|d| *d = !*d)?;
                     Ok(())
                 })
         )).class(tw!("w-full flex items-center justify-between mb-8 max-w-6xl mx-auto")),
@@ -524,19 +622,19 @@ fn App<'scope>(
         // Masonry Component Grid
         div(chain!(
             div(chain!(
-                ButtonShowcase(scope).build(),
-                FormControlsShowcase(scope).build()
+                ButtonShowcase(scope, error_handler).build(),
+                FormControlsShowcase(scope, error_handler).build()
             )).class(tw!("flex flex-col gap-6 w-full")),
 
             div(chain!(
-                TabsAndDialogShowcase(scope).build(),
-                FeedbackAndDataShowcase(scope).build(),
-                NewComponentsShowcase(scope).build()
+                TabsAndDialogShowcase(scope, error_handler).build(),
+                FeedbackAndDataShowcase(scope, error_handler).build(),
+                NewComponentsShowcase(scope, error_handler).build()
             )).class(tw!("flex flex-col gap-6 w-full"))
         )).class(tw!("grid grid-cols-1 md:grid-cols-2 gap-6 items-start w-full max-w-6xl mx-auto"))
     ))
     .class(tw!("min-h-screen p-4 sm:p-8 transition-colors duration-300 bg-slate-100 text-slate-900 dark:bg-slate-900 dark:text-slate-50"))
-    .class(rx!(scope; if *$is_dark { "dark" } else { "" }))
+    .class(rx!(scope; error_handler; if *$is_dark { "dark" } else { "" }))
     .into_any()
     )
 }
@@ -561,6 +659,6 @@ fn mount_ui_view<'scope>(context: &MountContext<'scope>) -> SilexResult<()> {
     let scope = context.scope();
     let error_handler = scope.error_handler(|error: SilexError| {
         web_sys::console::error_1(&error.to_string().into());
-    });
+    })?;
     context.mount(App(scope, error_handler).build(), error_handler)
 }

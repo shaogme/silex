@@ -1,11 +1,15 @@
-error[E0505]: cannot move out of `root` because it is borrowed
- --> tests/ui/fail_root_handle_escape.rs:7:10
+error[E0599]: no method named `scope` found for enum `Result<T, E>` in the current scope
+ --> tests/ui/fail_root_handle_escape.rs:6:23
   |
-5 |     let root = runtime.run();
-  |         ---- binding `root` declared here
 6 |     let signal = root.scope().signal(0i32).0;
-  |                  ---- borrow of `root` occurs here
-7 |     drop(root);
-  |          ^^^^ move out of `root` occurs here
-8 |     let _ = signal.get();
-  |             ------ borrow later used here
+  |                       ^^^^^ method not found in `Result<RootHandle, SilexError>`
+  |
+note: the method `scope` exists on the type `RootHandle`
+ --> src/scope.rs
+  |
+  |     pub fn scope(&self) -> Scope<'_> {
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: consider using `Result::expect` to unwrap the `RootHandle` value, panicking if the value is a `Result::Err`
+  |
+6 |     let signal = root.expect("REASON").scope().signal(0i32).0;
+  |                      +++++++++++++++++

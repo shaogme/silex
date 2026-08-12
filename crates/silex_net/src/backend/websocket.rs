@@ -11,8 +11,8 @@ use wasm_bindgen::{JsCast, closure::Closure};
 use web_sys::{Event, MessageEvent, WebSocket as JsWebSocket};
 
 use silex_core::{
-    CallbackInvokeError, CompletionSender, ErrorReporter, Memo, ReadSignal, RuntimeInputs, Scope,
-    SilexError, SilexResult, StoredValue, TaskHandle, WriteSignal, unwind_safe,
+    CallbackInvokeError, CompletionSender, ErrorReporter, ReadSignal, RuntimeInputs, Rx, Scope,
+    SilexError, SilexResult, StoredValue, TaskHandle, WriteSignal, runtime_inputs_of, unwind_safe,
 };
 
 use crate::{
@@ -37,7 +37,7 @@ impl WebSocket {
         url: impl IntoNetValue<'scope>,
         error_handler: ErrorReporter<'scope>,
     ) -> Result<WebSocketConnection<'scope>, NetError> {
-        Self::connect(scope, url, error_handler).try_build()
+        Self::connect(scope, url, error_handler).build()
     }
 
     pub fn lazy<'scope>(
@@ -56,6 +56,7 @@ pub struct WebSocketConnection<'scope> {
     state: ReadSignal<'scope, ConnectionState>,
     message: ReadSignal<'scope, Option<String>>,
     error: ReadSignal<'scope, Option<NetError>>,
+    error_handler: ErrorReporter<'scope>,
 }
 
 #[derive(Clone)]
@@ -158,7 +159,20 @@ impl HostRegistration {
         let message_token = token.clone();
         let on_message = Closure::wrap(Box::new(move |event: MessageEvent| {
             if message_gate.get() {
-                let data = event.data().as_string().unwrap_or_default();
+                let Some(data) = event.data().as_string() else {
+                    submit_completion(
+                        &message_token,
+                        WebSocketEvent::Error {
+                            generation,
+                            error: NetError::JsError(
+                                "WebSocket message data is not a string".to_string(),
+                            ),
+                        },
+                        error_handler,
+                        Some(&message_gate),
+                    );
+                    return;
+                };
                 submit_completion(
                     &message_token,
                     WebSocketEvent::Message { generation, data },
@@ -253,20 +267,22 @@ struct WebSocketInner<'scope> {
     manual_close: bool,
 }
 
-fn cleanup_stored_inner<'scope>(inner: StoredValue<'scope, WebSocketInner<'scope>>) {
+fn cleanup_stored_inner<'scope>(
+    inner: StoredValue<'scope, WebSocketInner<'scope>>,
+) -> SilexResult<()> {
     inner
-        .try_update(WebSocketInner::cleanup)
-        .unwrap_or_else(|error| panic!("WebSocket cleanup failed: {error}"));
+        .update(WebSocketInner::cleanup)
+        .map_err(SilexError::from)?
 }
 
 impl Drop for WebSocketInner<'_> {
     fn drop(&mut self) {
-        self.cleanup();
+        let _ = self.cleanup();
     }
 }
 
 impl<'scope> WebSocketInner<'scope> {
-    fn cleanup(&mut self) {
+    fn cleanup(&mut self) -> SilexResult<()> {
         if let Some(task) = self.retry_task.take() {
             task.cancel();
         }
@@ -274,6 +290,7 @@ impl<'scope> WebSocketInner<'scope> {
         self.generation = self.generation.wrapping_add(1);
         self.registration.take();
         self.completion.cancel();
+        Ok(())
     }
 
     fn cancel_retry(&mut self) {
@@ -315,7 +332,9 @@ impl<'scope> WebSocketInner<'scope> {
         self.retry_started_at = None;
     }
 
-    fn try_open_current(&mut self) -> (Result<(), NetError>, Option<DeferredCallback<'scope>>) {
+    fn try_open_current(
+        &mut self,
+    ) -> SilexResult<(Result<(), NetError>, Option<DeferredCallback<'scope>>)> {
         self.reset_retry_window();
         self.try_open_current_with_socket(None)
     }
@@ -323,24 +342,28 @@ impl<'scope> WebSocketInner<'scope> {
     fn try_open_current_with_socket(
         &mut self,
         socket: Option<JsWebSocket>,
-    ) -> (Result<(), NetError>, Option<DeferredCallback<'scope>>) {
+    ) -> SilexResult<(Result<(), NetError>, Option<DeferredCallback<'scope>>)> {
         self.cancel_retry();
         self.registration.take();
         self.manual_close = false;
         self.generation = self.generation.wrapping_add(1);
         let generation = self.generation;
-        self.set_state.set(ConnectionState::Connecting);
+        self.set_state.set(ConnectionState::Connecting)?;
 
         let socket = match socket {
             Some(socket) => Ok(socket),
-            None => create_socket(&self.url.resolve(), &self.protocols),
+            None => self
+                .url
+                .resolve()
+                .map_err(NetError::from)
+                .and_then(|url| create_socket(&url, &self.protocols)),
         };
         let socket = match socket {
             Ok(socket) => socket,
             Err(error) => {
-                self.set_error.set(Some(error.clone()));
-                self.set_state.set(ConnectionState::Error);
-                return (Err(error.clone()), Some(self.defer_error(error)));
+                self.set_error.set(Some(error.clone()))?;
+                self.set_state.set(ConnectionState::Error)?;
+                return Ok((Err(error.clone()), Some(self.defer_error(error))));
             }
         };
         self.registration = Some(HostRegistration::new(
@@ -349,20 +372,20 @@ impl<'scope> WebSocketInner<'scope> {
             &self.completion,
             erase_error_handler(self.error_handler),
         ));
-        (Ok(()), None)
+        Ok((Ok(()), None))
     }
 
-    fn schedule_retry(&mut self, generation: u64) {
+    fn schedule_retry(&mut self, generation: u64) -> SilexResult<()> {
         if self.retry_generation == Some(generation) {
-            return;
+            return Ok(());
         }
         let Some(policy) = self.retry else {
-            return;
+            return Ok(());
         };
         let max_attempts = policy.max_attempts.max(1);
         self.retry_attempt = self.retry_attempt.saturating_add(1);
         if self.retry_attempt >= max_attempts {
-            return;
+            return Ok(());
         }
 
         let now = js_sys::Date::now();
@@ -370,7 +393,7 @@ impl<'scope> WebSocketInner<'scope> {
         if let Some(max_elapsed) = policy.max_elapsed {
             let elapsed = Duration::from_millis((now - started_at).max(0.0) as u64);
             if elapsed >= max_elapsed {
-                return;
+                return Ok(());
             }
         }
 
@@ -391,10 +414,14 @@ impl<'scope> WebSocketInner<'scope> {
                 );
             },
             self.error_handler,
-        ));
+        )?);
+        Ok(())
     }
 
-    fn handle_event(&mut self, event: WebSocketEvent) -> Option<DeferredCallback<'scope>> {
+    fn handle_event(
+        &mut self,
+        event: WebSocketEvent,
+    ) -> SilexResult<Option<DeferredCallback<'scope>>> {
         let mut callback = None;
         match event {
             WebSocketEvent::Open { generation }
@@ -403,22 +430,22 @@ impl<'scope> WebSocketInner<'scope> {
                 self.retry_task.take();
                 self.retry_generation = None;
                 self.reset_retry_window();
-                self.set_state.set(ConnectionState::Connected);
-                self.set_error.set(None);
+                self.set_state.set(ConnectionState::Connected)?;
+                self.set_error.set(None)?;
                 callback = Some(self.defer_open());
             }
             WebSocketEvent::Message { generation, data }
                 if generation == self.generation && !self.manual_close =>
             {
-                self.set_message.set(Some(data));
-                self.set_state.set(ConnectionState::Connected);
+                self.set_message.set(Some(data))?;
+                self.set_state.set(ConnectionState::Connected)?;
             }
             WebSocketEvent::Error { generation, error }
                 if generation == self.generation && !self.manual_close =>
             {
-                self.set_error.set(Some(error.clone()));
-                self.set_state.set(ConnectionState::Error);
-                self.schedule_retry(generation);
+                self.set_error.set(Some(error.clone()))?;
+                self.set_state.set(ConnectionState::Error)?;
+                self.schedule_retry(generation)?;
                 callback = Some(self.defer_error(error));
             }
             WebSocketEvent::Close {
@@ -427,11 +454,11 @@ impl<'scope> WebSocketInner<'scope> {
                 reason,
             } if generation == self.generation => {
                 self.registration.take();
-                self.set_state.set(ConnectionState::Closed);
+                self.set_state.set(ConnectionState::Closed)?;
                 let manual_close = self.manual_close;
                 self.manual_close = false;
                 if !manual_close {
-                    self.schedule_retry(generation);
+                    self.schedule_retry(generation)?;
                 }
                 callback = Some(self.defer_close(code, reason));
             }
@@ -444,49 +471,59 @@ impl<'scope> WebSocketInner<'scope> {
                     let elapsed =
                         Duration::from_millis((js_sys::Date::now() - started_at).max(0.0) as u64);
                     if policy.max_elapsed.is_some_and(|limit| elapsed >= limit) {
-                        return callback;
+                        return Ok(callback);
                     }
                 }
-                let (_, retry_callback) = self.try_open_current_with_socket(None);
+                let (_, retry_callback) = self.try_open_current_with_socket(None)?;
                 callback = retry_callback;
             }
             _ => {}
         }
-        callback
+        Ok(callback)
     }
 
-    fn close(&mut self) {
+    fn close(&mut self) -> SilexResult<()> {
         self.cancel_retry();
         if self.manual_close {
-            return;
+            return Ok(());
         }
         self.manual_close = true;
         if let Some(registration) = &self.registration {
-            self.set_state.set(ConnectionState::Closing);
+            self.set_state.set(ConnectionState::Closing)?;
             let _ = registration.socket.close();
         } else {
-            self.set_state.set(ConnectionState::Closed);
+            self.set_state.set(ConnectionState::Closed)?;
         }
+        Ok(())
     }
 }
 
 impl<'scope> WebSocketConnection<'scope> {
-    pub fn is_connected(&self) -> Memo<'scope, bool> {
+    fn derive_state<T: 'scope>(
+        &self,
+        f: impl Fn(ConnectionState) -> T + 'scope,
+    ) -> SilexResult<Rx<'scope, T>> {
         let state = self.state;
-        self.scope.memo(move |_| state.get().is_connected())
+        let handler = self.error_handler;
+        self.scope.derived_from(
+            runtime_inputs_of(state),
+            move || state.get().map(&f),
+            handler,
+        )
     }
 
-    pub fn is_connecting(&self) -> Memo<'scope, bool> {
-        let state = self.state;
-        self.scope
-            .memo(move |_| matches!(state.get(), ConnectionState::Connecting))
+    pub fn is_connected(&self) -> SilexResult<Rx<'scope, bool>> {
+        self.derive_state(|state| state.is_connected())
     }
 
-    pub fn is_closed(&self) -> Memo<'scope, bool> {
-        let state = self.state;
-        self.scope.memo(move |_| {
+    pub fn is_connecting(&self) -> SilexResult<Rx<'scope, bool>> {
+        self.derive_state(|state| matches!(state, ConnectionState::Connecting))
+    }
+
+    pub fn is_closed(&self) -> SilexResult<Rx<'scope, bool>> {
+        self.derive_state(|state| {
             matches!(
-                state.get(),
+                state,
                 ConnectionState::Closed | ConnectionState::Disconnected
             )
         })
@@ -497,21 +534,32 @@ impl<'scope> WebSocketConnection<'scope> {
     }
 
     #[cfg(feature = "json")]
-    pub fn message<T>(&self) -> Memo<'scope, Option<T>>
+    pub fn message<T>(&self) -> SilexResult<Rx<'scope, Option<T>>>
     where
         T: serde::de::DeserializeOwned + PartialEq + 'scope,
     {
         let message = self.message;
-        self.scope.memo(move |_| {
-            message
-                .get()
-                .and_then(|raw| serde_json::from_str(&raw).ok())
-        })
+        let handler = self.error_handler;
+        self.scope.derived_from(
+            runtime_inputs_of(message),
+            move || {
+                message
+                    .get()?
+                    .map(|raw| {
+                        serde_json::from_str(&raw).map_err(|error| {
+                            SilexError::Framework(format!(
+                                "decode WebSocket message failed: {error}"
+                            ))
+                        })
+                    })
+                    .transpose()
+            },
+            handler,
+        )
     }
 
-    pub fn state_str(&self) -> Memo<'scope, &'static str> {
-        let state = self.state;
-        self.scope.memo(move |_| state.get().as_str())
+    pub fn state_str(&self) -> SilexResult<Rx<'scope, &'static str>> {
+        self.derive_state(|state| state.as_str())
     }
 
     pub fn raw_message(&self) -> ReadSignal<'scope, Option<String>> {
@@ -525,32 +573,35 @@ impl<'scope> WebSocketConnection<'scope> {
 
     pub fn send(&self, value: impl Into<String>) -> Result<(), NetError> {
         let message = value.into();
-        self.inner.with(|inner| {
-            let state = inner.state.get();
-            if matches!(state, ConnectionState::Closed) {
-                return Err(NetError::ConnectionClosed);
-            }
-            if !matches!(state, ConnectionState::Connected) {
-                return Err(NetError::ConnectionNotReady { state });
-            }
-            let Some(registration) = &inner.registration else {
-                return Err(NetError::ConnectionClosed);
-            };
-            match registration.socket.ready_state() {
-                JsWebSocket::OPEN => registration
-                    .socket
-                    .send_with_str(&message)
-                    .map_err(NetError::from),
-                JsWebSocket::CONNECTING => Err(NetError::ConnectionNotReady {
-                    state: ConnectionState::Connecting,
-                }),
-                JsWebSocket::CLOSING => Err(NetError::ConnectionNotReady {
-                    state: ConnectionState::Closing,
-                }),
-                JsWebSocket::CLOSED => Err(NetError::ConnectionClosed),
-                _ => Err(NetError::ConnectionNotReady { state }),
-            }
-        })
+        self.inner
+            .with(|inner| {
+                let state = inner.state.get().map_err(NetError::from)?;
+                if matches!(state, ConnectionState::Closed) {
+                    return Err(NetError::ConnectionClosed);
+                }
+                if !matches!(state, ConnectionState::Connected) {
+                    return Err(NetError::ConnectionNotReady { state });
+                }
+                let Some(registration) = &inner.registration else {
+                    return Err(NetError::ConnectionClosed);
+                };
+                match registration.socket.ready_state() {
+                    JsWebSocket::OPEN => registration
+                        .socket
+                        .send_with_str(&message)
+                        .map_err(NetError::from),
+                    JsWebSocket::CONNECTING => Err(NetError::ConnectionNotReady {
+                        state: ConnectionState::Connecting,
+                    }),
+                    JsWebSocket::CLOSING => Err(NetError::ConnectionNotReady {
+                        state: ConnectionState::Closing,
+                    }),
+                    JsWebSocket::CLOSED => Err(NetError::ConnectionClosed),
+                    _ => Err(NetError::ConnectionNotReady { state }),
+                }
+            })
+            .map_err(NetError::from)
+            .and_then(|result| result)
     }
 
     pub fn send_text(&self, value: impl Into<String>) -> Result<(), NetError> {
@@ -568,34 +619,38 @@ impl<'scope> WebSocketConnection<'scope> {
     }
 
     pub fn close(&self) -> Result<(), NetError> {
-        self.inner.update(WebSocketInner::close);
+        self.inner
+            .update(WebSocketInner::close)
+            .map_err(SilexError::from)
+            .map_err(NetError::from)??;
         Ok(())
     }
 
-    pub fn try_reconnect(&self) -> Result<(), NetError> {
+    pub fn reconnect(&self) -> Result<(), NetError> {
         if !matches!(
-            self.state.get(),
+            self.state.get().map_err(NetError::from)?,
             ConnectionState::Closed | ConnectionState::Disconnected | ConnectionState::Error
         ) {
             return Ok(());
         }
-        let (result, callbacks) = self.inner.update(WebSocketInner::try_open_current);
+        let (result, callbacks) = self
+            .inner
+            .update(WebSocketInner::try_open_current)
+            .map_err(SilexError::from)
+            .map_err(NetError::from)??;
         if let Some(callback) = callbacks {
             callback();
         }
         result
     }
 
-    pub fn reconnect(&self) {
-        let _ = self.try_reconnect();
-    }
-
-    pub fn toggle(&self) {
-        if self.state.get().is_active() {
-            let _ = self.close();
+    pub fn toggle(&self) -> Result<(), NetError> {
+        if self.state.get().map_err(NetError::from)?.is_active() {
+            self.close()?;
         } else {
-            self.reconnect();
+            self.reconnect()?;
         }
+        Ok(())
     }
 }
 
@@ -666,7 +721,7 @@ impl<'scope> WebSocketBuilder<'scope> {
         self
     }
 
-    pub fn try_build(self) -> Result<WebSocketConnection<'scope>, NetError> {
+    pub fn build(self) -> Result<WebSocketConnection<'scope>, NetError> {
         let Self {
             scope,
             error_handler,
@@ -680,12 +735,14 @@ impl<'scope> WebSocketBuilder<'scope> {
         } = self;
         let mut inputs = RuntimeInputs::new();
         inputs.extend(&url.inputs());
-        scope
-            .try_validate_inputs(&inputs)
-            .map_err(|error| NetError::InvalidConfiguration(error.to_string()))?;
+        scope.validate_inputs(&inputs).map_err(NetError::from)?;
 
         let initial_socket = if auto_connect {
-            match create_socket(&url.resolve(), &protocols) {
+            match url
+                .resolve()
+                .map_err(NetError::from)
+                .and_then(|url| create_socket(&url, &protocols))
+            {
                 Ok(socket) => Some(socket),
                 Err(error) => {
                     for handler in &on_error {
@@ -702,21 +759,24 @@ impl<'scope> WebSocketBuilder<'scope> {
             ConnectionState::Connecting
         } else {
             ConnectionState::Disconnected
-        });
-        let (message, set_message) = scope.signal(None::<String>);
-        let (error, set_error) = scope.signal(None::<NetError>);
+        })?;
+        let (message, set_message) = scope.signal(None::<String>)?;
+        let (error, set_error) = scope.signal(None::<NetError>)?;
         let inner_slot = Rc::new(Cell::new(
             None::<StoredValue<'scope, WebSocketInner<'scope>>>,
         ));
         let inner_slot_for_completion = inner_slot.clone();
         let completion = scope.completion_sender(unwind_safe(move |event: WebSocketEvent| {
-            if let Some(inner) = inner_slot_for_completion.get()
-                && let Some(callback) = inner.update(|inner| inner.handle_event(event))
-            {
-                callback();
+            if let Some(inner) = inner_slot_for_completion.get() {
+                let callback = inner
+                    .update(|inner| inner.handle_event(event))
+                    .map_err(SilexError::from)??;
+                if let Some(callback) = callback {
+                    callback();
+                }
             }
             Ok(())
-        }));
+        }))?;
         let inner = scope.stored(WebSocketInner {
             url,
             protocols,
@@ -738,17 +798,14 @@ impl<'scope> WebSocketBuilder<'scope> {
             retry_attempt: 0,
             retry_started_at: None,
             manual_close: false,
-        });
+        })?;
         inner_slot.set(Some(inner));
         scope
             .on_cleanup(
-                move || -> SilexResult<()> {
-                    cleanup_stored_inner(inner);
-                    Ok(())
-                },
+                move || -> SilexResult<()> { cleanup_stored_inner(inner) },
                 error_handler,
             )
-            .map_err(|error| NetError::InvalidConfiguration(error.to_string()))?;
+            .map_err(NetError::from)?;
 
         let connection = WebSocketConnection {
             scope,
@@ -756,23 +813,21 @@ impl<'scope> WebSocketBuilder<'scope> {
             state,
             message,
             error,
+            error_handler,
         };
         if auto_connect {
-            let (result, callbacks) =
-                inner.update(|inner| inner.try_open_current_with_socket(initial_socket));
+            let (result, callbacks) = inner
+                .update(|inner| inner.try_open_current_with_socket(initial_socket))
+                .map_err(SilexError::from)
+                .map_err(NetError::from)??;
             if let Some(callback) = callbacks {
                 callback();
             }
             if let Err(error) = result {
-                cleanup_stored_inner(inner);
+                let _ = cleanup_stored_inner(inner);
                 return Err(error);
             }
         }
         Ok(connection)
-    }
-
-    pub fn build(self) -> WebSocketConnection<'scope> {
-        self.try_build()
-            .unwrap_or_else(|error| panic!("创建 WebSocket 失败: {error:?}"))
     }
 }

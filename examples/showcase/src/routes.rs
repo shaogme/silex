@@ -1,5 +1,4 @@
-use crate::advanced::UserSettingsStore;
-use crate::css::AppTheme;
+use crate::{advanced::UserSettingsStore, css::AppTheme};
 use silex::prelude::*;
 
 #[component]
@@ -11,8 +10,9 @@ pub fn SelectDemo<'scope>() -> impl View<'scope> {
 pub fn NavBar<'scope>(
     ctx: RouterContext<'scope>,
     settings: UserSettingsStore<'scope, 'scope>,
+    error_handler: ErrorReporter<'scope>,
 ) -> impl View<'scope> {
-    nav!(
+    Ok(nav!(
         Link(ctx, "/").children("Home").active_class("active").build(),
         Link(ctx, "/basics")
             .children("Basics")
@@ -42,7 +42,7 @@ pub fn NavBar<'scope>(
             .children("Advanced")
             .active_class("active")
             .build(),
-        button(rx!(ctx.scope(); if $(settings.theme) == "Light" { "Dark" } else { "Light" }))
+        button(rx!(ctx.scope(); error_handler; if $(settings.theme) == "Light" { "Dark" } else { "Light" }))
             .on_click(move |_| {
                 settings.theme.update(|theme| {
                     *theme = if theme == "Light" {
@@ -50,23 +50,21 @@ pub fn NavBar<'scope>(
                     } else {
                         "Light".to_string()
                     };
-                });
+                })?;
                 Ok(())
             })
             .style(
                 sty()
-                    .margin_left(AUTO)
-                    .cursor(CursorKeyword::Pointer)
-                    .background(AppTheme::BORDER)
-                    .border(NONE)
-                    .padding(padding::block_inline(px(8), px(12)))
-                    .border_radius(px(6))
-                    .color(AppTheme::TEXT),
+                    .margin_left(AUTO)?
+                    .cursor(CursorKeyword::Pointer)?
+                    .background(AppTheme::BORDER)?
+                    .border(NONE)?
+                    .padding(padding::block_inline(px(8), px(12)))?
+                    .border_radius(px(6))?
+                    .color(AppTheme::TEXT)?,
             ),
     )
-    .style(
-        "display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 24px; margin-bottom: 20px; background: var(--slx-theme-surface); color: var(--slx-theme-text); border-bottom: 1px solid var(--slx-theme-border);",
-    )
+    .style(sty().display("flex")?.flex_wrap(FlexWrapKeyword::Wrap)?.align_items("center")?.gap(px(8))?.padding("12px 24px")?.margin_bottom(px(20))?.background(AppTheme::SURFACE)?.color(AppTheme::TEXT)?.border_bottom(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?))
 }
 
 #[component]
@@ -74,11 +72,17 @@ pub fn AppLayout<'scope>(
     ctx: RouterContext<'scope>,
     outlet: AnyView<'scope>,
     settings: UserSettingsStore<'scope, 'scope>,
+    error_handler: ErrorReporter<'scope>,
 ) -> impl View<'scope> {
-    div!(
-        NavBar(ctx, settings).build(),
-        main(outlet).style("max-width: 1200px; margin: 0 auto; padding: 0 20px 40px;"),
-    )
+    Ok(div!(
+        NavBar(ctx, settings, error_handler).build(),
+        main(outlet).style(
+            sty()
+                .max_width(px(1200))?
+                .margin("0 auto")?
+                .padding("0 20px 40px")?
+        ),
+    ))
 }
 
 #[component]
@@ -86,7 +90,7 @@ pub fn AdvancedLayout<'scope>(
     ctx: RouterContext<'scope>,
     outlet: AnyView<'scope>,
 ) -> impl View<'scope> {
-    div!(
+    Ok(div!(
         h2("Advanced Features"),
         div!(
             Link(ctx, "/advanced/store")
@@ -122,14 +126,20 @@ pub fn AdvancedLayout<'scope>(
                 .class("tab")
                 .build(),
         )
-        .style("display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px;"),
+        .style(
+            sty()
+                .display("flex")?
+                .flex_wrap(FlexWrapKeyword::Wrap)?
+                .gap(px(10))?
+                .margin_bottom(px(20))?
+        ),
         outlet,
-    )
+    ))
 }
 
 #[component]
 pub fn CssLayout<'scope>(ctx: RouterContext<'scope>, outlet: AnyView<'scope>) -> impl View<'scope> {
-    div!(
+    Ok(div!(
         h2("CSS & Styling"),
         p(
             "Silex provides multiple ways to style your applications, from CSS-in-Rust to type-safe builders."
@@ -145,18 +155,24 @@ pub fn CssLayout<'scope>(ctx: RouterContext<'scope>, outlet: AnyView<'scope>) ->
                 .class("tab")
                 .build(),
         )
-        .style("display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px;"),
+        .style(
+            sty()
+                .display("flex")?
+                .flex_wrap(FlexWrapKeyword::Wrap)?
+                .gap(px(10))?
+                .margin_bottom(px(20))?
+        ),
         outlet,
-    )
+    ))
 }
 
 #[component]
 pub fn NotFoundPage<'scope>(ctx: RouterContext<'scope>) -> impl View<'scope> {
-    div!(
+    Ok(div!(
         h1("404 - Page Not Found"),
         Link(ctx, "/").children("Return Home").class("tab").build(),
     )
-    .style("color: red; padding: 20px;")
+    .style(sty().color(ColorName::Red)?.padding("20px")?))
 }
 
 #[component]

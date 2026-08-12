@@ -33,10 +33,12 @@ mod tests {
     fn rw_signal_is_a_store_field() {
         let mut runtime = Runtime::new();
 
-        runtime.child(|scope| {
-            let field = scope.rw_signal(42);
-            assert_store_field(field);
-            assert_eq!(field.get(), 42);
-        });
+        runtime
+            .child(|scope| {
+                let field = scope.rw_signal(42).expect("rw signal should initialize");
+                assert_store_field(field);
+                assert_eq!(field.get().expect("field should be readable"), 42);
+            })
+            .expect("child scope should initialize");
     }
 }

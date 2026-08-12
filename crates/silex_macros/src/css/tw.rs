@@ -12,9 +12,9 @@ pub use variants::tw_variants_impl;
 use ast::{TwInput, TwSegment, UtilityRule};
 use codegen::{build_css_block_from_rules, build_css_block_from_tw};
 use merge::{WriteSet, cluster};
-use proc_macro2::TokenStream;
-use quote::quote;
-use syn::{Error, Expr, Lit, Result};
+use proc_macro2::{Delimiter, TokenStream, TokenTree};
+use quote::{ToTokens, quote};
+use syn::{Error, Expr, Lit, Result, Token, parse::Parse, parse::ParseStream};
 
 /// 一个簇里最多允许的条件分支数。
 ///
@@ -35,12 +35,13 @@ pub fn tw_verbose_impl(ts: TokenStream) -> Result<TokenStream> {
 
 fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
     let __silex = crate::crate_path::silex();
+    let (error_handler, tw_tokens) = parse_tw_input(ts);
     let input_str = if verbose {
-        ts.to_string()
+        tw_tokens.to_string()
     } else {
         String::new()
     };
-    let mut input: TwInput = syn::parse2(ts)?;
+    let mut input: TwInput = syn::parse2(tw_tokens)?;
     fold_static_conditions(&mut input);
     let extra_classes = input.extra_classes.clone();
     let span = proc_macro2::Span::call_site();
@@ -73,7 +74,7 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
             );
         }
 
-        return crate::css::generate_css_output(compile_result, span);
+        return crate::css::generate_css_output(compile_result, span, error_handler);
     }
 
     // 处理包含条件分支句段的情形
@@ -290,7 +291,7 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
         let name = quote::format_ident!("__slx_cond_value_{}", index);
         quote! {
             let #name = __slx_conditions_for_effect[#index]
-                .try_get()
+                .get()
                 .map_err(#__silex::core::SilexError::from)?;
         }
     });
@@ -399,6 +400,42 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
             )
         }
     })
+}
+
+struct TwInputPrefix {
+    error_handler: Expr,
+    _semi: Token![;],
+    body: TokenStream,
+}
+
+impl Parse for TwInputPrefix {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
+        Ok(Self {
+            error_handler: input.parse()?,
+            _semi: input.parse()?,
+            body: input.parse()?,
+        })
+    }
+}
+
+fn parse_tw_input(ts: TokenStream) -> (Option<TokenStream>, TokenStream) {
+    match syn::parse2::<TwInputPrefix>(ts.clone()) {
+        Ok(prefix) => {
+            let body = unwrap_tw_body_group(prefix.body);
+            (Some(prefix.error_handler.into_token_stream()), body)
+        }
+        Err(_) => (None, ts),
+    }
+}
+
+fn unwrap_tw_body_group(body: TokenStream) -> TokenStream {
+    let tokens: Vec<_> = body.into_iter().collect();
+    if let [TokenTree::Group(group)] = tokens.as_slice()
+        && group.delimiter() == Delimiter::Brace
+    {
+        return group.stream();
+    }
+    tokens.into_iter().collect()
 }
 
 fn fold_static_conditions(input: &mut TwInput) {

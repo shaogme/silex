@@ -20,6 +20,7 @@ global! {
 
 global! {
     pub MixedGlobal<'scope>(
+        error_handler: silex_core::ErrorReporter<'scope>,
         color: silex_core::reactivity::Signal<'scope, Hex>,
     ) {
         body {
@@ -48,7 +49,7 @@ styled! {
 fn main() {
     let _ = css! { color: $(static StaticTheme::PRIMARY); };
     let mut runtime = silex_core::Runtime::new();
-    runtime.child(|scope| {
+    let _ = runtime.child(|scope| {
         let _ = StaticGlobal(scope);
     });
 }

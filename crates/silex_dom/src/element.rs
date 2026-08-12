@@ -88,7 +88,7 @@ impl<'scope> Element<'scope> {
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
     ) -> SilexResult<()> {
-        let provisional_scope = Rc::new(owner.try_owned_scope()?);
+        let provisional_scope = Rc::new(owner.owned_scope()?);
         let provisional_owner =
             OwnedViewOwner::new(provisional_scope.clone(), owner.token().error_handler());
         let token = provisional_owner.token();
@@ -387,7 +387,7 @@ where
     let destination = owner.host_callback(
         move |payload| handler(payload.unchecked_into::<E>()),
         owner.error_handler(),
-    );
+    )?;
     let destination_for_closure = std::panic::AssertUnwindSafe(destination.clone());
     let closure: Closure<dyn FnMut(E)> = Closure::wrap(Box::new(move |event: E| {
         let _ = destination_for_closure.dispatch(event.unchecked_into::<JsValue>());
@@ -406,7 +406,7 @@ where
     let target = dom_element.clone();
     let event_name_for_cleanup = event_name.clone();
     let js_fn_for_cleanup = js_fn.clone();
-    owner.try_host_resource_for_js_callback(&destination, resource, move || {
+    owner.host_resource_for_js_callback(&destination, resource, move || {
         let _ =
             target.remove_event_listener_with_callback(&event_name_for_cleanup, &js_fn_for_cleanup);
     })?;

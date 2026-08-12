@@ -1,16 +1,20 @@
 error[E0521]: borrowed data escapes outside of closure
- --> tests/ui/fail_scoped_callback_in_detached_task.rs:7:9
-  |
-5 |       runtime.child(|scope| {
-  |                      -----
-  |                      |
-  |                      `scope` is a reference that is only valid in the closure body
-  |                      has type `silex_core::Scope<'1>`
-6 |           let (value, _) = scope.signal(1_i32);
-7 | /         scope.spawn_scoped(async move {
-8 | |             let _ = value.get();
-9 | |         }, scope.error_handler(|_| {}));
-  | |                                       ^
-  | |                                       |
-  | |_______________________________________`scope` escapes the closure body here
-  |                                         argument requires that `'1` must outlive `'static`
+  --> tests/ui/fail_scoped_callback_in_detached_task.rs:7:21
+   |
+ 5 |       runtime.child(|scope| {
+   |                      -----
+   |                      |
+   |                      `scope` is a reference that is only valid in the closure body
+   |                      has type `silex_core::Scope<'1>`
+ 6 |           let (value, _) = scope.signal(1_i32).unwrap();
+ 7 |           let _task = scope.spawn_scoped(
+   |  _____________________^
+ 8 | |             async move {
+ 9 | |                 let _ = value.get();
+10 | |             },
+11 | |             scope.error_handler(|_| {}).unwrap(),
+12 | |         );
+   | |         ^
+   | |         |
+   | |_________`scope` escapes the closure body here
+   |           argument requires that `'1` must outlive `'static`

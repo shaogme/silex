@@ -32,17 +32,17 @@ impl<T> RxValue for Constant<T> {
 }
 
 impl<T> RxBase for Constant<T> {
-    fn try_track(&self) -> SilexResult<()> {
+    fn track(&self) -> SilexResult<()> {
         Ok(())
     }
 }
 
 impl<T> RxRead for Constant<T> {
-    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+    fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         Ok(f(&self.0))
     }
 
-    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+    fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         Ok(f(&self.0))
     }
 }
@@ -170,43 +170,25 @@ impl<'scope, T: 'scope> ReadSignal<'scope, T> {
         self
     }
 
-    pub fn try_get(&self) -> SilexResult<T>
+    pub fn get(&self) -> SilexResult<T>
     where
         T: Clone,
     {
         self.inner.get().map_err(SilexError::from)
     }
 
-    pub fn get(&self) -> T
-    where
-        T: Clone,
-    {
-        self.try_get()
-            .unwrap_or_else(|error| panic!("读取 scoped signal 失败: {error}"))
-    }
-
-    pub fn try_get_untracked(&self) -> SilexResult<T>
+    pub fn get_untracked(&self) -> SilexResult<T>
     where
         T: Clone,
     {
         self.inner.get_untracked().map_err(SilexError::from)
     }
 
-    pub fn with<U>(&self, f: impl FnOnce(&T) -> U) -> U {
-        self.try_with(f)
-            .unwrap_or_else(|error| panic!("读取 scoped signal 失败: {error}"))
-    }
-
-    pub fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+    pub fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         self.inner.with(f).map_err(SilexError::from)
     }
 
-    pub fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> U {
-        self.try_with_untracked(f)
-            .unwrap_or_else(|error| panic!("读取 scoped signal 失败: {error}"))
-    }
-
-    pub fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+    pub fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         self.inner.with_untracked(f).map_err(SilexError::from)
     }
 
@@ -232,31 +214,16 @@ impl<'scope, T: 'scope> WriteSignal<'scope, T> {
         self
     }
 
-    pub fn try_set(&self, value: T) -> ReactiveResult<()> {
+    pub fn set(&self, value: T) -> ReactiveResult<()> {
         self.inner.set(value)
     }
 
-    pub fn set(&self, value: T) {
-        self.try_set(value)
-            .unwrap_or_else(|error| panic!("写入 scoped signal 失败: {error}"));
-    }
-
-    pub fn try_update<U>(&self, f: impl FnOnce(&mut T) -> U) -> ReactiveResult<U> {
+    pub fn update<U>(&self, f: impl FnOnce(&mut T) -> U) -> ReactiveResult<U> {
         self.inner.update(f)
     }
 
-    pub fn update(&self, f: impl FnOnce(&mut T)) {
-        self.try_update(f)
-            .unwrap_or_else(|error| panic!("更新 scoped signal 失败: {error}"));
-    }
-
-    pub fn try_notify(&self) -> ReactiveResult<()> {
+    pub fn notify(&self) -> ReactiveResult<()> {
         raw_notify(&self.inner)
-    }
-
-    pub fn notify(&self) {
-        self.try_notify()
-            .unwrap_or_else(|error| panic!("通知 scoped signal 失败: {error}"));
     }
 
     /// Return opaque runtime provenance for owner-bound validation.
@@ -290,25 +257,25 @@ impl<'scope, T> RwSignal<'scope, T> {
         (self.read, self.write)
     }
 
-    pub fn get(&self) -> T
+    pub fn get(&self) -> SilexResult<T>
     where
         T: Clone + 'scope,
     {
         self.read.get()
     }
 
-    pub fn set(&self, value: T)
+    pub fn set(&self, value: T) -> ReactiveResult<()>
     where
         T: 'scope,
     {
         self.write.set(value)
     }
 
-    pub fn update(&self, f: impl FnOnce(&mut T))
+    pub fn update(&self, f: impl FnOnce(&mut T)) -> ReactiveResult<()>
     where
         T: 'scope,
     {
-        self.write.update(f)
+        self.write.update(f).map(|_| ())
     }
 
     pub fn slice<O, F>(self, getter: F) -> SignalSlice<Self, F, O>
@@ -326,34 +293,19 @@ impl<'scope, T: 'scope> Signal<'scope, T> {
         Self { rx }
     }
 
-    pub fn get(&self) -> T
+    pub fn get(&self) -> SilexResult<T>
     where
         T: Clone,
     {
         self.rx.get()
     }
 
-    pub fn try_get(&self) -> SilexResult<T>
-    where
-        T: Clone,
-    {
-        self.rx.try_get()
-    }
-
-    pub fn with<U>(&self, f: impl FnOnce(&T) -> U) -> U {
+    pub fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         self.rx.with(f)
     }
 
-    pub fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.rx.try_with(f)
-    }
-
-    pub fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> U {
+    pub fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         self.rx.with_untracked(f)
-    }
-
-    pub fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.rx.try_with_untracked(f)
     }
 
     pub fn is_constant(&self) -> bool {
@@ -404,19 +356,21 @@ mod tests {
     #[test]
     fn test_signal_partial_eq() {
         let mut runtime = Runtime::new();
-        runtime.child(|scope| {
-            let (read1, write1) = scope.signal(10);
-            let (read2, _write2) = scope.signal(10);
+        runtime
+            .child(|scope| {
+                let (read1, write1) = scope.signal(10).expect("signal should initialize");
+                let (read2, _write2) = scope.signal(10).expect("signal should initialize");
 
-            assert_eq!(read1, read1);
-            assert_ne!(read1, read2);
-            assert_eq!(write1, write1);
+                assert_eq!(read1, read1);
+                assert_ne!(read1, read2);
+                assert_eq!(write1, write1);
 
-            let rw1 = scope.rw_signal(20);
-            let rw2 = scope.rw_signal(20);
+                let rw1 = scope.rw_signal(20).expect("rw signal should initialize");
+                let rw2 = scope.rw_signal(20).expect("rw signal should initialize");
 
-            assert_eq!(rw1, rw1);
-            assert_ne!(rw1, rw2);
-        });
+                assert_eq!(rw1, rw1);
+                assert_ne!(rw1, rw2);
+            })
+            .expect("child scope should initialize");
     }
 }

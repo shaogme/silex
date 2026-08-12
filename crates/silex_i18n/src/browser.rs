@@ -115,7 +115,7 @@ pub(crate) fn sync_document_metadata<'scope>(
     let root: Option<web_sys::Element> = None;
     let Some(root) = root else {
         let effect = scope.effect(|| Ok(()), store.error_handler())?;
-        effect.stop();
+        effect.stop()?;
         return Ok(effect);
     };
 
@@ -176,7 +176,7 @@ pub(crate) fn sync_document_metadata<'scope>(
                 return Ok(());
             }
 
-            let locale = locale.try_get()?;
+            let locale = locale.get()?;
             let lang = locale.as_str().to_string();
             let dir = locale_direction(&locale).as_str().to_string();
             set_record_value(
@@ -369,7 +369,7 @@ mod tests {
     use super::*;
 
     fn locale(value: &str) -> Locale {
-        Locale::new(value)
+        Locale::new(value).expect("valid locale")
     }
 
     #[test]
@@ -400,15 +400,20 @@ mod tests {
     #[test]
     fn missing_document_returns_an_inactive_effect_without_leaking_nodes() {
         let mut runtime = silex_core::Runtime::new();
-        runtime.child(|scope| {
-            let store = crate::I18nBuilder::new(scope, scope.error_handler(|_| {}))
-                .locale(Locale::new("en-US"))
+        runtime
+            .child(|scope| {
+                let store = crate::I18nBuilder::new(
+                    scope,
+                    scope.error_handler(|_| {}).expect("error handler"),
+                )
+                .locale(Locale::new("en-US").expect("valid locale"))
                 .build()
                 .expect("valid i18n store");
-            let before = scope.runtime_snapshot();
-            let effect = sync_document_metadata(store).expect("metadata effect can be created");
-            assert_eq!(scope.runtime_snapshot(), before);
-            assert!(!effect.try_stop().expect("inactive effect can stop"));
-        });
+                let before = scope.runtime_snapshot();
+                let effect = sync_document_metadata(store).expect("metadata effect can be created");
+                assert_eq!(scope.runtime_snapshot(), before);
+                assert!(!effect.stop().expect("inactive effect can stop"));
+            })
+            .expect("child scope");
     }
 }

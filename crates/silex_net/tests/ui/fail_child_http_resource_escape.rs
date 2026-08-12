@@ -3,9 +3,15 @@ use silex_net::{HttpClient, NetError};
 
 fn escape(runtime: &mut Runtime) -> Resource<'static, std::string::String, NetError> {
     runtime.child(|scope| {
-        HttpClient::get(scope, "https://example.test", scope.error_handler(|_| {}))
+        HttpClient::get(
+            scope,
+            "https://example.test",
+            scope.error_handler(|_| {}).unwrap(),
+        )
             .into_resource(None)
+            .unwrap()
     })
+    .unwrap()
 }
 
 fn main() {

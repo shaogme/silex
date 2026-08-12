@@ -1,4 +1,4 @@
-use silex_core::{Scope, SilexError, reactivity::ReactiveSource};
+use silex_core::{ErrorReporter, Scope, SilexError, reactivity::ReactiveSource};
 use silex_dom::prelude::*;
 use silex_macros::component;
 use std::collections::HashMap;
@@ -16,12 +16,13 @@ use std::rc::Rc;
 /// Switch(scope, count)
 ///     .fallback("Default View")
 ///     .build()
-///     .try_case(0, "Zero")?
-///     .try_case(1, "One")?;
+///     .case(0, "Zero")?
+///     .case(1, "One")?;
 /// ```
 #[component]
 pub fn Switch<'scope, Source, T>(
     scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
     source: Source,
     #[chain(default)] cases: HashMap<T, AnyView<'scope>>,
     #[prop(render)]
@@ -32,16 +33,16 @@ where
     Source: ReactiveSource<'scope, Value = T> + Clone + 'scope,
     T: Eq + Hash + Clone + 'scope,
 {
-    let source = scope.promote(source);
+    let source = scope.promote(source, error_handler)?;
     let cases = Rc::new(cases);
-    silex_core::rx!(scope; {
+    Ok(silex_core::rx!(scope; error_handler; {
         let val = (*$source).clone();
         if let Some(view) = cases.get(&val) {
             view.clone()
         } else {
             fallback.clone()
         }
-    })
+    }))
 }
 
 impl<'scope, Source, T> SwitchComponent<'scope, Source, T>
@@ -50,7 +51,7 @@ where
     T: Eq + Hash + Clone + 'scope,
 {
     /// 添加一个匹配分支，并在重复 key 时返回配置错误。
-    pub fn try_case<V>(mut self, value: T, view: V) -> Result<Self, SilexError>
+    pub fn case<V>(mut self, value: T, view: V) -> Result<Self, SilexError>
     where
         V: View<'scope> + 'scope,
     {

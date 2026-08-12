@@ -12,7 +12,9 @@ use web_sys::Element as DomElement;
 wasm_bindgen_test_configure!(run_in_browser);
 
 fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
-    scope.error_handler(|_| {})
+    scope
+        .error_handler(|_| {})
+        .expect("error handler should register")
 }
 
 fn host() -> DomElement {
@@ -37,25 +39,27 @@ fn style_text(element: &DomElement) -> String {
 fn reactive_static_str_attribute_updates() {
     let host = host();
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let (read, write) = scope.signal("initial");
-        let owner = ScopedViewOwner::new(scope, test_handler(scope));
-        let view = Element::new("button").attr("data-state", read.into_rx());
-        view.mount(&owner, &host, Vec::new())
-            .expect("reactive view should mount");
+    runtime
+        .child(|scope| {
+            let (read, write) = scope.signal("initial").expect("signal should initialize");
+            let owner = ScopedViewOwner::new(scope, test_handler(scope));
+            let view = Element::new("button").attr("data-state", read.into_rx());
+            view.mount(&owner, &host, Vec::new())
+                .expect("reactive view should mount");
 
-        let element = mounted(&host);
-        assert_eq!(
-            element.get_attribute("data-state").as_deref(),
-            Some("initial")
-        );
+            let element = mounted(&host);
+            assert_eq!(
+                element.get_attribute("data-state").as_deref(),
+                Some("initial")
+            );
 
-        write.set("updated");
-        assert_eq!(
-            element.get_attribute("data-state").as_deref(),
-            Some("updated")
-        );
-    });
+            write.set("updated").expect("signal should be writable");
+            assert_eq!(
+                element.get_attribute("data-state").as_deref(),
+                Some("updated")
+            );
+        })
+        .expect("child scope should initialize");
 }
 
 #[wasm_bindgen_test]
@@ -64,50 +68,62 @@ fn reactive_borrowed_str_attribute_updates() {
     let initial = String::from("initial");
     let updated = String::from("updated");
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let (read, write) = scope.signal(initial.as_str());
-        let owner = ScopedViewOwner::new(scope, test_handler(scope));
-        let view = Element::new("div").attr("data-value", read.into_rx());
-        view.mount(&owner, &host, Vec::new())
-            .expect("reactive view should mount");
+    runtime
+        .child(|scope| {
+            let (read, write) = scope
+                .signal(initial.as_str())
+                .expect("signal should initialize");
+            let owner = ScopedViewOwner::new(scope, test_handler(scope));
+            let view = Element::new("div").attr("data-value", read.into_rx());
+            view.mount(&owner, &host, Vec::new())
+                .expect("reactive view should mount");
 
-        let element = mounted(&host);
-        assert_eq!(
-            element.get_attribute("data-value").as_deref(),
-            Some("initial")
-        );
+            let element = mounted(&host);
+            assert_eq!(
+                element.get_attribute("data-value").as_deref(),
+                Some("initial")
+            );
 
-        write.set(updated.as_str());
-        assert_eq!(
-            element.get_attribute("data-value").as_deref(),
-            Some("updated")
-        );
-    });
+            write
+                .set(updated.as_str())
+                .expect("signal should be writable");
+            assert_eq!(
+                element.get_attribute("data-value").as_deref(),
+                Some("updated")
+            );
+        })
+        .expect("child scope should initialize");
 }
 
 #[wasm_bindgen_test]
 fn reactive_cow_attribute_updates() {
     let host = host();
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let (read, write) = scope.signal(Cow::Borrowed("initial"));
-        let owner = ScopedViewOwner::new(scope, test_handler(scope));
-        let view = Element::new("span").attr("data-state", read.into_rx());
-        view.mount(&owner, &host, Vec::new())
-            .expect("reactive view should mount");
+    runtime
+        .child(|scope| {
+            let (read, write) = scope
+                .signal(Cow::Borrowed("initial"))
+                .expect("signal should initialize");
+            let owner = ScopedViewOwner::new(scope, test_handler(scope));
+            let view = Element::new("span").attr("data-state", read.into_rx());
+            view.mount(&owner, &host, Vec::new())
+                .expect("reactive view should mount");
 
-        let element = mounted(&host);
-        assert_eq!(
-            element.get_attribute("data-state").as_deref(),
-            Some("initial")
-        );
+            let element = mounted(&host);
+            assert_eq!(
+                element.get_attribute("data-state").as_deref(),
+                Some("initial")
+            );
 
-        write.set(Cow::Owned(String::from("updated")));
-        assert_eq!(
-            element.get_attribute("data-state").as_deref(),
-            Some("updated")
-        );
-    });
+            write
+                .set(Cow::Owned(String::from("updated")))
+                .expect("signal should be writable");
+            assert_eq!(
+                element.get_attribute("data-state").as_deref(),
+                Some("updated")
+            );
+        })
+        .expect("child scope should initialize");
 }
 
 #[wasm_bindgen_test]
@@ -116,36 +132,40 @@ fn reactive_string_reference_attribute_updates() {
     let initial = String::from("initial");
     let updated = String::from("updated");
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let (read, write) = scope.signal(&initial);
-        let owner = ScopedViewOwner::new(scope, test_handler(scope));
-        let view = Element::new("p").attr("data-text", read.into_rx());
-        view.mount(&owner, &host, Vec::new())
-            .expect("reactive view should mount");
+    runtime
+        .child(|scope| {
+            let (read, write) = scope.signal(&initial).expect("signal should initialize");
+            let owner = ScopedViewOwner::new(scope, test_handler(scope));
+            let view = Element::new("p").attr("data-text", read.into_rx());
+            view.mount(&owner, &host, Vec::new())
+                .expect("reactive view should mount");
 
-        let element = mounted(&host);
-        assert_eq!(
-            element.get_attribute("data-text").as_deref(),
-            Some("initial")
-        );
+            let element = mounted(&host);
+            assert_eq!(
+                element.get_attribute("data-text").as_deref(),
+                Some("initial")
+            );
 
-        write.set(&updated);
-        assert_eq!(
-            element.get_attribute("data-text").as_deref(),
-            Some("updated")
-        );
-    });
+            write.set(&updated).expect("signal should be writable");
+            assert_eq!(
+                element.get_attribute("data-text").as_deref(),
+                Some("updated")
+            );
+        })
+        .expect("child scope should initialize");
 }
 
 #[wasm_bindgen_test]
 fn reactive_str_classes_merge_update_and_cleanup() {
     let host = host();
     let mut runtime = Runtime::new();
-    let root = runtime.run();
+    let root = runtime.run().expect("root should start");
     let element;
     {
         let scope = root.scope();
-        let (read, write) = scope.signal("dynamic-one");
+        let (read, write) = scope
+            .signal("dynamic-one")
+            .expect("signal should initialize");
         let owner = ScopedViewOwner::new(scope, test_handler(scope));
         let view = Element::new("div")
             .attr("class", "static")
@@ -157,7 +177,7 @@ fn reactive_str_classes_merge_update_and_cleanup() {
         assert!(element.class_list().contains("static"));
         assert!(element.class_list().contains("dynamic-one"));
 
-        write.set("dynamic-two");
+        write.set("dynamic-two").expect("signal should be writable");
         assert!(element.class_list().contains("static"));
         assert!(!element.class_list().contains("dynamic-one"));
         assert!(element.class_list().contains("dynamic-two"));
@@ -172,11 +192,13 @@ fn reactive_str_classes_merge_update_and_cleanup() {
 fn reactive_str_stylesheet_merges_update_and_cleanup() {
     let host = host();
     let mut runtime = Runtime::new();
-    let root = runtime.run();
+    let root = runtime.run().expect("root should start");
     let element;
     {
         let scope = root.scope();
-        let (read, write) = scope.signal("color: red;");
+        let (read, write) = scope
+            .signal("color: red;")
+            .expect("signal should initialize");
         let owner = ScopedViewOwner::new(scope, test_handler(scope));
         let view = Element::new("div")
             .attr("style", "display: block;")
@@ -189,7 +211,9 @@ fn reactive_str_stylesheet_merges_update_and_cleanup() {
         assert!(initial.contains("display: block"), "{initial}");
         assert!(initial.contains("color: red"), "{initial}");
 
-        write.set("color: blue;");
+        write
+            .set("color: blue;")
+            .expect("signal should be writable");
         let updated = style_text(&element);
         assert!(updated.contains("display: block"), "{updated}");
         assert!(updated.contains("color: blue"), "{updated}");
@@ -206,11 +230,13 @@ fn reactive_str_stylesheet_merges_update_and_cleanup() {
 fn reactive_cow_style_property_updates_and_cleans_up() {
     let host = host();
     let mut runtime = Runtime::new();
-    let root = runtime.run();
+    let root = runtime.run().expect("root should start");
     let element;
     {
         let scope = root.scope();
-        let (read, write) = scope.signal(Cow::Borrowed("red"));
+        let (read, write) = scope
+            .signal(Cow::Borrowed("red"))
+            .expect("signal should initialize");
         let owner = ScopedViewOwner::new(scope, test_handler(scope));
         let view = Element::new("div")
             .attr("style", ("color", read.into_rx()))
@@ -223,7 +249,9 @@ fn reactive_cow_style_property_updates_and_cleans_up() {
         assert!(initial.contains("display: block"), "{initial}");
         assert!(initial.contains("color: red"), "{initial}");
 
-        write.set(Cow::Owned(String::from("blue")));
+        write
+            .set(Cow::Owned(String::from("blue")))
+            .expect("signal should be writable");
         let updated = style_text(&element);
         assert!(updated.contains("display: block"), "{updated}");
         assert!(updated.contains("color: blue"), "{updated}");

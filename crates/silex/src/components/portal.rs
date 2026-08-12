@@ -22,12 +22,17 @@ impl<'scope> PortalView<'scope> {
         attrs: Vec<PendingAttribute<'scope>>,
     ) -> silex_core::SilexResult<()> {
         let document = silex_dom::document();
-        let target = self.mount_to.unwrap_or_else(|| {
-            document
+        let target = match self.mount_to {
+            Some(target) => target,
+            None => document
                 .body()
-                .expect("Portal requires document.body when no target is supplied")
-                .into()
-        });
+                .ok_or_else(|| {
+                    silex_core::SilexError::Dom(
+                        "Portal requires document.body when no target is supplied".to_string(),
+                    )
+                })?
+                .into(),
+        };
         let container = document
             .create_element("div")
             .map_err(silex_core::SilexError::from)?;

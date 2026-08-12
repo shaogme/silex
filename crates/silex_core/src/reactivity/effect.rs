@@ -33,12 +33,7 @@ impl<'scope> Effect<'scope> {
         Self { inner }
     }
 
-    pub fn try_stop(&self) -> SilexResult<bool> {
+    pub fn stop(&self) -> SilexResult<bool> {
         self.inner.stop().map_err(SilexError::from)
-    }
-
-    pub fn stop(&self) {
-        self.try_stop()
-            .unwrap_or_else(|error| panic!("停止 effect 失败: {error}"));
     }
 }

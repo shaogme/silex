@@ -26,7 +26,9 @@ impl ThemeToCss for Theme {
 fn main() {
     let mut runtime = Runtime::new();
     let theme = runtime.child(|scope| {
-        let (value, _) = scope.signal(Theme);
+        let (value, _) = scope
+            .signal(Theme)
+            .expect("signal should initialize");
         theme_variables(value)
     });
     let _ = theme;

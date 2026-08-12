@@ -8,7 +8,7 @@ use crate::{
 };
 #[cfg(feature = "persist")]
 use silex_core::CompletionOnce;
-use silex_core::{ErrorReporter, RuntimeInputs, Scope};
+use silex_core::{ErrorReporter, RuntimeInputs, Scope, SilexResult};
 use std::{marker::PhantomData, rc::Rc, time::Duration};
 
 pub mod client_impl;
@@ -68,18 +68,21 @@ impl<'scope> BodyResolver<'scope> {
         inputs
     }
 
-    fn resolve(&self, resolver: fn(&ValueResolver<'scope>) -> String) -> RequestBody {
+    fn resolve(
+        &self,
+        resolver: fn(&ValueResolver<'scope>) -> SilexResult<String>,
+    ) -> SilexResult<RequestBody> {
         match self {
-            Self::Static(body) => body.clone(),
-            Self::Text(value) => RequestBody::Text(resolver(value)),
+            Self::Static(body) => Ok(body.clone()),
+            Self::Text(value) => Ok(RequestBody::Text(resolver(value)?)),
             #[cfg(feature = "json")]
-            Self::Json(value) => RequestBody::Json(resolver(value)),
-            Self::Form(fields) => RequestBody::Form(
+            Self::Json(value) => Ok(RequestBody::Json(resolver(value)?)),
+            Self::Form(fields) => Ok(RequestBody::Form(
                 fields
                     .iter()
-                    .map(|(name, value)| (resolver(name), resolver(value)))
-                    .collect(),
-            ),
+                    .map(|(name, value)| Ok((resolver(name)?, resolver(value)?)))
+                    .collect::<SilexResult<Vec<_>>>()?,
+            )),
         }
     }
 }
@@ -317,18 +320,18 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
                 move || {
                     let credentials = format!(
                         "{}:{}",
-                        tracked_user.resolve_tracked(),
-                        tracked_password.resolve_tracked()
+                        tracked_user.resolve_tracked()?,
+                        tracked_password.resolve_tracked()?
                     );
-                    format!("Basic {}", base64_encode(credentials.as_bytes()))
+                    Ok(format!("Basic {}", base64_encode(credentials.as_bytes())))
                 },
                 move || {
                     let credentials = format!(
                         "{}:{}",
-                        untracked_user.resolve(),
-                        untracked_password.resolve()
+                        untracked_user.resolve()?,
+                        untracked_password.resolve()?
                     );
-                    format!("Basic {}", base64_encode(credentials.as_bytes()))
+                    Ok(format!("Basic {}", base64_encode(credentials.as_bytes())))
                 },
                 inputs,
             ),
@@ -380,8 +383,8 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
         self.header(
             "Authorization",
             ValueResolver::dynamic_with_inputs(
-                move || format!("Bearer {}", tracked.resolve_tracked()),
-                move || format!("Bearer {}", untracked.resolve()),
+                move || Ok(format!("Bearer {}", tracked.resolve_tracked()?)),
+                move || Ok(format!("Bearer {}", untracked.resolve()?)),
                 inputs,
             ),
         )
@@ -393,7 +396,7 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
     }
 
     #[cfg(feature = "json")]
-    pub fn try_json_body<TBody>(mut self, value: TBody) -> Result<Self, NetError>
+    pub fn json_body<TBody>(mut self, value: TBody) -> Result<Self, NetError>
     where
         TBody: serde::Serialize,
     {
@@ -460,7 +463,7 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
     }
 
     #[cfg(feature = "persist")]
-    pub fn try_cache(
+    pub fn cache(
         mut self,
         policy: CachePolicy,
         cache: HttpCache<'scope, T>,
@@ -478,15 +481,6 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
     }
 
     #[cfg(feature = "persist")]
-    pub fn cache(self, policy: CachePolicy, cache: HttpCache<'scope, T>) -> Self
-    where
-        T: Clone + 'static,
-    {
-        self.try_cache(policy, cache)
-            .unwrap_or_else(|error| panic!("配置 HTTP cache 失败: {error:?}"))
-    }
-
-    #[cfg(feature = "persist")]
     fn clear_legacy_cache_key(&self, spec: &RequestSpec) {
         let Some(storage) =
             web_sys::window().and_then(|window| window.local_storage().ok().flatten())
@@ -497,50 +491,62 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
     }
 
     #[cfg(feature = "persist")]
-    pub(crate) fn cached_value(&self, spec: &RequestSpec) -> Option<T>
+    pub(crate) fn cached_value(&self, spec: &RequestSpec) -> Result<Option<T>, NetError>
     where
         T: Clone + 'static,
     {
-        let cache = self.cache.as_ref()?;
+        let Some(cache) = self.cache.as_ref() else {
+            return Ok(None);
+        };
         if matches!(cache.policy, CachePolicy::None) {
-            return None;
+            return Ok(None);
         }
         self.clear_legacy_cache_key(spec);
         if !self.persistent_cache_allowed(spec) {
-            return None;
+            return Ok(None);
         }
-        cache.cache.cached_value(spec)
+        cache.cache.cached_value(spec).map_err(NetError::from)
     }
 
     #[cfg(feature = "persist")]
-    pub(crate) fn cache_binding(&self, spec: &RequestSpec) -> Option<CacheBinding<T>>
+    pub(crate) fn cache_binding(
+        &self,
+        spec: &RequestSpec,
+    ) -> Result<Option<CacheBinding<T>>, NetError>
     where
         T: Clone + 'static,
     {
-        let cache = self.cache.as_ref()?;
+        let Some(cache) = self.cache.as_ref() else {
+            return Ok(None);
+        };
         if matches!(cache.policy, CachePolicy::None) {
-            return None;
+            return Ok(None);
         }
         self.clear_legacy_cache_key(spec);
         if !self.persistent_cache_allowed(spec) {
-            return None;
+            return Ok(None);
         }
-        cache.cache.binding(spec)
+        cache.cache.binding(spec).map_err(NetError::from)
     }
 
     #[cfg(feature = "persist")]
     pub(crate) fn cache_completion_once_for_binding(
         &self,
         binding: CacheBinding<T>,
-    ) -> CompletionOnce<T>
+    ) -> Result<CompletionOnce<T>, NetError>
     where
         T: Clone + 'static,
     {
-        self.cache
-            .as_ref()
-            .expect("cache binding requires cache configuration")
+        Ok(self
             .cache
-            .completion_once_for_binding(self.scope, binding)
+            .as_ref()
+            .ok_or_else(|| {
+                NetError::InvalidConfiguration(
+                    "cache binding requires cache configuration".to_string(),
+                )
+            })?
+            .cache
+            .completion_once_for_binding(self.scope, binding)?)
     }
 
     #[cfg(feature = "persist")]
@@ -583,23 +589,29 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
             ));
         }
         target_scope
-            .try_validate_inputs(&self.runtime_inputs())
-            .map_err(|error| NetError::InvalidConfiguration(error.to_string()))
+            .validate_inputs(&self.runtime_inputs())
+            .map_err(NetError::from)
     }
 
-    pub(crate) fn resolve_spec(&self) -> RequestSpec {
+    pub(crate) fn resolve_spec(&self) -> Result<RequestSpec, NetError> {
         self.resolve_spec_with(ValueResolver::resolve)
     }
 
-    pub(crate) fn resolve_spec_tracked(&self) -> RequestSpec {
+    pub(crate) fn resolve_spec_tracked(&self) -> Result<RequestSpec, NetError> {
         self.resolve_spec_with(ValueResolver::resolve_tracked)
     }
 
-    fn resolve_spec_with(&self, resolve: fn(&ValueResolver<'scope>) -> String) -> RequestSpec {
-        let mut url = resolve(&self.url);
+    fn resolve_spec_with(
+        &self,
+        resolve: fn(&ValueResolver<'scope>) -> SilexResult<String>,
+    ) -> Result<RequestSpec, NetError> {
+        let mut url = resolve(&self.url).map_err(NetError::from)?;
         for (key, value) in &self.path_params {
             let needle = format!("{{{key}}}");
-            url = url.replace(&needle, &encode_component(&resolve(value)));
+            url = url.replace(
+                &needle,
+                &encode_component(&resolve(value).map_err(NetError::from)?),
+            );
         }
 
         let (mut url, fragment) = match url.split_once('#') {
@@ -612,7 +624,7 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
             query_parts.push(format!(
                 "{}={}",
                 encode_component(key),
-                encode_component(&resolve(value))
+                encode_component(&resolve(value).map_err(NetError::from)?)
             ));
         }
         if !query_parts.is_empty() {
@@ -627,17 +639,17 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
         let headers = self
             .headers
             .iter()
-            .map(|(name, value)| (name.clone(), resolve(value)))
-            .collect();
+            .map(|(name, value)| Ok((name.clone(), resolve(value).map_err(NetError::from)?)))
+            .collect::<Result<Vec<_>, NetError>>()?;
 
-        RequestSpec {
+        Ok(RequestSpec {
             method: self.method,
             url,
             headers,
             timeout: self.timeout,
             credentials: self.credentials,
-            body: self.body.resolve(resolve),
-        }
+            body: self.body.resolve(resolve).map_err(NetError::from)?,
+        })
     }
 
     pub fn text(self) -> HttpClientBuilder<'scope, String, TextCodec> {
@@ -722,173 +734,192 @@ mod tests {
     }
 
     fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
-        scope.error_handler(|_| {})
+        scope.error_handler(|_| {}).unwrap()
     }
 
     #[test]
     fn request_inputs_include_dynamic_body_and_all_request_parts() {
         let mut runtime = Runtime::new();
-        runtime.child(|scope| {
-            let (url, _) = scope.signal("https://example.test/{id}".to_string());
-            let (header, _) = scope.signal("token".to_string());
-            let (query, _) = scope.signal("search".to_string());
-            let (path, _) = scope.signal("42".to_string());
-            let (body, _) = scope.signal("payload".to_string());
-            let builder = HttpClient::post(scope, url, test_handler(scope))
-                .header("Authorization", header)
-                .query("q", query)
-                .path_param("id", path)
-                .text_body(body);
+        runtime
+            .child(|scope| {
+                let (url, _) = scope
+                    .signal("https://example.test/{id}".to_string())
+                    .unwrap();
+                let (header, _) = scope.signal("token".to_string()).unwrap();
+                let (query, _) = scope.signal("search".to_string()).unwrap();
+                let (path, _) = scope.signal("42".to_string()).unwrap();
+                let (body, _) = scope.signal("payload".to_string()).unwrap();
+                let builder = HttpClient::post(scope, url, test_handler(scope))
+                    .header("Authorization", header)
+                    .query("q", query)
+                    .path_param("id", path)
+                    .text_body(body);
 
-            assert_eq!(builder.runtime_inputs().len(), 5);
-            assert_eq!(
-                builder.resolve_spec_tracked().url,
-                "https://example.test/42?q=search"
-            );
-            assert_eq!(
-                builder.resolve_spec().body,
-                RequestBody::Text("payload".to_string())
-            );
-        });
+                assert_eq!(builder.runtime_inputs().len(), 5);
+                assert_eq!(
+                    builder.resolve_spec_tracked().unwrap().url,
+                    "https://example.test/42?q=search"
+                );
+                assert_eq!(
+                    builder.resolve_spec().unwrap().body,
+                    RequestBody::Text("payload".to_string())
+                );
+            })
+            .unwrap();
     }
 
     #[test]
     fn query_is_inserted_before_url_fragment() {
         let mut runtime = Runtime::new();
-        runtime.child(|scope| {
-            let builder = HttpClient::get(
-                scope,
-                "https://example.test/path#fragment?not-a-query",
-                test_handler(scope),
-            )
-            .query("q", "one");
-            assert_eq!(
-                builder.resolve_spec().url,
-                "https://example.test/path?q=one#fragment?not-a-query"
-            );
+        runtime
+            .child(|scope| {
+                let builder = HttpClient::get(
+                    scope,
+                    "https://example.test/path#fragment?not-a-query",
+                    test_handler(scope),
+                )
+                .query("q", "one");
+                assert_eq!(
+                    builder.resolve_spec().unwrap().url,
+                    "https://example.test/path?q=one#fragment?not-a-query"
+                );
 
-            let builder = HttpClient::get(
-                scope,
-                "https://example.test/path?existing=1#fragment",
-                test_handler(scope),
-            )
-            .query("q", "two");
-            assert_eq!(
-                builder.resolve_spec().url,
-                "https://example.test/path?existing=1&q=two#fragment"
-            );
-        });
+                let builder = HttpClient::get(
+                    scope,
+                    "https://example.test/path?existing=1#fragment",
+                    test_handler(scope),
+                )
+                .query("q", "two");
+                assert_eq!(
+                    builder.resolve_spec().unwrap().url,
+                    "https://example.test/path?existing=1&q=two#fragment"
+                );
+            })
+            .unwrap();
     }
 
     #[test]
     fn form_body_resolves_dynamic_values_without_leaking_resolvers() {
         let mut runtime = Runtime::new();
-        runtime.child(|scope| {
-            let (name, _) = scope.signal("first".to_string());
-            let (value, set_value) = scope.signal("one".to_string());
-            let builder = HttpClient::post(scope, "https://example.test", test_handler(scope))
-                .form_body([
-                    (name.into_net_value(), value.into_net_value()),
-                    (
-                        ValueResolver::static_value("second"),
-                        ValueResolver::static_value("two"),
-                    ),
-                ]);
+        runtime
+            .child(|scope| {
+                let (name, _) = scope.signal("first".to_string()).unwrap();
+                let (value, set_value) = scope.signal("one".to_string()).unwrap();
+                let builder = HttpClient::post(scope, "https://example.test", test_handler(scope))
+                    .form_body([
+                        (name.into_net_value(), value.into_net_value()),
+                        (
+                            ValueResolver::static_value("second"),
+                            ValueResolver::static_value("two"),
+                        ),
+                    ]);
 
-            assert_eq!(builder.runtime_inputs().len(), 2);
-            assert_eq!(
-                builder.resolve_spec_tracked().body,
-                RequestBody::Form(vec![
-                    ("first".to_string(), "one".to_string()),
-                    ("second".to_string(), "two".to_string()),
-                ])
-            );
-            set_value.set("updated".to_string());
-            assert_eq!(
-                builder.resolve_spec().body,
-                RequestBody::Form(vec![
-                    ("first".to_string(), "updated".to_string()),
-                    ("second".to_string(), "two".to_string()),
-                ])
-            );
-        });
+                assert_eq!(builder.runtime_inputs().len(), 2);
+                assert_eq!(
+                    builder.resolve_spec_tracked().unwrap().body,
+                    RequestBody::Form(vec![
+                        ("first".to_string(), "one".to_string()),
+                        ("second".to_string(), "two".to_string()),
+                    ])
+                );
+                set_value.set("updated".to_string()).unwrap();
+                assert_eq!(
+                    builder.resolve_spec().unwrap().body,
+                    RequestBody::Form(vec![
+                        ("first".to_string(), "updated".to_string()),
+                        ("second".to_string(), "two".to_string()),
+                    ])
+                );
+            })
+            .unwrap();
     }
 
     #[test]
     fn foreign_dynamic_body_is_rejected_before_request_materialization() {
         let mut source_runtime = Runtime::new();
         let mut target_runtime = Runtime::new();
-        source_runtime.child(|source_scope| {
-            let (body, _) = source_scope.signal("foreign".to_string());
-            let foreign_inputs = runtime_inputs_of(body);
-            target_runtime.child(|target_scope| {
-                let foreign_body = ValueResolver::dynamic_with_inputs(
-                    || "foreign".to_string(),
-                    || "foreign".to_string(),
-                    foreign_inputs,
-                );
-                let builder = HttpClient::post(
-                    target_scope,
-                    "https://example.test",
-                    test_handler(target_scope),
-                )
-                .text_body(foreign_body);
-                assert!(builder.validate_runtime_inputs().is_err());
-                assert!(builder.try_as_mutation().is_err());
-            });
-        });
+        source_runtime
+            .child(|source_scope| {
+                let (body, _) = source_scope.signal("foreign".to_string()).unwrap();
+                let foreign_inputs = runtime_inputs_of(body);
+                target_runtime
+                    .child(|target_scope| {
+                        let foreign_body = ValueResolver::dynamic_with_inputs(
+                            || Ok("foreign".to_string()),
+                            || Ok("foreign".to_string()),
+                            foreign_inputs,
+                        );
+                        let builder = HttpClient::post(
+                            target_scope,
+                            "https://example.test",
+                            test_handler(target_scope),
+                        )
+                        .text_body(foreign_body);
+                        assert!(builder.validate_runtime_inputs().is_err());
+                        assert!(builder.as_mutation().is_err());
+                    })
+                    .unwrap();
+            })
+            .unwrap();
     }
 
     #[cfg(feature = "json")]
     #[test]
     fn json_body_serialization_failure_returns_net_error() {
         let mut runtime = Runtime::new();
-        runtime.child(|scope| {
-            let result = HttpClient::post(scope, "https://example.test", test_handler(scope))
-                .try_json_body(FailingSerialize);
-            assert!(matches!(
-                result,
-                Err(NetError::SerializeError(message))
-                    if message.contains("serialization failed")
-            ));
-        });
+        runtime
+            .child(|scope| {
+                let result = HttpClient::post(scope, "https://example.test", test_handler(scope))
+                    .json_body(FailingSerialize);
+                assert!(matches!(
+                    result,
+                    Err(NetError::SerializeError(message))
+                        if message.contains("serialization failed")
+                ));
+            })
+            .unwrap();
     }
 
     #[cfg(feature = "json")]
     #[test]
     fn mutation_reports_json_serialization_failure_before_pending() {
         let mut runtime = Runtime::new();
-        runtime.child(|scope| {
-            let mutation = HttpClient::post(scope, "https://example.test", test_handler(scope))
-                .as_mutation_with(move |_| {
-                    let builder =
-                        HttpClient::post(scope, "https://example.test", test_handler(scope))
-                            .try_json_body(FailingSerialize)?;
-                    Ok(builder)
-                });
+        runtime
+            .child(|scope| {
+                let mutation = HttpClient::post(scope, "https://example.test", test_handler(scope))
+                    .as_mutation_with(move |_| {
+                        let builder =
+                            HttpClient::post(scope, "https://example.test", test_handler(scope))
+                                .json_body(FailingSerialize)?;
+                        Ok(builder)
+                    })
+                    .unwrap();
 
-            mutation.mutate(());
-            assert!(matches!(
-                mutation.state.get(),
-                MutationState::Error(NetError::SerializeError(_))
-            ));
-        });
+                mutation.mutate(()).unwrap();
+                assert!(matches!(
+                    mutation.state.get().unwrap(),
+                    MutationState::Error(NetError::SerializeError(_))
+                ));
+            })
+            .unwrap();
     }
 
     #[cfg(feature = "json")]
     #[test]
     fn json_body_value_contributes_dynamic_input() {
         let mut runtime = Runtime::new();
-        runtime.child(|scope| {
-            let (body, _) = scope.signal("{\"value\":1}".to_string());
-            let builder = HttpClient::post(scope, "https://example.test", test_handler(scope))
-                .json_body_value(body);
+        runtime
+            .child(|scope| {
+                let (body, _) = scope.signal("{\"value\":1}".to_string()).unwrap();
+                let builder = HttpClient::post(scope, "https://example.test", test_handler(scope))
+                    .json_body_value(body);
 
-            assert_eq!(builder.runtime_inputs().len(), 1);
-            assert_eq!(
-                builder.resolve_spec().body,
-                RequestBody::Json("{\"value\":1}".to_string())
-            );
-        });
+                assert_eq!(builder.runtime_inputs().len(), 1);
+                assert_eq!(
+                    builder.resolve_spec().unwrap().body,
+                    RequestBody::Json("{\"value\":1}".to_string())
+                );
+            })
+            .unwrap();
     }
 }

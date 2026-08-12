@@ -45,7 +45,7 @@ impl NumberFormat {
 
         #[cfg(target_arch = "wasm32")]
         {
-            return wasm::format_number(&self.locale, value);
+            wasm::format_number(&self.locale, value)
         }
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -83,7 +83,7 @@ impl DateTimeFormat {
 
         #[cfg(target_arch = "wasm32")]
         {
-            return wasm::format_date_time(&self.locale, timestamp_millis);
+            wasm::format_date_time(&self.locale, timestamp_millis)
         }
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -289,11 +289,13 @@ mod tests {
     #[test]
     fn host_number_format_is_deterministic() {
         assert_eq!(
-            format_number(&Locale::new("en-US"), 1_234_567.5).expect("number formats"),
+            format_number(&Locale::new("en-US").expect("valid locale"), 1_234_567.5)
+                .expect("number formats"),
             "1,234,567.5"
         );
         assert_eq!(
-            format_number(&Locale::new("de-DE"), 1_234_567.5).expect("number formats"),
+            format_number(&Locale::new("de-DE").expect("valid locale"), 1_234_567.5)
+                .expect("number formats"),
             "1.234.567,5"
         );
     }
@@ -301,11 +303,13 @@ mod tests {
     #[test]
     fn host_date_format_is_deterministic() {
         assert_eq!(
-            format_date_time(&Locale::new("en-US"), 0.0).expect("date formats"),
+            format_date_time(&Locale::new("en-US").expect("valid locale"), 0.0)
+                .expect("date formats"),
             "1970-01-01 00:00:00 UTC"
         );
         assert_eq!(
-            format_date_time(&Locale::new("en-US"), -1.0).expect("date formats"),
+            format_date_time(&Locale::new("en-US").expect("valid locale"), -1.0)
+                .expect("date formats"),
             "1969-12-31 23:59:59 UTC"
         );
     }

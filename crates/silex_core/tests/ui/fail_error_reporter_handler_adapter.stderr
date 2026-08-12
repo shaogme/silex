@@ -1,3 +1,18 @@
+error[E0308]: mismatched types
+ --> tests/ui/fail_error_reporter_handler_adapter.rs:6:43
+  |
+6 |         let reporter: ErrorReporter<'_> = scope.error_handler(|_: SilexError| {});
+  |                       -----------------   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `ErrorHandler<'_, SilexError>`, found `Result<ErrorHandler<'_, ...>, ...>`
+  |                       |
+  |                       expected due to this
+  |
+  = note: expected struct `ErrorHandler<'_, SilexError>`
+               found enum `Result<ErrorHandler<'_, SilexError>, SilexError>`
+help: consider using `Result::expect` to unwrap the `Result<ErrorHandler<'_, SilexError>, SilexError>` value, panicking if the value is a `Result::Err`
+  |
+6 |         let reporter: ErrorReporter<'_> = scope.error_handler(|_: SilexError| {}).expect("REASON");
+  |                                                                                  +++++++++++++++++
+
 error[E0599]: no method named `handler` found for struct `ErrorHandler<'scope, E>` in the current scope
  --> tests/ui/fail_error_reporter_handler_adapter.rs:7:26
   |

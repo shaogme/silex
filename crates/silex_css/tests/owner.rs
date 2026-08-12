@@ -25,7 +25,9 @@ use web_sys::{Element, Node};
 wasm_bindgen_test_configure!(run_in_browser);
 
 fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
-    scope.error_handler(|_| {})
+    scope
+        .error_handler(|_| {})
+        .expect("test error handler should register")
 }
 
 fn document() -> web_sys::Document {
@@ -140,31 +142,39 @@ fn style_updates_inline_values_and_cleans_on_scope_dispose() {
     host.append_child(&element).expect("element can be mounted");
 
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let (value, set_value) = scope.signal(String::from("red"));
-        let owner = ScopedViewOwner::new(scope, test_handler(scope));
-        let token = owner.token();
-        let class_name = Style::new()
-            .raw("--test-color", value)
-            .apply_to_element(&element, &token)
-            .expect("style can be applied");
+    runtime
+        .child(|scope| {
+            let (value, set_value) = scope
+                .signal(String::from("red"))
+                .expect("signal should initialize");
+            let owner = ScopedViewOwner::new(scope, test_handler(scope));
+            let token = owner.token();
+            let class_name = Style::new()
+                .with_error_handler(test_handler(scope))
+                .raw("--test-color", value)
+                .expect("style should build")
+                .apply_to_element(&element, &token)
+                .expect("style can be applied");
 
-        assert!(element.class_list().contains(&class_name));
-        assert!(
-            element
-                .get_attribute("style")
-                .unwrap_or_default()
-                .contains("red")
-        );
+            assert!(element.class_list().contains(&class_name));
+            assert!(
+                element
+                    .get_attribute("style")
+                    .unwrap_or_default()
+                    .contains("red")
+            );
 
-        set_value.set(String::from("blue"));
-        assert!(
-            element
-                .get_attribute("style")
-                .unwrap_or_default()
-                .contains("blue")
-        );
-    });
+            set_value
+                .set(String::from("blue"))
+                .expect("signal should update");
+            assert!(
+                element
+                    .get_attribute("style")
+                    .unwrap_or_default()
+                    .contains("blue")
+            );
+        })
+        .expect("child scope should initialize");
 
     assert!(element.class_name().is_empty());
     assert!(
@@ -185,32 +195,38 @@ fn theme_updates_variables_and_cleans_on_scope_dispose() {
     host.append_child(&element).expect("element can be mounted");
 
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let (theme, set_theme) = scope.signal(TestTheme {
-            color: String::from("red"),
-        });
-        let owner = ScopedViewOwner::new(scope, test_handler(scope));
-        let token = owner.token();
-        theme_variables(theme)
-            .apply(&element, ApplyTarget::Apply, &token)
-            .expect("theme variables can be applied");
+    runtime
+        .child(|scope| {
+            let (theme, set_theme) = scope
+                .signal(TestTheme {
+                    color: String::from("red"),
+                })
+                .expect("theme signal should initialize");
+            let owner = ScopedViewOwner::new(scope, test_handler(scope));
+            let token = owner.token();
+            theme_variables(theme)
+                .apply(&element, ApplyTarget::Apply, &token)
+                .expect("theme variables can be applied");
 
-        assert!(
-            element
-                .get_attribute("style")
-                .unwrap_or_default()
-                .contains("--theme-color: red")
-        );
-        set_theme.set(TestTheme {
-            color: String::from("blue"),
-        });
-        assert!(
-            element
-                .get_attribute("style")
-                .unwrap_or_default()
-                .contains("--theme-color: blue")
-        );
-    });
+            assert!(
+                element
+                    .get_attribute("style")
+                    .unwrap_or_default()
+                    .contains("--theme-color: red")
+            );
+            set_theme
+                .set(TestTheme {
+                    color: String::from("blue"),
+                })
+                .expect("theme signal should update");
+            assert!(
+                element
+                    .get_attribute("style")
+                    .unwrap_or_default()
+                    .contains("--theme-color: blue")
+            );
+        })
+        .expect("child scope should initialize");
 
     assert!(
         element
@@ -231,29 +247,37 @@ fn svg_style_updates_inline_values_and_cleans_on_scope_dispose() {
         .expect("svg element can be mounted");
 
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let (value, set_value) = scope.signal(String::from("red"));
-        let owner = ScopedViewOwner::new(scope, test_handler(scope));
-        let token = owner.token();
-        Style::new()
-            .raw("--svg-color", value)
-            .apply_to_element(&element, &token)
-            .expect("svg style can be applied");
-        assert!(
-            element
-                .get_attribute("style")
-                .unwrap_or_default()
-                .contains("red")
-        );
+    runtime
+        .child(|scope| {
+            let (value, set_value) = scope
+                .signal(String::from("red"))
+                .expect("signal should initialize");
+            let owner = ScopedViewOwner::new(scope, test_handler(scope));
+            let token = owner.token();
+            Style::new()
+                .with_error_handler(test_handler(scope))
+                .raw("--svg-color", value)
+                .expect("style should build")
+                .apply_to_element(&element, &token)
+                .expect("svg style can be applied");
+            assert!(
+                element
+                    .get_attribute("style")
+                    .unwrap_or_default()
+                    .contains("red")
+            );
 
-        set_value.set(String::from("blue"));
-        assert!(
-            element
-                .get_attribute("style")
-                .unwrap_or_default()
-                .contains("blue")
-        );
-    });
+            set_value
+                .set(String::from("blue"))
+                .expect("signal should update");
+            assert!(
+                element
+                    .get_attribute("style")
+                    .unwrap_or_default()
+                    .contains("blue")
+            );
+        })
+        .expect("child scope should initialize");
 
     assert!(
         element
@@ -273,33 +297,39 @@ fn dynamic_css_replaces_rule_class_and_cleans_on_scope_dispose() {
     host.append_child(&element).expect("element can be mounted");
 
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let (value, set_value) = scope.signal(String::from("red"));
-        let owner = ScopedViewOwner::new(scope, test_handler(scope));
-        let token = owner.token();
-        let dynamic = DynamicCss::new("slx-owner-test").with_rule(
-            &[
-                CssPart::Lit("."),
-                CssPart::Class,
-                CssPart::Lit(" "),
-                CssPart::SelectorVal(0),
-                CssPart::Lit("{color:red}"),
-            ],
-            vec![value.into_css_reactive()],
-        );
+    runtime
+        .child(|scope| {
+            let (value, set_value) = scope
+                .signal(String::from("red"))
+                .expect("signal should initialize");
+            let owner = ScopedViewOwner::new(scope, test_handler(scope));
+            let token = owner.token();
+            let dynamic = DynamicCss::new("slx-owner-test").with_rule(
+                &[
+                    CssPart::Lit("."),
+                    CssPart::Class,
+                    CssPart::Lit(" "),
+                    CssPart::SelectorVal(0),
+                    CssPart::Lit("{color:red}"),
+                ],
+                vec![value.into_css_reactive()],
+            );
 
-        dynamic
-            .apply(&element, ApplyTarget::Class, &token)
-            .expect("dynamic style can be applied");
-        let first_class = element.class_name();
-        assert!(first_class.contains("slx-owner-test"));
-        assert!(first_class.contains("-d"));
+            dynamic
+                .apply(&element, ApplyTarget::Class, &token)
+                .expect("dynamic style can be applied");
+            let first_class = element.class_name();
+            assert!(first_class.contains("slx-owner-test"));
+            assert!(first_class.contains("-d"));
 
-        set_value.set(String::from("blue"));
-        let second_class = element.class_name();
-        assert!(second_class.contains("slx-owner-test"));
-        assert_ne!(first_class, second_class);
-    });
+            set_value
+                .set(String::from("blue"))
+                .expect("signal should update");
+            let second_class = element.class_name();
+            assert!(second_class.contains("slx-owner-test"));
+            assert_ne!(first_class, second_class);
+        })
+        .expect("child scope should initialize");
 
     assert!(element.class_name().is_empty());
     remove(&host.into());
@@ -314,25 +344,29 @@ async fn pending_dynamic_sheet_operations_do_not_survive_owner_dispose() {
     host.append_child(&element).expect("element can be mounted");
 
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let (value, _) = scope.signal(String::from("red"));
-        let owner = ScopedViewOwner::new(scope, test_handler(scope));
-        let token = owner.token();
-        let dynamic = DynamicCss::new("slx-pending-owner").with_rule(
-            &[
-                CssPart::Lit("."),
-                CssPart::Class,
-                CssPart::Lit(" "),
-                CssPart::SelectorVal(0),
-                CssPart::Lit("{color:red}"),
-            ],
-            vec![value.into_css_reactive()],
-        );
-        dynamic
-            .apply(&element, ApplyTarget::Class, &token)
-            .expect("dynamic style can be applied");
-        assert!(element.class_name().contains("slx-pending-owner"));
-    });
+    runtime
+        .child(|scope| {
+            let (value, _) = scope
+                .signal(String::from("red"))
+                .expect("signal should initialize");
+            let owner = ScopedViewOwner::new(scope, test_handler(scope));
+            let token = owner.token();
+            let dynamic = DynamicCss::new("slx-pending-owner").with_rule(
+                &[
+                    CssPart::Lit("."),
+                    CssPart::Class,
+                    CssPart::Lit(" "),
+                    CssPart::SelectorVal(0),
+                    CssPart::Lit("{color:red}"),
+                ],
+                vec![value.into_css_reactive()],
+            );
+            dynamic
+                .apply(&element, ApplyTarget::Class, &token)
+                .expect("dynamic style can be applied");
+            assert!(element.class_name().contains("slx-pending-owner"));
+        })
+        .expect("child scope should initialize");
 
     flush_style_microtasks().await;
     assert!(!adopted_sheet_contains("slx-pending-owner"));
@@ -342,9 +376,9 @@ async fn pending_dynamic_sheet_operations_do_not_survive_owner_dispose() {
 #[wasm_bindgen_test(async)]
 async fn global_theme_stylesheets_are_isolated_per_owner() {
     let mut first_runtime = Runtime::new();
-    let first_root = first_runtime.run();
+    let first_root = first_runtime.run().expect("first root should initialize");
     let mut second_runtime = Runtime::new();
-    let second_root = second_runtime.run();
+    let second_root = second_runtime.run().expect("second root should initialize");
 
     first_root.with_scope(|first_scope| {
         second_root.with_scope(|second_scope| {
@@ -352,16 +386,20 @@ async fn global_theme_stylesheets_are_isolated_per_owner() {
             let second_owner = ScopedViewOwner::new(second_scope, test_handler(second_scope));
             set_global_theme(
                 &first_owner,
-                first_scope.stored(TestTheme {
-                    color: String::from("owner-red"),
-                }),
+                first_scope
+                    .stored(TestTheme {
+                        color: String::from("owner-red"),
+                    })
+                    .expect("first theme should initialize"),
             )
             .expect("first global theme can be registered");
             set_global_theme(
                 &second_owner,
-                second_scope.stored(TestTheme {
-                    color: String::from("owner-blue"),
-                }),
+                second_scope
+                    .stored(TestTheme {
+                        color: String::from("owner-blue"),
+                    })
+                    .expect("second theme should initialize"),
             )
             .expect("second global theme can be registered");
         });
@@ -390,21 +428,27 @@ fn theme_patch_removes_variables_that_disappear_from_the_next_round() {
     host.append_child(&element).expect("element can be mounted");
 
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let (patch, set_patch) = scope.signal(TestPatch { alternate: false });
-        let owner = ScopedViewOwner::new(scope, test_handler(scope));
-        let token = owner.token();
-        theme_patch(patch)
-            .apply(&element, ApplyTarget::Apply, &token)
-            .expect("theme patch can be applied");
-        let initial = element.get_attribute("style").unwrap_or_default();
-        assert!(initial.contains("--patch-old"), "{initial}");
+    runtime
+        .child(|scope| {
+            let (patch, set_patch) = scope
+                .signal(TestPatch { alternate: false })
+                .expect("patch signal should initialize");
+            let owner = ScopedViewOwner::new(scope, test_handler(scope));
+            let token = owner.token();
+            theme_patch(patch)
+                .apply(&element, ApplyTarget::Apply, &token)
+                .expect("theme patch can be applied");
+            let initial = element.get_attribute("style").unwrap_or_default();
+            assert!(initial.contains("--patch-old"), "{initial}");
 
-        set_patch.set(TestPatch { alternate: true });
-        let updated = element.get_attribute("style").unwrap_or_default();
-        assert!(!updated.contains("--patch-old"), "{updated}");
-        assert!(updated.contains("--patch-new"), "{updated}");
-    });
+            set_patch
+                .set(TestPatch { alternate: true })
+                .expect("patch signal should update");
+            let updated = element.get_attribute("style").unwrap_or_default();
+            assert!(!updated.contains("--patch-old"), "{updated}");
+            assert!(updated.contains("--patch-new"), "{updated}");
+        })
+        .expect("child scope should initialize");
 
     assert!(
         element
@@ -424,23 +468,32 @@ fn foreign_runtime_css_input_is_rejected_before_custom_callback() {
     host.append_child(&element).expect("element can be mounted");
 
     let mut foreign_runtime = Runtime::new();
-    let foreign_inputs =
-        foreign_runtime.child(|scope| scope.rw_signal(1i32).into_rx().runtime_inputs());
+    let foreign_inputs = foreign_runtime
+        .child(|scope| {
+            scope
+                .rw_signal(1i32)
+                .expect("foreign signal should initialize")
+                .into_rx()
+                .runtime_inputs()
+        })
+        .expect("foreign child scope should initialize");
     let callback_runs = Cell::new(0);
 
     let mut local_runtime = Runtime::new();
-    local_runtime.child(|scope| {
-        let owner = ScopedViewOwner::new(scope, test_handler(scope));
-        let token = owner.token();
-        let operation = AttrOp::custom_with_inputs(foreign_inputs, |element, _| {
-            callback_runs.set(callback_runs.get() + 1);
-            let _ = element.set_attribute("data-foreign", "unexpected");
-            Ok(())
-        });
-        operation
-            .apply(&element, &token)
-            .expect_err("foreign runtime input should be rejected");
-    });
+    local_runtime
+        .child(|scope| {
+            let owner = ScopedViewOwner::new(scope, test_handler(scope));
+            let token = owner.token();
+            let operation = AttrOp::custom_with_inputs(foreign_inputs, |element, _| {
+                callback_runs.set(callback_runs.get() + 1);
+                let _ = element.set_attribute("data-foreign", "unexpected");
+                Ok(())
+            });
+            operation
+                .apply(&element, &token)
+                .expect_err("foreign runtime input should be rejected");
+        })
+        .expect("local child scope should initialize");
 
     assert_eq!(callback_runs.get(), 0);
     assert!(!element.has_attribute("data-foreign"));

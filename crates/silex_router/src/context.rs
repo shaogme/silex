@@ -1,7 +1,7 @@
 use crate::ToRoute;
 use silex_core::{
-    RuntimeInputs, Scope, SilexResult,
-    reactivity::{Memo, ReadSignal, StoredValue, WriteSignal, runtime_inputs_of},
+    ErrorReporter, RuntimeInputs, Rx, Scope, SilexError, SilexResult,
+    reactivity::{ReadSignal, StoredValue, WriteSignal, runtime_inputs_of},
     traits::RxGet,
 };
 use silex_dom::attribute::PendingAttribute;
@@ -59,12 +59,17 @@ pub struct RouterContext<'scope> {
     /// 导航控制器
     pub navigator: Navigator<'scope>,
     scope: Scope<'scope>,
-    query: Memo<'scope, HashMap<String, String>>,
+    error_handler: ErrorReporter<'scope>,
+    query: Rx<'scope, HashMap<String, String>>,
 }
 
 impl<'scope> RouterContext<'scope> {
     /// Create a RouterContext after validating every read and write source.
-    pub fn try_new(scope: Scope<'scope>, props: RouterContextProps<'scope>) -> SilexResult<Self> {
+    pub fn new(
+        scope: Scope<'scope>,
+        props: RouterContextProps<'scope>,
+        error_handler: ErrorReporter<'scope>,
+    ) -> SilexResult<Self> {
         let RouterContextProps {
             base_path: raw_base_path,
             path,
@@ -78,9 +83,9 @@ impl<'scope> RouterContext<'scope> {
         inputs.extend(&runtime_inputs_of(search));
         inputs.extend(&set_path.runtime_inputs());
         inputs.extend(&set_search.runtime_inputs());
-        scope.try_validate_inputs(&inputs)?;
+        scope.validate_inputs(&inputs)?;
 
-        let base_path = scope.stored(normalize_base_path(&raw_base_path));
+        let base_path = scope.stored(normalize_base_path(&raw_base_path))?;
         let navigator = Navigator {
             base_path,
             path,
@@ -88,15 +93,21 @@ impl<'scope> RouterContext<'scope> {
             set_path,
             set_search,
         };
-        let query = scope.try_memo_from(runtime_inputs_of(search), move |_| {
-            parse_query(&search.get())
-        })?;
+        let query = scope.derived_from(
+            runtime_inputs_of(search),
+            move || {
+                let search = search.get()?;
+                parse_query(&search)
+            },
+            error_handler,
+        )?;
         Ok(Self {
             base_path,
             path,
             search,
             navigator,
             scope,
+            error_handler,
             query,
         })
     }
@@ -106,8 +117,12 @@ impl<'scope> RouterContext<'scope> {
     }
 
     /// 获取解析后的查询参数 Memo
-    pub fn query_map(self) -> Memo<'scope, HashMap<String, String>> {
+    pub fn query_map(self) -> Rx<'scope, HashMap<String, String>> {
         self.query
+    }
+
+    pub(crate) fn error_handler(self) -> ErrorReporter<'scope> {
+        self.error_handler
     }
 
     pub(crate) fn runtime_inputs(self) -> RuntimeInputs {
@@ -122,19 +137,25 @@ impl<'scope> RouterContext<'scope> {
     }
 }
 
-fn parse_query(search: &str) -> HashMap<String, String> {
+fn parse_query(search: &str) -> SilexResult<HashMap<String, String>> {
     let mut map = HashMap::new();
-    if let Ok(params) = web_sys::UrlSearchParams::new_with_str(search)
-        && let Ok(Some(iter)) = js_sys::try_iter(&params)
-    {
-        for val in iter.flatten() {
+    let params = web_sys::UrlSearchParams::new_with_str(search).map_err(SilexError::from)?;
+    if let Some(iter) = js_sys::try_iter(&params).map_err(SilexError::from)? {
+        for val in iter {
+            let val = val.map_err(SilexError::from)?;
             let pair: js_sys::Array = val.unchecked_into();
-            let key = pair.get(0).as_string().unwrap_or_default();
-            let value = pair.get(1).as_string().unwrap_or_default();
+            let key = pair
+                .get(0)
+                .as_string()
+                .ok_or_else(|| SilexError::Javascript("query key is not a string".into()))?;
+            let value = pair
+                .get(1)
+                .as_string()
+                .ok_or_else(|| SilexError::Javascript("query value is not a string".into()))?;
             map.insert(key, value);
         }
     }
-    map
+    Ok(map)
 }
 
 pub(crate) fn normalize_base_path(path: &str) -> String {
@@ -203,95 +224,99 @@ pub struct Navigator<'scope> {
 }
 
 impl<'scope> Navigator<'scope> {
-    fn handle_navigation(self, url: &str, replace: bool) {
-        let window = web_sys::window().unwrap();
+    fn handle_navigation(self, url: &str, replace: bool) -> SilexResult<()> {
+        let window = web_sys::window()
+            .ok_or_else(|| SilexError::Javascript("no global `window` exists".into()))?;
 
         // 1. 构造用于浏览器历史记录的完整 URL
-        let base_path = normalize_base_path(&self.base_path.get_untracked());
+        let base_path = normalize_base_path(&self.base_path.get_untracked()?);
         let full_url = build_history_url(&base_path, url);
 
         // 2. 使用 History API
-        if let Ok(history) = window.history() {
-            if replace {
-                let _ = history.replace_state_with_url(
-                    &wasm_bindgen::JsValue::NULL,
-                    "",
-                    Some(&full_url),
-                );
-            } else {
-                let _ =
-                    history.push_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(&full_url));
-            }
+        let history = window.history().map_err(SilexError::from)?;
+        if replace {
+            history
+                .replace_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(&full_url))
+                .map_err(SilexError::from)?;
+        } else {
+            history
+                .push_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(&full_url))
+                .map_err(SilexError::from)?;
         }
 
-        self.refresh_location();
+        self.refresh_location()
     }
 
-    pub(crate) fn refresh_location(self) {
-        let window = web_sys::window().unwrap();
-        let base_path = normalize_base_path(&self.base_path.get_untracked());
+    pub(crate) fn refresh_location(self) -> SilexResult<()> {
+        let window = web_sys::window()
+            .ok_or_else(|| SilexError::Javascript("no global `window` exists".into()))?;
+        let base_path = normalize_base_path(&self.base_path.get_untracked()?);
 
         // 读取当前状态并更新信号 (需要剥离 base_path)
         let location = window.location();
-        let raw_path = location.pathname().unwrap_or_else(|_| "/".to_string());
+        let raw_path = location.pathname().map_err(SilexError::from)?;
 
         let logical_path = strip_base_path(&base_path, &raw_path);
 
-        let search = location.search().unwrap_or_default();
+        let search = location.search().map_err(SilexError::from)?;
 
         // 更新信号 (带去重，避免不必要的副作用)
-        if self.path.get_untracked() != logical_path {
-            self.set_path.set(logical_path);
+        if self.path.get_untracked()? != logical_path {
+            self.set_path.set(logical_path)?;
         }
 
-        if self.search.get_untracked() != search {
-            self.set_search.set(search);
+        if self.search.get_untracked()? != search {
+            self.set_search.set(search)?;
         }
+        Ok(())
     }
 
     /// 导航到指定路径
-    pub fn push<T: ToRoute>(self, to: T) {
-        self.handle_navigation(&to.to_route(), false);
+    pub fn push<T: ToRoute>(self, to: T) -> SilexResult<()> {
+        self.handle_navigation(&to.to_route(), false)
     }
 
     /// 替换当前路径
-    pub fn replace<T: ToRoute>(self, to: T) {
-        self.handle_navigation(&to.to_route(), true);
+    pub fn replace<T: ToRoute>(self, to: T) -> SilexResult<()> {
+        self.handle_navigation(&to.to_route(), true)
     }
 
     /// 设置或更新查询参数
     ///
     /// * `key`: 参数名
     /// * `value`: 参数值。如果为 `None`，则删除该参数。
-    pub fn set_query(self, key: &str, value: Option<&str>) {
-        let current_search = self.search.get_untracked();
+    pub fn set_query(self, key: &str, value: Option<&str>) -> SilexResult<()> {
+        let current_search = self.search.get_untracked()?;
 
-        if let Ok(params) = web_sys::UrlSearchParams::new_with_str(&current_search) {
-            match value {
-                Some(v) => params.set(key, v),
-                None => params.delete(key),
-            }
-
-            let new_search = params.to_string().as_string().unwrap_or_default();
-            let new_search = if new_search.is_empty() {
-                String::new()
-            } else {
-                format!("?{new_search}")
-            };
-
-            if new_search == current_search {
-                return;
-            }
-
-            let pathname = self.path.get_untracked();
-            let new_url = if new_search.is_empty() {
-                pathname
-            } else {
-                format!("{}{}", pathname, new_search)
-            };
-
-            self.push(&new_url);
+        let params =
+            web_sys::UrlSearchParams::new_with_str(&current_search).map_err(SilexError::from)?;
+        match value {
+            Some(v) => params.set(key, v),
+            None => params.delete(key),
         }
+
+        let new_search = params
+            .to_string()
+            .as_string()
+            .ok_or_else(|| SilexError::Javascript("query serialization is not a string".into()))?;
+        let new_search = if new_search.is_empty() {
+            String::new()
+        } else {
+            format!("?{new_search}")
+        };
+
+        if new_search == current_search {
+            return Ok(());
+        }
+
+        let pathname = self.path.get_untracked()?;
+        let new_url = if new_search.is_empty() {
+            pathname
+        } else {
+            format!("{}{}", pathname, new_search)
+        };
+
+        self.push(&new_url)
     }
 }
 

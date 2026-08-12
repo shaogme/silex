@@ -4,12 +4,14 @@ use silex_dom::{CleanupFailure, CleanupOrigin, CleanupReport, DisposeError, Moun
 
 fn cleanup_error() -> silex_core::CleanupError {
     let mut runtime = Runtime::new();
-    let root = runtime.run();
+    let root = runtime.run().expect("root runtime should start");
     root.with_scope(|scope| {
         scope
             .on_cleanup(
                 || panic!("host cleanup failure"),
-                scope.error_handler(|_: SilexError| {}),
+                scope
+                    .error_handler(|_: SilexError| {})
+                    .expect("cleanup error handler should be registered"),
             )
             .expect("cleanup should register");
     });

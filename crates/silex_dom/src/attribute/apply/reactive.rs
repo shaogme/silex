@@ -28,7 +28,7 @@ where
     T: ToString + Clone + 'scope,
 {
     register(owner, rx.runtime_inputs(), move || {
-        let value = rx.try_get()?.to_string();
+        let value = rx.get()?.to_string();
         match &target {
             ApplyTarget::Attr(_) => apply_immediate_string(&el, &target, &value),
             ApplyTarget::Prop(_) => apply_immediate_string(&el, &target, &value),
@@ -74,7 +74,7 @@ pub(crate) fn apply_string_pair_reactive_internal<'scope>(
         let style = get_style_decl(&el)
             .ok_or_else(|| SilexError::Dom("element does not expose a style declaration".into()))?;
         register(owner, rx.runtime_inputs(), move || {
-            let value = rx.try_get()?;
+            let value = rx.get()?;
             style.set_property(&key, &value).map_err(SilexError::from)
         })?;
     } else {
@@ -90,7 +90,7 @@ pub(crate) fn apply_bool_reactive_internal<'scope>(
     owner: &ViewOwnerToken<'scope>,
 ) -> SilexResult<()> {
     register(owner, rx.runtime_inputs(), move || {
-        let value = rx.try_get()?;
+        let value = rx.get()?;
         match &target {
             ApplyTarget::Attr(name) => {
                 if value {
@@ -124,7 +124,7 @@ pub(crate) fn apply_bool_pair_reactive_internal<'scope>(
 ) -> SilexResult<()> {
     let list = el.class_list();
     register(owner, rx.runtime_inputs(), move || {
-        if rx.try_get()? {
+        if rx.get()? {
             list.add_1(&key).map_err(SilexError::from)
         } else {
             list.remove_1(&key).map_err(SilexError::from)
@@ -314,7 +314,7 @@ impl<'scope> ReactiveApply<'scope> for Attr<'scope> {
     ) -> SilexResult<()> {
         register(owner, rx.runtime_inputs(), move || {
             if let Some(name) = target.name() {
-                let value = rx.try_get()?;
+                let value = rx.get()?;
                 apply_attr_with_target_internal(&el, &name, target.clone(), &value)
             } else {
                 Ok(())
@@ -347,10 +347,7 @@ where
         owner: &ViewOwnerToken<'scope>,
     ) -> SilexResult<()> {
         register(owner, rx.runtime_inputs(), move || {
-            let value = rx
-                .try_get()?
-                .map(|value| value.to_string())
-                .unwrap_or_default();
+            let value = rx.get()?.map(|value| value.to_string()).unwrap_or_default();
             match target {
                 ApplyTarget::Class => el.set_attribute("class", &value).map_err(SilexError::from),
                 ApplyTarget::Style => {
@@ -367,18 +364,6 @@ where
             }
         })
     }
-}
-
-fn map_string_like_rx<'scope, T>(rx: Rx<'scope, T>) -> Rx<'scope, String>
-where
-    T: ToString + 'scope,
-{
-    rx.map(
-        |value| value.to_string(),
-        rx.scope()
-            .error_handler(|error| panic!("reactive attribute mapping failed: {error}")),
-    )
-    .unwrap_or_else(|error| panic!("创建 reactive attribute mapping 失败: {error}"))
 }
 
 macro_rules! impl_reactive_apply_string_like {
@@ -406,7 +391,7 @@ macro_rules! impl_reactive_apply_string_like {
                             SilexError::Dom("element does not expose a style declaration".into())
                         })?;
                         register(owner, rx.runtime_inputs(), move || {
-                            let value = rx.try_get()?;
+                            let value = rx.get()?;
                             style
                                 .set_property(&key, value.as_ref())
                                 .map_err(SilexError::from)
@@ -421,21 +406,8 @@ macro_rules! impl_reactive_apply_string_like {
                     rx: Rx<'scope, Self>,
                     target: ApplyTarget,
                 ) -> Option<AttrOp<'scope>> {
-                    match target {
-                        ApplyTarget::Attr(_) | ApplyTarget::Known(_) => {
-                            Some(AttrOp::Update(AttrUpdate {
-                                target,
-                                data: AttrData::ReactiveString(map_string_like_rx(rx)),
-                            }))
-                        }
-                        ApplyTarget::Class => {
-                            Some(AttrOp::reactive_classes(map_string_like_rx(rx)))
-                        }
-                        ApplyTarget::Style => {
-                            Some(AttrOp::reactive_stylesheet(map_string_like_rx(rx)))
-                        }
-                        _ => None,
-                    }
+                    let _ = (rx, target);
+                    None
                 }
 
                 fn into_op_pair_reactive(
@@ -443,11 +415,8 @@ macro_rules! impl_reactive_apply_string_like {
                     key: Cow<'static, str>,
                     target: ApplyTarget,
                 ) -> Option<AttrOp<'scope>> {
-                    if matches!(target, ApplyTarget::Style) {
-                        Some(AttrOp::style_property(key, map_string_like_rx(rx)))
-                    } else {
-                        None
-                    }
+                    let _ = (rx, key, target);
+                    None
                 }
             }
         )*

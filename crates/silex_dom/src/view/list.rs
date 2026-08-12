@@ -159,7 +159,7 @@ where
 {
     let inputs = runtime_inputs_of(source.clone());
     owner.validate_inputs(&inputs)?;
-    let scope = Rc::new(owner.try_owned_scope()?);
+    let scope = Rc::new(owner.owned_scope()?);
     let local_owner = OwnedViewOwner::new(scope.clone(), owner.token().error_handler());
     let range = DomRange::append(parent, "for")?;
     let token = local_owner.token();
@@ -208,7 +208,7 @@ where
         inputs,
         Box::new(move || -> SilexResult<()> {
             let values = source
-                .try_with(|items| items.as_slice().map(|values| values.to_vec()))
+                .with(|items| items.as_slice().map(|values| values.to_vec()))
                 .and_then(|result| result)?;
             let mut rows = effect_rows.take()?;
             let old_len = rows.len();
@@ -226,7 +226,7 @@ where
                 for (offset, item) in values.enumerate() {
                     let index = old_len + offset;
                     let row_range = DomRange::before(&end, "for-row")?;
-                    let row = RowController::try_new(
+                    let row = RowController::new(
                         &token,
                         RowControllerConfig {
                             range: row_range,
@@ -327,7 +327,7 @@ where
 {
     let inputs = runtime_inputs_of(source.clone());
     owner.validate_inputs(&inputs)?;
-    let scope = Rc::new(owner.try_owned_scope()?);
+    let scope = Rc::new(owner.owned_scope()?);
     let error_handler = error_handler.unwrap_or_else(|| owner.token().error_handler());
     let local_owner = OwnedViewOwner::new(scope.clone(), error_handler);
     let token = local_owner.token();
@@ -381,7 +381,7 @@ where
         inputs,
         Box::new(move || -> SilexResult<()> {
             let values = source
-                .try_with(|items| items.as_slice().map(|values| values.to_vec()))
+                .with(|items| items.as_slice().map(|values| values.to_vec()))
                 .and_then(|result| result)?;
 
             let key_result = catch_unwind(AssertUnwindSafe(|| -> SilexResult<Vec<K>> {
@@ -424,7 +424,7 @@ where
                         continue;
                     }
                     let row_range = DomRange::before(&end, "for-row")?;
-                    let row = RowController::try_new(
+                    let row = RowController::new(
                         &token,
                         RowControllerConfig {
                             range: row_range,

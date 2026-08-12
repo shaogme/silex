@@ -1,11 +1,11 @@
 error[E0599]: no method named `into_rx` found for struct `silex_css::builder::Style<'scope>` in the current scope
- --> tests/ui/fail_old_css_constructors.rs:5:19
+ --> tests/ui/fail_old_css_constructors.rs:7:19
   |
-5 |     let _ = style.into_rx();
+7 |     let _ = style.into_rx();
   |                   ^^^^^^^
   |
 help: there is a method `into` with a similar name
   |
-5 -     let _ = style.into_rx();
-5 +     let _ = style.into();
+7 -     let _ = style.into_rx();
+7 +     let _ = style.into();
   |

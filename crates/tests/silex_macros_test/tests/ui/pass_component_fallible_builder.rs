@@ -27,7 +27,7 @@ fn build_view<'scope>(scope: Scope<'scope>) -> SilexResult<impl View<'scope>> {
 
 fn main() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    let _ = runtime.child(|scope| {
         let _ = build_view(scope);
     });
 }

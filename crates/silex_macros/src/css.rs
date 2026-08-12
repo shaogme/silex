@@ -15,8 +15,8 @@ pub mod tw;
 pub mod value_check;
 
 use proc_macro2::{Delimiter, Span, TokenStream, TokenTree};
-use quote::{quote, quote_spanned};
-use syn::Result;
+use quote::{ToTokens, quote, quote_spanned};
+use syn::{Expr, Result, Token, parse::Parse, parse::ParseStream};
 
 use ast::{CssBlock, CssRule};
 use compiler::CssCompiler;
@@ -323,13 +323,51 @@ fn first_reactive_token_span(ts: &TokenStream) -> Option<Span> {
 
 pub fn css_impl(ts: TokenStream) -> Result<TokenStream> {
     let span = Span::call_site(); // Use call site for better error reporting in blocks
-    let compile_result = CssCompiler::compile(ts, span, false)?;
-    generate_css_output(compile_result, span)
+    let (error_handler, css_tokens) = parse_css_input(ts);
+    let compile_result = CssCompiler::compile(css_tokens, span, false)?;
+    generate_css_output(compile_result, span, error_handler)
+}
+
+struct CssInputPrefix {
+    error_handler: Expr,
+    _semi: Token![;],
+    body: TokenStream,
+}
+
+impl Parse for CssInputPrefix {
+    fn parse(input: ParseStream<'_>) -> Result<Self> {
+        Ok(Self {
+            error_handler: input.parse()?,
+            _semi: input.parse()?,
+            body: input.parse()?,
+        })
+    }
+}
+
+fn parse_css_input(ts: TokenStream) -> (Option<TokenStream>, TokenStream) {
+    match syn::parse2::<CssInputPrefix>(ts.clone()) {
+        Ok(prefix) => {
+            let body = unwrap_css_body_group(prefix.body);
+            (Some(prefix.error_handler.into_token_stream()), body)
+        }
+        Err(_) => (None, ts),
+    }
+}
+
+fn unwrap_css_body_group(body: TokenStream) -> TokenStream {
+    let tokens: Vec<_> = body.into_iter().collect();
+    if let [TokenTree::Group(group)] = tokens.as_slice()
+        && group.delimiter() == Delimiter::Brace
+    {
+        return group.stream();
+    }
+    tokens.into_iter().collect()
 }
 
 pub(crate) fn generate_css_output(
     compile_result: compiler::CssCompileResult,
     span: Span,
+    error_handler: Option<TokenStream>,
 ) -> Result<TokenStream> {
     let __silex = crate::crate_path::silex();
     let class_name = &compile_result.class_name;
@@ -398,13 +436,26 @@ pub(crate) fn generate_css_output(
             }
         })
     } else {
+        let Some(error_handler) = error_handler else {
+            return Err(syn::Error::new(
+                span,
+                "动态 `css!` 必须显式提供 ErrorReporter；请使用 `css!(error_handler; { ... })`",
+            ));
+        };
         // Generate DynamicCss struct
         let mut var_calls = Vec::new();
         for (i, (prop, expr)) in expressions.iter().enumerate() {
             let var_name = format!("--{}-{}", class_name, i);
             let prop_type = get_prop_type(prop, span)?;
+            let needs_unwrap = !dynamic_rules.is_empty() || i + 1 < expressions.len();
+            let question_mark = if needs_unwrap {
+                quote! { ? }
+            } else {
+                quote! {}
+            };
             var_calls.push(quote! {
-                .with_var::<#prop_type, _>(#var_name, #expr)
+                .with_var::<#prop_type, _>(#var_name, #expr, __slx_css_error_handler)
+                #question_mark
             });
         }
 
@@ -414,24 +465,39 @@ pub(crate) fn generate_css_output(
             let mut exprs = Vec::new();
             for (prop, expr) in &rule.expressions {
                 let prop_type = get_prop_type(prop, span)?;
-                exprs.push(quote! { #__silex::css::make_property_val::<#prop_type, _>(#expr) });
+                exprs.push(quote! {
+                    #__silex::css::make_property_val::<#prop_type, _>(
+                        #expr,
+                        __slx_css_error_handler,
+                    )?
+                });
             }
             rule_calls.push(quote! {
                 .with_rule(#parts, ::std::vec![ #(#exprs),* ])
             });
         }
 
+        let dynamic_css = quote! {
+            #__silex::css::DynamicCss::new(#class_name)
+                .with_layer(#layer)
+                #dynamic_static_values
+                .with_static_style(#static_id, #static_css)
+                .with_static_style(#style_id, #component_css)
+                #(#var_calls)*
+                #(#rule_calls)*
+        };
+        let dynamic_result = if dynamic_rules.is_empty() {
+            quote! { #dynamic_css }
+        } else {
+            quote! { Ok(#dynamic_css) }
+        };
+
         Ok(quote! {
             {
                 #common_inits
                 #static_value_inits
-                #__silex::css::DynamicCss::new(#class_name)
-                    .with_layer(#layer)
-                    #dynamic_static_values
-                    .with_static_style(#static_id, #static_css)
-                    .with_static_style(#style_id, #component_css)
-                    #(#var_calls)*
-                    #(#rule_calls)*
+                let __slx_css_error_handler = #error_handler;
+                #dynamic_result
             }
         })
     }
@@ -556,7 +622,9 @@ mod tests {
 
     #[test]
     fn dynamic_css_carries_static_styles_into_its_owner_bound_payload() {
-        let output = css_impl(quote! { color: $(color); }).unwrap().to_string();
+        let output = css_impl(quote! { error_handler; color: $(color); })
+            .unwrap()
+            .to_string();
         assert!(output.contains("with_static_style"), "{output}");
         assert!(!output.contains("inject_style"), "{output}");
     }
@@ -574,6 +642,7 @@ mod tests {
     #[test]
     fn dynamic_css_carries_static_values_with_its_template() {
         let output = css_impl(quote! {
+            error_handler;
             color: $(static AppTheme::PRIMARY);
             width: $(color);
         })

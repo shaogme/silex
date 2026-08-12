@@ -20,7 +20,9 @@ use wasm_bindgen_test::*;
 wasm_bindgen_test_configure!(run_in_browser);
 
 fn test_handler<'scope>(scope: silex_core::Scope<'scope>) -> ErrorReporter<'scope> {
-    scope.error_handler(|_| {})
+    scope
+        .error_handler(|_| {})
+        .expect("test error handler should be registered")
 }
 
 #[wasm_bindgen(inline_js = r#"
@@ -172,10 +174,10 @@ fn router_navigation_uses_required_table_and_updates_outlet() {
     let host = mount_host();
     let navigator = Rc::new(RefCell::new(None));
     let mut runtime = Runtime::new();
-    let root = runtime.run();
+    let root = runtime.run().expect("root should be created");
 
     root.with_scope(|scope| {
-        let view = Router(scope)
+        let view = Router(scope, test_handler(scope))
             .base("/app")
             .routes(navigation_table(navigator.clone()))
             .build();
@@ -192,7 +194,9 @@ fn router_navigation_uses_required_table_and_updates_outlet() {
         .as_ref()
         .copied()
         .expect("route handler should expose navigator");
-    navigator.push(RoutePath::new("/home").expect("route path should be valid"));
+    navigator
+        .push(RoutePath::new("/home").expect("route path should be valid"))
+        .expect("home navigation should succeed");
     assert_eq!(host.text_content().as_deref(), Some("home"));
     assert_eq!(
         web_sys::window().unwrap().location().pathname().unwrap(),
@@ -200,7 +204,9 @@ fn router_navigation_uses_required_table_and_updates_outlet() {
     );
 
     let history_length = web_sys::window().unwrap().history().unwrap().length();
-    navigator.replace("/users/8?tab=replaced");
+    navigator
+        .replace("/users/8?tab=replaced")
+        .expect("replace navigation should succeed");
     assert_eq!(host.text_content().as_deref(), Some("8"));
     assert_eq!(
         web_sys::window().unwrap().history().unwrap().length(),
@@ -236,7 +242,7 @@ fn router_layout_is_created_once_while_outlet_changes() {
     let navigator = Rc::new(RefCell::new(None));
     let layouts = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
-    let root = runtime.run();
+    let root = runtime.run().expect("root should be created");
 
     root.with_scope(|scope| {
         let navigator_for_one = navigator.clone();
@@ -255,7 +261,7 @@ fn router_layout_is_created_once_while_outlet_changes() {
         ])
         .expect("route table should compile");
         let layouts_for_view = layouts.clone();
-        let view = Router(scope)
+        let view = Router(scope, test_handler(scope))
             .base("/app")
             .routes(table)
             .layout(move |_context, outlet| {
@@ -275,7 +281,9 @@ fn router_layout_is_created_once_while_outlet_changes() {
         .as_ref()
         .copied()
         .expect("route handler should expose navigator");
-    navigator.push(RoutePath::new("/two").expect("route path should be valid"));
+    navigator
+        .push(RoutePath::new("/two").expect("route path should be valid"))
+        .expect("second route navigation should succeed");
     assert_eq!(host.text_content().as_deref(), Some("two"));
     assert_eq!(layouts.get(), 1);
 
@@ -294,7 +302,7 @@ fn nested_outlet_keeps_parent_layout_while_child_route_changes() {
     let layouts = Rc::new(Cell::new(0));
     let navigator = Rc::new(RefCell::new(None));
     let mut runtime = Runtime::new();
-    let root = runtime.run();
+    let root = runtime.run().expect("root should be created");
 
     root.with_scope(|scope| {
         let navigator_for_detail = navigator.clone();
@@ -310,8 +318,12 @@ fn nested_outlet_keeps_parent_layout_while_child_route_changes() {
                     AnyView::from(id.to_string())
                 },
             },
-        });
-        let view = Router(scope).base("/app").routes(routes.table()).build();
+        })
+        .expect("nested route catalog should compile");
+        let view = Router(scope, test_handler(scope))
+            .base("/app")
+            .routes(routes.table())
+            .build();
         let owner = ScopedViewOwner::new(scope, test_handler(scope));
         view.mount_owned(&owner, &host, Vec::new())
             .expect("nested router should mount");
@@ -324,7 +336,9 @@ fn nested_outlet_keeps_parent_layout_while_child_route_changes() {
         .as_ref()
         .copied()
         .expect("nested route should expose navigator");
-    navigator.push(RoutePath::new("/users/2").expect("nested path should be valid"));
+    navigator
+        .push(RoutePath::new("/users/2").expect("nested path should be valid"))
+        .expect("nested route navigation should succeed");
     assert_eq!(host.text_content().as_deref(), Some("users:2"));
     assert_eq!(layouts.get(), 1);
 
@@ -341,12 +355,16 @@ fn link_requires_context_and_tracks_active_path() {
     set_url("/");
     let host = mount_host();
     let mut runtime = Runtime::new();
-    let root = runtime.run();
+    let root = runtime.run().expect("root should be created");
 
     root.with_scope(|scope| {
-        let (path, set_path) = scope.signal(String::from("/users"));
-        let (search, set_search) = scope.signal(String::new());
-        let context = RouterContext::try_new(
+        let (path, set_path) = scope
+            .signal(String::from("/users"))
+            .expect("path signal should be created");
+        let (search, set_search) = scope
+            .signal(String::new())
+            .expect("search signal should be created");
+        let context = RouterContext::new(
             scope,
             RouterContextProps {
                 base_path: String::from("/app"),
@@ -355,12 +373,16 @@ fn link_requires_context_and_tracks_active_path() {
                 set_path,
                 set_search,
             },
+            test_handler(scope),
         )
         .expect("router context should be created");
-        let link = Link(context, RoutePath::new("/users").unwrap())
-            .children("users")
-            .active_class("active")
-            .build();
+        let link = Link(
+            context,
+            RoutePath::new("/users").expect("route path should be valid"),
+        )
+        .children("users")
+        .active_class("active")
+        .build();
         let owner = ScopedViewOwner::new(scope, test_handler(scope));
         link.mount_owned(&owner, &host, Vec::new())
             .expect("link should mount");
@@ -373,7 +395,9 @@ fn link_requires_context_and_tracks_active_path() {
         assert_eq!(element.get_attribute("href").as_deref(), Some("/app/users"));
         assert_eq!(element.class_name(), "active");
 
-        set_path.set(String::from("/other"));
+        set_path
+            .set(String::from("/other"))
+            .expect("path signal should update");
         assert_eq!(element.class_name(), "");
     });
 
@@ -389,14 +413,18 @@ fn link_requires_context_and_tracks_active_path() {
 fn query_memo_handles_empty_multiple_duplicate_delete_and_reactive_changes() {
     set_url("/query?empty&blank=&first=one&second=two&tag=first&tag=last");
     let mut runtime = Runtime::new();
-    let root = runtime.run();
+    let root = runtime.run().expect("root should be created");
 
     root.with_scope(|scope| {
-        let (path, set_path) = scope.signal(String::from("/query"));
-        let (search, set_search) = scope.signal(String::from(
-            "?empty&blank=&first=one&second=two&tag=first&tag=last",
-        ));
-        let context = RouterContext::try_new(
+        let (path, set_path) = scope
+            .signal(String::from("/query"))
+            .expect("path signal should be created");
+        let (search, set_search) = scope
+            .signal(String::from(
+                "?empty&blank=&first=one&second=two&tag=first&tag=last",
+            ))
+            .expect("search signal should be created");
+        let context = RouterContext::new(
             scope,
             RouterContextProps {
                 base_path: String::from("/"),
@@ -405,6 +433,7 @@ fn query_memo_handles_empty_multiple_duplicate_delete_and_reactive_changes() {
                 set_path,
                 set_search,
             },
+            test_handler(scope),
         )
         .expect("router context should be created");
         let query = context.query_map();
@@ -413,14 +442,14 @@ fn query_memo_handles_empty_multiple_duplicate_delete_and_reactive_changes() {
         scope
             .effect(
                 move || -> SilexResult<()> {
-                    snapshots_for_effect.borrow_mut().push(query.try_get()?);
+                    snapshots_for_effect.borrow_mut().push(query.get()?);
                     Ok(())
                 },
                 test_handler(scope),
             )
             .expect("query effect can be registered");
 
-        let initial = query.get();
+        let initial = query.get().expect("initial query should be readable");
         assert_eq!(initial.len(), 5);
         assert_eq!(initial.get("empty"), Some(&String::new()));
         assert_eq!(initial.get("blank"), Some(&String::new()));
@@ -428,16 +457,23 @@ fn query_memo_handles_empty_multiple_duplicate_delete_and_reactive_changes() {
         assert_eq!(initial.get("second"), Some(&String::from("two")));
         assert_eq!(initial.get("tag"), Some(&String::from("last")));
 
-        context.navigator.set_query("tag", None);
-        let after_delete = query.get();
+        context
+            .navigator
+            .set_query("tag", None)
+            .expect("query key should be removed");
+        let after_delete = query.get().expect("query should be readable");
         assert!(!after_delete.contains_key("tag"));
         assert_eq!(after_delete.get("first"), Some(&String::from("one")));
 
-        set_search.set(String::new());
-        assert!(query.get().is_empty());
+        set_search
+            .set(String::new())
+            .expect("search signal should update");
+        assert!(query.get().expect("query should be readable").is_empty());
 
-        set_search.set(String::from("?first=updated&new=value"));
-        let updated = query.get();
+        set_search
+            .set(String::from("?first=updated&new=value"))
+            .expect("search signal should update");
+        let updated = query.get().expect("query should be readable");
         assert_eq!(updated.get("first"), Some(&String::from("updated")));
         assert_eq!(updated.get("new"), Some(&String::from("value")));
         assert_eq!(snapshots.borrow().len(), 4);
@@ -494,26 +530,31 @@ fn router_owner_dispose_removes_listener_and_ignores_late_popstate() {
     let cleanups = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
 
-    runtime.child(|scope| {
-        let cleanups_for_route = cleanups.clone();
-        let table = RouteTable::from_entries(vec![
-            RouteEntry::new("/users", move |_, _| {
-                Some(AnyView::new(RouterCleanupView {
-                    text: String::from("lexical"),
-                    cleanups: cleanups_for_route.clone(),
-                }))
-            })
-            .expect("route should compile"),
-        ])
-        .expect("route table should compile");
-        let view = Router(scope).base("/app").routes(table).build();
-        let owner = ScopedViewOwner::new(scope, test_handler(scope));
-        view.mount_owned(&owner, &host, Vec::new())
-            .expect("router view should mount");
+    runtime
+        .child(|scope| {
+            let cleanups_for_route = cleanups.clone();
+            let table = RouteTable::from_entries(vec![
+                RouteEntry::new("/users", move |_, _| {
+                    Some(AnyView::new(RouterCleanupView {
+                        text: String::from("lexical"),
+                        cleanups: cleanups_for_route.clone(),
+                    }))
+                })
+                .expect("route should compile"),
+            ])
+            .expect("route table should compile");
+            let view = Router(scope, test_handler(scope))
+                .base("/app")
+                .routes(table)
+                .build();
+            let owner = ScopedViewOwner::new(scope, test_handler(scope));
+            view.mount_owned(&owner, &host, Vec::new())
+                .expect("router view should mount");
 
-        assert_eq!(host.text_content().as_deref(), Some("lexical"));
-        assert_eq!(spy.count("add"), 1);
-    });
+            assert_eq!(host.text_content().as_deref(), Some("lexical"));
+            assert_eq!(spy.count("add"), 1);
+        })
+        .expect("router child scope should run");
 
     assert_eq!(spy.count("remove"), 1);
     assert_eq!(cleanups.get(), 1);
@@ -539,7 +580,7 @@ fn router_does_not_mount_outlet_when_listener_registration_fails() {
     let host = mount_host();
     let route_calls = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
-    let root = runtime.run();
+    let root = runtime.run().expect("root should be created");
 
     root.with_scope(|scope| {
         let calls = route_calls.clone();
@@ -551,7 +592,10 @@ fn router_does_not_mount_outlet_when_listener_registration_fails() {
             .expect("route should compile"),
         ])
         .expect("route table should compile");
-        let view = Router(scope).base("/app").routes(table).build();
+        let view = Router(scope, test_handler(scope))
+            .base("/app")
+            .routes(table)
+            .build();
         let owner = ScopedViewOwner::new(scope, test_handler(scope));
         assert!(matches!(
             view.mount_owned(&owner, &host, Vec::new()),
@@ -594,7 +638,8 @@ impl<'scope> View<'scope> for FactoryTextView<'scope> {
             }),
             owner.token().error_handler(),
         )?;
-        mount_text_node(parent, &self.text.get())?;
+        let text = self.text.get()?;
+        mount_text_node(parent, &text)?;
         Ok(())
     }
 
@@ -618,10 +663,12 @@ fn router_view_factory_keeps_scoped_dynamic_owner_cleanup() {
     let cleanups = Rc::new(Cell::new(0));
     let factory_calls = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
-    let root = runtime.run();
+    let root = runtime.run().expect("root should be created");
 
     root.with_scope(|scope| {
-        let (text, set_text) = scope.signal(String::from("factory-one"));
+        let (text, set_text) = scope
+            .signal(String::from("factory-one"))
+            .expect("text signal should be created");
         let cleanups_for_factory = cleanups.clone();
         let calls_for_factory = factory_calls.clone();
         let factory = RouterViewFactory(Rc::new(move || {
@@ -639,7 +686,9 @@ fn router_view_factory_keeps_scoped_dynamic_owner_cleanup() {
         assert_eq!(host.text_content().as_deref(), Some("factory-one"));
         assert_eq!(factory_calls.get(), 1);
 
-        set_text.set(String::from("factory-two"));
+        set_text
+            .set(String::from("factory-two"))
+            .expect("factory text should update");
         assert_eq!(host.text_content().as_deref(), Some("factory-two"));
         assert_eq!(factory_calls.get(), 2);
         assert_eq!(cleanups.get(), 1);

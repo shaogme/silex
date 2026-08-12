@@ -223,7 +223,7 @@ fn split_at_semicolon(tokens: &mut impl Iterator<Item = TokenTree>) -> Option<To
 
 fn nested_reads(bindings: &[&SourceBinding], body: &TokenStream2, promoted: bool) -> TokenStream2 {
     let Some(binding) = bindings.first() else {
-        return quote! {{ #body }};
+        return quote! { Ok(#body) };
     };
     let source = if promoted {
         let promoted = &binding.promoted;
@@ -235,16 +235,18 @@ fn nested_reads(bindings: &[&SourceBinding], body: &TokenStream2, promoted: bool
     let reference = &binding.reference;
     let rest = nested_reads(&bindings[1..], body, promoted);
     quote! {
-        (#source).with(|#reference| #rest)
+        (#source).with(|#reference| #rest)?
     }
 }
 
-fn source_setup(bindings: &[&SourceBinding]) -> TokenStream2 {
+fn source_setup(bindings: &[&SourceBinding], error_handler: &Ident) -> TokenStream2 {
     let sources = bindings.iter().map(|binding| {
         let promoted = &binding.promoted;
         let source = &binding.source;
         quote! {
-            let #promoted = __silex_scope.promote(#source);
+            let #promoted = __silex_scope
+                .promote(#source, #error_handler)
+                ?;
         }
     });
     quote! {
@@ -273,7 +275,7 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
     let prefix = split_at_semicolon(&mut tokens).ok_or_else(|| {
         Error::new(
             proc_macro2::Span::call_site(),
-            "rx! requires prefix; scope; body",
+            "rx! requires prefix; scope; error_handler; body",
         )
     })?;
     if prefix.is_empty() {
@@ -295,9 +297,28 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
         ));
     }
     let scope: Expr = parse2(scope_tokens)?;
+    let error_handler_tokens = split_at_semicolon(&mut tokens).ok_or_else(|| {
+        Error::new(
+            proc_macro2::Span::call_site(),
+            "rx! requires an explicit error handler before the body",
+        )
+    })?;
+    if error_handler_tokens.is_empty() {
+        return Err(Error::new(
+            proc_macro2::Span::call_site(),
+            "rx! error handler cannot be empty",
+        ));
+    }
+    let error_handler: Expr = parse2(error_handler_tokens)?;
     let body: TokenStream2 = tokens.collect();
     if body.is_empty() {
-        return Ok(quote! {{ let __silex_scope = #scope; __silex_scope.constant(()) }});
+        let error_handler_ident = format_ident!("__silex_error_handler");
+        return Ok(quote! {{
+            let __silex_scope = #scope;
+            let #error_handler_ident: #prefix::ErrorReporter<'_> = #error_handler;
+            let _ = #error_handler_ident;
+            __silex_scope.constant(())?
+        }});
     }
 
     let mut registry = SourceRegistry::default();
@@ -338,20 +359,27 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
         let closure_body = quote! { #closure_body };
         let reads = nested_reads(&bindings, &closure_body, false);
         closure.capture = Some(Move::default());
-        *closure.body = parse2(quote! { Ok(#reads) })?;
+        *closure.body = parse2(quote! { #reads })?;
         let constructor = if closure.inputs.is_empty() {
-            let setup = source_setup(&bindings);
+            let error_handler_ident = format_ident!("__silex_error_handler");
+            let setup = source_setup(&bindings, &error_handler_ident);
             let inputs = input_set(&prefix, &bindings);
             quote! {
+                let #error_handler_ident: #prefix::ErrorReporter<'_> = #error_handler;
                 #setup
                 __silex_scope.derived_from(
                     #inputs,
                     #closure,
-                    __silex_scope.error_handler(|error| panic!("rx! derived failed: {error}")),
-                ).unwrap_or_else(|error| panic!("创建 rx! derived 失败: {error}"))
+                    #error_handler_ident,
+                )?
             }
         } else {
-            quote! { __silex_scope.callback(#closure) }
+            let error_handler_ident = format_ident!("__silex_error_handler");
+            quote! {
+                let #error_handler_ident: #prefix::ErrorReporter<'_> = #error_handler;
+                let _ = #error_handler_ident;
+                __silex_scope.callback(#closure)?
+            }
         };
         return Ok(quote! {{ #scope_binding #constructor }});
     }
@@ -367,24 +395,29 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
         )
         && parse2::<syn::ExprLit>(expression_tokens.clone()).is_ok()
     {
-        return Ok(quote! {{ #scope_binding __silex_scope.constant(#expression) }});
+        return Ok(quote! {{
+            #scope_binding
+            __silex_scope.constant(#expression)?
+        }});
     }
 
-    let setup = source_setup(&bindings);
+    let error_handler_ident = format_ident!("__silex_error_handler");
+    let setup = source_setup(&bindings, &error_handler_ident);
     let inputs = input_set(&prefix, &bindings);
     Ok(quote! {{
         #scope_binding
+        let #error_handler_ident: #prefix::ErrorReporter<'_> = #error_handler;
         #setup
         __silex_scope.derived_from(
             #inputs,
-            move || Ok(#reads),
-            __silex_scope.error_handler(|error| panic!("rx! derived failed: {error}")),
-        ).unwrap_or_else(|error| panic!("创建 rx! derived 失败: {error}"))
+            move || #reads,
+            #error_handler_ident,
+        )?
     }})
 }
 
-/// `rx!` process macro. The first section is a dependency prefix, the second
-/// section is the explicit scope expression.
+/// `rx!` process macro. The first section is a dependency prefix, followed by
+/// the explicit scope, error handler, and body expressions.
 #[proc_macro]
 pub fn rx(input: TokenStream) -> TokenStream {
     match expand(TokenStream2::from(input)) {
@@ -419,7 +452,7 @@ mod tests {
 
     #[test]
     fn rejects_non_source_parenthesized_expression() {
-        let input: TokenStream2 = "::silex_core; scope; $(settings.theme.clone())"
+        let input: TokenStream2 = "::silex_core; scope; handler; $(settings.theme.clone())"
             .parse()
             .unwrap();
         let error = expand(input).unwrap_err();
@@ -429,9 +462,10 @@ mod tests {
 
     #[test]
     fn rewrites_explicit_source_inside_nested_macro() {
-        let input: TokenStream2 = "::silex_core; scope; format!(\"Theme: {}\", $(settings.theme))"
-            .parse()
-            .unwrap();
+        let input: TokenStream2 =
+            "::silex_core; scope; handler; format!(\"Theme: {}\", $(settings.theme))"
+                .parse()
+                .unwrap();
         let output = expand(input).unwrap().to_string();
 
         assert!(output.contains("settings . theme"));
@@ -444,6 +478,7 @@ mod tests {
         let output = expand(quote! {
             ::silex_core;
             scope;
+            handler;
             $state.name.clone()
         })
         .unwrap()
@@ -457,9 +492,10 @@ mod tests {
 
     #[test]
     fn deduplicates_repeated_explicit_sources() {
-        let input: TokenStream2 = "::silex_core; scope; $(settings.theme) == $(settings.theme)"
-            .parse()
-            .unwrap();
+        let input: TokenStream2 =
+            "::silex_core; scope; handler; $(settings.theme) == $(settings.theme)"
+                .parse()
+                .unwrap();
         let output = expand(input).unwrap().to_string();
 
         assert_eq!(output.matches("promote").count(), 1);
@@ -472,8 +508,14 @@ mod tests {
     }
 
     #[test]
+    fn rejects_missing_error_handler() {
+        let error = expand(quote! { ::silex_core; scope; $count }).unwrap_err();
+        assert!(error.to_string().contains("error handler"));
+    }
+
+    #[test]
     fn emits_only_scoped_constructors() {
-        let output = expand(quote! { ::silex_core; scope; $count + 1 })
+        let output = expand(quote! { ::silex_core; scope; handler; $count + 1 })
             .unwrap()
             .to_string();
         assert!(output.contains("derived"));
@@ -484,7 +526,7 @@ mod tests {
 
     #[test]
     fn routes_parameterless_closures_to_derived() {
-        let output = expand(quote! { ::silex_core; scope; || $count + 1 })
+        let output = expand(quote! { ::silex_core; scope; handler; || $count + 1 })
             .unwrap()
             .to_string();
         assert!(output.contains("derived"));
@@ -493,7 +535,7 @@ mod tests {
 
     #[test]
     fn routes_parameterized_closures_to_callback() {
-        let output = expand(quote! { ::silex_core; scope; |value: i32| value + 1 })
+        let output = expand(quote! { ::silex_core; scope; handler; |value: i32| value + 1 })
             .unwrap()
             .to_string();
         assert!(output.contains("callback"));
@@ -505,6 +547,7 @@ mod tests {
         let output = expand(quote! {
             ::silex_core;
             scope;
+            handler;
             @fn $a + $b + $c + $d
         })
         .unwrap()
@@ -513,5 +556,22 @@ mod tests {
         assert!(!output.contains("map1_static"));
         assert!(!output.contains("map2_static"));
         assert!(!output.contains("map3_static"));
+    }
+
+    #[test]
+    fn propagates_runtime_errors_without_generated_panics() {
+        let output = expand(quote! {
+            ::silex_core;
+            scope;
+            handler;
+            $count + 1
+        })
+        .unwrap()
+        .to_string();
+
+        assert!(output.contains("?"));
+        assert!(!output.contains("unwrap_or_else"));
+        assert!(!output.contains("panic !"));
+        assert!(!output.contains("console_error"));
     }
 }

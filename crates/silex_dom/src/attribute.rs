@@ -246,14 +246,14 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
             let node_ref_for_cleanup = node_ref;
             owner.on_cleanup(
                 Box::new(move || -> SilexResult<()> {
-                    match node_ref_for_cleanup.try_clear() {
+                    match node_ref_for_cleanup.clear() {
                         Ok(()) | Err(ReactiveError::NoSuchNode) => Ok(()),
                         Err(error) => Err(error.into()),
                     }
                 }),
                 owner.error_handler(),
             )?;
-            node_ref.try_load(typed).map_err(SilexError::from)
+            node_ref.load(typed).map_err(SilexError::from)
         }))
     }
 
@@ -341,7 +341,7 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
     {
         let s = signal.clone();
         let this = self.on_input(move |value| {
-            s.try_update(|current| *current = T::from(value))?;
+            s.update(|current| *current = T::from(value))?;
             Ok(())
         });
 
@@ -351,7 +351,7 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
             owner.effect_from(
                 runtime_inputs_of(signal.clone()),
                 Box::new(move || -> SilexResult<()> {
-                    let value = signal.try_get()?;
+                    let value = signal.get()?;
                     let str_val = value.as_ref();
                     apply_attr_with_target_internal(
                         &dom_element,
@@ -417,17 +417,19 @@ mod tests {
     #[test]
     fn test_known_prop_reactive_bool_into_op() {
         let mut runtime = Runtime::new();
-        runtime.child(|scope| {
-            let signal = scope.rw_signal(true);
-            let target = ApplyTarget::Known(KnownProp::Disabled);
-            let pending = PendingAttribute::build(signal.into_storable(), target);
-            match pending {
-                AttrOp::Update(AttrUpdate { target, .. }) => {
-                    assert_eq!(target, ApplyTarget::Known(KnownProp::Disabled));
+        runtime
+            .child(|scope| {
+                let signal = scope.rw_signal(true).expect("signal should initialize");
+                let target = ApplyTarget::Known(KnownProp::Disabled);
+                let pending = PendingAttribute::build(signal.into_storable(), target);
+                match pending {
+                    AttrOp::Update(AttrUpdate { target, .. }) => {
+                        assert_eq!(target, ApplyTarget::Known(KnownProp::Disabled));
+                    }
+                    _ => panic!("Expected AttrOp::Update for KnownProp reactive bool"),
                 }
-                _ => panic!("Expected AttrOp::Update for KnownProp reactive bool"),
-            }
-        });
+            })
+            .expect("child scope should initialize");
     }
 
     #[test]
@@ -457,23 +459,29 @@ mod tests {
     #[test]
     fn test_tuple_reactive_bool_class_into_op() {
         let mut runtime = Runtime::new();
-        runtime.child(|scope| {
-            let signal = scope.rw_signal(true);
-            let rx = signal.into_rx();
-            let op = ("active", rx).into_op(ApplyTarget::Class);
-            assert_eq!(op, AttrOp::class_toggle(Cow::Borrowed("active"), rx));
-        });
+        runtime
+            .child(|scope| {
+                let signal = scope.rw_signal(true).expect("signal should initialize");
+                let rx = signal.into_rx();
+                let op = ("active", rx).into_op(ApplyTarget::Class);
+                assert_eq!(op, AttrOp::class_toggle(Cow::Borrowed("active"), rx));
+            })
+            .expect("child scope should initialize");
     }
 
     #[test]
     fn test_tuple_reactive_string_style_into_op() {
         let mut runtime = Runtime::new();
-        runtime.child(|scope| {
-            let signal = scope.rw_signal("10px".to_string());
-            let rx = signal.into_rx();
-            let op = ("margin", rx).into_op(ApplyTarget::Style);
-            assert_eq!(op, AttrOp::style_property(Cow::Borrowed("margin"), rx));
-        });
+        runtime
+            .child(|scope| {
+                let signal = scope
+                    .rw_signal("10px".to_string())
+                    .expect("signal should initialize");
+                let rx = signal.into_rx();
+                let op = ("margin", rx).into_op(ApplyTarget::Style);
+                assert_eq!(op, AttrOp::style_property(Cow::Borrowed("margin"), rx));
+            })
+            .expect("child scope should initialize");
     }
 
     #[test]
@@ -488,42 +496,49 @@ mod tests {
     #[test]
     fn test_consolidate_attributes_dedup_and_combine() {
         let mut runtime = Runtime::new();
-        runtime.child(|scope| {
-            let signal = scope.rw_signal(true);
+        runtime
+            .child(|scope| {
+                let signal = scope.rw_signal(true).expect("signal should initialize");
 
-            let attrs = vec![
-                PendingAttribute::build("btn", ApplyTarget::Class),
-                PendingAttribute::build("active", ApplyTarget::Class),
-                PendingAttribute::build("btn", ApplyTarget::Class), // 重复项 (非相邻)
-                PendingAttribute::build(("highlight", signal.into_rx()), ApplyTarget::Class),
-            ];
+                let attrs = vec![
+                    PendingAttribute::build("btn", ApplyTarget::Class),
+                    PendingAttribute::build("active", ApplyTarget::Class),
+                    PendingAttribute::build("btn", ApplyTarget::Class), // 重复项 (非相邻)
+                    PendingAttribute::build(("highlight", signal.into_rx()), ApplyTarget::Class),
+                ];
 
-            let consolidated = consolidate_attributes(attrs);
-            assert_eq!(consolidated.len(), 1);
+                let consolidated = consolidate_attributes(attrs);
+                assert_eq!(consolidated.len(), 1);
 
-            match &consolidated[0] {
-                AttrOp::CombinedClasses(cc) => {
-                    assert_eq!(
-                        cc.statics,
-                        vec![Cow::Borrowed("btn"), Cow::Borrowed("active")]
-                    );
-                    assert_eq!(cc.toggles.len(), 1);
-                    assert_eq!(cc.toggles[0].0, "highlight");
+                match &consolidated[0] {
+                    AttrOp::CombinedClasses(cc) => {
+                        assert_eq!(
+                            cc.statics,
+                            vec![Cow::Borrowed("btn"), Cow::Borrowed("active")]
+                        );
+                        assert_eq!(cc.toggles.len(), 1);
+                        assert_eq!(cc.toggles[0].0, "highlight");
+                    }
+                    _ => panic!("Expected AttrOp::CombinedClasses"),
                 }
-                _ => panic!("Expected AttrOp::CombinedClasses"),
-            }
-        })
+            })
+            .expect("child scope should initialize");
     }
 
     #[test]
     fn custom_with_inputs_keeps_declared_runtime_sources() {
         let mut runtime = Runtime::new();
-        runtime.child(|scope| {
-            let source = scope.rw_signal(1i32).into_rx();
-            let op = AttrOp::custom_with_inputs(source.runtime_inputs(), |_, _| Ok(()));
+        runtime
+            .child(|scope| {
+                let source = scope
+                    .rw_signal(1i32)
+                    .expect("signal should initialize")
+                    .into_rx();
+                let op = AttrOp::custom_with_inputs(source.runtime_inputs(), |_, _| Ok(()));
 
-            assert_eq!(op.runtime_inputs().len(), 1);
-            assert!(format!("{op:?}").contains("CustomWithInputs"));
-        });
+                assert_eq!(op.runtime_inputs().len(), 1);
+                assert!(format!("{op:?}").contains("CustomWithInputs"));
+            })
+            .expect("child scope should initialize");
     }
 }

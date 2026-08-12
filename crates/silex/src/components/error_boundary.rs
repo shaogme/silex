@@ -239,12 +239,14 @@ where
     V1: View<'scope> + 'scope,
     V2: View<'scope> + 'scope,
 {
-    let (error, set_error) = scope.signal(None::<SilexError>);
+    let (error, set_error) = scope.signal(None::<SilexError>)?;
     let completion = scope.completion_sender(unwind_safe(move |value| {
-        set_error.set(Some(value));
+        let _ = set_error.set(Some(value));
         Ok(())
-    }));
-    let completion_error_handler = scope.error_handler(move |error| set_error.set(Some(error)));
+    }))?;
+    let completion_error_handler = scope.error_handler(move |error| {
+        let _ = set_error.set(Some(error));
+    })?;
     let completion_error_handler = erase_error_handler(completion_error_handler);
     let reporter_completion = completion.clone();
     let boundary_handler = scope.error_handler(move |error| {
@@ -253,15 +255,17 @@ where
         spawn_local(async move {
             submit_boundary_error(&completion, error, error_handler);
         });
-    });
+    })?;
 
     let parent_handler: ParentHandlerCell<'scope> = SharedSlot::new(None);
     let fallback = Rc::new(move |error: SilexError| fallback(error).into_any());
-    let record_error = Rc::new(move |error: SilexError| set_error.set(Some(error)));
+    let record_error = Rc::new(move |error: SilexError| {
+        let _ = set_error.set(Some(error));
+    });
     let phase_handler = {
         let parent_handler = parent_handler.clone();
         scope.error_handler(move |error_value| {
-            if error.try_get_untracked().ok().flatten().is_some() {
+            if error.get_untracked().ok().flatten().is_some() {
                 let parent = parent_handler.with(|state| {
                     state
                         .as_ref()
@@ -275,14 +279,14 @@ where
             } else {
                 let _ = boundary_handler.handle(error_value);
             }
-        })
+        })?
     };
 
     let fallback = fallback.clone();
     let children = children.clone();
     let child_handler = boundary_handler;
     let parent_handler_for_view = parent_handler.clone();
-    let view = rx!(scope; {
+    let view = rx!(scope; phase_handler; {
         if let Some(error) = (*$error).clone() {
             ErrorBoundaryBranch::fallback(
                 fallback(error),
@@ -327,10 +331,10 @@ where
         }
     });
 
-    ErrorBoundaryView {
+    Ok(ErrorBoundaryView {
         view: view.into_any(),
         phase_handler,
         parent_handler,
         parent_handler_override: parent_error_handler,
-    }
+    })
 }

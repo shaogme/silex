@@ -282,7 +282,7 @@ pub(crate) struct RowControllerConfig<'scope, T> {
 }
 
 impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
-    pub(crate) fn try_new(
+    pub(crate) fn new(
         owner: &dyn ViewOwner<'scope>,
         config: RowControllerConfig<'scope, T>,
     ) -> SilexResult<Self> {
@@ -298,7 +298,7 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
         let mut range_guard = RangeGuard::new(range.clone());
         let updater = RowUpdater::new();
         let error_handler = owner.token().error_handler();
-        let row_scope = owner.try_owned_scope()?;
+        let row_scope = owner.owned_scope()?;
         let mut controller = Self {
             range,
             row_scope: Rc::new(row_scope),
@@ -366,7 +366,7 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
             .as_ref()
             .and_then(|nodes| nodes.with(Clone::clone).ok())
             .unwrap_or_default();
-        let render_scope = match self.row_scope.try_child() {
+        let render_scope = match self.row_scope.child() {
             Ok(scope) => Rc::new(scope),
             Err(error) => {
                 self.render_scope = previous_scope;
@@ -393,7 +393,7 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
                 self.render_inputs.clone(),
                 move || -> SilexResult<()> {
                     let old_nodes = rendered_nodes_for_effect.with(Clone::clone)?;
-                    let candidate_scope = match row_scope.try_child() {
+                    let candidate_scope = match row_scope.child() {
                         Ok(scope) => Rc::new(scope),
                         Err(error) => return Err(error),
                     };

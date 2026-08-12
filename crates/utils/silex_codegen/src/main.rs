@@ -1,7 +1,11 @@
+#[cfg(not(target_arch = "wasm32"))]
 mod css;
+#[cfg(not(target_arch = "wasm32"))]
 mod tags;
+#[cfg(not(target_arch = "wasm32"))]
 mod tw;
 
+#[cfg(not(target_arch = "wasm32"))]
 use crate::{
     css::{
         generate_keywords_code, generate_properties_macro, generate_property_caps_code,
@@ -16,9 +20,13 @@ use crate::{
         validate_prefix_metadata, validate_resolver_properties, validate_resolver_values,
     },
 };
+#[cfg(not(target_arch = "wasm32"))]
 use heck::AsSnakeCase;
+#[cfg(not(target_arch = "wasm32"))]
 use reqwest::blocking::Client;
+#[cfg(not(target_arch = "wasm32"))]
 use serde_json::{Value, from_reader, from_str, to_writer_pretty};
+#[cfg(not(target_arch = "wasm32"))]
 use std::{
     collections::BTreeMap,
     env::{args, current_dir},
@@ -28,6 +36,7 @@ use std::{
     path::Path,
 };
 
+#[cfg(not(target_arch = "wasm32"))]
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = args().collect();
     let should_fetch = args.contains(&"--fetch".to_string());
@@ -289,3 +298,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("\nSuccessfully completed!");
     Ok(())
 }
+
+#[cfg(target_arch = "wasm32")]
+fn main() {}

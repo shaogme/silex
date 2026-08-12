@@ -12,30 +12,41 @@ fn Card<'scope>(
     #[chain(default)]
     on_hover: Callback<'scope>,
 ) -> impl View<'scope> {
-    let style = format!(
-        "border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px {}px rgba(0,0,0,0.1); transition: transform 0.2s;",
-        elevation * 4
-    );
+    let box_shadow = format!("0 4px {}px rgba(0,0,0,0.1)", elevation * 4);
 
     let mut root = div!(
-        h1(title).style("margin-top: 0; font-size: 1.2rem; color: #333;"),
+        h1(title).style(
+            sty()
+                .margin_top(px(0))?
+                .font_size(rem(1.2))?
+                .color(hex("#333"))?
+        ),
         child,
     )
     .class("card")
-    .style(&style);
+    .style(
+        sty()
+            .border("1px solid #e0e0e0")?
+            .border_radius(px(8))?
+            .padding("20px")?
+            .margin_bottom(px(20))?
+            .box_shadow(box_shadow)?
+            .transition("transform 0.2s")?,
+    );
 
     root = root.on_click(move |_| on_hover.invoke(()));
 
-    root
+    Ok(root)
 }
 
 #[component]
 fn CounterDisplay<'scope>(
     scope: Scope<'scope>,
     count: ReadSignal<'scope, i32>,
-) -> SilexResult<impl View<'scope>> {
+    #[chain] error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
     // Demo: Style Map (Vec) and Dynamic Class (Signal)
-    let is_even = scope.memo(move |_| count.get() % 2 == 0);
+    let is_even = rx!(scope; error_handler; $count % 2 == 0);
 
     // Demo: CSS-in-Rust (Scoped CSS)
     let container_class = css! {
@@ -57,12 +68,14 @@ fn CounterDisplay<'scope>(
 
     Ok(div!(
         span("Global Status: "),
-        span(count)
-            .style(("font-weight", "bold")) // Single tuple style
-            .style(("color", "#6200ea")),
+        span(count).style(
+            sty()
+                .font_weight(FontWeightKeyword::Bold)?
+                .color(hex("#6200ea"))?,
+        ),
         div(" (Even Number - Dynamic Class Active)")
-            .style(("margin-top", "5px"))
-            .style(rx!(scope;
+            .style(sty().margin_top(px(5))?)
+            .style(rx!(scope; error_handler;
                 format!(
                     "opacity: {}; transition: opacity 0.3s",
                     if *$is_even { 1.0 } else { 0.0 }
@@ -70,56 +83,74 @@ fn CounterDisplay<'scope>(
             )),
     )
     .class(container_class)
-    .class(("even-number", rx!(scope; *$is_even)))) // Adds class "even-number" when count is even
+    .class(("even-number", rx!(scope; error_handler; *$is_even)))) // Adds class "even-number" when count is even
 }
 
 #[component]
 fn CounterControls<'scope>(
     count: ReadSignal<'scope, i32>,
     set_count: WriteSignal<'scope, i32>,
-) -> SilexResult<impl View<'scope>> {
+) -> impl View<'scope> {
     // Demo: Style Array
-    let btn_style = [
-        ("padding", "8px 16px"),
-        ("border-radius", "4px"),
-        ("border", "1px solid #ccc"),
-        ("cursor", "pointer"),
-        ("background-color", "white"),
-        ("transition", "background-color 0.2s"),
-    ];
+    let btn_style = sty()
+        .padding("8px 16px")?
+        .border_radius(px(4))?
+        .border("1px solid #ccc")?
+        .cursor(CursorKeyword::Pointer)?
+        .background(ColorName::White)?
+        .transition("background-color 0.2s")?;
 
     Ok(div!(
-        button("-")
-            .style(btn_style) // Apply array of styles
-            .on_click(move |_| {
-                set_count.update(|n| *n -= 1);
-                Ok(())
-            }),
-        span(count)
-            .style("font-size: 1.5rem; font-weight: bold; min-width: 30px; text-align: center;"),
+        button("-").style(btn_style.clone()).on_click(move |_| {
+            set_count.update(|n| *n -= 1)?;
+            Ok(())
+        }),
+        span(count).style(
+            sty()
+                .font_size(rem(1.5))?
+                .font_weight(FontWeightKeyword::Bold)?
+                .min_width(px(30))?
+                .text_align(TextAlignKeyword::Center)?
+        ),
         button("+").style(btn_style).on_click(move |_| {
-            set_count.update(|n| *n += 1);
+            set_count.update(|n| *n += 1)?;
             Ok(())
         }),
     )
-    .style("display: flex; align-items: center; gap: 15px;"))
+    .style(sty().display("flex")?.align_items("center")?.gap(px(15))?))
 }
 
 // --- Views ---
 
 #[component]
 fn NavBar<'scope>(ctx: RouterContext<'scope>) -> impl View<'scope> {
-    div!(
+    Ok(div!(
         Link(ctx, "/")
             .children("Home")
-            .style("margin-right: 15px; text-decoration: none; color: #007bff; font-weight: bold;")
+            .style(
+                sty()
+                    .margin_right(px(15))?
+                    .text_decoration("none")?
+                    .color(hex("#007bff"))?
+                    .font_weight(FontWeightKeyword::Bold)?
+            )
             .build(),
         Link(ctx, "/about")
             .children("About")
-            .style("text-decoration: none; color: #007bff; font-weight: bold;")
+            .style(
+                sty()
+                    .text_decoration("none")?
+                    .color(hex("#007bff"))?
+                    .font_weight(FontWeightKeyword::Bold)?
+            )
             .build(),
     )
-    .style("margin-bottom: 20px; padding: 10px; border-bottom: 1px solid #eee")
+    .style(
+        sty()
+            .margin_bottom(px(20))?
+            .padding("10px")?
+            .border_bottom("1px solid #eee")?,
+    ))
 }
 
 #[component]
@@ -130,19 +161,31 @@ fn HomeView<'scope>(
     let scope = ctx.scope();
 
     // 页面级状态
-    let (name, set_name) = scope.signal("Rustacean".to_string());
+    let (name, set_name) = scope.signal("Rustacean".to_string())?;
 
     // 显式本地信号传递演示
-    let (count, set_count) = scope.signal(0);
-    let is_high = scope.memo(move |_| count.get() > 5);
+    let (count, set_count) = scope.signal(0)?;
+    let is_high = rx!(scope; error_handler; *$count > 5);
+    let suspense_source = scope.constant(())?;
+    let suspense_data_style = sty()
+        .color(hex("#2e7d32"))?
+        .font_weight(FontWeightKeyword::Bold)?
+        .background("#e8f5e9")?
+        .padding("10px")?
+        .border_radius(px(4))?;
 
     Ok(div!(
         // Header
         div!(
             h1("Silex: Next Gen"),
-            p("Builder Pattern + Router + Explicit State + Suspense").style("color: #666"),
+            p("Builder Pattern + Router + Explicit State + Suspense")
+                .style(sty().color(hex("#666"))?),
         )
-        .style("text-align: center; margin-bottom: 30px;"),
+        .style(
+            sty()
+                .text_align(TextAlignKeyword::Center)?
+                .margin_bottom(px(30))?
+        ),
         // Card 1: Explicit Parameter Counter
         Card(scope, "Explicit Counter")
             .elevation(3)
@@ -152,85 +195,129 @@ fn HomeView<'scope>(
             })?)
             .child(chain!(
                 CounterControls(count, set_count).build(),
-                CounterDisplay(scope, count).build(),
+                CounterDisplay(scope, count)
+                    .error_handler(error_handler)
+                    .build(),
             ))
             .build(),
         // Card 2: Input & Local State
-        Card(scope, "Local State (Resets on Nav)").child(div!(div!(
-            div!(
-                span("Hello, "),
-                span(name).style("color: #007bff; font-weight: bold;"),
-                span("!"),
-            )
-            .style("margin-bottom: 10px"),
-            input()
-                .type_("text")
-                .placeholder("Enter name")
-                .style("padding: 8px; border: 1px solid #ccc; border-radius: 4px; width: 100%;")
-                .value(name)
-                .on_input(move |val| {
-                    set_name.set(val);
-                    Ok(())
-                })
-        )))
-        .build(),
-        // Card 3: Control Flow
-        Card(scope, "Control Flow").child(
-            is_high
-                .when(
-                    scope,
-                    div("⚠️ Warning: Count is getting high!").style(
-                        "background: #ffebee; color: #c62828; padding: 10px; border-radius: 4px;"
-                    )
+        Card(scope, "Local State (Resets on Nav)")
+            .child(div!(div!(
+                div!(
+                    span("Hello, "),
+                    span(name).style(
+                        sty()
+                            .color(hex("#007bff"))?
+                            .font_weight(FontWeightKeyword::Bold)?
+                    ),
+                    span("!"),
                 )
-                .fallback(div("✓ System works normally.").style(
-                    "background: #e8f5e9; color: #2e7d32; padding: 10px; border-radius: 4px;"
-                ))
-                .build()
-        )
-        .build(),
-        // Card 4: Suspense
-        Card(scope, "Suspense (Async Loading)").child(
-            Suspense(scope, move |cx| {
-                let async_data_local = Resource::new(
-                    scope,
-                    scope.constant(()),
-                    |_| async {
-                        gloo_timers::future::TimeoutFuture::new(2_000).await;
-                        Ok::<_, SilexError>("Loaded Data from Server!".to_string())
-                    },
-                    Some(cx),
-                    error_handler,
-                );
-                div(rx!(scope; $async_data_local.clone().unwrap_or("Waiting...".to_string())))
-                    .style("color: #2e7d32; font-weight: bold; background: #e8f5e9; padding: 10px; border-radius: 4px;")
-            })
-            .fallback(div("Loading data (approx 2s)...").style("color: orange; font-style: italic;"))
+                .style(sty().margin_bottom(px(10))?),
+                input()
+                    .type_("text")
+                    .placeholder("Enter name")
+                    .style(
+                        sty()
+                            .padding("8px")?
+                            .border("1px solid #ccc")?
+                            .border_radius(px(4))?
+                            .width(pct(100))?
+                    )
+                    .value(name)
+                    .on_input(move |val| {
+                        set_name.set(val)?;
+                        Ok(())
+                    })
+            )))
             .build(),
-        )
-        .build(),
+        // Card 3: Control Flow
+        Card(scope, "Control Flow")
+            .child(
+                is_high
+                    .when(
+                        scope,
+                        error_handler,
+                        div("⚠️ Warning: Count is getting high!").style(
+                            sty()
+                                .background("#ffebee")?
+                                .color(hex("#c62828"))?
+                                .padding("10px")?
+                                .border_radius(px(4))?
+                        )
+                    )
+                    .fallback(
+                        div("✓ System works normally.").style(
+                            sty()
+                                .background("#e8f5e9")?
+                                .color(hex("#2e7d32"))?
+                                .padding("10px")?
+                                .border_radius(px(4))?
+                        )
+                    )
+                    .build()
+            )
+            .build(),
+        // Card 4: Suspense
+        Card(scope, "Suspense (Async Loading)")
+            .child(
+                Suspense(scope, error_handler, move |cx| {
+                    match Resource::new(
+                        scope,
+                        suspense_source,
+                        |_| async {
+                            gloo_timers::future::TimeoutFuture::new(2_000).await;
+                            Ok::<_, SilexError>("Loaded Data from Server!".to_string())
+                        },
+                        Some(cx),
+                        error_handler,
+                    ) {
+                        Ok(async_data_local) => {
+                            Ok(div(move || match async_data_local.get_data() {
+                                Ok(Some(data)) => data,
+                                Ok(None) => "Waiting...".to_string(),
+                                Err(error) => {
+                                    let _ = error_handler.handle(error.clone());
+                                    format!("Resource error: {error}")
+                                }
+                            })
+                            .style(suspense_data_style.clone())
+                            .into_any())
+                        }
+                        Err(error) => {
+                            let _ = error_handler.handle(error.clone());
+                            Ok(ErrorPage(error).build().into_any())
+                        }
+                    }
+                })
+                .fallback(
+                    div("Loading data (approx 2s)...")
+                        .style(sty().color(ColorName::Orange)?.font_style("italic")?)
+                )
+                .build(),
+            )
+            .build(),
     ))
 }
 
 #[component]
 fn AboutView<'scope>() -> AnyView<'scope> {
-    div!(
+    Ok(div!(
         h1("About"),
         p("This is the About Page to demonstrate Silex Router."),
         p("Try going back to Home, and notice the Counter is preserved while being passed explicitly to components."),
-    ).style("padding: 20px; text-align: center;").into_any()
+    ).style(sty().padding("20px")?.text_align(TextAlignKeyword::Center)?).into_any())
 }
 
 #[component]
 fn NotFound<'scope>() -> AnyView<'scope> {
-    div(h1("404 - Page Not Found"))
-        .style("color: red; padding: 20px;")
-        .into_any()
+    Ok(div(h1("404 - Page Not Found"))
+        .style(sty().color(ColorName::Red)?.padding("20px")?)
+        .into_any())
 }
 
 #[component]
 fn ErrorPage<'scope>(error: SilexError) -> AnyView<'scope> {
-    div!(
+    Ok(div!(
         h1("Silex Application Error"),
         p(error.to_string()),
         button("Reload Application").on_click(|_| {
@@ -240,46 +327,66 @@ fn ErrorPage<'scope>(error: SilexError) -> AnyView<'scope> {
             Ok(())
         }),
     )
-    .style("max-width: 600px; margin: 80px auto; padding: 32px; font-family: sans-serif; border: 1px solid #f0b4b4; background: #fff7f7; color: #7f1d1d;")
-    .into_any()
+    .style(
+        sty()
+            .max_width(px(600))?
+            .margin("80px auto")?
+            .padding("32px")?
+            .font_family("sans-serif")?
+            .border("1px solid #f0b4b4")?
+            .background("#fff7f7")?
+            .color(hex("#7f1d1d"))?,
+    )
+    .into_any())
 }
 
 #[component]
 fn App<'scope>(
     scope: Scope<'scope>,
     root_error: ReadSignal<'scope, Option<SilexError>>,
+    #[chain] error_handler: ErrorReporter<'scope>,
 ) -> impl View<'scope> {
-    let boundary = ErrorBoundary(
-        scope,
-        move |error_handler| {
-            let routes = routes!(AppRoutes {
-                home "/" => move |ctx| {
-                     HomeView(ctx).error_handler(error_handler).build()
-                },
-                about "/about" => move |_ctx| AboutView().build(),
-                not_found "/*" => move |_ctx| NotFound().build(),
-            });
-                div!(
-                    Router(scope)
-                        .routes(routes.table())
-                        .layout(move |ctx, outlet| div!(NavBar(ctx).build(), outlet))
-                        .build()
-                )
+    let app_style = sty()
+        .font_family("-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif")?
+        .max_width(px(600))?
+        .margin("0 auto")?
+        .padding("20px")?;
+
+    let boundary = ErrorBoundary(scope, move |boundary_error_handler| {
+        match routes!(AppRoutes {
+            home "/" => move |ctx| {
+                HomeView(ctx)
+                    .error_handler(boundary_error_handler)
+                    .build()
+            },
+            about "/about" => move |_ctx| AboutView().build(),
+            not_found "/*" => move |_ctx| NotFound().build(),
+        }) {
+            Ok(routes) => div!(
+                Router(scope, boundary_error_handler)
+                    .routes(routes.table())
+                    .layout(move |ctx, outlet| div!(NavBar(ctx).build(), outlet))
+                    .build()
+            )
             .class("app-container")
-            .style("font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;")
-        },
-    )
+            .style(app_style.clone())
+            .into_any(),
+            Err(error) => ErrorPage(SilexError::Framework(error.to_string()))
+                .build()
+                .into_any(),
+        }
+    })
     .fallback(|e| ErrorPage(e).build())
     .build()
     .into_any();
 
-    rx!(scope; {
+    Ok(rx!(scope; error_handler; {
         if let Some(error) = (*$root_error).clone() {
             ErrorPage(error).build().into_any()
         } else {
             boundary.clone()
         }
-    })
+    }))
 }
 
 /// Mount the counter application into the conventional `#app` target.
@@ -298,10 +405,10 @@ pub fn mount_counter_into(target: web_sys::Node) -> Result<JsAppHost, BootstrapE
 
 fn mount_counter_view<'scope>(context: &MountContext<'scope>) -> SilexResult<()> {
     let scope = context.scope();
-    let (root_error, set_root_error) = scope.signal(None::<SilexError>);
+    let (root_error, set_root_error) = scope.signal(None::<SilexError>)?;
     let error_handler = scope.error_handler(move |error: SilexError| {
-        let _ = set_root_error.try_set(Some(error));
-    });
-    let app = App(scope, root_error).build();
+        let _ = set_root_error.set(Some(error));
+    })?;
+    let app = App(scope, root_error).error_handler(error_handler).build();
     context.mount(app, error_handler)
 }

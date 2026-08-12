@@ -10,7 +10,8 @@ fn main() {
             silex_router::dom::view::AnyView::from(rest.into_inner())
         },
         fallback "/*" => move |_ctx| silex_router::dom::view::AnyView::from("not found"),
-    });
+    })
+    .expect("route catalog should compile");
 
     let _ = routes.table();
     let _ = routes.user(42);

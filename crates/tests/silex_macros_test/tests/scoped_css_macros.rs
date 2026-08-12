@@ -2,7 +2,7 @@
 
 extern crate silex_macros_test as silex;
 
-use silex::core::{Runtime, Rx, Scope};
+use silex::core::{ErrorReporter, Runtime, Rx, Scope, SilexResult};
 use silex::css::types::Hex;
 use silex::dom::attribute::{AttrOp, AttributeBuilder, AttributeGroup, GlobalAttributes};
 use silex::dom::prelude::AnyView;
@@ -58,6 +58,7 @@ global! {
 
 global! {
     pub ScopedGlobal<'scope>(
+        error_handler: ErrorReporter<'scope>,
         color: silex::core::reactivity::Signal<'scope, Hex>,
         selector: silex::core::reactivity::Signal<'scope, String>,
     ) {
@@ -68,8 +69,16 @@ global! {
 
 fn dynamic_width<'scope>(
     source: Rx<'scope, silex::css::types::Px>,
-) -> silex::css::DynamicCss<'scope> {
-    css! { width: $(source); }
+    error_handler: ErrorReporter<'scope>,
+) -> SilexResult<silex::css::DynamicCss<'scope>> {
+    css!(error_handler; width: $(source);)
+}
+
+fn dynamic_tw_width<'scope>(
+    source: Rx<'scope, silex::css::types::Px>,
+    error_handler: ErrorReporter<'scope>,
+) -> SilexResult<silex::css::DynamicCss<'scope>> {
+    tw!(error_handler; "w-[$(source)]")
 }
 
 fn conditional_class<'scope>(condition: Rx<'scope, bool>) -> AttrOp<'scope> {
@@ -92,36 +101,56 @@ fn conditional_classes<'scope>(
 #[test]
 fn conditional_tw_expands_to_a_scoped_attribute_operation() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let (read, _) = scope.signal(true);
-        let operation = conditional_class(read.into_rx());
+    runtime
+        .child(|scope| {
+            let (read, _) = scope.signal(true).unwrap();
+            let operation = conditional_class(read.into_rx());
 
-        match operation {
-            AttrOp::CustomWithInputs { inputs, .. } => assert_eq!(inputs.len(), 1),
-            other => panic!("expected CustomWithInputs, got {other:?}"),
-        }
-    });
+            match operation {
+                AttrOp::CustomWithInputs { inputs, .. } => assert_eq!(inputs.len(), 1),
+                other => panic!("expected CustomWithInputs, got {other:?}"),
+            }
+        })
+        .unwrap();
 }
 
 #[test]
 fn dynamic_css_keeps_the_source_scope() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let (read, _) = scope.signal(silex::css::types::px(4));
-        let dynamic = dynamic_width(read.into_rx());
-        assert_eq!(dynamic.vars.len(), 1);
-    });
+    runtime
+        .child(|scope| {
+            let (read, _) = scope.signal(silex::css::types::px(4)).unwrap();
+            let error_handler = scope.error_handler(|_| {}).unwrap();
+            let dynamic = dynamic_width(read.into_rx(), error_handler).unwrap();
+            assert_eq!(dynamic.vars.len(), 1);
+        })
+        .unwrap();
+}
+
+#[test]
+fn dynamic_tw_accepts_the_explicit_error_handler_syntax() {
+    let mut runtime = Runtime::new();
+    runtime
+        .child(|scope| {
+            let (read, _) = scope.signal(silex::css::types::px(4)).unwrap();
+            let error_handler = scope.error_handler(|_| {}).unwrap();
+            let dynamic = dynamic_tw_width(read.into_rx(), error_handler).unwrap();
+            assert_eq!(dynamic.vars.len(), 1);
+        })
+        .unwrap();
 }
 
 #[test]
 fn classes_converts_signal_to_a_scoped_attribute_group() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let (condition, _) = scope.signal(true);
-        let group = conditional_classes(condition);
-        assert_eq!(group.0.len(), 1);
-        assert!(matches!(group.0[0], AttrOp::CombinedClasses(_)));
-    });
+    runtime
+        .child(|scope| {
+            let (condition, _) = scope.signal(true).unwrap();
+            let group = conditional_classes(condition);
+            assert_eq!(group.0.len(), 1);
+            assert!(matches!(group.0[0], AttrOp::CombinedClasses(_)));
+        })
+        .unwrap();
 }
 
 #[test]

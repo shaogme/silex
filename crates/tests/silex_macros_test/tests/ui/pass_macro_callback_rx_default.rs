@@ -18,7 +18,7 @@ fn CallbackRxDefault<'scope>(
 
 fn main() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    let _ = runtime.child(|scope| {
         let _view = CallbackRxDefault(scope, AnyView::Empty)
             .build()
             .expect("callback default should be fallible");

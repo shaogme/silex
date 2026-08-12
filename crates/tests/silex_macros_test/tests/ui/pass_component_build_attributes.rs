@@ -17,7 +17,7 @@ fn BuildAttributes<'scope>(
 
 fn main() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    let _ = runtime.child(|scope| {
         let mut view = BuildAttributes(scope, AnyView::Empty)
             .class("before")
             .build()

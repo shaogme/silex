@@ -6,15 +6,15 @@ error[E0521]: borrowed data escapes outside of closure
    |                      |
    |                      `scope` is a reference that is only valid in the closure body
    |                      has type `silex_core::Scope<'1>`
- 7 |           let (value, _) = scope.signal(1_i32);
+ 7 |           let (value, _) = scope.signal(1_i32).unwrap();
  8 |           let _builder = HttpClient::get(
    |  ________________________^
  9 | |             scope,
 10 | |             "https://example.test",
-11 | |             scope.error_handler(|_| {}),
+11 | |             scope.error_handler(|_| {}).unwrap(),
 12 | |         )
-13 | |             .query("value", move || value.get());
-   | |                                                ^
-   | |                                                |
-   | |________________________________________________`scope` escapes the closure body here
-   |                                                  argument requires that `'1` must outlive `'static`
+13 | |             .query("value", move || value.get().unwrap());
+   | |                                                         ^
+   | |                                                         |
+   | |_________________________________________________________`scope` escapes the closure body here
+   |                                                           argument requires that `'1` must outlive `'static`

@@ -2,11 +2,11 @@ error[E0277]: CSS 动态插值只能接受带当前生命周期的响应式 sour
   --> tests/ui/fail_macro_global_static_value.rs:9:1
    |
  9 | / global! {
-10 | |     pub StaticValueGlobal<'scope>(source: Signal<'scope, Hex>) {
-11 | |         body {
-12 | |             color: $("red");
+10 | |     pub StaticValueGlobal<'scope>(
+11 | |         error_handler: ErrorReporter<'scope>,
+12 | |         source: Signal<'scope, Hex>,
 ...  |
-15 | | }
+18 | | }
    | |_^ 此值不是 scoped reactive source
    |
    = help: the trait `IntoCssReactive<'_>` is not implemented for `&str`
@@ -21,7 +21,7 @@ error[E0277]: CSS 动态插值只能接受带当前生命周期的响应式 sour
 note: required by a bound in `silex_css::make_property_val`
   --> $WORKSPACE/crates/silex_css/src/runtime/dynamic.rs
    |
-   | pub fn make_property_val<'scope, P, S>(source: S) -> Rx<'scope, String>
+   | pub fn make_property_val<'scope, P, S>(
    |        ----------------- required by a bound in this function
 ...
    |     S: IntoCssReactive<'scope>,

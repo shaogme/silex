@@ -1,5 +1,8 @@
 use crate::{Catalog, I18nError, Locale};
-use silex_core::reactivity::{ReadSignal, Resource, ResourceState};
+use silex_core::{
+    SilexResult,
+    reactivity::{ReadSignal, Resource, ResourceState},
+};
 use std::fmt::Debug;
 
 /// Errors produced by a catalog loader, including a response for the wrong locale.
@@ -7,6 +10,7 @@ use std::fmt::Debug;
 pub enum CatalogLoadError<E> {
     Loader(E),
     LocaleMismatch { requested: Locale, loaded: Locale },
+    Runtime(String),
 }
 
 impl<E> From<E> for CatalogLoadError<E> {
@@ -23,6 +27,7 @@ impl<E: std::fmt::Display> std::fmt::Display for CatalogLoadError<E> {
                 f,
                 "catalog loader returned {loaded} while requesting {requested}"
             ),
+            Self::Runtime(error) => write!(f, "catalog resource failed: {error}"),
         }
     }
 }
@@ -46,19 +51,19 @@ impl<'scope, E: Clone + Debug + 'static> CatalogResource<'scope, E> {
         self.resource
     }
 
-    pub fn refetch(&self) {
-        self.resource.refetch();
+    pub fn refetch(&self) -> SilexResult<()> {
+        Ok(self.resource.refetch()?)
     }
 
-    pub fn loading(&self) -> bool {
+    pub fn loading(&self) -> SilexResult<bool> {
         self.resource.loading()
     }
 
-    pub fn value(&self) -> Option<Catalog> {
+    pub fn value(&self) -> SilexResult<Option<Catalog>> {
         self.resource.value()
     }
 
-    pub fn get_data(&self) -> Option<Catalog> {
+    pub fn get_data(&self) -> SilexResult<Option<Catalog>> {
         self.resource.get_data()
     }
 }
@@ -70,8 +75,8 @@ mod tests {
     #[test]
     fn reports_locale_mismatch() {
         let error = CatalogLoadError::<I18nError>::LocaleMismatch {
-            requested: Locale::new("en-US"),
-            loaded: Locale::new("en-GB"),
+            requested: Locale::new("en-US").expect("valid test locale"),
+            loaded: Locale::new("en-GB").expect("valid test locale"),
         };
         assert!(error.to_string().contains("en-GB"));
     }

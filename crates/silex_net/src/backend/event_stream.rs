@@ -9,8 +9,8 @@ use wasm_bindgen::{JsCast, closure::Closure};
 use web_sys::{Event, EventSource as JsEventSource, MessageEvent};
 
 use silex_core::{
-    CallbackInvokeError, CompletionSender, ErrorReporter, Memo, ReadSignal, RuntimeInputs,
-    RwSignal, Scope, SilexError, SilexResult, StoredValue, WriteSignal, unwind_safe,
+    CallbackInvokeError, CompletionSender, ErrorReporter, ReadSignal, RuntimeInputs, RwSignal, Rx,
+    Scope, SilexError, SilexResult, StoredValue, WriteSignal, runtime_inputs_of, unwind_safe,
 };
 
 use crate::{
@@ -40,7 +40,7 @@ impl EventStream {
         url: impl IntoNetValue<'scope>,
         error_handler: ErrorReporter<'scope>,
     ) -> Result<EventStreamConnection<'scope>, NetError> {
-        Self::builder(scope, url, error_handler).try_build()
+        Self::builder(scope, url, error_handler).build()
     }
 
     pub fn lazy<'scope>(
@@ -59,6 +59,7 @@ pub struct EventStreamConnection<'scope> {
     state: ReadSignal<'scope, ConnectionState>,
     messages: RwSignal<'scope, Vec<EventMessage>>,
     error: ReadSignal<'scope, Option<NetError>>,
+    error_handler: ErrorReporter<'scope>,
 }
 
 #[derive(Clone)]
@@ -147,12 +148,26 @@ impl HostRegistration {
         let message_token = token.clone();
         let on_message = Closure::wrap(Box::new(move |event: MessageEvent| {
             if message_gate.get() {
+                let Some(data) = event.data().as_string() else {
+                    submit_completion(
+                        &message_token,
+                        EventStreamEvent::Error {
+                            generation,
+                            error: NetError::JsError(
+                                "EventSource message data is not a string".to_string(),
+                            ),
+                        },
+                        error_handler,
+                        Some(&message_gate),
+                    );
+                    return;
+                };
                 submit_completion(
                     &message_token,
                     EventStreamEvent::Message {
                         generation,
                         event: Some(event.type_()),
-                        data: event.data().as_string().unwrap_or_default(),
+                        data,
                     },
                     error_handler,
                     Some(&message_gate),
@@ -238,23 +253,26 @@ struct EventStreamInner<'scope> {
     generation: u64,
 }
 
-fn cleanup_stored_inner<'scope>(inner: StoredValue<'scope, EventStreamInner<'scope>>) {
+fn cleanup_stored_inner<'scope>(
+    inner: StoredValue<'scope, EventStreamInner<'scope>>,
+) -> SilexResult<()> {
     inner
-        .try_update(EventStreamInner::cleanup)
-        .unwrap_or_else(|error| panic!("EventStream cleanup failed: {error}"));
+        .update(EventStreamInner::cleanup)
+        .map_err(SilexError::from)?
 }
 
 impl Drop for EventStreamInner<'_> {
     fn drop(&mut self) {
-        self.cleanup();
+        let _ = self.cleanup();
     }
 }
 
 impl<'scope> EventStreamInner<'scope> {
-    fn cleanup(&mut self) {
+    fn cleanup(&mut self) -> SilexResult<()> {
         self.registration.take();
         self.generation = self.generation.wrapping_add(1);
         self.completion.cancel();
+        Ok(())
     }
 
     fn defer_open(&self) -> DeferredCallback<'scope> {
@@ -275,29 +293,35 @@ impl<'scope> EventStreamInner<'scope> {
         })
     }
 
-    fn try_open_current(&mut self) -> (Result<(), NetError>, Option<DeferredCallback<'scope>>) {
+    fn try_open_current(
+        &mut self,
+    ) -> SilexResult<(Result<(), NetError>, Option<DeferredCallback<'scope>>)> {
         self.try_open_current_with_source(None)
     }
 
     fn try_open_current_with_source(
         &mut self,
         source: Option<JsEventSource>,
-    ) -> (Result<(), NetError>, Option<DeferredCallback<'scope>>) {
+    ) -> SilexResult<(Result<(), NetError>, Option<DeferredCallback<'scope>>)> {
         self.registration.take();
         self.generation = self.generation.wrapping_add(1);
         let generation = self.generation;
-        self.set_state.set(ConnectionState::Connecting);
+        self.set_state.set(ConnectionState::Connecting)?;
 
         let source = match source {
             Some(source) => Ok(source),
-            None => create_source(&self.url.resolve()),
+            None => self
+                .url
+                .resolve()
+                .map_err(NetError::from)
+                .and_then(|url| create_source(&url)),
         };
         let source = match source {
             Ok(source) => source,
             Err(error) => {
-                self.set_state.set(ConnectionState::Error);
-                self.set_error.set(Some(error.clone()));
-                return (Err(error.clone()), Some(self.defer_error(error)));
+                self.set_state.set(ConnectionState::Error)?;
+                self.set_error.set(Some(error.clone()))?;
+                return Ok((Err(error.clone()), Some(self.defer_error(error))));
             }
         };
         match HostRegistration::new(
@@ -309,22 +333,25 @@ impl<'scope> EventStreamInner<'scope> {
         ) {
             Ok(registration) => {
                 self.registration = Some(registration);
-                (Ok(()), None)
+                Ok((Ok(()), None))
             }
             Err(error) => {
-                self.set_state.set(ConnectionState::Error);
-                self.set_error.set(Some(error.clone()));
-                (Err(error.clone()), Some(self.defer_error(error)))
+                self.set_state.set(ConnectionState::Error)?;
+                self.set_error.set(Some(error.clone()))?;
+                Ok((Err(error.clone()), Some(self.defer_error(error))))
             }
         }
     }
 
-    fn handle_event(&mut self, event: EventStreamEvent) -> Option<DeferredCallback<'scope>> {
+    fn handle_event(
+        &mut self,
+        event: EventStreamEvent,
+    ) -> SilexResult<Option<DeferredCallback<'scope>>> {
         let mut callback = None;
         match event {
             EventStreamEvent::Open { generation } if generation == self.generation => {
-                self.set_state.set(ConnectionState::Connected);
-                self.set_error.set(None);
+                self.set_state.set(ConnectionState::Connected)?;
+                self.set_error.set(None)?;
                 callback = Some(self.defer_open());
             }
             EventStreamEvent::Message {
@@ -340,43 +367,53 @@ impl<'scope> EventStreamInner<'scope> {
                             messages.drain(..excess);
                         }
                     }
-                });
-                self.set_state.set(ConnectionState::Connected);
+                })?;
+                self.set_state.set(ConnectionState::Connected)?;
             }
             EventStreamEvent::Error { generation, error } if generation == self.generation => {
-                self.set_state.set(ConnectionState::Error);
-                self.set_error.set(Some(error.clone()));
+                self.set_state.set(ConnectionState::Error)?;
+                self.set_error.set(Some(error.clone()))?;
                 callback = Some(self.defer_error(error));
             }
             _ => {}
         }
-        callback
+        Ok(callback)
     }
 
-    fn close(&mut self) {
+    fn close(&mut self) -> SilexResult<()> {
         self.registration.take();
         self.generation = self.generation.wrapping_add(1);
-        self.set_state.set(ConnectionState::Closed);
+        self.set_state.set(ConnectionState::Closed)?;
+        Ok(())
     }
 }
 
 impl<'scope> EventStreamConnection<'scope> {
-    pub fn is_connected(&self) -> Memo<'scope, bool> {
+    fn derive_state<T: 'scope>(
+        &self,
+        f: impl Fn(ConnectionState) -> T + 'scope,
+    ) -> SilexResult<Rx<'scope, T>> {
         let state = self.state;
-        self.scope.memo(move |_| state.get().is_connected())
+        let handler = self.error_handler;
+        self.scope.derived_from(
+            runtime_inputs_of(state),
+            move || state.get().map(&f),
+            handler,
+        )
     }
 
-    pub fn is_connecting(&self) -> Memo<'scope, bool> {
-        let state = self.state;
-        self.scope
-            .memo(move |_| matches!(state.get(), ConnectionState::Connecting))
+    pub fn is_connected(&self) -> SilexResult<Rx<'scope, bool>> {
+        self.derive_state(|state| state.is_connected())
     }
 
-    pub fn is_closed(&self) -> Memo<'scope, bool> {
-        let state = self.state;
-        self.scope.memo(move |_| {
+    pub fn is_connecting(&self) -> SilexResult<Rx<'scope, bool>> {
+        self.derive_state(|state| matches!(state, ConnectionState::Connecting))
+    }
+
+    pub fn is_closed(&self) -> SilexResult<Rx<'scope, bool>> {
+        self.derive_state(|state| {
             matches!(
-                state.get(),
+                state,
                 ConnectionState::Closed | ConnectionState::Disconnected
             )
         })
@@ -387,49 +424,83 @@ impl<'scope> EventStreamConnection<'scope> {
     }
 
     #[cfg(feature = "json")]
-    pub fn messages<T>(&self) -> Memo<'scope, Vec<T>>
+    pub fn messages<T>(&self) -> SilexResult<Rx<'scope, Vec<T>>>
     where
         T: serde::de::DeserializeOwned + PartialEq + 'scope,
     {
         let messages = self.messages;
-        self.scope.memo(move |_| {
-            messages
-                .get()
-                .into_iter()
-                .filter_map(|message| serde_json::from_str(&message.data).ok())
-                .collect()
-        })
+        let handler = self.error_handler;
+        self.scope.derived_from(
+            runtime_inputs_of(messages),
+            move || {
+                messages
+                    .get()?
+                    .into_iter()
+                    .map(|message| {
+                        serde_json::from_str(&message.data).map_err(|error| {
+                            SilexError::Framework(format!(
+                                "decode EventStream message failed: {error}"
+                            ))
+                        })
+                    })
+                    .collect()
+            },
+            handler,
+        )
     }
 
     #[cfg(feature = "json")]
-    pub fn last_message<T>(&self) -> Memo<'scope, Option<T>>
+    pub fn last_message<T>(&self) -> SilexResult<Rx<'scope, Option<T>>>
     where
         T: serde::de::DeserializeOwned + PartialEq + 'scope,
     {
         let messages = self.messages;
-        self.scope.memo(move |_| {
-            messages
-                .get()
-                .last()
-                .and_then(|message| serde_json::from_str(&message.data).ok())
-        })
+        let handler = self.error_handler;
+        self.scope.derived_from(
+            runtime_inputs_of(messages),
+            move || {
+                messages
+                    .get()?
+                    .last()
+                    .map(|message| {
+                        serde_json::from_str(&message.data).map_err(|error| {
+                            SilexError::Framework(format!(
+                                "decode EventStream message failed: {error}"
+                            ))
+                        })
+                    })
+                    .transpose()
+            },
+            handler,
+        )
     }
 
     #[cfg(feature = "json")]
-    pub fn latest_messages<T>(&self, limit: usize) -> Memo<'scope, Vec<T>>
+    pub fn latest_messages<T>(&self, limit: usize) -> SilexResult<Rx<'scope, Vec<T>>>
     where
         T: serde::de::DeserializeOwned + PartialEq + 'scope,
     {
         let messages = self.messages;
-        self.scope.memo(move |_| {
-            messages
-                .get()
-                .iter()
-                .rev()
-                .take(limit)
-                .filter_map(|message| serde_json::from_str(&message.data).ok())
-                .collect()
-        })
+        let handler = self.error_handler;
+        self.scope.derived_from(
+            runtime_inputs_of(messages),
+            move || {
+                messages
+                    .get()?
+                    .iter()
+                    .rev()
+                    .take(limit)
+                    .map(|message| {
+                        serde_json::from_str(&message.data).map_err(|error| {
+                            SilexError::Framework(format!(
+                                "decode EventStream message failed: {error}"
+                            ))
+                        })
+                    })
+                    .collect()
+            },
+            handler,
+        )
     }
 
     pub fn raw_messages(&self) -> ReadSignal<'scope, Vec<EventMessage>> {
@@ -441,38 +512,40 @@ impl<'scope> EventStreamConnection<'scope> {
         self.error
     }
 
-    pub fn clear_messages(&self) {
-        self.messages.set(Vec::new());
+    pub fn clear_messages(&self) -> SilexResult<()> {
+        Ok(self.messages.set(Vec::new())?)
     }
 
-    pub fn close(&self) {
-        self.inner.update(EventStreamInner::close);
+    pub fn close(&self) -> SilexResult<()> {
+        let _ = self.inner.update(EventStreamInner::close)?;
+        Ok(())
     }
 
-    pub fn try_reconnect(&self) -> Result<(), NetError> {
+    pub fn reconnect(&self) -> Result<(), NetError> {
         if !matches!(
-            self.state.get(),
+            self.state.get().map_err(NetError::from)?,
             ConnectionState::Closed | ConnectionState::Disconnected | ConnectionState::Error
         ) {
             return Ok(());
         }
-        let (result, callbacks) = self.inner.update(EventStreamInner::try_open_current);
+        let (result, callbacks) = self
+            .inner
+            .update(EventStreamInner::try_open_current)
+            .map_err(SilexError::from)
+            .map_err(NetError::from)??;
         if let Some(callback) = callbacks {
             callback();
         }
         result
     }
 
-    pub fn reconnect(&self) {
-        let _ = self.try_reconnect();
-    }
-
-    pub fn toggle(&self) {
-        if self.state.get().is_active() {
-            self.close();
+    pub fn toggle(&self) -> Result<(), NetError> {
+        if self.state.get().map_err(NetError::from)?.is_active() {
+            self.close().map_err(NetError::from)?;
         } else {
-            self.reconnect();
+            self.reconnect()?;
         }
+        Ok(())
     }
 }
 
@@ -531,7 +604,7 @@ impl<'scope> EventStreamBuilder<'scope> {
         self
     }
 
-    pub fn try_build(self) -> Result<EventStreamConnection<'scope>, NetError> {
+    pub fn build(self) -> Result<EventStreamConnection<'scope>, NetError> {
         let Self {
             scope,
             error_handler,
@@ -544,12 +617,14 @@ impl<'scope> EventStreamBuilder<'scope> {
         } = self;
         let mut inputs = RuntimeInputs::new();
         inputs.extend(&url.inputs());
-        scope
-            .try_validate_inputs(&inputs)
-            .map_err(|error| NetError::InvalidConfiguration(error.to_string()))?;
+        scope.validate_inputs(&inputs).map_err(NetError::from)?;
 
         let initial_source = if auto_connect {
-            match create_source(&url.resolve()) {
+            match url
+                .resolve()
+                .map_err(NetError::from)
+                .and_then(|url| create_source(&url))
+            {
                 Ok(source) => Some(source),
                 Err(error) => {
                     for handler in &on_error {
@@ -566,21 +641,24 @@ impl<'scope> EventStreamBuilder<'scope> {
             ConnectionState::Connecting
         } else {
             ConnectionState::Disconnected
-        });
-        let messages = scope.rw_signal(Vec::<EventMessage>::new());
-        let (error, set_error) = scope.signal(None::<NetError>);
+        })?;
+        let messages = scope.rw_signal(Vec::<EventMessage>::new())?;
+        let (error, set_error) = scope.signal(None::<NetError>)?;
         let inner_slot = Rc::new(Cell::new(
             None::<StoredValue<'scope, EventStreamInner<'scope>>>,
         ));
         let inner_slot_for_completion = inner_slot.clone();
         let completion = scope.completion_sender(unwind_safe(move |event: EventStreamEvent| {
-            if let Some(inner) = inner_slot_for_completion.get()
-                && let Some(callback) = inner.update(|inner| inner.handle_event(event))
-            {
-                callback();
+            if let Some(inner) = inner_slot_for_completion.get() {
+                let callback = inner
+                    .update(|inner| inner.handle_event(event))
+                    .map_err(SilexError::from)??;
+                if let Some(callback) = callback {
+                    callback();
+                }
             }
             Ok(())
-        }));
+        }))?;
         let inner = scope.stored(EventStreamInner {
             url,
             event_name,
@@ -594,17 +672,14 @@ impl<'scope> EventStreamBuilder<'scope> {
             completion,
             registration: None,
             generation: 0,
-        });
+        })?;
         inner_slot.set(Some(inner));
         scope
             .on_cleanup(
-                move || -> SilexResult<()> {
-                    cleanup_stored_inner(inner);
-                    Ok(())
-                },
+                move || -> SilexResult<()> { cleanup_stored_inner(inner) },
                 error_handler,
             )
-            .map_err(|error| NetError::InvalidConfiguration(error.to_string()))?;
+            .map_err(NetError::from)?;
 
         let connection = EventStreamConnection {
             scope,
@@ -612,23 +687,21 @@ impl<'scope> EventStreamBuilder<'scope> {
             state: state.read_signal(),
             messages,
             error,
+            error_handler,
         };
         if auto_connect {
-            let (result, callbacks) =
-                inner.update(|inner| inner.try_open_current_with_source(initial_source));
+            let (result, callbacks) = inner
+                .update(|inner| inner.try_open_current_with_source(initial_source))
+                .map_err(SilexError::from)
+                .map_err(NetError::from)??;
             if let Some(callback) = callbacks {
                 callback();
             }
             if let Err(error) = result {
-                cleanup_stored_inner(inner);
+                let _ = cleanup_stored_inner(inner);
                 return Err(error);
             }
         }
         Ok(connection)
-    }
-
-    pub fn build(self) -> EventStreamConnection<'scope> {
-        self.try_build()
-            .unwrap_or_else(|error| panic!("创建 EventStream 失败: {error:?}"))
     }
 }

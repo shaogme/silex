@@ -1,11 +1,11 @@
 use crate::reactivity::ReactiveSource;
 use crate::{
-    ErrorReporter, Scope, SilexError, SilexResult,
-    reactivity::{Memo, ReadSignal, RwSignal, WriteSignal},
+    ErrorReporter, Rx, Scope, SilexError, SilexResult,
+    reactivity::{ReadSignal, RwSignal, WriteSignal},
     traits::{RxBase, RxCloneData, RxData, RxError, RxGet, RxRead, RxValue},
     unwind_safe,
 };
-use silex_reactivity::{CallbackInvokeError, RuntimeInputs};
+use silex_reactivity::{CallbackInvokeError, ReactiveResult, RuntimeInputs};
 use std::{cell::Cell, future::Future, marker::PhantomData, rc::Rc};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -25,10 +25,12 @@ impl<T, E> ResourceState<T, E> {
         }
     }
 
-    pub fn unwrap(self) -> T {
+    pub fn into_value(self) -> SilexResult<T> {
         match self {
-            Self::Ready(value) | Self::Reloading(value) => value,
-            _ => panic!("ResourceState::unwrap called without data"),
+            Self::Ready(value) | Self::Reloading(value) => Ok(value),
+            _ => Err(SilexError::Framework(
+                "resource state does not contain data".into(),
+            )),
         }
     }
 
@@ -112,7 +114,7 @@ where
         fetcher: Fetcher,
         suspense: Option<SuspenseContext<'scope>>,
         error_handler: ErrorReporter<'scope>,
-    ) -> Self
+    ) -> crate::SilexResult<Self>
     where
         S: Clone + PartialEq + 'static,
         R: RxRead<Value = S> + ReactiveSource<'scope> + Clone + 'scope,
@@ -127,9 +129,9 @@ where
         if let Some(context) = suspense.as_ref() {
             inputs.push(context.count.inner.runtime_input());
         }
-        scope.assert_inputs(&inputs);
-        let (state, set_state) = scope.signal(ResourceState::Idle);
-        let trigger = scope.rw_signal(0usize);
+        scope.validate_inputs(&inputs)?;
+        let (state, set_state) = scope.signal(ResourceState::Idle)?;
+        let trigger = scope.rw_signal(0usize)?;
         inputs.push(trigger.read_signal().inner.runtime_input());
         let request_id = Rc::new(Cell::new(0usize));
         let request_id_for_callback = request_id.clone();
@@ -145,13 +147,13 @@ where
                     message.id,
                     message.result,
                 ) {
-                    set_state_for_callback.set(next_state);
+                    set_state_for_callback.set(next_state)?;
                 }
                 if let Some(context) = suspense_for_callback {
-                    context.decrement();
+                    context.decrement()?;
                 }
                 Ok(())
-            }));
+            }))?;
 
         let source_for_effect = source.clone();
         let trigger_for_effect = trigger.read_signal();
@@ -160,114 +162,123 @@ where
         let set_state_for_effect = set_state;
         let suspense_for_effect = suspense;
         let error_handler_for_effect = error_handler;
-        let _effect = scope
-            .effect_from(
-                inputs,
-                move || -> SilexResult<()> {
-                    let input = source_for_effect.try_get()?;
-                    let _ = trigger_for_effect.try_get()?;
-                    let next_state = state_for_effect.try_with_untracked(|state| {
-                        state
-                            .as_option()
-                            .cloned()
-                            .map(ResourceState::Reloading)
-                            .unwrap_or(ResourceState::Loading)
-                    })?;
-                    set_state_for_effect.try_set(next_state)?;
-                    if let Some(context) = suspense_for_effect {
-                        context.increment();
-                    }
-                    let settled = Rc::new(Cell::new(false));
-                    let settled_for_cleanup = settled.clone();
-                    let suspense_for_cleanup = suspense_for_effect;
-                    scope.on_cleanup(
-                        move || {
-                            if !settled_for_cleanup.replace(true)
-                                && let Some(context) = suspense_for_cleanup
-                            {
-                                context.decrement();
+        let _effect = scope.effect_from(
+            inputs,
+            move || -> SilexResult<()> {
+                let input = source_for_effect.get()?;
+                let _ = trigger_for_effect.get()?;
+                let next_state = state_for_effect.with_untracked(|state| {
+                    state
+                        .as_option()
+                        .cloned()
+                        .map(ResourceState::Reloading)
+                        .unwrap_or(ResourceState::Loading)
+                })?;
+                set_state_for_effect.set(next_state)?;
+                if let Some(context) = suspense_for_effect {
+                    context.increment()?;
+                }
+                let settled = Rc::new(Cell::new(false));
+                let settled_for_cleanup = settled.clone();
+                let suspense_for_cleanup = suspense_for_effect;
+                scope.on_cleanup(
+                    move || {
+                        if !settled_for_cleanup.replace(true)
+                            && let Some(context) = suspense_for_cleanup
+                        {
+                            context.decrement()?;
+                        }
+                        Ok(())
+                    },
+                    error_handler,
+                )?;
+                let id = request_id_for_effect
+                    .get()
+                    .checked_add(1)
+                    .ok_or_else(|| SilexError::Framework("Resource request id exhausted".into()))?;
+                request_id_for_effect.set(id);
+                let future = fetcher.fetch(input);
+                let completion = completion.clone();
+                scope.spawn_scoped(
+                    async move {
+                        let result = completion.submit(ResourceCompletion {
+                            id,
+                            result: future.await,
+                            settled,
+                        });
+                        match result {
+                            Ok(_) => {}
+                            Err(CallbackInvokeError::Runtime(error)) => {
+                                let _ = completion_error_handler.handle(error.into());
                             }
-                            Ok(())
-                        },
-                        error_handler,
-                    )?;
-                    let id = request_id_for_effect
-                        .get()
-                        .checked_add(1)
-                        .expect("Resource request id exhausted");
-                    request_id_for_effect.set(id);
-                    let future = fetcher.fetch(input);
-                    let completion = completion.clone();
-                    scope.spawn_scoped(
-                        async move {
-                            let result = completion.submit(ResourceCompletion {
-                                id,
-                                result: future.await,
-                                settled,
-                            });
-                            match result {
-                                Ok(_) => {}
-                                Err(CallbackInvokeError::Runtime(error)) => {
-                                    let _ = completion_error_handler.handle(error.into());
-                                }
-                                Err(CallbackInvokeError::User(error)) => {
-                                    let _ = completion_error_handler.handle(error);
-                                }
+                            Err(CallbackInvokeError::User(error)) => {
+                                let _ = completion_error_handler.handle(error);
                             }
-                        },
-                        error_handler,
-                    );
-                    Ok(())
-                },
-                error_handler_for_effect,
-            )
-            .unwrap_or_else(|error| panic!("创建 resource effect 失败: {error}"));
+                        }
+                    },
+                    error_handler,
+                )?;
+                Ok(())
+            },
+            error_handler_for_effect,
+        )?;
 
-        Self {
+        Ok(Self {
             state,
             set_state,
             trigger,
             marker: PhantomData,
-        }
+        })
     }
 
-    pub fn refetch(&self) {
-        self.trigger.update(|value| *value = value.wrapping_add(1));
+    pub fn refetch(&self) -> ReactiveResult<()> {
+        self.trigger
+            .update(|value| *value = value.wrapping_add(1))
+            .map(|_| ())
     }
 
-    pub fn update(&self, f: impl FnOnce(&mut T)) {
-        self.set_state.update(|state| match state {
-            ResourceState::Ready(value) | ResourceState::Reloading(value) => f(value),
-            _ => {}
-        });
+    pub fn update(&self, f: impl FnOnce(&mut T)) -> ReactiveResult<()> {
+        self.set_state
+            .update(|state| match state {
+                ResourceState::Ready(value) | ResourceState::Reloading(value) => f(value),
+                _ => {}
+            })
+            .map(|_| ())
     }
 
-    pub fn set(&self, value: T) {
-        self.set_state.set(ResourceState::Ready(value));
+    pub fn set(&self, value: T) -> ReactiveResult<()> {
+        self.set_state.set(ResourceState::Ready(value))
     }
 
-    pub fn loading(&self) -> bool {
+    pub fn loading(&self) -> crate::SilexResult<bool> {
         self.state.with(ResourceState::is_loading)
     }
 
-    pub fn value(&self) -> Option<T> {
+    pub fn value(&self) -> crate::SilexResult<Option<T>> {
         self.state.with(|state| state.as_option().cloned())
     }
 
-    pub fn get_data(&self) -> Option<T> {
+    pub fn get_data(&self) -> crate::SilexResult<Option<T>> {
         self.value()
     }
 
-    pub fn map<U, F>(&self, scope: Scope<'scope>, f: F) -> Memo<'scope, U>
+    pub fn map<U, F>(
+        &self,
+        scope: Scope<'scope>,
+        f: F,
+        error_handler: ErrorReporter<'scope>,
+    ) -> crate::SilexResult<Rx<'scope, U>>
     where
-        U: PartialEq + 'static,
+        U: 'scope,
         F: Fn(Option<&T>) -> U + 'scope,
     {
         let resource = *self;
         let inputs = RuntimeInputs::single(resource.state.inner.runtime_input());
-        scope.memo_from(inputs, move |_| {
-            resource.state.with(|state| f(state.as_option()))
-        })
+        scope.derived_from(
+            inputs,
+            move || resource.state.with(|state| f(state.as_option())),
+            error_handler,
+        )
     }
 }
 
@@ -276,19 +287,19 @@ impl<'scope, T: RxData + 'scope, E: RxError + 'scope> RxValue for Resource<'scop
 }
 
 impl<'scope, T: RxData + 'scope, E: RxError + 'scope> RxBase for Resource<'scope, T, E> {
-    fn try_track(&self) -> crate::SilexResult<()> {
-        self.state.try_track()
+    fn track(&self) -> crate::SilexResult<()> {
+        self.state.track()
     }
 }
 
 impl<'scope, T: RxCloneData + 'scope, E: RxError + 'scope> RxRead for Resource<'scope, T, E> {
-    fn try_with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> crate::SilexResult<U> {
-        self.state.try_with(|state| f(&state.as_option().cloned()))
+    fn with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> crate::SilexResult<U> {
+        self.state.with(|state| f(&state.as_option().cloned()))
     }
 
-    fn try_with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> crate::SilexResult<U> {
+    fn with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> crate::SilexResult<U> {
         self.state
-            .try_with_untracked(|state| f(&state.as_option().cloned()))
+            .with_untracked(|state| f(&state.as_option().cloned()))
     }
 }
 
@@ -307,19 +318,19 @@ impl<'scope> PartialEq for SuspenseContext<'scope> {
 impl<'scope> Eq for SuspenseContext<'scope> {}
 
 impl<'scope> SuspenseContext<'scope> {
-    pub fn new(scope: Scope<'scope>) -> Self {
-        let (count, set_count) = scope.signal(0usize);
-        Self { count, set_count }
+    pub fn new(scope: Scope<'scope>) -> crate::SilexResult<Self> {
+        let (count, set_count) = scope.signal(0usize)?;
+        Ok(Self { count, set_count })
     }
 
-    pub fn increment(&self) {
-        self.set_count.update(|count| *count += 1);
+    pub fn increment(&self) -> ReactiveResult<()> {
+        self.set_count.update(|count| *count += 1).map(|_| ())
     }
 
-    pub fn decrement(&self) {
-        let _ = self
-            .set_count
-            .try_update(|count| *count = count.saturating_sub(1));
+    pub fn decrement(&self) -> ReactiveResult<()> {
+        self.set_count
+            .update(|count| *count = count.saturating_sub(1))
+            .map(|_| ())
     }
 }
 

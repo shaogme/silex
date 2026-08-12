@@ -41,7 +41,7 @@ fn detach(target: &Node) {
 }
 
 fn mount_text<'scope>(context: &MountContext<'scope>, text: &'static str) -> SilexResult<()> {
-    let handler = context.scope().error_handler(|_: SilexError| {});
+    let handler = context.scope().error_handler(|_: SilexError| {})?;
     context.mount(Element::with_child("section", text), handler)
 }
 
@@ -122,7 +122,7 @@ fn non_clean_mount_rollback_poisoned_host() {
     let error = host
         .mount(Runtime::new(), |context| {
             let scope = context.scope();
-            let handler = scope.error_handler(|_: SilexError| {});
+            let handler = scope.error_handler(|_: SilexError| {})?;
             scope.on_cleanup(
                 || -> SilexResult<()> { panic!("rollback cleanup failure") },
                 handler,
@@ -209,7 +209,7 @@ fn failed_old_dispose_does_not_restore_or_replace_the_old_app() {
 
     host.mount(Runtime::new(), |context| {
         let scope = context.scope();
-        let handler = scope.error_handler(|_: SilexError| {});
+        let handler = scope.error_handler(|_: SilexError| {})?;
         scope.on_cleanup(
             || -> SilexResult<()> { panic!("old app cleanup failure") },
             handler,
@@ -286,7 +286,7 @@ fn app_host_drop_delegates_cleanup_once_to_mounted_app() {
         let mut host = AppHost::new(target.clone(), clean_sink());
         host.mount(Runtime::new(), move |context| {
             let scope = context.scope();
-            let handler = scope.error_handler(|_: SilexError| {});
+            let handler = scope.error_handler(|_: SilexError| {})?;
             let cleanups = cleanups_by_builder.clone();
             scope.on_cleanup(
                 move || {

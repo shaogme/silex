@@ -5,7 +5,7 @@ error: lifetime may not live long enough
    |                               ------ return type of closure is ScopedPanelBuilder<'2>
    |                               |
    |                               has type `silex_core::Scope<'1>`
-23 |         let (color, _) = scope.signal(silex_css::types::hex("#fff"));
+23 |         let (color, _) = scope.signal(silex_css::types::hex("#fff")).unwrap();
 24 |         ScopedPanel(AnyView::new(()), color)
    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ returning this value requires that `'1` must outlive `'2`
    |

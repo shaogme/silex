@@ -39,9 +39,10 @@ fn CategoryTab<'scope>(
     label: &'static str,
     target: DemoCategory,
     category: Persistent<'scope, DemoCategory>,
+    error_handler: ErrorReporter<'scope>,
 ) -> impl View<'scope> {
-    let is_active = rx!(scope; *$category == target);
-    button(label)
+    let is_active = rx!(scope; error_handler; *$category == target);
+    Ok(button(label)
         .class(tw!(
             "px-4 py-2 text-xs rounded-xl transition-all duration-200 cursor-pointer border-0 outline-none",
             (
@@ -51,9 +52,10 @@ fn CategoryTab<'scope>(
             )
         ))
         .on_click(move |_| {
-            category.set(target);
+            category.set(target)?;
             Ok(())
         })
+    )
 }
 
 #[component]
@@ -77,6 +79,7 @@ fn Header<'scope>(
     scope: Scope<'scope>,
     is_dark: Persistent<'scope, bool>,
     category: Persistent<'scope, DemoCategory>,
+    error_handler: ErrorReporter<'scope>,
 ) -> impl View<'scope> {
     let categories = Constant::new(vec![
         ("All Highlights", DemoCategory::All),
@@ -85,7 +88,7 @@ fn Header<'scope>(
         ("Advanced (Phases 4-7)", DemoCategory::Advanced),
     ]);
 
-    div(chain!(
+    Ok(div(chain!(
         // Top Toolbar Row: Badge, Statuses & Theme Toggle
         div(chain!(
             div(chain!(
@@ -97,12 +100,12 @@ fn Header<'scope>(
                 ))
             )).class(tw!("flex items-center gap-3")),
 
-            button(rx!(scope; if *$is_dark { "🌙 Dark Mode" } else { "☀️ Light Mode" }))
+            button(rx!(scope; error_handler; if *$is_dark { "🌙 Dark Mode" } else { "☀️ Light Mode" }))
                 .class(tw!(
                     "flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-amber-300 font-bold text-xs rounded-full cursor-pointer border border-solid border-slate-300 dark:border-slate-700 transition-all duration-300 hover:scale-105 shadow-sm"
                 ))
                 .on_click(move |_| {
-                    is_dark.update(|d| *d = !*d);
+                    is_dark.update(|d| *d = !*d)?;
                     Ok(())
                 })
         )).class(tw!("w-full flex items-center justify-between mb-8")),
@@ -116,11 +119,11 @@ fn Header<'scope>(
         // Dashboard Category Tabs rendered via Index component
         div(Index(categories).children(move |item, _| {
             let (label, target) = item;
-            CategoryTab(scope, label, target, category).build()
+            CategoryTab(scope, label, target, category, error_handler).build()
         }).build())
         .class(tw!("flex flex-wrap items-center justify-center gap-2 p-1.5 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-solid border-slate-200 dark:border-slate-800"))
     ))
-    .class(tw!("w-full max-w-6xl mx-auto mb-10 p-8 sm:p-10 bg-white dark:bg-slate-850 rounded-3xl border border-solid border-slate-200 dark:border-slate-800 shadow-xl transition-colors duration-300 flex flex-col items-center text-center"))
+    .class(tw!("w-full max-w-6xl mx-auto mb-10 p-8 sm:p-10 bg-white dark:bg-slate-850 rounded-3xl border border-solid border-slate-200 dark:border-slate-800 shadow-xl transition-colors duration-300 flex flex-col items-center text-center")))
 }
 
 // Card Wrapper for Consistency
@@ -220,11 +223,14 @@ fn GroupAndPeerDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
 }
 
 #[component]
-fn FiltersAndReactivityDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
-    let (count, set_count) = scope.signal(16);
-    let pad_val = rx!(scope; format!("{}px", $count));
+fn FiltersAndReactivityDemo<'scope>(
+    scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
+    let (count, set_count) = scope.signal(16)?;
+    let pad_val = rx!(scope; error_handler; format!("{}px", $count));
 
-    div(chain!(
+    Ok(div(chain!(
         div(chain!(
             span("4. Filters & Dynamic Signals").class(tw!("text-xs font-black text-sky-600 dark:text-sky-400 uppercase tracking-widest")),
             h2("Glassmorphism & Rust Signals").class(tw!("text-xl font-bold text-slate-900 dark:text-white mt-1 mb-5 transition-colors duration-300"))
@@ -243,16 +249,16 @@ fn FiltersAndReactivityDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
                 div(chain!(
                     button("Increase Padding").class(tw!("px-3 py-1.5 bg-indigo-600 text-white text-xs font-bold rounded-lg cursor-pointer transition-all mb-2.5"))
                         .on_click(move |_| {
-                            set_count.update(|n| *n = (*n + 4).min(36));
+                            set_count.update(|n| *n = (*n + 4).min(36))?;
                             Ok(())
                         }),
-                    div(rx!(scope; format!("Padding: {}px", $count)))
-                        .class(tw!("p-[$(pad_val)] bg-slate-100 dark:bg-slate-900 border border-solid border-slate-300 dark:border-slate-800 rounded-xl font-mono text-xs text-indigo-600 dark:text-indigo-400 transition-all duration-200 text-center"))
+                    div(rx!(scope; error_handler; format!("Padding: {}px", $count)))
+                        .class(tw!(error_handler; "p-[$(pad_val)] bg-slate-100 dark:bg-slate-900 border border-solid border-slate-300 dark:border-slate-800 rounded-xl font-mono text-xs text-indigo-600 dark:text-indigo-400 transition-all duration-200 text-center")?)
                 ))
             )).class(tw!("p-4 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-solid border-slate-200 dark:border-slate-800 transition-colors duration-300"))
         )).class(tw!("grid grid-cols-1 sm:grid-cols-2 gap-4"))
     ))
-    .class(card_container_cls())
+    .class(card_container_cls()))
 }
 
 #[component]
@@ -341,8 +347,11 @@ fn StandardColorPaletteDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
 }
 
 #[component]
-fn ReactiveConditionalTwDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
-    let (is_active, set_is_active) = scope.signal(false);
+fn ReactiveConditionalTwDemo<'scope>(
+    scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
+    let (is_active, set_is_active) = scope.signal(false)?;
 
     let card_cls = tw!(
         "p-6 bg-white dark:bg-slate-800 border rounded-3xl shadow-lg hover:shadow-xl transition-all duration-300 flex flex-col h-fit",
@@ -360,12 +369,12 @@ fn ReactiveConditionalTwDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> 
             "bg-indigo-600 text-white hover:bg-indigo-700 scale-105"
         ),
         (
-            rx!(scope; !*$is_active),
+            rx!(scope; error_handler; !*$is_active),
             "bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-800"
         )
     );
 
-    div(chain!(
+    Ok(div(chain!(
         div(chain!(
             span("8. Zero-Cost Reactive Conditional Utility").class(tw!("text-xs font-black text-violet-600 dark:text-violet-400 uppercase tracking-widest")),
             h2("Reactive Tuple Syntax tw!(..., (cond, then, else))").class(tw!("text-xl font-bold text-slate-900 dark:text-white mt-1 mb-2 transition-colors duration-300")),
@@ -373,10 +382,10 @@ fn ReactiveConditionalTwDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> 
                 .class(tw!("text-xs text-slate-600 dark:text-slate-300 mb-5 leading-relaxed transition-colors duration-300"))
         )),
         div(chain!(
-            button(rx!(scope; if *$is_active { "✓ Active State Enabled" } else { "Click to Toggle State" }))
+            button(rx!(scope; error_handler; if *$is_active { "✓ Active State Enabled" } else { "Click to Toggle State" }))
                 .class(btn_cls)
                 .on_click(move |_| {
-                    set_is_active.update(|a| *a = !*a);
+                    set_is_active.update(|a| *a = !*a)?;
                     Ok(())
                 }),
             div(chain!(
@@ -385,7 +394,7 @@ fn ReactiveConditionalTwDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> 
             )).class(tw!("flex flex-wrap gap-2 mt-4"))
         ))
     ))
-    .class(card_cls)
+    .class(card_cls))
 }
 
 #[component]
@@ -483,9 +492,12 @@ fn FractionalAndDirectionalDemo<'scope>(scope: Scope<'scope>) -> impl View<'scop
 }
 
 #[component]
-fn TailwindVariantsCvaDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
-    let (intent, set_intent) = scope.signal("primary".to_string());
-    let (size, set_size) = scope.signal("md".to_string());
+fn TailwindVariantsCvaDemo<'scope>(
+    scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
+    let (intent, set_intent) = scope.signal("primary".to_string())?;
+    let (size, set_size) = scope.signal("md".to_string())?;
 
     let button_variants = tw_variants! {
         base: "font-semibold rounded-xl transition-all duration-300 flex items-center justify-center cursor-pointer border-0 outline-none shadow-md hover:scale-105",
@@ -514,9 +526,9 @@ fn TailwindVariantsCvaDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
         ]
     };
 
-    let btn_cls = rx!(scope; button_variants.get($intent, $size));
+    let btn_cls = rx!(scope; error_handler; button_variants.get($intent, $size));
 
-    div(chain!(
+    Ok(div(chain!(
         div(chain!(
             span("11. Tailwind CVA Paradigm (tw_variants!)").class(tw!("text-xs font-black text-rose-600 dark:text-rose-400 uppercase tracking-widest")),
             h2("Class Variance Authority & Compile-Time Merge").class(tw!("text-xl font-bold text-slate-900 dark:text-white mt-1 mb-2 transition-colors duration-300")),
@@ -528,31 +540,31 @@ fn TailwindVariantsCvaDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
             div(chain!(
                 div(chain!(
                     span("Intent:").class(tw!("text-xs font-bold text-slate-500 dark:text-slate-400 mr-2")),
-                    button("Primary").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (rx!(scope; *$intent == "primary"), "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| {
-                        set_intent.set("primary".to_string());
+                    button("Primary").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (rx!(scope; error_handler; *$intent == "primary"), "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| {
+                        set_intent.set("primary".to_string())?;
                         Ok(())
                     }),
-                    button("Secondary").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (rx!(scope; *$intent == "secondary"), "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| {
-                        set_intent.set("secondary".to_string());
+                    button("Secondary").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (rx!(scope; error_handler; *$intent == "secondary"), "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| {
+                        set_intent.set("secondary".to_string())?;
                         Ok(())
                     }),
-                    button("Danger").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (rx!(scope; *$intent == "danger"), "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| {
-                        set_intent.set("danger".to_string());
+                    button("Danger").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (rx!(scope; error_handler; *$intent == "danger"), "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| {
+                        set_intent.set("danger".to_string())?;
                         Ok(())
                     })
                 )).class(tw!("flex flex-wrap items-center gap-1.5 mb-3")),
                 div(chain!(
                     span("Size:").class(tw!("text-xs font-bold text-slate-500 dark:text-slate-400 mr-2")),
-                    button("Small (sm)").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (rx!(scope; *$size == "sm"), "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| {
-                        set_size.set("sm".to_string());
+                    button("Small (sm)").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (rx!(scope; error_handler; *$size == "sm"), "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| {
+                        set_size.set("sm".to_string())?;
                         Ok(())
                     }),
-                    button("Medium (md)").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (rx!(scope; *$size == "md"), "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| {
-                        set_size.set("md".to_string());
+                    button("Medium (md)").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (rx!(scope; error_handler; *$size == "md"), "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| {
+                        set_size.set("md".to_string())?;
                         Ok(())
                     }),
-                    button("Large (lg)").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (rx!(scope; *$size == "lg"), "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| {
-                        set_size.set("lg".to_string());
+                    button("Large (lg)").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (rx!(scope; error_handler; *$size == "lg"), "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| {
+                        set_size.set("lg".to_string())?;
                         Ok(())
                     })
                 )).class(tw!("flex flex-wrap items-center gap-1.5"))
@@ -560,7 +572,7 @@ fn TailwindVariantsCvaDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
 
             // Live Rendered Variant Button Showcase
             div(chain!(
-                button(rx!(scope; format!("⚡ Variant Button ({}, {})", $intent, $size)))
+                button(rx!(scope; error_handler; format!("⚡ Variant Button ({}, {})", $intent, $size)))
                     .class(btn_cls)
             )).class(tw!("flex justify-center p-6 bg-slate-100 dark:bg-slate-950 rounded-2xl border border-solid border-slate-200 dark:border-slate-800/60 mb-4")),
 
@@ -571,7 +583,7 @@ fn TailwindVariantsCvaDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
             )).class(tw!("flex flex-wrap gap-2"))
         ))
     ))
-    .class(card_container_cls())
+    .class(card_container_cls()))
 }
 
 #[component]
@@ -676,19 +688,29 @@ const CARDS_REGISTRY: &[CardMeta] = &[
     },
 ];
 
-fn render_card<'scope>(scope: Scope<'scope>, id: usize) -> AnyView<'scope> {
+fn render_card<'scope>(
+    scope: Scope<'scope>,
+    id: usize,
+    error_handler: ErrorReporter<'scope>,
+) -> AnyView<'scope> {
     match id {
         1 => TailwindMergeDemo(scope).build().into_any(),
         2 => KeyframesDemo(scope).build().into_any(),
         3 => GroupAndPeerDemo(scope).build().into_any(),
-        4 => FiltersAndReactivityDemo(scope).build().into_any(),
+        4 => FiltersAndReactivityDemo(scope, error_handler)
+            .build()
+            .into_any(),
         5 => ThemeSystemAndDiagnosticsDemo(scope).build().into_any(),
         6 => ContainerQueriesAndDceDemo(scope).build().into_any(),
         7 => StandardColorPaletteDemo(scope).build().into_any(),
-        8 => ReactiveConditionalTwDemo(scope).build().into_any(),
+        8 => ReactiveConditionalTwDemo(scope, error_handler)
+            .build()
+            .into_any(),
         9 => NewSyntaxExpansionDemo(scope).build().into_any(),
         10 => FractionalAndDirectionalDemo(scope).build().into_any(),
-        11 => TailwindVariantsCvaDemo(scope).build().into_any(),
+        11 => TailwindVariantsCvaDemo(scope, error_handler)
+            .build()
+            .into_any(),
         12 => SilexTomlDesignTokensDemo(scope).build().into_any(),
         _ => ().into_any(),
     }
@@ -719,22 +741,27 @@ fn render_column<'scope>(
     scope: Scope<'scope>,
     is_left: bool,
     category: Persistent<'scope, DemoCategory>,
-) -> impl View<'scope> {
-    let visible_card_ids = category.map(scope, move |cat| {
-        CARDS_REGISTRY
-            .iter()
-            .copied()
-            .filter(move |card| {
-                current_cat_matches(card.category, *cat)
-                    && (is_in_left_column(card.id, *cat) == is_left)
-            })
-            .map(|card| card.id)
-            .collect::<Vec<usize>>()
-    });
+    error_handler: ErrorReporter<'scope>,
+) -> SilexResult<impl View<'scope>> {
+    let visible_card_ids = category.map(
+        scope,
+        move |cat| {
+            CARDS_REGISTRY
+                .iter()
+                .copied()
+                .filter(move |card| {
+                    current_cat_matches(card.category, *cat)
+                        && (is_in_left_column(card.id, *cat) == is_left)
+                })
+                .map(|card| card.id)
+                .collect::<Vec<usize>>()
+        },
+        error_handler,
+    )?;
 
-    Index(visible_card_ids)
-        .children(move |id, _| render_card(scope, id))
-        .build()
+    Ok(Index(visible_card_ids)
+        .children(move |id, _| render_card(scope, id, error_handler))
+        .build())
 }
 
 fn current_cat_matches(card_cat: DemoCategory, current_cat: DemoCategory) -> bool {
@@ -747,28 +774,28 @@ fn App<'scope>(scope: Scope<'scope>, error_handler: ErrorReporter<'scope>) -> im
         .local()
         .parse::<bool>()
         .default(true)
-        .build();
+        .build()?;
 
     let category = Persistent::builder(scope, "silex-tailwind-category", error_handler)
         .local()
         .parse::<DemoCategory>()
         .default(DemoCategory::All)
-        .build();
+        .build()?;
 
-    div(chain!(
+    Ok(div(chain!(
         div(chain!(
-            Header(scope, is_dark, category).build(),
+            Header(scope, is_dark, category, error_handler).build(),
 
             // Dashboard Content Grid: Dynamic Height-Sensing Greedy Masonry Allocation
             div(chain!(
-                div(render_column(scope, true, category)).class(tw!("flex flex-col gap-6 w-full")),
-                div(render_column(scope, false, category)).class(tw!("flex flex-col gap-6 w-full"))
+                div(render_column(scope, true, category, error_handler)?).class(tw!("flex flex-col gap-6 w-full")),
+                div(render_column(scope, false, category, error_handler)?).class(tw!("flex flex-col gap-6 w-full"))
             ))
             .class(tw!("grid grid-cols-1 md:grid-cols-2 gap-6 items-start w-full max-w-6xl mx-auto"))
         ))
         .class(tw!("min-h-screen p-4 sm:p-8 transition-colors duration-300 bg-slate-100 text-slate-900 dark:bg-slate-900 dark:text-slate-50"))
     ))
-    .class(rx!(scope; if *$is_dark { "dark" } else { "" }))
+    .class(rx!(scope; error_handler; if *$is_dark { "dark" } else { "" })))
 }
 
 /// Mount the Tailwind showcase into the conventional `#app` target.
@@ -789,6 +816,6 @@ fn mount_tailwind_view<'scope>(context: &MountContext<'scope>) -> SilexResult<()
     let scope = context.scope();
     let error_handler = scope.error_handler(|error: SilexError| {
         web_sys::console::error_1(&error.to_string().into());
-    });
+    })?;
     context.mount(App(scope, error_handler).build(), error_handler)
 }

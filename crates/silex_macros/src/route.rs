@@ -846,8 +846,8 @@ fn generate_catalog_mount_method(
         let value = format_ident!("__silex_routes_mounted_child_{}", nest.name);
         let nested_prefix = &nest.prefix;
         let nested_mount = quote! {
-            let #prefix = __silex_mounted.child_prefix(#nested_prefix);
-            let #value = self.#field.#mount_method(#prefix);
+            let #prefix = __silex_mounted.child_prefix(#nested_prefix)?;
+            let #value = self.#field.#mount_method(#prefix)?;
         };
         child_bindings.push(nested_mount);
         child_fields.push(quote! { #field: #value });
@@ -858,10 +858,8 @@ fn generate_catalog_mount_method(
             fn at(
                 self,
                 prefix: &'static str,
-            ) -> #mounted_catalog<#scope> {
-                let prefix = #silex::router::RoutePath::new(prefix).unwrap_or_else(|error| {
-                    panic!("routes! generated an invalid mount prefix: {}", error)
-                });
+            ) -> ::std::result::Result<#mounted_catalog<#scope>, #silex::router::PathError> {
+                let prefix = #silex::router::RoutePath::new(prefix)?;
                 self.#mount_method(prefix)
             }
         }
@@ -873,16 +871,16 @@ fn generate_catalog_mount_method(
         fn #mount_method(
             self,
             prefix: #silex::router::RoutePath,
-        ) -> #mounted_catalog<#scope> {
+        ) -> ::std::result::Result<#mounted_catalog<#scope>, #silex::router::PathError> {
             let __silex_mounted = #silex::router::MountedCatalog::from_parts(
                 prefix,
                 self.__silex_route_table.clone(),
             );
             #(#child_bindings)*
-            #mounted_catalog {
+            Ok(#mounted_catalog {
                 __silex_mounted,
                 #(#child_fields),*
-            }
+            })
         }
 
         #at_method
@@ -915,27 +913,34 @@ fn generate_catalog_binding(
         MacroNode::Nest(nest) => {
             let field = nested_catalog_field(&nest.name);
             let value_name = &nest.value_name;
-            Some(quote! { #field: #value_name })
+            Some(quote! { #field: #value_name? })
         }
     });
 
     bindings.push(quote! {
-        let #value_name = #catalog {
-            #table_field: #table,
-            #(#child_fields),*
-        };
+        let #value_name: ::std::result::Result<_, #silex::router::RoutePatternError> = (|| {
+            Ok(#catalog {
+                #table_field: #table,
+                #(#child_fields),*
+            })
+        })();
     });
 }
 
 fn generate_table_expression(silex: &TokenStream, nodes: &[MacroNode]) -> TokenStream {
-    let entry_names = nodes.iter().filter_map(|node| match node {
-        MacroNode::Leaf(route) => Some(&route.entry_name),
-        MacroNode::Nest(_) => None,
-    });
+    let entry_values = nodes
+        .iter()
+        .filter_map(|node| match node {
+            MacroNode::Leaf(route) => {
+                let entry_name = &route.entry_name;
+                Some(quote! { #entry_name? })
+            }
+            MacroNode::Nest(_) => None,
+        })
+        .collect::<Vec<_>>();
     let mut table = quote! {{
-        let __silex_route_entries = ::std::vec![#(#entry_names),*];
-        #silex::router::RouteTable::from_entries(__silex_route_entries)
-            .expect("routes! generated an invalid route table")
+        let __silex_route_entries = ::std::vec![#(#entry_values),*];
+        #silex::router::RouteTable::from_entries(__silex_route_entries)?
     }};
 
     for node in nodes {
@@ -945,6 +950,12 @@ fn generate_table_expression(silex: &TokenStream, nodes: &[MacroNode]) -> TokenS
         let prefix = &nest.prefix;
         let child_value = &nest.value_name;
         let layout_name = &nest.layout_name;
+        let child_table = quote! {
+            #child_value
+                .as_ref()
+                .map_err(|error| error.clone())?
+                .table()
+        };
         let context = format_ident!("__silex_nested_context");
         let outlet = format_ident!("__silex_nested_outlet");
         let mut layout_view = quote! {
@@ -960,11 +971,11 @@ fn generate_table_expression(silex: &TokenStream, nodes: &[MacroNode]) -> TokenS
         table = quote! {
             #table.nest(
                 #prefix,
-                #child_value.table(),
+                #child_table,
                 move |#context, #outlet| {
                     #layout_view
                 },
-            )
+            )?
         };
     }
 
@@ -1003,7 +1014,7 @@ fn generate_entry_binding(silex: &TokenStream, route: &MacroRoute) -> TokenStrea
                 Some(#view)
             },
         )
-        .expect("routes! generated an invalid route entry");
+        ;
     }
 }
 
@@ -1033,19 +1044,16 @@ fn generate_mounted_path_method(silex: &TokenStream, route: &MacroRoute) -> Opti
                 __silex_route_path.push_str(#raw);
             }),
             MacroSegment::Param { name } | MacroSegment::Wildcard { name: Some(name) } => {
-                let param = route
-                    .params
-                    .iter()
-                    .find(|param| param.name == *name)
-                    .expect("validated route parameter is missing from handler parameters");
+                let param = route.params.iter().find(|param| param.name == *name);
+                let param = param?;
                 let ident = &param.ident;
                 let ty = &param.ty;
                 path_parts.push(quote! {
                     let __silex_encoded_segment =
                         <#ty as #silex::router::PathParam>::encode_segment(&#ident)
-                            .unwrap_or_else(|error| {
-                                panic!("routes! could not encode a route parameter: {}", error)
-                            });
+                            .map_err(|error| {
+                                #silex::router::PathParamError::InvalidValue(error.to_string())
+                            })?;
                     __silex_route_path.push_str(&__silex_encoded_segment);
                 });
             }
@@ -1054,13 +1062,15 @@ fn generate_mounted_path_method(silex: &TokenStream, route: &MacroRoute) -> Opti
     }
 
     Some(quote! {
-        fn #name(&self, #(#arguments),*) -> #silex::router::RoutePath {
+        fn #name(
+            &self,
+            #(#arguments),*
+        ) -> ::std::result::Result<#silex::router::RoutePath, #silex::router::PathParamError> {
             let mut __silex_route_path =
                 self.__silex_mounted.prefix().as_str().to_string();
             #(#path_parts)*
-            #silex::router::RoutePath::new(__silex_route_path).unwrap_or_else(|error| {
-                panic!("routes! generated an invalid destination path: {}", error)
-            })
+            #silex::router::RoutePath::new(__silex_route_path)
+                .map_err(#silex::router::PathParamError::from)
         }
     })
 }
@@ -1097,19 +1107,16 @@ fn generate_path_method(silex: &TokenStream, route: &MacroRoute) -> Option<Token
                 __silex_route_path.push_str(#raw);
             }),
             MacroSegment::Param { name } | MacroSegment::Wildcard { name: Some(name) } => {
-                let param = route
-                    .params
-                    .iter()
-                    .find(|param| param.name == *name)
-                    .expect("validated route parameter is missing from handler parameters");
+                let param = route.params.iter().find(|param| param.name == *name);
+                let param = param?;
                 let ident = &param.ident;
                 let ty = &param.ty;
                 path_parts.push(quote! {
                     let __silex_encoded_segment =
                         <#ty as #silex::router::PathParam>::encode_segment(&#ident)
-                            .unwrap_or_else(|error| {
-                                panic!("routes! could not encode a route parameter: {}", error)
-                            });
+                            .map_err(|error| {
+                                #silex::router::PathParamError::InvalidValue(error.to_string())
+                            })?;
                     __silex_route_path.push_str(&__silex_encoded_segment);
                 });
             }
@@ -1118,12 +1125,14 @@ fn generate_path_method(silex: &TokenStream, route: &MacroRoute) -> Option<Token
     }
 
     Some(quote! {
-        fn #name(&self, #(#arguments),*) -> #silex::router::RoutePath {
+        fn #name(
+            &self,
+            #(#arguments),*
+        ) -> ::std::result::Result<#silex::router::RoutePath, #silex::router::PathParamError> {
             let mut __silex_route_path = ::std::string::String::new();
             #(#path_parts)*
-            #silex::router::RoutePath::new(__silex_route_path).unwrap_or_else(|error| {
-                panic!("routes! generated an invalid destination path: {}", error)
-            })
+            #silex::router::RoutePath::new(__silex_route_path)
+                .map_err(#silex::router::PathParamError::from)
         }
     })
 }

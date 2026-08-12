@@ -12,7 +12,7 @@ struct User {
 
 #[component]
 fn App<'scope>(scope: Scope<'scope>, user: UserStore<'scope>) -> impl View<'scope> {
-    div!(
+    Ok(div!(
         h1("Silex Store Demo"),
         p("This example demonstrates fine-grained reactivity using the #[store] macro."),
         UserDisplay(scope, user).build(),
@@ -20,43 +20,61 @@ fn App<'scope>(scope: Scope<'scope>, user: UserStore<'scope>) -> impl View<'scop
         DebugPanel(scope, user).build(),
     )
     .style(
-        "padding: 20px; font-family: sans-serif; max-width: 500px; margin: 0 auto; border: 1px solid #ccc; border-radius: 8px;",
-    )
+        sty()
+            .padding("20px")?
+            .font_family("sans-serif")?
+            .max_width(px(500))?
+            .margin("0 auto")?
+            .border("1px solid #ccc")?
+            .border_radius(px(8))?,
+    ))
 }
 
 #[component]
 fn UserDisplay<'scope>(_scope: Scope<'scope>, user: UserStore<'scope>) -> impl View<'scope> {
-    div!(
-        div!(span("Name: ").style("font-weight: bold;"), span(user.name),),
-        div!(span("Age: ").style("font-weight: bold;"), span(user.age),),
+    Ok(div!(
         div!(
-            span("Email: ").style("font-weight: bold;"),
+            span("Name: ").style(sty().font_weight(FontWeightKeyword::Bold)?),
+            span(user.name),
+        ),
+        div!(
+            span("Age: ").style(sty().font_weight(FontWeightKeyword::Bold)?),
+            span(user.age),
+        ),
+        div!(
+            span("Email: ").style(sty().font_weight(FontWeightKeyword::Bold)?),
             span(user.email),
         ),
     )
-    .style("background: #f5f5f5; padding: 15px; border-radius: 4px; margin-bottom: 20px;")
+    .style(
+        sty()
+            .background("#f5f5f5")?
+            .padding("15px")?
+            .border_radius(px(4))?
+            .margin_bottom(px(20))?,
+    ))
 }
 
 #[component]
 fn UserEditor<'scope>(_scope: Scope<'scope>, user: UserStore<'scope>) -> impl View<'scope> {
-    div!(
+    Ok(div!(
         div!(
             label("Change Name: "),
             input()
                 .type_("text")
                 .value(user.name)
                 .on_input(move |new_val| {
-                    user.name.set(new_val);
+                    user.name.set(new_val)?;
                     Ok(())
                 }),
         ),
         div!(
             label("Change Age: "),
             button("Increment Age").on_click(move |_| {
-                user.age.update(|age| *age += 1);
+                user.age.update(|age| *age += 1)?;
                 Ok(())
             }),
-            span("(Only updates Age node)").style("margin-left: 10px; color: #666;"),
+            span("(Only updates Age node)").style(sty().margin_left(px(10))?.color(hex("#666"))?),
         ),
         div!(
             label("Change Email: "),
@@ -64,22 +82,34 @@ fn UserEditor<'scope>(_scope: Scope<'scope>, user: UserStore<'scope>) -> impl Vi
                 .type_("email")
                 .value(user.email)
                 .on_input(move |new_val| {
-                    user.email.set(new_val);
+                    user.email.set(new_val)?;
                     Ok(())
                 }),
         ),
     )
-    .style("display: flex; flex-direction: column; gap: 10px;")
+    .style(
+        sty()
+            .display("flex")?
+            .flex_direction(FlexDirectionKeyword::Column)?
+            .gap(px(10))?,
+    ))
 }
 
 #[component]
 fn DebugPanel<'scope>(_scope: Scope<'scope>, user: UserStore<'scope>) -> impl View<'scope> {
-    div!(button("Log Current State to Console").on_click(move |_| {
-        let current_state = user.snapshot_untracked();
-        web_sys::console::log_1(&format!("Current Store State: {:?}", current_state).into());
-        Ok(())
-    }))
-    .style("margin-top: 20px; border-top: 1px dashed #ccc; padding-top: 10px;")
+    Ok(
+        div!(button("Log Current State to Console").on_click(move |_| {
+            let current_state = user.snapshot_untracked()?;
+            web_sys::console::log_1(&format!("Current Store State: {:?}", current_state).into());
+            Ok(())
+        }))
+        .style(
+            sty()
+                .margin_top(px(20))?
+                .border_top("1px dashed #ccc")?
+                .padding_top(px(10))?,
+        ),
+    )
 }
 
 /// Mount the Store demo into the conventional `#app` target.
@@ -100,7 +130,7 @@ fn mount_store_view<'scope>(context: &MountContext<'scope>) -> SilexResult<()> {
     let scope = context.scope();
     let error_handler = scope.error_handler(|error: SilexError| {
         web_sys::console::error_1(&error.to_string().into());
-    });
+    })?;
     let user = UserStore::new(
         scope,
         User {
@@ -108,7 +138,7 @@ fn mount_store_view<'scope>(context: &MountContext<'scope>) -> SilexResult<()> {
             age: 25,
             email: "alice@example.com".to_string(),
         },
-    );
+    )?;
 
     context.mount(App(scope, user).build(), error_handler)
 }

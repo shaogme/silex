@@ -18,7 +18,7 @@ fn BuiltProduct<'scope>(
 
 fn main() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    let _ = runtime.child(|scope| {
         let view = BuiltProduct(scope, AnyView::Empty)
             .label(String::from("Save"))
             .build();

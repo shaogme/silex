@@ -6,12 +6,13 @@ use silex_macros::{component, tw};
 #[component]
 pub fn Accordion<'scope>(
     scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
     class: Signal<'scope, String>,
 ) -> impl View<'scope> {
-    let root_cls = rx!(scope; {
+    let root_cls = rx!(scope; error_handler; {
         let base = tw!("w-full");
         let extra = $class;
         if extra.is_empty() {
@@ -21,19 +22,20 @@ pub fn Accordion<'scope>(
         }
     });
 
-    div(children).attr("data-slot", "accordion").class(root_cls)
+    Ok(div(children).attr("data-slot", "accordion").class(root_cls))
 }
 
 #[component]
 pub fn AccordionItem<'scope>(
     scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
     children: AnyView<'scope>,
     value: &'static str,
     #[prop(into)]
     #[chain(default)]
     class: Signal<'scope, String>,
 ) -> impl View<'scope> {
-    let item_cls = rx!(scope; {
+    let item_cls = rx!(scope; error_handler; {
         let base = tw!("border-b border-slate-200 dark:border-slate-800 last:border-b-0");
         let extra = $class;
         if extra.is_empty() {
@@ -43,15 +45,16 @@ pub fn AccordionItem<'scope>(
         }
     });
 
-    div(children)
+    Ok(div(children)
         .attr("data-slot", "accordion-item")
         .attr("data-value", value)
-        .class(item_cls)
+        .class(item_cls))
 }
 
 #[component]
 pub fn AccordionTrigger<'scope>(
     scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
@@ -63,7 +66,7 @@ pub fn AccordionTrigger<'scope>(
     #[chain(default)]
     on_click: Callback<'scope, ()>,
 ) -> impl View<'scope> {
-    let trigger_cls = rx!(scope; {
+    let trigger_cls = rx!(scope; error_handler; {
         let base = tw!(
             "flex flex-1 w-full items-center justify-between gap-4 py-4 text-left text-sm font-medium transition-all hover:underline cursor-pointer border-0 bg-transparent text-slate-900 dark:text-slate-100 [&[data-state=open]>svg]:rotate-180"
         );
@@ -75,8 +78,8 @@ pub fn AccordionTrigger<'scope>(
         }
     });
 
-    let state_attr = rx!(scope; if *$open { "open" } else { "closed" });
-    let icon_cls = rx!(scope; {
+    let state_attr = rx!(scope; error_handler; if *$open { "open" } else { "closed" });
+    let icon_cls = rx!(scope; error_handler; {
         let is_open = *$open;
         if is_open {
             tw!("pointer-events-none size-4 shrink-0 translate-y-0.5 text-slate-500 dark:text-slate-400 transition-transform duration-200 rotate-180").to_string()
@@ -97,16 +100,17 @@ pub fn AccordionTrigger<'scope>(
         .attr("stroke-linejoin", "round")
         .class(icon_cls);
 
-    button(chain!(children, icon))
+    Ok(button(chain!(children, icon))
         .attr("data-slot", "accordion-trigger")
         .attr("data-state", state_attr)
         .class(trigger_cls)
-        .on_click(move |_| -> SilexResult<()> { on_click.invoke(()) })
+        .on_click(move |_| -> SilexResult<()> { on_click.invoke(()) }))
 }
 
 #[component]
 pub fn AccordionContent<'scope>(
     scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
@@ -115,7 +119,7 @@ pub fn AccordionContent<'scope>(
     #[chain(default)]
     class: Signal<'scope, String>,
 ) -> impl View<'scope> {
-    let content_cls = rx!(scope; {
+    let content_cls = rx!(scope; error_handler; {
         let base = tw!(
             "overflow-hidden text-sm pb-4 pt-0 text-slate-600 dark:text-slate-400 transition-all"
         );
@@ -127,9 +131,9 @@ pub fn AccordionContent<'scope>(
         }
     });
 
-    let stored = scope.stored(children);
+    let stored = scope.stored(children)?;
 
-    rx!(scope; {
+    Ok(rx!(scope; error_handler; {
         if *$open {
             div(stored.with(|children| children.clone()))
                 .attr("data-slot", "accordion-content")
@@ -139,5 +143,5 @@ pub fn AccordionContent<'scope>(
         } else {
             ().into_any()
         }
-    })
+    }))
 }

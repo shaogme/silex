@@ -18,27 +18,28 @@ pub struct UserSettings<'s> {
 pub fn StoreDemo<'scope>(
     scope: Scope<'scope>,
     settings: UserSettingsStore<'scope, 'scope>,
+    error_handler: ErrorReporter<'scope>,
 ) -> impl View<'scope> {
-    div![
+    Ok(div![
         h3("Global Store Demo"),
         div![
             p![strong("Username: "), settings.username],
             p![strong("Theme: "), settings.theme],
             p![
                 strong("Notifications: "),
-                text(
-                    settings
-                        .notifications
-                        .map_fn(scope, |n| if *n { "On" } else { "Off" })
-                ),
+                text(settings.notifications.map_fn(
+                    scope,
+                    |n| if *n { "On" } else { "Off" },
+                    error_handler
+                )?),
             ],
         ]
         .style(
             sty()
-                .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))
-                .background(AppTheme::SURFACE)
-                .padding(px(10))
-                .margin_bottom(px(10))
+                .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
+                .background(AppTheme::SURFACE)?
+                .padding(px(10))?
+                .margin_bottom(px(10))?
         ),
         h4("Update Settings"),
         div![
@@ -58,8 +59,8 @@ pub fn StoreDemo<'scope>(
                 .bind_value(settings.username)
                 .placeholder("Change username..."),
         ]
-        .style("display: flex; gap: 10px;"),
-    ]
+        .style(sty().display("flex")?.gap(px(10))?),
+    ])
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -88,36 +89,42 @@ pub fn JsonStorageDemo<'scope>(
         .local()
         .json::<ComplexState>()
         .default(ComplexState::default())
-        .build();
+        .build()?;
 
-    div![
+    Ok(div![
         h4("Native JSON Persistence Demo"),
         p(
             "This demo uses the JSON codec to persist a complex struct via browser-native `JSON.stringify/parse`."
         ),
         div![
-            p![strong("Hero: "), rx!(scope; $state.name.clone())],
-            p![strong("Level: "), rx!(scope; $state.level.to_string())],
+            p![
+                strong("Hero: "),
+                rx!(scope; error_handler; $state.name.clone())
+            ],
+            p![
+                strong("Level: "),
+                rx!(scope; error_handler; $state.level.to_string())
+            ],
             p![
                 strong("Inventory: "),
-                rx!(scope; $state.inventory.join(", "))
+                rx!(scope; error_handler; $state.inventory.join(", "))
             ],
         ]
         .style(
             sty()
-                .background(AppTheme::SURFACE_ALT)
-                .padding(px(10))
-                .border_left(border(px(4), BorderStyleKeyword::Solid, AppTheme::PRIMARY))
-                .border_radius(px(4))
-                .margin_bottom(px(10))
+                .background(AppTheme::SURFACE_ALT)?
+                .padding(px(10))?
+                .border_left(border(px(4), BorderStyleKeyword::Solid, AppTheme::PRIMARY))?
+                .border_radius(px(4))?
+                .margin_bottom(px(10))?
         ),
         div![
             button("Level Up").on(event::click, move |_| {
-                state.try_update(|s| s.level += 1).map_err(Into::into)
+                state.update(|s| s.level += 1).map_err(Into::into)
             }),
             button("Add Shield").on(event::click, move |_| {
                 state
-                    .try_update(|s| {
+                    .update(|s| {
                         if !s.inventory.contains(&"Shield".to_string()) {
                             s.inventory.push("Shield".to_string());
                         }
@@ -125,11 +132,11 @@ pub fn JsonStorageDemo<'scope>(
                     .map_err(Into::into)
             }),
             button("Reset").on(event::click, move |_| {
-                state.try_set(ComplexState::default()).map_err(Into::into)
+                state.set(ComplexState::default()).map_err(Into::into)
             }),
         ]
-        .style("display: flex; gap: 10px;"),
-    ]
+        .style(sty().display("flex")?.gap(px(10))?),
+    ])
 }
 
 #[component]
@@ -141,9 +148,9 @@ pub fn StorageDemo<'scope>(
         .local()
         .parse::<i32>()
         .default(0)
-        .build();
+        .build()?;
 
-    div![
+    Ok(div![
         h3("LocalStorage Persistence"),
         p("Silex provides a unified persistence abstraction. Basic types use string and parse codecs, while complex structures use the JSON codec."),
 
@@ -152,11 +159,11 @@ pub fn StorageDemo<'scope>(
             h4("Basic Type Persistence (No Serde needed)"),
             div![
                 button("-1").on(event::click, count.updater(|c| *c -= 1)),
-                span(count).style("font-size: 1.5em; font-weight: bold; min-width: 50px; text-align: center;"),
+                span(count).style(sty().font_size(em_unit(1.5))?.font_weight(FontWeightKeyword::Bold)?.min_width(px(50))?.text_align(TextAlignKeyword::Center)?),
                 button("+1").on(event::click, count.updater(|c| *c += 1)),
             ]
-            .style("display: flex; gap: 20px; align-items: center; margin: 15px 0;"),
-        ].style(sty().padding(px(15)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).border_radius(px(4)).margin_bottom(px(20))),
+            .style(sty().display("flex")?.gap(px(20))?.align_items("center")?.margin("15px 0")?),
+        ].style(sty().padding(px(15))?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?.border_radius(px(4))?.margin_bottom(px(20))?),
 
         // 2. 复杂类型持久化
         JsonStorageDemo(scope, error_handler).build(),
@@ -167,7 +174,7 @@ pub fn StorageDemo<'scope>(
             " and watch them sync in real-time!"
         ]
     ]
-    .style(sty().padding(px(20)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).border_radius(px(8)).background(AppTheme::SURFACE).transition("all 0.3s"))
+    .style(sty().padding(px(20))?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?.border_radius(px(8))?.background(AppTheme::SURFACE)?.transition("all 0.3s")?))
 }
 
 #[component]
@@ -181,7 +188,7 @@ pub fn QueryDemo<'scope>(
         .query(ctx)
         .cow()
         .default("".into())
-        .build();
+        .build()?;
 
     let page = div![
         h3("Query Signal Demo"),
@@ -194,27 +201,33 @@ pub fn QueryDemo<'scope>(
                 .placeholder("Type here...")
                 .style(
                     sty()
-                        .padding(px(8))
-                        .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))
-                        .border_radius(px(4))
-                        .background(AppTheme::SURFACE)
-                        .color(AppTheme::TEXT)
+                        .padding(px(8))?
+                        .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
+                        .border_radius(px(4))?
+                        .background(AppTheme::SURFACE)?
+                        .color(AppTheme::TEXT)?
                 ),
             button("Reset")
                 .on(event::click, val.setter("".into()))
-                .style("padding: 8px 16px; cursor: pointer;")
+                .style(sty().padding("8px 16px")?.cursor("pointer")?)
         ]
-        .style("display: flex; gap: 10px; margin: 10px 0; align-items: center;"),
+        .style(
+            sty()
+                .display("flex")?
+                .gap(px(10))?
+                .margin("10px 0")?
+                .align_items("center")?
+        ),
         p![strong("Current Value: "), val].style(
             sty()
-                .background(AppTheme::SURFACE)
-                .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))
-                .padding(px(10))
-                .border_radius(px(4))
+                .background(AppTheme::SURFACE)?
+                .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
+                .padding(px(10))?
+                .border_radius(px(4))?
         )
     ];
 
-    AuthGuard(scope, settings, page.into_any()).build()
+    Ok(AuthGuard(scope, settings, page.into_any(), error_handler).build())
 }
 
 #[component]
@@ -222,20 +235,21 @@ pub fn AuthGuard<'scope>(
     scope: Scope<'scope>,
     settings: UserSettingsStore<'scope, 'scope>,
     children: AnyView<'scope>,
+    error_handler: ErrorReporter<'scope>,
 ) -> impl View<'scope> {
     let children = children.clone();
 
-    rx!(scope;
+    Ok(rx!(scope; error_handler;
         if $(settings.username) != "Guest" {
             children.clone()
         } else {
             div![
                 h3("🔒 Restricted Access"),
                 p("This content is protected. Please go to 'Store Demo' and change your username to something other than 'Guest'."),
-            ].style("padding: 20px; background: #fff0f0; border: 1px solid #ffcccc; color: #cc0000;")
+            ].style(sty().padding("20px")?.background("#fff0f0")?.border("1px solid #ffcccc")?.color(hex("#cc0000"))?)
             .into_any()
         }
-    )
+    ))
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -269,12 +283,12 @@ pub fn ResourceDemo<'scope>(
     scope: Scope<'scope>,
     error_handler: ErrorReporter<'scope>,
 ) -> impl View<'scope> {
-    let (user_id, set_user_id) = scope.signal(1);
+    let (user_id, set_user_id) = scope.signal(1)?;
 
     // Create Resource: triggers when user_id changes
-    let user_resource = Resource::new(scope, user_id, mock_fetch_user, None, error_handler);
+    let user_resource = Resource::new(scope, user_id, mock_fetch_user, None, error_handler)?;
 
-    div![
+    Ok(div![
         h3("Resource & Optimistic UI"),
         p("Fetches user data with a 1s delay. You can optimistically update the name before the server responds."),
 
@@ -283,27 +297,28 @@ pub fn ResourceDemo<'scope>(
             button("User 2").on(event::click, set_user_id.setter(2)),
             button("Invalid User").on(event::click, set_user_id.setter(-1)),
             button("Refetch").on(event::click, move |_| {
-                user_resource.refetch();
+                user_resource.refetch()?;
                 Ok(())
             }),
-        ].style("display: flex; gap: 10px; margin-bottom: 15px;"),
+        ].style(sty().display("flex")?.gap(px(10))?.margin_bottom(px(15))?),
 
         div![
             "Status: ",
             // Show loading state using the new state enum helper
             move || {
-                let state = user_resource.state.get();
-                if state.is_loading() {
-                    span(if let ResourceState::Reloading(_) = state { "Reloading..." } else { "Loading..." }).style("color: orange;")
+                let state = user_resource.state.get()?;
+                let view = if state.is_loading() {
+                    span(if let ResourceState::Reloading(_) = state { "Reloading..." } else { "Loading..." }).style(sty().color(ColorName::Orange)?)
                 } else {
-                    span("Idle").style("color: green;")
-                }
+                    span("Idle").style(sty().color(ColorName::Green)?)
+                };
+                Ok(view.into_any())
             }
-        ].style("margin-bottom: 10px; font-weight: bold;"),
+        ].style(sty().margin_bottom(px(10))?.font_weight(FontWeightKeyword::Bold)?),
 
         // Display Data using get_data() which covers both Ready and Reloading
         move || {
-            match user_resource.get_data() {
+            Ok(match user_resource.get_data()? {
                 Some(user) => div![
                     div(format!("ID: {}", user.id)),
                     div(format!("Name: {}", user.name)),
@@ -317,25 +332,28 @@ pub fn ResourceDemo<'scope>(
                                 // Manually update the local resource data
                                 user_resource.update(|u| {
                                     u.name = "Modified Name".to_string();
-                                });
+                                })?;
                                 Ok(())
                             }),
-                    ].style("margin-top: 15px; border-top: 1px solid #eee; padding-top: 10px;")
-                ],
-                None => div("No Data (or Loading...)"),
-            }
+                    ].style(sty().margin_top(px(15))?.border_top("1px solid #eee")?.padding_top(px(10))?)
+                ]
+                .into_any(),
+                None => div("No Data (or Loading...)").into_any(),
+            })
         },
 
         // Error Handling via state matching
         move || {
-            if let ResourceState::Error(err) = user_resource.state.get() {
-                div(format!("Error: {}", err)).style("color: red; margin-top: 10px;")
+            if let ResourceState::Error(err) = user_resource.state.get()? {
+                Ok(div(format!("Error: {}", err))
+                    .style(sty().color(ColorName::Red)?.margin_top(px(10))?)
+                    .into_any())
             } else {
-                div("")
+                Ok(div("").into_any())
             }
         }
     ]
-    .style(sty().padding(px(20)).border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER)).border_radius(px(8)).background(AppTheme::SURFACE).transition("all 0.3s"))
+    .style(sty().padding(px(20))?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?.border_radius(px(8))?.background(AppTheme::SURFACE)?.transition("all 0.3s")?))
 }
 
 #[component]
@@ -358,64 +376,86 @@ pub fn MutationDemo<'scope>(
             }
         },
         error_handler,
-    );
+    )?;
 
-    let username = scope.rw_signal("".to_string());
-    let password = scope.rw_signal("".to_string());
+    let username = scope.rw_signal("".to_string())?;
+    let password = scope.rw_signal("".to_string())?;
+    let login_error_style = sty().color(ColorName::Red)?;
+    let login_success_style = sty()
+        .color(ColorName::Green)?
+        .font_weight(FontWeightKeyword::Bold)?;
+    let login_token_style = sty()
+        .font_family("monospace")?
+        .background("#eee")?
+        .padding("5px")?;
 
-    div![
+    Ok(div![
         h3("Mutation Demo (Async Write)"),
         p("Enter 'admin' / 'password' to succeed, others to fail."),
         div![
             input()
                 .bind_value(username)
                 .placeholder("Username")
-                .style("margin-right: 10px; padding: 5px;"),
+                .style(sty().margin_right(px(10))?.padding("5px")?),
             input()
                 .bind_value(password)
                 .attr("type", "password")
                 .placeholder("Password")
-                .style("margin-right: 10px; padding: 5px;"),
+                .style(sty().margin_right(px(10))?.padding("5px")?),
             button("Login")
                 .attr("type", "button") // Prevent accidental form submission
                 .on(event::click, move |e: web_sys::MouseEvent| {
                     e.prevent_default();
 
                     // Note: "login_mutation.mutate((username.get(), password.get()));" is the same as "login_mutation.mutate_with((username, password));"
-                    login_mutation.mutate((username.get(), password.get()));
+                    login_mutation.mutate((username.get()?, password.get()?))?;
                     Ok(())
                 })
-                .attr("disabled", rx!(scope; login_mutation.loading()))
-                .style("padding: 5px 10px;"),
+                .attr(
+                    "disabled",
+                    rx!(scope; error_handler; login_mutation.loading()?)
+                )
+                .style(sty().padding("5px 10px")?),
         ]
-        .style("margin-bottom: 10px;"),
+        .style(sty().margin_bottom(px(10))?),
         // Loading State
-        move || if login_mutation.loading() {
-            div("Logging in...").style("color: blue;")
-        } else {
-            div("")
+        move || {
+            if login_mutation.loading()? {
+                Ok(div("Logging in...")
+                    .style(sty().color(ColorName::Blue)?)
+                    .into_any())
+            } else {
+                Ok(div("").into_any())
+            }
         },
-        // Error State
-        move || login_mutation
-            .error()
-            .map(|err| { div(format!("Error: {}", err)).style("color: red;") }),
-        // Success State
-        move || login_mutation.value().map(|token| {
-            div![
-                div("Login Successful!").style("color: green; font-weight: bold;"),
-                div(format!("Token: {}", token))
-                    .style("font-family: monospace; background: #eee; padding: 5px;")
-            ]
-        })
+        move || {
+            Ok(login_mutation
+                .error()?
+                .map(|err| div(format!("Error: {}", err)).style(login_error_style.clone()))
+                .map(|view| view.into_any())
+                .unwrap_or_else(|| div("").into_any()))
+        },
+        move || {
+            Ok(login_mutation
+                .value()?
+                .map(|token| {
+                    div![
+                        div("Login Successful!").style(login_success_style.clone()),
+                        div(format!("Token: {}", token)).style(login_token_style.clone()),
+                    ]
+                })
+                .map(|view| view.into_any())
+                .unwrap_or_else(|| div("").into_any()))
+        }
     ]
     .style(
         sty()
-            .padding(px(20))
-            .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))
-            .border_radius(px(8))
-            .background(AppTheme::SURFACE)
-            .transition("all 0.3s"),
-    )
+            .padding(px(20))?
+            .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
+            .border_radius(px(8))?
+            .background(AppTheme::SURFACE)?
+            .transition("all 0.3s")?,
+    ))
 }
 
 #[component]
@@ -425,11 +465,11 @@ pub fn SuspenseDemo<'scope>(
 ) -> impl View<'scope> {
     use silex::components::SuspenseMode;
 
-    let (show_content, set_show_content) = scope.signal(false);
-    let (mode, set_mode) = scope.signal(SuspenseMode::KeepAlive);
+    let (show_content, set_show_content) = scope.signal(false)?;
+    let (mode, set_mode) = scope.signal(SuspenseMode::KeepAlive)?;
 
     // Trigger for reloading the resource
-    let (trigger, set_trigger) = scope.signal(0);
+    let (trigger, set_trigger) = scope.signal(0)?;
 
     // Mock heavy resource
     async fn heavy_work(id: i32) -> Result<String, String> {
@@ -437,7 +477,7 @@ pub fn SuspenseDemo<'scope>(
         Ok(format!("Content Loaded! (Req ID: {})", id))
     }
 
-    div![
+    Ok(div![
         h3("Suspense Modes Demo"),
         p("Compare KeepAlive (Data persists) vs Unmount mode (Data resets)."),
         // Mode Selection
@@ -446,68 +486,69 @@ pub fn SuspenseDemo<'scope>(
                 input()
                     .attr("type", "radio")
                     .attr("name", "suspense_mode")
-                    .attr("checked", rx!(scope; *$mode == SuspenseMode::KeepAlive))
+                    .attr("checked", rx!(scope; error_handler; *$mode == SuspenseMode::KeepAlive))
                     .on(event::change, set_mode.setter(SuspenseMode::KeepAlive)),
                 " KeepAlive (CSS Hide)"
             ]
-            .style("margin-right: 15px;"),
+            .style(sty().margin_right(px(15))?),
             label![
                 input()
                     .attr("type", "radio")
                     .attr("name", "suspense_mode")
-                    .attr("checked", rx!(scope; *$mode == SuspenseMode::Unmount))
+                    .attr("checked", rx!(scope; error_handler; *$mode == SuspenseMode::Unmount))
                     .on(event::change, set_mode.setter(SuspenseMode::Unmount)),
                 " Unmount (DOM Remove)"
             ]
         ]
-        .style("margin-bottom: 15px;"),
+        .style(sty().margin_bottom(px(15))?),
         div![
             button(show_content.map_fn(scope, |s| if *s {
                 "Destroy Component"
             } else {
                 "Create Component"
-            }))
+            }, error_handler)?)
             .on(event::click, set_show_content.updater(|s| *s = !*s))
-            .style("margin-right: 10px;"),
+            .style(sty().margin_right(px(10))?),
             button("Reload Resource").on(event::click, set_trigger.updater(|n| *n += 1))
         ]
-        .style("margin-bottom: 15px;"),
-        div![rx!(scope;
+        .style(sty().margin_bottom(px(15))?),
+        div![rx!(scope; error_handler;
             if *$show_content {
-                Suspense(scope, move |cx| {
+                Suspense(scope, error_handler, move |cx| {
                     let resource = Resource::new(
                         scope,
                         trigger,
                         heavy_work,
                         Some(cx),
                         error_handler,
-                    );
-                    div![
+                    )?;
+                    Ok(div![
                         div![
                             "Resource Data: ",
                             // Fine-grained reading: Only this text node updates
-                            rx!(scope; resource.get_data().unwrap_or_else(|| "Waiting...".to_string()))
+                            rx!(scope; error_handler; resource.get_data()?.unwrap_or_else(|| "Waiting...".to_string()))
                         ],
                         div("1. Type something below."),
                         div("2. Click 'Reload Resource'."),
                         div("3. KeepAlive: Text stays. Unmount: Text gone."),
                         input()
                             .placeholder("Type here test persistence...")
-                            .style("margin-top: 5px; padding: 5px; width: 250px;")
+                            .style(sty().margin_top(px(5))?.padding("5px")?.width(px(250))?)
                     ]
-                    .style("border: 1px solid green; padding: 10px; background: #e8f5e9;")
+                    .style(sty().border("1px solid green")?.padding("10px")?.background("#e8f5e9")?)
+                    .into_any())
                 })
-                .fallback(div("Loading... (2s)").style("color: blue; font-weight: bold;"))
-                .mode(mode.get())
+                .fallback(div("Loading... (2s)").style(sty().color(ColorName::Blue)?.font_weight(FontWeightKeyword::Bold)?))
+                .mode(mode.get()?)
                 .build()
                 .into_any()
             } else {
                 ().into_any()
             }
         )]
-        .style("min-height: 150px; border: 1px dashed #ccc; padding: 10px;")
+        .style(sty().min_height(px(150))?.border("1px dashed #ccc")?.padding("10px")?)
     ]
-    .style("padding: 20px; border: 1px solid #ccc; border-radius: 8px; margin-top: 20px;")
+    .style(sty().padding("20px")?.border("1px solid #ccc")?.border_radius(px(8))?.margin_top(px(20))?))
 }
 
 // --- Generics Demo ---
@@ -517,18 +558,20 @@ pub fn GenericMessage<'scope, T: std::fmt::Display + Clone + 'scope>(
     value: T,
     #[chain] title: &'scope str,
 ) -> impl View<'scope> {
-    div![h4(title.to_string()), p(format!("Value: {}", value)),].style(
-        sty()
-            .padding(px(10))
-            .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))
-            .background(AppTheme::SURFACE)
-            .transition("all 0.3s"),
+    Ok(
+        div![h4(title.to_string()), p(format!("Value: {}", value)),].style(
+            sty()
+                .padding(px(10))?
+                .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
+                .background(AppTheme::SURFACE)?
+                .transition("all 0.3s")?,
+        ),
     )
 }
 
 #[component]
-pub fn GenericsDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
-    div![
+pub fn GenericsDemo<'scope>(_scope: Scope<'scope>) -> impl View<'scope> {
+    Ok(div![
         h3("Generics & Lifetimes Demo"),
         p("This demonstrates how #[component] macro supports generics and lifetimes natively."),
         GenericMessage(42).title("Integer Message").build(),
@@ -538,13 +581,13 @@ pub fn GenericsDemo<'scope>(scope: Scope<'scope>) -> impl View<'scope> {
     ]
     .style(
         sty()
-            .padding(px(20))
-            .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))
-            .border_radius(px(8))
-            .margin_top(px(20))
-            .background(AppTheme::SURFACE)
-            .transition("all 0.3s"),
-    )
+            .padding(px(20))?
+            .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
+            .border_radius(px(8))?
+            .margin_top(px(20))?
+            .background(AppTheme::SURFACE)?
+            .transition("all 0.3s")?,
+    ))
 }
 
 // --- Adaptive Read & Reactive Tuple Demo ---
@@ -576,32 +619,30 @@ pub fn AdaptiveReadDemo<'scope>(
     scope: Scope<'scope>,
     error_handler: ErrorReporter<'scope>,
 ) -> impl View<'scope> {
-    let system_name = scope.rw_signal(Cow::Borrowed("Nebula-1"));
-    let (stability, set_stability) = scope.signal(0.85); // 0.0 to 1.0
+    let system_name = scope.rw_signal(Cow::Borrowed("Nebula-1"))?;
+    let (stability, set_stability) = scope.signal(0.85)?; // 0.0 to 1.0
 
     // Create a non-cloneable resource
-    let (identity, _) = scope.signal(QuantumIdentity::new(0xDEADBEEF));
+    let (identity, _) = scope.signal(QuantumIdentity::new(0xDEADBEEF))?;
 
     // 1. REACTIVE TUPLE: Used for organizational grouping and tracking.
     // Note: (RwSignal<String>, ReadSignal<f64>, ReadSignal<QuantumIdentity>)
     // implements RxBase, allowing tracking even with non-cloneable items.
     let core_vitals = (system_name, stability, identity);
 
-    scope
-        .effect(
-            move || -> SilexResult<()> {
-                core_vitals.track(); // Track the whole group at once
-                console_log("Quantum Core Vitals updated.");
-                Ok(())
-            },
-            error_handler,
-        )
-        .expect("adaptive read effect should initialize");
+    scope.effect(
+        move || -> SilexResult<()> {
+            core_vitals.track()?; // Track the whole group at once
+            console_log("Quantum Core Vitals updated.");
+            Ok(())
+        },
+        error_handler,
+    )?;
 
     // 2. SEGMENTED ACCESS (Recommended):
     // Using $ syntax on individual signals is ALWAYS zero-copy and
     // works even if the types are NOT Clone.
-    let status_bar = rx!(scope; format!(
+    let status_bar = rx!(scope; error_handler; format!(
         "System: {} | Stability: {:.0}% | {}",
         $system_name,
         *$stability * 100.0,
@@ -610,29 +651,29 @@ pub fn AdaptiveReadDemo<'scope>(
 
     // 3. FINE-GRAINED REACTIVITY:
     // Only the specific parts of the UI update when their respective signals change.
-    let detail_metrics = rx!(scope; {
+    let detail_metrics = rx!(scope; error_handler; {
         div![
             div![
                 strong("CORE NAME: "),
-                span($system_name.to_uppercase()).style("letter-spacing: 2px;")
+                span($system_name.to_uppercase()).style(sty().letter_spacing(px(2))?)
             ],
             div![
                 strong("QUANTUM SIGNATURE: "),
                 i($identity.signature.clone())
-            ].style("margin-top: 5px; color: #7f8c8d;"),
+            ].style(sty().margin_top(px(5))?.color(hex("#7f8c8d"))?),
         ]
     });
 
-    div![
+    Ok(div![
         h3("Adaptive Read & Segmented Access")
-            .style("color: #2c3e50; border-left: 5px solid #e74c3c; padding-left: 15px; margin-bottom: 20px;"),
+            .style(sty().color(hex("#2c3e50"))?.border_left("5px solid #e74c3c")?.padding_left(px(15))?.margin_bottom(px(20))?),
 
         p("Silex 0.1.0-beta.8 optimizes reactive access for performance. While tuples can group resources, segmented access using individual signals ensures zero-copy performance without Clone requirements."),
 
         div![
             // Live Status Bar
             div(status_bar)
-                .style("background: #2c3e50; color: #ecf0f1; padding: 12px 20px; border-radius: 8px 8px 0 0; font-family: 'Courier New', monospace; font-size: 0.9em;"),
+                .style(sty().background("#2c3e50")?.color(hex("#ecf0f1"))?.padding("12px 20px")?.border_radius("8px 8px 0 0")?.font_family("'Courier New', monospace")?.font_size(em_unit(0.9))?),
 
             // Interaction Area
             div![
@@ -648,37 +689,37 @@ pub fn AdaptiveReadDemo<'scope>(
                         .prop("value", stability)
                         .on(event::input, move |e| {
                             if let Ok(val) = event_target_value(&e).parse::<f64>() {
-                                set_stability.try_set(val)?;
+                                set_stability.set(val)?;
                             }
                             Ok(())
                         })
-                        .style("flex-grow: 1; accent-color: #e74c3c;"),
-                    span(rx!(scope; format!("{:.0}%", *$stability * 100.0)))
-                        .style("width: 50px; text-align: right; font-weight: bold; color: #e74c3c;"),
-                ].style("margin-top: 20px; display: flex; align-items: center; gap: 15px;"),
+                        .style(sty().flex_grow(1)?.accent_color(hex("#e74c3c"))?),
+                    span(rx!(scope; error_handler; format!("{:.0}%", *$stability * 100.0)))
+                        .style(sty().width(px(50))?.text_align(TextAlignKeyword::Right)?.font_weight(FontWeightKeyword::Bold)?.color(hex("#e74c3c"))?),
+                ].style(sty().margin_top(px(20))?.display("flex")?.align_items("center")?.gap(px(15))?),
 
                 div![
                     label("Rename Core: "),
                     input()
                         .bind_value(system_name)
-                        .style("padding: 8px; border: 1px solid #ddd; border-radius: 4px; width: 100%; box-sizing: border-box;"),
-                ].style("margin-top: 15px;"),
+                        .style(sty().padding("8px")?.border("1px solid #ddd")?.border_radius(px(4))?.width(pct(100))?.box_sizing(BoxSizingKeyword::BorderBox)?),
+                ].style(sty().margin_top(px(15))?),
             ]
-            .style("background: white; padding: 25px; border: 1px solid #2c3e50; border-top: none; border-radius: 0 0 8px 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.1);"),
+            .style(sty().background("white")?.padding("25px")?.border("1px solid #2c3e50")?.border_top("none")?.border_radius("0 0 8px 8px")?.box_shadow("0 10px 30px rgba(0,0,0,0.1)")?),
         ]
-        .style("margin: 20px 0;"),
+        .style(sty().margin("20px 0")?),
 
         div![
             p("Architecture Insights:")
-                .style("font-weight: bold; margin-bottom: 5px;"),
+                .style(sty().font_weight(FontWeightKeyword::Bold)?.margin_bottom(px(5))?),
             ul![
                 li("Zero-Copy: The $ syntax expands to .with() calls, providing direct references."),
                 li("No Clone Needed: QuantumIdentity is non-cloneable, yet accessible via references."),
                 li("Tuple Limitation: Tuples grouping non-cloneable items are valid for tracking, but 'overall' access via .with() on the tuple itself is restricted to avoid accidental deep clones."),
             ]
-            .style("font-size: 0.85em; color: #34495e;"),
+            .style(sty().font_size(em_unit(0.85))?.color(hex("#34495e"))?),
         ]
-        .style("padding: 15px; background: #fdf2f2; border-radius: 6px; border: 1px solid #fab1a0;")
+        .style(sty().padding("15px")?.background("#fdf2f2")?.border_radius(px(6))?.border("1px solid #fab1a0")?)
     ]
-    .style("margin-top: 30px;")
+    .style(sty().margin_top(px(30))?))
 }

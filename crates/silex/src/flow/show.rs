@@ -1,4 +1,4 @@
-use silex_core::{Scope, reactivity::ReactiveSource};
+use silex_core::{ErrorReporter, Scope, reactivity::ReactiveSource};
 use silex_dom::prelude::*;
 use silex_macros::component;
 
@@ -14,6 +14,7 @@ use silex_macros::component;
 #[component]
 pub fn Show<'scope, C>(
     scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
     when: C,
     #[prop(render)]
     #[chain]
@@ -25,19 +26,24 @@ pub fn Show<'scope, C>(
 where
     C: ReactiveSource<'scope, Value = bool> + Clone + 'scope,
 {
-    let condition = scope.promote(when);
-    silex_core::rx!(scope; if *$condition {
+    let condition = scope.promote(when, error_handler)?;
+    Ok(silex_core::rx!(scope; error_handler; if *$condition {
         children.clone()
     } else {
         fallback.clone()
-    })
+    }))
 }
 
 // --- Signal 扩展 ---
 
 /// Signal 扩展特质，提供 .when() 语法糖
 pub trait SignalShowExt<'scope>: ReactiveSource<'scope, Value = bool> + Clone + Sized {
-    fn when<V>(self, scope: Scope<'scope>, view: V) -> ShowBuilder<'scope, PropFixed, Self>
+    fn when<V>(
+        self,
+        scope: Scope<'scope>,
+        error_handler: ErrorReporter<'scope>,
+        view: V,
+    ) -> ShowBuilder<'scope, PropFixed, Self>
     where
         V: View<'scope> + 'scope;
 }
@@ -46,10 +52,15 @@ impl<'scope, S> SignalShowExt<'scope> for S
 where
     S: ReactiveSource<'scope, Value = bool> + Clone,
 {
-    fn when<V>(self, scope: Scope<'scope>, view: V) -> ShowBuilder<'scope, PropFixed, Self>
+    fn when<V>(
+        self,
+        scope: Scope<'scope>,
+        error_handler: ErrorReporter<'scope>,
+        view: V,
+    ) -> ShowBuilder<'scope, PropFixed, Self>
     where
         V: View<'scope> + 'scope,
     {
-        Show(scope, self).children(view)
+        Show(scope, error_handler, self).children(view)
     }
 }

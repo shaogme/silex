@@ -5,7 +5,7 @@ error[E0599]: no method named `cache_with_default` found for struct `HttpClientB
    |  ________________________-
  8 | |             scope,
  9 | |             "https://example.test",
-10 | |             scope.error_handler(|_| {}),
+10 | |             scope.error_handler(|_| {}).unwrap(),
 11 | |         )
 12 | |         .cache_with_default(CachePolicy::CacheFirst, "default".to_string());
    | |         -^^^^^^^^^^^^^^^^^^ method not found in `HttpClientBuilder<'_, std::string::String, TextCodec>`

@@ -488,7 +488,7 @@ fn apply_update_internal<'scope>(
                 rx.runtime_inputs(),
                 Box::new(move || -> SilexResult<()> {
                     let name = target.attr_name();
-                    let value = rx.try_get()?;
+                    let value = rx.get()?;
                     apply_attr_with_target_internal(&el, name, target.clone(), &value)
                 }),
                 owner.error_handler(),
@@ -500,7 +500,7 @@ fn apply_update_internal<'scope>(
                 rx.runtime_inputs(),
                 Box::new(move || -> SilexResult<()> {
                     let name = target.attr_name();
-                    let val = rx.try_get()?;
+                    let val = rx.get()?;
                     apply_attr_with_target_internal(&el, name, target.clone(), &Attr::from(val))
                 }),
                 owner.error_handler(),
@@ -512,7 +512,7 @@ fn apply_update_internal<'scope>(
                 rx.runtime_inputs(),
                 Box::new(move || -> SilexResult<()> {
                     let name = target.attr_name();
-                    let val = rx.try_get()?;
+                    let val = rx.get()?;
                     apply_attr_with_target_internal(&el, name, target.clone(), &Attr::from(val))
                 }),
                 owner.error_handler(),
@@ -524,7 +524,7 @@ fn apply_update_internal<'scope>(
                 rx.runtime_inputs(),
                 Box::new(move || -> SilexResult<()> {
                     let name = target.attr_name();
-                    let val = rx.try_get()?;
+                    let val = rx.get()?;
                     let attr = match val {
                         Some(s) => Attr::from(s),
                         None => Attr::Removed,
@@ -539,7 +539,7 @@ fn apply_update_internal<'scope>(
             owner.effect_from(
                 rx.runtime_inputs(),
                 Box::new(move || -> SilexResult<()> {
-                    let value = rx.try_get()?;
+                    let value = rx.get()?;
                     js_sys::Reflect::set(&el, &JsValue::from_str(&name), &value)
                         .map(|_| ())
                         .map_err(SilexError::from)
@@ -604,13 +604,13 @@ fn apply_combined_classes_internal<'scope>(
                 // class，只有它不再被任何动态来源提供时才能从 DOM 中移除。
                 let mut new_dynamic_tokens = HashSet::new();
                 for (name, rx) in &toggles {
-                    if rx.try_get()? {
+                    if rx.get()? {
                         new_dynamic_tokens.insert(name.to_string());
                     }
                 }
 
                 for rx in &reactives {
-                    let value = rx.try_get()?;
+                    let value = rx.get()?;
                     for token in value.split_whitespace() {
                         new_dynamic_tokens.insert(token.to_string());
                     }
@@ -703,7 +703,7 @@ fn apply_combined_styles_internal<'scope>(
                 // 处理单项 Property 绑定 (仅在值发生变化时更新 DOM)
                 let mut next_props = Vec::with_capacity(properties.len());
                 for (i, (name, rx)) in properties.iter().enumerate() {
-                    let val = rx.try_get()?;
+                    let val = rx.get()?;
                     let previous_value = previous
                         .and_then(|previous| previous.properties.get(i))
                         .and_then(Option::as_deref);
@@ -718,7 +718,7 @@ fn apply_combined_styles_internal<'scope>(
                 if !sheets.is_empty() {
                     let sheet_strings: Vec<String> = sheets
                         .iter()
-                        .map(|rx| rx.try_get())
+                        .map(|rx| rx.get())
                         .collect::<SilexResult<_>>()?;
                     let mut new_style_map = std::collections::HashMap::new();
                     for s in &sheet_strings {

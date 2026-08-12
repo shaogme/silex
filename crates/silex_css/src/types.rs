@@ -451,9 +451,13 @@ mod tests {
     fn css_wide_is_valid_for_every_kind_of_property() {
         let _ = Style::new()
             .color(INHERIT)
+            .expect("color should build")
             .align_items(INITIAL)
+            .expect("align-items should build")
             .z_index(UNSET)
+            .expect("z-index should build")
             .width(REVERT)
+            .expect("width should build")
             .transform(REVERT_LAYER);
     }
 
@@ -469,7 +473,10 @@ mod tests {
     /// 纯 `auto` / 纯 `none` 的属性直接复用全局类型，不再各生成一个枚举
     #[test]
     fn bare_auto_and_none_reuse_the_global_types() {
-        let _ = Style::new().width(AUTO).transform(NONE);
+        let _ = Style::new()
+            .width(AUTO)
+            .expect("width should build")
+            .transform(NONE);
         assert_eq!(AUTO.to_string(), "auto");
         assert_eq!(NONE.to_string(), "none");
     }
@@ -487,7 +494,11 @@ mod tests {
     /// 静态路径不再产出 `width: ;` 这种无效声明
     #[test]
     fn css_option_none_produces_a_valid_declaration() {
-        let css = Style::new().width(css_none::<Px>()).render().css;
+        let css = Style::new()
+            .width(css_none::<Px>())
+            .expect("width should build")
+            .render()
+            .css;
         assert!(css.contains("width: unset;"), "{css}");
     }
 
@@ -496,13 +507,20 @@ mod tests {
     fn typed_values_land_on_the_right_properties() {
         let _ = Style::new()
             .width(px(10))
+            .expect("width should build")
             .color(hex("#fff"))
+            .expect("color should build")
             .opacity(0.5)
+            .expect("opacity should build")
             .z_index(3)
+            .expect("z-index should build")
             .rotate(deg(90))
+            .expect("rotate should build")
             .background_image(url("a.png"))
+            .expect("background-image should build")
             // 真正的复合属性仍然收裸字符串
             .transition("all 0.3s")
+            .expect("transition should build")
             .margin("0 auto");
     }
 
@@ -512,7 +530,9 @@ mod tests {
     fn time_units_land_on_time_properties() {
         let css = Style::new()
             .transition_duration(sec(0.3))
+            .expect("transition-duration should build")
             .animation_delay(ms(150))
+            .expect("animation-delay should build")
             .render()
             .css;
         assert!(css.contains("transition-duration: 0.3s;"), "{css}");
@@ -522,7 +542,11 @@ mod tests {
     /// `fr` 只在网格轨道尺寸里合法
     #[test]
     fn fr_lands_on_grid_track_properties() {
-        let css = Style::new().grid_auto_columns(fr(1)).render().css;
+        let css = Style::new()
+            .grid_auto_columns(fr(1))
+            .expect("grid-auto-columns should build")
+            .render()
+            .css;
         assert!(css.contains("grid-auto-columns: 1fr;"), "{css}");
     }
 
@@ -531,7 +555,9 @@ mod tests {
     fn modern_color_functions_land_on_color_properties() {
         let css = Style::new()
             .color(oklch(0.7, 0.15, 250))
+            .expect("color should build")
             .background_color(color_mix(ColorSpace::Oklch, hex("#fff"), hex("#000")))
+            .expect("background-color should build")
             .render()
             .css;
         assert!(css.contains("color: oklch(0.7 0.15 250);"), "{css}");
@@ -546,13 +572,13 @@ mod tests {
         macro_rules! check {
             ($($t:ident),* $(,)?) => {$(
                 let v = $t::from(1);
-                let _ = Style::new().width(v);
+                let _ = Style::new().width(v).expect("width should build");
                 let _ = v + px(1);
                 let _ = px(1) + v;
             )*};
         }
         for_all_length_units!(check);
-        let _ = Style::new().width(pct(50));
+        let _ = Style::new().width(pct(50)).expect("width should build");
         let _ = pct(50) + px(1);
     }
 
@@ -562,7 +588,7 @@ mod tests {
         macro_rules! check_angle {
             ($($t:ident),* $(,)?) => {$(
                 let v = $t::from(1);
-                let _ = Style::new().rotate(v);
+                let _ = Style::new().rotate(v).expect("rotate should build");
                 let _ = v + deg(1);
             )*};
         }
@@ -571,7 +597,9 @@ mod tests {
         macro_rules! check_time {
             ($($t:ident),* $(,)?) => {$(
                 let v = $t::from(1);
-                let _ = Style::new().transition_duration(v);
+                let _ = Style::new()
+                    .transition_duration(v)
+                    .expect("transition-duration should build");
                 let _ = v + sec(1);
             )*};
         }

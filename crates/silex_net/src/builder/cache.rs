@@ -1,6 +1,6 @@
 use std::{collections::HashMap, rc::Rc};
 
-use silex_core::{CompletionOnce, Scope, SilexError, StoredValue, unwind_safe};
+use silex_core::{CompletionOnce, Scope, SilexError, SilexResult, StoredValue, unwind_safe};
 use silex_persist::{LocalStorageBackend, PersistCodec, PersistenceBackend};
 
 use crate::{
@@ -50,7 +50,7 @@ impl<'scope, T> HttpCache<'scope, T>
 where
     T: Clone + 'static,
 {
-    pub fn new<C>(scope: Scope<'scope>, config: CacheConfig, codec: C) -> Self
+    pub fn new<C>(scope: Scope<'scope>, config: CacheConfig, codec: C) -> SilexResult<Self>
     where
         C: CacheCodec<T>,
     {
@@ -65,7 +65,10 @@ where
             encode: Rc::new(move |value| encoder.encode(value)),
             decode: Rc::new(move |raw| PersistCodec::decode(&decoder, raw)),
         });
-        Self { state, scope }
+        Ok(Self {
+            state: state?,
+            scope,
+        })
     }
 
     pub(crate) fn belongs_to(&self, scope: Scope<'scope>) -> bool {
@@ -80,13 +83,14 @@ where
         js_sys::Date::now()
     }
 
-    fn touch(entry: &mut CacheEntry<T>, next_access: &mut u64) {
+    fn touch(entry: &mut CacheEntry<T>, next_access: &mut u64) -> SilexResult<()> {
         let access = next_access
             .checked_add(1)
-            .expect("HTTP cache access counter exhausted");
+            .ok_or_else(|| SilexError::Framework("HTTP cache access counter exhausted".into()))?;
         *next_access = access;
         entry.last_access = access;
         entry.last_access_at = Self::now();
+        Ok(())
     }
 
     fn expired(config: CacheConfig, entry: &CacheEntry<T>) -> bool {
@@ -95,42 +99,52 @@ where
             .is_some_and(|ttl| Self::now() - entry.last_access_at >= ttl.as_millis() as f64)
     }
 
-    fn remove_persisted(config: CacheConfig, backend: &LocalStorageBackend, key: &str) {
+    fn remove_persisted(
+        config: CacheConfig,
+        backend: &LocalStorageBackend,
+        key: &str,
+    ) -> SilexResult<()> {
         if matches!(config.eviction, CacheEviction::RemovePersisted) {
-            let _ = backend.remove(key);
+            backend
+                .remove(key)
+                .map_err(|error| SilexError::Framework(error.to_string()))?;
         }
+        Ok(())
     }
 
-    fn evict_one(state: &mut CacheState<T>) {
+    fn evict_one(state: &mut CacheState<T>) -> SilexResult<()> {
         let key = state
             .entries
             .iter()
             .min_by_key(|(_, entry)| entry.last_access)
             .map(|(key, _)| key.clone());
         let Some(key) = key else {
-            return;
+            return Ok(());
         };
         state.entries.remove(&key);
-        Self::remove_persisted(state.config, &state.backend, &key);
+        Self::remove_persisted(state.config, &state.backend, &key)
     }
 
-    fn load_snapshot(state: &CacheState<T>, key: &str) -> Option<T> {
+    fn load_snapshot(state: &CacheState<T>, key: &str) -> SilexResult<Option<T>> {
         let raw = match state.backend.get(key) {
             Ok(Some(raw)) => raw,
-            Ok(None) | Err(_) => return None,
+            Ok(None) => return Ok(None),
+            Err(error) => {
+                return Err(SilexError::Framework(error.to_string()));
+            }
         };
         match (state.decode)(&raw) {
-            Ok(value) => Some(value),
+            Ok(value) => Ok(Some(value)),
             Err(_) => {
-                Self::remove_persisted(state.config, &state.backend, key);
-                None
+                Self::remove_persisted(state.config, &state.backend, key)?;
+                Ok(None)
             }
         }
     }
 
-    fn ensure_entry(state: &mut CacheState<T>, key: &str) -> Option<Option<T>> {
+    fn ensure_entry(state: &mut CacheState<T>, key: &str) -> SilexResult<Option<Option<T>>> {
         if state.config.capacity == 0 {
-            return None;
+            return Ok(None);
         }
 
         let expired = state
@@ -139,84 +153,88 @@ where
             .is_some_and(|entry| Self::expired(state.config, entry));
         if expired {
             state.entries.remove(key);
-            Self::remove_persisted(state.config, &state.backend, key);
+            Self::remove_persisted(state.config, &state.backend, key)?;
         }
 
         if let Some(entry) = state.entries.get_mut(key) {
-            Self::touch(entry, &mut state.next_access);
-            return Some(entry.snapshot.clone());
+            Self::touch(entry, &mut state.next_access)?;
+            return Ok(Some(entry.snapshot.clone()));
         }
 
         if state.entries.len() >= state.config.capacity {
-            Self::evict_one(state);
+            Self::evict_one(state)?;
         }
 
         let access = state
             .next_access
             .checked_add(1)
-            .expect("HTTP cache access counter exhausted");
+            .ok_or_else(|| SilexError::Framework("HTTP cache access counter exhausted".into()))?;
         state.next_access = access;
         let entry = CacheEntry {
-            snapshot: Self::load_snapshot(state, key),
+            snapshot: Self::load_snapshot(state, key)?,
             generation: 0,
             last_access: access,
             last_access_at: Self::now(),
         };
         let snapshot = entry.snapshot.clone();
         state.entries.insert(key.to_string(), entry);
-        Some(snapshot)
+        Ok(Some(snapshot))
     }
 
-    fn begin_binding(state: &mut CacheState<T>, key: &str, snapshot: Option<T>) -> CacheBinding<T> {
+    fn begin_binding(
+        state: &mut CacheState<T>,
+        key: &str,
+        snapshot: Option<T>,
+    ) -> SilexResult<CacheBinding<T>> {
         let generation = state
             .next_generation
             .checked_add(1)
-            .expect("HTTP cache generation exhausted");
+            .ok_or_else(|| SilexError::Framework("HTTP cache generation exhausted".into()))?;
         state.next_generation = generation;
         let entry = state
             .entries
             .get_mut(key)
-            .expect("cache entry must exist before binding");
+            .ok_or_else(|| SilexError::Framework("cache entry missing before binding".into()))?;
         entry.generation = generation;
-        Self::touch(entry, &mut state.next_access);
-        CacheBinding {
+        Self::touch(entry, &mut state.next_access)?;
+        Ok(CacheBinding {
             key: key.to_string(),
             generation,
             snapshot,
-        }
+        })
     }
 
-    pub(crate) fn binding(&self, spec: &RequestSpec) -> Option<CacheBinding<T>> {
+    pub(crate) fn binding(&self, spec: &RequestSpec) -> SilexResult<Option<CacheBinding<T>>> {
         let key = Self::key(spec);
         self.state
-            .try_update(|state| {
-                let snapshot = Self::ensure_entry(state, &key)?;
-                Some(Self::begin_binding(state, &key, snapshot))
+            .update(|state| {
+                let Some(snapshot) = Self::ensure_entry(state, &key)? else {
+                    return Ok(None);
+                };
+                Ok(Some(Self::begin_binding(state, &key, snapshot)?))
             })
-            .ok()
-            .flatten()
+            .map_err(SilexError::from)?
     }
 
-    pub(crate) fn cached_value(&self, spec: &RequestSpec) -> Option<T> {
+    pub(crate) fn cached_value(&self, spec: &RequestSpec) -> SilexResult<Option<T>> {
         let key = Self::key(spec);
         self.state
-            .try_update(|state| Self::ensure_entry(state, &key).flatten())
-            .ok()
-            .flatten()
+            .update(|state| Ok(Self::ensure_entry(state, &key)?.flatten()))
+            .map_err(SilexError::from)?
     }
 
     pub(crate) fn completion_once_for_binding(
         &self,
         scope: Scope<'scope>,
         binding: CacheBinding<T>,
-    ) -> CompletionOnce<T> {
+    ) -> SilexResult<CompletionOnce<T>> {
         let state = self.state;
         let key = binding.key;
         let generation = binding.generation;
-        let encode = state.with(|state| state.encode.clone());
-        let backend = state.with(|state| state.backend.clone());
+        let encode = state.with(|state| state.encode.clone())?;
+        let backend = state.with(|state| state.backend.clone())?;
         scope.completion_once(unwind_safe(move |value: T| {
-            let active = state.try_with(|state| {
+            let active = state.with(|state| {
                 state
                     .entries
                     .get(&key)
@@ -234,14 +252,14 @@ where
             })?;
 
             state
-                .try_update(|state| {
+                .update(|state| {
                     if let Some(entry) = state.entries.get_mut(&key)
                         && entry.generation == generation
                     {
                         entry.snapshot = Some(value);
                     }
                 })
-                .map_err(SilexError::Reactivity)?;
+                .map_err(SilexError::from)?;
             Ok(())
         }))
     }

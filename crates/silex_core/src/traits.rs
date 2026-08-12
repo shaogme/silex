@@ -1,7 +1,7 @@
 //! Lifetime-aware reactive traits.
 
 use crate::{
-    Callback, CallbackInvokeError, NodeRef, ReactiveError, ReactiveResult, Rx, RxInner,
+    Callback, CallbackInvokeError, ErrorReporter, NodeRef, ReactiveResult, Rx, RxInner,
     RxValueKind, Scope, SilexError, SilexResult,
     reactivity::{Memo, ReactiveSource, ReadSignal, RwSignal, Signal, StoredValue, WriteSignal},
 };
@@ -27,20 +27,7 @@ impl<T: Clone + Debug> RxError for T {}
 pub trait RxFrom<'scope>: Sized {
     type Value: 'scope;
 
-    fn rx_from<V>(scope: Scope<'scope>, value: V) -> Self
-    where
-        V: Into<Self::Value>;
-}
-
-/// Fallible construction of a scope-owned reactive wrapper.
-///
-/// This trait is used by wrappers whose node registration can fail and whose
-/// error must remain visible to the caller. Infallible value conversions keep
-/// using [`RxFrom`].
-pub trait TryRxFrom<'scope>: Sized {
-    type Value: 'scope;
-
-    fn try_rx_from<V>(scope: Scope<'scope>, value: V) -> SilexResult<Self>
+    fn rx_from<V>(scope: Scope<'scope>, value: V) -> SilexResult<Self>
     where
         V: Into<Self::Value>;
 }
@@ -57,7 +44,7 @@ pub trait TryRxFrom<'scope>: Sized {
     note = "constant reactive inputs require a Scope<'scope> and only the framework-supported value types are accepted"
 )]
 pub trait ReactiveInput<'scope, Target>: Sized {
-    fn into_reactive_input(self, scope: Scope<'scope>) -> Target;
+    fn into_reactive_input(self, scope: Scope<'scope>) -> SilexResult<Target>;
 }
 
 /// Construct a scope-owned reactive wrapper from its value's default.
@@ -66,7 +53,7 @@ pub trait ReactiveInput<'scope, Target>: Sized {
 /// default operation only delegates to [`RxFrom::rx_from`], so it cannot
 /// create a [`crate::Runtime`], a detached scope, or thread-local runtime state.
 pub trait RxDefault<'scope>: RxFrom<'scope> {
-    fn rx_default(scope: Scope<'scope>) -> Self
+    fn rx_default(scope: Scope<'scope>) -> SilexResult<Self>
     where
         Self::Value: Default,
     {
@@ -76,26 +63,14 @@ pub trait RxDefault<'scope>: RxFrom<'scope> {
 
 impl<'scope, T> RxDefault<'scope> for T where T: RxFrom<'scope> {}
 
-/// Fallible default construction for wrappers implementing [`TryRxFrom`].
-pub trait TryRxDefault<'scope>: TryRxFrom<'scope> {
-    fn try_rx_default(scope: Scope<'scope>) -> SilexResult<Self>
-    where
-        Self::Value: Default,
-    {
-        Self::try_rx_from(scope, Self::Value::default())
-    }
-}
-
-impl<'scope, T> TryRxDefault<'scope> for T where T: TryRxFrom<'scope> {}
-
 impl<'scope, T: 'scope> RxFrom<'scope> for Signal<'scope, T> {
     type Value = T;
 
-    fn rx_from<V>(scope: Scope<'scope>, value: V) -> Self
+    fn rx_from<V>(scope: Scope<'scope>, value: V) -> SilexResult<Self>
     where
         V: Into<Self::Value>,
     {
-        scope.stored(value.into()).into()
+        scope.stored(value.into()).map(Into::into)
     }
 }
 
@@ -105,11 +80,7 @@ pub trait RxValue {
 
 /// Common diagnostics and dependency tracking for a reactive value.
 pub trait RxBase: RxValue {
-    fn try_track(&self) -> SilexResult<()>;
-
-    fn track(&self) {
-        self.try_track().unwrap_or_else(panic_reactive);
-    }
+    fn track(&self) -> SilexResult<()>;
 
     fn debug_name(&self) -> Option<String> {
         None
@@ -119,27 +90,9 @@ pub trait RxBase: RxValue {
 /// Closure-based tracked and untracked access. No reference can outlive the
 /// callback supplied to these methods.
 pub trait RxRead: RxBase {
-    fn try_with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> SilexResult<U>;
+    fn with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> SilexResult<U>;
 
-    fn with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> U {
-        self.try_with(f).unwrap_or_else(panic_reactive)
-    }
-
-    fn try_with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> SilexResult<U>;
-
-    fn with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> U {
-        self.try_with_untracked(f).unwrap_or_else(panic_reactive)
-    }
-}
-
-#[cold]
-fn panic_reactive<T>(error: SilexError) -> T {
-    panic!("reactive operation failed: {error}")
-}
-
-#[cold]
-fn panic_raw_reactive<T>(error: ReactiveError) -> T {
-    panic!("reactive operation failed: {error}")
+    fn with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> SilexResult<U>;
 }
 
 fn map_read_error(error: CallbackInvokeError<SilexError>) -> SilexError {
@@ -152,18 +105,18 @@ fn map_read_error(error: CallbackInvokeError<SilexError>) -> SilexError {
 impl<'scope, T: 'scope> RxFrom<'scope> for ReadSignal<'scope, T> {
     type Value = T;
 
-    fn rx_from<V>(scope: Scope<'scope>, value: V) -> Self
+    fn rx_from<V>(scope: Scope<'scope>, value: V) -> SilexResult<Self>
     where
         V: Into<Self::Value>,
     {
-        scope.signal(value.into()).0
+        scope.signal(value.into()).map(|(read, _)| read)
     }
 }
 
 impl<'scope, T: 'scope> RxFrom<'scope> for RwSignal<'scope, T> {
     type Value = T;
 
-    fn rx_from<V>(scope: Scope<'scope>, value: V) -> Self
+    fn rx_from<V>(scope: Scope<'scope>, value: V) -> SilexResult<Self>
     where
         V: Into<Self::Value>,
     {
@@ -174,7 +127,7 @@ impl<'scope, T: 'scope> RxFrom<'scope> for RwSignal<'scope, T> {
 impl<'scope, T: Clone + PartialEq + 'scope> RxFrom<'scope> for Memo<'scope, T> {
     type Value = T;
 
-    fn rx_from<V>(scope: Scope<'scope>, value: V) -> Self
+    fn rx_from<V>(scope: Scope<'scope>, value: V) -> SilexResult<Self>
     where
         V: Into<Self::Value>,
     {
@@ -186,7 +139,7 @@ impl<'scope, T: Clone + PartialEq + 'scope> RxFrom<'scope> for Memo<'scope, T> {
 impl<'scope, T: 'scope> RxFrom<'scope> for StoredValue<'scope, T> {
     type Value = T;
 
-    fn rx_from<V>(scope: Scope<'scope>, value: V) -> Self
+    fn rx_from<V>(scope: Scope<'scope>, value: V) -> SilexResult<Self>
     where
         V: Into<Self::Value>,
     {
@@ -197,7 +150,7 @@ impl<'scope, T: 'scope> RxFrom<'scope> for StoredValue<'scope, T> {
 impl<'scope, T: 'scope> RxFrom<'scope> for Rx<'scope, T, RxValueKind> {
     type Value = T;
 
-    fn rx_from<V>(scope: Scope<'scope>, value: V) -> Self
+    fn rx_from<V>(scope: Scope<'scope>, value: V) -> SilexResult<Self>
     where
         V: Into<Self::Value>,
     {
@@ -205,10 +158,10 @@ impl<'scope, T: 'scope> RxFrom<'scope> for Rx<'scope, T, RxValueKind> {
     }
 }
 
-impl<'scope, T: 'scope> TryRxFrom<'scope> for Callback<'scope, T> {
+impl<'scope, T: 'scope> RxFrom<'scope> for Callback<'scope, T> {
     type Value = ();
 
-    fn try_rx_from<V>(scope: Scope<'scope>, _value: V) -> SilexResult<Self>
+    fn rx_from<V>(scope: Scope<'scope>, _value: V) -> SilexResult<Self>
     where
         V: Into<Self::Value>,
     {
@@ -219,7 +172,7 @@ impl<'scope, T: 'scope> TryRxFrom<'scope> for Callback<'scope, T> {
 impl<'scope, T: 'scope> RxFrom<'scope> for NodeRef<'scope, T> {
     type Value = ();
 
-    fn rx_from<V>(scope: Scope<'scope>, _value: V) -> Self
+    fn rx_from<V>(scope: Scope<'scope>, _value: V) -> SilexResult<Self>
     where
         V: Into<Self::Value>,
     {
@@ -228,104 +181,104 @@ impl<'scope, T: 'scope> RxFrom<'scope> for NodeRef<'scope, T> {
 }
 
 impl<'scope, T: 'scope> ReactiveInput<'scope, Signal<'scope, T>> for Signal<'scope, T> {
-    fn into_reactive_input(self, _scope: Scope<'scope>) -> Signal<'scope, T> {
-        self
+    fn into_reactive_input(self, _scope: Scope<'scope>) -> SilexResult<Signal<'scope, T>> {
+        Ok(self)
     }
 }
 
 impl<'scope, T: 'scope> ReactiveInput<'scope, Signal<'scope, T>> for ReadSignal<'scope, T> {
-    fn into_reactive_input(self, _scope: Scope<'scope>) -> Signal<'scope, T> {
-        self.into()
+    fn into_reactive_input(self, _scope: Scope<'scope>) -> SilexResult<Signal<'scope, T>> {
+        Ok(self.into())
     }
 }
 
 impl<'scope, T: 'scope> ReactiveInput<'scope, Signal<'scope, T>> for RwSignal<'scope, T> {
-    fn into_reactive_input(self, _scope: Scope<'scope>) -> Signal<'scope, T> {
-        self.into()
+    fn into_reactive_input(self, _scope: Scope<'scope>) -> SilexResult<Signal<'scope, T>> {
+        Ok(self.into())
     }
 }
 
 impl<'scope, T: 'scope> ReactiveInput<'scope, Signal<'scope, T>> for Memo<'scope, T> {
-    fn into_reactive_input(self, _scope: Scope<'scope>) -> Signal<'scope, T> {
-        self.into()
+    fn into_reactive_input(self, _scope: Scope<'scope>) -> SilexResult<Signal<'scope, T>> {
+        Ok(self.into())
     }
 }
 
 impl<'scope, T: 'scope> ReactiveInput<'scope, Signal<'scope, T>> for StoredValue<'scope, T> {
-    fn into_reactive_input(self, _scope: Scope<'scope>) -> Signal<'scope, T> {
-        self.into()
+    fn into_reactive_input(self, _scope: Scope<'scope>) -> SilexResult<Signal<'scope, T>> {
+        Ok(self.into())
     }
 }
 
 impl<'scope, T: 'scope> ReactiveInput<'scope, Signal<'scope, T>> for Rx<'scope, T, RxValueKind> {
-    fn into_reactive_input(self, _scope: Scope<'scope>) -> Signal<'scope, T> {
-        self.into_signal()
+    fn into_reactive_input(self, _scope: Scope<'scope>) -> SilexResult<Signal<'scope, T>> {
+        Ok(self.into_signal())
     }
 }
 
 impl<'scope, T: 'scope> ReactiveInput<'scope, ReadSignal<'scope, T>> for ReadSignal<'scope, T> {
-    fn into_reactive_input(self, _scope: Scope<'scope>) -> ReadSignal<'scope, T> {
-        self
+    fn into_reactive_input(self, _scope: Scope<'scope>) -> SilexResult<ReadSignal<'scope, T>> {
+        Ok(self)
     }
 }
 
 impl<'scope, T: 'scope> ReactiveInput<'scope, ReadSignal<'scope, T>> for RwSignal<'scope, T> {
-    fn into_reactive_input(self, _scope: Scope<'scope>) -> ReadSignal<'scope, T> {
-        self.read_signal()
+    fn into_reactive_input(self, _scope: Scope<'scope>) -> SilexResult<ReadSignal<'scope, T>> {
+        Ok(self.read_signal())
     }
 }
 
 impl<'scope, T: 'scope> ReactiveInput<'scope, RwSignal<'scope, T>> for RwSignal<'scope, T> {
-    fn into_reactive_input(self, _scope: Scope<'scope>) -> RwSignal<'scope, T> {
-        self
+    fn into_reactive_input(self, _scope: Scope<'scope>) -> SilexResult<RwSignal<'scope, T>> {
+        Ok(self)
     }
 }
 
 impl<'scope, T: 'scope> ReactiveInput<'scope, Memo<'scope, T>> for Memo<'scope, T> {
-    fn into_reactive_input(self, _scope: Scope<'scope>) -> Memo<'scope, T> {
-        self
+    fn into_reactive_input(self, _scope: Scope<'scope>) -> SilexResult<Memo<'scope, T>> {
+        Ok(self)
     }
 }
 
 impl<'scope, T: 'scope> ReactiveInput<'scope, StoredValue<'scope, T>> for StoredValue<'scope, T> {
-    fn into_reactive_input(self, _scope: Scope<'scope>) -> StoredValue<'scope, T> {
-        self
+    fn into_reactive_input(self, _scope: Scope<'scope>) -> SilexResult<StoredValue<'scope, T>> {
+        Ok(self)
     }
 }
 
 impl<'scope, T: 'scope> ReactiveInput<'scope, Rx<'scope, T>> for Signal<'scope, T> {
-    fn into_reactive_input(self, _scope: Scope<'scope>) -> Rx<'scope, T> {
-        self.into_rx()
+    fn into_reactive_input(self, _scope: Scope<'scope>) -> SilexResult<Rx<'scope, T>> {
+        Ok(self.into_rx())
     }
 }
 
 impl<'scope, T: 'scope> ReactiveInput<'scope, Rx<'scope, T>> for ReadSignal<'scope, T> {
-    fn into_reactive_input(self, _scope: Scope<'scope>) -> Rx<'scope, T> {
-        self.into_rx()
+    fn into_reactive_input(self, _scope: Scope<'scope>) -> SilexResult<Rx<'scope, T>> {
+        Ok(self.into_rx())
     }
 }
 
 impl<'scope, T: 'scope> ReactiveInput<'scope, Rx<'scope, T>> for RwSignal<'scope, T> {
-    fn into_reactive_input(self, _scope: Scope<'scope>) -> Rx<'scope, T> {
-        self.into_rx()
+    fn into_reactive_input(self, _scope: Scope<'scope>) -> SilexResult<Rx<'scope, T>> {
+        Ok(self.into_rx())
     }
 }
 
 impl<'scope, T: 'scope> ReactiveInput<'scope, Rx<'scope, T>> for Memo<'scope, T> {
-    fn into_reactive_input(self, _scope: Scope<'scope>) -> Rx<'scope, T> {
-        self.into_rx()
+    fn into_reactive_input(self, _scope: Scope<'scope>) -> SilexResult<Rx<'scope, T>> {
+        Ok(self.into_rx())
     }
 }
 
 impl<'scope, T: 'scope> ReactiveInput<'scope, Rx<'scope, T>> for StoredValue<'scope, T> {
-    fn into_reactive_input(self, _scope: Scope<'scope>) -> Rx<'scope, T> {
-        self.into_rx()
+    fn into_reactive_input(self, _scope: Scope<'scope>) -> SilexResult<Rx<'scope, T>> {
+        Ok(self.into_rx())
     }
 }
 
 impl<'scope, T: 'scope> ReactiveInput<'scope, Rx<'scope, T>> for Rx<'scope, T, RxValueKind> {
-    fn into_reactive_input(self, _scope: Scope<'scope>) -> Rx<'scope, T> {
-        self
+    fn into_reactive_input(self, _scope: Scope<'scope>) -> SilexResult<Rx<'scope, T>> {
+        Ok(self)
     }
 }
 
@@ -336,7 +289,7 @@ macro_rules! impl_reactive_input_values {
                 fn into_reactive_input(
                     self,
                     scope: Scope<'scope>,
-                ) -> Signal<'scope, $value> {
+                ) -> SilexResult<Signal<'scope, $value>> {
                     <Signal<'scope, $value> as RxFrom<'scope>>::rx_from(scope, self)
                 }
             }
@@ -345,7 +298,7 @@ macro_rules! impl_reactive_input_values {
                 fn into_reactive_input(
                     self,
                     scope: Scope<'scope>,
-                ) -> ReadSignal<'scope, $value> {
+                ) -> SilexResult<ReadSignal<'scope, $value>> {
                     <ReadSignal<'scope, $value> as RxFrom<'scope>>::rx_from(scope, self)
                 }
             }
@@ -354,7 +307,7 @@ macro_rules! impl_reactive_input_values {
                 fn into_reactive_input(
                     self,
                     scope: Scope<'scope>,
-                ) -> RwSignal<'scope, $value> {
+                ) -> SilexResult<RwSignal<'scope, $value>> {
                     <RwSignal<'scope, $value> as RxFrom<'scope>>::rx_from(scope, self)
                 }
             }
@@ -363,7 +316,7 @@ macro_rules! impl_reactive_input_values {
                 fn into_reactive_input(
                     self,
                     scope: Scope<'scope>,
-                ) -> Memo<'scope, $value> {
+                ) -> SilexResult<Memo<'scope, $value>> {
                     <Memo<'scope, $value> as RxFrom<'scope>>::rx_from(scope, self)
                 }
             }
@@ -372,7 +325,7 @@ macro_rules! impl_reactive_input_values {
                 fn into_reactive_input(
                     self,
                     scope: Scope<'scope>,
-                ) -> StoredValue<'scope, $value> {
+                ) -> SilexResult<StoredValue<'scope, $value>> {
                     <StoredValue<'scope, $value> as RxFrom<'scope>>::rx_from(scope, self)
                 }
             }
@@ -381,7 +334,7 @@ macro_rules! impl_reactive_input_values {
                 fn into_reactive_input(
                     self,
                     scope: Scope<'scope>,
-                ) -> Rx<'scope, $value> {
+                ) -> SilexResult<Rx<'scope, $value>> {
                     <Rx<'scope, $value> as RxFrom<'scope>>::rx_from(scope, self)
                 }
             }
@@ -419,7 +372,7 @@ macro_rules! impl_reactive_input_str_values {
                 fn into_reactive_input(
                     self,
                     scope: Scope<'scope>,
-                ) -> Signal<'scope, $target> {
+                ) -> SilexResult<Signal<'scope, $target>> {
                     <Signal<'scope, $target> as RxFrom<'scope>>::rx_from(scope, self)
                 }
             }
@@ -430,7 +383,7 @@ macro_rules! impl_reactive_input_str_values {
                 fn into_reactive_input(
                     self,
                     scope: Scope<'scope>,
-                ) -> ReadSignal<'scope, $target> {
+                ) -> SilexResult<ReadSignal<'scope, $target>> {
                     <ReadSignal<'scope, $target> as RxFrom<'scope>>::rx_from(scope, self)
                 }
             }
@@ -441,7 +394,7 @@ macro_rules! impl_reactive_input_str_values {
                 fn into_reactive_input(
                     self,
                     scope: Scope<'scope>,
-                ) -> RwSignal<'scope, $target> {
+                ) -> SilexResult<RwSignal<'scope, $target>> {
                     <RwSignal<'scope, $target> as RxFrom<'scope>>::rx_from(scope, self)
                 }
             }
@@ -452,7 +405,7 @@ macro_rules! impl_reactive_input_str_values {
                 fn into_reactive_input(
                     self,
                     scope: Scope<'scope>,
-                ) -> Memo<'scope, $target> {
+                ) -> SilexResult<Memo<'scope, $target>> {
                     <Memo<'scope, $target> as RxFrom<'scope>>::rx_from(scope, self)
                 }
             }
@@ -463,7 +416,7 @@ macro_rules! impl_reactive_input_str_values {
                 fn into_reactive_input(
                     self,
                     scope: Scope<'scope>,
-                ) -> StoredValue<'scope, $target> {
+                ) -> SilexResult<StoredValue<'scope, $target>> {
                     <StoredValue<'scope, $target> as RxFrom<'scope>>::rx_from(scope, self)
                 }
             }
@@ -474,7 +427,7 @@ macro_rules! impl_reactive_input_str_values {
                 fn into_reactive_input(
                     self,
                     scope: Scope<'scope>,
-                ) -> Rx<'scope, $target> {
+                ) -> SilexResult<Rx<'scope, $target>> {
                     <Rx<'scope, $target> as RxFrom<'scope>>::rx_from(scope, self)
                 }
             }
@@ -489,20 +442,12 @@ pub trait RxGet: RxRead
 where
     Self::Value: Sized + Clone,
 {
-    fn try_get_untracked(&self) -> SilexResult<Self::Value> {
-        self.try_with_untracked(Clone::clone)
+    fn get_untracked(&self) -> SilexResult<Self::Value> {
+        self.with_untracked(Clone::clone)
     }
 
-    fn get_untracked(&self) -> Self::Value {
-        self.try_get_untracked().unwrap_or_else(panic_reactive)
-    }
-
-    fn try_get(&self) -> SilexResult<Self::Value> {
-        self.try_with(Clone::clone)
-    }
-
-    fn get(&self) -> Self::Value {
-        self.try_get().unwrap_or_else(panic_reactive)
+    fn get(&self) -> SilexResult<Self::Value> {
+        self.with(Clone::clone)
     }
 }
 
@@ -515,57 +460,35 @@ where
 
 /// Unified scoped writes.
 pub trait RxWrite: RxBase {
-    fn rx_try_update_untracked<U>(
-        &self,
-        f: impl FnOnce(&mut Self::Value) -> U,
-    ) -> ReactiveResult<U>;
+    fn rx_update_untracked<U>(&self, f: impl FnOnce(&mut Self::Value) -> U) -> ReactiveResult<U>;
 
-    fn rx_try_notify(&self) -> ReactiveResult<()>;
+    fn rx_notify(&self) -> ReactiveResult<()>;
 
-    fn update(&self, f: impl FnOnce(&mut Self::Value)) {
-        self.try_update(f).unwrap_or_else(panic_raw_reactive);
+    fn update<U>(&self, f: impl FnOnce(&mut Self::Value) -> U) -> ReactiveResult<U> {
+        self.rx_update_untracked(f)
     }
 
-    fn try_update<U>(&self, f: impl FnOnce(&mut Self::Value) -> U) -> ReactiveResult<U> {
-        self.rx_try_update_untracked(f)
-    }
-
-    fn set(&self, value: Self::Value)
+    fn set(&self, value: Self::Value) -> ReactiveResult<()>
     where
         Self::Value: Sized,
     {
-        self.update(|current| *current = value);
+        self.update(|current| *current = value)
     }
 
-    fn try_set(&self, value: Self::Value) -> ReactiveResult<()>
+    fn update_untracked<U>(&self, f: impl FnOnce(&mut Self::Value) -> U) -> ReactiveResult<U> {
+        self.rx_update_untracked(f)
+    }
+
+    fn set_untracked(&self, value: Self::Value) -> ReactiveResult<()>
     where
         Self::Value: Sized,
     {
-        self.try_update(|current| *current = value)
+        self.update_untracked(|current| *current = value)
+            .map(|_| ())
     }
 
-    fn try_update_untracked<U>(&self, f: impl FnOnce(&mut Self::Value) -> U) -> ReactiveResult<U> {
-        self.rx_try_update_untracked(f)
-    }
-
-    fn update_untracked<U>(&self, f: impl FnOnce(&mut Self::Value) -> U) -> U {
-        self.try_update_untracked(f)
-            .unwrap_or_else(panic_raw_reactive)
-    }
-
-    fn set_untracked(&self, value: Self::Value)
-    where
-        Self::Value: Sized,
-    {
-        self.update_untracked(|current| *current = value);
-    }
-
-    fn try_notify(&self) -> ReactiveResult<()> {
-        self.rx_try_notify()
-    }
-
-    fn notify(&self) {
-        self.try_notify().unwrap_or_else(panic_raw_reactive);
+    fn notify(&self) -> ReactiveResult<()> {
+        self.rx_notify()
     }
 
     fn setter(self, value: Self::Value) -> impl Fn() -> SilexResult<()> + Clone
@@ -573,7 +496,7 @@ pub trait RxWrite: RxBase {
         Self: Sized + Clone,
         Self::Value: Sized + Clone,
     {
-        move || self.try_set(value.clone()).map_err(Into::into)
+        move || self.set(value.clone()).map_err(Into::into)
     }
 
     fn updater<F>(self, f: F) -> impl Fn() -> SilexResult<()> + Clone
@@ -582,7 +505,7 @@ pub trait RxWrite: RxBase {
         Self::Value: Sized,
         F: Fn(&mut Self::Value) + Clone,
     {
-        move || self.try_update(f.clone()).map_err(Into::into)
+        move || self.update(f.clone()).map(|_| ()).map_err(Into::into)
     }
 }
 
@@ -591,7 +514,7 @@ impl<'scope, T: 'scope> RxValue for ReadSignal<'scope, T> {
 }
 
 impl<'scope, T: 'scope> RxBase for ReadSignal<'scope, T> {
-    fn try_track(&self) -> SilexResult<()> {
+    fn track(&self) -> SilexResult<()> {
         self.inner
             .with(|_| ())
             .map(|_| ())
@@ -600,11 +523,11 @@ impl<'scope, T: 'scope> RxBase for ReadSignal<'scope, T> {
 }
 
 impl<'scope, T: 'scope> RxRead for ReadSignal<'scope, T> {
-    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+    fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         self.inner.with(f).map_err(SilexError::from)
     }
 
-    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+    fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         self.inner.with_untracked(f).map_err(SilexError::from)
     }
 }
@@ -614,17 +537,17 @@ impl<'scope, T: 'scope> RxValue for WriteSignal<'scope, T> {
 }
 
 impl<'scope, T: 'scope> RxBase for WriteSignal<'scope, T> {
-    fn try_track(&self) -> SilexResult<()> {
+    fn track(&self) -> SilexResult<()> {
         Ok(())
     }
 }
 
 impl<'scope, T: 'scope> RxWrite for WriteSignal<'scope, T> {
-    fn rx_try_update_untracked<U>(&self, f: impl FnOnce(&mut T) -> U) -> ReactiveResult<U> {
+    fn rx_update_untracked<U>(&self, f: impl FnOnce(&mut T) -> U) -> ReactiveResult<U> {
         self.inner.update(f)
     }
 
-    fn rx_try_notify(&self) -> ReactiveResult<()> {
+    fn rx_notify(&self) -> ReactiveResult<()> {
         raw_notify(&self.inner)
     }
 }
@@ -634,28 +557,28 @@ impl<'scope, T: 'scope> RxValue for RwSignal<'scope, T> {
 }
 
 impl<'scope, T: 'scope> RxBase for RwSignal<'scope, T> {
-    fn try_track(&self) -> SilexResult<()> {
-        self.read.try_track()
+    fn track(&self) -> SilexResult<()> {
+        self.read.track()
     }
 }
 
 impl<'scope, T: 'scope> RxRead for RwSignal<'scope, T> {
-    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.read.try_with(f)
+    fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+        self.read.with(f)
     }
 
-    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.read.try_with_untracked(f)
+    fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+        self.read.with_untracked(f)
     }
 }
 
 impl<'scope, T: 'scope> RxWrite for RwSignal<'scope, T> {
-    fn rx_try_update_untracked<U>(&self, f: impl FnOnce(&mut T) -> U) -> ReactiveResult<U> {
-        self.write.rx_try_update_untracked(f)
+    fn rx_update_untracked<U>(&self, f: impl FnOnce(&mut T) -> U) -> ReactiveResult<U> {
+        self.write.rx_update_untracked(f)
     }
 
-    fn rx_try_notify(&self) -> ReactiveResult<()> {
-        self.write.rx_try_notify()
+    fn rx_notify(&self) -> ReactiveResult<()> {
+        self.write.rx_notify()
     }
 }
 
@@ -664,18 +587,18 @@ impl<'scope, T: 'scope> RxValue for Signal<'scope, T> {
 }
 
 impl<'scope, T: 'scope> RxBase for Signal<'scope, T> {
-    fn try_track(&self) -> SilexResult<()> {
-        self.rx.try_track()
+    fn track(&self) -> SilexResult<()> {
+        self.rx.track()
     }
 }
 
 impl<'scope, T: 'scope> RxRead for Signal<'scope, T> {
-    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.rx.try_with(f)
+    fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+        self.rx.with(f)
     }
 
-    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.rx.try_with_untracked(f)
+    fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+        self.rx.with_untracked(f)
     }
 }
 
@@ -684,7 +607,7 @@ impl<'scope, T: 'scope> RxValue for Rx<'scope, T, RxValueKind> {
 }
 
 impl<'scope, T: 'scope> RxBase for Rx<'scope, T, RxValueKind> {
-    fn try_track(&self) -> SilexResult<()> {
+    fn track(&self) -> SilexResult<()> {
         match &self.inner {
             RxInner::Signal(signal) => signal.with(|_| ()).map_err(SilexError::from),
             RxInner::Memo(memo) => memo.with(|_| ()).map_err(SilexError::from),
@@ -695,7 +618,7 @@ impl<'scope, T: 'scope> RxBase for Rx<'scope, T, RxValueKind> {
 }
 
 impl<'scope, T: 'scope> RxRead for Rx<'scope, T, RxValueKind> {
-    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+    fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         match &self.inner {
             RxInner::Signal(signal) => signal.with(f).map_err(SilexError::from),
             RxInner::Memo(memo) => memo.with(f).map_err(SilexError::from),
@@ -704,7 +627,7 @@ impl<'scope, T: 'scope> RxRead for Rx<'scope, T, RxValueKind> {
         }
     }
 
-    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+    fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         match &self.inner {
             RxInner::Signal(signal) => signal.with_untracked(f).map_err(SilexError::from),
             RxInner::Memo(memo) => memo.with_untracked(f).map_err(SilexError::from),
@@ -719,27 +642,27 @@ impl<'scope, T: 'scope> RxValue for StoredValue<'scope, T> {
 }
 
 impl<'scope, T: 'scope> RxBase for StoredValue<'scope, T> {
-    fn try_track(&self) -> SilexResult<()> {
+    fn track(&self) -> SilexResult<()> {
         Ok(())
     }
 }
 
 impl<'scope, T: 'scope> RxRead for StoredValue<'scope, T> {
-    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+    fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         self.inner.with(f).map_err(SilexError::from)
     }
 
-    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+    fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         self.inner.with(f).map_err(SilexError::from)
     }
 }
 
 impl<'scope, T: 'scope> RxWrite for StoredValue<'scope, T> {
-    fn rx_try_update_untracked<U>(&self, f: impl FnOnce(&mut T) -> U) -> ReactiveResult<U> {
+    fn rx_update_untracked<U>(&self, f: impl FnOnce(&mut T) -> U) -> ReactiveResult<U> {
         self.inner.update(f)
     }
 
-    fn rx_try_notify(&self) -> ReactiveResult<()> {
+    fn rx_notify(&self) -> ReactiveResult<()> {
         Ok(())
     }
 }
@@ -784,7 +707,7 @@ impl RxValue for &str {
 }
 
 impl<'scope, T: 'scope> RxBase for Memo<'scope, T> {
-    fn try_track(&self) -> SilexResult<()> {
+    fn track(&self) -> SilexResult<()> {
         self.inner
             .with(|_| ())
             .map(|_| ())
@@ -793,11 +716,11 @@ impl<'scope, T: 'scope> RxBase for Memo<'scope, T> {
 }
 
 impl<'scope, T: 'scope> RxRead for Memo<'scope, T> {
-    fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+    fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         self.inner.with(f).map_err(SilexError::from)
     }
 
-    fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+    fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         self.inner.with_untracked(f).map_err(SilexError::from)
     }
 }
@@ -841,8 +764,8 @@ macro_rules! impl_tuple_rx_traits {
         where
             $($name: RxBase, $name::Value: Sized + RxData),+
         {
-            fn try_track(&self) -> SilexResult<()> {
-                $(self.$index.try_track()?;)+
+            fn track(&self) -> SilexResult<()> {
+                $(self.$index.track()?;)+
                 Ok(())
             }
         }
@@ -851,16 +774,16 @@ macro_rules! impl_tuple_rx_traits {
         where
             $($name: RxRead, $name::Value: Sized + Clone + RxData),+
         {
-            fn try_with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> SilexResult<U> {
-                let value = ($(self.$index.try_with(|value| value.clone())?,)+);
+            fn with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> SilexResult<U> {
+                let value = ($(self.$index.with(|value| (*value).clone())?,)+);
                 Ok(f(&value))
             }
 
-            fn try_with_untracked<U>(
+            fn with_untracked<U>(
                 &self,
                 f: impl FnOnce(&Self::Value) -> U,
             ) -> SilexResult<U> {
-                let value = ($(self.$index.try_with_untracked(|value| value.clone())?,)+);
+                let value = ($(self.$index.with_untracked(|value| (*value).clone())?,)+);
                 Ok(f(&value))
             }
         }
@@ -881,24 +804,32 @@ pub trait RxOptionExt<T>: RxRead<Value = Option<T>> + Clone {
         scope: Scope<'scope>,
         default: U,
         f: impl Fn(&T) -> U + 'scope,
-    ) -> Memo<'scope, U>
+        error_handler: ErrorReporter<'scope>,
+    ) -> SilexResult<Rx<'scope, U>>
     where
         Self: ReactiveSource<'scope> + 'scope,
-        U: PartialEq + Clone + 'scope,
+        U: Clone + 'scope,
         T: 'scope,
     {
-        let source = scope.promote(self.clone());
-        scope.memo_from(source.runtime_inputs(), move |_| {
-            source.with(|value| value.as_ref().map(&f).unwrap_or_else(|| default.clone()))
-        })
+        let source = scope.promote(self.clone(), error_handler)?;
+        scope.derived_from(
+            source.runtime_inputs(),
+            move || source.with(|value| value.as_ref().map(&f).unwrap_or_else(|| default.clone())),
+            error_handler,
+        )
     }
 
-    fn unwrap_or<'scope>(&self, scope: Scope<'scope>, default: T) -> Memo<'scope, T>
+    fn unwrap_or<'scope>(
+        &self,
+        scope: Scope<'scope>,
+        default: T,
+        error_handler: ErrorReporter<'scope>,
+    ) -> SilexResult<Rx<'scope, T>>
     where
         Self: ReactiveSource<'scope> + 'scope,
         T: PartialEq + Clone + 'scope,
     {
-        self.map_or(scope, default, Clone::clone)
+        self.map_or(scope, default, Clone::clone, error_handler)
     }
 
     fn map_or_else<'scope, U>(
@@ -906,47 +837,54 @@ pub trait RxOptionExt<T>: RxRead<Value = Option<T>> + Clone {
         scope: Scope<'scope>,
         default: impl Fn() -> U + 'scope,
         f: impl Fn(&T) -> U + 'scope,
-    ) -> Memo<'scope, U>
+        error_handler: ErrorReporter<'scope>,
+    ) -> SilexResult<Rx<'scope, U>>
     where
         Self: ReactiveSource<'scope> + 'scope,
-        U: PartialEq + Clone + 'scope,
+        U: 'scope,
         T: 'scope,
     {
-        let source = scope.promote(self.clone());
-        scope.memo_from(source.runtime_inputs(), move |_| {
-            source.with(|value| value.as_ref().map(&f).unwrap_or_else(&default))
-        })
+        let source = scope.promote(self.clone(), error_handler)?;
+        scope.derived_from(
+            source.runtime_inputs(),
+            move || source.with(|value| value.as_ref().map(&f).unwrap_or_else(&default)),
+            error_handler,
+        )
     }
 
     fn and_then<'scope, U>(
         &self,
         scope: Scope<'scope>,
         f: impl Fn(&T) -> Option<U> + 'scope,
-    ) -> Memo<'scope, Option<U>>
+        error_handler: ErrorReporter<'scope>,
+    ) -> SilexResult<Rx<'scope, Option<U>>>
     where
         Self: ReactiveSource<'scope> + 'scope,
-        U: PartialEq + Clone + 'scope,
+        U: 'scope,
         T: 'scope,
     {
-        let source = scope.promote(self.clone());
-        scope.memo_from(source.runtime_inputs(), move |_| {
-            source.with(|value| value.as_ref().and_then(&f))
-        })
+        let source = scope.promote(self.clone(), error_handler)?;
+        scope.derived_from(
+            source.runtime_inputs(),
+            move || source.with(|value| value.as_ref().and_then(&f)),
+            error_handler,
+        )
     }
 
     fn is_some_and<'scope>(
         &self,
         scope: Scope<'scope>,
         f: impl Fn(&T) -> bool + 'scope,
-    ) -> Memo<'scope, bool>
+        error_handler: ErrorReporter<'scope>,
+    ) -> SilexResult<Rx<'scope, bool>>
     where
         Self: ReactiveSource<'scope> + 'scope,
         T: 'scope,
     {
-        self.map_or(scope, false, f)
+        self.map_or(scope, false, f, error_handler)
     }
 
-    fn if_some_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> Option<U> {
+    fn if_some_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<Option<U>> {
         self.with_untracked(|value| value.as_ref().map(f))
     }
 }

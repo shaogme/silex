@@ -33,8 +33,8 @@ where
     S: RxBase,
     O: ?Sized + RxData,
 {
-    fn try_track(&self) -> SilexResult<()> {
-        self.source.try_track()
+    fn track(&self) -> SilexResult<()> {
+        self.source.track()
     }
 }
 
@@ -44,12 +44,11 @@ where
     F: Fn(&S::Value) -> &O,
     O: ?Sized + RxData,
 {
-    fn try_with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> SilexResult<U> {
-        self.source.try_with(|value| f((self.getter)(value)))
+    fn with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> SilexResult<U> {
+        self.source.with(|value| f((self.getter)(value)))
     }
 
-    fn try_with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> SilexResult<U> {
-        self.source
-            .try_with_untracked(|value| f((self.getter)(value)))
+    fn with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> SilexResult<U> {
+        self.source.with_untracked(|value| f((self.getter)(value)))
     }
 }

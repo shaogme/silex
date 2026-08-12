@@ -6,6 +6,7 @@ use silex_macros::{component, tw};
 #[component]
 pub fn Switch<'scope>(
     scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
     #[prop(into)]
     #[chain(default)]
     checked: Signal<'scope, bool>,
@@ -19,7 +20,7 @@ pub fn Switch<'scope>(
     #[chain(default)]
     on_change: Callback<'scope, bool>,
 ) -> impl View<'scope> {
-    let track_cls = rx!(scope; {
+    let track_cls = rx!(scope; error_handler; {
         let is_checked = *$checked;
         let is_sm = $size.as_str() == "sm";
 
@@ -45,7 +46,7 @@ pub fn Switch<'scope>(
         }
     });
 
-    let thumb_cls = rx!(scope; {
+    let thumb_cls = rx!(scope; error_handler; {
         let is_checked = *$checked;
         let is_sm = $size.as_str() == "sm";
 
@@ -64,7 +65,7 @@ pub fn Switch<'scope>(
         }
     });
 
-    button(span(()).class(thumb_cls))
+    Ok(button(span(()).class(thumb_cls))
         .class(track_cls)
-        .on_click(move |_| -> SilexResult<()> { on_change.invoke(!checked.try_get()?) })
+        .on_click(move |_| -> SilexResult<()> { on_change.invoke(!checked.get()?) }))
 }

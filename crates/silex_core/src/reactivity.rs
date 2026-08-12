@@ -7,8 +7,6 @@ mod signal;
 mod slice;
 mod stored_value;
 
-pub mod dispatch;
-
 pub use effect::Effect;
 pub use memo::Memo;
 pub use mutation::{Mutation, MutationState};

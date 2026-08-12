@@ -1,5 +1,5 @@
 use ref_str::LocalStaticRefStr;
-use silex_core::{ErrorReporter, ReactiveError, Runtime, RuntimeInputs, RxGet, Scope, SilexResult};
+use silex_core::{ErrorReporter, ReactiveError, Runtime, RuntimeInputs, Scope, SilexResult};
 use silex_persist::{
     BackendEvent, BackendEventSink, BackendSubscribeError, BackendSubscription, DecodePolicy,
     NoDefault, ParseCodec, PersistCodec, PersistMode, PersistenceBackend, PersistenceError,
@@ -15,7 +15,9 @@ use std::{
 type SubscriptionMap = Rc<RefCell<HashMap<LocalStaticRefStr, Vec<(usize, BackendEventSink)>>>>;
 
 fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
-    scope.error_handler(|_| {})
+    scope
+        .error_handler(|_| {})
+        .expect("test error handler should be registered")
 }
 
 #[derive(Clone, Default)]
@@ -363,15 +365,24 @@ where
 #[test]
 fn write_default_if_missing_persists_default() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    let _ = runtime.child(|scope| {
         let backend = MockBackend::default();
         let value = parse_builder(scope, backend.clone(), "counter")
             .default(7)
-            .build();
-        assert_eq!(value.get_untracked(), 7);
+            .build()
+            .expect("persistent binding should build");
+        assert_eq!(
+            value
+                .get_untracked()
+                .expect("reactive value should be readable"),
+            7
+        );
         assert_eq!(backend.get("counter").unwrap(), Some("7".to_string()));
         assert_eq!(
-            value.state().get_untracked(),
+            value
+                .state()
+                .get_untracked()
+                .expect("reactive value should be readable"),
             PersistenceState::Ready("7".to_string())
         );
     });
@@ -380,20 +391,29 @@ fn write_default_if_missing_persists_default() {
 #[test]
 fn decode_error_remove_and_use_default_keeps_decode_error_state() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    let _ = runtime.child(|scope| {
         let backend = MockBackend::with_value("counter", "bad");
         let value = parse_builder(scope, backend.clone(), "counter")
             .on_decode_error(DecodePolicy::RemoveAndUseDefault)
             .default(5)
-            .build();
-        assert_eq!(value.get_untracked(), 5);
+            .build()
+            .expect("persistent binding should build");
+        assert_eq!(
+            value
+                .get_untracked()
+                .expect("reactive value should be readable"),
+            5
+        );
         assert_eq!(backend.get("counter").unwrap(), None);
         assert_eq!(
             backend.removed.borrow().as_slice(),
             &["counter".to_string()]
         );
         assert!(matches!(
-            value.state().get_untracked(),
+            value
+                .state()
+                .get_untracked()
+                .expect("reactive value should be readable"),
             PersistenceState::DecodeError(_)
         ));
     });
@@ -402,16 +422,25 @@ fn decode_error_remove_and_use_default_keeps_decode_error_state() {
 #[test]
 fn decode_error_use_default_preserves_invalid_raw() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    let _ = runtime.child(|scope| {
         let backend = MockBackend::with_value("counter", "bad");
         let value = parse_builder(scope, backend.clone(), "counter")
             .on_decode_error(DecodePolicy::UseDefault)
             .default(11)
-            .build();
-        assert_eq!(value.get_untracked(), 11);
+            .build()
+            .expect("persistent binding should build");
+        assert_eq!(
+            value
+                .get_untracked()
+                .expect("reactive value should be readable"),
+            11
+        );
         assert_eq!(backend.get("counter").unwrap(), Some("bad".to_string()));
         assert!(matches!(
-            value.state().get_untracked(),
+            value
+                .state()
+                .get_untracked()
+                .expect("reactive value should be readable"),
             PersistenceState::DecodeError(_)
         ));
     });
@@ -420,12 +449,13 @@ fn decode_error_use_default_preserves_invalid_raw() {
 #[test]
 fn write_default_always_normalizes_existing_raw() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    let _ = runtime.child(|scope| {
         let backend = MockBackend::with_value("counter", "007");
         let _value = parse_builder(scope, backend.clone(), "counter")
             .write_default(WriteDefault::Always)
             .default(5)
-            .build();
+            .build()
+            .expect("persistent binding should build");
         assert_eq!(backend.get("counter").unwrap(), Some("7".to_string()));
         assert_eq!(
             backend.writes.borrow().as_slice(),
@@ -437,12 +467,23 @@ fn write_default_always_normalizes_existing_raw() {
 #[test]
 fn initial_default_write_failure_is_visible() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    let _ = runtime.child(|scope| {
         let backend = MockBackend::failing_writes();
-        let value = parse_builder(scope, backend, "counter").default(3).build();
-        assert_eq!(value.get_untracked(), 3);
+        let value = parse_builder(scope, backend, "counter")
+            .default(3)
+            .build()
+            .expect("persistent binding should build");
         assert_eq!(
-            value.state().get_untracked(),
+            value
+                .get_untracked()
+                .expect("reactive value should be readable"),
+            3
+        );
+        assert_eq!(
+            value
+                .state()
+                .get_untracked()
+                .expect("reactive value should be readable"),
             PersistenceState::WriteError("mock backend write failure".to_string())
         );
     });
@@ -451,7 +492,7 @@ fn initial_default_write_failure_is_visible() {
 #[test]
 fn manual_encode_failure_sets_write_error_for_effect_and_flush() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    let _ = runtime.child(|scope| {
         let backend = MockBackend::default();
         let codec = FailingEncodeCodec {
             fail: Rc::new(Cell::new(false)),
@@ -463,18 +504,25 @@ fn manual_encode_failure_sets_write_error_for_effect_and_flush() {
             .mode(PersistMode::Manual)
             .sync(SyncStrategy::None)
             .default(1)
-            .build();
+            .build()
+            .expect("persistent binding should build");
 
         fail.set(true);
-        value.set(2);
+        value.set(2).expect("reactive update should succeed");
         assert_eq!(
-            value.state().get_untracked(),
+            value
+                .state()
+                .get_untracked()
+                .expect("reactive value should be readable"),
             PersistenceState::WriteError("mock codec encode failure".to_string())
         );
 
-        value.set(3);
+        value.set(3).expect("reactive update should succeed");
         assert_eq!(
-            value.state().get_untracked(),
+            value
+                .state()
+                .get_untracked()
+                .expect("reactive value should be readable"),
             PersistenceState::WriteError("mock codec encode failure".to_string())
         );
         assert_eq!(
@@ -484,7 +532,10 @@ fn manual_encode_failure_sets_write_error_for_effect_and_flush() {
             ))
         );
         assert_eq!(
-            value.state().get_untracked(),
+            value
+                .state()
+                .get_untracked()
+                .expect("reactive value should be readable"),
             PersistenceState::WriteError("mock codec encode failure".to_string())
         );
     });
@@ -493,15 +544,21 @@ fn manual_encode_failure_sets_write_error_for_effect_and_flush() {
 #[test]
 fn optional_none_flush_removes_backend_key() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    let _ = runtime.child(|scope| {
         let backend = MockBackend::with_value("name", "alice");
         let value = Persistent::builder(scope, "name", test_handler(scope))
             .backend(backend.clone())
             .string()
             .optional()
-            .build();
-        assert_eq!(value.get_untracked(), Some("alice".to_string()));
-        value.set(None);
+            .build()
+            .expect("persistent binding should build");
+        assert_eq!(
+            value
+                .get_untracked()
+                .expect("reactive value should be readable"),
+            Some("alice".to_string())
+        );
+        value.set(None).expect("reactive update should succeed");
         value.flush().unwrap();
         assert_eq!(backend.get("name").unwrap(), None);
         assert_eq!(backend.removed.borrow().as_slice(), &["name".to_string()]);
@@ -511,11 +568,12 @@ fn optional_none_flush_removes_backend_key() {
 #[test]
 fn external_remove_uses_default_without_rewriting_backend() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    let _ = runtime.child(|scope| {
         let backend = MockBackend::with_value("counter", "7");
         let value = parse_builder(scope, backend.clone(), "counter")
             .default(5)
-            .build();
+            .build()
+            .expect("persistent binding should build");
         backend.state.borrow_mut().remove("counter");
         backend.emit(
             "counter",
@@ -523,11 +581,19 @@ fn external_remove_uses_default_without_rewriting_backend() {
                 key: "counter".into(),
             },
         );
-        assert_eq!(value.get_untracked(), 5);
+        assert_eq!(
+            value
+                .get_untracked()
+                .expect("reactive value should be readable"),
+            5
+        );
         assert_eq!(backend.get("counter").unwrap(), None);
         assert!(backend.removed.borrow().is_empty());
         assert_eq!(
-            value.state().get_untracked(),
+            value
+                .state()
+                .get_untracked()
+                .expect("reactive value should be readable"),
             PersistenceState::Ready(String::new())
         );
     });
@@ -536,13 +602,14 @@ fn external_remove_uses_default_without_rewriting_backend() {
 #[test]
 fn explicit_remove_does_not_skip_the_next_immediate_or_manual_write() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    let _ = runtime.child(|scope| {
         let immediate_backend = MockBackend::default();
         let immediate = parse_builder(scope, immediate_backend.clone(), "immediate-remove")
             .default(5)
-            .build();
+            .build()
+            .expect("persistent binding should build");
         immediate.remove().unwrap();
-        immediate.set(9);
+        immediate.set(9).expect("reactive update should succeed");
         assert_eq!(
             immediate_backend.get("immediate-remove").unwrap(),
             Some("9".to_string())
@@ -553,11 +620,15 @@ fn explicit_remove_does_not_skip_the_next_immediate_or_manual_write() {
             .mode(PersistMode::Manual)
             .sync(SyncStrategy::None)
             .default(5)
-            .build();
+            .build()
+            .expect("persistent binding should build");
         manual.remove().unwrap();
-        manual.set(9);
+        manual.set(9).expect("reactive update should succeed");
         assert_eq!(
-            manual.state().get_untracked(),
+            manual
+                .state()
+                .get_untracked()
+                .expect("reactive value should be readable"),
             PersistenceState::Dirty("9".to_string())
         );
         manual.flush().unwrap();
@@ -571,14 +642,15 @@ fn explicit_remove_does_not_skip_the_next_immediate_or_manual_write() {
 #[test]
 fn missing_reload_with_default_value_does_not_skip_the_next_write() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    let _ = runtime.child(|scope| {
         let backend = MockBackend::default();
         let value = parse_builder(scope, backend.clone(), "reload-missing")
             .write_default(WriteDefault::Never)
             .default(5)
-            .build();
+            .build()
+            .expect("persistent binding should build");
         value.reload().unwrap();
-        value.set(6);
+        value.set(6).expect("reactive update should succeed");
         assert_eq!(
             backend.get("reload-missing").unwrap(),
             Some("6".to_string())
@@ -589,11 +661,12 @@ fn missing_reload_with_default_value_does_not_skip_the_next_write() {
 #[test]
 fn external_remove_with_default_value_does_not_skip_the_next_write() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    let _ = runtime.child(|scope| {
         let backend = MockBackend::with_value("same-default", "5");
         let value = parse_builder(scope, backend.clone(), "same-default")
             .default(5)
-            .build();
+            .build()
+            .expect("persistent binding should build");
         backend.state.borrow_mut().remove("same-default");
         backend.emit(
             "same-default",
@@ -601,7 +674,7 @@ fn external_remove_with_default_value_does_not_skip_the_next_write() {
                 key: "same-default".into(),
             },
         );
-        value.set(6);
+        value.set(6).expect("reactive update should succeed");
         assert_eq!(backend.get("same-default").unwrap(), Some("6".to_string()));
     });
 }
@@ -609,12 +682,13 @@ fn external_remove_with_default_value_does_not_skip_the_next_write() {
 #[test]
 fn ignored_external_remove_does_not_skip_the_next_write() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    let _ = runtime.child(|scope| {
         let backend = MockBackend::with_value("ignored-remove", "7");
         let value = parse_builder(scope, backend.clone(), "ignored-remove")
             .on_remove(RemovePolicy::Ignore)
             .default(5)
-            .build();
+            .build()
+            .expect("persistent binding should build");
         backend.state.borrow_mut().remove("ignored-remove");
         backend.emit(
             "ignored-remove",
@@ -622,8 +696,13 @@ fn ignored_external_remove_does_not_skip_the_next_write() {
                 key: "ignored-remove".into(),
             },
         );
-        assert_eq!(value.get_untracked(), 7);
-        value.set(8);
+        assert_eq!(
+            value
+                .get_untracked()
+                .expect("reactive value should be readable"),
+            7
+        );
+        value.set(8).expect("reactive update should succeed");
         assert_eq!(
             backend.get("ignored-remove").unwrap(),
             Some("8".to_string())
@@ -634,18 +713,21 @@ fn ignored_external_remove_does_not_skip_the_next_write() {
 #[test]
 fn local_write_after_external_fallback_before_effect_flush_is_persisted() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    let _ = runtime.child(|scope| {
         let backend = MockBackend::with_value("same-transaction", "7");
         let value = parse_builder(scope, backend.clone(), "same-transaction")
             .default(5)
-            .build();
-        let (trigger, set_trigger) = scope.signal(false);
+            .build()
+            .expect("persistent binding should build");
+        let (trigger, set_trigger) = scope
+            .signal(false)
+            .expect("trigger signal should be created");
         let value_for_effect = value;
         let backend_for_effect = backend.clone();
         scope
             .effect(
                 move || -> SilexResult<()> {
-                    if trigger.try_get()? {
+                    if trigger.get()? {
                         backend_for_effect
                             .state
                             .borrow_mut()
@@ -656,7 +738,9 @@ fn local_write_after_external_fallback_before_effect_flush_is_persisted() {
                                 key: "same-transaction".into(),
                             },
                         );
-                        value_for_effect.set(6);
+                        value_for_effect
+                            .set(6)
+                            .expect("reactive update should succeed");
                     }
                     Ok(())
                 },
@@ -664,7 +748,9 @@ fn local_write_after_external_fallback_before_effect_flush_is_persisted() {
             )
             .expect("persistence test effect can be registered");
 
-        set_trigger.set(true);
+        set_trigger
+            .set(true)
+            .expect("reactive update should succeed");
         assert_eq!(
             backend.get("same-transaction").unwrap(),
             Some("6".to_string())
@@ -675,7 +761,7 @@ fn local_write_after_external_fallback_before_effect_flush_is_persisted() {
 #[test]
 fn codec_callbacks_can_reenter_the_same_binding() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    let _ = runtime.child(|scope| {
         let backend = MockBackend::with_value("codec-reentry", "1");
         let binding_slot: Rc<RefCell<Option<Persistent<'_, i32>>>> = Rc::new(RefCell::new(None));
         let encode_called = Rc::new(Cell::new(false));
@@ -721,11 +807,12 @@ fn codec_callbacks_can_reenter_the_same_binding() {
             .backend(backend.clone())
             .custom_codec::<i32, _>(codec)
             .default(1)
-            .build();
+            .build()
+            .expect("persistent binding should build");
         *binding_slot.borrow_mut() = Some(binding);
 
         binding.reload().unwrap();
-        binding.set(2);
+        binding.set(2).expect("reactive update should succeed");
         assert!(decode_called.get());
         assert!(encode_called.get());
         assert!(should_remove_called.get());
@@ -736,7 +823,7 @@ fn codec_callbacks_can_reenter_the_same_binding() {
 #[test]
 fn default_callback_can_reenter_the_same_binding() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    let _ = runtime.child(|scope| {
         let backend = MockBackend::with_value("default-reentry", "7");
         let binding_slot: Rc<RefCell<Option<Persistent<'_, i32>>>> = Rc::new(RefCell::new(None));
         let called = Rc::new(Cell::new(false));
@@ -752,7 +839,8 @@ fn default_callback_can_reenter_the_same_binding() {
                 }
                 5
             })
-            .build();
+            .build()
+            .expect("persistent binding should build");
         *binding_slot.borrow_mut() = Some(binding);
 
         backend.state.borrow_mut().remove("default-reentry");
@@ -763,9 +851,17 @@ fn default_callback_can_reenter_the_same_binding() {
             },
         );
         assert!(called.get());
-        assert_eq!(binding.get_untracked(), 5);
         assert_eq!(
-            binding.state().get_untracked(),
+            binding
+                .get_untracked()
+                .expect("reactive value should be readable"),
+            5
+        );
+        assert_eq!(
+            binding
+                .state()
+                .get_untracked()
+                .expect("reactive value should be readable"),
             PersistenceState::Ready(String::new())
         );
     });
@@ -774,7 +870,7 @@ fn default_callback_can_reenter_the_same_binding() {
 #[test]
 fn backend_callbacks_can_reenter_the_same_binding() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    let _ = runtime.child(|scope| {
         let inner = MockBackend::with_value("backend-reentry", "1");
         let binding_slot: Rc<RefCell<Option<Persistent<'_, i32>>>> = Rc::new(RefCell::new(None));
         let get_called = Rc::new(Cell::new(false));
@@ -821,11 +917,12 @@ fn backend_callbacks_can_reenter_the_same_binding() {
             .backend(backend)
             .parse::<i32>()
             .default(1)
-            .build();
+            .build()
+            .expect("persistent binding should build");
         *binding_slot.borrow_mut() = Some(binding);
 
         binding.reload().unwrap();
-        binding.set(2);
+        binding.set(2).expect("reactive update should succeed");
         binding.remove().unwrap();
         assert!(get_called.get());
         assert!(set_called.get());
@@ -837,7 +934,7 @@ fn backend_callbacks_can_reenter_the_same_binding() {
 #[test]
 fn panicking_codec_callback_restores_the_controller_payload() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    let _ = runtime.child(|scope| {
         let backend = MockBackend::with_value("codec-panic", "1");
         let should_panic = Rc::new(Cell::new(false));
         let panic_for_callback = should_panic.clone();
@@ -854,12 +951,13 @@ fn panicking_codec_callback_restores_the_controller_payload() {
             .backend(backend.clone())
             .custom_codec::<i32, _>(codec)
             .default(1)
-            .build();
+            .build()
+            .expect("persistent binding should build");
 
         should_panic.set(true);
         let panic = catch_unwind(AssertUnwindSafe(|| binding.set(2)));
         assert!(panic.is_err());
-        binding.set(3);
+        binding.set(3).expect("reactive update should succeed");
         assert_eq!(backend.get("codec-panic").unwrap(), Some("3".to_string()));
     });
 }
@@ -868,10 +966,11 @@ fn panicking_codec_callback_restores_the_controller_payload() {
 fn subscription_is_removed_when_scope_is_disposed() {
     let backend = MockBackend::with_value("counter", "7");
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    let _ = runtime.child(|scope| {
         let _value = parse_builder(scope, backend.clone(), "counter")
             .default(5)
-            .build();
+            .build()
+            .expect("persistent binding should build");
         assert_eq!(backend.subscriptions.borrow().len(), 1);
     });
     assert!(backend.subscriptions.borrow().is_empty());
@@ -881,13 +980,14 @@ fn subscription_is_removed_when_scope_is_disposed() {
 fn stale_persistent_operations_return_no_such_node_during_root_cleanup() {
     let backend = MockBackend::default();
     let mut runtime = Runtime::new();
-    let root = runtime.run();
+    let root = runtime.run().expect("root should be created");
     let errors = Rc::new(RefCell::new(Vec::new()));
 
     root.with_scope(|scope| {
         let value = parse_builder(scope, backend.clone(), "stale-cleanup")
             .default(1)
-            .build();
+            .build()
+            .expect("persistent binding should build");
         let errors_for_cleanup = errors.clone();
         scope
             .on_cleanup(
@@ -902,10 +1002,10 @@ fn stale_persistent_operations_return_no_such_node_during_root_cleanup() {
                         .borrow_mut()
                         .push(value.flush().expect_err("stale flush must fail"));
                     assert_eq!(
-                        value.try_set(2),
+                        value.set(2),
                         Err(PersistenceError::Reactivity(ReactiveError::NoSuchNode))
                     );
-                    value.reset();
+                    value.reset()?;
                     Ok(())
                 },
                 test_handler(scope),
@@ -932,7 +1032,7 @@ fn stale_persistent_operations_return_no_such_node_during_root_cleanup() {
 #[test]
 fn subscription_configuration_failure_does_not_create_binding_nodes() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    let _ = runtime.child(|scope| {
         let backend = MockBackend::failing_subscription();
         let marker = Rc::new(());
         let marker_count_before = Rc::strong_count(&marker);
@@ -944,7 +1044,7 @@ fn subscription_configuration_failure_does_not_create_binding_nodes() {
                     1
                 }
             })
-            .try_build();
+            .build();
 
         assert!(matches!(
             result,
@@ -959,7 +1059,7 @@ fn subscription_configuration_failure_does_not_create_binding_nodes() {
 #[test]
 fn subscription_error_rolls_back_resources_created_before_failure() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    let _ = runtime.child(|scope| {
         let backend = FailingSubscriptionResourceBackend::default();
         let marker = Rc::new(());
         let marker_count_before = Rc::strong_count(&marker);
@@ -971,7 +1071,7 @@ fn subscription_error_rolls_back_resources_created_before_failure() {
                     1
                 }
             })
-            .try_build();
+            .build();
 
         assert!(matches!(
             result,
@@ -987,13 +1087,17 @@ fn subscription_error_rolls_back_resources_created_before_failure() {
 #[test]
 fn foreign_runtime_try_build_leaves_no_binding_resources() {
     let mut foreign_runtime = Runtime::new();
-    let foreign_inputs = foreign_runtime.child(|scope| {
-        let (_, write) = scope.signal(1_i32);
-        write.runtime_inputs()
-    });
+    let foreign_inputs = foreign_runtime
+        .child(|scope| {
+            let (_, write) = scope
+                .signal(1_i32)
+                .expect("foreign input signal should be created");
+            write.runtime_inputs()
+        })
+        .expect("foreign runtime inputs should be collected");
 
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    let _ = runtime.child(|scope| {
         let marker = Rc::new(());
         let backend = ForeignRuntimeBackend {
             inputs: foreign_inputs.clone(),
@@ -1010,7 +1114,7 @@ fn foreign_runtime_try_build_leaves_no_binding_resources() {
                 move || MarkerValue(marker.clone())
             });
 
-        let result = builder.try_build();
+        let result = builder.build();
 
         assert!(matches!(
             result,
@@ -1025,18 +1129,27 @@ fn foreign_runtime_try_build_leaves_no_binding_resources() {
 #[test]
 fn synchronous_subscription_event_is_replayed_after_initialization() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    let _ = runtime.child(|scope| {
         let backend = MockBackend::with_subscription_event(BackendEvent::Set {
             key: "synchronous-event".into(),
             value: "9".to_string(),
         });
         let value = parse_builder(scope, backend, "synchronous-event")
             .default(1)
-            .build();
+            .build()
+            .expect("persistent binding should build");
 
-        assert_eq!(value.get_untracked(), 9);
         assert_eq!(
-            value.state().get_untracked(),
+            value
+                .get_untracked()
+                .expect("reactive value should be readable"),
+            9
+        );
+        assert_eq!(
+            value
+                .state()
+                .get_untracked()
+                .expect("reactive value should be readable"),
             PersistenceState::Ready("9".to_string())
         );
     });
@@ -1045,21 +1158,28 @@ fn synchronous_subscription_event_is_replayed_after_initialization() {
 #[test]
 fn manual_mode_marks_value_dirty_until_flush() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    let _ = runtime.child(|scope| {
         let backend = MockBackend::default();
         let value = parse_builder(scope, backend.clone(), "counter")
             .mode(PersistMode::Manual)
             .sync(SyncStrategy::None)
             .default(1)
-            .build();
-        value.set(2);
+            .build()
+            .expect("persistent binding should build");
+        value.set(2).expect("reactive update should succeed");
         assert_eq!(
-            value.state().get_untracked(),
+            value
+                .state()
+                .get_untracked()
+                .expect("reactive value should be readable"),
             PersistenceState::Dirty("2".to_string())
         );
         value.flush().unwrap();
         assert_eq!(
-            value.state().get_untracked(),
+            value
+                .state()
+                .get_untracked()
+                .expect("reactive value should be readable"),
             PersistenceState::Ready("2".to_string())
         );
     });
@@ -1068,7 +1188,7 @@ fn manual_mode_marks_value_dirty_until_flush() {
 #[test]
 fn initial_decode_removal_failure_sets_write_error() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    let _ = runtime.child(|scope| {
         let backend = MockBackend::failing_removes();
         backend
             .state
@@ -1078,9 +1198,13 @@ fn initial_decode_removal_failure_sets_write_error() {
             .write_default(WriteDefault::Always)
             .on_decode_error(DecodePolicy::RemoveAndUseDefault)
             .default(1)
-            .build();
+            .build()
+            .expect("persistent binding should build");
         assert_eq!(
-            value.state().get_untracked(),
+            value
+                .state()
+                .get_untracked()
+                .expect("reactive value should be readable"),
             PersistenceState::WriteError("mock backend remove failure".to_string())
         );
         assert_eq!(backend.get("counter").unwrap(), Some("bad".to_string()));
@@ -1090,12 +1214,13 @@ fn initial_decode_removal_failure_sets_write_error() {
 #[test]
 fn external_decode_removal_failure_sets_write_error() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    let _ = runtime.child(|scope| {
         let backend = MockBackend::with_value("counter", "1");
         let value = parse_builder(scope, backend.clone(), "counter")
             .on_decode_error(DecodePolicy::RemoveAndUseDefault)
             .default(1)
-            .build();
+            .build()
+            .expect("persistent binding should build");
         *backend.fail_removes.borrow_mut() = true;
         backend.emit(
             "counter",
@@ -1105,7 +1230,10 @@ fn external_decode_removal_failure_sets_write_error() {
             },
         );
         assert_eq!(
-            value.state().get_untracked(),
+            value
+                .state()
+                .get_untracked()
+                .expect("reactive value should be readable"),
             PersistenceState::WriteError("mock backend remove failure".to_string())
         );
     });
@@ -1114,33 +1242,45 @@ fn external_decode_removal_failure_sets_write_error() {
 #[test]
 fn write_default_never_and_immediate_none_cover_missing_and_existing_values() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    let _ = runtime.child(|scope| {
         let missing_backend = MockBackend::default();
         let missing = parse_builder(scope, missing_backend.clone(), "matrix-missing")
             .write_default(WriteDefault::Never)
             .on_remove(RemovePolicy::Ignore)
             .sync(SyncStrategy::None)
             .default(5)
-            .build();
-        assert_eq!(missing.get_untracked(), 5);
+            .build()
+            .expect("persistent binding should build");
+        assert_eq!(
+            missing
+                .get_untracked()
+                .expect("reactive value should be readable"),
+            5
+        );
         assert_eq!(missing_backend.get("matrix-missing").unwrap(), None);
         assert!(missing_backend.subscriptions.borrow().is_empty());
         assert_eq!(
-            missing.state().get_untracked(),
+            missing
+                .state()
+                .get_untracked()
+                .expect("reactive value should be readable"),
             PersistenceState::Ready(String::new())
         );
 
-        missing.set(5);
+        missing.set(5).expect("reactive update should succeed");
         assert_eq!(
             missing_backend.get("matrix-missing").unwrap(),
             Some("5".to_string())
         );
         assert_eq!(
-            missing.state().get_untracked(),
+            missing
+                .state()
+                .get_untracked()
+                .expect("reactive value should be readable"),
             PersistenceState::Ready("5".to_string())
         );
 
-        missing.set(6);
+        missing.set(6).expect("reactive update should succeed");
         assert_eq!(
             missing_backend.get("matrix-missing").unwrap(),
             Some("6".to_string())
@@ -1153,7 +1293,10 @@ fn write_default_never_and_immediate_none_cover_missing_and_existing_values() {
             ]
         );
         assert_eq!(
-            missing.state().get_untracked(),
+            missing
+                .state()
+                .get_untracked()
+                .expect("reactive value should be readable"),
             PersistenceState::Ready("6".to_string())
         );
 
@@ -1163,10 +1306,19 @@ fn write_default_never_and_immediate_none_cover_missing_and_existing_values() {
             .on_remove(RemovePolicy::Ignore)
             .sync(SyncStrategy::None)
             .default(5)
-            .build();
-        assert_eq!(existing.get_untracked(), 7);
+            .build()
+            .expect("persistent binding should build");
         assert_eq!(
-            existing.state().get_untracked(),
+            existing
+                .get_untracked()
+                .expect("reactive value should be readable"),
+            7
+        );
+        assert_eq!(
+            existing
+                .state()
+                .get_untracked()
+                .expect("reactive value should be readable"),
             PersistenceState::Ready("7".to_string())
         );
         assert!(existing_backend.writes.borrow().is_empty());
@@ -1180,13 +1332,21 @@ fn write_default_never_and_immediate_none_cover_missing_and_existing_values() {
                 key: "matrix-existing".into(),
             },
         );
-        assert_eq!(existing.get_untracked(), 7);
         assert_eq!(
-            existing.state().get_untracked(),
+            existing
+                .get_untracked()
+                .expect("reactive value should be readable"),
+            7
+        );
+        assert_eq!(
+            existing
+                .state()
+                .get_untracked()
+                .expect("reactive value should be readable"),
             PersistenceState::Ready("7".to_string())
         );
 
-        existing.set(8);
+        existing.set(8).expect("reactive update should succeed");
         assert_eq!(
             existing_backend.get("matrix-existing").unwrap(),
             Some("8".to_string())
@@ -1201,12 +1361,13 @@ fn write_default_never_and_immediate_none_cover_missing_and_existing_values() {
 #[test]
 fn remove_ignore_matrix_clears_external_state_without_skipping_local_writes() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    let _ = runtime.child(|scope| {
         let non_default_backend = MockBackend::with_value("ignore-non-default", "7");
         let non_default = parse_builder(scope, non_default_backend.clone(), "ignore-non-default")
             .on_remove(RemovePolicy::Ignore)
             .default(5)
-            .build();
+            .build()
+            .expect("persistent binding should build");
         non_default_backend
             .state
             .borrow_mut()
@@ -1217,12 +1378,20 @@ fn remove_ignore_matrix_clears_external_state_without_skipping_local_writes() {
                 key: "ignore-non-default".into(),
             },
         );
-        assert_eq!(non_default.get_untracked(), 7);
         assert_eq!(
-            non_default.state().get_untracked(),
+            non_default
+                .get_untracked()
+                .expect("reactive value should be readable"),
+            7
+        );
+        assert_eq!(
+            non_default
+                .state()
+                .get_untracked()
+                .expect("reactive value should be readable"),
             PersistenceState::Ready(String::new())
         );
-        non_default.set(8);
+        non_default.set(8).expect("reactive update should succeed");
         assert_eq!(
             non_default_backend.get("ignore-non-default").unwrap(),
             Some("8".to_string())
@@ -1233,7 +1402,8 @@ fn remove_ignore_matrix_clears_external_state_without_skipping_local_writes() {
             .write_default(WriteDefault::Never)
             .on_remove(RemovePolicy::Ignore)
             .default(5)
-            .build();
+            .build()
+            .expect("persistent binding should build");
         default_backend.state.borrow_mut().remove("ignore-default");
         default_backend.emit(
             "ignore-default",
@@ -1241,12 +1411,20 @@ fn remove_ignore_matrix_clears_external_state_without_skipping_local_writes() {
                 key: "ignore-default".into(),
             },
         );
-        assert_eq!(default.get_untracked(), 5);
         assert_eq!(
-            default.state().get_untracked(),
+            default
+                .get_untracked()
+                .expect("reactive value should be readable"),
+            5
+        );
+        assert_eq!(
+            default
+                .state()
+                .get_untracked()
+                .expect("reactive value should be readable"),
             PersistenceState::Ready(String::new())
         );
-        default.set(6);
+        default.set(6).expect("reactive update should succeed");
         assert_eq!(
             default_backend.get("ignore-default").unwrap(),
             Some("6".to_string())
@@ -1259,7 +1437,8 @@ fn remove_ignore_matrix_clears_external_state_without_skipping_local_writes() {
             .sync(SyncStrategy::CrossContext)
             .on_remove(RemovePolicy::Ignore)
             .default(5)
-            .build();
+            .build()
+            .expect("persistent binding should build");
         manual_backend.state.borrow_mut().remove("ignore-manual");
         manual_backend.emit(
             "ignore-manual",
@@ -1268,12 +1447,18 @@ fn remove_ignore_matrix_clears_external_state_without_skipping_local_writes() {
             },
         );
         assert_eq!(
-            manual.state().get_untracked(),
+            manual
+                .state()
+                .get_untracked()
+                .expect("reactive value should be readable"),
             PersistenceState::Ready(String::new())
         );
-        manual.set(8);
+        manual.set(8).expect("reactive update should succeed");
         assert_eq!(
-            manual.state().get_untracked(),
+            manual
+                .state()
+                .get_untracked()
+                .expect("reactive value should be readable"),
             PersistenceState::Dirty("8".to_string())
         );
         manual.flush().unwrap();
@@ -1282,7 +1467,10 @@ fn remove_ignore_matrix_clears_external_state_without_skipping_local_writes() {
             Some("8".to_string())
         );
         assert_eq!(
-            manual.state().get_untracked(),
+            manual
+                .state()
+                .get_untracked()
+                .expect("reactive value should be readable"),
             PersistenceState::Ready("8".to_string())
         );
     });
@@ -1291,7 +1479,7 @@ fn remove_ignore_matrix_clears_external_state_without_skipping_local_writes() {
 #[test]
 fn write_default_never_manual_none_stays_ready_until_a_local_change() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    let _ = runtime.child(|scope| {
         let backend = MockBackend::default();
         let value = parse_builder(scope, backend.clone(), "never-manual")
             .write_default(WriteDefault::Never)
@@ -1299,22 +1487,32 @@ fn write_default_never_manual_none_stays_ready_until_a_local_change() {
             .sync(SyncStrategy::None)
             .on_remove(RemovePolicy::Ignore)
             .default(1)
-            .build();
+            .build()
+            .expect("persistent binding should build");
         assert_eq!(
-            value.state().get_untracked(),
+            value
+                .state()
+                .get_untracked()
+                .expect("reactive value should be readable"),
             PersistenceState::Ready(String::new())
         );
         assert_eq!(backend.get("never-manual").unwrap(), None);
 
-        value.set(2);
+        value.set(2).expect("reactive update should succeed");
         assert_eq!(
-            value.state().get_untracked(),
+            value
+                .state()
+                .get_untracked()
+                .expect("reactive value should be readable"),
             PersistenceState::Dirty("2".to_string())
         );
         value.flush().unwrap();
         assert_eq!(backend.get("never-manual").unwrap(), Some("2".to_string()));
         assert_eq!(
-            value.state().get_untracked(),
+            value
+                .state()
+                .get_untracked()
+                .expect("reactive value should be readable"),
             PersistenceState::Ready("2".to_string())
         );
     });

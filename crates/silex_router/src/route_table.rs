@@ -403,10 +403,7 @@ impl RouteMatcher {
             .map(|route| route.pattern.as_str())
     }
 
-    pub fn try_matches<'path>(
-        &self,
-        path: &'path str,
-    ) -> Result<Vec<RouteMatch<'path>>, PathError> {
+    pub fn matches<'path>(&self, path: &'path str) -> Result<Vec<RouteMatch<'path>>, PathError> {
         let segments = raw_path_segments(path)?;
         let mut matches = Vec::new();
         self.root
@@ -414,12 +411,8 @@ impl RouteMatcher {
         Ok(matches)
     }
 
-    pub fn matches<'path>(&self, path: &'path str) -> Vec<RouteMatch<'path>> {
-        self.try_matches(path).unwrap_or_default()
-    }
-
     pub fn match_path<'path>(&self, path: &'path str) -> Option<RouteMatch<'path>> {
-        self.try_matches(path).ok()?.into_iter().next()
+        self.matches(path).ok()?.into_iter().next()
     }
 
     pub(crate) fn branch_key(&self, path: &str) -> RouteBranchKey {
@@ -432,7 +425,7 @@ impl RouteMatcher {
     where
         F: FnMut(RouteMatch<'path>) -> Option<T>,
     {
-        self.try_matches(path).ok()?.into_iter().find_map(handler)
+        self.matches(path).ok()?.into_iter().find_map(handler)
     }
 
     fn add_compiled(&mut self, route: CompiledRoute) -> Result<RouteId, RoutePatternError> {
@@ -532,7 +525,7 @@ impl<'scope> RouteTable<'scope> {
     }
 
     pub fn matches<'path>(&self, path: &'path str) -> Result<Vec<RouteMatch<'path>>, PathError> {
-        self.matcher.try_matches(path)
+        self.matcher.matches(path)
     }
 
     pub fn match_path<'path>(&self, path: &'path str) -> Option<RouteMatch<'path>> {
@@ -544,19 +537,8 @@ impl<'scope> RouteTable<'scope> {
     }
 
     /// Compose a child route table below a static path prefix.
-    pub fn nest<F, V>(self, prefix: impl AsRef<str>, child: RouteTable<'scope>, layout: F) -> Self
-    where
-        F: Fn(RouterContext<'scope>, AnyView<'scope>) -> V + 'scope,
-        V: View<'scope> + 'scope,
-    {
-        self.try_nest(prefix, child, layout)
-            .unwrap_or_else(|error| panic!("failed to nest route table: {error}"))
-    }
-
-    /// Fallible form of [`RouteTable::nest`] for callers that validate route
-    /// composition during setup instead of panicking.
-    pub fn try_nest<F, V>(
-        mut self,
+    pub fn nest<F, V>(
+        self,
         prefix: impl AsRef<str>,
         child: RouteTable<'scope>,
         layout: F,
@@ -565,6 +547,7 @@ impl<'scope> RouteTable<'scope> {
         F: Fn(RouterContext<'scope>, AnyView<'scope>) -> V + 'scope,
         V: View<'scope> + 'scope,
     {
+        let mut table = self;
         let prefix = normalize_nest_prefix(prefix.as_ref())?;
         let pattern = if prefix == "/" {
             String::from("/*")
@@ -575,8 +558,8 @@ impl<'scope> RouteTable<'scope> {
             let outlet = RouteOutlet::nested(context, child.clone(), prefix.clone()).into_any();
             Some(layout(context, outlet).into_any())
         })?;
-        self.add_entry(entry)?;
-        Ok(self)
+        table.add_entry(entry)?;
+        Ok(table)
     }
 
     pub fn resolve(&self, path: &str, context: RouterContext<'scope>) -> Option<AnyView<'scope>> {
@@ -589,7 +572,7 @@ impl<'scope> RouteTable<'scope> {
         context: RouterContext<'scope>,
     ) -> Option<(RouteBranchKey, AnyView<'scope>)> {
         self.matcher
-            .try_matches(path)
+            .matches(path)
             .ok()?
             .into_iter()
             .find_map(|matched| {
@@ -630,9 +613,8 @@ impl<'scope> MountedCatalog<'scope> {
         self.table.clone()
     }
 
-    pub fn child_prefix(&self, suffix: impl AsRef<str>) -> RoutePath {
-        let suffix = normalize_path(suffix.as_ref())
-            .unwrap_or_else(|error| panic!("invalid mounted route prefix: {error}"));
+    pub fn child_prefix(&self, suffix: impl AsRef<str>) -> Result<RoutePath, PathError> {
+        let suffix = normalize_path(suffix.as_ref())?;
         let path = if self.prefix.as_str() == "/" {
             suffix
         } else if suffix == "/" {
@@ -640,7 +622,7 @@ impl<'scope> MountedCatalog<'scope> {
         } else {
             format!("{}{}", self.prefix.as_str(), suffix)
         };
-        RoutePath::new(path).unwrap_or_else(|error| panic!("invalid mounted route prefix: {error}"))
+        RoutePath::new(path)
     }
 }
 
@@ -670,7 +652,7 @@ mod tests {
                 .unwrap();
 
         let patterns = matcher
-            .try_matches("/files/new")
+            .matches("/files/new")
             .unwrap()
             .into_iter()
             .map(|matched| matcher.pattern(matched.route_id()).unwrap())
@@ -735,7 +717,7 @@ mod tests {
         let matcher = RouteMatcher::from_patterns(["/users", "/*"]).unwrap();
         assert_eq!(matcher.match_path("/users/").unwrap().route_id(), 0);
         assert!(matcher.match_path("/users//").is_none());
-        assert!(matcher.try_matches("/users//").is_err());
+        assert!(matcher.matches("/users//").is_err());
     }
 
     #[test]
@@ -749,7 +731,7 @@ mod tests {
         ])
         .unwrap();
 
-        let nested = parent.nest("/users", child, |_, outlet| outlet);
+        let nested = parent.nest("/users", child, |_, outlet| outlet).unwrap();
         assert_eq!(nested.matcher().pattern(1), Some("/users/*"));
         assert_eq!(nested.match_path("/users/42").unwrap().route_id(), 1);
         assert_eq!(nested.branch_key("/users/1"), nested.branch_key("/users/2"));
@@ -759,10 +741,6 @@ mod tests {
     fn nested_prefixes_reject_dynamic_segments() {
         let child = RouteTable::from_entries(Vec::<RouteEntry<'static>>::new()).unwrap();
         let parent = RouteTable::from_entries(Vec::<RouteEntry<'static>>::new()).unwrap();
-        assert!(
-            parent
-                .try_nest("/:tenant", child, |_, outlet| outlet)
-                .is_err()
-        );
+        assert!(parent.nest("/:tenant", child, |_, outlet| outlet).is_err());
     }
 }

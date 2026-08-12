@@ -36,7 +36,7 @@ mod super_global {
 
 fn main() {
     let mut runtime = silex_core::Runtime::new();
-    runtime.child(|scope| {
+    let _ = runtime.child(|scope| {
         let _ = public_global::PublicGlobal(scope);
         let _ = crate_global::CrateGlobal(scope);
         let _ = super_global::SuperGlobal(scope);

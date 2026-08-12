@@ -7,7 +7,7 @@ fn main() {
         let _builder = HttpClient::get(
             scope,
             "https://example.test",
-            scope.error_handler(|_| {}),
+            scope.error_handler(|_| {}).unwrap(),
         )
         .json::<String>()
         .cache_with_default(CachePolicy::CacheFirst, "default".to_string());

@@ -1,12 +1,10 @@
-error: lifetime may not live long enough
- --> tests/ui/fail_child_handle_escape.rs:5:62
+error[E0609]: no field `0` on type `Result<(ReadSignal<'_, {integer}>, WriteSignal<'_, {integer}>), SilexError>`
+ --> tests/ui/fail_child_handle_escape.rs:5:78
   |
 5 |     let _escaped = runtime.child(|scope| scope.child(|child| child.signal(1).0));
-  |                                                       ------ ^^^^^^^^^^^^^^^^^ returning this value requires that `'1` must outlive `'2`
-  |                                                       |    |
-  |                                                       |    return type of closure is ReadSignal<'2, i32>
-  |                                                       has type `silex_core::Scope<'1>`
+  |                                                                              ^ unknown field
   |
-  = note: requirement occurs because of the type `ReadSignal<'_, i32>`, which makes the generic argument `'_` invariant
-  = note: the struct `ReadSignal<'scope, T>` is invariant over the parameter `'scope`
-  = help: see <https://doc.rust-lang.org/nomicon/subtyping.html> for more information about variance
+help: one of the expressions' fields has a field of the same name
+  |
+5 |     let _escaped = runtime.child(|scope| scope.child(|child| child.signal(1).unwrap().0));
+  |                                                                              +++++++++

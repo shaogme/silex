@@ -4,7 +4,7 @@ use silex_dom::mounted::MountContext;
 fn builder<'scope>(context: &MountContext<'scope>) -> SilexResult<()> {
     let _scope = context.scope();
     let _parent = context.parent();
-    let _handler = context.scope().error_handler(|_: SilexError| {});
+    let _handler = context.scope().error_handler(|_: SilexError| {})?;
     Ok(())
 }
 

@@ -46,6 +46,7 @@ fn calculate_slider_value(
 #[component]
 pub fn Slider<'scope>(
     scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
     #[prop(into)]
     #[chain(default)]
     value: Signal<'scope, f64>,
@@ -71,9 +72,9 @@ pub fn Slider<'scope>(
     #[chain(default)]
     on_change: Callback<'scope, f64>,
 ) -> impl View<'scope> {
-    let min_val = rx!(scope; *$min);
+    let min_val = rx!(scope; error_handler; *$min);
 
-    let max_val = rx!(scope; {
+    let max_val = rx!(scope; error_handler; {
         let mn = *$min;
         let mx = *$max;
         if mx <= mn {
@@ -87,19 +88,19 @@ pub fn Slider<'scope>(
         }
     });
 
-    let step_val = rx!(scope; {
+    let step_val = rx!(scope; error_handler; {
         let s = *$step;
         if s <= 0.0 { 1.0 } else { s }
     });
 
-    let is_vertical = rx!(scope; $orientation.as_str() == "vertical");
-    let orient = rx!(scope; if *$is_vertical {
+    let is_vertical = rx!(scope; error_handler; $orientation.as_str() == "vertical");
+    let orient = rx!(scope; error_handler; if *$is_vertical {
         "vertical"
     } else {
         "horizontal"
     });
 
-    let root_cls = rx!(scope; {
+    let root_cls = rx!(scope; error_handler; {
         let base = tw!(
             "relative flex w-full touch-none items-center select-none data-[disabled]:opacity-50 data-[orientation=vertical]:h-full data-[orientation=vertical]:min-h-44 data-[orientation=vertical]:w-auto data-[orientation=vertical]:flex-col"
         );
@@ -111,7 +112,7 @@ pub fn Slider<'scope>(
         }
     });
 
-    let pct = rx!(scope; {
+    let pct = rx!(scope; error_handler; {
         let v = *$value;
         let mn = *$min_val;
         let mx = *$max_val;
@@ -122,7 +123,7 @@ pub fn Slider<'scope>(
         }
     });
 
-    let range_style = rx!(scope; {
+    let range_style = rx!(scope; error_handler; {
         let p = *$pct;
         if *$is_vertical {
             format!("height: {}%;", p)
@@ -131,7 +132,7 @@ pub fn Slider<'scope>(
         }
     });
 
-    let thumb_style = rx!(scope; {
+    let thumb_style = rx!(scope; error_handler; {
         let p = *$pct;
         if *$is_vertical {
             format!("bottom: {}%;", p)
@@ -140,13 +141,13 @@ pub fn Slider<'scope>(
         }
     });
 
-    let input_val_str = rx!(scope; $value.to_string());
+    let input_val_str = rx!(scope; error_handler; $value.to_string());
     let is_dragging = Rc::new(Cell::new(false));
 
     let handle_down = {
         let is_dragging = is_dragging.clone();
         move |e: web_sys::PointerEvent| -> SilexResult<()> {
-            if disabled.try_get()? {
+            if disabled.get()? {
                 return Ok(());
             }
             if let Some(target) = e.current_target()
@@ -157,10 +158,10 @@ pub fn Slider<'scope>(
                 let new_val = calculate_slider_value(
                     &e,
                     &el,
-                    is_vertical.try_get()?,
-                    min_val.try_get()?,
-                    max_val.try_get()?,
-                    step_val.try_get()?,
+                    is_vertical.get()?,
+                    min_val.get()?,
+                    max_val.get()?,
+                    step_val.get()?,
                 );
                 on_change.invoke(new_val)?;
             }
@@ -178,10 +179,10 @@ pub fn Slider<'scope>(
                 let new_val = calculate_slider_value(
                     &e,
                     &el,
-                    is_vertical.try_get()?,
-                    min_val.try_get()?,
-                    max_val.try_get()?,
-                    step_val.try_get()?,
+                    is_vertical.get()?,
+                    min_val.get()?,
+                    max_val.get()?,
+                    step_val.get()?,
                 );
                 on_change.invoke(new_val)?;
             }
@@ -211,7 +212,7 @@ pub fn Slider<'scope>(
         Ok(())
     };
 
-    div(chain!(
+    Ok(div(chain!(
         // Hidden Range Input for Accessibility & Keyboard arrows
         input()
             .type_("range")
@@ -244,10 +245,10 @@ pub fn Slider<'scope>(
     ))
     .attr("data-slot", "slider")
     .attr("data-orientation", orient)
-    .attr("data-disabled", rx!(scope; *$disabled))
+    .attr("data-disabled", rx!(scope; error_handler; *$disabled))
     .class(root_cls)
     .on_pointer_down(handle_down)
     .on_pointer_move(handle_move)
     .on_pointer_up(handle_up.clone())
-    .on_pointer_cancel(handle_up)
+    .on_pointer_cancel(handle_up))
 }

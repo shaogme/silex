@@ -5,12 +5,14 @@ error: lifetime may not live long enough
    |                      ------ return type of closure is Persistent<'2, i32>
    |                      |
    |                      has type `silex_core::Scope<'1>`
- 7 | /         Persistent::builder(scope, "counter", scope.error_handler(|_| {}))
- 8 | |             .local()
- 9 | |             .parse::<i32>()
-10 | |             .default(0)
-11 | |             .build()
-   | |____________________^ returning this value requires that `'1` must outlive `'2`
+ 7 | /         Persistent::builder(
+ 8 | |             scope,
+ 9 | |             "counter",
+10 | |             scope
+...  |
+17 | |         .build()
+18 | |         .expect("persistent binding should build")
+   | |__________________________________________________^ returning this value requires that `'1` must outlive `'2`
    |
    = note: requirement occurs because of the type `Persistent<'_, i32>`, which makes the generic argument `'_` invariant
    = note: the struct `Persistent<'scope, T>` is invariant over the parameter `'scope`

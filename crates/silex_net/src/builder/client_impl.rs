@@ -1,7 +1,9 @@
 use std::{
     cell::Cell,
+    future::Future,
     marker::PhantomData,
     panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
+    pin::Pin,
     rc::Rc,
     time::Duration,
 };
@@ -30,6 +32,8 @@ struct PreparedClient<T, C> {
     retry: Option<RetryPolicy>,
     marker: PhantomData<fn() -> T>,
 }
+
+type NetFuture<T> = Pin<Box<dyn Future<Output = Result<T, NetError>> + 'static>>;
 
 fn submit_once<T: 'static>(
     token: &CompletionOnce<T>,
@@ -142,7 +146,9 @@ where
     if let Some(value) = fallback {
         return Ok(value);
     }
-    Err(last_error.expect("retry always performs at least one attempt"))
+    Err(last_error.unwrap_or_else(|| {
+        NetError::InvalidConfiguration("request retry policy produced no attempts".to_string())
+    }))
 }
 
 macro_rules! impl_net_methods {
@@ -162,12 +168,12 @@ macro_rules! impl_net_methods {
 
         pub async fn send(&self) -> Result<T, NetError> {
             self.validate_runtime_inputs()?;
-            let mut spec = self.resolve_spec();
+            let mut spec = self.resolve_spec()?;
             let client = self.prepared();
             client.apply_interceptors(&mut spec);
 
             #[cfg(feature = "persist")]
-            let cache_binding = self.cache_binding(&spec);
+            let cache_binding = self.cache_binding(&spec)?;
             #[cfg(feature = "persist")]
             let cache_snapshot = cache_binding
                 .as_ref()
@@ -186,23 +192,26 @@ macro_rules! impl_net_methods {
             {
                 let refresh_client = client.clone();
                 let refresh_spec = spec.clone();
-                let refresh_binding = self.cache_binding(&spec);
-                let cache_token =
-                    refresh_binding.map(|binding| self.cache_completion_once_for_binding(binding));
+                let refresh_binding = self.cache_binding(&spec)?;
+                let cache_token = refresh_binding
+                    .map(|binding| self.cache_completion_once_for_binding(binding))
+                    .transpose()?;
                 let refresh_error_handler = erase_error_handler(self.error_handler);
-                self.scope.spawn_scoped(
-                    async move {
-                        let _ = execute_prepared(
-                            refresh_client,
-                            refresh_spec,
-                            None,
-                            cache_token,
-                            refresh_error_handler,
-                        )
-                        .await;
-                    },
-                    self.error_handler,
-                );
+                self.scope
+                    .spawn_scoped(
+                        async move {
+                            let _ = execute_prepared(
+                                refresh_client,
+                                refresh_spec,
+                                None,
+                                cache_token,
+                                refresh_error_handler,
+                            )
+                            .await;
+                        },
+                        self.error_handler,
+                    )
+                    .map_err(NetError::from)?;
                 return Ok(value);
             }
 
@@ -218,7 +227,9 @@ macro_rules! impl_net_methods {
             let cache_token = {
                 #[cfg(feature = "persist")]
                 {
-                    cache_binding.map(|binding| self.cache_completion_once_for_binding(binding))
+                    cache_binding
+                        .map(|binding| self.cache_completion_once_for_binding(binding))
+                        .transpose()?
                 }
                 #[cfg(not(feature = "persist"))]
                 {
@@ -238,21 +249,13 @@ macro_rules! impl_net_methods {
         pub fn into_resource(
             self,
             suspense: Option<SuspenseContext<'scope>>,
-        ) -> Resource<'scope, T, NetError> {
-            self.try_into_resource(suspense)
-                .unwrap_or_else(|error| panic!("创建 HTTP Resource 失败: {error:?}"))
-        }
-
-        pub fn try_into_resource(
-            self,
-            suspense: Option<SuspenseContext<'scope>>,
         ) -> Result<Resource<'scope, T, NetError>, NetError> {
             self.validate_runtime_inputs()?;
-            let source = self.scope.constant(());
-            self.try_as_resource(source, suspense)
+            let source = self.scope.constant(())?;
+            self.as_resource(source, suspense)
         }
 
-        pub fn try_as_resource<S>(
+        pub fn as_resource<S>(
             self,
             source: S,
             suspense: Option<SuspenseContext<'scope>>,
@@ -265,19 +268,21 @@ macro_rules! impl_net_methods {
             let request_inputs = self.runtime_inputs();
             let mut inputs = request_inputs.clone();
             inputs.extend(&runtime_inputs_of(source.clone()));
-            scope
-                .try_validate_inputs(&inputs)
-                .map_err(|error| NetError::InvalidConfiguration(error.to_string()))?;
+            scope.validate_inputs(&inputs).map_err(NetError::from)?;
 
             let error_handler = self.error_handler;
             let request_builder = self.clone();
             let request_source = scope
                 .derived_from(
                     request_inputs,
-                    move || Ok(request_builder.resolve_spec_tracked()),
+                    move || {
+                        request_builder
+                            .resolve_spec_tracked()
+                            .map_err(|error| SilexError::Framework(format!("{error}")))
+                    },
                     error_handler,
                 )
-                .map_err(|error| NetError::InvalidConfiguration(error.to_string()))?;
+                .map_err(NetError::from)?;
 
             #[cfg(feature = "persist")]
             let cache_policy = self.cache_policy();
@@ -295,10 +300,10 @@ macro_rules! impl_net_methods {
             let combined_source = scope
                 .derived_from(
                     inputs,
-                    move || Ok((source.try_get()?, request_source.try_get()?)),
+                    move || Ok((source.get()?, request_source.get()?)),
                     error_handler,
                 )
-                .map_err(|error| NetError::InvalidConfiguration(error.to_string()))?;
+                .map_err(NetError::from)?;
             let resource = Resource::new(
                 scope,
                 combined_source,
@@ -308,11 +313,25 @@ macro_rules! impl_net_methods {
                     let generation = resource_generation_for_fetcher
                         .get()
                         .checked_add(1)
-                        .expect("HTTP Resource generation exhausted");
+                        .ok_or_else(|| {
+                            SilexError::Framework("HTTP Resource generation exhausted".to_string())
+                        });
+                    let generation = match generation {
+                        Ok(generation) => generation,
+                        Err(error) => {
+                            return Box::pin(std::future::ready(Err(NetError::from(error))))
+                                as NetFuture<T>;
+                        }
+                    };
                     resource_generation_for_fetcher.set(generation);
 
                     #[cfg(feature = "persist")]
-                    let cache_binding = fetch_builder.cache_binding(&spec);
+                    let cache_binding = match fetch_builder.cache_binding(&spec) {
+                        Ok(binding) => binding,
+                        Err(error) => {
+                            return Box::pin(std::future::ready(Err(error))) as NetFuture<T>;
+                        }
+                    };
                     #[cfg(feature = "persist")]
                     let cache_snapshot = cache_binding
                         .as_ref()
@@ -333,11 +352,22 @@ macro_rules! impl_net_methods {
                         && cached.is_some()
                     {
                         #[cfg(feature = "persist")]
-                        let refresh_binding = fetch_builder.cache_binding(&spec);
+                        let refresh_binding = match fetch_builder.cache_binding(&spec) {
+                            Ok(binding) => binding,
+                            Err(error) => {
+                                return Box::pin(std::future::ready(Err(error))) as NetFuture<T>;
+                            }
+                        };
                         #[cfg(feature = "persist")]
-                        let refresh_cache_token = refresh_binding.map(|binding| {
-                            fetch_builder.cache_completion_once_for_binding(binding)
-                        });
+                        let refresh_cache_token = match refresh_binding
+                            .map(|binding| fetch_builder.cache_completion_once_for_binding(binding))
+                            .transpose()
+                        {
+                            Ok(token) => token,
+                            Err(error) => {
+                                return Box::pin(std::future::ready(Err(error))) as NetFuture<T>;
+                            }
+                        };
                         #[cfg(not(feature = "persist"))]
                         let refresh_cache_token = None;
                         let refresh_client = fetch_client.clone();
@@ -345,19 +375,25 @@ macro_rules! impl_net_methods {
                         let resource_generation_for_completion =
                             resource_generation_for_fetcher.clone();
                         let resource_slot_for_completion = resource_slot_for_fetcher.clone();
-                        let completion = scope.completion_once(unwind_safe(
+                        let completion = match scope.completion_once(unwind_safe(
                             move |result: Result<T, NetError>| {
                                 if resource_generation_for_completion.get() == generation
                                     && let Ok(value) = result
                                     && let Some(resource) = resource_slot_for_completion.get()
                                 {
-                                    resource.set(value);
+                                    resource.set(value).map_err(SilexError::from)?;
                                 }
                                 Ok(())
                             },
-                        ));
+                        )) {
+                            Ok(completion) => completion,
+                            Err(error) => {
+                                return Box::pin(std::future::ready(Err(NetError::from(error))))
+                                    as NetFuture<T>;
+                            }
+                        };
                         let refresh_error_handler = completion_error_handler;
-                        scope.spawn_scoped(
+                        if let Err(error) = scope.spawn_scoped(
                             async move {
                                 sleep(Duration::from_millis(0)).await;
                                 let result = execute_prepared(
@@ -371,7 +407,10 @@ macro_rules! impl_net_methods {
                                 submit_once(&completion, result, refresh_error_handler);
                             },
                             fetch_error_handler,
-                        );
+                        ) {
+                            return Box::pin(std::future::ready(Err(NetError::from(error))))
+                                as NetFuture<T>;
+                        }
                     }
 
                     let cache_token = if cached.is_some() {
@@ -379,9 +418,18 @@ macro_rules! impl_net_methods {
                     } else {
                         #[cfg(feature = "persist")]
                         {
-                            cache_binding.map(|binding| {
-                                fetch_builder.cache_completion_once_for_binding(binding)
-                            })
+                            match cache_binding
+                                .map(|binding| {
+                                    fetch_builder.cache_completion_once_for_binding(binding)
+                                })
+                                .transpose()
+                            {
+                                Ok(token) => token,
+                                Err(error) => {
+                                    return Box::pin(std::future::ready(Err(error)))
+                                        as NetFuture<T>;
+                                }
+                            }
                         }
                         #[cfg(not(feature = "persist"))]
                         {
@@ -402,44 +450,32 @@ macro_rules! impl_net_methods {
                             )
                             .await
                         }
-                    })
+                    }) as NetFuture<T>
                 },
                 suspense,
                 error_handler,
-            );
+            )
+            .map_err(NetError::from)?;
 
             resource_slot.set(Some(resource));
 
             Ok(resource)
         }
 
-        pub fn as_resource<S>(
-            self,
-            source: S,
-            suspense: Option<SuspenseContext<'scope>>,
-        ) -> Resource<'scope, T, NetError>
-        where
-            S: RxRead + ReactiveSource<'scope> + Clone + 'scope,
-            S::Value: Clone + PartialEq + 'static,
-        {
-            self.try_as_resource(source, suspense)
-                .unwrap_or_else(|error| panic!("创建 HTTP Resource 失败: {error:?}"))
-        }
-
-        pub fn try_as_mutation(&self) -> Result<Mutation<'scope, (), T, NetError>, NetError> {
+        pub fn as_mutation(&self) -> Result<Mutation<'scope, (), T, NetError>, NetError> {
             self.validate_runtime_inputs()?;
             let builder = self.clone();
             let completion_error_handler = erase_error_handler(self.error_handler);
-            Ok(Mutation::new(
+            Mutation::new_with_prepare(
                 self.scope,
                 move |_| {
-                    let mut spec = builder.resolve_spec();
+                    let mut spec = builder.resolve_spec()?;
                     let client = builder.prepared();
                     client.apply_interceptors(&mut spec);
                     #[cfg(feature = "persist")]
                     let fallback =
                         if matches!(builder.cache_policy(), Some(CachePolicy::NetworkFirst)) {
-                            builder.cached_value(&spec)
+                            builder.cached_value(&spec)?
                         } else {
                             None
                         };
@@ -449,64 +485,10 @@ macro_rules! impl_net_methods {
                         #[cfg(feature = "persist")]
                         {
                             builder
-                                .cache_binding(&spec)
+                                .cache_binding(&spec)?
                                 .map(|binding| builder.cache_completion_once_for_binding(binding))
-                        }
-                        #[cfg(not(feature = "persist"))]
-                        {
-                            None
-                        }
-                    };
-                    async move {
-                        execute_prepared(
-                            client,
-                            spec,
-                            fallback,
-                            cache_token,
-                            completion_error_handler,
-                        )
-                        .await
-                    }
-                },
-                self.error_handler,
-            ))
-        }
-
-        pub fn as_mutation(&self) -> Mutation<'scope, (), T, NetError> {
-            self.try_as_mutation()
-                .unwrap_or_else(|error| panic!("创建 HTTP Mutation 失败: {error:?}"))
-        }
-
-        pub fn as_mutation_with<Input, F>(self, factory: F) -> Mutation<'scope, Input, T, NetError>
-        where
-            F: Fn(Input) -> Result<Self, NetError> + 'scope,
-            Input: 'scope,
-        {
-            let scope = self.scope;
-            let completion_error_handler = erase_error_handler(self.error_handler);
-            Mutation::new_with_prepare(
-                scope,
-                move |input: Input| {
-                    let builder = factory(input)?;
-                    builder.validate_runtime_inputs_for(scope)?;
-                    let mut spec = builder.resolve_spec();
-                    let client = builder.prepared();
-                    client.apply_interceptors(&mut spec);
-                    #[cfg(feature = "persist")]
-                    let fallback =
-                        if matches!(builder.cache_policy(), Some(CachePolicy::NetworkFirst)) {
-                            builder.cached_value(&spec)
-                        } else {
-                            None
-                        };
-                    #[cfg(not(feature = "persist"))]
-                    let fallback = None;
-                    let cache_token = {
-                        #[cfg(feature = "persist")]
-                        {
-                            builder
-                                .cache_binding(&spec)
-                                .map(|binding| builder.cache_completion_once_for_binding(binding))
+                                .transpose()
+                                .map_err(NetError::from)?
                         }
                         #[cfg(not(feature = "persist"))]
                         {
@@ -526,6 +508,64 @@ macro_rules! impl_net_methods {
                 },
                 self.error_handler,
             )
+            .map_err(NetError::from)
+        }
+
+        pub fn as_mutation_with<Input, F>(
+            self,
+            factory: F,
+        ) -> Result<Mutation<'scope, Input, T, NetError>, NetError>
+        where
+            F: Fn(Input) -> Result<Self, NetError> + 'scope,
+            Input: 'scope,
+        {
+            let scope = self.scope;
+            let completion_error_handler = erase_error_handler(self.error_handler);
+            Mutation::new_with_prepare(
+                scope,
+                move |input: Input| {
+                    let builder = factory(input)?;
+                    builder.validate_runtime_inputs_for(scope)?;
+                    let mut spec = builder.resolve_spec()?;
+                    let client = builder.prepared();
+                    client.apply_interceptors(&mut spec);
+                    #[cfg(feature = "persist")]
+                    let fallback =
+                        if matches!(builder.cache_policy(), Some(CachePolicy::NetworkFirst)) {
+                            builder.cached_value(&spec)?
+                        } else {
+                            None
+                        };
+                    #[cfg(not(feature = "persist"))]
+                    let fallback = None;
+                    let cache_token = {
+                        #[cfg(feature = "persist")]
+                        {
+                            builder
+                                .cache_binding(&spec)?
+                                .map(|binding| builder.cache_completion_once_for_binding(binding))
+                                .transpose()
+                                .map_err(NetError::from)?
+                        }
+                        #[cfg(not(feature = "persist"))]
+                        {
+                            None
+                        }
+                    };
+                    Ok(async move {
+                        execute_prepared(
+                            client,
+                            spec,
+                            fallback,
+                            cache_token,
+                            completion_error_handler,
+                        )
+                        .await
+                    })
+                },
+                self.error_handler,
+            )
+            .map_err(NetError::from)
         }
     };
 }

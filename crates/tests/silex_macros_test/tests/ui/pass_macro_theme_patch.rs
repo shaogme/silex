@@ -14,8 +14,17 @@ theme! {
 
 fn main() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let patch = rx!(scope; PatchThemePatch::default().primary(hex("#ff69b4")));
-        let _ = theme_patch(patch);
-    });
+    runtime
+        .child(|scope| -> SilexResult<()> {
+            let error_handler = scope.error_handler(|_| {})?;
+            let patch = rx!(
+                scope;
+                error_handler;
+                PatchThemePatch::default().primary(hex("#ff69b4"))
+            );
+            let _ = theme_patch(patch);
+            Ok(())
+        })
+        .unwrap()
+        .unwrap();
 }

@@ -9,7 +9,7 @@ use crate::{
         },
     },
 };
-use silex_core::{Rx, RxValueKind, SilexError, SilexResult};
+use silex_core::{ErrorReporter, Rx, RxValueKind, SilexError, SilexResult};
 use silex_dom::attribute::{ApplyTarget, ApplyToDom, IntoStorable, ReactiveApply};
 use silex_dom::view::ViewOwnerToken;
 use silex_hash::{
@@ -37,22 +37,22 @@ enum StyleValue<'scope> {
 }
 
 impl<'scope> StyleValue<'scope> {
-    fn from_source<S>(value: S) -> Self
+    fn from_source<S>(value: S, error_handler: Option<ErrorReporter<'scope>>) -> SilexResult<Self>
     where
         S: IntoCssSource<'scope>,
         S::Value: Display + Clone + 'scope,
     {
         match value.into_css_source() {
-            CssSource::Static(value) => Self::Static(Cow::Owned(value.to_string())),
+            CssSource::Static(value) => Ok(Self::Static(Cow::Owned(value.to_string()))),
             CssSource::Reactive(source) => {
-                let handler = source
-                    .scope()
-                    .error_handler(|error| panic!("reactive CSS mapping failed: {error}"));
-                Self::Dynamic(
-                    source
-                        .map(|value| value.to_string(), handler)
-                        .unwrap_or_else(|error| panic!("创建 reactive CSS mapping 失败: {error}")),
-                )
+                let handler = error_handler.ok_or_else(|| {
+                    SilexError::Framework(
+                        "reactive CSS style requires an explicit error handler".into(),
+                    )
+                })?;
+                Ok(Self::Dynamic(
+                    source.map(|value| value.to_string(), handler)?,
+                ))
             }
         }
     }
@@ -72,6 +72,7 @@ pub struct Style<'scope> {
     pub(crate) static_rules: Vec<StaticRule>,
     pub(crate) dynamic_rules: Vec<DynamicRule<'scope>>,
     pub(crate) nested_rules: Vec<NestedRule<'scope>>,
+    error_handler: Option<ErrorReporter<'scope>>,
 }
 
 impl<'scope> Default for Style<'scope> {
@@ -86,17 +87,30 @@ impl<'scope> Style<'scope> {
             static_rules: Vec::new(),
             dynamic_rules: Vec::new(),
             nested_rules: Vec::new(),
+            error_handler: None,
         }
     }
 
+    /// Set the error reporter used by reactive CSS value mappings.
+    pub fn with_error_handler(mut self, error_handler: ErrorReporter<'scope>) -> Self {
+        self.error_handler = Some(error_handler);
+        self
+    }
+
+    fn nested_style(&self) -> Self {
+        let mut nested = Self::new();
+        nested.error_handler = self.error_handler;
+        nested
+    }
+
     /// 定义媒体查询，例如 `.media("@media (max-width: 600px)", |s| s.width(PX(100)))`
-    pub fn media<F>(mut self, query: &'static str, f: F) -> Self
+    pub fn media<F>(mut self, query: &'static str, f: F) -> SilexResult<Self>
     where
-        F: FnOnce(Style<'scope>) -> Style<'scope>,
+        F: FnOnce(Style<'scope>) -> SilexResult<Style<'scope>>,
     {
         self.nested_rules
-            .push(NestedRule::Media(query, f(Style::new())));
-        self
+            .push(NestedRule::Media(query, f(self.nested_style())?));
+        Ok(self)
     }
 
     /// 定义嵌套选择器，语义与 CSS Nesting 一致。
@@ -111,101 +125,101 @@ impl<'scope> Style<'scope> {
     /// 宏当后代选择器**，两边匹配的是完全不同的元素集。
     ///
     /// 想要「贴在自身上」的伪类请用 [`Style::pseudo`] 或 `on_hover()` 一族。
-    pub fn nest<F>(mut self, selector: &'static str, f: F) -> Self
+    pub fn nest<F>(mut self, selector: &'static str, f: F) -> SilexResult<Self>
     where
-        F: FnOnce(Style<'scope>) -> Style<'scope>,
+        F: FnOnce(Style<'scope>) -> SilexResult<Style<'scope>>,
     {
         self.nested_rules
-            .push(NestedRule::Selector(selector, f(Style::new())));
-        self
+            .push(NestedRule::Selector(selector, f(self.nested_style())?));
+        Ok(self)
     }
 
     /// 把一个伪类/伪元素**贴在本样式自身**上：`.pseudo(":hover", …)` → `.cls:hover`。
     ///
     /// 等价于 `nest("&:hover", …)`。与 [`Style::nest`] 的区别就是那个隐含的 `&`
     /// ——`nest` 按 CSS Nesting 补的是后代关系。
-    pub fn pseudo<F>(self, selector: &'static str, f: F) -> Self
+    pub fn pseudo<F>(self, selector: &'static str, f: F) -> SilexResult<Self>
     where
-        F: FnOnce(Style<'scope>) -> Style<'scope>,
+        F: FnOnce(Style<'scope>) -> SilexResult<Style<'scope>>,
     {
         self.attached(selector, f)
     }
 
     /// `pseudo` 的内部实现：把 `sel` 当作直接附着在基类后面的片段。
-    fn attached<F>(mut self, selector: &'static str, f: F) -> Self
+    fn attached<F>(mut self, selector: &'static str, f: F) -> SilexResult<Self>
     where
-        F: FnOnce(Style<'scope>) -> Style<'scope>,
+        F: FnOnce(Style<'scope>) -> SilexResult<Style<'scope>>,
     {
         self.nested_rules
-            .push(NestedRule::Attached(selector, f(Style::new())));
-        self
+            .push(NestedRule::Attached(selector, f(self.nested_style())?));
+        Ok(self)
     }
 
-    pub fn on_hover<F>(self, f: F) -> Self
+    pub fn on_hover<F>(self, f: F) -> SilexResult<Self>
     where
-        F: FnOnce(Style<'scope>) -> Style<'scope>,
+        F: FnOnce(Style<'scope>) -> SilexResult<Style<'scope>>,
     {
         self.attached(":hover", f)
     }
 
-    pub fn on_active<F>(self, f: F) -> Self
+    pub fn on_active<F>(self, f: F) -> SilexResult<Self>
     where
-        F: FnOnce(Style<'scope>) -> Style<'scope>,
+        F: FnOnce(Style<'scope>) -> SilexResult<Style<'scope>>,
     {
         self.attached(":active", f)
     }
 
-    pub fn on_focus<F>(self, f: F) -> Self
+    pub fn on_focus<F>(self, f: F) -> SilexResult<Self>
     where
-        F: FnOnce(Style<'scope>) -> Style<'scope>,
+        F: FnOnce(Style<'scope>) -> SilexResult<Style<'scope>>,
     {
         self.attached(":focus", f)
     }
 
-    pub fn on_focus_visible<F>(self, f: F) -> Self
+    pub fn on_focus_visible<F>(self, f: F) -> SilexResult<Self>
     where
-        F: FnOnce(Style<'scope>) -> Style<'scope>,
+        F: FnOnce(Style<'scope>) -> SilexResult<Style<'scope>>,
     {
         self.attached(":focus-visible", f)
     }
 
-    pub fn on_disabled<F>(self, f: F) -> Self
+    pub fn on_disabled<F>(self, f: F) -> SilexResult<Self>
     where
-        F: FnOnce(Style<'scope>) -> Style<'scope>,
+        F: FnOnce(Style<'scope>) -> SilexResult<Style<'scope>>,
     {
         self.attached(":disabled", f)
     }
 
-    pub fn margin_x<V>(self, value: V) -> Self
+    pub fn margin_x<V>(self, value: V) -> SilexResult<Self>
     where
         V: IntoCssSource<'scope> + Clone,
         V::Value: ValidFor<MarginLeft> + ValidFor<MarginRight> + Display + Clone + 'scope,
     {
-        self.margin_left(value.clone()).margin_right(value)
+        self.margin_left(value.clone())?.margin_right(value)
     }
 
-    pub fn margin_y<V>(self, value: V) -> Self
+    pub fn margin_y<V>(self, value: V) -> SilexResult<Self>
     where
         V: IntoCssSource<'scope> + Clone,
         V::Value: ValidFor<MarginTop> + ValidFor<MarginBottom> + Display + Clone + 'scope,
     {
-        self.margin_top(value.clone()).margin_bottom(value)
+        self.margin_top(value.clone())?.margin_bottom(value)
     }
 
-    pub fn padding_x<V>(self, value: V) -> Self
+    pub fn padding_x<V>(self, value: V) -> SilexResult<Self>
     where
         V: IntoCssSource<'scope> + Clone,
         V::Value: ValidFor<PaddingLeft> + ValidFor<PaddingRight> + Display + Clone + 'scope,
     {
-        self.padding_left(value.clone()).padding_right(value)
+        self.padding_left(value.clone())?.padding_right(value)
     }
 
-    pub fn padding_y<V>(self, value: V) -> Self
+    pub fn padding_y<V>(self, value: V) -> SilexResult<Self>
     where
         V: IntoCssSource<'scope> + Clone,
         V::Value: ValidFor<PaddingTop> + ValidFor<PaddingBottom> + Display + Clone + 'scope,
     {
-        self.padding_top(value.clone()).padding_bottom(value)
+        self.padding_top(value.clone())?.padding_bottom(value)
     }
 
     /// 写一个自定义属性（CSS 变量）：`.var("--brand", hex("#09f"))`。
@@ -217,7 +231,7 @@ impl<'scope> Style<'scope> {
     ///
     /// 自定义属性按规范接受任意 token 序列，所以这里不做值类型校验；值仍然会
     /// 过一遍声明边界净化。
-    pub fn var<V>(self, name: impl Into<Cow<'static, str>>, value: V) -> Self
+    pub fn var<V>(self, name: impl Into<Cow<'static, str>>, value: V) -> SilexResult<Self>
     where
         V: IntoCssSource<'scope>,
         V::Value: Display + Clone + 'scope,
@@ -229,7 +243,8 @@ impl<'scope> Style<'scope> {
         } else {
             Cow::Owned(format!("--{}", name.trim_start_matches('-')))
         };
-        self.add_rule(name, StyleValue::from_source(value))
+        let style_value = StyleValue::from_source(value, self.error_handler)?;
+        self.add_rule(name, style_value)
     }
 
     /// 逃生舱：写一条**不经类型系统**的声明。
@@ -240,17 +255,18 @@ impl<'scope> Style<'scope> {
     /// 新属性。此前完全没有这条路，只能退回 `styled!` 宏。
     ///
     /// 属性名与值都会过净化，写不出越界的声明；但**语义正确与否由调用方负责**。
-    pub fn raw<V>(self, name: impl Into<Cow<'static, str>>, value: V) -> Self
+    pub fn raw<V>(self, name: impl Into<Cow<'static, str>>, value: V) -> SilexResult<Self>
     where
         V: IntoCssSource<'scope>,
         V::Value: Display + Clone + 'scope,
     {
         let name = name.into();
         debug_assert!(!name.is_empty(), "属性名不能为空");
-        self.add_rule(name, StyleValue::from_source(value))
+        let style_value = StyleValue::from_source(value, self.error_handler)?;
+        self.add_rule(name, style_value)
     }
 
-    fn add_rule(mut self, prop: PropName, value: StyleValue<'scope>) -> Self {
+    fn add_rule(mut self, prop: PropName, value: StyleValue<'scope>) -> SilexResult<Self> {
         match value {
             StyleValue::Static(val_str) => {
                 self.static_rules.push((prop, val_str));
@@ -259,7 +275,7 @@ impl<'scope> Style<'scope> {
                 self.dynamic_rules.push((prop, getter));
             }
         }
-        self
+        Ok(self)
     }
 }
 
@@ -271,12 +287,16 @@ macro_rules! generate_builder_methods {
     ($( ($snake:ident, $kebab:expr, $pascal:ident, [$($cap:ident)*]) ),*) => {
         impl<'scope> Style<'scope> {
             $(
-                pub fn $snake<V>(self, value: V) -> Self
+                pub fn $snake<V>(self, value: V) -> SilexResult<Self>
                 where
                     V: IntoCssSource<'scope>,
                     V::Value: ValidFor<props::$pascal> + Display + Clone + 'scope,
                 {
-                    self.add_rule(::std::borrow::Cow::Borrowed($kebab), StyleValue::from_source(value))
+                    let style_value = StyleValue::from_source(value, self.error_handler)?;
+                    self.add_rule(
+                        ::std::borrow::Cow::Borrowed($kebab),
+                        style_value,
+                    )
                 }
             )*
         }
@@ -386,7 +406,7 @@ impl<'scope> Style<'scope> {
                     > {
                         let values: Vec<String> = bindings
                             .iter()
-                            .map(|(_, source)| source.try_get())
+                            .map(|(_, source)| source.get())
                             .collect::<SilexResult<_>>()?;
                         if let Some(style) = element_style(&el_clone) {
                             for (index, ((name, _), value)) in
@@ -575,7 +595,7 @@ impl<'scope> ReactiveApply<'scope> for Style<'scope> {
         owner.effect_with_previous_from(
             rx.runtime_inputs(),
             Box::new(move |previous: Option<&String>| -> SilexResult<String> {
-                let style = rx.try_get()?;
+                let style = rx.get()?;
                 owner_for_callback.validate_inputs(&style.runtime_inputs())?;
                 let class_name = style.apply_to_element(&el, &owner_for_callback)?;
                 if let Some(previous) = previous
@@ -611,11 +631,13 @@ mod tests {
     use silex_core::{ErrorReporter, Scope};
 
     fn discard_test_errors<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
-        scope.error_handler(|_| {})
+        scope
+            .error_handler(|_| {})
+            .expect("test error handler should register")
     }
 
-    fn css_of(style: Style<'_>) -> String {
-        style.render().css
+    fn css_of(style: SilexResult<Style<'_>>) -> String {
+        style.expect("static style should build").render().css
     }
 
     /// 报告 P2-3：`sty()` 的产出此前**不带任何 layer**，靠「无层规则压过所有
@@ -634,15 +656,25 @@ mod tests {
     /// 空样式不该注入一个空的 layer 块
     #[test]
     fn an_empty_style_produces_no_css_at_all() {
-        assert_eq!(css_of(Style::new()), "");
+        assert_eq!(css_of(Ok(Style::new())), "");
     }
 
     /// 类名只由静态结构决定：同样的声明必须给出同一个类名，
     /// 否则每次渲染都会往静态表里塞一份新副本
     #[test]
     fn the_class_name_is_stable_across_renders() {
-        let a = Style::new().color(hex("#fff")).width(px(10)).render();
-        let b = Style::new().color(hex("#fff")).width(px(10)).render();
+        let a = Style::new()
+            .color(hex("#fff"))
+            .expect("color should build")
+            .width(px(10))
+            .expect("width should build")
+            .render();
+        let b = Style::new()
+            .color(hex("#fff"))
+            .expect("color should build")
+            .width(px(10))
+            .expect("width should build")
+            .render();
         assert_eq!(a.class_base, b.class_base);
         assert!(a.class_base.starts_with("slx-"));
     }
@@ -664,6 +696,7 @@ mod tests {
     fn nested_selectors_expand_against_the_base_class() {
         let rendered = Style::new()
             .nest("& > div", |s| s.color(hex("#000")))
+            .expect("nested style should build")
             .render();
         let base = format!(".{}", rendered.class_base);
         assert!(
@@ -682,6 +715,7 @@ mod tests {
     fn nest_follows_css_nesting_and_pseudo_attaches() {
         let nested = Style::new()
             .nest(":hover", |s| s.color(hex("#000")))
+            .expect("nested style should build")
             .render();
         let base = format!(".{}", nested.class_base);
         assert!(
@@ -692,6 +726,7 @@ mod tests {
 
         let attached = Style::new()
             .pseudo(":hover", |s| s.color(hex("#000")))
+            .expect("pseudo style should build")
             .render();
         let base = format!(".{}", attached.class_base);
         assert!(
@@ -707,16 +742,21 @@ mod tests {
     fn nest_and_pseudo_do_not_collide_on_the_same_class_name() {
         let a = Style::new()
             .nest(":hover", |s| s.color(hex("#000")))
+            .expect("nested style should build")
             .render();
         let b = Style::new()
             .pseudo(":hover", |s| s.color(hex("#000")))
+            .expect("pseudo style should build")
             .render();
         assert_ne!(a.class_base, b.class_base);
     }
 
     #[test]
     fn the_on_x_helpers_attach_to_the_base_class() {
-        let rendered = Style::new().on_hover(|s| s.color(hex("#000"))).render();
+        let rendered = Style::new()
+            .on_hover(|s| s.color(hex("#000")))
+            .expect("hover style should build")
+            .render();
         let base = format!(".{}", rendered.class_base);
         assert!(
             rendered.css.contains(&format!("{base}:hover {{")),
@@ -760,17 +800,23 @@ mod tests {
     #[test]
     fn a_custom_property_can_be_reactive() {
         let mut runtime = silex_core::Runtime::new();
-        runtime.child(|scope| {
-            let signal = scope.rw_signal(px(1));
-            let rendered = Style::new().var("--gap", signal).render();
-            assert_eq!(rendered.dyn_bindings.len(), 1);
-            let var_name = &rendered.dyn_bindings[0].0;
-            assert!(
-                rendered.css.contains(&format!("--gap: var({var_name});")),
-                "{}",
-                rendered.css
-            );
-        });
+        runtime
+            .child(|scope| {
+                let signal = scope.rw_signal(px(1)).expect("signal should initialize");
+                let rendered = Style::new()
+                    .with_error_handler(discard_test_errors(scope))
+                    .var("--gap", signal)
+                    .expect("reactive style should build")
+                    .render();
+                assert_eq!(rendered.dyn_bindings.len(), 1);
+                let var_name = &rendered.dyn_bindings[0].0;
+                assert!(
+                    rendered.css.contains(&format!("--gap: var({var_name});")),
+                    "{}",
+                    rendered.css
+                );
+            })
+            .expect("child scope should initialize");
     }
 
     /// `apply_to_element` 每次调用都为每个动态绑定新建一个 `Effect`，而
@@ -782,58 +828,66 @@ mod tests {
     /// 钉一根桩：哪天所有权模型变了，先坏在这儿而不是坏成线上的 Effect 泄漏。
     #[test]
     fn inner_effects_are_reclaimed_when_the_outer_effect_reruns() {
-        use silex_core::{Runtime, RxGet};
+        use silex_core::Runtime;
         use std::{cell::Cell, rc::Rc};
 
         let mut runtime = Runtime::new();
-        runtime.child(|scope| {
-            let outer = scope.rw_signal(0);
-            let inner_dep = scope.rw_signal(0);
-            let inner_runs = Rc::new(Cell::new(0));
+        runtime
+            .child(|scope| {
+                let outer = scope.rw_signal(0).expect("outer signal should initialize");
+                let inner_dep = scope.rw_signal(0).expect("inner signal should initialize");
+                let inner_runs = Rc::new(Cell::new(0));
 
-            let counter = inner_runs.clone();
-            scope
-                .effect(
-                    move || -> SilexResult<()> {
-                        outer.try_get()?;
-                        let counter = counter.clone();
-                        scope.effect(
-                            move || -> SilexResult<()> {
-                                inner_dep.try_get()?;
-                                counter.set(counter.get() + 1);
-                                Ok(())
-                            },
-                            discard_test_errors(scope),
-                        )?;
-                        Ok(())
-                    },
-                    discard_test_errors(scope),
-                )
-                .expect("nested effects can be registered");
+                let counter = inner_runs.clone();
+                scope
+                    .effect(
+                        move || -> SilexResult<()> {
+                            outer.get()?;
+                            let counter = counter.clone();
+                            scope.effect(
+                                move || -> SilexResult<()> {
+                                    inner_dep.get()?;
+                                    counter.set(counter.get() + 1);
+                                    Ok(())
+                                },
+                                discard_test_errors(scope),
+                            )?;
+                            Ok(())
+                        },
+                        discard_test_errors(scope),
+                    )
+                    .expect("nested effects can be registered");
 
-            assert_eq!(inner_runs.get(), 1, "首轮内层 Effect 跑一次");
-            outer.set(1);
-            assert_eq!(inner_runs.get(), 2, "外层重跑，新内层 Effect 跑一次");
-            inner_dep.set(1);
-            assert_eq!(
-                inner_runs.get(),
-                3,
-                "只有存活的那个内层 Effect 响应；上一轮的若没回收会多跑一次"
-            );
-        });
+                assert_eq!(inner_runs.get(), 1, "首轮内层 Effect 跑一次");
+                outer.set(1).expect("outer signal should update");
+                assert_eq!(inner_runs.get(), 2, "外层重跑，新内层 Effect 跑一次");
+                inner_dep.set(1).expect("inner signal should update");
+                assert_eq!(
+                    inner_runs.get(),
+                    3,
+                    "只有存活的那个内层 Effect 响应；上一轮的若没回收会多跑一次"
+                );
+            })
+            .expect("child scope should initialize");
     }
 
     /// 动态值走行内 CSS 变量，规则里只留一个 `var()` 引用
     #[test]
     fn dynamic_values_become_a_css_variable_reference() {
         let mut runtime = silex_core::Runtime::new();
-        runtime.child(|scope| {
-            let signal = scope.rw_signal(px(1));
-            let rendered = Style::new().width(signal).render();
-            assert_eq!(rendered.dyn_bindings.len(), 1);
-            let var_name = &rendered.dyn_bindings[0].0;
-            assert!(var_name.starts_with("--sb-"), "{var_name}");
-            assert!(rendered.css.contains(&format!("width: var({var_name});")));
-        });
+        runtime
+            .child(|scope| {
+                let signal = scope.rw_signal(px(1)).expect("signal should initialize");
+                let rendered = Style::new()
+                    .with_error_handler(discard_test_errors(scope))
+                    .width(signal)
+                    .expect("reactive style should build")
+                    .render();
+                assert_eq!(rendered.dyn_bindings.len(), 1);
+                let var_name = &rendered.dyn_bindings[0].0;
+                assert!(var_name.starts_with("--sb-"), "{var_name}");
+                assert!(rendered.css.contains(&format!("width: var({var_name});")));
+            })
+            .expect("child scope should initialize");
     }
 }

@@ -20,7 +20,7 @@ styled! {
 fn main() {
     let mut runtime = Runtime::new();
     let view = runtime.child(|scope| {
-        let (color, _) = scope.signal(silex_css::types::hex("#fff"));
+        let (color, _) = scope.signal(silex_css::types::hex("#fff")).unwrap();
         ScopedPanel(AnyView::new(()), color)
     });
     let _ = view;

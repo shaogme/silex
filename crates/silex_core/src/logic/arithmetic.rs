@@ -1,5 +1,34 @@
-use crate::{Rx, RxValueKind, SilexError, reactivity::ReactiveSource};
+use crate::{ErrorReporter, Rx, RxValueKind, SilexResult, reactivity::ReactiveSource};
 use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Not, Rem, Shl, Shr, Sub};
+
+macro_rules! binary_method {
+    ($name:ident, $trait:ident, $op:ident) => {
+        pub fn $name<R>(
+            self,
+            right: R,
+            error_handler: ErrorReporter<'scope>,
+        ) -> SilexResult<Rx<'scope, T>>
+        where
+            T: 'scope,
+            for<'a> &'a T: $trait<&'a T, Output = T>,
+            R: ReactiveSource<'scope, Value = T>,
+        {
+            binary_op(self, right, ops_impl::$op::<T>, error_handler)
+        }
+    };
+}
+
+macro_rules! unary_method {
+    ($name:ident, $trait:ident, $op:ident) => {
+        pub fn $name(self, error_handler: ErrorReporter<'scope>) -> SilexResult<Rx<'scope, T>>
+        where
+            T: 'scope,
+            for<'a> &'a T: $trait<Output = T>,
+        {
+            unary_op(self, ops_impl::$op::<T>, error_handler)
+        }
+    };
+}
 
 #[doc(hidden)]
 pub mod ops_impl {
@@ -46,7 +75,12 @@ pub mod ops_impl {
     }
 }
 
-fn binary_op<'scope, T, R>(left: Rx<'scope, T>, right: R, op: fn(&T, &T) -> T) -> Rx<'scope, T>
+fn binary_op<'scope, T, R>(
+    left: Rx<'scope, T>,
+    right: R,
+    op: fn(&T, &T) -> T,
+    error_handler: ErrorReporter<'scope>,
+) -> SilexResult<Rx<'scope, T>>
 where
     T: 'scope,
     R: ReactiveSource<'scope, Value = T>,
@@ -55,73 +89,43 @@ where
     let right = right.into_promotion_plan();
     let mut inputs = left.runtime_inputs();
     inputs.extend(&right.inputs());
-    scope.assert_inputs(&inputs);
-    let right = right.materialize_unchecked(scope);
-    scope
-        .derived_from(
-            inputs,
-            move || Ok(left.with(|left| right.with(|right| op(left, right)))),
-            scope.error_handler(|error| panic!("reactive arithmetic failed: {error}")),
-        )
-        .unwrap_or_else(|error: SilexError| panic!("创建 reactive arithmetic 失败: {error}"))
+    scope.validate_inputs(&inputs)?;
+    let right = right.materialize(scope, error_handler)?;
+    scope.derived_from(
+        inputs,
+        move || left.with(|left| right.with(|right| op(left, right)))?,
+        error_handler,
+    )
 }
 
-fn unary_op<'scope, T>(value: Rx<'scope, T>, op: fn(&T) -> T) -> Rx<'scope, T>
+fn unary_op<'scope, T>(
+    value: Rx<'scope, T>,
+    op: fn(&T) -> T,
+    error_handler: ErrorReporter<'scope>,
+) -> SilexResult<Rx<'scope, T>>
 where
     T: 'scope,
 {
     let scope = value.scope();
-    scope
-        .derived_from(
-            value.runtime_inputs(),
-            move || Ok(value.with(op)),
-            scope.error_handler(|error| panic!("reactive arithmetic failed: {error}")),
-        )
-        .unwrap_or_else(|error: SilexError| panic!("创建 reactive arithmetic 失败: {error}"))
+    scope.derived_from(
+        value.runtime_inputs(),
+        move || value.with(op),
+        error_handler,
+    )
 }
 
-macro_rules! impl_rx_binary {
-    ($trait:ident, $method:ident, $op:ident) => {
-        impl<'scope, T, R> $trait<R> for Rx<'scope, T, RxValueKind>
-        where
-            T: Clone + 'scope,
-            for<'a> &'a T: $trait<&'a T, Output = T>,
-            R: ReactiveSource<'scope, Value = T>,
-        {
-            type Output = Rx<'scope, T>;
+impl<'scope, T> Rx<'scope, T, RxValueKind> {
+    binary_method!(add, Add, add);
+    binary_method!(sub, Sub, sub);
+    binary_method!(mul, Mul, mul);
+    binary_method!(div, Div, div);
+    binary_method!(rem, Rem, rem);
+    binary_method!(bitand, BitAnd, bitand);
+    binary_method!(bitor, BitOr, bitor);
+    binary_method!(bitxor, BitXor, bitxor);
+    binary_method!(shl, Shl, shl);
+    binary_method!(shr, Shr, shr);
 
-            fn $method(self, right: R) -> Self::Output {
-                binary_op(self, right, ops_impl::$op::<T>)
-            }
-        }
-    };
+    unary_method!(neg, Neg, neg);
+    unary_method!(not, Not, not);
 }
-
-macro_rules! impl_rx_unary {
-    ($trait:ident, $method:ident, $op:ident) => {
-        impl<'scope, T> $trait for Rx<'scope, T, RxValueKind>
-        where
-            T: Clone + 'scope,
-            for<'a> &'a T: $trait<Output = T>,
-        {
-            type Output = Rx<'scope, T>;
-
-            fn $method(self) -> Self::Output {
-                unary_op(self, ops_impl::$op::<T>)
-            }
-        }
-    };
-}
-
-impl_rx_binary!(Add, add, add);
-impl_rx_binary!(Sub, sub, sub);
-impl_rx_binary!(Mul, mul, mul);
-impl_rx_binary!(Div, div, div);
-impl_rx_binary!(Rem, rem, rem);
-impl_rx_binary!(BitAnd, bitand, bitand);
-impl_rx_binary!(BitOr, bitor, bitor);
-impl_rx_binary!(BitXor, bitxor, bitxor);
-impl_rx_binary!(Shl, shl, shl);
-impl_rx_binary!(Shr, shr, shr);
-impl_rx_unary!(Neg, neg, neg);
-impl_rx_unary!(Not, not, not);

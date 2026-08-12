@@ -12,7 +12,7 @@ use crate::{
     source::IntoCssReactive,
     types,
 };
-use silex_core::{RuntimeInputs, Rx, SilexError, SilexResult};
+use silex_core::{ErrorReporter, RuntimeInputs, Rx, SilexError, SilexResult};
 use silex_dom::{
     attribute::{ApplyTarget, ApplyToDom, AttrOp, IntoStorable, PendingAttribute},
     view::{ApplyAttributes, OwnerState, View, ViewOwner, ViewOwnerToken},
@@ -368,15 +368,20 @@ impl<'scope> DynamicCss<'scope> {
         self
     }
 
-    pub fn with_var<P, S>(mut self, var_name: &'static str, source: S) -> Self
+    pub fn with_var<P, S>(
+        mut self,
+        var_name: &'static str,
+        source: S,
+        error_handler: ErrorReporter<'scope>,
+    ) -> SilexResult<Self>
     where
         P: types::CssProperty,
         S: IntoCssReactive<'scope>,
         S::Value: Clone + Sized + types::ValidFor<P> + Display + 'scope,
     {
         self.vars
-            .push((var_name, make_property_val::<P, S>(source)));
-        self
+            .push((var_name, make_property_val::<P, S>(source, error_handler)?));
+        Ok(self)
     }
 
     pub fn with_rule(
@@ -432,7 +437,7 @@ impl<'scope> DynamicCss<'scope> {
                     > {
                         let values: Vec<String> = vars_for_effect
                             .iter()
-                            .map(|(_, getter)| getter.try_get())
+                            .map(|(_, getter)| getter.get())
                             .collect::<SilexResult<_>>()?;
                         if let Some(style) = element_style(&el_clone) {
                             for (index, ((name, _), value)) in
@@ -490,7 +495,7 @@ impl<'scope> DynamicCss<'scope> {
                 Box::new(move |previous: Option<&String>| -> SilexResult<String> {
                     let current_vals: Vec<String> = getters
                         .iter()
-                        .map(|getter| getter.try_get())
+                        .map(|getter| getter.get())
                         .collect::<SilexResult<_>>()?;
                     let dyn_class = dynamic_class_with_static(
                         base_class,
@@ -747,7 +752,7 @@ impl<'scope> StyledVariantBinding<'scope> {
             Box::new(move || -> SilexResult<()> {
                 let active_variants: Vec<String> = groups
                     .iter()
-                    .map(|group| group.source.try_get().map(|value| value.to_lowercase()))
+                    .map(|group| group.source.get().map(|value| value.to_lowercase()))
                     .collect::<Result<_, _>>()?;
                 update_styled_variant_classes(
                     &element_for_effect,
@@ -1048,19 +1053,17 @@ impl<'scope> View<'scope> for GlobalStyleView<'scope> {
     }
 }
 
-pub fn make_property_val<'scope, P, S>(source: S) -> Rx<'scope, String>
+pub fn make_property_val<'scope, P, S>(
+    source: S,
+    error_handler: ErrorReporter<'scope>,
+) -> SilexResult<Rx<'scope, String>>
 where
     P: types::CssProperty,
     S: IntoCssReactive<'scope>,
     S::Value: Clone + Sized + types::ValidFor<P> + Display + 'scope,
 {
     let source = source.into_css_reactive();
-    let handler = source
-        .scope()
-        .error_handler(|error| panic!("reactive CSS mapping failed: {error}"));
-    source
-        .map(|value| value.to_string(), handler)
-        .unwrap_or_else(|error| panic!("创建 reactive CSS mapping 失败: {error}"))
+    source.map(|value| value.to_string(), error_handler)
 }
 
 /// 一条带动态选择器的组件规则：算出本轮类名、把规则写进独占样式表、返回类名。
@@ -1087,7 +1090,7 @@ pub fn dynamic_rule_class_with_static(
 ) -> SilexResult<Option<String>> {
     let vals: Vec<String> = getters
         .iter()
-        .map(|getter| getter.try_get())
+        .map(|getter| getter.get())
         .collect::<SilexResult<_>>()?;
     let dyn_class = dynamic_class_with_static(base_class, parts, &vals, static_values);
     let rule = render_layered_selector(layer, parts, &dyn_class, &vals, static_values);
@@ -1156,7 +1159,7 @@ pub fn inject_managed_dynamic_style<'scope>(
             Box::new(move || -> SilexResult<()> {
                 let vals: Vec<String> = positional
                     .iter()
-                    .map(|getter| getter.try_get())
+                    .map(|getter| getter.get())
                     .collect::<SilexResult<_>>()?;
                 // 全局样式没有组件类名，`CssPart::Class` 不会出现在这类模板里
                 let res = render_selector_with_static(parts, "", &vals, &static_values);
@@ -1173,7 +1176,7 @@ pub fn inject_managed_dynamic_style<'scope>(
                     replacements
                         .iter()
                         .map(|(pattern, getter)| {
-                            getter.try_get().map(|value| {
+                            getter.get().map(|value| {
                                 (
                                     pattern.clone(),
                                     crate::escape::declaration_value(&value).into_owned(),

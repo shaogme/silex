@@ -215,15 +215,15 @@ struct CompletionRegistrar<'scope> {
 
 type HostCallbackFn<'scope> = Box<dyn FnMut(JsValue) -> SilexResult<()> + 'scope>;
 type CompletionSenderFactory<'scope> =
-    Rc<dyn Fn(HostCallbackFn<'scope>) -> CompletionSender<JsValue> + 'scope>;
+    Rc<dyn Fn(HostCallbackFn<'scope>) -> SilexResult<CompletionSender<JsValue>> + 'scope>;
 type CompletionOnceFactory<'scope> =
-    Rc<dyn Fn(HostCallbackFn<'scope>) -> CompletionOnce<JsValue> + 'scope>;
+    Rc<dyn Fn(HostCallbackFn<'scope>) -> SilexResult<CompletionOnce<JsValue>> + 'scope>;
 
 impl<'scope> CompletionRegistrar<'scope> {
     fn new<FS, FO>(sender: FS, once: FO) -> Self
     where
-        FS: Fn(HostCallbackFn<'scope>) -> CompletionSender<JsValue> + 'scope,
-        FO: Fn(HostCallbackFn<'scope>) -> CompletionOnce<JsValue> + 'scope,
+        FS: Fn(HostCallbackFn<'scope>) -> SilexResult<CompletionSender<JsValue>> + 'scope,
+        FO: Fn(HostCallbackFn<'scope>) -> SilexResult<CompletionOnce<JsValue>> + 'scope,
     {
         Self {
             sender: Rc::new(sender),
@@ -231,11 +231,14 @@ impl<'scope> CompletionRegistrar<'scope> {
         }
     }
 
-    fn call_sender(&self, callback: HostCallbackFn<'scope>) -> CompletionSender<JsValue> {
+    fn call_sender(
+        &self,
+        callback: HostCallbackFn<'scope>,
+    ) -> SilexResult<CompletionSender<JsValue>> {
         (self.sender)(callback)
     }
 
-    fn call_once(&self, callback: HostCallbackFn<'scope>) -> CompletionOnce<JsValue> {
+    fn call_once(&self, callback: HostCallbackFn<'scope>) -> SilexResult<CompletionOnce<JsValue>> {
         (self.once)(callback)
     }
 }
@@ -389,7 +392,7 @@ impl<'scope, T: 'scope> OwnerState<'scope, T> {
                     .ok_or(SilexError::Reactivity(ReactiveError::NoSuchNode))
             }),
             OwnerStateValue::Stored(value) => value
-                .try_with(|value| value.as_ref().map(callback))?
+                .with(|value| value.as_ref().map(callback))?
                 .ok_or(SilexError::Reactivity(ReactiveError::NoSuchNode)),
         }
     }
@@ -404,7 +407,7 @@ impl<'scope, T: 'scope> OwnerState<'scope, T> {
                     .ok_or(SilexError::Reactivity(ReactiveError::NoSuchNode))
             }),
             OwnerStateValue::Stored(value) => value
-                .try_update(|value| value.as_mut().map(callback))
+                .update(|value| value.as_mut().map(callback))
                 .map_err(SilexError::from)?
                 .ok_or(SilexError::Reactivity(ReactiveError::NoSuchNode)),
         }
@@ -417,7 +420,7 @@ impl<'scope, T: 'scope> OwnerState<'scope, T> {
                 .with_mut(Option::take)
                 .ok_or(SilexError::Reactivity(ReactiveError::NoSuchNode)),
             OwnerStateValue::Stored(value) => value
-                .try_update(Option::take)
+                .update(Option::take)
                 .map_err(SilexError::from)?
                 .ok_or(SilexError::Reactivity(ReactiveError::NoSuchNode)),
         }
@@ -430,7 +433,7 @@ impl<'scope, T: 'scope> OwnerState<'scope, T> {
                 Ok(current.with_mut(|current| current.replace(value)))
             }
             OwnerStateValue::Stored(current) => current
-                .try_update(|current| current.replace(value))
+                .update(|current| current.replace(value))
                 .map_err(SilexError::from),
         }
     }
@@ -443,7 +446,7 @@ impl<'scope, T: 'scope> OwnerState<'scope, T> {
     pub fn take_for_cleanup(&self) -> Option<T> {
         match &self.value {
             OwnerStateValue::Shared(value) => value.with_mut(Option::take),
-            OwnerStateValue::Stored(value) => value.try_update(Option::take).ok().flatten(),
+            OwnerStateValue::Stored(value) => value.update(Option::take).ok().flatten(),
         }
     }
 }
@@ -762,7 +765,7 @@ impl<'scope> ViewOwnerToken<'scope> {
             return Err(SilexError::Reactivity(ReactiveError::NoSuchNode));
         }
         Ok(match self.state_scope {
-            Some(scope) => OwnerState::new_stored(scope.stored(Some(value)), self.active.clone()),
+            Some(scope) => OwnerState::new_stored(scope.stored(Some(value))?, self.active.clone()),
             None => OwnerState::new(value, self.active.clone()),
         })
     }
@@ -779,7 +782,7 @@ impl<'scope> ViewOwnerToken<'scope> {
         self.cleanup.call(cleanup, error_handler)
     }
 
-    pub fn try_owned_scope(&self) -> SilexResult<OwnedScope<'scope>> {
+    pub fn owned_scope(&self) -> SilexResult<OwnedScope<'scope>> {
         self.owned_scope.call()
     }
 
@@ -809,30 +812,30 @@ impl<'scope> ViewOwnerToken<'scope> {
         &self,
         callback: F,
         error_handler: ViewErrorHandler<'scope>,
-    ) -> HostCallback
+    ) -> SilexResult<HostCallback>
     where
         F: FnMut(JsValue) -> SilexResult<()> + 'scope,
     {
-        HostCallback {
-            destination: HostDestination::Sender(self.completion.call_sender(Box::new(callback))),
+        Ok(HostCallback {
+            destination: HostDestination::Sender(self.completion.call_sender(Box::new(callback))?),
             gate: Rc::new(Cell::new(true)),
             error_handler: erase_error_handler(error_handler),
-        }
+        })
     }
 
     pub(crate) fn host_callback_once<F>(
         &self,
         callback: F,
         error_handler: ViewErrorHandler<'scope>,
-    ) -> HostCallback
+    ) -> SilexResult<HostCallback>
     where
         F: FnMut(JsValue) -> SilexResult<()> + 'scope,
     {
-        HostCallback {
-            destination: HostDestination::Once(self.completion.call_once(Box::new(callback))),
+        Ok(HostCallback {
+            destination: HostDestination::Once(self.completion.call_once(Box::new(callback))?),
             gate: Rc::new(Cell::new(true)),
             error_handler: erase_error_handler(error_handler),
-        }
+        })
     }
 
     pub(crate) fn is_active(&self) -> bool {
@@ -840,37 +843,6 @@ impl<'scope> ViewOwnerToken<'scope> {
     }
 
     pub(crate) fn host_resource_for_callback<F>(
-        &self,
-        callback: &HostCallback,
-        cancel: F,
-    ) -> HostResourceHandle<'scope>
-    where
-        F: FnOnce() + 'scope,
-    {
-        self.try_host_resource_for_callback(callback, cancel)
-            .unwrap_or_else(|error| {
-                self.handle_error(error);
-                HostResourceHandle::inactive()
-            })
-    }
-
-    pub(crate) fn host_resource_for_js_callback<F>(
-        &self,
-        callback: &HostCallback,
-        resource: HostResourceHandle<'scope>,
-        cancel: F,
-    ) -> HostResourceHandle<'scope>
-    where
-        F: FnOnce() + 'scope,
-    {
-        self.try_host_resource_for_js_callback(callback, resource, cancel)
-            .unwrap_or_else(|error| {
-                self.handle_error(error);
-                HostResourceHandle::inactive()
-            })
-    }
-
-    pub(crate) fn try_host_resource_for_callback<F>(
         &self,
         callback: &HostCallback,
         cancel: F,
@@ -883,10 +855,10 @@ impl<'scope> ViewOwnerToken<'scope> {
             callback_for_cancel.cancel();
             cancel();
         });
-        self.try_register_host_resource(resource)
+        self.register_host_resource(resource)
     }
 
-    pub(crate) fn try_host_resource_for_js_callback<F>(
+    pub(crate) fn host_resource_for_js_callback<F>(
         &self,
         callback: &HostCallback,
         resource: HostResourceHandle<'scope>,
@@ -900,10 +872,10 @@ impl<'scope> ViewOwnerToken<'scope> {
             callback_for_cancel.cancel();
             cancel();
         });
-        self.try_register_host_resource(resource)
+        self.register_host_resource(resource)
     }
 
-    fn try_register_host_resource(
+    fn register_host_resource(
         &self,
         resource: HostResourceHandle<'scope>,
     ) -> SilexResult<HostResourceHandle<'scope>> {
@@ -941,7 +913,7 @@ pub trait ViewOwner<'scope> {
         error_handler: ViewErrorHandler<'scope>,
     ) -> SilexResult<()>;
     fn token(&self) -> ViewOwnerToken<'scope>;
-    fn try_owned_scope(&self) -> SilexResult<OwnedScope<'scope>>;
+    fn owned_scope(&self) -> SilexResult<OwnedScope<'scope>>;
 
     fn handle_error(&self, error: SilexError) {
         self.token().handle_error(error);
@@ -974,8 +946,8 @@ impl<'scope> ViewOwner<'scope> for ViewOwnerToken<'scope> {
         self.clone()
     }
 
-    fn try_owned_scope(&self) -> SilexResult<OwnedScope<'scope>> {
-        ViewOwnerToken::try_owned_scope(self)
+    fn owned_scope(&self) -> SilexResult<OwnedScope<'scope>> {
+        ViewOwnerToken::owned_scope(self)
     }
 
     fn handle_error(&self, error: SilexError) {
@@ -1031,7 +1003,7 @@ impl<'scope> ViewOwner<'scope> for ScopedViewOwner<'scope> {
     }
 
     fn validate_inputs(&self, inputs: &RuntimeInputs) -> SilexResult<()> {
-        self.scope.try_validate_inputs(inputs)
+        self.scope.validate_inputs(inputs)
     }
 
     fn on_cleanup(
@@ -1060,12 +1032,12 @@ impl<'scope> ViewOwner<'scope> for ScopedViewOwner<'scope> {
             }),
             previous_effect: PreviousEffectOwner::Scoped(scope_for_previous),
             validate: ValidationRegistrar::new(move |inputs| {
-                scope_for_validate.try_validate_inputs(inputs)
+                scope_for_validate.validate_inputs(inputs)
             }),
             cleanup: CleanupRegistrar::new(move |cleanup, error_handler| {
                 scope_for_cleanup.on_cleanup(cleanup, error_handler)
             }),
-            owned_scope: OwnedScopeRegistrar::new(move || scope_for_owned.try_owned_scope()),
+            owned_scope: OwnedScopeRegistrar::new(move || scope_for_owned.owned_scope()),
             completion: CompletionRegistrar::new(
                 move |callback| scope_for_sender.completion_sender(unwind_safe(callback)),
                 move |callback| scope_for_once.completion_once(unwind_safe(callback)),
@@ -1076,8 +1048,8 @@ impl<'scope> ViewOwner<'scope> for ScopedViewOwner<'scope> {
         })
     }
 
-    fn try_owned_scope(&self) -> SilexResult<OwnedScope<'scope>> {
-        self.scope.try_owned_scope()
+    fn owned_scope(&self) -> SilexResult<OwnedScope<'scope>> {
+        self.scope.owned_scope()
     }
 }
 
@@ -1112,7 +1084,7 @@ impl<'scope> ViewOwner<'scope> for OwnedViewOwner<'scope> {
     }
 
     fn validate_inputs(&self, inputs: &RuntimeInputs) -> SilexResult<()> {
-        self.scope.try_validate_inputs(inputs)
+        self.scope.validate_inputs(inputs)
     }
 
     fn on_cleanup(
@@ -1141,12 +1113,12 @@ impl<'scope> ViewOwner<'scope> for OwnedViewOwner<'scope> {
             }),
             previous_effect: PreviousEffectOwner::Owned(scope_for_previous),
             validate: ValidationRegistrar::new(move |inputs| {
-                scope_for_validate.try_validate_inputs(inputs)
+                scope_for_validate.validate_inputs(inputs)
             }),
             cleanup: CleanupRegistrar::new(move |cleanup, error_handler| {
                 scope_for_cleanup.on_cleanup(cleanup, error_handler)
             }),
-            owned_scope: OwnedScopeRegistrar::new(move || scope_for_owned.try_child()),
+            owned_scope: OwnedScopeRegistrar::new(move || scope_for_owned.child()),
             completion: CompletionRegistrar::new(
                 move |callback| scope_for_sender.completion_sender(unwind_safe(callback)),
                 move |callback| scope_for_once.completion_once(unwind_safe(callback)),
@@ -1157,8 +1129,8 @@ impl<'scope> ViewOwner<'scope> for OwnedViewOwner<'scope> {
         })
     }
 
-    fn try_owned_scope(&self) -> SilexResult<OwnedScope<'scope>> {
-        self.scope.try_child()
+    fn owned_scope(&self) -> SilexResult<OwnedScope<'scope>> {
+        self.scope.child()
     }
 }
 
@@ -1276,13 +1248,17 @@ impl<'a, T: RxValue> RxValue for Prop<'a, T> {
 }
 
 impl<'a, T> Prop<'a, T> {
-    pub fn promote<'scope>(self, scope: Scope<'scope>) -> Rx<'scope, T::Value>
+    pub fn promote<'scope>(
+        self,
+        scope: Scope<'scope>,
+        error_handler: ErrorReporter<'scope>,
+    ) -> SilexResult<Rx<'scope, T::Value>>
     where
         'a: 'scope,
         T: ReactiveSource<'scope> + Clone,
         T::Value: Sized + RxData + 'scope,
     {
-        scope.promote(self.into_owned())
+        scope.promote(self.into_owned(), error_handler)
     }
 }
 
@@ -1364,7 +1340,7 @@ pub(crate) fn mount_composite<'scope, F>(
 where
     F: FnOnce(&dyn ViewOwner<'scope>, &Node, Vec<PendingAttribute<'scope>>) -> SilexResult<()>,
 {
-    let scope = Rc::new(owner.try_owned_scope()?);
+    let scope = Rc::new(owner.owned_scope()?);
     let provisional_owner = OwnedViewOwner::new(scope.clone(), owner.token().error_handler());
     let fragment: Node = crate::document().create_document_fragment().into();
 
@@ -1642,7 +1618,7 @@ pub(crate) fn mount_dynamic_view_universal_from<'scope>(
         renderer.call(RenderArgs::new(parent, attrs, token))
     });
     let token = owner.token();
-    let row = RowController::try_new(
+    let row = RowController::new(
         &token,
         RowControllerConfig {
             range,
@@ -1757,7 +1733,7 @@ impl<K: PartialEq, S> PartialEq for BranchEvaluation<K, S> {
 
 impl<K: Eq, S> Eq for BranchEvaluation<K, S> {}
 
-/// Mount a branch that is replaced only when its route identity changes.
+/// Mount a stable branch whose evaluation can report a runtime error.
 pub fn mount_branch_stable_cached<'scope, K, S, KeyFn, BranchFn>(
     owner: &dyn ViewOwner<'scope>,
     parent: &Node,
@@ -1769,7 +1745,7 @@ pub fn mount_branch_stable_cached<'scope, K, S, KeyFn, BranchFn>(
 where
     K: PartialEq + Clone + 'scope,
     S: Clone + 'scope,
-    KeyFn: Fn() -> BranchEvaluation<K, S> + Clone + 'scope,
+    KeyFn: Fn() -> SilexResult<BranchEvaluation<K, S>> + Clone + 'scope,
     BranchFn: Fn(BranchEvaluation<K, S>) -> AnyView<'scope> + 'scope,
 {
     let render = RowRender::new(move |args: RowRenderArgs<'scope, BranchEvaluation<K, S>>| {
@@ -1782,7 +1758,7 @@ where
         } = args;
         branch_fn(key).mount_owned(&token, &parent, attrs)
     });
-    mount_keyed_dynamic_view(owner, parent, attrs, inputs, key_fn, render, false)
+    mount_keyed_dynamic_view_result(owner, parent, attrs, inputs, key_fn, render, false)
 }
 
 struct BranchState<'scope, K> {
@@ -1806,8 +1782,32 @@ where
     K: PartialEq + Clone + 'scope,
     KeyFn: Fn() -> K + Clone + 'scope,
 {
+    mount_keyed_dynamic_view_result(
+        owner,
+        parent,
+        attrs,
+        inputs,
+        move || Ok(key_fn()),
+        render,
+        update_same_key,
+    )
+}
+
+fn mount_keyed_dynamic_view_result<'scope, K, KeyFn>(
+    owner: &dyn ViewOwner<'scope>,
+    parent: &Node,
+    attrs: Vec<PendingAttribute<'scope>>,
+    inputs: RuntimeInputs,
+    key_fn: KeyFn,
+    render: RowRender<'scope, K>,
+    update_same_key: bool,
+) -> SilexResult<()>
+where
+    K: PartialEq + Clone + 'scope,
+    KeyFn: Fn() -> SilexResult<K> + Clone + 'scope,
+{
     owner.validate_inputs(&inputs)?;
-    let scope = Rc::new(owner.try_owned_scope()?);
+    let scope = Rc::new(owner.owned_scope()?);
     let local_owner = OwnedViewOwner::new(scope.clone(), owner.token().error_handler());
     let range = DomRange::append(parent, "branch")?;
     let state = local_owner.token().owner_state(BranchState {
@@ -1851,7 +1851,7 @@ where
         Box::new(move || -> SilexResult<()> {
             let mut state = effect_state.take()?;
             let result = catch_unwind(AssertUnwindSafe(|| -> SilexResult<()> {
-                let key = key_fn();
+                let key = key_fn()?;
                 let same_key = state.key.as_ref().is_some_and(|current| current == &key);
                 if same_key {
                     if update_same_key {
@@ -1889,7 +1889,7 @@ where
                         return Err(error);
                     }
                 };
-                let row = match RowController::try_new(
+                let row = match RowController::new(
                     &token,
                     RowControllerConfig {
                         range: row_range,
@@ -2280,18 +2280,25 @@ mod tests {
         let seen = Rc::new(Cell::new(0));
         let seen_in_callback = seen.clone();
         let mut runtime = Runtime::new();
-        let root = runtime.run();
+        let root = runtime.run().expect("root should start");
         let bridge = {
             let scope = root.scope();
-            let owner = ScopedViewOwner::new(scope, scope.error_handler(|_| {}));
-            let token = owner.token();
-            let bridge = token.host_callback(
-                move |_| {
-                    seen_in_callback.set(seen_in_callback.get() + 1);
-                    Ok(())
-                },
-                token.error_handler(),
+            let owner = ScopedViewOwner::new(
+                scope,
+                scope
+                    .error_handler(|_| {})
+                    .expect("error handler should register"),
             );
+            let token = owner.token();
+            let bridge = token
+                .host_callback(
+                    move |_| {
+                        seen_in_callback.set(seen_in_callback.get() + 1);
+                        Ok(())
+                    },
+                    token.error_handler(),
+                )
+                .expect("host callback should register");
             assert!(bridge.dispatch(JsValue::UNDEFINED));
             bridge
         };
@@ -2306,21 +2313,26 @@ mod tests {
     fn host_callback_reports_completion_errors_after_callback_returns() {
         let handled = Rc::new(Cell::new(0));
         let mut runtime = Runtime::new();
-        let root = runtime.run();
+        let root = runtime.run().expect("root should start");
         let bridge = {
             let scope = root.scope();
-            let (_, set_signal) = scope.signal(0);
+            let (_, set_signal) = scope.signal(0).expect("signal should initialize");
             let handled_in_handler = handled.clone();
-            let handler = scope.error_handler(move |error| {
-                assert!(matches!(error, SilexError::Framework(message) if message == "host"));
-                handled_in_handler.set(handled_in_handler.get() + 1);
-                set_signal.set(1);
-            });
+            let handler = scope
+                .error_handler(move |error| {
+                    assert!(matches!(error, SilexError::Framework(message) if message == "host"));
+                    handled_in_handler.set(handled_in_handler.get() + 1);
+                    set_signal.set(1).expect("signal should be writable");
+                })
+                .expect("error handler should register");
             let owner = ScopedViewOwner::new(scope, handler);
-            owner.token().host_callback(
-                |_| Err(SilexError::Framework(String::from("host"))),
-                handler,
-            )
+            owner
+                .token()
+                .host_callback(
+                    |_| Err(SilexError::Framework(String::from("host"))),
+                    handler,
+                )
+                .expect("host callback should register")
         };
 
         assert!(bridge.dispatch(JsValue::UNDEFINED));
@@ -2331,15 +2343,20 @@ mod tests {
     #[test]
     fn host_callback_handler_panic_closes_the_destination() {
         let mut runtime = Runtime::new();
-        let root = runtime.run();
+        let root = runtime.run().expect("root should start");
         let bridge = {
             let scope = root.scope();
-            let handler = scope.error_handler(|_| panic!("host error handler panic"));
+            let handler = scope
+                .error_handler(|_| panic!("host error handler panic"))
+                .expect("error handler should register");
             let owner = ScopedViewOwner::new(scope, handler);
-            owner.token().host_callback(
-                |_| Err(SilexError::Framework(String::from("host"))),
-                handler,
-            )
+            owner
+                .token()
+                .host_callback(
+                    |_| Err(SilexError::Framework(String::from("host"))),
+                    handler,
+                )
+                .expect("host callback should register")
         };
 
         let result = catch_unwind(AssertUnwindSafe(|| bridge.dispatch(JsValue::UNDEFINED)));
@@ -2370,15 +2387,24 @@ mod tests {
         let cancelled = Rc::new(Cell::new(0));
         let cancelled_in_cleanup = cancelled.clone();
         let mut runtime = Runtime::new();
-        let root = runtime.run();
+        let root = runtime.run().expect("root should start");
         {
             let scope = root.scope();
-            let owner = ScopedViewOwner::new(scope, scope.error_handler(|_| {}));
+            let owner = ScopedViewOwner::new(
+                scope,
+                scope
+                    .error_handler(|_| {})
+                    .expect("error handler should register"),
+            );
             let token = owner.token();
-            let callback = token.host_callback(|_| Ok(()), token.error_handler());
-            let handle = token.host_resource_for_callback(&callback, move || {
-                cancelled_in_cleanup.set(cancelled_in_cleanup.get() + 1);
-            });
+            let callback = token
+                .host_callback(|_| Ok(()), token.error_handler())
+                .expect("host callback should register");
+            let handle = token
+                .host_resource_for_callback(&callback, move || {
+                    cancelled_in_cleanup.set(cancelled_in_cleanup.get() + 1);
+                })
+                .expect("host resource should register");
             drop(handle);
         }
         assert_eq!(cancelled.get(), 0);
@@ -2390,35 +2416,49 @@ mod tests {
     fn owner_rejects_foreign_inputs_before_effect_registration() {
         let mut first = Runtime::new();
         let mut second = Runtime::new();
-        let inputs = first.child(|scope| {
-            let (source, _) = scope.signal(1i32);
-            scope.promote(source).runtime_inputs()
-        });
+        let inputs = first
+            .child(|scope| {
+                let (source, _) = scope.signal(1i32).expect("signal should initialize");
+                scope
+                    .promote(
+                        source,
+                        scope
+                            .error_handler(|_| {})
+                            .expect("error handler should register"),
+                    )
+                    .expect("promotion should initialize")
+                    .runtime_inputs()
+            })
+            .expect("child scope should initialize");
         let runs = Rc::new(Cell::new(0));
         let runs_for_effect = runs.clone();
 
-        second.child(|scope| {
-            let errors = Rc::new(RefCell::new(Vec::new()));
-            let errors_for_reporter = errors.clone();
-            let owner = ScopedViewOwner::new(
-                scope,
-                scope.error_handler(move |error| errors_for_reporter.borrow_mut().push(error)),
-            );
-            assert!(owner.validate_inputs(&inputs).is_err());
-            assert!(
-                owner
-                    .effect_from(
-                        inputs,
-                        Box::new(move || {
-                            runs_for_effect.set(runs_for_effect.get() + 1);
-                            Ok(())
-                        }),
-                        owner.token().error_handler(),
-                    )
-                    .is_err()
-            );
-            assert!(errors.borrow().is_empty());
-        });
+        second
+            .child(|scope| {
+                let errors = Rc::new(RefCell::new(Vec::new()));
+                let errors_for_reporter = errors.clone();
+                let owner = ScopedViewOwner::new(
+                    scope,
+                    scope
+                        .error_handler(move |error| errors_for_reporter.borrow_mut().push(error))
+                        .expect("error handler should register"),
+                );
+                assert!(owner.validate_inputs(&inputs).is_err());
+                assert!(
+                    owner
+                        .effect_from(
+                            inputs,
+                            Box::new(move || {
+                                runs_for_effect.set(runs_for_effect.get() + 1);
+                                Ok(())
+                            }),
+                            owner.token().error_handler(),
+                        )
+                        .is_err()
+                );
+                assert!(errors.borrow().is_empty());
+            })
+            .expect("child scope should initialize");
 
         assert_eq!(runs.get(), 0);
     }
@@ -2431,26 +2471,34 @@ mod tests {
         let inner_errors_for_reporter = inner_errors.clone();
         let mut runtime = Runtime::new();
 
-        runtime.child(|scope| {
-            let owner = ScopedViewOwner::new(
-                scope,
-                scope.error_handler(move |error| {
-                    outer_errors_for_reporter
-                        .borrow_mut()
-                        .push(error.to_string());
-                }),
-            );
-            let token = owner.token();
-            token.handle_error(SilexError::Framework("outer".to_string()));
+        runtime
+            .child(|scope| {
+                let owner = ScopedViewOwner::new(
+                    scope,
+                    scope
+                        .error_handler(move |error| {
+                            outer_errors_for_reporter
+                                .borrow_mut()
+                                .push(error.to_string());
+                        })
+                        .expect("error handler should register"),
+                );
+                let token = owner.token();
+                token.handle_error(SilexError::Framework("outer".to_string()));
 
-            let nested = token.with_error_handler(scope.error_handler(move |error| {
-                inner_errors_for_reporter
-                    .borrow_mut()
-                    .push(error.to_string());
-            }));
-            nested.handle_error(SilexError::Framework("inner".to_string()));
-            token.handle_error(SilexError::Framework("outer-again".to_string()));
-        });
+                let nested = token.with_error_handler(
+                    scope
+                        .error_handler(move |error| {
+                            inner_errors_for_reporter
+                                .borrow_mut()
+                                .push(error.to_string());
+                        })
+                        .expect("error handler should register"),
+                );
+                nested.handle_error(SilexError::Framework("inner".to_string()));
+                token.handle_error(SilexError::Framework("outer-again".to_string()));
+            })
+            .expect("child scope should initialize");
 
         assert_eq!(
             outer_errors.borrow().as_slice(),
@@ -2466,11 +2514,16 @@ mod tests {
         let late_access_rejected_for_cleanup = late_access_rejected.clone();
         let cleanup_value_for_cleanup = cleanup_value.clone();
         let mut runtime = Runtime::new();
-        let root = runtime.run();
+        let root = runtime.run().expect("root should start");
 
         {
             let scope = root.scope();
-            let owner = ScopedViewOwner::new(scope, scope.error_handler(|_| {}));
+            let owner = ScopedViewOwner::new(
+                scope,
+                scope
+                    .error_handler(|_| {})
+                    .expect("error handler should register"),
+            );
             let token = owner.token();
             let state = token.owner_state(41).expect("owner state should be active");
             assert_eq!(

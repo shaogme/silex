@@ -29,7 +29,9 @@ fn host_with_caller_node() -> Node {
 }
 
 fn error_handler<'scope>(scope: silex_core::Scope<'scope>) -> ErrorReporter<'scope> {
-    scope.error_handler(|_: SilexError| {})
+    scope
+        .error_handler(|_: SilexError| {})
+        .expect("error handler should register")
 }
 
 struct CleanupProbe {

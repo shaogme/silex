@@ -37,52 +37,26 @@ impl<'scope, T: 'scope> Memo<'scope, T> {
         Self { inner, scope }
     }
 
-    pub fn try_get(&self) -> SilexResult<T>
+    pub fn get(&self) -> SilexResult<T>
     where
         T: Clone,
     {
         self.inner.get().map_err(SilexError::from)
     }
 
-    pub fn get(&self) -> T
-    where
-        T: Clone,
-    {
-        self.try_get()
-            .unwrap_or_else(|error| panic!("读取 scoped memo 失败: {error}"))
-    }
-
-    pub fn try_get_untracked(&self) -> SilexResult<T>
+    pub fn get_untracked(&self) -> SilexResult<T>
     where
         T: Clone,
     {
         self.inner.get_untracked().map_err(SilexError::from)
     }
 
-    pub fn get_untracked(&self) -> T
-    where
-        T: Clone,
-    {
-        self.try_get_untracked()
-            .unwrap_or_else(|error| panic!("读取 scoped memo 失败: {error}"))
-    }
-
-    pub fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+    pub fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         self.inner.with(f).map_err(SilexError::from)
     }
 
-    pub fn with<U>(&self, f: impl FnOnce(&T) -> U) -> U {
-        self.try_with(f)
-            .unwrap_or_else(|error| panic!("读取 scoped memo 失败: {error}"))
-    }
-
-    pub fn try_with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+    pub fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         self.inner.with_untracked(f).map_err(SilexError::from)
-    }
-
-    pub fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> U {
-        self.try_with_untracked(f)
-            .unwrap_or_else(|error| panic!("读取 scoped memo 失败: {error}"))
     }
 
     pub fn map<U, F>(
@@ -96,11 +70,7 @@ impl<'scope, T: 'scope> Memo<'scope, T> {
     {
         let scope = self.scope;
         let inputs = silex_reactivity::RuntimeInputs::single(self.inner.runtime_input());
-        scope.derived_from(
-            inputs,
-            move || self.try_with(|value| f(value)),
-            error_handler,
-        )
+        scope.derived_from(inputs, move || self.with(|value| f(value)), error_handler)
     }
 
     pub fn into_rx(self) -> Rx<'scope, T, RxValueKind> {

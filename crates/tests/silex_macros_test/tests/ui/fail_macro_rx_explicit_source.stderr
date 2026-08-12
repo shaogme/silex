@@ -1,5 +1,5 @@
 error: explicit reactive source must be a path or field access; put method calls outside $(...)
-  --> tests/ui/fail_macro_rx_explicit_source.rs:11:30
+  --> tests/ui/fail_macro_rx_explicit_source.rs:13:49
    |
-11 |         let _ = rx!(scope; $(source.clone()));
-   |                              ^^^^^^^^^^^^^^
+13 |             let _ = rx!(scope; error_handler; $(source.clone()));
+   |                                                 ^^^^^^^^^^^^^^

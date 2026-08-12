@@ -15,7 +15,7 @@ impl ResponseCodec<Value> for Codec {
 }
 
 fn build(scope: silex_core::Scope<'_>) {
-    let handler = scope.error_handler(|_| {});
+    let handler = scope.error_handler(|_| {}).unwrap();
     let send_builder = HttpClient::builder_with_codec(
         scope,
         HttpMethod::Get,
@@ -30,18 +30,18 @@ fn build(scope: silex_core::Scope<'_>) {
         HttpMethod::Get,
         "https://example.test",
         Codec,
-        scope.error_handler(|_| {}),
+        scope.error_handler(|_| {}).unwrap(),
     );
-    let _resource = resource_builder.try_into_resource(None);
+    let _resource = resource_builder.into_resource(None);
 
     let mutation_builder = HttpClient::builder_with_codec(
         scope,
         HttpMethod::Post,
         "https://example.test",
         Codec,
-        scope.error_handler(|_| {}),
+        scope.error_handler(|_| {}).unwrap(),
     );
-    let _mutation = mutation_builder.try_as_mutation();
+    let _mutation = mutation_builder.as_mutation();
 }
 
 fn main() {

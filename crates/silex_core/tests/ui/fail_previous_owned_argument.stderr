@@ -1,3 +1,24 @@
+error[E0308]: mismatched types
+ --> tests/ui/fail_previous_owned_argument.rs:8:13
+  |
+6 |         let _ = scope.effect_with_previous(
+  |                       -------------------- arguments to this method are incorrect
+7 |             |previous: Option<i32>| Ok::<i32, SilexError>(previous.unwrap_or_default()),
+8 |             scope.error_handler(|_: SilexError| {}),
+  |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `ErrorHandler<'_, SilexError>`, found `Result<ErrorHandler<'_, ...>, ...>`
+  |
+  = note: expected struct `ErrorHandler<'_, SilexError>`
+               found enum `Result<ErrorHandler<'_, SilexError>, SilexError>`
+note: method defined here
+ --> src/scope.rs
+  |
+  |     pub fn effect_with_previous<T, F>(
+  |            ^^^^^^^^^^^^^^^^^^^^
+help: consider using `Result::expect` to unwrap the `Result<ErrorHandler<'_, SilexError>, SilexError>` value, panicking if the value is a `Result::Err`
+  |
+8 |             scope.error_handler(|_: SilexError| {}).expect("REASON"),
+  |                                                    +++++++++++++++++
+
 error[E0631]: type mismatch in closure arguments
  --> tests/ui/fail_previous_owned_argument.rs:6:23
   |

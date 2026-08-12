@@ -523,6 +523,12 @@ impl BuilderContext {
             (setter_param, setter_value, quote! {}, quote! {})
         };
 
+        let setter_value = if reactive_input {
+            quote! { #setter_value? }
+        } else {
+            setter_value
+        };
+
         let final_value = if !field.attrs.chained {
             setter_value.clone()
         } else {
@@ -545,10 +551,27 @@ impl BuilderContext {
                 }
             }
             let return_ty = self.get_builder_ty(&return_states);
+            let setter_return_ty = if reactive_input {
+                quote! { #__silex::core::SilexResult<#return_ty> }
+            } else {
+                return_ty.clone()
+            };
+            let builder_value = quote! {
+                #builder_name {
+                    #(#fields_destructure,)*
+                    _pending_attrs,
+                    _markers: ::core::marker::PhantomData,
+                }
+            };
+            let return_value = if reactive_input {
+                quote! { ::core::result::Result::Ok(#builder_value) }
+            } else {
+                builder_value
+            };
 
             quote! {
                 #[allow(non_camel_case_types, unused_variables)]
-                pub fn #ident #generic(self, val: #setter_param) -> #return_ty #where_clause {
+                pub fn #ident #generic(self, val: #setter_param) -> #setter_return_ty #where_clause {
                     let Self {
                         #(#fields_destructure,)*
                         _pending_attrs,
@@ -557,18 +580,24 @@ impl BuilderContext {
 
                     let #ident = #final_value;
 
-                    #builder_name {
-                        #(#fields_destructure,)*
-                        _pending_attrs,
-                        _markers: ::core::marker::PhantomData,
-                    }
+                    #return_value
                 }
             }
         } else {
+            let return_value = if reactive_input {
+                quote! { ::core::result::Result::Ok(self) }
+            } else {
+                quote! { self }
+            };
+            let setter_return_ty = if reactive_input {
+                quote! { #__silex::core::SilexResult<Self> }
+            } else {
+                quote! { Self }
+            };
             quote! {
-                pub fn #ident #generic(mut self, val: #setter_param) -> Self #where_clause {
+                pub fn #ident #generic(mut self, val: #setter_param) -> #setter_return_ty #where_clause {
                     self.#ident = #final_value;
-                    self
+                    #return_value
                 }
             }
         }
@@ -936,20 +965,6 @@ fn reactive_default_transform(
         };
     }
 
-    if is_fallible_reactive_default_field(field) {
-        return match default_value {
-            Some(value) => quote! {
-                <#ty as #__silex::core::TryRxFrom<#scope>>::try_rx_from(
-                    #scope_field,
-                    #value,
-                )
-            },
-            None => quote! {
-                <#ty as #__silex::core::TryRxDefault<#scope>>::try_rx_default(#scope_field)
-            },
-        };
-    }
-
     match default_value {
         Some(value) => quote! {
             <#ty as #__silex::core::RxFrom<#scope>>::rx_from(#scope_field, #value)
@@ -986,7 +1001,6 @@ fn parse_component_metadata(
     let mut render_fn_name = None;
     let mut constructor_name = None;
     let mut inject_owner = false;
-
     attr.parse_nested_meta(|meta| {
         if meta.path.is_ident("builder") {
             if builder_name.is_some() {
@@ -1218,7 +1232,6 @@ fn is_reactive_default_field(field: &FieldSpec) -> bool {
 
 fn is_fallible_reactive_default_field(field: &FieldSpec) -> bool {
     is_reactive_default_field(field)
-        && type_last_segment_name(&field.ty).is_some_and(|ident| ident == "Callback")
 }
 
 fn is_scope_marker_field(field: &FieldSpec) -> bool {

@@ -6,6 +6,7 @@ use silex_macros::{component, tw};
 #[component]
 pub fn Progress<'scope>(
     scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
     #[prop(into)]
     #[chain(default)]
     value: Signal<'scope, u32>,
@@ -13,7 +14,7 @@ pub fn Progress<'scope>(
     #[chain(default)]
     class: Signal<'scope, String>,
 ) -> impl View<'scope> {
-    let container_cls = rx!(scope; {
+    let container_cls = rx!(scope; error_handler; {
         let base =
             tw!("relative h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800");
         let extra = $class;
@@ -24,15 +25,15 @@ pub fn Progress<'scope>(
         }
     });
 
-    let indicator_style = rx!(scope; {
+    let indicator_style = rx!(scope; error_handler; {
         let pct = (*$value).min(100);
         format!("width: {}%;", pct)
     });
 
-    div(div(())
+    Ok(div(div(())
         .class(tw!(
             "h-full bg-slate-900 dark:bg-slate-50 transition-all duration-300"
         ))
         .style(indicator_style))
-    .class(container_cls)
+    .class(container_cls))
 }

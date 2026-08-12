@@ -2,8 +2,7 @@ use crate::PersistenceError;
 use js_sys::Object;
 use ref_str::LocalStaticRefStr;
 use silex_core::{
-    ErrorReporter, RuntimeInputs, Scope, SilexResult,
-    reactivity::{Memo, runtime_inputs_of},
+    ErrorReporter, RuntimeInputs, Rx, Scope, SilexResult, reactivity::runtime_inputs_of,
 };
 use silex_router::{Navigator, RouterContext};
 use std::{
@@ -168,7 +167,7 @@ pub type SessionStorageBackend = WebStorageBackend<false>;
 #[derive(Clone)]
 pub struct QueryBackend<'scope> {
     navigator: Option<Navigator<'scope>>,
-    query_map: Option<Memo<'scope, HashMap<String, String>>>,
+    query_map: Option<Rx<'scope, HashMap<String, String>>>,
     inputs: RuntimeInputs,
 }
 
@@ -205,7 +204,7 @@ impl<'scope> QueryBackend<'scope> {
             .ok_or(PersistenceError::BackendUnavailable)
     }
 
-    fn query_map(&self) -> Result<Memo<'scope, HashMap<String, String>>, PersistenceError> {
+    fn query_map(&self) -> Result<Rx<'scope, HashMap<String, String>>, PersistenceError> {
         self.query_map.ok_or(PersistenceError::BackendUnavailable)
     }
 }
@@ -236,16 +235,25 @@ impl<'scope, const IS_LOCAL: bool> PersistenceBackend<'scope> for WebStorageBack
 
 impl<'scope> PersistenceBackend<'scope> for QueryBackend<'scope> {
     fn get(&self, key: &str) -> Result<Option<String>, PersistenceError> {
-        Ok(self.query_map()?.get_untracked().get(key).cloned())
+        Ok(self
+            .query_map()?
+            .get_untracked()
+            .map_err(PersistenceError::from)?
+            .get(key)
+            .cloned())
     }
 
     fn set(&self, key: &str, value: &str) -> Result<(), PersistenceError> {
-        self.navigator()?.set_query(key, Some(value));
+        self.navigator()?
+            .set_query(key, Some(value))
+            .map_err(PersistenceError::from)?;
         Ok(())
     }
 
     fn remove(&self, key: &str) -> Result<(), PersistenceError> {
-        self.navigator()?.set_query(key, None);
+        self.navigator()?
+            .set_query(key, None)
+            .map_err(PersistenceError::from)?;
         Ok(())
     }
 
@@ -261,7 +269,7 @@ impl<'scope> PersistenceBackend<'scope> for QueryBackend<'scope> {
         error_handler: ErrorReporter<'scope>,
     ) -> Result<BackendSubscription<'scope>, BackendSubscribeError<'scope>> {
         let inputs = self.runtime_inputs();
-        scope.try_validate_inputs(&inputs).map_err(|error| {
+        scope.validate_inputs(&inputs).map_err(|error| {
             BackendSubscribeError::new(PersistenceError::InvalidConfiguration(error.to_string()))
         })?;
 
@@ -274,7 +282,7 @@ impl<'scope> PersistenceBackend<'scope> for QueryBackend<'scope> {
             .effect_with_previous_from(
                 inputs,
                 move |previous: Option<&Option<String>>| -> SilexResult<Option<String>> {
-                    let current = query_map.try_get()?.get(key_for_effect.as_ref()).cloned();
+                    let current = query_map.get()?.get(key_for_effect.as_ref()).cloned();
                     if active_for_effect.get()
                         && let Some(previous) = previous
                         && previous != &current
@@ -514,10 +522,24 @@ mod tests {
         scope: Scope<'scope>,
         map: ReadSignal<'scope, HashMap<String, String>>,
     ) -> QueryBackend<'scope> {
-        let base_path = scope.stored("/".to_string());
-        let (path, set_path) = scope.signal("/".to_string());
-        let (search, set_search) = scope.signal(String::new());
-        let query_map = scope.memo_from(runtime_inputs_of(map), move |_| map.get());
+        let base_path = scope
+            .stored("/".to_string())
+            .expect("base path should be stored");
+        let (path, set_path) = scope
+            .signal("/".to_string())
+            .expect("path signal should be created");
+        let (search, set_search) = scope
+            .signal(String::new())
+            .expect("search signal should be created");
+        let query_map = scope
+            .derived_from(
+                runtime_inputs_of(map),
+                move || map.get(),
+                scope
+                    .error_handler(|_| {})
+                    .expect("error handler should be registered"),
+            )
+            .expect("query map should be derived");
         let navigator = Navigator {
             base_path,
             path,
@@ -546,36 +568,47 @@ mod tests {
     #[test]
     fn query_backend_get_and_subscribe_follow_query_map_changes() {
         let mut runtime = Runtime::new();
-        runtime.child(|scope| {
-            let map = scope.rw_signal(HashMap::<String, String>::new());
-            let backend = test_query_backend(scope, map.read_signal());
-            let events = Rc::new(RefCell::new(Vec::<BackendEvent>::new()));
-            let callback = {
-                let events = events.clone();
-                Rc::new(move |event| events.borrow_mut().push(event)) as BackendEventSink
-            };
+        runtime
+            .child(|scope| {
+                let map = scope
+                    .rw_signal(HashMap::<String, String>::new())
+                    .expect("query map signal should be created");
+                let backend = test_query_backend(scope, map.read_signal());
+                let events = Rc::new(RefCell::new(Vec::<BackendEvent>::new()));
+                let callback = {
+                    let events = events.clone();
+                    Rc::new(move |event| events.borrow_mut().push(event)) as BackendEventSink
+                };
 
-            let _subscription = backend
-                .subscribe(scope, "q", callback, scope.error_handler(|_| {}))
-                .unwrap();
-            assert_eq!(backend.get("q").unwrap(), None);
+                let _subscription = backend
+                    .subscribe(
+                        scope,
+                        "q",
+                        callback,
+                        scope
+                            .error_handler(|_| {})
+                            .expect("error handler should be registered"),
+                    )
+                    .unwrap();
+                assert_eq!(backend.get("q").unwrap(), None);
 
-            let mut with_value = HashMap::new();
-            with_value.insert("q".to_string(), "rust".to_string());
-            map.set(with_value);
+                let mut with_value = HashMap::new();
+                with_value.insert("q".to_string(), "rust".to_string());
+                map.set(with_value).expect("query map should update");
 
-            assert_eq!(backend.get("q").unwrap(), Some("rust".to_string()));
-            assert!(matches!(
-                events.borrow().first(),
-                Some(BackendEvent::Set { key, value }) if key == "q" && value == "rust"
-            ));
+                assert_eq!(backend.get("q").unwrap(), Some("rust".to_string()));
+                assert!(matches!(
+                    events.borrow().first(),
+                    Some(BackendEvent::Set { key, value }) if key == "q" && value == "rust"
+                ));
 
-            map.set(HashMap::new());
-            assert!(matches!(
-                events.borrow().get(1),
-                Some(BackendEvent::Removed { key }) if key == "q"
-            ));
-        });
+                map.set(HashMap::new()).expect("query map should update");
+                assert!(matches!(
+                    events.borrow().get(1),
+                    Some(BackendEvent::Removed { key }) if key == "q"
+                ));
+            })
+            .expect("query backend test scope should run");
     }
 
     #[test]
@@ -586,28 +619,39 @@ mod tests {
         ));
 
         let mut runtime = Runtime::new();
-        runtime.child(|scope| {
-            let backend = QueryBackend::unavailable();
-            let result = backend
-                .subscribe(scope, "q", Rc::new(|_| {}), scope.error_handler(|_| {}))
-                .map_err(|error| error.into_error());
-            assert!(matches!(result, Err(PersistenceError::BackendUnavailable)));
-        });
+        runtime
+            .child(|scope| {
+                let backend = QueryBackend::unavailable();
+                let result = backend
+                    .subscribe(
+                        scope,
+                        "q",
+                        Rc::new(|_| {}),
+                        scope
+                            .error_handler(|_| {})
+                            .expect("error handler should be registered"),
+                    )
+                    .map_err(|error| error.into_error());
+                assert!(matches!(result, Err(PersistenceError::BackendUnavailable)));
+            })
+            .expect("unavailable backend test scope should run");
     }
 
     #[test]
     fn query_runtime_inputs_reject_a_foreign_scope_before_effect_creation() {
         let mut first_runtime = Runtime::new();
-        let first_root = first_runtime.run();
+        let first_root = first_runtime.run().expect("first root should be created");
         let inputs = first_root.with_scope(|scope| {
-            let map = scope.rw_signal(HashMap::<String, String>::new());
+            let map = scope
+                .rw_signal(HashMap::<String, String>::new())
+                .expect("query map signal should be created");
             test_query_backend(scope, map.read_signal()).runtime_inputs()
         });
 
         let mut second_runtime = Runtime::new();
-        let second_root = second_runtime.run();
+        let second_root = second_runtime.run().expect("second root should be created");
         second_root.with_scope(|scope| {
-            assert!(scope.try_validate_inputs(&inputs).is_err());
+            assert!(scope.validate_inputs(&inputs).is_err());
             let runs = Rc::new(Cell::new(0));
             let runs_for_effect = runs.clone();
             assert!(
@@ -618,7 +662,9 @@ mod tests {
                             runs_for_effect.set(runs_for_effect.get() + 1);
                             Ok(())
                         },
-                        scope.error_handler(|_| {}),
+                        scope
+                            .error_handler(|_| {})
+                            .expect("error handler should be registered"),
                     )
                     .is_err()
             );

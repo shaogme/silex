@@ -556,7 +556,7 @@ struct MountTransaction {
 impl MountTransaction {
     fn new(runtime: Runtime, host: Node, cleanup_sink: CleanupSink) -> Result<Self, MountError> {
         let mut runtime = runtime;
-        let root = match runtime.try_run() {
+        let root = match runtime.run() {
             Ok(root) => root,
             Err(primary) => return Err(MountError::new(primary, CleanupReport::new())),
         };
@@ -684,12 +684,14 @@ mod tests {
 
     fn root_with_cleanup_panic(message: &'static str) -> RootHandle {
         let mut runtime = Runtime::new();
-        let root = runtime.run();
+        let root = runtime.run().expect("root should be created");
         root.with_scope(|scope| {
             scope
                 .on_cleanup(
                     move || panic!("{message}"),
-                    scope.error_handler(|_: SilexError| {}),
+                    scope
+                        .error_handler(|_: SilexError| {})
+                        .expect("error handler should register"),
                 )
                 .expect("cleanup should register");
         });

@@ -15,82 +15,111 @@ enum Text {
 #[test]
 fn typed_key_macro_keeps_reactive_arguments_inside_the_memo() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let catalog = Catalog::from_entries(
-            Locale::new("en"),
-            [
-                ("welcome.user", CatalogValue::from("Hello, {name}!")),
-                (
-                    "cart.items",
-                    CatalogValue::plural([
-                        ("one", "You have {count} item."),
-                        ("other", "You have {count} items."),
-                    ]),
-                ),
-            ],
-        )
-        .expect("valid catalog");
-        let store = I18nBuilder::new(scope, scope.error_handler(|_| {}))
-            .locale(Locale::new("en"))
-            .catalog(catalog)
-            .build()
-            .expect("valid store");
-        let name = scope.rw_signal("Alice".to_string());
-        let greeting = t!(store, Text::WelcomeUser { name: name.get() });
+    runtime
+        .child(|scope| {
+            let catalog = Catalog::from_entries(
+                Locale::new("en").expect("valid locale"),
+                [
+                    ("welcome.user", CatalogValue::from("Hello, {name}!")),
+                    (
+                        "cart.items",
+                        CatalogValue::plural([
+                            ("one", "You have {count} item."),
+                            ("other", "You have {count} items."),
+                        ]),
+                    ),
+                ],
+            )
+            .expect("valid catalog");
+            let store =
+                I18nBuilder::new(scope, scope.error_handler(|_| {}).expect("error handler"))
+                    .locale(Locale::new("en").expect("valid locale"))
+                    .catalog(catalog)
+                    .build()
+                    .expect("valid store");
+            let name = scope.rw_signal("Alice".to_string()).expect("name signal");
+            let greeting = t!(
+                store,
+                Text::WelcomeUser {
+                    name: name.get().expect("name value")
+                }
+            )
+            .expect("greeting translation");
 
-        assert_eq!(greeting.get(), "Hello, Alice!");
-        name.set("Bob".to_string());
-        assert_eq!(greeting.get(), "Hello, Bob!");
-        assert_eq!(
-            t!(store, Text::CartItems { count: 2 }).get(),
-            "You have 2 items."
-        );
-    });
+            assert_eq!(greeting.get().expect("greeting value"), "Hello, Alice!");
+            name.set("Bob".to_string()).expect("name update");
+            assert_eq!(greeting.get().expect("greeting value"), "Hello, Bob!");
+            assert_eq!(
+                t!(store, Text::CartItems { count: 2 })
+                    .expect("cart translation")
+                    .get()
+                    .expect("cart value"),
+                "You have 2 items."
+            );
+        })
+        .expect("child scope");
 }
 
 #[test]
 fn typed_key_memo_tracks_fallback_and_catalog_revision() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let french = Catalog::from_entries(
-            Locale::new("fr"),
-            [("welcome.user", CatalogValue::from("Bonjour, {name}!"))],
-        )
-        .expect("valid french catalog");
-        let german = Catalog::from_entries(
-            Locale::new("de"),
-            [("welcome.user", CatalogValue::from("Hallo, {name}!"))],
-        )
-        .expect("valid german catalog");
-        let store = I18nBuilder::new(scope, scope.error_handler(|_| {}))
-            .locale(Locale::new("es-MX"))
-            .fallback_locale(Locale::new("fr"))
-            .catalog(french)
-            .catalog(german)
-            .build()
-            .expect("valid store");
-        let name = scope.rw_signal("Alice".to_string());
-        let greeting = t!(store, Text::WelcomeUser { name: name.get() });
-
-        assert_eq!(greeting.get(), "Bonjour, Alice!");
-        name.set("Bob".to_string());
-        assert_eq!(greeting.get(), "Bonjour, Bob!");
-
-        store.set_fallback_locale(Locale::new("de"));
-        assert_eq!(greeting.get(), "Hallo, Bob!");
-
-        store.insert_catalog(
-            Catalog::from_entries(
-                Locale::new("de"),
-                [("welcome.user", CatalogValue::from("Guten Tag, {name}!"))],
+    runtime
+        .child(|scope| {
+            let french = Catalog::from_entries(
+                Locale::new("fr").expect("valid locale"),
+                [("welcome.user", CatalogValue::from("Bonjour, {name}!"))],
             )
-            .expect("valid replacement catalog"),
-        );
-        assert_eq!(greeting.get(), "Guten Tag, Bob!");
+            .expect("valid french catalog");
+            let german = Catalog::from_entries(
+                Locale::new("de").expect("valid locale"),
+                [("welcome.user", CatalogValue::from("Hallo, {name}!"))],
+            )
+            .expect("valid german catalog");
+            let store =
+                I18nBuilder::new(scope, scope.error_handler(|_| {}).expect("error handler"))
+                    .locale(Locale::new("es-MX").expect("valid locale"))
+                    .fallback_locale(Locale::new("fr").expect("valid locale"))
+                    .catalog(french)
+                    .catalog(german)
+                    .build()
+                    .expect("valid store");
+            let name = scope.rw_signal("Alice".to_string()).expect("name signal");
+            let greeting = t!(
+                store,
+                Text::WelcomeUser {
+                    name: name.get().expect("name value")
+                }
+            )
+            .expect("greeting translation");
 
-        store.remove_catalog(&Locale::new("de"));
-        assert_eq!(greeting.get(), "welcome.user");
-        store.set_fallback_locale(Locale::new("fr"));
-        assert_eq!(greeting.get(), "Bonjour, Bob!");
-    });
+            assert_eq!(greeting.get().expect("greeting value"), "Bonjour, Alice!");
+            name.set("Bob".to_string()).expect("name update");
+            assert_eq!(greeting.get().expect("greeting value"), "Bonjour, Bob!");
+
+            store
+                .set_fallback_locale(Locale::new("de").expect("valid locale"))
+                .expect("fallback update");
+            assert_eq!(greeting.get().expect("greeting value"), "Hallo, Bob!");
+
+            store
+                .insert_catalog(
+                    Catalog::from_entries(
+                        Locale::new("de").expect("valid locale"),
+                        [("welcome.user", CatalogValue::from("Guten Tag, {name}!"))],
+                    )
+                    .expect("valid replacement catalog"),
+                )
+                .expect("catalog insertion");
+            assert_eq!(greeting.get().expect("greeting value"), "Guten Tag, Bob!");
+
+            store
+                .remove_catalog(&Locale::new("de").expect("valid locale"))
+                .expect("catalog removal");
+            assert_eq!(greeting.get().expect("greeting value"), "welcome.user");
+            store
+                .set_fallback_locale(Locale::new("fr").expect("valid locale"))
+                .expect("fallback update");
+            assert_eq!(greeting.get().expect("greeting value"), "Bonjour, Bob!");
+        })
+        .expect("child scope");
 }

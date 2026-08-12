@@ -27,7 +27,7 @@ pub use route_table::*;
 
 use crate::path::strip_path_prefix;
 use crate::route_table::RouteBranchKey;
-use silex_core::{Scope, SilexResult, reactivity::runtime_inputs_of};
+use silex_core::{ErrorReporter, Scope, SilexError, SilexResult, reactivity::runtime_inputs_of};
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::helpers::window_event_listener_untyped;
 use silex_dom::view::{AnyView, ApplyAttributes, BranchEvaluation, View, ViewOwner};
@@ -66,17 +66,19 @@ impl ToRoute for RoutePath {
 fn create_router_context<'scope>(
     scope: Scope<'scope>,
     base: &str,
+    error_handler: ErrorReporter<'scope>,
 ) -> SilexResult<RouterContext<'scope>> {
-    let window = web_sys::window().expect("no global `window` exists");
+    let window = web_sys::window()
+        .ok_or_else(|| SilexError::Javascript("no global `window` exists".into()))?;
     let location = window.location();
-    let raw_path = location.pathname().unwrap_or_else(|_| "/".to_string());
-    let initial_search = location.search().unwrap_or_default();
+    let raw_path = location.pathname().map_err(SilexError::from)?;
+    let initial_search = location.search().map_err(SilexError::from)?;
     let base_path = context::normalize_base_path(base);
     let initial_path = context::strip_base_path(&base_path, &raw_path);
-    let (path, set_path) = scope.signal(initial_path);
-    let (search, set_search) = scope.signal(initial_search);
+    let (path, set_path) = scope.signal(initial_path)?;
+    let (search, set_search) = scope.signal(initial_search)?;
 
-    RouterContext::try_new(
+    RouterContext::new(
         scope,
         RouterContextProps {
             base_path,
@@ -85,6 +87,7 @@ fn create_router_context<'scope>(
             set_path,
             set_search,
         },
+        error_handler,
     )
 }
 
@@ -119,6 +122,7 @@ impl<'scope> RouterLayoutInput<'scope> {
 #[component]
 pub fn Router<'scope>(
     scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
     #[chain] routes: RouteTable<'scope>,
     #[prop(into)]
     #[chain(default = String::from("/"))]
@@ -126,19 +130,19 @@ pub fn Router<'scope>(
     #[prop(into)]
     #[chain(default)]
     layout: RouterLayoutInput<'scope>,
-) -> SilexResult<RouterView<'scope>> {
-    let context = create_router_context(scope, &base)?;
-    Ok(RouterView {
+) -> RouterView<'scope> {
+    let context = create_router_context(scope, &base, error_handler);
+    RouterView {
         context,
         routes,
         layout: layout.into_option(),
-    })
+    }
 }
 
 /// Router 的实际 view，负责注册 popstate listener 并挂载 layout/outlet。
 #[derive(Clone)]
 pub struct RouterView<'scope> {
-    context: RouterContext<'scope>,
+    context: SilexResult<RouterContext<'scope>>,
     routes: RouteTable<'scope>,
     layout: Option<RouterLayout<'scope>>,
 }
@@ -150,19 +154,24 @@ impl<'scope> RouterView<'scope> {
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
     ) -> SilexResult<()> {
-        let inputs = self.context.runtime_inputs();
+        let Self {
+            context,
+            routes,
+            layout,
+        } = self;
+        let context = context?;
+        let inputs = context.runtime_inputs();
         owner.validate_inputs(&inputs)?;
 
         let token = owner.token();
-        let navigator = self.context.navigator;
+        let navigator = context.navigator;
         let listener = window_event_listener_untyped(&token, "popstate", move |_| {
-            navigator.refresh_location();
-            Ok(())
+            navigator.refresh_location()
         })?;
 
-        let outlet = RouteOutlet::new(self.context, self.routes).into_any();
-        let view = match self.layout {
-            Some(layout) => layout(self.context, outlet),
+        let outlet = RouteOutlet::new(context, routes).into_any();
+        let view = match layout {
+            Some(layout) => layout(context, outlet),
             None => outlet,
         };
         if let Err(error) = view.mount_owned(owner, parent, attrs) {
@@ -263,13 +272,13 @@ impl<'scope> View<'scope> for RouteOutlet<'scope> {
             attrs,
             inputs,
             move || {
-                let path = path_signal.get();
+                let path = path_signal.get()?;
                 let snapshot = nested_outlet_path(prefix_for_key.as_deref(), &path);
                 let key = snapshot
                     .as_deref()
                     .map(|path| routes_for_key.branch_key(path))
                     .unwrap_or(RouteBranchKey::Empty);
-                BranchEvaluation::new(key, snapshot)
+                Ok(BranchEvaluation::new(key, snapshot))
             },
             move |evaluation| {
                 let (_, path) = evaluation.into_parts();

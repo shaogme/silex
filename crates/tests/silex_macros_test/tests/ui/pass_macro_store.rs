@@ -42,8 +42,9 @@ fn persistent_field_store<'scope>(
     notifications: RwSignal<'scope, bool>,
 ) {
     let _settings: SettingsStore<'scope> =
-        SettingsStore::try_from_handles(scope, theme, notifications).unwrap();
-    let _settings: SettingsStore<'scope> = SettingsStore::from_handles(scope, theme, notifications);
+        SettingsStore::from_handles(scope, theme, notifications).unwrap();
+    let _settings: SettingsStore<'scope> =
+        SettingsStore::from_handles(scope, theme, notifications).unwrap();
 }
 
 fn typed_persistent_field_store<'scope>(
@@ -52,35 +53,38 @@ fn typed_persistent_field_store<'scope>(
     notifications: RwSignal<'scope, bool>,
 ) {
     let _settings: SettingsStore<'scope, Persistent<'scope, String>, RwSignal<'scope, bool>> =
-        SettingsStore::try_from_typed_handles(scope, theme, notifications).unwrap();
+        SettingsStore::from_typed_handles(scope, theme, notifications).unwrap();
     let _settings: SettingsStore<'scope, Persistent<'scope, String>, RwSignal<'scope, bool>> =
-        SettingsStore::from_typed_handles(scope, theme, notifications);
+        SettingsStore::from_typed_handles(scope, theme, notifications).unwrap();
 }
 
 fn main() {
     let mut runtime = Runtime::new();
 
-    runtime.child(|scope| {
+    runtime
+        .child(|scope| -> SilexResult<()> {
+        let error_handler = scope.error_handler(|_: SilexError| {}).unwrap();
         let user = UserStore::new(
             scope,
             User {
                 name: "Alice".to_string(),
                 age: 25,
             },
-        );
+        )
+        .unwrap();
 
-        user.name.set("Bob".to_string());
-        user.age.update(|age| *age += 1);
-        assert_eq!(user.snapshot().name, "Bob");
-        assert_eq!(user.snapshot_untracked().age, 26);
+        user.name.set("Bob".to_string()).unwrap();
+        user.age.update(|age| *age += 1).unwrap();
+        assert_eq!(user.snapshot().unwrap().name, "Bob");
+        assert_eq!(user.snapshot_untracked().unwrap().age, 26);
         assert!(user.scope() == scope);
         let copied = user;
-        assert_eq!(copied.snapshot().name, "Bob");
+        assert_eq!(copied.snapshot().unwrap().name, "Bob");
 
-        let name = scope.rw_signal("Carol".to_string());
-        let age = scope.rw_signal(30);
-        let from_handles: UserStore<'_> = UserStore::try_from_handles(scope, name, age).unwrap();
-        assert_eq!(from_handles.snapshot().name, "Carol");
+        let name = scope.rw_signal("Carol".to_string()).unwrap();
+        let age = scope.rw_signal(30).unwrap();
+        let from_handles: UserStore<'_> = UserStore::from_handles(scope, name, age).unwrap();
+        assert_eq!(from_handles.snapshot().unwrap().name, "Carol");
 
         let settings = SettingsStore::new(
             scope,
@@ -88,19 +92,23 @@ fn main() {
                 theme: "Light".to_string(),
                 notifications: false,
             },
-        );
-        let theme = rx!(scope; $(settings.theme).clone());
-        let label = rx!(scope; format!("Theme: {}", $(settings.theme)));
-        assert_eq!(theme.get(), "Light");
-        assert_eq!(label.get(), "Theme: Light");
+        )
+        .unwrap();
+        let theme = rx!(scope; error_handler; $(settings.theme).clone());
+        let label = rx!(scope; error_handler; format!("Theme: {}", $(settings.theme)));
+        assert_eq!(theme.get()?, "Light");
+        assert_eq!(label.get()?, "Theme: Light");
 
-        let value = scope.rw_signal(7u32);
+        let value = scope.rw_signal(7u32).unwrap();
         let label = "generic";
-        let generic = GenericStore::new(scope, Generic { value: 7, label });
-        let _ = (value, generic.snapshot());
+        let generic = GenericStore::new(scope, Generic { value: 7, label }).unwrap();
+        let _ = (value, generic.snapshot().unwrap());
 
-        let fixed = FixedStore::new(scope, Fixed { values: [1, 2] });
-        assert_eq!(fixed.snapshot().values, [1, 2]);
+        let fixed = FixedStore::new(scope, Fixed { values: [1, 2] }).unwrap();
+        assert_eq!(fixed.snapshot().unwrap().values, [1, 2]);
         let _ = (persistent_field_store, typed_persistent_field_store);
-    });
+        Ok(())
+    })
+    .unwrap()
+    .unwrap();
 }

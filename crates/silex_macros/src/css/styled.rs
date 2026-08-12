@@ -5,7 +5,7 @@ use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::visit::Visit;
 use syn::{
-    Attribute, FnArg, GenericArgument, Generics, Ident, PathArguments, Result, Token, Type,
+    Attribute, FnArg, GenericArgument, Generics, Ident, Pat, PathArguments, Result, Token, Type,
     Visibility,
 };
 
@@ -170,6 +170,11 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
     let parsed: StyledComponent = syn::parse2(input)?;
     let tag = &parsed.tag;
     let name = &parsed.name;
+    let explicit_error_handler = find_error_handler_parameter(&parsed.props);
+    let dynamic_error_handler = explicit_error_handler
+        .as_ref()
+        .map(|ident| quote! { #ident })
+        .unwrap_or_else(|| quote! { __silex_owner.error_handler() });
 
     let compile_result = CssCompiler::compile_with_prefix(
         parsed.css_block,
@@ -236,15 +241,16 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
     let mut dynamic_rule_descriptors = Vec::new();
 
     // 1. Process base dynamic values
-    process_dynamic_entries(
-        &compile_result.expressions,
-        &compile_result.class_name,
-        tag.span(),
-        &mut var_decls,
-        &mut style_bindings,
-        &mut style_getters,
-        "",
-    )?;
+    process_dynamic_entries(DynamicEntryExpansion {
+        entries: &compile_result.expressions,
+        class_name: &compile_result.class_name,
+        span: tag.span(),
+        var_decls: &mut var_decls,
+        style_bindings: &mut style_bindings,
+        style_getters: &mut style_getters,
+        suffix: "",
+        error_handler: dynamic_error_handler.clone(),
+    })?;
 
     // 2. Process base dynamic rules
     for (idx, rule) in compile_result.dynamic_rules.into_iter().enumerate() {
@@ -257,6 +263,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
             var_decls: &mut var_decls,
             variant_info: None,
             static_values: base_static_values_ident.as_ref(),
+            error_handler: dynamic_error_handler.clone(),
         })?;
     }
 
@@ -320,15 +327,16 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
                 &mut deferred_style_templates,
             );
 
-            process_dynamic_entries(
-                &res.expressions,
-                &v_class,
-                v_name.span(),
-                &mut var_decls,
-                &mut style_bindings,
-                &mut style_getters,
-                &format!("_{}_{}", prop, v_name),
-            )?;
+            process_dynamic_entries(DynamicEntryExpansion {
+                entries: &res.expressions,
+                class_name: &v_class,
+                span: v_name.span(),
+                var_decls: &mut var_decls,
+                style_bindings: &mut style_bindings,
+                style_getters: &mut style_getters,
+                suffix: &format!("_{}_{}", prop, v_name),
+                error_handler: dynamic_error_handler.clone(),
+            })?;
 
             for (idx, rule) in res.dynamic_rules.into_iter().enumerate() {
                 expand_dynamic_rule(DynamicRuleExpansion {
@@ -344,6 +352,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
                         name_lower: v_name.to_string().to_lowercase(),
                     }),
                     static_values: variant_static_values_ident.as_ref(),
+                    error_handler: dynamic_error_handler.clone(),
                 })?;
             }
 
@@ -382,6 +391,15 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
                     #__silex::core::reactivity::Signal<#scope, ::std::string::String>
             });
         }
+    }
+
+    let needs_result = !var_decls.is_empty();
+    let needs_owner = needs_result && explicit_error_handler.is_none();
+    if needs_owner {
+        all_fn_args.push(syn::parse_quote! {
+            #[inject(owner)]
+            __silex_owner: #__silex::dom::view::ViewOwnerToken<#scope>
+        });
     }
 
     for arg in &mut all_fn_args {
@@ -454,6 +472,24 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
         quote! { #__silex::html::#tag(#children_binding) }
     };
 
+    let node_view = quote! {
+        #node_init
+            .class(#class_name)
+            #style_prop_binding
+            .apply(#__silex::dom::attribute::AttrOp::CombinedStyles(#__silex::dom::attribute::CombinedStyles {
+                statics: ::std::vec![],
+                properties: ::std::vec![ #(#style_bindings),* ],
+                sheets: ::std::vec![],
+            }))
+            #styled_variant_binding
+    };
+
+    let node_return = if needs_result {
+        quote! { ::core::result::Result::Ok(#node_view) }
+    } else {
+        node_view.clone()
+    };
+
     let fn_body: syn::Block = syn::parse_quote! {
         {
             #assertions
@@ -465,15 +501,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
 
             #immediate_style_inits
 
-            #node_init
-                .class(#class_name)
-                #style_prop_binding
-                .apply(#__silex::dom::attribute::AttrOp::CombinedStyles(#__silex::dom::attribute::CombinedStyles {
-                    statics: ::std::vec![],
-                    properties: ::std::vec![ #(#style_bindings),* ],
-                    sheets: ::std::vec![],
-                }))
-                #styled_variant_binding
+            #node_return
         }
     };
 
@@ -493,7 +521,11 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
             variadic: None,
             output: syn::ReturnType::Type(
                 syn::token::RArrow::default(),
-                Box::new(syn::parse2(return_type)?),
+                Box::new(if needs_result {
+                    syn::parse_quote!(#__silex::core::SilexResult<#return_type>)
+                } else {
+                    syn::parse2(return_type)?
+                }),
             ),
         },
         block: Box::new(fn_body),
@@ -506,21 +538,37 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
     })
 }
 
-fn process_dynamic_entries(
-    entries: &[(String, TokenStream)],
-    class_name: &str,
+struct DynamicEntryExpansion<'a> {
+    entries: &'a [(String, TokenStream)],
+    class_name: &'a str,
     span: Span,
-    var_decls: &mut Vec<TokenStream>,
-    style_bindings: &mut Vec<TokenStream>,
-    style_getters: &mut Vec<Ident>,
-    suffix: &str,
-) -> Result<()> {
+    var_decls: &'a mut Vec<TokenStream>,
+    style_bindings: &'a mut Vec<TokenStream>,
+    style_getters: &'a mut Vec<Ident>,
+    suffix: &'a str,
+    error_handler: TokenStream,
+}
+
+fn process_dynamic_entries(input: DynamicEntryExpansion<'_>) -> Result<()> {
+    let DynamicEntryExpansion {
+        entries,
+        class_name,
+        span,
+        var_decls,
+        style_bindings,
+        style_getters,
+        suffix,
+        error_handler,
+    } = input;
     let __silex = crate::crate_path::silex();
     for (i, (prop, expr)) in entries.iter().enumerate() {
         let var_ident = quote::format_ident!("dyn_var{}_{}", suffix, i);
         let prop_type = crate::css::get_prop_type(prop, span)?;
         var_decls.push(quote! {
-            let #var_ident = #__silex::css::make_property_val::<#prop_type, _>((#expr).clone());
+            let #var_ident = #__silex::css::make_property_val::<#prop_type, _>(
+                (#expr).clone(),
+                #error_handler,
+            )?;
         });
         style_getters.push(var_ident.clone());
         let var_name = format!("--{}-{}", class_name, i);
@@ -583,6 +631,7 @@ struct DynamicRuleExpansion<'a> {
     var_decls: &'a mut Vec<TokenStream>,
     variant_info: Option<DynamicVariantInfo<'a>>,
     static_values: Option<&'a Ident>,
+    error_handler: TokenStream,
 }
 
 fn expand_dynamic_rule(input: DynamicRuleExpansion<'_>) -> Result<()> {
@@ -595,6 +644,7 @@ fn expand_dynamic_rule(input: DynamicRuleExpansion<'_>) -> Result<()> {
         var_decls,
         variant_info,
         static_values,
+        error_handler,
     } = input;
     let __silex = crate::crate_path::silex();
     let parts = crate::css::compiler::template_parts_tokens(&rule.template);
@@ -610,7 +660,10 @@ fn expand_dynamic_rule(input: DynamicRuleExpansion<'_>) -> Result<()> {
         let var_id = quote::format_ident!("rule_var{}_{}_{}", suffix, idx, expr_idx);
         let prop_ty = crate::css::get_prop_type(prop, span)?;
         var_decls.push(quote! {
-            let #var_id = #__silex::css::make_property_val::<#prop_ty, _>((#expr).clone());
+            let #var_id = #__silex::css::make_property_val::<#prop_ty, _>(
+                (#expr).clone(),
+                #error_handler,
+            )?;
         });
         getters.push(var_id);
     }
@@ -860,6 +913,13 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
         });
     }
 
+    let error_handler = find_error_handler_parameter(&params).ok_or_else(|| {
+        syn::Error::new(
+            c_name.span(),
+            "global! 的动态 CSS 必须声明显式 ErrorReporter 参数",
+        )
+    })?;
+
     for arg in &mut params {
         if let FnArg::Typed(arg) = arg {
             normalize_scoped_type(&mut arg.ty, &scope);
@@ -900,7 +960,10 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
         let prop_type = crate::css::get_prop_type(property, c_name.span())?;
         let pattern = format!("var(--slx-dyn-{index})");
         getter_decls.push(quote! {
-            let #getter = #__silex::css::make_property_val::<#prop_type, _>(#expression);
+            let #getter = #__silex::css::make_property_val::<#prop_type, _>(
+                #expression,
+                #error_handler,
+            )?;
         });
         replacement_getters.push(quote! {
             (
@@ -954,14 +1017,7 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
                 quote::format_ident!("__slx_global_selector_source_{index}_{expression_index}");
             getter_decls.push(quote! {
                 let #source = #__silex::css::IntoCssReactive::into_css_reactive(#expression);
-                let #getter = #source
-                    .map(
-                        |value| value.to_string(),
-                        #source.scope().error_handler(|error| {
-                            panic!("global! 动态选择器计算失败: {error}")
-                        }),
-                    )
-                    .unwrap_or_else(|error| panic!("创建 global! 动态选择器失败: {error}"));
+                let #getter = #source.map(|value| value.to_string(), #error_handler)?;
             });
             positional.push(quote! { #getter.clone() });
         }
@@ -984,9 +1040,9 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
         #[allow(non_snake_case, unused_variables)]
         #vis fn #c_name #fn_generics(
             #params
-        ) -> impl #__silex::dom::view::View<#scope>
+        ) -> #__silex::core::SilexResult<impl #__silex::dom::view::View<#scope>
             + #__silex::dom::view::ApplyAttributes<#scope>
-            + #scope
+            + #scope>
             #where_clause
         {
             #assertions
@@ -994,11 +1050,29 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
             let #static_values_ident: ::std::vec::Vec<::std::string::String> =
                 #static_value_tokens;
             #(#getter_decls)*
-            #__silex::css::GlobalStyleView::new(
+            Ok(#__silex::css::GlobalStyleView::new(
                 ::std::vec![ #(#static_styles),* ],
                 ::std::vec![ #(#bindings),* ],
-            )
+            ))
         }
+    })
+}
+
+fn find_error_handler_parameter(params: &Punctuated<FnArg, Token![,]>) -> Option<Ident> {
+    params.iter().find_map(|param| {
+        let FnArg::Typed(arg) = param else {
+            return None;
+        };
+        let Pat::Ident(pattern) = arg.pat.as_ref() else {
+            return None;
+        };
+        let Type::Path(type_path) = arg.ty.as_ref() else {
+            return None;
+        };
+        let is_error_handler = type_path.path.segments.last().is_some_and(|segment| {
+            segment.ident == "ErrorReporter" || segment.ident == "ErrorHandler"
+        });
+        is_error_handler.then(|| pattern.ident.clone())
     })
 }
 
@@ -1130,6 +1204,22 @@ mod tests {
     }
 
     #[test]
+    fn dynamic_styled_styles_use_explicit_error_handler_without_owner() {
+        let input = quote::quote! {
+            Panel<'scope><div>(
+                children: AnyView<'scope>,
+                error_handler: ErrorReporter<'scope>,
+                color: Signal<'scope, Hex>,
+            ) {
+                color: $(color);
+            }
+        };
+        let code = styled_impl(input).unwrap().to_string();
+        assert!(code.contains("error_handler"), "{code}");
+        assert!(!code.contains("__silex_owner"), "{code}");
+    }
+
+    #[test]
     fn dynamic_styled_rules_use_one_runtime_binding() {
         let input = quote::quote! {
             Panel<'scope><div>(
@@ -1147,7 +1237,10 @@ mod tests {
     #[test]
     fn mixed_global_styles_use_static_replacements() {
         let input = quote::quote! {
-            pub Global<'scope>(color: Signal<'scope, Hex>) {
+            pub Global<'scope>(
+                error_handler: ErrorReporter<'scope>,
+                color: Signal<'scope, Hex>,
+            ) {
                 body {
                     color: $(static AppTheme::PRIMARY);
                     border-color: $(color);

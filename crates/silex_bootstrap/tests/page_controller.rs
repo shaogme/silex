@@ -47,7 +47,7 @@ fn clean_sink() -> CleanupSink {
 }
 
 fn mount_text<'scope>(context: &MountContext<'scope>, text: &'static str) -> SilexResult<()> {
-    let handler = context.scope().error_handler(|_: SilexError| {});
+    let handler = context.scope().error_handler(|_: SilexError| {})?;
     context.mount(Element::with_child("section", text), handler)
 }
 
@@ -192,7 +192,7 @@ fn lifecycle_reentrancy_is_reported_without_blocking_outer_unmount() {
     controller
         .mount(Runtime::new(), |context| {
             let scope = context.scope();
-            let handler = scope.error_handler(|_: SilexError| {});
+            let handler = scope.error_handler(|_: SilexError| {})?;
             scope.on_cleanup(
                 || {
                     dispatch("pagehide");
@@ -236,7 +236,7 @@ fn lifecycle_reporter_receives_cleanup_error() {
     controller
         .mount(Runtime::new(), |context| {
             let scope = context.scope();
-            let handler = scope.error_handler(|_: SilexError| {});
+            let handler = scope.error_handler(|_: SilexError| {})?;
             scope.on_cleanup(
                 || -> SilexResult<()> { panic!("page cleanup failure") },
                 handler,

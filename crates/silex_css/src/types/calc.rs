@@ -488,7 +488,9 @@ mod tests {
         use crate::types::units::{pct, rem, vw};
         let css = Style::new()
             .width(css_min!(px(600), pct(100)))
+            .expect("width should build")
             .font_size(css_max!(rem(1), vw(4)))
+            .expect("font-size should build")
             .render()
             .css;
         assert!(css.contains("width: min(600px, 100%)"), "{css}");

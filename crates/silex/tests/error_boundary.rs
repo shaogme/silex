@@ -76,7 +76,7 @@ impl<'scope> View<'scope> for DeferredFailure<'scope> {
         owner.effect_from(
             silex_core::reactivity::runtime_inputs_of(source),
             Box::new(move || {
-                if source.try_get()? {
+                if source.get()? {
                     return Err(SilexError::Framework("deferred child failure".to_string()));
                 }
                 Ok(())
@@ -113,7 +113,7 @@ impl<'scope> View<'scope> for ConstructedHandlerFailure<'scope> {
         _parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
     ) -> SilexResult<()> {
-        self.handler.handle(SilexError::Framework(
+        let _ = self.handler.handle(SilexError::Framework(
             "constructed child failure".to_string(),
         ));
         Ok(())
@@ -142,7 +142,9 @@ fn test_handler<'scope>(
     scope: silex_core::Scope<'scope>,
     errors: Rc<Cell<usize>>,
 ) -> ErrorReporter<'scope> {
-    scope.error_handler(move |_| errors.set(errors.get() + 1))
+    scope
+        .error_handler(move |_| errors.set(errors.get() + 1))
+        .expect("test error handler should be registered")
 }
 
 #[wasm_bindgen_test]
@@ -151,19 +153,21 @@ fn initial_child_error_switches_to_fallback_without_parent_dispatch() {
     let parent_errors = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
 
-    runtime.child(|scope| {
-        let owner = ScopedViewOwner::new(scope, test_handler(scope, parent_errors.clone()));
-        let view = ErrorBoundary(scope, |_| InitialFailure)
-            .fallback(|error| format!("fallback: {error}"))
-            .build();
+    runtime
+        .child(|scope| {
+            let owner = ScopedViewOwner::new(scope, test_handler(scope, parent_errors.clone()));
+            let view = ErrorBoundary(scope, |_| InitialFailure)
+                .fallback(|error| format!("fallback: {error}"))
+                .build();
 
-        view.mount_owned(&owner, host.as_ref(), Vec::new())
-            .expect("initial child error should be recovered by the boundary");
-        assert_eq!(
-            host.text_content().as_deref(),
-            Some("fallback: Framework Error: initial child failure")
-        );
-    });
+            view.mount_owned(&owner, host.as_ref(), Vec::new())
+                .expect("initial child error should be recovered by the boundary");
+            assert_eq!(
+                host.text_content().as_deref(),
+                Some("fallback: Framework Error: initial child failure")
+            );
+        })
+        .expect("initial error boundary child should mount");
 
     assert_eq!(parent_errors.get(), 0);
 }
@@ -173,10 +177,10 @@ async fn deferred_child_error_reaches_boundary_and_disposes_child() {
     let host = host();
     let parent_errors = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
-    let root = runtime.run();
+    let root = runtime.run().expect("root runtime should start");
 
     let set_failed = root.with_scope(|scope| {
-        let (failed, set_failed) = scope.signal(false);
+        let (failed, set_failed) = scope.signal(false).expect("test signal should be created");
         let owner = ScopedViewOwner::new(scope, test_handler(scope, parent_errors.clone()));
         let child = DeferredFailure { source: failed };
         let view = ErrorBoundary(scope, move |_| child)
@@ -189,7 +193,9 @@ async fn deferred_child_error_reaches_boundary_and_disposes_child() {
         set_failed
     });
 
-    set_failed.set(true);
+    set_failed
+        .set(true)
+        .expect("test signal should be writable");
     JsFuture::from(Promise::resolve(&JsValue::UNDEFINED))
         .await
         .expect("microtask should resolve");
@@ -205,7 +211,7 @@ async fn child_factory_handler_reaches_boundary_fallback() {
     let host = host();
     let parent_errors = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
-    let root = runtime.run();
+    let root = runtime.run().expect("root runtime should start");
 
     root.with_scope(|scope| {
         let owner = ScopedViewOwner::new(scope, test_handler(scope, parent_errors.clone()));

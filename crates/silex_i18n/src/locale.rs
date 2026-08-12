@@ -10,9 +10,9 @@ pub struct Locale {
 }
 
 impl Locale {
-    pub fn new(value: impl Into<String>) -> Self {
+    pub fn new(value: impl Into<String>) -> Result<Self, I18nError> {
         let value = value.into();
-        Self::parse(&value).unwrap_or_else(|error| panic!("{error}"))
+        Self::parse(&value)
     }
 
     pub fn parse(value: impl AsRef<str>) -> Result<Self, I18nError> {

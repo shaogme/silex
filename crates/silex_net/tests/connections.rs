@@ -2,22 +2,23 @@ use silex_core::{ErrorReporter, Runtime};
 use silex_net::{EventStream, NetError, WebSocket};
 
 fn test_handler<'scope>(scope: silex_core::Scope<'scope>) -> ErrorReporter<'scope> {
-    scope.error_handler(|_| {})
+    scope.error_handler(|_| {}).unwrap()
 }
 
 #[test]
 fn foreign_connection_url_is_rejected_before_host_registration() {
     let mut source_runtime = Runtime::new();
     let mut target_runtime = Runtime::new();
-    let source_root = source_runtime.run();
-    let target_root = target_runtime.run();
+    let source_root = source_runtime.run().expect("source runtime setup");
+    let target_root = target_runtime.run().expect("target runtime setup");
 
     source_root.with_scope(|source_scope| {
-        let (url, _) = source_scope.signal("wss://foreign.test".to_string());
+        let (url, _) = source_scope
+            .signal("wss://foreign.test".to_string())
+            .unwrap();
         target_root.with_scope(|target_scope| {
-            let socket = WebSocket::lazy(target_scope, url, test_handler(target_scope)).try_build();
-            let stream =
-                EventStream::lazy(target_scope, url, test_handler(target_scope)).try_build();
+            let socket = WebSocket::lazy(target_scope, url, test_handler(target_scope)).build();
+            let stream = EventStream::lazy(target_scope, url, test_handler(target_scope)).build();
             assert!(matches!(socket, Err(NetError::InvalidConfiguration(_))));
             assert!(matches!(stream, Err(NetError::InvalidConfiguration(_))));
         });

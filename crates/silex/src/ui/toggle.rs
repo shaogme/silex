@@ -6,6 +6,7 @@ use silex_macros::{component, tw_variants};
 #[component]
 pub fn Toggle<'scope>(
     scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
@@ -42,7 +43,7 @@ pub fn Toggle<'scope>(
         }
     };
 
-    let cls = rx!(scope; {
+    let cls = rx!(scope; error_handler; {
         let base_cls = toggle_variants.get($variant, $size);
         let extra = $class;
         if extra.is_empty() {
@@ -52,12 +53,15 @@ pub fn Toggle<'scope>(
         }
     });
 
-    let state_attr = rx!(scope; if *$pressed { "on" } else { "off" });
+    let state_attr = rx!(scope; error_handler; if *$pressed { "on" } else { "off" });
 
-    button(children)
+    Ok(button(children)
         .attr("data-slot", "toggle")
-        .attr("aria-pressed", rx!(scope; $pressed.to_string()))
+        .attr(
+            "aria-pressed",
+            rx!(scope; error_handler; $pressed.to_string()),
+        )
         .attr("data-state", state_attr)
         .class(cls)
-        .on_click(move |_| -> SilexResult<()> { on_change.invoke(!pressed.try_get()?) })
+        .on_click(move |_| -> SilexResult<()> { on_change.invoke(!pressed.get()?) }))
 }

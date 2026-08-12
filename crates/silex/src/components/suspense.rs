@@ -1,4 +1,4 @@
-use silex_core::{Scope, reactivity::SuspenseContext};
+use silex_core::{ErrorReporter, Scope, reactivity::SuspenseContext};
 use silex_dom::prelude::*;
 use silex_html::div;
 use silex_macros::component;
@@ -31,6 +31,7 @@ pub enum SuspenseMode {
 #[component]
 pub fn Suspense<'scope, CH, R>(
     scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
     children: CH,
     #[chain(default = AnyView::Empty)] fallback: AnyView<'scope>,
     #[chain(default)] mode: SuspenseMode,
@@ -42,7 +43,7 @@ where
     let children = Rc::new(move |cx: SuspenseContext<'scope>| children(cx).into_any());
 
     // 创建属于此 Suspense 边界的上下文
-    let ctx = SuspenseContext::new(scope);
+    let ctx = SuspenseContext::new(scope)?;
 
     // 在组件初始化时（稳定作用域）执行一次工厂闭包。
     // 确保 Resource 实例绑定到稳定的组件作用域。
@@ -51,17 +52,17 @@ where
     match mode {
         SuspenseMode::KeepAlive => {
             let count = ctx.count;
-            let content_display = silex_core::rx!(scope; if *$count > 0 {
+            let content_display = silex_core::rx!(scope; error_handler; if *$count > 0 {
                 "display: none".to_string()
             } else {
                 "display: block".to_string()
             });
-            let fallback_display = silex_core::rx!(scope; if *$count > 0 {
+            let fallback_display = silex_core::rx!(scope; error_handler; if *$count > 0 {
                 "display: block".to_string()
             } else {
                 "display: none".to_string()
             });
-            chain!(
+            Ok(chain!(
                 div(initial_view.clone())
                     .class("suspense-content")
                     .style(content_display),
@@ -69,18 +70,18 @@ where
                     .class("suspense-fallback")
                     .style(fallback_display)
             )
-            .into_any()
+            .into_any())
         }
         SuspenseMode::Unmount => {
             let count = ctx.count;
-            let (is_first, set_is_first) = scope.signal(true);
+            let (is_first, set_is_first) = scope.signal(true)?;
             let initial_view = initial_view.clone();
             let children = children.clone();
             let fallback = fallback.clone();
-            let content = silex_core::rx!(scope; {
+            let content = silex_core::rx!(scope; error_handler; {
                 if *$count == 0 {
                     if *$is_first {
-                        set_is_first.set(false);
+                        set_is_first.set(false)?;
                         initial_view.clone()
                     } else {
                         children(ctx)
@@ -89,14 +90,14 @@ where
                     AnyView::Empty
                 }
             });
-            let fallback_view = silex_core::rx!(scope; {
+            let fallback_view = silex_core::rx!(scope; error_handler; {
                 if *$count > 0 {
                     fallback.clone()
                 } else {
                     AnyView::Empty
                 }
             });
-            chain!(content, fallback_view).into_any()
+            Ok(chain!(content, fallback_view).into_any())
         }
     }
 }

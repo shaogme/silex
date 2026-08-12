@@ -90,12 +90,12 @@ where
         scope: Scope<'scope>,
         action: F,
         error_handler: ErrorReporter<'scope>,
-    ) -> Self
+    ) -> crate::SilexResult<Self>
     where
         F: Fn(Arg) -> Fut + 'scope,
         Fut: Future<Output = Result<T, E>> + 'static,
     {
-        let (state, set_state) = scope.signal(MutationState::Idle);
+        let (state, set_state) = scope.signal(MutationState::Idle)?;
         let last_id = Rc::new(Cell::new(0usize));
         let last_id_for_callback = last_id.clone();
         let set_state_for_callback = set_state;
@@ -104,23 +104,23 @@ where
                 if let Some(next_state) =
                     resolve_mutation_result(last_id_for_callback.get(), id, result)
                 {
-                    set_state_for_callback.set(next_state);
+                    set_state_for_callback.set(next_state)?;
                 }
                 Ok(())
-            }));
+            }))?;
         let inner = scope.stored(MutationInner {
             action: MutationAction::Regular(Rc::new(move |arg| Box::pin(action(arg)))),
             last_id,
             completion,
-        });
+        })?;
 
-        Self {
+        Ok(Self {
             state,
             set_state,
             inner,
             scope,
             error_handler,
-        }
+        })
     }
 
     /// Create a mutation whose owned future is prepared before `Pending` is
@@ -129,12 +129,12 @@ where
         scope: Scope<'scope>,
         prepare: F,
         error_handler: ErrorReporter<'scope>,
-    ) -> Self
+    ) -> crate::SilexResult<Self>
     where
         F: Fn(Arg) -> Result<Fut, E> + 'scope,
         Fut: Future<Output = Result<T, E>> + 'static,
     {
-        let (state, set_state) = scope.signal(MutationState::Idle);
+        let (state, set_state) = scope.signal(MutationState::Idle)?;
         let last_id = Rc::new(Cell::new(0usize));
         let last_id_for_callback = last_id.clone();
         let set_state_for_callback = set_state;
@@ -143,30 +143,30 @@ where
                 if let Some(next_state) =
                     resolve_mutation_result(last_id_for_callback.get(), id, result)
                 {
-                    set_state_for_callback.set(next_state);
+                    set_state_for_callback.set(next_state)?;
                 }
                 Ok(())
-            }));
+            }))?;
         let inner = scope.stored(MutationInner {
             action: MutationAction::Prepared(Rc::new(move |arg| {
                 prepare(arg).map(|future| Box::pin(future) as MutationFuture<T, E>)
             })),
             last_id,
             completion,
-        });
+        })?;
 
-        Self {
+        Ok(Self {
             state,
             set_state,
             inner,
             scope,
             error_handler,
-        }
+        })
     }
 
-    pub fn mutate(&self, arg: Arg) {
+    pub fn mutate(&self, arg: Arg) -> crate::SilexResult<()> {
         if !self.scope.is_active() {
-            return;
+            return Ok(());
         }
 
         let (action, last_id, completion) = self.inner.with(|inner| {
@@ -175,39 +175,37 @@ where
                 inner.last_id.clone(),
                 inner.completion.clone(),
             )
-        });
-        let (id, future) = match &action {
-            MutationAction::Regular(action) => {
-                let id = last_id
-                    .get()
-                    .checked_add(1)
-                    .expect("Mutation request id exhausted");
-                last_id.set(id);
-                self.set_state.set(MutationState::Pending);
-                (id, action(arg))
-            }
-            MutationAction::Prepared(prepare) => {
-                let future = match prepare(arg) {
-                    Ok(future) => future,
-                    Err(error) => {
-                        let id = last_id
-                            .get()
-                            .checked_add(1)
-                            .expect("Mutation request id exhausted");
-                        last_id.set(id);
-                        self.set_state.set(MutationState::Error(error));
-                        return;
-                    }
-                };
-                let id = last_id
-                    .get()
-                    .checked_add(1)
-                    .expect("Mutation request id exhausted");
-                last_id.set(id);
-                self.set_state.set(MutationState::Pending);
-                (id, future)
-            }
-        };
+        })?;
+        let (id, future) =
+            match &action {
+                MutationAction::Regular(action) => {
+                    let id = last_id.get().checked_add(1).ok_or_else(|| {
+                        SilexError::Framework("Mutation request id exhausted".into())
+                    })?;
+                    last_id.set(id);
+                    self.set_state.set(MutationState::Pending)?;
+                    (id, action(arg))
+                }
+                MutationAction::Prepared(prepare) => {
+                    let future = match prepare(arg) {
+                        Ok(future) => future,
+                        Err(error) => {
+                            let id = last_id.get().checked_add(1).ok_or_else(|| {
+                                SilexError::Framework("Mutation request id exhausted".into())
+                            })?;
+                            last_id.set(id);
+                            self.set_state.set(MutationState::Error(error))?;
+                            return Ok(());
+                        }
+                    };
+                    let id = last_id.get().checked_add(1).ok_or_else(|| {
+                        SilexError::Framework("Mutation request id exhausted".into())
+                    })?;
+                    last_id.set(id);
+                    self.set_state.set(MutationState::Pending)?;
+                    (id, future)
+                }
+            };
         // SAFETY: the completion destination rejects stale submissions before
         // this erased handler can be accessed after owner disposal.
         let error_handler = unsafe {
@@ -226,29 +224,30 @@ where
                 }
             },
             self.error_handler,
-        );
+        )?;
+        Ok(())
     }
 
-    pub fn mutate_with<S>(&self, source: S)
+    pub fn mutate_with<S>(&self, source: S) -> crate::SilexResult<()>
     where
         S: RxRead<Value = Arg>,
         Arg: Clone,
     {
-        self.mutate(source.with(Clone::clone));
+        self.mutate(source.with(Clone::clone)?)
     }
 
-    pub fn loading(&self) -> bool {
+    pub fn loading(&self) -> crate::SilexResult<bool> {
         self.state.with(MutationState::is_loading)
     }
 
-    pub fn value(&self) -> Option<T>
+    pub fn value(&self) -> crate::SilexResult<Option<T>>
     where
         T: Clone,
     {
         self.state.with(|state| state.value().cloned())
     }
 
-    pub fn error(&self) -> Option<E>
+    pub fn error(&self) -> crate::SilexResult<Option<E>>
     where
         E: Clone,
     {
@@ -274,8 +273,8 @@ where
     T: RxData + 'scope,
     E: RxError + 'scope,
 {
-    fn try_track(&self) -> crate::SilexResult<()> {
-        self.state.try_track()
+    fn track(&self) -> crate::SilexResult<()> {
+        self.state.track()
     }
 }
 
@@ -285,13 +284,13 @@ where
     T: RxCloneData + 'scope,
     E: RxError + 'scope,
 {
-    fn try_with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> crate::SilexResult<U> {
-        self.state.try_with(|state| f(&state.value().cloned()))
+    fn with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> crate::SilexResult<U> {
+        self.state.with(|state| f(&state.value().cloned()))
     }
 
-    fn try_with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> crate::SilexResult<U> {
+    fn with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> crate::SilexResult<U> {
         self.state
-            .try_with_untracked(|state| f(&state.value().cloned()))
+            .with_untracked(|state| f(&state.value().cloned()))
     }
 }
 

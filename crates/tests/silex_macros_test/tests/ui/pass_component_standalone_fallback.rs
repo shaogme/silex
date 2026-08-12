@@ -20,7 +20,7 @@ fn __silex_render_Standalone<'scope>(props: StandaloneProps<'scope>) -> impl Vie
 
 fn main() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    let _ = runtime.child(|scope| {
         let view = Standalone(scope, AnyView::Empty).build();
         let _ = AnyView::new(view);
     });

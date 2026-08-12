@@ -51,6 +51,28 @@ fn conditional_tw_rejects_dynamic_values_inside_arms() {
     assert!(err.contains("动态 arbitrary value"), "{err}");
 }
 
+#[test]
+fn dynamic_tw_accepts_an_explicit_error_handler() {
+    let output = tw_impl(quote!(error_handler; "p-[$(padding)]")).unwrap();
+    let code = output.to_string();
+    assert!(
+        code.contains("let __slx_css_error_handler = error_handler"),
+        "{code}"
+    );
+    assert!(code.contains("with_var"), "{code}");
+}
+
+#[test]
+fn dynamic_tw_accepts_a_braced_body_with_an_explicit_error_handler() {
+    let output = tw_impl(quote!(error_handler; { "p-[$(padding)]" })).unwrap();
+    let code = output.to_string();
+    assert!(
+        code.contains("let __slx_css_error_handler = error_handler"),
+        "{code}"
+    );
+    assert!(code.contains("with_var"), "{code}");
+}
+
 // ---------------------------------------------------------------------------
 // §3.5 跨段层叠顺序
 // ---------------------------------------------------------------------------

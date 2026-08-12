@@ -8,12 +8,14 @@ use std::{cell::RefCell, rc::Rc};
 #[test]
 fn mount_and_dispose_errors_keep_their_separate_ownership() {
     let mut runtime = Runtime::new();
-    let root = runtime.run();
+    let root = runtime.run().expect("root should start");
     root.with_scope(|scope| {
         scope
             .on_cleanup(
                 || panic!("root cleanup"),
-                scope.error_handler(|_: SilexError| {}),
+                scope
+                    .error_handler(|_: SilexError| {})
+                    .expect("error handler should register"),
             )
             .expect("cleanup should register");
     });

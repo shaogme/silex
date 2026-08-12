@@ -236,6 +236,16 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
         .attrs
         .push(syn::parse_quote!(#[allow(non_snake_case, unused_variables, unused_mut)]));
 
+    let fallible_render = is_fallible_render(&input_fn.sig.output, &input_fn.block);
+    if fallible_render
+        && !is_result_output(&input_fn.sig.output)
+        && let syn::ReturnType::Type(_, output) = &input_fn.sig.output
+    {
+        hidden_fn.sig.output = syn::parse_quote!(
+            -> #__silex::core::SilexResult<#output>
+        );
+    }
+
     let mut hidden_stmts: Vec<syn::Stmt> = Vec::new();
     let destructure: syn::Stmt = syn::parse2(quote! {
         let #props_name { #(#prop_arg_names,)* .. } = props;
@@ -249,7 +259,6 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
     } else {
         quote! {}
     };
-
     Ok(quote! {
         #[derive(Clone, #__silex::macros::PropsBuilder)]
         #[silex_component(
@@ -264,6 +273,58 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
 
         #hidden_fn
     })
+}
+
+fn is_fallible_render(output: &syn::ReturnType, block: &syn::Block) -> bool {
+    is_result_output(output) || block_returns_result(block)
+}
+
+fn is_result_output(output: &syn::ReturnType) -> bool {
+    let syn::ReturnType::Type(_, ty) = output else {
+        return false;
+    };
+    let Type::Path(type_path) = ty.as_ref() else {
+        return false;
+    };
+    type_path
+        .path
+        .segments
+        .last()
+        .is_some_and(|segment| segment.ident == "Result" || segment.ident == "SilexResult")
+}
+
+fn block_returns_result(block: &syn::Block) -> bool {
+    let Some(syn::Stmt::Expr(expression, _)) = block.stmts.last() else {
+        return false;
+    };
+    expression_returns_result(expression)
+}
+
+fn expression_returns_result(expression: &syn::Expr) -> bool {
+    match expression {
+        syn::Expr::Call(call) => match call.func.as_ref() {
+            syn::Expr::Path(path) => path
+                .path
+                .segments
+                .last()
+                .is_some_and(|segment| segment.ident == "Ok" || segment.ident == "Err"),
+            _ => false,
+        },
+        syn::Expr::Block(block) => block_returns_result(&block.block),
+        syn::Expr::If(if_expression) => {
+            block_returns_result(&if_expression.then_branch)
+                && if_expression
+                    .else_branch
+                    .as_ref()
+                    .is_some_and(|(_, expression)| expression_returns_result(expression))
+        }
+        syn::Expr::Match(match_expression) => match_expression
+            .arms
+            .iter()
+            .all(|arm| expression_returns_result(&arm.body)),
+        syn::Expr::Paren(paren) => expression_returns_result(&paren.expr),
+        _ => false,
+    }
 }
 
 fn has_owner_injection(attrs: &[syn::Attribute]) -> syn::Result<bool> {

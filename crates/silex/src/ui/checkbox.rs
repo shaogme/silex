@@ -6,6 +6,7 @@ use silex_macros::{component, tw};
 #[component]
 pub fn Checkbox<'scope>(
     scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
     #[prop(into)]
     #[chain(default)]
     checked: Signal<'scope, bool>,
@@ -16,7 +17,7 @@ pub fn Checkbox<'scope>(
     #[chain(default)]
     on_change: Callback<'scope, bool>,
 ) -> impl View<'scope> {
-    let cls = rx!(scope; {
+    let cls = rx!(scope; error_handler; {
         let is_checked = *$checked;
         let base = if is_checked {
             tw!("peer size-4 shrink-0 rounded-[4px] border border-solid shadow-xs transition-all duration-150 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 inline-flex items-center justify-center cursor-pointer bg-slate-900 text-slate-50 border-slate-900 dark:bg-slate-50 dark:text-slate-900 dark:border-slate-50").to_string()
@@ -31,7 +32,7 @@ pub fn Checkbox<'scope>(
         }
     });
 
-    let check_icon = rx!(scope; {
+    let check_icon = rx!(scope; error_handler; {
         let is_checked = *$checked;
         let icon_cls = if is_checked {
             tw!("size-3.5 transition-all duration-150 ease-in-out opacity-100 scale-100").to_string()
@@ -52,7 +53,7 @@ pub fn Checkbox<'scope>(
             .class(icon_cls)
     });
 
-    button(check_icon)
+    Ok(button(check_icon)
         .class(cls)
-        .on_click(move |_| -> SilexResult<()> { on_change.invoke(!checked.try_get()?) })
+        .on_click(move |_| -> SilexResult<()> { on_change.invoke(!checked.get()?) }))
 }

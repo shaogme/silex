@@ -99,13 +99,14 @@ pub fn card_class_from_str(size: &str) -> Result<String, String> {
         .map_err(|e| e.to_string())
 }
 
-pub fn renamed_route_path() -> my_silex::router::RoutePath {
+pub fn renamed_route_path() -> Result<my_silex::router::RoutePath, String> {
     let routes = routes!(RenamedRoutes {
         user "/users/:id" => move |_ctx, id: u32| {
             my_silex::dom::view::AnyView::from(id.to_string())
         },
-    });
-    routes.user(42)
+    })
+    .map_err(|error| error.to_string())?;
+    routes.user(42).map_err(|error| error.to_string())
 }
 
 // `styled!`：展开出 `#[component]`、`inject_style`、`TypedElement` 等一大片绝对路径
@@ -139,9 +140,10 @@ fn RenamedReactiveInput<'scope>(
 }
 
 pub fn renamed_reactive_input<'scope>(scope: my_silex::Scope<'scope>) -> impl View<'scope> {
-    RenamedReactiveInput(scope, AnyView::Empty)
-        .value("renamed")
-        .build()
+    match RenamedReactiveInput(scope, AnyView::Empty).value("renamed") {
+        Ok(builder) => builder.build().into_any(),
+        Err(error) => AnyView::from(error.to_string()),
+    }
 }
 
 #[cfg(test)]

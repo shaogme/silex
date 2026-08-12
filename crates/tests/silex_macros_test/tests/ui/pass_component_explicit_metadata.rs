@@ -24,7 +24,7 @@ fn render_explicit<'scope>(props: ExplicitProps<'scope>) -> impl View<'scope> {
 
 fn main() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    let _ = runtime.child(|scope| {
         let view = Explicit(scope, AnyView::Empty).build();
         let _ = AnyView::new(view);
     });

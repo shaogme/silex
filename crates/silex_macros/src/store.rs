@@ -77,7 +77,7 @@ pub fn store_impl(mut model: ItemStruct) -> Result<TokenStream> {
 
     let new_fields = field_infos.iter().map(|field| {
         let ident = &field.ident;
-        quote!(#ident: scope.rw_signal(source.#ident))
+        quote!(#ident: scope.rw_signal(source.#ident)?)
     });
 
     let handle_arguments = field_infos
@@ -88,8 +88,6 @@ pub fn store_impl(mut model: ItemStruct) -> Result<TokenStream> {
             quote!(#ident: #handle)
         })
         .collect::<Vec<_>>();
-    let handle_arguments_for_from = handle_arguments.clone();
-
     let handle_names = field_infos
         .iter()
         .map(|field| {
@@ -97,7 +95,6 @@ pub fn store_impl(mut model: ItemStruct) -> Result<TokenStream> {
             quote!(#ident)
         })
         .collect::<Vec<_>>();
-    let handle_names_for_from = handle_names.clone();
     let input_handle_arguments = field_infos
         .iter()
         .map(|field| {
@@ -178,19 +175,22 @@ pub fn store_impl(mut model: ItemStruct) -> Result<TokenStream> {
 
         impl #default_impl_generics_tokens #fields_name #default_fields_args #default_impl_where
         {
-            pub fn new(scope: #core::Scope<'scope>, source: #model_type) -> Self {
-                Self {
+            pub fn new(
+                scope: #core::Scope<'scope>,
+                source: #model_type,
+            ) -> #core::SilexResult<Self> {
+                Ok(Self {
                     scope,
                     _marker: ::std::marker::PhantomData,
                     #(#new_fields),*
-                }
+                })
             }
 
             /// Builds the default Store type from compatible scoped handles.
             ///
             /// Runtime validation happens before any handle conversion so a
             /// foreign handle cannot be accepted accidentally.
-            pub fn try_from_handles #input_method_generics (
+            pub fn from_handles #input_method_generics (
                 scope: #core::Scope<'scope>,
                 #(#input_handle_arguments),*
             ) -> #core::SilexResult<Self>
@@ -198,7 +198,7 @@ pub fn store_impl(mut model: ItemStruct) -> Result<TokenStream> {
             {
                 let mut inputs = #core::RuntimeInputs::new();
                 #(#input_collection)*
-                scope.try_validate_inputs(&inputs)?;
+                scope.validate_inputs(&inputs)?;
 
                 Ok(Self {
                     scope,
@@ -207,15 +207,6 @@ pub fn store_impl(mut model: ItemStruct) -> Result<TokenStream> {
                 })
             }
 
-            pub fn from_handles #input_method_generics (
-                scope: #core::Scope<'scope>,
-                #(#input_handle_arguments),*
-            ) -> Self
-            #input_method_where
-            {
-                Self::try_from_handles(scope, #(#handle_names_for_from),*)
-                    .unwrap_or_else(|error| panic!("创建 scoped Store 失败: {error}"))
-            }
         }
 
         impl #fields_impl_generics #fields_name #fields_ty_generics #fields_where {
@@ -223,13 +214,13 @@ pub fn store_impl(mut model: ItemStruct) -> Result<TokenStream> {
                 self.scope
             }
 
-            pub fn try_from_typed_handles(
+            pub fn from_typed_handles(
                 scope: #core::Scope<'scope>,
                 #(#handle_arguments),*
             ) -> #core::SilexResult<Self> {
                 let mut inputs = #core::RuntimeInputs::new();
                 #(#input_collection)*
-                scope.try_validate_inputs(&inputs)?;
+                scope.validate_inputs(&inputs)?;
 
                 Ok(Self {
                     scope,
@@ -238,24 +229,16 @@ pub fn store_impl(mut model: ItemStruct) -> Result<TokenStream> {
                 })
             }
 
-            pub fn from_typed_handles(
-                scope: #core::Scope<'scope>,
-                #(#handle_arguments_for_from),*
-            ) -> Self {
-                Self::try_from_typed_handles(scope, #(#handle_names_for_from),*)
-                    .unwrap_or_else(|error| panic!("创建 scoped Store 失败: {error}"))
+            pub fn snapshot(&self) -> #core::SilexResult<#model_type> {
+                Ok(#model_expression {
+                    #(#snapshot_fields?),*
+                })
             }
 
-            pub fn snapshot(&self) -> #model_type {
-                #model_expression {
-                    #(#snapshot_fields),*
-                }
-            }
-
-            pub fn snapshot_untracked(&self) -> #model_type {
-                #model_expression {
-                    #(#snapshot_untracked_fields),*
-                }
+            pub fn snapshot_untracked(&self) -> #core::SilexResult<#model_type> {
+                Ok(#model_expression {
+                    #(#snapshot_untracked_fields?),*
+                })
             }
         }
     })

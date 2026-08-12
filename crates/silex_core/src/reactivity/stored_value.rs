@@ -4,8 +4,8 @@ use std::fmt;
 
 /// A non-reactive value owned by a scope.
 ///
-/// During final disposal of the owning scope, `try_with`, `with`, `try_update`,
-/// and `update` remain available until this value's payload is dropped. The
+/// During final disposal of the owning scope, `with` and `update` remain
+/// available until this value's payload is dropped. The
 /// owner is still inactive in that window, so raw signals, callbacks, node
 /// refs, node creation, and other scope APIs remain unavailable. A
 /// `Signal` facade created from this value preserves this StoredValue source
@@ -48,27 +48,16 @@ impl<'scope, T: 'scope> StoredValue<'scope, T> {
         Self { inner, scope }
     }
 
-    pub fn with<U>(&self, f: impl FnOnce(&T) -> U) -> U {
-        self.try_with(f)
-            .unwrap_or_else(|error| panic!("读取 StoredValue 失败: {error}"))
-    }
-
-    pub fn try_with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+    pub fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         self.inner.with(f).map_err(SilexError::from)
     }
 
-    pub fn update<U>(&self, f: impl FnOnce(&mut T) -> U) -> U {
-        self.try_update(f)
-            .unwrap_or_else(|error| panic!("更新 StoredValue 失败: {error}"))
-    }
-
-    pub fn try_update<U>(&self, f: impl FnOnce(&mut T) -> U) -> ReactiveResult<U> {
+    pub fn update<U>(&self, f: impl FnOnce(&mut T) -> U) -> ReactiveResult<U> {
         self.inner.update(f)
     }
 
-    pub fn set(&self, value: T) {
-        self.try_update(|stored| *stored = value)
-            .unwrap_or_else(|error| panic!("写入 StoredValue 失败: {error}"));
+    pub fn set(&self, value: T) -> ReactiveResult<()> {
+        self.update(|stored| *stored = value).map(|_| ())
     }
 
     pub fn into_rx(self) -> Rx<'scope, T, RxValueKind> {

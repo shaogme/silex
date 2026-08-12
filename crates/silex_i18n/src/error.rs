@@ -1,6 +1,6 @@
 use std::fmt::{Display, Formatter};
 
-use silex_core::ReactiveError;
+use silex_core::{ReactiveError, SilexError};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum I18nError {
@@ -11,6 +11,7 @@ pub enum I18nError {
     MissingOther { key: String },
     Loader(String),
     Reactivity(ReactiveError),
+    Core(String),
 }
 
 impl From<ReactiveError> for I18nError {
@@ -33,8 +34,25 @@ impl Display for I18nError {
             }
             Self::Loader(reason) => write!(f, "catalog loader failed: {reason}"),
             Self::Reactivity(error) => write!(f, "reactivity error: {error}"),
+            Self::Core(error) => write!(f, "core error: {error}"),
         }
     }
 }
 
 impl std::error::Error for I18nError {}
+
+impl From<SilexError> for I18nError {
+    fn from(error: SilexError) -> Self {
+        match error {
+            SilexError::Reactivity(error) => Self::Reactivity(error),
+            error => Self::Core(error.to_string()),
+        }
+    }
+}
+
+#[cfg(feature = "persist")]
+impl From<silex_persist::PersistenceError> for I18nError {
+    fn from(error: silex_persist::PersistenceError) -> Self {
+        Self::Core(error.to_string())
+    }
+}

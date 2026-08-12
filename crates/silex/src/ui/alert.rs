@@ -18,6 +18,7 @@ styled! {
 #[component]
 pub fn Alert<'scope>(
     scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
@@ -39,7 +40,7 @@ pub fn Alert<'scope>(
         }
     };
 
-    let cls = rx!(scope; {
+    let cls = rx!(scope; error_handler; {
         let base_cls = alert_variants.get($variant);
         let extra = $class;
         if extra.is_empty() {
@@ -49,5 +50,5 @@ pub fn Alert<'scope>(
         }
     });
 
-    div(children).class(cls)
+    Ok(div(children).class(cls))
 }

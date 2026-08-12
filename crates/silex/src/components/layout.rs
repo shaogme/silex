@@ -4,6 +4,7 @@ styled! {
     /// 弹性布局容器 (Flexbox)
     pub Stack<'scope> <div> (
         scope: Scope<'scope>,
+        error_handler: ErrorReporter<'scope>,
         children: AnyView<'scope>,
         #[prop(into)] #[chain(default = FlexDirectionKeyword::Column)]
         direction: Signal<'scope, FlexDirectionKeyword>,
@@ -20,7 +21,7 @@ styled! {
         flex-direction: $(direction);
         align-items: $(align);
         justify-content: $(justify);
-        gap: $(gap.map_fn(scope, |g| px(*g)));
+        gap: $(gap.map_fn(scope, |g| px(*g), error_handler)?);
     }
 }
 
@@ -42,6 +43,7 @@ styled! {
     /// 网格布局容器 (Grid)
     pub Grid<'scope> <div> (
         scope: Scope<'scope>,
+        error_handler: ErrorReporter<'scope>,
         children: AnyView<'scope>,
         #[prop(into)] #[chain(default = 1)]
         columns: Signal<'scope, i32>,
@@ -52,6 +54,6 @@ styled! {
     ) {
         display: grid;
         grid-template-columns: repeat($(columns), minmax(0, 1fr));
-        gap: $(gap.map_fn(scope, |g| px(*g)));
+        gap: $(gap.map_fn(scope, |g| px(*g), error_handler)?);
     }
 }

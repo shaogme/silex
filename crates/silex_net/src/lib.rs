@@ -37,6 +37,8 @@ pub mod reexports {
     pub use web_sys;
 }
 
+use silex_core::SilexError;
+use std::fmt;
 use wasm_bindgen::JsValue;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -54,9 +56,21 @@ pub enum NetError {
     InvalidConfiguration(String),
 }
 
+impl fmt::Display for NetError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{self:?}")
+    }
+}
+
 impl From<JsValue> for NetError {
     fn from(value: JsValue) -> Self {
         Self::JsError(format!("{value:?}"))
+    }
+}
+
+impl From<SilexError> for NetError {
+    fn from(value: SilexError) -> Self {
+        Self::InvalidConfiguration(value.to_string())
     }
 }
 

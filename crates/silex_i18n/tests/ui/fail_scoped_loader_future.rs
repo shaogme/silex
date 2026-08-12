@@ -3,8 +3,11 @@ use silex_i18n::{Catalog, I18nBuilder, I18nError, Runtime};
 fn main() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
-        let (source, _) = scope.signal(1_u32);
-        let store = I18nBuilder::new(scope, scope.error_handler(|_| {}))
+        let (source, _) = scope.signal(1_u32).expect("source signal");
+        let store = I18nBuilder::new(
+            scope,
+            scope.error_handler(|_| {}).expect("error handler"),
+        )
             .build()
             .expect("valid store");
         let _resource = store.catalog_resource(
