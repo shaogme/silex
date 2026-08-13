@@ -1,8 +1,6 @@
 use std::{borrow::Cow, cell::Cell, rc::Rc};
 
-use silex_core::{
-    ReactiveError, RuntimeInputs, Rx, RxValueKind, SilexError, SilexErrorKind, SilexResult,
-};
+use silex_core::{ReactiveError, Rx, RxValueKind, SilexError, SilexErrorKind, SilexResult};
 use wasm_bindgen::JsValue;
 use web_sys::Element as WebElem;
 
@@ -133,10 +131,9 @@ type BindingInstaller<'scope> = Rc<
 
 /// 响应式绑定的唯一运行时计划。
 ///
-/// 计划把输入、目标语义、初始/更新回调和 owner cleanup 放在同一个值里。
+/// 计划把目标语义、初始/更新回调和 owner cleanup 放在同一个值里。
 /// 样式合并器只消费 `string_value`，属性和特殊 CSS 绑定则使用同一套安装器。
 pub struct ReactiveBindingPlan<'scope> {
-    pub inputs: RuntimeInputs,
     pub target: ReactiveBindingTarget<'scope>,
     initial: BindingEffect<'scope>,
     update: BindingEffect<'scope>,
@@ -149,7 +146,6 @@ pub struct ReactiveBindingPlan<'scope> {
 impl Clone for ReactiveBindingPlan<'_> {
     fn clone(&self) -> Self {
         Self {
-            inputs: self.inputs.clone(),
             target: self.target.clone(),
             initial: self.initial.clone(),
             update: self.update.clone(),
@@ -163,14 +159,13 @@ impl Clone for ReactiveBindingPlan<'_> {
 
 impl PartialEq for ReactiveBindingPlan<'_> {
     fn eq(&self, other: &Self) -> bool {
-        self.inputs == other.inputs && self.target == other.target
+        self.target == other.target
     }
 }
 
 impl std::fmt::Debug for ReactiveBindingPlan<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ReactiveBindingPlan")
-            .field("inputs", &self.inputs)
             .field("target", &self.target)
             .finish()
     }
@@ -178,13 +173,11 @@ impl std::fmt::Debug for ReactiveBindingPlan<'_> {
 
 impl<'scope> ReactiveBindingPlan<'scope> {
     pub(crate) fn effect(
-        inputs: RuntimeInputs,
         target: ReactiveBindingTarget<'scope>,
         update: BindingEffect<'scope>,
         cleanup: BindingCleanup<'scope>,
     ) -> Self {
         Self {
-            inputs,
             target,
             initial: update.clone(),
             update,
@@ -231,13 +224,8 @@ impl<'scope> ReactiveBindingPlan<'scope> {
                 .remove_1(&name_for_cleanup)
                 .map_err(SilexError::fatal)
         });
-        Self::effect(
-            rx.runtime_inputs(),
-            ReactiveBindingTarget::ClassToggle(name),
-            update,
-            cleanup,
-        )
-        .with_bool_value(value)
+        Self::effect(ReactiveBindingTarget::ClassToggle(name), update, cleanup)
+            .with_bool_value(value)
     }
 
     pub fn dynamic_classes(rx: Rx<'scope, String>) -> Self {
@@ -249,13 +237,8 @@ impl<'scope> ReactiveBindingPlan<'scope> {
         });
         let cleanup =
             Rc::new(move |el: &WebElem| el.remove_attribute("class").map_err(SilexError::fatal));
-        Self::effect(
-            rx.runtime_inputs(),
-            ReactiveBindingTarget::DynamicClasses,
-            update,
-            cleanup,
-        )
-        .with_string_value(value)
+        Self::effect(ReactiveBindingTarget::DynamicClasses, update, cleanup)
+            .with_string_value(value)
     }
 
     pub fn style_property(name: Cow<'scope, str>, rx: Rx<'scope, String>) -> Self {
@@ -284,13 +267,8 @@ impl<'scope> ReactiveBindingPlan<'scope> {
                 .map(|_| ())
                 .map_err(SilexError::fatal)
         });
-        Self::effect(
-            rx.runtime_inputs(),
-            ReactiveBindingTarget::StyleProperty(name),
-            update,
-            cleanup,
-        )
-        .with_string_value(value)
+        Self::effect(ReactiveBindingTarget::StyleProperty(name), update, cleanup)
+            .with_string_value(value)
     }
 
     pub fn dynamic_style(rx: Rx<'scope, String>) -> Self {
@@ -314,17 +292,10 @@ impl<'scope> ReactiveBindingPlan<'scope> {
             style.set_css_text("");
             Ok(())
         });
-        Self::effect(
-            rx.runtime_inputs(),
-            ReactiveBindingTarget::DynamicStyle,
-            update,
-            cleanup,
-        )
-        .with_string_value(value)
+        Self::effect(ReactiveBindingTarget::DynamicStyle, update, cleanup).with_string_value(value)
     }
 
     pub fn custom(
-        inputs: RuntimeInputs,
         target: ReactiveBindingTarget<'scope>,
         installer: impl Fn(
             &WebElem,
@@ -335,7 +306,7 @@ impl<'scope> ReactiveBindingPlan<'scope> {
         cleanup: impl Fn(&WebElem) -> SilexResult<()> + 'scope,
     ) -> Self {
         let update = Rc::new(|_: &WebElem| Ok(()));
-        Self::effect(inputs, target, update, Rc::new(cleanup)).with_installer(Rc::new(installer))
+        Self::effect(target, update, Rc::new(cleanup)).with_installer(Rc::new(installer))
     }
 
     pub(crate) fn string_value(&self) -> SilexResult<String> {
@@ -369,8 +340,7 @@ impl<'scope> ReactiveBindingPlan<'scope> {
         let update = self.update;
         let first_run = Rc::new(Cell::new(true));
         let first_run_for_effect = first_run.clone();
-        owner.effect_from(
-            self.inputs,
+        owner.effect(
             Box::new(move || {
                 if first_run_for_effect.replace(false) {
                     initial(&element)

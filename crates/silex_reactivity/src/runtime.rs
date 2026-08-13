@@ -17,17 +17,14 @@ mod storage;
 
 pub(crate) use dispose::{dispose_all, dispose_nodes};
 pub(crate) use eval::{run_global_queue, run_initial};
-pub use input::{RuntimeInput, RuntimeInputs};
-pub(crate) use input::{
-    create_derived, create_effect, create_memo, create_previous, create_watch, validate_inputs,
-};
+pub(crate) use input::{create_derived, create_effect, create_memo, create_previous, create_watch};
 #[cfg(feature = "test-support")]
 pub use model::RuntimeSnapshot;
 pub(crate) use model::ScopeState;
 pub(crate) use ops::{
     invoke_callback, invoke_error_handler, node_ref_clear, node_ref_get, node_ref_set, notify,
-    stop_effect, track, track_many, update_signal, update_stored, with_batch, with_fallible_signal,
-    with_signal, with_stored, with_untracked,
+    stop_effect, update_signal, update_stored, with_batch, with_fallible_signal, with_signal,
+    with_stored, with_untracked,
 };
 pub(crate) use scheduler::{GlobalScheduler, ObserverFrame, ScopeId};
 
@@ -78,7 +75,7 @@ impl Runtime {
             storage: &storage,
             _marker: PhantomData,
         };
-        let observer_frame = ObserverFrame::push_child(scheduler, storage.scope_id);
+        let observer_frame = ObserverFrame::push_untracked(scheduler);
         let result = catch_unwind(AssertUnwindSafe(|| f(scope)));
         let dispose_result = catch_unwind(AssertUnwindSafe(|| storage.dispose_untracked()));
         drop(observer_frame);

@@ -27,9 +27,7 @@ pub use route_table::*;
 
 use crate::path::strip_path_prefix;
 use crate::route_table::RouteBranchKey;
-use silex_core::{
-    ErrorReporter, Scope, SilexError, SilexErrorKind, SilexResult, reactivity::runtime_inputs_of,
-};
+use silex_core::{ErrorReporter, Scope, SilexError, SilexErrorKind, SilexResult};
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::helpers::window_event_listener_untyped;
 use silex_dom::view::{
@@ -168,9 +166,6 @@ impl<'scope> RouterView<'scope> {
             layout,
         } = self;
         let context = context?;
-        let inputs = context.runtime_inputs();
-        owner.validate_inputs(&inputs)?;
-
         let token = owner.token();
         let navigator = context.navigator;
         let listener = window_event_listener_untyped(
@@ -258,13 +253,10 @@ impl<'scope> View<'scope> for RouteOutlet<'scope> {
         let routes_for_key = routes.clone();
         let prefix = this.prefix;
         let prefix_for_key = prefix.clone();
-        let inputs = runtime_inputs_of(path_signal);
-
         silex_dom::view::mount_branch_stable_cached(
             owner,
             parent,
             attrs,
-            inputs,
             error_handler,
             move || {
                 let path = path_signal.get()?;

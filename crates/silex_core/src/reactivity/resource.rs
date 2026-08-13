@@ -2,10 +2,10 @@ use crate::reactivity::ReactiveSource;
 use crate::{
     ErrorReporter, Rx, Scope, SilexError, SilexErrorKind, SilexResult,
     reactivity::{ReadSignal, RwSignal, WriteSignal},
-    traits::{RxBase, RxCloneData, RxData, RxError, RxGet, RxRead, RxValue},
+    traits::{RxCloneData, RxData, RxError, RxGet, RxRead, RxValue},
     unwind_safe,
 };
-use silex_reactivity::{CallbackInvokeError, ReactiveResult, RuntimeInputs};
+use silex_reactivity::{CallbackInvokeError, ReactiveResult};
 use std::{cell::Cell, future::Future, marker::PhantomData, rc::Rc};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -125,14 +125,8 @@ where
         let completion_error_handler = unsafe {
             std::mem::transmute::<ErrorReporter<'scope>, ErrorReporter<'static>>(error_handler)
         };
-        let mut inputs = source.clone().into_promotion_plan().inputs();
-        if let Some(context) = suspense.as_ref() {
-            inputs.push(context.count.inner.runtime_input());
-        }
-        scope.validate_inputs(&inputs)?;
         let (state, set_state) = scope.signal(ResourceState::Idle)?;
         let trigger = scope.rw_signal(0usize)?;
-        inputs.push(trigger.read_signal().inner.runtime_input());
         let request_id = Rc::new(Cell::new(0usize));
         let request_id_for_callback = request_id.clone();
         let set_state_for_callback = set_state;
@@ -164,8 +158,7 @@ where
         let set_state_for_effect = set_state;
         let suspense_for_effect = suspense;
         let error_handler_for_effect = error_handler;
-        let _effect = scope.effect_from(
-            inputs,
+        let _effect = scope.effect(
             move || -> SilexResult<()> {
                 let input = source_for_effect.get()?;
                 let _ = trigger_for_effect.get()?;
@@ -278,9 +271,7 @@ where
         F: Fn(Option<&T>) -> U + 'scope,
     {
         let resource = *self;
-        let inputs = RuntimeInputs::single(resource.state.inner.runtime_input());
-        scope.derived_from(
-            inputs,
+        scope.derived(
             move || resource.state.with(|state| f(state.as_option())),
             error_handler,
         )
@@ -289,12 +280,6 @@ where
 
 impl<'scope, T: RxData + 'scope, E: RxError + 'scope> RxValue for Resource<'scope, T, E> {
     type Value = Option<T>;
-}
-
-impl<'scope, T: RxData + 'scope, E: RxError + 'scope> RxBase for Resource<'scope, T, E> {
-    fn track(&self) -> crate::SilexResult<()> {
-        self.state.track()
-    }
 }
 
 impl<'scope, T: RxCloneData + 'scope, E: RxError + 'scope> RxRead for Resource<'scope, T, E> {

@@ -1,9 +1,7 @@
 use crate::PersistenceError;
 use js_sys::Object;
 use ref_str::LocalStaticRefStr;
-use silex_core::{
-    ErrorReporter, RuntimeInputs, Rx, Scope, SilexResult, reactivity::runtime_inputs_of,
-};
+use silex_core::{ErrorReporter, Rx, Scope, SilexResult};
 use silex_router::{Navigator, RouterContext};
 use std::{
     cell::{Cell, RefCell},
@@ -107,10 +105,6 @@ pub trait PersistenceBackend<'scope>: Clone + 'scope {
     fn set(&self, key: &str, value: &str) -> Result<(), PersistenceError>;
     fn remove(&self, key: &str) -> Result<(), PersistenceError>;
 
-    fn runtime_inputs(&self) -> RuntimeInputs {
-        RuntimeInputs::new()
-    }
-
     fn subscribe(
         &self,
         scope: Scope<'scope>,
@@ -168,25 +162,16 @@ pub type SessionStorageBackend = WebStorageBackend<false>;
 pub struct QueryBackend<'scope> {
     navigator: Option<Navigator<'scope>>,
     query_map: Option<Rx<'scope, HashMap<String, String>>>,
-    inputs: RuntimeInputs,
 }
 
 impl<'scope> QueryBackend<'scope> {
     pub fn new(ctx: RouterContext<'scope>) -> Self {
         let navigator = ctx.navigator;
         let query_map = ctx.query_map();
-        let mut inputs = RuntimeInputs::new();
-        inputs.extend(&runtime_inputs_of(ctx.base_path));
-        inputs.extend(&runtime_inputs_of(ctx.path));
-        inputs.extend(&runtime_inputs_of(ctx.search));
-        inputs.extend(&runtime_inputs_of(navigator.path));
-        inputs.extend(&runtime_inputs_of(navigator.search));
-        inputs.extend(&runtime_inputs_of(query_map));
 
         Self {
             navigator: Some(navigator),
             query_map: Some(query_map),
-            inputs,
         }
     }
 
@@ -194,7 +179,6 @@ impl<'scope> QueryBackend<'scope> {
         Self {
             navigator: None,
             query_map: None,
-            inputs: RuntimeInputs::new(),
         }
     }
 
@@ -257,10 +241,6 @@ impl<'scope> PersistenceBackend<'scope> for QueryBackend<'scope> {
         Ok(())
     }
 
-    fn runtime_inputs(&self) -> RuntimeInputs {
-        self.inputs.clone()
-    }
-
     fn subscribe(
         &self,
         scope: Scope<'scope>,
@@ -268,19 +248,13 @@ impl<'scope> PersistenceBackend<'scope> for QueryBackend<'scope> {
         sink: BackendEventSink,
         error_handler: ErrorReporter<'scope>,
     ) -> Result<BackendSubscription<'scope>, BackendSubscribeError<'scope>> {
-        let inputs = self.runtime_inputs();
-        scope.validate_inputs(&inputs).map_err(|error| {
-            BackendSubscribeError::new(PersistenceError::InvalidConfiguration(error.to_string()))
-        })?;
-
         let key = key.into();
         let query_map = self.query_map().map_err(BackendSubscribeError::new)?;
         let active = Rc::new(Cell::new(true));
         let active_for_effect = active.clone();
         let key_for_effect = key.clone();
         let _effect = scope
-            .effect_with_previous_from(
-                inputs,
+            .effect_with_previous(
                 move |previous: Option<&Option<String>>| -> SilexResult<Option<String>> {
                     let current = query_map.get()?.get(key_for_effect.as_ref()).cloned();
                     if active_for_effect.get()
@@ -514,7 +488,7 @@ fn storage_handle(kind: StorageAreaKind) -> Result<Storage, PersistenceError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use silex_core::{Memo, ReadSignal, Runtime};
+    use silex_core::{ReadSignal, Runtime};
     use silex_router::Navigator;
     use std::{cell::RefCell, collections::HashMap};
 
@@ -531,16 +505,7 @@ mod tests {
         let (search, set_search) = scope
             .signal(String::new())
             .expect("search signal should be created");
-        let query_map = scope
-            .memo_from(
-                runtime_inputs_of(map),
-                move |_| map.get(),
-                scope
-                    .error_handler(|_| {})
-                    .expect("error handler should be registered"),
-            )
-            .map(Memo::into_rx)
-            .expect("query map should initialize");
+        let query_map = map.into_rx();
         let navigator = Navigator {
             base_path,
             path,
@@ -548,15 +513,9 @@ mod tests {
             set_path,
             set_search,
         };
-        let mut inputs = RuntimeInputs::new();
-        inputs.extend(&runtime_inputs_of(base_path));
-        inputs.extend(&runtime_inputs_of(path));
-        inputs.extend(&runtime_inputs_of(search));
-        inputs.extend(&runtime_inputs_of(query_map));
         QueryBackend {
             navigator: Some(navigator),
             query_map: Some(query_map),
-            inputs,
         }
     }
 
@@ -639,37 +598,32 @@ mod tests {
     }
 
     #[test]
-    fn query_runtime_inputs_reject_a_foreign_scope_before_effect_creation() {
+    fn query_backend_rejects_a_foreign_tracked_subscription() {
         let mut first_runtime = Runtime::new();
         let first_root = first_runtime.run().expect("first root should be created");
-        let inputs = first_root.with_scope(|scope| {
+        let mut second_runtime = Runtime::new();
+        let second_root = second_runtime.run().expect("second root should be created");
+        first_root.with_scope(|scope| {
             let map = scope
                 .rw_signal(HashMap::<String, String>::new())
                 .expect("query map signal should be created");
-            test_query_backend(scope, map.read_signal()).runtime_inputs()
-        });
-
-        let mut second_runtime = Runtime::new();
-        let second_root = second_runtime.run().expect("second root should be created");
-        second_root.with_scope(|scope| {
-            assert!(scope.validate_inputs(&inputs).is_err());
-            let runs = Rc::new(Cell::new(0));
-            let runs_for_effect = runs.clone();
-            assert!(
-                scope
-                    .effect_from(
-                        inputs,
-                        move || -> SilexResult<()> {
-                            runs_for_effect.set(runs_for_effect.get() + 1);
-                            Ok(())
-                        },
-                        scope
+            let backend = test_query_backend(scope, map.read_signal());
+            second_root.with_scope(|target_scope| {
+                let result = backend
+                    .subscribe(
+                        target_scope,
+                        "q",
+                        Rc::new(|_| {}),
+                        target_scope
                             .error_handler(|_| {})
                             .expect("error handler should be registered"),
                     )
-                    .is_err()
-            );
-            assert_eq!(runs.get(), 0);
+                    .map_err(|error| error.into_error());
+                assert!(matches!(
+                    result,
+                    Err(PersistenceError::InvalidConfiguration(_))
+                ));
+            });
         });
 
         second_root.dispose().expect("dispose second root");

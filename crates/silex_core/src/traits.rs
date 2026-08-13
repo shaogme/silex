@@ -4,7 +4,9 @@ use crate::{
     Callback, CallbackInvokeError, ErrorReporter, NodeRef, ReactiveResult, Rx, RxInner,
     RxValueKind, Scope, SilexError, SilexResult,
     callback::map_callback_error,
-    reactivity::{Memo, ReactiveSource, ReadSignal, RwSignal, Signal, StoredValue, WriteSignal},
+    reactivity::{
+        Memo, ReactiveSource, ReadSignal, RwSignal, Signal, SignalSlice, StoredValue, WriteSignal,
+    },
 };
 use silex_reactivity::notify as raw_notify;
 use std::fmt::Debug;
@@ -79,21 +81,68 @@ pub trait RxValue {
     type Value: ?Sized;
 }
 
-/// Common diagnostics and dependency tracking for a reactive value.
-pub trait RxBase: RxValue {
-    fn track(&self) -> SilexResult<()>;
-
-    fn debug_name(&self) -> Option<String> {
-        None
-    }
-}
-
 /// Closure-based tracked and untracked access. No reference can outlive the
 /// callback supplied to these methods.
-pub trait RxRead: RxBase {
+pub trait RxRead: RxValue {
     fn with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> SilexResult<U>;
 
     fn with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> SilexResult<U>;
+}
+
+/// Exposes the runtime provenance retained by a scoped reactive source.
+pub trait RuntimeScoped {
+    fn runtime_scope(&self) -> Scope<'_>;
+}
+
+impl<'scope, T, M> RuntimeScoped for Rx<'scope, T, M> {
+    fn runtime_scope(&self) -> Scope<'_> {
+        self.scope
+    }
+}
+
+impl<'scope, T> RuntimeScoped for ReadSignal<'scope, T> {
+    fn runtime_scope(&self) -> Scope<'_> {
+        self.scope
+    }
+}
+
+impl<'scope, T> RuntimeScoped for WriteSignal<'scope, T> {
+    fn runtime_scope(&self) -> Scope<'_> {
+        self.scope
+    }
+}
+
+impl<'scope, T> RuntimeScoped for RwSignal<'scope, T> {
+    fn runtime_scope(&self) -> Scope<'_> {
+        self.read.runtime_scope()
+    }
+}
+
+impl<'scope, T> RuntimeScoped for Memo<'scope, T> {
+    fn runtime_scope(&self) -> Scope<'_> {
+        self.scope
+    }
+}
+
+impl<'scope, T> RuntimeScoped for StoredValue<'scope, T> {
+    fn runtime_scope(&self) -> Scope<'_> {
+        self.scope
+    }
+}
+
+impl<'scope, T> RuntimeScoped for Signal<'scope, T> {
+    fn runtime_scope(&self) -> Scope<'_> {
+        self.rx.runtime_scope()
+    }
+}
+
+impl<S, F, O: ?Sized> RuntimeScoped for SignalSlice<S, F, O>
+where
+    S: RuntimeScoped,
+{
+    fn runtime_scope(&self) -> Scope<'_> {
+        self.source.runtime_scope()
+    }
 }
 
 impl<'scope, T: 'scope> RxFrom<'scope> for ReadSignal<'scope, T> {
@@ -453,7 +502,7 @@ where
 }
 
 /// Unified scoped writes.
-pub trait RxWrite: RxBase {
+pub trait RxWrite: RxValue {
     fn rx_update_untracked<U>(&self, f: impl FnOnce(&mut Self::Value) -> U) -> ReactiveResult<U>;
 
     fn rx_notify(&self) -> ReactiveResult<()>;
@@ -511,15 +560,6 @@ impl<'scope, T: 'scope> RxValue for ReadSignal<'scope, T> {
     type Value = T;
 }
 
-impl<'scope, T: 'scope> RxBase for ReadSignal<'scope, T> {
-    fn track(&self) -> SilexResult<()> {
-        self.inner
-            .with(|_| ())
-            .map(|_| ())
-            .map_err(SilexError::fatal)
-    }
-}
-
 impl<'scope, T: 'scope> RxRead for ReadSignal<'scope, T> {
     fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         self.inner.with(f).map_err(SilexError::fatal)
@@ -534,12 +574,6 @@ impl<'scope, T: 'scope> RxValue for WriteSignal<'scope, T> {
     type Value = T;
 }
 
-impl<'scope, T: 'scope> RxBase for WriteSignal<'scope, T> {
-    fn track(&self) -> SilexResult<()> {
-        Ok(())
-    }
-}
-
 impl<'scope, T: 'scope> RxWrite for WriteSignal<'scope, T> {
     fn rx_update_untracked<U>(&self, f: impl FnOnce(&mut T) -> U) -> ReactiveResult<U> {
         self.inner.update(f)
@@ -552,12 +586,6 @@ impl<'scope, T: 'scope> RxWrite for WriteSignal<'scope, T> {
 
 impl<'scope, T: 'scope> RxValue for RwSignal<'scope, T> {
     type Value = T;
-}
-
-impl<'scope, T: 'scope> RxBase for RwSignal<'scope, T> {
-    fn track(&self) -> SilexResult<()> {
-        self.read.track()
-    }
 }
 
 impl<'scope, T: 'scope> RxRead for RwSignal<'scope, T> {
@@ -584,12 +612,6 @@ impl<'scope, T: 'scope> RxValue for Signal<'scope, T> {
     type Value = T;
 }
 
-impl<'scope, T: 'scope> RxBase for Signal<'scope, T> {
-    fn track(&self) -> SilexResult<()> {
-        self.rx.track()
-    }
-}
-
 impl<'scope, T: 'scope> RxRead for Signal<'scope, T> {
     fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         self.rx.with(f)
@@ -602,20 +624,6 @@ impl<'scope, T: 'scope> RxRead for Signal<'scope, T> {
 
 impl<'scope, T: 'scope> RxValue for Rx<'scope, T, RxValueKind> {
     type Value = T;
-}
-
-impl<'scope, T: 'scope> RxBase for Rx<'scope, T, RxValueKind> {
-    fn track(&self) -> SilexResult<()> {
-        match &self.inner {
-            RxInner::Signal(signal) => signal.with(|_| ()).map_err(SilexError::fatal),
-            RxInner::Memo(memo) => memo.with(|_| ()).map_err(map_callback_error),
-            RxInner::Derived(derived) => derived.with(|_| ()).map_err(|error| match error {
-                CallbackInvokeError::Runtime(error) => SilexError::fatal(error),
-                CallbackInvokeError::User(error) => error,
-            }),
-            RxInner::Stored(stored) => stored.with(|_| ()).map_err(SilexError::fatal),
-        }
-    }
 }
 
 impl<'scope, T: 'scope> RxRead for Rx<'scope, T, RxValueKind> {
@@ -646,12 +654,6 @@ impl<'scope, T: 'scope> RxRead for Rx<'scope, T, RxValueKind> {
 
 impl<'scope, T: 'scope> RxValue for StoredValue<'scope, T> {
     type Value = T;
-}
-
-impl<'scope, T: 'scope> RxBase for StoredValue<'scope, T> {
-    fn track(&self) -> SilexResult<()> {
-        Ok(())
-    }
 }
 
 impl<'scope, T: 'scope> RxRead for StoredValue<'scope, T> {
@@ -713,15 +715,6 @@ impl RxValue for &str {
     type Value = String;
 }
 
-impl<'scope, T: 'scope> RxBase for Memo<'scope, T> {
-    fn track(&self) -> SilexResult<()> {
-        self.inner
-            .with(|_| ())
-            .map(|_| ())
-            .map_err(map_callback_error)
-    }
-}
-
 impl<'scope, T: 'scope> RxRead for Memo<'scope, T> {
     fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         self.inner.with(f).map_err(map_callback_error)
@@ -767,16 +760,6 @@ impl_tuple_rx_value!(A, B, C, D, E, F);
 /// multiple independent sources cannot provide a transactional mutation.
 macro_rules! impl_tuple_rx_traits {
     ($($name:ident : $index:tt),+ $(,)?) => {
-        impl<$($name),+> RxBase for ($($name,)+)
-        where
-            $($name: RxBase, $name::Value: Sized + RxData),+
-        {
-            fn track(&self) -> SilexResult<()> {
-                $(self.$index.track()?;)+
-                Ok(())
-            }
-        }
-
         impl<$($name),+> RxRead for ($($name,)+)
         where
             $($name: RxRead, $name::Value: Sized + Clone + RxData),+
@@ -819,8 +802,7 @@ pub trait RxOptionExt<T>: RxRead<Value = Option<T>> + Clone {
         T: 'scope,
     {
         let source = scope.promote(self.clone(), error_handler)?;
-        scope.derived_from(
-            source.runtime_inputs(),
+        scope.derived(
             move || source.with(|value| value.as_ref().map(&f).unwrap_or_else(|| default.clone())),
             error_handler,
         )
@@ -838,8 +820,7 @@ pub trait RxOptionExt<T>: RxRead<Value = Option<T>> + Clone {
     {
         let source = scope.promote(self.clone(), error_handler)?;
         scope
-            .memo_from(
-                source.runtime_inputs(),
+            .memo(
                 move |_| {
                     source.with(|value| value.as_ref().cloned().unwrap_or_else(|| default.clone()))
                 },
@@ -861,8 +842,7 @@ pub trait RxOptionExt<T>: RxRead<Value = Option<T>> + Clone {
         T: 'scope,
     {
         let source = scope.promote(self.clone(), error_handler)?;
-        scope.derived_from(
-            source.runtime_inputs(),
+        scope.derived(
             move || source.with(|value| value.as_ref().map(&f).unwrap_or_else(&default)),
             error_handler,
         )
@@ -880,8 +860,7 @@ pub trait RxOptionExt<T>: RxRead<Value = Option<T>> + Clone {
         T: 'scope,
     {
         let source = scope.promote(self.clone(), error_handler)?;
-        scope.derived_from(
-            source.runtime_inputs(),
+        scope.derived(
             move || source.with(|value| value.as_ref().and_then(&f)),
             error_handler,
         )
@@ -899,8 +878,7 @@ pub trait RxOptionExt<T>: RxRead<Value = Option<T>> + Clone {
     {
         let source = scope.promote(self.clone(), error_handler)?;
         scope
-            .memo_from(
-                source.runtime_inputs(),
+            .memo(
                 move |_| source.with(|value| value.as_ref().is_some_and(&f)),
                 error_handler,
             )

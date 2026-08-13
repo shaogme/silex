@@ -77,6 +77,7 @@ fn drop_node_data<'scope>(
     let NodeData { storage, cleanups } = data;
     let mut outcome = run_cleanups(scheduler.clone(), cleanups);
 
+    let _observer_frame = ObserverFrame::push_untracked(scheduler);
     if let Err(panic) = catch_unwind(AssertUnwindSafe(|| drop(storage))) {
         remember_panic(&mut outcome.panic, panic);
     }
@@ -252,7 +253,9 @@ pub(crate) fn dispose_nodes_collect<'scope>(
                             if subscriber.scope_id == state_ref.scope_id {
                                 continue;
                             }
-                            let observer_state = scheduler.borrow().get_scope(subscriber.scope_id);
+                            let observer_state = scheduler
+                                .borrow()
+                                .get_scope_for_edge_cleanup(subscriber.scope_id);
                             if let Some(observer_state) = observer_state {
                                 observer_state
                                     .try_borrow_mut()
@@ -266,8 +269,9 @@ pub(crate) fn dispose_nodes_collect<'scope>(
                             state_ref.edges.remove(edge_id);
                             if subscriber.scope_id == state_ref.scope_id {
                                 state_ref.remove_dependency(subscriber.node, source_target);
-                            } else if let Some(observer_state) =
-                                scheduler.borrow().get_scope(subscriber.scope_id)
+                            } else if let Some(observer_state) = scheduler
+                                .borrow()
+                                .get_scope_for_edge_cleanup(subscriber.scope_id)
                             {
                                 observer_state
                                     .try_borrow_mut()

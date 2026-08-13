@@ -1,6 +1,6 @@
 use crate::{
     SilexResult,
-    traits::{RxBase, RxData, RxRead, RxValue},
+    traits::{RxData, RxRead, RxValue},
 };
 use std::marker::PhantomData;
 
@@ -26,16 +26,6 @@ where
     O: ?Sized + RxData,
 {
     type Value = O;
-}
-
-impl<S, F, O> RxBase for SignalSlice<S, F, O>
-where
-    S: RxBase,
-    O: ?Sized + RxData,
-{
-    fn track(&self) -> SilexResult<()> {
-        self.source.track()
-    }
 }
 
 impl<S, F, O> RxRead for SignalSlice<S, F, O>

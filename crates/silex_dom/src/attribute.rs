@@ -7,7 +7,6 @@ use web_sys::{Element, Event, InputEvent, MouseEvent, PointerEvent};
 use silex_core::{
     ReactiveError, SilexError, SilexErrorKind, SilexResult,
     node_ref::NodeRef,
-    reactivity::{ReactiveSource, runtime_inputs_of},
     traits::{RxGet, RxWrite},
 };
 
@@ -347,7 +346,7 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
     fn bind_value<T, S>(self, signal: S) -> Self
     where
         T: AsRef<str> + From<String> + Clone + PartialEq + 'scope,
-        S: RxGet<Value = T> + RxWrite + ReactiveSource<'scope> + Clone + 'scope,
+        S: RxGet<Value = T> + RxWrite + Clone + 'scope,
     {
         let s = signal.clone();
         let this = self.on_input(move |value| {
@@ -360,8 +359,7 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
             move |el: &Element, owner, error_handler| {
                 let dom_element = el.clone();
                 let signal = signal.clone();
-                owner.effect_from(
-                    runtime_inputs_of(signal.clone()),
+                owner.effect(
                     Box::new(move || -> SilexResult<()> {
                         let value = signal.get()?;
                         let str_val = value.as_ref();
@@ -544,23 +542,6 @@ mod tests {
                     }
                     _ => panic!("Expected AttrOp::CombinedClasses"),
                 }
-            })
-            .expect("child scope should initialize");
-    }
-
-    #[test]
-    fn custom_with_inputs_keeps_declared_runtime_sources() {
-        let mut runtime = Runtime::new();
-        runtime
-            .child(|scope| {
-                let source = scope
-                    .rw_signal(1i32)
-                    .expect("signal should initialize")
-                    .into_rx();
-                let op = AttrOp::custom_with_inputs(source.runtime_inputs(), |_, _, _| Ok(()));
-
-                assert_eq!(op.runtime_inputs().len(), 1);
-                assert!(format!("{op:?}").contains("CustomWithInputs"));
             })
             .expect("child scope should initialize");
     }

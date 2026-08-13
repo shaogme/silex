@@ -406,11 +406,6 @@ where
     T: Clone + PartialEq + 'scope,
 {
     pub fn build(self) -> Result<Persistent<'scope, T>, PersistenceError> {
-        let inputs = self.backend.runtime_inputs();
-        self.scope
-            .validate_inputs(&inputs)
-            .map_err(|error| PersistenceError::InvalidConfiguration(error.to_string()))?;
-
         let key = self.key.clone();
         let default = self.config.default.ok_or_else(|| {
             PersistenceError::InvalidConfiguration(

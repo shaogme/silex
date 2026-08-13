@@ -1,8 +1,6 @@
 use super::owner::{MountErrorHandler, MountOwner, MountOwnerToken, MountState, OwnedMountOwner};
 use crate::attribute::PendingAttribute;
-use silex_core::{
-    OwnedScope, ReactiveError, RuntimeInputs, SilexError, SilexErrorKind, SilexResult,
-};
+use silex_core::{OwnedScope, ReactiveError, SilexError, SilexErrorKind, SilexResult};
 use std::{
     cell::{Cell, RefCell},
     marker::PhantomData,
@@ -264,7 +262,6 @@ pub(crate) struct RowInstance<'scope, T> {
     render_content_scope: Option<MountState<'scope, Option<Rc<OwnedScope<'scope>>>>>,
     render_nodes: Option<MountState<'scope, Vec<Node>>>,
     render: RowRenderer<'scope, T>,
-    render_inputs: RuntimeInputs,
     attrs: Vec<PendingAttribute<'scope>>,
     error_handler: MountErrorHandler<'scope>,
     updater: RowUpdater<'scope, T>,
@@ -279,7 +276,6 @@ pub(crate) struct RowInstance<'scope, T> {
 pub(crate) struct RowInstanceConfig<'scope, T> {
     pub(crate) range: NodeRange,
     pub(crate) render: RowRenderer<'scope, T>,
-    pub(crate) render_inputs: RuntimeInputs,
     pub(crate) attrs: Vec<PendingAttribute<'scope>>,
     pub(crate) item: T,
     pub(crate) index: usize,
@@ -295,7 +291,6 @@ impl<'scope, T: Clone + 'scope> RowInstance<'scope, T> {
         let RowInstanceConfig {
             range,
             render,
-            render_inputs,
             attrs,
             item,
             index,
@@ -312,7 +307,6 @@ impl<'scope, T: Clone + 'scope> RowInstance<'scope, T> {
             render_content_scope: None,
             render_nodes: None,
             render,
-            render_inputs,
             attrs,
             error_handler,
             updater,
@@ -394,8 +388,7 @@ impl<'scope, T: Clone + 'scope> RowInstance<'scope, T> {
         let document = crate::document();
         let render_handler = self.error_handler;
         let registration = catch_unwind(AssertUnwindSafe(|| {
-            render_scope.effect_from(
-                self.render_inputs.clone(),
+            render_scope.effect(
                 move || -> SilexResult<()> {
                     let old_nodes = rendered_nodes_for_effect.with(Clone::clone)?;
                     let candidate_scope = match row_scope.child() {

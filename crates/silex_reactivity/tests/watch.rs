@@ -238,48 +238,43 @@ fn initial_watch_panic_rolls_back_the_registered_node() {
 }
 
 #[test]
-fn foreign_watch_inputs_fail_before_getter_or_callback_execution() {
+fn foreign_watch_reads_fail_before_callback_execution() {
     let mut first = Runtime::new();
     let mut second = Runtime::new();
-    let foreign_inputs = first
-        .child(|scope| {
-            let (source, _) = scope.signal(1_i32).expect("fallible reactive creation");
-            silex_reactivity::RuntimeInputs::single(source.runtime_input())
-        })
-        .expect("runtime child");
+    let first_root = first.run().expect("first root");
+    let second_root = second.run().expect("second root");
     let getter_runs = Rc::new(Cell::new(0));
     let callback_runs = Rc::new(Cell::new(0));
 
-    let result = second
-        .child(|scope| {
+    let result = first_root.with_scope(|foreign_scope| {
+        let (foreign_source, _) = foreign_scope
+            .signal(1_i32)
+            .expect("foreign signal should initialize");
+        second_root.with_scope(|scope| {
             let getter_runs_in_getter = getter_runs.clone();
             let callback_runs_in_callback = callback_runs.clone();
             scope
-                .watch_getter_from(
-                    foreign_inputs,
+                .watch_getter(
                     move || {
                         getter_runs_in_getter.set(getter_runs_in_getter.get() + 1);
-                        Ok(1_i32)
+                        foreign_source.get().map_err(|_| ())
                     },
                     move |_, _| {
                         callback_runs_in_callback.set(callback_runs_in_callback.get() + 1);
                         Ok(())
                     },
                     handler(scope),
-                    WatchOptions::default(),
                 )
                 .map(|_| ())
         })
-        .expect("runtime child");
+    });
 
-    assert!(matches!(
-        result,
-        Err(ComputationInitError::Registration(
-            silex_reactivity::ReactiveError::RuntimeMismatch,
-        ))
-    ));
-    assert_eq!(getter_runs.get(), 0);
+    assert!(matches!(result, Err(ComputationInitError::Initial(()))));
+    assert_eq!(getter_runs.get(), 1);
     assert_eq!(callback_runs.get(), 0);
+
+    second_root.dispose().expect("second root disposal");
+    first_root.dispose().expect("first root disposal");
 }
 
 #[test]

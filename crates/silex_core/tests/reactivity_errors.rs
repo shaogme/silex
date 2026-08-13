@@ -1,4 +1,3 @@
-use silex_core::traits::RxBase;
 use silex_core::{ErrorHandler, ReactiveError, Runtime, Scope, SilexError, SilexErrorKind};
 use std::{cell::Cell, rc::Rc};
 
@@ -102,7 +101,7 @@ fn node_ref_keeps_empty_value_separate_from_runtime_errors() {
 }
 
 #[test]
-fn stale_core_trait_access_returns_no_such_node() {
+fn stale_core_read_returns_no_such_node_and_track_is_inactive() {
     let mut runtime = Runtime::new();
     let stale_error = Rc::new(Cell::new(None));
     let stale_error_for_cleanup = stale_error.clone();
@@ -115,12 +114,6 @@ fn stale_core_trait_access_returns_no_such_node() {
                     move || {
                         assert!(matches!(
                             read.get(),
-                            Err(SilexError::Fatal(SilexErrorKind::Reactivity(
-                                ReactiveError::NoSuchNode
-                            )))
-                        ));
-                        assert!(matches!(
-                            read.track(),
                             Err(SilexError::Fatal(SilexErrorKind::Reactivity(
                                 ReactiveError::NoSuchNode
                             )))

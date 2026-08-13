@@ -70,6 +70,16 @@ pub(crate) fn prepare_read<'scope>(
     id: RawId,
     track: bool,
 ) -> ReactiveResult<()> {
+    let tracking = if track {
+        Some(
+            state
+                .try_borrow()
+                .map_err(|_| ReactiveError::BorrowConflict)?
+                .preflight_track_read(id)?,
+        )
+    } else {
+        None
+    };
     let (settled, running) = {
         let state_ref = state
             .try_borrow()
@@ -94,11 +104,11 @@ pub(crate) fn prepare_read<'scope>(
             }
         })?;
     }
-    if track {
+    if let Some(Some(context)) = tracking {
         state
             .try_borrow_mut()
             .map_err(|_| ReactiveError::BorrowConflict)?
-            .track(id);
+            .track_read(id, &context)?;
     }
     flush_if_idle(state);
     Ok(())
@@ -109,6 +119,17 @@ pub(crate) fn prepare_fallible_read<'scope>(
     id: RawId,
     track: bool,
 ) -> EvaluationResult<'scope, ()> {
+    let tracking = if track {
+        Some(
+            state
+                .try_borrow()
+                .map_err(|_| EvaluationError::Runtime(ReactiveError::BorrowConflict))?
+                .preflight_track_read(id)
+                .map_err(EvaluationError::Runtime)?,
+        )
+    } else {
+        None
+    };
     let (settled, running) = {
         let state_ref = state
             .try_borrow()
@@ -128,11 +149,12 @@ pub(crate) fn prepare_fallible_read<'scope>(
     if !settled {
         evaluate_root(state, id, EvaluationMode::Read)?;
     }
-    if track {
+    if let Some(Some(context)) = tracking {
         state
             .try_borrow_mut()
             .map_err(|_| EvaluationError::Runtime(ReactiveError::BorrowConflict))?
-            .track(id);
+            .track_read(id, &context)
+            .map_err(EvaluationError::Runtime)?;
     }
     flush_if_idle(state);
     Ok(())

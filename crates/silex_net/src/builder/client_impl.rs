@@ -10,8 +10,8 @@ use std::{
 
 use gloo_timers::future::sleep;
 use silex_core::{
-    CallbackInvokeError, CompletionOnce, ErrorReporter, Memo, Mutation, ReactiveSource, Resource,
-    RxGet, RxRead, SilexError, SilexErrorKind, SuspenseContext, runtime_inputs_of, unwind_safe,
+    CallbackInvokeError, CompletionOnce, ErrorReporter, Mutation, ReactiveSource, Resource, RxGet,
+    RxRead, SilexError, SilexErrorKind, SuspenseContext, unwind_safe,
 };
 
 use crate::{
@@ -167,7 +167,7 @@ macro_rules! impl_net_methods {
         }
 
         pub async fn send(&self) -> Result<T, NetError> {
-            self.validate_runtime_inputs()?;
+            self.validate_runtime().map_err(NetError::from)?;
             let mut spec = self.resolve_spec()?;
             let client = self.prepared();
             client.apply_interceptors(&mut spec);
@@ -250,7 +250,7 @@ macro_rules! impl_net_methods {
             self,
             suspense: Option<SuspenseContext<'scope>>,
         ) -> Result<Resource<'scope, T, NetError>, NetError> {
-            self.validate_runtime_inputs()?;
+            self.validate_runtime().map_err(NetError::from)?;
             let source = self.scope.constant(())?;
             self.as_resource(source, suspense)
         }
@@ -264,17 +264,12 @@ macro_rules! impl_net_methods {
             S: RxRead + ReactiveSource<'scope> + Clone + 'scope,
             S::Value: Clone + PartialEq + 'static,
         {
+            self.validate_runtime().map_err(NetError::from)?;
             let scope = self.scope;
-            let request_inputs = self.runtime_inputs();
-            let mut inputs = request_inputs.clone();
-            inputs.extend(&runtime_inputs_of(source.clone()));
-            scope.validate_inputs(&inputs).map_err(NetError::from)?;
-
             let error_handler = self.error_handler;
             let request_builder = self.clone();
             let request_source = scope
-                .memo_from(
-                    request_inputs,
+                .memo(
                     move |_| {
                         request_builder.resolve_spec_tracked().map_err(|error| {
                             SilexError::fatal(SilexErrorKind::Framework(format!("{error}")))
@@ -282,7 +277,7 @@ macro_rules! impl_net_methods {
                     },
                     error_handler,
                 )
-                .map(Memo::into_rx)
+                .map(|memo| memo.into_rx())
                 .map_err(NetError::from)?;
 
             #[cfg(feature = "persist")]
@@ -299,12 +294,11 @@ macro_rules! impl_net_methods {
             let resource_generation_for_fetcher = resource_generation.clone();
             let resource_slot_for_fetcher = resource_slot.clone();
             let combined_source = scope
-                .memo_from(
-                    inputs,
+                .memo(
                     move |_| Ok((source.get()?, request_source.get()?)),
                     error_handler,
                 )
-                .map(Memo::into_rx)
+                .map(|memo| memo.into_rx())
                 .map_err(NetError::from)?;
             let resource = Resource::new(
                 scope,
@@ -467,7 +461,7 @@ macro_rules! impl_net_methods {
         }
 
         pub fn as_mutation(&self) -> Result<Mutation<'scope, (), T, NetError>, NetError> {
-            self.validate_runtime_inputs()?;
+            self.validate_runtime().map_err(NetError::from)?;
             let builder = self.clone();
             let completion_error_handler = erase_error_handler(self.error_handler);
             Mutation::new_with_prepare(
@@ -523,13 +517,13 @@ macro_rules! impl_net_methods {
             F: Fn(Input) -> Result<Self, NetError> + 'scope,
             Input: 'scope,
         {
+            self.validate_runtime().map_err(NetError::from)?;
             let scope = self.scope;
             let completion_error_handler = erase_error_handler(self.error_handler);
             Mutation::new_with_prepare(
                 scope,
                 move |input: Input| {
                     let builder = factory(input)?;
-                    builder.validate_runtime_inputs_for(scope)?;
                     let mut spec = builder.resolve_spec()?;
                     let client = builder.prepared();
                     client.apply_interceptors(&mut spec);

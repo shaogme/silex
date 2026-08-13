@@ -3,7 +3,7 @@ use super::contract::{ApplyAttributes, MountInstance, View};
 use super::owner::{MountErrorHandler, MountOwner, MountOwnerToken, OwnedMountOwner};
 use super::row::{NodeRange, RowInstance, RowInstanceConfig, RowRenderContext, RowRenderer};
 use crate::attribute::PendingAttribute;
-use silex_core::{RuntimeInputs, SilexError, SilexErrorKind, SilexResult};
+use silex_core::{SilexError, SilexErrorKind, SilexResult};
 use std::{
     panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
     rc::Rc,
@@ -103,25 +103,6 @@ pub fn mount_dynamic_view_universal<'scope>(
     error_handler: MountErrorHandler<'scope>,
     renderer: DynamicRenderer<'scope>,
 ) -> SilexResult<MountInstance<'scope>> {
-    mount_dynamic_view_universal_from(
-        owner,
-        parent,
-        attrs,
-        RuntimeInputs::new(),
-        error_handler,
-        renderer,
-    )
-}
-
-pub(crate) fn mount_dynamic_view_universal_from<'scope>(
-    owner: &dyn MountOwner<'scope>,
-    parent: &Node,
-    attrs: Vec<PendingAttribute<'scope>>,
-    inputs: RuntimeInputs,
-    error_handler: MountErrorHandler<'scope>,
-    renderer: DynamicRenderer<'scope>,
-) -> SilexResult<MountInstance<'scope>> {
-    owner.validate_inputs(&inputs)?;
     let range = NodeRange::append(parent, "dyn")?;
     let render = RowRenderer::new(move |args: RowRenderContext<'scope, ()>| {
         let RowRenderContext {
@@ -142,7 +123,6 @@ pub(crate) fn mount_dynamic_view_universal_from<'scope>(
         RowInstanceConfig {
             range,
             render,
-            render_inputs: inputs,
             attrs,
             item: (),
             index: 0,
@@ -216,7 +196,6 @@ pub fn mount_branch_stable_cached<'scope, K, S, KeyFn, BranchFn>(
     owner: &dyn MountOwner<'scope>,
     parent: &Node,
     attrs: Vec<PendingAttribute<'scope>>,
-    inputs: RuntimeInputs,
     error_handler: MountErrorHandler<'scope>,
     key_fn: KeyFn,
     branch_fn: BranchFn,
@@ -246,7 +225,6 @@ where
         owner,
         parent,
         attrs,
-        inputs,
         error_handler,
         key_fn,
         render,
@@ -266,7 +244,6 @@ struct KeyedDynamicMountArgs<'owner, 'scope, K, KeyFn> {
     owner: &'owner dyn MountOwner<'scope>,
     parent: &'owner Node,
     attrs: Vec<PendingAttribute<'scope>>,
-    inputs: RuntimeInputs,
     error_handler: MountErrorHandler<'scope>,
     key_fn: KeyFn,
     render: RowRenderer<'scope, K>,
@@ -284,13 +261,11 @@ where
         owner,
         parent,
         attrs,
-        inputs,
         error_handler,
         key_fn,
         render,
         update_same_key,
     } = args;
-    owner.validate_inputs(&inputs)?;
     let scope = Rc::new(owner.owned_scope()?);
     let local_owner = OwnedMountOwner::new(scope.clone());
     let range = NodeRange::append(parent, "branch")?;
@@ -329,8 +304,7 @@ where
 
     let token = local_owner.token();
     let effect_state = state.clone();
-    if let Err(error) = local_owner.effect_from(
-        inputs,
+    if let Err(error) = local_owner.effect(
         Box::new(move || -> SilexResult<()> {
             let mut state = effect_state.take()?;
             let result = catch_unwind(AssertUnwindSafe(|| -> SilexResult<()> {
@@ -377,7 +351,6 @@ where
                     RowInstanceConfig {
                         range: row_range,
                         render,
-                        render_inputs: RuntimeInputs::new(),
                         attrs,
                         item: key.clone(),
                         index: 0,

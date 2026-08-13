@@ -114,8 +114,8 @@ fn conditional_tw_expands_to_a_scoped_attribute_operation() {
             let operation = conditional_class(read.into_rx());
 
             match operation {
-                AttrOp::CustomWithInputs { inputs, .. } => assert_eq!(inputs.len(), 1),
-                other => panic!("expected CustomWithInputs, got {other:?}"),
+                AttrOp::Custom { .. } => {}
+                other => panic!("expected Custom, got {other:?}"),
             }
         })
         .unwrap();

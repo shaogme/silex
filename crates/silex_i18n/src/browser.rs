@@ -1,5 +1,5 @@
 use crate::{I18nStore, Locale};
-use silex_core::{Effect, SilexError, SilexResult, runtime_inputs_of};
+use silex_core::{Effect, SilexError, SilexResult};
 use std::{cell::Cell, rc::Rc};
 use wasm_bindgen::JsValue;
 
@@ -169,8 +169,7 @@ pub(crate) fn sync_document_metadata<'scope>(
     let owner_id_for_effect = owner_id.clone();
     let record_for_effect = record.clone();
     let error_handler = store.error_handler();
-    let effect = scope.effect_from(
-        runtime_inputs_of(locale),
+    let effect = scope.effect(
         move || -> SilexResult<()> {
             if !active_for_effect.get() {
                 return Ok(());

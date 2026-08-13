@@ -43,11 +43,7 @@ where
         F: Fn(&Self::Value) -> U + 'scope,
     {
         let source = scope.promote(self, error_handler)?;
-        scope.derived_from(
-            source.runtime_inputs(),
-            move || source.with(|value| f(value)),
-            error_handler,
-        )
+        scope.derived(move || source.with(|value| f(value)), error_handler)
     }
 
     fn map_fn<'scope, U>(
@@ -62,11 +58,7 @@ where
         U: 'scope,
     {
         let source = scope.promote(self, error_handler)?;
-        scope.derived_from(
-            source.runtime_inputs(),
-            move || source.with(f),
-            error_handler,
-        )
+        scope.derived(move || source.with(f), error_handler)
     }
 }
 
@@ -96,11 +88,7 @@ where
     {
         let source = scope.promote(self, error_handler)?;
         scope
-            .memo_from(
-                source.runtime_inputs(),
-                move |_| source.get(),
-                error_handler,
-            )
+            .memo(move |_| source.get(), error_handler)
             .map(|memo| memo.into_rx())
     }
 }

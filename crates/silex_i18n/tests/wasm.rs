@@ -1,7 +1,7 @@
 #![cfg(target_arch = "wasm32")]
 
 use gloo_timers::future::TimeoutFuture;
-use silex_core::{ErrorReporter, ReactiveError, Runtime, Scope, SilexResult, runtime_inputs_of};
+use silex_core::{ErrorReporter, ReactiveError, Runtime, Scope, SilexResult};
 use silex_i18n::{
     Catalog, CatalogLoadError, I18nBuilder, I18nStore, Locale, ResourceState, SuspenseContext, t,
 };
@@ -385,8 +385,7 @@ async fn catalog_resource_completion_is_cancelled_after_root_dispose() {
         let resource_state = resource.state();
         let resource_state_runs_for_effect = resource_state_runs_for_scope.clone();
         scope
-            .effect_from(
-                runtime_inputs_of(resource_state),
+            .effect(
                 move || -> SilexResult<()> {
                     let _ = resource_state.get_untracked()?;
                     resource_state_runs_for_effect.set(resource_state_runs_for_effect.get() + 1);
@@ -398,8 +397,7 @@ async fn catalog_resource_completion_is_cancelled_after_root_dispose() {
         let translation = t!(i18n, "title").expect("translation");
         let translation_runs_for_effect = translation_runs_for_scope.clone();
         scope
-            .effect_from(
-                runtime_inputs_of(translation),
+            .effect(
                 move || -> SilexResult<()> {
                     let _ = translation.get_untracked()?;
                     translation_runs_for_effect.set(translation_runs_for_effect.get() + 1);

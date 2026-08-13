@@ -2,7 +2,9 @@
 
 use super::{
     model::{DependencyTransaction, EdgeId, NodeState, ReactiveEdge, ScopeState},
-    scheduler::{ScheduledTask, TargetNode},
+    scheduler::{
+        ActiveObserver, Observer, ScheduledTask, TargetNode, TrackingContext, active_context,
+    },
 };
 use crate::{ReactiveError, ReactiveResult, handle::NodeKindTag, internal::RawId};
 use std::collections::VecDeque;
@@ -42,7 +44,9 @@ impl<'scope> ScopeState<'scope> {
             if dependency.scope_id == self.scope_id {
                 continue;
             }
-            if let Some(dependency_scope) = scheduler.get_scope(dependency.scope_id) {
+            if let Some(dependency_scope) =
+                scheduler.get_scope_for_edge_cleanup(dependency.scope_id)
+            {
                 dependency_scope
                     .try_borrow_mut()
                     .map_err(|_| ReactiveError::BorrowConflict)?;
@@ -66,7 +70,10 @@ impl<'scope> ScopeState<'scope> {
             return Ok(());
         }
 
-        let dependency_scope = self.scheduler.borrow().get_scope(dependency.scope_id);
+        let dependency_scope = self
+            .scheduler
+            .borrow()
+            .get_scope_for_edge_cleanup(dependency.scope_id);
         let Some(dependency_scope) = dependency_scope else {
             self.remove_dependency(observer, dependency);
             return Ok(());
@@ -100,7 +107,10 @@ impl<'scope> ScopeState<'scope> {
             return Ok(());
         }
 
-        let dependency_scope = self.scheduler.borrow().get_scope(dependency.scope_id);
+        let dependency_scope = self
+            .scheduler
+            .borrow()
+            .get_scope_for_edge_cleanup(dependency.scope_id);
         let Some(dependency_scope) = dependency_scope else {
             return Ok(());
         };
@@ -284,7 +294,10 @@ impl<'scope> ScopeState<'scope> {
             self.dependency_edges_of(observer_id).collect();
         for (_, edge) in &dependencies {
             if edge.target.scope_id != self.scope_id
-                && let Some(dep_scope) = self.scheduler.borrow().get_scope(edge.target.scope_id)
+                && let Some(dep_scope) = self
+                    .scheduler
+                    .borrow()
+                    .get_scope_for_edge_cleanup(edge.target.scope_id)
             {
                 dep_scope
                     .try_borrow_mut()
@@ -304,7 +317,10 @@ impl<'scope> ScopeState<'scope> {
             if dep.scope_id == self.scope_id {
                 self.remove_subscriber(dep.node, self_sub);
             } else {
-                let dep_scope = self.scheduler.borrow().get_scope(dep.scope_id);
+                let dep_scope = self
+                    .scheduler
+                    .borrow()
+                    .get_scope_for_edge_cleanup(dep.scope_id);
                 if let Some(dep_scope) = dep_scope {
                     let mut dep_state = dep_scope
                         .try_borrow_mut()
@@ -315,21 +331,7 @@ impl<'scope> ScopeState<'scope> {
         }
     }
 
-    pub(crate) fn track(&mut self, target: RawId) {
-        let observer = {
-            let scheduler = self.scheduler.borrow();
-            let Some(observer) = scheduler.observer() else {
-                return;
-            };
-            if !scheduler.allows_tracking(observer, self.scope_id) {
-                return;
-            }
-            observer
-        };
-        if !self.has_value(target) {
-            return;
-        }
-
+    fn track_pair(&mut self, observer: Observer, target: RawId) {
         let target_sub = TargetNode {
             scope_id: observer.scope_id,
             node: observer.node,
@@ -338,44 +340,117 @@ impl<'scope> ScopeState<'scope> {
             scope_id: self.scope_id,
             node: target,
         };
-
-        if observer.scope_id == self.scope_id {
-            let observer_node = observer.node;
-            if observer_node == target || !self.node_exists(observer_node) {
-                return;
-            }
-            if let Some(obs_node) = self.nodes.get(observer_node)
-                && !obs_node.is_computation()
-            {
-                return;
-            }
-            self.observe_dependency(observer_node, observer_dep);
-            self.add_subscriber(target, target_sub);
-            self.add_dependency(observer_node, observer_dep);
-            return;
-        }
-
-        // Cross-scope dependency
-        let obs_scope = self.scheduler.borrow().get_scope(observer.scope_id);
-        if let Some(obs_scope) = obs_scope {
-            let mut obs_state = obs_scope
-                .try_borrow_mut()
-                .expect("obs_scope borrow failed during track");
-            if let Some(obs_node) = obs_state.nodes.get(observer.node)
-                && obs_node.is_computation()
-            {
-                obs_state.observe_dependency(observer.node, observer_dep);
-                obs_state.add_dependency(observer.node, observer_dep);
-                drop(obs_state);
-                self.add_subscriber(target, target_sub);
-            }
-        }
+        self.observe_dependency(observer.node, observer_dep);
+        self.add_dependency(observer.node, observer_dep);
+        self.add_subscriber(target, target_sub);
     }
 
-    pub(crate) fn track_many(&mut self, targets: &[RawId]) {
-        for &target in targets {
-            self.track(target);
+    fn observer_is_computation(&self, observer: Observer) -> bool {
+        self.nodes
+            .get(observer.node)
+            .is_some_and(|node| node.is_computation())
+    }
+
+    fn observer_state(
+        &self,
+        active: &ActiveObserver,
+    ) -> ReactiveResult<std::rc::Rc<std::cell::RefCell<ScopeState<'scope>>>> {
+        active
+            .scheduler
+            .borrow()
+            .get_scope_for_edge_cleanup(active.observer.scope_id)
+            .ok_or(ReactiveError::NoSuchNode)
+    }
+
+    /// Validate a tracked read before a dirty computation is evaluated.
+    pub(crate) fn preflight_track_read(
+        &self,
+        target: RawId,
+    ) -> ReactiveResult<Option<TrackingContext>> {
+        let Some(context) = active_context() else {
+            return Ok(None);
+        };
+        let Some(active) = context.observer.as_ref() else {
+            return Ok(None);
+        };
+        if !std::rc::Rc::ptr_eq(&active.scheduler, &self.scheduler) {
+            return Err(ReactiveError::RuntimeMismatch);
         }
+        if !self.is_active() || !self.has_value(target) {
+            return Err(ReactiveError::NoSuchNode);
+        }
+        let observer_scope = self.observer_state(active)?;
+        if std::rc::Rc::ptr_eq(&observer_scope, &self.scheduler_state()) {
+            if !self.observer_is_computation(active.observer) || active.observer.node == target {
+                return Err(ReactiveError::Reentrant);
+            }
+        } else {
+            let observer_state = observer_scope
+                .try_borrow_mut()
+                .map_err(|_| ReactiveError::BorrowConflict)?;
+            if !observer_state.is_active()
+                || !observer_state.observer_is_computation(active.observer)
+                || observer_state.scope_id == self.scope_id && active.observer.node == target
+            {
+                return Err(ReactiveError::Reentrant);
+            }
+        }
+        Ok(Some(context))
+    }
+
+    fn scheduler_state(&self) -> std::rc::Rc<std::cell::RefCell<ScopeState<'scope>>> {
+        self.scheduler
+            .borrow()
+            .get_scope_for_edge_cleanup(self.scope_id)
+            .expect("active source scope must remain registered")
+    }
+
+    /// Record one tracked read after the source has been evaluated.
+    pub(crate) fn track_read(
+        &mut self,
+        target: RawId,
+        context: &TrackingContext,
+    ) -> ReactiveResult<()> {
+        let Some(active) = context.observer.as_ref() else {
+            return Ok(());
+        };
+        if context.blocked_scopes.contains(&self.scope_id) {
+            return Ok(());
+        }
+        if !std::rc::Rc::ptr_eq(&active.scheduler, &self.scheduler) {
+            return Err(ReactiveError::RuntimeMismatch);
+        }
+        if !self.is_active() || !self.has_value(target) {
+            return Err(ReactiveError::NoSuchNode);
+        }
+        let observer_scope = self.observer_state(active)?;
+        let observer_target = TargetNode {
+            scope_id: active.observer.scope_id,
+            node: active.observer.node,
+        };
+        if std::rc::Rc::ptr_eq(&observer_scope, &self.scheduler_state()) {
+            if active.observer.node == target || !self.observer_is_computation(active.observer) {
+                return Err(ReactiveError::Reentrant);
+            }
+            self.track_pair(active.observer, target);
+            return Ok(());
+        }
+
+        let mut observer_state = observer_scope
+            .try_borrow_mut()
+            .map_err(|_| ReactiveError::BorrowConflict)?;
+        if !observer_state.is_active() || !observer_state.observer_is_computation(active.observer) {
+            return Err(ReactiveError::NoSuchNode);
+        }
+        let observer_dep = TargetNode {
+            scope_id: self.scope_id,
+            node: target,
+        };
+        observer_state.observe_dependency(active.observer.node, observer_dep);
+        observer_state.add_dependency(active.observer.node, observer_dep);
+        drop(observer_state);
+        self.add_subscriber(target, observer_target);
+        Ok(())
     }
 
     pub(crate) fn queue_dependents(&mut self, source: RawId) {
@@ -457,10 +532,7 @@ mod tests {
     use super::*;
     use crate::{
         ErrorHandler, Runtime, Scope,
-        runtime::{
-            dispose::dispose_nodes,
-            scheduler::{GlobalScheduler, Observer, ObserverFrame},
-        },
+        runtime::{dispose::dispose_nodes, scheduler::GlobalScheduler},
         scope::ScopeStorage,
     };
     use std::{panic::AssertUnwindSafe, panic::catch_unwind};
@@ -556,90 +628,6 @@ mod tests {
                         .count(),
                     0
                 );
-            });
-        });
-    }
-
-    #[test]
-    fn track_conflict_does_not_leave_a_subscriber_half_edge() {
-        let mut runtime = Runtime::new();
-        child(&mut runtime, |scope| {
-            let (source, _) = scope.signal(0i32).expect("fallible reactive creation");
-            let (target, _) = scope.signal(1i32).expect("fallible reactive creation");
-            let source_state = source.handle.state();
-
-            let _ = scope.child(|child| {
-                let (local, _) = child.signal(0i32).expect("fallible reactive creation");
-                let effect = child
-                    .effect(
-                        move || {
-                            let _ = source.get();
-                            Ok(())
-                        },
-                        handler(child),
-                    )
-                    .expect("effect should initialize");
-                let child_state = local.handle.state();
-                let (scheduler, child_scope_id) = {
-                    let state = child_state.borrow();
-                    (state.scheduler.clone(), state.scope_id)
-                };
-                let observer_frame = ObserverFrame::push(
-                    scheduler.clone(),
-                    Some(Observer {
-                        scope_id: child_scope_id,
-                        node: effect.handle.raw(),
-                    }),
-                );
-
-                let target_raw = target.handle.raw();
-                let effect_raw = effect.handle.raw();
-                let child_borrow = child_state.borrow_mut();
-                let mut source_borrow = source_state.borrow_mut();
-                let panic = catch_unwind(AssertUnwindSafe(|| {
-                    source_borrow.track(target_raw);
-                }));
-
-                assert!(panic.is_err());
-                assert_eq!(
-                    source_borrow
-                        .subscriber_edges_of(target_raw)
-                        .filter(|(_, edge)| {
-                            edge.target
-                                == TargetNode {
-                                    scope_id: child_scope_id,
-                                    node: effect_raw,
-                                }
-                        })
-                        .count(),
-                    0
-                );
-                assert_eq!(
-                    child_borrow
-                        .dependency_edges_of(effect_raw)
-                        .filter(|(_, edge)| edge.target.node == target_raw)
-                        .count(),
-                    0
-                );
-                drop(source_borrow);
-                drop(child_borrow);
-
-                source_state.borrow_mut().track(target_raw);
-                assert_eq!(
-                    source_state
-                        .borrow()
-                        .subscriber_edges_of(target_raw)
-                        .filter(|(_, edge)| {
-                            edge.target
-                                == TargetNode {
-                                    scope_id: child_scope_id,
-                                    node: effect_raw,
-                                }
-                        })
-                        .count(),
-                    1
-                );
-                drop(observer_frame);
             });
         });
     }

@@ -6,7 +6,7 @@ use silex_core::{
     ErrorReporter, ReactiveError, ReactiveResult, Rx, RxGet, Scope, SilexErrorKind, SilexResult,
     StoreField,
     reactivity::{PromotionPlan, ReactiveSource, ReadSignal, RwSignal, StoredValue},
-    traits::{RxBase, RxCloneData, RxData, RxRead, RxValue, RxWrite},
+    traits::{RxCloneData, RxData, RxRead, RxValue, RxWrite},
 };
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::view::{
@@ -269,12 +269,6 @@ where
 
 impl<'scope, T: RxData> RxValue for Persistent<'scope, T> {
     type Value = T;
-}
-
-impl<'scope, T: RxData> RxBase for Persistent<'scope, T> {
-    fn track(&self) -> SilexResult<()> {
-        self.value.track()
-    }
 }
 
 impl<'scope, T: RxData> RxRead for Persistent<'scope, T> {

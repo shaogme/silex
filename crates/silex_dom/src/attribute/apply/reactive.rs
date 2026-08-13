@@ -126,8 +126,7 @@ where
         ReactiveBindingTarget::Custom => Ok(()),
     });
 
-    ReactiveBindingPlan::effect(rx.runtime_inputs(), target, update, cleanup)
-        .with_string_value(value)
+    ReactiveBindingPlan::effect(target, update, cleanup).with_string_value(value)
 }
 
 fn bool_value<'scope>(rx: Rx<'scope, bool>) -> Rc<dyn Fn() -> SilexResult<bool> + 'scope> {
@@ -177,7 +176,7 @@ fn bool_plan<'scope>(
         _ => Ok(()),
     });
 
-    ReactiveBindingPlan::effect(rx.runtime_inputs(), target, update, cleanup).with_bool_value(value)
+    ReactiveBindingPlan::effect(target, update, cleanup).with_bool_value(value)
 }
 
 fn attr_plan<'scope>(
@@ -196,12 +195,7 @@ fn attr_plan<'scope>(
     });
     let target_for_cleanup = target.clone();
     let cleanup = Rc::new(move |el: &WebElem| cleanup_target(el, &target_for_cleanup));
-    ReactiveBindingPlan::effect(
-        rx.runtime_inputs(),
-        ReactiveBindingTarget::Attribute(target),
-        update,
-        cleanup,
-    )
+    ReactiveBindingPlan::effect(ReactiveBindingTarget::Attribute(target), update, cleanup)
 }
 
 fn target_for_value(target: ApplyTarget) -> Option<ReactiveBindingTarget<'static>> {
@@ -441,8 +435,7 @@ where
                             }),
                         _ => Ok(()),
                     });
-                    ReactiveBindingPlan::effect(rx.runtime_inputs(), target, update, cleanup)
-                        .with_string_value(value)
+                    ReactiveBindingPlan::effect(target, update, cleanup).with_string_value(value)
                 })
             }
             ReactiveBindingContext::Pair { .. } => None,

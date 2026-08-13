@@ -87,13 +87,9 @@ where
 {
     let scope = left.scope();
     let right = right.into_promotion_plan();
-    let mut inputs = left.runtime_inputs();
-    inputs.extend(&right.inputs());
-    scope.validate_inputs(&inputs)?;
     let right = right.materialize(scope, error_handler)?;
     scope
-        .memo_from(
-            inputs,
+        .memo(
             move |_| left.with(|left| right.with(|right| op(left, right)))?,
             error_handler,
         )
@@ -110,11 +106,7 @@ where
 {
     let scope = value.scope();
     scope
-        .memo_from(
-            value.runtime_inputs(),
-            move |_| value.with(op),
-            error_handler,
-        )
+        .memo(move |_| value.with(op), error_handler)
         .map(Memo::into_rx)
 }
 

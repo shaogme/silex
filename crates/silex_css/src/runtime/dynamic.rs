@@ -12,7 +12,7 @@ use crate::{
     source::IntoCssReactive,
     types,
 };
-use silex_core::{ErrorReporter, RuntimeInputs, Rx, SilexError, SilexErrorKind, SilexResult};
+use silex_core::{ErrorReporter, Rx, SilexError, SilexErrorKind, SilexResult};
 use silex_dom::{
     attribute::{ApplyTarget, ApplyToDom, AttrOp, IntoStorable, PendingAttribute},
     view::{
@@ -398,27 +398,12 @@ impl<'scope> DynamicCss<'scope> {
         self
     }
 
-    pub(crate) fn runtime_inputs(&self) -> RuntimeInputs {
-        let mut inputs = RuntimeInputs::new();
-        for (_, getter) in &self.vars {
-            inputs.extend(&getter.runtime_inputs());
-        }
-        for (_, getters) in &self.rules {
-            for getter in getters {
-                inputs.extend(&getter.runtime_inputs());
-            }
-        }
-        inputs
-    }
-
     fn apply_to_element(
         &self,
         el: &Element,
         owner: &dyn MountOwner<'scope>,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
-        let all_inputs = self.runtime_inputs();
-        owner.validate_inputs(&all_inputs)?;
         let token = owner.token();
 
         for (style_id, css) in &self.static_styles {
@@ -433,13 +418,8 @@ impl<'scope> DynamicCss<'scope> {
         if !self.vars.is_empty() {
             let vars = self.vars.clone();
             let vars_for_effect = vars.clone();
-            let mut inputs = RuntimeInputs::new();
-            for (_, getter) in &vars {
-                inputs.extend(&getter.runtime_inputs());
-            }
             let el_clone = el.clone();
-            token.effect_with_previous_from(
-                inputs,
+            token.effect_with_previous(
                 Box::new(
                     move |previous: Option<&Vec<Option<String>>>| -> SilexResult<
                         Vec<Option<String>>,
@@ -486,10 +466,6 @@ impl<'scope> DynamicCss<'scope> {
 
         let static_values = self.static_values.clone();
         for (parts, getters) in self.rules.clone() {
-            let mut inputs = RuntimeInputs::new();
-            for getter in &getters {
-                inputs.extend(&getter.runtime_inputs());
-            }
             let manager = Rc::new(DynamicStyleManager::new());
             let manager_for_effect = manager.clone();
             let current_class = token.owner_state(None::<String>)?;
@@ -498,8 +474,7 @@ impl<'scope> DynamicCss<'scope> {
             let base_class = self.class_name;
             let layer = self.layer;
             let static_values_for_effect = static_values.clone();
-            token.effect_with_previous_from(
-                inputs,
+            token.effect_with_previous(
                 Box::new(move |previous: Option<&String>| -> SilexResult<String> {
                     let current_vals: Vec<String> = getters
                         .iter()
@@ -588,8 +563,7 @@ impl<'scope> ApplyToDom<'scope> for DynamicCss<'scope> {
     }
 
     fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope> {
-        let inputs = self.runtime_inputs();
-        AttrOp::custom_with_inputs(inputs, move |el, owner, error_handler| {
+        AttrOp::custom(move |el, owner, error_handler| {
             self.apply_to_element(el, owner, error_handler)
         })
     }
@@ -704,26 +678,9 @@ impl<'scope> StyledVariantBinding<'scope> {
     }
 
     pub fn into_op(self) -> AttrOp<'scope> {
-        let inputs = self.runtime_inputs();
-        AttrOp::custom_with_inputs(inputs, move |element, owner, error_handler| {
+        AttrOp::custom(move |element, owner, error_handler| {
             self.mount_to_element(element, owner, error_handler)
         })
-    }
-
-    fn runtime_inputs(&self) -> RuntimeInputs {
-        let mut inputs = RuntimeInputs::new();
-        for group in &self.groups {
-            inputs.extend(&group.source.runtime_inputs());
-        }
-        for rule in &self.rules {
-            for getter in &rule.getters {
-                inputs.extend(&getter.runtime_inputs());
-            }
-        }
-        for getter in &self.property_getters {
-            inputs.extend(&getter.runtime_inputs());
-        }
-        inputs
     }
 
     fn mount_to_element(
@@ -732,9 +689,6 @@ impl<'scope> StyledVariantBinding<'scope> {
         owner: &MountOwnerToken<'scope>,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
-        let inputs = self.runtime_inputs();
-        owner.validate_inputs(&inputs)?;
-
         for (style_id, css) in &self.static_styles {
             if !style_id.is_empty() && !css.is_empty() {
                 crate::inject_style(style_id, css);
@@ -766,8 +720,7 @@ impl<'scope> StyledVariantBinding<'scope> {
         let states_for_effect = states.clone();
         let variant_classes_for_effect = variant_classes.clone();
         let element_for_effect = element.clone();
-        owner.effect_from(
-            inputs,
+        owner.effect(
             Box::new(move || -> SilexResult<()> {
                 let active_variants: Vec<String> = groups
                     .iter()
@@ -996,17 +949,6 @@ impl<'scope> GlobalStyleBinding<'scope> {
         self.static_replacements = replacements;
         self
     }
-
-    fn runtime_inputs(&self) -> RuntimeInputs {
-        let mut inputs = RuntimeInputs::new();
-        for getter in &self.positional {
-            inputs.extend(&getter.runtime_inputs());
-        }
-        for (_, getter) in &self.replacements {
-            inputs.extend(&getter.runtime_inputs());
-        }
-        inputs
-    }
 }
 
 /// An owner-bound document stylesheet that does not create a DOM node.
@@ -1037,12 +979,6 @@ impl<'scope> GlobalStyleView<'scope> {
         owner: &dyn MountOwner<'scope>,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
-        let mut inputs = RuntimeInputs::new();
-        for binding in &self.bindings {
-            inputs.extend(&binding.runtime_inputs());
-        }
-        owner.validate_inputs(&inputs)?;
-
         for (style_id, css) in &self.static_styles {
             if !style_id.is_empty() && !css.is_empty() {
                 crate::inject_style(style_id, css);
@@ -1162,15 +1098,6 @@ pub fn inject_managed_dynamic_style<'scope>(
         static_values,
         static_replacements,
     } = style;
-    let mut inputs = RuntimeInputs::new();
-    for getter in &positional {
-        inputs.extend(&getter.runtime_inputs());
-    }
-    for (_, getter) in &replacements {
-        inputs.extend(&getter.runtime_inputs());
-    }
-    owner.validate_inputs(&inputs)?;
-
     let manager = Rc::new(DynamicStyleManager::new());
     let style_id_str = style_id;
     let manager_for_cleanup = manager.clone();
@@ -1184,8 +1111,7 @@ pub fn inject_managed_dynamic_style<'scope>(
 
     let manager_for_effect = manager.clone();
     owner
-        .effect_from(
-            inputs,
+        .effect(
             Box::new(move || -> SilexResult<()> {
                 let vals: Vec<String> = positional
                     .iter()

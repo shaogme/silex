@@ -2,7 +2,7 @@ use crate::attribute::PendingAttribute;
 use crate::element::{Element, TypedElement, tags::Tag};
 use crate::view::{
     AnyView, ApplyAttributes, DynamicRenderArgs, DynamicRenderer, MountErrorHandler, MountInstance,
-    MountOwner, OwnedMountOwner, View, ViewCons, mount_dynamic_view_universal_from,
+    MountOwner, OwnedMountOwner, View, ViewCons, mount_dynamic_view_universal,
 };
 use silex_core::reactivity::{Memo, ReadSignal, RwSignal, Signal, StoredValue};
 use silex_core::traits::RxCloneData;
@@ -20,8 +20,6 @@ pub(crate) fn mount_reactive_text<'scope, T>(
 where
     T: Display + RxCloneData + 'scope,
 {
-    let inputs = rx.runtime_inputs();
-    owner.validate_inputs(&inputs)?;
     let scope = Rc::new(owner.owned_scope()?);
     let local_owner = OwnedMountOwner::new(scope.clone());
     let parent = parent.clone();
@@ -45,8 +43,7 @@ where
     }
 
     let node_for_effect = node.clone();
-    if let Err(error) = local_owner.effect_from(
-        inputs,
+    if let Err(error) = local_owner.effect(
         Box::new(move || -> SilexResult<()> {
             let value = rx.with(|value| value.to_string())?;
             node_for_effect.set_node_value(Some(&value));
@@ -81,13 +78,10 @@ pub(crate) fn mount_reactive_view<'scope, V>(
 where
     V: View<'scope> + 'scope,
 {
-    let inputs = rx.runtime_inputs();
-    owner.validate_inputs(&inputs)?;
-    mount_dynamic_view_universal_from(
+    mount_dynamic_view_universal(
         owner,
         parent,
         attrs,
-        inputs,
         error_handler,
         DynamicRenderer::new(move |args| {
             let DynamicRenderArgs {

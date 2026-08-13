@@ -8,7 +8,7 @@ use crate::{
 };
 #[cfg(feature = "persist")]
 use silex_core::CompletionOnce;
-use silex_core::{ErrorReporter, RuntimeInputs, Scope, SilexResult};
+use silex_core::{ErrorReporter, Scope, SilexResult};
 use std::{marker::PhantomData, rc::Rc, time::Duration};
 
 pub mod client_impl;
@@ -51,21 +51,17 @@ enum BodyResolver<'scope> {
 }
 
 impl<'scope> BodyResolver<'scope> {
-    fn inputs(&self) -> RuntimeInputs {
-        let mut inputs = RuntimeInputs::new();
+    fn validate_runtime(&self, scope: Scope<'scope>) -> SilexResult<()> {
         match self {
-            Self::Static(_) => {}
-            Self::Text(value) => inputs.extend(&value.inputs()),
+            Self::Static(_) => Ok(()),
+            Self::Text(value) => value.validate_runtime(scope),
             #[cfg(feature = "json")]
-            Self::Json(value) => inputs.extend(&value.inputs()),
-            Self::Form(fields) => {
-                for (name, value) in fields {
-                    inputs.extend(&name.inputs());
-                    inputs.extend(&value.inputs());
-                }
-            }
+            Self::Json(value) => value.validate_runtime(scope),
+            Self::Form(fields) => fields.iter().try_for_each(|(name, value)| {
+                name.validate_runtime(scope)?;
+                value.validate_runtime(scope)
+            }),
         }
-        inputs
     }
 
     fn resolve(
@@ -308,15 +304,13 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
     ) -> Self {
         let user = username.into_net_value();
         let password = password.into_net_value();
-        let mut inputs = user.inputs();
-        inputs.extend(&password.inputs());
         let tracked_user = user.clone();
         let tracked_password = password.clone();
         let untracked_user = user;
         let untracked_password = password;
         self.header(
             "Authorization",
-            ValueResolver::dynamic_with_inputs(
+            ValueResolver::dynamic(
                 move || {
                     let credentials = format!(
                         "{}:{}",
@@ -333,7 +327,6 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
                     );
                     Ok(format!("Basic {}", base64_encode(credentials.as_bytes())))
                 },
-                inputs,
             ),
         )
     }
@@ -379,13 +372,11 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
         let token = token.into_net_value();
         let tracked = token.clone();
         let untracked = token;
-        let inputs = tracked.inputs();
         self.header(
             "Authorization",
-            ValueResolver::dynamic_with_inputs(
+            ValueResolver::dynamic(
                 move || Ok(format!("Bearer {}", tracked.resolve_tracked()?)),
                 move || Ok(format!("Bearer {}", untracked.resolve()?)),
-                inputs,
             ),
         )
     }
@@ -561,40 +552,22 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
             && self.transport.supports_persistent_cache()
     }
 
-    pub(crate) fn runtime_inputs(&self) -> RuntimeInputs {
-        let mut inputs = self.url.inputs();
-        for (_, value) in self
-            .headers
-            .iter()
-            .chain(self.query.iter())
-            .chain(self.path_params.iter())
-        {
-            inputs.extend(&value.inputs());
-        }
-        inputs.extend(&self.body.inputs());
-        inputs
-    }
-
-    pub(crate) fn validate_runtime_inputs(&self) -> Result<(), NetError> {
-        self.validate_runtime_inputs_for(self.scope)
-    }
-
-    pub(crate) fn validate_runtime_inputs_for(
-        &self,
-        target_scope: Scope<'scope>,
-    ) -> Result<(), NetError> {
-        if self.scope != target_scope {
-            return Err(NetError::InvalidConfiguration(
-                "HTTP builder scope does not match its target scope".to_string(),
-            ));
-        }
-        target_scope
-            .validate_inputs(&self.runtime_inputs())
-            .map_err(NetError::from)
-    }
-
     pub(crate) fn resolve_spec(&self) -> Result<RequestSpec, NetError> {
         self.resolve_spec_with(ValueResolver::resolve)
+    }
+
+    pub(crate) fn validate_runtime(&self) -> SilexResult<()> {
+        self.url.validate_runtime(self.scope)?;
+        self.headers
+            .iter()
+            .try_for_each(|(_, value)| value.validate_runtime(self.scope))?;
+        self.query
+            .iter()
+            .try_for_each(|(_, value)| value.validate_runtime(self.scope))?;
+        self.path_params
+            .iter()
+            .try_for_each(|(_, value)| value.validate_runtime(self.scope))?;
+        self.body.validate_runtime(self.scope)
     }
 
     pub(crate) fn resolve_spec_tracked(&self) -> Result<RequestSpec, NetError> {
@@ -711,7 +684,7 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
 mod tests {
     use super::{HttpClient, IntoNetValue, ValueResolver};
     use crate::state::RequestBody;
-    use silex_core::{ErrorReporter, Runtime, Scope, runtime_inputs_of};
+    use silex_core::{ErrorReporter, Runtime, Scope};
 
     #[cfg(feature = "json")]
     use crate::NetError;
@@ -738,7 +711,7 @@ mod tests {
     }
 
     #[test]
-    fn request_inputs_include_dynamic_body_and_all_request_parts() {
+    fn request_spec_resolves_dynamic_body_and_all_request_parts() {
         let mut runtime = Runtime::new();
         runtime
             .child(|scope| {
@@ -755,7 +728,6 @@ mod tests {
                     .path_param("id", path)
                     .text_body(body);
 
-                assert_eq!(builder.runtime_inputs().len(), 5);
                 assert_eq!(
                     builder.resolve_spec_tracked().unwrap().url,
                     "https://example.test/42?q=search"
@@ -814,7 +786,6 @@ mod tests {
                         ),
                     ]);
 
-                assert_eq!(builder.runtime_inputs().len(), 2);
                 assert_eq!(
                     builder.resolve_spec_tracked().unwrap().body,
                     RequestBody::Form(vec![
@@ -835,36 +806,7 @@ mod tests {
     }
 
     #[test]
-    fn foreign_dynamic_body_is_rejected_before_request_materialization() {
-        let mut source_runtime = Runtime::new();
-        let mut target_runtime = Runtime::new();
-        source_runtime
-            .child(|source_scope| {
-                let (body, _) = source_scope.signal("foreign".to_string()).unwrap();
-                let foreign_inputs = runtime_inputs_of(body);
-                target_runtime
-                    .child(|target_scope| {
-                        let foreign_body = ValueResolver::dynamic_with_inputs(
-                            || Ok("foreign".to_string()),
-                            || Ok("foreign".to_string()),
-                            foreign_inputs,
-                        );
-                        let builder = HttpClient::post(
-                            target_scope,
-                            "https://example.test",
-                            test_handler(target_scope),
-                        )
-                        .text_body(foreign_body);
-                        assert!(builder.validate_runtime_inputs().is_err());
-                        assert!(builder.as_mutation().is_err());
-                    })
-                    .unwrap();
-            })
-            .unwrap();
-    }
-
     #[cfg(feature = "json")]
-    #[test]
     fn json_body_serialization_failure_returns_net_error() {
         let mut runtime = Runtime::new();
         runtime
@@ -914,7 +856,6 @@ mod tests {
                 let builder = HttpClient::post(scope, "https://example.test", test_handler(scope))
                     .json_body_value(body);
 
-                assert_eq!(builder.runtime_inputs().len(), 1);
                 assert_eq!(
                     builder.resolve_spec().unwrap().body,
                     RequestBody::Json("{\"value\":1}".to_string())

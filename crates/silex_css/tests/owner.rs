@@ -16,6 +16,7 @@ use silex_dom::{
 use std::{
     cell::Cell,
     fmt::{Display, Formatter},
+    rc::Rc,
 };
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
@@ -467,7 +468,7 @@ fn theme_patch_removes_variables_that_disappear_from_the_next_round() {
 }
 
 #[wasm_bindgen_test]
-fn foreign_runtime_css_input_is_rejected_before_custom_callback() {
+fn foreign_runtime_css_read_is_rejected_during_custom_callback() {
     let host = mount_point();
     let element = document()
         .create_element("div")
@@ -475,34 +476,36 @@ fn foreign_runtime_css_input_is_rejected_before_custom_callback() {
     host.append_child(&element).expect("element can be mounted");
 
     let mut foreign_runtime = Runtime::new();
-    let foreign_inputs = foreign_runtime
-        .child(|scope| {
-            scope
-                .rw_signal(1i32)
-                .expect("foreign signal should initialize")
-                .into_rx()
-                .runtime_inputs()
-        })
-        .expect("foreign child scope should initialize");
-    let callback_runs = Cell::new(0);
-
+    let foreign_root = foreign_runtime
+        .run()
+        .expect("foreign root should initialize");
     let mut local_runtime = Runtime::new();
-    local_runtime
-        .child(|scope| {
-            let (owner, error_handler) = test_owner(scope);
-            let token = owner.token();
-            let operation = AttrOp::custom_with_inputs(foreign_inputs, |element, _, _| {
-                callback_runs.set(callback_runs.get() + 1);
-                let _ = element.set_attribute("data-foreign", "unexpected");
-                Ok(())
-            });
-            operation
-                .apply(&element, &token, error_handler)
-                .expect_err("foreign runtime input should be rejected");
-        })
-        .expect("local child scope should initialize");
+    let callback_runs = Rc::new(Cell::new(0));
 
-    assert_eq!(callback_runs.get(), 0);
+    foreign_root.with_scope(|foreign_scope| {
+        let (foreign, _) = foreign_scope
+            .signal(1_i32)
+            .expect("foreign signal should initialize");
+        local_runtime
+            .child(|scope| {
+                let (owner, error_handler) = test_owner(scope);
+                let token = owner.token();
+                let callback_runs_in_operation = callback_runs.clone();
+                let operation = AttrOp::custom(move |element, _, _| {
+                    callback_runs_in_operation.set(callback_runs_in_operation.get() + 1);
+                    foreign.get().map(|_| ())?;
+                    let _ = element.set_attribute("data-foreign", "unexpected");
+                    Ok(())
+                });
+                operation
+                    .apply(&element, &token, error_handler)
+                    .expect_err("foreign runtime read should be rejected");
+            })
+            .expect("local child scope should initialize");
+    });
+
+    assert_eq!(callback_runs.get(), 1);
     assert!(!element.has_attribute("data-foreign"));
     remove(&host.into());
+    foreign_root.dispose().expect("foreign root cleanup");
 }

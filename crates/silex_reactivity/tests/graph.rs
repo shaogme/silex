@@ -1,4 +1,4 @@
-use silex_reactivity::{ErrorHandler, Memo, Runtime, Scope, notify, track_batch};
+use silex_reactivity::{ErrorHandler, Memo, Runtime, Scope, notify};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -176,6 +176,48 @@ fn dynamic_dependencies_are_replaced_on_each_effect_run() {
             set_right.set(4).expect("test operation should succeed");
             assert_eq!(runs.get(), 4);
             assert_eq!(seen.get(), 4);
+        })
+        .expect("test operation should succeed");
+}
+
+#[test]
+fn cross_scope_explicit_dependencies_are_replaced_on_each_effect_run() {
+    let mut runtime = Runtime::new();
+    let runs = Rc::new(Cell::new(0));
+
+    runtime
+        .child(|scope| {
+            let (switch, set_switch) = scope.signal(true).expect("switch creation");
+            let (left, set_left) = scope.signal(0_i32).expect("left creation");
+            let (right, set_right) = scope.signal(0_i32).expect("right creation");
+            let runs_in_effect = runs.clone();
+
+            scope
+                .child(|child| {
+                    child
+                        .effect(
+                            move || {
+                                if switch.get().expect("switch read") {
+                                    left.get().expect("left read");
+                                } else {
+                                    right.get().expect("right read");
+                                }
+                                runs_in_effect.set(runs_in_effect.get() + 1);
+                                Ok(())
+                            },
+                            handler(child),
+                        )
+                        .expect("effect should initialize");
+
+                    assert_eq!(runs.get(), 1);
+                    set_switch.set(false).expect("switch update");
+                    assert_eq!(runs.get(), 2);
+                    set_left.set(1).expect("left update");
+                    assert_eq!(runs.get(), 2);
+                    set_right.set(1).expect("right update");
+                    assert_eq!(runs.get(), 3);
+                })
+                .expect("child should complete");
         })
         .expect("test operation should succeed");
 }
@@ -385,7 +427,7 @@ fn epoch_memo_fast_path_skips_evaluation_when_upstream_unchanged() {
 }
 
 #[test]
-fn track_batch_tracks_all_signals_in_one_scope() {
+fn ordinary_reads_track_all_signals_in_one_scope() {
     let mut runtime = Runtime::new();
     let runs = Rc::new(Cell::new(0));
 
@@ -398,7 +440,8 @@ fn track_batch_tracks_all_signals_in_one_scope() {
             scope
                 .effect(
                     move || {
-                        track_batch(&[sig1, sig2]).expect("test operation should succeed");
+                        sig1.get().expect("first signal read");
+                        sig2.get().expect("second signal read");
                         runs_in_effect.set(runs_in_effect.get() + 1);
                         Ok(())
                     },
@@ -588,6 +631,38 @@ fn cross_scope_derived_reacts_and_detaches_on_exit() {
 
             set_source.set(3).expect("test operation should succeed");
             assert_eq!(seen.get(), 4);
+        })
+        .expect("test operation should succeed");
+}
+
+#[test]
+fn disposing_the_cross_scope_observer_detaches_it_from_the_source() {
+    let mut runtime = Runtime::new();
+    let runs = Rc::new(Cell::new(0));
+
+    runtime
+        .child(|scope| {
+            let (source, set_source) = scope.signal(0_i32).expect("source creation");
+            scope
+                .child(|child| {
+                    let runs_in_effect = runs.clone();
+                    let effect = child
+                        .effect(
+                            move || {
+                                let _ = source.get();
+                                runs_in_effect.set(runs_in_effect.get() + 1);
+                                Ok(())
+                            },
+                            handler(child),
+                        )
+                        .expect("effect should initialize");
+
+                    assert_eq!(runs.get(), 1);
+                    effect.stop().expect("effect should stop");
+                    set_source.set(1).expect("source update");
+                    assert_eq!(runs.get(), 1);
+                })
+                .expect("child should complete");
         })
         .expect("test operation should succeed");
 }

@@ -26,18 +26,40 @@ pub(crate) struct Observer {
     pub(crate) node: RawId,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct ObserverBoundary {
-    scope_id: ScopeId,
-    inherited: Option<Observer>,
+#[derive(Clone)]
+pub(crate) struct TrackingContext {
+    pub(crate) observer: Option<ActiveObserver>,
+    pub(crate) blocked_scopes: Vec<ScopeId>,
 }
 
-/// Restores the scheduler observer and, for lexical child scopes, the active
-/// tracking boundary when the surrounding operation unwinds.
+#[derive(Clone)]
+pub(crate) struct ActiveObserver {
+    pub(crate) scheduler: Rc<RefCell<GlobalScheduler>>,
+    pub(crate) observer: Observer,
+}
+
+thread_local! {
+    static ACTIVE_CONTEXT: RefCell<Vec<TrackingContext>> = const { RefCell::new(Vec::new()) };
+}
+
+pub(crate) fn active_context() -> Option<TrackingContext> {
+    ACTIVE_CONTEXT.with(|stack| stack.borrow().last().cloned())
+}
+
+#[cfg(feature = "test-support")]
+pub(crate) fn active_observer_for(scheduler: &Rc<RefCell<GlobalScheduler>>) -> Option<Observer> {
+    active_context().and_then(|context| {
+        context
+            .observer
+            .and_then(|active| Rc::ptr_eq(&active.scheduler, scheduler).then_some(active.observer))
+    })
+}
+
+/// Restores the previous tracking context when the surrounding operation
+/// unwinds. The context is process-local only; runtime state remains owned by
+/// the explicit scheduler stored in each handle.
 pub(crate) struct ObserverFrame {
-    scheduler: Rc<RefCell<GlobalScheduler>>,
-    previous: Option<Observer>,
-    boundary: Option<ScopeId>,
+    active: bool,
 }
 
 impl ObserverFrame {
@@ -45,49 +67,61 @@ impl ObserverFrame {
         scheduler: Rc<RefCell<GlobalScheduler>>,
         observer: Option<Observer>,
     ) -> Self {
-        let previous = scheduler.borrow_mut().set_observer(observer);
-        Self {
-            scheduler,
-            previous,
-            boundary: None,
-        }
+        ACTIVE_CONTEXT.with(|stack| {
+            stack.borrow_mut().push(TrackingContext {
+                observer: observer.map(|observer| ActiveObserver {
+                    scheduler,
+                    observer,
+                }),
+                blocked_scopes: Vec::new(),
+            });
+        });
+        Self { active: true }
     }
 
-    pub(crate) fn push_untracked(scheduler: Rc<RefCell<GlobalScheduler>>) -> Self {
-        Self::push(scheduler, None)
+    pub(crate) fn push_untracked(_scheduler: Rc<RefCell<GlobalScheduler>>) -> Self {
+        ACTIVE_CONTEXT.with(|stack| {
+            stack.borrow_mut().push(TrackingContext {
+                observer: None,
+                blocked_scopes: Vec::new(),
+            });
+        });
+        Self { active: true }
     }
 
     pub(crate) fn push_child(scheduler: Rc<RefCell<GlobalScheduler>>, scope_id: ScopeId) -> Self {
-        let previous = {
-            let mut scheduler_ref = scheduler.borrow_mut();
-            let observer = scheduler_ref.observer();
-            scheduler_ref.observer_boundaries.push(ObserverBoundary {
-                scope_id,
-                inherited: observer,
-            });
-            observer
-        };
-        Self {
-            scheduler,
-            previous,
-            boundary: Some(scope_id),
-        }
+        let inherited = active_context().and_then(|mut context| {
+            let active = context.observer.take()?;
+            if !Rc::ptr_eq(&active.scheduler, &scheduler) {
+                return None;
+            }
+            context.blocked_scopes.push(scope_id);
+            Some(TrackingContext {
+                observer: Some(active),
+                blocked_scopes: context.blocked_scopes,
+            })
+        });
+        ACTIVE_CONTEXT.with(|stack| {
+            stack
+                .borrow_mut()
+                .push(inherited.unwrap_or(TrackingContext {
+                    observer: None,
+                    blocked_scopes: Vec::new(),
+                }));
+        });
+        Self { active: true }
     }
 }
 
 impl Drop for ObserverFrame {
     fn drop(&mut self) {
-        let mut scheduler = self.scheduler.borrow_mut();
-        if let Some(boundary) = self.boundary {
-            debug_assert_eq!(
-                scheduler
-                    .observer_boundaries
-                    .pop()
-                    .map(|value| value.scope_id),
-                Some(boundary)
-            );
+        if !self.active {
+            return;
         }
-        scheduler.set_observer(self.previous);
+        ACTIVE_CONTEXT.with(|stack| {
+            let popped = stack.borrow_mut().pop();
+            debug_assert!(popped.is_some(), "tracking context stack underflow");
+        });
     }
 }
 
@@ -170,8 +204,6 @@ pub(crate) struct GlobalScheduler {
     next_scope_id: u32,
     free_scope_ids: Vec<u32>,
     epoch: u64,
-    observer: Option<Observer>,
-    observer_boundaries: Vec<ObserverBoundary>,
     pub(crate) global_queue: VecDeque<ScheduledTask>,
     pub(crate) running_queue: bool,
     pub(crate) batch_depth: usize,
@@ -189,8 +221,6 @@ impl GlobalScheduler {
             next_scope_id: 0,
             free_scope_ids: Vec::new(),
             epoch: 1,
-            observer: None,
-            observer_boundaries: Vec::new(),
             global_queue: VecDeque::new(),
             running_queue: false,
             batch_depth: 0,
@@ -210,22 +240,6 @@ impl GlobalScheduler {
         self.epoch
     }
 
-    pub(crate) fn observer(&self) -> Option<Observer> {
-        self.observer
-    }
-
-    pub(crate) fn set_observer(&mut self, observer: Option<Observer>) -> Option<Observer> {
-        std::mem::replace(&mut self.observer, observer)
-    }
-
-    pub(crate) fn allows_tracking(&self, observer: Observer, target_scope_id: ScopeId) -> bool {
-        // A child boundary isolates only the observer that was inherited on entry;
-        // computations created inside the child keep their normal tracking rules.
-        self.observer_boundaries.last().is_none_or(|boundary| {
-            boundary.scope_id != target_scope_id || boundary.inherited != Some(observer)
-        })
-    }
-
     pub(crate) fn alloc_scope<'scope>(
         &mut self,
         state: &Rc<RefCell<ScopeState<'scope>>>,
@@ -240,8 +254,8 @@ impl GlobalScheduler {
         let weak_state = Rc::downgrade(state);
         // SAFETY: `ErasedScopeState` 是 `RefCell<ScopeState<'static>>` 的类型擦除别名。
         // 在此处擦除 `'scope` 生命周期是 Sound 的，因为全局调度器仅保留 `Weak` 弱引用，
-        // 且仅在 `get_scope` 中通过 `is_scope_active` 确认 Scope 在词法作用域内处于 Active 状态时，
-        // 才会将弱引用 restore 为对应的目标生命周期 `ScopeState<'scope>`，绝不会导致生命周期悬空。
+        // 并且只在 registry entry 仍然存在时恢复为对应的目标生命周期；该 entry 会在
+        // 所有节点和 reverse edge 清理完成后才被 release，绝不会导致生命周期悬空。
         let erased_state = unsafe {
             std::mem::transmute::<Weak<RefCell<ScopeState<'scope>>>, Weak<ErasedScopeState>>(
                 weak_state,
@@ -262,16 +276,16 @@ impl GlobalScheduler {
             return;
         }
         self.active_mask.set(id.0, false);
-        let index = id.0 as usize;
-        if index < self.scopes.len() {
-            self.scopes[index] = None;
-        }
         self.global_queue.retain(|task| task.scope_id != id);
     }
 
     pub(crate) fn release_scope_id(&mut self, id: ScopeId) {
         if self.is_scope_active(id) || self.free_scope_ids.contains(&id.0) {
             return;
+        }
+        let index = id.0 as usize;
+        if index < self.scopes.len() {
+            self.scopes[index] = None;
         }
         self.free_scope_ids.push(id.0);
     }
@@ -307,11 +321,22 @@ impl GlobalScheduler {
         if !self.is_scope_active(id) {
             return None;
         }
+        self.get_registered_scope(id)
+    }
+
+    pub(crate) fn get_scope_for_edge_cleanup<'scope>(
+        &self,
+        id: ScopeId,
+    ) -> Option<Rc<RefCell<ScopeState<'scope>>>> {
+        self.get_registered_scope(id)
+    }
+
+    fn get_registered_scope<'scope>(&self, id: ScopeId) -> Option<Rc<RefCell<ScopeState<'scope>>>> {
         let entry = self.scopes.get(id.0 as usize)?.as_ref()?;
-        // SAFETY: `erased_state` 在被 `transmute` 为当前要求的 `ScopeState<'scope>` 引用前，
-        // 已通过 `is_scope_active` 验证该 ScopeId 在当下确实处于活跃生命周期内。
-        // 此外，`Weak::upgrade()` 返回 `Option<Rc<RefCell<ScopeState<'scope>>>>`，
-        // 借用者使用返回的 `Rc` 受调用方作用域约束，不会造成非法内存越界访问或生命周期悬空。
+        // SAFETY: the registry owns this weak entry until the scope's final
+        // edge cleanup has completed. Both active operations and the private
+        // cleanup path therefore receive a live allocation, while the weak
+        // upgrade keeps the result bounded by the owning storage.
         unsafe {
             let weak = std::mem::transmute::<
                 &Weak<ErasedScopeState>,
@@ -359,6 +384,12 @@ mod tests {
         let first_id = scheduler.borrow_mut().alloc_scope(&first);
         first.borrow_mut().scope_id = first_id;
         scheduler.borrow_mut().deactivate_scope(first_id);
+        assert!(
+            scheduler
+                .borrow()
+                .get_scope_for_edge_cleanup(first_id)
+                .is_some()
+        );
 
         let second = std::rc::Rc::new(std::cell::RefCell::new(ScopeState::new(
             ScopeId(0),
@@ -368,6 +399,12 @@ mod tests {
         assert_ne!(first_id, second_id);
 
         scheduler.borrow_mut().release_scope_id(first_id);
+        assert!(
+            scheduler
+                .borrow()
+                .get_scope_for_edge_cleanup(first_id)
+                .is_none()
+        );
 
         let third = std::rc::Rc::new(std::cell::RefCell::new(ScopeState::new(
             ScopeId(0),

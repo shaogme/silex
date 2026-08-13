@@ -18,14 +18,10 @@ where
 {
     let left = left.into_promotion_plan();
     let right = right.into_promotion_plan();
-    let mut inputs = left.inputs();
-    inputs.extend(&right.inputs());
-    scope.validate_inputs(&inputs)?;
     let left = left.materialize(scope, error_handler)?;
     let right = right.materialize(scope, error_handler)?;
     scope
-        .memo_from(
-            inputs,
+        .memo(
             move |_| left.with(|left| right.with(|right| compare(left, right)))?,
             error_handler,
         )

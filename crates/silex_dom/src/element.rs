@@ -10,7 +10,7 @@ use std::rc::Rc;
 use wasm_bindgen::{JsCast, JsValue, convert::FromWasmAbi, prelude::*};
 use web_sys::Element as WebElem;
 
-use silex_core::{ReactiveError, RuntimeInputs, SilexError, SilexResult};
+use silex_core::{ReactiveError, SilexError, SilexResult};
 
 pub mod tags;
 pub use tags::*;
@@ -102,11 +102,6 @@ impl<'scope> Element<'scope> {
         let mut appended = false;
         let result = (|| -> SilexResult<MountInstance<'scope>> {
             let attrs = self.all_attrs(attrs);
-            let mut inputs = RuntimeInputs::new();
-            for attr in &attrs {
-                inputs.extend(&attr.runtime_inputs());
-            }
-            token.validate_inputs(&inputs)?;
             for attr in attrs {
                 attr.apply(&dom_element, &token, error_handler)?;
             }

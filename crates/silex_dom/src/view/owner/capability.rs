@@ -3,8 +3,8 @@ use super::host::{
 };
 use super::state::{ActiveRegistrar, MountState};
 use silex_core::{
-    CleanupError, ErrorReporter, OwnedScope, ReactiveError, RuntimeInputs, Scope, SilexError,
-    SilexResult, unwind_safe,
+    CleanupError, ErrorReporter, OwnedScope, ReactiveError, Scope, SilexError, SilexResult,
+    unwind_safe,
 };
 use std::{cell::Cell, rc::Rc};
 use wasm_bindgen::JsValue;
@@ -27,7 +27,6 @@ struct EffectRegistrar<'scope> {
 trait EffectRegister<'scope> {
     fn register(
         &self,
-        inputs: RuntimeInputs,
         callback: MountEffect<'scope>,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()>;
@@ -35,24 +34,21 @@ trait EffectRegister<'scope> {
 
 impl<'scope, F> EffectRegister<'scope> for F
 where
-    F: Fn(RuntimeInputs, MountEffect<'scope>, MountErrorHandler<'scope>) -> SilexResult<()>
-        + 'scope,
+    F: Fn(MountEffect<'scope>, MountErrorHandler<'scope>) -> SilexResult<()> + 'scope,
 {
     fn register(
         &self,
-        inputs: RuntimeInputs,
         callback: MountEffect<'scope>,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
-        self(inputs, callback, error_handler)
+        self(callback, error_handler)
     }
 }
 
 impl<'scope> EffectRegistrar<'scope> {
     fn new<F>(register: F) -> Self
     where
-        F: Fn(RuntimeInputs, MountEffect<'scope>, MountErrorHandler<'scope>) -> SilexResult<()>
-            + 'scope,
+        F: Fn(MountEffect<'scope>, MountErrorHandler<'scope>) -> SilexResult<()> + 'scope,
     {
         Self {
             inner: Rc::new(register),
@@ -61,33 +57,10 @@ impl<'scope> EffectRegistrar<'scope> {
 
     fn call(
         &self,
-        inputs: RuntimeInputs,
         callback: MountEffect<'scope>,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
-        self.inner.register(inputs, callback, error_handler)
-    }
-}
-
-type ValidationCallback<'scope> = Rc<dyn Fn(&RuntimeInputs) -> SilexResult<()> + 'scope>;
-
-#[derive(Clone)]
-struct ValidationRegistrar<'scope> {
-    inner: ValidationCallback<'scope>,
-}
-
-impl<'scope> ValidationRegistrar<'scope> {
-    fn new<F>(validate: F) -> Self
-    where
-        F: Fn(&RuntimeInputs) -> SilexResult<()> + 'scope,
-    {
-        Self {
-            inner: Rc::new(validate),
-        }
-    }
-
-    fn call(&self, inputs: &RuntimeInputs) -> SilexResult<()> {
-        (self.inner)(inputs)
+        self.inner.register(callback, error_handler)
     }
 }
 
@@ -178,7 +151,6 @@ enum PreviousEffectOwner<'scope> {
 impl<'scope> PreviousEffectOwner<'scope> {
     fn register<T, F>(
         &self,
-        inputs: RuntimeInputs,
         callback: F,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()>
@@ -188,10 +160,10 @@ impl<'scope> PreviousEffectOwner<'scope> {
     {
         match self {
             Self::Scoped(scope) => scope
-                .effect_with_previous_from(inputs, callback, error_handler)
+                .effect_with_previous(callback, error_handler)
                 .map(|_| ()),
             Self::Owned(scope) => scope
-                .effect_with_previous_from(inputs, callback, error_handler)
+                .effect_with_previous(callback, error_handler)
                 .map(|_| ()),
         }
     }
@@ -201,7 +173,6 @@ impl<'scope> PreviousEffectOwner<'scope> {
 pub struct MountOwnerToken<'scope> {
     effect: EffectRegistrar<'scope>,
     previous_effect: PreviousEffectOwner<'scope>,
-    validate: ValidationRegistrar<'scope>,
     cleanup: CleanupRegistrar<'scope>,
     owned_scope: OwnedScopeRegistrar<'scope>,
     completion: CompletionRegistrar<'scope>,
@@ -213,7 +184,6 @@ pub struct MountOwnerToken<'scope> {
 struct ViewOwnerTokenParts<'scope> {
     effect: EffectRegistrar<'scope>,
     previous_effect: PreviousEffectOwner<'scope>,
-    validate: ValidationRegistrar<'scope>,
     cleanup: CleanupRegistrar<'scope>,
     owned_scope: OwnedScopeRegistrar<'scope>,
     completion: CompletionRegistrar<'scope>,
@@ -227,7 +197,6 @@ impl<'scope> MountOwnerToken<'scope> {
         Self {
             effect: parts.effect,
             previous_effect: parts.previous_effect,
-            validate: parts.validate,
             cleanup: parts.cleanup,
             owned_scope: parts.owned_scope,
             completion: parts.completion,
@@ -237,13 +206,12 @@ impl<'scope> MountOwnerToken<'scope> {
         }
     }
 
-    pub fn effect_from(
+    pub fn effect(
         &self,
-        inputs: RuntimeInputs,
         callback: MountEffect<'scope>,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
-        self.effect.call(inputs, callback, error_handler)
+        self.effect.call(callback, error_handler)
     }
 
     pub fn effect_with_previous<T, F>(
@@ -255,21 +223,7 @@ impl<'scope> MountOwnerToken<'scope> {
         T: 'scope,
         F: FnMut(Option<&T>) -> SilexResult<T> + 'scope,
     {
-        self.effect_with_previous_from(RuntimeInputs::new(), callback, error_handler)
-    }
-
-    pub fn effect_with_previous_from<T, F>(
-        &self,
-        inputs: RuntimeInputs,
-        callback: F,
-        error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()>
-    where
-        T: 'scope,
-        F: FnMut(Option<&T>) -> SilexResult<T> + 'scope,
-    {
-        self.previous_effect
-            .register(inputs, callback, error_handler)
+        self.previous_effect.register(callback, error_handler)
     }
 
     pub fn owner_state<T: 'scope>(&self, value: T) -> SilexResult<MountState<'scope, T>> {
@@ -280,10 +234,6 @@ impl<'scope> MountOwnerToken<'scope> {
             Some(scope) => MountState::new_stored(scope.stored(Some(value))?, self.active.clone()),
             None => MountState::new(value, self.active.clone()),
         })
-    }
-
-    pub fn validate_inputs(&self, inputs: &RuntimeInputs) -> SilexResult<()> {
-        self.validate.call(inputs)
     }
 
     pub fn on_cleanup(
@@ -397,13 +347,11 @@ impl<'scope> MountOwnerToken<'scope> {
 
 /// Mount-time capability shared by all view implementations.
 pub trait MountOwner<'scope> {
-    fn effect_from(
+    fn effect(
         &self,
-        inputs: RuntimeInputs,
         callback: MountEffect<'scope>,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()>;
-    fn validate_inputs(&self, inputs: &RuntimeInputs) -> SilexResult<()>;
     fn on_cleanup(
         &self,
         cleanup: MountCleanup<'scope>,
@@ -414,17 +362,12 @@ pub trait MountOwner<'scope> {
 }
 
 impl<'scope> MountOwner<'scope> for MountOwnerToken<'scope> {
-    fn effect_from(
+    fn effect(
         &self,
-        inputs: RuntimeInputs,
         callback: MountEffect<'scope>,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
-        MountOwnerToken::effect_from(self, inputs, callback, error_handler)
-    }
-
-    fn validate_inputs(&self, inputs: &RuntimeInputs) -> SilexResult<()> {
-        self.validate_inputs(inputs)
+        MountOwnerToken::effect(self, callback, error_handler)
     }
 
     fn on_cleanup(
@@ -469,9 +412,8 @@ impl<'scope> ScopedMountOwner<'scope> {
         }
     }
 
-    pub fn effect_with_previous_from<T, F>(
+    pub fn effect_with_previous<T, F>(
         &self,
-        inputs: RuntimeInputs,
         callback: F,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()>
@@ -480,7 +422,7 @@ impl<'scope> ScopedMountOwner<'scope> {
         F: FnMut(Option<&T>) -> SilexResult<T> + 'scope,
     {
         self.scope
-            .effect_with_previous_from(inputs, callback, error_handler)
+            .effect_with_previous(callback, error_handler)
             .map(|_| ())
     }
 
@@ -490,19 +432,12 @@ impl<'scope> ScopedMountOwner<'scope> {
 }
 
 impl<'scope> MountOwner<'scope> for ScopedMountOwner<'scope> {
-    fn effect_from(
+    fn effect(
         &self,
-        inputs: RuntimeInputs,
         callback: MountEffect<'scope>,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
-        self.scope
-            .effect_from(inputs, callback, error_handler)
-            .map(|_| ())
-    }
-
-    fn validate_inputs(&self, inputs: &RuntimeInputs) -> SilexResult<()> {
-        self.scope.validate_inputs(inputs)
+        self.scope.effect(callback, error_handler).map(|_| ())
     }
 
     fn on_cleanup(
@@ -521,18 +456,12 @@ impl<'scope> MountOwner<'scope> for ScopedMountOwner<'scope> {
         let scope_for_sender = self.scope;
         let scope_for_once = self.scope;
         let scope_for_active = self.scope;
-        let scope_for_validate = self.scope;
         let cleanup_reporter = self.cleanup_reporter.clone();
         MountOwnerToken::new(ViewOwnerTokenParts {
-            effect: EffectRegistrar::new(move |inputs, callback, error_handler| {
-                scope_for_effect
-                    .effect_from(inputs, callback, error_handler)
-                    .map(|_| ())
+            effect: EffectRegistrar::new(move |callback, error_handler| {
+                scope_for_effect.effect(callback, error_handler).map(|_| ())
             }),
             previous_effect: PreviousEffectOwner::Scoped(scope_for_previous),
-            validate: ValidationRegistrar::new(move |inputs| {
-                scope_for_validate.validate_inputs(inputs)
-            }),
             cleanup: CleanupRegistrar::new(move |cleanup, error_handler| {
                 scope_for_cleanup.on_cleanup(cleanup, error_handler)
             }),
@@ -581,19 +510,12 @@ impl<'scope> OwnedMountOwner<'scope> {
 }
 
 impl<'scope> MountOwner<'scope> for OwnedMountOwner<'scope> {
-    fn effect_from(
+    fn effect(
         &self,
-        inputs: RuntimeInputs,
         callback: MountEffect<'scope>,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
-        self.scope
-            .effect_from(inputs, callback, error_handler)
-            .map(|_| ())
-    }
-
-    fn validate_inputs(&self, inputs: &RuntimeInputs) -> SilexResult<()> {
-        self.scope.validate_inputs(inputs)
+        self.scope.effect(callback, error_handler).map(|_| ())
     }
 
     fn on_cleanup(
@@ -612,18 +534,12 @@ impl<'scope> MountOwner<'scope> for OwnedMountOwner<'scope> {
         let scope_for_sender = self.scope.clone();
         let scope_for_once = self.scope.clone();
         let scope_for_active = self.scope.clone();
-        let scope_for_validate = self.scope.clone();
         let cleanup_reporter = self.cleanup_reporter.clone();
         MountOwnerToken::new(ViewOwnerTokenParts {
-            effect: EffectRegistrar::new(move |inputs, callback, error_handler| {
-                scope_for_effect
-                    .effect_from(inputs, callback, error_handler)
-                    .map(|_| ())
+            effect: EffectRegistrar::new(move |callback, error_handler| {
+                scope_for_effect.effect(callback, error_handler).map(|_| ())
             }),
             previous_effect: PreviousEffectOwner::Owned(scope_for_previous),
-            validate: ValidationRegistrar::new(move |inputs| {
-                scope_for_validate.validate_inputs(inputs)
-            }),
             cleanup: CleanupRegistrar::new(move |cleanup, error_handler| {
                 scope_for_cleanup.on_cleanup(cleanup, error_handler)
             }),
@@ -802,52 +718,33 @@ mod tests {
     }
 
     #[test]
-    fn owner_rejects_foreign_inputs_before_effect_registration() {
-        let mut first = Runtime::new();
-        let mut second = Runtime::new();
-        let inputs = first
-            .child(|scope| {
-                let (source, _) = scope.signal(1i32).expect("signal should initialize");
-                scope
-                    .promote(
-                        source,
-                        scope
-                            .error_handler(|_| {})
-                            .expect("error handler should register"),
-                    )
-                    .expect("promotion should initialize")
-                    .runtime_inputs()
-            })
-            .expect("child scope should initialize");
+    fn owner_effect_tracks_ordinary_reads() {
+        let mut runtime = Runtime::new();
         let runs = Rc::new(Cell::new(0));
-        let runs_for_effect = runs.clone();
 
-        second
+        runtime
             .child(|scope| {
-                let errors = Rc::new(RefCell::new(Vec::new()));
-                let errors_for_reporter = errors.clone();
+                let (source, set_source) = scope.signal(1_i32).expect("signal should initialize");
                 let handler = scope
-                    .error_handler(move |error| errors_for_reporter.borrow_mut().push(error))
+                    .error_handler(|_| {})
                     .expect("error handler should register");
                 let owner = ScopedMountOwner::new(scope);
-                assert!(owner.validate_inputs(&inputs).is_err());
-                assert!(
-                    owner
-                        .effect_from(
-                            inputs,
-                            Box::new(move || {
-                                runs_for_effect.set(runs_for_effect.get() + 1);
-                                Ok(())
-                            }),
-                            handler,
-                        )
-                        .is_err()
-                );
-                assert!(errors.borrow().is_empty());
+                let runs_for_effect = runs.clone();
+                owner
+                    .effect(
+                        Box::new(move || {
+                            source.get()?;
+                            runs_for_effect.set(runs_for_effect.get() + 1);
+                            Ok(())
+                        }),
+                        handler,
+                    )
+                    .expect("owner effect should initialize");
+                assert_eq!(runs.get(), 1);
+                set_source.set(2).expect("source should update");
+                assert_eq!(runs.get(), 2);
             })
             .expect("child scope should initialize");
-
-        assert_eq!(runs.get(), 0);
     }
 
     #[test]

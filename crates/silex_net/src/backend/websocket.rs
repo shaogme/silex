@@ -11,9 +11,8 @@ use wasm_bindgen::{JsCast, closure::Closure};
 use web_sys::{Event, MessageEvent, WebSocket as JsWebSocket};
 
 use silex_core::{
-    CallbackInvokeError, CompletionSender, ErrorReporter, Memo, ReadSignal, RuntimeInputs, Rx,
-    Scope, SilexError, SilexErrorKind, SilexResult, StoredValue, TaskHandle, WriteSignal,
-    runtime_inputs_of, unwind_safe,
+    CallbackInvokeError, CompletionSender, ErrorReporter, ReadSignal, Rx, Scope, SilexError,
+    SilexResult, StoredValue, TaskHandle, WriteSignal, unwind_safe,
 };
 
 use crate::{
@@ -529,12 +528,8 @@ impl<'scope> WebSocketConnection<'scope> {
         let state = self.state;
         let handler = self.error_handler;
         self.scope
-            .memo_from(
-                runtime_inputs_of(state),
-                move |_| state.get().map(&f),
-                handler,
-            )
-            .map(Memo::into_rx)
+            .memo(move |_| state.get().map(&f), handler)
+            .map(|memo| memo.into_rx())
     }
 
     pub fn is_connected(&self) -> SilexResult<Rx<'scope, bool>> {
@@ -566,14 +561,13 @@ impl<'scope> WebSocketConnection<'scope> {
         let message = self.message;
         let handler = self.error_handler;
         self.scope
-            .memo_from(
-                runtime_inputs_of(message),
+            .memo(
                 move |_| {
                     message
                         .get()?
                         .map(|raw| {
                             serde_json::from_str(&raw).map_err(|error| {
-                                SilexError::fatal(SilexErrorKind::Framework(format!(
+                                SilexError::fatal(silex_core::SilexErrorKind::Framework(format!(
                                     "decode WebSocket message failed: {error}"
                                 )))
                             })
@@ -582,7 +576,7 @@ impl<'scope> WebSocketConnection<'scope> {
                 },
                 handler,
             )
-            .map(Memo::into_rx)
+            .map(|memo| memo.into_rx())
     }
 
     pub fn state_str(&self) -> SilexResult<Rx<'scope, &'static str>> {
@@ -760,10 +754,7 @@ impl<'scope> WebSocketBuilder<'scope> {
             on_error,
             on_close,
         } = self;
-        let mut inputs = RuntimeInputs::new();
-        inputs.extend(&url.inputs());
-        scope.validate_inputs(&inputs).map_err(NetError::from)?;
-
+        url.validate_runtime(scope).map_err(NetError::from)?;
         let initial_socket = if auto_connect {
             match url
                 .resolve()

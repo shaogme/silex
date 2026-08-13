@@ -169,9 +169,6 @@ pub fn consolidate_attributes<'scope>(attrs: Vec<AttrOp<'scope>>) -> Vec<AttrOp<
                     consolidated.push(AttrOp::Reactive(plan));
                 }
             },
-            AttrOp::CustomWithInputs { .. } => {
-                consolidated.push(op);
-            }
             AttrOp::Noop => {}
             op => {
                 consolidated.push(op);

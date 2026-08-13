@@ -1,5 +1,6 @@
 use silex_reactivity::{
-    CallbackInvokeError, ErrorHandler, ReactiveError, Runtime, Scope, notify, unwind_safe,
+    CallbackInvokeError, ErrorHandler, ReactiveError, ReadSignal, Runtime, Scope, notify,
+    unwind_safe,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -21,6 +22,17 @@ impl Drop for CleanupStoredProbe {
     fn drop(&mut self) {
         self.drops.set(self.drops.get() + 1);
         self.dropped_value.set(self.value.get());
+    }
+}
+
+struct TrackDuringDrop<'scope> {
+    source: ReadSignal<'scope, i32>,
+    tracked: Rc<Cell<bool>>,
+}
+
+impl Drop for TrackDuringDrop<'_> {
+    fn drop(&mut self) {
+        self.tracked.set(self.source.get().is_ok());
     }
 }
 
@@ -218,6 +230,30 @@ fn final_cleanup_updates_stored_value_before_payload_drop() {
     assert_eq!(observed.borrow().as_slice(), &[1, 2]);
     assert_eq!(drops.get(), 1);
     assert_eq!(dropped_value.get(), 2);
+}
+
+#[test]
+fn payload_drop_cannot_track_through_either_observer_slot() {
+    let mut runtime = Runtime::new();
+    let tracked = Rc::new(Cell::new(false));
+
+    runtime
+        .child(|scope| {
+            let (source, _) = scope.signal(0_i32).expect("source creation");
+            scope
+                .child(|child| {
+                    child
+                        .stored(TrackDuringDrop {
+                            source,
+                            tracked: tracked.clone(),
+                        })
+                        .expect("stored creation");
+                })
+                .expect("child scope should dispose its payload");
+        })
+        .expect("test operation should succeed");
+
+    assert!(tracked.get());
 }
 
 #[test]
@@ -495,7 +531,7 @@ fn child_callback_panic_is_not_replaced_by_cleanup_panic() {
 }
 
 #[test]
-fn parent_effect_tracks_reads_inside_child_callback() {
+fn parent_effect_tracks_parent_reads_inside_child_callback() {
     let mut runtime = Runtime::new();
     let runs = Rc::new(Cell::new(0));
 
@@ -521,6 +557,203 @@ fn parent_effect_tracks_reads_inside_child_callback() {
 
             assert_eq!(runs.get(), 1);
             set_source.set(1).expect("test operation should succeed");
+            assert_eq!(runs.get(), 2);
+        })
+        .expect("test operation should succeed");
+}
+
+#[test]
+fn parent_effect_tracks_parent_reads_inside_nested_child_callback() {
+    let mut runtime = Runtime::new();
+    let runs = Rc::new(Cell::new(0));
+
+    runtime
+        .child(|scope| {
+            let (source, set_source) = scope.signal(0i32).expect("signal creation");
+            let parent_scope = scope;
+            let runs_in_effect = runs.clone();
+            scope
+                .effect(
+                    move || {
+                        parent_scope
+                            .child(|_| {
+                                source.get().expect("source read");
+                            })
+                            .expect("child should complete");
+                        runs_in_effect.set(runs_in_effect.get() + 1);
+                        Ok(())
+                    },
+                    handler(scope),
+                )
+                .expect("effect should initialize");
+
+            assert_eq!(runs.get(), 1);
+            set_source.set(1).expect("signal update");
+            assert_eq!(runs.get(), 2);
+        })
+        .expect("test operation should succeed");
+}
+
+#[test]
+fn nested_child_frames_keep_parent_tracking_at_the_outer_boundary() {
+    let mut runtime = Runtime::new();
+    let runs = Rc::new(Cell::new(0));
+
+    runtime
+        .child(|scope| {
+            let (outer, set_outer) = scope.signal(0_i32).expect("outer source creation");
+            let (inner, set_inner) = scope.signal(0_i32).expect("inner source creation");
+            let (deep, set_deep) = scope.signal(0_i32).expect("deep source creation");
+            let parent_scope = scope;
+            let runs_in_effect = runs.clone();
+            scope
+                .effect(
+                    move || {
+                        parent_scope
+                            .child(|level1| {
+                                outer.get().expect("outer read");
+                                level1
+                                    .child(|level2| {
+                                        inner.get().expect("inner read");
+                                        level2
+                                            .child(|_level3| {
+                                                deep.get().expect("deep read");
+                                            })
+                                            .expect("level3 should complete");
+                                    })
+                                    .expect("level2 should complete");
+                            })
+                            .expect("level1 should complete");
+                        runs_in_effect.set(runs_in_effect.get() + 1);
+                        Ok(())
+                    },
+                    handler(scope),
+                )
+                .expect("effect should initialize");
+
+            assert_eq!(runs.get(), 1);
+            set_inner.set(1).expect("inner update");
+            assert_eq!(runs.get(), 2);
+            set_deep.set(1).expect("deep update");
+            assert_eq!(runs.get(), 3);
+            set_outer.set(1).expect("outer update");
+            assert_eq!(runs.get(), 4);
+        })
+        .expect("test operation should succeed");
+}
+
+#[test]
+fn nested_child_panic_restores_the_parent_observer_frame() {
+    let mut runtime = Runtime::new();
+    let runs = Rc::new(Cell::new(0));
+
+    runtime
+        .child(|scope| {
+            let (source, set_source) = scope.signal(0_i32).expect("source creation");
+            let parent_scope = scope;
+            let runs_in_effect = runs.clone();
+            scope
+                .effect(
+                    move || {
+                        let panic = catch_unwind(AssertUnwindSafe(|| {
+                            parent_scope
+                                .child(|level1| {
+                                    level1
+                                        .child(|level2| {
+                                            level2
+                                                .child(|_| panic!("nested child panic"))
+                                                .expect("level3 should complete");
+                                        })
+                                        .expect("level2 should complete");
+                                })
+                                .expect("level1 should complete");
+                        }));
+                        assert!(panic.is_err());
+                        source.get().expect("source read after panic");
+                        runs_in_effect.set(runs_in_effect.get() + 1);
+                        Ok(())
+                    },
+                    handler(scope),
+                )
+                .expect("effect should initialize");
+
+            assert_eq!(runs.get(), 1);
+            set_source.set(1).expect("source update");
+            assert_eq!(runs.get(), 2);
+        })
+        .expect("test operation should succeed");
+}
+
+#[test]
+fn cleanup_track_is_untracked_and_does_not_add_a_dependency() {
+    let mut runtime = Runtime::new();
+    let runs = Rc::new(Cell::new(0));
+    let cleanup_track_succeeded = Rc::new(Cell::new(false));
+
+    runtime
+        .child(|scope| {
+            let (source, set_source) = scope.signal(0i32).expect("source creation");
+            let (other, set_other) = scope.signal(0i32).expect("other creation");
+            let runs_in_effect = runs.clone();
+            let cleanup_track_succeeded_in_effect = cleanup_track_succeeded.clone();
+            scope
+                .effect(
+                    move || {
+                        source.get().expect("source read");
+                        let cleanup_track_succeeded_in_cleanup =
+                            cleanup_track_succeeded_in_effect.clone();
+                        scope
+                            .on_cleanup(
+                                move || {
+                                    cleanup_track_succeeded_in_cleanup.set(other.get().is_ok());
+                                    Ok(())
+                                },
+                                handler(scope),
+                            )
+                            .expect("cleanup registration");
+                        runs_in_effect.set(runs_in_effect.get() + 1);
+                        Ok(())
+                    },
+                    handler(scope),
+                )
+                .expect("effect should initialize");
+
+            set_source.set(1).expect("source update");
+            assert_eq!(runs.get(), 2);
+            assert!(cleanup_track_succeeded.get());
+            set_other.set(1).expect("other update");
+            assert_eq!(runs.get(), 2);
+        })
+        .expect("test operation should succeed");
+}
+
+#[test]
+fn untrack_blocks_ordinary_reads() {
+    let mut runtime = Runtime::new();
+    let runs = Rc::new(Cell::new(0));
+
+    runtime
+        .child(|scope| {
+            let (source, set_source) = scope.signal(0_i32).expect("source creation");
+            let (other, set_other) = scope.signal(0_i32).expect("other creation");
+            let runs_in_effect = runs.clone();
+            scope
+                .effect(
+                    move || {
+                        scope.untrack(|| {
+                            other.get().expect("untracked read");
+                        });
+                        source.get().expect("source read");
+                        runs_in_effect.set(runs_in_effect.get() + 1);
+                        Ok(())
+                    },
+                    handler(scope),
+                )
+                .expect("effect should initialize");
+
+            set_other.set(1).expect("other update");
+            assert_eq!(runs.get(), 1);
+            set_source.set(1).expect("source update");
             assert_eq!(runs.get(), 2);
         })
         .expect("test operation should succeed");

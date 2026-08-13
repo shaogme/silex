@@ -1,4 +1,3 @@
-use silex_core::RuntimeInputs;
 use silex_core::prelude::*;
 use std::borrow::Cow;
 use std::collections::HashSet;
@@ -224,12 +223,6 @@ pub enum AttrOp<'scope> {
     /// Custom closure execution
     Custom(CustomAttribute<'scope>),
 
-    /// Custom closure with inputs declared outside the closure body.
-    CustomWithInputs {
-        inputs: RuntimeInputs,
-        callback: CustomAttribute<'scope>,
-    },
-
     /// No operation
     Noop,
 }
@@ -243,11 +236,6 @@ impl std::fmt::Debug for AttrOp<'_> {
             Self::Reactive(plan) => f.debug_tuple("Reactive").field(plan).finish(),
             Self::Sequence(seq) => f.debug_tuple("Sequence").field(seq).finish(),
             Self::Custom(_) => f.write_str("Custom(Rc<Fn>)"),
-            Self::CustomWithInputs { inputs, .. } => f
-                .debug_struct("CustomWithInputs")
-                .field("inputs", inputs)
-                .field("callback", &"Rc<Fn>")
-                .finish(),
             Self::Noop => f.write_str("Noop"),
         }
     }
@@ -262,16 +250,6 @@ impl PartialEq for AttrOp<'_> {
             (Self::Reactive(a), Self::Reactive(b)) => a == b,
             (Self::Sequence(a), Self::Sequence(b)) => a == b,
             (Self::Custom(a), Self::Custom(b)) => Rc::ptr_eq(a, b),
-            (
-                Self::CustomWithInputs {
-                    inputs: inputs_a,
-                    callback: callback_a,
-                },
-                Self::CustomWithInputs {
-                    inputs: inputs_b,
-                    callback: callback_b,
-                },
-            ) => inputs_a == inputs_b && Rc::ptr_eq(callback_a, callback_b),
             (Self::Noop, Self::Noop) => true,
             _ => false,
         }
@@ -319,8 +297,7 @@ impl<'scope> AttrOp<'scope> {
         AttrOp::Reactive(ReactiveBindingPlan::dynamic_style(rx))
     }
 
-    pub fn custom_with_inputs(
-        inputs: RuntimeInputs,
+    pub fn custom(
         callback: impl Fn(
             &Element,
             &MountOwnerToken<'scope>,
@@ -328,59 +305,7 @@ impl<'scope> AttrOp<'scope> {
         ) -> SilexResult<()>
         + 'scope,
     ) -> Self {
-        Self::CustomWithInputs {
-            inputs,
-            callback: Rc::new(callback),
-        }
-    }
-
-    pub(crate) fn runtime_inputs(&self) -> RuntimeInputs {
-        let mut inputs = RuntimeInputs::new();
-        match self {
-            AttrOp::Update(AttrUpdate { data, .. }) => match data {
-                AttrData::ReactiveAttr(rx) => inputs.extend(&rx.runtime_inputs()),
-                AttrData::ReactiveString(rx) => inputs.extend(&rx.runtime_inputs()),
-                AttrData::ReactiveBool(rx) => inputs.extend(&rx.runtime_inputs()),
-                AttrData::ReactiveOptionString(rx) => inputs.extend(&rx.runtime_inputs()),
-                AttrData::ReactiveJs(rx) => inputs.extend(&rx.runtime_inputs()),
-                AttrData::StaticAttr(_) | AttrData::StaticJs(_) => {}
-            },
-            AttrOp::CombinedClasses(CombinedClasses {
-                toggles, reactives, ..
-            }) => {
-                for (_, plan) in toggles {
-                    inputs.extend(&plan.inputs);
-                }
-                for plan in reactives {
-                    inputs.extend(&plan.inputs);
-                }
-            }
-            AttrOp::CombinedStyles(CombinedStyles {
-                properties, sheets, ..
-            }) => {
-                for plan in properties {
-                    inputs.extend(&plan.inputs);
-                }
-                for plan in sheets {
-                    inputs.extend(&plan.inputs);
-                }
-            }
-            AttrOp::Sequence(ops) => {
-                for op in ops {
-                    inputs.extend(&op.runtime_inputs());
-                }
-            }
-            AttrOp::Custom(_) | AttrOp::Noop => {}
-            AttrOp::CustomWithInputs {
-                inputs: declared, ..
-            } => {
-                inputs.extend(declared);
-            }
-            AttrOp::Reactive(plan) => {
-                inputs.extend(&plan.inputs);
-            }
-        }
-        inputs
+        Self::Custom(Rc::new(callback))
     }
 
     pub fn apply(
@@ -389,8 +314,6 @@ impl<'scope> AttrOp<'scope> {
         owner: &MountOwnerToken<'scope>,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
-        let inputs = self.runtime_inputs();
-        owner.validate_inputs(&inputs)?;
         self.apply_unchecked(el, owner, error_handler)
     }
 
@@ -443,9 +366,6 @@ impl<'scope> AttrOp<'scope> {
             AttrOp::Custom(f) => {
                 f(el, owner, error_handler)?;
             }
-            AttrOp::CustomWithInputs { callback, .. } => {
-                callback(el, owner, error_handler)?;
-            }
             AttrOp::Noop => {}
         }
         Ok(())
@@ -470,8 +390,7 @@ fn apply_update_internal<'scope>(
         }
         AttrData::ReactiveAttr(rx) => {
             let el = el.clone();
-            owner.effect_from(
-                rx.runtime_inputs(),
+            owner.effect(
                 Box::new(move || -> SilexResult<()> {
                     let name = target.attr_name();
                     let value = rx.get()?;
@@ -482,8 +401,7 @@ fn apply_update_internal<'scope>(
         }
         AttrData::ReactiveString(rx) => {
             let el = el.clone();
-            owner.effect_from(
-                rx.runtime_inputs(),
+            owner.effect(
                 Box::new(move || -> SilexResult<()> {
                     let name = target.attr_name();
                     let val = rx.get()?;
@@ -494,8 +412,7 @@ fn apply_update_internal<'scope>(
         }
         AttrData::ReactiveBool(rx) => {
             let el = el.clone();
-            owner.effect_from(
-                rx.runtime_inputs(),
+            owner.effect(
                 Box::new(move || -> SilexResult<()> {
                     let name = target.attr_name();
                     let val = rx.get()?;
@@ -506,8 +423,7 @@ fn apply_update_internal<'scope>(
         }
         AttrData::ReactiveOptionString(rx) => {
             let el = el.clone();
-            owner.effect_from(
-                rx.runtime_inputs(),
+            owner.effect(
                 Box::new(move || -> SilexResult<()> {
                     let name = target.attr_name();
                     let val = rx.get()?;
@@ -522,8 +438,7 @@ fn apply_update_internal<'scope>(
         }
         AttrData::ReactiveJs(rx) => {
             let el = el.clone();
-            owner.effect_from(
-                rx.runtime_inputs(),
+            owner.effect(
                 Box::new(move || -> SilexResult<()> {
                     let value = rx.get()?;
                     js_sys::Reflect::set(&el, &JsValue::from_str(&name), &value)
@@ -566,14 +481,6 @@ fn apply_combined_classes_internal<'scope>(
         .iter()
         .flat_map(|class| class.split_whitespace().map(str::to_owned))
         .collect();
-    let mut inputs = RuntimeInputs::new();
-    for (_, plan) in &toggles {
-        inputs.extend(&plan.inputs);
-    }
-    for plan in &reactives {
-        inputs.extend(&plan.inputs);
-    }
-
     // 2. 建立单 Effect 追踪所有响应式部分
     let prev_dynamic_tokens = owner.owner_state(HashSet::<String>::new())?;
     let prev_dynamic_tokens_for_effect = prev_dynamic_tokens.clone();
@@ -581,8 +488,7 @@ fn apply_combined_classes_internal<'scope>(
     let static_tokens_for_cleanup = static_tokens.clone();
     let el_clone = el.clone();
     let el_for_cleanup = el.clone();
-    owner.effect_with_previous_from(
-        inputs,
+    owner.effect_with_previous(
         Box::new(
             move |previous: Option<&HashSet<String>>| -> SilexResult<HashSet<String>> {
                 let list = el_clone.class_list();
@@ -670,14 +576,6 @@ fn apply_combined_styles_internal<'scope>(
         return Ok(());
     }
 
-    let mut inputs = RuntimeInputs::new();
-    for plan in &properties {
-        inputs.extend(&plan.inputs);
-    }
-    for plan in &sheets {
-        inputs.extend(&plan.inputs);
-    }
-
     // 2. 建立单 Effect 追踪所有响应式样式
     let sheet_keys = owner.owner_state(HashSet::<String>::new())?;
     let sheet_keys_for_effect = sheet_keys.clone();
@@ -693,8 +591,7 @@ fn apply_combined_styles_internal<'scope>(
     let el_for_cleanup = el.clone();
     let static_values_for_cleanup = static_values;
 
-    owner.effect_with_previous_from(
-        inputs,
+    owner.effect_with_previous(
         Box::new(
             move |previous: Option<&CombinedStylePrevious>| -> SilexResult<CombinedStylePrevious> {
                 let style = get_style_decl(&el_clone).ok_or_else(|| {

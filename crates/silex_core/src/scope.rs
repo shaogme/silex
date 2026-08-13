@@ -7,11 +7,11 @@ use crate::{
         Effect, Memo, ReactiveSource, ReadSignal, RwSignal, StoredValue, WatchOptions, WriteSignal,
     },
     task,
-    traits::RxData,
+    traits::{RuntimeScoped, RxData},
 };
 #[cfg(feature = "test-support")]
 use silex_reactivity::RuntimeSnapshot;
-use silex_reactivity::{ComputationInitError, RuntimeInputs};
+use silex_reactivity::{ComputationInitError, ReactiveError};
 use std::{future::Future, panic::UnwindSafe};
 
 /// User-owned high-level runtime.
@@ -106,6 +106,21 @@ impl<'scope> Scope<'scope> {
         self.inner.is_active()
     }
 
+    /// Validate a reactive source before creating target-side nodes.
+    pub fn validate_runtime<S>(self, source: &S) -> SilexResult<()>
+    where
+        S: RuntimeScoped + ?Sized,
+    {
+        if !self.is_active() {
+            return Err(SilexError::fatal(ReactiveError::NoSuchNode));
+        }
+        if self.inner.same_runtime(&source.runtime_scope().inner) {
+            Ok(())
+        } else {
+            Err(SilexError::fatal(ReactiveError::RuntimeMismatch))
+        }
+    }
+
     pub fn signal<T: 'scope>(
         self,
         value: T,
@@ -113,7 +128,7 @@ impl<'scope> Scope<'scope> {
         let (read, write) = self.inner.signal(value).map_err(SilexError::fatal)?;
         Ok((
             ReadSignal::from_inner(read, self),
-            WriteSignal::from_inner(write),
+            WriteSignal::from_inner(write, self),
         ))
     }
 
@@ -132,22 +147,8 @@ impl<'scope> Scope<'scope> {
         T: PartialEq + 'scope,
         F: FnMut(Option<&T>) -> SilexResult<T> + 'scope,
     {
-        self.memo_from(RuntimeInputs::new(), f, error_handler)
-    }
-
-    #[doc(hidden)]
-    pub fn memo_from<T, F>(
-        self,
-        inputs: RuntimeInputs,
-        f: F,
-        error_handler: ErrorHandler<'scope, SilexError>,
-    ) -> SilexResult<Memo<'scope, T>>
-    where
-        T: PartialEq + 'scope,
-        F: FnMut(Option<&T>) -> SilexResult<T> + 'scope,
-    {
         self.inner
-            .memo_from(inputs, f, error_handler)
+            .memo(f, error_handler)
             .map(|memo| Memo::from_inner(memo, self))
             .map_err(|error| match error {
                 ComputationInitError::Registration(error) => SilexError::fatal(error),
@@ -182,22 +183,8 @@ impl<'scope> Scope<'scope> {
         T: 'scope,
         F: FnMut() -> SilexResult<T> + 'scope,
     {
-        self.derived_from(RuntimeInputs::new(), f, error_handler)
-    }
-
-    #[doc(hidden)]
-    pub fn derived_from<T, F>(
-        self,
-        inputs: RuntimeInputs,
-        f: F,
-        error_handler: ErrorHandler<'scope, SilexError>,
-    ) -> SilexResult<Rx<'scope, T>>
-    where
-        T: 'scope,
-        F: FnMut() -> SilexResult<T> + 'scope,
-    {
         self.inner
-            .derived_from(inputs, f, error_handler)
+            .derived(f, error_handler)
             .map_err(|error| match error {
                 ComputationInitError::Registration(error) => SilexError::fatal(error),
                 ComputationInitError::Initial(error) => error,
@@ -213,26 +200,13 @@ impl<'scope> Scope<'scope> {
     where
         F: FnMut() -> SilexResult<()> + 'scope,
     {
-        self.effect_from(RuntimeInputs::new(), f, error_handler)
-    }
-
-    #[doc(hidden)]
-    pub fn effect_from<F>(
-        self,
-        inputs: RuntimeInputs,
-        f: F,
-        error_handler: ErrorHandler<'scope, SilexError>,
-    ) -> SilexResult<Effect<'scope>>
-    where
-        F: FnMut() -> SilexResult<()> + 'scope,
-    {
-        let effect =
-            self.inner
-                .effect_from(inputs, f, error_handler)
-                .map_err(|error| match error {
-                    ComputationInitError::Registration(error) => SilexError::fatal(error),
-                    ComputationInitError::Initial(error) => error,
-                })?;
+        let effect = self
+            .inner
+            .effect(f, error_handler)
+            .map_err(|error| match error {
+                ComputationInitError::Registration(error) => SilexError::fatal(error),
+                ComputationInitError::Initial(error) => error,
+            })?;
         Ok(Effect::from_inner(effect))
     }
 
@@ -250,27 +224,13 @@ impl<'scope> Scope<'scope> {
         T: 'scope,
         F: FnMut(Option<&T>) -> SilexResult<T> + 'scope,
     {
-        self.effect_with_previous_from(RuntimeInputs::new(), f, error_handler)
-    }
-
-    #[doc(hidden)]
-    pub fn effect_with_previous_from<T, F>(
-        self,
-        inputs: RuntimeInputs,
-        f: F,
-        error_handler: ErrorHandler<'scope, SilexError>,
-    ) -> SilexResult<Effect<'scope>>
-    where
-        T: 'scope,
-        F: FnMut(Option<&T>) -> SilexResult<T> + 'scope,
-    {
-        let effect = self
-            .inner
-            .effect_with_previous_from(inputs, f, error_handler)
-            .map_err(|error| match error {
-                ComputationInitError::Registration(error) => SilexError::fatal(error),
-                ComputationInitError::Initial(error) => error,
-            })?;
+        let effect =
+            self.inner
+                .effect_with_previous(f, error_handler)
+                .map_err(|error| match error {
+                    ComputationInitError::Registration(error) => SilexError::fatal(error),
+                    ComputationInitError::Initial(error) => error,
+                })?;
         Ok(Effect::from_inner(effect))
     }
 
@@ -301,16 +261,8 @@ impl<'scope> Scope<'scope> {
         C: FnMut(&S::Value, Option<&S::Value>) -> SilexResult<()> + 'scope,
     {
         let plan = source.into_promotion_plan();
-        let inputs = plan.inputs();
-        self.validate_inputs(&inputs)?;
         let source = plan.materialize(self, error_handler)?;
-        self.watch_getter_from(
-            inputs,
-            move || source.get(),
-            callback,
-            error_handler,
-            options,
-        )
+        self.watch_getter_with_options(move || source.get(), callback, error_handler, options)
     }
 
     pub fn watch_getter<T, G, C>(
@@ -339,31 +291,8 @@ impl<'scope> Scope<'scope> {
         G: FnMut() -> SilexResult<T> + 'scope,
         C: FnMut(&T, Option<&T>) -> SilexResult<()> + 'scope,
     {
-        self.watch_getter_from(
-            RuntimeInputs::new(),
-            getter,
-            callback,
-            error_handler,
-            options,
-        )
-    }
-
-    #[doc(hidden)]
-    pub fn watch_getter_from<T, G, C>(
-        self,
-        inputs: RuntimeInputs,
-        getter: G,
-        callback: C,
-        error_handler: ErrorHandler<'scope, SilexError>,
-        options: WatchOptions,
-    ) -> SilexResult<Effect<'scope>>
-    where
-        T: PartialEq + 'scope,
-        G: FnMut() -> SilexResult<T> + 'scope,
-        C: FnMut(&T, Option<&T>) -> SilexResult<()> + 'scope,
-    {
         self.inner
-            .watch_getter_from(inputs, getter, callback, error_handler, options)
+            .watch_getter_with_options(getter, callback, error_handler, options)
             .map_err(|error| match error {
                 ComputationInitError::Registration(error) => SilexError::fatal(error),
                 ComputationInitError::Initial(error) => error,
@@ -463,13 +392,6 @@ impl<'scope> Scope<'scope> {
         value.into_promotion_plan().materialize(self, error_handler)
     }
 
-    #[doc(hidden)]
-    pub fn validate_inputs(self, inputs: &RuntimeInputs) -> SilexResult<()> {
-        self.inner
-            .validate_inputs(inputs)
-            .map_err(SilexError::fatal)
-    }
-
     #[cfg(feature = "test-support")]
     #[doc(hidden)]
     pub fn runtime_snapshot(self) -> RuntimeSnapshot {
@@ -538,13 +460,6 @@ impl<'scope> OwnedScope<'scope> {
         self.inner.is_active()
     }
 
-    #[doc(hidden)]
-    pub fn validate_inputs(&self, inputs: &RuntimeInputs) -> SilexResult<()> {
-        self.inner
-            .validate_inputs(inputs)
-            .map_err(SilexError::fatal)
-    }
-
     /// Register and immediately run an owner-bound effect without extra
     /// framework-declared inputs.
     pub fn effect<F>(
@@ -555,20 +470,8 @@ impl<'scope> OwnedScope<'scope> {
     where
         F: FnMut() -> SilexResult<()> + 'scope,
     {
-        self.effect_from(RuntimeInputs::new(), f, error_handler)
-    }
-
-    pub fn effect_from<F>(
-        &self,
-        inputs: RuntimeInputs,
-        f: F,
-        error_handler: ErrorHandler<'scope, SilexError>,
-    ) -> SilexResult<Effect<'_>>
-    where
-        F: FnMut() -> SilexResult<()> + 'scope,
-    {
         self.inner
-            .effect_from(inputs, f, error_handler)
+            .effect(f, error_handler)
             .map(Effect::from_inner)
             .map_err(|error| match error {
                 ComputationInitError::Registration(error) => SilexError::fatal(error),
@@ -585,22 +488,8 @@ impl<'scope> OwnedScope<'scope> {
         T: 'scope,
         F: FnMut(Option<&T>) -> SilexResult<T> + 'scope,
     {
-        self.effect_with_previous_from(RuntimeInputs::new(), f, error_handler)
-    }
-
-    #[doc(hidden)]
-    pub fn effect_with_previous_from<T, F>(
-        &self,
-        inputs: RuntimeInputs,
-        f: F,
-        error_handler: ErrorHandler<'scope, SilexError>,
-    ) -> SilexResult<Effect<'_>>
-    where
-        T: 'scope,
-        F: FnMut(Option<&T>) -> SilexResult<T> + 'scope,
-    {
         self.inner
-            .effect_with_previous_from(inputs, f, error_handler)
+            .effect_with_previous(f, error_handler)
             .map(Effect::from_inner)
             .map_err(|error| match error {
                 ComputationInitError::Registration(error) => SilexError::fatal(error),
@@ -634,31 +523,8 @@ impl<'scope> OwnedScope<'scope> {
         G: FnMut() -> SilexResult<T> + 'scope,
         C: FnMut(&T, Option<&T>) -> SilexResult<()> + 'scope,
     {
-        self.watch_getter_from(
-            RuntimeInputs::new(),
-            getter,
-            callback,
-            error_handler,
-            options,
-        )
-    }
-
-    #[doc(hidden)]
-    pub fn watch_getter_from<T, G, C>(
-        &self,
-        inputs: RuntimeInputs,
-        getter: G,
-        callback: C,
-        error_handler: ErrorHandler<'scope, SilexError>,
-        options: WatchOptions,
-    ) -> SilexResult<Effect<'_>>
-    where
-        T: PartialEq + 'scope,
-        G: FnMut() -> SilexResult<T> + 'scope,
-        C: FnMut(&T, Option<&T>) -> SilexResult<()> + 'scope,
-    {
         self.inner
-            .watch_getter_from(inputs, getter, callback, error_handler, options)
+            .watch_getter_with_options(getter, callback, error_handler, options)
             .map(Effect::from_inner)
             .map_err(|error| match error {
                 ComputationInitError::Registration(error) => SilexError::fatal(error),

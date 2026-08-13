@@ -12,14 +12,14 @@ fn test_conditional_tw_macro() {
     );
     let output = tw_impl(ts).unwrap();
     let code = output.to_string();
-    assert!(code.contains("custom_with_inputs"));
+    assert!(code.contains("custom"));
     assert!(!code.contains("rx !"));
-    assert!(code.contains("runtime_inputs"));
+    assert!(!code.contains("runtime_inputs"));
     assert!(code.contains("on_cleanup"));
     assert!(code.contains("is_active"));
     assert!(code.contains("is_dark"));
     let custom_pos = code
-        .find("custom_with_inputs")
+        .find("custom")
         .expect("conditional tw uses an owner-bound attribute");
     let inject_pos = code
         .find("inject_style")

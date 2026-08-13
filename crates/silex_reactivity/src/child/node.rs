@@ -1,16 +1,13 @@
 //! Reactive node primitives owned by an execution scope.
 
-use std::{cell::RefCell, fmt, marker::PhantomData, rc::Rc};
+use std::{fmt, marker::PhantomData};
 
 use crate::{
     CallbackInvokeResult, ErrorHandler, ReactiveError, ReactiveResult,
     error::map_callback_error,
     handle::{CallbackId, DerivedId, EffectId, MemoId, NodeRefId, SignalId, StoredId},
-    internal::{
-        RawId,
-        value::{AnyValue, CallbackThunkError},
-    },
-    runtime::{self, RuntimeInput, ScopeState},
+    internal::value::{AnyValue, CallbackThunkError},
+    runtime,
 };
 
 /// Options controlling the initial callback and one-shot behavior of a watcher.
@@ -169,11 +166,6 @@ impl<'scope, T: 'scope, E: 'scope> Memo<'scope, T, E> {
                 .ok_or(ReactiveError::TypeMismatch)
         })
     }
-
-    #[doc(hidden)]
-    pub fn runtime_input(&self) -> RuntimeInput {
-        self.handle.runtime_input()
-    }
 }
 
 impl<'scope, T: 'scope, E: 'scope> Derived<'scope, T, E> {
@@ -205,11 +197,6 @@ impl<'scope, T: 'scope, E: 'scope> Derived<'scope, T, E> {
                 .map(f)
                 .ok_or(ReactiveError::TypeMismatch)
         })
-    }
-
-    #[doc(hidden)]
-    pub fn runtime_input(&self) -> RuntimeInput {
-        self.handle.runtime_input()
     }
 }
 
@@ -331,11 +318,6 @@ impl<'scope, T: 'scope> ReadSignal<'scope, T> {
                 .ok_or(ReactiveError::TypeMismatch)
         })?
     }
-
-    #[doc(hidden)]
-    pub fn runtime_input(&self) -> RuntimeInput {
-        self.handle.runtime_input()
-    }
 }
 
 impl<'scope, T: 'scope> WriteSignal<'scope, T> {
@@ -379,11 +361,6 @@ impl<'scope, T: 'scope> WriteSignal<'scope, T> {
             (Ok(true), true)
         })?
     }
-
-    #[doc(hidden)]
-    pub fn runtime_input(&self) -> RuntimeInput {
-        self.handle.runtime_input()
-    }
 }
 
 impl<'scope, T: 'scope> RwSignal<'scope, T> {
@@ -423,50 +400,12 @@ impl<'scope, T: 'scope> RwSignal<'scope, T> {
     pub fn write(&self) -> WriteSignal<'scope, T> {
         self.write
     }
-
-    #[doc(hidden)]
-    pub fn runtime_input(&self) -> RuntimeInput {
-        self.read.runtime_input()
-    }
 }
 
 /// Notify dependents after a silent update.
 pub fn notify<'scope, T>(signal: &WriteSignal<'scope, T>) -> ReactiveResult<()> {
     let state = signal.handle.state();
     runtime::notify(&state, signal.handle.raw())
-}
-
-/// Track a read capability without reading its value.
-pub fn track<'scope, T>(signal: &ReadSignal<'scope, T>) -> ReactiveResult<()> {
-    let state = signal.handle.state();
-    runtime::track(&state, signal.handle.raw())
-}
-
-/// Track multiple read capabilities in one call.
-///
-/// Handles from different `Runtime::run` or child-scope runs cannot be mixed in
-/// one batch because their scope lifetimes are intentionally distinct. The
-/// compile-fail case is covered by `tests/ui/fail_mixed_track_batch.rs`.
-pub fn track_batch<'scope, T>(signals: &[ReadSignal<'scope, T>]) -> ReactiveResult<()> {
-    let mut groups: Vec<(Rc<RefCell<ScopeState<'scope>>>, Vec<RawId>)> = Vec::new();
-
-    for signal in signals {
-        let state = signal.handle.state();
-        if let Some((_group_state, ids)) = groups
-            .iter_mut()
-            .find(|(group_state, _)| Rc::ptr_eq(group_state, &state))
-        {
-            ids.push(signal.handle.raw());
-        } else {
-            groups.push((state, vec![signal.handle.raw()]));
-        }
-    }
-
-    for (state, ids) in groups {
-        runtime::track_many(&state, &ids)?;
-    }
-
-    Ok(())
 }
 
 // =============================================================================
@@ -508,11 +447,6 @@ impl<'scope, T: 'scope> StoredValue<'scope, T> {
                 .map(f)
                 .ok_or(ReactiveError::TypeMismatch)
         })?
-    }
-
-    #[doc(hidden)]
-    pub fn runtime_input(&self) -> RuntimeInput {
-        self.handle.runtime_input()
     }
 }
 

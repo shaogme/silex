@@ -1,9 +1,6 @@
 use std::{borrow::Cow, rc::Rc};
 
-use silex_core::{
-    Memo, ReadSignal, RuntimeInputs, RwSignal, Rx, Signal, SilexResult, runtime_inputs_of,
-    traits::RxRead,
-};
+use silex_core::{Memo, ReadSignal, RwSignal, Rx, Scope, Signal, SilexResult};
 
 #[cfg(feature = "persist")]
 use silex_persist::Persistent;
@@ -11,7 +8,6 @@ use silex_persist::Persistent;
 #[derive(Clone)]
 pub struct ValueResolver<'scope> {
     kind: ResolverKind<'scope>,
-    inputs: RuntimeInputs,
 }
 
 #[derive(Clone)]
@@ -20,6 +16,7 @@ enum ResolverKind<'scope> {
     Dynamic {
         tracked: Rc<dyn Fn() -> SilexResult<String> + 'scope>,
         untracked: Rc<dyn Fn() -> SilexResult<String> + 'scope>,
+        validate: Rc<dyn Fn(Scope<'scope>) -> SilexResult<()> + 'scope>,
     },
 }
 
@@ -27,15 +24,11 @@ impl<'scope> ValueResolver<'scope> {
     pub fn static_value(value: impl Into<Cow<'static, str>>) -> Self {
         Self {
             kind: ResolverKind::Static(value.into()),
-            inputs: RuntimeInputs::new(),
         }
     }
 
-    /// Create a resolver with explicit framework-known source provenance.
-    ///
-    /// The tracked closure is used by request-derived nodes. The untracked
-    /// closure is used when a request is materialized for an owned future.
-    pub fn dynamic_with_inputs<F, U>(tracked: F, untracked: U, inputs: RuntimeInputs) -> Self
+    /// Create a resolver with tracked and untracked accessors.
+    pub fn dynamic<F, U>(tracked: F, untracked: U) -> Self
     where
         F: Fn() -> SilexResult<String> + 'scope,
         U: Fn() -> SilexResult<String> + 'scope,
@@ -44,8 +37,36 @@ impl<'scope> ValueResolver<'scope> {
             kind: ResolverKind::Dynamic {
                 tracked: Rc::new(tracked),
                 untracked: Rc::new(untracked),
+                validate: Rc::new(|_| Ok(())),
             },
-            inputs,
+        }
+    }
+
+    pub(crate) fn dynamic_with_validator<F, U, V>(tracked: F, untracked: U, validate: V) -> Self
+    where
+        F: Fn() -> SilexResult<String> + 'scope,
+        U: Fn() -> SilexResult<String> + 'scope,
+        V: Fn(Scope<'scope>) -> SilexResult<()> + 'scope,
+    {
+        Self {
+            kind: ResolverKind::Dynamic {
+                tracked: Rc::new(tracked),
+                untracked: Rc::new(untracked),
+                validate: Rc::new(validate),
+            },
+        }
+    }
+
+    pub(crate) fn validate_runtime(&self, scope: Scope<'scope>) -> SilexResult<()> {
+        match self {
+            Self {
+                kind: ResolverKind::Static(_),
+                ..
+            } => Ok(()),
+            Self {
+                kind: ResolverKind::Dynamic { validate, .. },
+                ..
+            } => validate(scope),
         }
     }
 
@@ -74,10 +95,6 @@ impl<'scope> ValueResolver<'scope> {
             } => tracked(),
         }
     }
-
-    pub(crate) fn inputs(&self) -> RuntimeInputs {
-        self.inputs.clone()
-    }
 }
 
 pub trait IntoNetValue<'scope> {
@@ -103,33 +120,42 @@ impl<'scope> IntoNetValue<'scope> for &str {
 }
 
 macro_rules! impl_into_net_value_for_rx {
-    ($ty:ty) => {
+    ($ty:ty, $source:expr) => {
         impl<'scope, T> IntoNetValue<'scope> for $ty
         where
             T: ToString + 'scope,
         {
             fn into_net_value(self) -> ValueResolver<'scope> {
-                let inputs = runtime_inputs_of(self);
-                let tracked = self;
-                let untracked = self;
-                ValueResolver::dynamic_with_inputs(
+                let source: Rx<'scope, T> = ($source)(self);
+                let tracked = source;
+                let untracked = source;
+                let validation_source = source;
+                ValueResolver::dynamic_with_validator(
                     move || tracked.with(|value| value.to_string()),
                     move || untracked.with_untracked(|value| value.to_string()),
-                    inputs,
+                    move |scope| scope.validate_runtime(&validation_source),
                 )
             }
         }
     };
 }
 
-impl_into_net_value_for_rx!(Rx<'scope, T>);
-impl_into_net_value_for_rx!(ReadSignal<'scope, T>);
-impl_into_net_value_for_rx!(RwSignal<'scope, T>);
-impl_into_net_value_for_rx!(Signal<'scope, T>);
-impl_into_net_value_for_rx!(Memo<'scope, T>);
+impl_into_net_value_for_rx!(Rx<'scope, T>, |value: Rx<'scope, T>| value);
+impl_into_net_value_for_rx!(ReadSignal<'scope, T>, |value: ReadSignal<'scope, T>| {
+    value.into_rx()
+});
+impl_into_net_value_for_rx!(RwSignal<'scope, T>, |value: RwSignal<'scope, T>| {
+    value.into_rx()
+});
+impl_into_net_value_for_rx!(Signal<'scope, T>, |value: Signal<'scope, T>| {
+    value.into_rx()
+});
+impl_into_net_value_for_rx!(Memo<'scope, T>, |value: Memo<'scope, T>| value.into_rx());
 
 #[cfg(feature = "persist")]
-impl_into_net_value_for_rx!(Persistent<'scope, T>);
+impl_into_net_value_for_rx!(Persistent<'scope, T>, |value: Persistent<'scope, T>| value
+    .signal()
+    .into_rx());
 
 macro_rules! impl_into_net_value_for_prim {
     ($($ty:ty),*) => {
@@ -155,28 +181,22 @@ where
     fn into_net_value(self) -> ValueResolver<'scope> {
         let value = Rc::new(move || self().to_string());
         let tracked = value.clone();
-        ValueResolver::dynamic_with_inputs(
-            move || Ok(tracked()),
-            move || Ok(value()),
-            RuntimeInputs::new(),
-        )
+        ValueResolver::dynamic(move || Ok(tracked()), move || Ok(value()))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{IntoNetValue, ValueResolver};
-    use silex_core::{Runtime, runtime_inputs_of};
+    use silex_core::Runtime;
 
     #[test]
-    fn static_and_owned_closure_resolvers_have_no_inputs() {
+    fn static_and_owned_closure_resolvers_resolve_values() {
         let static_value = ValueResolver::static_value("static");
         assert_eq!(static_value.resolve().unwrap(), "static");
-        assert!(static_value.inputs().is_empty());
 
         let closure = (|| 42_i32).into_net_value();
         assert_eq!(closure.resolve().unwrap(), "42");
-        assert!(closure.inputs().is_empty());
     }
 
     #[test]
@@ -187,7 +207,6 @@ mod tests {
                 let (value, set_value) = scope.signal(1_i32).unwrap();
                 let resolver = value.into_net_value();
 
-                assert_eq!(resolver.inputs().len(), 1);
                 assert_eq!(resolver.resolve_tracked().unwrap(), "1");
                 set_value.set(2).unwrap();
                 assert_eq!(resolver.resolve().unwrap(), "2");
@@ -196,19 +215,17 @@ mod tests {
     }
 
     #[test]
-    fn explicit_resolver_aggregates_multiple_runtime_inputs() {
+    fn dynamic_resolver_can_read_multiple_sources() {
         let mut runtime = Runtime::new();
         runtime
             .child(|scope| {
                 let (first, _) = scope.signal("a".to_string()).unwrap();
                 let (second, _) = scope.signal("b".to_string()).unwrap();
-                let mut inputs = runtime_inputs_of(first);
-                inputs.extend(&runtime_inputs_of(second));
                 let tracked_first = first;
                 let tracked_second = second;
                 let untracked_first = first;
                 let untracked_second = second;
-                let resolver = ValueResolver::dynamic_with_inputs(
+                let resolver = ValueResolver::dynamic(
                     move || Ok(format!("{}{}", tracked_first.get()?, tracked_second.get()?)),
                     move || {
                         Ok(format!(
@@ -217,10 +234,8 @@ mod tests {
                             untracked_second.get_untracked()?
                         ))
                     },
-                    inputs,
                 );
 
-                assert_eq!(resolver.inputs().len(), 2);
                 assert_eq!(resolver.resolve_tracked().unwrap(), "ab");
                 assert_eq!(resolver.resolve().unwrap(), "ab");
             })

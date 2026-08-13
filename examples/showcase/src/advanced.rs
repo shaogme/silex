@@ -635,32 +635,33 @@ pub fn AdaptiveReadDemo<'scope>(
 
     // Create a non-cloneable resource
     let (identity, _) = scope.signal(QuantumIdentity::new(0xDEADBEEF))?;
-
-    // 1. REACTIVE TUPLE: Used for organizational grouping and tracking.
-    // Note: (RwSignal<String>, ReadSignal<f64>, ReadSignal<QuantumIdentity>)
-    // implements RxBase, allowing tracking even with non-cloneable items.
-    let core_vitals = (system_name, stability, identity);
+    let adaptive_state = (system_name, stability);
 
     scope.effect(
         move || -> SilexResult<()> {
-            core_vitals.track()?; // Track the whole group at once
-            console_log("Quantum Core Vitals updated.");
+            let (name, current_stability) = adaptive_state.get()?;
+            identity.with(|_| ())?;
+            console_log(format!(
+                "Quantum Core Vitals updated: {name} at {current_stability:.0}%"
+            ));
             Ok(())
         },
         error_handler,
     )?;
 
-    // 2. SEGMENTED ACCESS (Recommended):
-    // Using $ syntax on individual signals is ALWAYS zero-copy and
-    // works even if the types are NOT Clone.
-    let status_bar = rx!(scope; error_handler; format!(
-        "System: {} | Stability: {:.0}% | {}",
-        $system_name,
-        *$stability * 100.0,
-        $identity
-    ));
+    // Cloneable reactive values can be read as one tracked tuple snapshot.
+    let status_bar = scope.derived(
+        move || {
+            let (name, current_stability) = adaptive_state.get()?;
+            let identity_label = identity.with(ToString::to_string)?;
+            Ok(format!(
+                "System: {name} | Stability: {current_stability:.0}% | {identity_label}"
+            ))
+        },
+        error_handler,
+    )?;
 
-    // 3. FINE-GRAINED REACTIVITY:
+    // Non-cloneable values still use segmented `with` access for zero-copy reads.
     // Only the specific parts of the UI update when their respective signals change.
     let detail_metrics = rx!(scope; error_handler; {
         div![
@@ -679,7 +680,7 @@ pub fn AdaptiveReadDemo<'scope>(
         h3("Adaptive Read & Segmented Access")
             .style(sty().color(hex("#2c3e50"))?.border_left("5px solid #e74c3c")?.padding_left(px(15))?.margin_bottom(px(20))?),
 
-        p("Silex 0.1.0-beta.8 optimizes reactive access for performance. While tuples can group resources, segmented access using individual signals ensures zero-copy performance without Clone requirements."),
+        p("Cloneable reactive values can be grouped into a tuple and read with get(), which tracks every member. Non-cloneable resources remain available through segmented with() access without copying."),
 
         div![
             // Live Status Bar
@@ -726,9 +727,9 @@ pub fn AdaptiveReadDemo<'scope>(
             p("Architecture Insights:")
                 .style(sty().font_weight(FontWeightKeyword::Bold)?.margin_bottom(px(5))?),
             ul![
+                li("Tuple Snapshot: adaptive_state.get() tracks and clones the cloneable system name and stability values together."),
                 li("Zero-Copy: The $ syntax expands to .with() calls, providing direct references."),
-                li("No Clone Needed: QuantumIdentity is non-cloneable, yet accessible via references."),
-                li("Tuple Limitation: Tuples grouping non-cloneable items are valid for tracking, but 'overall' access via .with() on the tuple itself is restricted to avoid accidental deep clones."),
+                li("No Clone Needed: QuantumIdentity is non-cloneable, yet accessible via a direct with() read."),
             ]
             .style(sty().font_size(em_unit(0.85))?.color(hex("#34495e"))?),
         ]

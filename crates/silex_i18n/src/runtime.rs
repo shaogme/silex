@@ -6,10 +6,7 @@ use crate::{
 use silex_core::Effect;
 use silex_core::{
     ErrorReporter, Memo, Rx, Scope, SilexError, SilexResult,
-    reactivity::{
-        ReadSignal, Resource, ResourceState, RwSignal, StoredValue, SuspenseContext,
-        runtime_inputs_of,
-    },
+    reactivity::{ReadSignal, Resource, ResourceState, RwSignal, StoredValue, SuspenseContext},
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -21,7 +18,6 @@ use std::{
 #[cfg(feature = "persist")]
 use silex_persist::Persistent;
 
-use silex_core::RuntimeInputs;
 #[cfg(feature = "persist")]
 use silex_core::traits::RxGet;
 
@@ -195,26 +191,21 @@ impl<'scope> I18nBuilder<'scope> {
 
         let catalog_locale = catalogs.first().map(|catalog| catalog.locale().clone());
 
+        #[cfg(feature = "persist")]
+        if let Some(binding) = locale_binding.as_ref() {
+            let binding_source = binding.signal().into_rx();
+            scope.validate_runtime(&binding_source)?;
+        }
+
         let mut registry = CatalogRegistry::default();
         for catalog in catalogs {
             registry.catalogs.insert(catalog.locale().clone(), catalog);
         }
 
         #[cfg(feature = "persist")]
-        let binding_inputs = locale_binding.map(|binding| {
-            let inputs = runtime_inputs_of(binding);
-            (binding, inputs)
-        });
-
-        #[cfg(feature = "persist")]
-        if let Some((_, inputs)) = &binding_inputs {
-            validate_inputs(scope, inputs)?;
-        }
-
-        #[cfg(feature = "persist")]
-        let binding_locale = binding_inputs
+        let binding_locale = locale_binding
             .as_ref()
-            .map(|(binding, _)| binding.get_untracked())
+            .map(|binding| binding.get_untracked())
             .transpose()?;
         #[cfg(not(feature = "persist"))]
         let binding_locale: Option<Locale> = None;
@@ -238,13 +229,10 @@ impl<'scope> I18nBuilder<'scope> {
         };
 
         #[cfg(feature = "persist")]
-        if let Some((binding, binding_inputs)) = binding_inputs {
-            let locale_inputs = runtime_inputs_of(store.locale());
-
+        if let Some(binding) = locale_binding {
             let store_for_binding = store;
             scope
-                .effect_from(
-                    binding_inputs,
+                .effect(
                     move || -> SilexResult<()> {
                         let locale = binding.signal().get()?;
                         if store_for_binding.locale.get_untracked()? != locale {
@@ -261,8 +249,7 @@ impl<'scope> I18nBuilder<'scope> {
 
             let store_for_locale = store;
             scope
-                .effect_from(
-                    locale_inputs,
+                .effect(
                     move || -> SilexResult<()> {
                         let locale = store_for_locale.locale.get()?;
                         if binding.get_untracked().map_err(SilexError::from)? != locale {
@@ -358,12 +345,6 @@ impl<'scope> I18nStore<'scope> {
         E: Clone + Debug + 'static,
     {
         let suspense = suspense_ctx.into();
-        let mut inputs = runtime_inputs_of(self.locale());
-        if let Some(context) = suspense.as_ref() {
-            inputs.extend(&runtime_inputs_of(context.count));
-        }
-        validate_inputs(self.scope, &inputs)?;
-
         let cache = self.catalog_cache;
         let loader = Rc::new(loader);
         let resource = Resource::new(
@@ -396,11 +377,9 @@ impl<'scope> I18nStore<'scope> {
         )?;
 
         let state = resource.state;
-        let state_inputs = runtime_inputs_of(state);
         let store = *self;
         self.scope
-            .effect_from(
-                state_inputs,
+            .effect(
                 move || -> SilexResult<()> {
                     if let ResourceState::Ready(catalog) = state.get()? {
                         store.insert_catalog(catalog)?;
@@ -477,10 +456,6 @@ impl<'scope> I18nStore<'scope> {
             MissingKeyPolicy::Empty => String::new(),
         }))
     }
-}
-
-fn validate_inputs(scope: Scope<'_>, inputs: &RuntimeInputs) -> Result<(), I18nError> {
-    scope.validate_inputs(inputs).map_err(I18nError::from)
 }
 
 fn map_silex_error(error: SilexError) -> I18nError {

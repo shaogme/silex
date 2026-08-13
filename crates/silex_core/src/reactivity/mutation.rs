@@ -1,7 +1,7 @@
 use crate::{
     CompletionSender, ErrorReporter, Scope, SilexError, SilexErrorKind,
     reactivity::{ReadSignal, StoredValue, WriteSignal},
-    traits::{RxBase, RxCloneData, RxData, RxError, RxRead, RxValue},
+    traits::{RxCloneData, RxData, RxError, RxRead, RxValue},
     unwind_safe,
 };
 use silex_reactivity::CallbackInvokeError;
@@ -280,17 +280,6 @@ where
     E: RxError + 'scope,
 {
     type Value = Option<T>;
-}
-
-impl<'scope, Arg, T, E> RxBase for Mutation<'scope, Arg, T, E>
-where
-    Arg: RxData + 'scope,
-    T: RxData + 'scope,
-    E: RxError + 'scope,
-{
-    fn track(&self) -> crate::SilexResult<()> {
-        self.state.track()
-    }
 }
 
 impl<'scope, Arg, T, E> RxRead for Mutation<'scope, Arg, T, E>

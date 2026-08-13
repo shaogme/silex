@@ -1,5 +1,7 @@
 //! Runtime node and scope-state data structures.
 
+#[cfg(feature = "test-support")]
+use super::scheduler::active_observer_for;
 use super::{
     scheduler::{GlobalScheduler, ScopeId, TargetNode},
     storage::{ComputationStorage, LeaseCell, NodeStorage},
@@ -245,7 +247,7 @@ impl<'scope> ScopeState<'scope> {
             handlers: self.error_handlers.len(),
             queue: scheduler.global_queue.len(),
             epoch: scheduler.current_epoch(),
-            observer: scheduler.observer().is_some(),
+            observer: active_observer_for(&self.scheduler).is_some(),
             running_queue: scheduler.running_queue,
         }
     }
@@ -383,6 +385,16 @@ impl<'scope> ScopeState<'scope> {
     pub(crate) fn finish_dispose(&mut self) {
         self.current_owner = None;
         self.phase = ScopePhase::Disposed;
+    }
+
+    pub(crate) fn ready_for_scope_release(&self) -> bool {
+        self.phase == ScopePhase::Disposed
+            && self.nodes.is_empty()
+            && self.data.is_empty()
+            && self.edges.is_empty()
+            && self.roots.is_empty()
+            && self.root_cleanups.is_empty()
+            && self.dependency_transactions.is_empty()
     }
 
     pub(crate) fn allows_final_cleanup_stored_access(&self) -> bool {

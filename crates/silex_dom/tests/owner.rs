@@ -1,9 +1,6 @@
 #![cfg(target_arch = "wasm32")]
 
-use silex_core::{
-    ErrorReporter, Runtime, RuntimeInputs, Scope, SilexError, SilexErrorKind, SilexResult,
-    runtime_inputs_of,
-};
+use silex_core::{ErrorReporter, Runtime, Scope, SilexError, SilexErrorKind, SilexResult};
 use silex_dom::attribute::{AttrOp, CombinedStyles, PendingAttribute, ReactiveBindingPlan};
 use silex_dom::element::Element;
 use silex_dom::view::{
@@ -193,8 +190,7 @@ fn native_owner_error_handler_separates_initial_deferred_and_cleanup_errors() {
                 })
                 .expect("error handler should register");
             let owner = ScopedMountOwner::new(scope);
-            let result = owner.effect_from(
-                RuntimeInputs::new(),
+            let result = owner.effect(
                 Box::new(|| Err(SilexError::recoverable(SilexErrorKind::Framework("initial effect failure".to_string())))),
                 error_handler,
             );
@@ -231,8 +227,7 @@ fn native_owner_error_handler_separates_initial_deferred_and_cleanup_errors() {
             .expect("error handler should register");
         let owner = ScopedMountOwner::new(scope);
         owner
-            .effect_from(
-                runtime_inputs_of(should_fail),
+            .effect(
                 Box::new(move || -> SilexResult<()> {
                     if should_fail.get()? {
                         return Err(SilexError::recoverable(SilexErrorKind::Framework(
@@ -645,15 +640,10 @@ fn branch_replaces_row_owner_and_keyed_list_reorders_ranges() {
         let (key, set_key) = scope.signal(0i32).expect("signal should initialize");
         let (owner, error_handler) = test_owner(scope);
         let branch_cleanups_for_view = branch_cleanups.clone();
-        let key_inputs = scope
-            .promote(key, test_handler(scope))
-            .expect("signal promotion should succeed")
-            .runtime_inputs();
         let _ = mount_branch_stable_cached(
             &owner,
             &host,
             Vec::new(),
-            key_inputs,
             error_handler,
             move || {
                 let key = key.get().expect("signal should be readable");
@@ -798,10 +788,6 @@ fn repeated_branch_and_list_replacement_keeps_owner_lifecycle_stable() {
             &owner,
             &host,
             Vec::new(),
-            scope
-                .promote(key, test_handler(scope))
-                .expect("signal promotion should succeed")
-                .runtime_inputs(),
             error_handler,
             move || {
                 let key = key.get().expect("signal should be readable");

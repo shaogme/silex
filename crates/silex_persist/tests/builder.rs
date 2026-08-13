@@ -1,5 +1,5 @@
 use ref_str::LocalStaticRefStr;
-use silex_core::{ErrorReporter, ReactiveError, Runtime, RuntimeInputs, Scope, SilexResult};
+use silex_core::{ErrorReporter, ReactiveError, Runtime, Scope, SilexResult};
 use silex_persist::{
     BackendEvent, BackendEventSink, BackendSubscribeError, BackendSubscription, DecodePolicy,
     NoDefault, ParseCodec, PersistCodec, PersistMode, PersistenceBackend, PersistenceError,
@@ -284,68 +284,6 @@ impl<'scope> PersistenceBackend<'scope> for FailingSubscriptionResourceBackend {
             ),
             cleanup,
         ))
-    }
-}
-
-#[derive(Clone)]
-struct ForeignRuntimeBackend {
-    inputs: RuntimeInputs,
-    _marker: Rc<()>,
-    subscribe_calls: Rc<Cell<usize>>,
-    active_subscriptions: Rc<Cell<usize>>,
-}
-
-impl<'scope> PersistenceBackend<'scope> for ForeignRuntimeBackend {
-    fn get(&self, _key: &str) -> Result<Option<String>, PersistenceError> {
-        Ok(None)
-    }
-
-    fn set(&self, _key: &str, _value: &str) -> Result<(), PersistenceError> {
-        Ok(())
-    }
-
-    fn remove(&self, _key: &str) -> Result<(), PersistenceError> {
-        Ok(())
-    }
-
-    fn runtime_inputs(&self) -> RuntimeInputs {
-        self.inputs.clone()
-    }
-
-    fn subscribe(
-        &self,
-        _scope: Scope<'scope>,
-        _key: impl Into<LocalStaticRefStr>,
-        _sink: BackendEventSink,
-        _error_handler: ErrorReporter<'scope>,
-    ) -> Result<BackendSubscription<'scope>, BackendSubscribeError<'scope>> {
-        self.subscribe_calls.set(self.subscribe_calls.get() + 1);
-        self.active_subscriptions
-            .set(self.active_subscriptions.get() + 1);
-        let active_subscriptions = self.active_subscriptions.clone();
-        Ok(BackendSubscription::new(move || {
-            active_subscriptions.set(active_subscriptions.get() - 1);
-        }))
-    }
-}
-
-#[derive(Clone, PartialEq)]
-struct MarkerValue(Rc<()>);
-
-#[derive(Clone, Copy)]
-struct MarkerCodec;
-
-impl PersistCodec<MarkerValue> for MarkerCodec {
-    fn encode(&self, _value: &MarkerValue) -> Result<String, String> {
-        Ok("marker".to_string())
-    }
-
-    fn decode(&self, raw: &str) -> Result<MarkerValue, String> {
-        if raw == "marker" {
-            Ok(MarkerValue(Rc::new(())))
-        } else {
-            Err("unexpected marker value".to_string())
-        }
     }
 }
 
@@ -1081,48 +1019,6 @@ fn subscription_error_rolls_back_resources_created_before_failure() {
         assert_eq!(backend.active_resources.get(), 0);
         assert_eq!(backend.cleanup_calls.get(), 1);
         assert_eq!(Rc::strong_count(&marker), marker_count_before);
-    });
-}
-
-#[test]
-fn foreign_runtime_try_build_leaves_no_binding_resources() {
-    let mut foreign_runtime = Runtime::new();
-    let foreign_inputs = foreign_runtime
-        .child(|scope| {
-            let (_, write) = scope
-                .signal(1_i32)
-                .expect("foreign input signal should be created");
-            write.runtime_inputs()
-        })
-        .expect("foreign runtime inputs should be collected");
-
-    let mut runtime = Runtime::new();
-    let _ = runtime.child(|scope| {
-        let marker = Rc::new(());
-        let backend = ForeignRuntimeBackend {
-            inputs: foreign_inputs.clone(),
-            _marker: marker.clone(),
-            subscribe_calls: Rc::new(Cell::new(0)),
-            active_subscriptions: Rc::new(Cell::new(0)),
-        };
-        let marker_count_without_builder = Rc::strong_count(&marker);
-        let builder = Persistent::builder(scope, "foreign-runtime", test_handler(scope))
-            .backend(backend.clone())
-            .custom_codec::<MarkerValue, _>(MarkerCodec)
-            .default_with({
-                let marker = marker.clone();
-                move || MarkerValue(marker.clone())
-            });
-
-        let result = builder.build();
-
-        assert!(matches!(
-            result,
-            Err(PersistenceError::InvalidConfiguration(_))
-        ));
-        assert_eq!(backend.subscribe_calls.get(), 0);
-        assert_eq!(backend.active_subscriptions.get(), 0);
-        assert_eq!(Rc::strong_count(&marker), marker_count_without_builder);
     });
 }
 

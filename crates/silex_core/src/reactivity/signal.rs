@@ -1,7 +1,7 @@
 use crate::{
-    RuntimeInputs, Rx, RxValueKind, Scope, SilexError, SilexResult,
+    Rx, RxValueKind, Scope, SilexError, SilexResult,
     reactivity::{Memo, SignalSlice, StoredValue},
-    traits::{RxBase, RxRead, RxValue},
+    traits::{RxRead, RxValue},
 };
 use silex_reactivity::{
     ReactiveResult, ReadSignal as RawReadSignal, WriteSignal as RawWriteSignal,
@@ -31,12 +31,6 @@ impl<T> RxValue for Constant<T> {
     type Value = T;
 }
 
-impl<T> RxBase for Constant<T> {
-    fn track(&self) -> SilexResult<()> {
-        Ok(())
-    }
-}
-
 impl<T> RxRead for Constant<T> {
     fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         Ok(f(&self.0))
@@ -56,6 +50,7 @@ pub struct ReadSignal<'scope, T> {
 /// High-level write capability for a signal node.
 pub struct WriteSignal<'scope, T> {
     pub(crate) inner: RawWriteSignal<'scope, T>,
+    pub(crate) scope: Scope<'scope>,
 }
 
 /// A paired read/write signal.
@@ -206,8 +201,8 @@ impl<'scope, T: 'scope> ReadSignal<'scope, T> {
 }
 
 impl<'scope, T: 'scope> WriteSignal<'scope, T> {
-    pub(crate) fn from_inner(inner: RawWriteSignal<'scope, T>) -> Self {
-        Self { inner }
+    pub(crate) fn from_inner(inner: RawWriteSignal<'scope, T>, scope: Scope<'scope>) -> Self {
+        Self { inner, scope }
     }
 
     pub fn with_name(self, _name: impl Into<String>) -> Self {
@@ -224,12 +219,6 @@ impl<'scope, T: 'scope> WriteSignal<'scope, T> {
 
     pub fn notify(&self) -> ReactiveResult<()> {
         raw_notify(&self.inner)
-    }
-
-    /// Return opaque runtime provenance for owner-bound validation.
-    #[doc(hidden)]
-    pub fn runtime_inputs(&self) -> RuntimeInputs {
-        RuntimeInputs::single(self.inner.runtime_input())
     }
 }
 

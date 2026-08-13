@@ -1,4 +1,4 @@
-//! Reactive-source promotion and input aggregation.
+//! Reactive-source promotion.
 
 use crate::{
     ErrorReporter, Rx, RxValueKind, Scope,
@@ -7,22 +7,15 @@ use crate::{
     },
     traits::{RxCloneData, RxData, RxError, RxRead, RxValue},
 };
-use silex_reactivity::RuntimeInputs;
 
 /// A source description that can be materialized in a target scope after one
 /// complete input validation.
 pub struct PromotionPlan<'scope, T: 'scope> {
-    inputs: RuntimeInputs,
     materializer: Materializer<'scope, T>,
 }
 
 type DerivedMaterializer<'scope, T> = Box<
-    dyn FnOnce(
-            Scope<'scope>,
-            RuntimeInputs,
-            ErrorReporter<'scope>,
-        ) -> crate::SilexResult<Rx<'scope, T>>
-        + 'scope,
+    dyn FnOnce(Scope<'scope>, ErrorReporter<'scope>) -> crate::SilexResult<Rx<'scope, T>> + 'scope,
 >;
 
 enum Materializer<'scope, T: 'scope> {
@@ -34,9 +27,9 @@ enum Materializer<'scope, T: 'scope> {
 /// Source boundary for values that can be promoted into a target scope.
 ///
 /// Implementations outside `silex_core` must return a `constant` or `derived`
-/// plan. The plan's `RuntimeInputs` must include every runtime source read by
-/// its materializer. The materializer must create nodes through the supplied
-/// [`Scope`] and must not register nodes while building the plan.
+/// plan. The materializer must create nodes through the supplied [`Scope`] and
+/// must not register nodes while building the plan. Ordinary reads inside the
+/// materialized computation establish dependencies automatically.
 pub trait ReactiveSource<'scope>: RxValue {
     fn into_promotion_plan(self) -> PromotionPlan<'scope, Self::Value>
     where
@@ -44,19 +37,9 @@ pub trait ReactiveSource<'scope>: RxValue {
         Self::Value: Sized + RxData + 'scope;
 }
 
-/// Collect the opaque runtime provenance declared by a source.
-pub fn runtime_inputs_of<'scope, V>(value: V) -> RuntimeInputs
-where
-    V: ReactiveSource<'scope>,
-    V::Value: Sized + RxData + 'scope,
-{
-    value.into_promotion_plan().inputs()
-}
-
 impl<'scope, T: 'scope> PromotionPlan<'scope, T> {
-    pub(crate) fn existing(value: Rx<'scope, T>, inputs: RuntimeInputs) -> Self {
+    pub(crate) fn existing(value: Rx<'scope, T>) -> Self {
         Self {
-            inputs,
             materializer: Materializer::Existing(value),
         }
     }
@@ -64,33 +47,20 @@ impl<'scope, T: 'scope> PromotionPlan<'scope, T> {
     /// Create a non-reactive source plan.
     pub fn constant(value: T) -> Self {
         Self {
-            inputs: RuntimeInputs::new(),
             materializer: Materializer::Constant(value),
         }
     }
 
     /// Create a derived source plan.
     ///
-    /// `inputs` is validated against the target scope before `materializer`
-    /// runs. A foreign input therefore cannot create a target node, cleanup,
-    /// or initial computation run.
-    pub fn derived<F>(inputs: RuntimeInputs, materializer: F) -> Self
+    pub fn derived<F>(materializer: F) -> Self
     where
-        F: FnOnce(
-                Scope<'scope>,
-                RuntimeInputs,
-                ErrorReporter<'scope>,
-            ) -> crate::SilexResult<Rx<'scope, T>>
+        F: FnOnce(Scope<'scope>, ErrorReporter<'scope>) -> crate::SilexResult<Rx<'scope, T>>
             + 'scope,
     {
         Self {
-            inputs,
             materializer: Materializer::Derived(Box::new(materializer)),
         }
-    }
-
-    pub(crate) fn inputs(&self) -> RuntimeInputs {
-        self.inputs.clone()
     }
 
     pub(crate) fn materialize(
@@ -98,15 +68,11 @@ impl<'scope, T: 'scope> PromotionPlan<'scope, T> {
         scope: Scope<'scope>,
         error_handler: ErrorReporter<'scope>,
     ) -> crate::SilexResult<Rx<'scope, T>> {
-        scope.validate_inputs(&self.inputs)?;
-        let Self {
-            inputs,
-            materializer,
-        } = self;
+        let Self { materializer } = self;
         match materializer {
             Materializer::Existing(value) => Ok(value),
             Materializer::Constant(value) => scope.constant(value),
-            Materializer::Derived(materializer) => materializer(scope, inputs, error_handler),
+            Materializer::Derived(materializer) => materializer(scope, error_handler),
         }
     }
 }
@@ -177,8 +143,7 @@ where
         Self: Sized,
         T: Sized + RxData + 'scope,
     {
-        let inputs = RuntimeInputs::single(self.inner.runtime_input());
-        PromotionPlan::existing(self.into_rx(), inputs)
+        PromotionPlan::existing(self.into_rx())
     }
 }
 
@@ -217,7 +182,7 @@ where
         Self: Sized,
         T: Sized + RxData + 'scope,
     {
-        PromotionPlan::existing(self, self.runtime_inputs())
+        PromotionPlan::existing(self)
     }
 }
 
@@ -230,8 +195,7 @@ where
         Self: Sized,
         T: Sized + RxData + 'scope,
     {
-        let inputs = RuntimeInputs::single(self.inner.runtime_input());
-        PromotionPlan::existing(self.into_rx(), inputs)
+        PromotionPlan::existing(self.into_rx())
     }
 }
 
@@ -244,8 +208,7 @@ where
         Self: Sized,
         T: Sized + RxData + 'scope,
     {
-        let inputs = RuntimeInputs::single(self.inner.runtime_input());
-        PromotionPlan::existing(self.into_rx(), inputs)
+        PromotionPlan::existing(self.into_rx())
     }
 }
 
@@ -263,13 +226,9 @@ macro_rules! impl_tuple_sources {
                 Self::Value: Sized + RxData + 'scope,
             {
                 $(let $name = self.$index.into_promotion_plan();)+
-                let mut inputs = RuntimeInputs::new();
-                $(inputs.extend(&$name.inputs());)+
-                PromotionPlan::derived(inputs, move |scope, inputs, error_handler| {
+                PromotionPlan::derived(move |scope, error_handler| {
                     $(let $name = $name.materialize(scope, error_handler)?;)+
-                    scope
-                    .derived_from(
-                        inputs,
+                    scope.derived(
                         move || Ok(($($name.get()?,)+)),
                         error_handler,
                     )
@@ -299,12 +258,10 @@ where
         O: Sized + RxData + 'scope,
     {
         let source = self.source.into_promotion_plan();
-        let inputs = source.inputs();
         let getter = self.getter;
-        PromotionPlan::derived(inputs, move |scope, inputs, error_handler| {
+        PromotionPlan::derived(move |scope, error_handler| {
             let source = source.materialize(scope, error_handler)?;
-            scope.derived_from(
-                inputs,
+            scope.derived(
                 move || source.with(|value| getter(value).clone()),
                 error_handler,
             )
@@ -322,9 +279,8 @@ where
         Self: Sized,
         Option<T>: Sized + RxData + 'scope,
     {
-        let inputs = RuntimeInputs::single(self.state.inner.runtime_input());
-        PromotionPlan::derived(inputs, move |scope, inputs, error_handler| {
-            scope.derived_from(inputs, move || self.value(), error_handler)
+        PromotionPlan::derived(move |scope, error_handler| {
+            scope.derived(move || self.value(), error_handler)
         })
     }
 }
@@ -340,9 +296,8 @@ where
         Self: Sized,
         Option<T>: Sized + RxData + 'scope,
     {
-        let inputs = RuntimeInputs::single(self.state.inner.runtime_input());
-        PromotionPlan::derived(inputs, move |scope, inputs, error_handler| {
-            scope.derived_from(inputs, move || self.value(), error_handler)
+        PromotionPlan::derived(move |scope, error_handler| {
+            scope.derived(move || self.value(), error_handler)
         })
     }
 }

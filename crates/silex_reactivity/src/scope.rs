@@ -100,6 +100,10 @@ impl ScopeStorage {
             }))
         }));
         let release_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            assert!(
+                self.state.borrow().ready_for_scope_release(),
+                "scope registry entry cannot be released before node and edge cleanup"
+            );
             scheduler.borrow_mut().release_scope_id(self.scope_id);
         }));
         let mut first_panic = deactivate_result.err();

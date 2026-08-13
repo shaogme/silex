@@ -93,7 +93,6 @@ mod tests {
     #[cfg(feature = "persist")]
     #[derive(Clone)]
     struct InputBackend {
-        inputs: silex_core::RuntimeInputs,
         value: Rc<RefCell<Option<String>>>,
         get_calls: Rc<Cell<usize>>,
         set_calls: Rc<Cell<usize>>,
@@ -103,9 +102,8 @@ mod tests {
 
     #[cfg(feature = "persist")]
     impl InputBackend {
-        fn new(inputs: silex_core::RuntimeInputs) -> Self {
+        fn new() -> Self {
             Self {
-                inputs,
                 value: Rc::new(RefCell::new(None)),
                 get_calls: Rc::new(Cell::new(0)),
                 set_calls: Rc::new(Cell::new(0)),
@@ -131,10 +129,6 @@ mod tests {
         fn remove(&self, _key: &str) -> Result<(), PersistenceError> {
             *self.value.borrow_mut() = None;
             Ok(())
-        }
-
-        fn runtime_inputs(&self) -> silex_core::RuntimeInputs {
-            self.inputs.clone()
         }
 
         fn subscribe(
@@ -445,7 +439,7 @@ mod tests {
             .child(|scope| {
                 let binding =
                     Persistent::builder(scope, "silex-memory-locale", test_handler(scope))
-                        .backend(InputBackend::new(silex_core::RuntimeInputs::new()))
+                        .backend(InputBackend::new())
                         .parse::<Locale>()
                         .default(locale("en-US"))
                         .build()
@@ -479,8 +473,8 @@ mod tests {
     fn locale_binding_supports_root_and_child_scopes_in_one_runtime() {
         let mut runtime = Runtime::new();
         let root = runtime.run().expect("root scope");
-        let root_backend = InputBackend::new(silex_core::RuntimeInputs::new());
-        let child_backend = InputBackend::new(silex_core::RuntimeInputs::new());
+        let root_backend = InputBackend::new();
+        let child_backend = InputBackend::new();
 
         root.with_scope(|scope| {
             let root_binding = Persistent::builder(scope, "root-locale", test_handler(scope))
@@ -541,7 +535,7 @@ mod tests {
         let mut runtime = Runtime::new();
         runtime
             .child(|scope| {
-                let backend = InputBackend::new(silex_core::RuntimeInputs::new());
+                let backend = InputBackend::new();
                 let binding = Persistent::builder(scope, "equal-locale", test_handler(scope))
                     .backend(backend.clone())
                     .parse::<Locale>()
@@ -573,7 +567,7 @@ mod tests {
         let target_root = target_runtime.run().expect("target root scope");
 
         foreign_root.with_scope(|foreign_scope| {
-            let backend = InputBackend::new(silex_core::RuntimeInputs::new());
+            let backend = InputBackend::new();
             let binding = Persistent::builder(
                 foreign_scope,
                 "foreign-i18n-locale",

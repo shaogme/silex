@@ -2,7 +2,7 @@ use crate::{
     runtime::{DynamicStyleManager, dynamic::unique_dynamic_style_id},
     source::{CssSource, IntoCssSource},
 };
-use silex_core::{RuntimeInputs, SilexError, SilexErrorKind, SilexResult};
+use silex_core::{SilexError, SilexErrorKind, SilexResult};
 use silex_dom::{
     attribute::{ApplyTarget, ApplyToDom, AttrOp, IntoStorable},
     view::{MountErrorHandler, MountOwner, MountOwnerToken},
@@ -114,13 +114,6 @@ fn theme_entries<T: ThemeToCss>(theme: &T) -> SilexResult<Vec<(&'static str, Opt
         .collect())
 }
 
-fn source_inputs<'scope, T: 'scope>(source: &CssSource<'scope, T>) -> RuntimeInputs {
-    match source {
-        CssSource::Static(_) => RuntimeInputs::new(),
-        CssSource::Reactive(rx) => rx.runtime_inputs(),
-    }
-}
-
 /// Helper that applies theme variables to any element without an extra wrapper.
 /// Usage: `div(children).apply(theme_variables(theme))`
 pub fn theme_variables<'scope, S>(theme: S) -> ThemeVariables<'scope, S::Value>
@@ -146,12 +139,9 @@ where
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         let theme = self.0.clone();
-        let inputs = source_inputs(&theme);
-        owner.validate_inputs(&inputs)?;
         let el = el.clone();
         let effect_el = el.clone();
-        owner.effect_with_previous_from(
-            inputs,
+        owner.effect_with_previous(
             Box::new(
                 move |previous: Option<&Vec<(&'static str, Option<String>)>>| -> SilexResult<
                     Vec<(&'static str, Option<String>)>,
@@ -189,8 +179,7 @@ where
     }
 
     fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope> {
-        let inputs = source_inputs(&self.0);
-        AttrOp::custom_with_inputs(inputs, move |el, owner, error_handler| {
+        AttrOp::custom(move |el, owner, error_handler| {
             self.apply(el, ApplyTarget::Apply, owner, error_handler)
         })
     }
@@ -218,15 +207,12 @@ where
     S::Value: ThemeType + ThemeToCss + Clone + 'scope,
 {
     let source = theme.into_css_source();
-    let inputs = source_inputs(&source);
-    owner.validate_inputs(&inputs)?;
     let token = owner.token();
     let manager = Rc::new(DynamicStyleManager::new());
     let manager_for_effect = manager.clone();
     let style_id = unique_dynamic_style_id("slx-global-theme");
     token
-        .effect_with_previous_from(
-            inputs,
+        .effect_with_previous(
             Box::new(move |previous: Option<&String>| -> SilexResult<String> {
                 let theme = match &source {
                     CssSource::Static(theme) => theme.clone(),
@@ -305,14 +291,11 @@ where
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         let patch = self.0.clone();
-        let inputs = source_inputs(&patch);
-        owner.validate_inputs(&inputs)?;
         let el = el.clone();
         let effect_el = el.clone();
         let names = owner.owner_state(Vec::<&'static str>::new())?;
         let names_for_effect = names.clone();
-        owner.effect_with_previous_from(
-            inputs,
+        owner.effect_with_previous(
             Box::new(
                 move |previous: Option<&Vec<(&'static str, Option<String>)>>| -> SilexResult<
                     Vec<(&'static str, Option<String>)>,
@@ -362,8 +345,7 @@ where
     }
 
     fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope> {
-        let inputs = source_inputs(&self.0);
-        AttrOp::custom_with_inputs(inputs, move |el, owner, error_handler| {
+        AttrOp::custom(move |el, owner, error_handler| {
             self.apply(el, ApplyTarget::Apply, owner, error_handler)
         })
     }

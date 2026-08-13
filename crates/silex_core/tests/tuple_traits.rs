@@ -1,10 +1,6 @@
-use silex_core::{
-    ErrorHandler, Runtime, Scope, SilexError, SilexResult,
-    traits::{RxBase, RxGet, RxRead},
-};
-use std::{cell::Cell, rc::Rc};
-
-struct NonCloneValue;
+use silex_core::{ErrorHandler, Runtime, RxGet, RxRead, Scope, SilexError, SilexResult};
+use std::cell::Cell;
+use std::rc::Rc;
 
 fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, SilexError> {
     scope
@@ -13,23 +9,22 @@ fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, SilexError> {
 }
 
 #[test]
-fn tuple_tracking_accepts_non_cloneable_members() {
+fn tuple_get_tracks_each_member() {
     let mut runtime = Runtime::new();
     let runs = Rc::new(Cell::new(0));
 
     runtime
         .child(|scope| {
-            let (first, set_first) = scope.signal(1_i32).expect("signal should initialize");
-            let (second, set_second) = scope
-                .signal(NonCloneValue)
-                .expect("signal should initialize");
+            let (first, set_first) = scope.signal(1_i32).expect("first signal");
+            let (second, set_second) = scope.signal(2_i32).expect("second signal");
             let sources = (first, second);
             let runs_in_effect = runs.clone();
 
             scope
                 .effect(
                     move || -> SilexResult<()> {
-                        sources.track()?;
+                        let (first_value, second_value) = sources.get()?;
+                        assert_eq!(first_value + second_value, 3 + runs_in_effect.get() * 2);
                         runs_in_effect.set(runs_in_effect.get() + 1);
                         Ok(())
                     },
@@ -38,31 +33,58 @@ fn tuple_tracking_accepts_non_cloneable_members() {
                 .expect("tuple effect should initialize");
 
             assert_eq!(runs.get(), 1);
-            set_first.set(2).expect("signal should be writable");
+            set_first.set(3).expect("first signal should update");
             assert_eq!(runs.get(), 2);
-            set_second
-                .set(NonCloneValue)
-                .expect("signal should be writable");
+            set_second.set(4).expect("second signal should update");
             assert_eq!(runs.get(), 3);
         })
-        .expect("child scope should initialize");
+        .expect("runtime child should initialize");
 }
 
 #[test]
-fn cloneable_tuple_supports_tracked_and_untracked_reads() -> SilexResult<()> {
+fn tuple_with_reads_a_cloneable_snapshot() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let (first, set_first) = scope.signal(1_i32).expect("signal should initialize");
-        let (second, _) = scope.signal(2_i32).expect("signal should initialize");
-        let sources = (first, second);
 
-        assert_eq!(sources.get()?, (1, 2));
-        assert_eq!(sources.with(|value| value.0 + value.1)?, 3);
-        assert_eq!(sources.with_untracked(|value| value.0 + value.1)?, 3);
+    runtime
+        .child(|scope| {
+            let (first, _) = scope.signal(4_i32).expect("first signal");
+            let (second, _) = scope.signal(5_i32).expect("second signal");
+            let sources = (first, second);
+            let snapshot = sources
+                .with(|(first_value, second_value)| (*first_value, *second_value))
+                .expect("tuple read should succeed");
 
-        set_first.set(7).expect("signal should be writable");
-        assert_eq!(sources.with(|value| value.0 + value.1)?, 9);
-        Ok::<(), SilexError>(())
-    })??;
-    Ok(())
+            assert_eq!(snapshot, (4, 5));
+        })
+        .expect("runtime child should initialize");
+}
+
+#[test]
+fn tuple_untracked_get_does_not_subscribe() {
+    let mut runtime = Runtime::new();
+    let runs = Rc::new(Cell::new(0));
+
+    runtime
+        .child(|scope| {
+            let (first, set_first) = scope.signal(1_i32).expect("first signal");
+            let (second, _) = scope.signal(2_i32).expect("second signal");
+            let sources = (first, second);
+            let runs_in_effect = runs.clone();
+
+            scope
+                .effect(
+                    move || -> SilexResult<()> {
+                        assert_eq!(sources.get_untracked()?, (1, 2));
+                        runs_in_effect.set(runs_in_effect.get() + 1);
+                        Ok(())
+                    },
+                    handler(scope),
+                )
+                .expect("tuple effect should initialize");
+
+            assert_eq!(runs.get(), 1);
+            set_first.set(3).expect("first signal should update");
+            assert_eq!(runs.get(), 1);
+        })
+        .expect("runtime child should initialize");
 }

@@ -607,7 +607,6 @@ async fn mutation_preflight_error_does_not_enter_pending() {
     let target_root = target_runtime.run().expect("target runtime setup");
     source_root.with_scope(|source_scope| {
         let (foreign, _) = source_scope.signal("foreign".to_string()).unwrap();
-        let foreign_inputs = silex_core::runtime_inputs_of(foreign);
         target_root.with_scope(|target_scope| {
             let mutation = silex_net::HttpClient::post(
                 target_scope,
@@ -615,18 +614,12 @@ async fn mutation_preflight_error_does_not_enter_pending() {
                 test_handler(target_scope),
             )
             .as_mutation_with(move |_| {
-                let inputs = foreign_inputs.clone();
-                let body = silex_net::ValueResolver::dynamic_with_inputs(
-                    || Ok("foreign".to_string()),
-                    || Ok("foreign".to_string()),
-                    inputs,
-                );
                 Ok(silex_net::HttpClient::post(
                     target_scope,
                     "https://example.test/mutate",
                     test_handler(target_scope),
                 )
-                .text_body(body))
+                .text_body(foreign))
             })
             .expect("mutation setup");
             mutation.mutate(()).unwrap();

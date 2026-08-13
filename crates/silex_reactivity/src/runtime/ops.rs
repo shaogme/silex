@@ -388,46 +388,12 @@ pub(crate) fn notify<'scope>(
     Ok(())
 }
 
-pub(crate) fn track<'scope>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
-    id: RawId,
-) -> ReactiveResult<()> {
-    let mut state_ref = state
-        .try_borrow_mut()
-        .map_err(|_| ReactiveError::BorrowConflict)?;
-    if !state_ref.is_active() {
-        return Err(ReactiveError::NoSuchNode);
-    }
-    if !state_ref.node_exists(id) {
-        return Err(ReactiveError::NoSuchNode);
-    }
-    state_ref.track(id);
-    Ok(())
-}
-
-pub(crate) fn track_many<'scope>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
-    ids: &[RawId],
-) -> ReactiveResult<()> {
-    let mut state_ref = state
-        .try_borrow_mut()
-        .map_err(|_| ReactiveError::BorrowConflict)?;
-    if !state_ref.is_active() {
-        return Err(ReactiveError::NoSuchNode);
-    }
-    if ids.iter().any(|id| !state_ref.node_exists(*id)) {
-        return Err(ReactiveError::NoSuchNode);
-    }
-    state_ref.track_many(ids);
-    Ok(())
-}
-
 pub(crate) fn with_untracked<'scope, R>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     f: impl FnOnce() -> R,
 ) -> R {
     let scheduler = state.borrow().scheduler.clone();
-    let frame = super::scheduler::ObserverFrame::push(scheduler, None);
+    let frame = super::scheduler::ObserverFrame::push_untracked(scheduler);
     let result = catch_unwind(AssertUnwindSafe(f));
     drop(frame);
     match result {

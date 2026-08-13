@@ -37,7 +37,7 @@ pub use crate::{
         SignalId, StoredId, kind,
     },
     root::*,
-    runtime::{Runtime, RuntimeInput, RuntimeInputs},
+    runtime::Runtime,
 };
 
 #[cfg(feature = "test-support")]

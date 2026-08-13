@@ -1,99 +1,117 @@
-use silex_reactivity::{ComputationInitError, ErrorHandler, Runtime, RuntimeInputs, Scope};
+use silex_reactivity::{
+    CallbackInvokeError, ComputationInitError, ErrorHandler, ReactiveError, Runtime, Scope,
+};
+use std::cell::Cell;
+use std::rc::Rc;
 
-fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, ()> {
+fn handler<'scope, E: 'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, E> {
     scope.error_handler(|_| {}).expect("handler registration")
 }
 
 #[test]
-fn parent_child_owned_and_root_scopes_accept_same_family_inputs() {
+fn same_runtime_child_scope_reads_are_reactive() {
     let mut runtime = Runtime::new();
+    let runs = Rc::new(Cell::new(0));
+
     runtime
         .child(|scope| {
-            let (source, _) = scope.signal(0i32).expect("fallible reactive creation");
-            let input = source.runtime_input();
-            let owned = scope.owned_scope().expect("fallible reactive creation");
-            let nested = owned.child().expect("child scope creation");
-            assert!(
-                scope
-                    .effect_from(
-                        RuntimeInputs::single(input.clone()),
-                        || Ok(()),
-                        handler(scope)
-                    )
-                    .is_ok()
-            );
-            assert!(
-                owned
-                    .effect_from(
-                        RuntimeInputs::single(input.clone()),
-                        || Ok(()),
-                        handler(scope)
-                    )
-                    .is_ok()
-            );
-            assert!(
-                nested
-                    .effect_from(
-                        RuntimeInputs::single(input.clone()),
-                        || Ok(()),
-                        handler(scope)
-                    )
-                    .is_ok()
-            );
+            let (source, set_source) = scope.signal(1_i32).expect("source signal");
+            let child = scope.owned_scope().expect("owned scope");
+            let runs_in_effect = runs.clone();
+            child
+                .effect(
+                    move || {
+                        source.get()?;
+                        runs_in_effect.set(runs_in_effect.get() + 1);
+                        Ok(())
+                    },
+                    handler::<ReactiveError>(scope),
+                )
+                .expect("effect should initialize");
 
-            scope
-                .child(|child| {
-                    assert!(
-                        child
-                            .effect_from(RuntimeInputs::single(input), || Ok(()), handler(child))
-                            .is_ok()
-                    );
-                })
-                .expect("test operation should succeed");
+            assert_eq!(runs.get(), 1);
+            set_source.set(2).expect("source should update");
+            assert_eq!(runs.get(), 2);
+            child.dispose().expect("owned scope disposal");
         })
-        .expect("test operation should succeed");
-
-    let mut root_runtime = Runtime::new();
-    let root = root_runtime.run().expect("runtime root creation");
-    {
-        let scope = root.scope();
-        let (source, _) = scope.signal(0i32).expect("fallible reactive creation");
-        let input = source.runtime_input();
-        assert!(
-            scope
-                .effect_from(RuntimeInputs::single(input), || Ok(()), handler(scope))
-                .is_ok()
-        );
-    }
-    assert!(root.is_active());
+        .expect("runtime child should initialize");
 }
 
 #[test]
-fn different_schedulers_are_rejected_even_when_scope_ids_are_reused() {
-    let mut first = Runtime::new();
-    let mut second = Runtime::new();
-    let foreign_input = first
-        .child(|scope| {
-            let (source, _) = scope.signal(1i32).expect("fallible reactive creation");
-            source.runtime_input()
-        })
-        .expect("runtime child");
-    let result = second
-        .child(|scope| {
-            scope
-                .effect_from(
-                    RuntimeInputs::single(foreign_input),
-                    move || Ok(()),
-                    handler(scope),
+fn foreign_tracked_reads_are_rejected_before_source_evaluation() {
+    let mut foreign_runtime = Runtime::new();
+    let foreign_root = foreign_runtime.run().expect("foreign root");
+    let mut target_runtime = Runtime::new();
+    let target_root = target_runtime.run().expect("target root");
+
+    foreign_root.with_scope(|foreign_scope| {
+        let evaluations = Rc::new(Cell::new(0));
+        let evaluations_in_derived = evaluations.clone();
+        let (source, _) = foreign_scope.signal(1_i32).expect("foreign source");
+        let derived = foreign_scope
+            .derived(
+                move || {
+                    evaluations_in_derived.set(evaluations_in_derived.get() + 1);
+                    source.get()
+                },
+                handler(foreign_scope),
+            )
+            .expect("foreign derived");
+        assert_eq!(derived.get().expect("derived value"), 1);
+        assert_eq!(evaluations.get(), 1);
+
+        let result = target_root.with_scope(|target_scope| {
+            target_scope
+                .effect(
+                    move || derived.get().map(|_| ()),
+                    handler::<CallbackInvokeError<ReactiveError>>(target_scope),
                 )
                 .map(|_| ())
-        })
-        .expect("runtime child");
+        });
 
-    assert!(matches!(
-        result,
-        Err(ComputationInitError::Registration(
-            silex_reactivity::ReactiveError::RuntimeMismatch,
-        ))
-    ));
+        assert!(matches!(
+            result,
+            Err(ComputationInitError::Initial(_))
+                | Err(ComputationInitError::Registration(
+                    ReactiveError::RuntimeMismatch
+                ))
+        ));
+        assert_eq!(evaluations.get(), 1);
+    });
+
+    target_root.dispose().expect("target root disposal");
+    foreign_root.dispose().expect("foreign root disposal");
+}
+
+#[test]
+fn foreign_untracked_reads_are_allowed_without_subscription() {
+    let mut foreign_runtime = Runtime::new();
+    let foreign_root = foreign_runtime.run().expect("foreign root");
+    let mut target_runtime = Runtime::new();
+    let target_root = target_runtime.run().expect("target root");
+    let runs = Rc::new(Cell::new(0));
+
+    foreign_root.with_scope(|foreign_scope| {
+        let (source, set_source) = foreign_scope.signal(1_i32).expect("foreign source");
+        target_root.with_scope(|target_scope| {
+            let runs_in_effect = runs.clone();
+            target_scope
+                .effect(
+                    move || {
+                        source.get_untracked()?;
+                        runs_in_effect.set(runs_in_effect.get() + 1);
+                        Ok(())
+                    },
+                    handler::<ReactiveError>(target_scope),
+                )
+                .expect("effect should initialize");
+        });
+
+        assert_eq!(runs.get(), 1);
+        set_source.set(2).expect("foreign source update");
+        assert_eq!(runs.get(), 1);
+    });
+
+    target_root.dispose().expect("target root disposal");
+    foreign_root.dispose().expect("foreign root disposal");
 }

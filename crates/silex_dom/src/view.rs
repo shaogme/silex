@@ -24,6 +24,5 @@ pub use owner::{
 pub use reactive::AutoReactiveView;
 pub use row::RowUpdater;
 
-pub(crate) use dynamic::mount_dynamic_view_universal_from;
 pub(crate) use owner::{CleanupReporter, OwnedMountOwner};
 pub(crate) use owner::{HostCallback, JsCallbackResource};

@@ -4,9 +4,9 @@ use super::row::{
 };
 use crate::attribute::PendingAttribute;
 use crate::view::{AnyView, ApplyAttributes, MountErrorHandler, MountInstance, MountOwner, View};
-use silex_core::reactivity::{ReactiveSource, runtime_inputs_of};
+use silex_core::reactivity::ReactiveSource;
 use silex_core::traits::{ForLoopSource, RxRead};
-use silex_core::{ErrorHandler, RuntimeInputs, SilexError, SilexErrorKind, SilexResult};
+use silex_core::{ErrorHandler, SilexError, SilexErrorKind, SilexResult};
 use std::{
     collections::{HashMap, HashSet},
     mem,
@@ -168,8 +168,6 @@ where
     IS: ForLoopSource<Item = T> + 'scope,
     T: Clone + 'scope,
 {
-    let inputs = runtime_inputs_of(source.clone());
-    owner.validate_inputs(&inputs)?;
     let scope = Rc::new(owner.owned_scope()?);
     let local_owner = OwnedMountOwner::new(scope.clone());
     let range = NodeRange::append(parent, "for")?;
@@ -216,8 +214,7 @@ where
 
     let effect_rows = rows;
     let end = range.end.clone();
-    if let Err(error) = local_owner.effect_from(
-        inputs,
+    if let Err(error) = local_owner.effect(
         Box::new(move || -> SilexResult<()> {
             let values = source
                 .with(|items| items.as_slice().map(|values| values.to_vec()))
@@ -243,7 +240,6 @@ where
                         RowInstanceConfig {
                             range: row_range,
                             render: render.clone(),
-                            render_inputs: RuntimeInputs::new(),
                             attrs: attrs.clone(),
                             item,
                             index,
@@ -357,8 +353,6 @@ where
         parent_error_handler,
         ..
     } = args;
-    let inputs = runtime_inputs_of(source.clone());
-    owner.validate_inputs(&inputs)?;
     let scope = Rc::new(owner.owned_scope()?);
     let error_handler = error_handler.unwrap_or(parent_error_handler);
     let local_owner = OwnedMountOwner::new(scope.clone());
@@ -410,8 +404,7 @@ where
 
     let effect_state = state;
     let end = range.end.clone();
-    if let Err(error) = local_owner.effect_from(
-        inputs,
+    if let Err(error) = local_owner.effect(
         Box::new(move || -> SilexResult<()> {
             let values = source
                 .with(|items| items.as_slice().map(|values| values.to_vec()))
@@ -464,7 +457,6 @@ where
                         RowInstanceConfig {
                             range: row_range,
                             render: render.clone(),
-                            render_inputs: RuntimeInputs::new(),
                             attrs: attrs.clone(),
                             item,
                             index,

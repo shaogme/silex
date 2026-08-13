@@ -20,7 +20,7 @@ use crate::{
     error::ErrorHandlerEntry,
     handle::Handle,
     internal::value::{AnyValue, CallbackThunk, CleanupThunk},
-    runtime::{self, RuntimeInputs},
+    runtime,
     scope::ScopeStorage,
 };
 
@@ -78,6 +78,11 @@ impl<'scope> Scope<'scope> {
         self.storage.is_active()
     }
 
+    /// Check whether another scope belongs to this runtime scheduler.
+    pub fn same_runtime(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.storage.scheduler(), &other.storage.scheduler())
+    }
+
     /// Register a callback owned by this scope and return a copyable handle.
     ///
     /// The callback remains in the scope registry until disposal. Creating a
@@ -97,20 +102,17 @@ impl<'scope> Scope<'scope> {
         Ok(ErrorHandler::from_parts(self.storage, key))
     }
 
-    /// Validate opaque source provenance for a framework-owned registration.
-    #[doc(hidden)]
-    pub fn validate_inputs(&self, inputs: &RuntimeInputs) -> ReactiveResult<()> {
-        runtime::validate_inputs(&self.state(), inputs)
-    }
-
     #[cfg(feature = "test-support")]
     #[doc(hidden)]
     pub fn runtime_snapshot(&self) -> RuntimeSnapshot {
         self.state().borrow().runtime_snapshot()
     }
 
-    /// Execute a child scope. All child nodes and computations are destroyed
-    /// before this method returns, including during panic unwinding.
+    /// Execute a child scope. The parent computation remains the active
+    /// observer while the callback runs, while child-local transient sources
+    /// are blocked from escaping the callback. All child nodes and
+    /// computations are destroyed before this method returns, including
+    /// during panic unwinding.
     pub fn child<R>(&self, f: impl for<'child> FnOnce(Scope<'child>) -> R) -> ReactiveResult<R> {
         if !self.storage.is_active() {
             return Err(ReactiveError::NoSuchNode);
@@ -134,7 +136,7 @@ impl<'scope> Scope<'scope> {
     }
 
     /// Run a closure without recording signal dependencies. Ownership is
-    /// unchanged because only the shared observer slot is modified.
+    /// unchanged because both observer slots are temporarily cleared.
     pub fn untrack<R>(&self, f: impl FnOnce() -> R) -> R {
         let state = self.state();
         runtime::with_untracked(&state, f)
@@ -147,7 +149,8 @@ impl<'scope> Scope<'scope> {
     }
 
     /// Register cleanup on the current effect, or on this scope when no
-    /// computation is active.
+    /// computation is active. Cleanup reads are untracked, and tracked reads
+    /// are also disabled while cleanup runs.
     ///
     /// During final disposal of this scope, the cleanup runs while nodes and
     /// payloads still exist. It may synchronously read or update a
@@ -205,23 +208,8 @@ impl<'scope> Scope<'scope> {
         E: 'scope,
         F: FnMut() -> Result<(), E> + 'scope,
     {
-        self.effect_from(RuntimeInputs::new(), f, error_handler)
-    }
-
-    /// Create an effect after validating all declared reactive inputs.
-    #[doc(hidden)]
-    pub fn effect_from<E, F>(
-        &self,
-        inputs: RuntimeInputs,
-        f: F,
-        error_handler: ErrorHandler<'scope, E>,
-    ) -> ComputationInitResult<Effect<'scope>, E>
-    where
-        E: 'scope,
-        F: FnMut() -> Result<(), E> + 'scope,
-    {
         let state = self.state();
-        runtime::create_effect(&state, inputs, f, error_handler).map(|raw| Effect {
+        runtime::create_effect(&state, f, error_handler).map(|raw| Effect {
             handle: Handle::new(self.storage, raw),
         })
     }
@@ -237,23 +225,8 @@ impl<'scope> Scope<'scope> {
         E: 'scope,
         F: FnMut(Option<&T>) -> Result<T, E> + 'scope,
     {
-        self.effect_with_previous_from(RuntimeInputs::new(), f, error_handler)
-    }
-
-    #[doc(hidden)]
-    pub fn effect_with_previous_from<T, E, F>(
-        &self,
-        inputs: RuntimeInputs,
-        f: F,
-        error_handler: ErrorHandler<'scope, E>,
-    ) -> ComputationInitResult<Effect<'scope>, E>
-    where
-        T: 'scope,
-        E: 'scope,
-        F: FnMut(Option<&T>) -> Result<T, E> + 'scope,
-    {
         let state = self.state();
-        runtime::create_previous(&state, inputs, f, error_handler).map(|raw| Effect {
+        runtime::create_previous(&state, f, error_handler).map(|raw| Effect {
             handle: Handle::new(self.storage, raw),
         })
     }
@@ -287,35 +260,9 @@ impl<'scope> Scope<'scope> {
         G: FnMut() -> Result<T, E> + 'scope,
         C: FnMut(&T, Option<&T>) -> Result<(), E> + 'scope,
     {
-        self.watch_getter_from(
-            RuntimeInputs::new(),
-            getter,
-            callback,
-            error_handler,
-            options,
-        )
-    }
-
-    #[doc(hidden)]
-    pub fn watch_getter_from<T, E, G, C>(
-        &self,
-        inputs: RuntimeInputs,
-        getter: G,
-        callback: C,
-        error_handler: ErrorHandler<'scope, E>,
-        options: WatchOptions,
-    ) -> ComputationInitResult<Effect<'scope>, E>
-    where
-        T: PartialEq + 'scope,
-        E: 'scope,
-        G: FnMut() -> Result<T, E> + 'scope,
-        C: FnMut(&T, Option<&T>) -> Result<(), E> + 'scope,
-    {
         let state = self.state();
-        runtime::create_watch(&state, inputs, getter, callback, error_handler, options).map(|raw| {
-            Effect {
-                handle: Handle::new(self.storage, raw),
-            }
+        runtime::create_watch(&state, getter, callback, error_handler, options).map(|raw| Effect {
+            handle: Handle::new(self.storage, raw),
         })
     }
 
@@ -331,24 +278,8 @@ impl<'scope> Scope<'scope> {
         E: 'scope,
         F: FnMut(Option<&T>) -> Result<T, E> + 'scope,
     {
-        self.memo_from(RuntimeInputs::new(), f, error_handler)
-    }
-
-    /// Create a memo after validating all declared reactive inputs.
-    #[doc(hidden)]
-    pub fn memo_from<T, E, F>(
-        &self,
-        inputs: RuntimeInputs,
-        f: F,
-        error_handler: ErrorHandler<'scope, E>,
-    ) -> ComputationInitResult<Memo<'scope, T, E>, E>
-    where
-        T: PartialEq + 'scope,
-        E: 'scope,
-        F: FnMut(Option<&T>) -> Result<T, E> + 'scope,
-    {
         let state = self.state();
-        let raw = runtime::create_memo(&state, inputs, f, error_handler)?;
+        let raw = runtime::create_memo(&state, f, error_handler)?;
         let handle = Handle::new(self.storage, raw);
         Ok(Memo {
             handle,
@@ -367,24 +298,8 @@ impl<'scope> Scope<'scope> {
         E: 'scope,
         F: FnMut() -> Result<T, E> + 'scope,
     {
-        self.derived_from(RuntimeInputs::new(), f, error_handler)
-    }
-
-    /// Create a derived value after validating all declared reactive inputs.
-    #[doc(hidden)]
-    pub fn derived_from<T, E, F>(
-        &self,
-        inputs: RuntimeInputs,
-        f: F,
-        error_handler: ErrorHandler<'scope, E>,
-    ) -> ComputationInitResult<Derived<'scope, T, E>, E>
-    where
-        T: 'scope,
-        E: 'scope,
-        F: FnMut() -> Result<T, E> + 'scope,
-    {
         let state = self.state();
-        let raw = runtime::create_derived(&state, inputs, f, error_handler)?;
+        let raw = runtime::create_derived(&state, f, error_handler)?;
         let handle = Handle::new(self.storage, raw);
         Ok(Derived {
             handle,
@@ -528,14 +443,6 @@ impl<'scope> OwnedScope<'scope> {
         self.active.get() && self.storage.is_active()
     }
 
-    #[doc(hidden)]
-    pub fn validate_inputs(&self, inputs: &RuntimeInputs) -> ReactiveResult<()> {
-        if !self.active.get() {
-            return Err(ReactiveError::NoSuchNode);
-        }
-        runtime::validate_inputs(&self.state(), inputs)
-    }
-
     /// Register and immediately run an effect owned by this frame.
     ///
     /// The returned effect handle borrows this owner and cannot outlive
@@ -550,28 +457,13 @@ impl<'scope> OwnedScope<'scope> {
         E: 'scope,
         F: FnMut() -> Result<(), E> + 'scope,
     {
-        self.effect_from(RuntimeInputs::new(), f, error_handler)
-    }
-
-    /// Register an effect after validating all declared reactive inputs.
-    #[doc(hidden)]
-    pub fn effect_from<E, F>(
-        &self,
-        inputs: RuntimeInputs,
-        f: F,
-        error_handler: ErrorHandler<'scope, E>,
-    ) -> ComputationInitResult<Effect<'_>, E>
-    where
-        E: 'scope,
-        F: FnMut() -> Result<(), E> + 'scope,
-    {
         if !self.active.get() {
             return Err(ComputationInitError::Registration(
                 ReactiveError::NoSuchNode,
             ));
         }
         let state = self.state();
-        runtime::create_effect(&state, inputs, f, error_handler).map(|raw| Effect {
+        runtime::create_effect(&state, f, error_handler).map(|raw| Effect {
             handle: Handle::new(&self.storage, raw),
         })
     }
@@ -586,28 +478,13 @@ impl<'scope> OwnedScope<'scope> {
         E: 'scope,
         F: FnMut(Option<&T>) -> Result<T, E> + 'scope,
     {
-        self.effect_with_previous_from(RuntimeInputs::new(), f, error_handler)
-    }
-
-    #[doc(hidden)]
-    pub fn effect_with_previous_from<T, E, F>(
-        &self,
-        inputs: RuntimeInputs,
-        f: F,
-        error_handler: ErrorHandler<'scope, E>,
-    ) -> ComputationInitResult<Effect<'_>, E>
-    where
-        T: 'scope,
-        E: 'scope,
-        F: FnMut(Option<&T>) -> Result<T, E> + 'scope,
-    {
         if !self.active.get() {
             return Err(ComputationInitError::Registration(
                 ReactiveError::NoSuchNode,
             ));
         }
         let state = self.state();
-        runtime::create_previous(&state, inputs, f, error_handler).map(|raw| Effect {
+        runtime::create_previous(&state, f, error_handler).map(|raw| Effect {
             handle: Handle::new(&self.storage, raw),
         })
     }
@@ -641,40 +518,14 @@ impl<'scope> OwnedScope<'scope> {
         G: FnMut() -> Result<T, E> + 'scope,
         C: FnMut(&T, Option<&T>) -> Result<(), E> + 'scope,
     {
-        self.watch_getter_from(
-            RuntimeInputs::new(),
-            getter,
-            callback,
-            error_handler,
-            options,
-        )
-    }
-
-    #[doc(hidden)]
-    pub fn watch_getter_from<T, E, G, C>(
-        &self,
-        inputs: RuntimeInputs,
-        getter: G,
-        callback: C,
-        error_handler: ErrorHandler<'scope, E>,
-        options: WatchOptions,
-    ) -> ComputationInitResult<Effect<'_>, E>
-    where
-        T: PartialEq + 'scope,
-        E: 'scope,
-        G: FnMut() -> Result<T, E> + 'scope,
-        C: FnMut(&T, Option<&T>) -> Result<(), E> + 'scope,
-    {
         if !self.active.get() {
             return Err(ComputationInitError::Registration(
                 ReactiveError::NoSuchNode,
             ));
         }
         let state = self.state();
-        runtime::create_watch(&state, inputs, getter, callback, error_handler, options).map(|raw| {
-            Effect {
-                handle: Handle::new(&self.storage, raw),
-            }
+        runtime::create_watch(&state, getter, callback, error_handler, options).map(|raw| Effect {
+            handle: Handle::new(&self.storage, raw),
         })
     }
 
@@ -771,7 +622,10 @@ mod tests {
         CallbackInvokeError,
         runtime::{GlobalScheduler, ScopeState},
     };
-    use std::{cell::RefCell, rc::Rc};
+    use std::{
+        cell::{Cell, RefCell},
+        rc::Rc,
+    };
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     struct Snapshot {
@@ -1020,6 +874,36 @@ mod tests {
 
         assert!(*child_rejected.borrow());
         assert!(*owned_rejected.borrow());
+    }
+
+    #[test]
+    fn cleanup_scope_allocation_does_not_reuse_the_scope_being_disposed() {
+        let scheduler = GlobalScheduler::new();
+        let storage = ScopeStorage::new(scheduler.clone());
+        let scope = Scope {
+            storage: &storage,
+            _marker: PhantomData,
+        };
+        let disposing_id = storage.scope_id;
+        let allocated_id = Rc::new(Cell::new(None));
+        let allocated_id_in_cleanup = allocated_id.clone();
+        let scheduler_in_cleanup = scheduler.clone();
+        scope
+            .on_cleanup(
+                move || {
+                    let replacement = ScopeStorage::new(scheduler_in_cleanup.clone());
+                    allocated_id_in_cleanup.set(Some(replacement.scope_id));
+                    assert_ne!(replacement.scope_id, disposing_id);
+                    replacement.dispose_untracked();
+                    Ok(())
+                },
+                handler(scope),
+            )
+            .expect("cleanup should register");
+
+        storage.dispose_untracked();
+
+        assert_ne!(allocated_id.get(), Some(disposing_id));
     }
 
     #[test]

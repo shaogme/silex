@@ -9,9 +9,8 @@ use wasm_bindgen::{JsCast, closure::Closure};
 use web_sys::{Event, EventSource as JsEventSource, MessageEvent};
 
 use silex_core::{
-    CallbackInvokeError, CompletionSender, ErrorReporter, Memo, ReadSignal, RuntimeInputs,
-    RwSignal, Rx, Scope, SilexError, SilexErrorKind, SilexResult, StoredValue, WriteSignal,
-    runtime_inputs_of, unwind_safe,
+    CallbackInvokeError, CompletionSender, ErrorReporter, ReadSignal, RwSignal, Rx, Scope,
+    SilexError, SilexResult, StoredValue, WriteSignal, unwind_safe,
 };
 
 use crate::{
@@ -419,12 +418,8 @@ impl<'scope> EventStreamConnection<'scope> {
         let state = self.state;
         let handler = self.error_handler;
         self.scope
-            .memo_from(
-                runtime_inputs_of(state),
-                move |_| state.get().map(&f),
-                handler,
-            )
-            .map(Memo::into_rx)
+            .memo(move |_| state.get().map(&f), handler)
+            .map(|memo| memo.into_rx())
     }
 
     pub fn is_connected(&self) -> SilexResult<Rx<'scope, bool>> {
@@ -456,15 +451,14 @@ impl<'scope> EventStreamConnection<'scope> {
         let messages = self.messages;
         let handler = self.error_handler;
         self.scope
-            .memo_from(
-                runtime_inputs_of(messages),
+            .memo(
                 move |_| {
                     messages
                         .get()?
                         .into_iter()
                         .map(|message| {
                             serde_json::from_str(&message.data).map_err(|error| {
-                                SilexError::fatal(SilexErrorKind::Framework(format!(
+                                SilexError::fatal(silex_core::SilexErrorKind::Framework(format!(
                                     "decode EventStream message failed: {error}"
                                 )))
                             })
@@ -473,7 +467,7 @@ impl<'scope> EventStreamConnection<'scope> {
                 },
                 handler,
             )
-            .map(Memo::into_rx)
+            .map(|memo| memo.into_rx())
     }
 
     #[cfg(feature = "json")]
@@ -484,15 +478,14 @@ impl<'scope> EventStreamConnection<'scope> {
         let messages = self.messages;
         let handler = self.error_handler;
         self.scope
-            .memo_from(
-                runtime_inputs_of(messages),
+            .memo(
                 move |_| {
                     messages
                         .get()?
                         .last()
                         .map(|message| {
                             serde_json::from_str(&message.data).map_err(|error| {
-                                SilexError::fatal(SilexErrorKind::Framework(format!(
+                                SilexError::fatal(silex_core::SilexErrorKind::Framework(format!(
                                     "decode EventStream message failed: {error}"
                                 )))
                             })
@@ -501,7 +494,7 @@ impl<'scope> EventStreamConnection<'scope> {
                 },
                 handler,
             )
-            .map(Memo::into_rx)
+            .map(|memo| memo.into_rx())
     }
 
     #[cfg(feature = "json")]
@@ -512,8 +505,7 @@ impl<'scope> EventStreamConnection<'scope> {
         let messages = self.messages;
         let handler = self.error_handler;
         self.scope
-            .memo_from(
-                runtime_inputs_of(messages),
+            .memo(
                 move |_| {
                     messages
                         .get()?
@@ -522,7 +514,7 @@ impl<'scope> EventStreamConnection<'scope> {
                         .take(limit)
                         .map(|message| {
                             serde_json::from_str(&message.data).map_err(|error| {
-                                SilexError::fatal(SilexErrorKind::Framework(format!(
+                                SilexError::fatal(silex_core::SilexErrorKind::Framework(format!(
                                     "decode EventStream message failed: {error}"
                                 )))
                             })
@@ -531,7 +523,7 @@ impl<'scope> EventStreamConnection<'scope> {
                 },
                 handler,
             )
-            .map(Memo::into_rx)
+            .map(|memo| memo.into_rx())
     }
 
     pub fn raw_messages(&self) -> ReadSignal<'scope, Vec<EventMessage>> {
@@ -649,10 +641,7 @@ impl<'scope> EventStreamBuilder<'scope> {
             on_open,
             on_error,
         } = self;
-        let mut inputs = RuntimeInputs::new();
-        inputs.extend(&url.inputs());
-        scope.validate_inputs(&inputs).map_err(NetError::from)?;
-
+        url.validate_runtime(scope).map_err(NetError::from)?;
         let initial_source = if auto_connect {
             match url
                 .resolve()

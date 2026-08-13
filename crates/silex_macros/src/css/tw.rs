@@ -300,28 +300,17 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
         {
             let __slx_conditions: ::std::vec::Vec<#__silex::core::Rx<'_, bool>> =
                 ::std::vec![ #(#condition_sources),* ];
-            let mut __slx_inputs = #__silex::core::RuntimeInputs::new();
-            for __slx_condition in &__slx_conditions {
-                __slx_inputs.extend(&__slx_condition.runtime_inputs());
-            }
 
-            #__silex::dom::attribute::AttrOp::custom_with_inputs(
-                __slx_inputs,
+            #__silex::dom::attribute::AttrOp::custom(
                 move |element, owner, error_handler| {
                     #(#inits_tokens)*
-                    let mut __slx_effect_inputs = #__silex::core::RuntimeInputs::new();
-                    for __slx_condition in &__slx_conditions {
-                        __slx_effect_inputs.extend(&__slx_condition.runtime_inputs());
-                    }
-
                     let __slx_conditions_for_effect = __slx_conditions.clone();
                     let __slx_element = element.clone();
                     let __slx_current_class =
                         owner.owner_state(None::<::std::string::String>)?;
                     let __slx_current_class_for_effect = __slx_current_class.clone();
 
-                    owner.effect_with_previous_from(
-                        __slx_effect_inputs,
+                    owner.effect_with_previous(
                         ::std::boxed::Box::new(move |
                             __slx_previous_class: ::std::option::Option<
                                 &::std::string::String,

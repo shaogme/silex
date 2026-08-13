@@ -138,13 +138,6 @@ pub fn store_impl(mut model: ItemStruct) -> Result<TokenStream> {
     } else {
         quote!(where #(#input_constraints),*)
     };
-    let input_collection = field_infos
-        .iter()
-        .map(|field| {
-            let ident = &field.ident;
-            quote!(inputs.extend(&#core::runtime_inputs_of(#ident));)
-        })
-        .collect::<Vec<_>>();
     let snapshot_fields = field_infos.iter().map(|field| {
         let ident = &field.ident;
         quote!(#ident: #core::RxGet::get(&self.#ident))
@@ -188,18 +181,12 @@ pub fn store_impl(mut model: ItemStruct) -> Result<TokenStream> {
 
             /// Builds the default Store type from compatible scoped handles.
             ///
-            /// Runtime validation happens before any handle conversion so a
-            /// foreign handle cannot be accepted accidentally.
             pub fn from_handles #input_method_generics (
                 scope: #core::Scope<'scope>,
                 #(#input_handle_arguments),*
             ) -> #core::SilexResult<Self>
             #input_method_where
             {
-                let mut inputs = #core::RuntimeInputs::new();
-                #(#input_collection)*
-                scope.validate_inputs(&inputs)?;
-
                 Ok(Self {
                     scope,
                     _marker: ::std::marker::PhantomData,
@@ -218,10 +205,6 @@ pub fn store_impl(mut model: ItemStruct) -> Result<TokenStream> {
                 scope: #core::Scope<'scope>,
                 #(#handle_arguments),*
             ) -> #core::SilexResult<Self> {
-                let mut inputs = #core::RuntimeInputs::new();
-                #(#input_collection)*
-                scope.validate_inputs(&inputs)?;
-
                 Ok(Self {
                     scope,
                     _marker: ::std::marker::PhantomData,

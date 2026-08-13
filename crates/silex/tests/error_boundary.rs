@@ -66,8 +66,7 @@ impl<'scope> View<'scope> for DeferredFailure<'scope> {
         )?;
 
         let source = self.source;
-        owner.effect_from(
-            silex_core::reactivity::runtime_inputs_of(source),
+        owner.effect(
             Box::new(move || {
                 if source.get()? {
                     return Err(SilexError::recoverable(SilexErrorKind::Framework(

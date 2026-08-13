@@ -1,7 +1,7 @@
 use crate::ToRoute;
 use silex_core::{
-    ErrorReporter, Memo, RuntimeInputs, Rx, Scope, SilexError, SilexErrorKind, SilexResult,
-    reactivity::{ReadSignal, StoredValue, WriteSignal, runtime_inputs_of},
+    ErrorReporter, Rx, Scope, SilexError, SilexErrorKind, SilexResult,
+    reactivity::{ReadSignal, StoredValue, WriteSignal},
     traits::RxGet,
 };
 use silex_dom::attribute::PendingAttribute;
@@ -68,13 +68,10 @@ impl<'scope> RouterContext<'scope> {
             set_search,
         } = props;
 
-        let mut inputs = RuntimeInputs::new();
-        inputs.extend(&runtime_inputs_of(path));
-        inputs.extend(&runtime_inputs_of(search));
-        inputs.extend(&set_path.runtime_inputs());
-        inputs.extend(&set_search.runtime_inputs());
-        scope.validate_inputs(&inputs)?;
-
+        scope.validate_runtime(&path.into_rx())?;
+        scope.validate_runtime(&search.into_rx())?;
+        scope.validate_runtime(&set_path)?;
+        scope.validate_runtime(&set_search)?;
         let base_path = scope.stored(normalize_base_path(&raw_base_path))?;
         let navigator = Navigator {
             base_path,
@@ -84,15 +81,14 @@ impl<'scope> RouterContext<'scope> {
             set_search,
         };
         let query = scope
-            .memo_from(
-                runtime_inputs_of(search),
+            .memo(
                 move |_| {
                     let search = search.get()?;
                     parse_query(&search)
                 },
                 error_handler,
             )
-            .map(Memo::into_rx)?;
+            .map(|memo| memo.into_rx())?;
         Ok(Self {
             base_path,
             path,
@@ -110,17 +106,6 @@ impl<'scope> RouterContext<'scope> {
     /// 获取解析后的查询参数 Memo
     pub fn query_map(self) -> Rx<'scope, HashMap<String, String>> {
         self.query
-    }
-
-    pub(crate) fn runtime_inputs(self) -> RuntimeInputs {
-        let mut inputs = RuntimeInputs::new();
-        inputs.extend(&runtime_inputs_of(self.base_path));
-        inputs.extend(&runtime_inputs_of(self.path));
-        inputs.extend(&runtime_inputs_of(self.search));
-        inputs.extend(&runtime_inputs_of(self.query));
-        inputs.extend(&self.navigator.set_path.runtime_inputs());
-        inputs.extend(&self.navigator.set_search.runtime_inputs());
-        inputs
     }
 }
 

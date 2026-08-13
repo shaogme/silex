@@ -1,7 +1,5 @@
-use std::{panic::AssertUnwindSafe, panic::catch_unwind};
-
-use silex_core::{ErrorReporter, Runtime, runtime_inputs_of};
-use silex_net::{HttpClient, NetError, ValueResolver};
+use silex_core::{ErrorReporter, Runtime};
+use silex_net::{HttpClient, NetError};
 
 fn test_handler<'scope>(scope: silex_core::Scope<'scope>) -> ErrorReporter<'scope> {
     scope.error_handler(|_| {}).unwrap()
@@ -38,33 +36,13 @@ fn foreign_builder_into_resource_is_transactional_before_target_creation() {
 
     source_root.with_scope(|source_scope| {
         let (source, _) = source_scope.signal(1_i32).unwrap();
-        let foreign_inputs = runtime_inputs_of(source);
         target_root.with_scope(|target_scope| {
-            let foreign_url = ValueResolver::dynamic_with_inputs(
-                || Ok("https://example.test".to_string()),
-                || Ok("https://example.test".to_string()),
-                foreign_inputs.clone(),
-            );
             let handler = test_handler(target_scope);
             let before = target_scope.runtime_snapshot();
-            let result = HttpClient::get(target_scope, foreign_url, handler).into_resource(None);
+            let result = HttpClient::get(target_scope, source, handler).into_resource(None);
 
             assert!(matches!(result, Err(NetError::InvalidConfiguration(_))));
             assert_eq!(target_scope.runtime_snapshot(), before);
-
-            let foreign_url = ValueResolver::dynamic_with_inputs(
-                || Ok("https://example.test".to_string()),
-                || Ok("https://example.test".to_string()),
-                foreign_inputs,
-            );
-            let handler = test_handler(target_scope);
-            let before_panic = target_scope.runtime_snapshot();
-            let result = catch_unwind(AssertUnwindSafe(|| {
-                HttpClient::get(target_scope, foreign_url, handler).into_resource(None)
-            }));
-
-            assert!(matches!(result, Ok(Err(NetError::InvalidConfiguration(_)))));
-            assert_eq!(target_scope.runtime_snapshot(), before_panic);
         });
     });
 

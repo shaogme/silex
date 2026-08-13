@@ -123,7 +123,7 @@ impl<'scope> TooltipContext<'scope> {
 }
 
 fn owner_binding<'scope>(ctx: TooltipContext<'scope>) -> AttrOp<'scope> {
-    AttrOp::custom_with_inputs(RuntimeInputs::new(), move |_, owner, error_handler| {
+    AttrOp::custom(move |_, owner, error_handler| {
         ctx.set_owner(owner.clone(), error_handler)
             .map_err(SilexError::fatal)?;
         Ok(())

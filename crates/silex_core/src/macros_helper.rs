@@ -29,10 +29,8 @@ where
     let scope = context.scope;
     let error_handler = context.error_handler;
     let source = source.into_promotion_plan();
-    let inputs = source.inputs();
-    scope.validate_inputs(&inputs)?;
     let source = source.materialize(scope, error_handler)?;
-    scope.derived_from(inputs, move || source.with(f), error_handler)
+    scope.derived(move || source.with(f), error_handler)
 }
 
 #[inline]
@@ -53,13 +51,9 @@ where
     let error_handler = context.error_handler;
     let left = left.into_promotion_plan();
     let right = right.into_promotion_plan();
-    let mut inputs = left.inputs();
-    inputs.extend(&right.inputs());
-    scope.validate_inputs(&inputs)?;
     let left = left.materialize(scope, error_handler)?;
     let right = right.materialize(scope, error_handler)?;
-    scope.derived_from(
-        inputs,
+    scope.derived(
         move || left.with(|left| right.with(|right| f(left, right)))?,
         error_handler,
     )
@@ -87,15 +81,10 @@ where
     let first = first.into_promotion_plan();
     let second = second.into_promotion_plan();
     let third = third.into_promotion_plan();
-    let mut inputs = first.inputs();
-    inputs.extend(&second.inputs());
-    inputs.extend(&third.inputs());
-    scope.validate_inputs(&inputs)?;
     let first = first.materialize(scope, error_handler)?;
     let second = second.materialize(scope, error_handler)?;
     let third = third.materialize(scope, error_handler)?;
-    scope.derived_from(
-        inputs,
+    scope.derived(
         move || {
             first.with(|first| {
                 second.with(|second| third.with(|third| f(first, second, third)))?

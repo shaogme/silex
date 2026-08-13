@@ -320,8 +320,7 @@ impl<'scope> ApplyToDom<'scope> for Style<'scope> {
     }
 
     fn into_op(self, _target: ApplyTarget) -> silex_dom::attribute::AttrOp<'scope> {
-        let inputs = self.runtime_inputs();
-        silex_dom::attribute::AttrOp::custom_with_inputs(inputs, move |el, owner, error_handler| {
+        silex_dom::attribute::AttrOp::custom(move |el, owner, error_handler| {
             self.apply_to_element(el, owner, error_handler).map(|_| ())
         })
     }
@@ -384,12 +383,6 @@ impl<'scope> Style<'scope> {
             dyn_bindings,
         } = self.render();
 
-        let mut inputs = silex_core::RuntimeInputs::new();
-        for (_, source) in &dyn_bindings {
-            inputs.extend(&source.runtime_inputs());
-        }
-        owner.validate_inputs(&inputs)?;
-
         if !css.is_empty() {
             inject_style(&class_base, &css);
         }
@@ -404,8 +397,7 @@ impl<'scope> Style<'scope> {
         if !dyn_bindings.is_empty() {
             let el_clone = el.clone();
             let bindings = dyn_bindings;
-            owner.effect_with_previous_from(
-                inputs.clone(),
+            owner.effect_with_previous(
                 Box::new(
                     move |previous: Option<&Vec<Option<String>>>| -> SilexResult<
                         Vec<Option<String>>,
@@ -472,15 +464,6 @@ impl<'scope> Style<'scope> {
             )?;
         }
         Ok(class_base)
-    }
-
-    pub(crate) fn runtime_inputs(&self) -> silex_core::RuntimeInputs {
-        let rendered = self.render();
-        let mut inputs = silex_core::RuntimeInputs::new();
-        for (_, source) in rendered.dyn_bindings {
-            inputs.extend(&source.runtime_inputs());
-        }
-        inputs
     }
 }
 
@@ -601,11 +584,9 @@ impl<'scope> ReactiveBinding<'scope> for Style<'scope> {
             let el = el.clone();
             let owner = owner.clone();
             let owner_for_callback = owner.clone();
-            owner.effect_with_previous_from(
-                rx.runtime_inputs(),
+            owner.effect_with_previous(
                 Box::new(move |previous: Option<&String>| -> SilexResult<String> {
                     let style = rx.get()?;
-                    owner_for_callback.validate_inputs(&style.runtime_inputs())?;
                     let class_name =
                         style.apply_to_element(&el, &owner_for_callback, error_handler)?;
                     if let Some(previous) = previous
@@ -622,7 +603,6 @@ impl<'scope> ReactiveBinding<'scope> for Style<'scope> {
         };
 
         Some(ReactiveBindingPlan::custom(
-            rx.runtime_inputs(),
             ReactiveBindingTarget::Custom,
             installer,
             |_| Ok(()),
