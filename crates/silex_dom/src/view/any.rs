@@ -1,7 +1,9 @@
 use super::mount::mount_composite;
 use crate::attribute::PendingAttribute;
 use crate::element::Element;
-use crate::view::{ApplyAttributes, MountErrorHandler, MountOwner, View, ViewCons, ViewNil};
+use crate::view::{
+    ApplyAttributes, MountErrorHandler, MountOwner, View, ViewCons, ViewFactory, ViewNil,
+};
 use silex_core::SilexResult;
 use std::rc::Rc;
 use web_sys::Node;
@@ -14,13 +16,16 @@ pub enum AnyView<'scope> {
     Text(String),
     Element(Element<'scope>),
     List(Vec<AnyView<'scope>>),
-    Boxed(Rc<dyn View<'scope> + 'scope>, Vec<PendingAttribute<'scope>>),
+    Boxed(
+        Rc<dyn ViewFactory<'scope> + 'scope>,
+        Vec<PendingAttribute<'scope>>,
+    ),
 }
 
 impl<'scope> AnyView<'scope> {
     pub fn new<V>(view: V) -> Self
     where
-        V: View<'scope> + 'scope,
+        V: ViewFactory<'scope> + 'scope,
     {
         Self::Boxed(Rc::new(view), Vec::new())
     }
@@ -52,7 +57,7 @@ fn mount_list<'scope>(
         error_handler,
         move |transaction_owner, fragment, attrs, error_handler| {
             for (index, child) in list.iter().enumerate() {
-                child.mount(
+                let _ = child.create_mount_instance(
                     transaction_owner,
                     fragment,
                     if index == 0 {
@@ -82,7 +87,7 @@ fn mount_list_owned<'scope>(
         error_handler,
         move |transaction_owner, fragment, attrs, error_handler| {
             for (index, child) in list.into_iter().enumerate() {
-                child.mount_owned(
+                let _ = child.create_mount_instance(
                     transaction_owner,
                     fragment,
                     if index == 0 {
@@ -117,10 +122,6 @@ impl<'scope> ApplyAttributes<'scope> for AnyView<'scope> {
 }
 
 impl<'scope> View<'scope> for AnyView<'scope> {
-    fn into_any(self) -> Self {
-        self
-    }
-
     fn mount(
         &self,
         owner: &dyn MountOwner<'scope>,
@@ -133,12 +134,14 @@ impl<'scope> View<'scope> for AnyView<'scope> {
             Self::Text(text) => text.mount(owner, parent, attrs, error_handler),
             Self::Element(element) => element.mount(owner, parent, attrs, error_handler),
             Self::List(list) => mount_list(list, owner, parent, attrs, error_handler),
-            Self::Boxed(view, inner_attrs) => view.mount(
-                owner,
-                parent,
-                merge_attrs(inner_attrs.clone(), attrs),
-                error_handler,
-            ),
+            Self::Boxed(view, inner_attrs) => view
+                .create_mount_instance(
+                    owner,
+                    parent,
+                    merge_attrs(inner_attrs.clone(), attrs),
+                    error_handler,
+                )
+                .map(|_| ()),
         }
     }
 
@@ -157,12 +160,14 @@ impl<'scope> View<'scope> for AnyView<'scope> {
             Self::Text(text) => text.mount_owned(owner, parent, attrs, error_handler),
             Self::Element(element) => element.mount_owned(owner, parent, attrs, error_handler),
             Self::List(list) => mount_list_owned(list, owner, parent, attrs, error_handler),
-            Self::Boxed(view, inner_attrs) => view.mount(
-                owner,
-                parent,
-                merge_attrs(inner_attrs, attrs),
-                error_handler,
-            ),
+            Self::Boxed(view, inner_attrs) => view
+                .create_mount_instance(
+                    owner,
+                    parent,
+                    merge_attrs(inner_attrs, attrs),
+                    error_handler,
+                )
+                .map(|_| ()),
         }
     }
 }
@@ -248,16 +253,16 @@ impl_from_primitive!(
 
 impl<'scope, V> From<Vec<V>> for AnyView<'scope>
 where
-    V: View<'scope> + 'scope,
+    V: ViewFactory<'scope> + 'scope,
 {
     fn from(value: Vec<V>) -> Self {
-        Self::List(value.into_iter().map(View::into_any).collect())
+        Self::List(value.into_iter().map(ViewFactory::into_any).collect())
     }
 }
 
 impl<'scope, V> From<Option<V>> for AnyView<'scope>
 where
-    V: View<'scope> + 'scope,
+    V: ViewFactory<'scope> + 'scope,
 {
     fn from(value: Option<V>) -> Self {
         value.map_or(Self::Empty, AnyView::new)

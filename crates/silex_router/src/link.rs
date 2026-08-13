@@ -34,7 +34,9 @@ impl<'scope> View<'scope> for LinkView<'scope> {
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         match &self.view {
-            Ok(view) => view.mount(owner, parent, attrs, error_handler),
+            Ok(view) => view
+                .create_mount_instance(owner, parent, attrs, error_handler)
+                .map(|_| ()),
             Err(error) => Err(error.clone()),
         }
     }
@@ -49,7 +51,8 @@ impl<'scope> View<'scope> for LinkView<'scope> {
     where
         Self: Sized,
     {
-        self.mount(owner, parent, attrs, error_handler)
+        self.create_mount_instance(owner, parent, attrs, error_handler)
+            .map(|_| ())
     }
 }
 

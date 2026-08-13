@@ -5,7 +5,7 @@ use crate::{
         raw_path_segments,
     },
 };
-use silex_dom::view::{AnyView, View};
+use silex_dom::view::{AnyView, ViewFactory};
 use std::{
     collections::{BTreeMap, HashSet},
     error::Error,
@@ -545,7 +545,7 @@ impl<'scope> RouteTable<'scope> {
     ) -> Result<Self, RoutePatternError>
     where
         F: Fn(RouterContext<'scope>, AnyView<'scope>) -> V + 'scope,
-        V: View<'scope> + 'scope,
+        V: ViewFactory<'scope> + 'scope,
     {
         let mut table = self;
         let prefix = normalize_nest_prefix(prefix.as_ref())?;

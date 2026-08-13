@@ -17,7 +17,7 @@ impl<'scope, Item: 'scope> IndexRenderer<'scope, Item> {
     pub fn from_fn<F, V>(render: F) -> Self
     where
         F: Fn(Item, usize) -> V + 'scope,
-        V: View<'scope> + 'scope,
+        V: ViewFactory<'scope> + 'scope,
     {
         Self {
             render: Rc::new(move |item, index| render(item, index).into_any()),

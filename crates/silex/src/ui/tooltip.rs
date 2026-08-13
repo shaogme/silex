@@ -178,7 +178,7 @@ pub fn Tooltip<'scope, C, V>(
 ) -> impl View<'scope>
 where
     C: Fn(TooltipContext<'scope>) -> V + Clone + 'scope,
-    V: View<'scope> + 'scope,
+    V: ViewFactory<'scope> + 'scope,
 {
     let ctx = TooltipContext::new(scope)?;
     let root_cls = rx!(scope; error_handler; {

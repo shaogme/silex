@@ -18,7 +18,7 @@ impl<'scope, Item: 'scope> ForRenderer<'scope, Item> {
     pub fn from_fn<F, V>(render: F) -> Self
     where
         F: Fn(Item, usize) -> V + 'scope,
-        V: View<'scope> + 'scope,
+        V: ViewFactory<'scope> + 'scope,
     {
         Self {
             render: Rc::new(move |item, index| render(item, index).into_any()),
@@ -40,7 +40,7 @@ impl<'scope, Item: 'scope> ForStatefulRenderer<'scope, Item> {
     pub fn from_fn<F, V>(render: F) -> Self
     where
         F: Fn(Item, usize, RowUpdater<'scope, Item>) -> V + 'scope,
-        V: View<'scope> + 'scope,
+        V: ViewFactory<'scope> + 'scope,
     {
         Self {
             render: Rc::new(move |item, index, updater| render(item, index, updater).into_any()),

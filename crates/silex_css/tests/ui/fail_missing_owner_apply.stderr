@@ -2,7 +2,7 @@ error[E0061]: this method takes 3 arguments but 1 argument was supplied
  --> tests/ui/fail_missing_owner_apply.rs:7:10
   |
 7 |         .apply_to_element(element);
-  |          ^^^^^^^^^^^^^^^^--------- two arguments of type `&silex_dom::view::ViewOwnerToken<'_>` and `silex_reactivity::error::ErrorHandler<'_, silex_core::error::SilexError>` are missing
+  |          ^^^^^^^^^^^^^^^^--------- two arguments of type `&silex_dom::view::owner::capability::MountOwnerToken<'_>` and `silex_reactivity::error::ErrorHandler<'_, silex_core::error::SilexError>` are missing
   |
 note: method defined here
  --> src/builder.rs
@@ -11,5 +11,5 @@ note: method defined here
   |            ^^^^^^^^^^^^^^^^
 help: provide the arguments
   |
-7 |         .apply_to_element(element, /* &silex_dom::view::ViewOwnerToken<'_> */, /* silex_reactivity::error::ErrorHandler<'_, silex_core::error::SilexError> */);
-  |                                  ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+7 |         .apply_to_element(element, /* &silex_dom::view::owner::capability::MountOwnerToken<'_> */, /* silex_reactivity::error::ErrorHandler<'_, silex_core::error::SilexError> */);
+  |                                  ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

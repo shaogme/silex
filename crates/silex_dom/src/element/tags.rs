@@ -70,7 +70,7 @@ macro_rules! define_tag {
 
         pub fn $fn_name<'scope, V>(child: V) -> $crate::element::TypedElement<'scope, $struct_name>
         where
-            V: $crate::view::View<'scope> + 'scope,
+            V: $crate::view::ViewFactory<'scope> + 'scope,
         {
             $crate::element::TypedElement::with_child($tag_name, child)
         }

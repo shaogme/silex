@@ -1,0 +1,128 @@
+#![cfg(target_arch = "wasm32")]
+
+use js_sys::Promise;
+use silex::components::Portal;
+use silex::flow::Show;
+use silex::prelude::*;
+use silex_dom::document;
+use silex_dom::view::{ScopedMountOwner, View};
+use std::cell::Cell;
+use std::rc::Rc;
+use wasm_bindgen::JsValue;
+use wasm_bindgen_futures::JsFuture;
+use wasm_bindgen_test::*;
+use web_sys::Element;
+
+wasm_bindgen_test_configure!(run_in_browser);
+
+async fn flush_browser_tasks() {
+    for _ in 0..4 {
+        JsFuture::from(Promise::resolve(&JsValue::UNDEFINED))
+            .await
+            .expect("browser task should resolve");
+    }
+}
+
+fn host() -> Element {
+    let host = document()
+        .create_element("div")
+        .expect("test host should be creatable");
+    document()
+        .body()
+        .expect("document body should exist")
+        .append_child(&host)
+        .expect("test host should be attached");
+    host
+}
+
+fn text_occurrence_count(selector: &str, expected: &str) -> u32 {
+    let nodes = document()
+        .query_selector_all(selector)
+        .expect("selector query should succeed");
+    (0..nodes.length())
+        .filter_map(|index| nodes.item(index).and_then(|node| node.text_content()))
+        .map(|text| text.matches(expected).count() as u32)
+        .sum()
+}
+
+#[wasm_bindgen_test(async)]
+async fn portal_modal_does_not_duplicate_content_after_repeated_toggles() {
+    let host = host();
+    let mut runtime = Runtime::new();
+    let root = runtime.run().expect("root runtime should start");
+
+    let (set_show_modal, errors) = root.with_scope(|scope| {
+        let (show_modal, set_show_modal) = scope
+            .signal(false)
+            .expect("modal signal should be created");
+        let errors = Rc::new(Cell::new(0));
+        let errors_for_handler = errors.clone();
+        let error_handler = scope
+            .error_handler(move |_| errors_for_handler.set(errors_for_handler.get() + 1))
+            .expect("test error handler should be registered");
+        let view = div![
+            button("Toggle Modal"),
+            Show(scope, error_handler, show_modal)
+                .children(
+                    Portal(
+                        error_handler,
+                        div![
+                            h4("I am a Modal!"),
+                            p("I am rendered via Portal directly into the body, but I share context!")
+                        ]
+                        .attr("data-test", "portal-modal"),
+                    )
+                    .build(),
+                )
+                .build(),
+        ];
+        let owner = ScopedMountOwner::new(scope);
+        view.mount_owned(&owner, host.as_ref(), Vec::new(), error_handler)
+            .expect("portal demo should mount");
+        (set_show_modal, errors)
+    });
+
+    for _ in 0..3 {
+        set_show_modal.set(true).expect("modal should open");
+        flush_browser_tasks().await;
+        assert_eq!(
+            text_occurrence_count("body h4", "I am a Modal!"),
+            1,
+            "body={}, errors={}",
+            document()
+                .body()
+                .expect("document body should exist")
+                .inner_html(),
+            errors.get()
+        );
+        assert_eq!(
+            text_occurrence_count(
+                "body p",
+                "I am rendered via Portal directly into the body, but I share context!"
+            ),
+            1
+        );
+
+        set_show_modal.set(false).expect("modal should close");
+        flush_browser_tasks().await;
+        assert_eq!(text_occurrence_count("body h4", "I am a Modal!"), 0);
+        assert_eq!(
+            text_occurrence_count(
+                "body p",
+                "I am rendered via Portal directly into the body, but I share context!"
+            ),
+            0
+        );
+    }
+
+    root.dispose().expect("root cleanup should succeed");
+    assert!(
+        host.first_child().is_none(),
+        "host should be empty after root cleanup: {}",
+        host.inner_html()
+    );
+    host.parent_node()
+        .expect("test host should be attached")
+        .remove_child(&host)
+        .expect("test host should be detached");
+}

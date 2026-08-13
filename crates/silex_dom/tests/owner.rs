@@ -9,7 +9,7 @@ use silex_dom::element::Element;
 use silex_dom::view::{
     AnyView, ApplyAttributes, BranchEvaluation, IndexedListView, MountOwner,
     RenderOnlyKeyedListView, RowUpdater, ScopedMountOwner, StatefulKeyedListView, View,
-    mount_branch_stable_cached, mount_text_node,
+    ViewFactory, mount_branch_stable_cached, mount_text_node,
 };
 use std::{
     cell::{Cell, RefCell},

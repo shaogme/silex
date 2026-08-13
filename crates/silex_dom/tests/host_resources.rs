@@ -10,7 +10,10 @@ use silex_dom::{
         debounce, queue_microtask, request_animation_frame, request_idle_callback, set_interval,
         set_timeout, window_event_listener_untyped,
     },
-    view::{AnyView, MountOwner, ScopedMountOwner, StatefulKeyedListView, View, mount_text_node},
+    view::{
+        AnyView, MountOwner, ScopedMountOwner, StatefulKeyedListView, View, ViewFactory,
+        mount_text_node,
+    },
 };
 use std::{
     cell::{Cell, RefCell},
@@ -386,9 +389,17 @@ fn element_listener_removes_physically_and_drops_on_root_dispose() {
         let (owner, error_handler) = test_owner(scope);
         let token = owner.token();
         let element = Element::new("button");
-        spy.spy_target(element.dom_element.as_ref());
-        let element_node: Node = element.dom_element.clone().into();
-        *element_slot.borrow_mut() = Some(element.dom_element.clone());
+        let instance = element
+            .create_mount_instance(&owner, &host.clone().into(), Vec::new(), error_handler)
+            .expect("element should mount");
+        let mounted_element = instance
+            .first_node()
+            .expect("mount should contain the element")
+            .clone()
+            .unchecked_into::<WebElement>();
+        let element_node: Node = mounted_element.clone().into();
+        spy.spy_target(&mounted_element);
+        *element_slot.borrow_mut() = Some(mounted_element.clone());
 
         let node_ref = scope
             .node_ref::<WebElement>()
@@ -396,7 +407,7 @@ fn element_listener_removes_physically_and_drops_on_root_dispose() {
         let calls_for_handler = calls.clone();
         let probe = DropProbe::new(drops.clone());
         bind_event(
-            &element.dom_element,
+            &mounted_element,
             click,
             move |_| {
                 calls_for_handler.set(calls_for_handler.get() + 1);
@@ -409,11 +420,8 @@ fn element_listener_removes_physically_and_drops_on_root_dispose() {
         .expect("element listener can be registered");
 
         node_ref
-            .load(element.dom_element.clone())
+            .load(mounted_element.clone())
             .expect("node ref should load");
-        element
-            .mount_owned(&owner, &host.clone().into(), Vec::new(), error_handler)
-            .expect("element should mount");
         assert!(
             node_ref
                 .get()
@@ -454,14 +462,16 @@ fn element_listener_panic_closes_destination_before_owner_cleanup() {
         let scope = root.scope();
         let (owner, error_handler) = test_owner(scope);
         let token = owner.token();
-        let element = Element::new("button");
-        spy.spy_target(element.dom_element.as_ref());
-        element_node = element.dom_element.clone().into();
+        let element = document()
+            .create_element("button")
+            .expect("button should be creatable");
+        spy.spy_target(&element);
+        element_node = element.clone().into();
         let calls_for_callback = calls.clone();
         let probe = DropProbe::new(drops.clone());
 
         bind_event(
-            &element.dom_element,
+            &element,
             click,
             move |_| {
                 calls_for_callback.set(calls_for_callback.get() + 1);

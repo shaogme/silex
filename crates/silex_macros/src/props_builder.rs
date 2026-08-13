@@ -480,7 +480,7 @@ impl BuilderContext {
                 quote! {
                     where
                         #render_fn: Fn(#(#render_fn_args),*) -> #render_view + #scope,
-                        #render_view: #__silex::dom::view::View<#scope> + #scope,
+                        #render_view: #__silex::dom::view::ViewFactory<#scope> + #scope,
                 },
             )
         } else if reactive_input {
@@ -500,7 +500,7 @@ impl BuilderContext {
             )
         } else {
             let setter_param = if is_any_view_type(ty) {
-                quote! { impl #__silex::dom::view::View<#scope> + #scope }
+                quote! { impl #__silex::dom::view::ViewFactory<#scope> + #scope }
             } else if field.attrs.render {
                 quote! { #ty }
             } else if field.attrs.into_trait || is_auto_into_type(ty) {
@@ -509,7 +509,7 @@ impl BuilderContext {
                 quote! { #ty }
             };
             let setter_value = if is_any_view_type(ty) {
-                quote! { val.into_any() }
+                quote! { #__silex::dom::view::ViewFactory::into_any(val) }
             } else if field.attrs.into_trait || is_auto_into_type(ty) {
                 quote! { val.into() }
             } else {
@@ -852,7 +852,7 @@ impl BuilderContext {
             let ident = &field.ident;
             let ty = &field.ty;
             if is_any_view_type(ty) {
-                quote! { #ident: impl #__silex::dom::view::View<#scope> + #scope }
+                quote! { #ident: impl #__silex::dom::view::ViewFactory<#scope> + #scope }
             } else if field.attrs.into_trait || is_auto_into_type(ty) {
                 quote! { #ident: impl ::core::convert::Into<#ty> }
             } else {
@@ -864,7 +864,7 @@ impl BuilderContext {
             let ident = &field.ident;
             let ty = &field.ty;
             if is_any_view_type(ty) {
-                quote! { #ident.into_any() }
+                quote! { #__silex::dom::view::ViewFactory::into_any(#ident) }
             } else if field.attrs.into_trait || is_auto_into_type(ty) {
                 quote! { #ident.into() }
             } else {
@@ -907,7 +907,7 @@ fn field_value_transform(field: &FieldSpec, input: TokenStream2) -> TokenStream2
     let __silex = crate::crate_path::silex();
     let ty = &field.ty;
     if field.attrs.render && is_any_view_type(ty) {
-        quote! { #__silex::dom::view::View::into_any(#input) }
+        quote! { #__silex::dom::view::ViewFactory::into_any(#input) }
     } else if field.attrs.into_trait || (is_auto_into_type(ty) && !is_any_view_type(ty)) {
         quote! { ::core::convert::Into::into(#input) }
     } else {

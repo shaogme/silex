@@ -33,7 +33,7 @@ use silex_core::{
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::helpers::window_event_listener_untyped;
 use silex_dom::view::{
-    AnyView, ApplyAttributes, BranchEvaluation, MountErrorHandler, MountOwner, View,
+    AnyView, ApplyAttributes, BranchEvaluation, MountErrorHandler, MountOwner, View, ViewFactory,
 };
 use silex_macros::component;
 use std::rc::Rc;
@@ -109,7 +109,7 @@ pub struct RouterLayoutInput<'scope>(Option<RouterLayout<'scope>>);
 impl<'scope, F, V> From<F> for RouterLayoutInput<'scope>
 where
     F: Fn(RouterContext<'scope>, AnyView<'scope>) -> V + 'scope,
-    V: View<'scope> + 'scope,
+    V: ViewFactory<'scope> + 'scope,
 {
     fn from(layout: F) -> Self {
         Self(Some(Rc::new(move |context, outlet| {

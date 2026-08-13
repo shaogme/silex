@@ -2,7 +2,7 @@ use crate::attribute::PendingAttribute;
 use crate::element::{Element, TypedElement, tags::Tag};
 use crate::view::{
     AnyView, ApplyAttributes, DynamicRenderArgs, DynamicRenderer, MountErrorHandler, MountOwner,
-    OwnedMountOwner, View, ViewCons, mount_dynamic_view_universal_from,
+    OwnedMountOwner, View, ViewCons, ViewFactory, mount_dynamic_view_universal_from,
 };
 use silex_core::reactivity::{Memo, ReadSignal, RwSignal, Signal, StoredValue};
 use silex_core::traits::RxCloneData;
@@ -96,7 +96,9 @@ where
                 owner: token,
                 error_handler,
             } = args;
-            rx.with(|view| view.mount(&token, &parent, attrs, error_handler))?
+            rx.with(|view| view.create_mount_instance(&token, &parent, attrs, error_handler))
+                .map(|_| ())?;
+            Ok(())
         }),
     )
 }
@@ -235,7 +237,10 @@ macro_rules! impl_view_forward_to_rx {
                     attrs: Vec<PendingAttribute<'scope>>,
                     error_handler: MountErrorHandler<'scope>,
                 ) -> SilexResult<()> {
-                    self.clone().into_rx().mount(owner, parent, attrs, error_handler)
+                    self.clone()
+                        .into_rx()
+                        .create_mount_instance(owner, parent, attrs, error_handler)
+                        .map(|_| ())
                 }
 
                 fn mount_owned(
@@ -247,7 +252,9 @@ macro_rules! impl_view_forward_to_rx {
                 ) -> SilexResult<()> where
                     Self: Sized,
                 {
-                    self.into_rx().mount_owned(owner, parent, attrs, error_handler)
+                    self.into_rx()
+                        .create_mount_instance(owner, parent, attrs, error_handler)
+                        .map(|_| ())
                 }
             }
         )*

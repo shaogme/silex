@@ -3,7 +3,7 @@ use super::row::{
     NodeRange, RowInstance, RowInstanceConfig, RowRenderContext, RowRenderer, RowUpdater,
 };
 use crate::attribute::PendingAttribute;
-use crate::view::{AnyView, ApplyAttributes, MountErrorHandler, MountOwner, View};
+use crate::view::{AnyView, ApplyAttributes, MountErrorHandler, MountOwner, View, ViewFactory};
 use silex_core::reactivity::{ReactiveSource, runtime_inputs_of};
 use silex_core::traits::{ForLoopSource, RxRead};
 use silex_core::{ErrorHandler, RuntimeInputs, SilexError, SilexErrorKind, SilexResult};
@@ -252,12 +252,10 @@ where
             error_handler,
             updater,
         } = args;
-        render_factory.render(item, index, updater).mount_owned(
-            &token,
-            &parent,
-            attrs,
-            error_handler,
-        )
+        render_factory
+            .render(item, index, updater)
+            .create_mount_instance(&token, &parent, attrs, error_handler)
+            .map(|_| ())
     });
     let rows = local_owner
         .token()
@@ -444,12 +442,10 @@ where
             error_handler,
             updater,
         } = args;
-        render_factory.render(item, index, updater).mount_owned(
-            &token,
-            &parent,
-            attrs,
-            error_handler,
-        )
+        render_factory
+            .render(item, index, updater)
+            .create_mount_instance(&token, &parent, attrs, error_handler)
+            .map(|_| ())
     });
     let state = local_owner.token().owner_state(KeyedRows {
         rows: HashMap::new(),

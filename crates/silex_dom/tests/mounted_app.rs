@@ -4,7 +4,9 @@ use silex_core::{ErrorReporter, Runtime, SilexError, SilexErrorKind, SilexResult
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::element::Element;
 use silex_dom::mounted::{CleanupOrigin, CleanupSink, MountAvailability, MountedApp};
-use silex_dom::view::{ApplyAttributes, MountOwner, View, mount_component};
+use silex_dom::view::{
+    AnyView, ApplyAttributes, MountInstance, MountOwner, View, ViewFactory, mount_component,
+};
 use std::{cell::Cell, rc::Rc};
 use wasm_bindgen_test::*;
 use web_sys::Node;
@@ -36,6 +38,88 @@ fn error_handler<'scope>(scope: silex_core::Scope<'scope>) -> ErrorReporter<'sco
 
 struct CleanupProbe {
     cleanups: Rc<Cell<usize>>,
+}
+
+struct FactoryText {
+    created: Rc<Cell<usize>>,
+}
+
+impl<'scope> ViewFactory<'scope> for FactoryText {
+    fn create_mount_instance(
+        &self,
+        owner: &dyn MountOwner<'scope>,
+        parent: &Node,
+        _attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ErrorReporter<'scope>,
+    ) -> SilexResult<MountInstance<'scope>> {
+        let index = self.created.get() + 1;
+        self.created.set(index);
+        let document = web_sys::window()
+            .expect("window is available")
+            .document()
+            .expect("document is available");
+        let node: Node = document
+            .create_text_node(&format!("factory-{index}"))
+            .into();
+        parent
+            .append_child(&node)
+            .map_err(|error| SilexError::fatal(SilexErrorKind::from(error)))?;
+        let node_for_cleanup = node.clone();
+        owner.on_cleanup(
+            Box::new(move || {
+                if let Some(parent) = node_for_cleanup.parent_node() {
+                    parent
+                        .remove_child(&node_for_cleanup)
+                        .map_err(|error| SilexError::fatal(SilexErrorKind::from(error)))?;
+                }
+                Ok(())
+            }),
+            error_handler,
+        )?;
+        Ok(MountInstance::from_nodes(vec![node]))
+    }
+}
+
+#[wasm_bindgen_test]
+fn any_view_factory_creates_independent_mount_instances() {
+    let host = host_with_caller_node();
+    let mut runtime = Runtime::new();
+    let root = runtime.run().expect("root should start");
+    {
+        let scope = root.scope();
+        let owner = silex_dom::view::ScopedMountOwner::new(scope);
+        let handler = error_handler(scope);
+        let view = AnyView::new(FactoryText {
+            created: Rc::new(Cell::new(0)),
+        });
+
+        let first = view
+            .create_mount_instance(&owner, &host, Vec::new(), handler)
+            .expect("first factory mount should succeed");
+        let second = view
+            .create_mount_instance(&owner, &host, Vec::new(), handler)
+            .expect("second factory mount should succeed");
+
+        assert_eq!(first.len(), 1);
+        assert_eq!(second.len(), 1);
+        assert!(
+            !first
+                .first_node()
+                .expect("first instance should have a node")
+                .is_same_node(second.first_node())
+        );
+        assert_eq!(
+            host.text_content().as_deref(),
+            Some("caller-ownedfactory-1factory-2")
+        );
+    }
+
+    root.dispose().expect("factory instances should clean up");
+    assert_eq!(host.text_content().as_deref(), Some("caller-owned"));
+    host.parent_node()
+        .expect("host has a body parent")
+        .remove_child(&host)
+        .expect("host can be removed");
 }
 
 struct PanicRollbackView;
@@ -349,6 +433,7 @@ fn root_cleanup_runs_before_boundary_rollback_is_attempted() {
 }
 
 #[wasm_bindgen_test]
+#[ignore = "wasm32 cannot unwind cleanup panics inside the browser runner"]
 fn composite_cleanup_failure_upgrades_primary_and_records_provisional_owner() {
     let host = host_with_caller_node();
     let mut app = MountedApp::new(Runtime::new(), host.clone(), CleanupSink::new(|_| {}));

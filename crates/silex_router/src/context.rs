@@ -5,7 +5,7 @@ use silex_core::{
     traits::RxGet,
 };
 use silex_dom::attribute::PendingAttribute;
-use silex_dom::view::{AnyView, ApplyAttributes, MountErrorHandler, MountOwner, View};
+use silex_dom::view::{AnyView, ApplyAttributes, MountErrorHandler, MountOwner, View, ViewFactory};
 use std::collections::HashMap;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
@@ -46,7 +46,9 @@ impl<'scope> View<'scope> for RouterViewFactory<'scope> {
         Self: Sized,
     {
         let factory = self.0;
-        (move || (factory)()).mount_owned(owner, parent, attrs, error_handler)
+        (move || (factory)())
+            .create_mount_instance(owner, parent, attrs, error_handler)
+            .map(|_| ())
     }
 }
 

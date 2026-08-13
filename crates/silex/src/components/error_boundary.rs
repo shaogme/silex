@@ -122,17 +122,25 @@ impl<'scope> ErrorBoundaryBranch<'scope> {
         let fallback_attrs = attrs.clone();
         match phase {
             BoundaryPhase::Child => {
-                let result = self.view.mount(owner, parent, attrs, child_handler);
+                let result = self
+                    .view
+                    .create_mount_instance(owner, parent, attrs, child_handler)
+                    .map(|_| ());
                 match result {
                     Ok(()) => Ok(()),
                     Err(error @ SilexError::Recoverable(_)) => {
                         record_error(error.clone());
-                        fallback(error).mount_owned(owner, parent, fallback_attrs, parent_handler)
+                        fallback(error)
+                            .create_mount_instance(owner, parent, fallback_attrs, parent_handler)
+                            .map(|_| ())
                     }
                     Err(error @ SilexError::Fatal(_)) => Err(error),
                 }
             }
-            BoundaryPhase::Fallback => self.view.mount(owner, parent, attrs, parent_handler),
+            BoundaryPhase::Fallback => self
+                .view
+                .create_mount_instance(owner, parent, attrs, parent_handler)
+                .map(|_| ()),
         }
     }
 }
@@ -195,7 +203,9 @@ impl<'scope> View<'scope> for ErrorBoundaryView<'scope> {
         let token = owner.token();
         let parent_state = token.owner_state(parent_handler)?;
         self.parent_handler.set(Some(parent_state));
-        self.view.mount(owner, parent, attrs, self.phase_handler)
+        self.view
+            .create_mount_instance(owner, parent, attrs, self.phase_handler)
+            .map(|_| ())
     }
 
     fn mount_owned(
@@ -213,7 +223,8 @@ impl<'scope> View<'scope> for ErrorBoundaryView<'scope> {
         let parent_state = token.owner_state(parent_handler)?;
         self.parent_handler.set(Some(parent_state));
         self.view
-            .mount_owned(owner, parent, attrs, self.phase_handler)
+            .create_mount_instance(owner, parent, attrs, self.phase_handler)
+            .map(|_| ())
     }
 }
 
@@ -232,8 +243,8 @@ pub fn ErrorBoundary<'scope, FB, CH, V1, V2>(
 where
     FB: Fn(SilexError) -> V1 + Clone + 'scope,
     CH: Fn(ErrorReporter<'scope>) -> V2 + Clone + 'scope,
-    V1: View<'scope> + 'scope,
-    V2: View<'scope> + 'scope,
+    V1: ViewFactory<'scope> + 'scope,
+    V2: ViewFactory<'scope> + 'scope,
 {
     let (error, set_error) = scope.signal(None::<SilexError>)?;
     let completion = scope.completion_sender(unwind_safe(move |value| {

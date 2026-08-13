@@ -9,7 +9,9 @@ use silex_core::{
     traits::{RxBase, RxCloneData, RxData, RxRead, RxValue, RxWrite},
 };
 use silex_dom::attribute::PendingAttribute;
-use silex_dom::view::{ApplyAttributes, HostResourceHandle, MountErrorHandler, MountOwner, View};
+use silex_dom::view::{
+    ApplyAttributes, HostResourceHandle, MountErrorHandler, MountOwner, View, ViewFactory,
+};
 use std::rc::Rc;
 use web_sys::Node;
 
@@ -336,7 +338,8 @@ where
     ) -> silex_core::SilexResult<()> {
         self.value
             .into_rx()
-            .mount(owner, parent, attrs, error_handler)
+            .create_mount_instance(owner, parent, attrs, error_handler)
+            .map(|_| ())
     }
 
     fn mount_owned(
@@ -351,7 +354,8 @@ where
     {
         self.value
             .into_rx()
-            .mount_owned(owner, parent, attrs, error_handler)
+            .create_mount_instance(owner, parent, attrs, error_handler)
+            .map(|_| ())
     }
 }
 

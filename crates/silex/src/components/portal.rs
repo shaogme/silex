@@ -66,7 +66,7 @@ impl<'scope> PortalView<'scope> {
 
         let result = catch_unwind(AssertUnwindSafe(|| {
             self.children
-                .mount_owned(owner, &container, attrs, error_handler)
+                .create_mount_instance(owner, &container, attrs, error_handler)
         }));
         match result {
             Err(panic) => {
@@ -81,7 +81,9 @@ impl<'scope> PortalView<'scope> {
                 }
                 return Err(error);
             }
-            Ok(Ok(())) => {}
+            Ok(Ok(instance)) => {
+                let _child_instance = instance;
+            }
         }
         Ok(())
     }

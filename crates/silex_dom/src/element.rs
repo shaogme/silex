@@ -1,8 +1,8 @@
 use crate::attribute::{ApplyTarget, AttributeBuilder, IntoStorable, PendingAttribute};
 use crate::event::{EventDescriptor, EventHandler};
 use crate::view::{
-    AnyView, ApplyAttributes, HostResourceHandle, MountOwner, MountOwnerToken, OwnedMountOwner,
-    View,
+    AnyView, ApplyAttributes, HostResourceHandle, MountInstance, MountOwner, MountOwnerToken,
+    OwnedMountOwner, View, ViewFactory,
 };
 use std::marker::PhantomData;
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
@@ -15,12 +15,13 @@ use silex_core::{ReactiveError, RuntimeInputs, SilexError, SilexResult};
 pub mod tags;
 pub use tags::*;
 
-pub fn text<'scope, V: View<'scope>>(content: V) -> V {
+pub fn text<'scope, V: ViewFactory<'scope>>(content: V) -> V {
     content
 }
 
 pub struct Element<'scope> {
-    pub dom_element: WebElem,
+    tag_name: String,
+    namespace: Option<String>,
     pub(crate) pending_attrs: Vec<PendingAttribute<'scope>>,
     pub(crate) children: Vec<AnyView<'scope>>,
 }
@@ -28,7 +29,8 @@ pub struct Element<'scope> {
 impl<'scope> Clone for Element<'scope> {
     fn clone(&self) -> Self {
         Self {
-            dom_element: self.dom_element.clone(),
+            tag_name: self.tag_name.clone(),
+            namespace: self.namespace.clone(),
             pending_attrs: self.pending_attrs.clone(),
             children: self.children.clone(),
         }
@@ -37,7 +39,8 @@ impl<'scope> Clone for Element<'scope> {
 
 impl PartialEq for Element<'_> {
     fn eq(&self, other: &Self) -> bool {
-        self.dom_element == other.dom_element
+        self.tag_name == other.tag_name
+            && self.namespace == other.namespace
             && self.pending_attrs == other.pending_attrs
             && self.children == other.children
     }
@@ -45,24 +48,18 @@ impl PartialEq for Element<'_> {
 
 impl<'scope> Element<'scope> {
     pub fn new(tag: &str) -> Self {
-        let document = crate::document();
-        let dom_element = document
-            .create_element(tag)
-            .expect("Failed to create element");
         Self {
-            dom_element,
+            tag_name: tag.to_string(),
+            namespace: None,
             pending_attrs: Vec::new(),
             children: Vec::new(),
         }
     }
 
     pub fn new_svg(tag: &str) -> Self {
-        let document = crate::document();
-        let dom_element = document
-            .create_element_ns(Some("http://www.w3.org/2000/svg"), tag)
-            .expect("Failed to create SVG element");
         Self {
-            dom_element,
+            tag_name: tag.to_string(),
+            namespace: Some("http://www.w3.org/2000/svg".to_string()),
             pending_attrs: Vec::new(),
             children: Vec::new(),
         }
@@ -70,7 +67,7 @@ impl<'scope> Element<'scope> {
 
     pub fn with_child<V>(tag: &str, child: V) -> Self
     where
-        V: View<'scope> + 'scope,
+        V: ViewFactory<'scope> + 'scope,
     {
         let mut element = Self::new(tag);
         element.children.push(child.into_any());
@@ -89,12 +86,21 @@ impl<'scope> Element<'scope> {
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: crate::view::MountErrorHandler<'scope>,
-    ) -> SilexResult<()> {
+    ) -> SilexResult<MountInstance<'scope>> {
+        let document = crate::document();
+        let dom_element = match self.namespace.as_deref() {
+            Some(namespace) => document
+                .create_element_ns(Some(namespace), &self.tag_name)
+                .map_err(SilexError::fatal)?,
+            None => document
+                .create_element(&self.tag_name)
+                .map_err(SilexError::fatal)?,
+        };
         let provisional_scope = Rc::new(owner.owned_scope()?);
         let provisional_owner = OwnedMountOwner::new(provisional_scope.clone());
         let token = provisional_owner.token();
         let mut appended = false;
-        let result = (|| -> SilexResult<()> {
+        let result = (|| -> SilexResult<MountInstance<'scope>> {
             let attrs = self.all_attrs(attrs);
             let mut inputs = RuntimeInputs::new();
             for attr in &attrs {
@@ -102,36 +108,40 @@ impl<'scope> Element<'scope> {
             }
             token.validate_inputs(&inputs)?;
             for attr in attrs {
-                attr.apply(&self.dom_element, &token, error_handler)?;
+                attr.apply(&dom_element, &token, error_handler)?;
             }
             parent
-                .append_child(&self.dom_element)
+                .append_child(&dom_element)
                 .map_err(SilexError::fatal)?;
             appended = true;
             for child in &self.children {
-                child.mount(
+                let _ = child.create_mount_instance(
                     &provisional_owner,
-                    self.dom_element.as_ref(),
+                    dom_element.as_ref(),
                     Vec::new(),
                     error_handler,
                 )?;
             }
             let scope_for_cleanup = provisional_scope.clone();
+            let element_for_cleanup = dom_element.clone();
             owner.on_cleanup(
                 Box::new(move || {
                     let _ = scope_for_cleanup.dispose();
+                    if let Some(parent) = element_for_cleanup.parent_node() {
+                        let _ = parent.remove_child(&element_for_cleanup);
+                    }
                     Ok(())
                 }),
                 error_handler,
             )?;
-            Ok(())
+            Ok(MountInstance::from_nodes(vec![dom_element.clone().into()]))
         })();
 
-        if let Err(error) = result {
-            rollback_mount(&provisional_scope, &self.dom_element, appended);
-            return Err(error);
+        if let Err(error) = &result {
+            rollback_mount(&provisional_scope, &dom_element, appended);
+            return Err(error.clone());
         }
-        Ok(())
+        result
     }
 }
 
@@ -192,6 +202,7 @@ impl<'scope> View<'scope> for Element<'scope> {
         error_handler: crate::view::MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         self.mount_inner(owner, parent, attrs, error_handler)
+            .map(|_| ())
     }
 
     fn mount_owned(
@@ -205,11 +216,13 @@ impl<'scope> View<'scope> for Element<'scope> {
         Self: Sized,
     {
         self.mount_inner(owner, parent, attrs, error_handler)
+            .map(|_| ())
     }
 }
 
 pub struct TypedElement<'scope, T: Tag> {
-    pub dom_element: T::DomElement,
+    tag_name: String,
+    namespace: Option<String>,
     pub(crate) pending_attrs: Vec<PendingAttribute<'scope>>,
     pub(crate) children: Vec<AnyView<'scope>>,
     marker: PhantomData<T>,
@@ -218,7 +231,8 @@ pub struct TypedElement<'scope, T: Tag> {
 impl<'scope, T: Tag> Clone for TypedElement<'scope, T> {
     fn clone(&self) -> Self {
         Self {
-            dom_element: self.dom_element.clone(),
+            tag_name: self.tag_name.clone(),
+            namespace: self.namespace.clone(),
             pending_attrs: self.pending_attrs.clone(),
             children: self.children.clone(),
             marker: PhantomData,
@@ -228,7 +242,8 @@ impl<'scope, T: Tag> Clone for TypedElement<'scope, T> {
 
 impl<T: Tag> PartialEq for TypedElement<'_, T> {
     fn eq(&self, other: &Self) -> bool {
-        self.as_element() == other.as_element()
+        self.tag_name == other.tag_name
+            && self.namespace == other.namespace
             && self.pending_attrs == other.pending_attrs
             && self.children == other.children
     }
@@ -236,13 +251,9 @@ impl<T: Tag> PartialEq for TypedElement<'_, T> {
 
 impl<'scope, T: Tag> TypedElement<'scope, T> {
     pub fn new(tag: &str) -> Self {
-        let document = crate::document();
-        let dom_element = document
-            .create_element(tag)
-            .expect("Failed to create element")
-            .unchecked_into::<T::DomElement>();
         Self {
-            dom_element,
+            tag_name: tag.to_string(),
+            namespace: None,
             pending_attrs: Vec::new(),
             children: Vec::new(),
             marker: PhantomData,
@@ -250,13 +261,9 @@ impl<'scope, T: Tag> TypedElement<'scope, T> {
     }
 
     pub fn new_svg(tag: &str) -> Self {
-        let document = crate::document();
-        let dom_element = document
-            .create_element_ns(Some("http://www.w3.org/2000/svg"), tag)
-            .expect("Failed to create SVG element")
-            .unchecked_into::<T::DomElement>();
         Self {
-            dom_element,
+            tag_name: tag.to_string(),
+            namespace: Some("http://www.w3.org/2000/svg".to_string()),
             pending_attrs: Vec::new(),
             children: Vec::new(),
             marker: PhantomData,
@@ -265,26 +272,17 @@ impl<'scope, T: Tag> TypedElement<'scope, T> {
 
     pub fn with_child<V>(tag: &str, child: V) -> Self
     where
-        V: View<'scope> + 'scope,
+        V: ViewFactory<'scope> + 'scope,
     {
         let mut element = Self::new(tag);
         element.children.push(child.into_any());
         element
     }
 
-    #[inline(always)]
-    pub fn as_element(&self) -> &web_sys::Element {
-        AsRef::<web_sys::Element>::as_ref(&self.dom_element)
-    }
-
-    #[inline(always)]
-    pub fn as_node(&self) -> &web_sys::Node {
-        AsRef::<web_sys::Node>::as_ref(&self.dom_element)
-    }
-
     pub fn into_untyped(self) -> Element<'scope> {
         Element {
-            dom_element: self.as_element().clone(),
+            tag_name: self.tag_name,
+            namespace: self.namespace,
             pending_attrs: self.pending_attrs,
             children: self.children,
         }
@@ -332,7 +330,9 @@ impl<'scope, T: Tag> View<'scope> for TypedElement<'scope, T> {
         error_handler: crate::view::MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         let element = self.clone().into_untyped();
-        element.mount_inner(owner, parent, attrs, error_handler)
+        element
+            .mount_inner(owner, parent, attrs, error_handler)
+            .map(|_| ())
     }
 
     fn mount_owned(
@@ -346,29 +346,15 @@ impl<'scope, T: Tag> View<'scope> for TypedElement<'scope, T> {
         Self: Sized,
     {
         let element = self.into_untyped();
-        element.mount_inner(owner, parent, attrs, error_handler)
+        element
+            .mount_inner(owner, parent, attrs, error_handler)
+            .map(|_| ())
     }
 }
 
 impl<'scope, T: Tag> From<TypedElement<'scope, T>> for Element<'scope> {
     fn from(value: TypedElement<'scope, T>) -> Self {
         value.into_untyped()
-    }
-}
-
-impl<'scope> std::ops::Deref for Element<'scope> {
-    type Target = WebElem;
-
-    fn deref(&self) -> &Self::Target {
-        &self.dom_element
-    }
-}
-
-impl<'scope, T: Tag> std::ops::Deref for TypedElement<'scope, T> {
-    type Target = WebElem;
-
-    fn deref(&self) -> &Self::Target {
-        self.dom_element.as_ref()
     }
 }
 

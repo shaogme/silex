@@ -1,5 +1,5 @@
 use super::any::AnyView;
-use super::contract::{ApplyAttributes, View};
+use super::contract::{ApplyAttributes, View, ViewFactory};
 use super::owner::{MountErrorHandler, MountOwner, MountOwnerToken, OwnedMountOwner};
 use super::row::{NodeRange, RowInstance, RowInstanceConfig, RowRenderContext, RowRenderer};
 use crate::attribute::PendingAttribute;
@@ -98,7 +98,8 @@ where
                     error_handler,
                 } = args;
                 let view = self();
-                view.mount_owned(&token, &parent, attrs, error_handler)
+                view.create_mount_instance(&token, &parent, attrs, error_handler)
+                    .map(|_| ())
             }),
         )
     }
@@ -233,7 +234,9 @@ where
                 error_handler,
                 ..
             } = args;
-            branch_fn(key).mount_owned(&token, &parent, attrs, error_handler)
+            branch_fn(key)
+                .create_mount_instance(&token, &parent, attrs, error_handler)
+                .map(|_| ())
         },
     );
     mount_keyed_dynamic_view(KeyedDynamicMountArgs {

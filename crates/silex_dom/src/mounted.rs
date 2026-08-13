@@ -2,7 +2,7 @@
 
 use crate::{
     attribute::PendingAttribute,
-    view::{CleanupReporter, ScopedMountOwner, View},
+    view::{CleanupReporter, MountInstance, ScopedMountOwner, ViewFactory},
 };
 use silex_core::{
     CleanupDiagnostic, CleanupError, ErrorReporter, RootHandle, Runtime, Scope, SilexError,
@@ -318,9 +318,21 @@ impl<'scope> MountContext<'scope> {
     /// Mount one owned view into the transaction staging parent.
     pub fn mount<V>(&self, view: V, error_handler: ErrorReporter<'scope>) -> SilexResult<()>
     where
-        V: View<'scope> + 'scope,
+        V: ViewFactory<'scope> + 'scope,
     {
         self.mount_with_attributes(view, Vec::new(), error_handler)
+    }
+
+    /// 挂载一个工厂并返回这次挂载产生的物理实例。
+    pub fn mount_instance<V>(
+        &self,
+        view: V,
+        error_handler: ErrorReporter<'scope>,
+    ) -> SilexResult<MountInstance<'scope>>
+    where
+        V: ViewFactory<'scope> + 'scope,
+    {
+        self.mount_instance_with_attributes(view, Vec::new(), error_handler)
     }
 
     /// Mount one owned view with top-level pending attributes.
@@ -331,10 +343,24 @@ impl<'scope> MountContext<'scope> {
         error_handler: ErrorReporter<'scope>,
     ) -> SilexResult<()>
     where
-        V: View<'scope> + 'scope,
+        V: ViewFactory<'scope> + 'scope,
+    {
+        self.mount_instance_with_attributes(view, attrs, error_handler)
+            .map(|_| ())
+    }
+
+    /// 带顶层属性地创建一次独立挂载实例。
+    pub fn mount_instance_with_attributes<V>(
+        &self,
+        view: V,
+        attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ErrorReporter<'scope>,
+    ) -> SilexResult<MountInstance<'scope>>
+    where
+        V: ViewFactory<'scope> + 'scope,
     {
         let owner = self.owner();
-        view.mount_owned(&owner, &self.parent, attrs, error_handler)
+        view.create_mount_instance(&owner, &self.parent, attrs, error_handler)
     }
 }
 
