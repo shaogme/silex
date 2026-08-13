@@ -18,7 +18,7 @@ fn main() {
             .expect("keyed entries signal should be created");
         let _keyed_view = For(keyed_entries, |entry| entry.id)
             .error_handler(error_handler)
-            .children(|entry, index, _updater| {
+            .children(|entry, index| {
                 div(format!("{index}: {}", entry.title))
             })
             .build();
@@ -32,6 +32,20 @@ fn main() {
         let _indexed_view = Index(indexed_entries)
             .error_handler(error_handler)
             .children(|entry, index| div(format!("{index}: {}", entry.title)))
+            .build();
+
+        let (stateful_entries, _) = scope
+            .signal(vec![Entry {
+                id: 3,
+                title: "Stateful entry".to_string(),
+            }])
+            .expect("stateful entries signal should be created");
+        let _stateful_view = ForStateful(stateful_entries, |entry| entry.id)
+            .error_handler(error_handler)
+            .children(|entry, index, updater| {
+                let _ = updater;
+                div(format!("{index}: {}", entry.title))
+            })
             .build();
     });
 }

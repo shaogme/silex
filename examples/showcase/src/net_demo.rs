@@ -469,7 +469,7 @@ pub fn EventStreamDemo<'scope>(
             h4("Stream Log (Wikipedia Edits):"),
                 ul(For(logs, |item| item.id.unwrap_or(0).to_string() + &item.title)
                     .error_handler(error_handler)
-                    .children(move |change, _idx, _updater| {
+                    .children(move |change, _idx| {
                 li(div![
                     span(format!("[{}] ", change.wiki)).style(stream_wiki_style.clone()),
                     span(format!("{} ", change.title)).style(stream_title_style.clone()),

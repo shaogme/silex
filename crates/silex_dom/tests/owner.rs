@@ -7,8 +7,9 @@ use silex_core::{
 use silex_dom::attribute::{AttrOp, CombinedStyles, PendingAttribute};
 use silex_dom::element::Element;
 use silex_dom::view::{
-    AnyView, ApplyAttributes, BranchEvaluation, IndexedListView, KeyedListView, MountOwner,
-    RowUpdater, ScopedMountOwner, View, mount_branch_stable_cached, mount_text_node,
+    AnyView, ApplyAttributes, BranchEvaluation, IndexedListView, MountOwner,
+    RenderOnlyKeyedListView, RowUpdater, ScopedMountOwner, StatefulKeyedListView, View,
+    mount_branch_stable_cached, mount_text_node,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -489,6 +490,56 @@ fn deferred_row_render_failure_keeps_previous_content_and_recovers() {
 }
 
 #[wasm_bindgen_test]
+fn render_only_keyed_rows_follow_collection_changes() {
+    let host = mount_point();
+    let mut runtime = Runtime::new();
+
+    let root = runtime.run().expect("root should start");
+    {
+        let scope = root.scope();
+        scope
+            .child(|child| {
+                let (items, set_items) = child
+                    .signal(vec![1_i32, 2])
+                    .expect("signal should initialize");
+                let list = RenderOnlyKeyedListView {
+                    each: items,
+                    key_fn: Rc::new(|item: &i32| *item),
+                    view_fn: Rc::new(|item: i32, index| AnyView::new(format!("{item}:{index};"))),
+                    error_handler: None,
+                    _marker: PhantomData,
+                };
+                let (owner, error_handler) = test_owner(child);
+                list.mount_owned(&owner, &host, Vec::new(), error_handler)
+                    .expect("render-only keyed list should mount");
+                assert_eq!(host.text_content().as_deref(), Some("1:0;2:1;"));
+
+                set_items
+                    .set(vec![1, 2, 3])
+                    .expect("signal should be writable");
+                assert_eq!(host.text_content().as_deref(), Some("1:0;2:1;3:2;"));
+
+                set_items
+                    .set(vec![3, 1])
+                    .expect("signal should be writable");
+                assert_eq!(host.text_content().as_deref(), Some("3:0;1:1;"));
+
+                set_items.set(vec![1]).expect("signal should be writable");
+                assert_eq!(host.text_content().as_deref(), Some("1:0;"));
+            })
+            .expect("child scope should initialize");
+        assert!(host.first_child().is_none());
+    }
+
+    root.dispose().expect("root cleanup should succeed");
+    assert!(host.first_child().is_none());
+    host.parent_node()
+        .expect("test host has a body parent")
+        .remove_child(&host)
+        .expect("test host can be removed");
+}
+
+#[wasm_bindgen_test]
 fn keyed_list_initial_duplicate_key_is_a_mount_error() {
     let host = mount_point();
     let reports = Rc::new(Cell::new(0));
@@ -500,10 +551,10 @@ fn keyed_list_initial_duplicate_key_is_a_mount_error() {
                 .signal(vec![1_i32, 1])
                 .expect("signal should initialize");
             let reports_for_handler = reports.clone();
-            let list = KeyedListView {
+            let list = RenderOnlyKeyedListView {
                 each: items,
                 key_fn: Rc::new(|_: &i32| 0),
-                view_fn: Rc::new(|item: i32, _, _| AnyView::new(item.to_string())),
+                view_fn: Rc::new(|item: i32, _| AnyView::new(item.to_string())),
                 error_handler: Some(
                     scope
                         .error_handler(move |_| {
@@ -517,7 +568,7 @@ fn keyed_list_initial_duplicate_key_is_a_mount_error() {
 
             assert!(matches!(
                 list.mount_owned(&owner, &host, Vec::new(), error_handler),
-                Err(SilexError::Recoverable(SilexErrorKind::Framework(message))) if message == "duplicate key in keyed list"
+                Err(SilexError::Fatal(SilexErrorKind::Framework(message))) if message == "duplicate key in keyed list"
             ));
         })
         .expect("child scope should initialize");
@@ -678,7 +729,7 @@ fn branch_replaces_row_owner_and_keyed_list_reorders_ranges() {
                     .expect("signal should initialize");
                 let duplicate_errors = Rc::new(Cell::new(0));
                 let duplicate_errors_for_handler = duplicate_errors.clone();
-                let list = KeyedListView {
+                let list = StatefulKeyedListView {
                     each: items,
                     key_fn: Rc::new(|item: &i32| *item),
                     view_fn: Rc::new(|item: i32, index, updater| {
@@ -881,7 +932,7 @@ fn stateful_keyed_rows_preserve_mounts_and_invalidate_old_updaters() {
                 let updates_for_factory = updates.clone();
                 let cleanups_for_factory = cleanups.clone();
                 let first_updater_for_factory = first_updater.clone();
-                let view = KeyedListView {
+                let view = StatefulKeyedListView {
                     each: items,
                     key_fn: Rc::new(|item: &i32| *item),
                     view_fn: Rc::new(move |item: i32, index, updater: RowUpdater<'_, i32>| {
@@ -970,7 +1021,7 @@ fn rejected_stateful_factory_cleans_uncommitted_row_range() {
                     child.signal(vec![1i32]).expect("signal should initialize");
                 let cleanups_for_factory = cleanups.clone();
                 let errors_for_handler = errors.clone();
-                let list = KeyedListView {
+                let list = StatefulKeyedListView {
                     each: items,
                     key_fn: Rc::new(|item: &i32| *item),
                     view_fn: Rc::new(move |item: i32, index, updater: RowUpdater<'_, i32>| {

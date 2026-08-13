@@ -10,7 +10,7 @@ use silex_dom::{
         debounce, queue_microtask, request_animation_frame, request_idle_callback, set_interval,
         set_timeout, window_event_listener_untyped,
     },
-    view::{AnyView, KeyedListView, MountOwner, ScopedMountOwner, View, mount_text_node},
+    view::{AnyView, MountOwner, ScopedMountOwner, StatefulKeyedListView, View, mount_text_node},
 };
 use std::{
     cell::{Cell, RefCell},
@@ -583,7 +583,7 @@ fn keyed_reorder_keeps_window_resources_until_row_delete() {
                     .signal(vec![1i32, 2])
                     .expect("signal should initialize");
                 let calls_for_factory = calls.clone();
-                let list = KeyedListView {
+                let list = StatefulKeyedListView {
                     each: items,
                     key_fn: Rc::new(|item: &i32| *item),
                     view_fn: Rc::new(move |item: i32, _, updater| {

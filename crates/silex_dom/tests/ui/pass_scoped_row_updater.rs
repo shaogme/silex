@@ -1,5 +1,5 @@
 use silex_core::Runtime;
-use silex_dom::view::{AnyView, KeyedListView, RowUpdater};
+use silex_dom::view::{AnyView, RowUpdater, StatefulKeyedListView};
 use std::{marker::PhantomData, rc::Rc};
 
 fn main() {
@@ -7,7 +7,7 @@ fn main() {
     runtime
         .child(|scope| {
             let (items, _) = scope.signal(vec![1i32]).expect("signal");
-            let view = KeyedListView {
+            let view = StatefulKeyedListView {
                 each: items,
                 key_fn: Rc::new(|item: &i32| *item),
                 view_fn: Rc::new(|item: i32, index, updater: RowUpdater<'_, i32>| {

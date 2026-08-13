@@ -15,8 +15,17 @@ use std::{
 };
 use web_sys::Node;
 
+/// Keyed list that re-renders each row when its item or index changes.
+pub struct RenderOnlyKeyedListView<'scope, IF, IS, T, K> {
+    pub each: IF,
+    pub key_fn: Rc<dyn Fn(&T) -> K + 'scope>,
+    pub view_fn: Rc<dyn Fn(T, usize) -> AnyView<'scope> + 'scope>,
+    pub error_handler: Option<ErrorHandler<'scope, SilexError>>,
+    pub _marker: std::marker::PhantomData<(IS, T)>,
+}
+
 /// Keyed list with persistent row controllers and state-preserving updates.
-pub struct KeyedListView<'scope, IF, IS, T, K> {
+pub struct StatefulKeyedListView<'scope, IF, IS, T, K> {
     pub each: IF,
     pub key_fn: Rc<dyn Fn(&T) -> K + 'scope>,
     pub view_fn: Rc<dyn Fn(T, usize, RowUpdater<'scope, T>) -> AnyView<'scope> + 'scope>,
@@ -51,9 +60,65 @@ impl<'scope, T> RowFactory<'scope, T> {
     }
 }
 
-impl<'scope, IF, IS, T, K> ApplyAttributes<'scope> for KeyedListView<'scope, IF, IS, T, K> {}
+impl<'scope, IF, IS, T, K> ApplyAttributes<'scope>
+    for RenderOnlyKeyedListView<'scope, IF, IS, T, K>
+{
+}
 
-impl<'scope, IF, IS, T, K> View<'scope> for KeyedListView<'scope, IF, IS, T, K>
+impl<'scope, IF, IS, T, K> View<'scope> for RenderOnlyKeyedListView<'scope, IF, IS, T, K>
+where
+    IF: RxRead<Value = IS> + ReactiveSource<'scope> + Clone + 'scope,
+    IS: ForLoopSource<Item = T> + Sized + 'scope,
+    K: std::hash::Hash + Eq + Clone + 'scope,
+    T: Clone + 'scope,
+{
+    fn mount(
+        &self,
+        owner: &dyn MountOwner<'scope>,
+        parent: &Node,
+        attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: MountErrorHandler<'scope>,
+    ) -> SilexResult<()> {
+        mount_keyed_list(KeyedListMountArgs {
+            owner,
+            parent,
+            source: self.each.clone(),
+            key_fn: self.key_fn.clone(),
+            factory: RowFactory::RenderOnly(self.view_fn.clone()),
+            error_handler: self.error_handler,
+            attrs,
+            parent_error_handler: error_handler,
+            _marker: std::marker::PhantomData,
+        })
+    }
+
+    fn mount_owned(
+        self,
+        owner: &dyn MountOwner<'scope>,
+        parent: &Node,
+        attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: MountErrorHandler<'scope>,
+    ) -> SilexResult<()>
+    where
+        Self: Sized,
+    {
+        mount_keyed_list(KeyedListMountArgs {
+            owner,
+            parent,
+            source: self.each,
+            key_fn: self.key_fn,
+            factory: RowFactory::RenderOnly(self.view_fn),
+            error_handler: self.error_handler,
+            attrs,
+            parent_error_handler: error_handler,
+            _marker: std::marker::PhantomData,
+        })
+    }
+}
+
+impl<'scope, IF, IS, T, K> ApplyAttributes<'scope> for StatefulKeyedListView<'scope, IF, IS, T, K> {}
+
+impl<'scope, IF, IS, T, K> View<'scope> for StatefulKeyedListView<'scope, IF, IS, T, K>
 where
     IF: RxRead<Value = IS> + ReactiveSource<'scope> + Clone + 'scope,
     IS: ForLoopSource<Item = T> + Sized + 'scope,

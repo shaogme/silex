@@ -283,7 +283,7 @@ pub fn EventDemo<'scope>(
         button("Consume Payload").on(event::click, on_click_inner),
         ul(For(logs, |l| l.clone())
             .error_handler(error_handler)
-            .children(move |l, _idx, _updater| li(l).style(log_item_style.clone()))
+            .children(move |l, _idx| li(l).style(log_item_style.clone()))
             .build())
         .style(
             sty()

@@ -40,7 +40,7 @@ pub fn ListDemo<'scope>(
         )
         .build(),
         ul(For(list, |item| item.clone())
-            .children(|item, _idx, _updater| li(item))
+            .children(|item, _idx| li(item))
             .error_handler(list_error_handler)
             .build()),
         div![

@@ -1,5 +1,5 @@
-error[E0599]: no method named `error_handler` found for struct `ViewOwnerToken<'scope>` in the current scope
+error[E0599]: no method named `error_handler` found for struct `MountOwnerToken<'scope>` in the current scope
  --> tests/ui/fail_scoped_owner_without_handler.rs:9:31
   |
 9 |         let _ = owner.token().error_handler();
-  |                               ^^^^^^^^^^^^^ method not found in `ViewOwnerToken<'_>`
+  |                               ^^^^^^^^^^^^^ method not found in `MountOwnerToken<'_>`

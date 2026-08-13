@@ -1,14 +1,14 @@
 error: lifetime may not live long enough
  --> tests/ui/fail_scoped_thunk_escape.rs:4:5
   |
-3 |   fn make_renderer<'scope>(value: &'scope str) -> RenderThunk<'static> {
+3 |   fn make_renderer<'scope>(value: &'scope str) -> DynamicRenderer<'static> {
   |                    ------ lifetime `'scope` defined here
-4 | /     RenderThunk::new(move |_| {
+4 | /     DynamicRenderer::new(move |_| {
 5 | |         let _ = value.len();
 6 | |         Ok(())
 7 | |     })
   | |______^ returning this value requires that `'scope` must outlive `'static`
   |
-  = note: requirement occurs because of the type `RenderThunk<'_>`, which makes the generic argument `'_` invariant
-  = note: the struct `RenderThunk<'scope>` is invariant over the parameter `'scope`
+  = note: requirement occurs because of the type `DynamicRenderer<'_>`, which makes the generic argument `'_` invariant
+  = note: the struct `DynamicRenderer<'scope>` is invariant over the parameter `'scope`
   = help: see <https://doc.rust-lang.org/nomicon/subtyping.html> for more information about variance

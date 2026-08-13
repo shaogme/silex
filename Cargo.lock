@@ -1994,6 +1994,7 @@ dependencies = [
  "silex",
  "silex_macros",
  "wasm-bindgen",
+ "wasm-bindgen-test",
 ]
 
 [[package]]
