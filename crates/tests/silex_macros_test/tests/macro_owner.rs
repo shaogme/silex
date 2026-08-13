@@ -174,10 +174,7 @@ fn mount_foreign_css<'scope>(
     });
     let view = silex::html::div(()).apply(css?);
     let (owner, error_handler) = test_owner(local_scope);
-    assert!(
-        view.mount(&owner, host, Vec::new(), error_handler)
-            .is_err()
-    );
+    assert!(view.mount(&owner, host, Vec::new(), error_handler).is_err());
     Ok(())
 }
 

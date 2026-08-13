@@ -2,8 +2,7 @@
 
 use silex_core::{ErrorReporter, ReadSignal, Runtime, SilexError, SilexErrorKind, SilexResult};
 use silex_dom::view::{
-    AnyView, ApplyAttributes, MountInstance, MountOwner, ScopedMountOwner, View,
-    mount_text_node,
+    AnyView, ApplyAttributes, MountInstance, MountOwner, ScopedMountOwner, View, mount_text_node,
 };
 use silex_router::macros::routes;
 use silex_router::{

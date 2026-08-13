@@ -4,8 +4,7 @@ use gloo_timers::future::TimeoutFuture;
 use silex_core::{ErrorReporter, RootHandle, Runtime, Scope, SilexResult};
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::view::{
-    AnyView, ApplyAttributes, IndexedListView, MountInstance, MountOwner, ScopedMountOwner,
-    View,
+    AnyView, ApplyAttributes, IndexedListView, MountInstance, MountOwner, ScopedMountOwner, View,
 };
 use silex_persist::{PersistMode, PersistenceState, Persistent, SyncStrategy, WriteDefault};
 use silex_router::{RouterContext, RouterContextProps};
@@ -322,9 +321,7 @@ impl<'scope> View<'scope> for CapturedPersistent<'scope> {
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: ErrorReporter<'scope>,
     ) -> silex_core::SilexResult<MountInstance<'scope>> {
-        let instance = self
-            .binding
-            .mount(owner, parent, attrs, error_handler)?;
+        let instance = self.binding.mount(owner, parent, attrs, error_handler)?;
         *self.node.borrow_mut() = instance.first_node().cloned();
         Ok(instance)
     }

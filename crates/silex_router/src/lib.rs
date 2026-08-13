@@ -33,8 +33,7 @@ use silex_core::{
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::helpers::window_event_listener_untyped;
 use silex_dom::view::{
-    AnyView, ApplyAttributes, BranchEvaluation, MountErrorHandler, MountInstance, MountOwner,
-    View,
+    AnyView, ApplyAttributes, BranchEvaluation, MountErrorHandler, MountInstance, MountOwner, View,
 };
 use silex_macros::component;
 use std::rc::Rc;

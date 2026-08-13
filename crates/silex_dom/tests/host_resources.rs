@@ -10,9 +10,7 @@ use silex_dom::{
         debounce, queue_microtask, request_animation_frame, request_idle_callback, set_interval,
         set_timeout, window_event_listener_untyped,
     },
-    view::{
-        AnyView, MountOwner, ScopedMountOwner, StatefulKeyedListView, View, mount_text_node,
-    },
+    view::{AnyView, MountOwner, ScopedMountOwner, StatefulKeyedListView, View, mount_text_node},
 };
 use std::{
     cell::{Cell, RefCell},

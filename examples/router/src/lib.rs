@@ -345,10 +345,7 @@ fn MainLayout<'scope>(
 // ==========================================
 
 #[component]
-fn App<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
-) -> impl View<'scope> {
+fn App<'scope>(scope: Scope<'scope>, error_handler: ErrorReporter<'scope>) -> impl View<'scope> {
     let users = routes!(UsersRoutes {
         list "/" => move |ctx| UserList(ctx).error_handler(error_handler).build(),
         create "/new" => move |_ctx| CreateUser().error_handler(error_handler).build(),

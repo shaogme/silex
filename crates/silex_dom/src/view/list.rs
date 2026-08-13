@@ -3,9 +3,7 @@ use super::row::{
     NodeRange, RowInstance, RowInstanceConfig, RowRenderContext, RowRenderer, RowUpdater,
 };
 use crate::attribute::PendingAttribute;
-use crate::view::{
-    AnyView, ApplyAttributes, MountErrorHandler, MountInstance, MountOwner, View,
-};
+use crate::view::{AnyView, ApplyAttributes, MountErrorHandler, MountInstance, MountOwner, View};
 use silex_core::reactivity::{ReactiveSource, runtime_inputs_of};
 use silex_core::traits::{ForLoopSource, RxRead};
 use silex_core::{ErrorHandler, RuntimeInputs, SilexError, SilexErrorKind, SilexResult};

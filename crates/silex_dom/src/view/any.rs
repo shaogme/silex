@@ -2,7 +2,7 @@ use super::mount::mount_composite;
 use crate::attribute::PendingAttribute;
 use crate::element::Element;
 use crate::view::{
-    ApplyAttributes, MountErrorHandler, MountInstance, MountOwner, ViewCons, View, ViewNil,
+    ApplyAttributes, MountErrorHandler, MountInstance, MountOwner, View, ViewCons, ViewNil,
 };
 use silex_core::SilexResult;
 use std::rc::Rc;
@@ -16,10 +16,7 @@ pub enum AnyView<'scope> {
     Text(String),
     Element(Element<'scope>),
     List(Vec<AnyView<'scope>>),
-    Boxed(
-        Rc<dyn View<'scope> + 'scope>,
-        Vec<PendingAttribute<'scope>>,
-    ),
+    Boxed(Rc<dyn View<'scope> + 'scope>, Vec<PendingAttribute<'scope>>),
 }
 
 impl<'scope> AnyView<'scope> {
@@ -102,9 +99,7 @@ impl<'scope> View<'scope> for AnyView<'scope> {
         match self {
             Self::Empty => Ok(MountInstance::from_nodes(Vec::new())),
             Self::Text(text) => text.mount(owner, parent, attrs, error_handler),
-            Self::Element(element) => {
-                element.mount(owner, parent, attrs, error_handler)
-            }
+            Self::Element(element) => element.mount(owner, parent, attrs, error_handler),
             Self::List(list) => mount_list(list, owner, parent, attrs, error_handler),
             Self::Boxed(view, inner_attrs) => view.mount(
                 owner,

@@ -4,9 +4,7 @@ use silex_core::{ErrorReporter, Runtime, SilexError, SilexErrorKind, SilexResult
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::element::Element;
 use silex_dom::mounted::{CleanupOrigin, CleanupSink, MountAvailability, MountedApp};
-use silex_dom::view::{
-    AnyView, ApplyAttributes, MountInstance, MountOwner, View, mount_component,
-};
+use silex_dom::view::{AnyView, ApplyAttributes, MountInstance, MountOwner, View, mount_component};
 use std::{cell::Cell, rc::Rc};
 use wasm_bindgen_test::*;
 use web_sys::Node;

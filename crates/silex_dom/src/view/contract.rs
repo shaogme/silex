@@ -111,9 +111,7 @@ where
     ) -> SilexResult<MountInstance<'scope>> {
         match self {
             Self::Owned(value) => value.mount(owner, parent, attrs, error_handler),
-            Self::Borrowed(value) => {
-                value.mount(owner, parent, attrs, error_handler)
-            }
+            Self::Borrowed(value) => value.mount(owner, parent, attrs, error_handler),
         }
     }
 }

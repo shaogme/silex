@@ -1,4 +1,4 @@
-use super::contract::{ApplyAttributes, MountInstance, ViewCons, View, ViewNil};
+use super::contract::{ApplyAttributes, MountInstance, View, ViewCons, ViewNil};
 use super::owner::{MountErrorHandler, MountOwner, OwnedMountOwner};
 use crate::attribute::PendingAttribute;
 use silex_core::{CleanupError, OwnedScope, SilexError, SilexResult};
@@ -199,9 +199,7 @@ impl<'scope> View<'scope> for () {
     }
 }
 
-impl<'scope, V: View<'scope> + ApplyAttributes<'scope>> ApplyAttributes<'scope>
-    for Option<V>
-{
+impl<'scope, V: View<'scope> + ApplyAttributes<'scope>> ApplyAttributes<'scope> for Option<V> {
     fn apply_attributes(&mut self, attrs: Vec<PendingAttribute<'scope>>) {
         if let Some(value) = self {
             value.apply_attributes(attrs);
@@ -265,8 +263,8 @@ impl<'scope, V: View<'scope>> View<'scope> for Vec<V> {
     }
 }
 
-impl<'scope, V: View<'scope> + ApplyAttributes<'scope>, const N: usize>
-    ApplyAttributes<'scope> for [V; N]
+impl<'scope, V: View<'scope> + ApplyAttributes<'scope>, const N: usize> ApplyAttributes<'scope>
+    for [V; N]
 {
     fn apply_attributes(&mut self, attrs: Vec<PendingAttribute<'scope>>) {
         for value in self {
@@ -330,9 +328,7 @@ impl<'scope, H: ApplyAttributes<'scope>, T: ApplyAttributes<'scope>> ApplyAttrib
     }
 }
 
-impl<'scope, H: View<'scope>, T: View<'scope>> View<'scope>
-    for ViewCons<H, T>
-{
+impl<'scope, H: View<'scope>, T: View<'scope>> View<'scope> for ViewCons<H, T> {
     fn mount(
         &self,
         owner: &dyn MountOwner<'scope>,
@@ -346,18 +342,12 @@ impl<'scope, H: View<'scope>, T: View<'scope>> View<'scope>
             attrs,
             error_handler,
             move |transaction_owner, fragment, attrs, error_handler| {
-                let _ = self.0.mount(
-                    transaction_owner,
-                    fragment,
-                    attrs,
-                    error_handler,
-                )?;
-                let _ = self.1.mount(
-                    transaction_owner,
-                    fragment,
-                    Vec::new(),
-                    error_handler,
-                )?;
+                let _ = self
+                    .0
+                    .mount(transaction_owner, fragment, attrs, error_handler)?;
+                let _ = self
+                    .1
+                    .mount(transaction_owner, fragment, Vec::new(), error_handler)?;
                 Ok(MountInstance::from_nodes(Vec::new()))
             },
         )
@@ -377,9 +367,7 @@ macro_rules! chain {
     };
 }
 
-impl<'scope, V: View<'scope> + ApplyAttributes<'scope>> ApplyAttributes<'scope>
-    for SilexResult<V>
-{
+impl<'scope, V: View<'scope> + ApplyAttributes<'scope>> ApplyAttributes<'scope> for SilexResult<V> {
     fn apply_attributes(&mut self, attrs: Vec<PendingAttribute<'scope>>) {
         if let Ok(value) = self {
             value.apply_attributes(attrs);

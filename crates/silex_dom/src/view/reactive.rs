@@ -2,7 +2,7 @@ use crate::attribute::PendingAttribute;
 use crate::element::{Element, TypedElement, tags::Tag};
 use crate::view::{
     AnyView, ApplyAttributes, DynamicRenderArgs, DynamicRenderer, MountErrorHandler, MountInstance,
-    MountOwner, OwnedMountOwner, ViewCons, View, mount_dynamic_view_universal_from,
+    MountOwner, OwnedMountOwner, View, ViewCons, mount_dynamic_view_universal_from,
 };
 use silex_core::reactivity::{Memo, ReadSignal, RwSignal, Signal, StoredValue};
 use silex_core::traits::RxCloneData;
