@@ -1709,79 +1709,6 @@ pub(crate) fn mount_dynamic_view_universal_from<'scope>(
     Ok(())
 }
 
-/// Dynamic view mount with a persistent row owner keyed by the current key.
-pub fn mount_dynamic_view_cached<'scope, K, KeyFn, RenderFn>(
-    owner: &dyn ViewOwner<'scope>,
-    parent: &Node,
-    attrs: Vec<PendingAttribute<'scope>>,
-    inputs: RuntimeInputs,
-    error_handler: ViewErrorHandler<'scope>,
-    key_fn: KeyFn,
-    renderer: RenderFn,
-) -> SilexResult<()>
-where
-    K: PartialEq + Clone + 'scope,
-    KeyFn: Fn() -> K + Clone + 'scope,
-    RenderFn: Fn(K, (Node, Vec<PendingAttribute<'scope>>)) -> SilexResult<()> + 'scope,
-{
-    let render = RowRender::new(move |args: RowRenderArgs<'scope, K>| {
-        let RowRenderArgs {
-            item: key,
-            parent,
-            attrs,
-            ..
-        } = args;
-        renderer(key, (parent, attrs))
-    });
-    mount_keyed_dynamic_view(KeyedDynamicMountArgs {
-        owner,
-        parent,
-        attrs,
-        inputs,
-        error_handler,
-        key_fn,
-        render,
-        update_same_key: true,
-    })
-}
-
-pub fn mount_branch_cached<'scope, K, KeyFn, BranchFn>(
-    owner: &dyn ViewOwner<'scope>,
-    parent: &Node,
-    attrs: Vec<PendingAttribute<'scope>>,
-    inputs: RuntimeInputs,
-    error_handler: ViewErrorHandler<'scope>,
-    key_fn: KeyFn,
-    branch_fn: BranchFn,
-) -> SilexResult<()>
-where
-    K: PartialEq + Clone + 'scope,
-    KeyFn: Fn() -> K + Clone + 'scope,
-    BranchFn: Fn(K) -> AnyView<'scope> + 'scope,
-{
-    let render = RowRender::new(move |args: RowRenderArgs<'scope, K>| {
-        let RowRenderArgs {
-            item: key,
-            parent,
-            attrs,
-            owner: token,
-            error_handler,
-            ..
-        } = args;
-        branch_fn(key).mount_owned(&token, &parent, attrs, error_handler)
-    });
-    mount_keyed_dynamic_view(KeyedDynamicMountArgs {
-        owner,
-        parent,
-        attrs,
-        inputs,
-        error_handler,
-        key_fn,
-        render,
-        update_same_key: true,
-    })
-}
-
 /// The identity and render snapshot produced by one stable branch evaluation.
 ///
 /// Stable branches compare only `key`; the snapshot is delivered to the branch
@@ -1841,7 +1768,7 @@ where
         } = args;
         branch_fn(key).mount_owned(&token, &parent, attrs, error_handler)
     });
-    mount_keyed_dynamic_view_result(KeyedDynamicMountArgs {
+    mount_keyed_dynamic_view(KeyedDynamicMountArgs {
         owner,
         parent,
         attrs,
@@ -1872,36 +1799,7 @@ struct KeyedDynamicMountArgs<'owner, 'scope, K, KeyFn> {
     update_same_key: bool,
 }
 
-fn mount_keyed_dynamic_view<'owner, 'scope, K, KeyFn>(
-    args: KeyedDynamicMountArgs<'owner, 'scope, K, KeyFn>,
-) -> SilexResult<()>
-where
-    K: PartialEq + Clone + 'scope,
-    KeyFn: Fn() -> K + Clone + 'scope,
-{
-    let KeyedDynamicMountArgs {
-        owner,
-        parent,
-        attrs,
-        inputs,
-        error_handler,
-        key_fn,
-        render,
-        update_same_key,
-    } = args;
-    mount_keyed_dynamic_view_result(KeyedDynamicMountArgs {
-        owner,
-        parent,
-        attrs,
-        inputs,
-        error_handler,
-        key_fn: move || Ok(key_fn()),
-        render,
-        update_same_key,
-    })
-}
-
-fn mount_keyed_dynamic_view_result<'scope, K, KeyFn>(
+fn mount_keyed_dynamic_view<'scope, K, KeyFn>(
     args: KeyedDynamicMountArgs<'_, 'scope, K, KeyFn>,
 ) -> SilexResult<()>
 where

@@ -7,8 +7,8 @@ use silex_core::{
 use silex_dom::attribute::{AttrOp, CombinedStyles, PendingAttribute};
 use silex_dom::element::Element;
 use silex_dom::view::{
-    AnyView, ApplyAttributes, IndexedLoopView, KeyedLoopView, RowUpdater, ScopedViewOwner, View,
-    ViewOwner, mount_branch_cached, mount_text_node,
+    AnyView, ApplyAttributes, BranchEvaluation, IndexedLoopView, KeyedLoopView, RowUpdater,
+    ScopedViewOwner, View, ViewOwner, mount_branch_stable_cached, mount_text_node,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -644,14 +644,18 @@ fn branch_replaces_row_owner_and_keyed_list_reorders_ranges() {
             .promote(key, test_handler(scope))
             .expect("signal promotion should succeed")
             .runtime_inputs();
-        mount_branch_cached(
+        mount_branch_stable_cached(
             &owner,
             &host,
             Vec::new(),
             key_inputs,
             error_handler,
-            move || key.get().expect("signal should be readable"),
-            move |key| {
+            move || {
+                let key = key.get().expect("signal should be readable");
+                Ok(BranchEvaluation::new(key, ()))
+            },
+            move |evaluation| {
+                let (key, ()) = evaluation.into_parts();
                 AnyView::new(CleanupProbe {
                     text: format!("b{key}"),
                     cleanups: branch_cleanups_for_view.clone(),
@@ -662,10 +666,10 @@ fn branch_replaces_row_owner_and_keyed_list_reorders_ranges() {
         assert_eq!(host.text_content().as_deref(), Some("b0"));
 
         set_key.set(0).expect("signal should be writable");
-        assert_eq!(branch_cleanups.get(), 1);
+        assert_eq!(branch_cleanups.get(), 0);
         set_key.set(1).expect("signal should be writable");
         assert_eq!(host.text_content().as_deref(), Some("b1"));
-        assert_eq!(branch_cleanups.get(), 2);
+        assert_eq!(branch_cleanups.get(), 1);
 
         scope
             .child(|child| {
@@ -724,7 +728,7 @@ fn branch_replaces_row_owner_and_keyed_list_reorders_ranges() {
     }
 
     root.dispose().expect("root cleanup should succeed");
-    assert_eq!(branch_cleanups.get(), 3);
+    assert_eq!(branch_cleanups.get(), 2);
     assert!(host.first_child().is_none());
     host.parent_node()
         .expect("test host has a body parent")
@@ -783,7 +787,7 @@ fn repeated_branch_and_list_replacement_keeps_owner_lifecycle_stable() {
         let (key, set_key) = scope.signal(0i32).expect("signal should initialize");
         let (owner, error_handler) = test_owner(scope);
         let branch_cleanups_for_view = branch_cleanups.clone();
-        mount_branch_cached(
+        mount_branch_stable_cached(
             &owner,
             &host,
             Vec::new(),
@@ -792,8 +796,12 @@ fn repeated_branch_and_list_replacement_keeps_owner_lifecycle_stable() {
                 .expect("signal promotion should succeed")
                 .runtime_inputs(),
             error_handler,
-            move || key.get().expect("signal should be readable"),
-            move |key| {
+            move || {
+                let key = key.get().expect("signal should be readable");
+                Ok(BranchEvaluation::new(key, ()))
+            },
+            move |evaluation| {
+                let (key, ()) = evaluation.into_parts();
                 AnyView::new(CleanupProbe {
                     text: format!("b{key}"),
                     cleanups: branch_cleanups_for_view.clone(),
