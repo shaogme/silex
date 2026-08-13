@@ -1,48 +1,83 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, rc::Rc};
 
 use silex_core::{Rx, RxValueKind, SilexError, SilexErrorKind, SilexResult};
+use wasm_bindgen::JsValue;
 use web_sys::Element as WebElem;
 
-use super::foundation::{ApplyTarget, ApplyToDom, ReactiveApply, apply_immediate_string};
+use super::foundation::{
+    ApplyTarget, ApplyToDom, ReactiveBinding, ReactiveBindingContext, ReactiveBindingPlan,
+    ReactiveBindingTarget, apply_immediate_string,
+};
 use crate::attribute::op::{
-    Attr, AttrData, AttrOp, AttrUpdate, apply_attr_with_target_internal,
-    apply_immediate_bool_internal, get_style_decl,
+    Attr, AttrOp, apply_attr_with_target_internal, apply_immediate_bool_internal, get_style_decl,
 };
 use crate::view::{MountErrorHandler, MountOwnerToken};
 
-fn register<'scope>(
-    owner: &MountOwnerToken<'scope>,
-    inputs: silex_core::RuntimeInputs,
-    error_handler: MountErrorHandler<'scope>,
-    callback: impl FnMut() -> SilexResult<()> + 'scope,
-) -> SilexResult<()> {
-    owner.effect_from(inputs, Box::new(callback), error_handler)
+fn cleanup_target(el: &WebElem, target: &ApplyTarget) -> SilexResult<()> {
+    match target {
+        ApplyTarget::Attr(name) => el.remove_attribute(name).map_err(SilexError::fatal),
+        ApplyTarget::Prop(name) => {
+            js_sys::Reflect::set(el, &JsValue::from_str(name), &JsValue::UNDEFINED)
+                .map(|_| ())
+                .map_err(SilexError::fatal)
+        }
+        ApplyTarget::Known(prop) => apply_attr_with_target_internal(
+            el,
+            prop.name(),
+            ApplyTarget::Known(*prop),
+            &Attr::Removed,
+        ),
+        ApplyTarget::Class | ApplyTarget::Style | ApplyTarget::Apply => Ok(()),
+    }
 }
 
-pub(crate) fn apply_primitive_reactive_internal<'scope, T>(
-    el: WebElem,
-    target: ApplyTarget,
-    rx: Rx<'scope, T>,
-    owner: &MountOwnerToken<'scope>,
-    error_handler: MountErrorHandler<'scope>,
-) -> SilexResult<()>
+fn string_value<'scope, T>(rx: Rx<'scope, T>) -> Rc<dyn Fn() -> SilexResult<String> + 'scope>
 where
     T: ToString + Clone + 'scope,
 {
-    register(owner, rx.runtime_inputs(), error_handler, move || {
-        let value = rx.get()?.to_string();
-        match &target {
-            ApplyTarget::Attr(_) => apply_immediate_string(&el, &target, &value),
-            ApplyTarget::Prop(_) => apply_immediate_string(&el, &target, &value),
-            ApplyTarget::Known(prop) => apply_attr_with_target_internal(
-                &el,
-                prop.name(),
-                ApplyTarget::Known(*prop),
-                &Attr::from(value),
-            ),
-            ApplyTarget::Class => el.set_attribute("class", &value).map_err(SilexError::fatal),
-            ApplyTarget::Style => {
-                if let Some(style) = get_style_decl(&el) {
+    Rc::new(move || rx.get().map(|value| value.to_string()))
+}
+
+fn string_plan<'scope, T>(
+    rx: Rx<'scope, T>,
+    target: ReactiveBindingTarget<'scope>,
+) -> ReactiveBindingPlan<'scope>
+where
+    T: ToString + Clone + 'scope,
+{
+    let value = string_value(rx);
+    let value_for_update = value.clone();
+    let target_for_update = target.clone();
+    let update = Rc::new(move |el: &WebElem| {
+        let value = value_for_update()?;
+        match &target_for_update {
+            ReactiveBindingTarget::Attribute(target) => match target {
+                ApplyTarget::Attr(_) | ApplyTarget::Prop(_) | ApplyTarget::Known(_) => {
+                    apply_attr_with_target_internal(
+                        el,
+                        target.attr_name(),
+                        target.clone(),
+                        &Attr::from(value),
+                    )
+                }
+                ApplyTarget::Class => el.set_attribute("class", &value).map_err(SilexError::fatal),
+                ApplyTarget::Style => {
+                    if let Some(style) = get_style_decl(el) {
+                        style.set_css_text(&value);
+                        Ok(())
+                    } else {
+                        Err(SilexError::fatal(SilexErrorKind::Dom(
+                            "element does not expose a style declaration".to_string(),
+                        )))
+                    }
+                }
+                ApplyTarget::Apply => Ok(()),
+            },
+            ReactiveBindingTarget::DynamicClasses => {
+                el.set_attribute("class", &value).map_err(SilexError::fatal)
+            }
+            ReactiveBindingTarget::DynamicStyle => {
+                if let Some(style) = get_style_decl(el) {
                     style.set_css_text(&value);
                     Ok(())
                 } else {
@@ -51,94 +86,187 @@ where
                     )))
                 }
             }
-            ApplyTarget::Apply => Ok(()),
+            ReactiveBindingTarget::StyleProperty(name) => {
+                let style = get_style_decl(el).ok_or_else(|| {
+                    SilexError::fatal(SilexErrorKind::Dom(
+                        "element does not expose a style declaration".to_string(),
+                    ))
+                })?;
+                style.set_property(name, &value).map_err(SilexError::fatal)
+            }
+            ReactiveBindingTarget::ClassToggle(_) | ReactiveBindingTarget::Custom => Ok(()),
         }
-    })
+    });
+
+    let target_for_cleanup = target.clone();
+    let cleanup = Rc::new(move |el: &WebElem| match &target_for_cleanup {
+        ReactiveBindingTarget::Attribute(target) => cleanup_target(el, target),
+        ReactiveBindingTarget::DynamicClasses => {
+            el.remove_attribute("class").map_err(SilexError::fatal)
+        }
+        ReactiveBindingTarget::DynamicStyle => get_style_decl(el)
+            .map(|style| style.set_css_text(""))
+            .ok_or_else(|| {
+                SilexError::fatal(SilexErrorKind::Dom(
+                    "element does not expose a style declaration".to_string(),
+                ))
+            }),
+        ReactiveBindingTarget::StyleProperty(name) => get_style_decl(el)
+            .ok_or_else(|| {
+                SilexError::fatal(SilexErrorKind::Dom(
+                    "element does not expose a style declaration".to_string(),
+                ))
+            })?
+            .remove_property(name)
+            .map(|_| ())
+            .map_err(SilexError::fatal),
+        ReactiveBindingTarget::ClassToggle(name) => {
+            el.class_list().remove_1(name).map_err(SilexError::fatal)
+        }
+        ReactiveBindingTarget::Custom => Ok(()),
+    });
+
+    ReactiveBindingPlan::effect(rx.runtime_inputs(), target, update, cleanup)
+        .with_string_value(value)
 }
 
-pub(crate) fn apply_string_reactive_internal<'scope>(
-    el: WebElem,
-    target: ApplyTarget,
-    rx: Rx<'scope, String>,
-    owner: &MountOwnerToken<'scope>,
-    error_handler: MountErrorHandler<'scope>,
-) -> SilexResult<()> {
-    apply_primitive_reactive_internal(el, target, rx, owner, error_handler)
+fn bool_value<'scope>(rx: Rx<'scope, bool>) -> Rc<dyn Fn() -> SilexResult<bool> + 'scope> {
+    Rc::new(move || rx.get())
 }
 
-pub(crate) fn apply_string_pair_reactive_internal<'scope>(
-    el: WebElem,
-    key: Cow<'static, str>,
-    target: ApplyTarget,
-    rx: Rx<'scope, String>,
-    owner: &MountOwnerToken<'scope>,
-    error_handler: MountErrorHandler<'scope>,
-) -> SilexResult<()> {
-    if matches!(target, ApplyTarget::Style) {
-        let style = get_style_decl(&el).ok_or_else(|| {
-            SilexError::fatal(SilexErrorKind::Dom(
-                "element does not expose a style declaration".to_string(),
-            ))
-        })?;
-        register(owner, rx.runtime_inputs(), error_handler, move || {
-            let value = rx.get()?;
-            style.set_property(&key, &value).map_err(SilexError::fatal)
-        })?;
-    } else {
-        apply_string_reactive_internal(el, target, rx, owner, error_handler)?;
-    }
-    Ok(())
-}
-
-pub(crate) fn apply_bool_reactive_internal<'scope>(
-    el: WebElem,
-    target: ApplyTarget,
+fn bool_plan<'scope>(
     rx: Rx<'scope, bool>,
-    owner: &MountOwnerToken<'scope>,
-    error_handler: MountErrorHandler<'scope>,
-) -> SilexResult<()> {
-    register(owner, rx.runtime_inputs(), error_handler, move || {
-        let value = rx.get()?;
-        match &target {
-            ApplyTarget::Attr(name) => {
+    target: ReactiveBindingTarget<'scope>,
+) -> ReactiveBindingPlan<'scope> {
+    let value = bool_value(rx);
+    let value_for_update = value.clone();
+    let target_for_update = target.clone();
+    let update = Rc::new(move |el: &WebElem| {
+        let value = value_for_update()?;
+        match &target_for_update {
+            ReactiveBindingTarget::Attribute(target) => {
+                apply_immediate_bool_internal(el, target.attr_name(), value, true)
+            }
+            ReactiveBindingTarget::ClassToggle(name) => {
                 if value {
-                    el.set_attribute(name, "").map_err(SilexError::fatal)
+                    el.class_list().add_1(name).map_err(SilexError::fatal)
                 } else {
-                    el.remove_attribute(name).map_err(SilexError::fatal)
+                    el.class_list().remove_1(name).map_err(SilexError::fatal)
                 }
             }
-            ApplyTarget::Prop(name) => apply_immediate_bool_internal(&el, name, value, true),
-            ApplyTarget::Known(prop) => apply_attr_with_target_internal(
-                &el,
-                prop.name(),
-                ApplyTarget::Known(*prop),
-                &Attr::from(value),
-            ),
-            ApplyTarget::Class => el
+            ReactiveBindingTarget::DynamicClasses => el
                 .class_list()
                 .toggle_with_force("active", value)
                 .map(|_| ())
                 .map_err(SilexError::fatal),
-            _ => Ok(()),
+            ReactiveBindingTarget::DynamicStyle | ReactiveBindingTarget::Custom => Ok(()),
+            ReactiveBindingTarget::StyleProperty(_) => Ok(()),
         }
-    })
+    });
+
+    let target_for_cleanup = target.clone();
+    let cleanup = Rc::new(move |el: &WebElem| match &target_for_cleanup {
+        ReactiveBindingTarget::Attribute(target) => cleanup_target(el, target),
+        ReactiveBindingTarget::ClassToggle(name) => {
+            el.class_list().remove_1(name).map_err(SilexError::fatal)
+        }
+        ReactiveBindingTarget::DynamicClasses => el
+            .class_list()
+            .remove_1("active")
+            .map_err(SilexError::fatal),
+        _ => Ok(()),
+    });
+
+    ReactiveBindingPlan::effect(rx.runtime_inputs(), target, update, cleanup).with_bool_value(value)
 }
 
-pub(crate) fn apply_bool_pair_reactive_internal<'scope>(
-    el: WebElem,
-    key: Cow<'static, str>,
-    rx: Rx<'scope, bool>,
-    owner: &MountOwnerToken<'scope>,
-    error_handler: MountErrorHandler<'scope>,
-) -> SilexResult<()> {
-    let list = el.class_list();
-    register(owner, rx.runtime_inputs(), error_handler, move || {
-        if rx.get()? {
-            list.add_1(&key).map_err(SilexError::fatal)
-        } else {
-            list.remove_1(&key).map_err(SilexError::fatal)
+fn attr_plan<'scope>(
+    rx: Rx<'scope, Attr<'scope>>,
+    target: ApplyTarget,
+) -> ReactiveBindingPlan<'scope> {
+    let target_for_update = target.clone();
+    let update = Rc::new(move |el: &WebElem| {
+        let value = rx.get()?;
+        apply_attr_with_target_internal(
+            el,
+            target_for_update.attr_name(),
+            target_for_update.clone(),
+            &value,
+        )
+    });
+    let target_for_cleanup = target.clone();
+    let cleanup = Rc::new(move |el: &WebElem| cleanup_target(el, &target_for_cleanup));
+    ReactiveBindingPlan::effect(
+        rx.runtime_inputs(),
+        ReactiveBindingTarget::Attribute(target),
+        update,
+        cleanup,
+    )
+}
+
+fn target_for_value(target: ApplyTarget) -> Option<ReactiveBindingTarget<'static>> {
+    match target {
+        ApplyTarget::Attr(_) | ApplyTarget::Prop(_) | ApplyTarget::Known(_) => {
+            Some(ReactiveBindingTarget::Attribute(target))
         }
-    })
+        ApplyTarget::Class => Some(ReactiveBindingTarget::DynamicClasses),
+        ApplyTarget::Style => Some(ReactiveBindingTarget::DynamicStyle),
+        ApplyTarget::Apply => None,
+    }
+}
+
+fn target_for_pair(
+    key: Cow<'static, str>,
+    target: ApplyTarget,
+) -> Option<ReactiveBindingTarget<'static>> {
+    match target {
+        ApplyTarget::Style => Some(ReactiveBindingTarget::StyleProperty(key)),
+        ApplyTarget::Class => Some(ReactiveBindingTarget::DynamicClasses),
+        ApplyTarget::Apply => Some(ReactiveBindingTarget::Attribute(ApplyTarget::attr(key))),
+        ApplyTarget::Attr(_) | ApplyTarget::Prop(_) | ApplyTarget::Known(_) => {
+            Some(ReactiveBindingTarget::Attribute(target))
+        }
+    }
+}
+
+fn plan_for_context<'scope, T>(
+    rx: Rx<'scope, T>,
+    context: ReactiveBindingContext,
+) -> Option<ReactiveBindingPlan<'scope>>
+where
+    T: ToString + Clone + 'scope,
+{
+    match context {
+        ReactiveBindingContext::Value(target) => {
+            target_for_value(target).map(|target| string_plan(rx, target))
+        }
+        ReactiveBindingContext::Pair { key, target } => {
+            target_for_pair(key, target).map(|target| string_plan(rx, target))
+        }
+    }
+}
+
+fn bool_plan_for_context<'scope>(
+    rx: Rx<'scope, bool>,
+    context: ReactiveBindingContext,
+) -> Option<ReactiveBindingPlan<'scope>> {
+    match context {
+        ReactiveBindingContext::Value(target) => match target {
+            ApplyTarget::Attr(_) | ApplyTarget::Prop(_) | ApplyTarget::Known(_) => {
+                Some(bool_plan(rx, ReactiveBindingTarget::Attribute(target)))
+            }
+            ApplyTarget::Class => Some(bool_plan(rx, ReactiveBindingTarget::DynamicClasses)),
+            ApplyTarget::Style | ApplyTarget::Apply => None,
+        },
+        ReactiveBindingContext::Pair { key, target } => match target {
+            ApplyTarget::Class => Some(bool_plan(rx, ReactiveBindingTarget::ClassToggle(key))),
+            ApplyTarget::Apply
+            | ApplyTarget::Attr(_)
+            | ApplyTarget::Prop(_)
+            | ApplyTarget::Known(_)
+            | ApplyTarget::Style => None,
+        },
+    }
 }
 
 pub(crate) fn apply_rx_internal<'scope, T>(
@@ -149,14 +277,17 @@ pub(crate) fn apply_rx_internal<'scope, T>(
     error_handler: MountErrorHandler<'scope>,
 ) -> SilexResult<()>
 where
-    T: ReactiveApply<'scope> + 'scope,
+    T: ReactiveBinding<'scope> + 'scope,
 {
-    T::apply_to_dom(rx, el.clone(), target, owner, error_handler)
+    if let Some(plan) = T::binding_plan(rx, ReactiveBindingContext::Value(target)) {
+        plan.install(el, owner, error_handler)?;
+    }
+    Ok(())
 }
 
 impl<'scope, T> ApplyToDom<'scope> for Rx<'scope, T, RxValueKind>
 where
-    T: ReactiveApply<'scope> + Clone + 'scope,
+    T: ReactiveBinding<'scope> + Clone + 'scope,
 {
     fn apply(
         &self,
@@ -169,279 +300,152 @@ where
     }
 
     fn into_op(self, target: ApplyTarget) -> AttrOp<'scope> {
-        if let Some(op) = T::into_op_reactive(self, target.clone()) {
-            op
-        } else {
-            AttrOp::custom_with_inputs(self.runtime_inputs(), move |el, owner, error_handler| {
-                apply_rx_internal(self, el, target.clone(), owner, error_handler)
-            })
-        }
+        T::binding_plan(self, ReactiveBindingContext::Value(target))
+            .map(AttrOp::Reactive)
+            .unwrap_or(AttrOp::Noop)
     }
 }
 
-impl<'scope> ReactiveApply<'scope> for String {
-    fn apply_to_dom(
+impl<'scope> ReactiveBinding<'scope> for String {
+    fn binding_plan(
         rx: Rx<'scope, Self>,
-        el: WebElem,
-        target: ApplyTarget,
-        owner: &MountOwnerToken<'scope>,
-        error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()> {
-        apply_string_reactive_internal(el, target, rx, owner, error_handler)
-    }
-
-    fn apply_pair(
-        rx: Rx<'scope, Self>,
-        key: Cow<'static, str>,
-        el: WebElem,
-        target: ApplyTarget,
-        owner: &MountOwnerToken<'scope>,
-        error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()> {
-        apply_string_pair_reactive_internal(el, key, target, rx, owner, error_handler)
-    }
-
-    fn into_op_reactive(rx: Rx<'scope, Self>, target: ApplyTarget) -> Option<AttrOp<'scope>> {
-        match target {
-            ApplyTarget::Attr(_) | ApplyTarget::Known(_) => Some(AttrOp::Update(AttrUpdate {
-                target,
-                data: AttrData::ReactiveString(rx),
-            })),
-            ApplyTarget::Class => Some(AttrOp::reactive_classes(rx)),
-            ApplyTarget::Style => Some(AttrOp::reactive_stylesheet(rx)),
-            _ => None,
-        }
-    }
-
-    fn into_op_pair_reactive(
-        rx: Rx<'scope, Self>,
-        key: Cow<'static, str>,
-        target: ApplyTarget,
-    ) -> Option<AttrOp<'scope>> {
-        matches!(target, ApplyTarget::Style).then(|| AttrOp::style_property(key, rx))
+        context: ReactiveBindingContext,
+    ) -> Option<ReactiveBindingPlan<'scope>> {
+        plan_for_context(rx, context)
     }
 }
 
-macro_rules! impl_reactive_apply_primitive {
+macro_rules! impl_reactive_binding_string_like {
     ($($ty:ty),*) => {
         $(
-            impl<'scope> ReactiveApply<'scope> for $ty {
-                fn apply_to_dom(
+            impl<'scope, 'a: 'scope> ReactiveBinding<'scope> for $ty {
+                fn binding_plan(
                     rx: Rx<'scope, Self>,
-                    el: WebElem,
-                    target: ApplyTarget,
-                    owner: &MountOwnerToken<'scope>,
-                    error_handler: MountErrorHandler<'scope>,
-                ) -> SilexResult<()> {
-                    apply_primitive_reactive_internal(el, target, rx, owner, error_handler)
-                }
-
-                fn apply_pair(
-                    rx: Rx<'scope, Self>,
-                    key: Cow<'static, str>,
-                    el: WebElem,
-                    target: ApplyTarget,
-                    owner: &MountOwnerToken<'scope>,
-                    _error_handler: MountErrorHandler<'scope>,
-                ) -> SilexResult<()> {
-                    let _ = (rx, key, el, target, owner);
-                    Ok(())
-                }
-
-                fn into_op_reactive(
-                    rx: Rx<'scope, Self>,
-                    target: ApplyTarget,
-                ) -> Option<AttrOp<'scope>> {
-                    let _ = rx;
-                    let _ = target;
-                    None
-                }
-
-                fn into_op_pair_reactive(
-                    rx: Rx<'scope, Self>,
-                    key: Cow<'static, str>,
-                    target: ApplyTarget,
-                ) -> Option<AttrOp<'scope>> {
-                    let _ = (rx, key, target);
-                    None
+                    context: ReactiveBindingContext,
+                ) -> Option<ReactiveBindingPlan<'scope>> {
+                    plan_for_context(rx, context)
                 }
             }
         )*
     };
 }
 
-impl_reactive_apply_primitive!(
+impl_reactive_binding_string_like!(&'a str, Cow<'a, str>, &'a String);
+
+macro_rules! impl_reactive_binding_primitive {
+    ($($ty:ty),*) => {
+        $(
+            impl<'scope> ReactiveBinding<'scope> for $ty {
+                fn binding_plan(
+                    rx: Rx<'scope, Self>,
+                    context: ReactiveBindingContext,
+                ) -> Option<ReactiveBindingPlan<'scope>> {
+                    match context {
+                        ReactiveBindingContext::Value(target) => {
+                            target_for_value(target).map(|target| string_plan(rx, target))
+                        }
+                        ReactiveBindingContext::Pair { .. } => None,
+                    }
+                }
+            }
+        )*
+    };
+}
+
+impl_reactive_binding_primitive!(
     u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, f32, f64, char
 );
 
-impl<'scope> ReactiveApply<'scope> for bool {
-    fn apply_to_dom(
+impl<'scope> ReactiveBinding<'scope> for bool {
+    fn binding_plan(
         rx: Rx<'scope, Self>,
-        el: WebElem,
-        target: ApplyTarget,
-        owner: &MountOwnerToken<'scope>,
-        error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()> {
-        apply_bool_reactive_internal(el, target, rx, owner, error_handler)
+        context: ReactiveBindingContext,
+    ) -> Option<ReactiveBindingPlan<'scope>> {
+        bool_plan_for_context(rx, context)
     }
+}
 
-    fn apply_pair(
+impl<'scope> ReactiveBinding<'scope> for Attr<'scope> {
+    fn binding_plan(
         rx: Rx<'scope, Self>,
-        key: Cow<'static, str>,
-        el: WebElem,
-        target: ApplyTarget,
-        owner: &MountOwnerToken<'scope>,
-        error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()> {
-        if matches!(target, ApplyTarget::Class) {
-            apply_bool_pair_reactive_internal(el, key, rx, owner, error_handler)
-        } else {
-            Ok(())
+        context: ReactiveBindingContext,
+    ) -> Option<ReactiveBindingPlan<'scope>> {
+        match context {
+            ReactiveBindingContext::Value(target) => match target {
+                ApplyTarget::Attr(_) | ApplyTarget::Prop(_) | ApplyTarget::Known(_) => {
+                    Some(attr_plan(rx, target))
+                }
+                ApplyTarget::Class | ApplyTarget::Style | ApplyTarget::Apply => None,
+            },
+            ReactiveBindingContext::Pair { key, target } => match target {
+                ApplyTarget::Apply => Some(attr_plan(rx, ApplyTarget::attr(key))),
+                ApplyTarget::Attr(_) | ApplyTarget::Prop(_) | ApplyTarget::Known(_) => {
+                    Some(attr_plan(rx, target))
+                }
+                ApplyTarget::Class | ApplyTarget::Style => None,
+            },
         }
     }
-
-    fn into_op_reactive(rx: Rx<'scope, Self>, target: ApplyTarget) -> Option<AttrOp<'scope>> {
-        matches!(
-            target,
-            ApplyTarget::Attr(_) | ApplyTarget::Prop(_) | ApplyTarget::Known(_)
-        )
-        .then(|| {
-            AttrOp::Update(AttrUpdate {
-                target,
-                data: AttrData::ReactiveBool(rx),
-            })
-        })
-    }
-
-    fn into_op_pair_reactive(
-        rx: Rx<'scope, Self>,
-        key: Cow<'static, str>,
-        target: ApplyTarget,
-    ) -> Option<AttrOp<'scope>> {
-        matches!(target, ApplyTarget::Class).then(|| AttrOp::class_toggle(key, rx))
-    }
 }
 
-impl<'scope> ReactiveApply<'scope> for Attr<'scope> {
-    fn apply_to_dom(
-        rx: Rx<'scope, Self>,
-        el: WebElem,
-        target: ApplyTarget,
-        owner: &MountOwnerToken<'scope>,
-        error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()> {
-        register(owner, rx.runtime_inputs(), error_handler, move || {
-            if let Some(name) = target.name() {
-                let value = rx.get()?;
-                apply_attr_with_target_internal(&el, &name, target.clone(), &value)
-            } else {
-                Ok(())
-            }
-        })
-    }
-
-    fn into_op_reactive(rx: Rx<'scope, Self>, target: ApplyTarget) -> Option<AttrOp<'scope>> {
-        matches!(
-            target,
-            ApplyTarget::Attr(_) | ApplyTarget::Prop(_) | ApplyTarget::Known(_)
-        )
-        .then(|| {
-            AttrOp::Update(AttrUpdate {
-                target,
-                data: AttrData::ReactiveAttr(rx),
-            })
-        })
-    }
-}
-
-impl<'scope, T> ReactiveApply<'scope> for Option<T>
+impl<'scope, T> ReactiveBinding<'scope> for Option<T>
 where
     T: ToString + Clone + 'scope,
 {
-    fn apply_to_dom(
+    fn binding_plan(
         rx: Rx<'scope, Self>,
-        el: WebElem,
-        target: ApplyTarget,
-        owner: &MountOwnerToken<'scope>,
-        error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()> {
-        register(owner, rx.runtime_inputs(), error_handler, move || {
-            let value = rx.get()?.map(|value| value.to_string()).unwrap_or_default();
-            match target {
-                ApplyTarget::Class => el.set_attribute("class", &value).map_err(SilexError::fatal),
-                ApplyTarget::Style => {
-                    if let Some(style) = get_style_decl(&el) {
-                        style.set_css_text(&value);
-                        Ok(())
-                    } else {
-                        Err(SilexError::fatal(SilexErrorKind::Dom(
-                            "element does not expose a style declaration".to_string(),
-                        )))
-                    }
-                }
-                _ => apply_immediate_string(&el, &target, &value),
+        context: ReactiveBindingContext,
+    ) -> Option<ReactiveBindingPlan<'scope>> {
+        match context {
+            ReactiveBindingContext::Value(target) => {
+                let value = Rc::new(move || {
+                    Ok(rx.get()?.map(|value| value.to_string()).unwrap_or_default())
+                });
+                target_for_value(target).map(|target| {
+                    let value_for_update = value.clone();
+                    let target_for_update = target.clone();
+                    let update = Rc::new(move |el: &WebElem| {
+                        let value = value_for_update()?;
+                        match &target_for_update {
+                            ReactiveBindingTarget::Attribute(target) => {
+                                apply_immediate_string(el, target, &value)
+                            }
+                            ReactiveBindingTarget::DynamicClasses => {
+                                el.set_attribute("class", &value).map_err(SilexError::fatal)
+                            }
+                            ReactiveBindingTarget::DynamicStyle => {
+                                if let Some(style) = get_style_decl(el) {
+                                    style.set_css_text(&value);
+                                    Ok(())
+                                } else {
+                                    Err(SilexError::fatal(SilexErrorKind::Dom(
+                                        "element does not expose a style declaration".to_string(),
+                                    )))
+                                }
+                            }
+                            _ => Ok(()),
+                        }
+                    });
+                    let target_for_cleanup = target.clone();
+                    let cleanup = Rc::new(move |el: &WebElem| match &target_for_cleanup {
+                        ReactiveBindingTarget::Attribute(target) => cleanup_target(el, target),
+                        ReactiveBindingTarget::DynamicClasses => {
+                            el.remove_attribute("class").map_err(SilexError::fatal)
+                        }
+                        ReactiveBindingTarget::DynamicStyle => get_style_decl(el)
+                            .map(|style| style.set_css_text(""))
+                            .ok_or_else(|| {
+                                SilexError::fatal(SilexErrorKind::Dom(
+                                    "element does not expose a style declaration".to_string(),
+                                ))
+                            }),
+                        _ => Ok(()),
+                    });
+                    ReactiveBindingPlan::effect(rx.runtime_inputs(), target, update, cleanup)
+                        .with_string_value(value)
+                })
             }
-        })
+            ReactiveBindingContext::Pair { .. } => None,
+        }
     }
 }
-
-macro_rules! impl_reactive_apply_string_like {
-    ($($ty:ty),*) => {
-        $(
-            impl<'scope, 'a: 'scope> ReactiveApply<'scope> for $ty {
-                fn apply_to_dom(
-                    rx: Rx<'scope, Self>,
-                    el: WebElem,
-                    target: ApplyTarget,
-                    owner: &MountOwnerToken<'scope>,
-                    error_handler: MountErrorHandler<'scope>,
-                ) -> SilexResult<()> {
-                    apply_primitive_reactive_internal(el, target, rx, owner, error_handler)
-                }
-
-                fn apply_pair(
-                    rx: Rx<'scope, Self>,
-                    key: Cow<'static, str>,
-                    el: WebElem,
-                    target: ApplyTarget,
-                    owner: &MountOwnerToken<'scope>,
-                    error_handler: MountErrorHandler<'scope>,
-                ) -> SilexResult<()> {
-                    if matches!(target, ApplyTarget::Style) {
-                        let style = get_style_decl(&el).ok_or_else(|| {
-                            SilexError::fatal(SilexErrorKind::Dom("element does not expose a style declaration".to_string()))
-                        })?;
-                        register(owner, rx.runtime_inputs(), error_handler, move || {
-                            let value = rx.get()?;
-                            style
-                                .set_property(&key, value.as_ref())
-                                .map_err(SilexError::fatal)
-                        })?;
-                        Ok(())
-                    } else {
-                        apply_primitive_reactive_internal(el, target, rx, owner, error_handler)
-                    }
-                }
-
-                fn into_op_reactive(
-                    rx: Rx<'scope, Self>,
-                    target: ApplyTarget,
-                ) -> Option<AttrOp<'scope>> {
-                    let _ = (rx, target);
-                    None
-                }
-
-                fn into_op_pair_reactive(
-                    rx: Rx<'scope, Self>,
-                    key: Cow<'static, str>,
-                    target: ApplyTarget,
-                ) -> Option<AttrOp<'scope>> {
-                    let _ = (rx, key, target);
-                    None
-                }
-            }
-        )*
-    };
-}
-
-impl_reactive_apply_string_like!(&'a str, Cow<'a, str>, &'a String);

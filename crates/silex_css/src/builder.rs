@@ -9,8 +9,11 @@ use crate::{
         },
     },
 };
-use silex_core::{ErrorReporter, Rx, RxValueKind, SilexError, SilexErrorKind, SilexResult};
-use silex_dom::attribute::{ApplyTarget, ApplyToDom, IntoStorable, ReactiveApply};
+use silex_core::{ErrorReporter, Rx, SilexError, SilexErrorKind, SilexResult};
+use silex_dom::attribute::{
+    ApplyTarget, ApplyToDom, IntoStorable, ReactiveBinding, ReactiveBindingContext,
+    ReactiveBindingPlan, ReactiveBindingTarget,
+};
 use silex_dom::view::{MountErrorHandler, MountOwnerToken};
 use silex_hash::{
     css::{CssHasher, Normalized, encode_base36},
@@ -583,34 +586,47 @@ fn generate_css_recursive<'scope>(
     }
 }
 
-impl<'scope> ReactiveApply<'scope> for Style<'scope> {
-    fn apply_to_dom(
-        rx: Rx<'scope, Self, RxValueKind>,
-        el: Element,
-        _target: ApplyTarget,
-        owner: &MountOwnerToken<'scope>,
-        error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()> {
-        let el = el.clone();
-        let owner = owner.clone();
-        let owner_for_callback = owner.clone();
-        owner.effect_with_previous_from(
+impl<'scope> ReactiveBinding<'scope> for Style<'scope> {
+    fn binding_plan(
+        rx: Rx<'scope, Self>,
+        context: ReactiveBindingContext,
+    ) -> Option<ReactiveBindingPlan<'scope>> {
+        if !matches!(context, ReactiveBindingContext::Value(_)) {
+            return None;
+        }
+
+        let installer = move |el: &Element,
+                              owner: &MountOwnerToken<'scope>,
+                              error_handler: MountErrorHandler<'scope>| {
+            let el = el.clone();
+            let owner = owner.clone();
+            let owner_for_callback = owner.clone();
+            owner.effect_with_previous_from(
+                rx.runtime_inputs(),
+                Box::new(move |previous: Option<&String>| -> SilexResult<String> {
+                    let style = rx.get()?;
+                    owner_for_callback.validate_inputs(&style.runtime_inputs())?;
+                    let class_name =
+                        style.apply_to_element(&el, &owner_for_callback, error_handler)?;
+                    if let Some(previous) = previous
+                        && previous != &class_name
+                    {
+                        el.class_list()
+                            .remove_1(previous)
+                            .map_err(SilexError::fatal)?;
+                    }
+                    Ok(class_name)
+                }),
+                error_handler,
+            )
+        };
+
+        Some(ReactiveBindingPlan::custom(
             rx.runtime_inputs(),
-            Box::new(move |previous: Option<&String>| -> SilexResult<String> {
-                let style = rx.get()?;
-                owner_for_callback.validate_inputs(&style.runtime_inputs())?;
-                let class_name = style.apply_to_element(&el, &owner_for_callback, error_handler)?;
-                if let Some(previous) = previous
-                    && previous != &class_name
-                {
-                    el.class_list()
-                        .remove_1(previous)
-                        .map_err(SilexError::fatal)?;
-                }
-                Ok(class_name)
-            }),
-            error_handler,
-        )
+            ReactiveBindingTarget::Custom,
+            installer,
+            |_| Ok(()),
+        ))
     }
 }
 
@@ -824,7 +840,7 @@ mod tests {
     }
 
     /// `apply_to_element` 每次调用都为每个动态绑定新建一个 `Effect`，而
-    /// `ReactiveApply::apply_to_dom` 会在一个外层 `Effect` 里反复调用它。
+    /// 响应式绑定计划会在一个外层 `Effect` 里反复调用它。
     /// 这里成立的前提是：内层 `Effect` 是外层的子节点，外层重跑时随之回收。
     ///
     /// 这条不变量在 `silex_reactivity` 里（`run_effect` → `run_cleanups` →

@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use super::{ApplyToDom, Attr, AttrOp, AttributeGroup};
+use super::{ApplyToDom, Attr, AttrOp, AttributeGroup, ReactiveBinding};
 use crate::view::Prop;
 use silex_core::{Memo, ReadSignal, RwSignal, Rx, RxValueKind, Signal, StoredValue};
 // --- IntoStorable: 允许非 'static 类型转换为可存储类型 ---
@@ -72,7 +72,7 @@ impl_into_storable_primitive!(
 // --- 2. Rx 支持 ---
 impl<'scope, T> IntoStorable<'scope> for Rx<'scope, T, RxValueKind>
 where
-    T: super::ReactiveApply<'scope> + Clone + 'scope,
+    T: ReactiveBinding<'scope> + Clone + 'scope,
 {
     type Stored = Self;
 
@@ -83,7 +83,7 @@ where
 
 impl<'scope, T> IntoStorable<'scope> for Signal<'scope, T>
 where
-    T: super::ReactiveApply<'scope> + Clone + 'scope,
+    T: ReactiveBinding<'scope> + Clone + 'scope,
 {
     type Stored = Rx<'scope, T, RxValueKind>;
 
@@ -94,7 +94,7 @@ where
 
 impl<'scope, T> IntoStorable<'scope> for ReadSignal<'scope, T>
 where
-    T: super::ReactiveApply<'scope> + Clone + 'scope,
+    T: ReactiveBinding<'scope> + Clone + 'scope,
 {
     type Stored = Rx<'scope, T, RxValueKind>;
 
@@ -105,7 +105,7 @@ where
 
 impl<'scope, T> IntoStorable<'scope> for RwSignal<'scope, T>
 where
-    T: super::ReactiveApply<'scope> + Clone + 'scope,
+    T: ReactiveBinding<'scope> + Clone + 'scope,
 {
     type Stored = Rx<'scope, T, RxValueKind>;
 
@@ -116,7 +116,7 @@ where
 
 impl<'scope, T> IntoStorable<'scope> for Memo<'scope, T>
 where
-    T: super::ReactiveApply<'scope> + Clone + 'scope,
+    T: ReactiveBinding<'scope> + Clone + 'scope,
 {
     type Stored = Rx<'scope, T, RxValueKind>;
 
@@ -127,7 +127,7 @@ where
 
 impl<'scope, T> IntoStorable<'scope> for StoredValue<'scope, T>
 where
-    T: super::ReactiveApply<'scope> + Clone + 'scope,
+    T: ReactiveBinding<'scope> + Clone + 'scope,
 {
     type Stored = Rx<'scope, T, RxValueKind>;
 

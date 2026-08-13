@@ -4,7 +4,9 @@ extern crate silex_macros_test as silex;
 
 use silex::core::{ErrorReporter, Runtime, Rx, Scope, SilexResult};
 use silex::css::types::Hex;
-use silex::dom::attribute::{AttrOp, AttributeBuilder, AttributeGroup, GlobalAttributes};
+use silex::dom::attribute::{
+    AttrOp, AttributeBuilder, AttributeGroup, GlobalAttributes, ReactiveBindingTarget,
+};
 use silex::dom::prelude::AnyView;
 use silex::macros::{css, global, styled, tw, tw_variants};
 
@@ -153,7 +155,11 @@ fn classes_converts_signal_to_a_scoped_attribute_group() {
             let (condition, _) = scope.signal(true).unwrap();
             let group = conditional_classes(condition);
             assert_eq!(group.0.len(), 1);
-            assert!(matches!(group.0[0], AttrOp::CombinedClasses(_)));
+            assert!(matches!(
+                &group.0[0],
+                AttrOp::Reactive(plan)
+                    if matches!(&plan.target, ReactiveBindingTarget::ClassToggle(_))
+            ));
         })
         .unwrap();
 }

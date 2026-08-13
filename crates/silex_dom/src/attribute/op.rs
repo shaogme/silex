@@ -6,7 +6,7 @@ use std::rc::Rc;
 use wasm_bindgen::{JsCast, JsValue};
 use web_sys::{CssStyleDeclaration, Element, HtmlElement, SvgElement};
 
-use crate::attribute::apply::ApplyTarget;
+use crate::attribute::apply::{ApplyTarget, ReactiveBindingPlan, ReactiveBindingTarget};
 use crate::view::{MountErrorHandler, MountOwnerToken};
 
 type CustomAttribute<'scope> = Rc<
@@ -155,52 +155,10 @@ pub struct AttrUpdate<'scope> {
 }
 
 #[derive(Clone)]
-pub struct ClassToggle<'scope> {
-    pub name: Cow<'scope, str>,
-    pub rx: Rx<'scope, bool>,
-}
-
-impl PartialEq for ClassToggle<'_> {
-    fn eq(&self, other: &Self) -> bool {
-        self.name == other.name && self.rx == other.rx
-    }
-}
-
-impl std::fmt::Debug for ClassToggle<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ClassToggle")
-            .field("name", &self.name)
-            .field("rx", &"Rx<bool>")
-            .finish()
-    }
-}
-
-#[derive(Clone)]
-pub struct StyleProperty<'scope> {
-    pub name: Cow<'scope, str>,
-    pub rx: Rx<'scope, String>,
-}
-
-impl PartialEq for StyleProperty<'_> {
-    fn eq(&self, other: &Self) -> bool {
-        self.name == other.name && self.rx == other.rx
-    }
-}
-
-impl std::fmt::Debug for StyleProperty<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("StyleProperty")
-            .field("name", &self.name)
-            .field("rx", &"Rx<String>")
-            .finish()
-    }
-}
-
-#[derive(Clone)]
 pub struct CombinedClasses<'scope> {
     pub statics: Vec<Cow<'scope, str>>,
-    pub toggles: Vec<(Cow<'scope, str>, Rx<'scope, bool>)>,
-    pub reactives: Vec<Rx<'scope, String>>,
+    pub toggles: Vec<(Cow<'scope, str>, ReactiveBindingPlan<'scope>)>,
+    pub reactives: Vec<ReactiveBindingPlan<'scope>>,
 }
 
 impl PartialEq for CombinedClasses<'_> {
@@ -224,8 +182,8 @@ impl std::fmt::Debug for CombinedClasses<'_> {
 #[derive(Clone)]
 pub struct CombinedStyles<'scope> {
     pub statics: Vec<(Cow<'scope, str>, Cow<'scope, str>)>,
-    pub properties: Vec<(Cow<'scope, str>, Rx<'scope, String>)>,
-    pub sheets: Vec<Rx<'scope, String>>,
+    pub properties: Vec<ReactiveBindingPlan<'scope>>,
+    pub sheets: Vec<ReactiveBindingPlan<'scope>>,
 }
 
 impl PartialEq for CombinedStyles<'_> {
@@ -257,6 +215,9 @@ pub enum AttrOp<'scope> {
     /// Consolidated style operations (statics, properties, sheets)
     CombinedStyles(CombinedStyles<'scope>),
 
+    /// A single reactive binding plan before class/style consolidation.
+    Reactive(ReactiveBindingPlan<'scope>),
+
     /// Sequence of operations
     Sequence(Vec<AttrOp<'scope>>),
 
@@ -279,6 +240,7 @@ impl std::fmt::Debug for AttrOp<'_> {
             Self::Update(u) => f.debug_tuple("Update").field(u).finish(),
             Self::CombinedClasses(cc) => f.debug_tuple("CombinedClasses").field(cc).finish(),
             Self::CombinedStyles(cs) => f.debug_tuple("CombinedStyles").field(cs).finish(),
+            Self::Reactive(plan) => f.debug_tuple("Reactive").field(plan).finish(),
             Self::Sequence(seq) => f.debug_tuple("Sequence").field(seq).finish(),
             Self::Custom(_) => f.write_str("Custom(Rc<Fn>)"),
             Self::CustomWithInputs { inputs, .. } => f
@@ -297,6 +259,7 @@ impl PartialEq for AttrOp<'_> {
             (Self::Update(a), Self::Update(b)) => a == b,
             (Self::CombinedClasses(a), Self::CombinedClasses(b)) => a == b,
             (Self::CombinedStyles(a), Self::CombinedStyles(b)) => a == b,
+            (Self::Reactive(a), Self::Reactive(b)) => a == b,
             (Self::Sequence(a), Self::Sequence(b)) => a == b,
             (Self::Custom(a), Self::Custom(b)) => Rc::ptr_eq(a, b),
             (
@@ -333,19 +296,11 @@ impl<'scope> AttrOp<'scope> {
     }
 
     pub fn class_toggle(name: Cow<'scope, str>, rx: Rx<'scope, bool>) -> Self {
-        AttrOp::CombinedClasses(CombinedClasses {
-            statics: Vec::new(),
-            toggles: vec![(name, rx)],
-            reactives: Vec::new(),
-        })
+        AttrOp::Reactive(ReactiveBindingPlan::class_toggle(name, rx))
     }
 
     pub fn reactive_classes(rx: Rx<'scope, String>) -> Self {
-        AttrOp::CombinedClasses(CombinedClasses {
-            statics: Vec::new(),
-            toggles: Vec::new(),
-            reactives: vec![rx],
-        })
+        AttrOp::Reactive(ReactiveBindingPlan::dynamic_classes(rx))
     }
 
     pub fn static_styles(styles: Vec<(Cow<'scope, str>, Cow<'scope, str>)>) -> Self {
@@ -357,19 +312,11 @@ impl<'scope> AttrOp<'scope> {
     }
 
     pub fn style_property(name: Cow<'scope, str>, rx: Rx<'scope, String>) -> Self {
-        AttrOp::CombinedStyles(CombinedStyles {
-            statics: Vec::new(),
-            properties: vec![(name, rx)],
-            sheets: Vec::new(),
-        })
+        AttrOp::Reactive(ReactiveBindingPlan::style_property(name, rx))
     }
 
     pub fn reactive_stylesheet(rx: Rx<'scope, String>) -> Self {
-        AttrOp::CombinedStyles(CombinedStyles {
-            statics: Vec::new(),
-            properties: Vec::new(),
-            sheets: vec![rx],
-        })
+        AttrOp::Reactive(ReactiveBindingPlan::dynamic_style(rx))
     }
 
     pub fn custom_with_inputs(
@@ -401,21 +348,21 @@ impl<'scope> AttrOp<'scope> {
             AttrOp::CombinedClasses(CombinedClasses {
                 toggles, reactives, ..
             }) => {
-                for (_, rx) in toggles {
-                    inputs.extend(&rx.runtime_inputs());
+                for (_, plan) in toggles {
+                    inputs.extend(&plan.inputs);
                 }
-                for rx in reactives {
-                    inputs.extend(&rx.runtime_inputs());
+                for plan in reactives {
+                    inputs.extend(&plan.inputs);
                 }
             }
             AttrOp::CombinedStyles(CombinedStyles {
                 properties, sheets, ..
             }) => {
-                for (_, rx) in properties {
-                    inputs.extend(&rx.runtime_inputs());
+                for plan in properties {
+                    inputs.extend(&plan.inputs);
                 }
-                for rx in sheets {
-                    inputs.extend(&rx.runtime_inputs());
+                for plan in sheets {
+                    inputs.extend(&plan.inputs);
                 }
             }
             AttrOp::Sequence(ops) => {
@@ -428,6 +375,9 @@ impl<'scope> AttrOp<'scope> {
                 inputs: declared, ..
             } => {
                 inputs.extend(declared);
+            }
+            AttrOp::Reactive(plan) => {
+                inputs.extend(&plan.inputs);
             }
         }
         inputs
@@ -481,6 +431,9 @@ impl<'scope> AttrOp<'scope> {
                     owner,
                     error_handler,
                 )?;
+            }
+            AttrOp::Reactive(plan) => {
+                plan.install(el, owner, error_handler)?;
             }
             AttrOp::Sequence(ops) => {
                 for op in ops {
@@ -594,8 +547,8 @@ struct CombinedStylePrevious {
 fn apply_combined_classes_internal<'scope>(
     el: &Element,
     statics: Vec<Cow<'scope, str>>,
-    toggles: Vec<(Cow<'scope, str>, Rx<'scope, bool>)>,
-    reactives: Vec<Rx<'scope, String>>,
+    toggles: Vec<(Cow<'scope, str>, ReactiveBindingPlan<'scope>)>,
+    reactives: Vec<ReactiveBindingPlan<'scope>>,
     owner: &MountOwnerToken<'scope>,
     error_handler: MountErrorHandler<'scope>,
 ) -> SilexResult<()> {
@@ -614,11 +567,11 @@ fn apply_combined_classes_internal<'scope>(
         .flat_map(|class| class.split_whitespace().map(str::to_owned))
         .collect();
     let mut inputs = RuntimeInputs::new();
-    for (_, rx) in &toggles {
-        inputs.extend(&rx.runtime_inputs());
+    for (_, plan) in &toggles {
+        inputs.extend(&plan.inputs);
     }
-    for rx in &reactives {
-        inputs.extend(&rx.runtime_inputs());
+    for plan in &reactives {
+        inputs.extend(&plan.inputs);
     }
 
     // 2. 建立单 Effect 追踪所有响应式部分
@@ -637,14 +590,14 @@ fn apply_combined_classes_internal<'scope>(
                 // 先合并所有动态来源。一个 token 可能同时来自 toggle 与 reactive
                 // class，只有它不再被任何动态来源提供时才能从 DOM 中移除。
                 let mut new_dynamic_tokens = HashSet::new();
-                for (name, rx) in &toggles {
-                    if rx.get()? {
+                for (name, plan) in &toggles {
+                    if plan.bool_value()? {
                         new_dynamic_tokens.insert(name.to_string());
                     }
                 }
 
-                for rx in &reactives {
-                    let value = rx.get()?;
+                for plan in &reactives {
+                    let value = plan.string_value()?;
                     for token in value.split_whitespace() {
                         new_dynamic_tokens.insert(token.to_string());
                     }
@@ -692,8 +645,8 @@ fn apply_combined_classes_internal<'scope>(
 fn apply_combined_styles_internal<'scope>(
     el: &Element,
     statics: Vec<(Cow<'scope, str>, Cow<'scope, str>)>,
-    properties: Vec<(Cow<'scope, str>, Rx<'scope, String>)>,
-    sheets: Vec<Rx<'scope, String>>,
+    properties: Vec<ReactiveBindingPlan<'scope>>,
+    sheets: Vec<ReactiveBindingPlan<'scope>>,
     owner: &MountOwnerToken<'scope>,
     error_handler: MountErrorHandler<'scope>,
 ) -> SilexResult<()> {
@@ -708,16 +661,21 @@ fn apply_combined_styles_internal<'scope>(
         style.set_property(k, v).map_err(SilexError::fatal)?;
     }
 
+    let static_values: std::collections::HashMap<String, String> = statics
+        .iter()
+        .map(|(name, value)| (name.to_string(), value.to_string()))
+        .collect();
+
     if properties.is_empty() && sheets.is_empty() {
         return Ok(());
     }
 
     let mut inputs = RuntimeInputs::new();
-    for (_, rx) in &properties {
-        inputs.extend(&rx.runtime_inputs());
+    for plan in &properties {
+        inputs.extend(&plan.inputs);
     }
-    for rx in &sheets {
-        inputs.extend(&rx.runtime_inputs());
+    for plan in &sheets {
+        inputs.extend(&plan.inputs);
     }
 
     // 2. 建立单 Effect 追踪所有响应式样式
@@ -726,9 +684,14 @@ fn apply_combined_styles_internal<'scope>(
     let el_clone = el.clone();
     let property_names: Vec<String> = properties
         .iter()
-        .map(|(name, _)| name.to_string())
+        .filter_map(|plan| match &plan.target {
+            ReactiveBindingTarget::StyleProperty(name) => Some(name.to_string()),
+            _ => None,
+        })
         .collect();
+    let static_values_for_effect = static_values.clone();
     let el_for_cleanup = el.clone();
+    let static_values_for_cleanup = static_values;
 
     owner.effect_with_previous_from(
         inputs,
@@ -742,14 +705,20 @@ fn apply_combined_styles_internal<'scope>(
 
                 // 处理单项 Property 绑定 (仅在值发生变化时更新 DOM)
                 let mut next_props = Vec::with_capacity(properties.len());
-                for (i, (name, rx)) in properties.iter().enumerate() {
-                    let val = rx.get()?;
+                let mut property_values = std::collections::HashMap::new();
+                for (i, plan) in properties.iter().enumerate() {
+                    let name = match &plan.target {
+                        ReactiveBindingTarget::StyleProperty(name) => name,
+                        _ => continue,
+                    };
+                    let val = plan.string_value()?;
                     let previous_value = previous
                         .and_then(|previous| previous.properties.get(i))
                         .and_then(Option::as_deref);
                     if previous_value != Some(val.as_str()) {
                         style.set_property(name, &val).map_err(SilexError::fatal)?;
                     }
+                    property_values.insert(name.to_string(), val.clone());
                     next_props.push(Some(val));
                 }
 
@@ -758,7 +727,7 @@ fn apply_combined_styles_internal<'scope>(
                 if !sheets.is_empty() {
                     let sheet_strings: Vec<String> = sheets
                         .iter()
-                        .map(|rx| rx.get())
+                        .map(ReactiveBindingPlan::string_value)
                         .collect::<SilexResult<_>>()?;
                     let mut new_style_map = std::collections::HashMap::new();
                     for s in &sheet_strings {
@@ -777,13 +746,22 @@ fn apply_combined_styles_internal<'scope>(
                         .cloned()
                         .collect::<Vec<_>>();
                     for key in stale {
-                        style.remove_property(&key).map_err(SilexError::fatal)?;
+                        if let Some(value) = property_values
+                            .get(&key)
+                            .or_else(|| static_values_for_effect.get(&key))
+                        {
+                            style.set_property(&key, value).map_err(SilexError::fatal)?;
+                        } else {
+                            style.remove_property(&key).map_err(SilexError::fatal)?;
+                        }
                     }
 
                     for (key, value) in new_style_map {
-                        style
-                            .set_property(&key, &value)
-                            .map_err(SilexError::fatal)?;
+                        if !property_values.contains_key(&key) {
+                            style
+                                .set_property(&key, &value)
+                                .map_err(SilexError::fatal)?;
+                        }
                         next_sheet_keys.insert(key);
                     }
                 }
@@ -800,12 +778,17 @@ fn apply_combined_styles_internal<'scope>(
     owner.on_cleanup(
         Box::new(move || -> SilexResult<()> {
             if let Some(style) = get_style_decl(&el_for_cleanup) {
-                for name in property_names {
-                    let _ = style.remove_property(&name);
-                }
                 let sheet_keys = sheet_keys.take_for_cleanup().unwrap_or_default();
-                for name in &sheet_keys {
-                    let _ = style.remove_property(name);
+                let mut dynamic_names: HashSet<String> = property_names.into_iter().collect();
+                dynamic_names.extend(sheet_keys);
+                for name in dynamic_names {
+                    if let Some(value) = static_values_for_cleanup.get(&name) {
+                        style
+                            .set_property(&name, value)
+                            .map_err(SilexError::fatal)?;
+                    } else {
+                        style.remove_property(&name).map_err(SilexError::fatal)?;
+                    }
                 }
             }
             Ok(())

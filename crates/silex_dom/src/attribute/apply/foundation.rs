@@ -1,6 +1,8 @@
-use std::{borrow::Cow, rc::Rc};
+use std::{borrow::Cow, cell::Cell, rc::Rc};
 
-use silex_core::{Rx, RxValueKind, SilexError, SilexErrorKind, SilexResult};
+use silex_core::{
+    ReactiveError, RuntimeInputs, Rx, RxValueKind, SilexError, SilexErrorKind, SilexResult,
+};
 use wasm_bindgen::JsValue;
 use web_sys::Element as WebElem;
 
@@ -102,54 +104,295 @@ pub trait ApplyToDom<'scope> {
     }
 }
 
-pub trait ReactiveApply<'scope> {
-    fn apply_to_dom(
-        rx: Rx<'scope, Self, RxValueKind>,
-        el: WebElem,
+pub enum ReactiveBindingContext {
+    Value(ApplyTarget),
+    Pair {
+        key: Cow<'static, str>,
         target: ApplyTarget,
-        _owner: &MountOwnerToken<'scope>,
-        _error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()>
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ReactiveBindingTarget<'scope> {
+    Attribute(ApplyTarget),
+    ClassToggle(Cow<'scope, str>),
+    DynamicClasses,
+    StyleProperty(Cow<'scope, str>),
+    DynamicStyle,
+    Custom,
+}
+
+type BindingEffect<'scope> = Rc<dyn Fn(&WebElem) -> SilexResult<()> + 'scope>;
+type BindingCleanup<'scope> = Rc<dyn Fn(&WebElem) -> SilexResult<()> + 'scope>;
+type BindingString<'scope> = Rc<dyn Fn() -> SilexResult<String> + 'scope>;
+type BindingBool<'scope> = Rc<dyn Fn() -> SilexResult<bool> + 'scope>;
+type BindingInstaller<'scope> = Rc<
+    dyn Fn(&WebElem, &MountOwnerToken<'scope>, MountErrorHandler<'scope>) -> SilexResult<()>
+        + 'scope,
+>;
+
+/// 响应式绑定的唯一运行时计划。
+///
+/// 计划把输入、目标语义、初始/更新回调和 owner cleanup 放在同一个值里。
+/// 样式合并器只消费 `string_value`，属性和特殊 CSS 绑定则使用同一套安装器。
+pub struct ReactiveBindingPlan<'scope> {
+    pub inputs: RuntimeInputs,
+    pub target: ReactiveBindingTarget<'scope>,
+    initial: BindingEffect<'scope>,
+    update: BindingEffect<'scope>,
+    cleanup: BindingCleanup<'scope>,
+    string_value: Option<BindingString<'scope>>,
+    bool_value: Option<BindingBool<'scope>>,
+    installer: Option<BindingInstaller<'scope>>,
+}
+
+impl Clone for ReactiveBindingPlan<'_> {
+    fn clone(&self) -> Self {
+        Self {
+            inputs: self.inputs.clone(),
+            target: self.target.clone(),
+            initial: self.initial.clone(),
+            update: self.update.clone(),
+            cleanup: self.cleanup.clone(),
+            string_value: self.string_value.clone(),
+            bool_value: self.bool_value.clone(),
+            installer: self.installer.clone(),
+        }
+    }
+}
+
+impl PartialEq for ReactiveBindingPlan<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.inputs == other.inputs && self.target == other.target
+    }
+}
+
+impl std::fmt::Debug for ReactiveBindingPlan<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ReactiveBindingPlan")
+            .field("inputs", &self.inputs)
+            .field("target", &self.target)
+            .finish()
+    }
+}
+
+impl<'scope> ReactiveBindingPlan<'scope> {
+    pub(crate) fn effect(
+        inputs: RuntimeInputs,
+        target: ReactiveBindingTarget<'scope>,
+        update: BindingEffect<'scope>,
+        cleanup: BindingCleanup<'scope>,
+    ) -> Self {
+        Self {
+            inputs,
+            target,
+            initial: update.clone(),
+            update,
+            cleanup,
+            string_value: None,
+            bool_value: None,
+            installer: None,
+        }
+    }
+
+    pub(crate) fn with_string_value(mut self, value: BindingString<'scope>) -> Self {
+        self.string_value = Some(value);
+        self
+    }
+
+    pub(crate) fn with_bool_value(mut self, value: BindingBool<'scope>) -> Self {
+        self.bool_value = Some(value);
+        self
+    }
+
+    pub(crate) fn with_installer(mut self, installer: BindingInstaller<'scope>) -> Self {
+        self.installer = Some(installer);
+        self
+    }
+
+    pub fn class_toggle(name: Cow<'scope, str>, rx: Rx<'scope, bool>) -> Self {
+        let value = Rc::new(move || rx.get());
+        let value_for_update = value.clone();
+        let name_for_update = name.clone();
+        let update = Rc::new(move |el: &WebElem| {
+            if value_for_update()? {
+                el.class_list()
+                    .add_1(&name_for_update)
+                    .map_err(SilexError::fatal)
+            } else {
+                el.class_list()
+                    .remove_1(&name_for_update)
+                    .map_err(SilexError::fatal)
+            }
+        });
+        let name_for_cleanup = name.clone();
+        let cleanup = Rc::new(move |el: &WebElem| {
+            el.class_list()
+                .remove_1(&name_for_cleanup)
+                .map_err(SilexError::fatal)
+        });
+        Self::effect(
+            rx.runtime_inputs(),
+            ReactiveBindingTarget::ClassToggle(name),
+            update,
+            cleanup,
+        )
+        .with_bool_value(value)
+    }
+
+    pub fn dynamic_classes(rx: Rx<'scope, String>) -> Self {
+        let value = Rc::new(move || rx.get());
+        let value_for_update = value.clone();
+        let update = Rc::new(move |el: &WebElem| {
+            el.set_attribute("class", &value_for_update()?)
+                .map_err(SilexError::fatal)
+        });
+        let cleanup =
+            Rc::new(move |el: &WebElem| el.remove_attribute("class").map_err(SilexError::fatal));
+        Self::effect(
+            rx.runtime_inputs(),
+            ReactiveBindingTarget::DynamicClasses,
+            update,
+            cleanup,
+        )
+        .with_string_value(value)
+    }
+
+    pub fn style_property(name: Cow<'scope, str>, rx: Rx<'scope, String>) -> Self {
+        let value = Rc::new(move || rx.get());
+        let value_for_update = value.clone();
+        let name_for_update = name.clone();
+        let update = Rc::new(move |el: &WebElem| {
+            let style = get_style_decl(el).ok_or_else(|| {
+                SilexError::fatal(SilexErrorKind::Dom(
+                    "element does not expose a style declaration".to_string(),
+                ))
+            })?;
+            style
+                .set_property(&name_for_update, &value_for_update()?)
+                .map_err(SilexError::fatal)
+        });
+        let name_for_cleanup = name.clone();
+        let cleanup = Rc::new(move |el: &WebElem| {
+            let style = get_style_decl(el).ok_or_else(|| {
+                SilexError::fatal(SilexErrorKind::Dom(
+                    "element does not expose a style declaration".to_string(),
+                ))
+            })?;
+            style
+                .remove_property(&name_for_cleanup)
+                .map(|_| ())
+                .map_err(SilexError::fatal)
+        });
+        Self::effect(
+            rx.runtime_inputs(),
+            ReactiveBindingTarget::StyleProperty(name),
+            update,
+            cleanup,
+        )
+        .with_string_value(value)
+    }
+
+    pub fn dynamic_style(rx: Rx<'scope, String>) -> Self {
+        let value = Rc::new(move || rx.get());
+        let value_for_update = value.clone();
+        let update = Rc::new(move |el: &WebElem| {
+            let style = get_style_decl(el).ok_or_else(|| {
+                SilexError::fatal(SilexErrorKind::Dom(
+                    "element does not expose a style declaration".to_string(),
+                ))
+            })?;
+            style.set_css_text(&value_for_update()?);
+            Ok(())
+        });
+        let cleanup = Rc::new(move |el: &WebElem| {
+            let style = get_style_decl(el).ok_or_else(|| {
+                SilexError::fatal(SilexErrorKind::Dom(
+                    "element does not expose a style declaration".to_string(),
+                ))
+            })?;
+            style.set_css_text("");
+            Ok(())
+        });
+        Self::effect(
+            rx.runtime_inputs(),
+            ReactiveBindingTarget::DynamicStyle,
+            update,
+            cleanup,
+        )
+        .with_string_value(value)
+    }
+
+    pub fn custom(
+        inputs: RuntimeInputs,
+        target: ReactiveBindingTarget<'scope>,
+        installer: impl Fn(
+            &WebElem,
+            &MountOwnerToken<'scope>,
+            MountErrorHandler<'scope>,
+        ) -> SilexResult<()>
+        + 'scope,
+        cleanup: impl Fn(&WebElem) -> SilexResult<()> + 'scope,
+    ) -> Self {
+        let update = Rc::new(|_: &WebElem| Ok(()));
+        Self::effect(inputs, target, update, Rc::new(cleanup)).with_installer(Rc::new(installer))
+    }
+
+    pub(crate) fn string_value(&self) -> SilexResult<String> {
+        let getter = self
+            .string_value
+            .as_ref()
+            .ok_or_else(|| SilexError::fatal(ReactiveError::NoSuchNode))?;
+        getter()
+    }
+
+    pub(crate) fn bool_value(&self) -> SilexResult<bool> {
+        let getter = self
+            .bool_value
+            .as_ref()
+            .ok_or_else(|| SilexError::fatal(ReactiveError::NoSuchNode))?;
+        getter()
+    }
+
+    pub(crate) fn install(
+        self,
+        el: &WebElem,
+        owner: &MountOwnerToken<'scope>,
+        error_handler: MountErrorHandler<'scope>,
+    ) -> SilexResult<()> {
+        if let Some(installer) = self.installer {
+            return installer(el, owner, error_handler);
+        }
+
+        let element = el.clone();
+        let initial = self.initial;
+        let update = self.update;
+        let first_run = Rc::new(Cell::new(true));
+        let first_run_for_effect = first_run.clone();
+        owner.effect_from(
+            self.inputs,
+            Box::new(move || {
+                if first_run_for_effect.replace(false) {
+                    initial(&element)
+                } else {
+                    update(&element)
+                }
+            }),
+            error_handler,
+        )?;
+
+        let element = el.clone();
+        owner.on_cleanup(Box::new(move || (self.cleanup)(&element)), error_handler)
+    }
+}
+
+pub trait ReactiveBinding<'scope> {
+    fn binding_plan(
+        rx: Rx<'scope, Self, RxValueKind>,
+        context: ReactiveBindingContext,
+    ) -> Option<ReactiveBindingPlan<'scope>>
     where
         Self: Sized;
-
-    fn apply_pair(
-        rx: Rx<'scope, Self, RxValueKind>,
-        key: Cow<'static, str>,
-        el: WebElem,
-        target: ApplyTarget,
-        _owner: &MountOwnerToken<'scope>,
-        _error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()>
-    where
-        Self: Sized,
-    {
-        let _ = (rx, key, el, target);
-        Ok(())
-    }
-
-    fn into_op_reactive(
-        rx: Rx<'scope, Self, RxValueKind>,
-        target: ApplyTarget,
-    ) -> Option<AttrOp<'scope>>
-    where
-        Self: Sized,
-    {
-        let _ = (rx, target);
-        None
-    }
-
-    fn into_op_pair_reactive(
-        rx: Rx<'scope, Self, RxValueKind>,
-        key: Cow<'static, str>,
-        target: ApplyTarget,
-    ) -> Option<AttrOp<'scope>>
-    where
-        Self: Sized,
-    {
-        let _ = (rx, key, target);
-        None
-    }
 }
 
 // --- Basic Traits & Static Implementations ---
@@ -552,7 +795,7 @@ impl_apply_to_dom_for_primitive!(
 impl<'scope, K, T> ApplyToDom<'scope> for (K, Rx<'scope, T, RxValueKind>)
 where
     K: Into<Cow<'static, str>> + Clone + 'scope,
-    T: ReactiveApply<'scope> + Clone + 'scope,
+    T: ReactiveBinding<'scope> + Clone + 'scope,
 {
     fn apply(
         &self,
@@ -562,36 +805,25 @@ where
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         let (key, rx) = self.clone();
-        let el = el.clone();
-        T::apply_pair(rx, key.into(), el, target, owner, error_handler)
+        let context = ReactiveBindingContext::Pair {
+            key: key.into(),
+            target,
+        };
+        if let Some(plan) = T::binding_plan(rx, context) {
+            plan.install(el, owner, error_handler)?;
+        }
+        Ok(())
     }
 
     fn into_op(self, target: ApplyTarget) -> AttrOp<'scope> {
         let (key, rx) = self;
-        let key_cow: Cow<'static, str> = key.into();
-        if let Some(op) = T::into_op_pair_reactive(rx, key_cow.clone(), target.clone()) {
-            op
-        } else {
-            let target_effective = if target == ApplyTarget::Apply {
-                ApplyTarget::attr(key_cow.clone())
-            } else {
-                target
-            };
-            if let Some(op) = T::into_op_reactive(rx, target_effective.clone()) {
-                op
-            } else {
-                AttrOp::Custom(Rc::new(move |el, owner, error_handler| {
-                    T::apply_pair(
-                        rx,
-                        key_cow.clone(),
-                        el.clone(),
-                        target_effective.clone(),
-                        owner,
-                        error_handler,
-                    )
-                }))
-            }
-        }
+        let context = ReactiveBindingContext::Pair {
+            key: key.into(),
+            target,
+        };
+        T::binding_plan(rx, context)
+            .map(AttrOp::Reactive)
+            .unwrap_or(AttrOp::Noop)
     }
 }
 

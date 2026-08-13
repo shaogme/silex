@@ -441,10 +441,15 @@ mod tests {
                 let target = ApplyTarget::Known(KnownProp::Disabled);
                 let pending = PendingAttribute::build(signal.into_storable(), target);
                 match pending {
-                    AttrOp::Update(AttrUpdate { target, .. }) => {
-                        assert_eq!(target, ApplyTarget::Known(KnownProp::Disabled));
+                    AttrOp::Reactive(plan) => {
+                        assert_eq!(
+                            plan.target,
+                            ReactiveBindingTarget::Attribute(ApplyTarget::Known(
+                                KnownProp::Disabled,
+                            ))
+                        );
                     }
-                    _ => panic!("Expected AttrOp::Update for KnownProp reactive bool"),
+                    _ => panic!("Expected AttrOp::Reactive for KnownProp reactive bool"),
                 }
             })
             .expect("child scope should initialize");

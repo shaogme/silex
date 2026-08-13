@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use std::rc::Rc;
 use web_sys::Element as WebElem;
 
-use super::foundation::{ApplyTarget, ApplyToDom};
+use super::foundation::{ApplyTarget, ApplyToDom, ReactiveBindingPlan, ReactiveBindingTarget};
 use crate::attribute::op::{AttrOp, CombinedClasses, CombinedStyles};
 use crate::view::{MountErrorHandler, MountOwnerToken};
 
@@ -15,8 +15,8 @@ pub type PendingAttribute<'scope> = AttrOp<'scope>;
 #[derive(Default)]
 struct ClassAccumulator<'scope> {
     statics: Vec<Cow<'scope, str>>,
-    toggles: Vec<(Cow<'scope, str>, silex_core::Rx<'scope, bool>)>,
-    reactives: Vec<silex_core::Rx<'scope, String>>,
+    toggles: Vec<(Cow<'scope, str>, ReactiveBindingPlan<'scope>)>,
+    reactives: Vec<ReactiveBindingPlan<'scope>>,
 }
 
 impl<'scope> ClassAccumulator<'scope> {
@@ -26,16 +26,16 @@ impl<'scope> ClassAccumulator<'scope> {
         }
     }
 
-    fn push_toggle(&mut self, name: Cow<'scope, str>, rx: silex_core::Rx<'scope, bool>) {
+    fn push_toggle(&mut self, name: Cow<'scope, str>, plan: ReactiveBindingPlan<'scope>) {
         if let Some(idx) = self.toggles.iter().position(|(n, _)| n == &name) {
-            self.toggles[idx] = (name, rx);
+            self.toggles[idx] = (name, plan);
         } else {
-            self.toggles.push((name, rx));
+            self.toggles.push((name, plan));
         }
     }
 
-    fn push_reactive(&mut self, rx: silex_core::Rx<'scope, String>) {
-        self.reactives.push(rx);
+    fn push_reactive(&mut self, plan: ReactiveBindingPlan<'scope>) {
+        self.reactives.push(plan);
     }
 
     fn extend_combined(&mut self, combined: CombinedClasses<'scope>) {
@@ -66,8 +66,8 @@ impl<'scope> ClassAccumulator<'scope> {
 #[derive(Default)]
 struct StyleAccumulator<'scope> {
     statics: Vec<(Cow<'scope, str>, Cow<'scope, str>)>,
-    properties: Vec<(Cow<'scope, str>, silex_core::Rx<'scope, String>)>,
-    sheets: Vec<silex_core::Rx<'scope, String>>,
+    properties: Vec<ReactiveBindingPlan<'scope>>,
+    sheets: Vec<ReactiveBindingPlan<'scope>>,
 }
 
 impl<'scope> StyleAccumulator<'scope> {
@@ -79,27 +79,33 @@ impl<'scope> StyleAccumulator<'scope> {
         }
     }
 
-    fn push_property(&mut self, key: Cow<'scope, str>, rx: silex_core::Rx<'scope, String>) {
-        if let Some(idx) = self.properties.iter().position(|(k, _)| k == &key) {
-            self.properties[idx] = (key, rx);
+    fn push_property(&mut self, plan: ReactiveBindingPlan<'scope>) {
+        let key = match &plan.target {
+            ReactiveBindingTarget::StyleProperty(key) => key,
+            _ => return,
+        };
+        if let Some(idx) = self.properties.iter().position(|existing| {
+            matches!(&existing.target, ReactiveBindingTarget::StyleProperty(name) if name == key)
+        }) {
+            self.properties[idx] = plan;
         } else {
-            self.properties.push((key, rx));
+            self.properties.push(plan);
         }
     }
 
-    fn push_sheet(&mut self, rx: silex_core::Rx<'scope, String>) {
-        self.sheets.push(rx);
+    fn push_sheet(&mut self, plan: ReactiveBindingPlan<'scope>) {
+        self.sheets.push(plan);
     }
 
     fn extend_combined(&mut self, combined: CombinedStyles<'scope>) {
         for (k, v) in combined.statics {
             self.push_static(k, v);
         }
-        for (k, rx) in combined.properties {
-            self.push_property(k, rx);
+        for plan in combined.properties {
+            self.push_property(plan);
         }
-        for rx in combined.sheets {
-            self.push_sheet(rx);
+        for plan in combined.sheets {
+            self.push_sheet(plan);
         }
     }
 
@@ -152,6 +158,17 @@ pub fn consolidate_attributes<'scope>(attrs: Vec<AttrOp<'scope>>) -> Vec<AttrOp<
             AttrOp::CombinedStyles(cs) => {
                 style_acc.extend_combined(cs);
             }
+            AttrOp::Reactive(plan) => match &plan.target {
+                ReactiveBindingTarget::ClassToggle(name) => {
+                    class_acc.push_toggle(name.clone(), plan);
+                }
+                ReactiveBindingTarget::DynamicClasses => class_acc.push_reactive(plan),
+                ReactiveBindingTarget::StyleProperty(_) => style_acc.push_property(plan),
+                ReactiveBindingTarget::DynamicStyle => style_acc.push_sheet(plan),
+                ReactiveBindingTarget::Attribute(_) | ReactiveBindingTarget::Custom => {
+                    consolidated.push(AttrOp::Reactive(plan));
+                }
+            },
             AttrOp::CustomWithInputs { .. } => {
                 consolidated.push(op);
             }

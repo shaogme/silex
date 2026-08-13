@@ -4,7 +4,7 @@ use silex_core::{
     ErrorReporter, Runtime, RuntimeInputs, Scope, SilexError, SilexErrorKind, SilexResult,
     runtime_inputs_of,
 };
-use silex_dom::attribute::{AttrOp, CombinedStyles, PendingAttribute};
+use silex_dom::attribute::{AttrOp, CombinedStyles, PendingAttribute, ReactiveBindingPlan};
 use silex_dom::element::Element;
 use silex_dom::view::{
     AnyView, ApplyAttributes, BranchEvaluation, IndexedListView, MountOwner,
@@ -591,7 +591,10 @@ fn combined_reactive_styles_clean_up_properties_on_scope_dispose() {
             let token = owner.token();
             let operation = AttrOp::CombinedStyles(CombinedStyles {
                 statics: Vec::new(),
-                properties: vec![("--dom-owner-color".into(), color.into_rx())],
+                properties: vec![ReactiveBindingPlan::style_property(
+                    "--dom-owner-color".into(),
+                    color.into_rx(),
+                )],
                 sheets: Vec::new(),
             });
 

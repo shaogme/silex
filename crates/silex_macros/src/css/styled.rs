@@ -566,7 +566,12 @@ fn process_dynamic_entries(input: DynamicEntryExpansion<'_>) -> Result<()> {
         });
         style_getters.push(var_ident.clone());
         let var_name = format!("--{}-{}", class_name, i);
-        style_bindings.push(quote! { (::std::borrow::Cow::Borrowed(#var_name), #var_ident) });
+        style_bindings.push(quote! {
+            #__silex::dom::attribute::ReactiveBindingPlan::style_property(
+                ::std::borrow::Cow::Borrowed(#var_name),
+                #var_ident,
+            )
+        });
     }
     Ok(())
 }
