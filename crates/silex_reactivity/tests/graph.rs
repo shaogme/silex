@@ -18,10 +18,13 @@ fn memo_and_derived_keep_their_notification_rules() {
             let memo_runs_in_callback = memo_runs.clone();
             let memo_source = source;
             let memo = scope
-                .memo(move |_| {
-                    memo_runs_in_callback.set(memo_runs_in_callback.get() + 1);
-                    memo_source.get().expect("reactive read") / 10
-                })
+                .memo(
+                    move |_| {
+                        memo_runs_in_callback.set(memo_runs_in_callback.get() + 1);
+                        Ok(memo_source.get().expect("reactive read") / 10)
+                    },
+                    handler(scope),
+                )
                 .expect("memo creation");
             let derived_runs = Rc::new(Cell::new(0));
             let derived_runs_in_callback = derived_runs.clone();
@@ -55,11 +58,17 @@ fn dependency_chain_evaluates_upstream_before_effect() {
             let (source, set_source) = scope.signal(1i32).expect("fallible reactive creation");
             let middle_source = source;
             let middle = scope
-                .memo(move |_| middle_source.get().expect("reactive read") + 1)
+                .memo(
+                    move |_| Ok(middle_source.get().expect("reactive read") + 1),
+                    handler(scope),
+                )
                 .expect("memo creation");
             let tail_source = middle;
             let tail = scope
-                .memo(move |_| tail_source.get().expect("reactive read") + 1)
+                .memo(
+                    move |_| Ok(tail_source.get().expect("reactive read") + 1),
+                    handler(scope),
+                )
                 .expect("memo creation");
             let seen = Rc::new(Cell::new(0));
             let seen_in_effect = seen.clone();
@@ -90,10 +99,16 @@ fn diamond_dependencies_do_not_observe_intermediate_state() {
         .child(|scope| {
             let (source, set_source) = scope.signal(1i32).expect("fallible reactive creation");
             let left = scope
-                .memo(move |_| source.get().expect("reactive read") + 1)
+                .memo(
+                    move |_| Ok(source.get().expect("reactive read") + 1),
+                    handler(scope),
+                )
                 .expect("memo creation");
             let right = scope
-                .memo(move |_| source.get().expect("reactive read") + 10)
+                .memo(
+                    move |_| Ok(source.get().expect("reactive read") + 10),
+                    handler(scope),
+                )
                 .expect("memo creation");
             let seen_in_effect = seen.clone();
             scope
@@ -182,26 +197,29 @@ fn nested_memo_cleanup_does_not_track_the_outer_observer() {
             let cleanup_runs_in_cleanup = cleanup_runs.clone();
             let cleanup_handler = handler(scope);
             let inner = scope
-                .memo(move |_| {
-                    let value = inner_source.get().expect("reactive read");
-                    if first_inner_run.replace(false) {
-                        let cleanup_runs_for_cleanup = cleanup_runs_in_cleanup.clone();
-                        scope_for_cleanup
-                            .on_cleanup(
-                                move || {
-                                    cleanup_runs_for_cleanup
-                                        .set(cleanup_runs_for_cleanup.get() + 1);
-                                    probe_for_cleanup
-                                        .get()
-                                        .expect("test operation should succeed");
-                                    Ok(())
-                                },
-                                cleanup_handler,
-                            )
-                            .expect("cleanup should register");
-                    }
-                    value
-                })
+                .memo(
+                    move |_| {
+                        let value = inner_source.get().expect("reactive read");
+                        if first_inner_run.replace(false) {
+                            let cleanup_runs_for_cleanup = cleanup_runs_in_cleanup.clone();
+                            scope_for_cleanup
+                                .on_cleanup(
+                                    move || {
+                                        cleanup_runs_for_cleanup
+                                            .set(cleanup_runs_for_cleanup.get() + 1);
+                                        probe_for_cleanup
+                                            .get()
+                                            .expect("test operation should succeed");
+                                        Ok(())
+                                    },
+                                    cleanup_handler,
+                                )
+                                .expect("cleanup should register");
+                        }
+                        Ok(value)
+                    },
+                    handler(scope),
+                )
                 .expect("memo creation");
 
             let outer_runs = Rc::new(Cell::new(0));
@@ -313,28 +331,37 @@ fn epoch_memo_fast_path_skips_evaluation_when_upstream_unchanged() {
             let m1_runs = Rc::new(Cell::new(0));
             let m1_runs_cb = m1_runs.clone();
             let m1 = scope
-                .memo(move |_| {
-                    m1_runs_cb.set(m1_runs_cb.get() + 1);
-                    source.get().expect("reactive read") / 10
-                })
+                .memo(
+                    move |_| {
+                        m1_runs_cb.set(m1_runs_cb.get() + 1);
+                        Ok(source.get().expect("reactive read") / 10)
+                    },
+                    handler(scope),
+                )
                 .expect("memo creation");
 
             let m2_runs = Rc::new(Cell::new(0));
             let m2_runs_cb = m2_runs.clone();
             let m2 = scope
-                .memo(move |_| {
-                    m2_runs_cb.set(m2_runs_cb.get() + 1);
-                    m1.get().expect("reactive read") + 100
-                })
+                .memo(
+                    move |_| {
+                        m2_runs_cb.set(m2_runs_cb.get() + 1);
+                        Ok(m1.get().expect("reactive read") + 100)
+                    },
+                    handler(scope),
+                )
                 .expect("memo creation");
 
             let m3_runs = Rc::new(Cell::new(0));
             let m3_runs_cb = m3_runs.clone();
             let m3 = scope
-                .memo(move |_| {
-                    m3_runs_cb.set(m3_runs_cb.get() + 1);
-                    m2.get().expect("reactive read") * 2
-                })
+                .memo(
+                    move |_| {
+                        m3_runs_cb.set(m3_runs_cb.get() + 1);
+                        Ok(m2.get().expect("reactive read") * 2)
+                    },
+                    handler(scope),
+                )
                 .expect("memo creation");
 
             assert_eq!(m3.get(), Ok(202));
@@ -489,14 +516,20 @@ fn cross_scope_computation_stack_includes_scope_identity() {
         .child(|scope| {
             let (source, set_source) = scope.signal(1i32).expect("fallible reactive creation");
             let parent_memo = scope
-                .memo(move |_| source.get().expect("reactive read") + 1)
+                .memo(
+                    move |_| Ok(source.get().expect("reactive read") + 1),
+                    handler(scope),
+                )
                 .expect("memo creation");
 
             scope
                 .child(|child| {
                     let parent_memo_in_child = parent_memo;
                     let child_memo = child
-                        .memo(move |_| parent_memo_in_child.get().expect("reactive read") + 1)
+                        .memo(
+                            move |_| Ok(parent_memo_in_child.get().expect("reactive read") + 1),
+                            handler(child),
+                        )
                         .expect("memo creation");
                     let seen = Rc::new(Cell::new(0));
                     let seen_in_effect = seen.clone();
@@ -564,31 +597,37 @@ fn cyclic_memo_dependency_panics_without_poisoning_the_scheduler() {
     let mut runtime = Runtime::new();
     runtime
         .child(|scope| {
-            let first_slot: Rc<RefCell<Option<Memo<'_, i32>>>> = Rc::new(RefCell::new(None));
-            let second_slot: Rc<RefCell<Option<Memo<'_, i32>>>> = Rc::new(RefCell::new(None));
+            let first_slot: Rc<RefCell<Option<Memo<'_, i32, ()>>>> = Rc::new(RefCell::new(None));
+            let second_slot: Rc<RefCell<Option<Memo<'_, i32, ()>>>> = Rc::new(RefCell::new(None));
             let (source, set_source) = scope.signal(0i32).expect("fallible reactive creation");
 
             let second_slot_in_first = second_slot.clone();
             let first = scope
-                .memo(move |_| {
-                    let dependency = second_slot_in_first.borrow().as_ref().copied();
-                    source.get().expect("reactive read")
-                        + dependency
-                            .map(|memo| memo.get().expect("reactive read"))
-                            .unwrap_or(0)
-                })
+                .memo(
+                    move |_| {
+                        let dependency = second_slot_in_first.borrow().as_ref().copied();
+                        Ok(source.get().expect("reactive read")
+                            + dependency
+                                .map(|memo| memo.get().expect("reactive read"))
+                                .unwrap_or(0))
+                    },
+                    handler(scope),
+                )
                 .expect("memo creation");
             *first_slot.borrow_mut() = Some(first);
 
             let first_slot_in_second = first_slot.clone();
             let second = scope
-                .memo(move |_| {
-                    let dependency = first_slot_in_second.borrow().as_ref().copied();
-                    source.get().expect("reactive read")
-                        + dependency
-                            .map(|memo| memo.get().expect("reactive read"))
-                            .unwrap_or(0)
-                })
+                .memo(
+                    move |_| {
+                        let dependency = first_slot_in_second.borrow().as_ref().copied();
+                        Ok(source.get().expect("reactive read")
+                            + dependency
+                                .map(|memo| memo.get().expect("reactive read"))
+                                .unwrap_or(0))
+                    },
+                    handler(scope),
+                )
                 .expect("memo creation");
             *second_slot.borrow_mut() = Some(second);
 
@@ -611,33 +650,39 @@ fn cyclic_effect_queue_failure_does_not_poison_unrelated_effects() {
 
     runtime
         .child(|scope| {
-            let first_slot: Rc<RefCell<Option<Memo<'_, i32>>>> = Rc::new(RefCell::new(None));
-            let second_slot: Rc<RefCell<Option<Memo<'_, i32>>>> = Rc::new(RefCell::new(None));
+            let first_slot: Rc<RefCell<Option<Memo<'_, i32, ()>>>> = Rc::new(RefCell::new(None));
+            let second_slot: Rc<RefCell<Option<Memo<'_, i32, ()>>>> = Rc::new(RefCell::new(None));
             let (source, set_source) = scope.signal(0i32).expect("fallible reactive creation");
             let (refresh, set_refresh) = scope.signal(0i32).expect("fallible reactive creation");
 
             let second_slot_in_first = second_slot.clone();
             let first = scope
-                .memo(move |_| {
-                    refresh.get().expect("test operation should succeed");
-                    let dependency = second_slot_in_first.borrow().as_ref().copied();
-                    source.get().expect("reactive read")
-                        + dependency
-                            .map(|memo| memo.get().expect("reactive read"))
-                            .unwrap_or(0)
-                })
+                .memo(
+                    move |_| {
+                        refresh.get().expect("test operation should succeed");
+                        let dependency = second_slot_in_first.borrow().as_ref().copied();
+                        Ok(source.get().expect("reactive read")
+                            + dependency
+                                .map(|memo| memo.get().expect("reactive read"))
+                                .unwrap_or(0))
+                    },
+                    handler(scope),
+                )
                 .expect("memo creation");
             *first_slot.borrow_mut() = Some(first);
 
             let first_slot_in_second = first_slot.clone();
             let second = scope
-                .memo(move |_| {
-                    let dependency = first_slot_in_second.borrow().as_ref().copied();
-                    source.get().expect("reactive read")
-                        + dependency
-                            .map(|memo| memo.get().expect("reactive read"))
-                            .unwrap_or(0)
-                })
+                .memo(
+                    move |_| {
+                        let dependency = first_slot_in_second.borrow().as_ref().copied();
+                        Ok(source.get().expect("reactive read")
+                            + dependency
+                                .map(|memo| memo.get().expect("reactive read"))
+                                .unwrap_or(0))
+                    },
+                    handler(scope),
+                )
                 .expect("memo creation");
             *second_slot.borrow_mut() = Some(second);
 

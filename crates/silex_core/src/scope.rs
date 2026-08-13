@@ -11,7 +11,7 @@ use crate::{
 };
 #[cfg(feature = "test-support")]
 use silex_reactivity::RuntimeSnapshot;
-use silex_reactivity::{EffectInitError, RuntimeInputs};
+use silex_reactivity::{ComputationInitError, RuntimeInputs};
 use std::{future::Future, panic::UnwindSafe};
 
 /// User-owned high-level runtime.
@@ -122,25 +122,54 @@ impl<'scope> Scope<'scope> {
         Ok(RwSignal::from_parts(read, write))
     }
 
-    /// Create a memo without additional framework-declared inputs.
-    pub fn memo<T, F>(self, f: F) -> SilexResult<Memo<'scope, T>>
+    /// Create a fallible memo without additional framework-declared inputs.
+    pub fn memo<T, F>(
+        self,
+        f: F,
+        error_handler: ErrorHandler<'scope, SilexError>,
+    ) -> SilexResult<Memo<'scope, T>>
     where
         T: PartialEq + 'scope,
-        F: FnMut(Option<&T>) -> T + 'scope,
+        F: FnMut(Option<&T>) -> SilexResult<T> + 'scope,
     {
-        self.memo_from(RuntimeInputs::new(), f)
+        self.memo_from(RuntimeInputs::new(), f, error_handler)
     }
 
     #[doc(hidden)]
-    pub fn memo_from<T, F>(self, inputs: RuntimeInputs, f: F) -> SilexResult<Memo<'scope, T>>
+    pub fn memo_from<T, F>(
+        self,
+        inputs: RuntimeInputs,
+        f: F,
+        error_handler: ErrorHandler<'scope, SilexError>,
+    ) -> SilexResult<Memo<'scope, T>>
+    where
+        T: PartialEq + 'scope,
+        F: FnMut(Option<&T>) -> SilexResult<T> + 'scope,
+    {
+        self.inner
+            .memo_from(inputs, f, error_handler)
+            .map(|memo| Memo::from_inner(memo, self))
+            .map_err(|error| match error {
+                ComputationInitError::Registration(error) => SilexError::fatal(error),
+                ComputationInitError::Initial(error) => error,
+            })
+    }
+
+    pub(crate) fn memo_infallible<T, F>(self, mut f: F) -> SilexResult<Memo<'scope, T>>
     where
         T: PartialEq + 'scope,
         F: FnMut(Option<&T>) -> T + 'scope,
     {
-        self.inner
-            .memo_from(inputs, f)
-            .map(|memo| Memo::from_inner(memo, self))
-            .map_err(SilexError::fatal)
+        let error_handler = self
+            .inner
+            .error_handler(|_: SilexError| {
+                unreachable!("infallible memo cannot report a user error")
+            })
+            .map_err(SilexError::fatal)?;
+        self.memo(
+            move |previous| Ok::<T, SilexError>(f(previous)),
+            error_handler,
+        )
     }
 
     /// Create a derived value without additional framework-declared inputs.
@@ -170,8 +199,8 @@ impl<'scope> Scope<'scope> {
         self.inner
             .derived_from(inputs, f, error_handler)
             .map_err(|error| match error {
-                EffectInitError::Registration(error) => SilexError::fatal(error),
-                EffectInitError::Initial(error) => error,
+                ComputationInitError::Registration(error) => SilexError::fatal(error),
+                ComputationInitError::Initial(error) => error,
             })
             .map(|derived| Rx::from_derived(derived, self))
     }
@@ -201,8 +230,8 @@ impl<'scope> Scope<'scope> {
             self.inner
                 .effect_from(inputs, f, error_handler)
                 .map_err(|error| match error {
-                    EffectInitError::Registration(error) => SilexError::fatal(error),
-                    EffectInitError::Initial(error) => error,
+                    ComputationInitError::Registration(error) => SilexError::fatal(error),
+                    ComputationInitError::Initial(error) => error,
                 })?;
         Ok(Effect::from_inner(effect))
     }
@@ -239,8 +268,8 @@ impl<'scope> Scope<'scope> {
             .inner
             .effect_with_previous_from(inputs, f, error_handler)
             .map_err(|error| match error {
-                EffectInitError::Registration(error) => SilexError::fatal(error),
-                EffectInitError::Initial(error) => error,
+                ComputationInitError::Registration(error) => SilexError::fatal(error),
+                ComputationInitError::Initial(error) => error,
             })?;
         Ok(Effect::from_inner(effect))
     }
@@ -336,8 +365,8 @@ impl<'scope> Scope<'scope> {
         self.inner
             .watch_getter_from(inputs, getter, callback, error_handler, options)
             .map_err(|error| match error {
-                EffectInitError::Registration(error) => SilexError::fatal(error),
-                EffectInitError::Initial(error) => error,
+                ComputationInitError::Registration(error) => SilexError::fatal(error),
+                ComputationInitError::Initial(error) => error,
             })
             .map(Effect::from_inner)
     }
@@ -542,8 +571,8 @@ impl<'scope> OwnedScope<'scope> {
             .effect_from(inputs, f, error_handler)
             .map(Effect::from_inner)
             .map_err(|error| match error {
-                EffectInitError::Registration(error) => SilexError::fatal(error),
-                EffectInitError::Initial(error) => error,
+                ComputationInitError::Registration(error) => SilexError::fatal(error),
+                ComputationInitError::Initial(error) => error,
             })
     }
 
@@ -574,8 +603,8 @@ impl<'scope> OwnedScope<'scope> {
             .effect_with_previous_from(inputs, f, error_handler)
             .map(Effect::from_inner)
             .map_err(|error| match error {
-                EffectInitError::Registration(error) => SilexError::fatal(error),
-                EffectInitError::Initial(error) => error,
+                ComputationInitError::Registration(error) => SilexError::fatal(error),
+                ComputationInitError::Initial(error) => error,
             })
     }
 
@@ -632,8 +661,8 @@ impl<'scope> OwnedScope<'scope> {
             .watch_getter_from(inputs, getter, callback, error_handler, options)
             .map(Effect::from_inner)
             .map_err(|error| match error {
-                EffectInitError::Registration(error) => SilexError::fatal(error),
-                EffectInitError::Initial(error) => error,
+                ComputationInitError::Registration(error) => SilexError::fatal(error),
+                ComputationInitError::Initial(error) => error,
             })
     }
 

@@ -73,7 +73,9 @@ fn existing_sources_keep_identity_and_runtime_inputs() {
         .child(|scope| {
             let (read, _) = scope.signal(1_i32).expect("signal should initialize");
             let rw = scope.rw_signal(2_i32).expect("rw signal should initialize");
-            let memo = scope.memo(|_| 3_i32).expect("memo should initialize");
+            let memo = scope
+                .memo(|_| Ok(3_i32), handler(scope))
+                .expect("memo should initialize");
             let stored = scope.stored(4_i32).expect("stored value should initialize");
             let rx = scope.constant(5_i32).expect("constant should initialize");
 

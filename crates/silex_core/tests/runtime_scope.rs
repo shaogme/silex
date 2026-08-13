@@ -27,9 +27,11 @@ fn scoped_primitives_propagate_without_raw_handles() {
             .map(|value| value * 2, handler(scope))
             .expect("derived map should initialize");
         let memo = scope
-            .memo_from(doubled.runtime_inputs(), move |_| {
-                doubled.get().expect("doubled value should be readable") + 1
-            })
+            .memo_from(
+                doubled.runtime_inputs(),
+                move |_| Ok(doubled.get().expect("doubled value should be readable") + 1),
+                handler(scope),
+            )
             .expect("memo should initialize");
 
         assert_eq!(doubled.get().expect("doubled value should be readable"), 2);
@@ -66,7 +68,10 @@ fn scope_memo_and_derived_have_no_input_convenience_entries() {
             .derived(move || source.get().map(|value| value * 2), handler(scope))
             .expect("derived should initialize");
         let memo = scope
-            .memo(move |_| derived.get().expect("derived value should be readable") + 1)
+            .memo(
+                move |_| Ok(derived.get().expect("derived value should be readable") + 1),
+                handler(scope),
+            )
             .expect("memo should initialize");
 
         assert_eq!(derived.get().expect("derived value should be readable"), 4);

@@ -1,4 +1,4 @@
-use silex_reactivity::{EffectInitError, ErrorHandler, Runtime, Scope};
+use silex_reactivity::{ComputationInitError, ErrorHandler, Runtime, Scope};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -45,7 +45,10 @@ fn initial_callback_error_returns_without_calling_the_handler() {
                 collecting_handler(scope, errors.clone()),
             );
 
-            assert!(matches!(result, Err(EffectInitError::Initial("initial"))));
+            assert!(matches!(
+                result,
+                Err(ComputationInitError::Initial("initial"))
+            ));
             assert!(errors.borrow().is_empty());
             assert_eq!(cleanup_runs.get(), 1);
 
@@ -91,7 +94,10 @@ fn initial_failure_does_not_reenter_from_rollback_cleanup() {
                 collecting_handler(scope, errors.clone()),
             );
 
-            assert!(matches!(result, Err(EffectInitError::Initial("initial"))));
+            assert!(matches!(
+                result,
+                Err(ComputationInitError::Initial("initial"))
+            ));
             assert_eq!(callback_runs.get(), 1);
             assert!(errors.borrow().is_empty());
         })

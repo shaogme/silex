@@ -48,7 +48,7 @@ pub struct RxEffectKind;
 
 pub(crate) enum RxInner<'scope, T> {
     Signal(RxReadSignal<'scope, T>),
-    Memo(RxMemo<'scope, T>),
+    Memo(RxMemo<'scope, T, SilexError>),
     Derived(Derived<'scope, T, SilexError>),
     Stored(RxStoredValue<'scope, T>),
 }

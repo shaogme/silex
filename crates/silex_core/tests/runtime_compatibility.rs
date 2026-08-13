@@ -123,10 +123,14 @@ fn foreign_inputs_are_rejected_before_target_memo_creation() {
     let result = second
         .child(|scope| {
             scope
-                .memo_from(foreign_inputs, move |_| {
-                    called_for_memo.set(true);
-                    1i32
-                })
+                .memo_from(
+                    foreign_inputs,
+                    move |_| {
+                        called_for_memo.set(true);
+                        Ok(1i32)
+                    },
+                    handler(scope),
+                )
                 .map(|_| ())
         })
         .and_then(|result| result);

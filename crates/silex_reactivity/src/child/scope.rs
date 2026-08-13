@@ -12,7 +12,8 @@ use super::node::{
     WriteSignal,
 };
 use crate::{
-    CleanupError, EffectInitError, EffectInitResult, ErrorHandler, ReactiveError, ReactiveResult,
+    CleanupError, ComputationInitError, ComputationInitResult, ErrorHandler, ReactiveError,
+    ReactiveResult,
     completion::{
         CompletionOnce, CompletionSender, create_completion_once, create_completion_sender,
     },
@@ -199,7 +200,7 @@ impl<'scope> Scope<'scope> {
         &self,
         f: F,
         error_handler: ErrorHandler<'scope, E>,
-    ) -> EffectInitResult<Effect<'scope>, E>
+    ) -> ComputationInitResult<Effect<'scope>, E>
     where
         E: 'scope,
         F: FnMut() -> Result<(), E> + 'scope,
@@ -214,7 +215,7 @@ impl<'scope> Scope<'scope> {
         inputs: RuntimeInputs,
         f: F,
         error_handler: ErrorHandler<'scope, E>,
-    ) -> EffectInitResult<Effect<'scope>, E>
+    ) -> ComputationInitResult<Effect<'scope>, E>
     where
         E: 'scope,
         F: FnMut() -> Result<(), E> + 'scope,
@@ -230,7 +231,7 @@ impl<'scope> Scope<'scope> {
         &self,
         f: F,
         error_handler: ErrorHandler<'scope, E>,
-    ) -> EffectInitResult<Effect<'scope>, E>
+    ) -> ComputationInitResult<Effect<'scope>, E>
     where
         T: 'scope,
         E: 'scope,
@@ -245,7 +246,7 @@ impl<'scope> Scope<'scope> {
         inputs: RuntimeInputs,
         f: F,
         error_handler: ErrorHandler<'scope, E>,
-    ) -> EffectInitResult<Effect<'scope>, E>
+    ) -> ComputationInitResult<Effect<'scope>, E>
     where
         T: 'scope,
         E: 'scope,
@@ -263,7 +264,7 @@ impl<'scope> Scope<'scope> {
         getter: G,
         callback: C,
         error_handler: ErrorHandler<'scope, E>,
-    ) -> EffectInitResult<Effect<'scope>, E>
+    ) -> ComputationInitResult<Effect<'scope>, E>
     where
         T: PartialEq + 'scope,
         E: 'scope,
@@ -279,7 +280,7 @@ impl<'scope> Scope<'scope> {
         callback: C,
         error_handler: ErrorHandler<'scope, E>,
         options: WatchOptions,
-    ) -> EffectInitResult<Effect<'scope>, E>
+    ) -> ComputationInitResult<Effect<'scope>, E>
     where
         T: PartialEq + 'scope,
         E: 'scope,
@@ -303,7 +304,7 @@ impl<'scope> Scope<'scope> {
         callback: C,
         error_handler: ErrorHandler<'scope, E>,
         options: WatchOptions,
-    ) -> EffectInitResult<Effect<'scope>, E>
+    ) -> ComputationInitResult<Effect<'scope>, E>
     where
         T: PartialEq + 'scope,
         E: 'scope,
@@ -320,23 +321,34 @@ impl<'scope> Scope<'scope> {
 
     /// Create a lazy memo whose dependents are notified only when its value
     /// changes according to `PartialEq`.
-    pub fn memo<T, F>(&self, f: F) -> ReactiveResult<Memo<'scope, T>>
+    pub fn memo<T, E, F>(
+        &self,
+        f: F,
+        error_handler: ErrorHandler<'scope, E>,
+    ) -> ComputationInitResult<Memo<'scope, T, E>, E>
     where
         T: PartialEq + 'scope,
-        F: FnMut(Option<&T>) -> T + 'scope,
+        E: 'scope,
+        F: FnMut(Option<&T>) -> Result<T, E> + 'scope,
     {
-        self.memo_from(RuntimeInputs::new(), f)
+        self.memo_from(RuntimeInputs::new(), f, error_handler)
     }
 
     /// Create a memo after validating all declared reactive inputs.
     #[doc(hidden)]
-    pub fn memo_from<T, F>(&self, inputs: RuntimeInputs, f: F) -> ReactiveResult<Memo<'scope, T>>
+    pub fn memo_from<T, E, F>(
+        &self,
+        inputs: RuntimeInputs,
+        f: F,
+        error_handler: ErrorHandler<'scope, E>,
+    ) -> ComputationInitResult<Memo<'scope, T, E>, E>
     where
         T: PartialEq + 'scope,
-        F: FnMut(Option<&T>) -> T + 'scope,
+        E: 'scope,
+        F: FnMut(Option<&T>) -> Result<T, E> + 'scope,
     {
         let state = self.state();
-        let raw = runtime::create_memo(&state, inputs, f)?;
+        let raw = runtime::create_memo(&state, inputs, f, error_handler)?;
         let handle = Handle::new(self.storage, raw);
         Ok(Memo {
             handle,
@@ -349,7 +361,7 @@ impl<'scope> Scope<'scope> {
         &self,
         f: F,
         error_handler: ErrorHandler<'scope, E>,
-    ) -> EffectInitResult<Derived<'scope, T, E>, E>
+    ) -> ComputationInitResult<Derived<'scope, T, E>, E>
     where
         T: 'scope,
         E: 'scope,
@@ -365,7 +377,7 @@ impl<'scope> Scope<'scope> {
         inputs: RuntimeInputs,
         f: F,
         error_handler: ErrorHandler<'scope, E>,
-    ) -> EffectInitResult<Derived<'scope, T, E>, E>
+    ) -> ComputationInitResult<Derived<'scope, T, E>, E>
     where
         T: 'scope,
         E: 'scope,
@@ -533,7 +545,7 @@ impl<'scope> OwnedScope<'scope> {
         &self,
         f: F,
         error_handler: ErrorHandler<'scope, E>,
-    ) -> EffectInitResult<Effect<'_>, E>
+    ) -> ComputationInitResult<Effect<'_>, E>
     where
         E: 'scope,
         F: FnMut() -> Result<(), E> + 'scope,
@@ -548,13 +560,15 @@ impl<'scope> OwnedScope<'scope> {
         inputs: RuntimeInputs,
         f: F,
         error_handler: ErrorHandler<'scope, E>,
-    ) -> EffectInitResult<Effect<'_>, E>
+    ) -> ComputationInitResult<Effect<'_>, E>
     where
         E: 'scope,
         F: FnMut() -> Result<(), E> + 'scope,
     {
         if !self.active.get() {
-            return Err(EffectInitError::Registration(ReactiveError::NoSuchNode));
+            return Err(ComputationInitError::Registration(
+                ReactiveError::NoSuchNode,
+            ));
         }
         let state = self.state();
         runtime::create_effect(&state, inputs, f, error_handler).map(|raw| Effect {
@@ -566,7 +580,7 @@ impl<'scope> OwnedScope<'scope> {
         &self,
         f: F,
         error_handler: ErrorHandler<'scope, E>,
-    ) -> EffectInitResult<Effect<'_>, E>
+    ) -> ComputationInitResult<Effect<'_>, E>
     where
         T: 'scope,
         E: 'scope,
@@ -581,14 +595,16 @@ impl<'scope> OwnedScope<'scope> {
         inputs: RuntimeInputs,
         f: F,
         error_handler: ErrorHandler<'scope, E>,
-    ) -> EffectInitResult<Effect<'_>, E>
+    ) -> ComputationInitResult<Effect<'_>, E>
     where
         T: 'scope,
         E: 'scope,
         F: FnMut(Option<&T>) -> Result<T, E> + 'scope,
     {
         if !self.active.get() {
-            return Err(EffectInitError::Registration(ReactiveError::NoSuchNode));
+            return Err(ComputationInitError::Registration(
+                ReactiveError::NoSuchNode,
+            ));
         }
         let state = self.state();
         runtime::create_previous(&state, inputs, f, error_handler).map(|raw| Effect {
@@ -602,7 +618,7 @@ impl<'scope> OwnedScope<'scope> {
         getter: G,
         callback: C,
         error_handler: ErrorHandler<'scope, E>,
-    ) -> EffectInitResult<Effect<'_>, E>
+    ) -> ComputationInitResult<Effect<'_>, E>
     where
         T: PartialEq + 'scope,
         E: 'scope,
@@ -618,7 +634,7 @@ impl<'scope> OwnedScope<'scope> {
         callback: C,
         error_handler: ErrorHandler<'scope, E>,
         options: WatchOptions,
-    ) -> EffectInitResult<Effect<'_>, E>
+    ) -> ComputationInitResult<Effect<'_>, E>
     where
         T: PartialEq + 'scope,
         E: 'scope,
@@ -642,7 +658,7 @@ impl<'scope> OwnedScope<'scope> {
         callback: C,
         error_handler: ErrorHandler<'scope, E>,
         options: WatchOptions,
-    ) -> EffectInitResult<Effect<'_>, E>
+    ) -> ComputationInitResult<Effect<'_>, E>
     where
         T: PartialEq + 'scope,
         E: 'scope,
@@ -650,7 +666,9 @@ impl<'scope> OwnedScope<'scope> {
         C: FnMut(&T, Option<&T>) -> Result<(), E> + 'scope,
     {
         if !self.active.get() {
-            return Err(EffectInitError::Registration(ReactiveError::NoSuchNode));
+            return Err(ComputationInitError::Registration(
+                ReactiveError::NoSuchNode,
+            ));
         }
         let state = self.state();
         runtime::create_watch(&state, inputs, getter, callback, error_handler, options).map(|raw| {
@@ -1057,7 +1075,9 @@ mod tests {
 
         assert!(matches!(
             owner.effect(|| Ok(()), handler(scope)),
-            Err(EffectInitError::Registration(ReactiveError::BorrowConflict))
+            Err(ComputationInitError::Registration(
+                ReactiveError::BorrowConflict
+            ))
         ));
 
         drop(state_borrow);

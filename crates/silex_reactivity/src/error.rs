@@ -147,7 +147,7 @@ impl<'scope, E> ErrorHandler<'scope, E> {
 /// Distinguishes registration failures from errors returned by the first
 /// callback execution.
 #[derive(Debug)]
-pub enum EffectInitError<E> {
+pub enum ComputationInitError<E> {
     /// The runtime could not register or initialize the computation.
     Registration(ReactiveError),
     /// The computation was registered, but its first callback returned this
@@ -155,7 +155,7 @@ pub enum EffectInitError<E> {
     Initial(E),
 }
 
-pub type EffectInitResult<T, E> = Result<T, EffectInitError<E>>;
+pub type ComputationInitResult<T, E> = Result<T, ComputationInitError<E>>;
 
 #[derive(Clone, Copy)]
 pub(crate) enum ErrorPhase {

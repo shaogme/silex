@@ -7,7 +7,7 @@ use super::{
     scheduler::{GlobalScheduler, InitialFlushGuard},
 };
 use crate::{
-    EffectInitError, EffectInitResult, ErrorHandler, ReactiveError, ReactiveResult,
+    ComputationInitError, ComputationInitResult, ErrorHandler, ReactiveError, ReactiveResult,
     child::WatchOptions,
     error::{ErrorPhase, InitialErrorSlot},
     internal::{
@@ -219,32 +219,19 @@ fn finish_creation<'scope, E>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     result: Result<RawId, EvaluationError<'scope>>,
     initial_slot: &InitialErrorSlot<E>,
-) -> EffectInitResult<RawId, E> {
+) -> ComputationInitResult<RawId, E> {
     match result {
         Ok(raw) => Ok(raw),
-        Err(EvaluationError::Runtime(error)) => Err(EffectInitError::Registration(error)),
+        Err(EvaluationError::Runtime(error)) => Err(ComputationInitError::Registration(error)),
         Err(EvaluationError::Callback(error)) => {
             error.dispatch(ErrorPhase::Initial);
             let initial = initial_slot.take();
             flush_if_idle(state);
-            Err(EffectInitError::Initial(initial))
+            Err(ComputationInitError::Initial(initial))
         }
-        Err(EvaluationError::User(_)) => {
-            Err(EffectInitError::Registration(ReactiveError::TypeMismatch))
-        }
-    }
-}
-
-fn finish_infallible_creation(result: Result<RawId, EvaluationError<'_>>) -> ReactiveResult<RawId> {
-    match result {
-        Ok(raw) => Ok(raw),
-        Err(EvaluationError::Runtime(error)) => Err(error),
-        Err(EvaluationError::Callback(_)) => {
-            unreachable!("infallible computations cannot return callback errors")
-        }
-        Err(EvaluationError::User(_)) => {
-            unreachable!("infallible computations cannot return user errors")
-        }
+        Err(EvaluationError::User(_)) => Err(ComputationInitError::Registration(
+            ReactiveError::TypeMismatch,
+        )),
     }
 }
 
@@ -253,7 +240,7 @@ pub(crate) fn create_effect<'scope, E, F>(
     inputs: RuntimeInputs,
     callback: F,
     handler: ErrorHandler<'scope, E>,
-) -> EffectInitResult<RawId, E>
+) -> ComputationInitResult<RawId, E>
 where
     E: 'scope,
     F: FnMut() -> Result<(), E> + 'scope,
@@ -279,7 +266,7 @@ pub(crate) fn create_previous<'scope, T, E, F>(
     inputs: RuntimeInputs,
     callback: F,
     handler: ErrorHandler<'scope, E>,
-) -> EffectInitResult<RawId, E>
+) -> ComputationInitResult<RawId, E>
 where
     T: 'scope,
     E: 'scope,
@@ -308,7 +295,7 @@ pub(crate) fn create_watch<'scope, T, E, G, C>(
     callback: C,
     handler: ErrorHandler<'scope, E>,
     options: WatchOptions,
-) -> EffectInitResult<RawId, E>
+) -> ComputationInitResult<RawId, E>
 where
     T: PartialEq + 'scope,
     E: 'scope,
@@ -334,23 +321,31 @@ where
     finish_creation(state, result, &initial_slot)
 }
 
-pub(crate) fn create_memo<'scope, T, F>(
+pub(crate) fn create_memo<'scope, T, E, F>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     inputs: RuntimeInputs,
     callback: F,
-) -> ReactiveResult<RawId>
+    handler: ErrorHandler<'scope, E>,
+) -> ComputationInitResult<RawId, E>
 where
     T: PartialEq + 'scope,
-    F: FnMut(Option<&T>) -> T + 'scope,
+    E: 'scope,
+    F: FnMut(Option<&T>) -> Result<T, E> + 'scope,
 {
-    finish_infallible_creation(create_computation(
+    let initial_slot = InitialErrorSlot::new();
+    let result = create_computation(
         state,
         ComputationSpec {
             kind: ComputationKind::Memo,
             inputs,
-            computation: Computation::Memo(MemoThunk::new::<T, F>(callback)),
+            computation: Computation::Memo(MemoThunk::new::<T, E, F>(
+                callback,
+                handler,
+                initial_slot.clone(),
+            )),
         },
-    ))
+    );
+    finish_creation(state, result, &initial_slot)
 }
 
 pub(crate) fn create_derived<'scope, T, E, F>(
@@ -358,7 +353,7 @@ pub(crate) fn create_derived<'scope, T, E, F>(
     inputs: RuntimeInputs,
     callback: F,
     handler: ErrorHandler<'scope, E>,
-) -> EffectInitResult<RawId, E>
+) -> ComputationInitResult<RawId, E>
 where
     T: 'scope,
     E: 'scope,
@@ -435,7 +430,7 @@ mod tests {
 
         assert!(matches!(
             result,
-            Err(EffectInitError::Registration(
+            Err(ComputationInitError::Registration(
                 ReactiveError::RuntimeMismatch
             ))
         ));
@@ -463,7 +458,9 @@ mod tests {
 
         assert!(matches!(
             result,
-            Err(EffectInitError::Registration(ReactiveError::NoSuchNode))
+            Err(ComputationInitError::Registration(
+                ReactiveError::NoSuchNode
+            ))
         ));
         source.dispose();
     }
@@ -494,7 +491,7 @@ mod tests {
 
         assert!(matches!(
             result,
-            Err(EffectInitError::Registration(
+            Err(ComputationInitError::Registration(
                 ReactiveError::RuntimeMismatch
             ))
         ));

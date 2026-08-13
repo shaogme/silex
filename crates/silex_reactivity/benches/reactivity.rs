@@ -516,17 +516,29 @@ mod native {
                                 scope.signal(0i32).expect("fallible reactive creation");
                             let first_source = source;
                             let mut tail = scope
-                                .memo(move |_| {
-                                    first_source.get().expect("benchmark read").wrapping_add(1)
-                                })
+                                .memo(
+                                    move |_| {
+                                        Ok(first_source
+                                            .get()
+                                            .expect("benchmark read")
+                                            .wrapping_add(1))
+                                    },
+                                    handler(scope),
+                                )
                                 .expect("benchmark memo creation");
 
                             for _ in 1..depth {
                                 let upstream = tail;
                                 tail = scope
-                                    .memo(move |_| {
-                                        upstream.get().expect("benchmark read").wrapping_add(1)
-                                    })
+                                    .memo(
+                                        move |_| {
+                                            Ok(upstream
+                                                .get()
+                                                .expect("benchmark read")
+                                                .wrapping_add(1))
+                                        },
+                                        handler(scope),
+                                    )
                                     .expect("benchmark memo creation");
                             }
 
@@ -579,12 +591,15 @@ mod native {
                             for index in 0..width {
                                 memos.push(
                                     scope
-                                        .memo(move |_| {
-                                            source
-                                                .get()
-                                                .expect("benchmark read")
-                                                .wrapping_add(index as i32)
-                                        })
+                                        .memo(
+                                            move |_| {
+                                                Ok(source
+                                                    .get()
+                                                    .expect("benchmark read")
+                                                    .wrapping_add(index as i32))
+                                            },
+                                            handler(scope),
+                                        )
                                         .expect("benchmark memo creation"),
                                 );
                             }
@@ -694,19 +709,28 @@ mod native {
                             scope
                                 .child(|child| {
                                     let mut tail = child
-                                        .memo(move |_| {
-                                            source.get().expect("benchmark read").wrapping_add(1)
-                                        })
+                                        .memo(
+                                            move |_| {
+                                                Ok(source
+                                                    .get()
+                                                    .expect("benchmark read")
+                                                    .wrapping_add(1))
+                                            },
+                                            handler(child),
+                                        )
                                         .expect("benchmark memo creation");
                                     for _ in 1..depth {
                                         let upstream = tail;
                                         tail = child
-                                            .memo(move |_| {
-                                                upstream
-                                                    .get()
-                                                    .expect("benchmark read")
-                                                    .wrapping_add(1)
-                                            })
+                                            .memo(
+                                                move |_| {
+                                                    Ok(upstream
+                                                        .get()
+                                                        .expect("benchmark read")
+                                                        .wrapping_add(1))
+                                                },
+                                                handler(child),
+                                            )
                                             .expect("benchmark memo creation");
                                     }
 
@@ -764,12 +788,15 @@ mod native {
                                     for index in 0..width {
                                         memos.push(
                                             child
-                                                .memo(move |_| {
-                                                    source
-                                                        .get()
-                                                        .expect("benchmark read")
-                                                        .wrapping_add(index as i32)
-                                                })
+                                                .memo(
+                                                    move |_| {
+                                                        Ok(source
+                                                            .get()
+                                                            .expect("benchmark read")
+                                                            .wrapping_add(index as i32))
+                                                    },
+                                                    handler(child),
+                                                )
                                                 .expect("benchmark memo creation"),
                                         );
                                     }
@@ -832,10 +859,13 @@ mod native {
                                 let memo_runs = memo_runs.clone();
                                 memos.push(
                                     scope
-                                        .memo(move |_| {
-                                            memo_runs.set(memo_runs.get().wrapping_add(1));
-                                            source.get().expect("benchmark read")
-                                        })
+                                        .memo(
+                                            move |_| {
+                                                memo_runs.set(memo_runs.get().wrapping_add(1));
+                                                Ok(source.get().expect("benchmark read"))
+                                            },
+                                            handler(scope),
+                                        )
                                         .expect("benchmark memo creation"),
                                 );
                             }

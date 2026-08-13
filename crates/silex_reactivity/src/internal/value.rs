@@ -505,24 +505,36 @@ impl<'scope> DerivedThunk<'scope> {
     }
 }
 
-type MemoCallback<'scope> = Box<dyn FnMut(Option<&AnyValue<'scope>>) -> AnyValue<'scope> + 'scope>;
+type MemoCallback<'scope> = Box<
+    dyn FnMut(Option<&AnyValue<'scope>>) -> Result<AnyValue<'scope>, ErrorEvent<'scope>> + 'scope,
+>;
 
 impl<'scope> MemoThunk<'scope> {
-    pub(crate) fn new<T, F>(callback: F) -> Self
+    pub(crate) fn new<T, E, F>(
+        callback: F,
+        handler: ErrorHandler<'scope, E>,
+        initial_slot: InitialErrorSlot<E>,
+    ) -> Self
     where
         T: PartialEq + 'scope,
-        F: FnMut(Option<&T>) -> T + 'scope,
+        E: 'scope,
+        F: FnMut(Option<&T>) -> Result<T, E> + 'scope,
     {
         let mut callback = callback;
         Self {
             callback: Box::new(move |old| {
                 let old = old.and_then(|value| unsafe { value.downcast_ref::<T>() });
-                AnyValue::new_reactive(callback(old))
+                callback(old)
+                    .map(AnyValue::new_reactive)
+                    .map_err(|error| ErrorEvent::new(error, handler, initial_slot.clone()))
             }),
         }
     }
 
-    pub(crate) fn compute(&mut self, old: Option<&AnyValue<'scope>>) -> AnyValue<'scope> {
+    pub(crate) fn compute(
+        &mut self,
+        old: Option<&AnyValue<'scope>>,
+    ) -> Result<AnyValue<'scope>, ErrorEvent<'scope>> {
         (self.callback)(old)
     }
 }

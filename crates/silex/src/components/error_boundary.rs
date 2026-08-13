@@ -122,27 +122,17 @@ impl<'scope> ErrorBoundaryBranch<'scope> {
         let fallback_attrs = attrs.clone();
         match phase {
             BoundaryPhase::Child => {
-                let result = self
-                    .view
-                    .mount(owner, parent, attrs, child_handler);
+                let result = self.view.mount(owner, parent, attrs, child_handler);
                 match result {
                     Ok(instance) => Ok(instance),
                     Err(error @ SilexError::Recoverable(_)) => {
                         record_error(error.clone());
-                        fallback(error).mount(
-                            owner,
-                            parent,
-                            fallback_attrs,
-                            parent_handler,
-                        )
+                        fallback(error).mount(owner, parent, fallback_attrs, parent_handler)
                     }
                     Err(error @ SilexError::Fatal(_)) => Err(error),
                 }
             }
-            BoundaryPhase::Fallback => {
-                self.view
-                    .mount(owner, parent, attrs, parent_handler)
-            }
+            BoundaryPhase::Fallback => self.view.mount(owner, parent, attrs, parent_handler),
         }
     }
 }
@@ -192,8 +182,7 @@ impl<'scope> View<'scope> for ErrorBoundaryView<'scope> {
         let token = owner.token();
         let parent_state = token.owner_state(parent_handler)?;
         self.parent_handler.set(Some(parent_state));
-        self.view
-            .mount(owner, parent, attrs, self.phase_handler)
+        self.view.mount(owner, parent, attrs, self.phase_handler)
     }
 }
 

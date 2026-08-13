@@ -1,4 +1,4 @@
-use silex_reactivity::{Effect, EffectInitError, ErrorHandler, Runtime, Scope, WatchOptions};
+use silex_reactivity::{ComputationInitError, Effect, ErrorHandler, Runtime, Scope, WatchOptions};
 use std::{
     cell::{Cell, RefCell},
     panic::{AssertUnwindSafe, catch_unwind},
@@ -274,7 +274,7 @@ fn foreign_watch_inputs_fail_before_getter_or_callback_execution() {
 
     assert!(matches!(
         result,
-        Err(EffectInitError::Registration(
+        Err(ComputationInitError::Registration(
             silex_reactivity::ReactiveError::RuntimeMismatch,
         ))
     ));

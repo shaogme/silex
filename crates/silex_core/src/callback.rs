@@ -3,6 +3,13 @@ use std::{fmt, marker::PhantomData};
 use crate::{SilexError, SilexResult};
 use silex_reactivity::CallbackInvokeError;
 
+pub(crate) fn map_callback_error(error: CallbackInvokeError<SilexError>) -> SilexError {
+    match error {
+        CallbackInvokeError::Runtime(error) => SilexError::fatal(error),
+        CallbackInvokeError::User(error) => error,
+    }
+}
+
 /// A typed callback owned by a scope.
 pub struct Callback<'scope, T = ()> {
     pub(crate) inner: silex_reactivity::Callback<'scope, T, SilexError>,

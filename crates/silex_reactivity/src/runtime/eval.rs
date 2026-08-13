@@ -368,7 +368,7 @@ fn execute_computation<'scope>(
                 .try_read(scheduler.clone())
                 .map_err(EvaluationError::Runtime)?;
             let old = (*old_lease).as_ref();
-            let new_value = callback.compute(old);
+            let new_value = callback.compute(old).map_err(EvaluationError::Callback)?;
             drop(old_lease);
             let changed = {
                 let old_lease = computation

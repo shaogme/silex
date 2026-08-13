@@ -1,9 +1,11 @@
-use crate::{ErrorHandler, Rx, RxValueKind, Scope, SilexError, SilexResult};
+use crate::{
+    ErrorHandler, Rx, RxValueKind, Scope, SilexError, SilexResult, callback::map_callback_error,
+};
 use std::fmt;
 
 /// Equality-gated computed value.
 pub struct Memo<'scope, T> {
-    pub(crate) inner: silex_reactivity::Memo<'scope, T>,
+    pub(crate) inner: silex_reactivity::Memo<'scope, T, SilexError>,
     pub(crate) scope: Scope<'scope>,
 }
 
@@ -31,7 +33,7 @@ impl<'scope, T> Eq for Memo<'scope, T> {}
 
 impl<'scope, T: 'scope> Memo<'scope, T> {
     pub(crate) fn from_inner(
-        inner: silex_reactivity::Memo<'scope, T>,
+        inner: silex_reactivity::Memo<'scope, T, SilexError>,
         scope: Scope<'scope>,
     ) -> Self {
         Self { inner, scope }
@@ -41,22 +43,22 @@ impl<'scope, T: 'scope> Memo<'scope, T> {
     where
         T: Clone,
     {
-        self.inner.get().map_err(SilexError::fatal)
+        self.inner.get().map_err(map_callback_error)
     }
 
     pub fn get_untracked(&self) -> SilexResult<T>
     where
         T: Clone,
     {
-        self.inner.get_untracked().map_err(SilexError::fatal)
+        self.inner.get_untracked().map_err(map_callback_error)
     }
 
     pub fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.inner.with(f).map_err(SilexError::fatal)
+        self.inner.with(f).map_err(map_callback_error)
     }
 
     pub fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.inner.with_untracked(f).map_err(SilexError::fatal)
+        self.inner.with_untracked(f).map_err(map_callback_error)
     }
 
     pub fn map<U, F>(

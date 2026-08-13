@@ -65,8 +65,7 @@ impl<'scope> PortalView<'scope> {
         }
 
         let result = catch_unwind(AssertUnwindSafe(|| {
-            self.children
-                .mount(owner, &container, attrs, error_handler)
+            self.children.mount(owner, &container, attrs, error_handler)
         }));
         match result {
             Err(panic) => {

@@ -29,11 +29,11 @@ fn main() {
             let (read_string, _) = scope.signal(String::from("source"))?;
             let (read_int, _) = scope.signal(1_i32)?;
             let rw_bool = scope.rw_signal(false)?;
-            let memo_float = scope.memo(|_| 1.0_f64)?;
+            let error_handler = scope.error_handler(|_| {})?;
+            let memo_float = scope.memo(|_| Ok(1.0_f64), error_handler)?;
             let stored_char = scope.stored('s')?;
             let rx_usize = scope.constant(1_usize)?;
 
-            let error_handler = scope.error_handler(|_| {})?;
             let _builder = ReactiveInputComponent(scope, AnyView::Empty)
                 .error_handler(error_handler)
                 .signal("constant")?

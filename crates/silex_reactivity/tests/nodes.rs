@@ -73,7 +73,10 @@ fn all_public_node_capabilities_are_copy() {
             let read = signal.read();
             let write = signal.write();
             let memo = scope
-                .memo(move |_| read.get().expect("reactive read"))
+                .memo(
+                    move |_| Ok(read.get().expect("reactive read")),
+                    handler(scope),
+                )
                 .expect("memo creation");
             let derived = scope
                 .derived(move || Ok(1i32), handler(scope))
@@ -99,7 +102,7 @@ fn all_public_node_capabilities_are_copy() {
 
             let _: Option<ReadSignal<'_, i32>> = Some(read);
             let _: Option<WriteSignal<'_, i32>> = Some(write);
-            let _: Option<Memo<'_, i32>> = Some(memo);
+            let _: Option<Memo<'_, i32, ()>> = Some(memo);
             let _: Option<Derived<'_, i32, ()>> = Some(derived);
             let _: Option<Effect<'_>> = Some(effect);
             let _: Option<StoredValue<'_, i32>> = Some(stored);
@@ -439,18 +442,21 @@ fn nested_memo_child_payload_drop_does_not_track_the_outer_observer() {
             let probe_for_child = probe;
             let drops_in_child = drops.clone();
             let inner = scope
-                .memo(move |_| {
-                    let value = inner_source.get().expect("reactive read");
-                    if first_inner_run.replace(false) {
-                        scope_for_child
-                            .signal(ReadOnDrop {
-                                probe: probe_for_child,
-                                drops: drops_in_child.clone(),
-                            })
-                            .expect("test operation should succeed");
-                    }
-                    value
-                })
+                .memo(
+                    move |_| {
+                        let value = inner_source.get().expect("reactive read");
+                        if first_inner_run.replace(false) {
+                            scope_for_child
+                                .signal(ReadOnDrop {
+                                    probe: probe_for_child,
+                                    drops: drops_in_child.clone(),
+                                })
+                                .expect("test operation should succeed");
+                        }
+                        Ok(value)
+                    },
+                    handler(scope),
+                )
                 .expect("memo creation");
 
             let outer_runs = Rc::new(Cell::new(0));
@@ -510,16 +516,19 @@ fn nested_memo_result_drop_does_not_track_the_outer_observer() {
             let (probe, set_probe) = scope.signal(0i32).expect("fallible reactive creation");
             let drops = Rc::new(Cell::new(0));
             let inner = scope
-                .memo({
-                    let drops = drops.clone();
-                    move |_| {
-                        inner_source.get().expect("reactive read");
-                        ReadOnDrop {
-                            probe,
-                            drops: drops.clone(),
+                .memo(
+                    {
+                        let drops = drops.clone();
+                        move |_| {
+                            inner_source.get().expect("reactive read");
+                            Ok(ReadOnDrop {
+                                probe,
+                                drops: drops.clone(),
+                            })
                         }
-                    }
-                })
+                    },
+                    handler(scope),
+                )
                 .expect("memo creation");
 
             let outer_runs = Rc::new(Cell::new(0));

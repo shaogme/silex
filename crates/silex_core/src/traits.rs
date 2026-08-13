@@ -3,6 +3,7 @@
 use crate::{
     Callback, CallbackInvokeError, ErrorReporter, NodeRef, ReactiveResult, Rx, RxInner,
     RxValueKind, Scope, SilexError, SilexResult,
+    callback::map_callback_error,
     reactivity::{Memo, ReactiveSource, ReadSignal, RwSignal, Signal, StoredValue, WriteSignal},
 };
 use silex_reactivity::notify as raw_notify;
@@ -125,7 +126,7 @@ impl<'scope, T: Clone + PartialEq + 'scope> RxFrom<'scope> for Memo<'scope, T> {
         V: Into<Self::Value>,
     {
         let value = value.into();
-        scope.memo(move |_| value.clone())
+        scope.memo_infallible(move |_| value.clone())
     }
 }
 
@@ -607,7 +608,7 @@ impl<'scope, T: 'scope> RxBase for Rx<'scope, T, RxValueKind> {
     fn track(&self) -> SilexResult<()> {
         match &self.inner {
             RxInner::Signal(signal) => signal.with(|_| ()).map_err(SilexError::fatal),
-            RxInner::Memo(memo) => memo.with(|_| ()).map_err(SilexError::fatal),
+            RxInner::Memo(memo) => memo.with(|_| ()).map_err(map_callback_error),
             RxInner::Derived(derived) => derived.with(|_| ()).map_err(|error| match error {
                 CallbackInvokeError::Runtime(error) => SilexError::fatal(error),
                 CallbackInvokeError::User(error) => error,
@@ -621,7 +622,7 @@ impl<'scope, T: 'scope> RxRead for Rx<'scope, T, RxValueKind> {
     fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         match &self.inner {
             RxInner::Signal(signal) => signal.with(f).map_err(SilexError::fatal),
-            RxInner::Memo(memo) => memo.with(f).map_err(SilexError::fatal),
+            RxInner::Memo(memo) => memo.with(f).map_err(map_callback_error),
             RxInner::Derived(derived) => derived.with(f).map_err(|error| match error {
                 CallbackInvokeError::Runtime(error) => SilexError::fatal(error),
                 CallbackInvokeError::User(error) => error,
@@ -633,7 +634,7 @@ impl<'scope, T: 'scope> RxRead for Rx<'scope, T, RxValueKind> {
     fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         match &self.inner {
             RxInner::Signal(signal) => signal.with_untracked(f).map_err(SilexError::fatal),
-            RxInner::Memo(memo) => memo.with_untracked(f).map_err(SilexError::fatal),
+            RxInner::Memo(memo) => memo.with_untracked(f).map_err(map_callback_error),
             RxInner::Derived(derived) => derived.with_untracked(f).map_err(|error| match error {
                 CallbackInvokeError::Runtime(error) => SilexError::fatal(error),
                 CallbackInvokeError::User(error) => error,
@@ -717,17 +718,17 @@ impl<'scope, T: 'scope> RxBase for Memo<'scope, T> {
         self.inner
             .with(|_| ())
             .map(|_| ())
-            .map_err(SilexError::fatal)
+            .map_err(map_callback_error)
     }
 }
 
 impl<'scope, T: 'scope> RxRead for Memo<'scope, T> {
     fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.inner.with(f).map_err(SilexError::fatal)
+        self.inner.with(f).map_err(map_callback_error)
     }
 
     fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.inner.with_untracked(f).map_err(SilexError::fatal)
+        self.inner.with_untracked(f).map_err(map_callback_error)
     }
 }
 

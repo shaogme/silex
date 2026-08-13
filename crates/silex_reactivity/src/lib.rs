@@ -29,8 +29,8 @@ pub use crate::{
     child::*,
     completion::{CompletionOnce, CompletionSender, unwind_safe},
     error::{
-        CallbackInvokeError, CallbackInvokeResult, CompletionSubmitResult, EffectInitError,
-        EffectInitResult, ErrorHandler, ReactiveError, ReactiveResult,
+        CallbackInvokeError, CallbackInvokeResult, CompletionSubmitResult, ComputationInitError,
+        ComputationInitResult, ErrorHandler, ReactiveError, ReactiveResult,
     },
     handle::{
         CallbackId, DerivedId, EffectId, Handle, MemoId, NodeKind, NodeKindTag, NodeRefId,

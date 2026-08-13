@@ -1,4 +1,4 @@
-use silex_reactivity::{EffectInitError, ErrorHandler, Runtime, RuntimeInputs, Scope};
+use silex_reactivity::{ComputationInitError, ErrorHandler, Runtime, RuntimeInputs, Scope};
 
 fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, ()> {
     scope.error_handler(|_| {}).expect("handler registration")
@@ -92,7 +92,7 @@ fn different_schedulers_are_rejected_even_when_scope_ids_are_reused() {
 
     assert!(matches!(
         result,
-        Err(EffectInitError::Registration(
+        Err(ComputationInitError::Registration(
             silex_reactivity::ReactiveError::RuntimeMismatch,
         ))
     ));

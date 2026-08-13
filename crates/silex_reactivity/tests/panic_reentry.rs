@@ -1,4 +1,4 @@
-use silex_reactivity::{ErrorHandler, Memo, ReactiveError, Runtime, Scope};
+use silex_reactivity::{CallbackInvokeError, ErrorHandler, Memo, ReactiveError, Runtime, Scope};
 use std::{
     cell::Cell,
     panic::{AssertUnwindSafe, catch_unwind},
@@ -70,17 +70,23 @@ fn recursive_memo_read_reports_reentrant_instead_of_borrow_conflict() {
     let mut runtime = Runtime::new();
     runtime
         .child(|scope| {
-            let slot: Rc<Cell<Option<Memo<'_, i32>>>> = Rc::new(Cell::new(None));
+            let slot: Rc<Cell<Option<Memo<'_, i32, ()>>>> = Rc::new(Cell::new(None));
             let slot_in_memo = slot.clone();
             let (source, set_source) = scope.signal(1_i32).expect("fallible reactive creation");
             let memo = scope
-                .memo(move |_| {
-                    let value = source.get().expect("reactive read");
-                    if let Some(memo) = slot_in_memo.get() {
-                        assert_eq!(memo.get(), Err(ReactiveError::Reentrant));
-                    }
-                    value
-                })
+                .memo(
+                    move |_| {
+                        let value = source.get().expect("reactive read");
+                        if let Some(memo) = slot_in_memo.get() {
+                            assert_eq!(
+                                memo.get(),
+                                Err(CallbackInvokeError::Runtime(ReactiveError::Reentrant))
+                            );
+                        }
+                        Ok(value)
+                    },
+                    handler(scope),
+                )
                 .expect("memo creation");
             slot.set(Some(memo));
 
@@ -210,13 +216,16 @@ fn panic_in_memo_keeps_the_previous_value_and_allows_retry() {
             let (source, set_source) = scope.signal(1i32).expect("fallible reactive creation");
             let panic_in_memo = should_panic.clone();
             let memo = scope
-                .memo(move |_| {
-                    let value = source.get().expect("reactive read");
-                    if panic_in_memo.replace(false) {
-                        panic!("memo panic");
-                    }
-                    value * 2
-                })
+                .memo(
+                    move |_| {
+                        let value = source.get().expect("reactive read");
+                        if panic_in_memo.replace(false) {
+                            panic!("memo panic");
+                        }
+                        Ok(value * 2)
+                    },
+                    handler(scope),
+                )
                 .expect("memo creation");
 
             assert_eq!(memo.get(), Ok(2));
@@ -257,10 +266,15 @@ fn panic_in_memo_equality_keeps_the_previous_value_and_allows_retry() {
             let (source, set_source) = scope.signal(1i32).expect("fallible reactive creation");
             let panic_in_eq = should_panic.clone();
             let memo = scope
-                .memo(move |_| PanicOnCompare {
-                    value: source.get().expect("reactive read"),
-                    should_panic: panic_in_eq.clone(),
-                })
+                .memo(
+                    move |_| {
+                        Ok(PanicOnCompare {
+                            value: source.get().expect("reactive read"),
+                            should_panic: panic_in_eq.clone(),
+                        })
+                    },
+                    handler(scope),
+                )
                 .expect("memo creation");
 
             assert_eq!(memo.get().expect("reactive read").value, 1);

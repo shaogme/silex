@@ -110,10 +110,13 @@ fn test_any_value_memo_skip_equal_update() {
         .child(|scope| {
             let (sig, set_sig) = scope.signal(10i32).expect("fallible reactive creation");
             let memo = scope
-                .memo(move |_| {
-                    memo_eval_count_cloned.set(memo_eval_count_cloned.get() + 1);
-                    sig.get().expect("reactive read") * 2
-                })
+                .memo(
+                    move |_| {
+                        memo_eval_count_cloned.set(memo_eval_count_cloned.get() + 1);
+                        Ok(sig.get().expect("reactive read") * 2)
+                    },
+                    handler(scope),
+                )
                 .expect("memo creation");
 
             let memo_for_effect = memo;

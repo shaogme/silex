@@ -1,4 +1,4 @@
-use silex_reactivity::{CallbackInvokeError, EffectInitError, ErrorHandler, Runtime, Scope};
+use silex_reactivity::{CallbackInvokeError, ComputationInitError, ErrorHandler, Runtime, Scope};
 use std::{cell::RefCell, rc::Rc};
 
 #[derive(Debug, PartialEq)]
@@ -27,7 +27,7 @@ fn initial_error_is_returned_and_provisional_node_is_disposed() {
             );
             assert!(matches!(
                 result,
-                Err(EffectInitError::Initial(TestError::Rejected))
+                Err(ComputationInitError::Initial(TestError::Rejected))
             ));
             assert_eq!(scope.signal(1_i32).expect("signal creation").0.get(), Ok(1));
         })

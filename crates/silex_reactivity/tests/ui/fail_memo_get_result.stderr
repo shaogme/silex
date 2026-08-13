@@ -1,0 +1,14 @@
+error[E0308]: mismatched types
+  --> tests/ui/fail_memo_get_result.rs:13:22
+   |
+13 |         let _: i32 = memo.get();
+   |                ---   ^^^^^^^^^^ expected `i32`, found `Result<i32, CallbackInvokeError<()>>`
+   |                |
+   |                expected due to this
+   |
+   = note: expected type `i32`
+              found enum `Result<i32, CallbackInvokeError<()>>`
+help: consider using `Result::expect` to unwrap the `Result<i32, CallbackInvokeError<()>>` value, panicking if the value is a `Result::Err`
+   |
+13 |         let _: i32 = memo.get().expect("REASON");
+   |                                +++++++++++++++++

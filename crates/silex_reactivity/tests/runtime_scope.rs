@@ -33,7 +33,10 @@ fn runtime_run_provides_scoped_signal_and_effect() {
         .child(|scope| {
             let (count, set_count) = scope.signal(0i32).expect("fallible reactive creation");
             let doubled = scope
-                .memo(move |_| count.get().expect("reactive read") * 2)
+                .memo(
+                    move |_| Ok(count.get().expect("reactive read") * 2),
+                    handler(scope),
+                )
                 .expect("memo creation");
             let runs_in_effect = runs.clone();
             let doubled_in_effect = doubled;
