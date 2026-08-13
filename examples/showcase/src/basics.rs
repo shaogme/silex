@@ -1,5 +1,5 @@
 use crate::css::AppTheme;
-use silex::dom::view::{ScopedViewOwner, ViewOwner};
+use silex::dom::view::{MountOwner, ScopedMountOwner};
 use silex::{core::log::console_log, prelude::*};
 use std::time::Duration;
 
@@ -38,7 +38,7 @@ pub fn Counter<'scope>(
 ) -> impl View<'scope> {
     let (count, set_count) = scope.signal(0)?;
     let double_count = rx!(scope; error_handler; $count * 2);
-    let owner_for_timer = ScopedViewOwner::new(scope).token();
+    let owner_for_timer = ScopedMountOwner::new(scope).token();
 
     // Timer Handle for Auto Increment (StoredValue: doesn't trigger UI updates itself)
     let timer = scope.stored(None::<HostResourceHandle<'scope>>)?;

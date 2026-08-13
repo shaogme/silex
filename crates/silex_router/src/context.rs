@@ -5,7 +5,7 @@ use silex_core::{
     traits::RxGet,
 };
 use silex_dom::attribute::PendingAttribute;
-use silex_dom::view::{AnyView, ApplyAttributes, View, ViewErrorHandler, ViewOwner};
+use silex_dom::view::{AnyView, ApplyAttributes, MountErrorHandler, MountOwner, View};
 use std::collections::HashMap;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
@@ -26,10 +26,10 @@ impl<'scope> ApplyAttributes<'scope> for RouterViewFactory<'scope> {}
 impl<'scope> View<'scope> for RouterViewFactory<'scope> {
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: ViewErrorHandler<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         self.clone()
             .mount_owned(owner, parent, attrs, error_handler)
@@ -37,10 +37,10 @@ impl<'scope> View<'scope> for RouterViewFactory<'scope> {
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: ViewErrorHandler<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized,

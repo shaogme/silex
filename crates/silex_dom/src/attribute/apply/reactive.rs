@@ -8,12 +8,12 @@ use crate::attribute::op::{
     Attr, AttrData, AttrOp, AttrUpdate, apply_attr_with_target_internal,
     apply_immediate_bool_internal, get_style_decl,
 };
-use crate::view::{ViewErrorHandler, ViewOwnerToken};
+use crate::view::{MountErrorHandler, MountOwnerToken};
 
 fn register<'scope>(
-    owner: &ViewOwnerToken<'scope>,
+    owner: &MountOwnerToken<'scope>,
     inputs: silex_core::RuntimeInputs,
-    error_handler: ViewErrorHandler<'scope>,
+    error_handler: MountErrorHandler<'scope>,
     callback: impl FnMut() -> SilexResult<()> + 'scope,
 ) -> SilexResult<()> {
     owner.effect_from(inputs, Box::new(callback), error_handler)
@@ -23,8 +23,8 @@ pub(crate) fn apply_primitive_reactive_internal<'scope, T>(
     el: WebElem,
     target: ApplyTarget,
     rx: Rx<'scope, T>,
-    owner: &ViewOwnerToken<'scope>,
-    error_handler: ViewErrorHandler<'scope>,
+    owner: &MountOwnerToken<'scope>,
+    error_handler: MountErrorHandler<'scope>,
 ) -> SilexResult<()>
 where
     T: ToString + Clone + 'scope,
@@ -60,8 +60,8 @@ pub(crate) fn apply_string_reactive_internal<'scope>(
     el: WebElem,
     target: ApplyTarget,
     rx: Rx<'scope, String>,
-    owner: &ViewOwnerToken<'scope>,
-    error_handler: ViewErrorHandler<'scope>,
+    owner: &MountOwnerToken<'scope>,
+    error_handler: MountErrorHandler<'scope>,
 ) -> SilexResult<()> {
     apply_primitive_reactive_internal(el, target, rx, owner, error_handler)
 }
@@ -71,8 +71,8 @@ pub(crate) fn apply_string_pair_reactive_internal<'scope>(
     key: Cow<'static, str>,
     target: ApplyTarget,
     rx: Rx<'scope, String>,
-    owner: &ViewOwnerToken<'scope>,
-    error_handler: ViewErrorHandler<'scope>,
+    owner: &MountOwnerToken<'scope>,
+    error_handler: MountErrorHandler<'scope>,
 ) -> SilexResult<()> {
     if matches!(target, ApplyTarget::Style) {
         let style = get_style_decl(&el).ok_or_else(|| {
@@ -94,8 +94,8 @@ pub(crate) fn apply_bool_reactive_internal<'scope>(
     el: WebElem,
     target: ApplyTarget,
     rx: Rx<'scope, bool>,
-    owner: &ViewOwnerToken<'scope>,
-    error_handler: ViewErrorHandler<'scope>,
+    owner: &MountOwnerToken<'scope>,
+    error_handler: MountErrorHandler<'scope>,
 ) -> SilexResult<()> {
     register(owner, rx.runtime_inputs(), error_handler, move || {
         let value = rx.get()?;
@@ -128,8 +128,8 @@ pub(crate) fn apply_bool_pair_reactive_internal<'scope>(
     el: WebElem,
     key: Cow<'static, str>,
     rx: Rx<'scope, bool>,
-    owner: &ViewOwnerToken<'scope>,
-    error_handler: ViewErrorHandler<'scope>,
+    owner: &MountOwnerToken<'scope>,
+    error_handler: MountErrorHandler<'scope>,
 ) -> SilexResult<()> {
     let list = el.class_list();
     register(owner, rx.runtime_inputs(), error_handler, move || {
@@ -145,8 +145,8 @@ pub(crate) fn apply_rx_internal<'scope, T>(
     rx: Rx<'scope, T>,
     el: &WebElem,
     target: ApplyTarget,
-    owner: &ViewOwnerToken<'scope>,
-    error_handler: ViewErrorHandler<'scope>,
+    owner: &MountOwnerToken<'scope>,
+    error_handler: MountErrorHandler<'scope>,
 ) -> SilexResult<()>
 where
     T: ReactiveApply<'scope> + 'scope,
@@ -162,8 +162,8 @@ where
         &self,
         el: &WebElem,
         target: ApplyTarget,
-        owner: &ViewOwnerToken<'scope>,
-        error_handler: ViewErrorHandler<'scope>,
+        owner: &MountOwnerToken<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         apply_rx_internal(*self, el, target, owner, error_handler)
     }
@@ -184,8 +184,8 @@ impl<'scope> ReactiveApply<'scope> for String {
         rx: Rx<'scope, Self>,
         el: WebElem,
         target: ApplyTarget,
-        owner: &ViewOwnerToken<'scope>,
-        error_handler: ViewErrorHandler<'scope>,
+        owner: &MountOwnerToken<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         apply_string_reactive_internal(el, target, rx, owner, error_handler)
     }
@@ -195,8 +195,8 @@ impl<'scope> ReactiveApply<'scope> for String {
         key: Cow<'static, str>,
         el: WebElem,
         target: ApplyTarget,
-        owner: &ViewOwnerToken<'scope>,
-        error_handler: ViewErrorHandler<'scope>,
+        owner: &MountOwnerToken<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         apply_string_pair_reactive_internal(el, key, target, rx, owner, error_handler)
     }
@@ -230,8 +230,8 @@ macro_rules! impl_reactive_apply_primitive {
                     rx: Rx<'scope, Self>,
                     el: WebElem,
                     target: ApplyTarget,
-                    owner: &ViewOwnerToken<'scope>,
-                    error_handler: ViewErrorHandler<'scope>,
+                    owner: &MountOwnerToken<'scope>,
+                    error_handler: MountErrorHandler<'scope>,
                 ) -> SilexResult<()> {
                     apply_primitive_reactive_internal(el, target, rx, owner, error_handler)
                 }
@@ -241,8 +241,8 @@ macro_rules! impl_reactive_apply_primitive {
                     key: Cow<'static, str>,
                     el: WebElem,
                     target: ApplyTarget,
-                    owner: &ViewOwnerToken<'scope>,
-                    _error_handler: ViewErrorHandler<'scope>,
+                    owner: &MountOwnerToken<'scope>,
+                    _error_handler: MountErrorHandler<'scope>,
                 ) -> SilexResult<()> {
                     let _ = (rx, key, el, target, owner);
                     Ok(())
@@ -279,8 +279,8 @@ impl<'scope> ReactiveApply<'scope> for bool {
         rx: Rx<'scope, Self>,
         el: WebElem,
         target: ApplyTarget,
-        owner: &ViewOwnerToken<'scope>,
-        error_handler: ViewErrorHandler<'scope>,
+        owner: &MountOwnerToken<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         apply_bool_reactive_internal(el, target, rx, owner, error_handler)
     }
@@ -290,8 +290,8 @@ impl<'scope> ReactiveApply<'scope> for bool {
         key: Cow<'static, str>,
         el: WebElem,
         target: ApplyTarget,
-        owner: &ViewOwnerToken<'scope>,
-        error_handler: ViewErrorHandler<'scope>,
+        owner: &MountOwnerToken<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         if matches!(target, ApplyTarget::Class) {
             apply_bool_pair_reactive_internal(el, key, rx, owner, error_handler)
@@ -327,8 +327,8 @@ impl<'scope> ReactiveApply<'scope> for Attr<'scope> {
         rx: Rx<'scope, Self>,
         el: WebElem,
         target: ApplyTarget,
-        owner: &ViewOwnerToken<'scope>,
-        error_handler: ViewErrorHandler<'scope>,
+        owner: &MountOwnerToken<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         register(owner, rx.runtime_inputs(), error_handler, move || {
             if let Some(name) = target.name() {
@@ -362,8 +362,8 @@ where
         rx: Rx<'scope, Self>,
         el: WebElem,
         target: ApplyTarget,
-        owner: &ViewOwnerToken<'scope>,
-        error_handler: ViewErrorHandler<'scope>,
+        owner: &MountOwnerToken<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         register(owner, rx.runtime_inputs(), error_handler, move || {
             let value = rx.get()?.map(|value| value.to_string()).unwrap_or_default();
@@ -393,8 +393,8 @@ macro_rules! impl_reactive_apply_string_like {
                     rx: Rx<'scope, Self>,
                     el: WebElem,
                     target: ApplyTarget,
-                    owner: &ViewOwnerToken<'scope>,
-                    error_handler: ViewErrorHandler<'scope>,
+                    owner: &MountOwnerToken<'scope>,
+                    error_handler: MountErrorHandler<'scope>,
                 ) -> SilexResult<()> {
                     apply_primitive_reactive_internal(el, target, rx, owner, error_handler)
                 }
@@ -404,8 +404,8 @@ macro_rules! impl_reactive_apply_string_like {
                     key: Cow<'static, str>,
                     el: WebElem,
                     target: ApplyTarget,
-                    owner: &ViewOwnerToken<'scope>,
-                    error_handler: ViewErrorHandler<'scope>,
+                    owner: &MountOwnerToken<'scope>,
+                    error_handler: MountErrorHandler<'scope>,
                 ) -> SilexResult<()> {
                     if matches!(target, ApplyTarget::Style) {
                         let style = get_style_decl(&el).ok_or_else(|| {

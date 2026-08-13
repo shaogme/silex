@@ -7,8 +7,8 @@ use silex_core::{
 use silex_dom::attribute::{AttrOp, CombinedStyles, PendingAttribute};
 use silex_dom::element::Element;
 use silex_dom::view::{
-    AnyView, ApplyAttributes, BranchEvaluation, IndexedLoopView, KeyedLoopView, RowUpdater,
-    ScopedViewOwner, View, ViewOwner, mount_branch_stable_cached, mount_text_node,
+    AnyView, ApplyAttributes, BranchEvaluation, IndexedListView, KeyedListView, MountOwner,
+    RowUpdater, ScopedMountOwner, View, mount_branch_stable_cached, mount_text_node,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -26,9 +26,9 @@ fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
         .expect("error handler should register")
 }
 
-fn test_owner<'scope>(scope: Scope<'scope>) -> (ScopedViewOwner<'scope>, ErrorReporter<'scope>) {
+fn test_owner<'scope>(scope: Scope<'scope>) -> (ScopedMountOwner<'scope>, ErrorReporter<'scope>) {
     let error_handler = test_handler(scope);
-    (ScopedViewOwner::new(scope), error_handler)
+    (ScopedMountOwner::new(scope), error_handler)
 }
 
 struct CleanupProbe {
@@ -41,7 +41,7 @@ impl<'scope> ApplyAttributes<'scope> for CleanupProbe {}
 impl<'scope> View<'scope> for CleanupProbe {
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
         error_handler: ErrorReporter<'scope>,
@@ -60,7 +60,7 @@ impl<'scope> View<'scope> for CleanupProbe {
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: ErrorReporter<'scope>,
@@ -81,7 +81,7 @@ impl<'scope> ApplyAttributes<'scope> for FailingChild {}
 impl<'scope> View<'scope> for FailingChild {
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         _parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
         error_handler: ErrorReporter<'scope>,
@@ -101,7 +101,7 @@ impl<'scope> View<'scope> for FailingChild {
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: ErrorReporter<'scope>,
@@ -123,7 +123,7 @@ impl<'scope> ApplyAttributes<'scope> for ConditionalRow {}
 impl<'scope> View<'scope> for ConditionalRow {
     fn mount(
         &self,
-        _owner: &dyn ViewOwner<'scope>,
+        _owner: &dyn MountOwner<'scope>,
         parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
         _error_handler: ErrorReporter<'scope>,
@@ -139,7 +139,7 @@ impl<'scope> View<'scope> for ConditionalRow {
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: ErrorReporter<'scope>,
@@ -163,7 +163,7 @@ impl<'scope> ApplyAttributes<'scope> for StatefulProbe {}
 impl<'scope> View<'scope> for StatefulProbe {
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
         error_handler: ErrorReporter<'scope>,
@@ -195,7 +195,7 @@ impl<'scope> View<'scope> for StatefulProbe {
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: ErrorReporter<'scope>,
@@ -244,7 +244,7 @@ fn native_owner_error_handler_separates_initial_deferred_and_cleanup_errors() {
                     initial_reports_for_owner.set(initial_reports_for_owner.get() + 1);
                 })
                 .expect("error handler should register");
-            let owner = ScopedViewOwner::new(scope);
+            let owner = ScopedMountOwner::new(scope);
             let result = owner.effect_from(
                 RuntimeInputs::new(),
                 Box::new(|| Err(SilexError::recoverable(SilexErrorKind::Framework("initial effect failure".to_string())))),
@@ -281,7 +281,7 @@ fn native_owner_error_handler_separates_initial_deferred_and_cleanup_errors() {
                 }
             })
             .expect("error handler should register");
-        let owner = ScopedViewOwner::new(scope);
+        let owner = ScopedMountOwner::new(scope);
         owner
             .effect_from(
                 runtime_inputs_of(should_fail),
@@ -407,8 +407,8 @@ fn indexed_list_failure_restores_previous_rows_and_can_retry() {
                 reports_for_handler.set(reports_for_handler.get() + 1);
             })
             .expect("error handler should register");
-        let owner = ScopedViewOwner::new(scope);
-        let list = IndexedLoopView {
+        let owner = ScopedMountOwner::new(scope);
+        let list = IndexedListView {
             each: items,
             view_fn: Rc::new(|value: i32, _| {
                 AnyView::new(ConditionalRow {
@@ -458,7 +458,7 @@ fn deferred_row_render_failure_keeps_previous_content_and_recovers() {
                 reports_for_handler.set(reports_for_handler.get() + 1);
             })
             .expect("error handler should register");
-        let owner = ScopedViewOwner::new(scope);
+        let owner = ScopedMountOwner::new(scope);
         let view = move || {
             value.get().map(|value| {
                 AnyView::new(ConditionalRow {
@@ -500,7 +500,7 @@ fn keyed_list_initial_duplicate_key_is_a_mount_error() {
                 .signal(vec![1_i32, 1])
                 .expect("signal should initialize");
             let reports_for_handler = reports.clone();
-            let list = KeyedLoopView {
+            let list = KeyedListView {
                 each: items,
                 key_fn: Rc::new(|_: &i32| 0),
                 view_fn: Rc::new(|item: i32, _, _| AnyView::new(item.to_string())),
@@ -678,7 +678,7 @@ fn branch_replaces_row_owner_and_keyed_list_reorders_ranges() {
                     .expect("signal should initialize");
                 let duplicate_errors = Rc::new(Cell::new(0));
                 let duplicate_errors_for_handler = duplicate_errors.clone();
-                let list = KeyedLoopView {
+                let list = KeyedListView {
                     each: items,
                     key_fn: Rc::new(|item: &i32| *item),
                     view_fn: Rc::new(|item: i32, index, updater| {
@@ -748,7 +748,7 @@ fn indexed_list_preserves_position_identity_across_diff() {
                 let (items, set_items) = child
                     .signal(vec![1i32, 2])
                     .expect("signal should initialize");
-                let list = IndexedLoopView {
+                let list = IndexedListView {
                     each: items,
                     view_fn: Rc::new(|item: i32, index| format!("{item}:{index};").into_any()),
                     _marker: PhantomData,
@@ -822,7 +822,7 @@ fn repeated_branch_and_list_replacement_keeps_owner_lifecycle_stable() {
             .child(|child| {
                 let (items, set_items) =
                     child.signal(vec![0i32]).expect("signal should initialize");
-                let list = IndexedLoopView {
+                let list = IndexedListView {
                     each: items,
                     view_fn: Rc::new(|item: i32, index| format!("{item}:{index};").into_any()),
                     _marker: PhantomData,
@@ -881,7 +881,7 @@ fn stateful_keyed_rows_preserve_mounts_and_invalidate_old_updaters() {
                 let updates_for_factory = updates.clone();
                 let cleanups_for_factory = cleanups.clone();
                 let first_updater_for_factory = first_updater.clone();
-                let view = KeyedLoopView {
+                let view = KeyedListView {
                     each: items,
                     key_fn: Rc::new(|item: &i32| *item),
                     view_fn: Rc::new(move |item: i32, index, updater: RowUpdater<'_, i32>| {
@@ -970,7 +970,7 @@ fn rejected_stateful_factory_cleans_uncommitted_row_range() {
                     child.signal(vec![1i32]).expect("signal should initialize");
                 let cleanups_for_factory = cleanups.clone();
                 let errors_for_handler = errors.clone();
-                let list = KeyedLoopView {
+                let list = KeyedListView {
                     each: items,
                     key_fn: Rc::new(|item: &i32| *item),
                     view_fn: Rc::new(move |item: i32, index, updater: RowUpdater<'_, i32>| {

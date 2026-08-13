@@ -2,7 +2,7 @@ use silex_core::reactivity::ReactiveSource;
 use silex_core::traits::{ForLoopSource, RxRead};
 use silex_core::{ErrorHandler, ErrorReporter, SilexError};
 use silex_dom::prelude::*;
-use silex_dom::view::{AnyView, KeyedLoopView, RowUpdater};
+use silex_dom::view::{AnyView, KeyedListView, RowUpdater};
 use silex_macros::component;
 use std::hash::Hash;
 use std::marker::PhantomData;
@@ -57,7 +57,7 @@ pub fn For<'scope, ItemsFn, IS, Item, Key, KF>(
     row_error_handler: Option<ErrorHandler<'scope, SilexError>>,
     #[chain] error_handler: ErrorReporter<'scope>,
     #[chain(default)] _scope: PhantomData<&'scope ()>,
-) -> KeyedLoopView<'scope, ItemsFn, IS, Item, Key>
+) -> KeyedListView<'scope, ItemsFn, IS, Item, Key>
 where
     ItemsFn: RxRead<Value = IS> + ReactiveSource<'scope> + Clone + 'scope,
     IS: ForLoopSource<Item = Item> + Sized + 'scope,
@@ -71,7 +71,7 @@ where
         },
     );
 
-    KeyedLoopView {
+    KeyedListView {
         each,
         key_fn: Rc::new(key),
         view_fn,

@@ -11,7 +11,7 @@ use silex_css::{
 };
 use silex_dom::{
     attribute::{ApplyTarget, ApplyToDom, AttrOp},
-    view::{ScopedViewOwner, ViewOwner},
+    view::{MountOwner, ScopedMountOwner},
 };
 use std::{
     cell::Cell,
@@ -30,9 +30,9 @@ fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
         .expect("test error handler should register")
 }
 
-fn test_owner<'scope>(scope: Scope<'scope>) -> (ScopedViewOwner<'scope>, ErrorReporter<'scope>) {
+fn test_owner<'scope>(scope: Scope<'scope>) -> (ScopedMountOwner<'scope>, ErrorReporter<'scope>) {
     let error_handler = test_handler(scope);
-    (ScopedViewOwner::new(scope), error_handler)
+    (ScopedMountOwner::new(scope), error_handler)
 }
 
 fn document() -> web_sys::Document {

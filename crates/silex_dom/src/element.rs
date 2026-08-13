@@ -1,7 +1,8 @@
 use crate::attribute::{ApplyTarget, AttributeBuilder, IntoStorable, PendingAttribute};
 use crate::event::{EventDescriptor, EventHandler};
 use crate::view::{
-    AnyView, ApplyAttributes, HostResourceHandle, OwnedViewOwner, View, ViewOwner, ViewOwnerToken,
+    AnyView, ApplyAttributes, HostResourceHandle, MountOwner, MountOwnerToken, OwnedMountOwner,
+    View,
 };
 use std::marker::PhantomData;
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
@@ -84,13 +85,13 @@ impl<'scope> Element<'scope> {
 
     fn mount_inner(
         &self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: crate::view::ViewErrorHandler<'scope>,
+        error_handler: crate::view::MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         let provisional_scope = Rc::new(owner.owned_scope()?);
-        let provisional_owner = OwnedViewOwner::new(provisional_scope.clone());
+        let provisional_owner = OwnedMountOwner::new(provisional_scope.clone());
         let token = provisional_owner.token();
         let mut appended = false;
         let result = (|| -> SilexResult<()> {
@@ -185,20 +186,20 @@ impl<'scope> ApplyAttributes<'scope> for Element<'scope> {
 impl<'scope> View<'scope> for Element<'scope> {
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: crate::view::ViewErrorHandler<'scope>,
+        error_handler: crate::view::MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         self.mount_inner(owner, parent, attrs, error_handler)
     }
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: crate::view::ViewErrorHandler<'scope>,
+        error_handler: crate::view::MountErrorHandler<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized,
@@ -325,10 +326,10 @@ impl<'scope, T: Tag> ApplyAttributes<'scope> for TypedElement<'scope, T> {
 impl<'scope, T: Tag> View<'scope> for TypedElement<'scope, T> {
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: crate::view::ViewErrorHandler<'scope>,
+        error_handler: crate::view::MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         let element = self.clone().into_untyped();
         element.mount_inner(owner, parent, attrs, error_handler)
@@ -336,10 +337,10 @@ impl<'scope, T: Tag> View<'scope> for TypedElement<'scope, T> {
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: crate::view::ViewErrorHandler<'scope>,
+        error_handler: crate::view::MountErrorHandler<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized,
@@ -375,8 +376,8 @@ pub fn bind_event<'scope, E, F, M>(
     dom_element: &WebElem,
     event: E,
     callback: F,
-    owner: &ViewOwnerToken<'scope>,
-    error_handler: crate::view::ViewErrorHandler<'scope>,
+    owner: &MountOwnerToken<'scope>,
+    error_handler: crate::view::MountErrorHandler<'scope>,
 ) -> SilexResult<()>
 where
     E: crate::event::EventDescriptor + 'static,
@@ -396,8 +397,8 @@ pub fn bind_event_impl<'scope, E>(
     dom_element: &WebElem,
     event_name: String,
     mut handler: Box<dyn FnMut(E) -> SilexResult<()> + 'scope>,
-    owner: &ViewOwnerToken<'scope>,
-    error_handler: crate::view::ViewErrorHandler<'scope>,
+    owner: &MountOwnerToken<'scope>,
+    error_handler: crate::view::MountErrorHandler<'scope>,
 ) -> SilexResult<()>
 where
     E: FromWasmAbi + JsCast + 'static,

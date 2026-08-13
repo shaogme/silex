@@ -7,7 +7,7 @@ use silex::core::{ErrorReporter, Runtime, Scope, SilexResult};
 use silex::css::types::{Hex, hex, px};
 use silex::dom::attribute::{AttributeBuilder, GlobalAttributes};
 use silex::dom::prelude::AnyView;
-use silex::dom::view::{ScopedViewOwner, View, ViewOwner};
+use silex::dom::view::{MountOwner, ScopedMountOwner, View};
 use silex::macros::{classes, css, global, styled, tw};
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
@@ -19,9 +19,9 @@ fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
     scope.error_handler(|_| {}).unwrap()
 }
 
-fn test_owner<'scope>(scope: Scope<'scope>) -> (ScopedViewOwner<'scope>, ErrorReporter<'scope>) {
+fn test_owner<'scope>(scope: Scope<'scope>) -> (ScopedMountOwner<'scope>, ErrorReporter<'scope>) {
     let error_handler = test_handler(scope);
-    (ScopedViewOwner::new(scope), error_handler)
+    (ScopedMountOwner::new(scope), error_handler)
 }
 
 global! {

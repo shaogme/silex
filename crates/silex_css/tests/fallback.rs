@@ -5,7 +5,7 @@ use silex_core::{ErrorReporter, Runtime, Scope};
 use silex_css::{CssPart, DynamicCss, DynamicStyleManager, IntoCssReactive, prelude::inject_style};
 use silex_dom::{
     attribute::{ApplyTarget, ApplyToDom},
-    view::{ScopedViewOwner, ViewOwner},
+    view::{MountOwner, ScopedMountOwner},
 };
 use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
@@ -21,9 +21,9 @@ fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
         .expect("test error handler should register")
 }
 
-fn test_owner<'scope>(scope: Scope<'scope>) -> (ScopedViewOwner<'scope>, ErrorReporter<'scope>) {
+fn test_owner<'scope>(scope: Scope<'scope>) -> (ScopedMountOwner<'scope>, ErrorReporter<'scope>) {
     let error_handler = test_handler(scope);
-    (ScopedViewOwner::new(scope), error_handler)
+    (ScopedMountOwner::new(scope), error_handler)
 }
 
 fn document() -> Document {

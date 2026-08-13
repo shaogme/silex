@@ -4,7 +4,7 @@ use silex_core::{ErrorReporter, Runtime, SilexError, SilexErrorKind, SilexResult
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::element::Element;
 use silex_dom::mounted::{CleanupOrigin, CleanupSink, MountAvailability, MountedApp};
-use silex_dom::view::{ApplyAttributes, View, ViewOwner, mount_component};
+use silex_dom::view::{ApplyAttributes, MountOwner, View, mount_component};
 use std::{cell::Cell, rc::Rc};
 use wasm_bindgen_test::*;
 use web_sys::Node;
@@ -45,7 +45,7 @@ impl<'scope> ApplyAttributes<'scope> for PanicRollbackView {}
 impl<'scope> View<'scope> for PanicRollbackView {
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: ErrorReporter<'scope>,
@@ -66,7 +66,7 @@ impl<'scope> View<'scope> for PanicRollbackView {
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: ErrorReporter<'scope>,
@@ -83,7 +83,7 @@ impl<'scope> ApplyAttributes<'scope> for CleanupProbe {}
 impl<'scope> View<'scope> for CleanupProbe {
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
         error_handler: ErrorReporter<'scope>,
@@ -109,7 +109,7 @@ impl<'scope> View<'scope> for CleanupProbe {
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: ErrorReporter<'scope>,

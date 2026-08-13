@@ -737,20 +737,20 @@ impl BuilderContext {
             impl #impl_generics #__silex::dom::view::View<#scope> for #product_ty #view_where_clause {
                 fn mount(
                     &self,
-                    owner: &dyn #__silex::dom::view::ViewOwner<#scope>,
+                    owner: &dyn #__silex::dom::view::MountOwner<#scope>,
                     parent: &#__silex::reexports::web_sys::Node,
                     attrs: ::std::vec::Vec<#pending_attribute_ty>,
-                    error_handler: #__silex::dom::view::ViewErrorHandler<#scope>,
+                    error_handler: #__silex::dom::view::MountErrorHandler<#scope>,
                 ) -> #__silex::core::SilexResult<()> {
                     self.clone().mount_owned(owner, parent, attrs, error_handler)
                 }
 
                 fn mount_owned(
                     mut self,
-                    owner: &dyn #__silex::dom::view::ViewOwner<#scope>,
+                    owner: &dyn #__silex::dom::view::MountOwner<#scope>,
                     parent: &#__silex::reexports::web_sys::Node,
                     attrs: ::std::vec::Vec<#pending_attribute_ty>,
-                    error_handler: #__silex::dom::view::ViewErrorHandler<#scope>,
+                    error_handler: #__silex::dom::view::MountErrorHandler<#scope>,
                 ) -> #__silex::core::SilexResult<()>
                 where
                     Self: Sized,

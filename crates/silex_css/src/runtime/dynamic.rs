@@ -15,7 +15,7 @@ use crate::{
 use silex_core::{ErrorReporter, RuntimeInputs, Rx, SilexError, SilexErrorKind, SilexResult};
 use silex_dom::{
     attribute::{ApplyTarget, ApplyToDom, AttrOp, IntoStorable, PendingAttribute},
-    view::{ApplyAttributes, OwnerState, View, ViewErrorHandler, ViewOwner, ViewOwnerToken},
+    view::{ApplyAttributes, MountErrorHandler, MountOwner, MountOwnerToken, MountState, View},
 };
 use std::{
     cell::{Cell, RefCell},
@@ -411,8 +411,8 @@ impl<'scope> DynamicCss<'scope> {
     fn apply_to_element(
         &self,
         el: &Element,
-        owner: &dyn ViewOwner<'scope>,
-        error_handler: ViewErrorHandler<'scope>,
+        owner: &dyn MountOwner<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         let all_inputs = self.runtime_inputs();
         owner.validate_inputs(&all_inputs)?;
@@ -578,8 +578,8 @@ impl<'scope> ApplyToDom<'scope> for DynamicCss<'scope> {
         &self,
         el: &Element,
         _target: ApplyTarget,
-        owner: &ViewOwnerToken<'scope>,
-        error_handler: ViewErrorHandler<'scope>,
+        owner: &MountOwnerToken<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         self.apply_to_element(el, owner, error_handler)
     }
@@ -726,8 +726,8 @@ impl<'scope> StyledVariantBinding<'scope> {
     fn mount_to_element(
         &self,
         element: &Element,
-        owner: &ViewOwnerToken<'scope>,
-        error_handler: ViewErrorHandler<'scope>,
+        owner: &MountOwnerToken<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         let inputs = self.runtime_inputs();
         owner.validate_inputs(&inputs)?;
@@ -822,7 +822,7 @@ fn update_styled_variant_classes(
     element: &Element,
     groups: &[StyledVariantGroup<'_>],
     active_variants: &[String],
-    current_classes: &OwnerState<'_, Vec<Option<&'static str>>>,
+    current_classes: &MountState<'_, Vec<Option<&'static str>>>,
 ) -> SilexResult<()> {
     current_classes.update(|current_classes| {
         for (index, group) in groups.iter().enumerate() {
@@ -862,7 +862,7 @@ fn update_styled_dynamic_rules(
     rules: &[StyledDynamicRule<'_>],
     layer: &'static str,
     active_variants: &[String],
-    states: &OwnerState<'_, Vec<StyledRuleState>>,
+    states: &MountState<'_, Vec<StyledRuleState>>,
 ) -> SilexResult<()> {
     for (index, rule) in rules.iter().enumerate() {
         let active = match (rule.variant_group, rule.variant_key) {
@@ -1031,8 +1031,8 @@ impl<'scope> GlobalStyleView<'scope> {
 
     fn mount_inner(
         &self,
-        owner: &dyn ViewOwner<'scope>,
-        error_handler: ViewErrorHandler<'scope>,
+        owner: &dyn MountOwner<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         let mut inputs = RuntimeInputs::new();
         for binding in &self.bindings {
@@ -1071,20 +1071,20 @@ impl<'scope> ApplyAttributes<'scope> for GlobalStyleView<'scope> {}
 impl<'scope> View<'scope> for GlobalStyleView<'scope> {
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         _parent: &web_sys::Node,
         _attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: ViewErrorHandler<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         self.mount_inner(owner, error_handler)
     }
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         _parent: &web_sys::Node,
         _attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: ViewErrorHandler<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized,
@@ -1159,8 +1159,8 @@ fn render_layered_selector(
 ///   模板要先过一遍 lightningcss，位置信息在那之后不复存在，只能按文本找；但
 ///   替换是一遍扫描完成的，写进去的值不会再被当成占位符。
 pub fn inject_managed_dynamic_style<'scope>(
-    owner: &dyn ViewOwner<'scope>,
-    error_handler: ViewErrorHandler<'scope>,
+    owner: &dyn MountOwner<'scope>,
+    error_handler: MountErrorHandler<'scope>,
     style: ManagedDynamicStyle<'scope>,
 ) -> SilexResult<()> {
     let ManagedDynamicStyle {

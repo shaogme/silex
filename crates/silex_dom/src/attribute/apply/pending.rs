@@ -5,7 +5,7 @@ use web_sys::Element as WebElem;
 
 use super::foundation::{ApplyTarget, ApplyToDom};
 use crate::attribute::op::{AttrOp, CombinedClasses, CombinedStyles};
-use crate::view::{ViewErrorHandler, ViewOwnerToken};
+use crate::view::{MountErrorHandler, MountOwnerToken};
 
 // --- Attribute Forwarding Support ---
 
@@ -193,7 +193,7 @@ impl<'scope> AttrOp<'scope> {
     }
 
     pub fn new_scoped(
-        f: impl Fn(&WebElem, &ViewOwnerToken<'scope>, ViewErrorHandler<'scope>) -> SilexResult<()>
+        f: impl Fn(&WebElem, &MountOwnerToken<'scope>, MountErrorHandler<'scope>) -> SilexResult<()>
         + 'scope,
     ) -> Self {
         AttrOp::Custom(Rc::new(f))

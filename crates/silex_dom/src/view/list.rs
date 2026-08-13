@@ -1,8 +1,9 @@
-use super::owner::{
-    DomRange, RowController, RowControllerConfig, RowRender, RowRenderArgs, RowUpdater,
+use super::owner::OwnedMountOwner;
+use super::row::{
+    NodeRange, RowInstance, RowInstanceConfig, RowRenderContext, RowRenderer, RowUpdater,
 };
 use crate::attribute::PendingAttribute;
-use crate::view::{AnyView, ApplyAttributes, OwnedViewOwner, View, ViewErrorHandler, ViewOwner};
+use crate::view::{AnyView, ApplyAttributes, MountErrorHandler, MountOwner, View};
 use silex_core::reactivity::{ReactiveSource, runtime_inputs_of};
 use silex_core::traits::{ForLoopSource, RxRead};
 use silex_core::{ErrorHandler, RuntimeInputs, SilexError, SilexErrorKind, SilexResult};
@@ -15,7 +16,7 @@ use std::{
 use web_sys::Node;
 
 /// Keyed list with persistent row controllers and state-preserving updates.
-pub struct KeyedLoopView<'scope, IF, IS, T, K> {
+pub struct KeyedListView<'scope, IF, IS, T, K> {
     pub each: IF,
     pub key_fn: Rc<dyn Fn(&T) -> K + 'scope>,
     pub view_fn: Rc<dyn Fn(T, usize, RowUpdater<'scope, T>) -> AnyView<'scope> + 'scope>,
@@ -50,9 +51,9 @@ impl<'scope, T> RowFactory<'scope, T> {
     }
 }
 
-impl<'scope, IF, IS, T, K> ApplyAttributes<'scope> for KeyedLoopView<'scope, IF, IS, T, K> {}
+impl<'scope, IF, IS, T, K> ApplyAttributes<'scope> for KeyedListView<'scope, IF, IS, T, K> {}
 
-impl<'scope, IF, IS, T, K> View<'scope> for KeyedLoopView<'scope, IF, IS, T, K>
+impl<'scope, IF, IS, T, K> View<'scope> for KeyedListView<'scope, IF, IS, T, K>
 where
     IF: RxRead<Value = IS> + ReactiveSource<'scope> + Clone + 'scope,
     IS: ForLoopSource<Item = T> + Sized + 'scope,
@@ -61,10 +62,10 @@ where
 {
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: ViewErrorHandler<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         mount_keyed_list(KeyedListMountArgs {
             owner,
@@ -81,10 +82,10 @@ where
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: ViewErrorHandler<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized,
@@ -103,15 +104,15 @@ where
     }
 }
 
-pub struct IndexedLoopView<'scope, IF, T, IS> {
+pub struct IndexedListView<'scope, IF, T, IS> {
     pub each: IF,
     pub view_fn: Rc<dyn Fn(T, usize) -> AnyView<'scope> + 'scope>,
     pub _marker: std::marker::PhantomData<(T, IS)>,
 }
 
-impl<'scope, IF, T, IS> ApplyAttributes<'scope> for IndexedLoopView<'scope, IF, T, IS> {}
+impl<'scope, IF, T, IS> ApplyAttributes<'scope> for IndexedListView<'scope, IF, T, IS> {}
 
-impl<'scope, IF, T, IS> View<'scope> for IndexedLoopView<'scope, IF, T, IS>
+impl<'scope, IF, T, IS> View<'scope> for IndexedListView<'scope, IF, T, IS>
 where
     IF: RxRead<Value = IS> + ReactiveSource<'scope> + Clone + 'scope,
     IS: ForLoopSource<Item = T> + 'scope,
@@ -119,10 +120,10 @@ where
 {
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: ViewErrorHandler<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         mount_indexed_list(
             owner,
@@ -136,10 +137,10 @@ where
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: ViewErrorHandler<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized,
@@ -156,12 +157,12 @@ where
 }
 
 fn mount_indexed_list<'scope, IF, IS, T>(
-    owner: &dyn ViewOwner<'scope>,
+    owner: &dyn MountOwner<'scope>,
     parent: &Node,
     source: IF,
     factory: RowFactory<'scope, T>,
     attrs: Vec<PendingAttribute<'scope>>,
-    error_handler: ViewErrorHandler<'scope>,
+    error_handler: MountErrorHandler<'scope>,
 ) -> SilexResult<()>
 where
     IF: RxRead<Value = IS> + ReactiveSource<'scope> + Clone + 'scope,
@@ -171,13 +172,13 @@ where
     let inputs = runtime_inputs_of(source.clone());
     owner.validate_inputs(&inputs)?;
     let scope = Rc::new(owner.owned_scope()?);
-    let local_owner = OwnedViewOwner::new(scope.clone());
-    let range = DomRange::append(parent, "for")?;
+    let local_owner = OwnedMountOwner::new(scope.clone());
+    let range = NodeRange::append(parent, "for")?;
     let token = local_owner.token();
     let stateful = factory.is_stateful();
     let render_factory = factory.clone();
-    let render = RowRender::new(move |args: RowRenderArgs<'scope, T>| {
-        let RowRenderArgs {
+    let render = RowRenderer::new(move |args: RowRenderContext<'scope, T>| {
+        let RowRenderContext {
             item,
             index,
             parent,
@@ -195,7 +196,7 @@ where
     });
     let rows = local_owner
         .token()
-        .owner_state(Vec::<RowController<'scope, T>>::new())?;
+        .owner_state(Vec::<RowInstance<'scope, T>>::new())?;
 
     let cleanup_rows = rows.clone();
     let cleanup_range = range.clone();
@@ -239,10 +240,10 @@ where
                 }
                 for (offset, item) in values.enumerate() {
                     let index = old_len + offset;
-                    let row_range = DomRange::before(&end, "for-row")?;
-                    let row = RowController::new(
+                    let row_range = NodeRange::before(&end, "for-row")?;
+                    let row = RowInstance::new(
                         &token,
-                        RowControllerConfig {
+                        RowInstanceConfig {
                             range: row_range,
                             render: render.clone(),
                             render_inputs: RuntimeInputs::new(),
@@ -323,19 +324,19 @@ where
 }
 
 struct KeyedRows<'scope, T, K> {
-    rows: HashMap<K, RowController<'scope, T>>,
+    rows: HashMap<K, RowInstance<'scope, T>>,
     order: Vec<K>,
 }
 
 struct KeyedListMountArgs<'owner, 'scope, IF, IS, T, K> {
-    owner: &'owner dyn ViewOwner<'scope>,
+    owner: &'owner dyn MountOwner<'scope>,
     parent: &'owner Node,
     source: IF,
     key_fn: Rc<dyn Fn(&T) -> K + 'scope>,
     factory: RowFactory<'scope, T>,
     error_handler: Option<ErrorHandler<'scope, SilexError>>,
     attrs: Vec<PendingAttribute<'scope>>,
-    parent_error_handler: ViewErrorHandler<'scope>,
+    parent_error_handler: MountErrorHandler<'scope>,
     _marker: std::marker::PhantomData<IS>,
 }
 
@@ -363,13 +364,13 @@ where
     owner.validate_inputs(&inputs)?;
     let scope = Rc::new(owner.owned_scope()?);
     let error_handler = error_handler.unwrap_or(parent_error_handler);
-    let local_owner = OwnedViewOwner::new(scope.clone());
+    let local_owner = OwnedMountOwner::new(scope.clone());
     let token = local_owner.token();
-    let range = DomRange::append(parent, "for")?;
+    let range = NodeRange::append(parent, "for")?;
     let stateful = factory.is_stateful();
     let render_factory = factory.clone();
-    let render = RowRender::new(move |args: RowRenderArgs<'scope, T>| {
-        let RowRenderArgs {
+    let render = RowRenderer::new(move |args: RowRenderContext<'scope, T>| {
+        let RowRenderContext {
             item,
             index,
             parent,
@@ -462,10 +463,10 @@ where
                         next_order.push(key);
                         continue;
                     }
-                    let row_range = DomRange::before(&end, "for-row")?;
-                    let row = RowController::new(
+                    let row_range = NodeRange::before(&end, "for-row")?;
+                    let row = RowInstance::new(
                         &token,
-                        RowControllerConfig {
+                        RowInstanceConfig {
                             range: row_range,
                             render: render.clone(),
                             render_inputs: RuntimeInputs::new(),
@@ -586,14 +587,14 @@ where
 }
 
 fn dispose_map<'scope, T: Clone + 'scope, K>(
-    rows: &mut HashMap<K, RowController<'scope, T>>,
+    rows: &mut HashMap<K, RowInstance<'scope, T>>,
 ) -> Option<Box<dyn std::any::Any + Send>> {
     let mut values = rows.drain().map(|(_, row)| row).collect::<Vec<_>>();
     dispose_rows(&mut values)
 }
 
 fn restore_indexed_rows<'scope, T: Clone + 'scope>(
-    rows: &mut [RowController<'scope, T>],
+    rows: &mut [RowInstance<'scope, T>],
     updated: &[(usize, (T, usize))],
 ) -> Option<Box<dyn std::any::Any + Send>> {
     let mut first_panic = None;
@@ -611,7 +612,7 @@ fn restore_indexed_rows<'scope, T: Clone + 'scope>(
 }
 
 fn restore_keyed_rows<'scope, T: Clone + 'scope, K>(
-    rows: &mut HashMap<K, RowController<'scope, T>>,
+    rows: &mut HashMap<K, RowInstance<'scope, T>>,
     updated: &[(K, (T, usize))],
 ) -> Option<Box<dyn std::any::Any + Send>>
 where
@@ -635,7 +636,7 @@ where
 }
 
 fn restore_keyed_order<'scope, T, K>(
-    rows: &HashMap<K, RowController<'scope, T>>,
+    rows: &HashMap<K, RowInstance<'scope, T>>,
     order: &[K],
     end: &Node,
 ) where
@@ -659,7 +660,7 @@ fn panic_message(prefix: &str, panic: Box<dyn std::any::Any + Send>) -> String {
 }
 
 fn dispose_rows<'scope, T: Clone + 'scope>(
-    rows: &mut Vec<RowController<'scope, T>>,
+    rows: &mut Vec<RowInstance<'scope, T>>,
 ) -> Option<Box<dyn std::any::Any + Send>> {
     let mut first_panic = None;
     for mut row in rows.drain(..) {

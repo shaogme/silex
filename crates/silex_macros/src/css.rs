@@ -617,7 +617,7 @@ mod tests {
         assert!(output.contains("inject_style"), "{output}");
         assert!(!output.contains("DynamicCss"), "{output}");
         assert!(!output.contains("RuntimeInputs"), "{output}");
-        assert!(!output.contains("ViewOwner"), "{output}");
+        assert!(!output.contains("MountOwner"), "{output}");
     }
 
     #[test]

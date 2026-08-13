@@ -1,6 +1,6 @@
 use silex_core::prelude::*;
 use silex_dom::prelude::*;
-use silex_dom::view::ViewOwnerToken;
+use silex_dom::view::MountOwnerToken;
 use silex_html::div;
 use silex_macros::{component, tw};
 use std::time::Duration;
@@ -30,7 +30,7 @@ pub struct TooltipContext<'scope> {
     pub open: RwSignal<'scope, bool>,
     pub anchor: RwSignal<'scope, (f64, f64, f64, f64)>,
     timer: StoredValue<'scope, Option<HostResourceHandle<'scope>>>,
-    owner: StoredValue<'scope, Option<ViewOwnerToken<'scope>>>,
+    owner: StoredValue<'scope, Option<MountOwnerToken<'scope>>>,
     error_handler: StoredValue<'scope, Option<ErrorReporter<'scope>>>,
 }
 
@@ -47,7 +47,7 @@ impl<'scope> TooltipContext<'scope> {
 
     fn set_owner(
         &self,
-        owner: ViewOwnerToken<'scope>,
+        owner: MountOwnerToken<'scope>,
         error_handler: ErrorReporter<'scope>,
     ) -> ReactiveResult<()> {
         self.owner.set(Some(owner))?;

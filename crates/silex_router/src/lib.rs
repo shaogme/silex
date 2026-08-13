@@ -33,7 +33,7 @@ use silex_core::{
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::helpers::window_event_listener_untyped;
 use silex_dom::view::{
-    AnyView, ApplyAttributes, BranchEvaluation, View, ViewErrorHandler, ViewOwner,
+    AnyView, ApplyAttributes, BranchEvaluation, MountErrorHandler, MountOwner, View,
 };
 use silex_macros::component;
 use std::rc::Rc;
@@ -157,10 +157,10 @@ pub struct RouterView<'scope> {
 impl<'scope> RouterView<'scope> {
     fn mount_internal(
         self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: ViewErrorHandler<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         let Self {
             context,
@@ -199,10 +199,10 @@ impl<'scope> ApplyAttributes<'scope> for RouterView<'scope> {}
 impl<'scope> View<'scope> for RouterView<'scope> {
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: ViewErrorHandler<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         self.clone()
             .mount_owned(owner, parent, attrs, error_handler)
@@ -210,10 +210,10 @@ impl<'scope> View<'scope> for RouterView<'scope> {
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: ViewErrorHandler<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized,
@@ -257,10 +257,10 @@ impl<'scope> ApplyAttributes<'scope> for RouteOutlet<'scope> {}
 impl<'scope> View<'scope> for RouteOutlet<'scope> {
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: ViewErrorHandler<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         self.clone()
             .mount_owned(owner, parent, attrs, error_handler)
@@ -268,10 +268,10 @@ impl<'scope> View<'scope> for RouteOutlet<'scope> {
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: ViewErrorHandler<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized,

@@ -1,54 +1,10 @@
+use super::mount::mount_composite;
 use crate::attribute::PendingAttribute;
 use crate::element::Element;
-use crate::view::{
-    ApplyAttributes, View, ViewCons, ViewErrorHandler, ViewNil, ViewOwner, ViewOwnerToken,
-    mount_composite,
-};
+use crate::view::{ApplyAttributes, MountErrorHandler, MountOwner, View, ViewCons, ViewNil};
 use silex_core::SilexResult;
 use std::rc::Rc;
 use web_sys::Node;
-
-pub struct RenderArgs<'scope> {
-    pub(crate) parent: Node,
-    pub(crate) attrs: Vec<PendingAttribute<'scope>>,
-    pub(crate) owner: ViewOwnerToken<'scope>,
-    pub(crate) error_handler: ViewErrorHandler<'scope>,
-}
-
-impl<'scope> RenderArgs<'scope> {
-    pub fn new(
-        parent: Node,
-        attrs: Vec<PendingAttribute<'scope>>,
-        owner: ViewOwnerToken<'scope>,
-        error_handler: ViewErrorHandler<'scope>,
-    ) -> Self {
-        Self {
-            parent,
-            attrs,
-            owner,
-            error_handler,
-        }
-    }
-}
-
-pub struct RenderThunk<'scope> {
-    inner: silex_vtable::thunk::ThunkBox<'scope, RenderArgs<'scope>, SilexResult<()>>,
-}
-
-impl<'scope> RenderThunk<'scope> {
-    pub fn new<F>(render: F) -> Self
-    where
-        F: Fn(RenderArgs<'scope>) -> SilexResult<()> + 'scope,
-    {
-        Self {
-            inner: silex_vtable::thunk::ThunkBox::new(render),
-        }
-    }
-
-    pub fn call(&self, args: RenderArgs<'scope>) -> SilexResult<()> {
-        self.inner.call(args)
-    }
-}
 
 /// Scope-bound type-erased view.
 #[derive(Default)]
@@ -84,10 +40,10 @@ fn merge_attrs<'scope>(
 
 fn mount_list<'scope>(
     list: &[AnyView<'scope>],
-    owner: &dyn ViewOwner<'scope>,
+    owner: &dyn MountOwner<'scope>,
     parent: &Node,
     attrs: Vec<PendingAttribute<'scope>>,
-    error_handler: ViewErrorHandler<'scope>,
+    error_handler: MountErrorHandler<'scope>,
 ) -> SilexResult<()> {
     mount_composite(
         owner,
@@ -114,10 +70,10 @@ fn mount_list<'scope>(
 
 fn mount_list_owned<'scope>(
     list: Vec<AnyView<'scope>>,
-    owner: &dyn ViewOwner<'scope>,
+    owner: &dyn MountOwner<'scope>,
     parent: &Node,
     attrs: Vec<PendingAttribute<'scope>>,
-    error_handler: ViewErrorHandler<'scope>,
+    error_handler: MountErrorHandler<'scope>,
 ) -> SilexResult<()> {
     mount_composite(
         owner,
@@ -167,10 +123,10 @@ impl<'scope> View<'scope> for AnyView<'scope> {
 
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: ViewErrorHandler<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         match self {
             Self::Empty => Ok(()),
@@ -188,10 +144,10 @@ impl<'scope> View<'scope> for AnyView<'scope> {
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: ViewErrorHandler<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized,

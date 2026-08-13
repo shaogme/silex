@@ -11,7 +11,7 @@ use crate::{
 };
 use silex_core::{ErrorReporter, Rx, RxValueKind, SilexError, SilexErrorKind, SilexResult};
 use silex_dom::attribute::{ApplyTarget, ApplyToDom, IntoStorable, ReactiveApply};
-use silex_dom::view::{ViewErrorHandler, ViewOwnerToken};
+use silex_dom::view::{MountErrorHandler, MountOwnerToken};
 use silex_hash::{
     css::{CssHasher, Normalized, encode_base36},
     css_hasher,
@@ -310,8 +310,8 @@ impl<'scope> ApplyToDom<'scope> for Style<'scope> {
         &self,
         el: &Element,
         _target: ApplyTarget,
-        owner: &ViewOwnerToken<'scope>,
-        error_handler: ViewErrorHandler<'scope>,
+        owner: &MountOwnerToken<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         self.apply_to_element(el, owner, error_handler).map(|_| ())
     }
@@ -372,8 +372,8 @@ impl<'scope> Style<'scope> {
     pub fn apply_to_element(
         &self,
         el: &Element,
-        owner: &ViewOwnerToken<'scope>,
-        error_handler: ViewErrorHandler<'scope>,
+        owner: &MountOwnerToken<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<String> {
         let RenderedStyle {
             class_base,
@@ -588,8 +588,8 @@ impl<'scope> ReactiveApply<'scope> for Style<'scope> {
         rx: Rx<'scope, Self, RxValueKind>,
         el: Element,
         _target: ApplyTarget,
-        owner: &ViewOwnerToken<'scope>,
-        error_handler: ViewErrorHandler<'scope>,
+        owner: &MountOwnerToken<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         let el = el.clone();
         let owner = owner.clone();

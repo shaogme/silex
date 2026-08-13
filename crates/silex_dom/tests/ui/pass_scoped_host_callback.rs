@@ -8,7 +8,7 @@ use silex_dom::{
         debounce, queue_microtask, request_animation_frame, request_idle_callback, set_interval,
         set_timeout, window_event_listener_untyped,
     },
-    view::ViewOwnerToken,
+    view::MountOwnerToken,
 };
 use std::time::Duration;
 
@@ -28,7 +28,7 @@ fn compile_element<'scope>(
 
 #[allow(dead_code)]
 fn compile_owned<'scope>(
-    token: &ViewOwnerToken<'scope>,
+    token: &MountOwnerToken<'scope>,
     read: ReadSignal<'scope, i32>,
     write: WriteSignal<'scope, i32>,
     borrowed_ref: &'scope str,

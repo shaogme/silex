@@ -4,7 +4,7 @@ use gloo_timers::future::TimeoutFuture;
 use silex_core::{ErrorReporter, RootHandle, Runtime, Scope, SilexResult};
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::view::{
-    AnyView, ApplyAttributes, IndexedLoopView, ScopedViewOwner, View, ViewOwner,
+    AnyView, ApplyAttributes, IndexedListView, MountOwner, ScopedMountOwner, View,
 };
 use silex_persist::{PersistMode, PersistenceState, Persistent, SyncStrategy, WriteDefault};
 use silex_router::{RouterContext, RouterContextProps};
@@ -26,9 +26,9 @@ fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
         .expect("test error handler should be registered")
 }
 
-fn test_owner<'scope>(scope: Scope<'scope>) -> (ScopedViewOwner<'scope>, ErrorReporter<'scope>) {
+fn test_owner<'scope>(scope: Scope<'scope>) -> (ScopedMountOwner<'scope>, ErrorReporter<'scope>) {
     let error_handler = test_handler(scope);
-    (ScopedViewOwner::new(scope), error_handler)
+    (ScopedMountOwner::new(scope), error_handler)
 }
 
 const STORAGE_KEY: &str = "silex-persist-runtime-refactor";
@@ -316,7 +316,7 @@ impl<'scope> ApplyAttributes<'scope> for CapturedPersistent<'scope> {}
 impl<'scope> View<'scope> for CapturedPersistent<'scope> {
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: ErrorReporter<'scope>,
@@ -328,7 +328,7 @@ impl<'scope> View<'scope> for CapturedPersistent<'scope> {
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: ErrorReporter<'scope>,
@@ -860,7 +860,7 @@ fn persistent_view_stops_after_row_owner_dispose() {
         let (items, set_items) = scope
             .signal(vec![0_i32])
             .expect("items signal should be created");
-        let list = IndexedLoopView {
+        let list = IndexedListView {
             each: items,
             view_fn: Rc::new(move |_, _| {
                 AnyView::new(CapturedPersistent {

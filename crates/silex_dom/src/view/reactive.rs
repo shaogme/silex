@@ -1,8 +1,8 @@
 use crate::attribute::PendingAttribute;
 use crate::element::{Element, TypedElement, tags::Tag};
 use crate::view::{
-    AnyView, ApplyAttributes, OwnedViewOwner, RenderArgs, RenderThunk, View, ViewCons,
-    ViewErrorHandler, ViewOwner, mount_dynamic_view_universal_from,
+    AnyView, ApplyAttributes, DynamicRenderArgs, DynamicRenderer, MountErrorHandler, MountOwner,
+    OwnedMountOwner, View, ViewCons, mount_dynamic_view_universal_from,
 };
 use silex_core::reactivity::{Memo, ReadSignal, RwSignal, Signal, StoredValue};
 use silex_core::traits::RxCloneData;
@@ -12,10 +12,10 @@ use std::{borrow::Cow, rc::Rc};
 use web_sys::Node;
 
 pub(crate) fn mount_reactive_text<'scope, T>(
-    owner: &dyn ViewOwner<'scope>,
+    owner: &dyn MountOwner<'scope>,
     parent: &Node,
     rx: Rx<'scope, T>,
-    error_handler: ViewErrorHandler<'scope>,
+    error_handler: MountErrorHandler<'scope>,
 ) -> SilexResult<()>
 where
     T: Display + RxCloneData + 'scope,
@@ -23,7 +23,7 @@ where
     let inputs = rx.runtime_inputs();
     owner.validate_inputs(&inputs)?;
     let scope = Rc::new(owner.owned_scope()?);
-    let local_owner = OwnedViewOwner::new(scope.clone());
+    let local_owner = OwnedMountOwner::new(scope.clone());
     let parent = parent.clone();
     let node: Node = crate::document().create_text_node("").into();
     parent.append_child(&node).map_err(SilexError::fatal)?;
@@ -72,11 +72,11 @@ where
 }
 
 pub(crate) fn mount_reactive_view<'scope, V>(
-    owner: &dyn ViewOwner<'scope>,
+    owner: &dyn MountOwner<'scope>,
     parent: &Node,
     rx: Rx<'scope, V>,
     attrs: Vec<PendingAttribute<'scope>>,
-    error_handler: ViewErrorHandler<'scope>,
+    error_handler: MountErrorHandler<'scope>,
 ) -> SilexResult<()>
 where
     V: View<'scope> + 'scope,
@@ -89,8 +89,8 @@ where
         attrs,
         inputs,
         error_handler,
-        RenderThunk::new(move |args| {
-            let RenderArgs {
+        DynamicRenderer::new(move |args| {
+            let DynamicRenderArgs {
                 parent,
                 attrs,
                 owner: token,
@@ -104,10 +104,10 @@ where
 pub trait AutoReactiveView<'scope>: View<'scope> + Sized + 'scope {
     fn mount_reactive(
         rx: Rx<'scope, Self>,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: ViewErrorHandler<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         mount_reactive_view(owner, parent, rx, attrs, error_handler)
     }
@@ -124,20 +124,20 @@ where
 {
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: ViewErrorHandler<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         V::mount_reactive(*self, owner, parent, attrs, error_handler)
     }
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: ViewErrorHandler<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized,
@@ -152,10 +152,10 @@ macro_rules! impl_auto_reactive_text {
             impl<'scope> AutoReactiveView<'scope> for $ty {
                 fn mount_reactive(
                     rx: Rx<'scope, Self>,
-                    owner: &dyn ViewOwner<'scope>,
+                    owner: &dyn MountOwner<'scope>,
                     parent: &Node,
                     _attrs: Vec<PendingAttribute<'scope>>,
-                    error_handler: ViewErrorHandler<'scope>,
+                    error_handler: MountErrorHandler<'scope>,
                 ) -> SilexResult<()> {
                     mount_reactive_text(owner, parent, rx, error_handler)
                 }
@@ -179,10 +179,10 @@ impl_auto_reactive_text!(
 impl<'scope> AutoReactiveView<'scope> for &'scope str {
     fn mount_reactive(
         rx: Rx<'scope, Self>,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: ViewErrorHandler<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         mount_reactive_text(owner, parent, rx, error_handler)
     }
@@ -191,10 +191,10 @@ impl<'scope> AutoReactiveView<'scope> for &'scope str {
 impl<'scope> AutoReactiveView<'scope> for Cow<'scope, str> {
     fn mount_reactive(
         rx: Rx<'scope, Self>,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: ViewErrorHandler<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         mount_reactive_text(owner, parent, rx, error_handler)
     }
@@ -230,20 +230,20 @@ macro_rules! impl_view_forward_to_rx {
             {
                 fn mount(
                     &self,
-                    owner: &dyn ViewOwner<'scope>,
+                    owner: &dyn MountOwner<'scope>,
                     parent: &Node,
                     attrs: Vec<PendingAttribute<'scope>>,
-                    error_handler: ViewErrorHandler<'scope>,
+                    error_handler: MountErrorHandler<'scope>,
                 ) -> SilexResult<()> {
                     self.clone().into_rx().mount(owner, parent, attrs, error_handler)
                 }
 
                 fn mount_owned(
                     self,
-                    owner: &dyn ViewOwner<'scope>,
+                    owner: &dyn MountOwner<'scope>,
                     parent: &Node,
                     attrs: Vec<PendingAttribute<'scope>>,
-                    error_handler: ViewErrorHandler<'scope>,
+                    error_handler: MountErrorHandler<'scope>,
                 ) -> SilexResult<()> where
                     Self: Sized,
                 {

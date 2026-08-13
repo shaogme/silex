@@ -10,10 +10,10 @@ use silex_core::{
     SilexResult, rx, unwind_safe,
 };
 use silex_dom::prelude::*;
-use silex_dom::view::{OwnerState, SharedSlot, ViewOwner};
+use silex_dom::view::{MountOwner, MountState, SharedCell};
 use silex_macros::component;
 
-type ParentHandlerCell<'scope> = SharedSlot<Option<OwnerState<'scope, ErrorReporter<'scope>>>>;
+type ParentHandlerCell<'scope> = SharedCell<Option<MountState<'scope, ErrorReporter<'scope>>>>;
 type ErrorFactory<'scope> = Rc<dyn Fn(SilexError) -> AnyView<'scope> + 'scope>;
 type RecordError<'scope> = Rc<dyn Fn(SilexError) + 'scope>;
 
@@ -109,7 +109,7 @@ impl<'scope> ErrorBoundaryBranch<'scope> {
 
     fn mount_inner(
         self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
         _error_handler: ErrorReporter<'scope>,
@@ -146,7 +146,7 @@ impl<'scope> ApplyAttributes<'scope> for ErrorBoundaryBranch<'scope> {
 impl<'scope> View<'scope> for ErrorBoundaryBranch<'scope> {
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: ErrorReporter<'scope>,
@@ -157,7 +157,7 @@ impl<'scope> View<'scope> for ErrorBoundaryBranch<'scope> {
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: ErrorReporter<'scope>,
@@ -186,7 +186,7 @@ impl<'scope> ApplyAttributes<'scope> for ErrorBoundaryView<'scope> {
 impl<'scope> View<'scope> for ErrorBoundaryView<'scope> {
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: ErrorReporter<'scope>,
@@ -200,7 +200,7 @@ impl<'scope> View<'scope> for ErrorBoundaryView<'scope> {
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: ErrorReporter<'scope>,
@@ -253,7 +253,7 @@ where
         });
     })?;
 
-    let parent_handler: ParentHandlerCell<'scope> = SharedSlot::new(None);
+    let parent_handler: ParentHandlerCell<'scope> = SharedCell::new(None);
     let fallback = Rc::new(move |error: SilexError| fallback(error).into_any());
     let record_error = Rc::new(move |error: SilexError| {
         let _ = set_error.set(Some(error));

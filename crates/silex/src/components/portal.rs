@@ -1,6 +1,6 @@
 use silex_core::{ErrorReporter, SilexError, SilexErrorKind};
 use silex_dom::prelude::*;
-use silex_dom::view::{ViewErrorHandler, ViewOwner};
+use silex_dom::view::{MountErrorHandler, MountOwner};
 use silex_macros::component;
 use std::{
     cell::Cell,
@@ -18,10 +18,10 @@ struct PortalView<'scope> {
 impl<'scope> PortalView<'scope> {
     fn mount_inner(
         self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         _parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: ViewErrorHandler<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> silex_core::SilexResult<()> {
         let document = silex_dom::document();
         let target = match self.mount_to {
@@ -90,10 +90,10 @@ impl<'scope> PortalView<'scope> {
 impl<'scope> View<'scope> for PortalView<'scope> {
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: ViewErrorHandler<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> silex_core::SilexResult<()> {
         self.clone()
             .mount_inner(owner, parent, attrs, error_handler)
@@ -101,10 +101,10 @@ impl<'scope> View<'scope> for PortalView<'scope> {
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: ViewErrorHandler<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> silex_core::SilexResult<()>
     where
         Self: Sized,

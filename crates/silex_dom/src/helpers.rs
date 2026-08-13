@@ -11,7 +11,7 @@ use web_sys::Window;
 use silex_core::{SilexError, SilexErrorKind, SilexResult};
 
 use crate::view::{
-    HostCallback, HostResourceHandle, JsCallbackResource, ViewErrorHandler, ViewOwnerToken,
+    HostCallback, HostResourceHandle, JsCallbackResource, MountErrorHandler, MountOwnerToken,
 };
 
 pub mod detached;
@@ -123,10 +123,10 @@ where
 }
 
 pub fn window_event_listener_untyped<'scope>(
-    owner: &ViewOwnerToken<'scope>,
+    owner: &MountOwnerToken<'scope>,
     event_name: &str,
     mut cb: impl FnMut(web_sys::Event) -> SilexResult<()> + 'scope,
-    error_handler: ViewErrorHandler<'scope>,
+    error_handler: MountErrorHandler<'scope>,
 ) -> Result<HostResourceHandle<'scope>, JsValue> {
     if !owner.is_active() {
         return Err(JsValue::from_str("view owner is inactive"));
@@ -170,10 +170,10 @@ pub fn window_event_listener_untyped<'scope>(
 }
 
 pub fn window_event_listener<'scope, E, F>(
-    owner: &ViewOwnerToken<'scope>,
+    owner: &MountOwnerToken<'scope>,
     event: E,
     mut cb: F,
-    error_handler: ViewErrorHandler<'scope>,
+    error_handler: MountErrorHandler<'scope>,
 ) -> Result<HostResourceHandle<'scope>, JsValue>
 where
     E: crate::event::EventDescriptor,
@@ -206,9 +206,9 @@ impl Drop for OnceCallbackGuard {
 }
 
 fn owned_once_callback<'scope>(
-    owner: &ViewOwnerToken<'scope>,
+    owner: &MountOwnerToken<'scope>,
     cb: impl FnOnce() -> SilexResult<()> + 'scope,
-    error_handler: ViewErrorHandler<'scope>,
+    error_handler: MountErrorHandler<'scope>,
 ) -> Result<(HostCallback, HostResourceHandle<'scope>), JsValue> {
     let mut cb = Some(cb);
     let destination = owner
@@ -238,9 +238,9 @@ fn owned_once_callback<'scope>(
 }
 
 pub fn request_animation_frame<'scope>(
-    owner: &ViewOwnerToken<'scope>,
+    owner: &MountOwnerToken<'scope>,
     cb: impl FnOnce() -> SilexResult<()> + 'scope,
-    error_handler: ViewErrorHandler<'scope>,
+    error_handler: MountErrorHandler<'scope>,
 ) -> Result<HostResourceHandle<'scope>, JsValue> {
     if !owner.is_active() {
         return Err(JsValue::from_str("view owner is inactive"));
@@ -270,9 +270,9 @@ pub fn request_animation_frame<'scope>(
 }
 
 pub fn request_idle_callback<'scope>(
-    owner: &ViewOwnerToken<'scope>,
+    owner: &MountOwnerToken<'scope>,
     cb: impl FnOnce() -> SilexResult<()> + 'scope,
-    error_handler: ViewErrorHandler<'scope>,
+    error_handler: MountErrorHandler<'scope>,
 ) -> Result<HostResourceHandle<'scope>, JsValue> {
     if !owner.is_active() {
         return Err(JsValue::from_str("view owner is inactive"));
@@ -302,9 +302,9 @@ pub fn request_idle_callback<'scope>(
 }
 
 pub fn queue_microtask<'scope>(
-    owner: &ViewOwnerToken<'scope>,
+    owner: &MountOwnerToken<'scope>,
     task: impl FnOnce() -> SilexResult<()> + 'scope,
-    error_handler: ViewErrorHandler<'scope>,
+    error_handler: MountErrorHandler<'scope>,
 ) -> Result<HostResourceHandle<'scope>, JsValue> {
     if !owner.is_active() {
         return Ok(HostResourceHandle::inactive());
@@ -320,10 +320,10 @@ pub fn queue_microtask<'scope>(
 }
 
 pub fn set_timeout<'scope>(
-    owner: &ViewOwnerToken<'scope>,
+    owner: &MountOwnerToken<'scope>,
     cb: impl FnOnce() -> SilexResult<()> + 'scope,
     duration: Duration,
-    error_handler: ViewErrorHandler<'scope>,
+    error_handler: MountErrorHandler<'scope>,
 ) -> Result<HostResourceHandle<'scope>, JsValue> {
     if !owner.is_active() {
         return Err(JsValue::from_str("view owner is inactive"));
@@ -357,10 +357,10 @@ pub fn set_timeout<'scope>(
 }
 
 pub fn set_interval<'scope>(
-    owner: &ViewOwnerToken<'scope>,
+    owner: &MountOwnerToken<'scope>,
     mut cb: impl FnMut() -> SilexResult<()> + 'scope,
     duration: Duration,
-    error_handler: ViewErrorHandler<'scope>,
+    error_handler: MountErrorHandler<'scope>,
 ) -> Result<HostResourceHandle<'scope>, JsValue> {
     if !owner.is_active() {
         return Err(JsValue::from_str("view owner is inactive"));
@@ -423,10 +423,10 @@ impl<T> DebounceState<T> {
 }
 
 pub fn debounce<'scope, T, F>(
-    owner: &ViewOwnerToken<'scope>,
+    owner: &MountOwnerToken<'scope>,
     delay: Duration,
     mut cb: F,
-    error_handler: ViewErrorHandler<'scope>,
+    error_handler: MountErrorHandler<'scope>,
 ) -> Result<Box<dyn FnMut(T) + 'scope>, JsValue>
 where
     T: 'scope,

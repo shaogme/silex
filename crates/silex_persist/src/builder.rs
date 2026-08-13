@@ -21,7 +21,7 @@ use silex_core::{
     unwind_safe,
 };
 use silex_dom::helpers::set_timeout;
-use silex_dom::view::{ScopedViewOwner, ViewOwner};
+use silex_dom::view::{MountOwner, ScopedMountOwner};
 use silex_router::RouterContext;
 use std::{
     borrow::Cow,
@@ -720,7 +720,7 @@ where
                                     }
                                     drop(timer);
                                     let completion = completion.clone();
-                                    let owner = ScopedViewOwner::new(owner_scope);
+                                    let owner = ScopedMountOwner::new(owner_scope);
                                     let owner_token = owner.token();
                                     match set_timeout(
                                         &owner_token,

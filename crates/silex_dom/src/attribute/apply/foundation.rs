@@ -9,7 +9,7 @@ use crate::attribute::op::{
     apply_attr_with_target_internal, apply_immediate_bool_internal, get_style_decl,
     parse_style_str, set_string_property_internal,
 };
-use crate::view::{ViewErrorHandler, ViewOwnerToken};
+use crate::view::{MountErrorHandler, MountOwnerToken};
 
 // --- Unified Apply Target Enum ---
 
@@ -88,8 +88,8 @@ pub trait ApplyToDom<'scope> {
         &self,
         el: &WebElem,
         target: ApplyTarget,
-        owner: &ViewOwnerToken<'scope>,
-        error_handler: ViewErrorHandler<'scope>,
+        owner: &MountOwnerToken<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()>;
 
     fn into_op(self, target: ApplyTarget) -> AttrOp<'scope>
@@ -107,8 +107,8 @@ pub trait ReactiveApply<'scope> {
         rx: Rx<'scope, Self, RxValueKind>,
         el: WebElem,
         target: ApplyTarget,
-        _owner: &ViewOwnerToken<'scope>,
-        _error_handler: ViewErrorHandler<'scope>,
+        _owner: &MountOwnerToken<'scope>,
+        _error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized;
@@ -118,8 +118,8 @@ pub trait ReactiveApply<'scope> {
         key: Cow<'static, str>,
         el: WebElem,
         target: ApplyTarget,
-        _owner: &ViewOwnerToken<'scope>,
-        _error_handler: ViewErrorHandler<'scope>,
+        _owner: &MountOwnerToken<'scope>,
+        _error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()>
     where
         Self: Sized,
@@ -159,8 +159,8 @@ impl<'scope> ApplyToDom<'scope> for AttrOp<'scope> {
         &self,
         el: &WebElem,
         _target: ApplyTarget,
-        owner: &ViewOwnerToken<'scope>,
-        error_handler: ViewErrorHandler<'scope>,
+        owner: &MountOwnerToken<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         self.clone().apply(el, owner, error_handler)
     }
@@ -175,8 +175,8 @@ impl<'scope> ApplyToDom<'scope> for fn(&WebElem) {
         &self,
         el: &WebElem,
         _target: ApplyTarget,
-        _owner: &ViewOwnerToken<'scope>,
-        _error_handler: ViewErrorHandler<'scope>,
+        _owner: &MountOwnerToken<'scope>,
+        _error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         (self)(el);
         Ok(())
@@ -195,8 +195,8 @@ impl<'scope> ApplyToDom<'scope> for Rc<dyn Fn(&WebElem)> {
         &self,
         el: &WebElem,
         _target: ApplyTarget,
-        _owner: &ViewOwnerToken<'scope>,
-        _error_handler: ViewErrorHandler<'scope>,
+        _owner: &MountOwnerToken<'scope>,
+        _error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         (self)(el);
         Ok(())
@@ -287,8 +287,8 @@ impl<'scope, 'a: 'scope> ApplyToDom<'scope> for &'a str {
         &self,
         el: &WebElem,
         target: ApplyTarget,
-        _owner: &ViewOwnerToken<'scope>,
-        _error_handler: ViewErrorHandler<'scope>,
+        _owner: &MountOwnerToken<'scope>,
+        _error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         apply_immediate_string(el, &target, self)
     }
@@ -320,8 +320,8 @@ impl<'scope> ApplyToDom<'scope> for String {
         &self,
         el: &WebElem,
         target: ApplyTarget,
-        _owner: &ViewOwnerToken<'scope>,
-        _error_handler: ViewErrorHandler<'scope>,
+        _owner: &MountOwnerToken<'scope>,
+        _error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         apply_immediate_string(el, &target, self)
     }
@@ -362,8 +362,8 @@ impl<'scope> ApplyToDom<'scope> for &String {
         &self,
         el: &WebElem,
         target: ApplyTarget,
-        _owner: &ViewOwnerToken<'scope>,
-        _error_handler: ViewErrorHandler<'scope>,
+        _owner: &MountOwnerToken<'scope>,
+        _error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         apply_immediate_string(el, &target, self)
     }
@@ -378,8 +378,8 @@ impl<'scope, 'a: 'scope> ApplyToDom<'scope> for Cow<'a, str> {
         &self,
         el: &WebElem,
         target: ApplyTarget,
-        _owner: &ViewOwnerToken<'scope>,
-        _error_handler: ViewErrorHandler<'scope>,
+        _owner: &MountOwnerToken<'scope>,
+        _error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         apply_immediate_string(el, &target, self.as_ref())
     }
@@ -397,8 +397,8 @@ impl<'scope> ApplyToDom<'scope> for Attr<'scope> {
         &self,
         el: &WebElem,
         target: ApplyTarget,
-        _owner: &ViewOwnerToken<'scope>,
-        _error_handler: ViewErrorHandler<'scope>,
+        _owner: &MountOwnerToken<'scope>,
+        _error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         if let Some(name) = target.name() {
             apply_attr_with_target_internal(el, &name, target, self)?;
@@ -427,8 +427,8 @@ impl<'scope> ApplyToDom<'scope> for bool {
         &self,
         el: &WebElem,
         target: ApplyTarget,
-        _owner: &ViewOwnerToken<'scope>,
-        _error_handler: ViewErrorHandler<'scope>,
+        _owner: &MountOwnerToken<'scope>,
+        _error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         apply_immediate_bool(el, &target, *self)
     }
@@ -457,8 +457,8 @@ impl<'scope, V: ApplyToDom<'scope> + 'scope> ApplyToDom<'scope> for Option<V> {
         &self,
         el: &WebElem,
         target: ApplyTarget,
-        owner: &ViewOwnerToken<'scope>,
-        error_handler: ViewErrorHandler<'scope>,
+        owner: &MountOwnerToken<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         if let Some(v) = self {
             v.apply(el, target, owner, error_handler)?;
@@ -480,8 +480,8 @@ impl<'scope, V: ApplyToDom<'scope> + 'scope> ApplyToDom<'scope> for Vec<V> {
         &self,
         el: &WebElem,
         target: ApplyTarget,
-        owner: &ViewOwnerToken<'scope>,
-        error_handler: ViewErrorHandler<'scope>,
+        owner: &MountOwnerToken<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         for v in self {
             v.apply(el, target.clone(), owner, error_handler)?;
@@ -503,8 +503,8 @@ impl<'scope, V: ApplyToDom<'scope> + 'scope, const N: usize> ApplyToDom<'scope> 
         &self,
         el: &WebElem,
         target: ApplyTarget,
-        owner: &ViewOwnerToken<'scope>,
-        error_handler: ViewErrorHandler<'scope>,
+        owner: &MountOwnerToken<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         for v in self {
             v.apply(el, target.clone(), owner, error_handler)?;
@@ -529,8 +529,8 @@ macro_rules! impl_apply_to_dom_for_primitive {
                     &self,
                     el: &WebElem,
                     target: ApplyTarget,
-                    _owner: &ViewOwnerToken<'scope>,
-                    _error_handler: ViewErrorHandler<'scope>,
+                    _owner: &MountOwnerToken<'scope>,
+                    _error_handler: MountErrorHandler<'scope>,
                 ) -> SilexResult<()> {
                     apply_primitive_static_internal(el, target, self.to_string())
                 }
@@ -558,8 +558,8 @@ where
         &self,
         el: &WebElem,
         target: ApplyTarget,
-        owner: &ViewOwnerToken<'scope>,
-        error_handler: ViewErrorHandler<'scope>,
+        owner: &MountOwnerToken<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         let (key, rx) = self.clone();
         let el = el.clone();
@@ -604,8 +604,8 @@ where
         &self,
         el: &WebElem,
         target: ApplyTarget,
-        _owner: &ViewOwnerToken<'scope>,
-        _error_handler: ViewErrorHandler<'scope>,
+        _owner: &MountOwnerToken<'scope>,
+        _error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         let key_cow: Cow<'static, str> = self.0.clone().into();
         apply_static_pair(el, &target, key_cow.as_ref(), &self.1)
@@ -640,8 +640,8 @@ where
         &self,
         el: &WebElem,
         target: ApplyTarget,
-        _owner: &ViewOwnerToken<'scope>,
-        _error_handler: ViewErrorHandler<'scope>,
+        _owner: &MountOwnerToken<'scope>,
+        _error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         let key_cow: Cow<'static, str> = self.0.clone().into();
         apply_static_pair(el, &target, key_cow.as_ref(), self.1)
@@ -676,8 +676,8 @@ where
         &self,
         el: &WebElem,
         target: ApplyTarget,
-        _owner: &ViewOwnerToken<'scope>,
-        _error_handler: ViewErrorHandler<'scope>,
+        _owner: &MountOwnerToken<'scope>,
+        _error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         let (key, value) = self.clone();
         let key_cow: Cow<'static, str> = key.into();
@@ -751,8 +751,8 @@ impl<'scope> ApplyToDom<'scope> for AttributeGroup<'scope> {
         &self,
         el: &WebElem,
         _target: ApplyTarget,
-        owner: &ViewOwnerToken<'scope>,
-        error_handler: ViewErrorHandler<'scope>,
+        owner: &MountOwnerToken<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         for op in &self.0 {
             op.clone().apply(el, owner, error_handler)?;

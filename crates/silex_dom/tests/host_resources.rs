@@ -10,7 +10,7 @@ use silex_dom::{
         debounce, queue_microtask, request_animation_frame, request_idle_callback, set_interval,
         set_timeout, window_event_listener_untyped,
     },
-    view::{AnyView, KeyedLoopView, ScopedViewOwner, View, ViewOwner, mount_text_node},
+    view::{AnyView, KeyedListView, MountOwner, ScopedMountOwner, View, mount_text_node},
 };
 use std::{
     cell::{Cell, RefCell},
@@ -31,9 +31,9 @@ fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
         .expect("error handler should register")
 }
 
-fn test_owner<'scope>(scope: Scope<'scope>) -> (ScopedViewOwner<'scope>, ErrorReporter<'scope>) {
+fn test_owner<'scope>(scope: Scope<'scope>) -> (ScopedMountOwner<'scope>, ErrorReporter<'scope>) {
     let error_handler = test_handler(scope);
-    (ScopedViewOwner::new(scope), error_handler)
+    (ScopedMountOwner::new(scope), error_handler)
 }
 
 #[wasm_bindgen(inline_js = r#"
@@ -250,7 +250,7 @@ impl<'scope> silex_dom::view::ApplyAttributes<'scope> for WindowResourceView {}
 impl<'scope> View<'scope> for WindowResourceView {
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &Node,
         _attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
         error_handler: ErrorReporter<'scope>,
@@ -273,7 +273,7 @@ impl<'scope> View<'scope> for WindowResourceView {
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &Node,
         attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
         error_handler: ErrorReporter<'scope>,
@@ -356,7 +356,7 @@ fn fallible_dom_primitives_and_attribute_mount_failures_are_observable() {
                     reported_for_owner.set(matches!(error, SilexError::Recoverable(SilexErrorKind::Framework(_))));
                 })
                 .expect("error handler should register");
-            let owner = ScopedViewOwner::new(scope);
+            let owner = ScopedMountOwner::new(scope);
             let view = Element::new("div").apply(PendingAttribute::new_scoped(|_, _, _| {
                 Err(SilexError::recoverable(SilexErrorKind::Framework("attribute rejected".to_string())))
             }));
@@ -583,7 +583,7 @@ fn keyed_reorder_keeps_window_resources_until_row_delete() {
                     .signal(vec![1i32, 2])
                     .expect("signal should initialize");
                 let calls_for_factory = calls.clone();
-                let list = KeyedLoopView {
+                let list = KeyedListView {
                     each: items,
                     key_fn: Rc::new(|item: &i32| *item),
                     view_fn: Rc::new(move |item: i32, _, updater| {
@@ -964,7 +964,7 @@ fn debounce_timeout_creation_failure_reaches_owner_handler() {
             let error_handler = scope
                 .error_handler(move |error| errors_for_reporter.borrow_mut().push(error))
                 .expect("error handler should register");
-            let owner = silex_dom::view::ScopedViewOwner::new(scope);
+            let owner = silex_dom::view::ScopedMountOwner::new(scope);
             let token = owner.token();
             let mut debounce =
                 debounce(&token, Duration::from_millis(0), |_| Ok(()), error_handler)

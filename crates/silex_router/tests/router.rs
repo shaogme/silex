@@ -2,7 +2,7 @@
 
 use silex_core::{ErrorReporter, ReadSignal, Runtime, SilexError, SilexErrorKind, SilexResult};
 use silex_dom::view::{
-    AnyView, ApplyAttributes, ScopedViewOwner, View, ViewOwner, mount_text_node,
+    AnyView, ApplyAttributes, MountOwner, ScopedMountOwner, View, mount_text_node,
 };
 use silex_router::macros::routes;
 use silex_router::{
@@ -27,9 +27,9 @@ fn test_handler<'scope>(scope: silex_core::Scope<'scope>) -> ErrorReporter<'scop
 
 fn test_owner<'scope>(
     scope: silex_core::Scope<'scope>,
-) -> (ScopedViewOwner<'scope>, ErrorReporter<'scope>) {
+) -> (ScopedMountOwner<'scope>, ErrorReporter<'scope>) {
     let error_handler = test_handler(scope);
-    (ScopedViewOwner::new(scope), error_handler)
+    (ScopedMountOwner::new(scope), error_handler)
 }
 
 #[wasm_bindgen(inline_js = r#"
@@ -501,7 +501,7 @@ impl<'scope> ApplyAttributes<'scope> for RouterCleanupView {}
 impl<'scope> View<'scope> for RouterCleanupView {
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &web_sys::Node,
         _attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
         error_handler: ErrorReporter<'scope>,
@@ -520,7 +520,7 @@ impl<'scope> View<'scope> for RouterCleanupView {
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
         error_handler: ErrorReporter<'scope>,
@@ -636,7 +636,7 @@ impl<'scope> ApplyAttributes<'scope> for FactoryTextView<'scope> {}
 impl<'scope> View<'scope> for FactoryTextView<'scope> {
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &web_sys::Node,
         _attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
         error_handler: ErrorReporter<'scope>,
@@ -656,7 +656,7 @@ impl<'scope> View<'scope> for FactoryTextView<'scope> {
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
         error_handler: ErrorReporter<'scope>,

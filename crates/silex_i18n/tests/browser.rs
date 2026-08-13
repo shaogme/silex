@@ -2,7 +2,7 @@
 
 use gloo_timers::future::TimeoutFuture;
 use silex_core::{ErrorReporter, Runtime, Scope};
-use silex_dom::view::{ScopedViewOwner, View};
+use silex_dom::view::{ScopedMountOwner, View};
 use silex_i18n::{Catalog, I18nBuilder, Locale, detect_browser_locale, t};
 #[cfg(feature = "intl")]
 use silex_i18n::{DateTimeFormat, format_number};
@@ -19,9 +19,9 @@ fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
     scope.error_handler(|_| {}).expect("error handler")
 }
 
-fn test_owner<'scope>(scope: Scope<'scope>) -> (ScopedViewOwner<'scope>, ErrorReporter<'scope>) {
+fn test_owner<'scope>(scope: Scope<'scope>) -> (ScopedMountOwner<'scope>, ErrorReporter<'scope>) {
     let error_handler = test_handler(scope);
-    (ScopedViewOwner::new(scope), error_handler)
+    (ScopedMountOwner::new(scope), error_handler)
 }
 
 #[cfg(feature = "persist")]

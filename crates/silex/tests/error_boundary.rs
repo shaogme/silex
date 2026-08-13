@@ -7,7 +7,7 @@ use silex::components::ErrorBoundary;
 use silex_core::{ErrorReporter, ReadSignal, Runtime, SilexError, SilexErrorKind, SilexResult};
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::document;
-use silex_dom::view::{ApplyAttributes, ScopedViewOwner, View, ViewOwner};
+use silex_dom::view::{ApplyAttributes, MountOwner, ScopedMountOwner, View};
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
 use wasm_bindgen_test::*;
@@ -23,7 +23,7 @@ impl<'scope> ApplyAttributes<'scope> for InitialFailure {}
 impl<'scope> View<'scope> for InitialFailure {
     fn mount(
         &self,
-        _owner: &dyn ViewOwner<'scope>,
+        _owner: &dyn MountOwner<'scope>,
         _parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
         _error_handler: ErrorReporter<'scope>,
@@ -35,7 +35,7 @@ impl<'scope> View<'scope> for InitialFailure {
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: ErrorReporter<'scope>,
@@ -57,7 +57,7 @@ impl<'scope> ApplyAttributes<'scope> for DeferredFailure<'scope> {}
 impl<'scope> View<'scope> for DeferredFailure<'scope> {
     fn mount(
         &self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
         error_handler: ErrorReporter<'scope>,
@@ -96,7 +96,7 @@ impl<'scope> View<'scope> for DeferredFailure<'scope> {
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: ErrorReporter<'scope>,
@@ -118,7 +118,7 @@ impl<'scope> ApplyAttributes<'scope> for ConstructedHandlerFailure<'scope> {}
 impl<'scope> View<'scope> for ConstructedHandlerFailure<'scope> {
     fn mount(
         &self,
-        _owner: &dyn ViewOwner<'scope>,
+        _owner: &dyn MountOwner<'scope>,
         _parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
         _error_handler: ErrorReporter<'scope>,
@@ -133,7 +133,7 @@ impl<'scope> View<'scope> for ConstructedHandlerFailure<'scope> {
 
     fn mount_owned(
         self,
-        owner: &dyn ViewOwner<'scope>,
+        owner: &dyn MountOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: ErrorReporter<'scope>,
@@ -163,9 +163,9 @@ fn test_handler<'scope>(
 fn test_owner<'scope>(
     scope: silex_core::Scope<'scope>,
     errors: Rc<Cell<usize>>,
-) -> (ScopedViewOwner<'scope>, ErrorReporter<'scope>) {
+) -> (ScopedMountOwner<'scope>, ErrorReporter<'scope>) {
     let error_handler = test_handler(scope, errors);
-    (ScopedViewOwner::new(scope), error_handler)
+    (ScopedMountOwner::new(scope), error_handler)
 }
 
 #[wasm_bindgen_test]

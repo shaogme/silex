@@ -47,7 +47,7 @@ pub fn Index<'scope, IF, I, IS>(
     #[chain]
     children: IndexRenderer<'scope, I>,
     #[chain(default)] _scope: PhantomData<&'scope ()>,
-) -> silex_dom::view::list::IndexedLoopView<'scope, IF, I, IS>
+) -> silex_dom::view::list::IndexedListView<'scope, IF, I, IS>
 where
     IF: RxRead<Value = IS> + ReactiveSource<'scope> + Clone + 'scope,
     IS: ForLoopSource<Item = I> + 'scope,
@@ -55,7 +55,7 @@ where
 {
     let view_fn = Rc::new(move |item: I, index: usize| children.render(item, index));
 
-    silex_dom::view::list::IndexedLoopView {
+    silex_dom::view::list::IndexedListView {
         each,
         view_fn,
         _marker: std::marker::PhantomData,

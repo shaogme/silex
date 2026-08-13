@@ -5,7 +5,7 @@ use crate::{
 use silex_core::{RuntimeInputs, SilexError, SilexErrorKind, SilexResult};
 use silex_dom::{
     attribute::{ApplyTarget, ApplyToDom, AttrOp, IntoStorable},
-    view::{ViewErrorHandler, ViewOwner, ViewOwnerToken},
+    view::{MountErrorHandler, MountOwner, MountOwnerToken},
 };
 use std::{
     fmt::{Display, Write},
@@ -142,8 +142,8 @@ where
         &self,
         el: &Element,
         _target: ApplyTarget,
-        owner: &ViewOwnerToken<'scope>,
-        error_handler: ViewErrorHandler<'scope>,
+        owner: &MountOwnerToken<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         let theme = self.0.clone();
         let inputs = source_inputs(&theme);
@@ -209,9 +209,9 @@ where
 /// 全局主题下 `:root{}` 规则所用的样式表 id。
 /// Sets a global theme that applies to the entire document (:root).
 pub fn set_global_theme<'scope, S>(
-    owner: &dyn ViewOwner<'scope>,
+    owner: &dyn MountOwner<'scope>,
     theme: S,
-    error_handler: ViewErrorHandler<'scope>,
+    error_handler: MountErrorHandler<'scope>,
 ) -> SilexResult<()>
 where
     S: IntoCssSource<'scope>,
@@ -301,8 +301,8 @@ where
         &self,
         el: &Element,
         _target: ApplyTarget,
-        owner: &ViewOwnerToken<'scope>,
-        error_handler: ViewErrorHandler<'scope>,
+        owner: &MountOwnerToken<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         let patch = self.0.clone();
         let inputs = source_inputs(&patch);

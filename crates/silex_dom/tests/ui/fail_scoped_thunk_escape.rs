@@ -1,7 +1,7 @@
-use silex_dom::view::RenderThunk;
+use silex_dom::view::DynamicRenderer;
 
-fn make_renderer<'scope>(value: &'scope str) -> RenderThunk<'static> {
-    RenderThunk::new(move |_| {
+fn make_renderer<'scope>(value: &'scope str) -> DynamicRenderer<'static> {
+    DynamicRenderer::new(move |_| {
         let _ = value.len();
         Ok(())
     })

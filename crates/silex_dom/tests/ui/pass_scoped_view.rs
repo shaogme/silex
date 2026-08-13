@@ -1,6 +1,6 @@
 use silex_core::Runtime;
 use silex_dom::attribute::PendingAttribute;
-use silex_dom::view::{AnyView, RenderThunk, ScopedViewOwner, ViewOwner};
+use silex_dom::view::{AnyView, DynamicRenderer, ScopedMountOwner, MountOwner};
 
 fn main() {
     let mut runtime = Runtime::new();
@@ -11,7 +11,7 @@ fn main() {
             let (read, _) = scope.signal(borrowed_view.as_str()).expect("signal");
             let _view: AnyView<'_> = AnyView::new(read);
 
-            let owner = ScopedViewOwner::new(scope);
+            let owner = ScopedMountOwner::new(scope);
             let _token = owner.token();
 
             let borrowed_attr = String::from("borrowed-attribute");
@@ -21,7 +21,7 @@ fn main() {
             });
 
             let borrowed_renderer = String::from("borrowed-renderer");
-            let _renderer: RenderThunk<'_> = RenderThunk::new(move |_| {
+            let _renderer: DynamicRenderer<'_> = DynamicRenderer::new(move |_| {
                 let _ = borrowed_renderer.as_str();
                 Ok(())
             });

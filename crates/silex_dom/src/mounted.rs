@@ -2,7 +2,7 @@
 
 use crate::{
     attribute::PendingAttribute,
-    view::{CleanupReporter, ScopedViewOwner, View},
+    view::{CleanupReporter, ScopedMountOwner, View},
 };
 use silex_core::{
     CleanupDiagnostic, CleanupError, ErrorReporter, RootHandle, Runtime, Scope, SilexError,
@@ -311,8 +311,8 @@ impl<'scope> MountContext<'scope> {
     }
 
     /// Create an owner adapter for this mount scope.
-    pub fn owner(&self) -> ScopedViewOwner<'scope> {
-        ScopedViewOwner::with_cleanup_reporter(self.scope, self.cleanup_reporter.clone())
+    pub fn owner(&self) -> ScopedMountOwner<'scope> {
+        ScopedMountOwner::with_cleanup_reporter(self.scope, self.cleanup_reporter.clone())
     }
 
     /// Mount one owned view into the transaction staging parent.

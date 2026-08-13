@@ -7,10 +7,11 @@ use wasm_bindgen::{JsCast, JsValue};
 use web_sys::{CssStyleDeclaration, Element, HtmlElement, SvgElement};
 
 use crate::attribute::apply::ApplyTarget;
-use crate::view::{ViewErrorHandler, ViewOwnerToken};
+use crate::view::{MountErrorHandler, MountOwnerToken};
 
 type CustomAttribute<'scope> = Rc<
-    dyn Fn(&Element, &ViewOwnerToken<'scope>, ViewErrorHandler<'scope>) -> SilexResult<()> + 'scope,
+    dyn Fn(&Element, &MountOwnerToken<'scope>, MountErrorHandler<'scope>) -> SilexResult<()>
+        + 'scope,
 >;
 
 /// 预定义的 DOM 强类型 Property (Fast-Path)
@@ -375,8 +376,8 @@ impl<'scope> AttrOp<'scope> {
         inputs: RuntimeInputs,
         callback: impl Fn(
             &Element,
-            &ViewOwnerToken<'scope>,
-            ViewErrorHandler<'scope>,
+            &MountOwnerToken<'scope>,
+            MountErrorHandler<'scope>,
         ) -> SilexResult<()>
         + 'scope,
     ) -> Self {
@@ -435,8 +436,8 @@ impl<'scope> AttrOp<'scope> {
     pub fn apply(
         self,
         el: &Element,
-        owner: &ViewOwnerToken<'scope>,
-        error_handler: ViewErrorHandler<'scope>,
+        owner: &MountOwnerToken<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         let inputs = self.runtime_inputs();
         owner.validate_inputs(&inputs)?;
@@ -446,8 +447,8 @@ impl<'scope> AttrOp<'scope> {
     fn apply_unchecked(
         self,
         el: &Element,
-        owner: &ViewOwnerToken<'scope>,
-        error_handler: ViewErrorHandler<'scope>,
+        owner: &MountOwnerToken<'scope>,
+        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         match self {
             AttrOp::Update(AttrUpdate { target, data }) => {
@@ -502,8 +503,8 @@ fn apply_update_internal<'scope>(
     el: &Element,
     target: ApplyTarget,
     data: AttrData<'scope>,
-    owner: &ViewOwnerToken<'scope>,
-    error_handler: ViewErrorHandler<'scope>,
+    owner: &MountOwnerToken<'scope>,
+    error_handler: MountErrorHandler<'scope>,
 ) -> SilexResult<()> {
     let name = target.attr_name().to_string();
     match data {
@@ -595,8 +596,8 @@ fn apply_combined_classes_internal<'scope>(
     statics: Vec<Cow<'scope, str>>,
     toggles: Vec<(Cow<'scope, str>, Rx<'scope, bool>)>,
     reactives: Vec<Rx<'scope, String>>,
-    owner: &ViewOwnerToken<'scope>,
-    error_handler: ViewErrorHandler<'scope>,
+    owner: &MountOwnerToken<'scope>,
+    error_handler: MountErrorHandler<'scope>,
 ) -> SilexResult<()> {
     let list = el.class_list();
     // 1. 立即应用所有静态类（非响应式，仅执行一次）
@@ -693,8 +694,8 @@ fn apply_combined_styles_internal<'scope>(
     statics: Vec<(Cow<'scope, str>, Cow<'scope, str>)>,
     properties: Vec<(Cow<'scope, str>, Rx<'scope, String>)>,
     sheets: Vec<Rx<'scope, String>>,
-    owner: &ViewOwnerToken<'scope>,
-    error_handler: ViewErrorHandler<'scope>,
+    owner: &MountOwnerToken<'scope>,
+    error_handler: MountErrorHandler<'scope>,
 ) -> SilexResult<()> {
     let style = get_style_decl(el).ok_or_else(|| {
         SilexError::fatal(SilexErrorKind::Dom(

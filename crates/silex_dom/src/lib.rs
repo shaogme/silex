@@ -22,8 +22,8 @@ pub mod prelude {
     };
     pub use crate::setup_global_error_handlers;
     pub use crate::view::{
-        ApplyAttributes, AutoReactiveView, BranchEvaluation, HostResourceHandle, OwnerState, Prop,
-        PropFixed, PropMissing, View, ViewCons, ViewNil, ViewOwnerToken, any::*,
+        ApplyAttributes, AutoReactiveView, BranchEvaluation, HostResourceHandle, MountOwnerToken,
+        MountState, Prop, PropFixed, PropMissing, View, ViewCons, ViewNil, any::*,
     };
     pub use crate::{chain, view_match};
 }
