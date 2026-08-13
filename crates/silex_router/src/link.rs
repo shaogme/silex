@@ -32,27 +32,11 @@ impl<'scope> View<'scope> for LinkView<'scope> {
         parent: &web_sys::Node,
         attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
         error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()> {
+    ) -> SilexResult<silex_dom::view::MountInstance<'scope>> {
         match &self.view {
-            Ok(view) => view
-                .create_mount_instance(owner, parent, attrs, error_handler)
-                .map(|_| ()),
+            Ok(view) => view.mount(owner, parent, attrs, error_handler),
             Err(error) => Err(error.clone()),
         }
-    }
-
-    fn mount_owned(
-        self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &web_sys::Node,
-        attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
-        error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()>
-    where
-        Self: Sized,
-    {
-        self.create_mount_instance(owner, parent, attrs, error_handler)
-            .map(|_| ())
     }
 }
 

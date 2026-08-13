@@ -108,26 +108,12 @@ where
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()> {
+    ) -> SilexResult<MountInstance<'scope>> {
         match self {
             Self::Owned(value) => value.mount(owner, parent, attrs, error_handler),
-            Self::Borrowed(value) => value.mount(owner, parent, attrs, error_handler),
-        }
-    }
-
-    fn mount_owned(
-        self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &Node,
-        attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()>
-    where
-        Self: Sized,
-    {
-        match self {
-            Self::Owned(value) => value.mount_owned(owner, parent, attrs, error_handler),
-            Self::Borrowed(value) => value.mount(owner, parent, attrs, error_handler),
+            Self::Borrowed(value) => {
+                value.mount(owner, parent, attrs, error_handler)
+            }
         }
     }
 }
@@ -196,7 +182,7 @@ impl_forward_binop_copy!(Div, div);
 
 /// 一次挂载产生的物理 DOM 实例。
 ///
-/// `ViewFactory` 只描述如何创建视图；所有真实节点都属于本类型返回的这次
+/// `View` 只描述如何创建视图；所有真实节点都属于本类型返回的这次
 /// 挂载。节点的资源清理仍由传入的 `MountOwner` 管理，本类型提供节点快照，
 /// 供 Portal、宿主适配器和测试明确区分不同挂载实例。
 #[must_use = "a MountInstance represents a live DOM mount"]
@@ -237,8 +223,8 @@ impl<'scope> MountInstance<'scope> {
 /// 可重复执行的 View 工厂契约。
 ///
 /// 工厂不得保存已经挂载的 DOM 句柄；同一个工厂可以通过多次调用
-/// [`ViewFactory::create_mount_instance`] 创建互相独立的节点实例。
-pub trait ViewFactory<'scope> {
+/// [`View::mount`] 创建互相独立的节点实例。
+pub trait View<'scope> {
     fn into_any(self) -> AnyView<'scope>
     where
         Self: Sized + 'scope,
@@ -246,57 +232,11 @@ pub trait ViewFactory<'scope> {
         AnyView::new(self)
     }
 
-    fn create_mount_instance(
-        &self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &Node,
-        attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<MountInstance<'scope>>;
-}
-
-/// 旧的自定义 View 挂载适配契约。
-///
-/// 新代码应直接实现 [`ViewFactory`]。保留此 trait 仅用于工作区内现有
-/// 自定义组件的迁移；其 blanket 实现会把一次旧式挂载包装成
-/// `MountInstance`，而内置元素已经在每次挂载时创建新节点。
-pub trait View<'scope> {
     fn mount(
         &self,
         owner: &dyn MountOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()>;
-
-    fn mount_owned(
-        self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &Node,
-        attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()>
-    where
-        Self: Sized;
-}
-
-impl<'scope, T> ViewFactory<'scope> for T
-where
-    T: View<'scope> + ?Sized,
-{
-    fn create_mount_instance(
-        &self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &Node,
-        attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<MountInstance<'scope>> {
-        let previous_length = parent.child_nodes().length();
-        self.mount(owner, parent, attrs, error_handler)?;
-        let current = parent.child_nodes();
-        let nodes = (previous_length..current.length())
-            .filter_map(|index| current.item(index))
-            .collect();
-        Ok(MountInstance::from_nodes(nodes))
-    }
+    ) -> SilexResult<MountInstance<'scope>>;
 }

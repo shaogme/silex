@@ -38,7 +38,7 @@ pub fn Suspense<'scope, CH, R>(
 ) -> impl View<'scope>
 where
     CH: Fn(SuspenseContext<'scope>) -> R + Clone + 'scope,
-    R: ViewFactory<'scope> + 'scope,
+    R: View<'scope> + 'scope,
 {
     let children = Rc::new(move |cx: SuspenseContext<'scope>| children(cx).into_any());
 

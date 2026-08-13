@@ -1,5 +1,7 @@
 use silex_core::Runtime;
-use silex_dom::view::{AnyView, DynamicRenderer, ScopedMountOwner, View, MountOwner};
+use silex_dom::view::{
+    AnyView, DynamicRenderer, MountInstance, MountOwner, ScopedMountOwner, View,
+};
 
 fn accept_root_view<'scope, V>(_: V)
 where
@@ -19,7 +21,8 @@ fn main() {
         let view: AnyView<'_> = AnyView::new(borrowed_view.as_str());
         accept_root_view(view);
 
-        let _renderer: DynamicRenderer<'_> = DynamicRenderer::new(|_| Ok(()));
+        let _renderer: DynamicRenderer<'_> =
+            DynamicRenderer::new(|_| Ok(MountInstance::from_nodes(Vec::new())));
     }
 
     root.dispose().expect("root disposal should succeed");

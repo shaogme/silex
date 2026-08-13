@@ -7,7 +7,7 @@ use silex::components::ErrorBoundary;
 use silex_core::{ErrorReporter, ReadSignal, Runtime, SilexError, SilexErrorKind, SilexResult};
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::document;
-use silex_dom::view::{ApplyAttributes, MountOwner, ScopedMountOwner, View};
+use silex_dom::view::{ApplyAttributes, MountInstance, MountOwner, ScopedMountOwner, View};
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
 use wasm_bindgen_test::*;
@@ -27,23 +27,10 @@ impl<'scope> View<'scope> for InitialFailure {
         _parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
         _error_handler: ErrorReporter<'scope>,
-    ) -> SilexResult<()> {
+    ) -> SilexResult<MountInstance<'scope>> {
         Err(SilexError::recoverable(SilexErrorKind::Framework(
             "initial child failure".to_string(),
         )))
-    }
-
-    fn mount_owned(
-        self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &Node,
-        attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: ErrorReporter<'scope>,
-    ) -> SilexResult<()>
-    where
-        Self: Sized,
-    {
-        self.mount(owner, parent, attrs, error_handler)
     }
 }
 
@@ -61,7 +48,7 @@ impl<'scope> View<'scope> for DeferredFailure<'scope> {
         parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
         error_handler: ErrorReporter<'scope>,
-    ) -> SilexResult<()> {
+    ) -> SilexResult<MountInstance<'scope>> {
         let node = document().create_text_node("child");
         parent
             .append_child(&node)
@@ -91,20 +78,7 @@ impl<'scope> View<'scope> for DeferredFailure<'scope> {
             }),
             error_handler,
         )?;
-        Ok(())
-    }
-
-    fn mount_owned(
-        self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &Node,
-        attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: ErrorReporter<'scope>,
-    ) -> SilexResult<()>
-    where
-        Self: Sized,
-    {
-        self.mount(owner, parent, attrs, error_handler)
+        Ok(MountInstance::from_nodes(vec![node]))
     }
 }
 
@@ -122,26 +96,13 @@ impl<'scope> View<'scope> for ConstructedHandlerFailure<'scope> {
         _parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
         _error_handler: ErrorReporter<'scope>,
-    ) -> SilexResult<()> {
+    ) -> SilexResult<MountInstance<'scope>> {
         let _ = self
             .handler
             .handle(SilexError::recoverable(SilexErrorKind::Framework(
                 "constructed child failure".to_string(),
             )));
-        Ok(())
-    }
-
-    fn mount_owned(
-        self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &Node,
-        attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: ErrorReporter<'scope>,
-    ) -> SilexResult<()>
-    where
-        Self: Sized,
-    {
-        self.mount(owner, parent, attrs, error_handler)
+        Ok(MountInstance::from_nodes(Vec::new()))
     }
 }
 
@@ -182,11 +143,12 @@ fn initial_child_error_switches_to_fallback_without_parent_dispatch() {
                 .fallback(|error| format!("fallback: {error}"))
                 .build();
 
-            view.mount_owned(&owner, host.as_ref(), Vec::new(), error_handler)
+            let _ = view
+                .mount(&owner, host.as_ref(), Vec::new(), error_handler)
                 .expect("initial child error should be recovered by the boundary");
             assert_eq!(
                 host.text_content().as_deref(),
-                Some("fallback: Framework Error: initial child failure")
+                Some("fallback: Recoverable: Framework Error: initial child failure")
             );
         })
         .expect("initial error boundary child should mount");
@@ -210,7 +172,8 @@ async fn deferred_child_error_reaches_boundary_and_disposes_child() {
             .fallback(|_| "fallback")
             .build();
 
-        view.mount_owned(&owner, host.as_ref(), Vec::new(), error_handler)
+        let _ = view
+            .mount(&owner, host.as_ref(), Vec::new(), error_handler)
             .expect("child should mount before it fails");
         assert_eq!(host.text_content().as_deref(), Some("child"));
         set_failed
@@ -245,7 +208,8 @@ async fn child_factory_handler_reaches_boundary_fallback() {
         .fallback(|error| format!("boundary: {error}"))
         .build();
 
-        view.mount_owned(&owner, host.as_ref(), Vec::new(), error_handler)
+        let _ = view
+            .mount(&owner, host.as_ref(), Vec::new(), error_handler)
             .expect("child handler failure should be deferred");
     });
 
@@ -255,7 +219,7 @@ async fn child_factory_handler_reaches_boundary_fallback() {
 
     assert_eq!(
         host.text_content().as_deref(),
-        Some("boundary: Framework Error: constructed child failure")
+        Some("boundary: Recoverable: Framework Error: constructed child failure")
     );
     assert_eq!(parent_errors.get(), 0);
     root.dispose().expect("root cleanup should succeed");

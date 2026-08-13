@@ -53,7 +53,7 @@ where
     /// 添加一个匹配分支，并在重复 key 时返回配置错误。
     pub fn case<V>(mut self, value: T, view: V) -> Result<Self, SilexError>
     where
-        V: ViewFactory<'scope> + 'scope,
+        V: View<'scope> + 'scope,
     {
         match self.props.cases.entry(value) {
             Entry::Vacant(entry) => {

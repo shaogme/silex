@@ -29,7 +29,7 @@ pub fn Dynamic<'scope, V, FView>(
     view_fn: FView,
 ) -> impl View<'scope>
 where
-    V: ViewFactory<'scope> + Clone + 'scope,
+    V: View<'scope> + Clone + 'scope,
     FView: ReactiveSource<'scope, Value = V> + Clone + 'scope,
 {
     let view_fn = scope.promote(view_fn, error_handler)?;

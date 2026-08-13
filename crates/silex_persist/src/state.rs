@@ -10,7 +10,7 @@ use silex_core::{
 };
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::view::{
-    ApplyAttributes, HostResourceHandle, MountErrorHandler, MountOwner, View, ViewFactory,
+    ApplyAttributes, HostResourceHandle, MountErrorHandler, MountInstance, MountOwner, View,
 };
 use std::rc::Rc;
 use web_sys::Node;
@@ -335,27 +335,10 @@ where
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: MountErrorHandler<'scope>,
-    ) -> silex_core::SilexResult<()> {
+    ) -> silex_core::SilexResult<MountInstance<'scope>> {
         self.value
             .into_rx()
-            .create_mount_instance(owner, parent, attrs, error_handler)
-            .map(|_| ())
-    }
-
-    fn mount_owned(
-        self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &Node,
-        attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: MountErrorHandler<'scope>,
-    ) -> silex_core::SilexResult<()>
-    where
-        Self: Sized,
-    {
-        self.value
-            .into_rx()
-            .create_mount_instance(owner, parent, attrs, error_handler)
-            .map(|_| ())
+            .mount(owner, parent, attrs, error_handler)
     }
 }
 

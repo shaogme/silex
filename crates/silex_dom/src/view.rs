@@ -9,8 +9,8 @@ pub(crate) mod row;
 
 pub use any::AnyView;
 pub use contract::{
-    ApplyAttributes, MountInstance, Prop, PropFixed, PropInto, PropMissing, View, ViewCons,
-    ViewFactory, ViewNil,
+    ApplyAttributes, MountInstance, Prop, PropFixed, PropInto, PropMissing, ViewCons, View,
+    ViewNil,
 };
 pub use dynamic::{
     BranchEvaluation, DynamicRenderArgs, DynamicRenderer, mount_branch_stable_cached,

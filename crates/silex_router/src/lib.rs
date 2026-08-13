@@ -33,7 +33,8 @@ use silex_core::{
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::helpers::window_event_listener_untyped;
 use silex_dom::view::{
-    AnyView, ApplyAttributes, BranchEvaluation, MountErrorHandler, MountOwner, View, ViewFactory,
+    AnyView, ApplyAttributes, BranchEvaluation, MountErrorHandler, MountInstance, MountOwner,
+    View,
 };
 use silex_macros::component;
 use std::rc::Rc;
@@ -109,7 +110,7 @@ pub struct RouterLayoutInput<'scope>(Option<RouterLayout<'scope>>);
 impl<'scope, F, V> From<F> for RouterLayoutInput<'scope>
 where
     F: Fn(RouterContext<'scope>, AnyView<'scope>) -> V + 'scope,
-    V: ViewFactory<'scope> + 'scope,
+    V: View<'scope> + 'scope,
 {
     fn from(layout: F) -> Self {
         Self(Some(Rc::new(move |context, outlet| {
@@ -161,7 +162,7 @@ impl<'scope> RouterView<'scope> {
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()> {
+    ) -> SilexResult<MountInstance<'scope>> {
         let Self {
             context,
             routes,
@@ -186,11 +187,13 @@ impl<'scope> RouterView<'scope> {
             Some(layout) => layout(context, outlet),
             None => outlet,
         };
-        if let Err(error) = view.mount_owned(owner, parent, attrs, error_handler) {
-            listener.cancel();
-            return Err(error);
+        match view.mount(owner, parent, attrs, error_handler) {
+            Ok(instance) => Ok(instance),
+            Err(error) => {
+                listener.cancel();
+                Err(error)
+            }
         }
-        Ok(())
     }
 }
 
@@ -203,22 +206,9 @@ impl<'scope> View<'scope> for RouterView<'scope> {
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()> {
+    ) -> SilexResult<MountInstance<'scope>> {
         self.clone()
-            .mount_owned(owner, parent, attrs, error_handler)
-    }
-
-    fn mount_owned(
-        self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &web_sys::Node,
-        attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()>
-    where
-        Self: Sized,
-    {
-        self.mount_internal(owner, parent, attrs, error_handler)
+            .mount_internal(owner, parent, attrs, error_handler)
     }
 }
 
@@ -261,26 +251,13 @@ impl<'scope> View<'scope> for RouteOutlet<'scope> {
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()> {
-        self.clone()
-            .mount_owned(owner, parent, attrs, error_handler)
-    }
-
-    fn mount_owned(
-        self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &web_sys::Node,
-        attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()>
-    where
-        Self: Sized,
-    {
-        let context = self.context;
+    ) -> SilexResult<MountInstance<'scope>> {
+        let this = self.clone();
+        let context = this.context;
         let path_signal = context.path;
-        let routes = self.routes;
+        let routes = this.routes;
         let routes_for_key = routes.clone();
-        let prefix = self.prefix;
+        let prefix = this.prefix;
         let prefix_for_key = prefix.clone();
         let inputs = runtime_inputs_of(path_signal);
 

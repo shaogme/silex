@@ -15,7 +15,10 @@ use crate::{
 use silex_core::{ErrorReporter, RuntimeInputs, Rx, SilexError, SilexErrorKind, SilexResult};
 use silex_dom::{
     attribute::{ApplyTarget, ApplyToDom, AttrOp, IntoStorable, PendingAttribute},
-    view::{ApplyAttributes, MountErrorHandler, MountOwner, MountOwnerToken, MountState, View},
+    view::{
+        ApplyAttributes, MountErrorHandler, MountInstance, MountOwner, MountOwnerToken, MountState,
+        View,
+    },
 };
 use std::{
     cell::{Cell, RefCell},
@@ -1033,7 +1036,7 @@ impl<'scope> GlobalStyleView<'scope> {
         &self,
         owner: &dyn MountOwner<'scope>,
         error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()> {
+    ) -> SilexResult<MountInstance<'scope>> {
         let mut inputs = RuntimeInputs::new();
         for binding in &self.bindings {
             inputs.extend(&binding.runtime_inputs());
@@ -1062,7 +1065,7 @@ impl<'scope> GlobalStyleView<'scope> {
                 },
             )?;
         }
-        Ok(())
+        Ok(MountInstance::from_nodes(Vec::new()))
     }
 }
 
@@ -1075,20 +1078,7 @@ impl<'scope> View<'scope> for GlobalStyleView<'scope> {
         _parent: &web_sys::Node,
         _attrs: Vec<PendingAttribute<'scope>>,
         error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()> {
-        self.mount_inner(owner, error_handler)
-    }
-
-    fn mount_owned(
-        self,
-        owner: &dyn MountOwner<'scope>,
-        _parent: &web_sys::Node,
-        _attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()>
-    where
-        Self: Sized,
-    {
+    ) -> SilexResult<MountInstance<'scope>> {
         self.mount_inner(owner, error_handler)
     }
 }

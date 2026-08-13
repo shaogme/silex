@@ -1,5 +1,5 @@
 use super::any::AnyView;
-use super::contract::{ApplyAttributes, View, ViewFactory};
+use super::contract::{ApplyAttributes, MountInstance, View};
 use super::owner::{MountErrorHandler, MountOwner, MountOwnerToken, OwnedMountOwner};
 use super::row::{NodeRange, RowInstance, RowInstanceConfig, RowRenderContext, RowRenderer};
 use crate::attribute::PendingAttribute;
@@ -34,20 +34,24 @@ impl<'scope> DynamicRenderArgs<'scope> {
 }
 
 pub struct DynamicRenderer<'scope> {
-    inner: silex_vtable::thunk::ThunkBox<'scope, DynamicRenderArgs<'scope>, SilexResult<()>>,
+    inner: silex_vtable::thunk::ThunkBox<
+        'scope,
+        DynamicRenderArgs<'scope>,
+        SilexResult<MountInstance<'scope>>,
+    >,
 }
 
 impl<'scope> DynamicRenderer<'scope> {
     pub fn new<F>(render: F) -> Self
     where
-        F: Fn(DynamicRenderArgs<'scope>) -> SilexResult<()> + 'scope,
+        F: Fn(DynamicRenderArgs<'scope>) -> SilexResult<MountInstance<'scope>> + 'scope,
     {
         Self {
             inner: silex_vtable::thunk::ThunkBox::new(render),
         }
     }
 
-    pub fn call(&self, args: DynamicRenderArgs<'scope>) -> SilexResult<()> {
+    pub fn call(&self, args: DynamicRenderArgs<'scope>) -> SilexResult<MountInstance<'scope>> {
         self.inner.call(args)
     }
 }
@@ -70,21 +74,8 @@ where
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()> {
-        self.clone()
-            .mount_owned(owner, parent, attrs, error_handler)
-    }
-
-    fn mount_owned(
-        self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &Node,
-        attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()>
-    where
-        Self: Sized,
-    {
+    ) -> SilexResult<MountInstance<'scope>> {
+        let factory = self.clone();
         mount_dynamic_view_universal(
             owner,
             parent,
@@ -97,9 +88,8 @@ where
                     owner: token,
                     error_handler,
                 } = args;
-                let view = self();
-                view.create_mount_instance(&token, &parent, attrs, error_handler)
-                    .map(|_| ())
+                let view = factory();
+                view.mount(&token, &parent, attrs, error_handler)
             }),
         )
     }
@@ -112,7 +102,7 @@ pub fn mount_dynamic_view_universal<'scope>(
     attrs: Vec<PendingAttribute<'scope>>,
     error_handler: MountErrorHandler<'scope>,
     renderer: DynamicRenderer<'scope>,
-) -> SilexResult<()> {
+) -> SilexResult<MountInstance<'scope>> {
     mount_dynamic_view_universal_from(
         owner,
         parent,
@@ -130,7 +120,7 @@ pub(crate) fn mount_dynamic_view_universal_from<'scope>(
     inputs: RuntimeInputs,
     error_handler: MountErrorHandler<'scope>,
     renderer: DynamicRenderer<'scope>,
-) -> SilexResult<()> {
+) -> SilexResult<MountInstance<'scope>> {
     owner.validate_inputs(&inputs)?;
     let range = NodeRange::append(parent, "dyn")?;
     let render = RowRenderer::new(move |args: RowRenderContext<'scope, ()>| {
@@ -141,10 +131,13 @@ pub(crate) fn mount_dynamic_view_universal_from<'scope>(
             error_handler,
             ..
         } = args;
-        renderer.call(DynamicRenderArgs::new(parent, attrs, token, error_handler))
+        renderer
+            .call(DynamicRenderArgs::new(parent, attrs, token, error_handler))
+            .map(|_| ())
     });
     let token = owner.token();
-    let row = RowInstance::new(
+    let range_instance = range.clone();
+    let row = match RowInstance::new(
         &token,
         RowInstanceConfig {
             range,
@@ -156,7 +149,13 @@ pub(crate) fn mount_dynamic_view_universal_from<'scope>(
             stateful: false,
             error_handler,
         },
-    )?;
+    ) {
+        Ok(row) => row,
+        Err(error) => {
+            range_instance.remove();
+            return Err(error);
+        }
+    };
     let row_state = owner.token().owner_state(Some(row))?;
     let cleanup_state = row_state.clone();
     if let Err(error) = owner.on_cleanup(
@@ -171,9 +170,13 @@ pub(crate) fn mount_dynamic_view_universal_from<'scope>(
         if let Some(mut row) = row_state.take_for_cleanup().flatten() {
             row.dispose();
         }
+        range_instance.remove();
         return Err(error);
     }
-    Ok(())
+    Ok(MountInstance::from_nodes(vec![
+        range_instance.start,
+        range_instance.end,
+    ]))
 }
 
 /// The identity and render snapshot produced by one stable branch evaluation.
@@ -217,7 +220,7 @@ pub fn mount_branch_stable_cached<'scope, K, S, KeyFn, BranchFn>(
     error_handler: MountErrorHandler<'scope>,
     key_fn: KeyFn,
     branch_fn: BranchFn,
-) -> SilexResult<()>
+) -> SilexResult<MountInstance<'scope>>
 where
     K: PartialEq + Clone + 'scope,
     S: Clone + 'scope,
@@ -235,7 +238,7 @@ where
                 ..
             } = args;
             branch_fn(key)
-                .create_mount_instance(&token, &parent, attrs, error_handler)
+                .mount(&token, &parent, attrs, error_handler)
                 .map(|_| ())
         },
     );
@@ -272,7 +275,7 @@ struct KeyedDynamicMountArgs<'owner, 'scope, K, KeyFn> {
 
 fn mount_keyed_dynamic_view<'scope, K, KeyFn>(
     args: KeyedDynamicMountArgs<'_, 'scope, K, KeyFn>,
-) -> SilexResult<()>
+) -> SilexResult<MountInstance<'scope>>
 where
     K: PartialEq + Clone + 'scope,
     KeyFn: Fn() -> SilexResult<K> + Clone + 'scope,
@@ -431,5 +434,8 @@ where
         let _ = scope.dispose();
         return Err(error);
     }
-    Ok(())
+    Ok(MountInstance::from_nodes(vec![
+        cleanup_range.start,
+        cleanup_range.end,
+    ]))
 }

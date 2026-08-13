@@ -5,7 +5,7 @@ use silex_dom::attribute::PendingAttribute;
 use silex_dom::element::Element;
 use silex_dom::mounted::{CleanupOrigin, CleanupSink, MountAvailability, MountedApp};
 use silex_dom::view::{
-    AnyView, ApplyAttributes, MountInstance, MountOwner, View, ViewFactory, mount_component,
+    AnyView, ApplyAttributes, MountInstance, MountOwner, View, mount_component,
 };
 use std::{cell::Cell, rc::Rc};
 use wasm_bindgen_test::*;
@@ -44,8 +44,8 @@ struct FactoryText {
     created: Rc<Cell<usize>>,
 }
 
-impl<'scope> ViewFactory<'scope> for FactoryText {
-    fn create_mount_instance(
+impl<'scope> View<'scope> for FactoryText {
+    fn mount(
         &self,
         owner: &dyn MountOwner<'scope>,
         parent: &Node,
@@ -94,10 +94,10 @@ fn any_view_factory_creates_independent_mount_instances() {
         });
 
         let first = view
-            .create_mount_instance(&owner, &host, Vec::new(), handler)
+            .mount(&owner, &host, Vec::new(), handler)
             .expect("first factory mount should succeed");
         let second = view
-            .create_mount_instance(&owner, &host, Vec::new(), handler)
+            .mount(&owner, &host, Vec::new(), handler)
             .expect("second factory mount should succeed");
 
         assert_eq!(first.len(), 1);
@@ -133,7 +133,7 @@ impl<'scope> View<'scope> for PanicRollbackView {
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: ErrorReporter<'scope>,
-    ) -> SilexResult<()> {
+    ) -> SilexResult<MountInstance<'scope>> {
         mount_component(
             owner,
             parent,
@@ -147,19 +147,6 @@ impl<'scope> View<'scope> for PanicRollbackView {
             },
         )
     }
-
-    fn mount_owned(
-        self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &Node,
-        attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: ErrorReporter<'scope>,
-    ) -> SilexResult<()>
-    where
-        Self: Sized,
-    {
-        self.mount(owner, parent, attrs, error_handler)
-    }
 }
 
 impl<'scope> ApplyAttributes<'scope> for CleanupProbe {}
@@ -171,7 +158,7 @@ impl<'scope> View<'scope> for CleanupProbe {
         parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
         error_handler: ErrorReporter<'scope>,
-    ) -> SilexResult<()> {
+    ) -> SilexResult<MountInstance<'scope>> {
         let cleanups = self.cleanups.clone();
         owner.on_cleanup(
             Box::new(move || {
@@ -188,20 +175,7 @@ impl<'scope> View<'scope> for CleanupProbe {
         parent
             .append_child(&text)
             .map_err(|error| SilexError::fatal(SilexErrorKind::from(error)))?;
-        Ok(())
-    }
-
-    fn mount_owned(
-        self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &Node,
-        attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: ErrorReporter<'scope>,
-    ) -> SilexResult<()>
-    where
-        Self: Sized,
-    {
-        self.mount(owner, parent, attrs, error_handler)
+        Ok(MountInstance::from_nodes(vec![text]))
     }
 }
 

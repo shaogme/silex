@@ -1,9 +1,9 @@
-use silex_dom::view::DynamicRenderer;
+use silex_dom::view::{DynamicRenderer, MountInstance};
 
 fn make_renderer<'scope>(value: &'scope str) -> DynamicRenderer<'scope> {
     DynamicRenderer::new(move |_| {
         let _ = value.len();
-        Ok(())
+        Ok(MountInstance::from_nodes(Vec::new()))
     })
 }
 

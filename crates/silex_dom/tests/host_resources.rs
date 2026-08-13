@@ -11,8 +11,7 @@ use silex_dom::{
         set_timeout, window_event_listener_untyped,
     },
     view::{
-        AnyView, MountOwner, ScopedMountOwner, StatefulKeyedListView, View, ViewFactory,
-        mount_text_node,
+        AnyView, MountOwner, ScopedMountOwner, StatefulKeyedListView, View, mount_text_node,
     },
 };
 use std::{
@@ -257,7 +256,7 @@ impl<'scope> View<'scope> for WindowResourceView {
         parent: &Node,
         _attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
         error_handler: ErrorReporter<'scope>,
-    ) -> silex_core::SilexResult<()> {
+    ) -> silex_core::SilexResult<silex_dom::view::MountInstance<'scope>> {
         let calls = self.calls.clone();
         let id = self.id;
         window_event_listener_untyped(
@@ -270,21 +269,7 @@ impl<'scope> View<'scope> for WindowResourceView {
             error_handler,
         )
         .map_err(|error| SilexError::fatal(SilexErrorKind::from(error)))?;
-        mount_text_node(parent, &self.id.to_string())?;
-        Ok(())
-    }
-
-    fn mount_owned(
-        self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &Node,
-        attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
-        error_handler: ErrorReporter<'scope>,
-    ) -> silex_core::SilexResult<()>
-    where
-        Self: Sized,
-    {
-        self.mount(owner, parent, attrs, error_handler)
+        mount_text_node(parent, &self.id.to_string())
     }
 }
 
@@ -364,7 +349,7 @@ fn fallible_dom_primitives_and_attribute_mount_failures_are_observable() {
                 Err(SilexError::recoverable(SilexErrorKind::Framework("attribute rejected".to_string())))
             }));
             assert!(matches!(
-                view.mount_owned(&owner, &host.clone().into(), Vec::new(), error_handler),
+                view.mount(&owner, &host.clone().into(), Vec::new(), error_handler),
                 Err(SilexError::Recoverable(SilexErrorKind::Framework(message))) if message == "attribute rejected"
             ));
         })
@@ -390,7 +375,7 @@ fn element_listener_removes_physically_and_drops_on_root_dispose() {
         let token = owner.token();
         let element = Element::new("button");
         let instance = element
-            .create_mount_instance(&owner, &host.clone().into(), Vec::new(), error_handler)
+            .mount(&owner, &host.clone().into(), Vec::new(), error_handler)
             .expect("element should mount");
         let mounted_element = instance
             .first_node()
@@ -519,7 +504,8 @@ fn render_rerun_replaces_old_window_listener() {
             id: value.get().expect("signal should be readable"),
             calls: calls_for_view.clone(),
         };
-        view.mount_owned(&owner, &host_node, Vec::new(), error_handler)
+        let _ = view
+            .mount(&owner, &host_node, Vec::new(), error_handler)
             .expect("view should mount");
 
         let window = web_sys::window().expect("window is available");
@@ -607,7 +593,8 @@ fn keyed_reorder_keeps_window_resources_until_row_delete() {
                     _marker: PhantomData,
                 };
                 let (owner, error_handler) = test_owner(child);
-                list.mount_owned(&owner, &host_node, Vec::new(), error_handler)
+                let _ = list
+                    .mount(&owner, &host_node, Vec::new(), error_handler)
                     .expect("keyed list should mount");
                 assert_eq!(spy.count("event_add:silex-window-resource"), 2);
 

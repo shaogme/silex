@@ -40,7 +40,9 @@ where
     .into_any())
 }
 
-fn control_row<'scope, T: View<'scope> + 'scope>(content: T) -> SilexResult<impl View<'scope>> {
+fn control_row<'scope, T: View<'scope> + 'scope>(
+    content: T,
+) -> SilexResult<impl View<'scope>> {
     Ok(div(content).style(
         sty()
             .display("flex")?

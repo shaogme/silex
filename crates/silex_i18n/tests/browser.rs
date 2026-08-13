@@ -271,7 +271,7 @@ async fn translated_memo_updates_the_existing_text_node() {
         let (owner, error_handler) = test_owner(scope);
         t!(i18n, "title")
             .expect("translation")
-            .mount_owned(&owner, parent.as_ref(), Vec::new(), error_handler)
+            .mount(&owner, parent.as_ref(), Vec::new(), error_handler)
             .expect("translation should mount");
 
         assert_eq!(parent.text_content(), Some("English".to_string()));
@@ -310,7 +310,7 @@ fn translated_memo_is_removed_when_its_root_is_disposed() {
         let (owner, error_handler) = test_owner(scope);
         t!(i18n, "title")
             .expect("translation")
-            .mount_owned(&owner, parent.as_ref(), Vec::new(), error_handler)
+            .mount(&owner, parent.as_ref(), Vec::new(), error_handler)
             .expect("translation should mount");
         assert_eq!(parent.text_content(), Some("English".to_string()));
         assert_eq!(parent.child_nodes().length(), 1);
@@ -349,7 +349,7 @@ fn foreign_translation_source_does_not_mount_or_allocate_foreign_owner_nodes() {
         let (owner, error_handler) = test_owner(foreign_scope);
         assert!(
             translation
-                .mount_owned(&owner, parent.as_ref(), Vec::new(), error_handler)
+                .mount(&owner, parent.as_ref(), Vec::new(), error_handler)
                 .is_err()
         );
     }

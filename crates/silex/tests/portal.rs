@@ -77,7 +77,7 @@ async fn portal_modal_does_not_duplicate_content_after_repeated_toggles() {
                 .build(),
         ];
         let owner = ScopedMountOwner::new(scope);
-        view.mount_owned(&owner, host.as_ref(), Vec::new(), error_handler)
+        let _ = view.mount(&owner, host.as_ref(), Vec::new(), error_handler)
             .expect("portal demo should mount");
         (set_show_modal, errors)
     });

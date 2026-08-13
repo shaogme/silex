@@ -3,7 +3,6 @@
 include!("../../src/lib.rs");
 
 use silex_core::{ErrorReporter, Scope};
-use silex_dom::view::View;
 use silex_macros::component;
 
 #[component]

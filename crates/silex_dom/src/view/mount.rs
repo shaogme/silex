@@ -1,4 +1,4 @@
-use super::contract::{ApplyAttributes, View, ViewCons, ViewNil};
+use super::contract::{ApplyAttributes, MountInstance, ViewCons, View, ViewNil};
 use super::owner::{MountErrorHandler, MountOwner, OwnedMountOwner};
 use crate::attribute::PendingAttribute;
 use silex_core::{CleanupError, OwnedScope, SilexError, SilexResult};
@@ -15,14 +15,14 @@ pub(crate) fn mount_composite<'scope, F>(
     attrs: Vec<PendingAttribute<'scope>>,
     error_handler: MountErrorHandler<'scope>,
     mount: F,
-) -> SilexResult<()>
+) -> SilexResult<MountInstance<'scope>>
 where
     F: FnOnce(
         &dyn MountOwner<'scope>,
         &Node,
         Vec<PendingAttribute<'scope>>,
         MountErrorHandler<'scope>,
-    ) -> SilexResult<()>,
+    ) -> SilexResult<MountInstance<'scope>>,
 {
     let scope = Rc::new(owner.owned_scope()?);
     let owner_token = owner.token();
@@ -35,6 +35,11 @@ where
     if let Err(error) = mount(&provisional_owner, &fragment, attrs, error_handler) {
         return rollback_composite_scope_with_primary(owner, &scope, error);
     }
+
+    let fragment_children = fragment.child_nodes();
+    let nodes = (0..fragment_children.length())
+        .filter_map(|index| fragment_children.item(index))
+        .collect();
 
     let scope_for_cleanup = scope.clone();
     if let Err(error) = owner.on_cleanup(
@@ -50,7 +55,7 @@ where
     if let Err(error) = parent.append_child(&fragment).map_err(SilexError::fatal) {
         return rollback_composite_scope_with_primary(owner, &scope, error);
     }
-    Ok(())
+    Ok(MountInstance::from_nodes(nodes))
 }
 
 #[doc(hidden)]
@@ -60,14 +65,14 @@ pub fn mount_component<'scope, F>(
     attrs: Vec<PendingAttribute<'scope>>,
     error_handler: MountErrorHandler<'scope>,
     mount: F,
-) -> SilexResult<()>
+) -> SilexResult<MountInstance<'scope>>
 where
     F: FnOnce(
         &dyn MountOwner<'scope>,
         &Node,
         Vec<PendingAttribute<'scope>>,
         MountErrorHandler<'scope>,
-    ) -> SilexResult<()>,
+    ) -> SilexResult<MountInstance<'scope>>,
 {
     mount_composite(owner, parent, attrs, error_handler, mount)
 }
@@ -83,7 +88,7 @@ fn rollback_composite_scope_with_primary<'scope>(
     owner: &dyn MountOwner<'scope>,
     scope: &Rc<OwnedScope<'scope>>,
     primary: SilexError,
-) -> SilexResult<()> {
+) -> SilexResult<MountInstance<'scope>> {
     match rollback_composite_scope(scope) {
         Ok(()) => Err(primary),
         Err(cleanup) => {
@@ -97,11 +102,11 @@ fn rollback_composite_scope_with_primary<'scope>(
     }
 }
 
-pub fn mount_text_node(parent: &Node, text: &str) -> SilexResult<()> {
+pub fn mount_text_node<'scope>(parent: &Node, text: &str) -> SilexResult<MountInstance<'scope>> {
     let document = crate::document();
     let node = document.create_text_node(text);
     parent.append_child(&node).map_err(SilexError::fatal)?;
-    Ok(())
+    Ok(MountInstance::from_nodes(vec![node.into()]))
 }
 
 macro_rules! impl_text_view {
@@ -115,23 +120,9 @@ macro_rules! impl_text_view {
                 parent: &Node,
                 _attrs: Vec<PendingAttribute<'scope>>,
                 _error_handler: MountErrorHandler<'scope>,
-            ) -> SilexResult<()> {
+            ) -> SilexResult<MountInstance<'scope>> {
                 let _ = owner;
                 mount_text_node(parent, self)
-            }
-
-            fn mount_owned(
-                self,
-                owner: &dyn MountOwner<'scope>,
-                parent: &Node,
-                _attrs: Vec<PendingAttribute<'scope>>,
-                _error_handler: MountErrorHandler<'scope>,
-            ) -> SilexResult<()>
-            where
-                Self: Sized,
-            {
-                let _ = owner;
-                mount_text_node(parent, &self)
             }
         }
     };
@@ -148,21 +139,7 @@ impl<'scope> View<'scope> for &'scope str {
         parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
         _error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()> {
-        let _ = owner;
-        mount_text_node(parent, self)
-    }
-
-    fn mount_owned(
-        self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &Node,
-        _attrs: Vec<PendingAttribute<'scope>>,
-        _error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()>
-    where
-        Self: Sized,
-    {
+    ) -> SilexResult<MountInstance<'scope>> {
         let _ = owner;
         mount_text_node(parent, self)
     }
@@ -177,21 +154,7 @@ impl<'scope> View<'scope> for Cow<'scope, str> {
         parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
         _error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()> {
-        let _ = owner;
-        mount_text_node(parent, self.as_ref())
-    }
-
-    fn mount_owned(
-        self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &Node,
-        _attrs: Vec<PendingAttribute<'scope>>,
-        _error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()>
-    where
-        Self: Sized,
-    {
+    ) -> SilexResult<MountInstance<'scope>> {
         let _ = owner;
         mount_text_node(parent, self.as_ref())
     }
@@ -209,20 +172,7 @@ macro_rules! impl_primitive_view {
                     parent: &Node,
                     _attrs: Vec<PendingAttribute<'scope>>,
                     _error_handler: MountErrorHandler<'scope>,
-                ) -> SilexResult<()> {
-                    let _ = owner;
-                    mount_text_node(parent, &self.to_string())
-                }
-
-                fn mount_owned(
-                    self,
-                    owner: &dyn MountOwner<'scope>,
-                    parent: &Node,
-                    _attrs: Vec<PendingAttribute<'scope>>,
-                    _error_handler: MountErrorHandler<'scope>,
-                ) -> SilexResult<()> where
-                    Self: Sized,
-                {
+                ) -> SilexResult<MountInstance<'scope>> {
                     let _ = owner;
                     mount_text_node(parent, &self.to_string())
                 }
@@ -244,25 +194,14 @@ impl<'scope> View<'scope> for () {
         _parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
         _error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()> {
-        Ok(())
-    }
-
-    fn mount_owned(
-        self,
-        _owner: &dyn MountOwner<'scope>,
-        _parent: &Node,
-        _attrs: Vec<PendingAttribute<'scope>>,
-        _error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()>
-    where
-        Self: Sized,
-    {
-        Ok(())
+    ) -> SilexResult<MountInstance<'scope>> {
+        Ok(MountInstance::from_nodes(Vec::new()))
     }
 }
 
-impl<'scope, V: View<'scope> + ApplyAttributes<'scope>> ApplyAttributes<'scope> for Option<V> {
+impl<'scope, V: View<'scope> + ApplyAttributes<'scope>> ApplyAttributes<'scope>
+    for Option<V>
+{
     fn apply_attributes(&mut self, attrs: Vec<PendingAttribute<'scope>>) {
         if let Some(value) = self {
             value.apply_attributes(attrs);
@@ -277,28 +216,11 @@ impl<'scope, V: View<'scope>> View<'scope> for Option<V> {
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()> {
+    ) -> SilexResult<MountInstance<'scope>> {
         if let Some(value) = self {
             value.mount(owner, parent, attrs, error_handler)
         } else {
-            Ok(())
-        }
-    }
-
-    fn mount_owned(
-        self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &Node,
-        attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()>
-    where
-        Self: Sized,
-    {
-        if let Some(value) = self {
-            value.mount_owned(owner, parent, attrs, error_handler)
-        } else {
-            Ok(())
+            Ok(MountInstance::from_nodes(Vec::new()))
         }
     }
 }
@@ -318,7 +240,7 @@ impl<'scope, V: View<'scope>> View<'scope> for Vec<V> {
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()> {
+    ) -> SilexResult<MountInstance<'scope>> {
         mount_composite(
             owner,
             parent,
@@ -326,7 +248,7 @@ impl<'scope, V: View<'scope>> View<'scope> for Vec<V> {
             error_handler,
             move |transaction_owner, fragment, attrs, error_handler| {
                 for (index, value) in self.iter().enumerate() {
-                    value.mount(
+                    let _ = value.mount(
                         transaction_owner,
                         fragment,
                         if index == 0 {
@@ -337,47 +259,14 @@ impl<'scope, V: View<'scope>> View<'scope> for Vec<V> {
                         error_handler,
                     )?;
                 }
-                Ok(())
-            },
-        )
-    }
-
-    fn mount_owned(
-        self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &Node,
-        attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()>
-    where
-        Self: Sized,
-    {
-        mount_composite(
-            owner,
-            parent,
-            attrs,
-            error_handler,
-            move |transaction_owner, fragment, attrs, error_handler| {
-                for (index, value) in self.into_iter().enumerate() {
-                    value.mount_owned(
-                        transaction_owner,
-                        fragment,
-                        if index == 0 {
-                            attrs.clone()
-                        } else {
-                            Vec::new()
-                        },
-                        error_handler,
-                    )?;
-                }
-                Ok(())
+                Ok(MountInstance::from_nodes(Vec::new()))
             },
         )
     }
 }
 
-impl<'scope, V: View<'scope> + ApplyAttributes<'scope>, const N: usize> ApplyAttributes<'scope>
-    for [V; N]
+impl<'scope, V: View<'scope> + ApplyAttributes<'scope>, const N: usize>
+    ApplyAttributes<'scope> for [V; N]
 {
     fn apply_attributes(&mut self, attrs: Vec<PendingAttribute<'scope>>) {
         for value in self {
@@ -393,7 +282,7 @@ impl<'scope, V: View<'scope>, const N: usize> View<'scope> for [V; N] {
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()> {
+    ) -> SilexResult<MountInstance<'scope>> {
         mount_composite(
             owner,
             parent,
@@ -401,7 +290,7 @@ impl<'scope, V: View<'scope>, const N: usize> View<'scope> for [V; N] {
             error_handler,
             move |transaction_owner, fragment, attrs, error_handler| {
                 for (index, value) in self.iter().enumerate() {
-                    value.mount(
+                    let _ = value.mount(
                         transaction_owner,
                         fragment,
                         if index == 0 {
@@ -412,40 +301,7 @@ impl<'scope, V: View<'scope>, const N: usize> View<'scope> for [V; N] {
                         error_handler,
                     )?;
                 }
-                Ok(())
-            },
-        )
-    }
-
-    fn mount_owned(
-        self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &Node,
-        attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()>
-    where
-        Self: Sized,
-    {
-        mount_composite(
-            owner,
-            parent,
-            attrs,
-            error_handler,
-            move |transaction_owner, fragment, attrs, error_handler| {
-                for (index, value) in self.into_iter().enumerate() {
-                    value.mount_owned(
-                        transaction_owner,
-                        fragment,
-                        if index == 0 {
-                            attrs.clone()
-                        } else {
-                            Vec::new()
-                        },
-                        error_handler,
-                    )?;
-                }
-                Ok(())
+                Ok(MountInstance::from_nodes(Vec::new()))
             },
         )
     }
@@ -460,21 +316,8 @@ impl<'scope> View<'scope> for ViewNil {
         _parent: &Node,
         _attrs: Vec<PendingAttribute<'scope>>,
         _error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()> {
-        Ok(())
-    }
-
-    fn mount_owned(
-        self,
-        _owner: &dyn MountOwner<'scope>,
-        _parent: &Node,
-        _attrs: Vec<PendingAttribute<'scope>>,
-        _error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()>
-    where
-        Self: Sized,
-    {
-        Ok(())
+    ) -> SilexResult<MountInstance<'scope>> {
+        Ok(MountInstance::from_nodes(Vec::new()))
     }
 }
 
@@ -487,47 +330,35 @@ impl<'scope, H: ApplyAttributes<'scope>, T: ApplyAttributes<'scope>> ApplyAttrib
     }
 }
 
-impl<'scope, H: View<'scope>, T: View<'scope>> View<'scope> for ViewCons<H, T> {
+impl<'scope, H: View<'scope>, T: View<'scope>> View<'scope>
+    for ViewCons<H, T>
+{
     fn mount(
         &self,
         owner: &dyn MountOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()> {
+    ) -> SilexResult<MountInstance<'scope>> {
         mount_composite(
             owner,
             parent,
             attrs,
             error_handler,
             move |transaction_owner, fragment, attrs, error_handler| {
-                self.0
-                    .mount(transaction_owner, fragment, attrs, error_handler)?;
-                self.1
-                    .mount(transaction_owner, fragment, Vec::new(), error_handler)
-            },
-        )
-    }
-
-    fn mount_owned(
-        self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &Node,
-        attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()>
-    where
-        Self: Sized,
-    {
-        let ViewCons(head, tail) = self;
-        mount_composite(
-            owner,
-            parent,
-            attrs,
-            error_handler,
-            move |transaction_owner, fragment, attrs, error_handler| {
-                head.mount_owned(transaction_owner, fragment, attrs, error_handler)?;
-                tail.mount_owned(transaction_owner, fragment, Vec::new(), error_handler)
+                let _ = self.0.mount(
+                    transaction_owner,
+                    fragment,
+                    attrs,
+                    error_handler,
+                )?;
+                let _ = self.1.mount(
+                    transaction_owner,
+                    fragment,
+                    Vec::new(),
+                    error_handler,
+                )?;
+                Ok(MountInstance::from_nodes(Vec::new()))
             },
         )
     }
@@ -546,7 +377,9 @@ macro_rules! chain {
     };
 }
 
-impl<'scope, V: View<'scope> + ApplyAttributes<'scope>> ApplyAttributes<'scope> for SilexResult<V> {
+impl<'scope, V: View<'scope> + ApplyAttributes<'scope>> ApplyAttributes<'scope>
+    for SilexResult<V>
+{
     fn apply_attributes(&mut self, attrs: Vec<PendingAttribute<'scope>>) {
         if let Ok(value) = self {
             value.apply_attributes(attrs);
@@ -561,26 +394,10 @@ impl<'scope, V: View<'scope>> View<'scope> for SilexResult<V> {
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()> {
+    ) -> SilexResult<MountInstance<'scope>> {
         match self {
             Ok(value) => value.mount(owner, parent, attrs, error_handler),
             Err(error) => Err(error.clone()),
-        }
-    }
-
-    fn mount_owned(
-        self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &Node,
-        attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()>
-    where
-        Self: Sized,
-    {
-        match self {
-            Ok(value) => value.mount_owned(owner, parent, attrs, error_handler),
-            Err(error) => Err(error),
         }
     }
 }

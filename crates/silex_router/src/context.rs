@@ -5,7 +5,9 @@ use silex_core::{
     traits::RxGet,
 };
 use silex_dom::attribute::PendingAttribute;
-use silex_dom::view::{AnyView, ApplyAttributes, MountErrorHandler, MountOwner, View, ViewFactory};
+use silex_dom::view::{
+    AnyView, ApplyAttributes, MountErrorHandler, MountInstance, MountOwner, View,
+};
 use std::collections::HashMap;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
@@ -13,42 +15,26 @@ use web_sys::Node;
 
 /// Router View 工厂包装器，必须实现 PartialEq 以便在 Signal/Memo 中使用
 #[derive(Clone)]
-pub struct RouterViewFactory<'scope>(pub Rc<dyn Fn() -> AnyView<'scope> + 'scope>);
+pub struct RouterView<'scope>(pub Rc<dyn Fn() -> AnyView<'scope> + 'scope>);
 
-impl PartialEq for RouterViewFactory<'_> {
+impl PartialEq for RouterView<'_> {
     fn eq(&self, other: &Self) -> bool {
         Rc::ptr_eq(&self.0, &other.0)
     }
 }
 
-impl<'scope> ApplyAttributes<'scope> for RouterViewFactory<'scope> {}
+impl<'scope> ApplyAttributes<'scope> for RouterView<'scope> {}
 
-impl<'scope> View<'scope> for RouterViewFactory<'scope> {
+impl<'scope> View<'scope> for RouterView<'scope> {
     fn mount(
         &self,
         owner: &dyn MountOwner<'scope>,
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()> {
-        self.clone()
-            .mount_owned(owner, parent, attrs, error_handler)
-    }
-
-    fn mount_owned(
-        self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &Node,
-        attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()>
-    where
-        Self: Sized,
-    {
-        let factory = self.0;
-        (move || (factory)())
-            .create_mount_instance(owner, parent, attrs, error_handler)
-            .map(|_| ())
+    ) -> SilexResult<MountInstance<'scope>> {
+        let view = (self.0)();
+        view.mount(owner, parent, attrs, error_handler)
     }
 }
 

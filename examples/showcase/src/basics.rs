@@ -164,9 +164,13 @@ pub fn NodeRefDemo<'scope>(
     ))
 }
 #[component]
-pub fn SvgIconDemo<'scope>(#[chain] error_handler: ErrorReporter<'scope>) -> impl View<'scope> {
+pub fn SvgIconDemo<'scope>(
+    #[chain] error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
     #[component]
-    fn ShieldCheck<'scope>(#[chain] error_handler: ErrorReporter<'scope>) -> impl View<'scope> {
+    fn ShieldCheck<'scope>(
+        #[chain] error_handler: ErrorReporter<'scope>,
+    ) -> impl View<'scope> {
         svg(path()
             .attr("stroke-linecap", "round")
             .attr("stroke-linejoin", "round")

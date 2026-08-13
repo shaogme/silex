@@ -959,13 +959,13 @@ fn generate_table_expression(silex: &TokenStream, nodes: &[MacroNode]) -> TokenS
         let context = format_ident!("__silex_nested_context");
         let outlet = format_ident!("__silex_nested_outlet");
         let mut layout_view = quote! {
-            #silex::dom::view::ViewFactory::into_any(
+            #silex::dom::view::View::into_any(
                 (#layout_name)(#context, #outlet)
             )
         };
         for guard in nest.guards.iter().rev() {
             layout_view = quote! {
-                #silex::dom::view::ViewFactory::into_any(#guard(#layout_view))
+                #silex::dom::view::View::into_any(#guard(#layout_view))
             };
         }
         table = quote! {
@@ -995,14 +995,14 @@ fn generate_entry_binding(silex: &TokenStream, route: &MacroRoute) -> TokenStrea
     });
 
     let mut view = quote! {
-        #silex::dom::view::ViewFactory::into_any((#handler_name)(
+        #silex::dom::view::View::into_any((#handler_name)(
             #context,
             #(#arguments),*
         ))
     };
     for guard in route.guards.iter().rev() {
         view = quote! {
-            #silex::dom::view::ViewFactory::into_any(#guard(#view))
+            #silex::dom::view::View::into_any(#guard(#view))
         };
     }
 

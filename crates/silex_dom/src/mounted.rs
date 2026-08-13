@@ -2,7 +2,7 @@
 
 use crate::{
     attribute::PendingAttribute,
-    view::{CleanupReporter, MountInstance, ScopedMountOwner, ViewFactory},
+    view::{CleanupReporter, MountInstance, ScopedMountOwner, View},
 };
 use silex_core::{
     CleanupDiagnostic, CleanupError, ErrorReporter, RootHandle, Runtime, Scope, SilexError,
@@ -318,7 +318,7 @@ impl<'scope> MountContext<'scope> {
     /// Mount one owned view into the transaction staging parent.
     pub fn mount<V>(&self, view: V, error_handler: ErrorReporter<'scope>) -> SilexResult<()>
     where
-        V: ViewFactory<'scope> + 'scope,
+        V: View<'scope> + 'scope,
     {
         self.mount_with_attributes(view, Vec::new(), error_handler)
     }
@@ -330,7 +330,7 @@ impl<'scope> MountContext<'scope> {
         error_handler: ErrorReporter<'scope>,
     ) -> SilexResult<MountInstance<'scope>>
     where
-        V: ViewFactory<'scope> + 'scope,
+        V: View<'scope> + 'scope,
     {
         self.mount_instance_with_attributes(view, Vec::new(), error_handler)
     }
@@ -343,7 +343,7 @@ impl<'scope> MountContext<'scope> {
         error_handler: ErrorReporter<'scope>,
     ) -> SilexResult<()>
     where
-        V: ViewFactory<'scope> + 'scope,
+        V: View<'scope> + 'scope,
     {
         self.mount_instance_with_attributes(view, attrs, error_handler)
             .map(|_| ())
@@ -357,10 +357,10 @@ impl<'scope> MountContext<'scope> {
         error_handler: ErrorReporter<'scope>,
     ) -> SilexResult<MountInstance<'scope>>
     where
-        V: ViewFactory<'scope> + 'scope,
+        V: View<'scope> + 'scope,
     {
         let owner = self.owner();
-        view.create_mount_instance(&owner, &self.parent, attrs, error_handler)
+        view.mount(&owner, &self.parent, attrs, error_handler)
     }
 }
 

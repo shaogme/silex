@@ -1,4 +1,4 @@
-error[E0277]: the trait bound `BuilderAsViewBuilder<'_, PropFixed>: ViewFactory<'_>` is not satisfied
+error[E0277]: the trait bound `BuilderAsViewBuilder<'_, PropFixed>: silex_dom::view::View<'_>` is not satisfied
   --> tests/ui/fail_component_builder_as_view.rs:24:13
    |
 23 |           let _ = AnyView::new(
@@ -12,14 +12,23 @@ help: the trait `Fn()` is not implemented for `BuilderAsViewBuilder<'_, PropFixe
    |
  9 | #[component]
    | ^^^^^^^^^^^^
+   = help: the following other types implement trait `silex_dom::view::View<'scope>`:
+             &'scope str
+             ()
+             BuilderAsViewComponent<'scope>
+             IndexedListView<'scope, IF, T, IS>
+             Memo<'scope, T>
+             ReadSignal<'scope, T>
+             RenderOnlyKeyedListView<'scope, IF, IS, T, K>
+             RwSignal<'scope, T>
+           and $N others
    = note: required for `BuilderAsViewBuilder<'_, PropFixed>` to implement `silex_dom::view::View<'_>`
-   = note: required for `BuilderAsViewBuilder<'_, PropFixed>` to implement `ViewFactory<'_>`
 note: required by a bound in `silex_dom::view::AnyView::<'scope>::new`
   --> $WORKSPACE/crates/silex_dom/src/view/any.rs
    |
    |     pub fn new<V>(view: V) -> Self
    |            --- required by a bound in this associated function
    |     where
-   |         V: ViewFactory<'scope> + 'scope,
-   |            ^^^^^^^^^^^^^^^^^^^ required by this bound in `AnyView::<'scope>::new`
+   |         V: View<'scope> + 'scope,
+   |            ^^^^^^^^^^^^ required by this bound in `AnyView::<'scope>::new`
    = note: this error originates in the derive macro `::silex::macros::PropsBuilder` (in Nightly builds, run with -Z macro-backtrace for more info)

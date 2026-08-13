@@ -806,7 +806,10 @@ fn current_cat_matches(card_cat: DemoCategory, current_cat: DemoCategory) -> boo
 }
 
 #[component]
-fn App<'scope>(scope: Scope<'scope>, error_handler: ErrorReporter<'scope>) -> impl View<'scope> {
+fn App<'scope>(
+    scope: Scope<'scope>,
+    error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
     let is_dark = Persistent::builder(scope, "silex-tailwind-dark", error_handler)
         .local()
         .parse::<bool>()

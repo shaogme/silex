@@ -2,7 +2,7 @@ use crate::attribute::{ApplyTarget, AttributeBuilder, IntoStorable, PendingAttri
 use crate::event::{EventDescriptor, EventHandler};
 use crate::view::{
     AnyView, ApplyAttributes, HostResourceHandle, MountInstance, MountOwner, MountOwnerToken,
-    OwnedMountOwner, View, ViewFactory,
+    OwnedMountOwner, View,
 };
 use std::marker::PhantomData;
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
@@ -15,7 +15,7 @@ use silex_core::{ReactiveError, RuntimeInputs, SilexError, SilexResult};
 pub mod tags;
 pub use tags::*;
 
-pub fn text<'scope, V: ViewFactory<'scope>>(content: V) -> V {
+pub fn text<'scope, V: View<'scope>>(content: V) -> V {
     content
 }
 
@@ -67,7 +67,7 @@ impl<'scope> Element<'scope> {
 
     pub fn with_child<V>(tag: &str, child: V) -> Self
     where
-        V: ViewFactory<'scope> + 'scope,
+        V: View<'scope> + 'scope,
     {
         let mut element = Self::new(tag);
         element.children.push(child.into_any());
@@ -115,7 +115,7 @@ impl<'scope> Element<'scope> {
                 .map_err(SilexError::fatal)?;
             appended = true;
             for child in &self.children {
-                let _ = child.create_mount_instance(
+                let _ = child.mount(
                     &provisional_owner,
                     dom_element.as_ref(),
                     Vec::new(),
@@ -200,23 +200,8 @@ impl<'scope> View<'scope> for Element<'scope> {
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: crate::view::MountErrorHandler<'scope>,
-    ) -> SilexResult<()> {
+    ) -> SilexResult<MountInstance<'scope>> {
         self.mount_inner(owner, parent, attrs, error_handler)
-            .map(|_| ())
-    }
-
-    fn mount_owned(
-        self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &web_sys::Node,
-        attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: crate::view::MountErrorHandler<'scope>,
-    ) -> SilexResult<()>
-    where
-        Self: Sized,
-    {
-        self.mount_inner(owner, parent, attrs, error_handler)
-            .map(|_| ())
     }
 }
 
@@ -272,7 +257,7 @@ impl<'scope, T: Tag> TypedElement<'scope, T> {
 
     pub fn with_child<V>(tag: &str, child: V) -> Self
     where
-        V: ViewFactory<'scope> + 'scope,
+        V: View<'scope> + 'scope,
     {
         let mut element = Self::new(tag);
         element.children.push(child.into_any());
@@ -328,27 +313,9 @@ impl<'scope, T: Tag> View<'scope> for TypedElement<'scope, T> {
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: crate::view::MountErrorHandler<'scope>,
-    ) -> SilexResult<()> {
+    ) -> SilexResult<MountInstance<'scope>> {
         let element = self.clone().into_untyped();
-        element
-            .mount_inner(owner, parent, attrs, error_handler)
-            .map(|_| ())
-    }
-
-    fn mount_owned(
-        self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &web_sys::Node,
-        attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: crate::view::MountErrorHandler<'scope>,
-    ) -> SilexResult<()>
-    where
-        Self: Sized,
-    {
-        let element = self.into_untyped();
-        element
-            .mount_inner(owner, parent, attrs, error_handler)
-            .map(|_| ())
+        element.mount_inner(owner, parent, attrs, error_handler)
     }
 }
 

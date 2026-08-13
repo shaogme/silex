@@ -5,7 +5,7 @@ error: lifetime may not live long enough
   |                    ------ lifetime `'scope` defined here
 4 | /     DynamicRenderer::new(move |_| {
 5 | |         let _ = value.len();
-6 | |         Ok(())
+6 | |         Ok(MountInstance::from_nodes(Vec::new()))
 7 | |     })
   | |______^ returning this value requires that `'scope` must outlive `'static`
   |

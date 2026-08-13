@@ -1,4 +1,4 @@
-error[E0277]: the trait bound `RawPropsAsViewProps<'_>: ViewFactory<'_>` is not satisfied
+error[E0277]: the trait bound `RawPropsAsViewProps<'_>: silex_dom::view::View<'_>` is not satisfied
   --> tests/ui/fail_component_raw_props_as_view.rs:29:30
    |
 29 |         let _ = AnyView::new(props);
@@ -11,14 +11,23 @@ help: the trait `Fn()` is not implemented for `RawPropsAsViewProps<'_>`
    |
 10 | #[component]
    | ^^^^^^^^^^^^
+   = help: the following other types implement trait `silex_dom::view::View<'scope>`:
+             &'scope str
+             ()
+             IndexedListView<'scope, IF, T, IS>
+             Memo<'scope, T>
+             RawPropsAsViewComponent<'scope>
+             ReadSignal<'scope, T>
+             RenderOnlyKeyedListView<'scope, IF, IS, T, K>
+             RwSignal<'scope, T>
+           and $N others
    = note: required for `RawPropsAsViewProps<'_>` to implement `silex_dom::view::View<'_>`
-   = note: required for `RawPropsAsViewProps<'_>` to implement `ViewFactory<'_>`
 note: required by a bound in `silex_dom::view::AnyView::<'scope>::new`
   --> $WORKSPACE/crates/silex_dom/src/view/any.rs
    |
    |     pub fn new<V>(view: V) -> Self
    |            --- required by a bound in this associated function
    |     where
-   |         V: ViewFactory<'scope> + 'scope,
-   |            ^^^^^^^^^^^^^^^^^^^ required by this bound in `AnyView::<'scope>::new`
+   |         V: View<'scope> + 'scope,
+   |            ^^^^^^^^^^^^ required by this bound in `AnyView::<'scope>::new`
    = note: this error originates in the attribute macro `component` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -22,7 +22,7 @@ impl<'scope> PortalView<'scope> {
         _parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: MountErrorHandler<'scope>,
-    ) -> silex_core::SilexResult<()> {
+    ) -> silex_core::SilexResult<MountInstance<'scope>> {
         let document = silex_dom::document();
         let target = match self.mount_to {
             Some(target) => target,
@@ -66,7 +66,7 @@ impl<'scope> PortalView<'scope> {
 
         let result = catch_unwind(AssertUnwindSafe(|| {
             self.children
-                .create_mount_instance(owner, &container, attrs, error_handler)
+                .mount(owner, &container, attrs, error_handler)
         }));
         match result {
             Err(panic) => {
@@ -85,7 +85,7 @@ impl<'scope> PortalView<'scope> {
                 let _child_instance = instance;
             }
         }
-        Ok(())
+        Ok(MountInstance::from_nodes(vec![container]))
     }
 }
 
@@ -96,22 +96,9 @@ impl<'scope> View<'scope> for PortalView<'scope> {
         parent: &Node,
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: MountErrorHandler<'scope>,
-    ) -> silex_core::SilexResult<()> {
+    ) -> silex_core::SilexResult<MountInstance<'scope>> {
         self.clone()
             .mount_inner(owner, parent, attrs, error_handler)
-    }
-
-    fn mount_owned(
-        self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &Node,
-        attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: MountErrorHandler<'scope>,
-    ) -> silex_core::SilexResult<()>
-    where
-        Self: Sized,
-    {
-        self.mount_inner(owner, parent, attrs, error_handler)
     }
 }
 

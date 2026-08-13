@@ -2,7 +2,9 @@ use crate::{advanced::UserSettingsStore, css::AppTheme};
 use silex::prelude::*;
 
 #[component]
-pub fn SelectDemo<'scope>(#[chain] error_handler: ErrorReporter<'scope>) -> impl View<'scope> {
+pub fn SelectDemo<'scope>(
+    #[chain] error_handler: ErrorReporter<'scope>,
+) -> impl View<'scope> {
     div("Select a demo above.")
 }
 

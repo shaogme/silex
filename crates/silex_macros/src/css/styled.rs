@@ -1123,8 +1123,8 @@ fn generate_static_global(input: StaticGlobalExpansion<'_>) -> Result<TokenStrea
             let #static_values_ident: ::std::vec::Vec<::std::string::String> =
                 #static_value_tokens;
             #static_inits
-            use #__silex::dom::view::ViewFactory;
-            #__silex::dom::view::ViewFactory::into_any(())
+            use #__silex::dom::view::View;
+            #__silex::dom::view::View::into_any(())
         }
     })
 }

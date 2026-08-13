@@ -45,7 +45,7 @@ silex = { version = "0.1.0-beta.9", features = ["bootstrap"] } # 请使用最新
 use silex::{bootstrap::{BootstrapError, BrowserBootstrap}, prelude::*};
 
 #[component]
-fn Counter() -> impl View {
+fn Counter<'scope>() -> impl View<'scope> {
     // 创建响应式信号
     let (count, set_count) = Signal::pair(0);
     
@@ -122,7 +122,7 @@ enum AppRoute {
 }
 
 #[component]
-fn App() -> impl View {
+fn App<'scope>() -> impl View<'scope> {
     Router().match_route::<AppRoute>()
 }
 ```

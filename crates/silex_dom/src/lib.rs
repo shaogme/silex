@@ -23,8 +23,8 @@ pub mod prelude {
     pub use crate::setup_global_error_handlers;
     pub use crate::view::{
         ApplyAttributes, AutoReactiveView, BranchEvaluation, HostResourceHandle, MountInstance,
-        MountOwnerToken, MountState, Prop, PropFixed, PropMissing, View, ViewCons, ViewFactory,
-        ViewNil, any::*,
+        MountOwnerToken, MountState, Prop, PropFixed, PropMissing, ViewCons, View, ViewNil,
+        any::*,
     };
     pub use crate::{chain, view_match};
 }

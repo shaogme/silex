@@ -2,12 +2,13 @@
 
 use silex_core::{ErrorReporter, ReadSignal, Runtime, SilexError, SilexErrorKind, SilexResult};
 use silex_dom::view::{
-    AnyView, ApplyAttributes, MountOwner, ScopedMountOwner, View, mount_text_node,
+    AnyView, ApplyAttributes, MountInstance, MountOwner, ScopedMountOwner, View,
+    mount_text_node,
 };
 use silex_router::macros::routes;
 use silex_router::{
     Link, Navigator, RouteEntry, RoutePath, RouteTable, Router, RouterContext, RouterContextProps,
-    RouterViewFactory,
+    RouterView,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -189,7 +190,8 @@ fn router_navigation_uses_required_table_and_updates_outlet() {
             .routes(navigation_table(navigator.clone()))
             .build();
         let (owner, error_handler) = test_owner(scope);
-        view.mount_owned(&owner, &host, Vec::new(), error_handler)
+        let _ = view
+            .mount(&owner, &host, Vec::new(), error_handler)
             .expect("router view should mount");
 
         assert_eq!(host.text_content().as_deref(), Some("7"));
@@ -277,7 +279,8 @@ fn router_layout_is_created_once_while_outlet_changes() {
             })
             .build();
         let (owner, error_handler) = test_owner(scope);
-        view.mount_owned(&owner, &host, Vec::new(), error_handler)
+        let _ = view
+            .mount(&owner, &host, Vec::new(), error_handler)
             .expect("router view should mount");
     });
 
@@ -332,7 +335,8 @@ fn nested_outlet_keeps_parent_layout_while_child_route_changes() {
             .routes(routes.table())
             .build();
         let (owner, error_handler) = test_owner(scope);
-        view.mount_owned(&owner, &host, Vec::new(), error_handler)
+        let _ = view
+            .mount(&owner, &host, Vec::new(), error_handler)
             .expect("nested router should mount");
     });
 
@@ -392,7 +396,8 @@ fn link_requires_context_and_tracks_active_path() {
         .children("users")
         .active_class("active")
         .build();
-        link.mount_owned(&owner, &host, Vec::new(), error_handler)
+        let _ = link
+            .mount(&owner, &host, Vec::new(), error_handler)
             .expect("link should mount");
 
         let element: web_sys::Element = host
@@ -505,7 +510,7 @@ impl<'scope> View<'scope> for RouterCleanupView {
         parent: &web_sys::Node,
         _attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
         error_handler: ErrorReporter<'scope>,
-    ) -> SilexResult<()> {
+    ) -> SilexResult<MountInstance<'scope>> {
         let cleanups = self.cleanups.clone();
         owner.on_cleanup(
             Box::new(move || {
@@ -514,21 +519,7 @@ impl<'scope> View<'scope> for RouterCleanupView {
             }),
             error_handler,
         )?;
-        mount_text_node(parent, &self.text)?;
-        Ok(())
-    }
-
-    fn mount_owned(
-        self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &web_sys::Node,
-        attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
-        error_handler: ErrorReporter<'scope>,
-    ) -> SilexResult<()>
-    where
-        Self: Sized,
-    {
-        self.mount(owner, parent, attrs, error_handler)
+        mount_text_node(parent, &self.text)
     }
 }
 
@@ -558,7 +549,8 @@ fn router_owner_dispose_removes_listener_and_ignores_late_popstate() {
                 .routes(table)
                 .build();
             let (owner, error_handler) = test_owner(scope);
-            view.mount_owned(&owner, &host, Vec::new(), error_handler)
+            let _ = view
+                .mount(&owner, &host, Vec::new(), error_handler)
                 .expect("router view should mount");
 
             assert_eq!(host.text_content().as_deref(), Some("lexical"));
@@ -608,7 +600,7 @@ fn router_does_not_mount_outlet_when_listener_registration_fails() {
             .build();
         let (owner, error_handler) = test_owner(scope);
         assert!(matches!(
-            view.mount_owned(&owner, &host, Vec::new(), error_handler),
+            view.mount(&owner, &host, Vec::new(), error_handler),
             Err(SilexError::Fatal(SilexErrorKind::Javascript(_)))
         ));
     });
@@ -640,7 +632,7 @@ impl<'scope> View<'scope> for FactoryTextView<'scope> {
         parent: &web_sys::Node,
         _attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
         error_handler: ErrorReporter<'scope>,
-    ) -> SilexResult<()> {
+    ) -> SilexResult<MountInstance<'scope>> {
         let cleanups = self.cleanups.clone();
         owner.on_cleanup(
             Box::new(move || {
@@ -650,21 +642,7 @@ impl<'scope> View<'scope> for FactoryTextView<'scope> {
             error_handler,
         )?;
         let text = self.text.get()?;
-        mount_text_node(parent, &text)?;
-        Ok(())
-    }
-
-    fn mount_owned(
-        self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &web_sys::Node,
-        attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
-        error_handler: ErrorReporter<'scope>,
-    ) -> SilexResult<()>
-    where
-        Self: Sized,
-    {
-        self.mount(owner, parent, attrs, error_handler)
+        mount_text_node(parent, &text)
     }
 }
 
@@ -683,7 +661,7 @@ fn router_view_factory_keeps_scoped_dynamic_owner_cleanup() {
             .expect("text signal should be created");
         let cleanups_for_factory = cleanups.clone();
         let calls_for_factory = factory_calls.clone();
-        let factory = RouterViewFactory(Rc::new(move || {
+        let factory = RouterView(Rc::new(move || {
             calls_for_factory.set(calls_for_factory.get() + 1);
             AnyView::new(FactoryTextView {
                 text,
@@ -691,8 +669,8 @@ fn router_view_factory_keeps_scoped_dynamic_owner_cleanup() {
             })
         }));
         let (owner, error_handler) = test_owner(scope);
-        factory
-            .mount_owned(&owner, &host, Vec::new(), error_handler)
+        let _ = factory
+            .mount(&owner, &host, Vec::new(), error_handler)
             .expect("router factory should mount");
 
         assert_eq!(host.text_content().as_deref(), Some("factory-one"));

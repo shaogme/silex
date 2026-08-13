@@ -113,7 +113,7 @@ impl<'scope> ErrorBoundaryBranch<'scope> {
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
         _error_handler: ErrorReporter<'scope>,
-    ) -> silex_core::SilexResult<()> {
+    ) -> silex_core::SilexResult<MountInstance<'scope>> {
         let phase = self.phase;
         let child_handler = self.boundary_handler;
         let parent_handler = self.parent_handler()?;
@@ -124,23 +124,25 @@ impl<'scope> ErrorBoundaryBranch<'scope> {
             BoundaryPhase::Child => {
                 let result = self
                     .view
-                    .create_mount_instance(owner, parent, attrs, child_handler)
-                    .map(|_| ());
+                    .mount(owner, parent, attrs, child_handler);
                 match result {
-                    Ok(()) => Ok(()),
+                    Ok(instance) => Ok(instance),
                     Err(error @ SilexError::Recoverable(_)) => {
                         record_error(error.clone());
-                        fallback(error)
-                            .create_mount_instance(owner, parent, fallback_attrs, parent_handler)
-                            .map(|_| ())
+                        fallback(error).mount(
+                            owner,
+                            parent,
+                            fallback_attrs,
+                            parent_handler,
+                        )
                     }
                     Err(error @ SilexError::Fatal(_)) => Err(error),
                 }
             }
-            BoundaryPhase::Fallback => self
-                .view
-                .create_mount_instance(owner, parent, attrs, parent_handler)
-                .map(|_| ()),
+            BoundaryPhase::Fallback => {
+                self.view
+                    .mount(owner, parent, attrs, parent_handler)
+            }
         }
     }
 }
@@ -158,22 +160,9 @@ impl<'scope> View<'scope> for ErrorBoundaryBranch<'scope> {
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: ErrorReporter<'scope>,
-    ) -> silex_core::SilexResult<()> {
+    ) -> silex_core::SilexResult<MountInstance<'scope>> {
         self.clone()
             .mount_inner(owner, parent, attrs, error_handler)
-    }
-
-    fn mount_owned(
-        self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &web_sys::Node,
-        attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: ErrorReporter<'scope>,
-    ) -> silex_core::SilexResult<()>
-    where
-        Self: Sized,
-    {
-        self.mount_inner(owner, parent, attrs, error_handler)
     }
 }
 
@@ -198,33 +187,13 @@ impl<'scope> View<'scope> for ErrorBoundaryView<'scope> {
         parent: &web_sys::Node,
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: ErrorReporter<'scope>,
-    ) -> silex_core::SilexResult<()> {
+    ) -> silex_core::SilexResult<MountInstance<'scope>> {
         let parent_handler = self.parent_handler_override.unwrap_or(error_handler);
         let token = owner.token();
         let parent_state = token.owner_state(parent_handler)?;
         self.parent_handler.set(Some(parent_state));
         self.view
-            .create_mount_instance(owner, parent, attrs, self.phase_handler)
-            .map(|_| ())
-    }
-
-    fn mount_owned(
-        self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &web_sys::Node,
-        attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: ErrorReporter<'scope>,
-    ) -> silex_core::SilexResult<()>
-    where
-        Self: Sized,
-    {
-        let parent_handler = self.parent_handler_override.unwrap_or(error_handler);
-        let token = owner.token();
-        let parent_state = token.owner_state(parent_handler)?;
-        self.parent_handler.set(Some(parent_state));
-        self.view
-            .create_mount_instance(owner, parent, attrs, self.phase_handler)
-            .map(|_| ())
+            .mount(owner, parent, attrs, self.phase_handler)
     }
 }
 
@@ -243,8 +212,8 @@ pub fn ErrorBoundary<'scope, FB, CH, V1, V2>(
 where
     FB: Fn(SilexError) -> V1 + Clone + 'scope,
     CH: Fn(ErrorReporter<'scope>) -> V2 + Clone + 'scope,
-    V1: ViewFactory<'scope> + 'scope,
-    V2: ViewFactory<'scope> + 'scope,
+    V1: View<'scope> + 'scope,
+    V2: View<'scope> + 'scope,
 {
     let (error, set_error) = scope.signal(None::<SilexError>)?;
     let completion = scope.completion_sender(unwind_safe(move |value| {

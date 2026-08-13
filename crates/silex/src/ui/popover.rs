@@ -428,7 +428,7 @@ pub fn Popover<'scope, C, V>(
 ) -> impl View<'scope>
 where
     C: Fn(PopoverContext<'scope>) -> V + Clone + 'scope,
-    V: ViewFactory<'scope> + 'scope,
+    V: View<'scope> + 'scope,
 {
     let ctx = PopoverContext::new(scope)?;
     let root_cls = rx!(scope; error_handler; {

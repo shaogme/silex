@@ -480,7 +480,7 @@ impl BuilderContext {
                 quote! {
                     where
                         #render_fn: Fn(#(#render_fn_args),*) -> #render_view + #scope,
-                        #render_view: #__silex::dom::view::ViewFactory<#scope> + #scope,
+                        #render_view: #__silex::dom::view::View<#scope> + #scope,
                 },
             )
         } else if reactive_input {
@@ -500,7 +500,7 @@ impl BuilderContext {
             )
         } else {
             let setter_param = if is_any_view_type(ty) {
-                quote! { impl #__silex::dom::view::ViewFactory<#scope> + #scope }
+                quote! { impl #__silex::dom::view::View<#scope> + #scope }
             } else if field.attrs.render {
                 quote! { #ty }
             } else if field.attrs.into_trait || is_auto_into_type(ty) {
@@ -509,7 +509,7 @@ impl BuilderContext {
                 quote! { #ty }
             };
             let setter_value = if is_any_view_type(ty) {
-                quote! { #__silex::dom::view::ViewFactory::into_any(val) }
+                quote! { #__silex::dom::view::View::into_any(val) }
             } else if field.attrs.into_trait || is_auto_into_type(ty) {
                 quote! { val.into() }
             } else {
@@ -723,9 +723,9 @@ impl BuilderContext {
             .push(syn::parse_quote!(#product_ty: ::core::clone::Clone));
 
         let mount_body = quote! {
-            let view_instance = #render_fn_name(self.props);
-            #__silex::dom::view::View::mount_owned(
-                view_instance,
+            let view_instance = #render_fn_name(product.props);
+            #__silex::dom::view::View::mount(
+                &view_instance,
                 owner,
                 parent,
                 pending_attrs,
@@ -741,22 +741,10 @@ impl BuilderContext {
                     parent: &#__silex::reexports::web_sys::Node,
                     attrs: ::std::vec::Vec<#pending_attribute_ty>,
                     error_handler: #__silex::dom::view::MountErrorHandler<#scope>,
-                ) -> #__silex::core::SilexResult<()> {
-                    self.clone().mount_owned(owner, parent, attrs, error_handler)
-                }
-
-                fn mount_owned(
-                    mut self,
-                    owner: &dyn #__silex::dom::view::MountOwner<#scope>,
-                    parent: &#__silex::reexports::web_sys::Node,
-                    attrs: ::std::vec::Vec<#pending_attribute_ty>,
-                    error_handler: #__silex::dom::view::MountErrorHandler<#scope>,
-                ) -> #__silex::core::SilexResult<()>
-                where
-                    Self: Sized,
-                {
-                    self._pending_attrs.extend(attrs);
-                    let pending_attrs = self._pending_attrs;
+                ) -> #__silex::core::SilexResult<#__silex::dom::view::MountInstance<#scope>> {
+                    let mut product = self.clone();
+                    product._pending_attrs.extend(attrs);
+                    let pending_attrs = product._pending_attrs;
                     #mount_body
                 }
             }
@@ -852,7 +840,7 @@ impl BuilderContext {
             let ident = &field.ident;
             let ty = &field.ty;
             if is_any_view_type(ty) {
-                quote! { #ident: impl #__silex::dom::view::ViewFactory<#scope> + #scope }
+                quote! { #ident: impl #__silex::dom::view::View<#scope> + #scope }
             } else if field.attrs.into_trait || is_auto_into_type(ty) {
                 quote! { #ident: impl ::core::convert::Into<#ty> }
             } else {
@@ -864,7 +852,7 @@ impl BuilderContext {
             let ident = &field.ident;
             let ty = &field.ty;
             if is_any_view_type(ty) {
-                quote! { #__silex::dom::view::ViewFactory::into_any(#ident) }
+                quote! { #__silex::dom::view::View::into_any(#ident) }
             } else if field.attrs.into_trait || is_auto_into_type(ty) {
                 quote! { #ident.into() }
             } else {
@@ -907,7 +895,7 @@ fn field_value_transform(field: &FieldSpec, input: TokenStream2) -> TokenStream2
     let __silex = crate::crate_path::silex();
     let ty = &field.ty;
     if field.attrs.render && is_any_view_type(ty) {
-        quote! { #__silex::dom::view::ViewFactory::into_any(#input) }
+        quote! { #__silex::dom::view::View::into_any(#input) }
     } else if field.attrs.into_trait || (is_auto_into_type(ty) && !is_any_view_type(ty)) {
         quote! { ::core::convert::Into::into(#input) }
     } else {
