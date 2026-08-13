@@ -5,7 +5,7 @@ use crate::attribute::PendingAttribute;
 use crate::view::{AnyView, ApplyAttributes, OwnedViewOwner, View, ViewErrorHandler, ViewOwner};
 use silex_core::reactivity::{ReactiveSource, runtime_inputs_of};
 use silex_core::traits::{ForLoopSource, RxRead};
-use silex_core::{ErrorHandler, RuntimeInputs, SilexError, SilexResult};
+use silex_core::{ErrorHandler, RuntimeInputs, SilexError, SilexErrorKind, SilexResult};
 use std::{
     collections::{HashMap, HashSet},
     mem,
@@ -295,7 +295,9 @@ where
                     if let Some(panic) = cleanup_panic {
                         resume_unwind(panic);
                     }
-                    Err(panic_error("Indexed list", panic))
+                    Err(SilexError::fatal(SilexErrorKind::Javascript(
+                        panic_message("Indexed list", panic),
+                    )))
                 }
             }
         }),
@@ -425,9 +427,9 @@ where
                 for item in &values {
                     let key = key_fn(item);
                     if !seen.insert(key.clone()) {
-                        return Err(SilexError::Framework(
+                        return Err(SilexError::fatal(SilexErrorKind::Framework(
                             "duplicate key in keyed list".to_string(),
-                        ));
+                        )));
                     }
                     keys.push(key);
                 }
@@ -437,7 +439,9 @@ where
                 Ok(Ok(keys)) => keys,
                 Ok(Err(error)) => return Err(error),
                 Err(panic) => {
-                    return Err(panic_error("Keyed list key function", panic));
+                    return Err(SilexError::fatal(SilexErrorKind::Javascript(
+                        panic_message("Keyed list key function", panic),
+                    )));
                 }
             };
 
@@ -488,9 +492,9 @@ where
                             } else if let Some(row) = pending.get(key) {
                                 row.move_before(&end)?;
                             } else {
-                                return Err(SilexError::Framework(
+                                return Err(SilexError::fatal(SilexErrorKind::Framework(
                                     "keyed list row disappeared during diff".to_string(),
-                                ));
+                                )));
                             }
                         }
                         Ok(())
@@ -553,7 +557,9 @@ where
                     if let Some(panic) = cleanup_panic {
                         resume_unwind(panic);
                     }
-                    Err(panic_error("Keyed list", panic))
+                    Err(SilexError::fatal(SilexErrorKind::Javascript(
+                        panic_message("Keyed list", panic),
+                    )))
                 }
             };
             effect_state.replace(state)?;
@@ -642,15 +648,14 @@ fn restore_keyed_order<'scope, T, K>(
     }
 }
 
-fn panic_error(prefix: &str, panic: Box<dyn std::any::Any + Send>) -> SilexError {
-    let message = if let Some(value) = panic.downcast_ref::<&str>() {
+fn panic_message(prefix: &str, panic: Box<dyn std::any::Any + Send>) -> String {
+    if let Some(value) = panic.downcast_ref::<&str>() {
         format!("{prefix}: {value}")
     } else if let Some(value) = panic.downcast_ref::<String>() {
         format!("{prefix}: {value}")
     } else {
         format!("{prefix}: unknown panic")
-    };
-    SilexError::Javascript(message)
+    }
 }
 
 fn dispose_rows<'scope, T: Clone + 'scope>(

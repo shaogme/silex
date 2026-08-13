@@ -1,6 +1,6 @@
 use std::fmt::{Display, Formatter};
 
-use silex_core::{ReactiveError, SilexError};
+use silex_core::{ReactiveError, SilexError, SilexErrorKind};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum I18nError {
@@ -43,9 +43,9 @@ impl std::error::Error for I18nError {}
 
 impl From<SilexError> for I18nError {
     fn from(error: SilexError) -> Self {
-        match error {
-            SilexError::Reactivity(error) => Self::Reactivity(error),
-            error => Self::Core(error.to_string()),
+        match error.into_kind() {
+            SilexErrorKind::Reactivity(error) => Self::Reactivity(error),
+            kind => Self::Core(kind.to_string()),
         }
     }
 }

@@ -1,4 +1,4 @@
-use silex_core::ErrorReporter;
+use silex_core::{ErrorReporter, SilexError, SilexErrorKind};
 use silex_dom::prelude::*;
 use silex_dom::view::{ViewErrorHandler, ViewOwner};
 use silex_macros::component;
@@ -29,22 +29,18 @@ impl<'scope> PortalView<'scope> {
             None => document
                 .body()
                 .ok_or_else(|| {
-                    silex_core::SilexError::Dom(
+                    SilexError::fatal(SilexErrorKind::Dom(
                         "Portal requires document.body when no target is supplied".to_string(),
-                    )
+                    ))
                 })?
                 .into(),
         };
-        let container = document
-            .create_element("div")
-            .map_err(silex_core::SilexError::from)?;
+        let container = document.create_element("div").map_err(SilexError::fatal)?;
         container
             .set_attribute("style", "display: contents")
-            .map_err(silex_core::SilexError::from)?;
+            .map_err(SilexError::fatal)?;
         let container: Node = container.into();
-        target
-            .append_child(&container)
-            .map_err(silex_core::SilexError::from)?;
+        target.append_child(&container).map_err(SilexError::fatal)?;
 
         let active = Rc::new(Cell::new(true));
         let cleanup_active = active.clone();
@@ -57,7 +53,7 @@ impl<'scope> PortalView<'scope> {
                 if cleanup_active.replace(false) {
                     cleanup_target
                         .remove_child(&cleanup_container)
-                        .map_err(silex_core::SilexError::from)?;
+                        .map_err(SilexError::fatal)?;
                 }
                 Ok(())
             }),

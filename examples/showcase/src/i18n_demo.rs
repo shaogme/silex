@@ -51,7 +51,8 @@ fn control_row<'scope, T: View<'scope> + 'scope>(content: T) -> SilexResult<impl
 }
 
 fn parse_locale(value: &str) -> SilexResult<Locale> {
-    Locale::new(value).map_err(|error| SilexError::Framework(error.to_string()))
+    Locale::new(value)
+        .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))
 }
 
 fn locale_button<'scope>(
@@ -120,7 +121,7 @@ pub fn I18nPage<'scope>(
         .locale(i18n.locale().get_untracked()?)
         .fallback_locale(fallback_locale.clone())
         .build()
-        .map_err(|error| SilexError::Framework(error.to_string()))?;
+        .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
     let catalog_resource = loader_store
         .catalog_resource(
             move |locale| async move {
@@ -135,7 +136,7 @@ pub fn I18nPage<'scope>(
             },
             None,
         )
-        .map_err(|error| SilexError::Framework(error.to_string()))?;
+        .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
 
     let name = scope.rw_signal("Ada".to_string())?;
     let count = scope.rw_signal(1u32)?;
@@ -276,7 +277,11 @@ pub fn I18nPage<'scope>(
                         .style(sty().display("block")?.margin_bottom(px(5))?),
                     control_row(div![
                         button("-").on_click(move |_| {
-                            count.update(|value| *value = value.saturating_sub(1))?;
+                            count
+                                .update(|value| *value = value.saturating_sub(1))
+                                .map_err(|error| {
+                                    SilexError::fatal(SilexErrorKind::Reactivity(error))
+                                })?;
                             Ok(())
                         }),
                         span(count.map_fn(scope, |value| value.to_string(), error_handler)?).style(
@@ -285,7 +290,11 @@ pub fn I18nPage<'scope>(
                                 .text_align(TextAlignKeyword::Center)?
                         ),
                         button("+").on_click(move |_| {
-                            count.update(|value| *value = value.saturating_add(1))?;
+                            count
+                                .update(|value| *value = value.saturating_add(1))
+                                .map_err(|error| {
+                                    SilexError::fatal(SilexErrorKind::Reactivity(error))
+                                })?;
                             Ok(())
                         }),
                     ])?,

@@ -369,22 +369,28 @@ pub fn StylingBasics<'scope>(
                     set_color.update(|c| {
                         // Toggle between theme text color and warning yellow
                         *c = if *c == AppTheme::TEXT { hex("#fbbf24").into() } else { AppTheme::TEXT };
-                    })?;
+                    })
+                    .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                     set_size.update(|s| {
                         *s = if *s == "medium" { "large".to_string() } else { "medium".to_string() }
-                    })?;
+                    })
+                    .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                     set_border_state.update(|b| {
                         *b = border(px(2), BorderStyleKeyword::Dashed, hex("#f472b6"));
-                    })?;
+                    })
+                    .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                     set_padding_state.update(|p| {
                         *p = padding::block_inline(px(16), px(32));
-                    })?;
+                    })
+                    .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                     set_hover_color.update(|c| {
                         *c = if c.0 == "var(--slx-theme-primary)" { hex("#ec4899").into() } else { AppTheme::PRIMARY };
-                    })?;
+                    })
+                    .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                     set_pseudo_state.update(|s| {
                         *s = if *s == "hover" { "active".to_string() } else { "hover".to_string() }
-                    })?;
+                    })
+                    .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                     Ok(())
                 })
                 .build(),
@@ -410,7 +416,8 @@ pub fn StylingBasics<'scope>(
                         .type_("button") 
                         .title("Hover me! I'm a native button")
                         .on_click(move |_| {
-                            set_btn_kind.update(|k| *k = if k.as_str() == "primary" { "secondary".to_string() } else { "primary".to_string() })?;
+                            set_btn_kind.update(|k| *k = if k.as_str() == "primary" { "secondary".to_string() } else { "primary".to_string() })
+                                .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                             Ok(())
                         })
                         .build(),
@@ -455,17 +462,20 @@ pub fn StylingBasics<'scope>(
                 Stack(scope, error_handler, chain!(
                     div![
                         button("Grow").on(event::click, move |_| {
-                            set_count.update(|n| *n += 1)?;
+                            set_count.update(|n| *n += 1)
+                                .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                             Ok(())
                         })
                             .style(sty().padding("8px 16px")?.border_radius(px(6))?.border("1px solid #374151")?.background("#111827")?.color(ColorName::White)?.cursor("pointer")?.margin_right(px(8))?),
                         button("Toggle Box Shadow").on(event::click, move |_| {
-                            set_show_shadow.update(|s| *s = !*s)?;
+                            set_show_shadow.update(|s| *s = !*s)
+                                .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                             Ok(())
                         })
                             .style(sty().padding("8px 16px")?.border_radius(px(6))?.border("1px solid #374151")?.background("#111827")?.color(ColorName::White)?.cursor("pointer")?.margin_right(px(8))?),
                         button("Toggle Border").on(event::click, move |_| {
-                            set_active_border.update(|b| *b = !*b)?;
+                            set_active_border.update(|b| *b = !*b)
+                                .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                             Ok(())
                         })
                             .style(sty().padding("8px 16px")?.border_radius(px(6))?.border("1px solid #374151")?.background("#111827")?.color(ColorName::White)?.cursor("pointer")?),
@@ -534,7 +544,12 @@ pub fn Theming<'scope>(
 
         div![
             button("🌞 Light Mode")
-                .on(event::click, move |_| global_settings.theme.set("Light".to_string()).map_err(Into::into))
+                .on(event::click, move |_| {
+                    global_settings
+                        .theme
+                        .set("Light".to_string())
+                        .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))
+                })
                 .style(
                     sty()
                         .padding(padding::block_inline(px(8), px(16)))?
@@ -547,7 +562,12 @@ pub fn Theming<'scope>(
                         .border(rx!(scope; error_handler; if !*$is_dark { border(px(1), BorderStyleKeyword::Solid, AppTheme::PRIMARY) } else { border(px(1), BorderStyleKeyword::Solid, hex("#d1d5db")) }))?
                 ),
             button("🌙 Dark Mode")
-                .on(event::click, move |_| global_settings.theme.set("Dark".to_string()).map_err(Into::into))
+                .on(event::click, move |_| {
+                    global_settings
+                        .theme
+                        .set("Dark".to_string())
+                        .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))
+                })
                 .style(
                     sty()
                         .padding(padding::block_inline(px(8), px(16)))?

@@ -1,5 +1,6 @@
 use silex_core::{
-    ErrorHandler, Runtime, Scope, SilexError, SilexResult, WatchOptions, runtime_inputs_of,
+    ErrorHandler, ReactiveError, Runtime, Scope, SilexError, SilexErrorKind, SilexResult,
+    WatchOptions, runtime_inputs_of,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -40,9 +41,9 @@ fn registration_error_maps_to_reactivity_error() {
 
     assert!(matches!(
         result,
-        Err(SilexError::Reactivity(
-            silex_core::ReactiveError::RuntimeMismatch
-        ))
+        Err(SilexError::Fatal(SilexErrorKind::Reactivity(
+            ReactiveError::RuntimeMismatch,
+        )))
     ));
 }
 
@@ -54,13 +55,17 @@ fn initial_silex_error_is_returned_without_reporting_twice() {
     runtime
         .child(|scope| {
             let result = scope.effect(
-                || Err(SilexError::Dom("initial".to_string())),
+                || {
+                    Err(SilexError::fatal(SilexErrorKind::Dom(
+                        "initial".to_string(),
+                    )))
+                },
                 collecting_handler(scope, errors.clone()),
             );
 
             assert!(matches!(
                 result,
-                Err(SilexError::Dom(message)) if message == "initial"
+                Err(SilexError::Fatal(SilexErrorKind::Dom(message))) if message == "initial"
             ));
             assert!(errors.borrow().is_empty());
         })
@@ -85,7 +90,7 @@ fn deferred_error_reaches_reporter_and_effect_can_retry() {
                         source.get()?;
                         runs_in_effect.set(runs_in_effect.get() + 1);
                         if should_fail_in_effect.get() {
-                            Err(SilexError::Framework("deferred".to_string()))
+                            Err(SilexError::recoverable(SilexErrorKind::Framework("deferred".to_string())))
                         } else {
                             Ok(())
                         }
@@ -98,7 +103,7 @@ fn deferred_error_reaches_reporter_and_effect_can_retry() {
             set_source.set(1).expect("signal should be writable");
             assert!(matches!(
                 errors.borrow().as_slice(),
-                [SilexError::Framework(message)] if message == "deferred"
+                [SilexError::Recoverable(SilexErrorKind::Framework(message))] if message == "deferred"
             ));
 
             should_fail.set(false);
@@ -129,7 +134,7 @@ fn previous_error_preserves_the_last_successful_value() {
                             .borrow_mut()
                             .push(previous.copied());
                         if fail_next_in_effect.replace(false) {
-                            Err(SilexError::Framework("previous".to_string()))
+                            Err(SilexError::recoverable(SilexErrorKind::Framework("previous".to_string())))
                         } else {
                             Ok(previous.copied().unwrap_or(0) + 1)
                         }
@@ -147,7 +152,7 @@ fn previous_error_preserves_the_last_successful_value() {
             );
             assert!(matches!(
                 errors.borrow().as_slice(),
-                [SilexError::Framework(message)] if message == "previous"
+                [SilexError::Recoverable(SilexErrorKind::Framework(message))] if message == "previous"
             ));
         })
         .expect("child scope should initialize");
@@ -170,7 +175,9 @@ fn watch_error_preserves_the_previous_snapshot_for_retry() {
                     move || -> SilexResult<i32> { source.get() },
                     move |new, old| {
                         if fail_next_in_callback.replace(false) {
-                            Err(SilexError::Framework("watch".to_string()))
+                            Err(SilexError::recoverable(SilexErrorKind::Framework(
+                                "watch".to_string(),
+                            )))
                         } else {
                             calls_in_callback.borrow_mut().push((*new, old.copied()));
                             Ok(())
@@ -185,7 +192,7 @@ fn watch_error_preserves_the_previous_snapshot_for_retry() {
             set_source.set(1).expect("signal should be writable");
             assert!(errors.borrow().iter().any(|error| matches!(
                 error,
-                SilexError::Framework(message) if message == "watch"
+                SilexError::Recoverable(SilexErrorKind::Framework(message)) if message == "watch"
             )));
             assert!(calls.borrow().is_empty());
 
@@ -212,7 +219,11 @@ fn reporter_handler_can_be_cloned_for_effect_and_cleanup() {
                 .expect("effect should initialize");
             scope
                 .on_cleanup(
-                    || Err(SilexError::Framework("cleanup".to_string())),
+                    || {
+                        Err(SilexError::recoverable(SilexErrorKind::Framework(
+                            "cleanup".to_string(),
+                        )))
+                    },
                     handler,
                 )
                 .expect("cleanup should register");
@@ -221,6 +232,6 @@ fn reporter_handler_can_be_cloned_for_effect_and_cleanup() {
 
     assert!(matches!(
         errors.borrow().as_slice(),
-        [SilexError::Framework(message)] if message == "cleanup"
+        [SilexError::Recoverable(SilexErrorKind::Framework(message))] if message == "cleanup"
     ));
 }

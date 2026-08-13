@@ -1,6 +1,7 @@
 use silex_core::{
     Callback, ErrorHandler, Memo, NodeRef, ReactiveError, ReadSignal, Runtime, RwSignal, Rx,
-    RxDefault, RxFrom, RxRead, Scope, Signal, SilexError, SilexResult, StoredValue, rx,
+    RxDefault, RxFrom, RxRead, Scope, Signal, SilexError, SilexErrorKind, SilexResult, StoredValue,
+    rx,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -280,11 +281,11 @@ fn callback_errors_preserve_user_and_runtime_variants() {
 
     root.with_scope(|scope| {
         let callback = scope
-            .callback(|_: ()| Err(SilexError::Framework(String::from("user error"))))
+            .callback(|_: ()| Err(SilexError::recoverable(SilexErrorKind::Framework(String::from("user error")))))
             .expect("callback should register");
         assert!(matches!(
             callback.invoke(()),
-            Err(SilexError::Framework(message)) if message == "user error"
+            Err(SilexError::Recoverable(SilexErrorKind::Framework(message))) if message == "user error"
         ));
 
         scope
@@ -292,7 +293,7 @@ fn callback_errors_preserve_user_and_runtime_variants() {
                 move || {
                     stale_after_cleanup.set(matches!(
                         callback.invoke(()),
-                        Err(SilexError::Reactivity(ReactiveError::NoSuchNode))
+                        Err(SilexError::Fatal(SilexErrorKind::Reactivity(ReactiveError::NoSuchNode)))
                     ));
                     Ok(())
                 },
@@ -492,9 +493,9 @@ fn rx_default_nodes_keep_runtime_provenance() {
 
     assert!(matches!(
         result,
-        Err(silex_core::SilexError::Reactivity(
-            ReactiveError::RuntimeMismatch
-        ))
+        Err(SilexError::Fatal(SilexErrorKind::Reactivity(
+            ReactiveError::RuntimeMismatch,
+        )))
     ));
 }
 
@@ -519,12 +520,14 @@ fn signal_source_and_other_handles_are_inactive_after_root_disposal() {
                     stale_for_cleanup.set(
                         matches!(
                             signal.get(),
-                            Err(SilexError::Reactivity(ReactiveError::NoSuchNode))
+                            Err(SilexError::Fatal(SilexErrorKind::Reactivity(
+                                ReactiveError::NoSuchNode
+                            )))
                         ) && matches!(
                             callback.invoke(()),
-                            Err(silex_core::SilexError::Reactivity(
-                                ReactiveError::NoSuchNode
-                            ))
+                            Err(SilexError::Fatal(SilexErrorKind::Reactivity(
+                                ReactiveError::NoSuchNode,
+                            )))
                         ) && matches!(node_ref.get(), Err(ReactiveError::NoSuchNode)),
                     );
                     Ok(())

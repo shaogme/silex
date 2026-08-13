@@ -70,7 +70,7 @@ macro_rules! t {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use silex_core::{ErrorReporter, Runtime, Scope};
+    use silex_core::{ErrorReporter, ReactiveError, Runtime, Scope};
     use std::{cell::Cell, rc::Rc};
 
     fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
@@ -316,11 +316,11 @@ mod tests {
 
     #[test]
     fn reactivity_errors_keep_their_structured_variant() {
-        let error = I18nError::from(silex_core::ReactiveError::RuntimeMismatch);
+        let error = I18nError::from(ReactiveError::RuntimeMismatch);
 
         assert!(matches!(
             &error,
-            I18nError::Reactivity(silex_core::ReactiveError::RuntimeMismatch)
+            I18nError::Reactivity(ReactiveError::RuntimeMismatch)
         ));
         assert!(error.to_string().contains("响应式节点属于不同的 Runtime"));
     }
@@ -600,9 +600,7 @@ mod tests {
 
                 assert!(matches!(
                     result,
-                    Err(I18nError::Reactivity(
-                        silex_core::ReactiveError::RuntimeMismatch
-                    ))
+                    Err(I18nError::Reactivity(ReactiveError::RuntimeMismatch))
                 ));
                 assert_eq!(target_scope.runtime_snapshot(), before);
                 assert_eq!(

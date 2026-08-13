@@ -12,7 +12,8 @@ use web_sys::{Event, MessageEvent, WebSocket as JsWebSocket};
 
 use silex_core::{
     CallbackInvokeError, CompletionSender, ErrorReporter, ReadSignal, RuntimeInputs, Rx, Scope,
-    SilexError, SilexResult, StoredValue, TaskHandle, WriteSignal, runtime_inputs_of, unwind_safe,
+    SilexError, SilexErrorKind, SilexResult, StoredValue, TaskHandle, WriteSignal,
+    runtime_inputs_of, unwind_safe,
 };
 
 use crate::{
@@ -114,7 +115,7 @@ fn submit_completion<T: 'static>(
         return;
     };
     let error = match error {
-        CallbackInvokeError::Runtime(error) => SilexError::Reactivity(error),
+        CallbackInvokeError::Runtime(error) => SilexError::fatal(error),
         CallbackInvokeError::User(error) => error,
     };
     let handler_result = catch_unwind(AssertUnwindSafe(|| error_handler.handle(error)));
@@ -272,7 +273,7 @@ fn cleanup_stored_inner<'scope>(
 ) -> SilexResult<()> {
     inner
         .update(WebSocketInner::cleanup)
-        .map_err(SilexError::from)?
+        .map_err(SilexError::fatal)?
 }
 
 impl Drop for WebSocketInner<'_> {
@@ -348,7 +349,9 @@ impl<'scope> WebSocketInner<'scope> {
         self.manual_close = false;
         self.generation = self.generation.wrapping_add(1);
         let generation = self.generation;
-        self.set_state.set(ConnectionState::Connecting)?;
+        self.set_state
+            .set(ConnectionState::Connecting)
+            .map_err(SilexError::fatal)?;
 
         let socket = match socket {
             Some(socket) => Ok(socket),
@@ -361,8 +364,12 @@ impl<'scope> WebSocketInner<'scope> {
         let socket = match socket {
             Ok(socket) => socket,
             Err(error) => {
-                self.set_error.set(Some(error.clone()))?;
-                self.set_state.set(ConnectionState::Error)?;
+                self.set_error
+                    .set(Some(error.clone()))
+                    .map_err(SilexError::fatal)?;
+                self.set_state
+                    .set(ConnectionState::Error)
+                    .map_err(SilexError::fatal)?;
                 return Ok((Err(error.clone()), Some(self.defer_error(error))));
             }
         };
@@ -430,21 +437,31 @@ impl<'scope> WebSocketInner<'scope> {
                 self.retry_task.take();
                 self.retry_generation = None;
                 self.reset_retry_window();
-                self.set_state.set(ConnectionState::Connected)?;
-                self.set_error.set(None)?;
+                self.set_state
+                    .set(ConnectionState::Connected)
+                    .map_err(SilexError::fatal)?;
+                self.set_error.set(None).map_err(SilexError::fatal)?;
                 callback = Some(self.defer_open());
             }
             WebSocketEvent::Message { generation, data }
                 if generation == self.generation && !self.manual_close =>
             {
-                self.set_message.set(Some(data))?;
-                self.set_state.set(ConnectionState::Connected)?;
+                self.set_message
+                    .set(Some(data))
+                    .map_err(SilexError::fatal)?;
+                self.set_state
+                    .set(ConnectionState::Connected)
+                    .map_err(SilexError::fatal)?;
             }
             WebSocketEvent::Error { generation, error }
                 if generation == self.generation && !self.manual_close =>
             {
-                self.set_error.set(Some(error.clone()))?;
-                self.set_state.set(ConnectionState::Error)?;
+                self.set_error
+                    .set(Some(error.clone()))
+                    .map_err(SilexError::fatal)?;
+                self.set_state
+                    .set(ConnectionState::Error)
+                    .map_err(SilexError::fatal)?;
                 self.schedule_retry(generation)?;
                 callback = Some(self.defer_error(error));
             }
@@ -454,7 +471,9 @@ impl<'scope> WebSocketInner<'scope> {
                 reason,
             } if generation == self.generation => {
                 self.registration.take();
-                self.set_state.set(ConnectionState::Closed)?;
+                self.set_state
+                    .set(ConnectionState::Closed)
+                    .map_err(SilexError::fatal)?;
                 let manual_close = self.manual_close;
                 self.manual_close = false;
                 if !manual_close {
@@ -489,10 +508,14 @@ impl<'scope> WebSocketInner<'scope> {
         }
         self.manual_close = true;
         if let Some(registration) = &self.registration {
-            self.set_state.set(ConnectionState::Closing)?;
+            self.set_state
+                .set(ConnectionState::Closing)
+                .map_err(SilexError::fatal)?;
             let _ = registration.socket.close();
         } else {
-            self.set_state.set(ConnectionState::Closed)?;
+            self.set_state
+                .set(ConnectionState::Closed)
+                .map_err(SilexError::fatal)?;
         }
         Ok(())
     }
@@ -547,9 +570,9 @@ impl<'scope> WebSocketConnection<'scope> {
                     .get()?
                     .map(|raw| {
                         serde_json::from_str(&raw).map_err(|error| {
-                            SilexError::Framework(format!(
+                            SilexError::fatal(SilexErrorKind::Framework(format!(
                                 "decode WebSocket message failed: {error}"
-                            ))
+                            )))
                         })
                     })
                     .transpose()
@@ -621,7 +644,7 @@ impl<'scope> WebSocketConnection<'scope> {
     pub fn close(&self) -> Result<(), NetError> {
         self.inner
             .update(WebSocketInner::close)
-            .map_err(SilexError::from)
+            .map_err(SilexError::fatal)
             .map_err(NetError::from)??;
         Ok(())
     }
@@ -636,7 +659,7 @@ impl<'scope> WebSocketConnection<'scope> {
         let (result, callbacks) = self
             .inner
             .update(WebSocketInner::try_open_current)
-            .map_err(SilexError::from)
+            .map_err(SilexError::fatal)
             .map_err(NetError::from)??;
         if let Some(callback) = callbacks {
             callback();
@@ -770,7 +793,7 @@ impl<'scope> WebSocketBuilder<'scope> {
             if let Some(inner) = inner_slot_for_completion.get() {
                 let callback = inner
                     .update(|inner| inner.handle_event(event))
-                    .map_err(SilexError::from)??;
+                    .map_err(SilexError::fatal)??;
                 if let Some(callback) = callback {
                     callback();
                 }
@@ -818,7 +841,7 @@ impl<'scope> WebSocketBuilder<'scope> {
         if auto_connect {
             let (result, callbacks) = inner
                 .update(|inner| inner.try_open_current_with_socket(initial_socket))
-                .map_err(SilexError::from)
+                .map_err(SilexError::fatal)
                 .map_err(NetError::from)??;
             if let Some(callback) = callbacks {
                 callback();

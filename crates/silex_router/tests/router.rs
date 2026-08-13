@@ -1,6 +1,6 @@
 #![cfg(target_arch = "wasm32")]
 
-use silex_core::{ErrorReporter, ReadSignal, Runtime, SilexError, SilexResult};
+use silex_core::{ErrorReporter, ReadSignal, Runtime, SilexError, SilexErrorKind, SilexResult};
 use silex_dom::view::{
     AnyView, ApplyAttributes, ScopedViewOwner, View, ViewOwner, mount_text_node,
 };
@@ -609,7 +609,7 @@ fn router_does_not_mount_outlet_when_listener_registration_fails() {
         let (owner, error_handler) = test_owner(scope);
         assert!(matches!(
             view.mount_owned(&owner, &host, Vec::new(), error_handler),
-            Err(SilexError::Javascript(_))
+            Err(SilexError::Fatal(SilexErrorKind::Javascript(_)))
         ));
     });
 

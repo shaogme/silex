@@ -15,7 +15,8 @@ use crate::{
 };
 use ref_str::LocalStaticRefStr;
 use silex_core::{
-    CallbackInvokeError, CompletionSender, ErrorReporter, RxRead, Scope, SilexError, SilexResult,
+    CallbackInvokeError, CompletionSender, ErrorReporter, RxRead, Scope, SilexError,
+    SilexErrorKind, SilexResult,
     traits::{RxGet, RxWrite},
     unwind_safe,
 };
@@ -39,7 +40,7 @@ fn submit_completion<T: 'static>(
         return;
     };
     let error = match error {
-        CallbackInvokeError::Runtime(error) => SilexError::Reactivity(error),
+        CallbackInvokeError::Runtime(error) => SilexError::fatal(SilexErrorKind::Reactivity(error)),
         CallbackInvokeError::User(error) => error,
     };
     let handler_result = catch_unwind(AssertUnwindSafe(|| error_handler.handle(error)));
@@ -482,7 +483,8 @@ where
         self.scope
             .on_cleanup(
                 move || -> SilexResult<()> {
-                    let (subscription, timer) = take_controller_resources(cleanup_controller)?;
+                    let (subscription, timer) = take_controller_resources(cleanup_controller)
+                        .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                     if let Some(timer) = &timer {
                         timer.cancel();
                     }
@@ -651,7 +653,9 @@ where
                                         .as_mut()
                                         .is_some_and(|debounce| debounce.take_ready(generation))
                                 })
-                                .map_err(SilexError::from)?;
+                                .map_err(|error| {
+                                    SilexError::fatal(SilexErrorKind::Reactivity(error))
+                                })?;
                             if ready {
                                 let _ = flush_persistent_value(controller, value, state);
                             }
@@ -666,7 +670,10 @@ where
                                 let owner_error_handler = self.error_handler;
                                 move || -> SilexResult<()> {
                                     let current = value.get()?;
-                                    let should_skip = take_skip_next_auto_flush(controller)?;
+                                    let should_skip = take_skip_next_auto_flush(controller)
+                                        .map_err(|error| {
+                                            SilexError::fatal(SilexErrorKind::Reactivity(error))
+                                        })?;
                                     if should_skip {
                                         return Ok(());
                                     }
@@ -677,25 +684,36 @@ where
                                     let raw = match raw {
                                         Ok(raw) => raw,
                                         Err(error) => {
-                                            invalidate_debounce(controller)?;
-                                            state.set(PersistenceState::WriteError(
-                                                error.message(),
-                                            ))?;
+                                            invalidate_debounce(controller).map_err(|error| {
+                                                SilexError::fatal(SilexErrorKind::Reactivity(error))
+                                            })?;
+                                            state
+                                                .set(PersistenceState::WriteError(error.message()))
+                                                .map_err(|error| {
+                                                    SilexError::fatal(SilexErrorKind::Reactivity(
+                                                        error,
+                                                    ))
+                                                })?;
                                             return Ok(());
                                         }
                                     };
-                                    state.set(PersistenceState::Syncing(raw))?;
-                                    let (generation, timer) =
-                                        controller.update(|controller| {
+                                    state.set(PersistenceState::Syncing(raw)).map_err(|error| {
+                                        SilexError::fatal(SilexErrorKind::Reactivity(error))
+                                    })?;
+                                    let (generation, timer) = controller
+                                        .update(|controller| {
                                             controller
                                                 .debounce
                                                 .as_mut()
                                                 .ok_or_else(|| {
-                                                    SilexError::Framework(
+                                                    SilexError::fatal(SilexErrorKind::Framework(
                                                         "debounce state is missing".to_string(),
-                                                    )
+                                                    ))
                                                 })
                                                 .map(ScopedDebounceState::begin_with_previous_timer)
+                                        })
+                                        .map_err(|error| {
+                                            SilexError::fatal(SilexErrorKind::Reactivity(error))
                                         })??;
                                     if let Some(timer) = &timer {
                                         timer.cancel();
@@ -718,29 +736,44 @@ where
                                         owner_error_handler,
                                     ) {
                                         Ok(timer) => {
-                                            let stale_timer =
-                                                controller.update(|controller| {
+                                            let stale_timer = controller
+                                                .update(|controller| {
                                                     controller
                                                         .debounce
                                                         .as_mut()
                                                         .ok_or_else(|| {
-                                                            SilexError::Framework(
-                                                                "debounce state is missing"
-                                                                    .to_string(),
+                                                            SilexError::fatal(
+                                                                SilexErrorKind::Framework(
+                                                                    "debounce state is missing"
+                                                                        .to_string(),
+                                                                ),
                                                             )
                                                         })
                                                         .map(|debounce| {
                                                             debounce.set_timer(generation, timer)
                                                         })
+                                                })
+                                                .map_err(|error| {
+                                                    SilexError::fatal(SilexErrorKind::Reactivity(
+                                                        error,
+                                                    ))
                                                 })??;
                                             drop(stale_timer);
                                         }
                                         Err(error) => {
-                                            invalidate_debounce(controller)?;
-                                            state.set(PersistenceState::WriteError(format!(
-                                                "schedule persistence timeout failed: {:?}",
-                                                error
-                                            )))?;
+                                            invalidate_debounce(controller).map_err(|error| {
+                                                SilexError::fatal(SilexErrorKind::Reactivity(error))
+                                            })?;
+                                            state
+                                                .set(PersistenceState::WriteError(format!(
+                                                    "schedule persistence timeout failed: {:?}",
+                                                    error
+                                                )))
+                                                .map_err(|error| {
+                                                    SilexError::fatal(SilexErrorKind::Reactivity(
+                                                        error,
+                                                    ))
+                                                })?;
                                         }
                                     }
                                     Ok(())
@@ -757,13 +790,20 @@ where
                         .effect(
                             move || -> SilexResult<()> {
                                 value.get()?;
-                                let should_skip = take_skip_next_auto_flush(controller)?;
+                                let should_skip =
+                                    take_skip_next_auto_flush(controller).map_err(|error| {
+                                        SilexError::fatal(SilexErrorKind::Reactivity(error))
+                                    })?;
                                 if should_skip {
                                     return Ok(());
                                 }
                                 if let Err(error) = flush_persistent_value(controller, value, state)
                                 {
-                                    state.set(PersistenceState::WriteError(error.message()))?;
+                                    state
+                                        .set(PersistenceState::WriteError(error.message()))
+                                        .map_err(|error| {
+                                            SilexError::fatal(SilexErrorKind::Reactivity(error))
+                                        })?;
                                 }
                                 Ok(())
                             },
@@ -780,7 +820,10 @@ where
                     .effect(
                         move || -> SilexResult<()> {
                             let current = value.get()?;
-                            let suppress = take_suppress_manual_state(controller)?;
+                            let suppress =
+                                take_suppress_manual_state(controller).map_err(|error| {
+                                    SilexError::fatal(SilexErrorKind::Reactivity(error))
+                                })?;
                             if suppress {
                                 return Ok(());
                             }
@@ -803,17 +846,35 @@ where
                                     };
                                     if is_ready {
                                         if last_raw.is_none() {
-                                            state.set(PersistenceState::Ready(String::new()))?;
+                                            state
+                                                .set(PersistenceState::Ready(String::new()))
+                                                .map_err(|error| {
+                                                    SilexError::fatal(SilexErrorKind::Reactivity(
+                                                        error,
+                                                    ))
+                                                })?;
                                         } else {
-                                            state.set(PersistenceState::Ready(raw))?;
+                                            state.set(PersistenceState::Ready(raw)).map_err(
+                                                |error| {
+                                                    SilexError::fatal(SilexErrorKind::Reactivity(
+                                                        error,
+                                                    ))
+                                                },
+                                            )?;
                                         }
                                     } else {
-                                        state.set(PersistenceState::Dirty(raw))?;
+                                        state.set(PersistenceState::Dirty(raw)).map_err(
+                                            |error| {
+                                                SilexError::fatal(SilexErrorKind::Reactivity(error))
+                                            },
+                                        )?;
                                     }
                                 }
-                                Err(error) => {
-                                    state.set(PersistenceState::WriteError(error.message()))?
-                                }
+                                Err(error) => state
+                                    .set(PersistenceState::WriteError(error.message()))
+                                    .map_err(|error| {
+                                        SilexError::fatal(SilexErrorKind::Reactivity(error))
+                                    })?,
                             }
                             Ok(())
                         },

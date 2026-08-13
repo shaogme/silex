@@ -153,7 +153,8 @@ pub fn Slider<'scope>(
             if let Some(target) = e.current_target()
                 && let Ok(el) = target.dyn_into::<web_sys::Element>()
             {
-                el.set_pointer_capture(e.pointer_id())?;
+                el.set_pointer_capture(e.pointer_id())
+                    .map_err(SilexError::fatal)?;
                 is_dragging.set(true);
                 let new_val = calculate_slider_value(
                     &e,
@@ -198,7 +199,8 @@ pub fn Slider<'scope>(
                 if let Some(target) = e.current_target()
                     && let Ok(el) = target.dyn_into::<web_sys::Element>()
                 {
-                    el.release_pointer_capture(e.pointer_id())?;
+                    el.release_pointer_capture(e.pointer_id())
+                        .map_err(SilexError::fatal)?;
                 }
             }
             Ok(())

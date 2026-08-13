@@ -1,4 +1,4 @@
-use silex_core::{Runtime, SilexError};
+use silex_core::{Runtime, SilexError, SilexErrorKind};
 use silex_dom::mounted::{
     CleanupFailure, CleanupOrigin, CleanupReport, CleanupSink, DisposeError, DropFailureReport,
     MountError,
@@ -25,20 +25,28 @@ fn mount_and_dispose_errors_keep_their_separate_ownership() {
         .expect_err("cleanup panic should be returned");
     let report = CleanupReport::from_parts(
         vec![CleanupFailure::new(CleanupOrigin::Root, cleanup)],
-        vec![SilexError::Framework("boundary failure".to_string())],
+        vec![SilexError::recoverable(SilexErrorKind::Framework(
+            "boundary failure".to_string(),
+        ))],
     );
     assert!(!report.is_clean());
     assert_eq!(report.cleanup_failures().len(), 1);
     assert_eq!(report.boundary_errors().len(), 1);
 
-    let mount = MountError::new(SilexError::Framework("primary failure".to_string()), report);
+    let mount = MountError::new(
+        SilexError::recoverable(SilexErrorKind::Framework("primary failure".to_string())),
+        report,
+    );
     assert_eq!(
         mount.primary().to_string(),
-        "Framework Error: primary failure"
+        "Recoverable: Framework Error: primary failure"
     );
 
     let (primary, report) = mount.into_parts();
-    assert_eq!(primary.to_string(), "Framework Error: primary failure");
+    assert_eq!(
+        primary.to_string(),
+        "Recoverable: Framework Error: primary failure"
+    );
     let dispose = DisposeError::new(report);
     let report = dispose.into_parts();
     let (failures, boundary_errors) = report.into_parts();

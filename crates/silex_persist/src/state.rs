@@ -3,7 +3,7 @@ use crate::builder::PersistentBuilder;
 use crate::{DecodePolicy, NoBackend, NoCodec, PersistenceError, RemovePolicy};
 use ref_str::LocalStaticRefStr;
 use silex_core::{
-    ErrorReporter, ReactiveError, ReactiveResult, Rx, RxGet, Scope, SilexError, SilexResult,
+    ErrorReporter, ReactiveError, ReactiveResult, Rx, RxGet, Scope, SilexErrorKind, SilexResult,
     StoreField,
     reactivity::{PromotionPlan, ReactiveSource, ReadSignal, RwSignal, StoredValue},
     traits::{RxBase, RxCloneData, RxData, RxRead, RxValue, RxWrite},
@@ -205,7 +205,14 @@ where
             .with(|controller| controller.default.clone())
         {
             Ok(default) => default,
-            Err(SilexError::Reactivity(ReactiveError::NoSuchNode)) => return Ok(()),
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    SilexErrorKind::Reactivity(ReactiveError::NoSuchNode)
+                ) =>
+            {
+                return Ok(());
+            }
             Err(error) => return Err(PersistenceError::from(error)),
         };
         match self.set(default()) {

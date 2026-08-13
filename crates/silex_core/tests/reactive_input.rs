@@ -1,6 +1,6 @@
 use silex_core::{
     ErrorHandler, Memo, ReactiveError, ReactiveInput, ReadSignal, Runtime, RwSignal, Rx, Scope,
-    Signal, SilexError, StoredValue,
+    Signal, SilexError, SilexErrorKind, StoredValue,
 };
 use std::{cell::RefCell, rc::Rc};
 
@@ -142,7 +142,9 @@ fn foreign_sources_are_not_materialized_as_local_constants() {
 
     assert!(matches!(
         result,
-        Err(SilexError::Reactivity(ReactiveError::RuntimeMismatch))
+        Err(SilexError::Fatal(SilexErrorKind::Reactivity(
+            ReactiveError::RuntimeMismatch
+        )))
     ));
 }
 
@@ -182,7 +184,9 @@ fn signal_and_stored_value_keep_source_specific_cleanup_access() {
     let observed = observed.borrow();
     assert!(matches!(
         observed.0,
-        Some(SilexError::Reactivity(ReactiveError::NoSuchNode))
+        Some(SilexError::Fatal(SilexErrorKind::Reactivity(
+            ReactiveError::NoSuchNode
+        )))
     ));
     assert_eq!(observed.1, Some(9));
 }

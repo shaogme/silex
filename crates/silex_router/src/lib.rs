@@ -27,7 +27,9 @@ pub use route_table::*;
 
 use crate::path::strip_path_prefix;
 use crate::route_table::RouteBranchKey;
-use silex_core::{ErrorReporter, Scope, SilexError, SilexResult, reactivity::runtime_inputs_of};
+use silex_core::{
+    ErrorReporter, Scope, SilexError, SilexErrorKind, SilexResult, reactivity::runtime_inputs_of,
+};
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::helpers::window_event_listener_untyped;
 use silex_dom::view::{
@@ -70,11 +72,14 @@ fn create_router_context<'scope>(
     base: &str,
     error_handler: ErrorReporter<'scope>,
 ) -> SilexResult<RouterContext<'scope>> {
-    let window = web_sys::window()
-        .ok_or_else(|| SilexError::Javascript("no global `window` exists".into()))?;
+    let window = web_sys::window().ok_or_else(|| {
+        SilexError::fatal(SilexErrorKind::Javascript(
+            "no global `window` exists".to_string(),
+        ))
+    })?;
     let location = window.location();
-    let raw_path = location.pathname().map_err(SilexError::from)?;
-    let initial_search = location.search().map_err(SilexError::from)?;
+    let raw_path = location.pathname().map_err(SilexError::fatal)?;
+    let initial_search = location.search().map_err(SilexError::fatal)?;
     let base_path = context::normalize_base_path(base);
     let initial_path = context::strip_base_path(&base_path, &raw_path);
     let (path, set_path) = scope.signal(initial_path)?;
@@ -173,7 +178,8 @@ impl<'scope> RouterView<'scope> {
             "popstate",
             move |_| navigator.refresh_location(),
             error_handler,
-        )?;
+        )
+        .map_err(SilexError::fatal)?;
 
         let outlet = RouteOutlet::new(context, routes).into_any();
         let view = match layout {

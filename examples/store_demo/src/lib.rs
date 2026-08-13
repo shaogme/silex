@@ -78,14 +78,18 @@ fn UserEditor<'scope>(
                 .type_("text")
                 .value(user.name)
                 .on_input(move |new_val| {
-                    user.name.set(new_val)?;
+                    user.name
+                        .set(new_val)
+                        .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                     Ok(())
                 }),
         ),
         div!(
             label("Change Age: "),
             button("Increment Age").on_click(move |_| {
-                user.age.update(|age| *age += 1)?;
+                user.age
+                    .update(|age| *age += 1)
+                    .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                 Ok(())
             }),
             span("(Only updates Age node)").style(sty().margin_left(px(10))?.color(hex("#666"))?),
@@ -96,7 +100,9 @@ fn UserEditor<'scope>(
                 .type_("email")
                 .value(user.email)
                 .on_input(move |new_val| {
-                    user.email.set(new_val)?;
+                    user.email
+                        .set(new_val)
+                        .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                     Ok(())
                 }),
         ),

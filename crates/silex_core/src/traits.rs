@@ -95,13 +95,6 @@ pub trait RxRead: RxBase {
     fn with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> SilexResult<U>;
 }
 
-fn map_read_error(error: CallbackInvokeError<SilexError>) -> SilexError {
-    match error {
-        CallbackInvokeError::Runtime(error) => SilexError::from(error),
-        CallbackInvokeError::User(error) => error,
-    }
-}
-
 impl<'scope, T: 'scope> RxFrom<'scope> for ReadSignal<'scope, T> {
     type Value = T;
 
@@ -496,7 +489,7 @@ pub trait RxWrite: RxBase {
         Self: Sized + Clone,
         Self::Value: Sized + Clone,
     {
-        move || self.set(value.clone()).map_err(Into::into)
+        move || self.set(value.clone()).map_err(SilexError::fatal)
     }
 
     fn updater<F>(self, f: F) -> impl Fn() -> SilexResult<()> + Clone
@@ -505,7 +498,11 @@ pub trait RxWrite: RxBase {
         Self::Value: Sized,
         F: Fn(&mut Self::Value) + Clone,
     {
-        move || self.update(f.clone()).map(|_| ()).map_err(Into::into)
+        move || {
+            self.update(f.clone())
+                .map(|_| ())
+                .map_err(SilexError::fatal)
+        }
     }
 }
 
@@ -518,17 +515,17 @@ impl<'scope, T: 'scope> RxBase for ReadSignal<'scope, T> {
         self.inner
             .with(|_| ())
             .map(|_| ())
-            .map_err(SilexError::from)
+            .map_err(SilexError::fatal)
     }
 }
 
 impl<'scope, T: 'scope> RxRead for ReadSignal<'scope, T> {
     fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.inner.with(f).map_err(SilexError::from)
+        self.inner.with(f).map_err(SilexError::fatal)
     }
 
     fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.inner.with_untracked(f).map_err(SilexError::from)
+        self.inner.with_untracked(f).map_err(SilexError::fatal)
     }
 }
 
@@ -609,10 +606,13 @@ impl<'scope, T: 'scope> RxValue for Rx<'scope, T, RxValueKind> {
 impl<'scope, T: 'scope> RxBase for Rx<'scope, T, RxValueKind> {
     fn track(&self) -> SilexResult<()> {
         match &self.inner {
-            RxInner::Signal(signal) => signal.with(|_| ()).map_err(SilexError::from),
-            RxInner::Memo(memo) => memo.with(|_| ()).map_err(SilexError::from),
-            RxInner::Derived(derived) => derived.with(|_| ()).map_err(map_read_error),
-            RxInner::Stored(stored) => stored.with(|_| ()).map_err(SilexError::from),
+            RxInner::Signal(signal) => signal.with(|_| ()).map_err(SilexError::fatal),
+            RxInner::Memo(memo) => memo.with(|_| ()).map_err(SilexError::fatal),
+            RxInner::Derived(derived) => derived.with(|_| ()).map_err(|error| match error {
+                CallbackInvokeError::Runtime(error) => SilexError::fatal(error),
+                CallbackInvokeError::User(error) => error,
+            }),
+            RxInner::Stored(stored) => stored.with(|_| ()).map_err(SilexError::fatal),
         }
     }
 }
@@ -620,19 +620,25 @@ impl<'scope, T: 'scope> RxBase for Rx<'scope, T, RxValueKind> {
 impl<'scope, T: 'scope> RxRead for Rx<'scope, T, RxValueKind> {
     fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         match &self.inner {
-            RxInner::Signal(signal) => signal.with(f).map_err(SilexError::from),
-            RxInner::Memo(memo) => memo.with(f).map_err(SilexError::from),
-            RxInner::Derived(derived) => derived.with(f).map_err(map_read_error),
-            RxInner::Stored(stored) => stored.with(f).map_err(SilexError::from),
+            RxInner::Signal(signal) => signal.with(f).map_err(SilexError::fatal),
+            RxInner::Memo(memo) => memo.with(f).map_err(SilexError::fatal),
+            RxInner::Derived(derived) => derived.with(f).map_err(|error| match error {
+                CallbackInvokeError::Runtime(error) => SilexError::fatal(error),
+                CallbackInvokeError::User(error) => error,
+            }),
+            RxInner::Stored(stored) => stored.with(f).map_err(SilexError::fatal),
         }
     }
 
     fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         match &self.inner {
-            RxInner::Signal(signal) => signal.with_untracked(f).map_err(SilexError::from),
-            RxInner::Memo(memo) => memo.with_untracked(f).map_err(SilexError::from),
-            RxInner::Derived(derived) => derived.with_untracked(f).map_err(map_read_error),
-            RxInner::Stored(stored) => stored.with(f).map_err(SilexError::from),
+            RxInner::Signal(signal) => signal.with_untracked(f).map_err(SilexError::fatal),
+            RxInner::Memo(memo) => memo.with_untracked(f).map_err(SilexError::fatal),
+            RxInner::Derived(derived) => derived.with_untracked(f).map_err(|error| match error {
+                CallbackInvokeError::Runtime(error) => SilexError::fatal(error),
+                CallbackInvokeError::User(error) => error,
+            }),
+            RxInner::Stored(stored) => stored.with(f).map_err(SilexError::fatal),
         }
     }
 }
@@ -649,11 +655,11 @@ impl<'scope, T: 'scope> RxBase for StoredValue<'scope, T> {
 
 impl<'scope, T: 'scope> RxRead for StoredValue<'scope, T> {
     fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.inner.with(f).map_err(SilexError::from)
+        self.inner.with(f).map_err(SilexError::fatal)
     }
 
     fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.inner.with(f).map_err(SilexError::from)
+        self.inner.with(f).map_err(SilexError::fatal)
     }
 }
 
@@ -711,17 +717,17 @@ impl<'scope, T: 'scope> RxBase for Memo<'scope, T> {
         self.inner
             .with(|_| ())
             .map(|_| ())
-            .map_err(SilexError::from)
+            .map_err(SilexError::fatal)
     }
 }
 
 impl<'scope, T: 'scope> RxRead for Memo<'scope, T> {
     fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.inner.with(f).map_err(SilexError::from)
+        self.inner.with(f).map_err(SilexError::fatal)
     }
 
     fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.inner.with_untracked(f).map_err(SilexError::from)
+        self.inner.with_untracked(f).map_err(SilexError::fatal)
     }
 }
 

@@ -52,7 +52,7 @@ fn CategoryTab<'scope>(
             )
         ))
         .on_click(move |_| {
-            category.set(target)?;
+            category.set(target).map_err(SilexError::from)?;
             Ok(())
         })
     )
@@ -265,7 +265,7 @@ fn FiltersAndReactivityDemo<'scope>(
                 div(chain!(
                     button("Increase Padding").class(tw!("px-3 py-1.5 bg-indigo-600 text-white text-xs font-bold rounded-lg cursor-pointer transition-all mb-2.5"))
                         .on_click(move |_| {
-                            set_count.update(|n| *n = (*n + 4).min(36))?;
+                            set_count.update(|n| *n = (*n + 4).min(36)).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                             Ok(())
                         }),
                     div(rx!(scope; error_handler; format!("Padding: {}px", $count)))
@@ -410,7 +410,7 @@ fn ReactiveConditionalTwDemo<'scope>(
             button(rx!(scope; error_handler; if *$is_active { "✓ Active State Enabled" } else { "Click to Toggle State" }))
                 .class(btn_cls)
                 .on_click(move |_| {
-                    set_is_active.update(|a| *a = !*a)?;
+                    set_is_active.update(|a| *a = !*a).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                     Ok(())
                 }),
             div(chain!(
@@ -572,30 +572,30 @@ fn TailwindVariantsCvaDemo<'scope>(
                 div(chain!(
                     span("Intent:").class(tw!("text-xs font-bold text-slate-500 dark:text-slate-400 mr-2")),
                     button("Primary").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (rx!(scope; error_handler; *$intent == "primary"), "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| {
-                        set_intent.set("primary".to_string())?;
+                        set_intent.set("primary".to_string()).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                         Ok(())
                     }),
                     button("Secondary").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (rx!(scope; error_handler; *$intent == "secondary"), "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| {
-                        set_intent.set("secondary".to_string())?;
+                        set_intent.set("secondary".to_string()).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                         Ok(())
                     }),
                     button("Danger").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (rx!(scope; error_handler; *$intent == "danger"), "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| {
-                        set_intent.set("danger".to_string())?;
+                        set_intent.set("danger".to_string()).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                         Ok(())
                     })
                 )).class(tw!("flex flex-wrap items-center gap-1.5 mb-3")),
                 div(chain!(
                     span("Size:").class(tw!("text-xs font-bold text-slate-500 dark:text-slate-400 mr-2")),
                     button("Small (sm)").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (rx!(scope; error_handler; *$size == "sm"), "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| {
-                        set_size.set("sm".to_string())?;
+                        set_size.set("sm".to_string()).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                         Ok(())
                     }),
                     button("Medium (md)").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (rx!(scope; error_handler; *$size == "md"), "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| {
-                        set_size.set("md".to_string())?;
+                        set_size.set("md".to_string()).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                         Ok(())
                     }),
                     button("Large (lg)").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (rx!(scope; error_handler; *$size == "lg"), "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| {
-                        set_size.set("lg".to_string())?;
+                        set_size.set("lg".to_string()).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                         Ok(())
                     })
                 )).class(tw!("flex flex-wrap items-center gap-1.5"))

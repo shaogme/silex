@@ -511,7 +511,8 @@ fn apply_update_internal<'scope>(
             apply_attr_with_target_internal(el, &name, target, &attr)?;
         }
         AttrData::StaticJs(value) => {
-            js_sys::Reflect::set(el, &JsValue::from_str(&name), &value)?;
+            js_sys::Reflect::set(el, &JsValue::from_str(&name), &value)
+                .map_err(SilexError::fatal)?;
         }
         AttrData::ReactiveAttr(rx) => {
             let el = el.clone();
@@ -573,7 +574,7 @@ fn apply_update_internal<'scope>(
                     let value = rx.get()?;
                     js_sys::Reflect::set(&el, &JsValue::from_str(&name), &value)
                         .map(|_| ())
-                        .map_err(SilexError::from)
+                        .map_err(SilexError::fatal)
                 }),
                 error_handler,
             )?;
@@ -600,7 +601,7 @@ fn apply_combined_classes_internal<'scope>(
     let list = el.class_list();
     // 1. 立即应用所有静态类（非响应式，仅执行一次）
     for s in &statics {
-        list.add_1(s)?;
+        list.add_1(s).map_err(SilexError::fatal)?;
     }
 
     if toggles.is_empty() && reactives.is_empty() {
@@ -653,14 +654,14 @@ fn apply_combined_classes_internal<'scope>(
                 // 先添加新增加的 Class，确保样式/过渡声明（transition）无缝连接，
                 // 不因无类中间态产生闪烁或动画打断。
                 for token in new_dynamic_tokens.difference(&previous) {
-                    list.add_1(token)?;
+                    list.add_1(token).map_err(SilexError::fatal)?;
                 }
 
                 // 只删除已经不再由任何动态来源提供的旧 Class；静态 Class 即使
                 // 同名，也必须继续保留。
                 for token in previous.difference(&new_dynamic_tokens) {
                     if !static_tokens_for_update.contains(token) {
-                        list.remove_1(token)?;
+                        list.remove_1(token).map_err(SilexError::fatal)?;
                     }
                 }
 
@@ -695,12 +696,15 @@ fn apply_combined_styles_internal<'scope>(
     owner: &ViewOwnerToken<'scope>,
     error_handler: ViewErrorHandler<'scope>,
 ) -> SilexResult<()> {
-    let style = get_style_decl(el)
-        .ok_or_else(|| SilexError::Dom("element does not expose a style declaration".into()))?;
+    let style = get_style_decl(el).ok_or_else(|| {
+        SilexError::fatal(SilexErrorKind::Dom(
+            "element does not expose a style declaration".to_string(),
+        ))
+    })?;
 
     // 1. 立即应用所有静态样式项
     for (k, v) in &statics {
-        style.set_property(k, v)?;
+        style.set_property(k, v).map_err(SilexError::fatal)?;
     }
 
     if properties.is_empty() && sheets.is_empty() {
@@ -730,7 +734,9 @@ fn apply_combined_styles_internal<'scope>(
         Box::new(
             move |previous: Option<&CombinedStylePrevious>| -> SilexResult<CombinedStylePrevious> {
                 let style = get_style_decl(&el_clone).ok_or_else(|| {
-                    SilexError::Dom("element does not expose a style declaration".into())
+                    SilexError::fatal(SilexErrorKind::Dom(
+                        "element does not expose a style declaration".to_string(),
+                    ))
                 })?;
 
                 // 处理单项 Property 绑定 (仅在值发生变化时更新 DOM)
@@ -741,7 +747,7 @@ fn apply_combined_styles_internal<'scope>(
                         .and_then(|previous| previous.properties.get(i))
                         .and_then(Option::as_deref);
                     if previous_value != Some(val.as_str()) {
-                        style.set_property(name, &val)?;
+                        style.set_property(name, &val).map_err(SilexError::fatal)?;
                     }
                     next_props.push(Some(val));
                 }
@@ -770,11 +776,13 @@ fn apply_combined_styles_internal<'scope>(
                         .cloned()
                         .collect::<Vec<_>>();
                     for key in stale {
-                        style.remove_property(&key)?;
+                        style.remove_property(&key).map_err(SilexError::fatal)?;
                     }
 
                     for (key, value) in new_style_map {
-                        style.set_property(&key, &value)?;
+                        style
+                            .set_property(&key, &value)
+                            .map_err(SilexError::fatal)?;
                         next_sheet_keys.insert(key);
                     }
                 }
@@ -814,23 +822,23 @@ pub(crate) fn apply_attr_internal(el: &Element, name: &str, attr: &Attr<'_>) -> 
     }
     match attr {
         Attr::Removed => {
-            el.remove_attribute(name)?;
+            el.remove_attribute(name).map_err(SilexError::fatal)?;
         }
         Attr::Empty => {
-            el.set_attribute(name, "")?;
+            el.set_attribute(name, "").map_err(SilexError::fatal)?;
         }
         Attr::String(val) => match name {
             "style" => {
                 if let Some(style) = get_style_decl(el) {
                     style.set_css_text(val);
                 } else {
-                    return Err(SilexError::Dom(
-                        "element does not expose a style declaration".into(),
-                    ));
+                    return Err(SilexError::fatal(SilexErrorKind::Dom(
+                        "element does not expose a style declaration".to_string(),
+                    )));
                 }
             }
             _ => {
-                el.set_attribute(name, val)?;
+                el.set_attribute(name, val).map_err(SilexError::fatal)?;
             }
         },
     }
@@ -859,9 +867,10 @@ pub(crate) fn apply_attr_with_target_internal(
             ($attr_name:expr, $expr:expr) => {{
                 $expr;
                 if is_truthy {
-                    el.set_attribute($attr_name, "")?;
+                    el.set_attribute($attr_name, "")
+                        .map_err(SilexError::fatal)?;
                 } else {
-                    el.remove_attribute($attr_name)?;
+                    el.remove_attribute($attr_name).map_err(SilexError::fatal)?;
                 }
             }};
         }

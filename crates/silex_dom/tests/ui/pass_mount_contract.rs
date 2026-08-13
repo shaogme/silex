@@ -1,4 +1,4 @@
-use silex_core::{Runtime, SilexError};
+use silex_core::{Runtime, SilexError, SilexErrorKind};
 use silex_dom::mounted::{CleanupReport, CleanupSink, DropFailureReport, MountError};
 
 fn main() {
@@ -14,7 +14,7 @@ fn main() {
     });
 
     let mount = MountError::new(
-        SilexError::Framework("primary".to_string()),
+        SilexError::recoverable(SilexErrorKind::Framework("primary".to_string())),
         CleanupReport::new(),
     );
     let (_, rollback) = mount.into_parts();

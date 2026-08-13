@@ -17,7 +17,7 @@ use silex_reactivity::{
 };
 
 pub use callback::Callback;
-pub use error::{ErrorHandler, ErrorReporter, SilexError, SilexResult};
+pub use error::{ErrorHandler, ErrorReporter, SilexError, SilexErrorKind, SilexResult};
 pub use node_ref::NodeRef;
 pub use reactivity::{
     Constant, Effect, Memo, Mutation, PromotionPlan, ReactiveSource, ReadSignal, Resource,
@@ -263,7 +263,8 @@ macro_rules! batch_read_untracked_recurse {
 pub mod prelude {
     pub use crate::{
         Callback, CompletionOnce, CompletionSender, ErrorHandler, ErrorReporter, NodeRef,
-        ReactiveError, ReactiveResult, Runtime, Rx, Scope, SilexError, SilexResult, StoreField,
-        batch_read, batch_read_untracked, logic::*, reactivity::*, rx, traits::*, unwind_safe,
+        ReactiveError, ReactiveResult, Runtime, Rx, Scope, SilexError, SilexErrorKind, SilexResult,
+        StoreField, batch_read, batch_read_untracked, logic::*, reactivity::*, rx, traits::*,
+        unwind_safe,
     };
 }

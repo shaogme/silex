@@ -1,8 +1,8 @@
 use silex_bootstrap::AppHostError;
-use silex_core::{Runtime, SilexError};
+use silex_core::{CleanupError, Runtime, SilexError, SilexErrorKind};
 use silex_dom::{CleanupFailure, CleanupOrigin, CleanupReport, DisposeError, MountError};
 
-fn cleanup_error() -> silex_core::CleanupError {
+fn cleanup_error() -> CleanupError {
     let mut runtime = Runtime::new();
     let root = runtime.run().expect("root runtime should start");
     root.with_scope(|scope| {
@@ -22,10 +22,12 @@ fn cleanup_error() -> silex_core::CleanupError {
 fn app_host_error_keeps_mount_and_dispose_reports() {
     let report = CleanupReport::from_parts(
         vec![CleanupFailure::new(CleanupOrigin::Root, cleanup_error())],
-        vec![SilexError::Framework("boundary failure".to_string())],
+        vec![SilexError::recoverable(SilexErrorKind::Framework(
+            "boundary failure".to_string(),
+        ))],
     );
     let mount = AppHostError::Mount(MountError::new(
-        SilexError::Framework("mount failure".to_string()),
+        SilexError::recoverable(SilexErrorKind::Framework("mount failure".to_string())),
         report,
     ));
 
@@ -34,7 +36,7 @@ fn app_host_error_keeps_mount_and_dispose_reports() {
         .expect("mount error should be available");
     assert_eq!(
         mount_error.primary().to_string(),
-        "Framework Error: mount failure"
+        "Recoverable: Framework Error: mount failure"
     );
     assert!(!mount_error.rollback().is_clean());
 

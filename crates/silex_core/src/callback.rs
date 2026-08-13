@@ -34,7 +34,7 @@ impl<'scope, T: 'scope> Callback<'scope, T> {
     /// Invoke the callback and preserve the underlying reactive error.
     pub fn invoke(&self, value: T) -> SilexResult<()> {
         self.inner.invoke(value).map_err(|error| match error {
-            CallbackInvokeError::Runtime(error) => SilexError::Reactivity(error),
+            CallbackInvokeError::Runtime(error) => SilexError::fatal(error),
             CallbackInvokeError::User(error) => error,
         })
     }

@@ -1,6 +1,6 @@
 use std::fmt;
 
-use silex_core::{ReactiveError, SilexError};
+use silex_core::{ReactiveError, SilexError, SilexErrorKind};
 
 mod backend;
 mod builder;
@@ -61,9 +61,9 @@ impl From<ReactiveError> for PersistenceError {
 
 impl From<SilexError> for PersistenceError {
     fn from(error: SilexError) -> Self {
-        match error {
-            SilexError::Reactivity(error) => Self::Reactivity(error),
-            other => Self::InvalidConfiguration(other.to_string()),
+        match error.into_kind() {
+            SilexErrorKind::Reactivity(error) => Self::Reactivity(error),
+            kind => Self::InvalidConfiguration(kind.to_string()),
         }
     }
 }
@@ -71,8 +71,10 @@ impl From<SilexError> for PersistenceError {
 impl From<PersistenceError> for SilexError {
     fn from(error: PersistenceError) -> Self {
         match error {
-            PersistenceError::Reactivity(error) => SilexError::Reactivity(error),
-            other => SilexError::Framework(other.message()),
+            PersistenceError::Reactivity(error) => {
+                SilexError::fatal(SilexErrorKind::Reactivity(error))
+            }
+            other => SilexError::recoverable(SilexErrorKind::Framework(other.message())),
         }
     }
 }
@@ -117,18 +119,25 @@ mod tests {
     fn test_persistence_error_to_silex_error() {
         let err = PersistenceError::BackendUnavailable;
         let silex_err: SilexError = err.into();
-        assert!(matches!(silex_err, SilexError::Framework(msg) if msg == "backend unavailable"));
+        assert!(matches!(
+            silex_err,
+            SilexError::Recoverable(SilexErrorKind::Framework(msg))
+                if msg == "backend unavailable"
+        ));
 
         let err = PersistenceError::ReadFailed("read error".to_string());
         let silex_err: SilexError = err.into();
-        assert!(matches!(silex_err, SilexError::Framework(msg) if msg == "read error"));
+        assert!(matches!(
+            silex_err,
+            SilexError::Recoverable(SilexErrorKind::Framework(msg)) if msg == "read error"
+        ));
 
         let reactive_err = ReactiveError::NoSuchNode;
         let err = PersistenceError::Reactivity(reactive_err);
         let silex_err: SilexError = err.into();
         assert!(matches!(
             silex_err,
-            SilexError::Reactivity(ReactiveError::NoSuchNode)
+            SilexError::Fatal(SilexErrorKind::Reactivity(ReactiveError::NoSuchNode))
         ));
     }
 }

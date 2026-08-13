@@ -248,7 +248,10 @@ impl<'scope> I18nBuilder<'scope> {
                     move || -> SilexResult<()> {
                         let locale = binding.signal().get()?;
                         if store_for_binding.locale.get_untracked()? != locale {
-                            store_for_binding.locale.set(locale)?;
+                            store_for_binding
+                                .locale
+                                .set(locale)
+                                .map_err(SilexError::fatal)?;
                         }
                         Ok(())
                     },
@@ -282,7 +285,7 @@ impl<'scope> I18nStore<'scope> {
     }
 
     pub fn set_locale(&self, locale: Locale) -> SilexResult<()> {
-        self.locale.set(locale).map_err(SilexError::from)
+        self.locale.set(locale).map_err(SilexError::fatal)
     }
 
     #[cfg(feature = "browser")]
@@ -299,7 +302,7 @@ impl<'scope> I18nStore<'scope> {
     }
 
     pub fn set_fallback_locale(&self, locale: Locale) -> SilexResult<()> {
-        self.fallback_locale.set(locale).map_err(SilexError::from)
+        self.fallback_locale.set(locale).map_err(SilexError::fatal)
     }
 
     pub fn has_catalog(&self, locale: &Locale) -> SilexResult<bool> {
@@ -308,18 +311,23 @@ impl<'scope> I18nStore<'scope> {
     }
 
     pub fn insert_catalog(&self, catalog: Catalog) -> SilexResult<()> {
-        let changed = self.catalog_cache.update(|registry| {
-            let locale = catalog.locale().clone();
-            if registry.catalogs.get(&locale) == Some(&catalog) {
-                return false;
-            }
-            registry.catalogs.insert(locale, catalog);
-            true
-        })?;
+        let changed = self
+            .catalog_cache
+            .update(|registry| {
+                let locale = catalog.locale().clone();
+                if registry.catalogs.get(&locale) == Some(&catalog) {
+                    return false;
+                }
+                registry.catalogs.insert(locale, catalog);
+                true
+            })
+            .map_err(SilexError::fatal)?;
         if changed {
-            self.catalog_revision.update(|revision| {
-                *revision = revision.wrapping_add(1);
-            })?;
+            self.catalog_revision
+                .update(|revision| {
+                    *revision = revision.wrapping_add(1);
+                })
+                .map_err(SilexError::fatal)?;
         }
         Ok(())
     }
@@ -327,11 +335,14 @@ impl<'scope> I18nStore<'scope> {
     pub fn remove_catalog(&self, locale: &Locale) -> SilexResult<()> {
         let removed = self
             .catalog_cache
-            .update(|registry| registry.catalogs.remove(locale).is_some())?;
+            .update(|registry| registry.catalogs.remove(locale).is_some())
+            .map_err(SilexError::fatal)?;
         if removed {
-            self.catalog_revision.update(|revision| {
-                *revision = revision.wrapping_add(1);
-            })?;
+            self.catalog_revision
+                .update(|revision| {
+                    *revision = revision.wrapping_add(1);
+                })
+                .map_err(SilexError::fatal)?;
         }
         Ok(())
     }

@@ -14,20 +14,6 @@ use silex_reactivity::RuntimeSnapshot;
 use silex_reactivity::{EffectInitError, RuntimeInputs};
 use std::{future::Future, panic::UnwindSafe};
 
-fn map_effect_init_error(error: EffectInitError<SilexError>) -> SilexError {
-    match error {
-        EffectInitError::Registration(error) => SilexError::from(error),
-        EffectInitError::Initial(error) => error,
-    }
-}
-
-fn map_derived_init_error(error: EffectInitError<SilexError>) -> SilexError {
-    match error {
-        EffectInitError::Registration(error) => SilexError::from(error),
-        EffectInitError::Initial(error) => error,
-    }
-}
-
 /// User-owned high-level runtime.
 pub struct Runtime {
     inner: silex_reactivity::Runtime,
@@ -44,13 +30,13 @@ impl Runtime {
         self.inner
             .run()
             .map(|handle| RootHandle { inner: handle })
-            .map_err(SilexError::from)
+            .map_err(SilexError::fatal)
     }
 
     pub fn child<R>(&mut self, f: impl for<'scope> FnOnce(Scope<'scope>) -> R) -> SilexResult<R> {
         self.inner
             .child(|s| f(Scope { inner: s }))
-            .map_err(SilexError::from)
+            .map_err(SilexError::fatal)
     }
 }
 
@@ -106,14 +92,14 @@ impl<'scope> Scope<'scope> {
     where
         F: Fn(SilexError) + 'scope,
     {
-        self.inner.error_handler(handler).map_err(SilexError::from)
+        self.inner.error_handler(handler).map_err(SilexError::fatal)
     }
 
     pub fn owned_scope(self) -> SilexResult<OwnedScope<'scope>> {
         self.inner
             .owned_scope()
             .map(|inner| OwnedScope { inner })
-            .map_err(SilexError::from)
+            .map_err(SilexError::fatal)
     }
 
     pub fn is_active(self) -> bool {
@@ -124,7 +110,7 @@ impl<'scope> Scope<'scope> {
         self,
         value: T,
     ) -> SilexResult<(ReadSignal<'scope, T>, WriteSignal<'scope, T>)> {
-        let (read, write) = self.inner.signal(value).map_err(SilexError::from)?;
+        let (read, write) = self.inner.signal(value).map_err(SilexError::fatal)?;
         Ok((
             ReadSignal::from_inner(read, self),
             WriteSignal::from_inner(write),
@@ -154,7 +140,7 @@ impl<'scope> Scope<'scope> {
         self.inner
             .memo_from(inputs, f)
             .map(|memo| Memo::from_inner(memo, self))
-            .map_err(SilexError::from)
+            .map_err(SilexError::fatal)
     }
 
     /// Create a derived value without additional framework-declared inputs.
@@ -183,7 +169,10 @@ impl<'scope> Scope<'scope> {
     {
         self.inner
             .derived_from(inputs, f, error_handler)
-            .map_err(map_derived_init_error)
+            .map_err(|error| match error {
+                EffectInitError::Registration(error) => SilexError::fatal(error),
+                EffectInitError::Initial(error) => error,
+            })
             .map(|derived| Rx::from_derived(derived, self))
     }
 
@@ -208,10 +197,13 @@ impl<'scope> Scope<'scope> {
     where
         F: FnMut() -> SilexResult<()> + 'scope,
     {
-        let effect = self
-            .inner
-            .effect_from(inputs, f, error_handler)
-            .map_err(map_effect_init_error)?;
+        let effect =
+            self.inner
+                .effect_from(inputs, f, error_handler)
+                .map_err(|error| match error {
+                    EffectInitError::Registration(error) => SilexError::fatal(error),
+                    EffectInitError::Initial(error) => error,
+                })?;
         Ok(Effect::from_inner(effect))
     }
 
@@ -246,7 +238,10 @@ impl<'scope> Scope<'scope> {
         let effect = self
             .inner
             .effect_with_previous_from(inputs, f, error_handler)
-            .map_err(map_effect_init_error)?;
+            .map_err(|error| match error {
+                EffectInitError::Registration(error) => SilexError::fatal(error),
+                EffectInitError::Initial(error) => error,
+            })?;
         Ok(Effect::from_inner(effect))
     }
 
@@ -340,7 +335,10 @@ impl<'scope> Scope<'scope> {
     {
         self.inner
             .watch_getter_from(inputs, getter, callback, error_handler, options)
-            .map_err(map_effect_init_error)
+            .map_err(|error| match error {
+                EffectInitError::Registration(error) => SilexError::fatal(error),
+                EffectInitError::Initial(error) => error,
+            })
             .map(Effect::from_inner)
     }
 
@@ -348,7 +346,7 @@ impl<'scope> Scope<'scope> {
         self.inner
             .stored(value)
             .map(|inner| StoredValue::from_inner(inner, self))
-            .map_err(SilexError::from)
+            .map_err(SilexError::fatal)
     }
 
     pub fn callback<T, F>(self, callback: F) -> SilexResult<Callback<'scope, T>>
@@ -359,14 +357,14 @@ impl<'scope> Scope<'scope> {
         self.inner
             .callback(callback)
             .map(Callback::from_inner)
-            .map_err(SilexError::from)
+            .map_err(SilexError::fatal)
     }
 
     pub fn node_ref<T: 'scope>(self) -> SilexResult<NodeRef<'scope, T>> {
         self.inner
             .node_ref()
             .map(NodeRef::from_inner)
-            .map_err(SilexError::from)
+            .map_err(SilexError::fatal)
     }
 
     /// Create a one-shot completion destination.
@@ -380,7 +378,7 @@ impl<'scope> Scope<'scope> {
     {
         self.inner
             .completion_once(callback)
-            .map_err(SilexError::from)
+            .map_err(SilexError::fatal)
     }
 
     /// Create a reusable completion destination.
@@ -394,7 +392,7 @@ impl<'scope> Scope<'scope> {
     {
         self.inner
             .completion_sender(callback)
-            .map_err(SilexError::from)
+            .map_err(SilexError::fatal)
     }
 
     /// Spawn a task owned by this persistent scope or the currently running computation.
@@ -438,7 +436,9 @@ impl<'scope> Scope<'scope> {
 
     #[doc(hidden)]
     pub fn validate_inputs(self, inputs: &RuntimeInputs) -> SilexResult<()> {
-        self.inner.validate_inputs(inputs).map_err(SilexError::from)
+        self.inner
+            .validate_inputs(inputs)
+            .map_err(SilexError::fatal)
     }
 
     #[cfg(feature = "test-support")]
@@ -455,7 +455,7 @@ impl<'scope> Scope<'scope> {
     pub fn child<R>(self, f: impl for<'child> FnOnce(Scope<'child>) -> R) -> SilexResult<R> {
         self.inner
             .child(|scope| f(Scope { inner: scope }))
-            .map_err(SilexError::from)
+            .map_err(SilexError::fatal)
     }
 
     pub fn untrack<R>(self, f: impl FnOnce() -> R) -> R {
@@ -484,7 +484,7 @@ impl<'scope> Scope<'scope> {
     {
         self.inner
             .on_cleanup(f, error_handler)
-            .map_err(SilexError::from)
+            .map_err(SilexError::fatal)
     }
 }
 
@@ -502,7 +502,7 @@ impl<'scope> OwnedScope<'scope> {
         self.inner
             .child()
             .map(|inner| Self { inner })
-            .map_err(SilexError::from)
+            .map_err(SilexError::fatal)
     }
 
     pub fn is_active(&self) -> bool {
@@ -511,7 +511,9 @@ impl<'scope> OwnedScope<'scope> {
 
     #[doc(hidden)]
     pub fn validate_inputs(&self, inputs: &RuntimeInputs) -> SilexResult<()> {
-        self.inner.validate_inputs(inputs).map_err(SilexError::from)
+        self.inner
+            .validate_inputs(inputs)
+            .map_err(SilexError::fatal)
     }
 
     /// Register and immediately run an owner-bound effect without extra
@@ -539,7 +541,10 @@ impl<'scope> OwnedScope<'scope> {
         self.inner
             .effect_from(inputs, f, error_handler)
             .map(Effect::from_inner)
-            .map_err(map_effect_init_error)
+            .map_err(|error| match error {
+                EffectInitError::Registration(error) => SilexError::fatal(error),
+                EffectInitError::Initial(error) => error,
+            })
     }
 
     pub fn effect_with_previous<T, F>(
@@ -568,7 +573,10 @@ impl<'scope> OwnedScope<'scope> {
         self.inner
             .effect_with_previous_from(inputs, f, error_handler)
             .map(Effect::from_inner)
-            .map_err(map_effect_init_error)
+            .map_err(|error| match error {
+                EffectInitError::Registration(error) => SilexError::fatal(error),
+                EffectInitError::Initial(error) => error,
+            })
     }
 
     pub fn watch_getter<T, G, C>(
@@ -623,7 +631,10 @@ impl<'scope> OwnedScope<'scope> {
         self.inner
             .watch_getter_from(inputs, getter, callback, error_handler, options)
             .map(Effect::from_inner)
-            .map_err(map_effect_init_error)
+            .map_err(|error| match error {
+                EffectInitError::Registration(error) => SilexError::fatal(error),
+                EffectInitError::Initial(error) => error,
+            })
     }
 
     /// Register a cleanup callback for this persistent owner.
@@ -642,7 +653,7 @@ impl<'scope> OwnedScope<'scope> {
     {
         self.inner
             .on_cleanup(f, error_handler)
-            .map_err(SilexError::from)
+            .map_err(SilexError::fatal)
     }
 
     /// Create a one-shot completion destination.
@@ -656,7 +667,7 @@ impl<'scope> OwnedScope<'scope> {
     {
         self.inner
             .completion_once(callback)
-            .map_err(SilexError::from)
+            .map_err(SilexError::fatal)
     }
 
     /// Create a reusable completion destination.
@@ -670,7 +681,7 @@ impl<'scope> OwnedScope<'scope> {
     {
         self.inner
             .completion_sender(callback)
-            .map_err(SilexError::from)
+            .map_err(SilexError::fatal)
     }
 
     /// Spawn a task owned by this persistent scope or the currently running computation.

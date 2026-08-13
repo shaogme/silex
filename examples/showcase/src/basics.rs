@@ -74,20 +74,31 @@ pub fn Counter<'scope>(
                     if let Some(handle) = timer.get_untracked()? {
                         handle.cancel();
                     }
-                    timer.set_untracked(None)?;
-                    set_is_running.set(false)?;
+                    timer
+                        .set_untracked(None)
+                        .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+                    set_is_running
+                        .set(false)
+                        .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                 } else {
                     let handle = set_interval(
                         &owner_for_timer,
                         move || -> SilexResult<()> {
-                            set_count.update(|n| *n += 1)?;
+                            set_count.update(|n| *n += 1).map_err(|error| {
+                                SilexError::fatal(SilexErrorKind::Reactivity(error))
+                            })?;
                             Ok(())
                         },
                         Duration::from_millis(1000),
                         error_handler,
-                    )?;
-                    timer.set_untracked(Some(handle))?;
-                    set_is_running.set(true)?;
+                    )
+                    .map_err(|error| SilexError::fatal(SilexErrorKind::from(error)))?;
+                    timer
+                        .set_untracked(Some(handle))
+                        .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+                    set_is_running
+                        .set(true)
+                        .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                 }
                 Ok(())
             })
@@ -101,7 +112,9 @@ pub fn Counter<'scope>(
                 .on(event::input, move |e| {
                     let val_str = event_target_value(&e);
                     if let Ok(n) = val_str.parse::<i32>() {
-                        set_count.set(n)?;
+                        set_count.set(n).map_err(|error| {
+                            SilexError::fatal(SilexErrorKind::Reactivity(error))
+                        })?;
                     }
                     Ok(())
                 })
@@ -134,7 +147,10 @@ pub fn NodeRefDemo<'scope>(
             .node_ref(input_ref) // NodeRef 是 Copy 的，无需 clone
             .style(sty().margin_right(px(10))?.padding("5px")?),
         button("Focus Input").on(event::click, move |_| {
-            if let Some(el) = input_ref.get()? {
+            if let Some(el) = input_ref
+                .get()
+                .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?
+            {
                 let _ = el.focus();
             }
             Ok(())
@@ -226,9 +242,13 @@ pub fn EventDemo<'scope>(
             name.get()?,
             count.get()?
         ));
-        set_count.update(|n| *n += 1)?;
+        set_count
+            .update(|n| *n += 1)
+            .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
         let next_count = count.get()? + 1;
-        set_name.update(|n| *n = format!("Silex {}", next_count))?;
+        set_name
+            .update(|n| *n = format!("Silex {}", next_count))
+            .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
         Ok(())
     };
 
@@ -236,12 +256,14 @@ pub fn EventDemo<'scope>(
         // For non-Copy types like String, we clone them manually if needed multiple times
         let owned_data = payload.clone();
 
-        set_logs.update(|l| {
-            if l.len() >= 5 {
-                l.remove(0);
-            }
-            l.push(format!("Consumed: {}", owned_data));
-        })?;
+        set_logs
+            .update(|l| {
+                if l.len() >= 5 {
+                    l.remove(0);
+                }
+                l.push(format!("Consumed: {}", owned_data));
+            })
+            .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
         Ok(())
     };
 

@@ -40,9 +40,14 @@ fn App<'scope>(
                     p(format!("Error info: {}", error)),
                     button("Reset (Reload Page)").on_click(|_| {
                         let window = web_sys::window().ok_or_else(|| {
-                            SilexError::Javascript("Window is unavailable".to_string())
+                            SilexError::fatal(SilexErrorKind::Javascript(
+                                "Window is unavailable".to_string(),
+                            ))
                         })?;
-                        window.location().reload().map_err(SilexError::from)?;
+                        window
+                            .location()
+                            .reload()
+                            .map_err(|error| SilexError::fatal(SilexErrorKind::from(error)))?;
                         Ok(())
                     }),
                 )
@@ -80,14 +85,16 @@ fn RecoverableComponent<'scope>(
 
     Ok(move || {
         if should_error.get()? {
-            Err(SilexError::Javascript(
+            Err(SilexError::recoverable(SilexErrorKind::Framework(
                 "User clicked the error button!".to_string(),
-            ))
+            )))
         } else {
             Ok(div!(
                 p("Component is running normally."),
                 button("Trigger Result::Err").on_click(move |_| {
-                    set_should_error.set(true)?;
+                    set_should_error
+                        .set(true)
+                        .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                     Ok(())
                 }),
             ))
@@ -111,7 +118,9 @@ fn PanicToggleComponent<'scope>(
                 div!(
                     p("The panic component is currently hidden."),
                     button("Show Panic Component").on_click(move |_| {
-                        set_show_panic.set(true)?;
+                        set_show_panic.set(true).map_err(|error| {
+                            SilexError::fatal(SilexErrorKind::Reactivity(error))
+                        })?;
                         Ok(())
                     }),
                 )
@@ -131,7 +140,9 @@ fn ImmediatePanic<'scope>(
     Ok(div!(
         p("Ready to panic?"),
         button("Click to Panic Immediately").on_click(move |_| {
-            set_active.set(true)?;
+            set_active
+                .set(true)
+                .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
             Ok(())
         }),
         move || -> SilexResult<String> {

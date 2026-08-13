@@ -1,7 +1,7 @@
 #![cfg(target_arch = "wasm32")]
 
 use silex_bootstrap::{AppHost, AppHostError, HostState, UnmountOutcome};
-use silex_core::{Runtime, SilexError, SilexResult};
+use silex_core::{Runtime, SilexError, SilexErrorKind, SilexResult};
 use silex_dom::{CleanupSink, MountContext, element::Element};
 use std::{
     cell::Cell,
@@ -91,7 +91,9 @@ fn clean_mount_failure_returns_to_ready_and_preserves_primary_error() {
 
     let error = host
         .mount(Runtime::new(), |_context| {
-            Err(SilexError::Framework("mount rejected".to_string()))
+            Err(SilexError::recoverable(SilexErrorKind::Framework(
+                "mount rejected".to_string(),
+            )))
         })
         .expect_err("builder failure should be returned");
 
@@ -100,7 +102,7 @@ fn clean_mount_failure_returns_to_ready_and_preserves_primary_error() {
         .expect("mount error should be preserved");
     assert!(matches!(
         mount_error.primary(),
-        SilexError::Framework(message) if message == "mount rejected"
+        SilexError::Recoverable(SilexErrorKind::Framework(message)) if message == "mount rejected"
     ));
     assert!(mount_error.rollback().is_clean());
     assert_eq!(host.state(), HostState::Ready);
@@ -127,7 +129,9 @@ fn non_clean_mount_rollback_poisoned_host() {
                 || -> SilexResult<()> { panic!("rollback cleanup failure") },
                 handler,
             )?;
-            Err(SilexError::Framework("mount rejected".to_string()))
+            Err(SilexError::recoverable(SilexErrorKind::Framework(
+                "mount rejected".to_string(),
+            )))
         })
         .expect_err("mount should fail");
 
@@ -245,7 +249,9 @@ fn failed_new_mount_leaves_replace_host_empty_and_ready() {
         .expect("old app should mount");
     let error = host
         .replace(Runtime::new(), |_context| {
-            Err(SilexError::Framework("new app rejected".to_string()))
+            Err(SilexError::recoverable(SilexErrorKind::Framework(
+                "new app rejected".to_string(),
+            )))
         })
         .expect_err("new mount failure should be returned");
 

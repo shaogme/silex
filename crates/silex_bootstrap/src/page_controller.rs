@@ -1,5 +1,5 @@
 use crate::{AppHost, AppHostError, BootstrapError, HostState, UnmountOutcome};
-use silex_core::{Runtime, SilexError, SilexResult};
+use silex_core::{Runtime, SilexError, SilexErrorKind, SilexResult};
 use silex_dom::{
     CleanupSink, MountContext,
     helpers::{self, detached::WindowListenerHandle},
@@ -99,15 +99,17 @@ impl PageController {
             }
         };
         if helpers::try_window().is_none() {
-            return Err(BootstrapError::Listener(SilexError::Dom(
-                "Window not found".to_string(),
+            return Err(BootstrapError::Listener(SilexError::fatal(
+                SilexErrorKind::Dom("Window not found".to_string()),
             )));
         }
 
         let document = match policy {
             PageLifecyclePolicy::PageHideAndVisibilityChange => {
                 Some(helpers::try_document().ok_or_else(|| {
-                    BootstrapError::Listener(SilexError::Dom("Document not found".to_string()))
+                    BootstrapError::Listener(SilexError::fatal(SilexErrorKind::Dom(
+                        "Document not found".to_string(),
+                    )))
                 })?)
             }
             PageLifecyclePolicy::Manual | PageLifecyclePolicy::PageHide => None,
@@ -129,7 +131,9 @@ impl PageController {
                     }
                     dispatch_lifecycle_unmount(&host, &reporter);
                 })
-                .map_err(|error| BootstrapError::Listener(error.into()))?;
+                .map_err(|error| {
+                    BootstrapError::Listener(SilexError::fatal(SilexErrorKind::from(error)))
+                })?;
             listeners.push(listener);
         }
 

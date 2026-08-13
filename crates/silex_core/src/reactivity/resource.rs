@@ -1,6 +1,6 @@
 use crate::reactivity::ReactiveSource;
 use crate::{
-    ErrorReporter, Rx, Scope, SilexError, SilexResult,
+    ErrorReporter, Rx, Scope, SilexError, SilexErrorKind, SilexResult,
     reactivity::{ReadSignal, RwSignal, WriteSignal},
     traits::{RxBase, RxCloneData, RxData, RxError, RxGet, RxRead, RxValue},
     unwind_safe,
@@ -28,9 +28,9 @@ impl<T, E> ResourceState<T, E> {
     pub fn into_value(self) -> SilexResult<T> {
         match self {
             Self::Ready(value) | Self::Reloading(value) => Ok(value),
-            _ => Err(SilexError::Framework(
+            _ => Err(SilexError::fatal(SilexErrorKind::Framework(
                 "resource state does not contain data".into(),
-            )),
+            ))),
         }
     }
 
@@ -147,10 +147,12 @@ where
                     message.id,
                     message.result,
                 ) {
-                    set_state_for_callback.set(next_state)?;
+                    set_state_for_callback
+                        .set(next_state)
+                        .map_err(SilexError::fatal)?;
                 }
                 if let Some(context) = suspense_for_callback {
-                    context.decrement()?;
+                    context.decrement().map_err(SilexError::fatal)?;
                 }
                 Ok(())
             }))?;
@@ -174,9 +176,11 @@ where
                         .map(ResourceState::Reloading)
                         .unwrap_or(ResourceState::Loading)
                 })?;
-                set_state_for_effect.set(next_state)?;
+                set_state_for_effect
+                    .set(next_state)
+                    .map_err(SilexError::fatal)?;
                 if let Some(context) = suspense_for_effect {
-                    context.increment()?;
+                    context.increment().map_err(SilexError::fatal)?;
                 }
                 let settled = Rc::new(Cell::new(false));
                 let settled_for_cleanup = settled.clone();
@@ -186,16 +190,17 @@ where
                         if !settled_for_cleanup.replace(true)
                             && let Some(context) = suspense_for_cleanup
                         {
-                            context.decrement()?;
+                            context.decrement().map_err(SilexError::fatal)?;
                         }
                         Ok(())
                     },
                     error_handler,
                 )?;
-                let id = request_id_for_effect
-                    .get()
-                    .checked_add(1)
-                    .ok_or_else(|| SilexError::Framework("Resource request id exhausted".into()))?;
+                let id = request_id_for_effect.get().checked_add(1).ok_or_else(|| {
+                    SilexError::fatal(SilexErrorKind::Framework(
+                        "Resource request id exhausted".into(),
+                    ))
+                })?;
                 request_id_for_effect.set(id);
                 let future = fetcher.fetch(input);
                 let completion = completion.clone();
@@ -209,7 +214,7 @@ where
                         match result {
                             Ok(_) => {}
                             Err(CallbackInvokeError::Runtime(error)) => {
-                                let _ = completion_error_handler.handle(error.into());
+                                let _ = completion_error_handler.handle(SilexError::fatal(error));
                             }
                             Err(CallbackInvokeError::User(error)) => {
                                 let _ = completion_error_handler.handle(error);

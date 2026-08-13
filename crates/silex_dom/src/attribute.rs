@@ -5,7 +5,7 @@ use wasm_bindgen::convert::FromWasmAbi;
 use web_sys::{Element, Event, InputEvent, MouseEvent, PointerEvent};
 
 use silex_core::{
-    ReactiveError, SilexError, SilexResult,
+    ReactiveError, SilexError, SilexErrorKind, SilexResult,
     node_ref::NodeRef,
     reactivity::{ReactiveSource, runtime_inputs_of},
     traits::{RxGet, RxWrite},
@@ -241,7 +241,9 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
         self.apply(PendingAttribute::new_scoped(
             move |el: &Element, owner, error_handler| {
                 let typed = el.clone().dyn_into::<N>().map_err(|_| {
-                    SilexError::Dom("NodeRef type mismatch: failed to cast element".to_string())
+                    SilexError::fatal(SilexErrorKind::Dom(
+                        "NodeRef type mismatch: failed to cast element".to_string(),
+                    ))
                 })?;
 
                 let node_ref_for_cleanup = node_ref;
@@ -249,12 +251,12 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
                     Box::new(move || -> SilexResult<()> {
                         match node_ref_for_cleanup.clear() {
                             Ok(()) | Err(ReactiveError::NoSuchNode) => Ok(()),
-                            Err(error) => Err(error.into()),
+                            Err(error) => Err(SilexError::fatal(error)),
                         }
                     }),
                     error_handler,
                 )?;
-                node_ref.load(typed).map_err(SilexError::from)
+                node_ref.load(typed).map_err(SilexError::fatal)
             },
         ))
     }
@@ -349,7 +351,8 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
     {
         let s = signal.clone();
         let this = self.on_input(move |value| {
-            s.update(|current| *current = T::from(value))?;
+            s.update(|current| *current = T::from(value))
+                .map_err(SilexError::fatal)?;
             Ok(())
         });
 

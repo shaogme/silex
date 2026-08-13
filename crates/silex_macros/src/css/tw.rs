@@ -292,7 +292,7 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
         quote! {
             let #name = __slx_conditions_for_effect[#index]
                 .get()
-                .map_err(#__silex::core::SilexError::from)?;
+                ?;
         }
     });
 
@@ -349,7 +349,11 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
                                         __slx_element
                                             .class_list()
                                             .add_1(__slx_token)
-                                            .map_err(#__silex::core::SilexError::from)?;
+                                            .map_err(|error| {
+                                                #__silex::core::SilexError::fatal(
+                                                    #__silex::core::SilexErrorKind::from(error),
+                                                )
+                                            })?;
                                     }
                                 }
                                 for __slx_token in __slx_old_class.split_whitespace() {
@@ -360,7 +364,11 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
                                         __slx_element
                                             .class_list()
                                             .remove_1(__slx_token)
-                                            .map_err(#__silex::core::SilexError::from)?;
+                                            .map_err(|error| {
+                                                #__silex::core::SilexError::fatal(
+                                                    #__silex::core::SilexErrorKind::from(error),
+                                                )
+                                            })?;
                                     }
                                 }
                                 Ok(__slx_next_class)
@@ -388,7 +396,11 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
                                     __slx_element_for_cleanup
                                         .class_list()
                                         .remove_1(__slx_token)
-                                        .map_err(#__silex::core::SilexError::from)?;
+                                        .map_err(|error| {
+                                            #__silex::core::SilexError::fatal(
+                                                #__silex::core::SilexErrorKind::from(error),
+                                            )
+                                        })?;
                                 }
                             }
                             Ok(())

@@ -1,5 +1,5 @@
 use silex_core::traits::RxBase;
-use silex_core::{ErrorHandler, ReactiveError, Runtime, Scope, SilexError};
+use silex_core::{ErrorHandler, ReactiveError, Runtime, Scope, SilexError, SilexErrorKind};
 use std::{cell::Cell, rc::Rc};
 
 fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, SilexError> {
@@ -24,7 +24,9 @@ fn core_try_operations_preserve_borrow_conflicts() {
             let write_then_read = write.update(|_| read.get());
             assert!(matches!(
                 write_then_read,
-                Ok(Err(SilexError::Reactivity(ReactiveError::BorrowConflict)))
+                Ok(Err(SilexError::Fatal(SilexErrorKind::Reactivity(
+                    ReactiveError::BorrowConflict
+                ))))
             ));
 
             let write_then_write = write.update(|_| write.set(2));
@@ -113,11 +115,15 @@ fn stale_core_trait_access_returns_no_such_node() {
                     move || {
                         assert!(matches!(
                             read.get(),
-                            Err(SilexError::Reactivity(ReactiveError::NoSuchNode))
+                            Err(SilexError::Fatal(SilexErrorKind::Reactivity(
+                                ReactiveError::NoSuchNode
+                            )))
                         ));
                         assert!(matches!(
                             read.track(),
-                            Err(SilexError::Reactivity(ReactiveError::NoSuchNode))
+                            Err(SilexError::Fatal(SilexErrorKind::Reactivity(
+                                ReactiveError::NoSuchNode
+                            )))
                         ));
                         assert!(matches!(write.set(2), Err(ReactiveError::NoSuchNode)));
                         assert!(matches!(write.notify(), Err(ReactiveError::NoSuchNode)));
@@ -132,16 +138,18 @@ fn stale_core_trait_access_returns_no_such_node() {
 
     assert!(matches!(
         stale_error.take(),
-        Some(SilexError::Reactivity(ReactiveError::NoSuchNode))
+        Some(SilexError::Fatal(SilexErrorKind::Reactivity(
+            ReactiveError::NoSuchNode
+        )))
     ));
 }
 
 #[test]
 fn runtime_errors_are_matchable_through_silex_error() {
-    let error = SilexError::from(ReactiveError::RuntimeMismatch);
+    let error = SilexErrorKind::from(ReactiveError::RuntimeMismatch);
     assert!(matches!(
         error,
-        SilexError::Reactivity(ReactiveError::RuntimeMismatch)
+        SilexErrorKind::Reactivity(ReactiveError::RuntimeMismatch)
     ));
 }
 
@@ -157,11 +165,15 @@ fn core_owner_registration_exposes_inactive_errors() {
 
             assert!(matches!(
                 owner.on_cleanup(|| Ok(()), handler(scope)),
-                Err(SilexError::Reactivity(ReactiveError::NoSuchNode))
+                Err(SilexError::Fatal(SilexErrorKind::Reactivity(
+                    ReactiveError::NoSuchNode
+                )))
             ));
             assert!(matches!(
                 owner.child(),
-                Err(SilexError::Reactivity(ReactiveError::NoSuchNode))
+                Err(SilexError::Fatal(SilexErrorKind::Reactivity(
+                    ReactiveError::NoSuchNode
+                )))
             ));
         })
         .expect("child scope should initialize");

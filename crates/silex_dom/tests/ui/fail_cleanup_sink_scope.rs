@@ -1,4 +1,4 @@
-use silex_core::{Runtime, SilexError};
+use silex_core::{Runtime, SilexError, SilexErrorKind};
 use silex_dom::mounted::CleanupSink;
 
 fn main() {
@@ -6,7 +6,7 @@ fn main() {
     runtime.child(|scope| {
         let handler = scope.error_handler(|_: SilexError| {}).expect("handler");
         let _sink = CleanupSink::new(move |_| {
-            handler.handle(SilexError::Framework("scoped".to_string()));
+            handler.handle(SilexError::recoverable(SilexErrorKind::Framework("scoped".to_string())));
         });
     });
 }

@@ -6,8 +6,8 @@ use std::{
 use wasm_bindgen_futures::spawn_local;
 
 use silex_core::{
-    CallbackInvokeError, CompletionSender, ErrorReporter, Scope, SilexError, SilexResult, rx,
-    unwind_safe,
+    CallbackInvokeError, CompletionSender, ErrorReporter, Scope, SilexError, SilexErrorKind,
+    SilexResult, rx, unwind_safe,
 };
 use silex_dom::prelude::*;
 use silex_dom::view::{OwnerState, SharedSlot, ViewOwner};
@@ -27,7 +27,7 @@ fn submit_boundary_error(
         return;
     };
     let error = match error {
-        CallbackInvokeError::Runtime(error) => SilexError::Reactivity(error),
+        CallbackInvokeError::Runtime(error) => SilexError::fatal(SilexErrorKind::Reactivity(error)),
         CallbackInvokeError::User(error) => error,
     };
     let handler_result = catch_unwind(AssertUnwindSafe(|| error_handler.handle(error)));
@@ -101,9 +101,9 @@ impl<'scope> ErrorBoundaryBranch<'scope> {
                 .and_then(|state| state.with(|handler| *handler).ok())
         });
         handler.ok_or_else(|| {
-            SilexError::Framework(
+            SilexError::fatal(SilexErrorKind::Framework(
                 "ErrorBoundary parent handler must be resolved during mount".to_string(),
-            )
+            ))
         })
     }
 
@@ -125,10 +125,11 @@ impl<'scope> ErrorBoundaryBranch<'scope> {
                 let result = self.view.mount(owner, parent, attrs, child_handler);
                 match result {
                     Ok(()) => Ok(()),
-                    Err(error) => {
+                    Err(error @ SilexError::Recoverable(_)) => {
                         record_error(error.clone());
                         fallback(error).mount_owned(owner, parent, fallback_attrs, parent_handler)
                     }
+                    Err(error @ SilexError::Fatal(_)) => Err(error),
                 }
             }
             BoundaryPhase::Fallback => self.view.mount(owner, parent, attrs, parent_handler),
@@ -315,7 +316,7 @@ where
                         "Unknown Panic".to_string()
                     };
                     let completion = completion.clone();
-                    let error = SilexError::Javascript(message);
+                    let error = SilexError::fatal(SilexErrorKind::Javascript(message));
                     let error_handler = completion_error_handler;
                     spawn_local(async move {
                         submit_boundary_error(&completion, error, error_handler);

@@ -62,7 +62,7 @@ fn App<'scope>(
         },
         not_found "/*" => move |ctx| routes::NotFoundPage(ctx).error_handler(error_handler).build(),
     })
-    .map_err(|error| SilexError::Framework(error.to_string()))?;
+    .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
 
     Ok(div!(
         css::GlobalStyles(scope, error_handler),
@@ -102,26 +102,28 @@ fn mount_showcase_view<'scope>(context: &MountContext<'scope>) -> SilexResult<()
         web_sys::console::error_1(&error.to_string().into());
     })?;
 
-    let parse_locale =
-        |value: &str| Locale::new(value).map_err(|error| SilexError::Framework(error.to_string()));
+    let parse_locale = |value: &str| {
+        Locale::new(value)
+            .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))
+    };
 
     let en_catalog = Catalog::from_json(
         parse_locale("en-US")?,
         include_str!("../locales/en-US.json"),
     )
-    .map_err(|error| SilexError::Framework(error.to_string()))?;
+    .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
     let zh_catalog = Catalog::from_json(
         parse_locale("zh-CN")?,
         include_str!("../locales/zh-CN.json"),
     )
-    .map_err(|error| SilexError::Framework(error.to_string()))?;
+    .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
     let ar_catalog = Catalog::from_json(
         parse_locale("ar-EG")?,
         include_str!("../locales/ar-EG.json"),
     )
-    .map_err(|error| SilexError::Framework(error.to_string()))?;
+    .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
     let fr_catalog = Catalog::from_json(parse_locale("fr")?, include_str!("../locales/fr.json"))
-        .map_err(|error| SilexError::Framework(error.to_string()))?;
+        .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
     let available_locales = [
         parse_locale("en-US")?,
         parse_locale("zh-CN")?,
@@ -145,7 +147,7 @@ fn mount_showcase_view<'scope>(context: &MountContext<'scope>) -> SilexResult<()
         .catalog(ar_catalog)
         .catalog(fr_catalog)
         .build()
-        .map_err(|error| SilexError::Framework(error.to_string()))?;
+        .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
     let _metadata_effect = i18n.sync_document_metadata()?;
 
     let theme = Persistent::builder(scope, "silex-showcase-theme", error_handler)

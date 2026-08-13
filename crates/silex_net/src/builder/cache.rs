@@ -1,6 +1,8 @@
 use std::{collections::HashMap, rc::Rc};
 
-use silex_core::{CompletionOnce, Scope, SilexError, SilexResult, StoredValue, unwind_safe};
+use silex_core::{
+    CompletionOnce, Scope, SilexError, SilexErrorKind, SilexResult, StoredValue, unwind_safe,
+};
 use silex_persist::{LocalStorageBackend, PersistCodec, PersistenceBackend};
 
 use crate::{
@@ -84,9 +86,11 @@ where
     }
 
     fn touch(entry: &mut CacheEntry<T>, next_access: &mut u64) -> SilexResult<()> {
-        let access = next_access
-            .checked_add(1)
-            .ok_or_else(|| SilexError::Framework("HTTP cache access counter exhausted".into()))?;
+        let access = next_access.checked_add(1).ok_or_else(|| {
+            SilexError::fatal(SilexErrorKind::Framework(
+                "HTTP cache access counter exhausted".to_string(),
+            ))
+        })?;
         *next_access = access;
         entry.last_access = access;
         entry.last_access_at = Self::now();
@@ -107,7 +111,7 @@ where
         if matches!(config.eviction, CacheEviction::RemovePersisted) {
             backend
                 .remove(key)
-                .map_err(|error| SilexError::Framework(error.to_string()))?;
+                .map_err(|error| SilexError::fatal(SilexErrorKind::Framework(error.to_string())))?;
         }
         Ok(())
     }
@@ -130,7 +134,9 @@ where
             Ok(Some(raw)) => raw,
             Ok(None) => return Ok(None),
             Err(error) => {
-                return Err(SilexError::Framework(error.to_string()));
+                return Err(SilexError::fatal(SilexErrorKind::Framework(
+                    error.to_string(),
+                )));
             }
         };
         match (state.decode)(&raw) {
@@ -165,10 +171,11 @@ where
             Self::evict_one(state)?;
         }
 
-        let access = state
-            .next_access
-            .checked_add(1)
-            .ok_or_else(|| SilexError::Framework("HTTP cache access counter exhausted".into()))?;
+        let access = state.next_access.checked_add(1).ok_or_else(|| {
+            SilexError::fatal(SilexErrorKind::Framework(
+                "HTTP cache access counter exhausted".to_string(),
+            ))
+        })?;
         state.next_access = access;
         let entry = CacheEntry {
             snapshot: Self::load_snapshot(state, key)?,
@@ -186,15 +193,17 @@ where
         key: &str,
         snapshot: Option<T>,
     ) -> SilexResult<CacheBinding<T>> {
-        let generation = state
-            .next_generation
-            .checked_add(1)
-            .ok_or_else(|| SilexError::Framework("HTTP cache generation exhausted".into()))?;
+        let generation = state.next_generation.checked_add(1).ok_or_else(|| {
+            SilexError::fatal(SilexErrorKind::Framework(
+                "HTTP cache generation exhausted".to_string(),
+            ))
+        })?;
         state.next_generation = generation;
-        let entry = state
-            .entries
-            .get_mut(key)
-            .ok_or_else(|| SilexError::Framework("cache entry missing before binding".into()))?;
+        let entry = state.entries.get_mut(key).ok_or_else(|| {
+            SilexError::fatal(SilexErrorKind::Framework(
+                "cache entry missing before binding".to_string(),
+            ))
+        })?;
         entry.generation = generation;
         Self::touch(entry, &mut state.next_access)?;
         Ok(CacheBinding {
@@ -213,14 +222,14 @@ where
                 };
                 Ok(Some(Self::begin_binding(state, &key, snapshot)?))
             })
-            .map_err(SilexError::from)?
+            .map_err(SilexError::fatal)?
     }
 
     pub(crate) fn cached_value(&self, spec: &RequestSpec) -> SilexResult<Option<T>> {
         let key = Self::key(spec);
         self.state
             .update(|state| Ok(Self::ensure_entry(state, &key)?.flatten()))
-            .map_err(SilexError::from)?
+            .map_err(SilexError::fatal)?
     }
 
     pub(crate) fn completion_once_for_binding(
@@ -245,10 +254,14 @@ where
             }
 
             let raw = encode(&value).map_err(|error| {
-                SilexError::Framework(format!("encode HTTP cache value failed: {error}"))
+                SilexError::fatal(SilexErrorKind::Framework(format!(
+                    "encode HTTP cache value failed: {error}"
+                )))
             })?;
             backend.set(&key, &raw).map_err(|error| {
-                SilexError::Framework(format!("write HTTP cache value failed: {error}"))
+                SilexError::fatal(SilexErrorKind::Framework(format!(
+                    "write HTTP cache value failed: {error}"
+                )))
             })?;
 
             state
@@ -259,7 +272,7 @@ where
                         entry.snapshot = Some(value);
                     }
                 })
-                .map_err(SilexError::from)?;
+                .map_err(SilexError::fatal)?;
             Ok(())
         }))
     }

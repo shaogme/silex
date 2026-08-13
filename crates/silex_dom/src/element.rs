@@ -103,7 +103,9 @@ impl<'scope> Element<'scope> {
             for attr in attrs {
                 attr.apply(&self.dom_element, &token, error_handler)?;
             }
-            parent.append_child(&self.dom_element)?;
+            parent
+                .append_child(&self.dom_element)
+                .map_err(SilexError::fatal)?;
             appended = true;
             for child in &self.children {
                 child.mount(
@@ -401,7 +403,7 @@ where
     E: FromWasmAbi + JsCast + 'static,
 {
     if !owner.is_active() {
-        return Err(SilexError::Reactivity(ReactiveError::NoSuchNode));
+        return Err(SilexError::fatal(ReactiveError::NoSuchNode));
     }
     let destination = owner.host_callback(
         move |payload| handler(payload.unchecked_into::<E>()),
@@ -415,7 +417,7 @@ where
     let js_fn = resource.js_callback_function();
     if let Err(error) = dom_element
         .add_event_listener_with_callback(&event_name, &js_fn)
-        .map_err(SilexError::from)
+        .map_err(SilexError::fatal)
     {
         destination.cancel();
         resource.cancel_once();

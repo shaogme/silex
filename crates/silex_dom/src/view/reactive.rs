@@ -6,7 +6,7 @@ use crate::view::{
 };
 use silex_core::reactivity::{Memo, ReadSignal, RwSignal, Signal, StoredValue};
 use silex_core::traits::RxCloneData;
-use silex_core::{Rx, RxValueKind, SilexResult};
+use silex_core::{Rx, RxValueKind, SilexError, SilexResult};
 use std::fmt::Display;
 use std::{borrow::Cow, rc::Rc};
 use web_sys::Node;
@@ -26,7 +26,7 @@ where
     let local_owner = OwnedViewOwner::new(scope.clone());
     let parent = parent.clone();
     let node: Node = crate::document().create_text_node("").into();
-    parent.append_child(&node)?;
+    parent.append_child(&node).map_err(SilexError::fatal)?;
     let node_for_cleanup = node.clone();
     if let Err(error) = local_owner.on_cleanup(
         Box::new(move || {

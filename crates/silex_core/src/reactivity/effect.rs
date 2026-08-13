@@ -34,6 +34,6 @@ impl<'scope> Effect<'scope> {
     }
 
     pub fn stop(&self) -> SilexResult<bool> {
-        self.inner.stop().map_err(SilexError::from)
+        self.inner.stop().map_err(SilexError::fatal)
     }
 }

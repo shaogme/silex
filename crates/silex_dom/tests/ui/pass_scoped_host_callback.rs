@@ -1,4 +1,6 @@
-use silex_core::{ErrorReporter, ReadSignal, SilexResult, WriteSignal};
+use silex_core::{
+    ErrorReporter, ReadSignal, SilexError, SilexResult, WriteSignal,
+};
 use silex_dom::{
     attribute::GlobalEventAttributes,
     element::Element,
@@ -18,7 +20,8 @@ fn compile_element<'scope>(
 ) -> Element<'scope> {
     Element::new("button").on_click(move |_| {
         let _ = borrowed_ref;
-        write.set(read.get()? + 1)?;
+        write.set(read.get()? + 1)
+            .map_err(SilexError::fatal)?;
         Ok(())
     })
 }
@@ -34,7 +37,9 @@ fn compile_owned<'scope>(
     let _timeout = set_timeout(
         token,
         move || {
-            write.set(read.get()? + borrowed_ref.len() as i32)?;
+            write
+                .set(read.get()? + borrowed_ref.len() as i32)
+                .map_err(SilexError::fatal)?;
             Ok(())
         },
         Duration::from_millis(1),
@@ -43,33 +48,45 @@ fn compile_owned<'scope>(
     let _interval = set_interval(
         token,
         move || {
-            write.set(read.get()? + borrowed_ref.len() as i32)?;
+            write
+                .set(read.get()? + borrowed_ref.len() as i32)
+                .map_err(SilexError::fatal)?;
             Ok(())
         },
         Duration::from_millis(1),
         error_handler,
     );
     let _frame = request_animation_frame(token, move || {
-        write.set(read.get()? + borrowed_ref.len() as i32)?;
+        write
+            .set(read.get()? + borrowed_ref.len() as i32)
+            .map_err(SilexError::fatal)?;
         Ok(())
     }, error_handler);
     let _idle = request_idle_callback(token, move || {
-        write.set(read.get()? + borrowed_ref.len() as i32)?;
+        write
+            .set(read.get()? + borrowed_ref.len() as i32)
+            .map_err(SilexError::fatal)?;
         Ok(())
     }, error_handler);
     let _microtask = queue_microtask(token, move || {
-        write.set(read.get()? + borrowed_ref.len() as i32)?;
+        write
+            .set(read.get()? + borrowed_ref.len() as i32)
+            .map_err(SilexError::fatal)?;
         Ok(())
     }, error_handler);
     let _listener = window_event_listener_untyped(token, "click", move |_| {
         let _ = borrowed_ref;
-        write.set(read.get()? + 1)?;
+        write
+            .set(read.get()? + 1)
+            .map_err(SilexError::fatal)?;
         Ok(())
     }, error_handler);
     let _debounced = debounce(token, Duration::from_millis(1), move |_: i32| {
-        write.set(read.get()? + 1)?;
+        write
+            .set(read.get()? + 1)
+            .map_err(SilexError::fatal)?;
         Ok(())
-    }, error_handler)?;
+    }, error_handler).map_err(SilexError::fatal)?;
     Ok(())
 }
 

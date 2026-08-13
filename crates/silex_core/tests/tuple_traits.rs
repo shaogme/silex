@@ -62,7 +62,7 @@ fn cloneable_tuple_supports_tracked_and_untracked_reads() -> SilexResult<()> {
 
         set_first.set(7).expect("signal should be writable");
         assert_eq!(sources.with(|value| value.0 + value.1)?, 9);
-        Ok::<(), silex_core::SilexError>(())
+        Ok::<(), SilexError>(())
     })??;
     Ok(())
 }

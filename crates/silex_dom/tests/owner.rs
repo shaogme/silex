@@ -1,7 +1,8 @@
 #![cfg(target_arch = "wasm32")]
 
 use silex_core::{
-    ErrorReporter, Runtime, RuntimeInputs, Scope, SilexError, SilexResult, runtime_inputs_of,
+    ErrorReporter, Runtime, RuntimeInputs, Scope, SilexError, SilexErrorKind, SilexResult,
+    runtime_inputs_of,
 };
 use silex_dom::attribute::{AttrOp, CombinedStyles, PendingAttribute};
 use silex_dom::element::Element;
@@ -93,7 +94,9 @@ impl<'scope> View<'scope> for FailingChild {
             }),
             error_handler,
         )?;
-        Err(SilexError::Framework("child mount rejected".to_string()))
+        Err(SilexError::recoverable(SilexErrorKind::Framework(
+            "child mount rejected".to_string(),
+        )))
     }
 
     fn mount_owned(
@@ -126,10 +129,10 @@ impl<'scope> View<'scope> for ConditionalRow {
         _error_handler: ErrorReporter<'scope>,
     ) -> SilexResult<()> {
         if self.fail == Some(self.value) {
-            return Err(SilexError::Framework(format!(
+            return Err(SilexError::recoverable(SilexErrorKind::Framework(format!(
                 "row {} rejected",
                 self.value
-            )));
+            ))));
         }
         mount_text_node(parent, &format!("{};", self.value))
     }
@@ -174,7 +177,7 @@ impl<'scope> View<'scope> for StatefulProbe {
             .into();
         parent
             .append_child(&node)
-            .map_err(silex_core::SilexError::from)?;
+            .map_err(|error| SilexError::fatal(SilexErrorKind::from(error)))?;
         *self.node.borrow_mut() = Some(node);
 
         let node_for_cleanup = self.node.clone();
@@ -244,12 +247,12 @@ fn native_owner_error_handler_separates_initial_deferred_and_cleanup_errors() {
             let owner = ScopedViewOwner::new(scope);
             let result = owner.effect_from(
                 RuntimeInputs::new(),
-                Box::new(|| Err(SilexError::Framework("initial effect failure".to_string()))),
+                Box::new(|| Err(SilexError::recoverable(SilexErrorKind::Framework("initial effect failure".to_string())))),
                 error_handler,
             );
             assert!(matches!(
                 result,
-                Err(SilexError::Framework(message)) if message == "initial effect failure"
+                Err(SilexError::Recoverable(SilexErrorKind::Framework(message))) if message == "initial effect failure"
             ));
         })
         .expect("child scope should initialize");
@@ -268,11 +271,11 @@ fn native_owner_error_handler_separates_initial_deferred_and_cleanup_errors() {
         let cleanup_reports_for_owner = cleanup_reports.clone();
         let error_handler = scope
             .error_handler(move |error| {
-                if matches!(&error, SilexError::Framework(message) if message == "deferred effect failure")
+                if matches!(&error, SilexError::Recoverable(SilexErrorKind::Framework(message)) if message == "deferred effect failure")
                 {
                     deferred_reports_for_owner.set(deferred_reports_for_owner.get() + 1);
                 }
-                if matches!(&error, SilexError::Framework(message) if message == "cleanup failure")
+                if matches!(&error, SilexError::Recoverable(SilexErrorKind::Framework(message)) if message == "cleanup failure")
                 {
                     cleanup_reports_for_owner.set(cleanup_reports_for_owner.get() + 1);
                 }
@@ -284,7 +287,9 @@ fn native_owner_error_handler_separates_initial_deferred_and_cleanup_errors() {
                 runtime_inputs_of(should_fail),
                 Box::new(move || -> SilexResult<()> {
                     if should_fail.get()? {
-                        return Err(SilexError::Framework("deferred effect failure".to_string()));
+                        return Err(SilexError::recoverable(SilexErrorKind::Framework(
+                            "deferred effect failure".to_string(),
+                        )));
                     }
                     runs_for_effect.set(runs_for_effect.get() + 1);
                     Ok(())
@@ -296,7 +301,11 @@ fn native_owner_error_handler_separates_initial_deferred_and_cleanup_errors() {
 
         owner
             .on_cleanup(
-                Box::new(|| Err(SilexError::Framework("cleanup failure".to_string()))),
+                Box::new(|| {
+                    Err(SilexError::recoverable(SilexErrorKind::Framework(
+                        "cleanup failure".to_string(),
+                    )))
+                }),
                 error_handler,
             )
             .expect("cleanup registration should succeed");
@@ -334,7 +343,7 @@ fn element_child_failure_rolls_back_provisional_owner_and_dom() {
 
             assert!(matches!(
                 view.mount_owned(&owner, &host, Vec::new(), error_handler),
-                Err(SilexError::Framework(message)) if message == "child mount rejected"
+                Err(SilexError::Recoverable(SilexErrorKind::Framework(message))) if message == "child mount rejected"
             ));
         })
         .expect("child scope should initialize");
@@ -368,7 +377,7 @@ fn composite_view_failure_rolls_back_only_its_mount_transaction() {
 
             assert!(matches!(
             view.mount_owned(&owner, &host.clone(), Vec::new(), error_handler),
-                Err(SilexError::Framework(message)) if message == "child mount rejected"
+                Err(SilexError::Recoverable(SilexErrorKind::Framework(message))) if message == "child mount rejected"
             ));
         })
         .expect("child scope should initialize");
@@ -508,7 +517,7 @@ fn keyed_list_initial_duplicate_key_is_a_mount_error() {
 
             assert!(matches!(
                 list.mount_owned(&owner, &host, Vec::new(), error_handler),
-                Err(SilexError::Framework(message)) if message == "duplicate key in keyed list"
+                Err(SilexError::Recoverable(SilexErrorKind::Framework(message))) if message == "duplicate key in keyed list"
             ));
         })
         .expect("child scope should initialize");

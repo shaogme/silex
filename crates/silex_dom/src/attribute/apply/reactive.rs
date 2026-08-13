@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use silex_core::{Rx, RxValueKind, SilexError, SilexResult};
+use silex_core::{Rx, RxValueKind, SilexError, SilexErrorKind, SilexResult};
 use web_sys::Element as WebElem;
 
 use super::foundation::{ApplyTarget, ApplyToDom, ReactiveApply, apply_immediate_string};
@@ -40,15 +40,15 @@ where
                 ApplyTarget::Known(*prop),
                 &Attr::from(value),
             ),
-            ApplyTarget::Class => el.set_attribute("class", &value).map_err(SilexError::from),
+            ApplyTarget::Class => el.set_attribute("class", &value).map_err(SilexError::fatal),
             ApplyTarget::Style => {
                 if let Some(style) = get_style_decl(&el) {
                     style.set_css_text(&value);
                     Ok(())
                 } else {
-                    Err(SilexError::Dom(
-                        "element does not expose a style declaration".into(),
-                    ))
+                    Err(SilexError::fatal(SilexErrorKind::Dom(
+                        "element does not expose a style declaration".to_string(),
+                    )))
                 }
             }
             ApplyTarget::Apply => Ok(()),
@@ -75,11 +75,14 @@ pub(crate) fn apply_string_pair_reactive_internal<'scope>(
     error_handler: ViewErrorHandler<'scope>,
 ) -> SilexResult<()> {
     if matches!(target, ApplyTarget::Style) {
-        let style = get_style_decl(&el)
-            .ok_or_else(|| SilexError::Dom("element does not expose a style declaration".into()))?;
+        let style = get_style_decl(&el).ok_or_else(|| {
+            SilexError::fatal(SilexErrorKind::Dom(
+                "element does not expose a style declaration".to_string(),
+            ))
+        })?;
         register(owner, rx.runtime_inputs(), error_handler, move || {
             let value = rx.get()?;
-            style.set_property(&key, &value).map_err(SilexError::from)
+            style.set_property(&key, &value).map_err(SilexError::fatal)
         })?;
     } else {
         apply_string_reactive_internal(el, target, rx, owner, error_handler)?;
@@ -99,9 +102,9 @@ pub(crate) fn apply_bool_reactive_internal<'scope>(
         match &target {
             ApplyTarget::Attr(name) => {
                 if value {
-                    el.set_attribute(name, "").map_err(SilexError::from)
+                    el.set_attribute(name, "").map_err(SilexError::fatal)
                 } else {
-                    el.remove_attribute(name).map_err(SilexError::from)
+                    el.remove_attribute(name).map_err(SilexError::fatal)
                 }
             }
             ApplyTarget::Prop(name) => apply_immediate_bool_internal(&el, name, value, true),
@@ -115,7 +118,7 @@ pub(crate) fn apply_bool_reactive_internal<'scope>(
                 .class_list()
                 .toggle_with_force("active", value)
                 .map(|_| ())
-                .map_err(SilexError::from),
+                .map_err(SilexError::fatal),
             _ => Ok(()),
         }
     })
@@ -131,9 +134,9 @@ pub(crate) fn apply_bool_pair_reactive_internal<'scope>(
     let list = el.class_list();
     register(owner, rx.runtime_inputs(), error_handler, move || {
         if rx.get()? {
-            list.add_1(&key).map_err(SilexError::from)
+            list.add_1(&key).map_err(SilexError::fatal)
         } else {
-            list.remove_1(&key).map_err(SilexError::from)
+            list.remove_1(&key).map_err(SilexError::fatal)
         }
     })
 }
@@ -365,15 +368,15 @@ where
         register(owner, rx.runtime_inputs(), error_handler, move || {
             let value = rx.get()?.map(|value| value.to_string()).unwrap_or_default();
             match target {
-                ApplyTarget::Class => el.set_attribute("class", &value).map_err(SilexError::from),
+                ApplyTarget::Class => el.set_attribute("class", &value).map_err(SilexError::fatal),
                 ApplyTarget::Style => {
                     if let Some(style) = get_style_decl(&el) {
                         style.set_css_text(&value);
                         Ok(())
                     } else {
-                        Err(SilexError::Dom(
-                            "element does not expose a style declaration".into(),
-                        ))
+                        Err(SilexError::fatal(SilexErrorKind::Dom(
+                            "element does not expose a style declaration".to_string(),
+                        )))
                     }
                 }
                 _ => apply_immediate_string(&el, &target, &value),
@@ -406,13 +409,13 @@ macro_rules! impl_reactive_apply_string_like {
                 ) -> SilexResult<()> {
                     if matches!(target, ApplyTarget::Style) {
                         let style = get_style_decl(&el).ok_or_else(|| {
-                            SilexError::Dom("element does not expose a style declaration".into())
+                            SilexError::fatal(SilexErrorKind::Dom("element does not expose a style declaration".to_string()))
                         })?;
                         register(owner, rx.runtime_inputs(), error_handler, move || {
                             let value = rx.get()?;
                             style
                                 .set_property(&key, value.as_ref())
-                                .map_err(SilexError::from)
+                                .map_err(SilexError::fatal)
                         })?;
                         Ok(())
                     } else {

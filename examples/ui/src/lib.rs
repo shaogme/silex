@@ -134,7 +134,9 @@ fn FormControlsShowcase<'scope>(
                 Input(scope, error_handler)
                     .value(text_val)?
                     .placeholder("Type something...")?
-                    .on_input(scope.callback(move |v| Ok(set_text_val.set(v)?))?).build(),
+                    .on_input(scope.callback(move |v| {
+                        set_text_val.set(v).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))
+                    })?).build(),
                 p(rx!(scope; error_handler; format!("Live Bound Value: '{}'", $text_val)))
                     .class(tw!("text-xs text-slate-500 mt-1.5 font-mono"))
             )).class(tw!("flex flex-col mb-6")),
@@ -154,14 +156,18 @@ fn FormControlsShowcase<'scope>(
                 div(chain!(
                 Checkbox(scope, error_handler)
                     .checked(checked_val)?
-                    .on_change(scope.callback(move |v| Ok(set_checked_val.set(v)?))?).build(),
+                    .on_change(scope.callback(move |v| {
+                        set_checked_val.set(v).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))
+                    })?).build(),
                     span("Enable Notifications").class(tw!("text-sm font-medium text-slate-900 dark:text-slate-100"))
                 )).class(tw!("flex items-center gap-2")),
 
                 div(chain!(
                 Switch(scope, error_handler)
                     .checked(switch_val)?
-                    .on_change(scope.callback(move |v| Ok(set_switch_val.set(v)?))?).build(),
+                    .on_change(scope.callback(move |v| {
+                        set_switch_val.set(v).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))
+                    })?).build(),
                     span("Airplane Mode").class(tw!("text-sm font-medium text-slate-900 dark:text-slate-100"))
                 )).class(tw!("flex items-center gap-2"))
             )).class(tw!("flex flex-wrap items-center justify-between gap-4 p-4 bg-slate-50 dark:bg-slate-900 rounded-lg border border-solid border-slate-200 dark:border-slate-800"))
@@ -198,21 +204,21 @@ fn TabsAndDialogShowcase<'scope>(
                         TabsTrigger(scope, error_handler, "Account", "account")
                             .active_tab(active_tab)?
                             .on_select(scope.callback(move |tab: &'static str| {
-                                set_active_tab.set(tab.to_string())?;
+                                set_active_tab.set(tab.to_string()).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                                 Ok(())
                             })?)
                             .build(),
                         TabsTrigger(scope, error_handler, "Password", "password")
                             .active_tab(active_tab)?
                             .on_select(scope.callback(move |tab: &'static str| {
-                                set_active_tab.set(tab.to_string())?;
+                                set_active_tab.set(tab.to_string()).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                                 Ok(())
                             })?)
                             .build(),
                         TabsTrigger(scope, error_handler, "Settings", "settings")
                             .active_tab(active_tab)?
                             .on_select(scope.callback(move |tab: &'static str| {
-                                set_active_tab.set(tab.to_string())?;
+                                set_active_tab.set(tab.to_string()).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                                 Ok(())
                             })?)
                             .build()
@@ -265,7 +271,7 @@ fn TabsAndDialogShowcase<'scope>(
                 Button(scope, error_handler, "Open Modal Dialog")
                     .variant("default")?
                     .on_click(move |_| {
-                        set_dialog_open.set(true)?;
+                        set_dialog_open.set(true).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                         Ok(())
                     })
                     .build(),
@@ -294,14 +300,14 @@ fn TabsAndDialogShowcase<'scope>(
                         Button(scope, error_handler, "Cancel")
                             .variant("outline")?
                             .on_click(move |_| {
-                                set_dialog_open.set(false)?;
+                                set_dialog_open.set(false).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                                 Ok(())
                             })
                             .build(),
                         Button(scope, error_handler, "Save Changes")
                             .variant("default")?
                             .on_click(move |_| {
-                                set_dialog_open.set(false)?;
+                                set_dialog_open.set(false).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                                 Ok(())
                             })
                             .build()
@@ -311,7 +317,7 @@ fn TabsAndDialogShowcase<'scope>(
                 ))
                 .open(dialog_open)?
                 .on_close(scope.callback(move |_| {
-                    set_dialog_open.set(false)?;
+                    set_dialog_open.set(false).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                     Ok(())
                 })?)
                 .build()
@@ -363,11 +369,11 @@ fn FeedbackAndDataShowcase<'scope>(
                 Progress(scope, error_handler).value(progress_val)?.class(tw!("mb-3"))?.build(),
                 div(chain!(
                     Button(scope, error_handler, "-10%").variant("outline")?.size("xs")?.on_click(move |_| {
-                        set_progress_val.update(|v| *v = v.saturating_sub(10))?;
+                        set_progress_val.update(|v| *v = v.saturating_sub(10)).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                         Ok(())
                     }).build(),
                     Button(scope, error_handler, "+10%").variant("outline")?.size("xs")?.on_click(move |_| {
-                        set_progress_val.update(|v| *v = (*v + 10).min(100))?;
+                        set_progress_val.update(|v| *v = (*v + 10).min(100)).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                         Ok(())
                     }).build()
                 )).class(tw!("flex justify-end gap-2"))
@@ -543,7 +549,7 @@ fn NewComponentsShowcase<'scope>(
                         .min(0.0)?
                         .max(100.0)?
                         .on_change(scope.callback(move |v| {
-                            set_slider_val.set(v)?;
+                            set_slider_val.set(v).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                             Ok(())
                         })?)
                         .build()
@@ -555,7 +561,7 @@ fn NewComponentsShowcase<'scope>(
                         .variant("outline")?
                         .pressed(toggle_pressed)?
                         .on_change(scope.callback(move |p| {
-                            set_toggle_pressed.set(p)?;
+                            set_toggle_pressed.set(p).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                             Ok(())
                         })?)
                         .build()
@@ -577,7 +583,7 @@ fn NewComponentsShowcase<'scope>(
                             RadioGroupItem(scope, error_handler, "option-1")
                                 .selected_value(radio_val)?
                                 .on_select(scope.callback(move |v: &'static str| {
-                                    set_radio_val.set(v.to_string())?;
+                                    set_radio_val.set(v.to_string()).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                                     Ok(())
                                 })?)
                                 .build(),
@@ -587,7 +593,7 @@ fn NewComponentsShowcase<'scope>(
                             RadioGroupItem(scope, error_handler, "option-2")
                                 .selected_value(radio_val)?
                                 .on_select(scope.callback(move |v: &'static str| {
-                                    set_radio_val.set(v.to_string())?;
+                                    set_radio_val.set(v.to_string()).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                                     Ok(())
                                 })?)
                                 .build(),
@@ -603,7 +609,7 @@ fn NewComponentsShowcase<'scope>(
                             AccordionTrigger(scope, error_handler, "Is Silex 1:1 compatible?")
                                 .open(accordion_open)?
                                 .on_click(scope.callback(move |_| {
-                                    set_accordion_open.update(|v| *v = !*v)?;
+                                    set_accordion_open.update(|v| *v = !*v).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                                     Ok(())
                                 })?)
                                 .build(),

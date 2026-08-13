@@ -1,10 +1,10 @@
 #![cfg(target_arch = "wasm32")]
 
-use silex_core::{ErrorReporter, Runtime, SilexError, SilexResult};
+use silex_core::{ErrorReporter, Runtime, SilexError, SilexErrorKind, SilexResult};
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::element::Element;
-use silex_dom::mounted::{CleanupSink, MountedApp};
-use silex_dom::view::{ApplyAttributes, View, ViewOwner};
+use silex_dom::mounted::{CleanupOrigin, CleanupSink, MountedApp};
+use silex_dom::view::{ApplyAttributes, View, ViewOwner, mount_component};
 use std::{cell::Cell, rc::Rc};
 use wasm_bindgen_test::*;
 use web_sys::Node;
@@ -38,6 +38,46 @@ struct CleanupProbe {
     cleanups: Rc<Cell<usize>>,
 }
 
+struct PanicRollbackView;
+
+impl<'scope> ApplyAttributes<'scope> for PanicRollbackView {}
+
+impl<'scope> View<'scope> for PanicRollbackView {
+    fn mount(
+        &self,
+        owner: &dyn ViewOwner<'scope>,
+        parent: &Node,
+        attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ErrorReporter<'scope>,
+    ) -> SilexResult<()> {
+        mount_component(
+            owner,
+            parent,
+            attrs,
+            error_handler,
+            |owner, _, _, handler| {
+                owner.on_cleanup(Box::new(|| panic!("provisional cleanup")), handler)?;
+                Err(SilexError::recoverable(SilexErrorKind::Framework(
+                    "child rejected".to_string(),
+                )))
+            },
+        )
+    }
+
+    fn mount_owned(
+        self,
+        owner: &dyn ViewOwner<'scope>,
+        parent: &Node,
+        attrs: Vec<PendingAttribute<'scope>>,
+        error_handler: ErrorReporter<'scope>,
+    ) -> SilexResult<()>
+    where
+        Self: Sized,
+    {
+        self.mount(owner, parent, attrs, error_handler)
+    }
+}
+
 impl<'scope> ApplyAttributes<'scope> for CleanupProbe {}
 
 impl<'scope> View<'scope> for CleanupProbe {
@@ -61,7 +101,9 @@ impl<'scope> View<'scope> for CleanupProbe {
             .document()
             .expect("document is available");
         let text: Node = document.create_text_node("mounted").into();
-        parent.append_child(&text).map_err(SilexError::from)?;
+        parent
+            .append_child(&text)
+            .map_err(|error| SilexError::fatal(SilexErrorKind::from(error)))?;
         Ok(())
     }
 
@@ -168,7 +210,9 @@ fn mount_error_rolls_back_staging_without_touching_caller_nodes() {
         |context| {
             let handler = error_handler(context.scope());
             context.mount(Element::with_child("section", "partial"), handler)?;
-            Err(SilexError::Framework("primary mount failure".to_string()))
+            Err(SilexError::recoverable(SilexErrorKind::Framework(
+                "primary mount failure".to_string(),
+            )))
         },
     );
 
@@ -178,7 +222,7 @@ fn mount_error_rolls_back_staging_without_touching_caller_nodes() {
     };
     assert!(matches!(
         error.primary(),
-        SilexError::Framework(message) if message == "primary mount failure"
+        SilexError::Recoverable(SilexErrorKind::Framework(message)) if message == "primary mount failure"
     ));
     assert!(error.rollback().is_clean());
     assert_eq!(host.text_content().as_deref(), Some("caller-owned"));
@@ -217,7 +261,9 @@ fn root_cleanup_runs_before_boundary_rollback_is_attempted() {
                 },
                 handler,
             )?;
-            Err(SilexError::Framework("mount rejected".to_string()))
+            Err(SilexError::recoverable(SilexErrorKind::Framework(
+                "mount rejected".to_string(),
+            )))
         },
     );
 
@@ -230,6 +276,38 @@ fn root_cleanup_runs_before_boundary_rollback_is_attempted() {
     assert_eq!(host.text_content().as_deref(), Some("caller-owned"));
     assert_eq!(host.child_nodes().length(), 1);
 
+    host.parent_node()
+        .expect("host has a body parent")
+        .remove_child(&host)
+        .expect("host can be removed");
+}
+
+#[wasm_bindgen_test]
+fn composite_cleanup_failure_upgrades_primary_and_records_provisional_owner() {
+    let host = host_with_caller_node();
+    let result = MountedApp::mount(
+        Runtime::new(),
+        host.clone(),
+        CleanupSink::new(|_| {}),
+        |context| {
+            let handler = error_handler(context.scope());
+            context.mount(PanicRollbackView, handler)
+        },
+    );
+
+    let error = result.expect_err("mount should fail during composite rollback");
+    assert!(matches!(
+        error.primary(),
+        SilexError::Fatal(SilexErrorKind::Framework(message)) if message == "child rejected"
+    ));
+    assert!(
+        error
+            .rollback()
+            .cleanup_failures()
+            .iter()
+            .any(|failure| failure.origin == CleanupOrigin::ProvisionalOwner)
+    );
+    assert_eq!(host.text_content().as_deref(), Some("caller-owned"));
     host.parent_node()
         .expect("host has a body parent")
         .remove_child(&host)

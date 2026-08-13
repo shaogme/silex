@@ -1,6 +1,6 @@
 use crate::{AppHost, AppHostError, BootstrapError, HostState, UnmountOutcome};
 use js_sys::{Array, Object, Reflect};
-use silex_core::{CleanupDiagnostic, CleanupPayloadKind, SilexError};
+use silex_core::{CleanupDiagnostic, CleanupPayloadKind, SilexError, SilexErrorKind};
 use silex_dom::{CleanupFailure, CleanupOrigin, CleanupReport};
 use wasm_bindgen::{JsValue, prelude::wasm_bindgen};
 
@@ -179,8 +179,13 @@ fn cleanup_diagnostic_to_js(diagnostic: &CleanupDiagnostic) -> Result<JsValue, J
 }
 
 fn silex_error_to_js(error: &SilexError) -> Result<JsValue, JsValue> {
+    let (strategy, kind) = match error {
+        SilexError::Recoverable(kind) => ("recoverable", kind),
+        SilexError::Fatal(kind) => ("fatal", kind),
+    };
     let object = Object::new();
-    set_property(&object, "kind", JsValue::from_str(silex_error_kind(error)))?;
+    set_property(&object, "strategy", JsValue::from_str(strategy))?;
+    set_property(&object, "kind", JsValue::from_str(silex_error_kind(kind)))?;
     set_property(&object, "message", JsValue::from_str(&error.to_string()))?;
     Ok(object.into())
 }
@@ -213,12 +218,12 @@ fn cleanup_payload_kind_name(kind: CleanupPayloadKind) -> &'static str {
     }
 }
 
-fn silex_error_kind(error: &SilexError) -> &'static str {
-    match error {
-        SilexError::Dom(_) => "dom",
-        SilexError::Reactivity(_) => "reactivity",
-        SilexError::Framework(_) => "framework",
-        SilexError::Javascript(_) => "javascript",
+fn silex_error_kind(kind: &SilexErrorKind) -> &'static str {
+    match kind {
+        SilexErrorKind::Dom(_) => "dom",
+        SilexErrorKind::Reactivity(_) => "reactivity",
+        SilexErrorKind::Framework(_) => "framework",
+        SilexErrorKind::Javascript(_) => "javascript",
     }
 }
 
@@ -251,6 +256,47 @@ mod tests {
             Reflect::get(&error, &JsValue::from_str("primary"))
                 .expect("primary property should exist")
                 .is_undefined()
+        );
+    }
+
+    #[wasm_bindgen_test]
+    fn silex_errors_keep_strategy_separate_from_kind_in_javascript() {
+        let fatal = silex_error_to_js(&SilexError::fatal(SilexErrorKind::Framework(
+            "fatal child failure".to_string(),
+        )))
+        .expect("fatal error object should be created");
+        assert_eq!(
+            Reflect::get(&fatal, &JsValue::from_str("strategy"))
+                .expect("strategy property should exist")
+                .as_string()
+                .as_deref(),
+            Some("fatal")
+        );
+        assert_eq!(
+            Reflect::get(&fatal, &JsValue::from_str("kind"))
+                .expect("kind property should exist")
+                .as_string()
+                .as_deref(),
+            Some("framework")
+        );
+
+        let recoverable = silex_error_to_js(&SilexError::recoverable(SilexErrorKind::Framework(
+            "recoverable child failure".to_string(),
+        )))
+        .expect("recoverable error object should be created");
+        assert_eq!(
+            Reflect::get(&recoverable, &JsValue::from_str("strategy"))
+                .expect("strategy property should exist")
+                .as_string()
+                .as_deref(),
+            Some("recoverable")
+        );
+        assert_eq!(
+            Reflect::get(&recoverable, &JsValue::from_str("kind"))
+                .expect("kind property should exist")
+                .as_string()
+                .as_deref(),
+            Some("framework")
         );
     }
 }

@@ -104,7 +104,9 @@ fn CounterControls<'scope>(
 
     Ok(div!(
         button("-").style(btn_style.clone()).on_click(move |_| {
-            set_count.update(|n| *n -= 1)?;
+            set_count
+                .update(|n| *n -= 1)
+                .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
             Ok(())
         }),
         span(count).style(
@@ -115,7 +117,9 @@ fn CounterControls<'scope>(
                 .text_align(TextAlignKeyword::Center)?
         ),
         button("+").style(btn_style).on_click(move |_| {
-            set_count.update(|n| *n += 1)?;
+            set_count
+                .update(|n| *n += 1)
+                .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
             Ok(())
         }),
     )
@@ -236,7 +240,9 @@ fn HomeView<'scope>(
                     )
                     .value(name)
                     .on_input(move |val| {
-                        set_name.set(val)?;
+                        set_name.set(val).map_err(|error| {
+                            SilexError::fatal(SilexErrorKind::Reactivity(error))
+                        })?;
                         Ok(())
                     })
             )))
@@ -340,9 +346,15 @@ fn ErrorPage<'scope>(
         h1("Silex Application Error"),
         p(error.to_string()),
         button("Reload Application").on_click(|_| {
-            let window = web_sys::window()
-                .ok_or_else(|| SilexError::Javascript("Window is unavailable".to_string()))?;
-            window.location().reload().map_err(SilexError::from)?;
+            let window = web_sys::window().ok_or_else(|| {
+                SilexError::fatal(SilexErrorKind::Javascript(
+                    "Window is unavailable".to_string(),
+                ))
+            })?;
+            window
+                .location()
+                .reload()
+                .map_err(|error| SilexError::fatal(SilexErrorKind::from(error)))?;
             Ok(())
         }),
     )
@@ -395,10 +407,12 @@ fn App<'scope>(
             .class("app-container")
             .style(app_style.clone())
             .into_any(),
-            Err(error) => ErrorPage(SilexError::Framework(error.to_string()))
-                .error_handler(boundary_error_handler)
-                .build()
-                .into_any(),
+            Err(error) => ErrorPage(SilexError::recoverable(SilexErrorKind::Framework(
+                error.to_string(),
+            )))
+            .error_handler(boundary_error_handler)
+            .build()
+            .into_any(),
         }
     })
     .error_handler(error_handler)

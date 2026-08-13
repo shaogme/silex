@@ -1,4 +1,4 @@
-use silex_core::{ErrorHandler, ErrorReporter, Runtime, SilexError};
+use silex_core::{ErrorHandler, ErrorReporter, Runtime, SilexError, SilexErrorKind};
 use std::{cell::RefCell, rc::Rc};
 
 #[test]
@@ -18,21 +18,25 @@ fn reporter_delivers_errors_without_shared_context() {
                 .expect("second reporter should register");
 
             first_reporter
-                .handle(SilexError::Framework("first".to_string()))
+                .handle(SilexError::recoverable(SilexErrorKind::Framework(
+                    "first".to_string(),
+                )))
                 .expect("first reporter should handle the error");
             second_reporter
-                .handle(SilexError::Framework("second".to_string()))
+                .handle(SilexError::recoverable(SilexErrorKind::Framework(
+                    "second".to_string(),
+                )))
                 .expect("second reporter should handle the error");
         })
         .expect("child scope should initialize");
 
     assert!(matches!(
         first.borrow().as_slice(),
-        [SilexError::Framework(message)] if message == "first"
+        [SilexError::Recoverable(SilexErrorKind::Framework(message))] if message == "first"
     ));
     assert!(matches!(
         second.borrow().as_slice(),
-        [SilexError::Framework(message)] if message == "second"
+        [SilexError::Recoverable(SilexErrorKind::Framework(message))] if message == "second"
     ));
 }
 
@@ -50,7 +54,9 @@ fn reporter_can_capture_a_scoped_value() {
                 })
                 .expect("reporter should register");
             reporter
-                .handle(SilexError::Javascript("scoped".to_string()))
+                .handle(SilexError::fatal(SilexErrorKind::Javascript(
+                    "scoped".to_string(),
+                )))
                 .expect("reporter should handle the error");
             assert!(scope.is_active());
         })
@@ -58,7 +64,7 @@ fn reporter_can_capture_a_scoped_value() {
 
     assert_eq!(
         observed.borrow().as_deref(),
-        Some("JavaScript Error: scoped")
+        Some("Fatal: JavaScript Error: scoped")
     );
 }
 
@@ -73,7 +79,9 @@ fn error_reporter_is_the_reactivity_handler_alias() {
             let reporter: ErrorReporter<'_> = handler;
 
             reporter
-                .handle(SilexError::Framework("alias".to_string()))
+                .handle(SilexError::recoverable(SilexErrorKind::Framework(
+                    "alias".to_string(),
+                )))
                 .expect("reporter should handle the error");
         })
         .expect("child scope should initialize");

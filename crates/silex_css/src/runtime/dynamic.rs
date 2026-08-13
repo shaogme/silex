@@ -12,7 +12,7 @@ use crate::{
     source::IntoCssReactive,
     types,
 };
-use silex_core::{ErrorReporter, RuntimeInputs, Rx, SilexError, SilexResult};
+use silex_core::{ErrorReporter, RuntimeInputs, Rx, SilexError, SilexErrorKind, SilexResult};
 use silex_dom::{
     attribute::{ApplyTarget, ApplyToDom, AttrOp, IntoStorable, PendingAttribute},
     view::{ApplyAttributes, OwnerState, View, ViewErrorHandler, ViewOwner, ViewOwnerToken},
@@ -423,7 +423,9 @@ impl<'scope> DynamicCss<'scope> {
             crate::inject_style(style_id, &rendered);
         }
 
-        el.class_list().add_1(self.class_name)?;
+        el.class_list()
+            .add_1(self.class_name)
+            .map_err(SilexError::fatal)?;
 
         if !self.vars.is_empty() {
             let vars = self.vars.clone();
@@ -451,7 +453,7 @@ impl<'scope> DynamicCss<'scope> {
                                     .and_then(|values| values.get(index))
                                     .and_then(Option::as_deref);
                                 if old_value != Some(value.as_str()) {
-                                    style.set_property(name, value)?;
+                                    style.set_property(name, value).map_err(SilexError::fatal)?;
                                 }
                             }
                         }
@@ -469,7 +471,7 @@ impl<'scope> DynamicCss<'scope> {
                     if let Some(style) = element_style(&el_clone) {
                         for name in names {
                             if let Err(error) = style.remove_property(name) {
-                                first_error.get_or_insert_with(|| SilexError::from(error));
+                                first_error.get_or_insert_with(|| SilexError::fatal(error));
                             }
                         }
                     }
@@ -518,11 +520,19 @@ impl<'scope> DynamicCss<'scope> {
                         &static_values_for_effect,
                     );
                     if !manager_for_effect.update(&dyn_class, &rule) {
-                        return Err(SilexError::Dom("无法更新动态样式表".into()));
+                        return Err(SilexError::fatal(SilexErrorKind::Dom(
+                            "无法更新动态样式表".to_string(),
+                        )));
                     }
-                    el_clone.class_list().add_1(&dyn_class)?;
+                    el_clone
+                        .class_list()
+                        .add_1(&dyn_class)
+                        .map_err(SilexError::fatal)?;
                     if let Some(old_class) = previous {
-                        el_clone.class_list().remove_1(old_class)?;
+                        el_clone
+                            .class_list()
+                            .remove_1(old_class)
+                            .map_err(SilexError::fatal)?;
                     }
                     current_class_for_effect.update(|class| *class = Some(dyn_class.clone()))?;
                     Ok(dyn_class)
@@ -539,7 +549,7 @@ impl<'scope> DynamicCss<'scope> {
                     if let Some(class_name) = current_class_for_cleanup.take_for_cleanup().flatten()
                         && let Err(error) = el_clone.class_list().remove_1(&class_name)
                     {
-                        first_error = Some(SilexError::from(error));
+                        first_error = Some(SilexError::fatal(error));
                     }
                     manager_for_cleanup.dispose();
                     first_error.map_or(Ok(()), Err)
@@ -555,7 +565,7 @@ impl<'scope> DynamicCss<'scope> {
                 el_clone
                     .class_list()
                     .remove_1(class_name)
-                    .map_err(SilexError::from)
+                    .map_err(SilexError::fatal)
             }),
             error_handler,
         )?;
@@ -785,7 +795,7 @@ impl<'scope> StyledVariantBinding<'scope> {
                 let mut classes = variant_classes.take_for_cleanup().unwrap_or_default();
                 for class in classes.iter_mut().filter_map(Option::take) {
                     if let Err(error) = element_for_cleanup.class_list().remove_1(class) {
-                        first_error.get_or_insert_with(|| SilexError::from(error));
+                        first_error.get_or_insert_with(|| SilexError::fatal(error));
                     }
                 }
 
@@ -794,7 +804,7 @@ impl<'scope> StyledVariantBinding<'scope> {
                     if let Some(class) = state.current_class.take()
                         && let Err(error) = element_for_cleanup.class_list().remove_1(&class)
                     {
-                        first_error.get_or_insert_with(|| SilexError::from(error));
+                        first_error.get_or_insert_with(|| SilexError::fatal(error));
                     }
                     if let Some(manager) = &state.manager {
                         manager.dispose();
@@ -829,12 +839,18 @@ fn update_styled_variant_classes(
                 continue;
             }
             if let Some(next_class) = next_class {
-                element.class_list().add_1(next_class)?;
+                element
+                    .class_list()
+                    .add_1(next_class)
+                    .map_err(SilexError::fatal)?;
             }
             let old_class = current_classes[index];
             current_classes[index] = next_class;
             if let Some(old_class) = old_class {
-                element.class_list().remove_1(old_class)?;
+                element
+                    .class_list()
+                    .remove_1(old_class)
+                    .map_err(SilexError::fatal)?;
             }
         }
         Ok(())
@@ -866,7 +882,10 @@ fn update_styled_dynamic_rules(
                 state.current_class.take()
             })?;
             if let Some(old_class) = old_class {
-                element.class_list().remove_1(&old_class)?;
+                element
+                    .class_list()
+                    .remove_1(&old_class)
+                    .map_err(SilexError::fatal)?;
             }
             continue;
         }
@@ -887,17 +906,25 @@ fn update_styled_dynamic_rules(
             &rule.static_values,
         )?
         else {
-            return Err(SilexError::Dom("无法更新动态样式表".into()));
+            return Err(SilexError::fatal(SilexErrorKind::Dom(
+                "无法更新动态样式表".to_string(),
+            )));
         };
 
         let old_class = states.with(|states| states[index].current_class.clone())?;
         if old_class.as_deref() == Some(next_class.as_str()) {
             continue;
         }
-        element.class_list().add_1(&next_class)?;
+        element
+            .class_list()
+            .add_1(&next_class)
+            .map_err(SilexError::fatal)?;
         states.update(|states| states[index].current_class = Some(next_class.clone()))?;
         if let Some(old_class) = old_class {
-            element.class_list().remove_1(&old_class)?;
+            element
+                .class_list()
+                .remove_1(&old_class)
+                .map_err(SilexError::fatal)?;
         }
     }
     Ok(())
@@ -1204,7 +1231,9 @@ pub fn inject_managed_dynamic_style<'scope>(
                     None => res,
                 };
                 if !manager_for_effect.update(&style_id_str, &res) {
-                    return Err(SilexError::Dom("无法更新动态样式表".into()));
+                    return Err(SilexError::fatal(SilexErrorKind::Dom(
+                        "无法更新动态样式表".to_string(),
+                    )));
                 }
                 Ok(())
             }),

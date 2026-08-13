@@ -174,22 +174,22 @@ impl<'scope, T: 'scope> ReadSignal<'scope, T> {
     where
         T: Clone,
     {
-        self.inner.get().map_err(SilexError::from)
+        self.inner.get().map_err(SilexError::fatal)
     }
 
     pub fn get_untracked(&self) -> SilexResult<T>
     where
         T: Clone,
     {
-        self.inner.get_untracked().map_err(SilexError::from)
+        self.inner.get_untracked().map_err(SilexError::fatal)
     }
 
     pub fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.inner.with(f).map_err(SilexError::from)
+        self.inner.with(f).map_err(SilexError::fatal)
     }
 
     pub fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.inner.with_untracked(f).map_err(SilexError::from)
+        self.inner.with_untracked(f).map_err(SilexError::fatal)
     }
 
     pub fn into_rx(self) -> Rx<'scope, T> {

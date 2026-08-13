@@ -1,4 +1,6 @@
-use silex_core::{ErrorReporter, ReactiveError, Runtime, Scope, SilexError, SilexResult};
+use silex_core::{
+    ErrorReporter, ReactiveError, Runtime, Scope, SilexError, SilexErrorKind, SilexResult,
+};
 use silex_router::{RouterContext, RouterContextProps};
 
 fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
@@ -10,7 +12,9 @@ fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
 fn assert_runtime_mismatch<'scope>(result: SilexResult<RouterContext<'scope>>) {
     assert!(matches!(
         result,
-        Err(SilexError::Reactivity(ReactiveError::RuntimeMismatch))
+        Err(SilexError::Fatal(SilexErrorKind::Reactivity(
+            ReactiveError::RuntimeMismatch,
+        )))
     ));
 }
 

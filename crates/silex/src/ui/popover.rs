@@ -159,7 +159,8 @@ pub fn PopoverAnchor<'scope>(
                 if let Some(target) = target
                     && let Ok(el) = target.dyn_into::<web_sys::Element>()
                 {
-                    ctx.update_anchor_from_element(&el)?;
+                    ctx.update_anchor_from_element(&el)
+                        .map_err(SilexError::fatal)?;
                 }
                 Ok(())
             },
@@ -193,7 +194,7 @@ pub fn PopoverClose<'scope>(
         .attr("data-slot", "popover-close")
         .class(close_cls)
         .on(event::click, move |_| -> SilexResult<()> {
-            ctx.close()?;
+            ctx.close().map_err(SilexError::fatal)?;
             on_click.invoke(())
         }))
 }
@@ -350,7 +351,7 @@ pub fn PopoverContent<'scope>(
                 div(()).class(tw!("fixed inset-0 z-50 bg-transparent")).on(
                     event::click,
                     move |_| -> SilexResult<()> {
-                        ctx.close()?;
+                        ctx.close().map_err(SilexError::fatal)?;
                         on_close.invoke(())
                     }
                 ),
@@ -407,9 +408,10 @@ pub fn PopoverTrigger<'scope>(
                 if let Some(target) = target
                     && let Ok(el) = target.dyn_into::<web_sys::Element>()
                 {
-                    ctx.update_anchor_from_element(&el)?;
+                    ctx.update_anchor_from_element(&el)
+                        .map_err(SilexError::fatal)?;
                 }
-                ctx.toggle()?;
+                ctx.toggle().map_err(SilexError::fatal)?;
                 on_click.invoke(())
             },
         ))

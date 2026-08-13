@@ -159,9 +159,9 @@ fn UsersLayout<'scope>(
 
 fn user_detail_path(id: u32) -> SilexResult<RoutePath> {
     let encoded = <u32 as PathParam>::encode_segment(&id)
-        .map_err(|error| SilexError::Framework(error.to_string()))?;
+        .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
     RoutePath::new(format!("/users/{encoded}"))
-        .map_err(|error| SilexError::Framework(error.to_string()))
+        .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))
 }
 
 #[component]
@@ -351,25 +351,25 @@ fn App<'scope>(scope: Scope<'scope>, error_handler: ErrorReporter<'scope>) -> im
         create "/new" => move |_ctx| CreateUser().error_handler(error_handler).build(),
         detail "/:id" => move |ctx, id: u32| UserDetail(ctx, id).error_handler(error_handler).build(),
     })
-    .map_err(|error| SilexError::Framework(error.to_string()))?
+    .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?
     .at("/users")
-    .map_err(|error| SilexError::Framework(error.to_string()))?;
+    .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
     let routes = routes!(AppRoutes {
         home "/" => move |_ctx| Home().error_handler(error_handler).build(),
         search "/search" => move |ctx| SearchPage(ctx).error_handler(error_handler).build(),
         not_found "/*" => move |ctx| NotFound(ctx).error_handler(error_handler).build(),
     })
-    .map_err(|error| SilexError::Framework(error.to_string()))?;
+    .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
 
     let home_path = routes
         .home()
-        .map_err(|error| SilexError::Framework(error.to_string()))?;
+        .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
     let users_path = users
         .list()
-        .map_err(|error| SilexError::Framework(error.to_string()))?;
+        .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
     let search_path = routes
         .search()
-        .map_err(|error| SilexError::Framework(error.to_string()))?;
+        .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
     let table = routes
         .table()
         .nest(users.prefix(), users.table(), move |ctx, outlet| {
@@ -378,7 +378,7 @@ fn App<'scope>(scope: Scope<'scope>, error_handler: ErrorReporter<'scope>) -> im
                 .children(outlet)
                 .build()
         })
-        .map_err(|error| SilexError::Framework(error.to_string()))?;
+        .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
 
     Ok(Router(scope, error_handler)
         .routes(table)

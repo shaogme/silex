@@ -1,5 +1,5 @@
 use crate::{
-    CompletionSender, ErrorReporter, Scope, SilexError,
+    CompletionSender, ErrorReporter, Scope, SilexError, SilexErrorKind,
     reactivity::{ReadSignal, StoredValue, WriteSignal},
     traits::{RxBase, RxCloneData, RxData, RxError, RxRead, RxValue},
     unwind_safe,
@@ -104,7 +104,9 @@ where
                 if let Some(next_state) =
                     resolve_mutation_result(last_id_for_callback.get(), id, result)
                 {
-                    set_state_for_callback.set(next_state)?;
+                    set_state_for_callback
+                        .set(next_state)
+                        .map_err(SilexError::fatal)?;
                 }
                 Ok(())
             }))?;
@@ -143,7 +145,9 @@ where
                 if let Some(next_state) =
                     resolve_mutation_result(last_id_for_callback.get(), id, result)
                 {
-                    set_state_for_callback.set(next_state)?;
+                    set_state_for_callback
+                        .set(next_state)
+                        .map_err(SilexError::fatal)?;
                 }
                 Ok(())
             }))?;
@@ -176,36 +180,47 @@ where
                 inner.completion.clone(),
             )
         })?;
-        let (id, future) =
-            match &action {
-                MutationAction::Regular(action) => {
-                    let id = last_id.get().checked_add(1).ok_or_else(|| {
-                        SilexError::Framework("Mutation request id exhausted".into())
-                    })?;
-                    last_id.set(id);
-                    self.set_state.set(MutationState::Pending)?;
-                    (id, action(arg))
-                }
-                MutationAction::Prepared(prepare) => {
-                    let future = match prepare(arg) {
-                        Ok(future) => future,
-                        Err(error) => {
-                            let id = last_id.get().checked_add(1).ok_or_else(|| {
-                                SilexError::Framework("Mutation request id exhausted".into())
-                            })?;
-                            last_id.set(id);
-                            self.set_state.set(MutationState::Error(error))?;
-                            return Ok(());
-                        }
-                    };
-                    let id = last_id.get().checked_add(1).ok_or_else(|| {
-                        SilexError::Framework("Mutation request id exhausted".into())
-                    })?;
-                    last_id.set(id);
-                    self.set_state.set(MutationState::Pending)?;
-                    (id, future)
-                }
-            };
+        let (id, future) = match &action {
+            MutationAction::Regular(action) => {
+                let id = last_id.get().checked_add(1).ok_or_else(|| {
+                    SilexError::fatal(SilexErrorKind::Framework(
+                        "Mutation request id exhausted".into(),
+                    ))
+                })?;
+                last_id.set(id);
+                self.set_state
+                    .set(MutationState::Pending)
+                    .map_err(SilexError::fatal)?;
+                (id, action(arg))
+            }
+            MutationAction::Prepared(prepare) => {
+                let future = match prepare(arg) {
+                    Ok(future) => future,
+                    Err(error) => {
+                        let id = last_id.get().checked_add(1).ok_or_else(|| {
+                            SilexError::fatal(SilexErrorKind::Framework(
+                                "Mutation request id exhausted".into(),
+                            ))
+                        })?;
+                        last_id.set(id);
+                        self.set_state
+                            .set(MutationState::Error(error))
+                            .map_err(SilexError::fatal)?;
+                        return Ok(());
+                    }
+                };
+                let id = last_id.get().checked_add(1).ok_or_else(|| {
+                    SilexError::fatal(SilexErrorKind::Framework(
+                        "Mutation request id exhausted".into(),
+                    ))
+                })?;
+                last_id.set(id);
+                self.set_state
+                    .set(MutationState::Pending)
+                    .map_err(SilexError::fatal)?;
+                (id, future)
+            }
+        };
         // SAFETY: the completion destination rejects stale submissions before
         // this erased handler can be accessed after owner disposal.
         let error_handler = unsafe {
@@ -216,7 +231,7 @@ where
                 match completion.submit((id, future.await)) {
                     Ok(_) => {}
                     Err(CallbackInvokeError::Runtime(error)) => {
-                        let _ = error_handler.handle(error.into());
+                        let _ = error_handler.handle(SilexError::fatal(error));
                     }
                     Err(CallbackInvokeError::User(error)) => {
                         let _ = error_handler.handle(error);

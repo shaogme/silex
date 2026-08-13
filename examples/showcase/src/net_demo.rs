@@ -55,7 +55,7 @@ pub fn HttpClientDemo<'scope>(
     .retry_policy(2, std::time::Duration::from_millis(300))
     .json::<Post>()
     .as_resource(post_id, None)
-    .map_err(|error| SilexError::Framework(error.to_string()))?;
+    .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
 
     // 2. Using HttpClient::as_mutation_with for parameterized actions (POST)
     let create_post_builder = HttpClient::post(
@@ -78,7 +78,7 @@ pub fn HttpClientDemo<'scope>(
             }))?;
             Ok(builder.json::<Post>())
         })
-        .map_err(|error| SilexError::Framework(error.to_string()))?;
+        .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
 
     Ok(div![
         h3("HTTP Client Demo"),
@@ -92,7 +92,9 @@ pub fn HttpClientDemo<'scope>(
                 .prop("value", post_id)
                 .on(event::input, move |e| {
                     if let Ok(id) = event_target_value(&e).parse::<i32>() {
-                        set_post_id.set(id)?;
+                        set_post_id.set(id).map_err(|error| {
+                            SilexError::fatal(SilexErrorKind::Reactivity(error))
+                        })?;
                     }
                     Ok(())
                 })
@@ -119,7 +121,9 @@ pub fn HttpClientDemo<'scope>(
                         .color(AppTheme::TEXT)?
                 ),
             button("Refresh").on(event::click, move |_| {
-                post_resource.refetch()?;
+                post_resource
+                    .refetch()
+                    .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                 Ok(())
             }),
         ]
@@ -287,7 +291,7 @@ pub fn WebSocketDemo<'scope>(
     let url = scope.rw_signal("wss://echo.websocket.org".to_string())?;
     let socket = WebSocket::lazy(scope, url.get_untracked()?, error_handler)
         .build()
-        .map_err(|error| SilexError::Framework(error.to_string()))?;
+        .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
     let input_text = scope.rw_signal(String::new())?;
 
     let state_text = socket.state_str()?;
@@ -301,10 +305,12 @@ pub fn WebSocketDemo<'scope>(
     let send_message = move || -> SilexResult<()> {
         let text = input_text.get()?;
         if !text.trim().is_empty() {
-            socket
-                .send_text(&text)
-                .map_err(|error| SilexError::Framework(error.to_string()))?;
-            input_text.set(String::new())?;
+            socket.send_text(&text).map_err(|error| {
+                SilexError::recoverable(SilexErrorKind::Framework(error.to_string()))
+            })?;
+            input_text
+                .set(String::new())
+                .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
         }
         Ok(())
     };
@@ -328,9 +334,9 @@ pub fn WebSocketDemo<'scope>(
                 rx!(scope; error_handler; if *$is_connected { "Disconnect" } else { "Connect" })
             )
             .on(event::click, move |_| {
-                socket
-                    .toggle()
-                    .map_err(|error| SilexError::Framework(error.to_string()))?;
+                socket.toggle().map_err(|error| {
+                    SilexError::recoverable(SilexErrorKind::Framework(error.to_string()))
+                })?;
                 Ok(())
             })
             .style(
@@ -416,7 +422,7 @@ pub fn EventStreamDemo<'scope>(
     let url = scope.rw_signal("https://stream.wikimedia.org/v2/stream/recentchange".to_string())?;
     let stream = EventStream::lazy(scope, url.get_untracked()?, error_handler)
         .build()
-        .map_err(|error| SilexError::Framework(error.to_string()))?;
+        .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
 
     let is_connected = stream.is_connected()?;
     let logs = stream.latest_messages::<WikimediaChange>(50)?;
@@ -447,7 +453,7 @@ pub fn EventStreamDemo<'scope>(
                 .style(sty().flex_grow(1)?.padding("8px")?.border_radius(px(4))?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?.background(AppTheme::SURFACE)?.color(AppTheme::TEXT)?),
             button(rx!(scope; error_handler; if *$is_connected { "Stop Stream" } else { "Start Stream" }))
                 .on(event::click, move |_| {
-                    stream.toggle().map_err(|error| SilexError::Framework(error.to_string()))?;
+                    stream.toggle().map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
                     Ok(())
                 })
                 .style(sty().padding("8px 16px")?.margin_left(px(10))?.border_radius(px(4))?.cursor("pointer")?),

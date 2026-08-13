@@ -1,4 +1,4 @@
-use silex_core::{ErrorHandler, ErrorReporter, Runtime, SilexError};
+use silex_core::{ErrorHandler, ErrorReporter, Runtime, SilexError, SilexErrorKind};
 
 fn main() {
     let mut runtime = Runtime::new();
@@ -7,6 +7,6 @@ fn main() {
             let _ = error;
         }).expect("handler should register");
         let reporter: ErrorReporter<'_> = handler;
-        let _ = reporter.handle(SilexError::Framework("compile-pass".to_string()));
+        let _ = reporter.handle(SilexError::recoverable(SilexErrorKind::Framework("compile-pass".to_string())));
     }).expect("child scope should initialize");
 }

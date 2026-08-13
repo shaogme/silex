@@ -5,7 +5,7 @@ use silex::bootstrap::{AppHost, AppHostError, HostState};
 use silex::dom::{CleanupSink, MountContext, element::Element};
 use silex::reexports::wasm_bindgen::{JsCast, JsValue};
 use silex::reexports::web_sys::{self, Document, Element as DomElement, HtmlElement, Node};
-use silex::{Runtime, SilexError, SilexResult};
+use silex::{Runtime, SilexError, SilexErrorKind, SilexResult};
 use silex_counter::{mount_counter, mount_counter_into};
 use wasm_bindgen_test::*;
 
@@ -175,7 +175,9 @@ fn counter_mount_failure_preserves_error_and_ready_state() {
 
     let error = host
         .mount(Runtime::new(), |_context| {
-            Err(SilexError::Framework("counter mount rejected".to_string()))
+            Err(SilexError::recoverable(SilexErrorKind::Framework(
+                "counter mount rejected".to_string(),
+            )))
         })
         .expect_err("the rejected builder error should be returned");
     assert!(matches!(error, AppHostError::Mount(_)));

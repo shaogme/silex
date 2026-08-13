@@ -268,12 +268,11 @@ macro_rules! impl_tuple_sources {
                 PromotionPlan::derived(inputs, move |scope, inputs, error_handler| {
                     $(let $name = $name.materialize(scope, error_handler)?;)+
                     scope
-                        .derived_from(
-                            inputs,
-                            move || Ok(($($name.get()?,)+)),
-                            error_handler,
-                        )
-                        .map_err(Into::into)
+                    .derived_from(
+                        inputs,
+                        move || Ok(($($name.get()?,)+)),
+                        error_handler,
+                    )
                 })
             }
         }

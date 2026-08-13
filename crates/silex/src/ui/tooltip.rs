@@ -67,7 +67,7 @@ impl<'scope> TooltipContext<'scope> {
 
     /// Schedules a close timeout after `delay_ms` milliseconds (default 150ms grace period).
     pub fn schedule_close_timer(&self, delay_ms: i32) -> SilexResult<()> {
-        self.cancel_close_timer()?;
+        self.cancel_close_timer().map_err(SilexError::fatal)?;
         let Some(owner) = self.owner.with(Clone::clone)? else {
             return Ok(());
         };
@@ -79,21 +79,24 @@ impl<'scope> TooltipContext<'scope> {
         let handle = set_timeout(
             &owner,
             move || -> SilexResult<()> {
-                timer.update(|slot| *slot = None)?;
-                open.set(false)?;
+                timer
+                    .update(|slot| *slot = None)
+                    .map_err(SilexError::fatal)?;
+                open.set(false).map_err(SilexError::fatal)?;
                 Ok(())
             },
             Duration::from_millis(delay_ms.max(0) as u64),
             error_handler,
-        )?;
-        self.timer.set(Some(handle))?;
+        )
+        .map_err(SilexError::fatal)?;
+        self.timer.set(Some(handle)).map_err(SilexError::fatal)?;
         Ok(())
     }
 
     /// Called on pointer enter (trigger or content): cancels closing and opens tooltip.
     pub fn on_pointer_enter(&self) -> SilexResult<()> {
-        self.cancel_close_timer()?;
-        self.open.set(true)?;
+        self.cancel_close_timer().map_err(SilexError::fatal)?;
+        self.open.set(true).map_err(SilexError::fatal)?;
         Ok(())
     }
 
@@ -107,21 +110,22 @@ impl<'scope> TooltipContext<'scope> {
     }
 
     pub fn close(&self) -> SilexResult<()> {
-        self.cancel_close_timer()?;
-        self.open.set(false)?;
+        self.cancel_close_timer().map_err(SilexError::fatal)?;
+        self.open.set(false).map_err(SilexError::fatal)?;
         Ok(())
     }
 
     pub fn toggle(&self) -> SilexResult<()> {
-        self.cancel_close_timer()?;
-        self.open.update(|v| *v = !*v)?;
+        self.cancel_close_timer().map_err(SilexError::fatal)?;
+        self.open.update(|v| *v = !*v).map_err(SilexError::fatal)?;
         Ok(())
     }
 }
 
 fn owner_binding<'scope>(ctx: TooltipContext<'scope>) -> AttrOp<'scope> {
     AttrOp::custom_with_inputs(RuntimeInputs::new(), move |_, owner, error_handler| {
-        ctx.set_owner(owner.clone(), error_handler)?;
+        ctx.set_owner(owner.clone(), error_handler)
+            .map_err(SilexError::fatal)?;
         Ok(())
     })
 }
@@ -231,7 +235,9 @@ pub fn TooltipTrigger<'scope>(
         .on(
             event::mouseenter,
             move |e: web_sys::MouseEvent| -> SilexResult<()> {
-                ctx.anchor.set(get_event_anchor(&e))?;
+                ctx.anchor
+                    .set(get_event_anchor(&e))
+                    .map_err(SilexError::fatal)?;
                 ctx.on_pointer_enter()?;
                 on_mouse_enter.invoke(e)
             },
@@ -250,7 +256,9 @@ pub fn TooltipTrigger<'scope>(
                 if let Some(target) = target
                     && let Ok(el) = target.dyn_into::<web_sys::Element>()
                 {
-                    ctx.anchor.set(get_element_anchor(&el))?;
+                    ctx.anchor
+                        .set(get_element_anchor(&el))
+                        .map_err(SilexError::fatal)?;
                 }
                 ctx.on_pointer_enter()?;
                 on_focus.invoke(e)

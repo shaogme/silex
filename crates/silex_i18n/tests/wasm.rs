@@ -1,7 +1,7 @@
 #![cfg(target_arch = "wasm32")]
 
 use gloo_timers::future::TimeoutFuture;
-use silex_core::{ErrorReporter, Runtime, Scope, SilexResult, runtime_inputs_of};
+use silex_core::{ErrorReporter, ReactiveError, Runtime, Scope, SilexResult, runtime_inputs_of};
 use silex_i18n::{
     Catalog, CatalogLoadError, I18nBuilder, I18nStore, Locale, ResourceState, SuspenseContext, t,
 };
@@ -85,7 +85,7 @@ fn catalog_resource_rejects_foreign_suspense_before_allocating_nodes() {
     assert!(matches!(
         result,
         Err(silex_i18n::I18nError::Reactivity(
-            silex_core::ReactiveError::RuntimeMismatch
+            ReactiveError::RuntimeMismatch
         ))
     ));
     assert_eq!(target_scope.runtime_snapshot(), before);

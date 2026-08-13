@@ -1,4 +1,4 @@
-use silex::{ErrorHandler, ErrorReporter, Runtime, SilexError};
+use silex::{ErrorHandler, ErrorReporter, Runtime, SilexError, SilexErrorKind};
 
 #[test]
 fn facade_exports_one_handler_type_under_both_names() {
@@ -10,7 +10,9 @@ fn facade_exports_one_handler_type_under_both_names() {
         let reporter: ErrorReporter<'_> = handler;
 
         reporter
-            .handle(SilexError::Framework(String::from("alias")))
+            .handle(SilexError::recoverable(SilexErrorKind::Framework(
+                String::from("alias"),
+            )))
             .expect("reporter should handle the error");
     });
 }

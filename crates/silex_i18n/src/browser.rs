@@ -161,7 +161,7 @@ pub(crate) fn sync_document_metadata<'scope>(
     // Keep ownership history separate from lang/dir so equal values stay distinguishable.
     let stack = metadata_stack(&root, &stack_property)?.unwrap_or_default();
     stack.push(&record);
-    js_sys::Reflect::set(root.as_ref(), &stack_property, &stack)?;
+    js_sys::Reflect::set(root.as_ref(), &stack_property, &stack).map_err(SilexError::fatal)?;
 
     let active_for_effect = active.clone();
     let root_for_effect = root.clone();
@@ -264,13 +264,15 @@ pub(crate) fn sync_document_metadata<'scope>(
                 js_sys::Reflect::delete_property(
                     root_for_cleanup.as_ref(),
                     &stack_property_for_cleanup,
-                )?;
+                )
+                .map_err(SilexError::fatal)?;
             } else {
                 js_sys::Reflect::set(
                     root_for_cleanup.as_ref(),
                     &stack_property_for_cleanup,
                     &stack,
-                )?;
+                )
+                .map_err(SilexError::fatal)?;
             }
             Ok(())
         },
@@ -284,7 +286,7 @@ fn metadata_stack(
     root: &web_sys::Element,
     property: &JsValue,
 ) -> SilexResult<Option<js_sys::Array>> {
-    let value = js_sys::Reflect::get(root.as_ref(), property)?;
+    let value = js_sys::Reflect::get(root.as_ref(), property).map_err(SilexError::fatal)?;
     Ok(js_sys::Array::is_array(&value).then(|| js_sys::Array::from(&value)))
 }
 
@@ -299,7 +301,7 @@ fn record_value(record: &JsValue, name: &str) -> JsValue {
 fn set_record_value(record: &JsValue, name: &str, value: &JsValue) -> SilexResult<()> {
     js_sys::Reflect::set(record, &JsValue::from_str(name), value)
         .map(|_| ())
-        .map_err(SilexError::from)
+        .map_err(SilexError::fatal)
 }
 
 fn optional_string_value(value: Option<&str>) -> JsValue {
@@ -319,14 +321,15 @@ fn apply_record(
     if apply_lang
         && let Some(lang) = optional_attribute_value(record_value(record, RECORD_DESIRED_LANG))
     {
-        root.set_attribute("lang", &lang)?;
+        root.set_attribute("lang", &lang)
+            .map_err(SilexError::fatal)?;
         set_record_value(record, RECORD_LAST_LANG, &JsValue::from_str(&lang))?;
     }
 
     if apply_dir
         && let Some(dir) = optional_attribute_value(record_value(record, RECORD_DESIRED_DIR))
     {
-        root.set_attribute("dir", &dir)?;
+        root.set_attribute("dir", &dir).map_err(SilexError::fatal)?;
         set_record_value(record, RECORD_LAST_DIR, &JsValue::from_str(&dir))?;
     }
     Ok(())
@@ -355,10 +358,10 @@ fn restore_record(root: &web_sys::Element, record: &JsValue) -> SilexResult<(boo
 fn restore_attribute(root: &web_sys::Element, name: &str, value: Option<&str>) -> SilexResult<()> {
     match value {
         Some(value) => {
-            root.set_attribute(name, value)?;
+            root.set_attribute(name, value).map_err(SilexError::fatal)?;
         }
         None => {
-            root.remove_attribute(name)?;
+            root.remove_attribute(name).map_err(SilexError::fatal)?;
         }
     }
     Ok(())

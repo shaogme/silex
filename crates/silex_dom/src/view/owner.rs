@@ -1,6 +1,8 @@
 use crate::attribute::PendingAttribute;
 use crate::view::{OwnedViewOwner, OwnerState, ViewErrorHandler, ViewOwner, ViewOwnerToken};
-use silex_core::{OwnedScope, ReactiveError, RuntimeInputs, SilexError, SilexResult};
+use silex_core::{
+    OwnedScope, ReactiveError, RuntimeInputs, SilexError, SilexErrorKind, SilexResult,
+};
 use std::{
     cell::{Cell, RefCell},
     marker::PhantomData,
@@ -165,8 +167,8 @@ impl DomRange {
         let document = crate::document();
         let start: Node = document.create_comment(&format!("{label}-start")).into();
         let end: Node = document.create_comment(&format!("{label}-end")).into();
-        parent.append_child(&start)?;
-        if let Err(error) = parent.append_child(&end).map_err(SilexError::from) {
+        parent.append_child(&start).map_err(SilexError::fatal)?;
+        if let Err(error) = parent.append_child(&end).map_err(SilexError::fatal) {
             let _ = parent.remove_child(&start);
             return Err(error);
         }
@@ -175,17 +177,19 @@ impl DomRange {
 
     pub(crate) fn before(reference: &Node, label: &str) -> Result<Self, SilexError> {
         let Some(parent) = reference.parent_node() else {
-            return Err(SilexError::Dom(
+            return Err(SilexError::fatal(SilexErrorKind::Dom(
                 "cannot create a row range without a parent".to_string(),
-            ));
+            )));
         };
         let document = crate::document();
         let start: Node = document.create_comment(&format!("{label}-start")).into();
         let end: Node = document.create_comment(&format!("{label}-end")).into();
-        parent.insert_before(&start, Some(reference))?;
+        parent
+            .insert_before(&start, Some(reference))
+            .map_err(SilexError::fatal)?;
         if let Err(error) = parent
             .insert_before(&end, Some(reference))
-            .map_err(SilexError::from)
+            .map_err(SilexError::fatal)
         {
             let _ = parent.remove_child(&start);
             return Err(error);
@@ -217,16 +221,16 @@ impl DomRange {
 
     pub(crate) fn move_before(&self, reference: &Node) -> SilexResult<()> {
         let Some(parent) = reference.parent_node() else {
-            return Err(SilexError::Dom(
+            return Err(SilexError::fatal(SilexErrorKind::Dom(
                 "cannot move a range before a reference without a parent".to_string(),
-            ));
+            )));
         };
         if self.start.parent_node().as_ref() != Some(&parent)
             || self.end.parent_node().as_ref() != Some(&parent)
         {
-            return Err(SilexError::Dom(
+            return Err(SilexError::fatal(SilexErrorKind::Dom(
                 "cannot move a detached row range".to_string(),
-            ));
+            )));
         }
         let mut nodes = Vec::new();
         let mut current = Some(self.start.clone());
@@ -240,12 +244,14 @@ impl DomRange {
             current = next;
         }
         if nodes.last().is_none_or(|node| *node != self.end) {
-            return Err(SilexError::Dom(
+            return Err(SilexError::fatal(SilexErrorKind::Dom(
                 "cannot move an incomplete row range".to_string(),
-            ));
+            )));
         }
         for node in nodes {
-            parent.insert_before(&node, Some(reference))?;
+            parent
+                .insert_before(&node, Some(reference))
+                .map_err(SilexError::fatal)?;
         }
         Ok(())
     }
@@ -323,9 +329,9 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
         }
         if stateful && !controller.updater.is_active() {
             controller.dispose();
-            return Err(SilexError::Framework(
+            return Err(SilexError::fatal(SilexErrorKind::Framework(
                 "stateful row updater was not bound during initial render".to_string(),
-            ));
+            )));
         }
         range_guard.disarm();
         Ok(controller)
@@ -333,16 +339,16 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
 
     pub(crate) fn update(&mut self, item: T, index: usize) -> SilexResult<()> {
         if !self.active.get() {
-            return Err(SilexError::Reactivity(ReactiveError::NoSuchNode));
+            return Err(SilexError::fatal(ReactiveError::NoSuchNode));
         }
         let next_item = item.clone();
         let result = if self.stateful {
             if self.updater.update(item, index) {
                 Ok(())
             } else {
-                Err(SilexError::Framework(
+                Err(SilexError::fatal(SilexErrorKind::Framework(
                     "stateful row updater rejected update".to_string(),
-                ))
+                )))
             }
         } else {
             self.mount_render(item, index)
@@ -412,11 +418,13 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
                         })?;
                         let new_nodes = child_nodes(&fragment_node);
                         let Some(parent) = range.end.parent_node() else {
-                            return Err(SilexError::Dom(
+                            return Err(SilexError::fatal(SilexErrorKind::Dom(
                                 "cannot commit row render without a parent".to_string(),
-                            ));
+                            )));
                         };
-                        parent.insert_before(&fragment_node, Some(&range.end))?;
+                        parent
+                            .insert_before(&fragment_node, Some(&range.end))
+                            .map_err(SilexError::fatal)?;
                         for node in old_nodes {
                             if node.parent_node().is_some() {
                                 let _ = parent.remove_child(&node);
@@ -440,7 +448,9 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
                             Err(error)
                         }
                         Err(panic) => {
-                            let error = SilexError::Javascript(panic_message(&panic, "Row render"));
+                            let error = SilexError::fatal(SilexErrorKind::Javascript(
+                                panic_message(&panic, "Row render"),
+                            ));
                             dispose_scope_or_resume(candidate_scope);
                             Err(error)
                         }
@@ -457,7 +467,9 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
                 dispose_scope_or_resume(render_scope);
                 self.render_scope = previous_scope;
                 self.render_content_scope = previous_content_scope;
-                return Err(SilexError::Javascript(panic_message(&panic, "Row effect")));
+                return Err(SilexError::fatal(SilexErrorKind::Javascript(
+                    panic_message(&panic, "Row effect"),
+                )));
             }
         };
         if let Err(error) = registration {
@@ -484,7 +496,7 @@ impl<'scope, T: Clone + 'scope> RowController<'scope, T> {
 impl<'scope, T> RowController<'scope, T> {
     pub(crate) fn move_before(&self, reference: &Node) -> SilexResult<()> {
         if !self.active.get() {
-            return Err(SilexError::Reactivity(ReactiveError::NoSuchNode));
+            return Err(SilexError::fatal(ReactiveError::NoSuchNode));
         }
         self.range.move_before(reference)
     }

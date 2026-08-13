@@ -2,13 +2,14 @@
 
 use crate::{
     attribute::PendingAttribute,
-    view::{ScopedViewOwner, View},
+    view::{CleanupReporter, ScopedViewOwner, View},
 };
 use silex_core::{
     CleanupDiagnostic, CleanupError, ErrorReporter, RootHandle, Runtime, Scope, SilexError,
-    SilexResult, log::console_error,
+    SilexErrorKind, SilexResult, log::console_error,
 };
 use std::{
+    cell::RefCell,
     fmt,
     panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
     rc::Rc,
@@ -234,11 +235,26 @@ impl CleanupSink {
 pub struct MountContext<'scope> {
     scope: Scope<'scope>,
     parent: Node,
+    cleanup_reporter: CleanupReporter,
 }
 
 impl<'scope> MountContext<'scope> {
-    fn new(scope: Scope<'scope>, parent: Node) -> Self {
-        Self { scope, parent }
+    fn with_cleanup_failures(
+        scope: Scope<'scope>,
+        parent: Node,
+        cleanup_failures: Rc<RefCell<Vec<CleanupFailure>>>,
+    ) -> Self {
+        let failures_for_reporter = cleanup_failures.clone();
+        let cleanup_reporter: CleanupReporter = Rc::new(move |error| {
+            failures_for_reporter
+                .borrow_mut()
+                .push(CleanupFailure::new(CleanupOrigin::ProvisionalOwner, error));
+        });
+        Self {
+            scope,
+            parent,
+            cleanup_reporter,
+        }
     }
 
     /// Borrow the explicit scope capability used by this transaction.
@@ -253,7 +269,7 @@ impl<'scope> MountContext<'scope> {
 
     /// Create an owner adapter for this mount scope.
     pub fn owner(&self) -> ScopedViewOwner<'scope> {
-        ScopedViewOwner::new(self.scope)
+        ScopedViewOwner::with_cleanup_reporter(self.scope, self.cleanup_reporter.clone())
     }
 
     /// Mount one owned view into the transaction staging parent.
@@ -293,7 +309,7 @@ impl MountBoundary {
         let document = crate::document();
         let staging: Node = document.create_document_fragment().into();
         let start: Node = document.create_comment("mount-start").into();
-        staging.append_child(&start)?;
+        staging.append_child(&start).map_err(SilexError::fatal)?;
         Ok(Self {
             host,
             staging,
@@ -310,17 +326,17 @@ impl MountBoundary {
 
     fn finish_staging(&mut self) -> SilexResult<()> {
         if self.end.is_some() {
-            return Err(SilexError::Framework(
+            return Err(SilexError::fatal(SilexErrorKind::Framework(
                 "mount boundary was finalized twice".to_string(),
-            ));
+            )));
         }
         if self.start.parent_node().as_ref() != Some(&self.staging) {
-            return Err(SilexError::Dom(
+            return Err(SilexError::fatal(SilexErrorKind::Dom(
                 "mount boundary start anchor was detached".to_string(),
-            ));
+            )));
         }
         let end: Node = crate::document().create_comment("mount-end").into();
-        self.staging.append_child(&end)?;
+        self.staging.append_child(&end).map_err(SilexError::fatal)?;
         self.end = Some(end);
         self.owned_nodes = Self::children_of(&self.staging);
         Ok(())
@@ -328,16 +344,18 @@ impl MountBoundary {
 
     fn commit(&mut self) -> SilexResult<()> {
         if self.committed {
-            return Err(SilexError::Framework(
+            return Err(SilexError::fatal(SilexErrorKind::Framework(
                 "mount boundary was committed twice".to_string(),
-            ));
+            )));
         }
         if self.end.is_none() {
-            return Err(SilexError::Framework(
+            return Err(SilexError::fatal(SilexErrorKind::Framework(
                 "mount boundary was committed before finalization".to_string(),
-            ));
+            )));
         }
-        self.host.append_child(&self.staging)?;
+        self.host
+            .append_child(&self.staging)
+            .map_err(SilexError::fatal)?;
         self.committed = true;
         Ok(())
     }
@@ -362,7 +380,7 @@ impl MountBoundary {
                 if node.parent_node().as_ref() != Some(&parent) {
                     continue;
                 }
-                if let Err(error) = parent.remove_child(&node).map_err(SilexError::from) {
+                if let Err(error) = parent.remove_child(&node).map_err(SilexError::fatal) {
                     errors.push(error);
                 }
             }
@@ -581,6 +599,7 @@ impl MountTransaction {
         F: for<'scope> FnOnce(&MountContext<'scope>) -> SilexResult<()>,
     {
         self.state = TransactionState::Mounting;
+        let provisional_failures = Rc::new(RefCell::new(Vec::new()));
         let mount_result = catch_unwind(AssertUnwindSafe(|| {
             let root = self
                 .root
@@ -592,10 +611,15 @@ impl MountTransaction {
                 .expect("mount transaction boundary must exist")
                 .staging_parent();
             root.with_scope(|scope| {
-                let context = MountContext::new(scope, parent);
+                let context = MountContext::with_cleanup_failures(
+                    scope,
+                    parent,
+                    provisional_failures.clone(),
+                );
                 builder(&context)
             })
         }));
+        let provisional_failures = std::mem::take(&mut *provisional_failures.borrow_mut());
 
         match mount_result {
             Ok(Ok(())) => {
@@ -605,7 +629,7 @@ impl MountTransaction {
                     .expect("mount transaction boundary must exist")
                     .finish_staging()
                 {
-                    return self.fail(primary);
+                    return self.fail(primary, provisional_failures);
                 }
                 if let Err(primary) = self
                     .boundary
@@ -613,29 +637,36 @@ impl MountTransaction {
                     .expect("mount transaction boundary must exist")
                     .commit()
                 {
-                    return self.fail(primary);
+                    return self.fail(primary, provisional_failures);
                 }
                 self.state = TransactionState::Committed;
                 self.publish()
             }
-            Ok(Err(primary)) => self.fail(primary),
+            Ok(Err(primary)) => self.fail(primary, provisional_failures),
             Err(panic) => {
-                let report = self.abort();
+                let report = self.abort(provisional_failures);
                 record_drop_report(&self.cleanup_sink, report);
                 resume_unwind(panic)
             }
         }
     }
 
-    fn fail(mut self, primary: SilexError) -> Result<MountedApp, MountError> {
-        let rollback = self.abort();
+    fn fail(
+        mut self,
+        primary: SilexError,
+        provisional_failures: Vec<CleanupFailure>,
+    ) -> Result<MountedApp, MountError> {
+        let rollback = self.abort(provisional_failures);
         let _ = self.runtime.take();
         Err(MountError::new(primary, rollback))
     }
 
-    fn abort(&mut self) -> CleanupReport {
+    fn abort(&mut self, provisional_failures: Vec<CleanupFailure>) -> CleanupReport {
         self.state = TransactionState::Aborted;
-        cleanup_parts(&mut self.root, &mut self.boundary)
+        let report = cleanup_parts(&mut self.root, &mut self.boundary);
+        let (mut cleanup_failures, boundary_errors) = report.into_parts();
+        cleanup_failures.extend(provisional_failures);
+        CleanupReport::from_parts(cleanup_failures, boundary_errors)
     }
 
     fn publish(mut self) -> Result<MountedApp, MountError> {
@@ -672,7 +703,7 @@ impl Drop for MountTransaction {
         if self.root.is_none() && self.boundary.is_none() {
             return;
         }
-        let report = self.abort();
+        let report = self.abort(Vec::new());
         record_drop_report(&self.cleanup_sink, report);
     }
 }

@@ -1,6 +1,6 @@
 use std::{borrow::Cow, rc::Rc};
 
-use silex_core::{Rx, RxValueKind, SilexError, SilexResult};
+use silex_core::{Rx, RxValueKind, SilexError, SilexErrorKind, SilexResult};
 use wasm_bindgen::JsValue;
 use web_sys::Element as WebElem;
 
@@ -261,9 +261,11 @@ pub(crate) fn apply_static_pair(
     match target {
         ApplyTarget::Style => {
             let style = get_style_decl(el).ok_or_else(|| {
-                SilexError::Dom("element does not expose a style declaration".into())
+                SilexError::fatal(SilexErrorKind::Dom(
+                    "element does not expose a style declaration".to_string(),
+                ))
             })?;
-            style.set_property(key, value)?;
+            style.set_property(key, value).map_err(SilexError::fatal)?;
         }
         _ => {
             apply_immediate_string(el, target, value)?;
@@ -683,9 +685,9 @@ where
             ApplyTarget::Class => {
                 let list = el.class_list();
                 if value {
-                    list.add_1(key_cow.as_ref())?;
+                    list.add_1(key_cow.as_ref()).map_err(SilexError::fatal)?;
                 } else {
-                    list.remove_1(key_cow.as_ref())?;
+                    list.remove_1(key_cow.as_ref()).map_err(SilexError::fatal)?;
                 }
             }
             _ => {

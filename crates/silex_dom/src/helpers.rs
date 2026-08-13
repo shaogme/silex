@@ -8,7 +8,7 @@ use wasm_bindgen::prelude::*;
 use web_sys::Document;
 use web_sys::Window;
 
-use silex_core::{SilexError, SilexResult};
+use silex_core::{SilexError, SilexErrorKind, SilexResult};
 
 use crate::view::{
     HostCallback, HostResourceHandle, JsCallbackResource, ViewErrorHandler, ViewOwnerToken,
@@ -82,7 +82,9 @@ where
     E: AsRef<web_sys::Event>,
 {
     let Some(target) = event.as_ref().target() else {
-        return Err(SilexError::Dom("Event target not found".into()));
+        return Err(SilexError::fatal(SilexErrorKind::Dom(
+            "Event target not found".to_string(),
+        )));
     };
 
     if let Some(element) = target.dyn_ref::<web_sys::HtmlInputElement>() {
@@ -92,9 +94,9 @@ where
     } else if let Some(element) = target.dyn_ref::<web_sys::HtmlSelectElement>() {
         Ok(element.value())
     } else {
-        Err(SilexError::Dom(
-            "Event target does not expose a value".into(),
-        ))
+        Err(SilexError::fatal(SilexErrorKind::Dom(
+            "Event target does not expose a value".to_string(),
+        )))
     }
 }
 
@@ -501,7 +503,7 @@ where
             }
             Err(error) => {
                 let _ = state.borrow_mut().pending.take();
-                let _ = error_handler.handle(error.into());
+                let _ = error_handler.handle(SilexError::fatal(error));
             }
         }
     }))

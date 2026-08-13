@@ -1,4 +1,4 @@
-use silex_core::{SilexError, SilexResult, traits::ForLoopSource};
+use silex_core::{SilexError, SilexErrorKind, SilexResult, traits::ForLoopSource};
 
 #[test]
 fn fallible_list_source_exposes_successful_items() {
@@ -23,10 +23,12 @@ fn fallible_list_source_accepts_borrowed_items() {
 
 #[test]
 fn fallible_list_source_preserves_errors() {
-    let source: SilexResult<Vec<i32>> = Err(SilexError::Framework("list failed".to_string()));
+    let source: SilexResult<Vec<i32>> = Err(SilexError::recoverable(SilexErrorKind::Framework(
+        "list failed".to_string(),
+    )));
 
     assert!(matches!(
         source.as_slice(),
-        Err(SilexError::Framework(message)) if message == "list failed"
+        Err(SilexError::Recoverable(SilexErrorKind::Framework(message))) if message == "list failed"
     ));
 }

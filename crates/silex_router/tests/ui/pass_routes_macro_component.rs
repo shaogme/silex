@@ -17,7 +17,10 @@ fn UserView<'scope>(
 fn main() {
     let routes = routes!(AppRoutes {
         user "/users/:id" => move |ctx, id: u32| {
-            let error_handler = ctx.scope().error_handler(|_| {})?;
+            let error_handler = ctx
+                .scope()
+                .error_handler(|_| {})
+                .expect("route error handler should register");
             UserView(ctx, id)
                 .error_handler(error_handler)
                 .label("detail")

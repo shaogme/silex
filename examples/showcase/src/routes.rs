@@ -57,7 +57,8 @@ pub fn NavBar<'scope>(
                     } else {
                         "Light".to_string()
                     };
-                })?;
+                })
+                .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                 Ok(())
             })
             .style(

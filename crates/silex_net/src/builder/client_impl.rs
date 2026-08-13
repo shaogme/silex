@@ -11,7 +11,7 @@ use std::{
 use gloo_timers::future::sleep;
 use silex_core::{
     CallbackInvokeError, CompletionOnce, ErrorReporter, Mutation, ReactiveSource, Resource, RxGet,
-    RxRead, SilexError, SuspenseContext, runtime_inputs_of, unwind_safe,
+    RxRead, SilexError, SilexErrorKind, SuspenseContext, runtime_inputs_of, unwind_safe,
 };
 
 use crate::{
@@ -45,7 +45,7 @@ fn submit_once<T: 'static>(
         return;
     };
     let error = match error {
-        CallbackInvokeError::Runtime(error) => SilexError::Reactivity(error),
+        CallbackInvokeError::Runtime(error) => SilexError::fatal(error),
         CallbackInvokeError::User(error) => error,
     };
     let handler_result = catch_unwind(AssertUnwindSafe(|| error_handler.handle(error)));
@@ -276,9 +276,9 @@ macro_rules! impl_net_methods {
                 .derived_from(
                     request_inputs,
                     move || {
-                        request_builder
-                            .resolve_spec_tracked()
-                            .map_err(|error| SilexError::Framework(format!("{error}")))
+                        request_builder.resolve_spec_tracked().map_err(|error| {
+                            SilexError::fatal(SilexErrorKind::Framework(format!("{error}")))
+                        })
                     },
                     error_handler,
                 )
@@ -314,7 +314,9 @@ macro_rules! impl_net_methods {
                         .get()
                         .checked_add(1)
                         .ok_or_else(|| {
-                            SilexError::Framework("HTTP Resource generation exhausted".to_string())
+                            SilexError::fatal(SilexErrorKind::Framework(
+                                "HTTP Resource generation exhausted".to_string(),
+                            ))
                         });
                     let generation = match generation {
                         Ok(generation) => generation,
@@ -381,7 +383,7 @@ macro_rules! impl_net_methods {
                                     && let Ok(value) = result
                                     && let Some(resource) = resource_slot_for_completion.get()
                                 {
-                                    resource.set(value).map_err(SilexError::from)?;
+                                    resource.set(value).map_err(SilexError::fatal)?;
                                 }
                                 Ok(())
                             },

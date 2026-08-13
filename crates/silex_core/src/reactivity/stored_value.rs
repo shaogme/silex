@@ -49,7 +49,7 @@ impl<'scope, T: 'scope> StoredValue<'scope, T> {
     }
 
     pub fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.inner.with(f).map_err(SilexError::from)
+        self.inner.with(f).map_err(SilexError::fatal)
     }
 
     pub fn update<U>(&self, f: impl FnOnce(&mut T) -> U) -> ReactiveResult<U> {

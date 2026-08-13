@@ -4,7 +4,7 @@ use std::{cell::Cell, rc::Rc};
 
 use js_sys::Promise;
 use silex::components::ErrorBoundary;
-use silex_core::{ErrorReporter, ReadSignal, Runtime, SilexError, SilexResult};
+use silex_core::{ErrorReporter, ReadSignal, Runtime, SilexError, SilexErrorKind, SilexResult};
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::document;
 use silex_dom::view::{ApplyAttributes, ScopedViewOwner, View, ViewOwner};
@@ -28,7 +28,9 @@ impl<'scope> View<'scope> for InitialFailure {
         _attrs: Vec<PendingAttribute<'scope>>,
         _error_handler: ErrorReporter<'scope>,
     ) -> SilexResult<()> {
-        Err(SilexError::Framework("initial child failure".to_string()))
+        Err(SilexError::recoverable(SilexErrorKind::Framework(
+            "initial child failure".to_string(),
+        )))
     }
 
     fn mount_owned(
@@ -61,7 +63,9 @@ impl<'scope> View<'scope> for DeferredFailure<'scope> {
         error_handler: ErrorReporter<'scope>,
     ) -> SilexResult<()> {
         let node = document().create_text_node("child");
-        parent.append_child(&node)?;
+        parent
+            .append_child(&node)
+            .map_err(|error| SilexError::fatal(SilexErrorKind::from(error)))?;
         let node: Node = node.into();
         let node_for_cleanup = node.clone();
         owner.on_cleanup(
@@ -79,7 +83,9 @@ impl<'scope> View<'scope> for DeferredFailure<'scope> {
             silex_core::reactivity::runtime_inputs_of(source),
             Box::new(move || {
                 if source.get()? {
-                    return Err(SilexError::Framework("deferred child failure".to_string()));
+                    return Err(SilexError::recoverable(SilexErrorKind::Framework(
+                        "deferred child failure".to_string(),
+                    )));
                 }
                 Ok(())
             }),
@@ -117,9 +123,11 @@ impl<'scope> View<'scope> for ConstructedHandlerFailure<'scope> {
         _attrs: Vec<PendingAttribute<'scope>>,
         _error_handler: ErrorReporter<'scope>,
     ) -> SilexResult<()> {
-        let _ = self.handler.handle(SilexError::Framework(
-            "constructed child failure".to_string(),
-        ));
+        let _ = self
+            .handler
+            .handle(SilexError::recoverable(SilexErrorKind::Framework(
+                "constructed child failure".to_string(),
+            )));
         Ok(())
     }
 

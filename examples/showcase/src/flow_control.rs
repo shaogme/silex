@@ -45,28 +45,40 @@ pub fn ListDemo<'scope>(
             .build()),
         div![
             button("Add Item").on(event::click, move |_| {
-                set_error_msg.set(None)?;
-                set_list.update(|l| {
-                    if let Ok(v) = l {
-                        v.push(Cow::Owned(format!("New Item {}", v.len())));
-                    } else {
-                        *l = Ok(vec!["Apple".into(), "Banana".into(), "Cherry".into()]);
-                    }
-                })?;
+                set_error_msg
+                    .set(None)
+                    .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+                set_list
+                    .update(|l| {
+                        if let Ok(v) = l {
+                            v.push(Cow::Owned(format!("New Item {}", v.len())));
+                        } else {
+                            *l = Ok(vec!["Apple".into(), "Banana".into(), "Cherry".into()]);
+                        }
+                    })
+                    .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                 Ok(())
             }),
             button("Duplicate Key").on(event::click, move |_| {
-                set_error_msg.set(None)?;
-                set_list.update(|l| {
-                    if let Ok(v) = l {
-                        v.push("Duplicate".into());
-                        v.push("Duplicate".into());
-                    }
-                })?;
+                set_error_msg
+                    .set(None)
+                    .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+                set_list
+                    .update(|l| {
+                        if let Ok(v) = l {
+                            v.push("Duplicate".into());
+                            v.push("Duplicate".into());
+                        }
+                    })
+                    .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                 Ok(())
             }),
             button("Simulate Error").on(event::click, move |_| {
-                set_list.set(Err(SilexError::Javascript("模拟数据加载失败".to_string())))?;
+                set_list
+                    .set(Err(SilexError::fatal(SilexErrorKind::Javascript(
+                        "模拟数据加载失败".to_string(),
+                    ))))
+                    .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                 Ok(())
             }),
         ]
@@ -202,7 +214,9 @@ pub fn IndexDemo<'scope>(
             .build(),
         button("Append Item")
             .on(event::click, move |_| {
-                set_items.update(|list| list.push("New Item"))?;
+                set_items
+                    .update(|list| list.push("New Item"))
+                    .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
                 Ok(())
             })
             .style(sty().margin_top(px(10))?)

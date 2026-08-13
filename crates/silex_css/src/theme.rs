@@ -2,7 +2,7 @@ use crate::{
     runtime::{DynamicStyleManager, dynamic::unique_dynamic_style_id},
     source::{CssSource, IntoCssSource},
 };
-use silex_core::{RuntimeInputs, SilexError, SilexResult};
+use silex_core::{RuntimeInputs, SilexError, SilexErrorKind, SilexResult};
 use silex_dom::{
     attribute::{ApplyTarget, ApplyToDom, AttrOp, IntoStorable},
     view::{ViewErrorHandler, ViewOwner, ViewOwnerToken},
@@ -45,10 +45,10 @@ fn apply_var_diff(
     for write in var_writes(entries, prev) {
         match write {
             VarWrite::Set(name, value) => {
-                style.set_property(name, value)?;
+                style.set_property(name, value).map_err(SilexError::fatal)?;
             }
             VarWrite::Remove(name) => {
-                style.remove_property(name)?;
+                style.remove_property(name).map_err(SilexError::fatal)?;
             }
         }
     }
@@ -103,7 +103,9 @@ fn theme_entries<T: ThemeToCss>(theme: &T) -> SilexResult<Vec<(&'static str, Opt
     let names = T::get_variable_names();
     let values = theme.get_variable_values();
     if names.len() != values.len() {
-        return Err(SilexError::Framework("主题的变量名与取值数量不一致".into()));
+        return Err(SilexError::fatal(SilexErrorKind::Framework(
+            "主题的变量名与取值数量不一致".to_string(),
+        )));
     }
     Ok(names
         .iter()
@@ -159,9 +161,7 @@ where
                     CssSource::Reactive(rx) => rx.get()?,
                 };
                 let Some(style) = element_style(&effect_el) else {
-                    return Err(SilexError::Dom(
-                        "element does not expose a style declaration".into(),
-                    ));
+                    return Err(SilexError::fatal(SilexErrorKind::Dom("element does not expose a style declaration".to_string())));
                 };
                 let entries = theme_entries(&theme)?;
                 apply_var_diff(&style, &entries, previous)
@@ -177,7 +177,7 @@ where
                 if let Some(style) = element_style(&el_clone) {
                     for name in &names {
                         if let Err(error) = style.remove_property(name) {
-                            first_error.get_or_insert_with(|| SilexError::from(error));
+                            first_error.get_or_insert_with(|| SilexError::fatal(error));
                         }
                     }
                 }
@@ -236,7 +236,9 @@ where
                 if previous.map(String::as_str) != Some(css.as_str())
                     && !manager_for_effect.update(&style_id, &css)
                 {
-                    return Err(SilexError::Dom("无法更新全局主题样式表".into()));
+                    return Err(SilexError::fatal(SilexErrorKind::Dom(
+                        "无法更新全局主题样式表".to_string(),
+                    )));
                 }
                 Ok(css)
             }),
@@ -322,9 +324,7 @@ where
                 let entries = patch.get_patch_entries();
                 let next = {
                     let Some(style) = element_style(&effect_el) else {
-                        return Err(SilexError::Dom(
-                            "element does not expose a style declaration".into(),
-                        ));
+                        return Err(SilexError::fatal(SilexErrorKind::Dom("element does not expose a style declaration".to_string())));
                     };
                     let next = apply_var_diff(&style, &entries, previous)?;
                     names_for_effect.update(|names| {
@@ -350,7 +350,7 @@ where
                     let names = names_for_cleanup.take_for_cleanup().unwrap_or_default();
                     for name in &names {
                         if let Err(error) = style.remove_property(name) {
-                            first_error.get_or_insert_with(|| SilexError::from(error));
+                            first_error.get_or_insert_with(|| SilexError::fatal(error));
                         }
                     }
                 }

@@ -1,6 +1,6 @@
 use crate::ToRoute;
 use silex_core::{
-    ErrorReporter, RuntimeInputs, Rx, Scope, SilexError, SilexResult,
+    ErrorReporter, RuntimeInputs, Rx, Scope, SilexError, SilexErrorKind, SilexResult,
     reactivity::{ReadSignal, StoredValue, WriteSignal, runtime_inputs_of},
     traits::RxGet,
 };
@@ -136,19 +136,21 @@ impl<'scope> RouterContext<'scope> {
 
 fn parse_query(search: &str) -> SilexResult<HashMap<String, String>> {
     let mut map = HashMap::new();
-    let params = web_sys::UrlSearchParams::new_with_str(search).map_err(SilexError::from)?;
-    if let Some(iter) = js_sys::try_iter(&params).map_err(SilexError::from)? {
+    let params = web_sys::UrlSearchParams::new_with_str(search).map_err(SilexError::fatal)?;
+    if let Some(iter) = js_sys::try_iter(&params).map_err(SilexError::fatal)? {
         for val in iter {
-            let val = val.map_err(SilexError::from)?;
+            let val = val.map_err(SilexError::fatal)?;
             let pair: js_sys::Array = val.unchecked_into();
-            let key = pair
-                .get(0)
-                .as_string()
-                .ok_or_else(|| SilexError::Javascript("query key is not a string".into()))?;
-            let value = pair
-                .get(1)
-                .as_string()
-                .ok_or_else(|| SilexError::Javascript("query value is not a string".into()))?;
+            let key = pair.get(0).as_string().ok_or_else(|| {
+                SilexError::fatal(SilexErrorKind::Javascript(
+                    "query key is not a string".to_string(),
+                ))
+            })?;
+            let value = pair.get(1).as_string().ok_or_else(|| {
+                SilexError::fatal(SilexErrorKind::Javascript(
+                    "query value is not a string".to_string(),
+                ))
+            })?;
             map.insert(key, value);
         }
     }
@@ -222,48 +224,54 @@ pub struct Navigator<'scope> {
 
 impl<'scope> Navigator<'scope> {
     fn handle_navigation(self, url: &str, replace: bool) -> SilexResult<()> {
-        let window = web_sys::window()
-            .ok_or_else(|| SilexError::Javascript("no global `window` exists".into()))?;
+        let window = web_sys::window().ok_or_else(|| {
+            SilexError::fatal(SilexErrorKind::Javascript(
+                "no global `window` exists".to_string(),
+            ))
+        })?;
 
         // 1. 构造用于浏览器历史记录的完整 URL
         let base_path = normalize_base_path(&self.base_path.get_untracked()?);
         let full_url = build_history_url(&base_path, url);
 
         // 2. 使用 History API
-        let history = window.history().map_err(SilexError::from)?;
+        let history = window.history().map_err(SilexError::fatal)?;
         if replace {
             history
                 .replace_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(&full_url))
-                .map_err(SilexError::from)?;
+                .map_err(SilexError::fatal)?;
         } else {
             history
                 .push_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(&full_url))
-                .map_err(SilexError::from)?;
+                .map_err(SilexError::fatal)?;
         }
 
         self.refresh_location()
     }
 
     pub(crate) fn refresh_location(self) -> SilexResult<()> {
-        let window = web_sys::window()
-            .ok_or_else(|| SilexError::Javascript("no global `window` exists".into()))?;
+        let window = web_sys::window().ok_or_else(|| {
+            SilexError::fatal(SilexErrorKind::Javascript(
+                "no global `window` exists".to_string(),
+            ))
+        })?;
         let base_path = normalize_base_path(&self.base_path.get_untracked()?);
 
         // 读取当前状态并更新信号 (需要剥离 base_path)
         let location = window.location();
-        let raw_path = location.pathname().map_err(SilexError::from)?;
+        let raw_path = location.pathname().map_err(SilexError::fatal)?;
 
         let logical_path = strip_base_path(&base_path, &raw_path);
 
-        let search = location.search().map_err(SilexError::from)?;
+        let search = location.search().map_err(SilexError::fatal)?;
 
         // 更新信号 (带去重，避免不必要的副作用)
         if self.path.get_untracked()? != logical_path {
-            self.set_path.set(logical_path)?;
+            self.set_path.set(logical_path).map_err(SilexError::fatal)?;
         }
 
         if self.search.get_untracked()? != search {
-            self.set_search.set(search)?;
+            self.set_search.set(search).map_err(SilexError::fatal)?;
         }
         Ok(())
     }
@@ -286,16 +294,17 @@ impl<'scope> Navigator<'scope> {
         let current_search = self.search.get_untracked()?;
 
         let params =
-            web_sys::UrlSearchParams::new_with_str(&current_search).map_err(SilexError::from)?;
+            web_sys::UrlSearchParams::new_with_str(&current_search).map_err(SilexError::fatal)?;
         match value {
             Some(v) => params.set(key, v),
             None => params.delete(key),
         }
 
-        let new_search = params
-            .to_string()
-            .as_string()
-            .ok_or_else(|| SilexError::Javascript("query serialization is not a string".into()))?;
+        let new_search = params.to_string().as_string().ok_or_else(|| {
+            SilexError::fatal(SilexErrorKind::Javascript(
+                "query serialization is not a string".to_string(),
+            ))
+        })?;
         let new_search = if new_search.is_empty() {
             String::new()
         } else {

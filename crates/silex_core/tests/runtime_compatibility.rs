@@ -1,7 +1,7 @@
 use silex_core::traits::RxOptionExt;
 use silex_core::{
-    ErrorHandler, PromotionPlan, ReactiveSource, Runtime, RuntimeInputs, RxData, RxValue, Scope,
-    SilexError,
+    ErrorHandler, PromotionPlan, ReactiveError, ReactiveSource, Runtime, RuntimeInputs, RxData,
+    RxValue, Scope, SilexError, SilexErrorKind,
     logic::{Map, Memoize, ReactivePartialEq, ReactivePartialOrd},
     runtime_inputs_of,
 };
@@ -101,9 +101,9 @@ fn foreign_inputs_are_rejected_before_target_derived_creation() {
 
     assert!(matches!(
         result,
-        Err(silex_core::SilexError::Reactivity(
-            silex_core::ReactiveError::RuntimeMismatch,
-        ))
+        Err(SilexError::Fatal(SilexErrorKind::Reactivity(
+            ReactiveError::RuntimeMismatch,
+        )))
     ));
 }
 
@@ -133,9 +133,9 @@ fn foreign_inputs_are_rejected_before_target_memo_creation() {
 
     assert!(matches!(
         result,
-        Err(silex_core::SilexError::Reactivity(
-            silex_core::ReactiveError::RuntimeMismatch,
-        ))
+        Err(SilexError::Fatal(SilexErrorKind::Reactivity(
+            ReactiveError::RuntimeMismatch,
+        )))
     ));
     assert!(!called.get());
 }
@@ -169,9 +169,9 @@ fn external_promotion_plan_validates_inputs_before_materializing() {
 
     assert!(matches!(
         result,
-        Err(silex_core::SilexError::Reactivity(
-            silex_core::ReactiveError::RuntimeMismatch
-        ))
+        Err(SilexError::Fatal(SilexErrorKind::Reactivity(
+            ReactiveError::RuntimeMismatch,
+        )))
     ));
     assert!(!materialized.get());
 }
@@ -206,9 +206,9 @@ fn foreign_inputs_are_rejected_before_target_effect_creation() {
 
     assert!(matches!(
         result,
-        Err(silex_core::SilexError::Reactivity(
-            silex_core::ReactiveError::RuntimeMismatch,
-        ))
+        Err(SilexError::Fatal(SilexErrorKind::Reactivity(
+            ReactiveError::RuntimeMismatch,
+        )))
     ));
     assert!(!called.get());
 }

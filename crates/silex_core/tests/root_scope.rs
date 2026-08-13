@@ -1,4 +1,4 @@
-use silex_core::{ReactiveError, Runtime, Scope, SilexError};
+use silex_core::{ReactiveError, Runtime, Scope, SilexError, SilexErrorKind};
 use std::{cell::Cell, rc::Rc};
 
 #[test]
@@ -55,7 +55,9 @@ fn high_level_try_run_reports_an_active_root() {
 
     assert!(matches!(
         runtime.run(),
-        Err(SilexError::Reactivity(ReactiveError::RuntimeAlreadyRunning))
+        Err(SilexError::Fatal(SilexErrorKind::Reactivity(
+            ReactiveError::RuntimeAlreadyRunning
+        )))
     ));
 
     root.dispose().expect("root disposal should succeed");

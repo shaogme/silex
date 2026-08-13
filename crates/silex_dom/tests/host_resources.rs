@@ -1,6 +1,6 @@
 #![cfg(target_arch = "wasm32")]
 
-use silex_core::{ErrorReporter, RootHandle, Runtime, Scope, SilexError};
+use silex_core::{ErrorReporter, RootHandle, Runtime, Scope, SilexError, SilexErrorKind};
 use silex_dom::{
     attribute::{AttrOp, AttributeBuilder, PendingAttribute},
     document,
@@ -265,7 +265,8 @@ impl<'scope> View<'scope> for WindowResourceView {
                 Ok(())
             },
             error_handler,
-        )?;
+        )
+        .map_err(|error| SilexError::fatal(SilexErrorKind::from(error)))?;
         mount_text_node(parent, &self.id.to_string())?;
         Ok(())
     }
@@ -352,16 +353,16 @@ fn fallible_dom_primitives_and_attribute_mount_failures_are_observable() {
         .child(|scope| {
             let error_handler = scope
                 .error_handler(move |error| {
-                    reported_for_owner.set(matches!(error, SilexError::Framework(_)));
+                    reported_for_owner.set(matches!(error, SilexError::Recoverable(SilexErrorKind::Framework(_))));
                 })
                 .expect("error handler should register");
             let owner = ScopedViewOwner::new(scope);
             let view = Element::new("div").apply(PendingAttribute::new_scoped(|_, _, _| {
-                Err(SilexError::Framework("attribute rejected".to_string()))
+                Err(SilexError::recoverable(SilexErrorKind::Framework("attribute rejected".to_string())))
             }));
             assert!(matches!(
                 view.mount_owned(&owner, &host.clone().into(), Vec::new(), error_handler),
-                Err(SilexError::Framework(message)) if message == "attribute rejected"
+                Err(SilexError::Recoverable(SilexErrorKind::Framework(message))) if message == "attribute rejected"
             ));
         })
         .expect("child scope should initialize");
@@ -975,7 +976,7 @@ fn debounce_timeout_creation_failure_reaches_owner_handler() {
 
     assert!(matches!(
         errors.borrow().as_slice(),
-        [SilexError::Javascript(message)] if message.contains("forced timeout creation failure")
+        [SilexError::Fatal(SilexErrorKind::Javascript(message))] if message.contains("forced timeout creation failure")
     ));
 }
 

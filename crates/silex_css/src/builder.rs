@@ -9,7 +9,7 @@ use crate::{
         },
     },
 };
-use silex_core::{ErrorReporter, Rx, RxValueKind, SilexError, SilexResult};
+use silex_core::{ErrorReporter, Rx, RxValueKind, SilexError, SilexErrorKind, SilexResult};
 use silex_dom::attribute::{ApplyTarget, ApplyToDom, IntoStorable, ReactiveApply};
 use silex_dom::view::{ViewErrorHandler, ViewOwnerToken};
 use silex_hash::{
@@ -46,9 +46,9 @@ impl<'scope> StyleValue<'scope> {
             CssSource::Static(value) => Ok(Self::Static(Cow::Owned(value.to_string()))),
             CssSource::Reactive(source) => {
                 let handler = error_handler.ok_or_else(|| {
-                    SilexError::Framework(
-                        "reactive CSS style requires an explicit error handler".into(),
-                    )
+                    SilexError::fatal(SilexErrorKind::Framework(
+                        "reactive CSS style requires an explicit error handler".to_string(),
+                    ))
                 })?;
                 Ok(Self::Dynamic(
                     source.map(|value| value.to_string(), handler)?,
@@ -390,7 +390,9 @@ impl<'scope> Style<'scope> {
         if !css.is_empty() {
             inject_style(&class_base, &css);
         }
-        el.class_list().add_1(&class_base)?;
+        el.class_list()
+            .add_1(&class_base)
+            .map_err(SilexError::fatal)?;
 
         let owned_vars: Vec<String> = dyn_bindings
             .iter()
@@ -417,7 +419,7 @@ impl<'scope> Style<'scope> {
                                     .and_then(|values| values.get(index))
                                     .and_then(Option::as_deref);
                                 if old_value != Some(value.as_str()) {
-                                    style.set_property(name, value)?;
+                                    style.set_property(name, value).map_err(SilexError::fatal)?;
                                 }
                             }
                         }
@@ -434,12 +436,12 @@ impl<'scope> Style<'scope> {
                     if let Some(style) = element_style(&el_clone) {
                         for name in &owned_vars {
                             if let Err(error) = style.remove_property(name) {
-                                first_error.get_or_insert_with(|| SilexError::from(error));
+                                first_error.get_or_insert_with(|| SilexError::fatal(error));
                             }
                         }
                     }
                     if let Err(error) = el_clone.class_list().remove_1(&class_name) {
-                        first_error.get_or_insert_with(|| SilexError::from(error));
+                        first_error.get_or_insert_with(|| SilexError::fatal(error));
                     }
                     first_error.map_or(Ok(()), Err)
                 }),
@@ -454,12 +456,12 @@ impl<'scope> Style<'scope> {
                     if let Some(style) = element_style(&el_clone) {
                         for name in &owned_vars {
                             if let Err(error) = style.remove_property(name) {
-                                first_error.get_or_insert_with(|| SilexError::from(error));
+                                first_error.get_or_insert_with(|| SilexError::fatal(error));
                             }
                         }
                     }
                     if let Err(error) = el_clone.class_list().remove_1(&class_name) {
-                        first_error.get_or_insert_with(|| SilexError::from(error));
+                        first_error.get_or_insert_with(|| SilexError::fatal(error));
                     }
                     first_error.map_or(Ok(()), Err)
                 }),
@@ -601,7 +603,9 @@ impl<'scope> ReactiveApply<'scope> for Style<'scope> {
                 if let Some(previous) = previous
                     && previous != &class_name
                 {
-                    el.class_list().remove_1(previous)?;
+                    el.class_list()
+                        .remove_1(previous)
+                        .map_err(SilexError::fatal)?;
                 }
                 Ok(class_name)
             }),
