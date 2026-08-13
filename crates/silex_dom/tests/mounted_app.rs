@@ -3,7 +3,7 @@
 use silex_core::{ErrorReporter, Runtime, SilexError, SilexErrorKind, SilexResult};
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::element::Element;
-use silex_dom::mounted::{CleanupOrigin, CleanupSink, MountedApp};
+use silex_dom::mounted::{CleanupOrigin, CleanupSink, MountAvailability, MountedApp};
 use silex_dom::view::{ApplyAttributes, View, ViewOwner, mount_component};
 use std::{cell::Cell, rc::Rc};
 use wasm_bindgen_test::*;
@@ -124,15 +124,15 @@ impl<'scope> View<'scope> for CleanupProbe {
 #[wasm_bindgen_test]
 fn mounted_app_stages_and_commits_after_the_caller_node() {
     let host = host_with_caller_node();
-    let app = MountedApp::mount(
+    let mut app = MountedApp::new(
         Runtime::new(),
         host.clone(),
         CleanupSink::new(|report| assert!(report.is_clean())),
-        |context| {
-            let handler = error_handler(context.scope());
-            context.mount(Element::with_child("section", "app"), handler)
-        },
-    )
+    );
+    app.mount(|context| {
+        let handler = error_handler(context.scope());
+        context.mount(Element::with_child("section", "app"), handler)
+    })
     .expect("mount should commit");
 
     assert!(app.is_active());
@@ -152,15 +152,15 @@ fn mounted_app_stages_and_commits_after_the_caller_node() {
 #[wasm_bindgen_test]
 fn explicit_dispose_cleans_committed_boundary() {
     let host = host_with_caller_node();
-    let app = MountedApp::mount(
+    let mut app = MountedApp::new(
         Runtime::new(),
         host.clone(),
         CleanupSink::new(|_| panic!("clean explicit dispose should not report")),
-        |context| {
-            let handler = error_handler(context.scope());
-            context.mount(Element::with_child("section", "app"), handler)
-        },
-    )
+    );
+    app.mount(|context| {
+        let handler = error_handler(context.scope());
+        context.mount(Element::with_child("section", "app"), handler)
+    })
     .expect("mount should commit");
 
     app.dispose().expect("explicit dispose should succeed");
@@ -176,15 +176,15 @@ fn explicit_dispose_cleans_committed_boundary() {
 #[wasm_bindgen_test]
 fn dispose_after_external_host_removal_is_clean_and_keeps_caller_nodes() {
     let host = host_with_caller_node();
-    let app = MountedApp::mount(
+    let mut app = MountedApp::new(
         Runtime::new(),
         host.clone(),
         CleanupSink::new(|_| panic!("external removal should be clean")),
-        |context| {
-            let handler = error_handler(context.scope());
-            context.mount(Element::with_child("section", "app"), handler)
-        },
-    )
+    );
+    app.mount(|context| {
+        let handler = error_handler(context.scope());
+        context.mount(Element::with_child("section", "app"), handler)
+    })
     .expect("mount should commit");
 
     assert!(app.is_active());
@@ -203,18 +203,14 @@ fn dispose_after_external_host_removal_is_clean_and_keeps_caller_nodes() {
 #[wasm_bindgen_test]
 fn mount_error_rolls_back_staging_without_touching_caller_nodes() {
     let host = host_with_caller_node();
-    let result = MountedApp::mount(
-        Runtime::new(),
-        host.clone(),
-        CleanupSink::new(|_| {}),
-        |context| {
-            let handler = error_handler(context.scope());
-            context.mount(Element::with_child("section", "partial"), handler)?;
-            Err(SilexError::recoverable(SilexErrorKind::Framework(
-                "primary mount failure".to_string(),
-            )))
-        },
-    );
+    let mut app = MountedApp::new(Runtime::new(), host.clone(), CleanupSink::new(|_| {}));
+    let result = app.mount(|context| {
+        let handler = error_handler(context.scope());
+        context.mount(Element::with_child("section", "partial"), handler)?;
+        Err(SilexError::recoverable(SilexErrorKind::Framework(
+            "primary mount failure".to_string(),
+        )))
+    });
 
     let error = match result {
         Ok(_) => panic!("mount should return its primary error"),
@@ -225,6 +221,49 @@ fn mount_error_rolls_back_staging_without_touching_caller_nodes() {
         SilexError::Recoverable(SilexErrorKind::Framework(message)) if message == "primary mount failure"
     ));
     assert!(error.rollback().is_clean());
+    assert_eq!(error.availability(), MountAvailability::Retryable);
+    assert_eq!(host.text_content().as_deref(), Some("caller-owned"));
+    assert_eq!(host.child_nodes().length(), 1);
+
+    app.mount(|context| {
+        let handler = error_handler(context.scope());
+        context.mount(Element::with_child("section", "retry"), handler)
+    })
+    .expect("clean rollback should allow retrying the same handle");
+    assert!(app.is_active());
+    assert_eq!(host.text_content().as_deref(), Some("caller-ownedretry"));
+    app.dispose().expect("retry should dispose cleanly");
+
+    host.parent_node()
+        .expect("host has a body parent")
+        .remove_child(&host)
+        .expect("host can be removed");
+}
+
+#[wasm_bindgen_test]
+fn mounted_app_remounts_the_same_handle_and_preserves_caller_nodes() {
+    let host = host_with_caller_node();
+    let mut app = MountedApp::new(Runtime::new(), host.clone(), CleanupSink::new(|_| {}));
+
+    app.mount(|context| {
+        let handler = error_handler(context.scope());
+        context.mount(Element::with_child("section", "first"), handler)
+    })
+    .expect("first mount should commit");
+    app.mount(|context| {
+        let handler = error_handler(context.scope());
+        context.mount(Element::with_child("section", "second"), handler)
+    })
+    .expect("second mount should commit");
+
+    assert!(app.is_active());
+    assert!(!app.is_poisoned());
+    assert_eq!(app.host(), host);
+    assert_eq!(host.text_content().as_deref(), Some("caller-ownedsecond"));
+    assert_eq!(host.child_nodes().length(), 4);
+
+    app.dispose().expect("remounted app should dispose cleanly");
+    assert!(!app.is_active());
     assert_eq!(host.text_content().as_deref(), Some("caller-owned"));
     assert_eq!(host.child_nodes().length(), 1);
 
@@ -235,37 +274,64 @@ fn mount_error_rolls_back_staging_without_touching_caller_nodes() {
 }
 
 #[wasm_bindgen_test]
+fn disposed_handle_can_mount_again_and_dispose_is_idempotent() {
+    let host = host_with_caller_node();
+    let mut app = MountedApp::new(Runtime::new(), host.clone(), CleanupSink::new(|_| {}));
+
+    app.dispose().expect("ready dispose should be a no-op");
+    app.mount(|context| {
+        let handler = error_handler(context.scope());
+        context.mount(Element::with_child("section", "after-ready"), handler)
+    })
+    .expect("ready handle should mount");
+    app.dispose().expect("first dispose should succeed");
+    app.dispose().expect("second dispose should be idempotent");
+
+    app.mount(|context| {
+        let handler = error_handler(context.scope());
+        context.mount(Element::with_child("section", "after-dispose"), handler)
+    })
+    .expect("disposed handle should mount again");
+    assert_eq!(
+        host.text_content().as_deref(),
+        Some("caller-ownedafter-dispose")
+    );
+
+    app.dispose().expect("final dispose should succeed");
+    host.parent_node()
+        .expect("host has a body parent")
+        .remove_child(&host)
+        .expect("host can be removed");
+}
+
+#[wasm_bindgen_test]
 fn root_cleanup_runs_before_boundary_rollback_is_attempted() {
     let host = host_with_caller_node();
     let cleanups = Rc::new(Cell::new(0));
-    let result = MountedApp::mount(
-        Runtime::new(),
-        host.clone(),
-        CleanupSink::new(|_| {}),
-        |context| {
-            let scope = context.scope();
-            let handler = error_handler(scope);
-            let root_cleanups = cleanups.clone();
-            scope
-                .on_cleanup(
-                    move || {
-                        root_cleanups.set(root_cleanups.get() + 1);
-                        Ok(())
-                    },
-                    handler,
-                )
-                .expect("root cleanup should register");
-            context.mount(
-                CleanupProbe {
-                    cleanups: cleanups.clone(),
+    let mut app = MountedApp::new(Runtime::new(), host.clone(), CleanupSink::new(|_| {}));
+    let result = app.mount(|context| {
+        let scope = context.scope();
+        let handler = error_handler(scope);
+        let root_cleanups = cleanups.clone();
+        scope
+            .on_cleanup(
+                move || {
+                    root_cleanups.set(root_cleanups.get() + 1);
+                    Ok(())
                 },
                 handler,
-            )?;
-            Err(SilexError::recoverable(SilexErrorKind::Framework(
-                "mount rejected".to_string(),
-            )))
-        },
-    );
+            )
+            .expect("root cleanup should register");
+        context.mount(
+            CleanupProbe {
+                cleanups: cleanups.clone(),
+            },
+            handler,
+        )?;
+        Err(SilexError::recoverable(SilexErrorKind::Framework(
+            "mount rejected".to_string(),
+        )))
+    });
 
     let error = match result {
         Ok(_) => panic!("mount should fail"),
@@ -285,15 +351,11 @@ fn root_cleanup_runs_before_boundary_rollback_is_attempted() {
 #[wasm_bindgen_test]
 fn composite_cleanup_failure_upgrades_primary_and_records_provisional_owner() {
     let host = host_with_caller_node();
-    let result = MountedApp::mount(
-        Runtime::new(),
-        host.clone(),
-        CleanupSink::new(|_| {}),
-        |context| {
-            let handler = error_handler(context.scope());
-            context.mount(PanicRollbackView, handler)
-        },
-    );
+    let mut app = MountedApp::new(Runtime::new(), host.clone(), CleanupSink::new(|_| {}));
+    let result = app.mount(|context| {
+        let handler = error_handler(context.scope());
+        context.mount(PanicRollbackView, handler)
+    });
 
     let error = result.expect_err("mount should fail during composite rollback");
     assert!(matches!(

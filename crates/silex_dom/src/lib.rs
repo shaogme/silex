@@ -7,7 +7,7 @@ pub mod view;
 
 pub use mounted::{
     CleanupFailure, CleanupFailureDiagnostic, CleanupOrigin, CleanupReport, CleanupSink,
-    DisposeError, DropFailureReport, MountContext, MountError, MountedApp,
+    DisposeError, DropFailureReport, MountAvailability, MountContext, MountError, MountedApp,
 };
 
 pub mod prelude {
@@ -18,7 +18,7 @@ pub mod prelude {
     pub use crate::helpers::*;
     pub use crate::mounted::{
         CleanupFailure, CleanupFailureDiagnostic, CleanupOrigin, CleanupReport, CleanupSink,
-        DisposeError, DropFailureReport, MountContext, MountError, MountedApp,
+        DisposeError, DropFailureReport, MountAvailability, MountContext, MountError, MountedApp,
     };
     pub use crate::setup_global_error_handlers;
     pub use crate::view::{

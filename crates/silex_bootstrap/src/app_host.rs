@@ -141,23 +141,17 @@ impl AppHost {
         }
 
         self.state = HostState::Mounting;
-        let result = catch_unwind(AssertUnwindSafe(|| {
-            MountedApp::mount(
-                runtime,
-                self.target.clone(),
-                self.cleanup_sink.clone(),
-                builder,
-            )
-        }));
+        let mut app = MountedApp::new(runtime, self.target.clone(), self.cleanup_sink.clone());
+        let result = catch_unwind(AssertUnwindSafe(|| app.mount(builder)));
 
         match result {
-            Ok(Ok(app)) => {
+            Ok(Ok(())) => {
                 self.active = Some(app);
                 self.state = HostState::Active;
                 Ok(())
             }
             Ok(Err(error)) => {
-                self.state = if error.rollback().is_clean() {
+                self.state = if error.can_retry() {
                     HostState::Ready
                 } else {
                     HostState::Poisoned
@@ -165,7 +159,7 @@ impl AppHost {
                 Err(AppHostError::Mount(error))
             }
             Err(panic) => {
-                self.active = None;
+                self.active = Some(app);
                 self.state = HostState::Poisoned;
                 resume_unwind(panic)
             }
@@ -189,6 +183,7 @@ impl AppHost {
         };
 
         self.state = HostState::Disposing;
+        let mut active = active;
         let dispose_result = catch_unwind(AssertUnwindSafe(|| active.dispose()));
         match dispose_result {
             Ok(Ok(())) => {
@@ -221,6 +216,7 @@ impl AppHost {
         };
 
         self.state = HostState::Disposing;
+        let mut active = active;
         let dispose_result = catch_unwind(AssertUnwindSafe(|| active.dispose()));
         match dispose_result {
             Ok(Ok(())) => {

@@ -85,11 +85,25 @@ impl CleanupReport {
 pub struct MountError {
     primary: SilexError,
     rollback: CleanupReport,
+    availability: MountAvailability,
 }
 
 impl MountError {
     pub fn new(primary: SilexError, rollback: CleanupReport) -> Self {
-        Self { primary, rollback }
+        let availability = MountAvailability::from_report(&rollback);
+        Self {
+            primary,
+            rollback,
+            availability,
+        }
+    }
+
+    fn poisoned(primary: SilexError) -> Self {
+        Self {
+            primary,
+            rollback: CleanupReport::new(),
+            availability: MountAvailability::Poisoned,
+        }
     }
 
     pub fn primary(&self) -> &SilexError {
@@ -100,8 +114,37 @@ impl MountError {
         &self.rollback
     }
 
-    pub fn into_parts(self) -> (SilexError, CleanupReport) {
-        (self.primary, self.rollback)
+    pub fn availability(&self) -> MountAvailability {
+        self.availability
+    }
+
+    pub fn can_retry(&self) -> bool {
+        self.availability == MountAvailability::Retryable
+    }
+
+    pub fn is_poisoned(&self) -> bool {
+        self.availability == MountAvailability::Poisoned
+    }
+
+    pub fn into_parts(self) -> (SilexError, CleanupReport, MountAvailability) {
+        (self.primary, self.rollback, self.availability)
+    }
+}
+
+/// Describes whether the handle can start another mount after a failed attempt.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MountAvailability {
+    Retryable,
+    Poisoned,
+}
+
+impl MountAvailability {
+    fn from_report(report: &CleanupReport) -> Self {
+        if report.is_clean() {
+            Self::Retryable
+        } else {
+            Self::Poisoned
+        }
     }
 }
 
@@ -401,92 +444,199 @@ impl MountBoundary {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum TransactionState {
-    Created,
+enum MountState {
+    Ready,
     Mounting,
-    Committed,
-    Published,
+    Mounted,
     Disposing,
-    Disposed,
-    Aborted,
+    Poisoned,
 }
 
-/// A successfully committed application mount.
+struct MountSession {
+    root: RootHandle,
+    boundary: MountBoundary,
+    generation: u64,
+}
+
+/// A stable application handle that can be mounted repeatedly.
 pub struct MountedApp {
-    _runtime: Runtime,
-    root: Option<RootHandle>,
-    boundary: Option<MountBoundary>,
+    runtime: Runtime,
+    host: Node,
+    session: Option<MountSession>,
     cleanup_sink: CleanupSink,
-    state: TransactionState,
+    state: MountState,
+    next_generation: u64,
 }
 
 impl fmt::Debug for MountedApp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("MountedApp")
             .field("active", &self.is_active())
+            .field("poisoned", &self.is_poisoned())
+            .field(
+                "generation",
+                &self.session.as_ref().map(|session| session.generation),
+            )
             .finish()
     }
 }
 
 impl MountedApp {
-    /// Mount an application once and publish a handle only after commit.
-    pub fn mount<F>(
-        runtime: Runtime,
-        host: Node,
-        cleanup_sink: CleanupSink,
-        builder: F,
-    ) -> Result<Self, MountError>
+    /// Create a reusable handle without allocating a root or DOM boundary.
+    pub fn new(runtime: Runtime, host: Node, cleanup_sink: CleanupSink) -> Self {
+        Self {
+            runtime,
+            host,
+            session: None,
+            cleanup_sink,
+            state: MountState::Ready,
+            next_generation: 0,
+        }
+    }
+
+    /// Mount a new session, disposing an existing session before starting it.
+    pub fn mount<F>(&mut self, builder: F) -> Result<(), MountError>
     where
         F: for<'scope> FnOnce(&MountContext<'scope>) -> SilexResult<()>,
     {
-        MountTransaction::new(runtime, host, cleanup_sink)?.run(builder)
+        match self.state {
+            MountState::Poisoned => return Err(Self::poisoned_mount_error()),
+            MountState::Mounting | MountState::Disposing => {
+                self.state = MountState::Poisoned;
+                return Err(Self::poisoned_mount_error());
+            }
+            MountState::Ready | MountState::Mounted => {}
+        }
+
+        if let Some(session) = self.session.take() {
+            self.state = MountState::Disposing;
+            let mut root = Some(session.root);
+            let mut boundary = Some(session.boundary);
+            let report = cleanup_parts(&mut root, &mut boundary);
+            if !report.is_clean() {
+                self.state = MountState::Poisoned;
+                return Err(MountError::new(
+                    SilexError::fatal(SilexErrorKind::Framework(
+                        "previous mount cleanup failed".to_string(),
+                    )),
+                    report,
+                ));
+            }
+        }
+
+        self.state = MountState::Mounting;
+        let generation = self.next_generation;
+        self.next_generation = self.next_generation.wrapping_add(1);
+        let result = catch_unwind(AssertUnwindSafe(|| self.start_mount(builder, generation)));
+
+        match result {
+            Ok(Ok(session)) => {
+                self.session = Some(session);
+                self.state = MountState::Mounted;
+                Ok(())
+            }
+            Ok(Err(error)) => {
+                self.state = if error.can_retry() {
+                    MountState::Ready
+                } else {
+                    MountState::Poisoned
+                };
+                Err(error)
+            }
+            Err(panic) => {
+                self.state = MountState::Poisoned;
+                resume_unwind(panic)
+            }
+        }
     }
 
-    /// Whether the committed root is still active.
+    /// Whether the current committed session is active.
     pub fn is_active(&self) -> bool {
-        self.state == TransactionState::Published
-            && self.root.as_ref().is_some_and(RootHandle::is_active)
+        self.state == MountState::Mounted
+            && self
+                .session
+                .as_ref()
+                .is_some_and(|session| session.root.is_active())
     }
 
-    /// Return the caller-supplied host node.
+    /// Whether this handle can no longer create a session.
+    pub fn is_poisoned(&self) -> bool {
+        self.state == MountState::Poisoned
+    }
+
+    /// Return the caller-supplied host node, even while no session is active.
     pub fn host(&self) -> Node {
-        self.boundary
-            .as_ref()
-            .expect("published application must own a boundary")
-            .host
-            .clone()
+        self.host.clone()
     }
 
-    /// Dispose the root and outer DOM boundary in a fixed order.
-    pub fn dispose(mut self) -> Result<(), DisposeError> {
-        let report = self.dispose_inner();
+    /// Dispose the current session. A clean or already-ready handle remains reusable.
+    pub fn dispose(&mut self) -> Result<(), DisposeError> {
+        if self.state == MountState::Poisoned {
+            return Ok(());
+        }
+        if self.state == MountState::Mounting || self.state == MountState::Disposing {
+            self.state = MountState::Poisoned;
+            return Ok(());
+        }
+
+        let Some(session) = self.session.take() else {
+            self.state = MountState::Ready;
+            return Ok(());
+        };
+
+        self.state = MountState::Disposing;
+        let mut root = Some(session.root);
+        let mut boundary = Some(session.boundary);
+        let report = cleanup_parts(&mut root, &mut boundary);
         if report.is_clean() {
+            self.state = MountState::Ready;
             Ok(())
         } else {
+            self.state = MountState::Poisoned;
             Err(DisposeError::new(report))
         }
     }
 
-    fn dispose_inner(&mut self) -> CleanupReport {
-        if self.root.is_none() && self.boundary.is_none() {
-            self.state = TransactionState::Disposed;
-            return CleanupReport::new();
-        }
+    fn poisoned_mount_error() -> MountError {
+        MountError::poisoned(SilexError::fatal(SilexErrorKind::Framework(
+            "mounted app handle is poisoned".to_string(),
+        )))
+    }
 
-        self.state = TransactionState::Disposing;
-        let report = cleanup_parts(&mut self.root, &mut self.boundary);
-        self.state = TransactionState::Disposed;
-        report
+    fn start_mount<F>(&mut self, builder: F, generation: u64) -> Result<MountSession, MountError>
+    where
+        F: for<'scope> FnOnce(&MountContext<'scope>) -> SilexResult<()>,
+    {
+        let root = match self.runtime.run() {
+            Ok(root) => root,
+            Err(primary) => return Err(MountError::new(primary, CleanupReport::new())),
+        };
+        let provisional_failures = Rc::new(RefCell::new(Vec::new()));
+        let mut attempt = MountAttempt::new(
+            root,
+            self.cleanup_sink.clone(),
+            provisional_failures,
+            generation,
+        );
+        match MountBoundary::new(self.host.clone()) {
+            Ok(boundary) => {
+                attempt.boundary = Some(boundary);
+                attempt.run(builder)
+            }
+            Err(primary) => attempt.fail(primary, Vec::new()),
+        }
     }
 }
 
 impl Drop for MountedApp {
     fn drop(&mut self) {
-        if self.root.is_none() && self.boundary.is_none() {
+        let Some(session) = self.session.take() else {
             return;
-        }
+        };
 
-        let report = self.dispose_inner();
+        let mut root = Some(session.root);
+        let mut boundary = Some(session.boundary);
+        let report = cleanup_parts(&mut root, &mut boundary);
         record_drop_report(&self.cleanup_sink, report);
     }
 }
@@ -532,10 +682,6 @@ fn dispose_root_safely(root: RootHandle) -> Option<CleanupFailure> {
     }
 }
 
-fn cleanup_report_for_root(root: RootHandle) -> CleanupReport {
-    CleanupReport::from_parts(dispose_root_safely(root).into_iter().collect(), Vec::new())
-}
-
 fn record_drop_report(sink: &CleanupSink, report: CleanupReport) {
     if report.is_clean() {
         return;
@@ -563,70 +709,56 @@ fn record_drop_report(sink: &CleanupSink, report: CleanupReport) {
     }
 }
 
-struct MountTransaction {
-    runtime: Option<Runtime>,
+struct MountAttempt {
     root: Option<RootHandle>,
     boundary: Option<MountBoundary>,
     cleanup_sink: CleanupSink,
-    state: TransactionState,
+    provisional_failures: Rc<RefCell<Vec<CleanupFailure>>>,
+    generation: u64,
 }
 
-impl MountTransaction {
-    fn new(runtime: Runtime, host: Node, cleanup_sink: CleanupSink) -> Result<Self, MountError> {
-        let mut runtime = runtime;
-        let root = match runtime.run() {
-            Ok(root) => root,
-            Err(primary) => return Err(MountError::new(primary, CleanupReport::new())),
-        };
-        let boundary = match MountBoundary::new(host) {
-            Ok(boundary) => boundary,
-            Err(primary) => {
-                let rollback = cleanup_report_for_root(root);
-                return Err(MountError::new(primary, rollback));
-            }
-        };
-        Ok(Self {
-            runtime: Some(runtime),
+impl MountAttempt {
+    fn new(
+        root: RootHandle,
+        cleanup_sink: CleanupSink,
+        provisional_failures: Rc<RefCell<Vec<CleanupFailure>>>,
+        generation: u64,
+    ) -> Self {
+        Self {
             root: Some(root),
-            boundary: Some(boundary),
+            boundary: None,
             cleanup_sink,
-            state: TransactionState::Created,
-        })
+            provisional_failures,
+            generation,
+        }
     }
 
-    fn run<F>(mut self, builder: F) -> Result<MountedApp, MountError>
+    fn run<F>(mut self, builder: F) -> Result<MountSession, MountError>
     where
         F: for<'scope> FnOnce(&MountContext<'scope>) -> SilexResult<()>,
     {
-        self.state = TransactionState::Mounting;
-        let provisional_failures = Rc::new(RefCell::new(Vec::new()));
-        let mount_result = catch_unwind(AssertUnwindSafe(|| {
-            let root = self
-                .root
-                .as_ref()
-                .expect("mount transaction root must exist");
-            let parent = self
-                .boundary
-                .as_ref()
-                .expect("mount transaction boundary must exist")
-                .staging_parent();
-            root.with_scope(|scope| {
-                let context = MountContext::with_cleanup_failures(
-                    scope,
-                    parent,
-                    provisional_failures.clone(),
-                );
-                builder(&context)
-            })
-        }));
-        let provisional_failures = std::mem::take(&mut *provisional_failures.borrow_mut());
+        let root = self.root.as_ref().expect("mount attempt root must exist");
+        let parent = self
+            .boundary
+            .as_ref()
+            .expect("mount attempt boundary must exist")
+            .staging_parent();
+        let mount_result = root.with_scope(|scope| {
+            let context = MountContext::with_cleanup_failures(
+                scope,
+                parent,
+                self.provisional_failures.clone(),
+            );
+            builder(&context)
+        });
+        let provisional_failures = self.take_provisional_failures();
 
         match mount_result {
-            Ok(Ok(())) => {
+            Ok(()) => {
                 if let Err(primary) = self
                     .boundary
                     .as_mut()
-                    .expect("mount transaction boundary must exist")
+                    .expect("mount attempt boundary must exist")
                     .finish_staging()
                 {
                     return self.fail(primary, provisional_failures);
@@ -634,20 +766,14 @@ impl MountTransaction {
                 if let Err(primary) = self
                     .boundary
                     .as_mut()
-                    .expect("mount transaction boundary must exist")
+                    .expect("mount attempt boundary must exist")
                     .commit()
                 {
                     return self.fail(primary, provisional_failures);
                 }
-                self.state = TransactionState::Committed;
                 self.publish()
             }
-            Ok(Err(primary)) => self.fail(primary, provisional_failures),
-            Err(panic) => {
-                let report = self.abort(provisional_failures);
-                record_drop_report(&self.cleanup_sink, report);
-                resume_unwind(panic)
-            }
+            Err(primary) => self.fail(primary, provisional_failures),
         }
     }
 
@@ -655,55 +781,41 @@ impl MountTransaction {
         mut self,
         primary: SilexError,
         provisional_failures: Vec<CleanupFailure>,
-    ) -> Result<MountedApp, MountError> {
+    ) -> Result<MountSession, MountError> {
         let rollback = self.abort(provisional_failures);
-        let _ = self.runtime.take();
         Err(MountError::new(primary, rollback))
     }
 
     fn abort(&mut self, provisional_failures: Vec<CleanupFailure>) -> CleanupReport {
-        self.state = TransactionState::Aborted;
         let report = cleanup_parts(&mut self.root, &mut self.boundary);
         let (mut cleanup_failures, boundary_errors) = report.into_parts();
         cleanup_failures.extend(provisional_failures);
         CleanupReport::from_parts(cleanup_failures, boundary_errors)
     }
 
-    fn publish(mut self) -> Result<MountedApp, MountError> {
-        self.state = TransactionState::Published;
-        Ok(MountedApp {
-            _runtime: self
-                .runtime
+    fn publish(mut self) -> Result<MountSession, MountError> {
+        Ok(MountSession {
+            root: self.root.take().expect("published attempt root must exist"),
+            boundary: self
+                .boundary
                 .take()
-                .expect("published transaction runtime must exist"),
-            root: Some(
-                self.root
-                    .take()
-                    .expect("published transaction root must exist"),
-            ),
-            boundary: Some(
-                self.boundary
-                    .take()
-                    .expect("published transaction boundary must exist"),
-            ),
-            cleanup_sink: self.cleanup_sink.clone(),
-            state: self.state,
+                .expect("published attempt boundary must exist"),
+            generation: self.generation,
         })
+    }
+
+    fn take_provisional_failures(&self) -> Vec<CleanupFailure> {
+        std::mem::take(&mut *self.provisional_failures.borrow_mut())
     }
 }
 
-impl Drop for MountTransaction {
+impl Drop for MountAttempt {
     fn drop(&mut self) {
-        if matches!(
-            self.state,
-            TransactionState::Published | TransactionState::Aborted
-        ) {
-            return;
-        }
         if self.root.is_none() && self.boundary.is_none() {
             return;
         }
-        let report = self.abort(Vec::new());
+        let provisional_failures = self.take_provisional_failures();
+        let report = self.abort(provisional_failures);
         record_drop_report(&self.cleanup_sink, report);
     }
 }

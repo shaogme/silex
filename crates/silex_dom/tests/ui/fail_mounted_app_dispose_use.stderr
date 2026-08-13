@@ -1,15 +1,10 @@
-error[E0382]: borrow of moved value: `app`
- --> tests/ui/fail_mounted_app_dispose_use.rs:5:13
+error[E0596]: cannot borrow `*app` as mutable, as it is behind a `&` reference
+ --> tests/ui/fail_mounted_app_dispose_use.rs:4:13
   |
-3 | fn use_after_dispose(app: MountedApp) {
-  |                      --- move occurs because `app` has type `MountedApp`, which does not implement the `Copy` trait
 4 |     let _ = app.dispose();
-  |                 --------- `app` moved due to this method call
-5 |     let _ = app.is_active();
-  |             ^^^ value borrowed here after move
+  |             ^^^ `app` is a `&` reference, so it cannot be borrowed as mutable
   |
-note: `MountedApp::dispose` takes ownership of the receiver `self`, which moves `app`
- --> src/mounted.rs
+help: consider changing this to be a mutable reference
   |
-  |     pub fn dispose(mut self) -> Result<(), DisposeError> {
-  |                        ^^^^
+3 | fn use_after_dispose(app: &mut MountedApp) {
+  |                            +++

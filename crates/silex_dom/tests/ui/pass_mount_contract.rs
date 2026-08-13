@@ -17,7 +17,7 @@ fn main() {
         SilexError::recoverable(SilexErrorKind::Framework("primary".to_string())),
         CleanupReport::new(),
     );
-    let (_, rollback) = mount.into_parts();
+    let (_, rollback, _) = mount.into_parts();
     assert!(rollback.is_clean());
     sink.record(DropFailureReport::new());
     root.dispose().expect("root should dispose");

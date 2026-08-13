@@ -1,7 +1,7 @@
 use silex_core::{Runtime, SilexError, SilexErrorKind};
 use silex_dom::mounted::{
     CleanupFailure, CleanupOrigin, CleanupReport, CleanupSink, DisposeError, DropFailureReport,
-    MountError,
+    MountAvailability, MountError,
 };
 use std::{cell::RefCell, rc::Rc};
 
@@ -42,7 +42,8 @@ fn mount_and_dispose_errors_keep_their_separate_ownership() {
         "Recoverable: Framework Error: primary failure"
     );
 
-    let (primary, report) = mount.into_parts();
+    let (primary, report, availability) = mount.into_parts();
+    assert_eq!(availability, MountAvailability::Poisoned);
     assert_eq!(
         primary.to_string(),
         "Recoverable: Framework Error: primary failure"
