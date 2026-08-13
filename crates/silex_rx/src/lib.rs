@@ -364,14 +364,26 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
             let error_handler_ident = format_ident!("__silex_error_handler");
             let setup = source_setup(&bindings, &error_handler_ident);
             let inputs = input_set(&prefix, &bindings);
-            quote! {
-                let #error_handler_ident: #prefix::ErrorReporter<'_> = #error_handler;
-                #setup
-                __silex_scope.derived_from(
-                    #inputs,
-                    #closure,
-                    #error_handler_ident,
-                )?
+            if force_derived {
+                quote! {
+                    let #error_handler_ident: #prefix::ErrorReporter<'_> = #error_handler;
+                    #setup
+                    __silex_scope.derived_from(
+                        #inputs,
+                        #closure,
+                        #error_handler_ident,
+                    )?
+                }
+            } else {
+                quote! {
+                    let #error_handler_ident: #prefix::ErrorReporter<'_> = #error_handler;
+                    #setup
+                    __silex_scope.memo_from(
+                        #inputs,
+                        move |_| #reads,
+                        #error_handler_ident,
+                    )?.into_rx()
+                }
             }
         } else {
             let error_handler_ident = format_ident!("__silex_error_handler");
@@ -404,15 +416,28 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
     let error_handler_ident = format_ident!("__silex_error_handler");
     let setup = source_setup(&bindings, &error_handler_ident);
     let inputs = input_set(&prefix, &bindings);
+    let constructor = if force_derived {
+        quote! {
+            __silex_scope.derived_from(
+                #inputs,
+                move || #reads,
+                #error_handler_ident,
+            )?
+        }
+    } else {
+        quote! {
+            __silex_scope.memo_from(
+                #inputs,
+                move |_| #reads,
+                #error_handler_ident,
+            )?.into_rx()
+        }
+    };
     Ok(quote! {{
         #scope_binding
         let #error_handler_ident: #prefix::ErrorReporter<'_> = #error_handler;
         #setup
-        __silex_scope.derived_from(
-            #inputs,
-            move || #reads,
-            #error_handler_ident,
-        )?
+        #constructor
     }})
 }
 
@@ -518,18 +543,18 @@ mod tests {
         let output = expand(quote! { ::silex_core; scope; handler; $count + 1 })
             .unwrap()
             .to_string();
-        assert!(output.contains("derived"));
+        assert!(output.contains("memo_from"));
         assert!(!output.contains("new_op"));
         let old_ref_count = ["R", "c"].concat();
         assert!(!output.contains(&old_ref_count));
     }
 
     #[test]
-    fn routes_parameterless_closures_to_derived() {
+    fn routes_parameterless_closures_to_memo() {
         let output = expand(quote! { ::silex_core; scope; handler; || $count + 1 })
             .unwrap()
             .to_string();
-        assert!(output.contains("derived"));
+        assert!(output.contains("memo_from"));
         assert!(!output.contains("callback"));
     }
 

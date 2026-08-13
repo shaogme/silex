@@ -20,7 +20,7 @@ fn main() {
             let patch = rx!(
                 scope;
                 error_handler;
-                PatchThemePatch::default().primary(hex("#ff69b4"))
+                @fn PatchThemePatch::default().primary(hex("#ff69b4"))
             );
             let _ = theme_patch(patch);
             Ok(())

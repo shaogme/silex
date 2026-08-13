@@ -10,8 +10,8 @@ use std::{
 
 use gloo_timers::future::sleep;
 use silex_core::{
-    CallbackInvokeError, CompletionOnce, ErrorReporter, Mutation, ReactiveSource, Resource, RxGet,
-    RxRead, SilexError, SilexErrorKind, SuspenseContext, runtime_inputs_of, unwind_safe,
+    CallbackInvokeError, CompletionOnce, ErrorReporter, Memo, Mutation, ReactiveSource, Resource,
+    RxGet, RxRead, SilexError, SilexErrorKind, SuspenseContext, runtime_inputs_of, unwind_safe,
 };
 
 use crate::{
@@ -273,15 +273,16 @@ macro_rules! impl_net_methods {
             let error_handler = self.error_handler;
             let request_builder = self.clone();
             let request_source = scope
-                .derived_from(
+                .memo_from(
                     request_inputs,
-                    move || {
+                    move |_| {
                         request_builder.resolve_spec_tracked().map_err(|error| {
                             SilexError::fatal(SilexErrorKind::Framework(format!("{error}")))
                         })
                     },
                     error_handler,
                 )
+                .map(Memo::into_rx)
                 .map_err(NetError::from)?;
 
             #[cfg(feature = "persist")]
@@ -298,11 +299,12 @@ macro_rules! impl_net_methods {
             let resource_generation_for_fetcher = resource_generation.clone();
             let resource_slot_for_fetcher = resource_slot.clone();
             let combined_source = scope
-                .derived_from(
+                .memo_from(
                     inputs,
-                    move || Ok((source.get()?, request_source.get()?)),
+                    move |_| Ok((source.get()?, request_source.get()?)),
                     error_handler,
                 )
+                .map(Memo::into_rx)
                 .map_err(NetError::from)?;
             let resource = Resource::new(
                 scope,

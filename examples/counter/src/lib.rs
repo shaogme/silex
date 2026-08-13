@@ -47,7 +47,7 @@ fn CounterDisplay<'scope>(
     #[chain] error_handler: ErrorReporter<'scope>,
 ) -> impl View<'scope> {
     // Demo: Style Map (Vec) and Dynamic Class (Signal)
-    let is_even = rx!(scope; error_handler; $count % 2 == 0);
+    let is_even = scope.memo(move |_| Ok(count.get()? % 2 == 0), error_handler)?;
 
     // Demo: CSS-in-Rust (Scoped CSS)
     let container_class = css! {

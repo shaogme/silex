@@ -9,9 +9,9 @@ use wasm_bindgen::{JsCast, closure::Closure};
 use web_sys::{Event, EventSource as JsEventSource, MessageEvent};
 
 use silex_core::{
-    CallbackInvokeError, CompletionSender, ErrorReporter, ReadSignal, RuntimeInputs, RwSignal, Rx,
-    Scope, SilexError, SilexErrorKind, SilexResult, StoredValue, WriteSignal, runtime_inputs_of,
-    unwind_safe,
+    CallbackInvokeError, CompletionSender, ErrorReporter, Memo, ReadSignal, RuntimeInputs,
+    RwSignal, Rx, Scope, SilexError, SilexErrorKind, SilexResult, StoredValue, WriteSignal,
+    runtime_inputs_of, unwind_safe,
 };
 
 use crate::{
@@ -412,29 +412,31 @@ impl<'scope> EventStreamInner<'scope> {
 }
 
 impl<'scope> EventStreamConnection<'scope> {
-    fn derive_state<T: 'scope>(
+    fn memo_state<T: PartialEq + 'scope>(
         &self,
         f: impl Fn(ConnectionState) -> T + 'scope,
     ) -> SilexResult<Rx<'scope, T>> {
         let state = self.state;
         let handler = self.error_handler;
-        self.scope.derived_from(
-            runtime_inputs_of(state),
-            move || state.get().map(&f),
-            handler,
-        )
+        self.scope
+            .memo_from(
+                runtime_inputs_of(state),
+                move |_| state.get().map(&f),
+                handler,
+            )
+            .map(Memo::into_rx)
     }
 
     pub fn is_connected(&self) -> SilexResult<Rx<'scope, bool>> {
-        self.derive_state(|state| state.is_connected())
+        self.memo_state(|state| state.is_connected())
     }
 
     pub fn is_connecting(&self) -> SilexResult<Rx<'scope, bool>> {
-        self.derive_state(|state| matches!(state, ConnectionState::Connecting))
+        self.memo_state(|state| matches!(state, ConnectionState::Connecting))
     }
 
     pub fn is_closed(&self) -> SilexResult<Rx<'scope, bool>> {
-        self.derive_state(|state| {
+        self.memo_state(|state| {
             matches!(
                 state,
                 ConnectionState::Closed | ConnectionState::Disconnected
@@ -453,23 +455,25 @@ impl<'scope> EventStreamConnection<'scope> {
     {
         let messages = self.messages;
         let handler = self.error_handler;
-        self.scope.derived_from(
-            runtime_inputs_of(messages),
-            move || {
-                messages
-                    .get()?
-                    .into_iter()
-                    .map(|message| {
-                        serde_json::from_str(&message.data).map_err(|error| {
-                            SilexError::fatal(SilexErrorKind::Framework(format!(
-                                "decode EventStream message failed: {error}"
-                            )))
+        self.scope
+            .memo_from(
+                runtime_inputs_of(messages),
+                move |_| {
+                    messages
+                        .get()?
+                        .into_iter()
+                        .map(|message| {
+                            serde_json::from_str(&message.data).map_err(|error| {
+                                SilexError::fatal(SilexErrorKind::Framework(format!(
+                                    "decode EventStream message failed: {error}"
+                                )))
+                            })
                         })
-                    })
-                    .collect()
-            },
-            handler,
-        )
+                        .collect()
+                },
+                handler,
+            )
+            .map(Memo::into_rx)
     }
 
     #[cfg(feature = "json")]
@@ -479,23 +483,25 @@ impl<'scope> EventStreamConnection<'scope> {
     {
         let messages = self.messages;
         let handler = self.error_handler;
-        self.scope.derived_from(
-            runtime_inputs_of(messages),
-            move || {
-                messages
-                    .get()?
-                    .last()
-                    .map(|message| {
-                        serde_json::from_str(&message.data).map_err(|error| {
-                            SilexError::fatal(SilexErrorKind::Framework(format!(
-                                "decode EventStream message failed: {error}"
-                            )))
+        self.scope
+            .memo_from(
+                runtime_inputs_of(messages),
+                move |_| {
+                    messages
+                        .get()?
+                        .last()
+                        .map(|message| {
+                            serde_json::from_str(&message.data).map_err(|error| {
+                                SilexError::fatal(SilexErrorKind::Framework(format!(
+                                    "decode EventStream message failed: {error}"
+                                )))
+                            })
                         })
-                    })
-                    .transpose()
-            },
-            handler,
-        )
+                        .transpose()
+                },
+                handler,
+            )
+            .map(Memo::into_rx)
     }
 
     #[cfg(feature = "json")]
@@ -505,25 +511,27 @@ impl<'scope> EventStreamConnection<'scope> {
     {
         let messages = self.messages;
         let handler = self.error_handler;
-        self.scope.derived_from(
-            runtime_inputs_of(messages),
-            move || {
-                messages
-                    .get()?
-                    .iter()
-                    .rev()
-                    .take(limit)
-                    .map(|message| {
-                        serde_json::from_str(&message.data).map_err(|error| {
-                            SilexError::fatal(SilexErrorKind::Framework(format!(
-                                "decode EventStream message failed: {error}"
-                            )))
+        self.scope
+            .memo_from(
+                runtime_inputs_of(messages),
+                move |_| {
+                    messages
+                        .get()?
+                        .iter()
+                        .rev()
+                        .take(limit)
+                        .map(|message| {
+                            serde_json::from_str(&message.data).map_err(|error| {
+                                SilexError::fatal(SilexErrorKind::Framework(format!(
+                                    "decode EventStream message failed: {error}"
+                                )))
+                            })
                         })
-                    })
-                    .collect()
-            },
-            handler,
-        )
+                        .collect()
+                },
+                handler,
+            )
+            .map(Memo::into_rx)
     }
 
     pub fn raw_messages(&self) -> ReadSignal<'scope, Vec<EventMessage>> {

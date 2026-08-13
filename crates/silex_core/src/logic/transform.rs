@@ -95,6 +95,12 @@ where
         Self::Value: PartialEq + Clone + Sized + 'scope,
     {
         let source = scope.promote(self, error_handler)?;
-        scope.derived_from(source.runtime_inputs(), move || source.get(), error_handler)
+        scope
+            .memo_from(
+                source.runtime_inputs(),
+                move |_| source.get(),
+                error_handler,
+            )
+            .map(|memo| memo.into_rx())
     }
 }

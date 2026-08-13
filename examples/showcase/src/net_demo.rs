@@ -350,7 +350,7 @@ pub fn WebSocketDemo<'scope>(
         .style(sty().display("flex")?.margin_bottom(px(20))?),
         div![
             span("Status: "),
-            strong(state_text).style(rx!(scope; error_handler; if *$is_connected {
+            strong(state_text).style(rx!(scope; error_handler; @fn if *$is_connected {
                 sty().color(ColorName::Green)?
             } else {
                 sty().color(ColorName::Red)?

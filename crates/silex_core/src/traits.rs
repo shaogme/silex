@@ -836,7 +836,16 @@ pub trait RxOptionExt<T>: RxRead<Value = Option<T>> + Clone {
         Self: ReactiveSource<'scope> + 'scope,
         T: PartialEq + Clone + 'scope,
     {
-        self.map_or(scope, default, Clone::clone, error_handler)
+        let source = scope.promote(self.clone(), error_handler)?;
+        scope
+            .memo_from(
+                source.runtime_inputs(),
+                move |_| {
+                    source.with(|value| value.as_ref().cloned().unwrap_or_else(|| default.clone()))
+                },
+                error_handler,
+            )
+            .map(|memo| memo.into_rx())
     }
 
     fn map_or_else<'scope, U>(
@@ -888,7 +897,14 @@ pub trait RxOptionExt<T>: RxRead<Value = Option<T>> + Clone {
         Self: ReactiveSource<'scope> + 'scope,
         T: 'scope,
     {
-        self.map_or(scope, false, f, error_handler)
+        let source = scope.promote(self.clone(), error_handler)?;
+        scope
+            .memo_from(
+                source.runtime_inputs(),
+                move |_| source.with(|value| value.as_ref().is_some_and(&f)),
+                error_handler,
+            )
+            .map(|memo| memo.into_rx())
     }
 
     fn if_some_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<Option<U>> {

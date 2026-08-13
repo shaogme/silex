@@ -1,4 +1,4 @@
-use crate::{ErrorReporter, Rx, RxValueKind, SilexResult, reactivity::ReactiveSource};
+use crate::{ErrorReporter, Memo, Rx, RxValueKind, SilexResult, reactivity::ReactiveSource};
 use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Not, Rem, Shl, Shr, Sub};
 
 macro_rules! binary_method {
@@ -9,7 +9,7 @@ macro_rules! binary_method {
             error_handler: ErrorReporter<'scope>,
         ) -> SilexResult<Rx<'scope, T>>
         where
-            T: 'scope,
+            T: PartialEq + 'scope,
             for<'a> &'a T: $trait<&'a T, Output = T>,
             R: ReactiveSource<'scope, Value = T>,
         {
@@ -22,7 +22,7 @@ macro_rules! unary_method {
     ($name:ident, $trait:ident, $op:ident) => {
         pub fn $name(self, error_handler: ErrorReporter<'scope>) -> SilexResult<Rx<'scope, T>>
         where
-            T: 'scope,
+            T: PartialEq + 'scope,
             for<'a> &'a T: $trait<Output = T>,
         {
             unary_op(self, ops_impl::$op::<T>, error_handler)
@@ -82,7 +82,7 @@ fn binary_op<'scope, T, R>(
     error_handler: ErrorReporter<'scope>,
 ) -> SilexResult<Rx<'scope, T>>
 where
-    T: 'scope,
+    T: PartialEq + 'scope,
     R: ReactiveSource<'scope, Value = T>,
 {
     let scope = left.scope();
@@ -91,11 +91,13 @@ where
     inputs.extend(&right.inputs());
     scope.validate_inputs(&inputs)?;
     let right = right.materialize(scope, error_handler)?;
-    scope.derived_from(
-        inputs,
-        move || left.with(|left| right.with(|right| op(left, right)))?,
-        error_handler,
-    )
+    scope
+        .memo_from(
+            inputs,
+            move |_| left.with(|left| right.with(|right| op(left, right)))?,
+            error_handler,
+        )
+        .map(Memo::into_rx)
 }
 
 fn unary_op<'scope, T>(
@@ -104,14 +106,16 @@ fn unary_op<'scope, T>(
     error_handler: ErrorReporter<'scope>,
 ) -> SilexResult<Rx<'scope, T>>
 where
-    T: 'scope,
+    T: PartialEq + 'scope,
 {
     let scope = value.scope();
-    scope.derived_from(
-        value.runtime_inputs(),
-        move || value.with(op),
-        error_handler,
-    )
+    scope
+        .memo_from(
+            value.runtime_inputs(),
+            move |_| value.with(op),
+            error_handler,
+        )
+        .map(Memo::into_rx)
 }
 
 impl<'scope, T> Rx<'scope, T, RxValueKind> {

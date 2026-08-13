@@ -1,6 +1,6 @@
 use crate::ToRoute;
 use silex_core::{
-    ErrorReporter, RuntimeInputs, Rx, Scope, SilexError, SilexErrorKind, SilexResult,
+    ErrorReporter, Memo, RuntimeInputs, Rx, Scope, SilexError, SilexErrorKind, SilexResult,
     reactivity::{ReadSignal, StoredValue, WriteSignal, runtime_inputs_of},
     traits::RxGet,
 };
@@ -83,14 +83,16 @@ impl<'scope> RouterContext<'scope> {
             set_path,
             set_search,
         };
-        let query = scope.derived_from(
-            runtime_inputs_of(search),
-            move || {
-                let search = search.get()?;
-                parse_query(&search)
-            },
-            error_handler,
-        )?;
+        let query = scope
+            .memo_from(
+                runtime_inputs_of(search),
+                move |_| {
+                    let search = search.get()?;
+                    parse_query(&search)
+                },
+                error_handler,
+            )
+            .map(Memo::into_rx)?;
         Ok(Self {
             base_path,
             path,

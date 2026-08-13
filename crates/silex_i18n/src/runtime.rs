@@ -5,7 +5,7 @@ use crate::{
 #[cfg(feature = "browser")]
 use silex_core::Effect;
 use silex_core::{
-    ErrorReporter, Rx, Scope, SilexError, SilexResult,
+    ErrorReporter, Memo, Rx, Scope, SilexError, SilexResult,
     reactivity::{
         ReadSignal, Resource, ResourceState, RwSignal, StoredValue, SuspenseContext,
         runtime_inputs_of,
@@ -420,11 +420,13 @@ impl<'scope> I18nStore<'scope> {
     }
 
     #[doc(hidden)]
-    pub fn __memo<F>(self, f: F) -> SilexResult<Rx<'scope, String>>
+    pub fn __memo<F>(self, mut f: F) -> SilexResult<Rx<'scope, String>>
     where
         F: FnMut() -> SilexResult<String> + 'scope,
     {
-        self.scope.derived(f, self.error_handler())
+        self.scope
+            .memo(move |_| f(), self.error_handler())
+            .map(Memo::into_rx)
     }
 
     pub fn translate_now(&self, key: &str, arguments: &[Argument]) -> SilexResult<String> {

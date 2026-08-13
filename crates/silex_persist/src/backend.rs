@@ -514,7 +514,7 @@ fn storage_handle(kind: StorageAreaKind) -> Result<Storage, PersistenceError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use silex_core::{ReadSignal, Runtime};
+    use silex_core::{Memo, ReadSignal, Runtime};
     use silex_router::Navigator;
     use std::{cell::RefCell, collections::HashMap};
 
@@ -532,14 +532,15 @@ mod tests {
             .signal(String::new())
             .expect("search signal should be created");
         let query_map = scope
-            .derived_from(
+            .memo_from(
                 runtime_inputs_of(map),
-                move || map.get(),
+                move |_| map.get(),
                 scope
                     .error_handler(|_| {})
                     .expect("error handler should be registered"),
             )
-            .expect("query map should be derived");
+            .map(Memo::into_rx)
+            .expect("query map should initialize");
         let navigator = Navigator {
             base_path,
             path,

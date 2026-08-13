@@ -603,7 +603,7 @@ pub fn Theming<'scope>(
                     span(" (Variable inheritance in action!) ").style(sty().font_size(em_unit(0.8))?.opacity(0.6)?)
                 ]
             )).error_handler(error_handler).build()
-            .apply(theme_patch(rx!(scope; error_handler; AppThemePatch::default().primary(hex("#ff69b4"))))),
+            .apply(theme_patch(rx!(scope; error_handler; @fn AppThemePatch::default().primary(hex("#ff69b4"))))),
         ].apply(theme_variables(theme)),
 
         h3("Layout Continuity").style(sty().margin("40px 0 16px")?),

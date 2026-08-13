@@ -1,4 +1,6 @@
-use crate::{ErrorReporter, Rx, Scope, SilexResult, reactivity::ReactiveSource, traits::RxRead};
+use crate::{
+    ErrorReporter, Memo, Rx, Scope, SilexResult, reactivity::ReactiveSource, traits::RxRead,
+};
 
 fn compare<'scope, A, B, F>(
     scope: Scope<'scope>,
@@ -21,11 +23,13 @@ where
     scope.validate_inputs(&inputs)?;
     let left = left.materialize(scope, error_handler)?;
     let right = right.materialize(scope, error_handler)?;
-    scope.derived_from(
-        inputs,
-        move || left.with(|left| right.with(|right| compare(left, right)))?,
-        error_handler,
-    )
+    scope
+        .memo_from(
+            inputs,
+            move |_| left.with(|left| right.with(|right| compare(left, right)))?,
+            error_handler,
+        )
+        .map(Memo::into_rx)
 }
 
 pub trait ReactivePartialEq: RxRead + Clone {

@@ -11,8 +11,8 @@ use wasm_bindgen::{JsCast, closure::Closure};
 use web_sys::{Event, MessageEvent, WebSocket as JsWebSocket};
 
 use silex_core::{
-    CallbackInvokeError, CompletionSender, ErrorReporter, ReadSignal, RuntimeInputs, Rx, Scope,
-    SilexError, SilexErrorKind, SilexResult, StoredValue, TaskHandle, WriteSignal,
+    CallbackInvokeError, CompletionSender, ErrorReporter, Memo, ReadSignal, RuntimeInputs, Rx,
+    Scope, SilexError, SilexErrorKind, SilexResult, StoredValue, TaskHandle, WriteSignal,
     runtime_inputs_of, unwind_safe,
 };
 
@@ -522,29 +522,31 @@ impl<'scope> WebSocketInner<'scope> {
 }
 
 impl<'scope> WebSocketConnection<'scope> {
-    fn derive_state<T: 'scope>(
+    fn memo_state<T: PartialEq + 'scope>(
         &self,
         f: impl Fn(ConnectionState) -> T + 'scope,
     ) -> SilexResult<Rx<'scope, T>> {
         let state = self.state;
         let handler = self.error_handler;
-        self.scope.derived_from(
-            runtime_inputs_of(state),
-            move || state.get().map(&f),
-            handler,
-        )
+        self.scope
+            .memo_from(
+                runtime_inputs_of(state),
+                move |_| state.get().map(&f),
+                handler,
+            )
+            .map(Memo::into_rx)
     }
 
     pub fn is_connected(&self) -> SilexResult<Rx<'scope, bool>> {
-        self.derive_state(|state| state.is_connected())
+        self.memo_state(|state| state.is_connected())
     }
 
     pub fn is_connecting(&self) -> SilexResult<Rx<'scope, bool>> {
-        self.derive_state(|state| matches!(state, ConnectionState::Connecting))
+        self.memo_state(|state| matches!(state, ConnectionState::Connecting))
     }
 
     pub fn is_closed(&self) -> SilexResult<Rx<'scope, bool>> {
-        self.derive_state(|state| {
+        self.memo_state(|state| {
             matches!(
                 state,
                 ConnectionState::Closed | ConnectionState::Disconnected
@@ -563,26 +565,28 @@ impl<'scope> WebSocketConnection<'scope> {
     {
         let message = self.message;
         let handler = self.error_handler;
-        self.scope.derived_from(
-            runtime_inputs_of(message),
-            move || {
-                message
-                    .get()?
-                    .map(|raw| {
-                        serde_json::from_str(&raw).map_err(|error| {
-                            SilexError::fatal(SilexErrorKind::Framework(format!(
-                                "decode WebSocket message failed: {error}"
-                            )))
+        self.scope
+            .memo_from(
+                runtime_inputs_of(message),
+                move |_| {
+                    message
+                        .get()?
+                        .map(|raw| {
+                            serde_json::from_str(&raw).map_err(|error| {
+                                SilexError::fatal(SilexErrorKind::Framework(format!(
+                                    "decode WebSocket message failed: {error}"
+                                )))
+                            })
                         })
-                    })
-                    .transpose()
-            },
-            handler,
-        )
+                        .transpose()
+                },
+                handler,
+            )
+            .map(Memo::into_rx)
     }
 
     pub fn state_str(&self) -> SilexResult<Rx<'scope, &'static str>> {
-        self.derive_state(|state| state.as_str())
+        self.memo_state(|state| state.as_str())
     }
 
     pub fn raw_message(&self) -> ReadSignal<'scope, Option<String>> {

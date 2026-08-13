@@ -241,7 +241,7 @@ fn rx_macro_uses_explicit_scope_and_closure_reads() {
 }
 
 #[test]
-fn rx_macro_treats_parameterless_closures_as_derived_values() {
+fn rx_macro_treats_parameterless_closures_as_memo_values() {
     let mut runtime = Runtime::new();
     let result = runtime.child(|scope| -> SilexResult<()> {
         let (count, set_count) = scope.signal(2i32).expect("signal should initialize");
