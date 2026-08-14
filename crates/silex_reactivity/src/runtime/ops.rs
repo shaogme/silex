@@ -19,6 +19,7 @@ use crate::{
 };
 use std::{
     cell::RefCell,
+    marker::PhantomData,
     panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
     rc::Rc,
 };
@@ -80,7 +81,7 @@ pub(crate) fn invoke_error_handler<'scope, E>(
 where
     E: 'scope,
 {
-    let state: Rc<RefCell<ScopeState<'scope>>> = unsafe { storage.typed_state() };
+    let state: Rc<RefCell<ScopeState<'scope>>> = storage.owner_token(PhantomData).state();
     let callback = {
         let state_ref = state
             .try_borrow()
@@ -438,7 +439,7 @@ mod tests {
     #[test]
     fn disposing_a_node_during_a_read_does_not_require_put_back() {
         let storage = ScopeStorage::new(GlobalScheduler::new());
-        let state = unsafe { storage.typed_state() };
+        let state = storage.owner_token(PhantomData).state();
         let raw = state
             .borrow_mut()
             .create_signal(AnyValue::new(7_i32))

@@ -88,10 +88,7 @@ impl<'scope, K: NodeKind> Handle<'scope, K> {
     }
 
     pub(crate) fn state(&self) -> Rc<RefCell<ScopeState<'scope>>> {
-        // SAFETY: the handle lifetime is tied to the lexical Scope capability
-        // that created it, and storage is disposed before that capability can
-        // leave its higher-ranked callback.
-        unsafe { self.storage.typed_state() }
+        self.storage.owner_token(PhantomData).state()
     }
 
     pub(crate) const fn raw(&self) -> RawId {

@@ -280,8 +280,9 @@ mod tests {
         let runs_in_callback = runs.clone();
         let handler = scope.error_handler(|_| {}).expect("handler registration");
 
+        let state = storage.owner_token(PhantomData).state();
         let result = create_effect(
-            &unsafe { storage.typed_state() },
+            &state,
             move || {
                 runs_in_callback.set(runs_in_callback.get() + 1);
                 Ok::<(), ()>(())
@@ -300,11 +301,8 @@ mod tests {
         let scope = scope(&storage);
         let handler = scope.error_handler(|_| {}).expect("handler registration");
         storage.dispose();
-        let result = create_effect(
-            &unsafe { storage.typed_state() },
-            || Ok::<(), ()>(()),
-            handler,
-        );
+        let state = storage.owner_token(PhantomData).state();
+        let result = create_effect(&state, || Ok::<(), ()>(()), handler);
 
         assert!(matches!(
             result,

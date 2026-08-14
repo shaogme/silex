@@ -269,7 +269,7 @@ mod tests {
                 first_calls.set(first_calls.get() + 1);
             })
             .expect("handler registration");
-        let first_state = unsafe { first_storage.typed_state() };
+        let first_state = first_storage.owner_token(PhantomData).state();
         assert_eq!(first_state.borrow().error_handlers.len(), 1);
         assert_eq!(first_state.borrow().nodes.len(), 0);
 
@@ -326,7 +326,7 @@ mod tests {
                 let _ = &drop_probe;
             })
             .expect("handler registration");
-        let state = unsafe { storage.typed_state() };
+        let state = storage.owner_token(PhantomData).state();
 
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             storage.dispose_untracked();

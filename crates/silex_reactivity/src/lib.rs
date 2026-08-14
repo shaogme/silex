@@ -24,6 +24,7 @@ mod internal;
 mod root;
 mod runtime;
 mod scope;
+mod unsafe_boundary;
 
 pub use crate::{
     child::*,

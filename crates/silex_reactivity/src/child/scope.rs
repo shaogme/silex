@@ -53,9 +53,7 @@ impl<'scope> Eq for Scope<'scope> {}
 
 impl<'scope> Scope<'scope> {
     fn state(&self) -> Rc<RefCell<runtime::ScopeState<'scope>>> {
-        // SAFETY: this capability is created only for the higher-ranked
-        // lexical callback that owns the storage and disposes it before exit.
-        unsafe { self.storage.typed_state() }
+        self.storage.owner_token(PhantomData).state()
     }
 
     /// Create a persistent owner backed by the same scheduler as this scope.
@@ -410,10 +408,7 @@ pub struct OwnedScope<'scope> {
 
 impl<'scope> OwnedScope<'scope> {
     fn state(&self) -> Rc<RefCell<runtime::ScopeState<'scope>>> {
-        // SAFETY: OwnedScope's lifetime marker bounds every callback and
-        // payload stored in this owner, and dispose runs before the owner can
-        // be dropped.
-        unsafe { self.storage.typed_state() }
+        self.storage.owner_token(PhantomData).state()
     }
 
     fn new(scheduler: std::rc::Rc<std::cell::RefCell<crate::runtime::GlobalScheduler>>) -> Self {

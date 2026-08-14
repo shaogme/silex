@@ -1,7 +1,8 @@
-use crate::runtime::{self, GlobalScheduler, ScopeId, ScopeState, run_global_queue};
-use std::{cell::RefCell, rc::Rc};
-
-pub(crate) type ErasedScopeState = RefCell<ScopeState<'static>>;
+use crate::{
+    runtime::{self, GlobalScheduler, ScopeId, ScopeState, run_global_queue},
+    unsafe_boundary::{ErasedScopeState, OwnerToken},
+};
+use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 
 /// Stable storage for one lexical scope and its lifetime-bound payloads.
 pub(crate) struct ScopeStorage {
@@ -53,22 +54,11 @@ impl ScopeStorage {
         Self { scope_id, state }
     }
 
-    /// Restore the payload lifetime owned by the lexical capability.
-    ///
-    /// # Safety
-    ///
-    /// The caller must prove that the returned state is used only while the
-    /// owning lexical scope is active, and that disposal runs before any data
-    /// captured by the scope's payloads becomes invalid. The erased state is
-    /// never exposed as a public `'static` state.
-    pub(crate) unsafe fn typed_state<'scope>(&self) -> Rc<RefCell<ScopeState<'scope>>> {
-        // SAFETY: the caller supplies the lexical lifetime represented by the
-        // Scope or OwnedScope capability that owns this storage.
-        unsafe {
-            std::mem::transmute::<Rc<ErasedScopeState>, Rc<RefCell<ScopeState<'scope>>>>(
-                self.state.clone(),
-            )
-        }
+    pub(crate) fn owner_token<'scope>(
+        &self,
+        owner: PhantomData<fn(&'scope ()) -> &'scope ()>,
+    ) -> OwnerToken<'scope> {
+        OwnerToken::from_storage(self.state.clone(), owner)
     }
 
     pub(crate) fn dispose(&self) {

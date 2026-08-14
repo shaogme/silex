@@ -6,14 +6,15 @@ use crate::{
         RawId,
         value::{AnyValue, CallbackThunk, CallbackThunkError},
     },
-    runtime::{self, ScopeId, ScopeState},
-    scope::{ErasedScopeState, ScopeStorage},
+    runtime::{self, GlobalScheduler, ScopeId, ScopeState},
+    scope::ScopeStorage,
+    unsafe_boundary::WeakOwnerToken,
 };
 use std::{
     cell::{Cell, RefCell},
     marker::PhantomData,
     panic::{AssertUnwindSafe, UnwindSafe, catch_unwind, resume_unwind},
-    rc::{Rc, Weak},
+    rc::Rc,
 };
 
 /// Wrap a repeating callback with an explicit unwind-safety assertion.
@@ -36,16 +37,23 @@ enum CompletionPhase {
 }
 
 struct CompletionState {
-    state: Weak<ErasedScopeState>,
+    state: WeakOwnerToken,
+    scheduler: Rc<RefCell<GlobalScheduler>>,
     scope_id: ScopeId,
     callback: RawId,
     phase: Cell<CompletionPhase>,
 }
 
 impl CompletionState {
-    fn new(state: Weak<ErasedScopeState>, scope_id: ScopeId, callback: RawId) -> Self {
+    fn new(
+        state: WeakOwnerToken,
+        scheduler: Rc<RefCell<GlobalScheduler>>,
+        scope_id: ScopeId,
+        callback: RawId,
+    ) -> Self {
         Self {
             state,
+            scheduler,
             scope_id,
             callback,
             phase: Cell::new(CompletionPhase::Active),
@@ -55,32 +63,19 @@ impl CompletionState {
     fn current_state<'scope>(
         &self,
     ) -> Result<Option<Rc<RefCell<ScopeState<'scope>>>>, ReactiveError> {
-        let Some(erased_state) = self.state.upgrade() else {
-            return Ok(None);
-        };
-        let current = {
-            let state = erased_state
-                .try_borrow()
-                .map_err(|_| ReactiveError::BorrowConflict)?;
-            state
-                .scheduler
-                .try_borrow()
-                .map_err(|_| ReactiveError::BorrowConflict)?
-                .is_scope_current(self.scope_id, &self.state)
-        };
-        if !current {
+        if !self
+            .scheduler
+            .try_borrow()
+            .map_err(|_| ReactiveError::BorrowConflict)?
+            .is_scope_current(self.scope_id, &self.state)
+        {
             return Ok(None);
         }
 
-        // SAFETY: the scheduler registry contains this exact state allocation,
-        // and the caller only uses the restored lifetime while that state is
-        // active. Scope disposal removes the registry entry before payloads
-        // are dropped.
-        Ok(Some(unsafe {
-            std::mem::transmute::<Rc<ErasedScopeState>, Rc<RefCell<ScopeState<'scope>>>>(
-                erased_state,
-            )
-        }))
+        let Some(owner) = self.state.upgrade() else {
+            return Ok(None);
+        };
+        Ok(Some(owner.state()))
     }
 
     fn begin_once<'scope>(&self) -> Result<Option<Rc<RefCell<ScopeState<'scope>>>>, ReactiveError> {
@@ -246,13 +241,15 @@ where
     E: 'scope,
     F: FnMut(T) -> Result<(), E> + 'scope,
 {
-    let active = state
-        .try_borrow()
-        .map_err(|_| ReactiveError::BorrowConflict)?
-        .is_active();
-    if !active {
-        return Err(ReactiveError::NoSuchNode);
-    }
+    let scheduler = {
+        let state_ref = state
+            .try_borrow()
+            .map_err(|_| ReactiveError::BorrowConflict)?;
+        if !state_ref.is_active() {
+            return Err(ReactiveError::NoSuchNode);
+        }
+        state_ref.scheduler.clone()
+    };
 
     let thunk = CallbackThunk::new_typed_fallible(callback);
     let callback = {
@@ -261,15 +258,10 @@ where
             .map_err(|_| ReactiveError::BorrowConflict)?;
         state_ref.create_callback(thunk)?
     };
-    let weak = Rc::downgrade(&state);
-    // SAFETY: the destination stores only a weak reference to the scope state;
-    // the erased lifetime is restored only after the exact active registry
-    // entry has been checked.
-    let weak = unsafe {
-        std::mem::transmute::<Weak<RefCell<ScopeState<'scope>>>, Weak<ErasedScopeState>>(weak)
-    };
+    let weak = WeakOwnerToken::from_typed(&state);
     Ok(Rc::new(CompletionState::new(
         weak,
+        scheduler,
         storage.scope_id,
         callback,
     )))

@@ -1,15 +1,9 @@
 //! Global flat scheduler and scope bitmask lifetime tracking.
 
 use super::model::ScopeState;
-use crate::{ReactiveError, internal::RawId};
+use crate::{ReactiveError, internal::RawId, unsafe_boundary::WeakOwnerToken};
 
-use std::{
-    cell::RefCell,
-    collections::VecDeque,
-    rc::{Rc, Weak},
-};
-
-type ErasedScopeState = RefCell<ScopeState<'static>>;
+use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct ScopeId(pub(crate) u32);
@@ -195,7 +189,7 @@ impl BitSet {
 }
 
 pub(crate) struct ScopeEntry {
-    erased_state: Weak<ErasedScopeState>,
+    owner: WeakOwnerToken,
 }
 
 pub(crate) struct GlobalScheduler {
@@ -251,23 +245,14 @@ impl GlobalScheduler {
         });
         let scope_id = ScopeId(id);
 
-        let weak_state = Rc::downgrade(state);
-        // SAFETY: `ErasedScopeState` 是 `RefCell<ScopeState<'static>>` 的类型擦除别名。
-        // 在此处擦除 `'scope` 生命周期是 Sound 的，因为全局调度器仅保留 `Weak` 弱引用，
-        // 并且只在 registry entry 仍然存在时恢复为对应的目标生命周期；该 entry 会在
-        // 所有节点和 reverse edge 清理完成后才被 release，绝不会导致生命周期悬空。
-        let erased_state = unsafe {
-            std::mem::transmute::<Weak<RefCell<ScopeState<'scope>>>, Weak<ErasedScopeState>>(
-                weak_state,
-            )
-        };
+        let owner = WeakOwnerToken::from_typed(state);
 
         self.active_mask.set(id, true);
         let index = id as usize;
         if index >= self.scopes.len() {
             self.scopes.resize_with(index + 1, || None);
         }
-        self.scopes[index] = Some(ScopeEntry { erased_state });
+        self.scopes[index] = Some(ScopeEntry { owner });
         scope_id
     }
 
@@ -294,14 +279,14 @@ impl GlobalScheduler {
         self.active_mask.is_set(id.0)
     }
 
-    pub(crate) fn is_scope_current(&self, id: ScopeId, expected: &Weak<ErasedScopeState>) -> bool {
+    pub(crate) fn is_scope_current(&self, id: ScopeId, expected: &WeakOwnerToken) -> bool {
         if !self.is_scope_active(id) {
             return false;
         }
         self.scopes
             .get(id.0 as usize)
             .and_then(Option::as_ref)
-            .is_some_and(|entry| Weak::ptr_eq(&entry.erased_state, expected))
+            .is_some_and(|entry| entry.owner.ptr_eq(expected))
     }
 
     pub(crate) fn active_scope_ids(&self) -> Vec<ScopeId> {
@@ -333,17 +318,7 @@ impl GlobalScheduler {
 
     fn get_registered_scope<'scope>(&self, id: ScopeId) -> Option<Rc<RefCell<ScopeState<'scope>>>> {
         let entry = self.scopes.get(id.0 as usize)?.as_ref()?;
-        // SAFETY: the registry owns this weak entry until the scope's final
-        // edge cleanup has completed. Both active operations and the private
-        // cleanup path therefore receive a live allocation, while the weak
-        // upgrade keeps the result bounded by the owning storage.
-        unsafe {
-            let weak = std::mem::transmute::<
-                &Weak<ErasedScopeState>,
-                &Weak<RefCell<ScopeState<'scope>>>,
-            >(&entry.erased_state);
-            weak.upgrade()
-        }
+        entry.owner.upgrade().map(|owner| owner.state())
     }
 
     pub(crate) fn enqueue_effect(&mut self, task: ScheduledTask) {

@@ -10,22 +10,24 @@ use crate::{
 use silex_vtable::{any_box::InlineStorage, func_ptr::FuncPtr};
 use std::{marker::PhantomData, ptr};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub(crate) struct TypeIdToken {
-    name: &'static str,
+    // The vtable address is a per-monomorphization identity and does not rely
+    // on the stability or uniqueness of `type_name::<T>()`. Runtime values
+    // still cannot observe lifetime parameters, so downcast callers retain
+    // the exact-type contract documented below.
+    vtable: &'static AnyValueVTable,
 }
 
-fn type_id_token<T: ?Sized>() -> TypeIdToken {
+fn type_id_token<T>() -> TypeIdToken {
     TypeIdToken {
-        name: std::any::type_name::<T>(),
+        vtable: &VGen::<T>::STACK,
     }
 }
 
 impl PartialEq for TypeIdToken {
     fn eq(&self, other: &Self) -> bool {
-        std::ptr::eq(self.name.as_ptr(), other.name.as_ptr())
-            && self.name.len() == other.name.len()
-            && self.name == other.name
+        std::ptr::eq(self.vtable, other.vtable)
     }
 }
 
@@ -631,6 +633,12 @@ mod tests {
         let n1 = AnyValue::new(NonEq(10));
         let n2 = AnyValue::new(NonEq(10));
         assert!(!n1.try_eq(&n2));
+    }
+
+    #[test]
+    fn type_tokens_use_vtable_identity() {
+        assert!(type_id_token::<i32>() == type_id_token::<i32>());
+        assert!(type_id_token::<i32>() != type_id_token::<u32>());
     }
 
     #[test]

@@ -535,7 +535,7 @@ mod tests {
         runtime::{dispose::dispose_nodes, scheduler::GlobalScheduler},
         scope::ScopeStorage,
     };
-    use std::{panic::AssertUnwindSafe, panic::catch_unwind};
+    use std::{marker::PhantomData, panic::AssertUnwindSafe, panic::catch_unwind};
 
     fn child(runtime: &mut Runtime, f: impl for<'scope> FnOnce(Scope<'scope>)) {
         let _ = runtime.child(f);
@@ -735,8 +735,8 @@ mod tests {
                 handler(observer_scope),
             )
             .expect("effect should initialize");
-        let source_state = unsafe { source_storage.typed_state() };
-        let observer_state = unsafe { observer_storage.typed_state() };
+        let source_state = source_storage.owner_token(PhantomData).state();
+        let observer_state = observer_storage.owner_token(PhantomData).state();
         let source_raw = source.handle.raw();
         let effect_raw = effect.handle.raw();
         let observer_target = TargetNode {
