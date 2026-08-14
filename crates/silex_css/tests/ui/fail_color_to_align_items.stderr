@@ -1,31 +1,31 @@
 error[E0277]: 类型 `Hex` 无法作为有效的 CSS `AlignItems` 属性值使用
- --> tests/ui/fail_color_to_align_items.rs:6:38
-  |
-6 |     let _ = Style::new().align_items(hex("#ff0000"));
-  |                          ----------- ^^^^^^^^^^^^^^ 无效的 CSS 属性类型
-  |                          |
-  |                          required by a bound introduced by this call
-  |
-  = help: the trait `ValidFor<AlignItems>` is not implemented for `Hex`
-  = note: 请检查是否传入了错误的类型（例如将 Px 传给了 Color）。如果必须传入复杂的动态表达式，可以使用 `css_unsafe(...)` 显式绕过。
-  = help: the following other types implement trait `ValidFor<Prop>`:
-            AlignItemsKeyword
-            CssOption<T>
-            CssUnsafe
-            CssVar
-            CssVar<T>
-            CssWide
+  --> tests/ui/fail_color_to_align_items.rs:10:45
+   |
+10 |     let _ = Style::new(context).align_items(hex("#ff0000"));
+   |                                 ----------- ^^^^^^^^^^^^^^ 无效的 CSS 属性类型
+   |                                 |
+   |                                 required by a bound introduced by this call
+   |
+   = help: the trait `ValidFor<AlignItems>` is not implemented for `Hex`
+   = note: 请检查是否传入了错误的类型（例如将 Px 传给了 Color）。如果必须传入复杂的动态表达式，可以使用 `css_unsafe(...)` 显式绕过。
+   = help: the following other types implement trait `ValidFor<Prop>`:
+             AlignItemsKeyword
+             CssOption<T>
+             CssUnsafe
+             CssVar
+             CssVar<T>
+             CssWide
 note: required by a bound in `silex_css::builder::Style::<'scope>::align_items`
- --> src/builder.rs
-  |
-  |                     V::Value: ValidFor<props::$pascal> + Display + Clone + 'scope,
-  |                               ^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `Style::<'scope>::align_items`
+  --> src/builder.rs
+   |
+   |                     V::Value: ValidFor<props::$pascal> + Display + Clone + 'scope,
+   |                               ^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `Style::<'scope>::align_items`
 ...
-  | for_all_properties!(generate_builder_methods);
-  | --------------------------------------------- in this macro invocation
-  |
- ::: src/codegen/properties.rs
-  |
-  |             (align_items, "align-items", AlignItems, [Str]),
-  |              ----------- required by a bound in this associated function
-  = note: this error originates in the macro `generate_builder_methods` which comes from the expansion of the macro `for_all_properties` (in Nightly builds, run with -Z macro-backtrace for more info)
+   | for_all_properties!(generate_builder_methods);
+   | --------------------------------------------- in this macro invocation
+   |
+  ::: src/codegen/properties.rs
+   |
+   |             (align_items, "align-items", AlignItems, [Str]),
+   |              ----------- required by a bound in this associated function
+   = note: this error originates in the macro `generate_builder_methods` which comes from the expansion of the macro `for_all_properties` (in Nightly builds, run with -Z macro-backtrace for more info)

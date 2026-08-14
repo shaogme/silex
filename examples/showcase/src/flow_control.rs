@@ -25,7 +25,7 @@ pub fn ListDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
         )
         .children(
             div(rx!(context; $error_msg.clone().unwrap_or_default())).style(
-                sty()
+                sty(context)
                     .color(hex("#d32f2f"))?
                     .background(hex("#ffebee"))?
                     .padding(px(10))?
@@ -68,7 +68,12 @@ pub fn ListDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
                 Ok(())
             }),
         ]
-        .style(sty().display("flex")?.gap(px(10))?.margin_top(px(10))?),
+        .style(
+            sty(context)
+                .display("flex")?
+                .gap(px(10))?
+                .margin_top(px(10))?
+        ),
     ])
 }
 
@@ -83,7 +88,7 @@ pub fn ShowDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
         Show(context, visible)
             .children(
                 div("✅ Content is visible!").style(
-                    sty()
+                    sty(context)
                         .color(ColorName::Green)?
                         .padding(px(10))?
                         .background(hex("#e8f5e9"))?
@@ -91,7 +96,7 @@ pub fn ShowDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
             )
             .fallback(
                 div("❌ Content is hidden").style(
-                    sty()
+                    sty(context)
                         .color(ColorName::Red)?
                         .padding(px(10))?
                         .background(hex("#ffebee"))?
@@ -113,20 +118,25 @@ pub fn DynamicDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
             button("Show B").on(event::click, set_mode.setter("B")),
             button("Show C").on(event::click, set_mode.setter("C")),
         ]
-        .style(sty().display("flex")?.gap(px(10))?.margin_bottom(px(10))?),
+        .style(
+            sty(context)
+                .display("flex")?
+                .gap(px(10))?
+                .margin_bottom(px(10))?
+        ),
         // You can also use Dynamic(mode.map(|m| { view_match!(m, { ... }) })).
         Dynamic(
             context,
             mode.map(
                 scope,
-                |m| {
+                move |m| {
                     Ok(view_match!(*m, {
                         "A" => div("🅰️ Component A")
-                        .style(sty().padding(px(20))?.background(hex("#e3f2fd"))?),
+                        .style(sty(context).padding(px(20))?.background(hex("#e3f2fd"))?),
                         "B" => div("🅱️ Component B")
-                        .style(sty().padding(px(20))?.background(hex("#fff3e0"))?),
+                        .style(sty(context).padding(px(20))?.background(hex("#fff3e0"))?),
                         _ => div("©️ Component C")
-                        .style(sty().padding(px(20))?.background(hex("#f3e5f5"))?),
+                        .style(sty(context).padding(px(20))?.background(hex("#f3e5f5"))?),
                     }))
                 },
                 error_handler
@@ -145,17 +155,21 @@ pub fn SwitchDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
         .build()
         .case(
             0,
-            div("Content for Tab 1")
-                .style(sty().padding(px(10))?.background(AppTheme::SURFACE_ALT)?),
+            div("Content for Tab 1").style(
+                sty(context)
+                    .padding(px(10))?
+                    .background(AppTheme::SURFACE_ALT)?,
+            ),
         )?
         .case(
             1,
-            div("Content for Tab 2").style(sty().padding(px(10))?.background(AppTheme::BORDER)?),
+            div("Content for Tab 2")
+                .style(sty(context).padding(px(10))?.background(AppTheme::BORDER)?),
         )?
         .case(
             2,
             div("Content for Tab 3").style(
-                sty()
+                sty(context)
                     .padding(px(10))?
                     .background(AppTheme::BORDER)?
                     .opacity(0.8)?,
@@ -169,7 +183,12 @@ pub fn SwitchDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
             button("Tab 2").on(event::click, set_tab.setter(1)),
             button("Tab 3").on(event::click, set_tab.setter(2)),
         ]
-        .style(sty().display("flex")?.gap(px(10))?.margin_bottom(px(10))?),
+        .style(
+            sty(context)
+                .display("flex")?
+                .gap(px(10))?
+                .margin_bottom(px(10))?
+        ),
         switch
     ])
 }
@@ -189,7 +208,7 @@ pub fn IndexDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
                 set_items.update(|list| list.push("New Item"))?;
                 Ok(())
             })
-            .style(sty().margin_top(px(10))?)
+            .style(sty(context).margin_top(px(10))?)
     ])
 }
 
@@ -211,7 +230,7 @@ pub fn PortalDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
                             button("Close").on(event::click, set_show_modal.setter(false))
                         ]
                         .style(
-                            sty()
+                            sty(context)
                             .background(AppTheme::SURFACE)?
                             .padding(px(20))?
                             .border_radius(px(8))?
@@ -220,7 +239,7 @@ pub fn PortalDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
                         )
                     ]
                     .style(
-                        sty()
+                        sty(context)
                             .position(PositionKeyword::Fixed)?
                             .top(px(0))?
                             .left(px(0))?
@@ -251,7 +270,7 @@ pub fn FlowPage<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
         PortalDemo(context).build(),
     ]
     .style(
-        sty()
+        sty(context)
             .display("flex")?
             .flex_direction(FlexDirectionKeyword::Column)?
             .gap(px(20))?,

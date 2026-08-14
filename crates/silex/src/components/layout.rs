@@ -13,7 +13,7 @@ styled! {
         justify: Signal<'scope, JustifyContentKeyword>,
         #[prop(into)] #[chain(default)]
         gap: Signal<'scope, i32>,
-        #[prop(into)] #[chain(default)]
+        #[prop(into)] #[chain(default = sty(context))]
         style: Signal<'scope, Style<'scope>>,
     ) {
         display: flex;
@@ -29,7 +29,7 @@ styled! {
     pub Center<'scope, Ctx> <div> (
         #[context] context: Ctx,
         children: AnyView<'scope>,
-        #[prop(into)] #[chain(default)]
+        #[prop(into)] #[chain(default = sty(context))]
         style: Signal<'scope, Style<'scope>>,
     ) {
         display: flex;
@@ -47,7 +47,7 @@ styled! {
         columns: Signal<'scope, i32>,
         #[prop(into)] #[chain(default)]
         gap: Signal<'scope, i32>,
-        #[prop(into)] #[chain(default)]
+        #[prop(into)] #[chain(default = sty(context))]
         style: Signal<'scope, Style<'scope>>,
     ) {
         display: grid;

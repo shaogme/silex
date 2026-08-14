@@ -23,7 +23,7 @@ pub fn PersistencePage<'scope>(#[context] ctx: RouterContext<'scope>) -> impl Vi
     let scope = ctx.scope();
     Ok(div![
         h2("Comprehensive Persistence Demo")
-            .style(sty().color(AppTheme::PRIMARY)?.margin_bottom(px(10))?),
+            .style(sty(ctx).color(AppTheme::PRIMARY)?.margin_bottom(px(10))?),
         p("This page demonstrates the full spectrum of Silex's persistence system, from basic LocalStorage to advanced debouncing and manual control."),
 
         div![
@@ -38,9 +38,9 @@ pub fn PersistencePage<'scope>(#[context] ctx: RouterContext<'scope>) -> impl Vi
 
             // 4. Error Handling & JSON
             ErrorHandlingDemo(ctx).build(),
-        ].style(sty().display("flex")?.flex_direction(FlexDirectionKeyword::Column)?.gap(px(30))?.margin_top(px(20))?)
+        ].style(sty(ctx).display("flex")?.flex_direction(FlexDirectionKeyword::Column)?.gap(px(30))?.margin_top(px(20))?)
     ]
-    .style(sty().max_width(px(1000))?.margin("0 auto")?.padding("20px")?))
+    .style(sty(ctx).max_width(px(1000))?.margin("0 auto")?.padding("20px")?))
 }
 
 #[component]
@@ -51,7 +51,7 @@ fn Card<'scope, Ctx>(
 ) -> impl View<'scope> {
     Ok(div![
         h3(title).style(
-            sty()
+            sty(context)
                 .margin_top(px(0))?
                 .border_bottom(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
                 .padding_bottom(px(10))?
@@ -60,7 +60,7 @@ fn Card<'scope, Ctx>(
         children
     ]
     .style(
-        sty()
+        sty(context)
             .background(AppTheme::SURFACE)?
             .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
             .padding(px(24))?
@@ -98,13 +98,13 @@ fn BackendGrid<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scop
             div![
                 div![
                     label("LocalStorage").style(
-                        sty()
+                        sty(ctx)
                             .display("block")?
                             .font_weight(FontWeightKeyword::Bold)?
                             .margin_bottom(px(5))?
                     ),
                     input().bind_value(local).style(
-                        sty()
+                        sty(ctx)
                             .width(pct(100))?
                             .padding(px(8))?
                             .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
@@ -113,17 +113,17 @@ fn BackendGrid<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scop
                             .color(AppTheme::TEXT)?
                     ),
                     small("Persistent cross-sessions & tabs.")
-                        .style(sty().display("block")?.margin_top(px(5))?.opacity(0.7)?)
+                        .style(sty(ctx).display("block")?.margin_top(px(5))?.opacity(0.7)?)
                 ],
                 div![
                     label("SessionStorage").style(
-                        sty()
+                        sty(ctx)
                             .display("block")?
                             .font_weight(FontWeightKeyword::Bold)?
                             .margin_bottom(px(5))?
                     ),
                     input().bind_value(session).style(
-                        sty()
+                        sty(ctx)
                             .width(pct(100))?
                             .padding(px(8))?
                             .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
@@ -132,17 +132,17 @@ fn BackendGrid<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scop
                             .color(AppTheme::TEXT)?
                     ),
                     small("Scoped to this tab/window.")
-                        .style(sty().display("block")?.margin_top(px(5))?.opacity(0.7)?)
+                        .style(sty(ctx).display("block")?.margin_top(px(5))?.opacity(0.7)?)
                 ],
                 div![
                     label("URL Query").style(
-                        sty()
+                        sty(ctx)
                             .display("block")?
                             .font_weight(FontWeightKeyword::Bold)?
                             .margin_bottom(px(5))?
                     ),
                     input().bind_value(query).style(
-                        sty()
+                        sty(ctx)
                             .width(pct(100))?
                             .padding(px(8))?
                             .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
@@ -151,11 +151,11 @@ fn BackendGrid<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scop
                             .color(AppTheme::TEXT)?
                     ),
                     small("Synced to browser address bar.")
-                        .style(sty().display("block")?.margin_top(px(5))?.opacity(0.7)?)
+                        .style(sty(ctx).display("block")?.margin_top(px(5))?.opacity(0.7)?)
                 ],
             ]
             .style(
-                sty()
+                sty(ctx)
                     .display("grid")?
                     .grid_template_columns("repeat(auto-fit, minmax(280px, 1fr))")?
                     .gap(px(20))?
@@ -181,36 +181,36 @@ fn ManualFlushDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
             textarea("")
                 .bind_value(draft)
                 .placeholder("Type a long message here...")
-                .style(sty().width(pct(100))?.height(px(120))?.padding(px(12))?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?.border_radius(px(8))?.background(AppTheme::SURFACE_ALT)?.color(AppTheme::TEXT)?.resize(ResizeKeyword::Vertical)?),
+                .style(sty(context).width(pct(100))?.height(px(120))?.padding(px(12))?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?.border_radius(px(8))?.background(AppTheme::SURFACE_ALT)?.color(AppTheme::TEXT)?.resize(ResizeKeyword::Vertical)?),
             div![
                 button("💾 Save to Storage")
                     .on(event::click, move |_| {
                         draft.flush()?;
                         Ok(())
                     })
-                    .style(sty().background(AppTheme::PRIMARY)?.color(ColorName::White)?.border(NONE)?.padding(padding::block_inline(px(8), px(16)))?.border_radius(px(6))?.cursor(CursorKeyword::Pointer)?.transition("opacity 0.2s")?),
+                    .style(sty(context).background(AppTheme::PRIMARY)?.color(ColorName::White)?.border(NONE)?.padding(padding::block_inline(px(8), px(16)))?.border_radius(px(6))?.cursor(CursorKeyword::Pointer)?.transition("opacity 0.2s")?),
                 button("🔄 Reload from Storage")
                     .on(event::click, move |_| {
                         draft.reload()?;
                         Ok(())
                     })
-                    .style(sty().background(AppTheme::SURFACE)?.color(AppTheme::TEXT)?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?.padding(padding::block_inline(px(8), px(16)))?.border_radius(px(6))?.cursor(CursorKeyword::Pointer)?),
+                    .style(sty(context).background(AppTheme::SURFACE)?.color(AppTheme::TEXT)?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?.padding(padding::block_inline(px(8), px(16)))?.border_radius(px(6))?.cursor(CursorKeyword::Pointer)?),
                 button("🗑️ Forget")
                     .on(event::click, move |_| {
                         draft.remove()?;
                         Ok(())
                     })
-                    .style(sty().background("transparent")?.color(AppTheme::ERROR)?.border("1px solid currentColor")?.padding("8px 16px")?.border_radius(px(6))?.cursor("pointer")?.margin_left(AUTO)?),
-            ].style(sty().display("flex")?.gap(px(10))?.margin_top(px(10))?),
+                    .style(sty(context).background("transparent")?.color(AppTheme::ERROR)?.border("1px solid currentColor")?.padding("8px 16px")?.border_radius(px(6))?.cursor("pointer")?.margin_left(AUTO)?),
+            ].style(sty(context).display("flex")?.gap(px(10))?.margin_top(px(10))?),
             p![
                 "Memory Status: ",
                 move || -> SilexResult<AnyView<'scope>> {
                     Ok(match draft.state().get()? {
-                        PersistenceState::Ready(_) => span("✓ Clean (Synced)").style(sty().color(hex("#4caf50"))?.font_weight(FontWeightKeyword::Bold)?).into_any(),
-                        _ => span("✎ Dirty (Unsaved Changes)").style(sty().color(hex("#ff9800"))?.font_weight(FontWeightKeyword::Bold)?).into_any()
+                        PersistenceState::Ready(_) => span("✓ Clean (Synced)").style(sty(context).color(hex("#4caf50"))?.font_weight(FontWeightKeyword::Bold)?).into_any(),
+                        _ => span("✎ Dirty (Unsaved Changes)").style(sty(context).color(hex("#ff9800"))?.font_weight(FontWeightKeyword::Bold)?).into_any()
                     })
                 }
-            ].style(sty().margin_top(px(15))?.font_size(em_unit(0.9))?)
+            ].style(sty(context).margin_top(px(15))?.font_size(em_unit(0.9))?)
         ]
     )).title("2. Manual Persistence (Draft Mode)").build())
 }
@@ -232,10 +232,10 @@ fn DebounceDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
             input()
                 .bind_value(debounced)
                 .placeholder("Type quickly...")
-                .style(sty().width(pct(100))?.padding(px(12))?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?.border_radius(px(6))?.background(AppTheme::SURFACE_ALT)?.color(AppTheme::TEXT)?.font_size(em_unit(1.1))?),
+                .style(sty(context).width(pct(100))?.padding(px(12))?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?.border_radius(px(6))?.background(AppTheme::SURFACE_ALT)?.color(AppTheme::TEXT)?.font_size(em_unit(1.1))?),
 
             div![
-                h4("Live Sync Tracking:").style(sty().margin_bottom(px(5))?),
+                h4("Live Sync Tracking:").style(sty(context).margin_bottom(px(5))?),
                 move || -> SilexResult<AnyView<'scope>> {
                     let state = debounced.state().get()?;
                     let (status, content) = match &state {
@@ -249,8 +249,8 @@ fn DebounceDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
                     };
 
                     Ok(div![
-                        span(format!("Status: {}", status)).style(sty().font_weight(FontWeightKeyword::Bold)?.margin_right(px(10))?),
-                        span(format!("Raw Content: \"{}\"", content)).style(sty().opacity(0.7)?.font_size(em_unit(0.9))?)
+                        span(format!("Status: {}", status)).style(sty(context).font_weight(FontWeightKeyword::Bold)?.margin_right(px(10))?),
+                        span(format!("Raw Content: \"{}\"", content)).style(sty(context).opacity(0.7)?.font_size(em_unit(0.9))?)
                     ]
                     .style(match state {
                          PersistenceState::Ready(_) => "color: #4caf50; border-left: 3px solid #4caf50; padding-left: 10px;",
@@ -260,7 +260,7 @@ fn DebounceDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
                     })
                     .into_any())
                 }
-            ].style(sty().margin_top(px(15))?.background("rgba(0,0,0,0.05)")?.padding("12px")?.border_radius(px(6))?.font_family("monospace")?)
+            ].style(sty(context).margin_top(px(15))?.background("rgba(0,0,0,0.05)")?.padding("12px")?.border_radius(px(6))?.font_family("monospace")?)
         ]
     )).title("3. Debounced Syncing").build())
 }
@@ -280,7 +280,7 @@ fn ErrorHandlingDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> 
             p("Using JSON codec for complex types with built-in error recovery policies."),
             div![
                 div![
-                    label("Username").style(sty().display("block")?.margin_bottom(px(5))?),
+                    label("Username").style(sty(context).display("block")?.margin_bottom(px(5))?),
                     input()
                         .prop(
                             "value",
@@ -291,7 +291,7 @@ fn ErrorHandlingDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> 
                             Ok(())
                         })
                         .style(
-                            sty()
+                            sty(context)
                                 .width(pct(100))?
                                 .padding(px(8))?
                                 .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
@@ -302,7 +302,7 @@ fn ErrorHandlingDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> 
                 ],
                 div![
                     label(rx!(context; format!("Volume Level: {}%", $settings.volume))).style(
-                        sty()
+                        sty(context)
                             .display("block")?
                             .margin_top(px(15))?
                             .margin_bottom(px(5))?
@@ -318,22 +318,26 @@ fn ErrorHandlingDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> 
                             }
                             Ok(())
                         })
-                        .style(sty().width(pct(100))?.accent_color(AppTheme::PRIMARY)?)
+                        .style(
+                            sty(context)
+                                .width(pct(100))?
+                                .accent_color(AppTheme::PRIMARY)?
+                        )
                 ],
             ],
             div![
-                h4("Health Check").style(sty().margin_bottom(px(10))?),
+                h4("Health Check").style(sty(context).margin_bottom(px(10))?),
                 move || {
                     Ok(match settings.state().get()? {
                         PersistenceState::DecodeError(err) => div![
                             p("⚠️ Decode Error detected!").style(
-                                sty()
+                                sty(context)
                                     .color(hex("#f44336"))?
                                     .font_weight(FontWeightKeyword::Bold)?
                             ),
                             pre(format!("Raw Content: {}\nReason: {}", err.raw, err.message))
                                 .style(
-                                    sty()
+                                    sty(context)
                                         .background("#fff0f0")?
                                         .color(hex("#b71c1c"))?
                                         .padding("12px")?
@@ -345,7 +349,7 @@ fn ErrorHandlingDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> 
                         ]
                         .into_any(),
                         _ => p("✅ Ready: Backend content is valid JSON.")
-                            .style(sty().color(hex("#4caf50"))?)
+                            .style(sty(context).color(hex("#4caf50"))?)
                             .into_any(),
                     })
                 },
@@ -355,7 +359,7 @@ fn ErrorHandlingDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> 
                         Ok(())
                     })
                     .style(
-                        sty()
+                        sty(context)
                             .margin_top(px(15))?
                             .background(ColorKeyword::Transparent)?
                             .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
@@ -366,7 +370,7 @@ fn ErrorHandlingDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> 
                     )
             ]
             .style(
-                sty()
+                sty(context)
                     .margin_top(px(25))?
                     .padding(px(15))?
                     .background(AppTheme::SURFACE_ALT)?

@@ -63,7 +63,7 @@ pub fn NavBar<'scope>(
                 Ok(())
             })
             .style(
-                sty()
+                sty(ctx)
                     .margin_left(AUTO)?
                     .cursor(CursorKeyword::Pointer)?
                     .background(AppTheme::BORDER)?
@@ -74,7 +74,7 @@ pub fn NavBar<'scope>(
             ),
     )
     .style(
-        sty()
+        sty(ctx)
             .display("flex")?
             .flex_wrap(FlexWrapKeyword::Wrap)?
             .align_items("center")?
@@ -96,7 +96,7 @@ pub fn AppLayout<'scope>(
     Ok(div!(
         NavBar(ctx, settings).build(),
         main(outlet).style(
-            sty()
+            sty(ctx)
                 .max_width(px(1200))?
                 .margin("0 auto")?
                 .padding("0 20px 40px")?
@@ -161,7 +161,7 @@ pub fn AdvancedLayout<'scope>(
             .build(),
         )
         .style(
-            sty()
+            sty(ctx)
                 .display("flex")?
                 .flex_wrap(FlexWrapKeyword::Wrap)?
                 .gap(px(10))?
@@ -196,7 +196,7 @@ pub fn CssLayout<'scope>(
                 .build(),
         )
         .style(
-            sty()
+            sty(ctx)
                 .display("flex")?
                 .flex_wrap(FlexWrapKeyword::Wrap)?
                 .gap(px(10))?
@@ -215,7 +215,7 @@ pub fn NotFoundPage<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<
             .class("tab")
             .build(),
     )
-    .style(sty().color(ColorName::Red)?.padding("20px")?))
+    .style(sty(ctx).color(ColorName::Red)?.padding("20px")?))
 }
 
 #[component]

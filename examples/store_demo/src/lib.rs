@@ -20,7 +20,7 @@ fn App<'scope, Ctx>(#[context] context: Ctx, user: UserStore<'scope>) -> impl Vi
         DebugPanel(context, user).build(),
     )
     .style(
-        sty()
+        sty(context)
             .padding("20px")?
             .font_family("sans-serif")?
             .max_width(px(500))?
@@ -34,20 +34,20 @@ fn App<'scope, Ctx>(#[context] context: Ctx, user: UserStore<'scope>) -> impl Vi
 fn UserDisplay<'scope, Ctx>(#[context] context: Ctx, user: UserStore<'scope>) -> impl View<'scope> {
     Ok(div!(
         div!(
-            span("Name: ").style(sty().font_weight(FontWeightKeyword::Bold)?),
+            span("Name: ").style(sty(context).font_weight(FontWeightKeyword::Bold)?),
             span(user.name),
         ),
         div!(
-            span("Age: ").style(sty().font_weight(FontWeightKeyword::Bold)?),
+            span("Age: ").style(sty(context).font_weight(FontWeightKeyword::Bold)?),
             span(user.age),
         ),
         div!(
-            span("Email: ").style(sty().font_weight(FontWeightKeyword::Bold)?),
+            span("Email: ").style(sty(context).font_weight(FontWeightKeyword::Bold)?),
             span(user.email),
         ),
     )
     .style(
-        sty()
+        sty(context)
             .background("#f5f5f5")?
             .padding("15px")?
             .border_radius(px(4))?
@@ -74,7 +74,8 @@ fn UserEditor<'scope, Ctx>(#[context] context: Ctx, user: UserStore<'scope>) -> 
                 user.age.update(|age| *age += 1)?;
                 Ok(())
             }),
-            span("(Only updates Age node)").style(sty().margin_left(px(10))?.color(hex("#666"))?),
+            span("(Only updates Age node)")
+                .style(sty(context).margin_left(px(10))?.color(hex("#666"))?),
         ),
         div!(
             label("Change Email: "),
@@ -88,7 +89,7 @@ fn UserEditor<'scope, Ctx>(#[context] context: Ctx, user: UserStore<'scope>) -> 
         ),
     )
     .style(
-        sty()
+        sty(context)
             .display("flex")?
             .flex_direction(FlexDirectionKeyword::Column)?
             .gap(px(10))?,
@@ -104,7 +105,7 @@ fn DebugPanel<'scope, Ctx>(#[context] context: Ctx, user: UserStore<'scope>) -> 
             Ok(())
         }))
         .style(
-            sty()
+            sty(context)
                 .margin_top(px(20))?
                 .border_top("1px dashed #ccc")?
                 .padding_top(px(10))?,

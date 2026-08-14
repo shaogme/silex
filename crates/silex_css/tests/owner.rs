@@ -1,7 +1,7 @@
 #![cfg(target_arch = "wasm32")]
 
 use js_sys::{Array, Reflect};
-use silex_core::{ErrorReporter, Runtime, Scope};
+use silex_core::{ErrorReporter, Runtime, Scope, SilexContext};
 use silex_css::{
     CssPart, DynamicCss, IntoCssReactive,
     prelude::{
@@ -155,8 +155,7 @@ fn style_updates_inline_values_and_cleans_on_scope_dispose() {
                 .expect("signal should initialize");
             let (owner, error_handler) = test_owner(scope);
             let token = owner.token();
-            let class_name = Style::new()
-                .with_error_handler(test_handler(scope))
+            let class_name = Style::new(SilexContext::new(scope, test_handler(scope)))
                 .raw("--test-color", value)
                 .expect("style should build")
                 .apply_to_element(&element, &token, error_handler)
@@ -260,8 +259,7 @@ fn svg_style_updates_inline_values_and_cleans_on_scope_dispose() {
                 .expect("signal should initialize");
             let (owner, error_handler) = test_owner(scope);
             let token = owner.token();
-            Style::new()
-                .with_error_handler(test_handler(scope))
+            Style::new(SilexContext::new(scope, test_handler(scope)))
                 .raw("--svg-color", value)
                 .expect("style should build")
                 .apply_to_element(&element, &token, error_handler)

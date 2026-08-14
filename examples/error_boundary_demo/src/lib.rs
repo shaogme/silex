@@ -4,21 +4,21 @@ use silex::reexports::*;
 
 #[component]
 fn App<'scope>(#[context] context: SilexContext<'scope>) -> impl View<'scope> {
-    let recoverable_fallback_style = sty()
+    let recoverable_fallback_style = sty(context)
         .background_color(hex("#fee"))?
         .border("1px solid red")?
         .padding("10px")?
         .color(ColorName::Red)?;
-    let panic_fallback_style = sty()
+    let panic_fallback_style = sty(context)
         .background_color(hex("#fff3cd"))?
         .border("1px solid orange")?
         .padding("10px")?
         .color(hex("#856404"))?;
-    let section_style = sty()
+    let section_style = sty(context)
         .margin_bottom(px(20))?
         .border("1px solid #ccc")?
         .padding("10px")?;
-    let root_style = sty().padding("20px")?.font_family("sans-serif")?;
+    let root_style = sty(context).padding("20px")?.font_family("sans-serif")?;
 
     Ok(div!(
         h1("Error Boundary Demo"),

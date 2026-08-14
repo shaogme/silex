@@ -9,6 +9,9 @@ fn main() {
             .expect("signal should initialize");
         // 错误：border_top_width 的 setter 期望接收维度相关的信号（Px/Rem等），
         // 传入 Signal<'scope, Hex> 应当报错
-        let _ = Style::new().border_top_width(color_sig);
+        let error_handler = scope
+            .error_handler(|_| {})
+            .expect("handler should register");
+        let _ = Style::new(SilexContext::new(scope, error_handler)).border_top_width(color_sig);
     });
 }

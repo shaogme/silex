@@ -381,6 +381,7 @@ for_all_time_units!(impl_from_time_for_calc);
 mod tests {
     use super::*;
     use crate::types::units::{deg, px};
+    use silex_core::{Runtime, SilexContext};
 
     /// 算术结果必须自带 `calc()` 外壳：`width: (10px + 5px)` 不是合法 CSS
     #[test]
@@ -486,15 +487,23 @@ mod tests {
     fn the_macro_needs_no_annotation_at_a_property_call_site() {
         use crate::builder::Style;
         use crate::types::units::{pct, rem, vw};
-        let css = Style::new()
-            .width(css_min!(px(600), pct(100)))
-            .expect("width should build")
-            .font_size(css_max!(rem(1), vw(4)))
-            .expect("font-size should build")
-            .render()
-            .css;
-        assert!(css.contains("width: min(600px, 100%)"), "{css}");
-        assert!(css.contains("font-size: max(1rem, 4vw)"), "{css}");
+        let mut runtime = Runtime::new();
+        runtime
+            .child(|scope| {
+                let error_handler = scope
+                    .error_handler(|_| {})
+                    .expect("test error handler should register");
+                let css = Style::new(SilexContext::new(scope, error_handler))
+                    .width(css_min!(px(600), pct(100)))
+                    .expect("width should build")
+                    .font_size(css_max!(rem(1), vw(4)))
+                    .expect("font-size should build")
+                    .render()
+                    .css;
+                assert!(css.contains("width: min(600px, 100%)"), "{css}");
+                assert!(css.contains("font-size: max(1rem, 4vw)"), "{css}");
+            })
+            .expect("test context should initialize");
     }
 
     #[test]

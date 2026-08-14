@@ -1,10 +1,10 @@
 error[E0277]: 类型 `Px` 无法作为有效的 CSS `BorderBottomStyle` 属性值使用
- --> tests/ui/fail_unit_to_keyword.rs:5:46
+ --> tests/ui/fail_unit_to_keyword.rs:9:53
   |
-5 |     let _ = Style::new().border_bottom_style(px(10));
-  |                          ------------------- ^^^^^^ 无效的 CSS 属性类型
-  |                          |
-  |                          required by a bound introduced by this call
+9 |     let _ = Style::new(context).border_bottom_style(px(10));
+  |                                 ------------------- ^^^^^^ 无效的 CSS 属性类型
+  |                                 |
+  |                                 required by a bound introduced by this call
   |
   = help: the trait `ValidFor<BorderBottomStyle>` is not implemented for `Px`
   = note: 请检查是否传入了错误的类型（例如将 Px 传给了 Color）。如果必须传入复杂的动态表达式，可以使用 `css_unsafe(...)` 显式绕过。

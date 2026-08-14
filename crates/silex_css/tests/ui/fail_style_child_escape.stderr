@@ -1,15 +1,14 @@
 error: lifetime may not live long enough
-  --> tests/ui/fail_style_child_escape.rs:10:9
+  --> tests/ui/fail_style_child_escape.rs:13:9
    |
  6 |       let style = runtime.child(|scope| {
    |                                  ------ return type of closure is silex_css::builder::Style<'2>
    |                                  |
    |                                  has type `silex_core::Scope<'1>`
 ...
-10 | /         Style::new()
-11 | |             .with_error_handler(scope.error_handler(|_| {}).expect("handler should register"))
-12 | |             .raw("--color", value)
-13 | |             .expect("style should build")
+13 | /         Style::new(SilexContext::new(scope, error_handler))
+14 | |             .raw("--color", value)
+15 | |             .expect("style should build")
    | |_________________________________________^ returning this value requires that `'1` must outlive `'2`
    |
    = note: requirement occurs because of the type `silex_css::builder::Style<'_>`, which makes the generic argument `'_` invariant

@@ -1,4 +1,4 @@
-use silex_core::Runtime;
+use silex_core::{Runtime, SilexContext};
 use silex_css::{CssPart, DynamicCss, IntoCssReactive};
 use silex_css::prelude::Style;
 
@@ -8,8 +8,10 @@ fn main() {
         let (value, _) = scope
             .signal(String::from("red"))
             .expect("signal should initialize");
-        let _style = Style::new()
-            .with_error_handler(scope.error_handler(|_| {}).expect("handler should register"))
+        let error_handler = scope
+            .error_handler(|_| {})
+            .expect("handler should register");
+        let _style = Style::new(SilexContext::new(scope, error_handler))
             .raw("--color", value)
             .expect("style should build");
         let _dynamic = DynamicCss::new("scoped").with_rule(

@@ -30,7 +30,7 @@ router! {
 #[component]
 fn Card<'scope, Ctx>(#[context] context: Ctx, children: AnyView<'scope>) -> impl View<'scope> {
     Ok(div(children).style(
-        sty()
+        sty(context)
             .border("1px solid #ddd")?
             .border_radius(px(8))?
             .padding("20px")?
@@ -50,7 +50,7 @@ fn NavLink<'scope, T: ToRoute + Clone + 'scope>(
     Ok(Link(ctx, to)
         .children(children)
         .style(
-            sty()
+            sty(ctx)
                 .margin_right(px(15))?
                 .text_decoration("none")?
                 .color(hex("#666"))?
@@ -94,7 +94,7 @@ fn SearchPage<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scope
                     .placeholder("Type search term...")
                     .bind_value(search_term)
                     .style(
-                        sty()
+                        sty(ctx)
                             .padding("8px")?
                             .border("1px solid #ccc")?
                             .border_radius(px(4))?
@@ -106,7 +106,7 @@ fn SearchPage<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scope
                         Ok(())
                     })
                     .style(
-                        sty()
+                        sty(ctx)
                             .padding("8px 16px")?
                             .background("#f44336")?
                             .color(ColorName::White)?
@@ -115,7 +115,12 @@ fn SearchPage<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scope
                             .cursor("pointer")?
                     ),
             )
-            .style(sty().display("flex")?.gap(px(10))?.margin_bottom(px(20))?),
+            .style(
+                sty(ctx)
+                    .display("flex")?
+                    .gap(px(10))?
+                    .margin_bottom(px(20))?
+            ),
             div!(
                 strong("Current Query Parameter (q): "),
                 span(rx!(ctx; {
@@ -126,7 +131,7 @@ fn SearchPage<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scope
                         value
                     }
                 }))
-                .style(sty().color(hex("#e91e63"))?.font_family("monospace")?),
+                .style(sty(ctx).color(hex("#e91e63"))?.font_family("monospace")?),
             ),
         ),
     )
@@ -149,13 +154,13 @@ fn UsersLayout<'scope>(
         h2("👥 Users Module"),
         div!(
             NavLink(ctx, "/users").children("User List").build(),
-            span("|").style(sty().margin("0 10px")?.color(hex("#ccc"))?),
+            span("|").style(sty(ctx).margin("0 10px")?.color(hex("#ccc"))?),
             NavLink(ctx, "/users/new")
                 .children("Create User (Static)")
                 .build(),
         )
         .style(
-            sty()
+            sty(ctx)
                 .border_bottom("2px solid #eee")?
                 .padding_bottom(px(10))?
                 .margin_bottom(px(20))?
@@ -185,16 +190,16 @@ fn UserList<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scope> 
             let path = user_detail_path(id)?;
             Ok(li(Link(ctx, path)
                 .children(format!("👤 {} (ID: {})", name, id))
-                .style(sty().text_decoration("none")?.color(hex("#2196f3"))?)
+                .style(sty(ctx).text_decoration("none")?.color(hex("#2196f3"))?)
                 .active_class("active-user")
                 .build())
-            .style(sty().margin("5px 0")?))
+            .style(sty(ctx).margin("5px 0")?))
         })
         .collect::<SilexResult<Vec<_>>>()?;
 
     Ok(div!(
         h3("Select a User:"),
-        ul(user_links).style(sty().list_style("none")?.padding("0")?),
+        ul(user_links).style(sty(ctx).list_style("none")?.padding("0")?),
     ))
 }
 
@@ -220,34 +225,34 @@ fn UserDetail<'scope>(#[context] ctx: RouterContext<'scope>, id: u32) -> impl Vi
                         Ok(())
                     })
                     .style(
-                        sty()
+                        sty(ctx)
                             .font_size(rem(0.8))?
                             .padding("5px 10px")?
                             .cursor("pointer")?
                     ),
             )
             .style(
-                sty()
+                sty(ctx)
                     .display("flex")?
                     .justify_content("space-between")?
                     .align_items("center")?
             ),
             hr().style(
-                sty()
+                sty(ctx)
                     .border("0")?
                     .border_top("1px solid #eee")?
                     .margin("15px 0")?
             ),
             p!(
                 strong("Current Path: "),
-                span(path).style(sty().font_family("monospace")?),
+                span(path).style(sty(ctx).font_family("monospace")?),
             ),
             div!(p(format!(
                 "This component is rendered with strict prop id: {}",
                 id
             )))
             .style(
-                sty()
+                sty(ctx)
                     .background("#f5f5f5")?
                     .padding("10px")?
                     .border_radius(px(4))?
@@ -265,11 +270,15 @@ fn NotFound<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scope> 
         p("Page not found."),
         Link(ctx, "/")
             .children("Return Home")
-            .style(sty().color(hex("#2196f3"))?.text_decoration("underline")?)
+            .style(
+                sty(ctx)
+                    .color(hex("#2196f3"))?
+                    .text_decoration("underline")?
+            )
             .build(),
     )
     .style(
-        sty()
+        sty(ctx)
             .text_align(TextAlignKeyword::Center)?
             .padding("50px")?
             .color(hex("#d32f2f"))?,
@@ -289,7 +298,7 @@ fn MainLayout<'scope>(
     Ok(div!(
         header!(
             h1("🚀 Silex Router").style(
-                sty()
+                sty(ctx)
                     .margin("0")?
                     .font_size(rem(1.5))?
                     .color(hex("#2c3e50"))?
@@ -302,16 +311,16 @@ fn MainLayout<'scope>(
             )
         )
         .style(
-            sty()
+            sty(ctx)
                 .display("flex")?
                 .align_items("center")?
                 .justify_content("space-between")?
                 .padding("20px 0")?
                 .border_bottom("1px solid #eee")?
         ),
-        ::silex::html::main(children).style(sty().padding("20px 0")?),
+        ::silex::html::main(children).style(sty(ctx).padding("20px 0")?),
         footer!(p("Built with Silex & Rust")).style(
-            sty()
+            sty(ctx)
                 .margin_top(px(50))?
                 .padding_top(px(20))?
                 .border_top("1px solid #eee")?
@@ -321,7 +330,7 @@ fn MainLayout<'scope>(
         ),
     )
     .style(
-        sty()
+        sty(ctx)
             .font_family("sans-serif")?
             .max_width(px(800))?
             .margin("0 auto")?

@@ -16,14 +16,15 @@ enum DemoText {
     CartItems { count: u32 },
 }
 
-fn panel<'scope, T, U>(title: T, content: U) -> SilexResult<AnyView<'scope>>
+fn panel<'scope, Ctx, T, U>(context: Ctx, title: T, content: U) -> SilexResult<AnyView<'scope>>
 where
+    Ctx: SilexContextProvider<'scope>,
     T: View<'scope> + 'scope,
     U: View<'scope> + 'scope,
 {
     Ok(div![
         h3(title).style(
-            sty()
+            sty(context)
                 .margin_top(px(0))?
                 .margin_bottom(px(8))?
                 .color(AppTheme::PRIMARY)?
@@ -31,7 +32,7 @@ where
         content,
     ]
     .style(
-        sty()
+        sty(context)
             .padding("20px")?
             .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
             .border_radius(px(8))?
@@ -40,9 +41,13 @@ where
     .into_any())
 }
 
-fn control_row<'scope, T: View<'scope> + 'scope>(content: T) -> SilexResult<impl View<'scope>> {
+fn control_row<'scope, Ctx, T>(context: Ctx, content: T) -> SilexResult<impl View<'scope>>
+where
+    Ctx: SilexContextProvider<'scope>,
+    T: View<'scope> + 'scope,
+{
     Ok(div(content).style(
-        sty()
+        sty(context)
             .display("flex")?
             .flex_wrap(FlexWrapKeyword::Wrap)?
             .align_items("center")?
@@ -56,6 +61,7 @@ fn parse_locale(value: &str) -> SilexResult<Locale> {
 }
 
 fn locale_button<'scope>(
+    context: impl SilexContextProvider<'scope>,
     i18n: I18nStore<'scope>,
     loader_store: I18nStore<'scope>,
     locale_name: &'static str,
@@ -69,7 +75,7 @@ fn locale_button<'scope>(
             Ok(())
         })
         .style(
-            sty()
+            sty(context)
                 .padding("7px 11px")?
                 .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
                 .border_radius(px(5))?
@@ -167,7 +173,7 @@ pub fn I18nPage<'scope>(
                 div![
                     p(message),
                     small(format!("Catalog cache contains {} key(s).", catalog.len()))
-                        .style(sty().opacity(0.65)?),
+                        .style(sty(ctx).opacity(0.65)?),
                 ]
                 .into_any()
             }
@@ -220,77 +226,93 @@ pub fn I18nPage<'scope>(
 
     Ok(div![
         h2(t!(i18n, DemoText::Title)?),
-        p(t!(i18n, DemoText::Description)?).style(sty().opacity(0.75)?),
+        p(t!(i18n, DemoText::Description)?).style(sty(ctx).opacity(0.75)?),
         panel(
+            ctx,
             t!(i18n, "demo.locale.title")?,
             div![
-                p(t!(i18n, "demo.locale.description")?).style(sty().opacity(0.75)?),
+                p(t!(i18n, "demo.locale.description")?).style(sty(ctx).opacity(0.75)?),
                 p(current_locale),
                 p(fallback_locale_text),
-                p(t!(i18n, "demo.locale.persistence")?).style(sty().opacity(0.7)?),
-                control_row(div![
-                    locale_button(i18n, loader_store, "en-US", "English")?,
-                    locale_button(i18n, loader_store, "zh-CN", "中文")?,
-                    locale_button(i18n, loader_store, "ar-EG", "العربية")?,
-                    locale_button(i18n, loader_store, "fr-CA", "Français (fallback)")?,
-                ])?,
-                p(browser_candidates_text).style(sty().margin_bottom(px(4))?.opacity(0.75)?),
-                p(browser_match_text).style(sty().margin_top(px(0))?.opacity(0.75)?),
+                p(t!(i18n, "demo.locale.persistence")?).style(sty(ctx).opacity(0.7)?),
                 control_row(
+                    ctx,
+                    div![
+                        locale_button(ctx, i18n, loader_store, "en-US", "English")?,
+                        locale_button(ctx, i18n, loader_store, "zh-CN", "中文")?,
+                        locale_button(ctx, i18n, loader_store, "ar-EG", "العربية")?,
+                        locale_button(ctx, i18n, loader_store, "fr-CA", "Français (fallback)")?,
+                    ]
+                )?,
+                p(browser_candidates_text).style(sty(ctx).margin_bottom(px(4))?.opacity(0.75)?),
+                p(browser_match_text).style(sty(ctx).margin_top(px(0))?.opacity(0.75)?),
+                control_row(
+                    ctx,
                     button(t!(i18n, "demo.locale.use_browser")?).on_click(move |_| {
                         i18n_for_browser.set_locale(browser_match_for_click.clone())?;
                         loader_for_browser.set_locale(browser_match_for_click.clone())?;
                         Ok(())
                     })
                 )?,
-                p(query_locale_text).style(sty().margin_bottom(px(8))?.opacity(0.75)?),
-                control_row(div![
-                    button(t!(i18n, "demo.locale.apply_query")?).on_click(move |_| {
-                        let locale = query_for_apply.get()?;
-                        current_for_query.set_locale(locale.clone())?;
-                        loader_store.set_locale(locale)?;
-                        Ok(())
-                    }),
-                    button(t!(i18n, "demo.locale.write_query")?).on_click(move |_| {
-                        query_for_write.set(current_for_query.locale().get_untracked()?)?;
-                        Ok(())
-                    }),
-                ])?,
+                p(query_locale_text).style(sty(ctx).margin_bottom(px(8))?.opacity(0.75)?),
+                control_row(
+                    ctx,
+                    div![
+                        button(t!(i18n, "demo.locale.apply_query")?).on_click(move |_| {
+                            let locale = query_for_apply.get()?;
+                            current_for_query.set_locale(locale.clone())?;
+                            loader_store.set_locale(locale)?;
+                            Ok(())
+                        }),
+                        button(t!(i18n, "demo.locale.write_query")?).on_click(move |_| {
+                            query_for_write.set(current_for_query.locale().get_untracked()?)?;
+                            Ok(())
+                        }),
+                    ]
+                )?,
             ]
-            .style(sty().display("grid")?.gap(px(10))?),
+            .style(sty(ctx).display("grid")?.gap(px(10))?),
         )?,
         panel(
+            ctx,
             t!(i18n, "demo.messages.title")?,
             div![
-                p(t!(i18n, "demo.messages.description")?).style(sty().opacity(0.75)?),
+                p(t!(i18n, "demo.messages.description")?).style(sty(ctx).opacity(0.75)?),
                 div![
                     label(t!(i18n, "demo.messages.name")?)
-                        .style(sty().display("block")?.margin_bottom(px(5))?),
-                    input()
-                        .bind_value(name)
-                        .style(sty().width(pct(100))?.max_width(px(320))?.padding("8px")?),
+                        .style(sty(ctx).display("block")?.margin_bottom(px(5))?),
+                    input().bind_value(name).style(
+                        sty(ctx)
+                            .width(pct(100))?
+                            .max_width(px(320))?
+                            .padding("8px")?
+                    ),
                     p(t!(i18n, DemoText::Welcome { name: name.get()? })?),
                 ],
                 div![
                     label(t!(i18n, "demo.messages.count")?)
-                        .style(sty().display("block")?.margin_bottom(px(5))?),
-                    control_row(div![
-                        button("-").on_click(move |_| {
-                            count.update(|value| *value = value.saturating_sub(1))?;
-                            Ok(())
-                        }),
-                        span(count.map_fn(scope, |value| value.to_string(), error_handler)?).style(
-                            sty()
-                                .min_width(px(30))?
-                                .text_align(TextAlignKeyword::Center)?
-                        ),
-                        button("+").on_click(move |_| {
-                            count.update(|value| *value = value.saturating_add(1))?;
-                            Ok(())
-                        }),
-                    ])?,
+                        .style(sty(ctx).display("block")?.margin_bottom(px(5))?),
+                    control_row(
+                        ctx,
+                        div![
+                            button("-").on_click(move |_| {
+                                count.update(|value| *value = value.saturating_sub(1))?;
+                                Ok(())
+                            }),
+                            span(count.map_fn(scope, |value| value.to_string(), error_handler)?)
+                                .style(
+                                    sty(ctx)
+                                        .min_width(px(30))?
+                                        .text_align(TextAlignKeyword::Center)?
+                                ),
+                            button("+").on_click(move |_| {
+                                count.update(|value| *value = value.saturating_add(1))?;
+                                Ok(())
+                            }),
+                        ]
+                    )?,
                     p(t!(i18n, "demo.messages.literal", value = count.get())?),
-                    p(t!(i18n, "demo.messages.typed")?).style(sty().opacity(0.7)?),
+                    p(t!(i18n, "demo.messages.typed")?).style(sty(ctx).opacity(0.7)?),
                     p(t!(
                         i18n,
                         DemoText::CartItems {
@@ -311,41 +333,47 @@ pub fn I18nPage<'scope>(
                     )
                 }),
             ]
-            .style(sty().display("grid")?.gap(px(14))?),
+            .style(sty(ctx).display("grid")?.gap(px(14))?),
         )?,
         panel(
+            ctx,
             t!(i18n, "demo.formatter.title")?,
             div![
-                p(t!(i18n, "demo.formatter.description")?).style(sty().opacity(0.75)?),
+                p(t!(i18n, "demo.formatter.description")?).style(sty(ctx).opacity(0.75)?),
                 p(formatter_number),
                 p(formatter_date),
             ]
-            .style(sty().display("grid")?.gap(px(8))?),
+            .style(sty(ctx).display("grid")?.gap(px(8))?),
         )?,
         panel(
+            ctx,
             t!(i18n, "demo.loader.title")?,
             div![
-                p(t!(i18n, "demo.loader.description")?).style(sty().opacity(0.75)?),
-                control_row(button(t!(i18n, "demo.loader.reload")?).on_click(move |_| {
-                    let locale = reload_store.locale().get_untracked()?;
-                    reload_store.remove_catalog(&locale)?;
-                    resource_for_reload.refetch()?;
-                    Ok(())
-                }))?,
+                p(t!(i18n, "demo.loader.description")?).style(sty(ctx).opacity(0.75)?),
+                control_row(
+                    ctx,
+                    button(t!(i18n, "demo.loader.reload")?).on_click(move |_| {
+                        let locale = reload_store.locale().get_untracked()?;
+                        reload_store.remove_catalog(&locale)?;
+                        resource_for_reload.refetch()?;
+                        Ok(())
+                    })
+                )?,
                 div(resource_state).style(
-                    sty()
+                    sty(ctx)
                         .min_height(px(42))?
                         .padding("10px")?
                         .border_left(border(px(3), BorderStyleKeyword::Solid, AppTheme::PRIMARY))?
                         .background(AppTheme::SURFACE_ALT)?
                 ),
             ]
-            .style(sty().display("grid")?.gap(px(10))?),
+            .style(sty(ctx).display("grid")?.gap(px(10))?),
         )?,
         panel(
+            ctx,
             t!(i18n, "demo.metadata.title")?,
             div![
-                p(t!(i18n, "demo.metadata.description")?).style(sty().opacity(0.75)?),
+                p(t!(i18n, "demo.metadata.description")?).style(sty(ctx).opacity(0.75)?),
                 p(move || -> SilexResult<String> {
                     let direction = locale_direction(&i18n.locale().get()?);
                     i18n.translate_now(
@@ -354,11 +382,11 @@ pub fn I18nPage<'scope>(
                     )
                 }),
             ]
-            .style(sty().display("grid")?.gap(px(8))?),
+            .style(sty(ctx).display("grid")?.gap(px(8))?),
         )?,
     ]
     .style(
-        sty()
+        sty(ctx)
             .max_width(px(1100))?
             .margin("0 auto")?
             .padding("24px")?

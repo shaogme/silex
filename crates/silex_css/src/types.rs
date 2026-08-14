@@ -434,6 +434,22 @@ impl<T: Display> ValidFor<props::Any> for T {}
 mod tests {
     use super::*;
     use crate::builder::Style;
+    use silex_core::{Runtime, SilexContext};
+
+    fn with_test_context<F, R>(f: F) -> R
+    where
+        F: for<'scope> FnOnce(SilexContext<'scope>) -> R,
+    {
+        let mut runtime = Runtime::new();
+        runtime
+            .child(|scope| {
+                let error_handler = scope
+                    .error_handler(|_| {})
+                    .expect("test error handler should register");
+                f(SilexContext::new(scope, error_handler))
+            })
+            .expect("test context should initialize")
+    }
 
     /// 规范里这五个词对任何属性都合法。此前 `inherit` 在 361 个关键字枚举里
     /// 只出现过 2 次，`sty().color("inherit")` 直接编译失败。
@@ -449,16 +465,18 @@ mod tests {
     /// 编译得过就说明 `CssWide` 对这几类互不相干的属性都有效
     #[test]
     fn css_wide_is_valid_for_every_kind_of_property() {
-        let _ = Style::new()
-            .color(INHERIT)
-            .expect("color should build")
-            .align_items(INITIAL)
-            .expect("align-items should build")
-            .z_index(UNSET)
-            .expect("z-index should build")
-            .width(REVERT)
-            .expect("width should build")
-            .transform(REVERT_LAYER);
+        with_test_context(|context| {
+            let _ = Style::new(context)
+                .color(INHERIT)
+                .expect("color should build")
+                .align_items(INITIAL)
+                .expect("align-items should build")
+                .z_index(UNSET)
+                .expect("z-index should build")
+                .width(REVERT)
+                .expect("width should build")
+                .transform(REVERT_LAYER);
+        });
     }
 
     /// 关键字集合相同的属性现在共用同一个枚举：
@@ -473,10 +491,12 @@ mod tests {
     /// 纯 `auto` / 纯 `none` 的属性直接复用全局类型，不再各生成一个枚举
     #[test]
     fn bare_auto_and_none_reuse_the_global_types() {
-        let _ = Style::new()
-            .width(AUTO)
-            .expect("width should build")
-            .transform(NONE);
+        with_test_context(|context| {
+            let _ = Style::new(context)
+                .width(AUTO)
+                .expect("width should build")
+                .transform(NONE);
+        });
         assert_eq!(AUTO.to_string(), "auto");
         assert_eq!(NONE.to_string(), "none");
     }
@@ -494,47 +514,53 @@ mod tests {
     /// 静态路径不再产出 `width: ;` 这种无效声明
     #[test]
     fn css_option_none_produces_a_valid_declaration() {
-        let css = Style::new()
-            .width(css_none::<Px>())
-            .expect("width should build")
-            .render()
-            .css;
+        let css = with_test_context(|context| {
+            Style::new(context)
+                .width(css_none::<Px>())
+                .expect("width should build")
+                .render()
+                .css
+        });
         assert!(css.contains("width: unset;"), "{css}");
     }
 
     /// 值类型现在按属性的实际语法约束，而不是一刀切
     #[test]
     fn typed_values_land_on_the_right_properties() {
-        let _ = Style::new()
-            .width(px(10))
-            .expect("width should build")
-            .color(hex("#fff"))
-            .expect("color should build")
-            .opacity(0.5)
-            .expect("opacity should build")
-            .z_index(3)
-            .expect("z-index should build")
-            .rotate(deg(90))
-            .expect("rotate should build")
-            .background_image(url("a.png"))
-            .expect("background-image should build")
-            // 真正的复合属性仍然收裸字符串
-            .transition("all 0.3s")
-            .expect("transition should build")
-            .margin("0 auto");
+        with_test_context(|context| {
+            let _ = Style::new(context)
+                .width(px(10))
+                .expect("width should build")
+                .color(hex("#fff"))
+                .expect("color should build")
+                .opacity(0.5)
+                .expect("opacity should build")
+                .z_index(3)
+                .expect("z-index should build")
+                .rotate(deg(90))
+                .expect("rotate should build")
+                .background_image(url("a.png"))
+                .expect("background-image should build")
+                // 真正的复合属性仍然收裸字符串
+                .transition("all 0.3s")
+                .expect("transition should build")
+                .margin("0 auto");
+        });
     }
 
     /// 报告 P3-8：没有时间单位，`transition_duration` / `animation_delay`
     /// 只能吃字符串
     #[test]
     fn time_units_land_on_time_properties() {
-        let css = Style::new()
-            .transition_duration(sec(0.3))
-            .expect("transition-duration should build")
-            .animation_delay(ms(150))
-            .expect("animation-delay should build")
-            .render()
-            .css;
+        let css = with_test_context(|context| {
+            Style::new(context)
+                .transition_duration(sec(0.3))
+                .expect("transition-duration should build")
+                .animation_delay(ms(150))
+                .expect("animation-delay should build")
+                .render()
+                .css
+        });
         assert!(css.contains("transition-duration: 0.3s;"), "{css}");
         assert!(css.contains("animation-delay: 150ms;"), "{css}");
     }
@@ -542,24 +568,28 @@ mod tests {
     /// `fr` 只在网格轨道尺寸里合法
     #[test]
     fn fr_lands_on_grid_track_properties() {
-        let css = Style::new()
-            .grid_auto_columns(fr(1))
-            .expect("grid-auto-columns should build")
-            .render()
-            .css;
+        let css = with_test_context(|context| {
+            Style::new(context)
+                .grid_auto_columns(fr(1))
+                .expect("grid-auto-columns should build")
+                .render()
+                .css
+        });
         assert!(css.contains("grid-auto-columns: 1fr;"), "{css}");
     }
 
     /// 现代颜色语法能用在任何接受 `<color>` 的属性上
     #[test]
     fn modern_color_functions_land_on_color_properties() {
-        let css = Style::new()
-            .color(oklch(0.7, 0.15, 250))
-            .expect("color should build")
-            .background_color(color_mix(ColorSpace::Oklch, hex("#fff"), hex("#000")))
-            .expect("background-color should build")
-            .render()
-            .css;
+        let css = with_test_context(|context| {
+            Style::new(context)
+                .color(oklch(0.7, 0.15, 250))
+                .expect("color should build")
+                .background_color(color_mix(ColorSpace::Oklch, hex("#fff"), hex("#000")))
+                .expect("background-color should build")
+                .render()
+                .css
+        });
         assert!(css.contains("color: oklch(0.7 0.15 250);"), "{css}");
         assert!(css.contains("color-mix(in oklch, #fff, #000)"), "{css}");
     }
@@ -569,40 +599,46 @@ mod tests {
     /// （算术运算符）两份展开——任何一份漏掉某个单位都会在这里编译失败
     #[test]
     fn every_length_unit_reaches_both_the_property_table_and_the_operators() {
-        macro_rules! check {
+        with_test_context(|context| {
+            macro_rules! check {
             ($($t:ident),* $(,)?) => {$(
                 let v = $t::from(1);
-                let _ = Style::new().width(v).expect("width should build");
+                let _ = Style::new(context).width(v).expect("width should build");
                 let _ = v + px(1);
                 let _ = px(1) + v;
             )*};
         }
-        for_all_length_units!(check);
-        let _ = Style::new().width(pct(50)).expect("width should build");
-        let _ = pct(50) + px(1);
+            for_all_length_units!(check);
+            let _ = Style::new(context)
+                .width(pct(50))
+                .expect("width should build");
+            let _ = pct(50) + px(1);
+        });
     }
 
     /// 角度与时间同理
     #[test]
     fn every_angle_and_time_unit_reaches_its_properties() {
-        macro_rules! check_angle {
+        with_test_context(|context| {
+            macro_rules! check_angle {
             ($($t:ident),* $(,)?) => {$(
                 let v = $t::from(1);
-                let _ = Style::new().rotate(v).expect("rotate should build");
+                let _ = Style::new(context).rotate(v).expect("rotate should build");
                 let _ = v + deg(1);
             )*};
         }
-        for_all_angle_units!(check_angle);
+            for_all_angle_units!(check_angle);
 
-        macro_rules! check_time {
+            macro_rules! check_time {
             ($($t:ident),* $(,)?) => {$(
                 let v = $t::from(1);
-                let _ = Style::new()
+                let _ = Style::new(context)
                     .transition_duration(v)
                     .expect("transition-duration should build");
                 let _ = v + sec(1);
             )*};
         }
-        for_all_time_units!(check_time);
+            for_all_time_units!(check_time);
+        });
     }
 }

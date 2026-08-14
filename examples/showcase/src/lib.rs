@@ -110,7 +110,7 @@ fn App<'scope>(
     )
     .apply(theme_variables(theme))
     .style(
-        sty()
+        sty(context)
             .min_height(vh(100))?
             .font_family("Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif")?
             .background(css::AppTheme::SURFACE)?

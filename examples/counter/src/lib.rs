@@ -24,7 +24,7 @@ fn Card<'scope, Ctx>(
 
     let mut root = div!(
         h1(title).style(
-            sty()
+            sty(context)
                 .margin_top(px(0))?
                 .font_size(rem(1.2))?
                 .color(hex("#333"))?
@@ -33,7 +33,7 @@ fn Card<'scope, Ctx>(
     )
     .class("card")
     .style(
-        sty()
+        sty(context)
             .border("1px solid #e0e0e0")?
             .border_radius(px(8))?
             .padding("20px")?
@@ -76,12 +76,12 @@ fn CounterDisplay<'scope, Ctx>(
     Ok(div!(
         span("Global Status: "),
         span(count).style(
-            sty()
+            sty(context)
                 .font_weight(FontWeightKeyword::Bold)?
                 .color(hex("#6200ea"))?,
         ),
         div(" (Even Number - Dynamic Class Active)")
-            .style(sty().margin_top(px(5))?)
+            .style(sty(context).margin_top(px(5))?)
             .style(rx!(context;
                 format!(
                     "opacity: {}; transition: opacity 0.3s",
@@ -100,7 +100,7 @@ fn CounterControls<'scope, Ctx>(
     set_count: WriteSignal<'scope, i32>,
 ) -> impl View<'scope> {
     // Demo: Style Array
-    let btn_style = sty()
+    let btn_style = sty(context)
         .padding("8px 16px")?
         .border_radius(px(4))?
         .border("1px solid #ccc")?
@@ -114,7 +114,7 @@ fn CounterControls<'scope, Ctx>(
             Ok(())
         }),
         span(count).style(
-            sty()
+            sty(context)
                 .font_size(rem(1.5))?
                 .font_weight(FontWeightKeyword::Bold)?
                 .min_width(px(30))?
@@ -125,7 +125,12 @@ fn CounterControls<'scope, Ctx>(
             Ok(())
         }),
     )
-    .style(sty().display("flex")?.align_items("center")?.gap(px(15))?))
+    .style(
+        sty(context)
+            .display("flex")?
+            .align_items("center")?
+            .gap(px(15))?,
+    ))
 }
 
 // --- Views ---
@@ -136,7 +141,7 @@ fn NavBar<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scope> {
         Link(ctx, "/")
             .children("Home")
             .style(
-                sty()
+                sty(ctx)
                     .margin_right(px(15))?
                     .text_decoration("none")?
                     .color(hex("#007bff"))?
@@ -146,7 +151,7 @@ fn NavBar<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scope> {
         Link(ctx, "/about")
             .children("About")
             .style(
-                sty()
+                sty(ctx)
                     .text_decoration("none")?
                     .color(hex("#007bff"))?
                     .font_weight(FontWeightKeyword::Bold)?
@@ -154,7 +159,7 @@ fn NavBar<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scope> {
             .build(),
     )
     .style(
-        sty()
+        sty(ctx)
             .margin_bottom(px(20))?
             .padding("10px")?
             .border_bottom("1px solid #eee")?,
@@ -172,7 +177,7 @@ fn HomeView<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scope> 
     let (count, set_count) = scope.signal(0)?;
     let is_high = rx!(ctx; *$count > 5);
     let suspense_source = scope.constant(())?;
-    let suspense_data_style = sty()
+    let suspense_data_style = sty(ctx)
         .color(hex("#2e7d32"))?
         .font_weight(FontWeightKeyword::Bold)?
         .background("#e8f5e9")?
@@ -184,10 +189,10 @@ fn HomeView<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scope> 
         div!(
             h1("Silex: Next Gen"),
             p("Builder Pattern + Router + Explicit State + Suspense")
-                .style(sty().color(hex("#666"))?),
+                .style(sty(ctx).color(hex("#666"))?),
         )
         .style(
-            sty()
+            sty(ctx)
                 .text_align(TextAlignKeyword::Center)?
                 .margin_bottom(px(30))?
         ),
@@ -209,18 +214,18 @@ fn HomeView<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scope> 
                 div!(
                     span("Hello, "),
                     span(name).style(
-                        sty()
+                        sty(ctx)
                             .color(hex("#007bff"))?
                             .font_weight(FontWeightKeyword::Bold)?
                     ),
                     span("!"),
                 )
-                .style(sty().margin_bottom(px(10))?),
+                .style(sty(ctx).margin_bottom(px(10))?),
                 input()
                     .type_("text")
                     .placeholder("Enter name")
                     .style(
-                        sty()
+                        sty(ctx)
                             .padding("8px")?
                             .border("1px solid #ccc")?
                             .border_radius(px(4))?
@@ -240,7 +245,7 @@ fn HomeView<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scope> 
                     .when(
                         ctx,
                         div("⚠️ Warning: Count is getting high!").style(
-                            sty()
+                            sty(ctx)
                                 .background("#ffebee")?
                                 .color(hex("#c62828"))?
                                 .padding("10px")?
@@ -249,7 +254,7 @@ fn HomeView<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scope> 
                     )
                     .fallback(
                         div("✓ System works normally.").style(
-                            sty()
+                            sty(ctx)
                                 .background("#e8f5e9")?
                                 .color(hex("#2e7d32"))?
                                 .padding("10px")?
@@ -293,7 +298,7 @@ fn HomeView<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scope> 
                 })
                 .fallback(
                     div("Loading data (approx 2s)...")
-                        .style(sty().color(ColorName::Orange)?.font_style("italic")?)
+                        .style(sty(ctx).color(ColorName::Orange)?.font_style("italic")?)
                 )
                 .build(),
             )
@@ -302,18 +307,18 @@ fn HomeView<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scope> 
 }
 
 #[component]
-fn AboutView<'scope>(#[context] _context: RouterContext<'scope>) -> impl View<'scope> {
+fn AboutView<'scope>(#[context] context: RouterContext<'scope>) -> impl View<'scope> {
     Ok(div!(
         h1("About"),
         p("This is the About Page to demonstrate Silex Router."),
         p("Try going back to Home, and notice the Counter is preserved while being passed explicitly to components."),
-    ).style(sty().padding("20px")?.text_align(TextAlignKeyword::Center)?).into_any())
+    ).style(sty(context).padding("20px")?.text_align(TextAlignKeyword::Center)?).into_any())
 }
 
 #[component]
-fn NotFound<'scope>(#[context] _context: RouterContext<'scope>) -> impl View<'scope> {
+fn NotFound<'scope>(#[context] context: RouterContext<'scope>) -> impl View<'scope> {
     Ok(div(h1("404 - Page Not Found"))
-        .style(sty().color(ColorName::Red)?.padding("20px")?)
+        .style(sty(context).color(ColorName::Red)?.padding("20px")?)
         .into_any())
 }
 
@@ -339,7 +344,7 @@ where
         }),
     )
     .style(
-        sty()
+        sty(context)
             .max_width(px(600))?
             .margin("80px auto")?
             .padding("32px")?
@@ -356,7 +361,7 @@ fn App<'scope>(
     #[context] context: SilexContext<'scope>,
     root_error: ReadSignal<'scope, Option<SilexError>>,
 ) -> impl View<'scope> {
-    let app_style = sty()
+    let app_style = sty(context)
         .font_family("-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif")?
         .max_width(px(600))?
         .margin("0 auto")?
