@@ -10,7 +10,7 @@ router! {
     enum DynamicPrefix {
         Tenant(TenantRoute) {
             prefix: "/:tenant";
-            layout: |_context, outlet| outlet;
+            layout: |_ctx, outlet| outlet;
         },
     }
 }

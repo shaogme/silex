@@ -5,7 +5,7 @@ use silex_macros::{component, tw};
 
 #[component]
 pub fn Separator<'scope, Ctx>(
-    #[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     #[prop(into)]
     #[chain(default)]
     orientation: Signal<'scope, String>,
@@ -13,7 +13,7 @@ pub fn Separator<'scope, Ctx>(
     #[chain(default)]
     class: Signal<'scope, String>,
 ) -> impl View<'scope> {
-    let cls = rx!(context; {
+    let cls = rx!(ctx; {
         let orient = $orientation;
         let base_cls = if orient.as_str() == "vertical" {
             tw!("shrink-0 bg-slate-200 dark:bg-slate-800 h-full w-[1px]")

@@ -4,7 +4,7 @@ use crate::css::AppTheme;
 use silex::prelude::*;
 
 #[component]
-pub fn ListDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
+pub fn ListDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     let (list, set_list) = scope.signal(Ok(vec![
         Cow::Borrowed("Apple"),
         Cow::Borrowed("Banana"),
@@ -20,12 +20,12 @@ pub fn ListDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
         p("Demonstrates explicit error handling in For component to avoid crashes."),
         // Error display
         Show(
-            context,
+            ctx,
             error_msg.map(scope, |e| e.is_some(), error_handler)?,
         )
         .children(
-            div(rx!(context; $error_msg.clone().unwrap_or_default())).style(
-                sty(context)
+            div(rx!(ctx; $error_msg.clone().unwrap_or_default())).style(
+                sty(ctx)
                     .color(hex("#d32f2f"))?
                     .background(hex("#ffebee"))?
                     .padding(px(10))?
@@ -35,7 +35,7 @@ pub fn ListDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
             )
         )
         .build(),
-        ul(For(context, list, |item| item.clone())
+        ul(For(ctx, list, |item| item.clone())
             .children(|item, _idx| li(item))
             .row_error_handler(list_error_handler)
             .build()),
@@ -69,7 +69,7 @@ pub fn ListDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
             }),
         ]
         .style(
-            sty(context)
+            sty(ctx)
                 .display("flex")?
                 .gap(px(10))?
                 .margin_top(px(10))?
@@ -78,17 +78,17 @@ pub fn ListDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
 }
 
 #[component]
-pub fn ShowDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
+pub fn ShowDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     let (visible, set_visible) = scope.signal(true)?;
 
     Ok(div![
         h3("Conditional Rendering with Show"),
         p("Demonstrates passing a Signal directly to Show as condition."),
         button("Toggle Visibility").on(event::click, set_visible.updater(|v| *v = !*v)),
-        Show(context, visible)
+        Show(ctx, visible)
             .children(
                 div("✅ Content is visible!").style(
-                    sty(context)
+                    sty(ctx)
                         .color(ColorName::Green)?
                         .padding(px(10))?
                         .background(hex("#e8f5e9"))?
@@ -96,7 +96,7 @@ pub fn ShowDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
             )
             .fallback(
                 div("❌ Content is hidden").style(
-                    sty(context)
+                    sty(ctx)
                         .color(ColorName::Red)?
                         .padding(px(10))?
                         .background(hex("#ffebee"))?
@@ -107,7 +107,7 @@ pub fn ShowDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
 }
 
 #[component]
-pub fn DynamicDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
+pub fn DynamicDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     let (mode, set_mode) = scope.signal("A")?;
 
     Ok(div![
@@ -119,24 +119,24 @@ pub fn DynamicDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
             button("Show C").on(event::click, set_mode.setter("C")),
         ]
         .style(
-            sty(context)
+            sty(ctx)
                 .display("flex")?
                 .gap(px(10))?
                 .margin_bottom(px(10))?
         ),
         // You can also use Dynamic(mode.map(|m| { view_match!(m, { ... }) })).
         Dynamic(
-            context,
+            ctx,
             mode.map(
                 scope,
                 move |m| {
                     Ok(view_match!(*m, {
                         "A" => div("🅰️ Component A")
-                        .style(sty(context).padding(px(20))?.background(hex("#e3f2fd"))?),
+                        .style(sty(ctx).padding(px(20))?.background(hex("#e3f2fd"))?),
                         "B" => div("🅱️ Component B")
-                        .style(sty(context).padding(px(20))?.background(hex("#fff3e0"))?),
+                        .style(sty(ctx).padding(px(20))?.background(hex("#fff3e0"))?),
                         _ => div("©️ Component C")
-                        .style(sty(context).padding(px(20))?.background(hex("#f3e5f5"))?),
+                        .style(sty(ctx).padding(px(20))?.background(hex("#f3e5f5"))?),
                     }))
                 },
                 error_handler
@@ -147,16 +147,16 @@ pub fn DynamicDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
 }
 
 #[component]
-pub fn SwitchDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
+pub fn SwitchDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     let (tab, set_tab) = scope.signal(0)?;
 
-    let switch = Switch(context, tab)
+    let switch = Switch(ctx, tab)
         .fallback(div("Fallback (Should not happen)"))
         .build()
         .case(
             0,
             div("Content for Tab 1").style(
-                sty(context)
+                sty(ctx)
                     .padding(px(10))?
                     .background(AppTheme::SURFACE_ALT)?,
             ),
@@ -164,12 +164,12 @@ pub fn SwitchDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
         .case(
             1,
             div("Content for Tab 2")
-                .style(sty(context).padding(px(10))?.background(AppTheme::BORDER)?),
+                .style(sty(ctx).padding(px(10))?.background(AppTheme::BORDER)?),
         )?
         .case(
             2,
             div("Content for Tab 3").style(
-                sty(context)
+                sty(ctx)
                     .padding(px(10))?
                     .background(AppTheme::BORDER)?
                     .opacity(0.8)?,
@@ -184,7 +184,7 @@ pub fn SwitchDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
             button("Tab 3").on(event::click, set_tab.setter(2)),
         ]
         .style(
-            sty(context)
+            sty(ctx)
                 .display("flex")?
                 .gap(px(10))?
                 .margin_bottom(px(10))?
@@ -194,13 +194,13 @@ pub fn SwitchDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
 }
 
 #[component]
-pub fn IndexDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
+pub fn IndexDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     let (items, set_items) = scope.signal(vec!["Item A", "Item B", "Item C"])?;
 
     Ok(div![
         h3("Index For Loop Demo"),
         p("Optimized for list updates by index."),
-        Index(context, items)
+        Index(ctx, items)
             .children(|item, idx| div![strong(format!("{}: ", idx)), item])
             .build(),
         button("Append Item")
@@ -208,29 +208,29 @@ pub fn IndexDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
                 set_items.update(|list| list.push("New Item"))?;
                 Ok(())
             })
-            .style(sty(context).margin_top(px(10))?)
+            .style(sty(ctx).margin_top(px(10))?)
     ])
 }
 
 #[component]
-pub fn PortalDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
+pub fn PortalDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     let (show_modal, set_show_modal) = scope.signal(false)?;
 
     Ok(div![
         h3("Portal Demo"),
         button("Toggle Modal").on(event::click, set_show_modal.updater(|v| *v = !*v)),
-        Show(context, show_modal)
+        Show(ctx, show_modal)
             .children(
                 Portal(
-                    context,
+                    ctx,
                     div![
                         div![
                             h4("I am a Modal!"),
-                            p("I am rendered via Portal directly into the body, but I share context!"),
+                            p("I am rendered via Portal directly into the body, but I share ctx!"),
                             button("Close").on(event::click, set_show_modal.setter(false))
                         ]
                         .style(
-                            sty(context)
+                            sty(ctx)
                             .background(AppTheme::SURFACE)?
                             .padding(px(20))?
                             .border_radius(px(8))?
@@ -239,7 +239,7 @@ pub fn PortalDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
                         )
                     ]
                     .style(
-                        sty(context)
+                        sty(ctx)
                             .position(PositionKeyword::Fixed)?
                             .top(px(0))?
                             .left(px(0))?
@@ -259,18 +259,18 @@ pub fn PortalDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
 }
 
 #[component]
-pub fn FlowPage<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
+pub fn FlowPage<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     Ok(div![
         h2("Control Flow"),
-        ListDemo(context).build(),
-        ShowDemo(context).build(),
-        DynamicDemo(context).build(),
-        SwitchDemo(context).build(),
-        IndexDemo(context).build(),
-        PortalDemo(context).build(),
+        ListDemo(ctx).build(),
+        ShowDemo(ctx).build(),
+        DynamicDemo(ctx).build(),
+        SwitchDemo(ctx).build(),
+        IndexDemo(ctx).build(),
+        PortalDemo(ctx).build(),
     ]
     .style(
-        sty(context)
+        sty(ctx)
             .display("flex")?
             .flex_direction(FlexDirectionKeyword::Column)?
             .gap(px(20))?,

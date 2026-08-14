@@ -28,9 +28,9 @@ router! {
 
 /// 一个简单的卡片容器
 #[component]
-fn Card<'scope, Ctx>(#[context] context: Ctx, children: AnyView<'scope>) -> impl View<'scope> {
+fn Card<'scope, Ctx>(#[ctx] ctx: Ctx, children: AnyView<'scope>) -> impl View<'scope> {
     Ok(div(children).style(
-        sty(context)
+        sty(ctx)
             .border("1px solid #ddd")?
             .border_radius(px(8))?
             .padding("20px")?
@@ -43,7 +43,7 @@ fn Card<'scope, Ctx>(#[context] context: Ctx, children: AnyView<'scope>) -> impl
 /// 导航链接样式封装
 #[component]
 fn NavLink<'scope, T: ToRoute + Clone + 'scope>(
-    #[context] ctx: RouterContext<'scope>,
+    #[ctx] ctx: RouterContext<'scope>,
     to: T,
     #[chain] children: AnyView<'scope>,
 ) -> impl View<'scope> {
@@ -65,7 +65,7 @@ fn NavLink<'scope, T: ToRoute + Clone + 'scope>(
 // ==========================================
 
 #[component]
-fn Home<'scope>(#[context] _ctx: RouterContext<'scope>) -> impl View<'scope> {
+fn Home<'scope>(#[ctx] _ctx: RouterContext<'scope>) -> impl View<'scope> {
     div!(
         h2("🏠 Home Page"),
         p("Welcome to the Router Test Suite."),
@@ -74,7 +74,7 @@ fn Home<'scope>(#[context] _ctx: RouterContext<'scope>) -> impl View<'scope> {
 }
 
 #[component]
-fn SearchPage<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scope> {
+fn SearchPage<'scope>(#[ctx] ctx: RouterContext<'scope>) -> impl View<'scope> {
     let scope = ctx.scope();
     let search_term = Persistent::builder(scope, "q", error_handler)
         .query(ctx)
@@ -141,13 +141,13 @@ fn SearchPage<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scope
 // --- 用户模块 (嵌套路由中的共享布局) ---
 
 #[component]
-fn CreateUser<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scope> {
+fn CreateUser<'scope>(#[ctx] ctx: RouterContext<'scope>) -> impl View<'scope> {
     Card(ctx, h3("🆕 Create New User Form")).build()
 }
 
 #[component]
 fn UsersLayout<'scope>(
-    #[context] ctx: RouterContext<'scope>,
+    #[ctx] ctx: RouterContext<'scope>,
     #[chain] children: AnyView<'scope>,
 ) -> impl View<'scope> {
     Ok(div!(
@@ -176,7 +176,7 @@ fn user_detail_path(id: u32) -> SilexResult<RoutePath> {
 }
 
 #[component]
-fn UserList<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scope> {
+fn UserList<'scope>(#[ctx] ctx: RouterContext<'scope>) -> impl View<'scope> {
     let users = vec![
         (1, "Alice"),
         (2, "Bob"),
@@ -204,7 +204,7 @@ fn UserList<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scope> 
 }
 
 #[component]
-fn UserDetail<'scope>(#[context] ctx: RouterContext<'scope>, id: u32) -> impl View<'scope> {
+fn UserDetail<'scope>(#[ctx] ctx: RouterContext<'scope>, id: u32) -> impl View<'scope> {
     let navigator = ctx.navigator;
     let path = ctx.path;
 
@@ -264,7 +264,7 @@ fn UserDetail<'scope>(#[context] ctx: RouterContext<'scope>, id: u32) -> impl Vi
 }
 
 #[component]
-fn NotFound<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scope> {
+fn NotFound<'scope>(#[ctx] ctx: RouterContext<'scope>) -> impl View<'scope> {
     Ok(div!(
         h1("404"),
         p("Page not found."),
@@ -289,7 +289,7 @@ fn NotFound<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scope> 
 
 #[component]
 fn MainLayout<'scope>(
-    #[context] ctx: RouterContext<'scope>,
+    #[ctx] ctx: RouterContext<'scope>,
     home_path: RoutePath,
     users_path: RoutePath,
     search_path: RoutePath,
@@ -343,7 +343,7 @@ fn MainLayout<'scope>(
 // ==========================================
 
 #[component]
-fn App<'scope>(#[context] context: SilexContext<'scope>) -> impl View<'scope> {
+fn App<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
     let home_path = AppRoute::Home
         .path()
         .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
@@ -363,7 +363,7 @@ fn App<'scope>(#[context] context: SilexContext<'scope>) -> impl View<'scope> {
     })
     .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
 
-    Ok(Router(context)
+    Ok(Router(ctx)
         .routes(table)
         .layout(move |ctx, outlet| {
             MainLayout(
@@ -404,11 +404,11 @@ fn inject_router_styles() {
     };
 }
 
-fn mount_router_view<'scope>(context: &MountContext<'scope>) -> SilexResult<()> {
-    let scope = context.scope();
+fn mount_router_view<'scope>(ctx: &MountContext<'scope>) -> SilexResult<()> {
+    let scope = ctx.scope();
     let error_handler = scope.error_handler(|error: SilexError| {
         web_sys::console::error_1(&error.to_string().into());
     })?;
-    let silex_context = SilexContext::new(scope, error_handler);
-    context.mount(App(silex_context).build(), error_handler)
+    let silex_ctx = SilexContext::new(scope, error_handler);
+    ctx.mount(App(silex_ctx).build(), error_handler)
 }

@@ -56,7 +56,7 @@ fn foreign_search_is_rejected_before_query_memo_creation() {
 }
 
 #[test]
-fn foreign_write_destination_is_rejected_before_context_creation() {
+fn foreign_write_destination_is_rejected_before_ctx_creation() {
     let mut source_runtime = Runtime::new();
     let source_root = source_runtime.run().expect("source root should be created");
     let mut target_runtime = Runtime::new();

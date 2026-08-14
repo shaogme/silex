@@ -8,9 +8,8 @@ use silex_macros::component;
 
 #[component]
 fn RequiredOrder<'scope, Ctx>(
-#[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     children: AnyView<'scope>,
-    
     #[chain] first: String,
     #[chain] second: String,
 ) -> impl View<'scope> {
@@ -22,8 +21,8 @@ fn main() {
     let mut runtime = Runtime::new();
     let _ = runtime.child(|scope| {
         let error_handler = scope.error_handler(|_| {}).expect("handler");
-        let context = SilexContext::new(scope, error_handler);
-        let view = RequiredOrder(context, AnyView::Empty)
+        let ctx = SilexContext::new(scope, error_handler);
+        let view = RequiredOrder(ctx, AnyView::Empty)
             .second(String::from("second"))
             .first(String::from("first"))
             .second(String::from("override"))

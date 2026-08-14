@@ -607,7 +607,7 @@ fn query_binding_uses_target_scope_and_updates_only_its_key() {
         let (search, set_search) = scope
             .signal("?page=2&other=keep".to_string())
             .expect("search signal should be created");
-        let context = RouterContext::new(
+        let ctx = RouterContext::new(
             SilexContext::new(scope, test_handler(scope)),
             RouterContextProps {
                 base_path: "/".to_string(),
@@ -617,9 +617,9 @@ fn query_binding_uses_target_scope_and_updates_only_its_key() {
                 set_search,
             },
         )
-        .expect("router context should be created");
+        .expect("router ctx should be created");
         let page = Persistent::builder(scope, "page", test_handler(scope))
-            .query(context)
+            .query(ctx)
             .parse::<u32>()
             .default(1)
             .build()
@@ -655,7 +655,7 @@ fn query_backend_writes_one_push_and_one_url_update_per_change() {
         let (search, set_search) = scope
             .signal("?keep=yes".to_string())
             .expect("search signal should be created");
-        let context = RouterContext::new(
+        let ctx = RouterContext::new(
             SilexContext::new(scope, test_handler(scope)),
             RouterContextProps {
                 base_path: "/".to_string(),
@@ -665,7 +665,7 @@ fn query_backend_writes_one_push_and_one_url_update_per_change() {
                 set_search,
             },
         )
-        .expect("router context should be created");
+        .expect("router ctx should be created");
         let search_updates = Rc::new(Cell::new(0));
         let search_updates_for_effect = search_updates.clone();
         scope
@@ -681,7 +681,7 @@ fn query_backend_writes_one_push_and_one_url_update_per_change() {
         let initial_search_updates = search_updates.get();
 
         let binding = Persistent::builder(scope, QUERY_HISTORY_KEY, test_handler(scope))
-            .query(context)
+            .query(ctx)
             .parse::<u32>()
             .write_default(WriteDefault::Never)
             .default(1)

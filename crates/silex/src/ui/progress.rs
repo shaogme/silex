@@ -5,7 +5,7 @@ use silex_macros::{component, tw};
 
 #[component]
 pub fn Progress<'scope, Ctx>(
-    #[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     #[prop(into)]
     #[chain(default)]
     value: Signal<'scope, u32>,
@@ -13,7 +13,7 @@ pub fn Progress<'scope, Ctx>(
     #[chain(default)]
     class: Signal<'scope, String>,
 ) -> impl View<'scope> {
-    let container_cls = rx!(context; {
+    let container_cls = rx!(ctx; {
         let base =
             tw!("relative h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800");
         let extra = $class;
@@ -24,7 +24,7 @@ pub fn Progress<'scope, Ctx>(
         }
     });
 
-    let indicator_style = rx!(context; {
+    let indicator_style = rx!(ctx; {
         let pct = (*$value).min(100);
         format!("width: {}%;", pct)
     });

@@ -8,9 +8,8 @@ use silex_macros::component;
 
 #[component]
 fn ReactiveInputComponent<'scope, Ctx>(
-#[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     children: AnyView<'scope>,
-    
     #[chain(default)] signal: Signal<'scope, String>,
     #[chain(default)] read: ReadSignal<'scope, i32>,
     #[chain(default)] rw: RwSignal<'scope, bool>,
@@ -30,12 +29,12 @@ fn main() {
             let (read_int, _) = scope.signal(1_i32)?;
             let rw_bool = scope.rw_signal(false)?;
             let error_handler = scope.error_handler(|_| {})?;
-            let context = SilexContext::new(scope, error_handler);
+            let ctx = SilexContext::new(scope, error_handler);
             let memo_float = scope.memo(|_| Ok(1.0_f64), error_handler)?;
             let stored_char = scope.stored('s')?;
             let rx_usize = scope.constant(1_usize)?;
 
-            let _builder = ReactiveInputComponent(context, AnyView::Empty)
+            let _builder = ReactiveInputComponent(ctx, AnyView::Empty)
                 .signal("constant")?
                 .signal(read_string)?
                 .read(2_i32)?

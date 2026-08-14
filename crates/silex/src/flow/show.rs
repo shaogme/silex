@@ -6,14 +6,14 @@ use silex_macros::component;
 ///
 /// 使用方式：
 /// ```rust,ignore
-/// Show(context, condition)
+/// Show(ctx, condition)
 ///     .children(view)
 ///     .fallback(fallback_view)
 ///     .build()
 /// ```
 #[component]
 pub fn Show<'scope, Ctx, C>(
-    #[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     when: C,
     #[prop(render)]
     #[chain]
@@ -26,7 +26,7 @@ where
     C: ReactiveSource<'scope, Value = bool> + Clone + 'scope,
 {
     let condition = scope.promote(when, error_handler)?;
-    Ok(silex_core::rx!(context; if *$condition {
+    Ok(silex_core::rx!(ctx; if *$condition {
         children.clone()
     } else {
         fallback.clone()
@@ -37,7 +37,7 @@ where
 
 /// Signal 扩展特质，提供 .when() 语法糖
 pub trait SignalShowExt<'scope>: ReactiveSource<'scope, Value = bool> + Clone + Sized {
-    fn when<Ctx, V>(self, context: Ctx, view: V) -> ShowBuilder<'scope, PropFixed, Ctx, Self>
+    fn when<Ctx, V>(self, ctx: Ctx, view: V) -> ShowBuilder<'scope, PropFixed, Ctx, Self>
     where
         Ctx: SilexContextProvider<'scope>,
         V: View<'scope> + 'scope;
@@ -47,11 +47,11 @@ impl<'scope, S> SignalShowExt<'scope> for S
 where
     S: ReactiveSource<'scope, Value = bool> + Clone,
 {
-    fn when<Ctx, V>(self, context: Ctx, view: V) -> ShowBuilder<'scope, PropFixed, Ctx, Self>
+    fn when<Ctx, V>(self, ctx: Ctx, view: V) -> ShowBuilder<'scope, PropFixed, Ctx, Self>
     where
         Ctx: SilexContextProvider<'scope>,
         V: View<'scope> + 'scope,
     {
-        Show(context, self).children(view)
+        Show(ctx, self).children(view)
     }
 }

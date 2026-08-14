@@ -23,11 +23,11 @@ use silex_macros::component;
 /// })).build();
 /// ```
 #[component]
-pub fn Dynamic<'scope, Ctx, V, FView>(#[context] context: Ctx, view_fn: FView) -> impl View<'scope>
+pub fn Dynamic<'scope, Ctx, V, FView>(#[ctx] ctx: Ctx, view_fn: FView) -> impl View<'scope>
 where
     V: View<'scope> + Clone + 'scope,
     FView: ReactiveSource<'scope, Value = V> + Clone + 'scope,
 {
     let view_fn = scope.promote(view_fn, error_handler)?;
-    Ok(silex_core::rx!(context; (*$view_fn).clone().into_any()))
+    Ok(silex_core::rx!(ctx; (*$view_fn).clone().into_any()))
 }

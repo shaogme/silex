@@ -30,7 +30,7 @@ pub enum SuspenseMode {
 /// ```
 #[component]
 pub fn Suspense<'scope, Ctx, CH, R>(
-    #[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     children: CH,
     #[chain(default = AnyView::Empty)] fallback: AnyView<'scope>,
     #[chain(default)] mode: SuspenseMode,
@@ -42,21 +42,21 @@ where
     let children = Rc::new(move |cx: SuspenseContext<'scope>| children(cx).into_any());
 
     // 创建属于此 Suspense 边界的上下文
-    let ctx = SuspenseContext::new(scope)?;
+    let context = SuspenseContext::new(scope)?;
 
     // 在组件初始化时（稳定作用域）执行一次工厂闭包。
     // 确保 Resource 实例绑定到稳定的组件作用域。
-    let initial_view = children(ctx);
+    let initial_view = children(context);
 
     match mode {
         SuspenseMode::KeepAlive => {
-            let count = ctx.count;
-            let content_display = silex_core::rx!(context; if *$count > 0 {
+            let count = context.count;
+            let content_display = silex_core::rx!(ctx; if *$count > 0 {
                 "display: none".to_string()
             } else {
                 "display: block".to_string()
             });
-            let fallback_display = silex_core::rx!(context; if *$count > 0 {
+            let fallback_display = silex_core::rx!(ctx; if *$count > 0 {
                 "display: block".to_string()
             } else {
                 "display: none".to_string()
@@ -72,24 +72,24 @@ where
             .into_any())
         }
         SuspenseMode::Unmount => {
-            let count = ctx.count;
+            let count = context.count;
             let (is_first, set_is_first) = scope.signal(true)?;
             let initial_view = initial_view.clone();
             let children = children.clone();
             let fallback = fallback.clone();
-            let content = silex_core::rx!(context; {
+            let content = silex_core::rx!(ctx; {
                 if *$count == 0 {
                     if *$is_first {
                         set_is_first.set(false)?;
                         initial_view.clone()
                     } else {
-                        children(ctx)
+                        children(context)
                     }
                 } else {
                     AnyView::Empty
                 }
             });
-            let fallback_view = silex_core::rx!(context; {
+            let fallback_view = silex_core::rx!(ctx; {
                 if *$count > 0 {
                     fallback.clone()
                 } else {

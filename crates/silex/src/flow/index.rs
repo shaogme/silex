@@ -40,7 +40,7 @@ impl<'scope, Item: 'scope> IndexRenderer<'scope, Item> {
 /// ```
 #[component]
 pub fn Index<'scope, Ctx, IF, I, IS>(
-    #[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     each: IF,
     #[prop(render_fn(I, usize))]
     #[chain]

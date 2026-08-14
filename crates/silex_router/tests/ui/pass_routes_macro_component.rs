@@ -4,7 +4,7 @@ use silex_router::macros::{component, router};
 use silex_router::RouterContext;
 
 #[component]
-fn Home<'scope>(#[context] _context: RouterContext<'scope>) -> impl silex_router::dom::view::View<'scope> {
+fn Home<'scope>(#[ctx] _ctx: RouterContext<'scope>) -> impl silex_router::dom::view::View<'scope> {
     "home"
 }
 
@@ -15,8 +15,8 @@ router! {
 }
 
 fn main() {
-    let _ = AppRoute::table(|route, context| match route {
-        AppRoute::Home => Home(context).build().into_any(),
+    let _ = AppRoute::table(|route, ctx| match route {
+        AppRoute::Home => Home(ctx).build().into_any(),
     });
     let _ = AnyView::from("component");
 }

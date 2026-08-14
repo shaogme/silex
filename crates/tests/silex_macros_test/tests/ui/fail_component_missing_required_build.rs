@@ -8,9 +8,8 @@ use silex_macros::component;
 
 #[component]
 fn MissingRequiredBuild<'scope, Ctx>(
-#[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     children: AnyView<'scope>,
-    
     #[chain] required: String,
 ) -> impl View<'scope> {
     let _ = (scope, required);
@@ -21,8 +20,8 @@ fn main() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
         let error_handler = scope.error_handler(|_| {}).expect("handler");
-        let context = SilexContext::new(scope, error_handler);
-        let _ = MissingRequiredBuild(context, AnyView::Empty)
+        let ctx = SilexContext::new(scope, error_handler);
+        let _ = MissingRequiredBuild(ctx, AnyView::Empty)
             .build();
     });
 }

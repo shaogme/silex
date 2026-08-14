@@ -503,7 +503,7 @@ mod tests {
                 assert!(css.contains("width: min(600px, 100%)"), "{css}");
                 assert!(css.contains("font-size: max(1rem, 4vw)"), "{css}");
             })
-            .expect("test context should initialize");
+            .expect("test ctx should initialize");
     }
 
     #[test]

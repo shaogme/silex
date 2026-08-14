@@ -1,5 +1,5 @@
 error: nested route layout must accept RouterContext and outlet
   --> tests/ui/fail_router_macro_nested_layout.rs:13:21
    |
-13 |             layout: |_context| "invalid";
+13 |             layout: |_ctx| "invalid";
    |                     ^^^^^^^^^^^^^^^^^^^^

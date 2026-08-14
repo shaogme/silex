@@ -69,7 +69,7 @@ impl<'scope, Item: 'scope> ForStatefulRenderer<'scope, Item> {
 /// ```
 #[component]
 pub fn For<'scope, Ctx, ItemsFn, IS, Item, Key, KF>(
-    #[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     each: ItemsFn,
     key: KF,
     #[prop(render_fn(Item, usize))]
@@ -113,7 +113,7 @@ where
 /// ```
 #[component]
 pub fn ForStateful<'scope, Ctx, ItemsFn, IS, Item, Key, KF>(
-    #[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     each: ItemsFn,
     key: KF,
     #[prop(render_fn(Item, usize, RowUpdater<'scope, Item>))]

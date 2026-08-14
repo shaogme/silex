@@ -182,7 +182,7 @@ impl<'scope> View<'scope> for ErrorBoundaryView<'scope> {
 /// bind their construction-time effects to this boundary before mount.
 #[component]
 pub fn ErrorBoundary<'scope, Ctx, FB, CH, V1, V2>(
-    #[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     children: CH,
     #[chain] fallback: FB,
 ) -> impl View<'scope>
@@ -240,10 +240,10 @@ where
 
     let fallback = fallback.clone();
     let children = children.clone();
-    let child_context = SilexContextProvider::with_error_reporter(context, boundary_handler);
+    let child_ctx = SilexContextProvider::with_error_reporter(ctx, boundary_handler);
     let parent_handler_for_view = parent_handler.clone();
-    let phase_context = SilexContextProvider::with_error_reporter(context, phase_handler);
-    let view = rx!(phase_context; {
+    let phase_ctx = SilexContextProvider::with_error_reporter(ctx, phase_handler);
+    let view = rx!(phase_ctx; {
         if let Some(error) = (*$error).clone() {
             ErrorBoundaryBranch::fallback(
                 fallback(error),
@@ -256,7 +256,7 @@ where
         } else {
             let result = catch_unwind(AssertUnwindSafe({
                 let children = children.clone();
-                move || children(child_context).into_any()
+                move || children(child_ctx).into_any()
             }));
 
             match result {

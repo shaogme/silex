@@ -4,7 +4,7 @@ error[E0599]: no method named `build` found for struct `MissingRequiredBuildBuil
  9 |   #[component]
    |   ------------ method `build` not found for this struct
 ...
-25 |           let _ = MissingRequiredBuild(context, AnyView::Empty)
+25 |           let _ = MissingRequiredBuild(ctx, AnyView::Empty)
    |  _________________-
 26 | |             .build();
    | |             -^^^^^ method not found in `MissingRequiredBuildBuilder<'_, PropMissing, silex_core::SilexContext<'_>>`

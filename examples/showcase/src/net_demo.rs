@@ -33,7 +33,7 @@ pub struct CreatePostInput {
 }
 
 #[component]
-pub fn HttpClientDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
+pub fn HttpClientDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     let (post_id, set_post_id) = scope.signal(1)?;
     let search_query = scope.rw_signal(String::new())?;
 
@@ -94,7 +94,7 @@ pub fn HttpClientDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope>
                     Ok(())
                 })
                 .style(
-                    sty(context)
+                    sty(ctx)
                         .margin_right(px(10))?
                         .padding("4px 8px")?
                         .border_radius(px(4))?
@@ -102,12 +102,12 @@ pub fn HttpClientDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope>
                         .background(AppTheme::SURFACE)?
                         .color(AppTheme::TEXT)?
                 ),
-            span("Optional Filter Query: ").style(sty(context).margin_left(px(10))?),
+            span("Optional Filter Query: ").style(sty(ctx).margin_left(px(10))?),
             input()
                 .placeholder("Type query...")
                 .bind_value(search_query)
                 .style(
-                    sty(context)
+                    sty(ctx)
                         .margin_right(px(10))?
                         .padding("4px 8px")?
                         .border_radius(px(4))?
@@ -121,7 +121,7 @@ pub fn HttpClientDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope>
             }),
         ]
         .style(
-            sty(context)
+            sty(ctx)
                 .margin_bottom(px(20))?
                 .display("flex")?
                 .align_items("center")?
@@ -132,13 +132,13 @@ pub fn HttpClientDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope>
         div![move || {
             Ok(match post_resource.state.get()? {
                 ResourceState::Ready(post) | ResourceState::Reloading(post) => div![
-                    h4(post.title).style(sty(context).color(AppTheme::PRIMARY)?.margin_top(px(0))?),
-                    p(post.body).style(sty(context).opacity(0.8)?),
+                    h4(post.title).style(sty(ctx).color(AppTheme::PRIMARY)?.margin_top(px(0))?),
+                    p(post.body).style(sty(ctx).opacity(0.8)?),
                     small(format!("User ID: {} | Post ID: {}", post.user_id, post.id))
-                        .style(sty(context).opacity(0.6)?)
+                        .style(sty(ctx).opacity(0.6)?)
                 ]
                 .style(
-                    sty(context)
+                    sty(ctx)
                         .padding("20px")?
                         .background(AppTheme::SURFACE_ALT)?
                         .border_radius(px(8))?
@@ -147,15 +147,15 @@ pub fn HttpClientDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope>
                 .into_any(),
                 ResourceState::Error(err) => div![
                     div("❌ Request Failed").style(
-                        sty(context)
+                        sty(ctx)
                             .color(ColorName::Red)?
                             .font_weight(FontWeightKeyword::Bold)?
                     ),
                     p(format!("{:?}", err))
-                        .style(sty(context).font_size(em_unit(0.8))?.opacity(0.7)?)
+                        .style(sty(ctx).font_size(em_unit(0.8))?.opacity(0.7)?)
                 ]
                 .style(
-                    sty(context)
+                    sty(ctx)
                         .padding("20px")?
                         .border("1px solid red")?
                         .border_radius(px(8))?
@@ -164,17 +164,17 @@ pub fn HttpClientDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope>
                 .into_any(),
                 ResourceState::Loading if post_resource.get_data()?.is_none() => {
                     div("Loading post...")
-                        .style(sty(context).padding("20px")?.color(AppTheme::PRIMARY)?)
+                        .style(sty(ctx).padding("20px")?.color(AppTheme::PRIMARY)?)
                         .into_any()
                 }
                 _ => div("Select a post ID to fetch.")
-                    .style(sty(context).padding("20px")?.opacity(0.5)?)
+                    .style(sty(ctx).padding("20px")?.opacity(0.5)?)
                     .into_any(),
             })
         }]
-        .style(sty(context).min_height(px(120))?),
+        .style(sty(ctx).min_height(px(120))?),
         hr().style(
-            sty(context)
+            sty(ctx)
                 .margin("30px 0")?
                 .border("0")?
                 .border_top(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
@@ -186,7 +186,7 @@ pub fn HttpClientDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope>
                     .placeholder("Post Title")
                     .bind_value(new_title)
                     .style(
-                        sty(context)
+                        sty(ctx)
                             .margin_right(px(10))?
                             .padding("6px 10px")?
                             .border_radius(px(4))?
@@ -196,7 +196,7 @@ pub fn HttpClientDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope>
                             .width(px(200))?
                     ),
                 input().placeholder("Post Body").bind_value(new_body).style(
-                    sty(context)
+                    sty(ctx)
                         .margin_right(px(10))?
                         .padding("6px 10px")?
                         .border_radius(px(4))?
@@ -213,9 +213,9 @@ pub fn HttpClientDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope>
                         })?;
                         Ok(())
                     })
-                    .attr("disabled", rx!(context; create_post_mutation.loading()?))
+                    .attr("disabled", rx!(ctx; create_post_mutation.loading()?))
                     .style(
-                        sty(context)
+                        sty(ctx)
                             .padding("10px 20px")?
                             .background(AppTheme::PRIMARY)?
                             .color(ColorName::White)?
@@ -225,7 +225,7 @@ pub fn HttpClientDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope>
                     ),
             ]
             .style(
-                sty(context)
+                sty(ctx)
                     .display("flex")?
                     .flex_wrap(FlexWrapKeyword::Wrap)?
                     .gap(px(8))?
@@ -235,7 +235,7 @@ pub fn HttpClientDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope>
             move || {
                 if create_post_mutation.loading()? {
                     Ok(span(" Creating...")
-                        .style(sty(context).margin_left(px(10))?.color(AppTheme::PRIMARY)?)
+                        .style(sty(ctx).margin_left(px(10))?.color(AppTheme::PRIMARY)?)
                         .into_any())
                 } else {
                     Ok("".into_any())
@@ -245,18 +245,18 @@ pub fn HttpClientDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope>
         move || {
             let view = if let Some(err) = create_post_mutation.error()? {
                 div(format!("❌ Error creating post: {:?}", err))
-                    .style(sty(context).color(ColorName::Red)?.margin_top(px(15))?)
+                    .style(sty(ctx).color(ColorName::Red)?.margin_top(px(15))?)
                     .into_any()
             } else if let Some(post) = create_post_mutation.value()? {
                 div![
                     div("✅ Post Created Successfully (Mock)!").style(
-                        sty(context)
+                        sty(ctx)
                             .color(ColorName::Green)?
                             .font_weight(FontWeightKeyword::Bold)?
                             .margin_bottom(px(5))?
                     ),
                     pre(format!("{:#?}", post)).style(
-                        sty(context)
+                        sty(ctx)
                             .background("#1e1e1e")?
                             .color(hex("#d4d4d4"))?
                             .padding("15px")?
@@ -265,7 +265,7 @@ pub fn HttpClientDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope>
                             .overflow_x(OverflowKeyword::Auto)?
                     )
                 ]
-                .style(sty(context).margin_top(px(15))?)
+                .style(sty(ctx).margin_top(px(15))?)
                 .into_any()
             } else {
                 "".into_any()
@@ -276,7 +276,7 @@ pub fn HttpClientDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope>
 }
 
 #[component]
-pub fn WebSocketDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> + 'scope {
+pub fn WebSocketDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> + 'scope {
     let url = scope.rw_signal("wss://echo.websocket.org".to_string())?;
     let socket = WebSocket::lazy(scope, url.get_untracked()?, error_handler)
         .build()
@@ -309,7 +309,7 @@ pub fn WebSocketDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> 
         ),
         div![
             input().bind_value(url).style(
-                sty(context)
+                sty(ctx)
                     .flex_grow(1)?
                     .padding("8px")?
                     .border_radius(px(4))?
@@ -317,7 +317,7 @@ pub fn WebSocketDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> 
                     .background(AppTheme::SURFACE)?
                     .color(AppTheme::TEXT)?
             ),
-            button(rx!(context; if *$is_connected { "Disconnect" } else { "Connect" }))
+            button(rx!(ctx; if *$is_connected { "Disconnect" } else { "Connect" }))
                 .on(event::click, move |_| {
                     socket.toggle().map_err(|error| {
                         SilexError::recoverable(SilexErrorKind::Framework(error.to_string()))
@@ -325,24 +325,24 @@ pub fn WebSocketDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> 
                     Ok(())
                 })
                 .style(
-                    sty(context)
+                    sty(ctx)
                         .padding("8px 16px")?
                         .margin_left(px(10))?
                         .border_radius(px(4))?
                         .cursor("pointer")?
                 ),
         ]
-        .style(sty(context).display("flex")?.margin_bottom(px(20))?),
+        .style(sty(ctx).display("flex")?.margin_bottom(px(20))?),
         div![
             span("Status: "),
-            strong(state_text).style(rx!(context; @fn if *$is_connected {
-                sty(context).color(ColorName::Green)?
+            strong(state_text).style(rx!(ctx; @fn if *$is_connected {
+                sty(ctx).color(ColorName::Green)?
             } else {
-                sty(context).color(ColorName::Red)?
+                sty(ctx).color(ColorName::Red)?
             })),
         ]
-        .style(sty(context).margin_bottom(px(15))?),
-        Show(context, is_connected)
+        .style(sty(ctx).margin_bottom(px(15))?),
+        Show(ctx, is_connected)
             .children(div![
                 div![
                     input()
@@ -358,7 +358,7 @@ pub fn WebSocketDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> 
                             }
                         )
                         .style(
-                            sty(context)
+                            sty(ctx)
                                 .padding("8px")?
                                 .width(px(260))?
                                 .border_radius(px(4))?
@@ -372,7 +372,7 @@ pub fn WebSocketDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> 
                             Ok(())
                         })
                         .style(
-                            sty(context)
+                            sty(ctx)
                                 .margin_left(px(10))?
                                 .padding("8px 16px")?
                                 .cursor("pointer")?
@@ -381,7 +381,7 @@ pub fn WebSocketDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> 
                 div![
                     p("Last Echoed Message:"),
                     div(last_message).style(
-                        sty(context)
+                        sty(ctx)
                             .padding("15px")?
                             .background(AppTheme::SURFACE_ALT)?
                             .border_radius(px(6))?
@@ -393,14 +393,14 @@ pub fn WebSocketDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> 
                             ))?
                     )
                 ]
-                .style(sty(context).margin_top(px(15))?),
+                .style(sty(ctx).margin_top(px(15))?),
             ])
             .build()
     ])
 }
 
 #[component]
-pub fn EventStreamDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
+pub fn EventStreamDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     let url = scope.rw_signal("https://stream.wikimedia.org/v2/stream/recentchange".to_string())?;
     let stream = EventStream::lazy(scope, url.get_untracked()?, error_handler)
         .build()
@@ -408,15 +408,15 @@ pub fn EventStreamDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope
 
     let is_connected = stream.is_connected()?;
     let logs = stream.latest_messages::<WikimediaChange>(50)?;
-    let stream_wiki_style = sty(context)
+    let stream_wiki_style = sty(ctx)
         .font_weight(FontWeightKeyword::Bold)?
         .opacity(0.6)?;
-    let stream_title_style = sty(context)
+    let stream_title_style = sty(ctx)
         .color(AppTheme::PRIMARY)?
         .font_weight(FontWeightKeyword::Bold)?;
-    let stream_user_style = sty(context).opacity(0.8)?.font_style("italic")?;
-    let stream_type_style = sty(context).font_size(em_unit(0.85))?.opacity(0.5)?;
-    let stream_row_style = sty(context)
+    let stream_user_style = sty(ctx).opacity(0.8)?.font_style("italic")?;
+    let stream_type_style = sty(ctx).font_size(em_unit(0.85))?.opacity(0.5)?;
+    let stream_row_style = sty(ctx)
         .font_family("sans-serif")?
         .font_size(em_unit(0.9))?
         .margin_bottom(px(6))?
@@ -434,7 +434,7 @@ pub fn EventStreamDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope
         ),
         div![
             input().bind_value(url).style(
-                sty(context)
+                sty(ctx)
                     .flex_grow(1)?
                     .padding("8px")?
                     .border_radius(px(4))?
@@ -442,7 +442,7 @@ pub fn EventStreamDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope
                     .background(AppTheme::SURFACE)?
                     .color(AppTheme::TEXT)?
             ),
-            button(rx!(context; if *$is_connected { "Stop Stream" } else { "Start Stream" }))
+            button(rx!(ctx; if *$is_connected { "Stop Stream" } else { "Start Stream" }))
                 .on(event::click, move |_| {
                     stream.toggle().map_err(|error| {
                         SilexError::recoverable(SilexErrorKind::Framework(error.to_string()))
@@ -450,7 +450,7 @@ pub fn EventStreamDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope
                     Ok(())
                 })
                 .style(
-                    sty(context)
+                    sty(ctx)
                         .padding("8px 16px")?
                         .margin_left(px(10))?
                         .border_radius(px(4))?
@@ -462,7 +462,7 @@ pub fn EventStreamDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope
                     Ok(())
                 })
                 .style(
-                    sty(context)
+                    sty(ctx)
                         .padding("8px 16px")?
                         .margin_left(px(10))?
                         .border_radius(px(4))?
@@ -472,10 +472,10 @@ pub fn EventStreamDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope
                         .color(AppTheme::TEXT)?
                 ),
         ]
-        .style(sty(context).display("flex")?.margin_bottom(px(20))?),
+        .style(sty(ctx).display("flex")?.margin_bottom(px(20))?),
         div![
             h4("Stream Log (Wikipedia Edits):"),
-            ul(For(context, logs, |item| item.id.unwrap_or(0).to_string()
+            ul(For(ctx, logs, |item| item.id.unwrap_or(0).to_string()
                 + &item.title)
             .children(move |change, _idx| {
                 li(div![
@@ -488,7 +488,7 @@ pub fn EventStreamDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope
             })
             .build())
             .style(
-                sty(context)
+                sty(ctx)
                     .max_height(px(320))?
                     .overflow_y(OverflowKeyword::Auto)?
                     .background(AppTheme::SURFACE)?
@@ -501,7 +501,7 @@ pub fn EventStreamDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope
 }
 
 #[component]
-pub fn NetDemoPage<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
+pub fn NetDemoPage<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     let (active_tab, set_active_tab) = scope.signal("http")?;
 
     inject_css! {
@@ -520,26 +520,26 @@ pub fn NetDemoPage<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
         div![
             button("HTTP Client")
                 .on(event::click, set_active_tab.setter("http"))
-                .classes(rx!(context; if *$active_tab == "http" { "active" } else { "" })),
+                .classes(rx!(ctx; if *$active_tab == "http" { "active" } else { "" })),
             button("WebSocket")
                 .on(event::click, set_active_tab.setter("ws"))
-                .classes(rx!(context; if *$active_tab == "ws" { "active" } else { "" })),
+                .classes(rx!(ctx; if *$active_tab == "ws" { "active" } else { "" })),
             button("EventStream")
                 .on(event::click, set_active_tab.setter("sse"))
-                .classes(rx!(context; if *$active_tab == "sse" { "active" } else { "" })),
+                .classes(rx!(ctx; if *$active_tab == "sse" { "active" } else { "" })),
         ].class("tab-nav"),
 
         // Content
         div![
             move || { Ok(match active_tab.get()? {
-                "http" => HttpClientDemo(context).build().into_any(),
-                "ws" => WebSocketDemo(context).build().into_any(),
-                "sse" => EventStreamDemo(context).build().into_any(),
+                "http" => HttpClientDemo(ctx).build().into_any(),
+                "ws" => WebSocketDemo(ctx).build().into_any(),
+                "sse" => EventStreamDemo(ctx).build().into_any(),
                 _ => "".into_any(),
             })
             }
         ].class("demo-container")
     ]
-    .style(sty(context).padding("24px")?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?.border_radius(px(12))?.background(AppTheme::SURFACE)?.transition("all 0.3s")?)
+    .style(sty(ctx).padding("24px")?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?.border_radius(px(12))?.background(AppTheme::SURFACE)?.transition("all 0.3s")?)
     .classes("net-demo-page"))
 }

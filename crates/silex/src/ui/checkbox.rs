@@ -5,7 +5,7 @@ use silex_macros::{component, tw};
 
 #[component]
 pub fn Checkbox<'scope, Ctx>(
-    #[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     #[prop(into)]
     #[chain(default)]
     checked: Signal<'scope, bool>,
@@ -16,7 +16,7 @@ pub fn Checkbox<'scope, Ctx>(
     #[chain(default)]
     on_change: Callback<'scope, bool>,
 ) -> impl View<'scope> {
-    let cls = rx!(context; {
+    let cls = rx!(ctx; {
         let is_checked = *$checked;
         let base = if is_checked {
             tw!("peer size-4 shrink-0 rounded-[4px] border border-solid shadow-xs transition-all duration-150 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 inline-flex items-center justify-center cursor-pointer bg-slate-900 text-slate-50 border-slate-900 dark:bg-slate-50 dark:text-slate-900 dark:border-slate-50").to_string()
@@ -31,7 +31,7 @@ pub fn Checkbox<'scope, Ctx>(
         }
     });
 
-    let check_icon = rx!(context; {
+    let check_icon = rx!(ctx; {
         let is_checked = *$checked;
         let icon_cls = if is_checked {
             tw!("size-3.5 transition-all duration-150 ease-in-out opacity-100 scale-100").to_string()

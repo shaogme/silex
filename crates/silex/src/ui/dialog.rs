@@ -4,32 +4,32 @@ use silex_html::{button, div};
 use silex_macros::{component, styled, tw};
 
 styled! {
-    pub DialogHeader<'scope, Ctx><div>(#[context] context: Ctx, children: AnyView<'scope>) {
+    pub DialogHeader<'scope, Ctx><div>(#[ctx] ctx: Ctx, children: AnyView<'scope>) {
         @apply flex flex-col gap-2 text-center sm:text-left;
     }
 }
 
 styled! {
-    pub DialogTitle<'scope, Ctx><h2>(#[context] context: Ctx, children: AnyView<'scope>) {
+    pub DialogTitle<'scope, Ctx><h2>(#[ctx] ctx: Ctx, children: AnyView<'scope>) {
         @apply text-lg leading-none font-semibold;
     }
 }
 
 styled! {
-    pub DialogDescription<'scope, Ctx><p>(#[context] context: Ctx, children: AnyView<'scope>) {
+    pub DialogDescription<'scope, Ctx><p>(#[ctx] ctx: Ctx, children: AnyView<'scope>) {
         @apply text-sm text-slate-500 dark:text-slate-400;
     }
 }
 
 styled! {
-    pub DialogFooter<'scope, Ctx><div>(#[context] context: Ctx, children: AnyView<'scope>) {
+    pub DialogFooter<'scope, Ctx><div>(#[ctx] ctx: Ctx, children: AnyView<'scope>) {
         @apply flex flex-col-reverse gap-2 sm:flex-row sm:justify-end;
     }
 }
 
 #[component]
 pub fn Dialog<'scope, Ctx>(
-    #[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
@@ -41,7 +41,7 @@ pub fn Dialog<'scope, Ctx>(
     #[chain(default)]
     on_close: Callback<'scope, ()>,
 ) -> impl View<'scope> {
-    let content_cls = rx!(context; {
+    let content_cls = rx!(ctx; {
         let base = tw!(
             "fixed left-[50%] top-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border border-solid border-slate-200 bg-white p-6 shadow-lg sm:max-w-lg dark:border-slate-800 dark:bg-slate-950 text-slate-950 dark:text-slate-50"
         );
@@ -55,9 +55,9 @@ pub fn Dialog<'scope, Ctx>(
 
     let stored_children = scope.stored(children)?;
 
-    Ok(rx!(context; {
+    Ok(rx!(ctx; {
         if *$open {
-            crate::components::Portal(context, chain!(
+            crate::components::Portal(ctx, chain!(
                 // Overlay 遮罩
                 div(())
                     .class(tw!("fixed inset-0 z-50 bg-black/50 backdrop-blur-xs"))

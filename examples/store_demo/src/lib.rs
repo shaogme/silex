@@ -11,16 +11,16 @@ struct User {
 }
 
 #[component]
-fn App<'scope, Ctx>(#[context] context: Ctx, user: UserStore<'scope>) -> impl View<'scope> {
+fn App<'scope, Ctx>(#[ctx] ctx: Ctx, user: UserStore<'scope>) -> impl View<'scope> {
     Ok(div!(
         h1("Silex Store Demo"),
         p("This example demonstrates fine-grained reactivity using the #[store] macro."),
-        UserDisplay(context, user).build(),
-        UserEditor(context, user).build(),
-        DebugPanel(context, user).build(),
+        UserDisplay(ctx, user).build(),
+        UserEditor(ctx, user).build(),
+        DebugPanel(ctx, user).build(),
     )
     .style(
-        sty(context)
+        sty(ctx)
             .padding("20px")?
             .font_family("sans-serif")?
             .max_width(px(500))?
@@ -31,23 +31,23 @@ fn App<'scope, Ctx>(#[context] context: Ctx, user: UserStore<'scope>) -> impl Vi
 }
 
 #[component]
-fn UserDisplay<'scope, Ctx>(#[context] context: Ctx, user: UserStore<'scope>) -> impl View<'scope> {
+fn UserDisplay<'scope, Ctx>(#[ctx] ctx: Ctx, user: UserStore<'scope>) -> impl View<'scope> {
     Ok(div!(
         div!(
-            span("Name: ").style(sty(context).font_weight(FontWeightKeyword::Bold)?),
+            span("Name: ").style(sty(ctx).font_weight(FontWeightKeyword::Bold)?),
             span(user.name),
         ),
         div!(
-            span("Age: ").style(sty(context).font_weight(FontWeightKeyword::Bold)?),
+            span("Age: ").style(sty(ctx).font_weight(FontWeightKeyword::Bold)?),
             span(user.age),
         ),
         div!(
-            span("Email: ").style(sty(context).font_weight(FontWeightKeyword::Bold)?),
+            span("Email: ").style(sty(ctx).font_weight(FontWeightKeyword::Bold)?),
             span(user.email),
         ),
     )
     .style(
-        sty(context)
+        sty(ctx)
             .background("#f5f5f5")?
             .padding("15px")?
             .border_radius(px(4))?
@@ -56,7 +56,7 @@ fn UserDisplay<'scope, Ctx>(#[context] context: Ctx, user: UserStore<'scope>) ->
 }
 
 #[component]
-fn UserEditor<'scope, Ctx>(#[context] context: Ctx, user: UserStore<'scope>) -> impl View<'scope> {
+fn UserEditor<'scope, Ctx>(#[ctx] ctx: Ctx, user: UserStore<'scope>) -> impl View<'scope> {
     Ok(div!(
         div!(
             label("Change Name: "),
@@ -75,7 +75,7 @@ fn UserEditor<'scope, Ctx>(#[context] context: Ctx, user: UserStore<'scope>) -> 
                 Ok(())
             }),
             span("(Only updates Age node)")
-                .style(sty(context).margin_left(px(10))?.color(hex("#666"))?),
+                .style(sty(ctx).margin_left(px(10))?.color(hex("#666"))?),
         ),
         div!(
             label("Change Email: "),
@@ -89,7 +89,7 @@ fn UserEditor<'scope, Ctx>(#[context] context: Ctx, user: UserStore<'scope>) -> 
         ),
     )
     .style(
-        sty(context)
+        sty(ctx)
             .display("flex")?
             .flex_direction(FlexDirectionKeyword::Column)?
             .gap(px(10))?,
@@ -97,7 +97,7 @@ fn UserEditor<'scope, Ctx>(#[context] context: Ctx, user: UserStore<'scope>) -> 
 }
 
 #[component]
-fn DebugPanel<'scope, Ctx>(#[context] context: Ctx, user: UserStore<'scope>) -> impl View<'scope> {
+fn DebugPanel<'scope, Ctx>(#[ctx] ctx: Ctx, user: UserStore<'scope>) -> impl View<'scope> {
     Ok(
         div!(button("Log Current State to Console").on_click(move |_| {
             let current_state = user.snapshot_untracked()?;
@@ -105,7 +105,7 @@ fn DebugPanel<'scope, Ctx>(#[context] context: Ctx, user: UserStore<'scope>) -> 
             Ok(())
         }))
         .style(
-            sty(context)
+            sty(ctx)
                 .margin_top(px(20))?
                 .border_top("1px dashed #ccc")?
                 .padding_top(px(10))?,
@@ -127,8 +127,8 @@ pub fn mount_store_into(target: web_sys::Node) -> Result<JsAppHost, BootstrapErr
     bootstrap.into_js_host()
 }
 
-fn mount_store_view<'scope>(context: &MountContext<'scope>) -> SilexResult<()> {
-    let scope = context.scope();
+fn mount_store_view<'scope>(ctx: &MountContext<'scope>) -> SilexResult<()> {
+    let scope = ctx.scope();
     let error_handler = scope.error_handler(|error: SilexError| {
         web_sys::console::error_1(&error.to_string().into());
     })?;
@@ -141,6 +141,6 @@ fn mount_store_view<'scope>(context: &MountContext<'scope>) -> SilexResult<()> {
         },
     )?;
 
-    let silex_context = SilexContext::new(scope, error_handler);
-    context.mount(App(silex_context, user).build(), error_handler)
+    let silex_ctx = SilexContext::new(scope, error_handler);
+    ctx.mount(App(silex_ctx, user).build(), error_handler)
 }

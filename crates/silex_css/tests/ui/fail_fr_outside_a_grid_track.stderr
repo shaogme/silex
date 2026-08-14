@@ -1,10 +1,10 @@
 error[E0277]: 类型 `Fr` 无法作为有效的 CSS `Width` 属性值使用
- --> tests/ui/fail_fr_outside_a_grid_track.rs:9:39
+ --> tests/ui/fail_fr_outside_a_grid_track.rs:9:35
   |
-9 |     let _ = Style::new(context).width(fr(1));
-  |                                 ----- ^^^^^ 无效的 CSS 属性类型
-  |                                 |
-  |                                 required by a bound introduced by this call
+9 |     let _ = Style::new(ctx).width(fr(1));
+  |                             ----- ^^^^^ 无效的 CSS 属性类型
+  |                             |
+  |                             required by a bound introduced by this call
   |
   = help: the trait `ValidFor<Width>` is not implemented for `Fr`
   = note: 请检查是否传入了错误的类型（例如将 Px 传给了 Color）。如果必须传入复杂的动态表达式，可以使用 `css_unsafe(...)` 显式绕过。

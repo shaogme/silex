@@ -35,12 +35,12 @@ impl std::str::FromStr for DemoCategory {
 
 #[component]
 fn CategoryTab<'scope>(
-    #[context] context: SilexContext<'scope>,
+    #[ctx] ctx: SilexContext<'scope>,
     label: &'static str,
     target: DemoCategory,
     category: Persistent<'scope, DemoCategory>,
 ) -> impl View<'scope> {
-    let is_active = rx!(context; *$category == target);
+    let is_active = rx!(ctx; *$category == target);
     Ok(button(label)
         .class(tw!(
             "px-4 py-2 text-xs rounded-xl transition-all duration-200 cursor-pointer border-0 outline-none",
@@ -59,7 +59,7 @@ fn CategoryTab<'scope>(
 
 #[component]
 fn FeatureBadge<'scope>(
-    #[context] context: SilexContext<'scope>,
+    #[ctx] ctx: SilexContext<'scope>,
     label: &'static str,
     theme: &'static str,
 ) -> impl View<'scope> {
@@ -79,7 +79,7 @@ fn FeatureBadge<'scope>(
 
 #[component]
 fn Header<'scope>(
-    #[context] context: SilexContext<'scope>,
+    #[ctx] ctx: SilexContext<'scope>,
     is_dark: Persistent<'scope, bool>,
     category: Persistent<'scope, DemoCategory>,
 ) -> impl View<'scope> {
@@ -102,7 +102,7 @@ fn Header<'scope>(
                 ))
             )).class(tw!("flex items-center gap-3")),
 
-            button(rx!(context; if *$is_dark { "🌙 Dark Mode" } else { "☀️ Light Mode" }))
+            button(rx!(ctx; if *$is_dark { "🌙 Dark Mode" } else { "☀️ Light Mode" }))
                 .class(tw!(
                     "flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-amber-300 font-bold text-xs rounded-full cursor-pointer border border-solid border-slate-300 dark:border-slate-700 transition-all duration-300 hover:scale-105 shadow-sm"
                 ))
@@ -119,10 +119,10 @@ fn Header<'scope>(
             .class(tw!("text-sm sm:text-base text-slate-600 dark:text-slate-300 max-w-3xl text-center leading-relaxed mb-8 transition-colors duration-300")),
 
         // Dashboard Category Tabs rendered via Index component
-        div(Index(context, categories)
+        div(Index(ctx, categories)
             .children(move |item, _| {
                 let (label, target) = item;
-                CategoryTab(context, label, target, category).build()
+                CategoryTab(ctx, label, target, category).build()
             })
             .build())
         .class(tw!("flex flex-wrap items-center justify-center gap-2 p-1.5 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-solid border-slate-200 dark:border-slate-800"))
@@ -138,7 +138,7 @@ fn card_container_cls() -> &'static str {
 }
 
 #[component]
-fn TailwindMergeDemo<'scope>(#[context] context: SilexContext<'scope>) -> impl View<'scope> {
+fn TailwindMergeDemo<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
     // 示范编译期智能消解: p-2 被 p-6 覆盖, bg-red-500 被 bg-white/dark:bg-slate-800 覆盖
     div(chain!(
         div(chain!(
@@ -160,7 +160,7 @@ fn TailwindMergeDemo<'scope>(#[context] context: SilexContext<'scope>) -> impl V
 }
 
 #[component]
-fn KeyframesDemo<'scope>(#[context] context: SilexContext<'scope>) -> impl View<'scope> {
+fn KeyframesDemo<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
     div(chain!(
         div(chain!(
             span("2. Preset Keyframes Engine").class(tw!("text-xs font-black text-purple-600 dark:text-purple-400 uppercase tracking-widest")),
@@ -197,7 +197,7 @@ fn KeyframesDemo<'scope>(#[context] context: SilexContext<'scope>) -> impl View<
 }
 
 #[component]
-fn GroupAndPeerDemo<'scope>(#[context] context: SilexContext<'scope>) -> impl View<'scope> {
+fn GroupAndPeerDemo<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
     div(chain!(
         div(chain!(
             span("3. Compound State Selectors").class(tw!("text-xs font-black text-pink-600 dark:text-pink-400 uppercase tracking-widest")),
@@ -227,9 +227,9 @@ fn GroupAndPeerDemo<'scope>(#[context] context: SilexContext<'scope>) -> impl Vi
 }
 
 #[component]
-fn FiltersAndReactivityDemo<'scope>(#[context] context: SilexContext<'scope>) -> impl View<'scope> {
+fn FiltersAndReactivityDemo<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
     let (count, set_count) = scope.signal(16)?;
-    let pad_val = rx!(context; format!("{}px", $count));
+    let pad_val = rx!(ctx; format!("{}px", $count));
 
     Ok(div(chain!(
         div(chain!(
@@ -253,7 +253,7 @@ fn FiltersAndReactivityDemo<'scope>(#[context] context: SilexContext<'scope>) ->
                             set_count.update(|n| *n = (*n + 4).min(36))?;
                             Ok(())
                         }),
-                    div(rx!(context; format!("Padding: {}px", $count)))
+                    div(rx!(ctx; format!("Padding: {}px", $count)))
                         .class(tw!(error_handler; "p-[$(pad_val)] bg-slate-100 dark:bg-slate-900 border border-solid border-slate-300 dark:border-slate-800 rounded-xl font-mono text-xs text-indigo-600 dark:text-indigo-400 transition-all duration-200 text-center")?)
                 ))
             )).class(tw!("p-4 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-solid border-slate-200 dark:border-slate-800 transition-colors duration-300"))
@@ -264,7 +264,7 @@ fn FiltersAndReactivityDemo<'scope>(#[context] context: SilexContext<'scope>) ->
 
 #[component]
 fn ThemeSystemAndDiagnosticsDemo<'scope>(
-    #[context] context: SilexContext<'scope>,
+    #[ctx] ctx: SilexContext<'scope>,
 ) -> impl View<'scope> {
     let theme_box_cls = tw_verbose!(
         "p-4 bg-theme(primary/50) text-theme(border/80) border border-solid border-slate-300 dark:border-slate-700 rounded-2xl shadow-sm transition-colors duration-300"
@@ -292,7 +292,7 @@ fn ThemeSystemAndDiagnosticsDemo<'scope>(
 
 #[component]
 fn ContainerQueriesAndDceDemo<'scope>(
-    #[context] context: SilexContext<'scope>,
+    #[ctx] ctx: SilexContext<'scope>,
 ) -> impl View<'scope> {
     div(chain!(
         div(chain!(
@@ -319,7 +319,7 @@ fn ContainerQueriesAndDceDemo<'scope>(
 }
 
 #[component]
-fn StandardColorPaletteDemo<'scope>(#[context] context: SilexContext<'scope>) -> impl View<'scope> {
+fn StandardColorPaletteDemo<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
     div(chain!(
         div(chain!(
             span("7. Standard Color Palette System").class(tw!("text-xs font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest")),
@@ -353,7 +353,7 @@ fn StandardColorPaletteDemo<'scope>(#[context] context: SilexContext<'scope>) ->
 
 #[component]
 fn ReactiveConditionalTwDemo<'scope>(
-    #[context] context: SilexContext<'scope>,
+    #[ctx] ctx: SilexContext<'scope>,
 ) -> impl View<'scope> {
     let (is_active, set_is_active) = scope.signal(false)?;
 
@@ -373,7 +373,7 @@ fn ReactiveConditionalTwDemo<'scope>(
             "bg-indigo-600 text-white hover:bg-indigo-700 scale-105"
         ),
         (
-            rx!(context; !*$is_active),
+            rx!(ctx; !*$is_active),
             "bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-800"
         )
     );
@@ -386,7 +386,7 @@ fn ReactiveConditionalTwDemo<'scope>(
                 .class(tw!("text-xs text-slate-600 dark:text-slate-300 mb-5 leading-relaxed transition-colors duration-300"))
         )),
         div(chain!(
-            button(rx!(context; if *$is_active { "✓ Active State Enabled" } else { "Click to Toggle State" }))
+            button(rx!(ctx; if *$is_active { "✓ Active State Enabled" } else { "Click to Toggle State" }))
                 .class(btn_cls)
                 .on_click(move |_| {
                     set_is_active.update(|a| *a = !*a)?;
@@ -402,7 +402,7 @@ fn ReactiveConditionalTwDemo<'scope>(
 }
 
 #[component]
-fn NewSyntaxExpansionDemo<'scope>(#[context] context: SilexContext<'scope>) -> impl View<'scope> {
+fn NewSyntaxExpansionDemo<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
     div(chain!(
         div(chain!(
             span("9. Extended Utilities System").class(tw!("text-xs font-black text-amber-600 dark:text-amber-400 uppercase tracking-widest")),
@@ -453,7 +453,7 @@ fn NewSyntaxExpansionDemo<'scope>(#[context] context: SilexContext<'scope>) -> i
 
 #[component]
 fn FractionalAndDirectionalDemo<'scope>(
-    #[context] context: SilexContext<'scope>,
+    #[ctx] ctx: SilexContext<'scope>,
 ) -> impl View<'scope> {
     div(chain!(
         div(chain!(
@@ -498,7 +498,7 @@ fn FractionalAndDirectionalDemo<'scope>(
 }
 
 #[component]
-fn TailwindVariantsCvaDemo<'scope>(#[context] context: SilexContext<'scope>) -> impl View<'scope> {
+fn TailwindVariantsCvaDemo<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
     let (intent, set_intent) = scope.signal("primary".to_string())?;
     let (size, set_size) = scope.signal("md".to_string())?;
 
@@ -529,7 +529,7 @@ fn TailwindVariantsCvaDemo<'scope>(#[context] context: SilexContext<'scope>) -> 
         ]
     };
 
-    let btn_cls = rx!(context; button_variants.get($intent, $size));
+    let btn_cls = rx!(ctx; button_variants.get($intent, $size));
 
     Ok(div(chain!(
         div(chain!(
@@ -543,30 +543,30 @@ fn TailwindVariantsCvaDemo<'scope>(#[context] context: SilexContext<'scope>) -> 
             div(chain!(
                 div(chain!(
                     span("Intent:").class(tw!("text-xs font-bold text-slate-500 dark:text-slate-400 mr-2")),
-                    button("Primary").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (rx!(context; *$intent == "primary"), "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| {
+                    button("Primary").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (rx!(ctx; *$intent == "primary"), "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| {
                         set_intent.set("primary".to_string())?;
                         Ok(())
                     }),
-                    button("Secondary").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (rx!(context; *$intent == "secondary"), "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| {
+                    button("Secondary").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (rx!(ctx; *$intent == "secondary"), "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| {
                         set_intent.set("secondary".to_string())?;
                         Ok(())
                     }),
-                    button("Danger").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (rx!(context; *$intent == "danger"), "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| {
+                    button("Danger").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (rx!(ctx; *$intent == "danger"), "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| {
                         set_intent.set("danger".to_string())?;
                         Ok(())
                     })
                 )).class(tw!("flex flex-wrap items-center gap-1.5 mb-3")),
                 div(chain!(
                     span("Size:").class(tw!("text-xs font-bold text-slate-500 dark:text-slate-400 mr-2")),
-                    button("Small (sm)").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (rx!(context; *$size == "sm"), "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| {
+                    button("Small (sm)").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (rx!(ctx; *$size == "sm"), "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| {
                         set_size.set("sm".to_string())?;
                         Ok(())
                     }),
-                    button("Medium (md)").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (rx!(context; *$size == "md"), "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| {
+                    button("Medium (md)").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (rx!(ctx; *$size == "md"), "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| {
                         set_size.set("md".to_string())?;
                         Ok(())
                     }),
-                    button("Large (lg)").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (rx!(context; *$size == "lg"), "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| {
+                    button("Large (lg)").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (rx!(ctx; *$size == "lg"), "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| {
                         set_size.set("lg".to_string())?;
                         Ok(())
                     })
@@ -575,7 +575,7 @@ fn TailwindVariantsCvaDemo<'scope>(#[context] context: SilexContext<'scope>) -> 
 
             // Live Rendered Variant Button Showcase
             div(chain!(
-                button(rx!(context; format!("⚡ Variant Button ({}, {})", $intent, $size)))
+                button(rx!(ctx; format!("⚡ Variant Button ({}, {})", $intent, $size)))
                     .class(btn_cls)
             )).class(tw!("flex justify-center p-6 bg-slate-100 dark:bg-slate-950 rounded-2xl border border-solid border-slate-200 dark:border-slate-800/60 mb-4")),
 
@@ -591,7 +591,7 @@ fn TailwindVariantsCvaDemo<'scope>(#[context] context: SilexContext<'scope>) -> 
 
 #[component]
 fn SilexTomlDesignTokensDemo<'scope>(
-    #[context] context: SilexContext<'scope>,
+    #[ctx] ctx: SilexContext<'scope>,
 ) -> impl View<'scope> {
     div(chain!(
         div(chain!(
@@ -698,7 +698,7 @@ fn render_card<'scope>(
     id: usize,
     error_handler: ErrorReporter<'scope>,
 ) -> impl View<'scope> {
-    let context = SilexContext::new(scope, error_handler);
+    let ctx = SilexContext::new(scope, error_handler);
     macro_rules! render_card {
         ($card_id:expr, { $($id:literal => $builder:expr),+ $(,)? }) => {
             match $card_id {
@@ -709,18 +709,18 @@ fn render_card<'scope>(
     }
 
     render_card!(id, {
-        1 => TailwindMergeDemo(context),
-        2 => KeyframesDemo(context),
-        3 => GroupAndPeerDemo(context),
-        4 => FiltersAndReactivityDemo(context),
-        5 => ThemeSystemAndDiagnosticsDemo(context),
-        6 => ContainerQueriesAndDceDemo(context),
-        7 => StandardColorPaletteDemo(context),
-        8 => ReactiveConditionalTwDemo(context),
-        9 => NewSyntaxExpansionDemo(context),
-        10 => FractionalAndDirectionalDemo(context),
-        11 => TailwindVariantsCvaDemo(context),
-        12 => SilexTomlDesignTokensDemo(context),
+        1 => TailwindMergeDemo(ctx),
+        2 => KeyframesDemo(ctx),
+        3 => GroupAndPeerDemo(ctx),
+        4 => FiltersAndReactivityDemo(ctx),
+        5 => ThemeSystemAndDiagnosticsDemo(ctx),
+        6 => ContainerQueriesAndDceDemo(ctx),
+        7 => StandardColorPaletteDemo(ctx),
+        8 => ReactiveConditionalTwDemo(ctx),
+        9 => NewSyntaxExpansionDemo(ctx),
+        10 => FractionalAndDirectionalDemo(ctx),
+        11 => TailwindVariantsCvaDemo(ctx),
+        12 => SilexTomlDesignTokensDemo(ctx),
     })
 }
 
@@ -767,8 +767,8 @@ fn render_column<'scope>(
         error_handler,
     )?;
 
-    let context = SilexContext::new(scope, error_handler);
-    Ok(Index(context, visible_card_ids)
+    let ctx = SilexContext::new(scope, error_handler);
+    Ok(Index(ctx, visible_card_ids)
         .children(move |id, _| render_card(scope, id, error_handler))
         .build())
 }
@@ -778,7 +778,7 @@ fn current_cat_matches(card_cat: DemoCategory, current_cat: DemoCategory) -> boo
 }
 
 #[component]
-fn App<'scope>(#[context] context: SilexContext<'scope>) -> impl View<'scope> {
+fn App<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
     let is_dark = Persistent::builder(scope, "silex-tailwind-dark", error_handler)
         .local()
         .parse::<bool>()
@@ -793,7 +793,7 @@ fn App<'scope>(#[context] context: SilexContext<'scope>) -> impl View<'scope> {
 
     Ok(div(chain!(
         div(chain!(
-            Header(context, is_dark, category).build(),
+            Header(ctx, is_dark, category).build(),
 
             // Dashboard Content Grid: Dynamic Height-Sensing Greedy Masonry Allocation
             div(chain!(
@@ -804,7 +804,7 @@ fn App<'scope>(#[context] context: SilexContext<'scope>) -> impl View<'scope> {
         ))
         .class(tw!("min-h-screen p-4 sm:p-8 transition-colors duration-300 bg-slate-100 text-slate-900 dark:bg-slate-900 dark:text-slate-50"))
     ))
-    .class(rx!(context; if *$is_dark { "dark" } else { "" })))
+    .class(rx!(ctx; if *$is_dark { "dark" } else { "" })))
 }
 
 /// Mount the Tailwind showcase into the conventional `#app` target.
@@ -821,11 +821,11 @@ pub fn mount_tailwind_into(target: web_sys::Node) -> Result<JsAppHost, Bootstrap
     bootstrap.into_js_host()
 }
 
-fn mount_tailwind_view<'scope>(context: &MountContext<'scope>) -> SilexResult<()> {
-    let scope = context.scope();
+fn mount_tailwind_view<'scope>(ctx: &MountContext<'scope>) -> SilexResult<()> {
+    let scope = ctx.scope();
     let error_handler = scope.error_handler(|error: SilexError| {
         web_sys::console::error_1(&error.to_string().into());
     })?;
-    let silex_context = SilexContext::new(scope, error_handler);
-    context.mount(App(silex_context).build(), error_handler)
+    let silex_ctx = SilexContext::new(scope, error_handler);
+    ctx.mount(App(silex_ctx).build(), error_handler)
 }

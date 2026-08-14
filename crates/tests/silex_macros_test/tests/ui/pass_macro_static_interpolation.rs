@@ -32,7 +32,7 @@ global! {
 
 styled! {
     pub StaticStyled<'scope><div>(
-        #[context] context: silex_core::SilexContext<'scope>,
+        #[ctx] ctx: silex_core::SilexContext<'scope>,
         children: silex_dom::view::AnyView<'scope>,
     ) {
         color: $(static StaticTheme::PRIMARY);
@@ -41,7 +41,7 @@ styled! {
 
 styled! {
     pub MixedStyled<'scope><div>(
-        #[context] context: silex_core::SilexContext<'scope>,
+        #[ctx] ctx: silex_core::SilexContext<'scope>,
         children: silex_dom::view::AnyView<'scope>,
         color: silex_core::reactivity::Signal<'scope, Hex>,
     ) {

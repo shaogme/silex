@@ -36,21 +36,21 @@ thread_local! {
     static ACTIVE_CONTEXT: RefCell<Vec<TrackingContext>> = const { RefCell::new(Vec::new()) };
 }
 
-pub(crate) fn active_context() -> Option<TrackingContext> {
+pub(crate) fn active_ctx() -> Option<TrackingContext> {
     ACTIVE_CONTEXT.with(|stack| stack.borrow().last().cloned())
 }
 
 #[cfg(feature = "test-support")]
 pub(crate) fn active_observer_for(scheduler: &Rc<RefCell<GlobalScheduler>>) -> Option<Observer> {
-    active_context().and_then(|context| {
-        context
+    active_ctx().and_then(|ctx| {
+        ctx
             .observer
             .and_then(|active| Rc::ptr_eq(&active.scheduler, scheduler).then_some(active.observer))
     })
 }
 
-/// Restores the previous tracking context when the surrounding operation
-/// unwinds. The context is process-local only; runtime state remains owned by
+/// Restores the previous tracking ctx when the surrounding operation
+/// unwinds. The ctx is process-local only; runtime state remains owned by
 /// the explicit scheduler stored in each handle.
 pub(crate) struct ObserverFrame {
     active: bool,
@@ -84,15 +84,15 @@ impl ObserverFrame {
     }
 
     pub(crate) fn push_child(scheduler: Rc<RefCell<GlobalScheduler>>, scope_id: ScopeId) -> Self {
-        let inherited = active_context().and_then(|mut context| {
-            let active = context.observer.take()?;
+        let inherited = active_ctx().and_then(|mut ctx| {
+            let active = ctx.observer.take()?;
             if !Rc::ptr_eq(&active.scheduler, &scheduler) {
                 return None;
             }
-            context.blocked_scopes.push(scope_id);
+            ctx.blocked_scopes.push(scope_id);
             Some(TrackingContext {
                 observer: Some(active),
-                blocked_scopes: context.blocked_scopes,
+                blocked_scopes: ctx.blocked_scopes,
             })
         });
         ACTIVE_CONTEXT.with(|stack| {
@@ -114,7 +114,7 @@ impl Drop for ObserverFrame {
         }
         ACTIVE_CONTEXT.with(|stack| {
             let popped = stack.borrow_mut().pop();
-            debug_assert!(popped.is_some(), "tracking context stack underflow");
+            debug_assert!(popped.is_some(), "tracking ctx stack underflow");
         });
     }
 }

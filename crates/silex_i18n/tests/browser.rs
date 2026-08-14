@@ -174,7 +174,7 @@ fn query_binding_follows_router_search_signal() {
                 set_search,
             },
         )
-        .expect("valid router context");
+        .expect("valid router ctx");
         let binding = silex_i18n::Persistent::builder(scope, "lang", test_handler(scope))
             .query(ctx)
             .parse::<Locale>()

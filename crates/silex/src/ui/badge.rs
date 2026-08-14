@@ -5,7 +5,7 @@ use silex_macros::{component, tw_variants};
 
 #[component]
 pub fn Badge<'scope, Ctx>(
-    #[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
@@ -31,7 +31,7 @@ pub fn Badge<'scope, Ctx>(
         }
     };
 
-    let cls = rx!(context; {
+    let cls = rx!(ctx; {
         let base_cls = badge_variants.get($variant);
         let extra = $class;
         if extra.is_empty() {

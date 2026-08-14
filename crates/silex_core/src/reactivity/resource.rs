@@ -138,8 +138,8 @@ where
                 ) {
                     set_state_for_callback.set(next_state)?;
                 }
-                if let Some(context) = suspense_for_callback {
-                    context.decrement()?;
+                if let Some(ctx) = suspense_for_callback {
+                    ctx.decrement()?;
                 }
                 Ok(())
             }))?;
@@ -163,8 +163,8 @@ where
                         .unwrap_or(ResourceState::Loading)
                 })?;
                 set_state_for_effect.set(next_state)?;
-                if let Some(context) = suspense_for_effect {
-                    context.increment()?;
+                if let Some(ctx) = suspense_for_effect {
+                    ctx.increment()?;
                 }
                 let settled = Rc::new(Cell::new(false));
                 let settled_for_cleanup = settled.clone();
@@ -172,9 +172,9 @@ where
                 scope.on_cleanup(
                     move || {
                         if !settled_for_cleanup.replace(true)
-                            && let Some(context) = suspense_for_cleanup
+                            && let Some(ctx) = suspense_for_cleanup
                         {
-                            context.decrement()?;
+                            ctx.decrement()?;
                         }
                         Ok(())
                     },

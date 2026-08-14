@@ -16,7 +16,7 @@ pub struct UserSettings<'s> {
 
 #[component]
 pub fn StoreDemo<'scope, Ctx>(
-    #[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     settings: UserSettingsStore<'scope, 'scope>,
 ) -> impl View<'scope> {
     Ok(div![
@@ -34,7 +34,7 @@ pub fn StoreDemo<'scope, Ctx>(
             ],
         ]
         .style(
-            sty(context)
+            sty(ctx)
                 .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
                 .background(AppTheme::SURFACE)?
                 .padding(px(10))?
@@ -58,7 +58,7 @@ pub fn StoreDemo<'scope, Ctx>(
                 .bind_value(settings.username)
                 .placeholder("Change username..."),
         ]
-        .style(sty(context).display("flex")?.gap(px(10))?),
+        .style(sty(ctx).display("flex")?.gap(px(10))?),
     ])
 }
 
@@ -80,7 +80,7 @@ impl Default for ComplexState {
 }
 
 #[component]
-pub fn JsonStorageDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
+pub fn JsonStorageDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     let state = Persistent::builder(scope, "showcase-json-state", error_handler)
         .local()
         .json::<ComplexState>()
@@ -93,15 +93,15 @@ pub fn JsonStorageDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope
             "This demo uses the JSON codec to persist a complex struct via browser-native `JSON.stringify/parse`."
         ),
         div![
-            p![strong("Hero: "), rx!(context; $state.name.clone())],
-            p![strong("Level: "), rx!(context; $state.level.to_string())],
+            p![strong("Hero: "), rx!(ctx; $state.name.clone())],
+            p![strong("Level: "), rx!(ctx; $state.level.to_string())],
             p![
                 strong("Inventory: "),
-                rx!(context; $state.inventory.join(", "))
+                rx!(ctx; $state.inventory.join(", "))
             ],
         ]
         .style(
-            sty(context)
+            sty(ctx)
                 .background(AppTheme::SURFACE_ALT)?
                 .padding(px(10))?
                 .border_left(border(px(4), BorderStyleKeyword::Solid, AppTheme::PRIMARY))?
@@ -125,12 +125,12 @@ pub fn JsonStorageDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope
                 state.set(ComplexState::default()).map_err(Into::into)
             }),
         ]
-        .style(sty(context).display("flex")?.gap(px(10))?),
+        .style(sty(ctx).display("flex")?.gap(px(10))?),
     ])
 }
 
 #[component]
-pub fn StorageDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
+pub fn StorageDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     let count = Persistent::builder(scope, "showcase-counter", error_handler)
         .local()
         .parse::<i32>()
@@ -146,14 +146,14 @@ pub fn StorageDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
             h4("Basic Type Persistence (No Serde needed)"),
             div![
                 button("-1").on(event::click, count.updater(|c| *c -= 1)),
-                span(count).style(sty(context).font_size(em_unit(1.5))?.font_weight(FontWeightKeyword::Bold)?.min_width(px(50))?.text_align(TextAlignKeyword::Center)?),
+                span(count).style(sty(ctx).font_size(em_unit(1.5))?.font_weight(FontWeightKeyword::Bold)?.min_width(px(50))?.text_align(TextAlignKeyword::Center)?),
                 button("+1").on(event::click, count.updater(|c| *c += 1)),
             ]
-            .style(sty(context).display("flex")?.gap(px(20))?.align_items("center")?.margin("15px 0")?),
-        ].style(sty(context).padding(px(15))?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?.border_radius(px(4))?.margin_bottom(px(20))?),
+            .style(sty(ctx).display("flex")?.gap(px(20))?.align_items("center")?.margin("15px 0")?),
+        ].style(sty(ctx).padding(px(15))?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?.border_radius(px(4))?.margin_bottom(px(20))?),
 
         // 2. 复杂类型持久化
-        JsonStorageDemo(context).build(),
+        JsonStorageDemo(ctx).build(),
 
         p![
             "Try opening this page in ",
@@ -161,12 +161,12 @@ pub fn StorageDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
             " and watch them sync in real-time!"
         ]
     ]
-    .style(sty(context).padding(px(20))?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?.border_radius(px(8))?.background(AppTheme::SURFACE)?.transition("all 0.3s")?))
+    .style(sty(ctx).padding(px(20))?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?.border_radius(px(8))?.background(AppTheme::SURFACE)?.transition("all 0.3s")?))
 }
 
 #[component]
 pub fn QueryDemo<'scope>(
-    #[context] ctx: RouterContext<'scope>,
+    #[ctx] ctx: RouterContext<'scope>,
     settings: UserSettingsStore<'scope, 'scope>,
 ) -> impl View<'scope> {
     let scope = ctx.scope();
@@ -218,20 +218,20 @@ pub fn QueryDemo<'scope>(
 
 #[component]
 pub fn AuthGuard<'scope, Ctx>(
-    #[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     settings: UserSettingsStore<'scope, 'scope>,
     children: AnyView<'scope>,
 ) -> impl View<'scope> {
     let children = children.clone();
 
-    Ok(rx!(context;
+    Ok(rx!(ctx;
         if $(settings.username) != "Guest" {
             children.clone()
         } else {
             div![
                 h3("🔒 Restricted Access"),
                 p("This content is protected. Please go to 'Store Demo' and change your username to something other than 'Guest'."),
-            ].style(sty(context).padding("20px")?.background("#fff0f0")?.border("1px solid #ffcccc")?.color(hex("#cc0000"))?)
+            ].style(sty(ctx).padding("20px")?.background("#fff0f0")?.border("1px solid #ffcccc")?.color(hex("#cc0000"))?)
             .into_any()
         }
     ))
@@ -264,7 +264,7 @@ async fn mock_fetch_user(id: i32) -> Result<UserProfile, String> {
 }
 
 #[component]
-pub fn ResourceDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
+pub fn ResourceDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     let (user_id, set_user_id) = scope.signal(1)?;
 
     // Create Resource: triggers when user_id changes
@@ -283,7 +283,7 @@ pub fn ResourceDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
                     .refetch()?;
                 Ok(())
             }),
-        ].style(sty(context).display("flex")?.gap(px(10))?.margin_bottom(px(15))?),
+        ].style(sty(ctx).display("flex")?.gap(px(10))?.margin_bottom(px(15))?),
 
         div![
             "Status: ",
@@ -291,13 +291,13 @@ pub fn ResourceDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
             move || {
                 let state = user_resource.state.get()?;
                 let view = if state.is_loading() {
-                    span(if let ResourceState::Reloading(_) = state { "Reloading..." } else { "Loading..." }).style(sty(context).color(ColorName::Orange)?)
+                    span(if let ResourceState::Reloading(_) = state { "Reloading..." } else { "Loading..." }).style(sty(ctx).color(ColorName::Orange)?)
                 } else {
-                    span("Idle").style(sty(context).color(ColorName::Green)?)
+                    span("Idle").style(sty(ctx).color(ColorName::Green)?)
                 };
                 Ok(view.into_any())
             }
-        ].style(sty(context).margin_bottom(px(10))?.font_weight(FontWeightKeyword::Bold)?),
+        ].style(sty(ctx).margin_bottom(px(10))?.font_weight(FontWeightKeyword::Bold)?),
 
         // Display Data using get_data() which covers both Ready and Reloading
         move || {
@@ -318,7 +318,7 @@ pub fn ResourceDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
                                 })?;
                                 Ok(())
                             }),
-                    ].style(sty(context).margin_top(px(15))?.border_top("1px solid #eee")?.padding_top(px(10))?)
+                    ].style(sty(ctx).margin_top(px(15))?.border_top("1px solid #eee")?.padding_top(px(10))?)
                 ]
                 .into_any(),
                 None => div("No Data (or Loading...)").into_any(),
@@ -329,18 +329,18 @@ pub fn ResourceDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
         move || {
             if let ResourceState::Error(err) = user_resource.state.get()? {
                 Ok(div(format!("Error: {}", err))
-                    .style(sty(context).color(ColorName::Red)?.margin_top(px(10))?)
+                    .style(sty(ctx).color(ColorName::Red)?.margin_top(px(10))?)
                     .into_any())
             } else {
                 Ok(div("").into_any())
             }
         }
     ]
-    .style(sty(context).padding(px(20))?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?.border_radius(px(8))?.background(AppTheme::SURFACE)?.transition("all 0.3s")?))
+    .style(sty(ctx).padding(px(20))?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?.border_radius(px(8))?.background(AppTheme::SURFACE)?.transition("all 0.3s")?))
 }
 
 #[component]
-pub fn MutationDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
+pub fn MutationDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     // Simulate a login mutation
     // Takes (username, password) and returns a Result<String, String> token
     let login_mutation = Mutation::new(
@@ -360,11 +360,11 @@ pub fn MutationDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
 
     let username = scope.rw_signal("".to_string())?;
     let password = scope.rw_signal("".to_string())?;
-    let login_error_style = sty(context).color(ColorName::Red)?;
-    let login_success_style = sty(context)
+    let login_error_style = sty(ctx).color(ColorName::Red)?;
+    let login_success_style = sty(ctx)
         .color(ColorName::Green)?
         .font_weight(FontWeightKeyword::Bold)?;
-    let login_token_style = sty(context)
+    let login_token_style = sty(ctx)
         .font_family("monospace")?
         .background("#eee")?
         .padding("5px")?;
@@ -376,12 +376,12 @@ pub fn MutationDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
             input()
                 .bind_value(username)
                 .placeholder("Username")
-                .style(sty(context).margin_right(px(10))?.padding("5px")?),
+                .style(sty(ctx).margin_right(px(10))?.padding("5px")?),
             input()
                 .bind_value(password)
                 .attr("type", "password")
                 .placeholder("Password")
-                .style(sty(context).margin_right(px(10))?.padding("5px")?),
+                .style(sty(ctx).margin_right(px(10))?.padding("5px")?),
             button("Login")
                 .attr("type", "button") // Prevent accidental form submission
                 .on(event::click, move |e: web_sys::MouseEvent| {
@@ -391,15 +391,15 @@ pub fn MutationDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
                     login_mutation.mutate((username.get()?, password.get()?))?;
                     Ok(())
                 })
-                .attr("disabled", rx!(context; login_mutation.loading()?))
-                .style(sty(context).padding("5px 10px")?),
+                .attr("disabled", rx!(ctx; login_mutation.loading()?))
+                .style(sty(ctx).padding("5px 10px")?),
         ]
-        .style(sty(context).margin_bottom(px(10))?),
+        .style(sty(ctx).margin_bottom(px(10))?),
         // Loading State
         move || {
             if login_mutation.loading()? {
                 Ok(div("Logging in...")
-                    .style(sty(context).color(ColorName::Blue)?)
+                    .style(sty(ctx).color(ColorName::Blue)?)
                     .into_any())
             } else {
                 Ok(div("").into_any())
@@ -426,7 +426,7 @@ pub fn MutationDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
         }
     ]
     .style(
-        sty(context)
+        sty(ctx)
             .padding(px(20))?
             .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
             .border_radius(px(8))?
@@ -436,7 +436,7 @@ pub fn MutationDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
 }
 
 #[component]
-pub fn SuspenseDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
+pub fn SuspenseDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     use silex::components::SuspenseMode;
 
     let (show_content, set_show_content) = scope.signal(false)?;
@@ -460,21 +460,21 @@ pub fn SuspenseDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
                 input()
                     .attr("type", "radio")
                     .attr("name", "suspense_mode")
-                    .attr("checked", rx!(context; *$mode == SuspenseMode::KeepAlive))
+                    .attr("checked", rx!(ctx; *$mode == SuspenseMode::KeepAlive))
                     .on(event::change, set_mode.setter(SuspenseMode::KeepAlive)),
                 " KeepAlive (CSS Hide)"
             ]
-            .style(sty(context).margin_right(px(15))?),
+            .style(sty(ctx).margin_right(px(15))?),
             label![
                 input()
                     .attr("type", "radio")
                     .attr("name", "suspense_mode")
-                    .attr("checked", rx!(context; *$mode == SuspenseMode::Unmount))
+                    .attr("checked", rx!(ctx; *$mode == SuspenseMode::Unmount))
                     .on(event::change, set_mode.setter(SuspenseMode::Unmount)),
                 " Unmount (DOM Remove)"
             ]
         ]
-        .style(sty(context).margin_bottom(px(15))?),
+        .style(sty(ctx).margin_bottom(px(15))?),
         div![
             button(show_content.map_fn(scope, |s| if *s {
                 "Destroy Component"
@@ -482,13 +482,13 @@ pub fn SuspenseDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
                 "Create Component"
             }, error_handler)?)
             .on(event::click, set_show_content.updater(|s| *s = !*s))
-            .style(sty(context).margin_right(px(10))?),
+            .style(sty(ctx).margin_right(px(10))?),
             button("Reload Resource").on(event::click, set_trigger.updater(|n| *n += 1))
         ]
-        .style(sty(context).margin_bottom(px(15))?),
-        div![rx!(context;
+        .style(sty(ctx).margin_bottom(px(15))?),
+        div![rx!(ctx;
             if *$show_content {
-                Suspense(context, move |cx| {
+                Suspense(ctx, move |cx| {
                     let resource = Resource::new(
                         scope,
                         trigger,
@@ -500,19 +500,19 @@ pub fn SuspenseDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
                         div![
                             "Resource Data: ",
                             // Fine-grained reading: Only this text node updates
-                            rx!(context; resource.get_data()?.unwrap_or_else(|| "Waiting...".to_string()))
+                            rx!(ctx; resource.get_data()?.unwrap_or_else(|| "Waiting...".to_string()))
                         ],
                         div("1. Type something below."),
                         div("2. Click 'Reload Resource'."),
                         div("3. KeepAlive: Text stays. Unmount: Text gone."),
                         input()
                             .placeholder("Type here test persistence...")
-                            .style(sty(context).margin_top(px(5))?.padding("5px")?.width(px(250))?)
+                            .style(sty(ctx).margin_top(px(5))?.padding("5px")?.width(px(250))?)
                     ]
-                    .style(sty(context).border("1px solid green")?.padding("10px")?.background("#e8f5e9")?)
+                    .style(sty(ctx).border("1px solid green")?.padding("10px")?.background("#e8f5e9")?)
                     .into_any())
                 })
-                .fallback(div("Loading... (2s)").style(sty(context).color(ColorName::Blue)?.font_weight(FontWeightKeyword::Bold)?))
+                .fallback(div("Loading... (2s)").style(sty(ctx).color(ColorName::Blue)?.font_weight(FontWeightKeyword::Bold)?))
                 .mode(mode.get()?)
                 .build()
                 .into_any()
@@ -520,22 +520,22 @@ pub fn SuspenseDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
                 ().into_any()
             }
         )]
-        .style(sty(context).min_height(px(150))?.border("1px dashed #ccc")?.padding("10px")?)
+        .style(sty(ctx).min_height(px(150))?.border("1px dashed #ccc")?.padding("10px")?)
     ]
-    .style(sty(context).padding("20px")?.border("1px solid #ccc")?.border_radius(px(8))?.margin_top(px(20))?))
+    .style(sty(ctx).padding("20px")?.border("1px solid #ccc")?.border_radius(px(8))?.margin_top(px(20))?))
 }
 
 // --- Generics Demo ---
 
 #[component]
 pub fn GenericMessage<'scope, Ctx, T: std::fmt::Display + Clone + 'scope>(
-    #[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     value: T,
     #[chain] title: &'scope str,
 ) -> impl View<'scope> {
     Ok(
         div![h4(title.to_string()), p(format!("Value: {}", value)),].style(
-            sty(context)
+            sty(ctx)
                 .padding(px(10))?
                 .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
                 .background(AppTheme::SURFACE)?
@@ -545,17 +545,17 @@ pub fn GenericMessage<'scope, Ctx, T: std::fmt::Display + Clone + 'scope>(
 }
 
 #[component]
-pub fn GenericsDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
+pub fn GenericsDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     Ok(div![
         h3("Generics & Lifetimes Demo"),
         p("This demonstrates how #[component] macro supports generics and lifetimes natively."),
-        GenericMessage(context, 42).title("Integer Message").build(),
-        GenericMessage(context, "Hello Silex!")
+        GenericMessage(ctx, 42).title("Integer Message").build(),
+        GenericMessage(ctx, "Hello Silex!")
             .title("String Message")
             .build(),
     ]
     .style(
-        sty(context)
+        sty(ctx)
             .padding(px(20))?
             .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
             .border_radius(px(8))?
@@ -590,7 +590,7 @@ impl std::fmt::Display for QuantumIdentity {
 }
 
 #[component]
-pub fn AdaptiveReadDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
+pub fn AdaptiveReadDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     let system_name = scope.rw_signal(Cow::Borrowed("Nebula-1"))?;
     let (stability, set_stability) = scope.signal(0.85)?; // 0.0 to 1.0
 
@@ -624,29 +624,29 @@ pub fn AdaptiveReadDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scop
 
     // Non-cloneable values still use segmented `with` access for zero-copy reads.
     // Only the specific parts of the UI update when their respective signals change.
-    let detail_metrics = rx!(context; {
+    let detail_metrics = rx!(ctx; {
         div![
             div![
                 strong("CORE NAME: "),
-                span($system_name.to_uppercase()).style(sty(context).letter_spacing(px(2))?)
+                span($system_name.to_uppercase()).style(sty(ctx).letter_spacing(px(2))?)
             ],
             div![
                 strong("QUANTUM SIGNATURE: "),
                 i($identity.signature.clone())
-            ].style(sty(context).margin_top(px(5))?.color(hex("#7f8c8d"))?),
+            ].style(sty(ctx).margin_top(px(5))?.color(hex("#7f8c8d"))?),
         ]
     });
 
     Ok(div![
         h3("Adaptive Read & Segmented Access")
-            .style(sty(context).color(hex("#2c3e50"))?.border_left("5px solid #e74c3c")?.padding_left(px(15))?.margin_bottom(px(20))?),
+            .style(sty(ctx).color(hex("#2c3e50"))?.border_left("5px solid #e74c3c")?.padding_left(px(15))?.margin_bottom(px(20))?),
 
         p("Cloneable reactive values can be grouped into a tuple and read with get(), which tracks every member. Non-cloneable resources remain available through segmented with() access without copying."),
 
         div![
             // Live Status Bar
             div(status_bar)
-                .style(sty(context).background("#2c3e50")?.color(hex("#ecf0f1"))?.padding("12px 20px")?.border_radius("8px 8px 0 0")?.font_family("'Courier New', monospace")?.font_size(em_unit(0.9))?),
+                .style(sty(ctx).background("#2c3e50")?.color(hex("#ecf0f1"))?.padding("12px 20px")?.border_radius("8px 8px 0 0")?.font_family("'Courier New', monospace")?.font_size(em_unit(0.9))?),
 
             // Interaction Area
             div![
@@ -667,33 +667,33 @@ pub fn AdaptiveReadDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scop
                             }
                             Ok(())
                         })
-                        .style(sty(context).flex_grow(1)?.accent_color(hex("#e74c3c"))?),
-                    span(rx!(context; format!("{:.0}%", *$stability * 100.0)))
-                        .style(sty(context).width(px(50))?.text_align(TextAlignKeyword::Right)?.font_weight(FontWeightKeyword::Bold)?.color(hex("#e74c3c"))?),
-                ].style(sty(context).margin_top(px(20))?.display("flex")?.align_items("center")?.gap(px(15))?),
+                        .style(sty(ctx).flex_grow(1)?.accent_color(hex("#e74c3c"))?),
+                    span(rx!(ctx; format!("{:.0}%", *$stability * 100.0)))
+                        .style(sty(ctx).width(px(50))?.text_align(TextAlignKeyword::Right)?.font_weight(FontWeightKeyword::Bold)?.color(hex("#e74c3c"))?),
+                ].style(sty(ctx).margin_top(px(20))?.display("flex")?.align_items("center")?.gap(px(15))?),
 
                 div![
                     label("Rename Core: "),
                     input()
                         .bind_value(system_name)
-                        .style(sty(context).padding("8px")?.border("1px solid #ddd")?.border_radius(px(4))?.width(pct(100))?.box_sizing(BoxSizingKeyword::BorderBox)?),
-                ].style(sty(context).margin_top(px(15))?),
+                        .style(sty(ctx).padding("8px")?.border("1px solid #ddd")?.border_radius(px(4))?.width(pct(100))?.box_sizing(BoxSizingKeyword::BorderBox)?),
+                ].style(sty(ctx).margin_top(px(15))?),
             ]
-            .style(sty(context).background("white")?.padding("25px")?.border("1px solid #2c3e50")?.border_top("none")?.border_radius("0 0 8px 8px")?.box_shadow("0 10px 30px rgba(0,0,0,0.1)")?),
+            .style(sty(ctx).background("white")?.padding("25px")?.border("1px solid #2c3e50")?.border_top("none")?.border_radius("0 0 8px 8px")?.box_shadow("0 10px 30px rgba(0,0,0,0.1)")?),
         ]
-        .style(sty(context).margin("20px 0")?),
+        .style(sty(ctx).margin("20px 0")?),
 
         div![
             p("Architecture Insights:")
-                .style(sty(context).font_weight(FontWeightKeyword::Bold)?.margin_bottom(px(5))?),
+                .style(sty(ctx).font_weight(FontWeightKeyword::Bold)?.margin_bottom(px(5))?),
             ul![
                 li("Tuple Snapshot: adaptive_state.get() tracks and clones the cloneable system name and stability values together."),
                 li("Zero-Copy: The $ syntax expands to .with() calls, providing direct references."),
                 li("No Clone Needed: QuantumIdentity is non-cloneable, yet accessible via a direct with() read."),
             ]
-            .style(sty(context).font_size(em_unit(0.85))?.color(hex("#34495e"))?),
+            .style(sty(ctx).font_size(em_unit(0.85))?.color(hex("#34495e"))?),
         ]
-        .style(sty(context).padding("15px")?.background("#fdf2f2")?.border_radius(px(6))?.border("1px solid #fab1a0")?)
+        .style(sty(ctx).padding("15px")?.background("#fdf2f2")?.border_radius(px(6))?.border("1px solid #fab1a0")?)
     ]
-    .style(sty(context).margin_top(px(30))?))
+    .style(sty(ctx).margin_top(px(30))?))
 }

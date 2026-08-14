@@ -12,7 +12,7 @@ router! {
 
 #[component]
 fn Card<'scope, Ctx>(
-    #[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     #[prop(into)] title: String,
     #[chain(default = 1)] elevation: u8,
     #[chain(default)] child: AnyView<'scope>,
@@ -24,7 +24,7 @@ fn Card<'scope, Ctx>(
 
     let mut root = div!(
         h1(title).style(
-            sty(context)
+            sty(ctx)
                 .margin_top(px(0))?
                 .font_size(rem(1.2))?
                 .color(hex("#333"))?
@@ -33,7 +33,7 @@ fn Card<'scope, Ctx>(
     )
     .class("card")
     .style(
-        sty(context)
+        sty(ctx)
             .border("1px solid #e0e0e0")?
             .border_radius(px(8))?
             .padding("20px")?
@@ -49,7 +49,7 @@ fn Card<'scope, Ctx>(
 
 #[component]
 fn CounterDisplay<'scope, Ctx>(
-    #[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     count: ReadSignal<'scope, i32>,
 ) -> impl View<'scope> {
     // Demo: Style Map (Vec) and Dynamic Class (Signal)
@@ -76,13 +76,13 @@ fn CounterDisplay<'scope, Ctx>(
     Ok(div!(
         span("Global Status: "),
         span(count).style(
-            sty(context)
+            sty(ctx)
                 .font_weight(FontWeightKeyword::Bold)?
                 .color(hex("#6200ea"))?,
         ),
         div(" (Even Number - Dynamic Class Active)")
-            .style(sty(context).margin_top(px(5))?)
-            .style(rx!(context;
+            .style(sty(ctx).margin_top(px(5))?)
+            .style(rx!(ctx;
                 format!(
                     "opacity: {}; transition: opacity 0.3s",
                     if *$is_even { 1.0 } else { 0.0 }
@@ -90,17 +90,17 @@ fn CounterDisplay<'scope, Ctx>(
             )),
     )
     .class(container_class)
-    .class(("even-number", rx!(context; *$is_even)))) // Adds class "even-number" when count is even
+    .class(("even-number", rx!(ctx; *$is_even)))) // Adds class "even-number" when count is even
 }
 
 #[component]
 fn CounterControls<'scope, Ctx>(
-    #[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     count: ReadSignal<'scope, i32>,
     set_count: WriteSignal<'scope, i32>,
 ) -> impl View<'scope> {
     // Demo: Style Array
-    let btn_style = sty(context)
+    let btn_style = sty(ctx)
         .padding("8px 16px")?
         .border_radius(px(4))?
         .border("1px solid #ccc")?
@@ -114,7 +114,7 @@ fn CounterControls<'scope, Ctx>(
             Ok(())
         }),
         span(count).style(
-            sty(context)
+            sty(ctx)
                 .font_size(rem(1.5))?
                 .font_weight(FontWeightKeyword::Bold)?
                 .min_width(px(30))?
@@ -126,7 +126,7 @@ fn CounterControls<'scope, Ctx>(
         }),
     )
     .style(
-        sty(context)
+        sty(ctx)
             .display("flex")?
             .align_items("center")?
             .gap(px(15))?,
@@ -136,7 +136,7 @@ fn CounterControls<'scope, Ctx>(
 // --- Views ---
 
 #[component]
-fn NavBar<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scope> {
+fn NavBar<'scope>(#[ctx] ctx: RouterContext<'scope>) -> impl View<'scope> {
     Ok(div!(
         Link(ctx, "/")
             .children("Home")
@@ -167,7 +167,7 @@ fn NavBar<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scope> {
 }
 
 #[component]
-fn HomeView<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scope> {
+fn HomeView<'scope>(#[ctx] ctx: RouterContext<'scope>) -> impl View<'scope> {
     let scope = ctx.scope();
 
     // 页面级状态
@@ -307,23 +307,23 @@ fn HomeView<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scope> 
 }
 
 #[component]
-fn AboutView<'scope>(#[context] context: RouterContext<'scope>) -> impl View<'scope> {
+fn AboutView<'scope>(#[ctx] ctx: RouterContext<'scope>) -> impl View<'scope> {
     Ok(div!(
         h1("About"),
         p("This is the About Page to demonstrate Silex Router."),
         p("Try going back to Home, and notice the Counter is preserved while being passed explicitly to components."),
-    ).style(sty(context).padding("20px")?.text_align(TextAlignKeyword::Center)?).into_any())
+    ).style(sty(ctx).padding("20px")?.text_align(TextAlignKeyword::Center)?).into_any())
 }
 
 #[component]
-fn NotFound<'scope>(#[context] context: RouterContext<'scope>) -> impl View<'scope> {
+fn NotFound<'scope>(#[ctx] ctx: RouterContext<'scope>) -> impl View<'scope> {
     Ok(div(h1("404 - Page Not Found"))
-        .style(sty(context).color(ColorName::Red)?.padding("20px")?)
+        .style(sty(ctx).color(ColorName::Red)?.padding("20px")?)
         .into_any())
 }
 
 #[component]
-fn ErrorPage<'scope, Ctx, Err>(#[context] context: Ctx, error: Err) -> impl View<'scope>
+fn ErrorPage<'scope, Ctx, Err>(#[ctx] ctx: Ctx, error: Err) -> impl View<'scope>
 where
     Err: Into<SilexError>,
 {
@@ -344,7 +344,7 @@ where
         }),
     )
     .style(
-        sty(context)
+        sty(ctx)
             .max_width(px(600))?
             .margin("80px auto")?
             .padding("32px")?
@@ -358,23 +358,23 @@ where
 
 #[component]
 fn App<'scope>(
-    #[context] context: SilexContext<'scope>,
+    #[ctx] ctx: SilexContext<'scope>,
     root_error: ReadSignal<'scope, Option<SilexError>>,
 ) -> impl View<'scope> {
-    let app_style = sty(context)
+    let app_style = sty(ctx)
         .font_family("-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif")?
         .max_width(px(600))?
         .margin("0 auto")?
         .padding("20px")?;
 
-    let boundary = ErrorBoundary(context, move |boundary_context| {
+    let boundary = ErrorBoundary(ctx, move |boundary_ctx| {
         match AppRoute::table(|route, ctx| match route {
             AppRoute::Home => HomeView(ctx).build().into_any(),
             AppRoute::About => AboutView(ctx).build().into_any(),
             AppRoute::NotFound => NotFound(ctx).build().into_any(),
         }) {
             Ok(table) => div!(
-                Router(boundary_context)
+                Router(boundary_ctx)
                     .routes(table)
                     .layout(move |ctx, outlet| { div!(NavBar(ctx).build(), outlet) })
                     .build()
@@ -383,20 +383,20 @@ fn App<'scope>(
             .style(app_style.clone())
             .into_any(),
             Err(error) => ErrorPage(
-                boundary_context,
+                boundary_ctx,
                 SilexError::recoverable(SilexErrorKind::Framework(error.to_string())),
             )
             .build()
             .into_any(),
         }
     })
-    .fallback(move |e| ErrorPage(context, e).build())
+    .fallback(move |e| ErrorPage(ctx, e).build())
     .build()
     .into_any();
 
-    Ok(rx!(context; {
+    Ok(rx!(ctx; {
         if let Some(error) = (*$root_error).clone() {
-            ErrorPage(context, error).build().into_any()
+            ErrorPage(ctx, error).build().into_any()
         } else {
             boundary.clone()
         }
@@ -417,13 +417,13 @@ pub fn mount_counter_into(target: web_sys::Node) -> Result<JsAppHost, BootstrapE
     bootstrap.into_js_host()
 }
 
-fn mount_counter_view<'scope>(context: &MountContext<'scope>) -> SilexResult<()> {
-    let scope = context.scope();
+fn mount_counter_view<'scope>(ctx: &MountContext<'scope>) -> SilexResult<()> {
+    let scope = ctx.scope();
     let (root_error, set_root_error) = scope.signal(None::<SilexError>)?;
     let error_handler = scope.error_handler(move |error: SilexError| {
         let _ = set_root_error.set(Some(error));
     })?;
-    let silex_context = SilexContext::new(scope, error_handler);
-    let app = App(silex_context, root_error).build();
-    context.mount(app, error_handler)
+    let silex_ctx = SilexContext::new(scope, error_handler);
+    let app = App(silex_ctx, root_error).build();
+    ctx.mount(app, error_handler)
 }

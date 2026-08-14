@@ -16,15 +16,15 @@ enum DemoText {
     CartItems { count: u32 },
 }
 
-fn panel<'scope, Ctx, T, U>(context: Ctx, title: T, content: U) -> SilexResult<AnyView<'scope>>
-where
-    Ctx: SilexContextProvider<'scope>,
-    T: View<'scope> + 'scope,
-    U: View<'scope> + 'scope,
-{
+#[component]
+fn Panel<'scope, Ctx>(
+    #[ctx] ctx: Ctx,
+    title: AnyView<'scope>,
+    content: AnyView<'scope>,
+) -> impl View<'scope> {
     Ok(div![
         h3(title).style(
-            sty(context)
+            sty(ctx)
                 .margin_top(px(0))?
                 .margin_bottom(px(8))?
                 .color(AppTheme::PRIMARY)?
@@ -32,22 +32,18 @@ where
         content,
     ]
     .style(
-        sty(context)
+        sty(ctx)
             .padding("20px")?
             .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
             .border_radius(px(8))?
             .background(AppTheme::SURFACE)?,
-    )
-    .into_any())
+    ))
 }
 
-fn control_row<'scope, Ctx, T>(context: Ctx, content: T) -> SilexResult<impl View<'scope>>
-where
-    Ctx: SilexContextProvider<'scope>,
-    T: View<'scope> + 'scope,
-{
+#[component]
+fn ControlRow<'scope, Ctx>(#[ctx] ctx: Ctx, content: AnyView<'scope>) -> impl View<'scope> {
     Ok(div(content).style(
-        sty(context)
+        sty(ctx)
             .display("flex")?
             .flex_wrap(FlexWrapKeyword::Wrap)?
             .align_items("center")?
@@ -60,13 +56,14 @@ fn parse_locale(value: &str) -> SilexResult<Locale> {
         .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))
 }
 
-fn locale_button<'scope>(
-    context: impl SilexContextProvider<'scope>,
+#[component]
+fn LocaleButton<'scope, Ctx>(
+    #[ctx] ctx: Ctx,
     i18n: I18nStore<'scope>,
     loader_store: I18nStore<'scope>,
     locale_name: &'static str,
     label: &'static str,
-) -> SilexResult<impl View<'scope>> {
+) -> impl View<'scope> {
     Ok(button(label)
         .on_click(move |_| {
             let locale = parse_locale(locale_name)?;
@@ -75,7 +72,7 @@ fn locale_button<'scope>(
             Ok(())
         })
         .style(
-            sty(context)
+            sty(ctx)
                 .padding("7px 11px")?
                 .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
                 .border_radius(px(5))?
@@ -87,7 +84,7 @@ fn locale_button<'scope>(
 
 #[component]
 pub fn I18nPage<'scope>(
-    #[context] ctx: RouterContext<'scope>,
+    #[ctx] ctx: RouterContext<'scope>,
     i18n: I18nStore<'scope>,
 ) -> impl View<'scope> {
     let scope = ctx.scope();
@@ -227,7 +224,7 @@ pub fn I18nPage<'scope>(
     Ok(div![
         h2(t!(i18n, DemoText::Title)?),
         p(t!(i18n, DemoText::Description)?).style(sty(ctx).opacity(0.75)?),
-        panel(
+        Panel(
             ctx,
             t!(i18n, "demo.locale.title")?,
             div![
@@ -235,27 +232,30 @@ pub fn I18nPage<'scope>(
                 p(current_locale),
                 p(fallback_locale_text),
                 p(t!(i18n, "demo.locale.persistence")?).style(sty(ctx).opacity(0.7)?),
-                control_row(
+                ControlRow(
                     ctx,
                     div![
-                        locale_button(ctx, i18n, loader_store, "en-US", "English")?,
-                        locale_button(ctx, i18n, loader_store, "zh-CN", "中文")?,
-                        locale_button(ctx, i18n, loader_store, "ar-EG", "العربية")?,
-                        locale_button(ctx, i18n, loader_store, "fr-CA", "Français (fallback)")?,
+                        LocaleButton(ctx, i18n, loader_store, "en-US", "English").build(),
+                        LocaleButton(ctx, i18n, loader_store, "zh-CN", "中文").build(),
+                        LocaleButton(ctx, i18n, loader_store, "ar-EG", "العربية").build(),
+                        LocaleButton(ctx, i18n, loader_store, "fr-CA", "Français (fallback)")
+                            .build(),
                     ]
-                )?,
+                )
+                .build(),
                 p(browser_candidates_text).style(sty(ctx).margin_bottom(px(4))?.opacity(0.75)?),
                 p(browser_match_text).style(sty(ctx).margin_top(px(0))?.opacity(0.75)?),
-                control_row(
+                ControlRow(
                     ctx,
                     button(t!(i18n, "demo.locale.use_browser")?).on_click(move |_| {
                         i18n_for_browser.set_locale(browser_match_for_click.clone())?;
                         loader_for_browser.set_locale(browser_match_for_click.clone())?;
                         Ok(())
                     })
-                )?,
+                )
+                .build(),
                 p(query_locale_text).style(sty(ctx).margin_bottom(px(8))?.opacity(0.75)?),
-                control_row(
+                ControlRow(
                     ctx,
                     div![
                         button(t!(i18n, "demo.locale.apply_query")?).on_click(move |_| {
@@ -269,11 +269,13 @@ pub fn I18nPage<'scope>(
                             Ok(())
                         }),
                     ]
-                )?,
+                )
+                .build(),
             ]
             .style(sty(ctx).display("grid")?.gap(px(10))?),
-        )?,
-        panel(
+        )
+        .build(),
+        Panel(
             ctx,
             t!(i18n, "demo.messages.title")?,
             div![
@@ -292,7 +294,7 @@ pub fn I18nPage<'scope>(
                 div![
                     label(t!(i18n, "demo.messages.count")?)
                         .style(sty(ctx).display("block")?.margin_bottom(px(5))?),
-                    control_row(
+                    ControlRow(
                         ctx,
                         div![
                             button("-").on_click(move |_| {
@@ -310,7 +312,8 @@ pub fn I18nPage<'scope>(
                                 Ok(())
                             }),
                         ]
-                    )?,
+                    )
+                    .build(),
                     p(t!(i18n, "demo.messages.literal", value = count.get())?),
                     p(t!(i18n, "demo.messages.typed")?).style(sty(ctx).opacity(0.7)?),
                     p(t!(
@@ -334,8 +337,9 @@ pub fn I18nPage<'scope>(
                 }),
             ]
             .style(sty(ctx).display("grid")?.gap(px(14))?),
-        )?,
-        panel(
+        )
+        .build(),
+        Panel(
             ctx,
             t!(i18n, "demo.formatter.title")?,
             div![
@@ -344,13 +348,14 @@ pub fn I18nPage<'scope>(
                 p(formatter_date),
             ]
             .style(sty(ctx).display("grid")?.gap(px(8))?),
-        )?,
-        panel(
+        )
+        .build(),
+        Panel(
             ctx,
             t!(i18n, "demo.loader.title")?,
             div![
                 p(t!(i18n, "demo.loader.description")?).style(sty(ctx).opacity(0.75)?),
-                control_row(
+                ControlRow(
                     ctx,
                     button(t!(i18n, "demo.loader.reload")?).on_click(move |_| {
                         let locale = reload_store.locale().get_untracked()?;
@@ -358,7 +363,8 @@ pub fn I18nPage<'scope>(
                         resource_for_reload.refetch()?;
                         Ok(())
                     })
-                )?,
+                )
+                .build(),
                 div(resource_state).style(
                     sty(ctx)
                         .min_height(px(42))?
@@ -368,8 +374,9 @@ pub fn I18nPage<'scope>(
                 ),
             ]
             .style(sty(ctx).display("grid")?.gap(px(10))?),
-        )?,
-        panel(
+        )
+        .build(),
+        Panel(
             ctx,
             t!(i18n, "demo.metadata.title")?,
             div![
@@ -383,7 +390,8 @@ pub fn I18nPage<'scope>(
                 }),
             ]
             .style(sty(ctx).display("grid")?.gap(px(8))?),
-        )?,
+        )
+        .build(),
     ]
     .style(
         sty(ctx)

@@ -3,7 +3,7 @@ use crate::prelude::*;
 styled! {
     /// 弹性布局容器 (Flexbox)
     pub Stack<'scope, Ctx> <div> (
-        #[context] context: Ctx,
+        #[ctx] ctx: Ctx,
         children: AnyView<'scope>,
         #[prop(into)] #[chain(default = FlexDirectionKeyword::Column)]
         direction: Signal<'scope, FlexDirectionKeyword>,
@@ -13,7 +13,7 @@ styled! {
         justify: Signal<'scope, JustifyContentKeyword>,
         #[prop(into)] #[chain(default)]
         gap: Signal<'scope, i32>,
-        #[prop(into)] #[chain(default = sty(context))]
+        #[prop(into)] #[chain(default = sty(ctx))]
         style: Signal<'scope, Style<'scope>>,
     ) {
         display: flex;
@@ -27,9 +27,9 @@ styled! {
 styled! {
     /// 居中容器
     pub Center<'scope, Ctx> <div> (
-        #[context] context: Ctx,
+        #[ctx] ctx: Ctx,
         children: AnyView<'scope>,
-        #[prop(into)] #[chain(default = sty(context))]
+        #[prop(into)] #[chain(default = sty(ctx))]
         style: Signal<'scope, Style<'scope>>,
     ) {
         display: flex;
@@ -41,13 +41,13 @@ styled! {
 styled! {
     /// 网格布局容器 (Grid)
     pub Grid<'scope, Ctx> <div> (
-        #[context] context: Ctx,
+        #[ctx] ctx: Ctx,
         children: AnyView<'scope>,
         #[prop(into)] #[chain(default = 1)]
         columns: Signal<'scope, i32>,
         #[prop(into)] #[chain(default)]
         gap: Signal<'scope, i32>,
-        #[prop(into)] #[chain(default = sty(context))]
+        #[prop(into)] #[chain(default = sty(ctx))]
         style: Signal<'scope, Style<'scope>>,
     ) {
         display: grid;

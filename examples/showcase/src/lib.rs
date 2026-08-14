@@ -56,7 +56,7 @@ router! {
 
 #[component]
 fn App<'scope>(
-    #[context] context: SilexContext<'scope>,
+    #[ctx] ctx: SilexContext<'scope>,
     i18n: I18nStore<'scope>,
     store: UserSettingsStore<'scope, 'scope>,
 ) -> impl View<'scope> + 'scope {
@@ -103,14 +103,14 @@ fn App<'scope>(
 
     Ok(div!(
         css::GlobalStyles(scope, error_handler),
-        Router(context)
+        Router(ctx)
             .routes(table)
             .layout(move |ctx, outlet| routes::AppLayout(ctx, outlet, store).build())
             .build()
     )
     .apply(theme_variables(theme))
     .style(
-        sty(context)
+        sty(ctx)
             .min_height(vh(100))?
             .font_family("Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif")?
             .background(css::AppTheme::SURFACE)?
@@ -133,8 +133,8 @@ pub fn mount_showcase_into(target: web_sys::Node) -> Result<JsAppHost, Bootstrap
     bootstrap.into_js_host()
 }
 
-fn mount_showcase_view<'scope>(context: &MountContext<'scope>) -> SilexResult<()> {
-    let scope = context.scope();
+fn mount_showcase_view<'scope>(ctx: &MountContext<'scope>) -> SilexResult<()> {
+    let scope = ctx.scope();
     let error_handler = scope.error_handler(|error: SilexError| {
         web_sys::console::error_1(&error.to_string().into());
     })?;
@@ -205,7 +205,7 @@ fn mount_showcase_view<'scope>(context: &MountContext<'scope>) -> SilexResult<()
         .build()?;
     let store = UserSettingsStore::from_handles(scope, theme, notifications, username)?;
 
-    context.mount(
+    ctx.mount(
         App(SilexContext::new(scope, error_handler), i18n, store).build(),
         error_handler,
     )

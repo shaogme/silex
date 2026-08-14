@@ -5,7 +5,7 @@ use silex_macros::{component, tw};
 
 #[component]
 pub fn Switch<'scope, Ctx>(
-    #[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     #[prop(into)]
     #[chain(default)]
     checked: Signal<'scope, bool>,
@@ -19,7 +19,7 @@ pub fn Switch<'scope, Ctx>(
     #[chain(default)]
     on_change: Callback<'scope, bool>,
 ) -> impl View<'scope> {
-    let track_cls = rx!(context; {
+    let track_cls = rx!(ctx; {
         let is_checked = *$checked;
         let is_sm = $size.as_str() == "sm";
 
@@ -45,7 +45,7 @@ pub fn Switch<'scope, Ctx>(
         }
     });
 
-    let thumb_cls = rx!(context; {
+    let thumb_cls = rx!(ctx; {
         let is_checked = *$checked;
         let is_sm = $size.as_str() == "sm";
 

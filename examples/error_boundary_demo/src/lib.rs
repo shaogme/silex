@@ -3,30 +3,30 @@ use silex::prelude::*;
 use silex::reexports::*;
 
 #[component]
-fn App<'scope>(#[context] context: SilexContext<'scope>) -> impl View<'scope> {
-    let recoverable_fallback_style = sty(context)
+fn App<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
+    let recoverable_fallback_style = sty(ctx)
         .background_color(hex("#fee"))?
         .border("1px solid red")?
         .padding("10px")?
         .color(ColorName::Red)?;
-    let panic_fallback_style = sty(context)
+    let panic_fallback_style = sty(ctx)
         .background_color(hex("#fff3cd"))?
         .border("1px solid orange")?
         .padding("10px")?
         .color(hex("#856404"))?;
-    let section_style = sty(context)
+    let section_style = sty(ctx)
         .margin_bottom(px(20))?
         .border("1px solid #ccc")?
         .padding("10px")?;
-    let root_style = sty(context).padding("20px")?.font_family("sans-serif")?;
+    let root_style = sty(ctx).padding("20px")?.font_family("sans-serif")?;
 
     Ok(div!(
         h1("Error Boundary Demo"),
         p("This example demonstrates how ErrorBoundary catches errors."),
         div!(
             h2("1. Recoverable Error Test"),
-            ErrorBoundary(context, move |child_context| {
-                RecoverableComponent(child_context).build()
+            ErrorBoundary(ctx, move |child_ctx| {
+                RecoverableComponent(child_ctx).build()
             })
             .fallback(move |error| {
                 div!(
@@ -53,8 +53,8 @@ fn App<'scope>(#[context] context: SilexContext<'scope>) -> impl View<'scope> {
         div!(
             h2("2. Immediate Panic Test (Render Phase)"),
             p("The component below panics during rendering when triggered."),
-            ErrorBoundary(context, move |child_context| {
-                PanicToggleComponent(child_context).build()
+            ErrorBoundary(ctx, move |child_ctx| {
+                PanicToggleComponent(child_ctx).build()
             })
             .fallback(move |error| {
                 div!(h3("Caught Panic!"), p(format!("Panic details: {}", error)),)
@@ -69,7 +69,7 @@ fn App<'scope>(#[context] context: SilexContext<'scope>) -> impl View<'scope> {
 
 #[component]
 fn RecoverableComponent<'scope>(
-    #[context] context: SilexContext<'scope>,
+    #[ctx] ctx: SilexContext<'scope>,
 ) -> impl View<'scope> + 'scope {
     let (should_error, set_should_error) = scope.signal(false)?;
 
@@ -92,10 +92,10 @@ fn RecoverableComponent<'scope>(
 
 #[component]
 fn PanicToggleComponent<'scope>(
-    #[context] context: SilexContext<'scope>,
+    #[ctx] ctx: SilexContext<'scope>,
 ) -> impl View<'scope> + 'scope {
     let (show_panic, set_show_panic) = scope.signal(false)?;
-    let immediate_panic = ImmediatePanic(context).build();
+    let immediate_panic = ImmediatePanic(ctx).build();
 
     Ok(move || {
         if show_panic.get()? {
@@ -116,7 +116,7 @@ fn PanicToggleComponent<'scope>(
 }
 
 #[component]
-fn ImmediatePanic<'scope>(#[context] context: SilexContext<'scope>) -> impl View<'scope> + 'scope {
+fn ImmediatePanic<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> + 'scope {
     let (active, set_active) = scope.signal(false)?;
 
     Ok(div!(
@@ -148,12 +148,12 @@ pub fn mount_error_boundary_demo_into(target: web_sys::Node) -> Result<JsAppHost
     bootstrap.into_js_host()
 }
 
-fn mount_error_boundary_demo_view<'scope>(context: &MountContext<'scope>) -> SilexResult<()> {
-    let scope = context.scope();
+fn mount_error_boundary_demo_view<'scope>(ctx: &MountContext<'scope>) -> SilexResult<()> {
+    let scope = ctx.scope();
     let error_handler = scope.error_handler(|error: SilexError| {
         web_sys::console::error_1(&error.to_string().into());
     })?;
-    context.mount(
+    ctx.mount(
         App(SilexContext::new(scope, error_handler)).build(),
         error_handler,
     )

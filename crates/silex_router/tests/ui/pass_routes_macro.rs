@@ -17,7 +17,7 @@ fn main() {
     }
     .path();
     let _ = AppRoute::match_path("/users/42");
-    let _ = AppRoute::table(|route, _context| match route {
+    let _ = AppRoute::table(|route, _ctx| match route {
         AppRoute::Home => AnyView::from("home"),
         AppRoute::User { id } => AnyView::from(id.to_string()),
         AppRoute::Files { rest } => AnyView::from(rest.into_inner()),

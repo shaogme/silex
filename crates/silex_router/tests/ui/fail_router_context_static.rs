@@ -18,7 +18,7 @@ fn main() {
                 .error_handler(|_| {})
                 .expect("error handler should be registered"),
         );
-        let context = RouterContext::new(
+        let ctx = RouterContext::new(
             silex,
             RouterContextProps {
                 base_path: String::from("/"),
@@ -28,7 +28,7 @@ fn main() {
                 set_search,
             },
         )
-        .expect("router context should be created");
-        require_static(context);
+        .expect("router ctx should be created");
+        require_static(ctx);
     });
 }

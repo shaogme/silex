@@ -107,7 +107,7 @@ impl<'scope> ApplyAttributes<'scope> for PortalView<'scope> {}
 /// 但保持响应式上下文（Context）的连通性。
 #[component]
 pub fn Portal<'scope, Ctx>(
-    #[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     #[prop(into)] children: AnyView<'scope>,
     #[chain(default)] mount_to: Option<Node>,
 ) -> impl View<'scope> {

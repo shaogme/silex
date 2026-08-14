@@ -223,14 +223,14 @@ fn target_for_pair(
     }
 }
 
-fn plan_for_context<'scope, T>(
+fn plan_for_ctx<'scope, T>(
     rx: Rx<'scope, T>,
-    context: ReactiveBindingContext,
+    ctx: ReactiveBindingContext,
 ) -> Option<ReactiveBindingPlan<'scope>>
 where
     T: ToString + Clone + 'scope,
 {
-    match context {
+    match ctx {
         ReactiveBindingContext::Value(target) => {
             target_for_value(target).map(|target| string_plan(rx, target))
         }
@@ -240,11 +240,11 @@ where
     }
 }
 
-fn bool_plan_for_context<'scope>(
+fn bool_plan_for_ctx<'scope>(
     rx: Rx<'scope, bool>,
-    context: ReactiveBindingContext,
+    ctx: ReactiveBindingContext,
 ) -> Option<ReactiveBindingPlan<'scope>> {
-    match context {
+    match ctx {
         ReactiveBindingContext::Value(target) => match target {
             ApplyTarget::Attr(_) | ApplyTarget::Prop(_) | ApplyTarget::Known(_) => {
                 Some(bool_plan(rx, ReactiveBindingTarget::Attribute(target)))
@@ -303,9 +303,9 @@ where
 impl<'scope> ReactiveBinding<'scope> for String {
     fn binding_plan(
         rx: Rx<'scope, Self>,
-        context: ReactiveBindingContext,
+        ctx: ReactiveBindingContext,
     ) -> Option<ReactiveBindingPlan<'scope>> {
-        plan_for_context(rx, context)
+        plan_for_ctx(rx, ctx)
     }
 }
 
@@ -315,9 +315,9 @@ macro_rules! impl_reactive_binding_string_like {
             impl<'scope, 'a: 'scope> ReactiveBinding<'scope> for $ty {
                 fn binding_plan(
                     rx: Rx<'scope, Self>,
-                    context: ReactiveBindingContext,
+                    ctx: ReactiveBindingContext,
                 ) -> Option<ReactiveBindingPlan<'scope>> {
-                    plan_for_context(rx, context)
+                    plan_for_ctx(rx, ctx)
                 }
             }
         )*
@@ -332,9 +332,9 @@ macro_rules! impl_reactive_binding_primitive {
             impl<'scope> ReactiveBinding<'scope> for $ty {
                 fn binding_plan(
                     rx: Rx<'scope, Self>,
-                    context: ReactiveBindingContext,
+                    ctx: ReactiveBindingContext,
                 ) -> Option<ReactiveBindingPlan<'scope>> {
-                    match context {
+                    match ctx {
                         ReactiveBindingContext::Value(target) => {
                             target_for_value(target).map(|target| string_plan(rx, target))
                         }
@@ -353,18 +353,18 @@ impl_reactive_binding_primitive!(
 impl<'scope> ReactiveBinding<'scope> for bool {
     fn binding_plan(
         rx: Rx<'scope, Self>,
-        context: ReactiveBindingContext,
+        ctx: ReactiveBindingContext,
     ) -> Option<ReactiveBindingPlan<'scope>> {
-        bool_plan_for_context(rx, context)
+        bool_plan_for_ctx(rx, ctx)
     }
 }
 
 impl<'scope> ReactiveBinding<'scope> for Attr<'scope> {
     fn binding_plan(
         rx: Rx<'scope, Self>,
-        context: ReactiveBindingContext,
+        ctx: ReactiveBindingContext,
     ) -> Option<ReactiveBindingPlan<'scope>> {
-        match context {
+        match ctx {
             ReactiveBindingContext::Value(target) => match target {
                 ApplyTarget::Attr(_) | ApplyTarget::Prop(_) | ApplyTarget::Known(_) => {
                     Some(attr_plan(rx, target))
@@ -388,9 +388,9 @@ where
 {
     fn binding_plan(
         rx: Rx<'scope, Self>,
-        context: ReactiveBindingContext,
+        ctx: ReactiveBindingContext,
     ) -> Option<ReactiveBindingPlan<'scope>> {
-        match context {
+        match ctx {
             ReactiveBindingContext::Value(target) => {
                 let value = Rc::new(move || {
                     Ok(rx.get()?.map(|value| value.to_string()).unwrap_or_default())

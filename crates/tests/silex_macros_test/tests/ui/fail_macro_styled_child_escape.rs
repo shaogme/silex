@@ -10,7 +10,7 @@ use silex_macros::styled;
 
 styled! {
     pub ScopedPanel<'scope><div>(
-        #[context] context: silex_core::SilexContext<'scope>,
+        #[ctx] ctx: silex_core::SilexContext<'scope>,
         children: AnyView<'scope>,
         color: silex_core::reactivity::Signal<'scope, Hex>,
     ) {
@@ -23,8 +23,8 @@ fn main() {
     let view = runtime.child(|scope| {
         let (color, _) = scope.signal(silex_css::types::hex("#fff")).unwrap();
         let error_handler = scope.error_handler(|_| {}).unwrap();
-        let context = silex_core::SilexContext::new(scope, error_handler);
-        ScopedPanel(context, color, color)
+        let ctx = silex_core::SilexContext::new(scope, error_handler);
+        ScopedPanel(ctx, color, color)
     });
     let _ = view;
 }

@@ -38,9 +38,9 @@ fn clean_sink() -> CleanupSink {
     CleanupSink::new(|report| assert!(report.is_clean()))
 }
 
-fn mount_text<'scope>(context: &MountContext<'scope>) -> SilexResult<()> {
-    let handler = context.scope().error_handler(|_: SilexError| {})?;
-    context.mount(Element::with_child("section", "js-owner"), handler)
+fn mount_text<'scope>(ctx: &MountContext<'scope>) -> SilexResult<()> {
+    let handler = ctx.scope().error_handler(|_: SilexError| {})?;
+    ctx.mount(Element::with_child("section", "js-owner"), handler)
 }
 
 #[wasm_bindgen_test]

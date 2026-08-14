@@ -9,9 +9,8 @@ use std::marker::PhantomData;
 
 #[component]
 fn RawPropsAsView<'scope, Ctx>(
-#[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     children: AnyView<'scope>,
-    
 ) -> impl View<'scope> {
     let _ = scope;
     children
@@ -21,7 +20,7 @@ fn main() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
         let props = RawPropsAsViewProps {
-            context: SilexContext::new(
+            ctx: SilexContext::new(
                 scope,
                 scope.error_handler(|_| {}).expect("handler"),
             ),

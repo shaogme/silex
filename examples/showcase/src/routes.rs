@@ -9,13 +9,13 @@ fn route_path(route: AppRoute) -> SilexResult<RoutePath> {
 }
 
 #[component]
-pub fn SelectDemo<'scope>(#[context] _context: RouterContext<'scope>) -> impl View<'scope> {
+pub fn SelectDemo<'scope>(#[ctx] _ctx: RouterContext<'scope>) -> impl View<'scope> {
     div("Select a demo above.")
 }
 
 #[component]
 pub fn NavBar<'scope>(
-    #[context] ctx: RouterContext<'scope>,
+    #[ctx] ctx: RouterContext<'scope>,
     settings: UserSettingsStore<'scope, 'scope>,
 ) -> impl View<'scope> {
     Ok(nav!(
@@ -89,7 +89,7 @@ pub fn NavBar<'scope>(
 
 #[component]
 pub fn AppLayout<'scope>(
-    #[context] ctx: RouterContext<'scope>,
+    #[ctx] ctx: RouterContext<'scope>,
     outlet: AnyView<'scope>,
     settings: UserSettingsStore<'scope, 'scope>,
 ) -> impl View<'scope> {
@@ -106,7 +106,7 @@ pub fn AppLayout<'scope>(
 
 #[component]
 pub fn AdvancedLayout<'scope>(
-    #[context] ctx: RouterContext<'scope>,
+    #[ctx] ctx: RouterContext<'scope>,
     outlet: AnyView<'scope>,
 ) -> impl View<'scope> {
     Ok(div!(
@@ -173,7 +173,7 @@ pub fn AdvancedLayout<'scope>(
 
 #[component]
 pub fn CssLayout<'scope>(
-    #[context] ctx: RouterContext<'scope>,
+    #[ctx] ctx: RouterContext<'scope>,
     outlet: AnyView<'scope>,
 ) -> impl View<'scope> {
     Ok(div!(
@@ -207,7 +207,7 @@ pub fn CssLayout<'scope>(
 }
 
 #[component]
-pub fn NotFoundPage<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scope> {
+pub fn NotFoundPage<'scope>(#[ctx] ctx: RouterContext<'scope>) -> impl View<'scope> {
     Ok(div!(
         h1("404 - Page Not Found"),
         Link(ctx, route_path(AppRoute::Home)?)
@@ -219,7 +219,7 @@ pub fn NotFoundPage<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<
 }
 
 #[component]
-pub fn HomePage<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scope> {
+pub fn HomePage<'scope>(#[ctx] ctx: RouterContext<'scope>) -> impl View<'scope> {
     Ok(div!(
         h1("Welcome to Silex Showcase"),
         p("This example application demonstrates the core features of the Silex framework."),

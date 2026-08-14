@@ -26,7 +26,7 @@ fn compile_scoped_api<'scope>(scope: Scope<'scope>) {
             .error_handler(|_| {})
             .expect("error handler should be registered"),
     );
-    let context = RouterContext::new(
+    let ctx = RouterContext::new(
         silex,
         RouterContextProps {
             base_path: String::from("/app"),
@@ -36,16 +36,16 @@ fn compile_scoped_api<'scope>(scope: Scope<'scope>) {
             set_search,
         },
     )
-    .expect("router context should be created");
+    .expect("router ctx should be created");
     let _link = Link(
-        context,
+        ctx,
         RoutePath::new("/").expect("route path should be valid"),
     )
     .children(text)
     .active_class("active")
     .on_click(|_| Ok(()))
     .build();
-    let table = AppRoute::table(|route, _context| match route {
+    let table = AppRoute::table(|route, _ctx| match route {
         AppRoute::Home => AnyView::from("home"),
     })
     .expect("route table should compile");

@@ -5,7 +5,7 @@ use silex_macros::{component, styled, tw_variants};
 
 styled! {
     pub AlertTitle<'scope, Ctx><div>(
-        #[context] context: Ctx,
+        #[ctx] ctx: Ctx,
         children: AnyView<'scope>,
     ) {
         @apply col-start-2 line-clamp-1 min-h-4 font-medium tracking-tight;
@@ -14,7 +14,7 @@ styled! {
 
 styled! {
     pub AlertDescription<'scope, Ctx><div>(
-        #[context] context: Ctx,
+        #[ctx] ctx: Ctx,
         children: AnyView<'scope>,
     ) {
         @apply col-start-2 grid justify-items-start gap-1 text-sm text-muted-foreground [&_p]:leading-relaxed;
@@ -23,7 +23,7 @@ styled! {
 
 #[component]
 pub fn Alert<'scope, Ctx>(
-    #[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
@@ -45,7 +45,7 @@ pub fn Alert<'scope, Ctx>(
         }
     };
 
-    let cls = rx!(context; {
+    let cls = rx!(ctx; {
         let base_cls = alert_variants.get($variant);
         let extra = $class;
         if extra.is_empty() {

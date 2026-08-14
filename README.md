@@ -76,10 +76,10 @@ fn Counter<'scope>() -> impl View<'scope> {
 
 fn main() -> Result<(), BootstrapError> {
     let mut bootstrap = BrowserBootstrap::from_id("app")?;
-    bootstrap.mount(Runtime::new(), |context| {
-        let scope = context.scope();
+    bootstrap.mount(Runtime::new(), |ctx| {
+        let scope = ctx.scope();
         let error_handler = scope.error_handler(|_| {});
-        context.mount(Counter().build(), error_handler)
+        ctx.mount(Counter().build(), error_handler)
     })?;
     Ok(())
 }

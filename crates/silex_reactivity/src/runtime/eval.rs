@@ -99,11 +99,11 @@ pub(crate) fn prepare_read<'scope>(
             }
         })?;
     }
-    if let Some(Some(context)) = tracking {
+    if let Some(Some(ctx)) = tracking {
         state
             .try_borrow_mut()
             .map_err(|_| ReactiveError::BorrowConflict)?
-            .track_read(id, &context)?;
+            .track_read(id, &ctx)?;
     }
     flush_if_idle(state);
     Ok(())
@@ -144,11 +144,11 @@ pub(crate) fn prepare_fallible_read<'scope>(
     if !settled {
         evaluate_root(state, id, EvaluationMode::Read)?;
     }
-    if let Some(Some(context)) = tracking {
+    if let Some(Some(ctx)) = tracking {
         state
             .try_borrow_mut()
             .map_err(|_| EvaluationError::Runtime(ReactiveError::BorrowConflict))?
-            .track_read(id, &context)
+            .track_read(id, &ctx)
             .map_err(EvaluationError::Runtime)?;
     }
     flush_if_idle(state);
@@ -386,7 +386,7 @@ fn run_node<'scope>(
         scope_id: ScopeId,
     }
 
-    let node_context = {
+    let node_ctx = {
         let mut state_ref = state
             .try_borrow_mut()
             .map_err(|_| EvaluationError::Runtime(ReactiveError::BorrowConflict))?;
@@ -431,7 +431,7 @@ fn run_node<'scope>(
         previous_owner,
         scheduler,
         scope_id,
-    } = node_context;
+    } = node_ctx;
 
     let children_to_dispose: Vec<RawId> = state
         .try_borrow()
@@ -607,7 +607,7 @@ fn run_node<'scope>(
             let mut scheduler = state_ref.scheduler.borrow_mut();
             scheduler.executing = scheduler.executing.saturating_sub(1);
         }
-        state_ref.set_context(previous_owner);
+        state_ref.set_ctx(previous_owner);
         if let Some(node) = state_ref.nodes.get_mut(id) {
             node.running = false;
             node.last_computed_epoch = now_epoch;

@@ -1,10 +1,10 @@
 error[E0277]: 类型 `&'static str` 无法作为有效的 CSS `ZIndex` 属性值使用
- --> tests/ui/fail_string_to_z_index.rs:9:41
+ --> tests/ui/fail_string_to_z_index.rs:9:37
   |
-9 |     let _ = Style::new(context).z_index("abc");
-  |                                 ------- ^^^^^ 无效的 CSS 属性类型
-  |                                 |
-  |                                 required by a bound introduced by this call
+9 |     let _ = Style::new(ctx).z_index("abc");
+  |                             ------- ^^^^^ 无效的 CSS 属性类型
+  |                             |
+  |                             required by a bound introduced by this call
   |
   = help: the trait `ValidFor<ZIndex>` is not implemented for `&'static str`
   = note: 请检查是否传入了错误的类型（例如将 Px 传给了 Color）。如果必须传入复杂的动态表达式，可以使用 `css_unsafe(...)` 显式绕过。

@@ -65,7 +65,7 @@ impl ToRoute for RoutePath {
     }
 }
 
-fn create_router_context<'scope>(
+fn create_router_ctx<'scope>(
     silex: SilexContext<'scope>,
     base: &str,
 ) -> SilexResult<RouterContext<'scope>> {
@@ -109,8 +109,8 @@ where
     V: View<'scope> + 'scope,
 {
     fn from(layout: F) -> Self {
-        Self(Some(Rc::new(move |context, outlet| {
-            layout(context, outlet).into_any()
+        Self(Some(Rc::new(move |ctx, outlet| {
+            layout(ctx, outlet).into_any()
         })))
     }
 }
@@ -125,7 +125,7 @@ impl<'scope> RouterLayoutInput<'scope> {
 /// `.build()` 处理。
 #[component]
 pub fn Router<'scope>(
-    #[context] context: SilexContext<'scope>,
+    #[ctx] ctx: SilexContext<'scope>,
     #[chain] routes: RouteTable<'scope>,
     #[prop(into)]
     #[chain(default = String::from("/"))]
@@ -134,9 +134,9 @@ pub fn Router<'scope>(
     #[chain(default)]
     layout: RouterLayoutInput<'scope>,
 ) -> RouterView<'scope> {
-    let context = create_router_context(context, &base);
+    let ctx = create_router_ctx(ctx, &base);
     RouterView {
-        context,
+        ctx,
         routes,
         layout: layout.into_option(),
     }
@@ -145,7 +145,7 @@ pub fn Router<'scope>(
 /// Router 的实际 view，负责注册 popstate listener 并挂载 layout/outlet。
 #[derive(Clone)]
 pub struct RouterView<'scope> {
-    context: SilexResult<RouterContext<'scope>>,
+    ctx: SilexResult<RouterContext<'scope>>,
     routes: RouteTable<'scope>,
     layout: Option<RouterLayout<'scope>>,
 }
@@ -159,13 +159,13 @@ impl<'scope> RouterView<'scope> {
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         let Self {
-            context,
+            ctx,
             routes,
             layout,
         } = self;
-        let context = SilexContextProvider::with_error_reporter(context?, error_handler);
+        let ctx = SilexContextProvider::with_error_reporter(ctx?, error_handler);
         let token = owner.token();
-        let navigator = context.navigator;
+        let navigator = ctx.navigator;
         let listener = window_event_listener_untyped(
             &token,
             "popstate",
@@ -174,9 +174,9 @@ impl<'scope> RouterView<'scope> {
         )
         .map_err(SilexError::fatal)?;
 
-        let outlet = RouteOutlet::new(context, routes).into_any();
+        let outlet = RouteOutlet::new(ctx, routes).into_any();
         let view = match layout {
-            Some(layout) => layout(context, outlet),
+            Some(layout) => layout(ctx, outlet),
             None => outlet,
         };
         match view.mount(owner, parent, attrs, error_handler) {
@@ -207,27 +207,27 @@ impl<'scope> View<'scope> for RouterView<'scope> {
 /// 当前路由对应的动态 outlet。
 #[derive(Clone)]
 pub struct RouteOutlet<'scope> {
-    context: RouterContext<'scope>,
+    ctx: RouterContext<'scope>,
     routes: RouteTable<'scope>,
     prefix: Option<String>,
 }
 
 impl<'scope> RouteOutlet<'scope> {
-    pub fn new(context: RouterContext<'scope>, routes: RouteTable<'scope>) -> Self {
+    pub fn new(ctx: RouterContext<'scope>, routes: RouteTable<'scope>) -> Self {
         Self {
-            context,
+            ctx,
             routes,
             prefix: None,
         }
     }
 
     pub(crate) fn nested(
-        context: RouterContext<'scope>,
+        ctx: RouterContext<'scope>,
         routes: RouteTable<'scope>,
         prefix: String,
     ) -> Self {
         Self {
-            context,
+            ctx,
             routes,
             prefix: Some(prefix),
         }
@@ -245,8 +245,8 @@ impl<'scope> View<'scope> for RouteOutlet<'scope> {
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         let this = self.clone();
-        let context = this.context;
-        let path_signal = context.path;
+        let ctx = this.ctx;
+        let path_signal = ctx.path;
         let routes = this.routes;
         let routes_for_key = routes.clone();
         let prefix = this.prefix;
@@ -271,7 +271,7 @@ impl<'scope> View<'scope> for RouteOutlet<'scope> {
                     return AnyView::Empty;
                 };
                 routes
-                    .resolve_branch(&path, context)
+                    .resolve_branch(&path, ctx)
                     .map(|(_, view)| view)
                     .unwrap_or(AnyView::Empty)
             },

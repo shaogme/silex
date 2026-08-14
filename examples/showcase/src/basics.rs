@@ -5,7 +5,7 @@ use std::time::Duration;
 
 #[component]
 pub fn Greeting<'scope, Ctx>(
-    #[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     name: Signal<'scope, String>,
     #[chain(default)] punctuation: String,
 ) -> impl View<'scope> {
@@ -17,12 +17,12 @@ pub fn Greeting<'scope, Ctx>(
 
     Ok(div![
         span("Hello, "),
-        strong(name).style(sty(context).color(AppTheme::PRIMARY)?),
+        strong(name).style(sty(ctx).color(AppTheme::PRIMARY)?),
         span(full_punctuation),
     ]
     .class("greeting-card")
     .style(
-        sty(context)
+        sty(ctx)
             .padding(px(10))?
             .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
             .border_radius(px(4))?
@@ -32,9 +32,9 @@ pub fn Greeting<'scope, Ctx>(
 }
 
 #[component]
-pub fn Counter<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
+pub fn Counter<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     let (count, set_count) = scope.signal(0)?;
-    let double_count = rx!(context; $count * 2);
+    let double_count = rx!(ctx; $count * 2);
     let owner_for_timer = ScopedMountOwner::new(scope).token();
 
     // Timer Handle for Auto Increment (StoredValue: doesn't trigger UI updates itself)
@@ -59,14 +59,14 @@ pub fn Counter<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
             button("+").on(event::click, set_count.updater(|n| *n += 1)),
         ]
         .style(
-            sty(context)
+            sty(ctx)
                 .display("flex")?
                 .gap(px(10))?
                 .align_items("center")?
         ),
         // Auto Increment Demo using set_interval and StoredValue
         div![
-            button(rx!(context; if *$is_running {
+            button(rx!(ctx; if *$is_running {
                 "Stop Auto Inc"
             } else {
                 "Start Auto Inc"
@@ -95,7 +95,7 @@ pub fn Counter<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
                 Ok(())
             })
         ]
-        .style(sty(context).margin("10px 0")?),
+        .style(sty(ctx).margin("10px 0")?),
         // Manual Input Demo using event_target_value
         div![
             span("Set Value: "),
@@ -109,11 +109,11 @@ pub fn Counter<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
                     Ok(())
                 })
         ]
-        .style(sty(context).margin_bottom(px(10))?),
+        .style(sty(ctx).margin_bottom(px(10))?),
         div!["Double: ", double_count]
-            .classes(rx!(context; if *$count % 2 == 0 { "even" } else { "odd" }))
+            .classes(rx!(ctx; if *$count % 2 == 0 { "even" } else { "odd" }))
             .style(
-                sty(context)
+                sty(ctx)
                     .margin_top(px(5))?
                     .color(hex("#666"))?
                     .font_size(em_unit(0.9))?
@@ -122,7 +122,7 @@ pub fn Counter<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
 }
 
 #[component]
-pub fn NodeRefDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
+pub fn NodeRefDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     use silex::reexports::web_sys::HtmlInputElement;
     let input_ref = scope.node_ref::<HtmlInputElement>()?;
 
@@ -132,7 +132,7 @@ pub fn NodeRefDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
         input()
             .placeholder("I will be focused...")
             .node_ref(input_ref) // NodeRef 是 Copy 的，无需 clone
-            .style(sty(context).margin_right(px(10))?.padding("5px")?),
+            .style(sty(ctx).margin_right(px(10))?.padding("5px")?),
         button("Focus Input").on(event::click, move |_| {
             if let Some(el) = input_ref.get()? {
                 let _ = el.focus();
@@ -141,16 +141,16 @@ pub fn NodeRefDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
         })
     ]
     .style(
-        sty(context)
+        sty(ctx)
             .padding(px(20))?
             .border(border(px(1), BorderStyleKeyword::Dashed, AppTheme::BORDER))?
             .margin_top(px(20))?,
     ))
 }
 #[component]
-pub fn SvgIconDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
+pub fn SvgIconDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     #[component]
-    fn ShieldCheck<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
+    fn ShieldCheck<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
         svg(path()
             .attr("stroke-linecap", "round")
             .attr("stroke-linejoin", "round")
@@ -167,16 +167,16 @@ pub fn SvgIconDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
         h3("SVG Icon forwarding"),
         p("SVG icons with attribute forwarding."),
         div![
-            ShieldCheck(context).build().style(
-                sty(context)
+            ShieldCheck(ctx).build().style(
+                sty(ctx)
                     .width(px(32))?
                     .height(px(32))?
                     .color(ColorName::Green)?
             ),
-            ShieldCheck(context)
+            ShieldCheck(ctx)
                 .build()
                 .style(
-                    sty(context)
+                    sty(ctx)
                         .width(px(48))?
                         .height(px(48))?
                         .color(ColorName::Blue)?
@@ -187,14 +187,14 @@ pub fn SvgIconDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
                     console_log("Icon Clicked!");
                     Ok(())
                 }),
-            ShieldCheck(context)
+            ShieldCheck(ctx)
                 .build()
                 .attr("width", "50")
                 .attr("height", "50")
-                .style(sty(context).color(ColorName::Red)?.margin_left(px(10))?),
+                .style(sty(ctx).color(ColorName::Red)?.margin_left(px(10))?),
         ]
         .style(
-            sty(context)
+            sty(ctx)
                 .display(DisplayKeyword::Flex)?
                 .align_items(AlignItemsKeyword::Center)?
                 .padding(px(10))?
@@ -202,16 +202,16 @@ pub fn SvgIconDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
                 .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
         )
     ]
-    .style(sty(context).margin_top(px(20))?))
+    .style(sty(ctx).margin_top(px(20))?))
 }
 
 #[component]
-pub fn EventDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
+pub fn EventDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     let (name, set_name) = scope.signal("Silex".to_string())?;
     let (count, set_count) = scope.signal(0)?;
 
     let (logs, set_logs) = scope.signal(Vec::<String>::new())?;
-    let log_item_style = sty(context).font_size(em_unit(0.8))?;
+    let log_item_style = sty(ctx).font_size(em_unit(0.8))?;
     let payload = "DataPayload".to_string();
 
     // Since Signal is Copy, we can just move it directly into closures without cloning!
@@ -248,26 +248,26 @@ pub fn EventDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
             p(count.map(scope, |c| format!("Current Count: {}", c), error_handler)?),
         ]
         .style(
-            sty(context)
+            sty(ctx)
                 .margin_bottom(px(10))?
                 .font_family("monospace")?
         ),
         button("Log & Update (Standard)")
             .on(event::click, on_click)
-            .style(sty(context).margin_right(px(10))?),
+            .style(sty(ctx).margin_right(px(10))?),
         div![].style(
-            sty(context)
+            sty(ctx)
                 .height(px(1))?
                 .background("#ccc")?
                 .margin("15px 0")?
         ),
         p("2. Non-Copy types: Clone manually inside the closure."),
         button("Consume Payload").on(event::click, on_click_inner),
-        ul(For(context, logs, |l| l.clone())
+        ul(For(ctx, logs, |l| l.clone())
             .children(move |l, _idx| li(l).style(log_item_style.clone()))
             .build())
         .style(
-            sty(context)
+            sty(ctx)
                 .margin_top(px(10))?
                 .background(AppTheme::BORDER)?
                 .opacity(0.5)?
@@ -276,7 +276,7 @@ pub fn EventDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
         )
     ]
     .style(
-        sty(context)
+        sty(ctx)
             .padding(px(20))?
             .border(border(px(1), BorderStyleKeyword::Dashed, AppTheme::BORDER))?
             .margin_top(px(20))?,
@@ -284,7 +284,7 @@ pub fn EventDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
 }
 
 #[component]
-pub fn BasicsPage<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
+pub fn BasicsPage<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     let name_signal = scope.rw_signal("Developer".to_string())?;
 
     Ok(div![
@@ -298,21 +298,21 @@ pub fn BasicsPage<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
                     "disabled",
                     name_signal.read_signal().equals(scope, "", error_handler)?,
                 )
-                .style(sty(context).margin_left(px(10))?)
+                .style(sty(ctx).margin_left(px(10))?)
         ]
         .style(
-            sty(context)
+            sty(ctx)
                 .margin_bottom(px(15))?
                 .padding(px(10))?
                 .background(AppTheme::SURFACE)?
                 .border_radius(px(4))?
                 .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
         ),
-        Greeting(context, name_signal).build(),
-        Counter(context).build(),
-        EventDemo(context).build(),
-        NodeRefDemo(context).build(),
-        SvgIconDemo(context).build(),
+        Greeting(ctx, name_signal).build(),
+        Counter(ctx).build(),
+        EventDemo(ctx).build(),
+        NodeRefDemo(ctx).build(),
+        SvgIconDemo(ctx).build(),
         // AttributeDemo omitted for brevity, logic is same as previous
     ])
 }

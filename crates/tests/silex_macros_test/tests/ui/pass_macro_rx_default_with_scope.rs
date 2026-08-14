@@ -8,9 +8,8 @@ use silex_macros::component;
 
 #[component]
 fn RxDefaultWithScope<'scope, Ctx>(
-#[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     children: AnyView<'scope>,
-    
     #[chain(default)] signal: Signal<'scope, i32>,
     #[chain(default)] read: ReadSignal<'scope, i32>,
     #[chain(default)] rw: RwSignal<'scope, i32>,
@@ -28,9 +27,8 @@ fn RxDefaultWithScope<'scope, Ctx>(
 
 #[component]
 fn RxDefaultExplicit<'scope, Ctx>(
-#[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     children: AnyView<'scope>,
-    
     #[prop(into)]
     #[chain(default = "column")]
     direction: Signal<'scope, String>,
@@ -43,7 +41,7 @@ fn RxDefaultExplicit<'scope, Ctx>(
 #[component]
 fn OptionalRxDefault<'scope, Ctx>(
     children: AnyView<'scope>,
-    #[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     #[chain(default)] value: Option<Signal<'scope, i32>>,
 ) -> impl View<'scope> {
     let _ = value;

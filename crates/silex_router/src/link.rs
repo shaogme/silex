@@ -112,7 +112,7 @@ impl<'scope> View<'scope> for LinkView<'scope> {
 /// 类似于 HTML 的 `<a>` 标签，但会拦截点击事件并使用 Router 导航，而不是刷新页面。
 #[component]
 pub fn Link<'scope, T: ToRoute + Clone + 'scope>(
-    #[context] router_ctx: RouterContext<'scope>,
+    #[ctx] router_ctx: RouterContext<'scope>,
     to: T,
     #[chain] children: AnyView<'scope>,
     #[prop(into)]

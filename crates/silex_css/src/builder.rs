@@ -72,7 +72,7 @@ pub struct Style<'scope> {
 }
 
 impl<'scope> Style<'scope> {
-    pub fn new<C>(context: C) -> Self
+    pub fn new<C>(ctx: C) -> Self
     where
         C: SilexContextProvider<'scope>,
     {
@@ -80,7 +80,7 @@ impl<'scope> Style<'scope> {
             static_rules: Vec::new(),
             dynamic_rules: Vec::new(),
             nested_rules: Vec::new(),
-            error_handler: context.error_reporter(),
+            error_handler: ctx.error_reporter(),
         }
     }
 
@@ -270,11 +270,11 @@ impl<'scope> Style<'scope> {
     }
 }
 
-pub fn sty<'scope, C>(context: C) -> Style<'scope>
+pub fn sty<'scope, C>(ctx: C) -> Style<'scope>
 where
     C: SilexContextProvider<'scope>,
 {
-    Style::new(context)
+    Style::new(ctx)
 }
 
 macro_rules! generate_builder_methods {
@@ -563,9 +563,9 @@ fn generate_css_recursive<'scope>(
 impl<'scope> ReactiveBinding<'scope> for Style<'scope> {
     fn binding_plan(
         rx: Rx<'scope, Self>,
-        context: ReactiveBindingContext,
+        ctx: ReactiveBindingContext,
     ) -> Option<ReactiveBindingPlan<'scope>> {
-        if !matches!(context, ReactiveBindingContext::Value(_)) {
+        if !matches!(ctx, ReactiveBindingContext::Value(_)) {
             return None;
         }
 
@@ -625,7 +625,7 @@ mod tests {
         style.expect("static style should build").render().css
     }
 
-    fn with_test_context<F>(f: F)
+    fn with_test_ctx<F>(f: F)
     where
         F: for<'scope> FnOnce(SilexContext<'scope>),
     {
@@ -634,17 +634,17 @@ mod tests {
             .child(|scope| {
                 f(SilexContext::new(scope, discard_test_errors(scope)));
             })
-            .expect("test context should initialize");
+            .expect("test ctx should initialize");
     }
 
-    fn css_of_with_context<F>(build: F) -> String
+    fn css_of_with_ctx<F>(build: F) -> String
     where
         F: for<'scope> FnOnce(SilexContext<'scope>) -> SilexResult<Style<'scope>>,
     {
         let mut runtime = Runtime::new();
         runtime
             .child(|scope| css_of(build(SilexContext::new(scope, discard_test_errors(scope)))))
-            .expect("test context should initialize")
+            .expect("test ctx should initialize")
     }
 
     /// 报告 P2-3：`sty()` 的产出此前**不带任何 layer**，靠「无层规则压过所有
@@ -652,7 +652,7 @@ mod tests {
     /// 只能靠注入先后决定胜负。
     #[test]
     fn sty_lands_in_the_overrides_layer() {
-        let css = css_of_with_context(|context| Style::new(context).color(hex("#fff")));
+        let css = css_of_with_ctx(|ctx| Style::new(ctx).color(hex("#fff")));
         assert!(
             css.starts_with(&format!("@layer {} {{", layers::OVERRIDES)),
             "{css}"
@@ -663,21 +663,21 @@ mod tests {
     /// 空样式不该注入一个空的 layer 块
     #[test]
     fn an_empty_style_produces_no_css_at_all() {
-        assert_eq!(css_of_with_context(|context| Ok(Style::new(context))), "");
+        assert_eq!(css_of_with_ctx(|ctx| Ok(Style::new(ctx))), "");
     }
 
     /// 类名只由静态结构决定：同样的声明必须给出同一个类名，
     /// 否则每次渲染都会往静态表里塞一份新副本
     #[test]
     fn the_class_name_is_stable_across_renders() {
-        with_test_context(|context| {
-            let a = Style::new(context)
+        with_test_ctx(|ctx| {
+            let a = Style::new(ctx)
                 .color(hex("#fff"))
                 .expect("color should build")
                 .width(px(10))
                 .expect("width should build")
                 .render();
-            let b = Style::new(context)
+            let b = Style::new(ctx)
                 .color(hex("#fff"))
                 .expect("color should build")
                 .width(px(10))
@@ -694,8 +694,8 @@ mod tests {
     /// 用户字符串撑开的新规则。
     #[test]
     fn a_static_value_cannot_break_out_of_its_declaration() {
-        let css = css_of_with_context(|context| {
-            Style::new(context).grid_template_areas("red; } body { display: none")
+        let css = css_of_with_ctx(|ctx| {
+            Style::new(ctx).grid_template_areas("red; } body { display: none")
         });
         assert_eq!(css.matches('{').count(), 2, "{css}");
         assert_eq!(css.matches('}').count(), 2, "{css}");
@@ -705,8 +705,8 @@ mod tests {
     /// 嵌套选择器：带 `&` 的替换到位
     #[test]
     fn nested_selectors_expand_against_the_base_class() {
-        with_test_context(|context| {
-            let rendered = Style::new(context)
+        with_test_ctx(|ctx| {
+            let rendered = Style::new(ctx)
                 .nest("& > div", |s| s.color(hex("#000")))
                 .expect("nested style should build")
                 .render();
@@ -726,8 +726,8 @@ mod tests {
     /// 现在 `nest` 统一到 CSS Nesting，「贴在自身上」交给 `pseudo` 一族。
     #[test]
     fn nest_follows_css_nesting_and_pseudo_attaches() {
-        with_test_context(|context| {
-            let nested = Style::new(context)
+        with_test_ctx(|ctx| {
+            let nested = Style::new(ctx)
                 .nest(":hover", |s| s.color(hex("#000")))
                 .expect("nested style should build")
                 .render();
@@ -738,7 +738,7 @@ mod tests {
                 nested.css
             );
 
-            let attached = Style::new(context)
+            let attached = Style::new(ctx)
                 .pseudo(":hover", |s| s.color(hex("#000")))
                 .expect("pseudo style should build")
                 .render();
@@ -755,12 +755,12 @@ mod tests {
     /// 另一份的类名直接命中
     #[test]
     fn nest_and_pseudo_do_not_collide_on_the_same_class_name() {
-        with_test_context(|context| {
-            let a = Style::new(context)
+        with_test_ctx(|ctx| {
+            let a = Style::new(ctx)
                 .nest(":hover", |s| s.color(hex("#000")))
                 .expect("nested style should build")
                 .render();
-            let b = Style::new(context)
+            let b = Style::new(ctx)
                 .pseudo(":hover", |s| s.color(hex("#000")))
                 .expect("pseudo style should build")
                 .render();
@@ -770,8 +770,8 @@ mod tests {
 
     #[test]
     fn the_on_x_helpers_attach_to_the_base_class() {
-        with_test_context(|context| {
-            let rendered = Style::new(context)
+        with_test_ctx(|ctx| {
+            let rendered = Style::new(ctx)
                 .on_hover(|s| s.color(hex("#000")))
                 .expect("hover style should build")
                 .render();
@@ -788,10 +788,10 @@ mod tests {
     /// CSS 变量之上
     #[test]
     fn a_custom_property_can_be_written_from_the_builder() {
-        let css = css_of_with_context(|context| Style::new(context).var("--brand", hex("#09f")));
+        let css = css_of_with_ctx(|ctx| Style::new(ctx).var("--brand", hex("#09f")));
         assert!(css.contains("--brand: #09f;"), "{css}");
         // 不带 `--` 时自动补上
-        let css = css_of_with_context(|context| Style::new(context).var("brand", hex("#09f")));
+        let css = css_of_with_ctx(|ctx| Style::new(ctx).var("brand", hex("#09f")));
         assert!(css.contains("--brand: #09f;"), "{css}");
     }
 
@@ -799,8 +799,8 @@ mod tests {
     /// （`-webkit-font-smoothing` 根本不在 MDN 数据里）只能退回 `styled!`
     #[test]
     fn raw_reaches_properties_the_registry_does_not_cover() {
-        let css = css_of_with_context(|context| {
-            Style::new(context).raw("-webkit-font-smoothing", "antialiased")
+        let css = css_of_with_ctx(|ctx| {
+            Style::new(ctx).raw("-webkit-font-smoothing", "antialiased")
         });
         assert!(
             css.contains("-webkit-font-smoothing: antialiased;"),
@@ -811,8 +811,8 @@ mod tests {
     /// 属性名也可能来自调用方：一个 `:` 就能把一条声明劈成两条
     #[test]
     fn a_raw_property_name_cannot_open_a_second_declaration() {
-        let css = css_of_with_context(|context| {
-            Style::new(context).raw("color: red; background", "blue")
+        let css = css_of_with_ctx(|ctx| {
+            Style::new(ctx).raw("color: red; background", "blue")
         });
         // 只该有一条声明——`@layer` 块 + 规则块 = 2 个花括号，1 个分号
         assert_eq!(css.matches(';').count(), 1, "{css}");

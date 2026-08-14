@@ -761,8 +761,8 @@ fn generate_table_expression(
         let child = quote! {
             #child_type::table({
                 let __silex_render = ::std::rc::Rc::clone(&#render);
-                move |__silex_child, __silex_context| {
-                    __silex_render(Self::#variant(__silex_child), __silex_context)
+                move |__silex_child, __silex_ctx| {
+                    __silex_render(Self::#variant(__silex_child), __silex_ctx)
                 }
             })?
         };
@@ -772,9 +772,9 @@ fn generate_table_expression(
             __silex_table = __silex_table.nest(
                 #prefix,
                 #child,
-                move |__silex_context, __silex_outlet| {
+                move |__silex_ctx, __silex_outlet| {
                     #silex::dom::view::View::into_any(
-                        (#layout)(__silex_context, __silex_outlet)
+                        (#layout)(__silex_ctx, __silex_outlet)
                     )
                 },
             )?;
@@ -794,9 +794,9 @@ fn generate_entry(silex: &TokenStream, leaf: &RouteLeaf, render: &TokenStream) -
             #pattern,
             {
                 let __silex_render = ::std::rc::Rc::clone(&#render);
-                move |__silex_match, __silex_context| {
+                move |__silex_match, __silex_ctx| {
                     let __silex_route = #constructor?;
-                    Some(__silex_render(__silex_route, __silex_context))
+                    Some(__silex_render(__silex_route, __silex_ctx))
                 }
             },
         )

@@ -3,7 +3,7 @@ use silex_macros::styled;
 
 styled! {
     pub Skeleton<'scope, Ctx><div>(
-        #[context] context: Ctx,
+        #[ctx] ctx: Ctx,
     ) {
         @apply animate-pulse rounded-md bg-slate-100 dark:bg-slate-800;
     }

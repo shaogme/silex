@@ -9,7 +9,7 @@ use silex_macros::styled;
 
 styled! {
     pub ScopedPanel<'scope><div>(
-        #[context] context: silex_core::SilexContext<'scope>,
+        #[ctx] ctx: silex_core::SilexContext<'scope>,
         children: AnyView<'scope>,
         color: silex_core::reactivity::Signal<'scope, Hex>,
     ) {

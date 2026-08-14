@@ -45,7 +45,7 @@ fn calculate_slider_value(
 
 #[component]
 pub fn Slider<'scope, Ctx>(
-    #[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     #[prop(into)]
     #[chain(default)]
     value: Signal<'scope, f64>,
@@ -71,9 +71,9 @@ pub fn Slider<'scope, Ctx>(
     #[chain(default)]
     on_change: Callback<'scope, f64>,
 ) -> impl View<'scope> {
-    let min_val = rx!(context; *$min);
+    let min_val = rx!(ctx; *$min);
 
-    let max_val = rx!(context; {
+    let max_val = rx!(ctx; {
         let mn = *$min;
         let mx = *$max;
         if mx <= mn {
@@ -87,19 +87,19 @@ pub fn Slider<'scope, Ctx>(
         }
     });
 
-    let step_val = rx!(context; {
+    let step_val = rx!(ctx; {
         let s = *$step;
         if s <= 0.0 { 1.0 } else { s }
     });
 
-    let is_vertical = rx!(context; $orientation.as_str() == "vertical");
-    let orient = rx!(context; if *$is_vertical {
+    let is_vertical = rx!(ctx; $orientation.as_str() == "vertical");
+    let orient = rx!(ctx; if *$is_vertical {
         "vertical"
     } else {
         "horizontal"
     });
 
-    let root_cls = rx!(context; {
+    let root_cls = rx!(ctx; {
         let base = tw!(
             "relative flex w-full touch-none items-center select-none data-[disabled]:opacity-50 data-[orientation=vertical]:h-full data-[orientation=vertical]:min-h-44 data-[orientation=vertical]:w-auto data-[orientation=vertical]:flex-col"
         );
@@ -111,7 +111,7 @@ pub fn Slider<'scope, Ctx>(
         }
     });
 
-    let pct = rx!(context; {
+    let pct = rx!(ctx; {
         let v = *$value;
         let mn = *$min_val;
         let mx = *$max_val;
@@ -122,7 +122,7 @@ pub fn Slider<'scope, Ctx>(
         }
     });
 
-    let range_style = rx!(context; {
+    let range_style = rx!(ctx; {
         let p = *$pct;
         if *$is_vertical {
             format!("height: {}%;", p)
@@ -131,7 +131,7 @@ pub fn Slider<'scope, Ctx>(
         }
     });
 
-    let thumb_style = rx!(context; {
+    let thumb_style = rx!(ctx; {
         let p = *$pct;
         if *$is_vertical {
             format!("bottom: {}%;", p)
@@ -140,7 +140,7 @@ pub fn Slider<'scope, Ctx>(
         }
     });
 
-    let input_val_str = rx!(context; $value.to_string());
+    let input_val_str = rx!(ctx; $value.to_string());
     let is_dragging = Rc::new(Cell::new(false));
 
     let handle_down = {
@@ -246,7 +246,7 @@ pub fn Slider<'scope, Ctx>(
     ))
     .attr("data-slot", "slider")
     .attr("data-orientation", orient)
-    .attr("data-disabled", rx!(context; *$disabled))
+    .attr("data-disabled", rx!(ctx; *$disabled))
     .class(root_cls)
     .on_pointer_down(handle_down)
     .on_pointer_move(handle_move)

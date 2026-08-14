@@ -13,7 +13,7 @@ router! {
         Home => "/",
         Users(UsersRoute) {
             prefix: "/users";
-            layout: |_context, outlet| outlet;
+            layout: |_ctx, outlet| outlet;
         },
     }
 }
@@ -25,7 +25,7 @@ fn main() {
         rest: PathTail::from("docs/reference"),
     })
     .path();
-    let _ = AppRoute::table(|route, _context| match route {
+    let _ = AppRoute::table(|route, _ctx| match route {
         AppRoute::Home => AnyView::from("home"),
         AppRoute::Users(UsersRoute::List) => AnyView::from("list"),
         AppRoute::Users(UsersRoute::Detail { id }) => AnyView::from(id.to_string()),

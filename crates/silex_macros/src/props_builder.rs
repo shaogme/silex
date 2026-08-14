@@ -13,7 +13,7 @@ struct FieldAttrs {
     render: bool,
     render_fn_args: Option<Vec<Type>>,
     chained: bool,
-    context: bool,
+    ctx: bool,
 }
 
 #[derive(Clone)]
@@ -61,7 +61,7 @@ struct BuilderContext {
     prop_generic_idents: Vec<Ident>,
     required_fields: Vec<FieldSpec>,
     scope: syn::Lifetime,
-    context_field: Option<Ident>,
+    ctx_field: Option<Ident>,
 }
 
 impl BuilderContext {
@@ -129,21 +129,21 @@ impl BuilderContext {
             }
         };
 
-        let context_fields: Vec<_> = fields.iter().filter(|field| field.attrs.context).collect();
-        if context_fields.len() > 1 {
+        let ctx_fields: Vec<_> = fields.iter().filter(|field| field.attrs.ctx).collect();
+        if ctx_fields.len() > 1 {
             return Err(syn::Error::new_spanned(
-                &context_fields[1].ident,
-                "PropsBuilder supports exactly one `#[context]` field",
+                &ctx_fields[1].ident,
+                "PropsBuilder supports exactly one `#[ctx]` field",
             ));
         }
-        let context_field = context_fields.first().map(|field| field.ident.clone());
+        let ctx_field = ctx_fields.first().map(|field| field.ident.clone());
 
         if let Some(field) = fields.iter().find(|field| is_reactive_default_field(field))
-            && context_field.is_none()
+            && ctx_field.is_none()
         {
             return Err(syn::Error::new_spanned(
                 &field.ident,
-                "RxDefault requires an explicit `#[context]` parameter; scoped reactive defaults cannot create an implicit runtime",
+                "RxDefault requires an explicit `#[ctx]` parameter; scoped reactive defaults cannot create an implicit runtime",
             ));
         }
 
@@ -168,7 +168,7 @@ impl BuilderContext {
             prop_generic_idents,
             required_fields,
             scope,
-            context_field,
+            ctx_field,
         })
     }
 
@@ -258,7 +258,7 @@ impl BuilderContext {
         self.scope.clone()
     }
 
-    fn context_where_clause(&self) -> syn::WhereClause {
+    fn ctx_where_clause(&self) -> syn::WhereClause {
         let __silex = crate::crate_path::silex();
         let scope = self.scope_lifetime();
         let mut where_clause = self
@@ -266,16 +266,16 @@ impl BuilderContext {
             .where_clause
             .clone()
             .unwrap_or_else(|| syn::parse_quote!(where));
-        if let Some(context_field) = &self.context_field {
-            let context_ty = self
+        if let Some(ctx_field) = &self.ctx_field {
+            let ctx_ty = self
                 .fields
                 .iter()
-                .find(|field| &field.ident == context_field)
+                .find(|field| &field.ident == ctx_field)
                 .map(|field| &field.ty)
-                .expect("context field must be present in Props");
+                .expect("ctx field must be present in Props");
             where_clause
                 .predicates
-                .push(syn::parse_quote!(#context_ty: #__silex::core::SilexContextProvider<#scope>));
+                .push(syn::parse_quote!(#ctx_ty: #__silex::core::SilexContextProvider<#scope>));
         }
         where_clause
     }
@@ -413,7 +413,7 @@ impl BuilderContext {
         let __silex = crate::crate_path::silex();
         let (builder_generics_decl, builder_generics_type) = self.get_builder_generics();
         let builder_name = &self.builder_name;
-        let where_clause = self.context_where_clause();
+        let where_clause = self.ctx_where_clause();
 
         let initial_states: Vec<_> = self
             .prop_generic_idents
@@ -452,9 +452,9 @@ impl BuilderContext {
             .filter(|field| {
                 !is_internal_marker_field(field)
                     && self
-                        .context_field
+                        .ctx_field
                         .as_ref()
-                        .map(|context_field| context_field != &field.ident)
+                        .map(|ctx_field| ctx_field != &field.ident)
                         .unwrap_or(true)
             })
             .map(|f| self.generate_setter(f));
@@ -476,19 +476,19 @@ impl BuilderContext {
         let ident = &field.ident;
         let ty = &field.ty;
         let scope = self.scope_lifetime();
-        let reactive_input = self.context_field.is_some() && is_reactive_input_type(ty, &scope);
-        let context_field = self.context_field.as_ref();
+        let reactive_input = self.ctx_field.is_some() && is_reactive_input_type(ty, &scope);
+        let ctx_field = self.ctx_field.as_ref();
         let setter_generic = self.reactive_input_generic_ident();
         let scope_expr = if reactive_input {
-            let context_field =
-                context_field.expect("reactive input setters require a context field");
+            let ctx_field =
+                ctx_field.expect("reactive input setters require a ctx field");
             if field.required {
                 quote! {
-                    #__silex::core::SilexContextProvider::scope(&#context_field)
+                    #__silex::core::SilexContextProvider::scope(&#ctx_field)
                 }
             } else {
                 quote! {
-                    #__silex::core::SilexContextProvider::scope(&self.#context_field)
+                    #__silex::core::SilexContextProvider::scope(&self.#ctx_field)
                 }
             }
         } else {
@@ -630,7 +630,7 @@ impl BuilderContext {
     fn generate_build_impl(&self) -> TokenStream2 {
         let __silex = crate::crate_path::silex();
         let (impl_generics, ty_generics, _) = self.generics.split_for_impl();
-        let where_clause = self.context_where_clause();
+        let where_clause = self.ctx_where_clause();
         let product_name = &self.product_name;
         let props_name = &self.props_name;
         let product_ty = quote! { #product_name #ty_generics };
@@ -665,14 +665,14 @@ impl BuilderContext {
             }
 
             let default_value = if is_reactive_default_field(field) {
-                let context_field = self
-                    .context_field
+                let ctx_field = self
+                    .ctx_field
                     .as_ref()
-                    .expect("reactive defaults require a context field");
+                    .expect("reactive defaults require a ctx field");
                 let init_expr = reactive_default_transform(
                     field,
                     &self.scope,
-                    context_field,
+                    ctx_field,
                     field.attrs.default_value.as_ref(),
                 );
                 if is_fallible_reactive_default_field(field) {
@@ -743,11 +743,11 @@ impl BuilderContext {
         let render_fn_name = &self.render_fn_name;
         let scope = self.scope_lifetime();
         let pending_attribute_ty = self.pending_attribute_ty();
-        let where_clause = self.context_where_clause();
-        let context_field = self
-            .context_field
+        let where_clause = self.ctx_where_clause();
+        let ctx_field = self
+            .ctx_field
             .as_ref()
-            .expect("component Props must contain a context field");
+            .expect("component Props must contain a ctx field");
 
         let mut view_where_clause = where_clause;
         view_where_clause
@@ -755,8 +755,8 @@ impl BuilderContext {
             .push(syn::parse_quote!(#product_ty: ::core::clone::Clone));
 
         let mount_body = quote! {
-            product.props.#context_field = #__silex::core::SilexContextProvider::with_error_reporter(
-                product.props.#context_field,
+            product.props.#ctx_field = #__silex::core::SilexContextProvider::with_error_reporter(
+                product.props.#ctx_field,
                 error_handler,
             );
             let view_instance = #render_fn_name(product.props);
@@ -825,8 +825,8 @@ impl BuilderContext {
         let __silex = crate::crate_path::silex();
         let (builder_generics_decl, _) = self.get_builder_generics();
         let (product_impl_generics, product_ty_generics, _) = self.generics.split_for_impl();
-        let product_where_clause = self.context_where_clause();
-        let builder_where_clause = self.context_where_clause();
+        let product_where_clause = self.ctx_where_clause();
+        let builder_where_clause = self.ctx_where_clause();
         let product_name = &self.product_name;
         let scope = self.scope_lifetime();
 
@@ -861,7 +861,7 @@ impl BuilderContext {
         let vis = &self.vis;
         let component_name = &self.component_name;
         let (impl_generics, _, _) = self.generics.split_for_impl();
-        let where_clause = self.context_where_clause();
+        let where_clause = self.ctx_where_clause();
         let scope = self.scope_lifetime();
 
         let initial_states: Vec<_> = self
@@ -943,7 +943,7 @@ fn field_value_transform(field: &FieldSpec, input: TokenStream2) -> TokenStream2
 fn reactive_default_transform(
     field: &FieldSpec,
     scope: &syn::Lifetime,
-    context_field: &Ident,
+    ctx_field: &Ident,
     default_value: Option<&TokenStream2>,
 ) -> TokenStream2 {
     let __silex = crate::crate_path::silex();
@@ -955,7 +955,7 @@ fn reactive_default_transform(
                 {
                     use #__silex::core::ReactiveInput as _;
                     (#value).into_reactive_input(
-                        #__silex::core::SilexContextProvider::scope(&#context_field),
+                        #__silex::core::SilexContextProvider::scope(&#ctx_field),
                     )
                 }
             },
@@ -964,7 +964,7 @@ fn reactive_default_transform(
                     use #__silex::core::ReactiveInput as _;
                     <#value_ty as ::core::default::Default>::default()
                         .into_reactive_input(
-                            #__silex::core::SilexContextProvider::scope(&#context_field),
+                            #__silex::core::SilexContextProvider::scope(&#ctx_field),
                         )
                 }
             },
@@ -974,13 +974,13 @@ fn reactive_default_transform(
     match default_value {
         Some(value) => quote! {
             <#ty as #__silex::core::RxFrom<#scope>>::rx_from(
-                #__silex::core::SilexContextProvider::scope(&#context_field),
+                #__silex::core::SilexContextProvider::scope(&#ctx_field),
                 #value,
             )
         },
         None => quote! {
             <#ty as #__silex::core::RxDefault<#scope>>::rx_default(
-                #__silex::core::SilexContextProvider::scope(&#context_field),
+                #__silex::core::SilexContextProvider::scope(&#ctx_field),
             )
         },
     }
@@ -1118,14 +1118,14 @@ fn parse_field_attrs(attrs: &[Attribute]) -> syn::Result<FieldAttrs> {
                     }
                 })?;
             }
-        } else if attr.path().is_ident("context") {
+        } else if attr.path().is_ident("ctx") {
             if !matches!(attr.meta, syn::Meta::Path(_)) {
                 return Err(syn::Error::new_spanned(
                     attr,
-                    "`#[context]` does not accept arguments",
+                    "`#[ctx]` does not accept arguments",
                 ));
             }
-            result.context = true;
+            result.ctx = true;
         }
     }
 

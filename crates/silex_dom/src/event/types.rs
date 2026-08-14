@@ -29,7 +29,7 @@ generate_events! {
     mouseout: web_sys::MouseEvent,
     mouseenter: web_sys::MouseEvent,
     mouseleave: web_sys::MouseEvent,
-    contextmenu: web_sys::MouseEvent,
+    ctxmenu: web_sys::MouseEvent,
 }
 
 // === Keyboard Events ===

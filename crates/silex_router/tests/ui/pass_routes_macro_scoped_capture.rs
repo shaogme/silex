@@ -8,10 +8,10 @@ router! {
     }
 }
 
-fn make_routes<'scope>(context: RouterContext<'scope>) {
-    let _ = AppRoute::table(move |route, _context| match route {
+fn make_routes<'scope>(ctx: RouterContext<'scope>) {
+    let _ = AppRoute::table(move |route, _ctx| match route {
         AppRoute::Home => {
-            let _ = context;
+            let _ = ctx;
             AnyView::from("home")
         }
     });

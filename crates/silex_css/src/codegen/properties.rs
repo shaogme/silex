@@ -7,7 +7,7 @@ macro_rules! for_all_properties {
     ($callback:ident) => {
         $callback! {
             (moz_appearance, "-moz-appearance", MozAppearance, []),
-            (moz_context_properties, "-moz-context-properties", MozContextProperties, [Str]),
+            (moz_ctx_properties, "-moz-ctx-properties", MozContextProperties, [Str]),
             (moz_orient, "-moz-orient", MozOrient, []),
             (webkit_appearance, "-webkit-appearance", WebkitAppearance, []),
             (webkit_box_reflect, "-webkit-box-reflect", WebkitBoxReflect, [LenCalc Length Str Url]),

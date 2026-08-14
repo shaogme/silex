@@ -29,14 +29,14 @@ fn the_math_macros_type_check_at_a_property_call_site() {
             let error_handler = scope
                 .error_handler(|_| {})
                 .expect("test error handler should register");
-            let context = SilexContext::new(scope, error_handler);
+            let ctx = SilexContext::new(scope, error_handler);
 
-            let _ = sty(context)
+            let _ = sty(ctx)
                 .width(css_min!(px(600), pct(100)))
                 .expect("width should accept the minimum expression")
                 .height(css_max!(vh(50), px(320)))
                 .expect("height should accept the maximum expression")
                 .font_size(css_clamp!(rem(1), vw(4), rem(2)));
         })
-        .expect("test context should initialize");
+        .expect("test ctx should initialize");
 }

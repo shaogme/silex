@@ -260,7 +260,7 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
     let prefix = split_at_semicolon(&mut tokens).ok_or_else(|| {
         Error::new(
             proc_macro2::Span::call_site(),
-            "rx! requires a context and body",
+            "rx! requires a ctx and body",
         )
     })?;
     if prefix.is_empty() {
@@ -272,7 +272,7 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
     let scope_tokens = split_at_semicolon(&mut tokens).ok_or_else(|| {
         Error::new(
             proc_macro2::Span::call_site(),
-            "rx! requires `@context <context>; body`",
+            "rx! requires `@ctx <ctx>; body`",
         )
     })?;
     if scope_tokens.is_empty() {
@@ -282,30 +282,30 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
         ));
     }
     let mut scope_tokens_iter = scope_tokens.into_iter();
-    let is_context = matches!(
+    let is_ctx = matches!(
         (scope_tokens_iter.next(), scope_tokens_iter.next()),
         (Some(TokenTree::Punct(punct)), Some(TokenTree::Ident(identifier)))
-            if punct.as_char() == '@' && identifier == "context"
+            if punct.as_char() == '@' && identifier == "ctx"
     );
-    if !is_context {
+    if !is_ctx {
         return Err(Error::new(
             proc_macro2::Span::call_site(),
             "rx! requires `rx!(ctx; body)` and no longer accepts explicit scope or error handler arguments",
         ));
     }
-    let context_tokens: TokenStream2 = scope_tokens_iter.collect();
-    if context_tokens.is_empty() {
+    let ctx_tokens: TokenStream2 = scope_tokens_iter.collect();
+    if ctx_tokens.is_empty() {
         return Err(Error::new(
             proc_macro2::Span::call_site(),
-            "rx! context cannot be empty",
+            "rx! ctx cannot be empty",
         ));
     }
-    let context: Expr = parse2(context_tokens)?;
+    let ctx: Expr = parse2(ctx_tokens)?;
     let scope: Expr = parse2(quote! {
-        #prefix::SilexContextProvider::scope(&(#context))
+        #prefix::SilexContextProvider::scope(&(#ctx))
     })?;
     let error_handler: Expr = parse2(quote! {
-        #prefix::SilexContextProvider::error_reporter(&(#context))
+        #prefix::SilexContextProvider::error_reporter(&(#ctx))
     })?;
     let body: TokenStream2 = tokens.collect();
     if body.is_empty() {
@@ -421,7 +421,7 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
 }
 
 /// `rx!` process macro. The first section is a dependency prefix, followed by
-/// `@context`, a component context, and the body expression.
+/// `@ctx`, a component ctx, and the body expression.
 #[proc_macro]
 pub fn rx(input: TokenStream) -> TokenStream {
     match expand(TokenStream2::from(input)) {
@@ -456,7 +456,7 @@ mod tests {
 
     #[test]
     fn rejects_non_source_parenthesized_expression() {
-        let input: TokenStream2 = "::silex_core; @context ctx; $(settings.theme.clone())"
+        let input: TokenStream2 = "::silex_core; @ctx ctx; $(settings.theme.clone())"
             .parse()
             .unwrap();
         let error = expand(input).unwrap_err();
@@ -467,7 +467,7 @@ mod tests {
     #[test]
     fn rewrites_explicit_source_inside_nested_macro() {
         let input: TokenStream2 =
-            "::silex_core; @context ctx; format!(\"Theme: {}\", $(settings.theme))"
+            "::silex_core; @ctx ctx; format!(\"Theme: {}\", $(settings.theme))"
                 .parse()
                 .unwrap();
         let output = expand(input).unwrap().to_string();
@@ -481,7 +481,7 @@ mod tests {
     fn keeps_legacy_field_access_on_the_root_source() {
         let output = expand(quote! {
             ::silex_core;
-            @context ctx;
+            @ctx ctx;
             $state.name.clone()
         })
         .unwrap()
@@ -496,7 +496,7 @@ mod tests {
     #[test]
     fn deduplicates_repeated_explicit_sources() {
         let input: TokenStream2 =
-            "::silex_core; @context ctx; $(settings.theme) == $(settings.theme)"
+            "::silex_core; @ctx ctx; $(settings.theme) == $(settings.theme)"
                 .parse()
                 .unwrap();
         let output = expand(input).unwrap().to_string();
@@ -505,20 +505,20 @@ mod tests {
     }
 
     #[test]
-    fn rejects_missing_context_section() {
+    fn rejects_missing_ctx_section() {
         let error = expand(quote! { ::silex_core; $count }).unwrap_err();
-        assert!(error.to_string().contains("@context"));
+        assert!(error.to_string().contains("@ctx"));
     }
 
     #[test]
-    fn rejects_missing_context_expression() {
-        let error = expand(quote! { ::silex_core; @context; $count }).unwrap_err();
-        assert!(error.to_string().contains("context cannot be empty"));
+    fn rejects_missing_ctx_expression() {
+        let error = expand(quote! { ::silex_core; @ctx; $count }).unwrap_err();
+        assert!(error.to_string().contains("ctx cannot be empty"));
     }
 
     #[test]
     fn emits_only_scoped_constructors() {
-        let output = expand(quote! { ::silex_core; @context ctx; $count + 1 })
+        let output = expand(quote! { ::silex_core; @ctx ctx; $count + 1 })
             .unwrap()
             .to_string();
         assert!(output.contains("memo"));
@@ -529,7 +529,7 @@ mod tests {
 
     #[test]
     fn routes_parameterless_closures_to_memo() {
-        let output = expand(quote! { ::silex_core; @context ctx; || $count + 1 })
+        let output = expand(quote! { ::silex_core; @ctx ctx; || $count + 1 })
             .unwrap()
             .to_string();
         assert!(output.contains("memo"));
@@ -538,7 +538,7 @@ mod tests {
 
     #[test]
     fn routes_parameterized_closures_to_callback() {
-        let output = expand(quote! { ::silex_core; @context ctx; |value: i32| value + 1 })
+        let output = expand(quote! { ::silex_core; @ctx ctx; |value: i32| value + 1 })
             .unwrap()
             .to_string();
         assert!(output.contains("callback"));
@@ -549,7 +549,7 @@ mod tests {
     fn keeps_at_fn_on_the_typed_derived_path() {
         let output = expand(quote! {
             ::silex_core;
-            @context ctx;
+            @ctx ctx;
             @fn $a + $b + $c + $d
         })
         .unwrap()
@@ -564,7 +564,7 @@ mod tests {
     fn propagates_runtime_errors_without_generated_panics() {
         let output = expand(quote! {
             ::silex_core;
-            @context ctx;
+            @ctx ctx;
             $count + 1
         })
         .unwrap()

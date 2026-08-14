@@ -5,13 +5,13 @@ use silex_macros::{component, tw};
 
 #[component]
 pub fn Accordion<'scope, Ctx>(
-    #[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
     class: Signal<'scope, String>,
 ) -> impl View<'scope> {
-    let root_cls = rx!(context; {
+    let root_cls = rx!(ctx; {
         let base = tw!("w-full");
         let extra = $class;
         if extra.is_empty() {
@@ -26,14 +26,14 @@ pub fn Accordion<'scope, Ctx>(
 
 #[component]
 pub fn AccordionItem<'scope, Ctx>(
-    #[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     children: AnyView<'scope>,
     value: &'static str,
     #[prop(into)]
     #[chain(default)]
     class: Signal<'scope, String>,
 ) -> impl View<'scope> {
-    let item_cls = rx!(context; {
+    let item_cls = rx!(ctx; {
         let base = tw!("border-b border-slate-200 dark:border-slate-800 last:border-b-0");
         let extra = $class;
         if extra.is_empty() {
@@ -51,7 +51,7 @@ pub fn AccordionItem<'scope, Ctx>(
 
 #[component]
 pub fn AccordionTrigger<'scope, Ctx>(
-    #[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
@@ -63,7 +63,7 @@ pub fn AccordionTrigger<'scope, Ctx>(
     #[chain(default)]
     on_click: Callback<'scope, ()>,
 ) -> impl View<'scope> {
-    let trigger_cls = rx!(context; {
+    let trigger_cls = rx!(ctx; {
         let base = tw!(
             "flex flex-1 w-full items-center justify-between gap-4 py-4 text-left text-sm font-medium transition-all hover:underline cursor-pointer border-0 bg-transparent text-slate-900 dark:text-slate-100 [&[data-state=open]>svg]:rotate-180"
         );
@@ -75,8 +75,8 @@ pub fn AccordionTrigger<'scope, Ctx>(
         }
     });
 
-    let state_attr = rx!(context; if *$open { "open" } else { "closed" });
-    let icon_cls = rx!(context; {
+    let state_attr = rx!(ctx; if *$open { "open" } else { "closed" });
+    let icon_cls = rx!(ctx; {
         let is_open = *$open;
         if is_open {
             tw!("pointer-events-none size-4 shrink-0 translate-y-0.5 text-slate-500 dark:text-slate-400 transition-transform duration-200 rotate-180").to_string()
@@ -106,7 +106,7 @@ pub fn AccordionTrigger<'scope, Ctx>(
 
 #[component]
 pub fn AccordionContent<'scope, Ctx>(
-    #[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
@@ -115,7 +115,7 @@ pub fn AccordionContent<'scope, Ctx>(
     #[chain(default)]
     class: Signal<'scope, String>,
 ) -> impl View<'scope> {
-    let content_cls = rx!(context; {
+    let content_cls = rx!(ctx; {
         let base = tw!(
             "overflow-hidden text-sm pb-4 pt-0 text-slate-600 dark:text-slate-400 transition-all"
         );
@@ -129,7 +129,7 @@ pub fn AccordionContent<'scope, Ctx>(
 
     let stored = scope.stored(children)?;
 
-    Ok(rx!(context; {
+    Ok(rx!(ctx; {
         if *$open {
             div(stored.with(|children| children.clone()))
                 .attr("data-slot", "accordion-content")

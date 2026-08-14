@@ -5,7 +5,7 @@ use silex_macros::{component, tw_variants};
 
 #[component]
 pub fn Button<'scope, Ctx>(
-    #[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
@@ -45,7 +45,7 @@ pub fn Button<'scope, Ctx>(
         }
     };
 
-    let cls = rx!(context; {
+    let cls = rx!(ctx; {
         let base_cls = button_variants.get($variant, $size);
         let extra = $class;
         if extra.is_empty() {

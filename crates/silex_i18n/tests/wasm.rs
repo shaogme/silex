@@ -35,7 +35,7 @@ async fn catalog_resource_loads_and_updates_suspense() {
     root.with_scope(|scope| async move {
         let i18n = store(scope, "en-US");
         let calls_for_loader = calls.clone();
-        let suspense = SuspenseContext::new(scope).expect("suspense context");
+        let suspense = SuspenseContext::new(scope).expect("suspense ctx");
         let resource = i18n
             .catalog_resource(
                 move |locale| {
@@ -75,7 +75,7 @@ fn catalog_resource_rejects_foreign_suspense_before_allocating_nodes() {
     let foreign_scope = foreign_root.scope();
     let target_scope = target_root.scope();
     let i18n = store(target_scope, "en-US");
-    let suspense = SuspenseContext::new(foreign_scope).expect("suspense context");
+    let suspense = SuspenseContext::new(foreign_scope).expect("suspense ctx");
     let before = target_scope.runtime_snapshot();
     let result = i18n.catalog_resource(
         |_| async { Err::<Catalog, _>("foreign suspense must fail".to_string()) },
@@ -145,7 +145,7 @@ async fn catalog_resource_refetch_uses_cache_without_incrementing_loader_calls()
     let root = runtime.run().expect("root scope");
     root.with_scope(|scope| async move {
         let i18n = store(scope, "en-US");
-        let suspense = SuspenseContext::new(scope).expect("suspense context");
+        let suspense = SuspenseContext::new(scope).expect("suspense ctx");
         let calls_for_loader = calls.clone();
         let resource = i18n
             .catalog_resource(
@@ -191,7 +191,7 @@ async fn catalog_resource_reports_loader_errors() {
     let root = runtime.run().expect("root scope");
     root.with_scope(|scope| async move {
         let i18n = store(scope, "en-US");
-        let suspense = SuspenseContext::new(scope).expect("suspense context");
+        let suspense = SuspenseContext::new(scope).expect("suspense ctx");
         let resource = i18n.catalog_resource(
             |_| async { Err::<Catalog, _>("invalid catalog payload".to_string()) },
             suspense,
@@ -221,7 +221,7 @@ async fn catalog_resource_error_refetch_balances_suspense_and_recovers() {
     let root = runtime.run().expect("root scope");
     root.with_scope(|scope| async move {
         let i18n = store(scope, "en-US");
-        let suspense = SuspenseContext::new(scope).expect("suspense context");
+        let suspense = SuspenseContext::new(scope).expect("suspense ctx");
         let calls_for_loader = calls.clone();
         let resource = i18n
             .catalog_resource(
@@ -280,7 +280,7 @@ async fn catalog_resource_rejects_a_catalog_for_the_wrong_locale() {
     let root = runtime.run().expect("root scope");
     root.with_scope(|scope| async move {
         let i18n = store(scope, requested.as_str());
-        let suspense = SuspenseContext::new(scope).expect("suspense context");
+        let suspense = SuspenseContext::new(scope).expect("suspense ctx");
         let loaded_for_loader = loaded.clone();
         let resource = i18n
             .catalog_resource(
@@ -316,7 +316,7 @@ async fn catalog_resource_discards_old_locale_response() {
     let root = runtime.run().expect("root scope");
     root.with_scope(|scope| async move {
         let i18n = store(scope, "en-US");
-        let suspense = SuspenseContext::new(scope).expect("suspense context");
+        let suspense = SuspenseContext::new(scope).expect("suspense ctx");
         let en_for_loader = en.clone();
         let resource = i18n
             .catalog_resource(
@@ -369,7 +369,7 @@ async fn catalog_resource_completion_is_cancelled_after_root_dispose() {
     let root = runtime.run().expect("root scope");
     root.with_scope(|scope| async move {
         let i18n = store(scope, "en-US");
-        let suspense = SuspenseContext::new(scope).expect("suspense context");
+        let suspense = SuspenseContext::new(scope).expect("suspense ctx");
         let resource = i18n
             .catalog_resource(
                 move |locale| {

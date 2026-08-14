@@ -359,7 +359,7 @@ impl<'scope> ReactiveBindingPlan<'scope> {
 pub trait ReactiveBinding<'scope> {
     fn binding_plan(
         rx: Rx<'scope, Self, RxValueKind>,
-        context: ReactiveBindingContext,
+        ctx: ReactiveBindingContext,
     ) -> Option<ReactiveBindingPlan<'scope>>
     where
         Self: Sized;
@@ -775,11 +775,11 @@ where
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
         let (key, rx) = self.clone();
-        let context = ReactiveBindingContext::Pair {
+        let ctx = ReactiveBindingContext::Pair {
             key: key.into(),
             target,
         };
-        if let Some(plan) = T::binding_plan(rx, context) {
+        if let Some(plan) = T::binding_plan(rx, ctx) {
             plan.install(el, owner, error_handler)?;
         }
         Ok(())
@@ -787,11 +787,11 @@ where
 
     fn into_op(self, target: ApplyTarget) -> AttrOp<'scope> {
         let (key, rx) = self;
-        let context = ReactiveBindingContext::Pair {
+        let ctx = ReactiveBindingContext::Pair {
             key: key.into(),
             target,
         };
-        T::binding_plan(rx, context)
+        T::binding_plan(rx, ctx)
             .map(AttrOp::Reactive)
             .unwrap_or(AttrOp::Noop)
     }

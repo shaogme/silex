@@ -139,8 +139,8 @@ fn initial_child_error_switches_to_fallback_without_parent_dispatch() {
     runtime
         .child(|scope| {
             let (owner, error_handler) = test_owner(scope, parent_errors.clone());
-            let context = SilexContext::new(scope, error_handler);
-            let view = ErrorBoundary(context, |_| InitialFailure)
+            let ctx = SilexContext::new(scope, error_handler);
+            let view = ErrorBoundary(ctx, |_| InitialFailure)
                 .fallback(|error| format!("fallback: {error}"))
                 .build();
 
@@ -168,8 +168,8 @@ async fn deferred_child_error_reaches_boundary_and_disposes_child() {
         let (failed, set_failed) = scope.signal(false).expect("test signal should be created");
         let (owner, error_handler) = test_owner(scope, parent_errors.clone());
         let child = DeferredFailure { source: failed };
-        let context = SilexContext::new(scope, error_handler);
-        let view = ErrorBoundary(context, move |_| child)
+        let ctx = SilexContext::new(scope, error_handler);
+        let view = ErrorBoundary(ctx, move |_| child)
             .fallback(|_| "fallback")
             .build();
 
@@ -202,9 +202,9 @@ async fn child_factory_handler_reaches_boundary_fallback() {
 
     root.with_scope(|scope| {
         let (owner, error_handler) = test_owner(scope, parent_errors.clone());
-        let context = SilexContext::new(scope, error_handler);
-        let view = ErrorBoundary(context, move |child_context| ConstructedHandlerFailure {
-            handler: child_context.error_reporter(),
+        let ctx = SilexContext::new(scope, error_handler);
+        let view = ErrorBoundary(ctx, move |child_ctx| ConstructedHandlerFailure {
+            handler: child_ctx.error_reporter(),
         })
         .fallback(|error| format!("boundary: {error}"))
         .build();

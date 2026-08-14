@@ -30,12 +30,12 @@ struct TaskDriver {
 impl Future for TaskDriver {
     type Output = ();
 
-    fn poll(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, ctx: &mut Context<'_>) -> Poll<Self::Output> {
         let Some(mut future) = self.state.borrow_mut().future.take() else {
             return Poll::Ready(());
         };
 
-        match future.as_mut().poll(context) {
+        match future.as_mut().poll(ctx) {
             Poll::Pending => {
                 let future = {
                     let mut state = self.state.borrow_mut();

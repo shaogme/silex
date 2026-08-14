@@ -295,7 +295,7 @@ mod tests {
     }
 
     #[test]
-    fn static_values_are_rendered_in_declaration_context() {
+    fn static_values_are_rendered_in_declaration_ctx() {
         let parts = [
             CssPart::Lit(".base{color:"),
             CssPart::StaticVal(0),

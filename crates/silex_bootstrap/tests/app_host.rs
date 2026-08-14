@@ -40,9 +40,9 @@ fn detach(target: &Node) {
     }
 }
 
-fn mount_text<'scope>(context: &MountContext<'scope>, text: &'static str) -> SilexResult<()> {
-    let handler = context.scope().error_handler(|_: SilexError| {})?;
-    context.mount(Element::with_child("section", text), handler)
+fn mount_text<'scope>(ctx: &MountContext<'scope>, text: &'static str) -> SilexResult<()> {
+    let handler = ctx.scope().error_handler(|_: SilexError| {})?;
+    ctx.mount(Element::with_child("section", text), handler)
 }
 
 fn clean_sink() -> CleanupSink {
@@ -55,14 +55,14 @@ fn mount_rejects_active_app_and_unmount_is_idempotent() {
     let mut host = AppHost::new(target.clone(), clean_sink());
 
     assert_eq!(host.state(), HostState::Ready);
-    host.mount(Runtime::new(), |context| mount_text(context, "first"))
+    host.mount(Runtime::new(), |ctx| mount_text(ctx, "first"))
         .expect("initial mount should succeed");
     assert_eq!(host.state(), HostState::Active);
     assert!(host.is_active());
     assert_eq!(target.text_content().as_deref(), Some("first"));
 
     let error = host
-        .mount(Runtime::new(), |context| mount_text(context, "second"))
+        .mount(Runtime::new(), |ctx| mount_text(ctx, "second"))
         .expect_err("active host must reject a second mount");
     assert!(matches!(error, AppHostError::AlreadyMounted));
     assert!(host.is_active());
@@ -90,7 +90,7 @@ fn clean_mount_failure_returns_to_ready_and_preserves_primary_error() {
     let mut host = AppHost::new(target.clone(), clean_sink());
 
     let error = host
-        .mount(Runtime::new(), |_context| {
+        .mount(Runtime::new(), |_ctx| {
             Err(SilexError::recoverable(SilexErrorKind::Framework(
                 "mount rejected".to_string(),
             )))
@@ -109,7 +109,7 @@ fn clean_mount_failure_returns_to_ready_and_preserves_primary_error() {
     assert!(!host.is_active());
     assert_eq!(target.child_nodes().length(), 0);
 
-    host.mount(Runtime::new(), |context| mount_text(context, "reused"))
+    host.mount(Runtime::new(), |ctx| mount_text(ctx, "reused"))
         .expect("clean rollback should leave the host reusable");
     host.unmount().expect("reused app should unmount");
     detach(&target);
@@ -122,8 +122,8 @@ fn non_clean_mount_rollback_poisoned_host() {
     let mut host = AppHost::new(target.clone(), clean_sink());
 
     let error = host
-        .mount(Runtime::new(), |context| {
-            let scope = context.scope();
+        .mount(Runtime::new(), |ctx| {
+            let scope = ctx.scope();
             let handler = scope.error_handler(|_: SilexError| {})?;
             scope.on_cleanup(
                 || -> SilexResult<()> { panic!("rollback cleanup failure") },
@@ -142,7 +142,7 @@ fn non_clean_mount_rollback_poisoned_host() {
     assert_eq!(host.state(), HostState::Poisoned);
     assert!(!host.is_active());
     assert!(matches!(
-        host.mount(Runtime::new(), |context| mount_text(context, "blocked")),
+        host.mount(Runtime::new(), |ctx| mount_text(ctx, "blocked")),
         Err(AppHostError::Poisoned)
     ));
 
@@ -154,9 +154,9 @@ fn replace_disposes_old_app_before_publishing_new_app() {
     let target = target();
     let mut host = AppHost::new(target.clone(), clean_sink());
 
-    host.mount(Runtime::new(), |context| mount_text(context, "old"))
+    host.mount(Runtime::new(), |ctx| mount_text(ctx, "old"))
         .expect("initial mount should succeed");
-    host.replace(Runtime::new(), |context| mount_text(context, "new"))
+    host.replace(Runtime::new(), |ctx| mount_text(ctx, "new"))
         .expect("replacement mount should succeed");
 
     assert_eq!(host.state(), HostState::Active);
@@ -175,10 +175,10 @@ fn separate_hosts_keep_their_apps_and_runtimes_independent() {
     let mut second = AppHost::new(second_target.clone(), clean_sink());
 
     first
-        .mount(Runtime::new(), |context| mount_text(context, "first"))
+        .mount(Runtime::new(), |ctx| mount_text(ctx, "first"))
         .expect("first app should mount");
     second
-        .mount(Runtime::new(), |context| mount_text(context, "second"))
+        .mount(Runtime::new(), |ctx| mount_text(ctx, "second"))
         .expect("second app should mount");
 
     first.unmount().expect("first app should unmount");
@@ -197,7 +197,7 @@ fn replace_without_active_app_is_rejected() {
     let mut host = AppHost::new(target.clone(), clean_sink());
 
     let error = host
-        .replace(Runtime::new(), |context| mount_text(context, "new"))
+        .replace(Runtime::new(), |ctx| mount_text(ctx, "new"))
         .expect_err("replace requires an active app");
     assert!(matches!(error, AppHostError::NotMounted));
     assert_eq!(host.state(), HostState::Ready);
@@ -211,21 +211,21 @@ fn failed_old_dispose_does_not_restore_or_replace_the_old_app() {
     let target = target();
     let mut host = AppHost::new(target.clone(), clean_sink());
 
-    host.mount(Runtime::new(), |context| {
-        let scope = context.scope();
+    host.mount(Runtime::new(), |ctx| {
+        let scope = ctx.scope();
         let handler = scope.error_handler(|_: SilexError| {})?;
         scope.on_cleanup(
             || -> SilexResult<()> { panic!("old app cleanup failure") },
             handler,
         )?;
-        context.mount(Element::with_child("section", "old"), handler)
+        ctx.mount(Element::with_child("section", "old"), handler)
     })
     .expect("old app should mount");
 
     let replacement_called = Rc::new(Cell::new(false));
     let replacement_called_by_builder = replacement_called.clone();
     let error = host
-        .replace(Runtime::new(), move |_context| {
+        .replace(Runtime::new(), move |_ctx| {
             replacement_called_by_builder.set(true);
             Ok(())
         })
@@ -245,10 +245,10 @@ fn failed_new_mount_leaves_replace_host_empty_and_ready() {
     let target = target();
     let mut host = AppHost::new(target.clone(), clean_sink());
 
-    host.mount(Runtime::new(), |context| mount_text(context, "old"))
+    host.mount(Runtime::new(), |ctx| mount_text(ctx, "old"))
         .expect("old app should mount");
     let error = host
-        .replace(Runtime::new(), |_context| {
+        .replace(Runtime::new(), |_ctx| {
             Err(SilexError::recoverable(SilexErrorKind::Framework(
                 "new app rejected".to_string(),
             )))
@@ -270,7 +270,7 @@ fn builder_panic_poisoned_host_before_rethrowing() {
     let mut host = AppHost::new(target.clone(), clean_sink());
 
     let panic = catch_unwind(AssertUnwindSafe(|| {
-        host.mount(Runtime::new(), |_context| -> SilexResult<()> {
+        host.mount(Runtime::new(), |_ctx| -> SilexResult<()> {
             panic!("builder panic")
         })
         .expect("builder panic should not return")
@@ -290,8 +290,8 @@ fn app_host_drop_delegates_cleanup_once_to_mounted_app() {
     {
         let cleanups_by_builder = cleanups.clone();
         let mut host = AppHost::new(target.clone(), clean_sink());
-        host.mount(Runtime::new(), move |context| {
-            let scope = context.scope();
+        host.mount(Runtime::new(), move |ctx| {
+            let scope = ctx.scope();
             let handler = scope.error_handler(|_: SilexError| {})?;
             let cleanups = cleanups_by_builder.clone();
             scope.on_cleanup(
@@ -301,7 +301,7 @@ fn app_host_drop_delegates_cleanup_once_to_mounted_app() {
                 },
                 handler,
             )?;
-            context.mount(Element::with_child("section", "owned"), handler)
+            ctx.mount(Element::with_child("section", "owned"), handler)
         })
         .expect("app should mount");
     }
@@ -315,7 +315,7 @@ fn app_host_drop_delegates_cleanup_once_to_mounted_app() {
 fn unmount_after_external_target_removal_still_disposes_owner() {
     let target = target();
     let mut host = AppHost::new(target.clone(), clean_sink());
-    host.mount(Runtime::new(), |context| mount_text(context, "detached"))
+    host.mount(Runtime::new(), |ctx| mount_text(ctx, "detached"))
         .expect("app should mount");
 
     let parent = target.parent_node().expect("target has a parent");

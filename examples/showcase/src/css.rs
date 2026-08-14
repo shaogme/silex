@@ -123,7 +123,7 @@ global! {
 
 styled! {
     pub DemoCard<'scope, Ctx><div>(
-        #[context] context: Ctx,
+        #[ctx] ctx: Ctx,
         children: AnyView<'scope>,
     ) {
         background: $(static AppTheme::SURFACE);
@@ -132,7 +132,7 @@ styled! {
         border-radius: 16px;
         padding: 32px;
         margin: 24px 0;
-        box-shadow: 0 10px 40px $(rx!{ context; AppTheme::TEXT.alpha(0.15) });
+        box-shadow: 0 10px 40px $(rx!{ ctx; AppTheme::TEXT.alpha(0.15) });
         backdrop-filter: blur(12px);
         transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         animation: fade_in 0.8s ease-out;
@@ -152,7 +152,7 @@ styled! {
 
 styled! {
     pub ApplyDemoButton<'scope, Ctx><button>(
-        #[context] context: Ctx,
+        #[ctx] ctx: Ctx,
         children: AnyView<'scope>,
         #[chain] #[prop(into)] variant: Signal<'scope, String>,
     ) {
@@ -174,7 +174,7 @@ styled! {
 
 styled! {
     pub StyledButton<'scope, Ctx><button>(
-        #[context] context: Ctx,
+        #[ctx] ctx: Ctx,
         children: AnyView<'scope>,
         #[chain] #[prop(into)] color: Signal<'scope, CssVar<Hex>>,
         #[chain] #[prop(into)] size: Signal<'scope, String>,
@@ -222,7 +222,7 @@ styled! {
 styled! {
     #[theme(prefix = "slx-theme")]
     pub ThemePreviewCard<'scope, Ctx><div>(
-        #[context] context: Ctx,
+        #[ctx] ctx: Ctx,
         children: AnyView<'scope>,
     ) {
         background-color: $(static AppTheme::SURFACE);
@@ -238,11 +238,11 @@ styled! {
 
 styled! {
     pub ThemeButton<'scope, Ctx><button>(
-        #[context] context: Ctx,
+        #[ctx] ctx: Ctx,
         children: AnyView<'scope>,
         #[chain] #[prop(into)] active: Signal<'scope, bool>
     ) {
-        background-color: $(rx!{ context; AppTheme::SECONDARY.alpha(0.9) });
+        background-color: $(rx!{ ctx; AppTheme::SECONDARY.alpha(0.9) });
         color: white;
         border: none;
         padding: 12px 24px;
@@ -250,7 +250,7 @@ styled! {
         cursor: pointer;
         font-weight: 600;
         transition: all 0.2s;
-        opacity: $(rx!(context; if *$active { 1.0 } else { 0.8 }));
+        opacity: $(rx!(ctx; if *$active { 1.0 } else { 0.8 }));
 
         &:hover {
             filter: brightness(1.1);
@@ -265,7 +265,7 @@ styled! {
 
 styled! {
     pub DynamicVariantBtn<'scope, Ctx><button>(
-        #[context] context: Ctx,
+        #[ctx] ctx: Ctx,
         children: AnyView<'scope>,
         #[chain] #[prop(into)] kind: Signal<'scope, String>,
         #[chain] #[prop(into)] dynamic_width: Signal<'scope, Px>,
@@ -288,7 +288,7 @@ styled! {
                 }
                 secondary: {
                     background: linear-gradient(135deg, #10b981 0%, #3b82f6 100%);
-                    width: $(rx!(context; *$dynamic_width + px(60)));
+                    width: $(rx!(ctx; *$dynamic_width + px(60)));
                 }
             }
         }
@@ -298,7 +298,7 @@ styled! {
 // --- Demo Components ---
 
 #[component]
-pub fn StylingBasics<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
+pub fn StylingBasics<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     let (color, set_color) = scope.signal(AppTheme::TEXT)?;
     let (size, set_size) = scope.signal("medium".to_string())?;
     let (hover_color, set_hover_color) = scope.signal(AppTheme::PRIMARY)?;
@@ -314,15 +314,15 @@ pub fn StylingBasics<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> 
         div![
             h2("✨ Styling Basics"),
             p("Silex offers powerful ways to style components: from scoped CSS-in-Rust to type-safe builders.")
-                .style(sty(context).opacity(0.7)?.font_size(em_unit(1.1))?),
-        ].style(sty(context).margin_bottom(px(40))?),
+                .style(sty(ctx).opacity(0.7)?.font_size(em_unit(1.1))?),
+        ].style(sty(ctx).margin_bottom(px(40))?),
 
-        DemoCard(context, chain!(
+        DemoCard(ctx, chain!(
             h3("🌈 Color Transformations"),
             p("Use the new $(...) syntax to perform Rust-side transformations like alpha blending, which are then compiled to efficient CSS color-mix functions."),
             div![
                 span("Primary with 20% alpha").style(
-                    sty(context)
+                    sty(ctx)
                         .background_color(AppTheme::PRIMARY.alpha(0.2))?
                         .color(AppTheme::PRIMARY)?
                         .padding("8px 16px")?
@@ -331,22 +331,22 @@ pub fn StylingBasics<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> 
                         .margin_right(px(12))?
                 ),
                 span("Secondary with 20% alpha").style(
-                    sty(context)
+                    sty(ctx)
                         .background_color(AppTheme::SECONDARY.alpha(0.2))?
                         .color(AppTheme::SECONDARY)?
                         .padding("8px 16px")?
                         .border_radius(px(8))?
                         .font_weight(600)?
                 )
-            ].style(sty(context).margin_top(px(16))?)
+            ].style(sty(ctx).margin_top(px(16))?)
         )).build(),
 
-        DemoCard(context, chain!(
+        DemoCard(ctx, chain!(
             h3("1. Atomic & Scoped Styles (styled!)"),
             p(
                 "The `styled!` macro creates scoped, reusable components with dynamic interpolation and variants."
-            ).style(sty(context).margin_bottom(px(24))?.color(hex("#9ca3af"))?),
-                StyledButton(context, chain!(
+            ).style(sty(ctx).margin_bottom(px(24))?.color(hex("#9ca3af"))?),
+                StyledButton(ctx, chain!(
                     "Interactive Scoped Button"
                 ))
                 .color(color)?
@@ -380,17 +380,17 @@ pub fn StylingBasics<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> 
                 .build(),
         )).build(),
 
-        DemoCard(context, chain!(
+        DemoCard(ctx, chain!(
             h3("1.5 Dynamic Variants & Attribute Passthrough"),
             p(
                 "The `styled!` macro now supports dynamic interpolation directly inside variants, and fully preserves the chainable typed attributes of native HTML tags."
-            ).style(sty(context).margin_bottom(px(24))?.color(hex("#9ca3af"))?),
+            ).style(sty(ctx).margin_bottom(px(24))?.color(hex("#9ca3af"))?),
             {
                 let (btn_kind, set_btn_kind) = scope.signal("primary".to_string())?;
                 let (btn_width, _set_btn_width) = scope.signal(px(160))?;
 
-                Stack(context, chain!(
-                    DynamicVariantBtn(context, chain!("Toggle Variant"))
+                Stack(ctx, chain!(
+                    DynamicVariantBtn(ctx, chain!("Toggle Variant"))
                         .kind(btn_kind)?
                         .dynamic_width(btn_width)?
                         // Below are native HTML <button> attributes seamlessly passed through!
@@ -402,20 +402,20 @@ pub fn StylingBasics<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> 
                             Ok(())
                         })
                         .build(),
-                    div(rx!(context; format!("Current Variant: {}, Base Width Signal: {}", $btn_kind, $btn_width)))
-                        .style(sty(context).font_size(em_unit(0.9))?.opacity(0.8)?)
+                    div(rx!(ctx; format!("Current Variant: {}, Base Width Signal: {}", $btn_kind, $btn_width)))
+                        .style(sty(ctx).font_size(em_unit(0.9))?.opacity(0.8)?)
                 )).gap(16)?.build()
             }
         )).build(),
 
-        DemoCard(context, chain!(
+        DemoCard(ctx, chain!(
             h3("2. Type-Safe Style Builder (sty)"),
             p(
                 "A chainable API for defining styles with full reactivity, ideal for dynamic inline styles."
-            ).style(sty(context).margin_bottom(px(24))?.color(hex("#9ca3af"))?),
+            ).style(sty(ctx).margin_bottom(px(24))?.color(hex("#9ca3af"))?),
             div![
                 span("Hover to Reveal Effects").style(
-                    sty(context)
+                    sty(ctx)
                         .display(DisplayKeyword::InlineBlock)?
                         .padding(padding::block_inline(px(24), px(40)))?
                         .background_color(AppTheme::SURFACE)?
@@ -434,34 +434,34 @@ pub fn StylingBasics<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> 
                         })?
                 )
             ],
-            p("Signals are natively supported:").style(sty(context).margin("20px 0 10px")?.font_size(em_unit(0.9))?.opacity(0.6)?),
+            p("Signals are natively supported:").style(sty(ctx).margin("20px 0 10px")?.font_size(em_unit(0.9))?.opacity(0.6)?),
             {
                 let (count, set_count) = scope.signal(0)?;
                 let (show_shadow, set_show_shadow) = scope.signal(true)?;
                 let (active_border, set_active_border) = scope.signal(true)?;
 
-                Stack(context, chain!(
+                Stack(ctx, chain!(
                     div![
                         button("Grow").on(event::click, move |_| {
                             set_count.update(|n| *n += 1)?;
                             Ok(())
                         })
-                            .style(sty(context).padding("8px 16px")?.border_radius(px(6))?.border("1px solid #374151")?.background("#111827")?.color(ColorName::White)?.cursor("pointer")?.margin_right(px(8))?),
+                            .style(sty(ctx).padding("8px 16px")?.border_radius(px(6))?.border("1px solid #374151")?.background("#111827")?.color(ColorName::White)?.cursor("pointer")?.margin_right(px(8))?),
                         button("Toggle Box Shadow").on(event::click, move |_| {
                             set_show_shadow.update(|s| *s = !*s)?;
                             Ok(())
                         })
-                            .style(sty(context).padding("8px 16px")?.border_radius(px(6))?.border("1px solid #374151")?.background("#111827")?.color(ColorName::White)?.cursor("pointer")?.margin_right(px(8))?),
+                            .style(sty(ctx).padding("8px 16px")?.border_radius(px(6))?.border("1px solid #374151")?.background("#111827")?.color(ColorName::White)?.cursor("pointer")?.margin_right(px(8))?),
                         button("Toggle Border").on(event::click, move |_| {
                             set_active_border.update(|b| *b = !*b)?;
                             Ok(())
                         })
-                            .style(sty(context).padding("8px 16px")?.border_radius(px(6))?.border("1px solid #374151")?.background("#111827")?.color(ColorName::White)?.cursor("pointer")?),
-                    ].style(sty(context).display("flex")?.align_items("center")?.margin_bottom(px(12))?),
+                            .style(sty(ctx).padding("8px 16px")?.border_radius(px(6))?.border("1px solid #374151")?.background("#111827")?.color(ColorName::White)?.cursor("pointer")?),
+                    ].style(sty(ctx).display("flex")?.align_items("center")?.margin_bottom(px(12))?),
 
-                    div(rx!(context; format!("Reactive Width: {}px", 180 + *$count * 30))).style(
-                        sty(context)
-                            .width(rx!(context; px(180 + *$count * 30)))?
+                    div(rx!(ctx; format!("Reactive Width: {}px", 180 + *$count * 30))).style(
+                        sty(ctx)
+                            .width(rx!(ctx; px(180 + *$count * 30)))?
                             .height(px(48))?
                             .background("linear-gradient(90deg, #4f46e5, #9333ea)")?
                             .color(hex("#fff"))?
@@ -471,30 +471,30 @@ pub fn StylingBasics<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> 
                             .border_radius(px(12))?
                             .transition("all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)")?
                             // 动态开启/删除 box-shadow 属性 (css_none() 即删除属性)
-                            .box_shadow(rx!(context; if *$show_shadow { css_some("0 8px 20px rgba(79, 70, 229, 0.5)") } else { css_none() }))?
+                            .box_shadow(rx!(ctx; if *$show_shadow { css_some("0 8px 20px rgba(79, 70, 229, 0.5)") } else { css_none() }))?
                             // 动态开启/删除 border 属性 (使用 CssOption::some/none 独立方法)
-                            .border(rx!(context; if *$active_border { CssOption::some(border(px(2), BorderStyleKeyword::Solid, hex("#f472b6"))) } else { CssOption::none() }))?
+                            .border(rx!(ctx; if *$active_border { CssOption::some(border(px(2), BorderStyleKeyword::Solid, hex("#f472b6"))) } else { CssOption::none() }))?
                     )
                 )).build()
             }
         )).build(),
 
-        DemoCard(context, chain!(
+        DemoCard(ctx, chain!(
             h3("3. Layout Primitives"),
             p("Structural layout components like Stack, Grid, and Center for effortless alignment.")
-                .style(sty(context).margin_bottom(px(24))?.color(hex("#9ca3af"))?),
+                .style(sty(ctx).margin_bottom(px(24))?.color(hex("#9ca3af"))?),
 
-            Stack(context, chain!(
+            Stack(ctx, chain!(
                 span("Vertical Stack with Gap"),
-                Grid(context, chain!(
-                    div("Grid Item 1").style(sty(context).background("#312e81")?.padding("10px")?.border_radius(px(8))?),
-                    div("Grid Item 2").style(sty(context).background("#312e81")?.padding("10px")?.border_radius(px(8))?),
-                    div("Grid Item 3").style(sty(context).background("#312e81")?.padding("10px")?.border_radius(px(8))?),
+                Grid(ctx, chain!(
+                    div("Grid Item 1").style(sty(ctx).background("#312e81")?.padding("10px")?.border_radius(px(8))?),
+                    div("Grid Item 2").style(sty(ctx).background("#312e81")?.padding("10px")?.border_radius(px(8))?),
+                    div("Grid Item 3").style(sty(ctx).background("#312e81")?.padding("10px")?.border_radius(px(8))?),
                 )).columns(3)?.gap(12)?.build(),
-                Center(context, chain!(
+                Center(ctx, chain!(
                     "I am perfectly centered"
                 ))
-                    .style(sty(context).background_color(hex("#4f46e5"))?.padding(px(12))?.border_radius(px(8))?)?
+                    .style(sty(ctx).background_color(hex("#4f46e5"))?.padding(px(12))?.border_radius(px(8))?)?
                     .build(),
             )).gap(16)?.build()
         )).build(),
@@ -503,7 +503,7 @@ pub fn StylingBasics<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> 
 
 #[component]
 pub fn Theming<'scope, Ctx>(
-    #[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     global_settings: UserSettingsStore<'scope, 'scope>,
 ) -> impl View<'scope> {
     let theme = global_settings
@@ -516,7 +516,7 @@ pub fn Theming<'scope, Ctx>(
     Ok(div![
         h2("🎨 Theme Engine"),
         p("Define design tokens in Rust and propagate them via CSS variables with full layout transparency.")
-            .style(sty(context).color(hex("#6b7280"))?.margin_bottom(px(32))?.font_size(em_unit(1.1))?),
+            .style(sty(ctx).color(hex("#6b7280"))?.margin_bottom(px(32))?.font_size(em_unit(1.1))?),
 
         div![
             button("🌞 Light Mode")
@@ -526,15 +526,15 @@ pub fn Theming<'scope, Ctx>(
                         .set("Light".to_string())
                 })
                 .style(
-                    sty(context)
+                    sty(ctx)
                         .padding(padding::block_inline(px(8), px(16)))?
                         .border_radius(px(6))?
                         .cursor(CursorKeyword::Pointer)?
                         .transition("all 0.2s")?
                         .margin_right(px(12))?
-                        .background_color(rx!(context; if !*$is_dark { AppTheme::PRIMARY } else { hex("#f3f4f6").into() }))?
-                        .color(rx!(context; if !*$is_dark { hex("#ffffff") } else { hex("#374151") }))?
-                        .border(rx!(context; if !*$is_dark { border(px(1), BorderStyleKeyword::Solid, AppTheme::PRIMARY) } else { border(px(1), BorderStyleKeyword::Solid, hex("#d1d5db")) }))?
+                        .background_color(rx!(ctx; if !*$is_dark { AppTheme::PRIMARY } else { hex("#f3f4f6").into() }))?
+                        .color(rx!(ctx; if !*$is_dark { hex("#ffffff") } else { hex("#374151") }))?
+                        .border(rx!(ctx; if !*$is_dark { border(px(1), BorderStyleKeyword::Solid, AppTheme::PRIMARY) } else { border(px(1), BorderStyleKeyword::Solid, hex("#d1d5db")) }))?
                 ),
             button("🌙 Dark Mode")
                 .on(event::click, move |_| {
@@ -543,87 +543,87 @@ pub fn Theming<'scope, Ctx>(
                         .set("Dark".to_string())
                 })
                 .style(
-                    sty(context)
+                    sty(ctx)
                         .padding(padding::block_inline(px(8), px(16)))?
                         .border_radius(px(6))?
                         .cursor(CursorKeyword::Pointer)?
                         .transition("all 0.2s")?
-                        .background_color(rx!(context; if *$is_dark { AppTheme::PRIMARY } else { hex("#f3f4f6").into() }))?
-                        .color(rx!(context; if *$is_dark { hex("#ffffff") } else { hex("#374151") }))?
-                        .border(rx!(context; if *$is_dark { border(px(1), BorderStyleKeyword::Solid, AppTheme::PRIMARY) } else { border(px(1), BorderStyleKeyword::Solid, hex("#d1d5db")) }))?
+                        .background_color(rx!(ctx; if *$is_dark { AppTheme::PRIMARY } else { hex("#f3f4f6").into() }))?
+                        .color(rx!(ctx; if *$is_dark { hex("#ffffff") } else { hex("#374151") }))?
+                        .border(rx!(ctx; if *$is_dark { border(px(1), BorderStyleKeyword::Solid, AppTheme::PRIMARY) } else { border(px(1), BorderStyleKeyword::Solid, hex("#d1d5db")) }))?
                 ),
-        ].style(sty(context).margin_bottom(px(24))?),
+        ].style(sty(ctx).margin_bottom(px(24))?),
 
-        ThemePreviewCard(context, chain!(
+        ThemePreviewCard(ctx, chain!(
             h4("Real-time Propagation"),
             p("These styles react to the Rust theme object via CSS variables."),
-            ThemeButton(context, "Themed Scoped Button")
+            ThemeButton(ctx, "Themed Scoped Button")
                 .active(false)?
                 .build()
         )).build().apply(theme_variables(theme)),
 
-        h3("Incremental Patching (New)").style(sty(context).margin("40px 0 16px")?),
+        h3("Incremental Patching (New)").style(sty(ctx).margin("40px 0 16px")?),
         p("Only override specific variables (like 'primary') while inheriting the rest from the environment via CSS inheritance.")
-            .style(sty(context).color(hex("#9ca3af"))?.margin_bottom(px(24))?),
+            .style(sty(ctx).color(hex("#9ca3af"))?.margin_bottom(px(24))?),
 
         div![
-            ThemePreviewCard(context, chain!(
+            ThemePreviewCard(ctx, chain!(
                 h4("Primary Patch"),
                 p("This card ONLY patches 'primary' to Hot Pink."),
                 div![
-                    ThemeButton(context, "Still Secondary Color")
+                    ThemeButton(ctx, "Still Secondary Color")
                         .active(false)?
                         .build(),
-                    span(" (Variable inheritance in action!) ").style(sty(context).font_size(em_unit(0.8))?.opacity(0.6)?)
+                    span(" (Variable inheritance in action!) ").style(sty(ctx).font_size(em_unit(0.8))?.opacity(0.6)?)
                 ]
             )).build()
-            .apply(theme_patch(rx!(context; @fn AppThemePatch::default().primary(hex("#ff69b4"))))),
+            .apply(theme_patch(rx!(ctx; @fn AppThemePatch::default().primary(hex("#ff69b4"))))),
         ].apply(theme_variables(theme)),
 
-        h3("Layout Continuity").style(sty(context).margin("40px 0 16px")?),
+        h3("Layout Continuity").style(sty(ctx).margin("40px 0 16px")?),
         p("Theme variables are injected via 'apply', ensuring no extra DOM wrappers break CSS layouts like Flex or Grid.")
-            .style(sty(context).color(hex("#9ca3af"))?.margin_bottom(px(24))?),
+            .style(sty(ctx).color(hex("#9ca3af"))?.margin_bottom(px(24))?),
 
-        DemoCard(context, chain!(
+        DemoCard(ctx, chain!(
             h4("1. Theme variables in Flex (Stack)"),
-            p("The red border is a Stack. Variable injection doesn't break the flow.").style(sty(context).margin_bottom(px(12))?.font_size(em_unit(0.9))?.opacity(0.7)?),
-            Stack(context, chain!(
-                div("Themed Row 1").style(sty(context).background(AppTheme::SURFACE_ALT)?.padding("10px")?.margin("4px")?.border_radius(px(4))?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::PRIMARY))?)
+            p("The red border is a Stack. Variable injection doesn't break the flow.").style(sty(ctx).margin_bottom(px(12))?.font_size(em_unit(0.9))?.opacity(0.7)?),
+            Stack(ctx, chain!(
+                div("Themed Row 1").style(sty(ctx).background(AppTheme::SURFACE_ALT)?.padding("10px")?.margin("4px")?.border_radius(px(4))?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::PRIMARY))?)
                     .apply(theme_variables(theme)),
-                div("Themed Row 2").style(sty(context).background(AppTheme::SURFACE_ALT)?.padding("10px")?.margin("4px")?.border_radius(px(4))?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::SECONDARY))?)
+                div("Themed Row 2").style(sty(ctx).background(AppTheme::SURFACE_ALT)?.padding("10px")?.margin("4px")?.border_radius(px(4))?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::SECONDARY))?)
                     .apply(theme_variables(theme)),
-            )).style(sty(context).border(border(px(2), BorderStyleKeyword::Solid, hex("#ef4444")))?.padding(px(8))?)?.build()
+            )).style(sty(ctx).border(border(px(2), BorderStyleKeyword::Solid, hex("#ef4444")))?.padding(px(8))?)?.build()
         )).build(),
 
-        DemoCard(context, chain!(
+        DemoCard(ctx, chain!(
             h4("2. Nested Layout Stability"),
-            p("Even deeply nested layouts remain stable with variable injection.").style(sty(context).margin_bottom(px(12))?.font_size(em_unit(0.9))?.opacity(0.7)?),
-            Stack(context, chain!(
-                Stack(context, chain!(
-                    div("Nested 1").style(sty(context).background(AppTheme::SURFACE)?.color(AppTheme::TEXT)?.padding("10px")?.border_radius(px(4))?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::PRIMARY))?),
-                    div("Nested 2").style(sty(context).background(AppTheme::SURFACE)?.color(AppTheme::TEXT)?.padding("10px")?.border_radius(px(4))?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::SECONDARY))?),
+            p("Even deeply nested layouts remain stable with variable injection.").style(sty(ctx).margin_bottom(px(12))?.font_size(em_unit(0.9))?.opacity(0.7)?),
+            Stack(ctx, chain!(
+                Stack(ctx, chain!(
+                    div("Nested 1").style(sty(ctx).background(AppTheme::SURFACE)?.color(AppTheme::TEXT)?.padding("10px")?.border_radius(px(4))?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::PRIMARY))?),
+                    div("Nested 2").style(sty(ctx).background(AppTheme::SURFACE)?.color(AppTheme::TEXT)?.padding("10px")?.border_radius(px(4))?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::SECONDARY))?),
                 )).gap(4)?.build()?.apply(theme_variables(theme)),
-                div("Sibling of Nested Stack").style(sty(context).background(AppTheme::SURFACE_ALT)?.color(AppTheme::TEXT)?.padding("10px")?.margin_top(px(4))?.border_radius(px(4))?),
-            )).style(sty(context).border(border(px(2), BorderStyleKeyword::Solid, hex("#3b82f6")))?.padding(px(8))?)?.build()
+                div("Sibling of Nested Stack").style(sty(ctx).background(AppTheme::SURFACE_ALT)?.color(AppTheme::TEXT)?.padding("10px")?.margin_top(px(4))?.border_radius(px(4))?),
+            )).style(sty(ctx).border(border(px(2), BorderStyleKeyword::Solid, hex("#3b82f6")))?.padding(px(8))?)?.build()
         )).build(),
     ]
-    .style(sty(context).padding(px(24))?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?.border_radius(px(12))?.background(AppTheme::SURFACE)?.transition("all 0.3s")?))
+    .style(sty(ctx).padding(px(24))?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?.border_radius(px(12))?.background(AppTheme::SURFACE)?.transition("all 0.3s")?))
 }
 
 #[component]
-pub fn AdvancedStyling<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
+pub fn AdvancedStyling<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     Ok(div![
         h2("🧮 Advanced Styling"),
         p("Type-safe CSS math functions and declarative gradients for complex visuals.")
-            .style(sty(context).margin_bottom(px(32))?.color(hex("#9ca3af"))?.font_size(em_unit(1.1))?),
+            .style(sty(ctx).margin_bottom(px(32))?.color(hex("#9ca3af"))?.font_size(em_unit(1.1))?),
 
-        Stack(context, chain!(
-            DemoCard(context, chain!(
+        Stack(ctx, chain!(
+            DemoCard(ctx, chain!(
                 h4("1. Math Functions (calc, clamp, min, max)"),
-                p("Perform type-safe math operations across units at compile time.").style(sty(context).margin_bottom(px(16))?.font_size(em_unit(0.9))?.opacity(0.7)?),
-                Stack(context, chain!(
+                p("Perform type-safe math operations across units at compile time.").style(sty(ctx).margin_bottom(px(16))?.font_size(em_unit(0.9))?.opacity(0.7)?),
+                Stack(ctx, chain!(
                     div("Calc: 100% - 60px").style(
-                        sty(context)
+                        sty(ctx)
                             .width(calc(pct(100) - px(60)))?
                             .height(px(40))?
                             .background("#312e81")?
@@ -633,7 +633,7 @@ pub fn AdvancedStyling<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope
                             .padding_left(px(12))?
                     ),
                     div("Clamp (15% | 50% | 85%)").style(
-                        sty(context)
+                        sty(ctx)
                             .width(clamp(pct(15), pct(50), pct(85)))?
                             .height(px(40))?
                             .background("#4338ca")?
@@ -644,38 +644,38 @@ pub fn AdvancedStyling<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope
                     ),
                 )).gap(12)?.build()
         )).build(),
-            DemoCard(context, chain!(
+            DemoCard(ctx, chain!(
                 h4("2. Gradients DSL"),
-                p("Declarative API for complex linear and radial gradients.").style(sty(context).margin_bottom(px(16))?.font_size(em_unit(0.9))?.opacity(0.7)?),
-                Grid(context, chain!(
+                p("Declarative API for complex linear and radial gradients.").style(sty(ctx).margin_bottom(px(16))?.font_size(em_unit(0.9))?.opacity(0.7)?),
+                Grid(ctx, chain!(
                     div![
-                        p("Linear").style(sty(context).margin_bottom(px(8))?.font_size(em_unit(0.8))?),
-                        div(()).style(sty(context).height(px(100))?.border_radius(px(12))?.background_image(linear_gradient().to(Direction::ToRight).stop_at(hex("#6366f1"), pct(0)).stop_at(hex("#a855f7"), pct(100)).build())?)
+                        p("Linear").style(sty(ctx).margin_bottom(px(8))?.font_size(em_unit(0.8))?),
+                        div(()).style(sty(ctx).height(px(100))?.border_radius(px(12))?.background_image(linear_gradient().to(Direction::ToRight).stop_at(hex("#6366f1"), pct(0)).stop_at(hex("#a855f7"), pct(100)).build())?)
                     ],
                     div![
-                        p("Radial").style(sty(context).margin_bottom(px(8))?.font_size(em_unit(0.8))?),
-                        div(()).style(sty(context).height(px(100))?.border_radius(px(12))?.background_image(radial_gradient().circle().at(ObjectPositionKeyword::Center).stop_at(hex("#818cf8"), pct(0)).stop_at(hex("#1e1e24"), pct(100)).build())?)
+                        p("Radial").style(sty(ctx).margin_bottom(px(8))?.font_size(em_unit(0.8))?),
+                        div(()).style(sty(ctx).height(px(100))?.border_radius(px(12))?.background_image(radial_gradient().circle().at(ObjectPositionKeyword::Center).stop_at(hex("#818cf8"), pct(0)).stop_at(hex("#1e1e24"), pct(100)).build())?)
                     ],
                     div![
-                        p("Angled (45deg)").style(sty(context).margin_bottom(px(8))?.font_size(em_unit(0.8))?),
-                        div(()).style(sty(context).height(px(100))?.border_radius(px(12))?.background_image(linear_gradient().to(deg(45).into()).stop_at(hex("#f43f5e"), pct(0)).stop_at(hex("#fb923c"), pct(100)).build())?)
+                        p("Angled (45deg)").style(sty(ctx).margin_bottom(px(8))?.font_size(em_unit(0.8))?),
+                        div(()).style(sty(ctx).height(px(100))?.border_radius(px(12))?.background_image(linear_gradient().to(deg(45).into()).stop_at(hex("#f43f5e"), pct(0)).stop_at(hex("#fb923c"), pct(100)).build())?)
                     ],
                     div![
-                        p("Repeating").style(sty(context).margin_bottom(px(8))?.font_size(em_unit(0.8))?),
-                        div(()).style(sty(context).height(px(100))?.border_radius(px(12))?.background_image(linear_gradient().repeating().to(Direction::ToBottomRight).stop_at(hex("#1e1e24"), pct(0)).stop_at(hex("#1e1e24"), px(10)).stop_at(hex("#312e81"), px(10)).stop_at(hex("#312e81"), px(20)).build())?)
+                        p("Repeating").style(sty(ctx).margin_bottom(px(8))?.font_size(em_unit(0.8))?),
+                        div(()).style(sty(ctx).height(px(100))?.border_radius(px(12))?.background_image(linear_gradient().repeating().to(Direction::ToBottomRight).stop_at(hex("#1e1e24"), pct(0)).stop_at(hex("#1e1e24"), px(10)).stop_at(hex("#312e81"), px(10)).stop_at(hex("#312e81"), px(20)).build())?)
                     ],
                 )).columns(2)?.gap(16)?.build()
         )).build(),
-            DemoCard(context, chain!(
+            DemoCard(ctx, chain!(
                 h4("3. Responsive & Nested (Style Builder)"),
-                p("The enhanced `sty(context)` API now supports `@media` and complex nesting, just like the `styled!` macro.").style(sty(context).margin_bottom(px(16))?.font_size(em_unit(0.9))?.opacity(0.7)?),
+                p("The enhanced `sty(ctx)` API now supports `@media` and complex nesting, just like the `styled!` macro.").style(sty(ctx).margin_bottom(px(16))?.font_size(em_unit(0.9))?.opacity(0.7)?),
                 div![
                     span![
                         "Resize window and hover child!",
                         div("I am the child box").class("child-box")
-                            .style(sty(context).margin_top(px(16))?.color(hex("#fff"))?.font_size(px(12))?.text_align(TextAlignKeyword::Center)?.width(BlockSizeKeyword::FitContent)?.white_space("nowrap")?)
+                            .style(sty(ctx).margin_top(px(16))?.color(hex("#fff"))?.font_size(px(12))?.text_align(TextAlignKeyword::Center)?.width(BlockSizeKeyword::FitContent)?.white_space("nowrap")?)
                     ].style(
-                        sty(context)
+                        sty(ctx)
                             .display(DisplayKeyword::Block)?
                             .padding(px(32))?
                             .background(AppTheme::SURFACE)?
@@ -700,20 +700,20 @@ pub fn AdvancedStyling<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope
                                 s.nest("& > .child-box", |s| s.background(hex("#f43f5e")))
                             })?
                     ),
-                ].style(sty(context).position(PositionKeyword::Relative)?)
+                ].style(sty(ctx).position(PositionKeyword::Relative)?)
         )).build(),
-            DemoCard(context, chain!(
+            DemoCard(ctx, chain!(
                 h4("4. Complex DSLs (Grid Areas & Font Variations)"),
-                p("Specialized support for complex grid layouts and variable fonts.").style(sty(context).margin_bottom(px(24))?.color(hex("#9ca3af"))?),
-                Stack(context, chain!(
+                p("Specialized support for complex grid layouts and variable fonts.").style(sty(ctx).margin_bottom(px(24))?.color(hex("#9ca3af"))?),
+                Stack(ctx, chain!(
                     div![
-                        span("Grid Template Areas").style(sty(context).margin_bottom(px(8))?.display("block")?.font_size(em_unit(0.9))?.opacity(0.7)?),
+                        span("Grid Template Areas").style(sty(ctx).margin_bottom(px(8))?.display("block")?.font_size(em_unit(0.9))?.opacity(0.7)?),
                         div![
-                            div("Header").style(sty(context).grid_area("header")?.background(hex("#4f46e5"))?.padding(px(8))?),
-                            div("Main").style(sty(context).grid_area("main")?.background(hex("#312e81"))?.padding(px(24))?),
-                            div("Sidebar").style(sty(context).grid_area("sidebar")?.background(hex("#1e1e24"))?.padding(px(8))?),
+                            div("Header").style(sty(ctx).grid_area("header")?.background(hex("#4f46e5"))?.padding(px(8))?),
+                            div("Main").style(sty(ctx).grid_area("main")?.background(hex("#312e81"))?.padding(px(24))?),
+                            div("Sidebar").style(sty(ctx).grid_area("sidebar")?.background(hex("#1e1e24"))?.padding(px(8))?),
                         ].style(
-                            sty(context)
+                            sty(ctx)
                                 .display(DisplayKeyword::Grid)?
                                 .gap(px(8))?
                                 .grid_template_areas(grid_template_areas(["header header", "main sidebar"]))?
@@ -721,10 +721,10 @@ pub fn AdvancedStyling<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope
                         )
                     ],
                     div![
-                        span("Font Variation Settings").style(sty(context).margin_bottom(px(8))?.display("block")?.font_size(em_unit(0.9))?.opacity(0.7)?),
+                        span("Font Variation Settings").style(sty(ctx).margin_bottom(px(8))?.display("block")?.font_size(em_unit(0.9))?.opacity(0.7)?),
                         div("Variable Font Styling (Weight: 700, Ital: 0.5)")
                             .style(
-                                sty(context)
+                                sty(ctx)
                                     .font_size(px(24))?
                                     .font_variation_settings(font_variation_settings([("wght", 700.0), ("ital", 0.5)]))?
                             )
@@ -733,44 +733,44 @@ pub fn AdvancedStyling<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope
             )).build()
         )).gap(24)?.build(),
 
-        h2("🎨 Deep Integration with `@apply` & Inline Tailwind Mixins").style(sty(context).margin_top(px(48))?),
+        h2("🎨 Deep Integration with `@apply` & Inline Tailwind Mixins").style(sty(ctx).margin_top(px(48))?),
         p("Use `@apply` directives inside `css!` & `styled!` blocks and inline Tailwind utility strings in variant definitions.")
-            .style(sty(context).margin_bottom(px(24))?.color(hex("#9ca3af"))?),
+            .style(sty(ctx).margin_bottom(px(24))?.color(hex("#9ca3af"))?),
 
-        DemoCard(context, chain!(
+        DemoCard(ctx, chain!(
             h4("1. `@apply` Directives & Inline Tailwind String Variants"),
-            p("Compose complex styles seamlessly using Tailwind utilities within standard styled! components.").style(sty(context).margin_bottom(px(16))?.font_size(em_unit(0.9))?.opacity(0.7)?),
+            p("Compose complex styles seamlessly using Tailwind utilities within standard styled! components.").style(sty(ctx).margin_bottom(px(16))?.font_size(em_unit(0.9))?.opacity(0.7)?),
             div![
-                ApplyDemoButton(context, "Primary Variant")
+                ApplyDemoButton(ctx, "Primary Variant")
                     .variant("primary")?
                     .build(),
-                ApplyDemoButton(context, "Secondary Variant")
+                ApplyDemoButton(ctx, "Secondary Variant")
                     .variant("secondary")?
                     .build(),
-                ApplyDemoButton(context, "Outline Variant")
+                ApplyDemoButton(ctx, "Outline Variant")
                     .variant("outline")?
                     .build(),
-            ].style(sty(context).display(DisplayKeyword::Flex)?.gap(px(16))?)
+            ].style(sty(ctx).display(DisplayKeyword::Flex)?.gap(px(16))?)
         )).build(),
 
-        h2("🔒 Unsafe Styles & Escape Hatches").style(sty(context).margin_top(px(48))?),
+        h2("🔒 Unsafe Styles & Escape Hatches").style(sty(ctx).margin_top(px(48))?),
         p("Bypass compile-time property and type validation for non-standard CSS or raw value injection.")
-            .style(sty(context).margin_bottom(px(24))?.color(hex("#9ca3af"))?),
+            .style(sty(ctx).margin_bottom(px(24))?.color(hex("#9ca3af"))?),
 
-        Stack(context, chain!(
-            DemoCard(context, chain!(
+        Stack(ctx, chain!(
+            DemoCard(ctx, chain!(
                 h4("1. Local Unsafe Blocks"),
-                p("Use `unsafe { ... }` blocks to inject raw properties or bypass type checks locally.").style(sty(context).margin_bottom(px(16))?.font_size(em_unit(0.9))?.opacity(0.7)?),
-                UnsafeBlockDemo(context, "I have a raw orange glow")
+                p("Use `unsafe { ... }` blocks to inject raw properties or bypass type checks locally.").style(sty(ctx).margin_bottom(px(16))?.font_size(em_unit(0.9))?.opacity(0.7)?),
+                UnsafeBlockDemo(ctx, "I have a raw orange glow")
                     .build()
-                    .style(sty(context).margin_bottom(px(16))?)
+                    .style(sty(ctx).margin_bottom(px(16))?)
         )).build(),
-            DemoCard(context, chain!(
+            DemoCard(ctx, chain!(
                 h4("2. Global Unsafe Component"),
-                p("Marking a styled component as `unsafe` disables all validation for its entire CSS block.").style(sty(context).margin_bottom(px(16))?.font_size(em_unit(0.9))?.opacity(0.7)?),
-                UnsafeCompDemo(context, "Everything here is raw")
+                p("Marking a styled component as `unsafe` disables all validation for its entire CSS block.").style(sty(ctx).margin_bottom(px(16))?.font_size(em_unit(0.9))?.opacity(0.7)?),
+                UnsafeCompDemo(ctx, "Everything here is raw")
                     .build()
-                    .style(sty(context).width(pct(100))?)
+                    .style(sty(ctx).width(pct(100))?)
             )).build()
         )).gap(24)?.build()
     ])
@@ -780,7 +780,7 @@ pub fn AdvancedStyling<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope
 
 styled! {
     pub UnsafeBlockDemo<'scope, Ctx><div>(
-        #[context] context: Ctx,
+        #[ctx] ctx: Ctx,
         children: AnyView<'scope>,
     ) {
         padding: 24px;
@@ -806,7 +806,7 @@ styled! {
 
 styled! {
     pub unsafe UnsafeCompDemo<'scope, Ctx><div>(
-        #[context] context: Ctx,
+        #[ctx] ctx: Ctx,
         children: AnyView<'scope>,
     ) {
         // Enire component is unsafe
@@ -818,7 +818,7 @@ styled! {
         // No type checking here - passing a raw string for color
         color: rgb(244, 63, 94);
 
-        font-family: $(rx!(context; "'Courier New', monospace".to_string()));
+        font-family: $(rx!(ctx; "'Courier New', monospace".to_string()));
         cursor: help;
 
         &:hover {

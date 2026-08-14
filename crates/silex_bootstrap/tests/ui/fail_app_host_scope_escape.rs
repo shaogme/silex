@@ -8,18 +8,18 @@ fn call_mount(
     runtime: Runtime,
     slot: &mut Option<Scope<'static>>,
 ) {
-    let _ = host.mount(runtime, |context| {
-        *slot = Some(context.scope());
+    let _ = host.mount(runtime, |ctx| {
+        *slot = Some(ctx.scope());
         Ok(())
     });
 }
 
 #[allow(dead_code)]
 fn builder<'scope>(
-    context: &MountContext<'scope>,
+    ctx: &MountContext<'scope>,
     slot: &mut Option<Scope<'static>>,
 ) -> SilexResult<()> {
-    *slot = Some(context.scope());
+    *slot = Some(ctx.scope());
     Ok(())
 }
 

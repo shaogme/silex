@@ -170,13 +170,13 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
     let parsed: StyledComponent = syn::parse2(input)?;
     let tag = &parsed.tag;
     let name = &parsed.name;
-    find_context_parameter(&parsed.props).ok_or_else(|| {
+    find_ctx_parameter(&parsed.props).ok_or_else(|| {
         syn::Error::new(
             name.span(),
-            "styled! components must declare exactly one #[context] parameter",
+            "styled! components must declare exactly one #[ctx] parameter",
         )
     })?;
-    // `component` generates these aliases from the context field after it
+    // `component` generates these aliases from the ctx field after it
     // destructures the props. CSS expressions can therefore keep using the
     // same local names as ordinary component bodies.
     let dynamic_error_handler = quote! { error_handler };
@@ -1060,7 +1060,7 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
     })
 }
 
-fn find_context_parameter(params: &Punctuated<FnArg, Token![,]>) -> Option<Ident> {
+fn find_ctx_parameter(params: &Punctuated<FnArg, Token![,]>) -> Option<Ident> {
     params.iter().find_map(|param| {
         let FnArg::Typed(arg) = param else {
             return None;
@@ -1070,7 +1070,7 @@ fn find_context_parameter(params: &Punctuated<FnArg, Token![,]>) -> Option<Ident
         };
         arg.attrs
             .iter()
-            .any(|attr| attr.path().is_ident("context"))
+            .any(|attr| attr.path().is_ident("ctx"))
             .then(|| pattern.ident.clone())
     })
 }
@@ -1192,7 +1192,7 @@ mod tests {
     fn test_styled_inline_tailwind_variants() {
         let input = quote::quote! {
             Card<'scope><button>(
-                #[context] context: SilexContext<'scope>,
+                #[ctx] ctx: SilexContext<'scope>,
                 id: String,
                 children: AnyView<'scope>,
             ) {
@@ -1215,7 +1215,7 @@ mod tests {
     fn dynamic_styled_styles_are_injected_by_an_owner_bound_attribute() {
         let input = quote::quote! {
             Panel<'scope><div>(
-                #[context] context: SilexContext<'scope>,
+                #[ctx] ctx: SilexContext<'scope>,
                 children: AnyView<'scope>,
                 color: Signal<'scope, Hex>,
             ) {
@@ -1230,11 +1230,11 @@ mod tests {
     }
 
     #[test]
-    fn dynamic_styled_styles_use_context_without_owner() {
+    fn dynamic_styled_styles_use_ctx_without_owner() {
         let input = quote::quote! {
             Panel<'scope><div>(
                 children: AnyView<'scope>,
-                #[context] context: SilexContext<'scope>,
+                #[ctx] ctx: SilexContext<'scope>,
                 color: Signal<'scope, Hex>,
             ) {
                 color: $(color);
@@ -1249,7 +1249,7 @@ mod tests {
     fn dynamic_styled_rules_use_one_runtime_binding() {
         let input = quote::quote! {
             Panel<'scope><div>(
-                #[context] context: SilexContext<'scope>,
+                #[ctx] ctx: SilexContext<'scope>,
                 children: AnyView<'scope>,
                 selector: Signal<'scope, String>,
             ) {

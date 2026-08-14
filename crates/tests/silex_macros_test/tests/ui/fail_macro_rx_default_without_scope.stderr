@@ -1,4 +1,4 @@
-error: component functions must declare exactly one `#[context]` parameter
+error: component functions must declare exactly one `#[ctx]` parameter
   --> tests/ui/fail_macro_rx_default_without_scope.rs:10:4
    |
 10 | fn MissingRxDefaultScope<'scope>(

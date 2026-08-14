@@ -10,7 +10,7 @@ router! {
     enum InvalidLayout {
         Users(UsersRoute) {
             prefix: "/users";
-            layout: |_context| "invalid";
+            layout: |_ctx| "invalid";
         },
     }
 }

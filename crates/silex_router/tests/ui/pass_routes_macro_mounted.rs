@@ -10,7 +10,7 @@ router! {
     enum AdminRoute {
         Users(UsersRoute) {
             prefix: "/users";
-            layout: |_context, outlet| outlet;
+            layout: |_ctx, outlet| outlet;
         },
     }
 }
@@ -20,7 +20,7 @@ router! {
         Home => "/",
         Admin(AdminRoute) {
             prefix: "/admin";
-            layout: |_context, outlet| outlet;
+            layout: |_ctx, outlet| outlet;
         },
     }
 }
@@ -28,7 +28,7 @@ router! {
 fn main() {
     let route = AppRoute::Admin(AdminRoute::Users(UsersRoute::Detail { id: 42 }));
     let _ = route.path();
-    let _ = AppRoute::table(|route, _context| match route {
+    let _ = AppRoute::table(|route, _ctx| match route {
         AppRoute::Home => AnyView::from("home"),
         AppRoute::Admin(AdminRoute::Users(UsersRoute::Detail { id })) => {
             AnyView::from(id.to_string())

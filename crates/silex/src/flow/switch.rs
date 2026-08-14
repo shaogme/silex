@@ -13,7 +13,7 @@ use std::rc::Rc;
 /// use silex::prelude::*;
 /// let (count, set_count) = scope.signal(0);
 ///
-/// Switch(context, count)
+/// Switch(ctx, count)
 ///     .fallback("Default View")
 ///     .build()
 ///     .case(0, "Zero")?
@@ -21,7 +21,7 @@ use std::rc::Rc;
 /// ```
 #[component]
 pub fn Switch<'scope, Ctx, Source, T>(
-    #[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     source: Source,
     #[chain(default)] cases: HashMap<T, AnyView<'scope>>,
     #[prop(render)]
@@ -34,7 +34,7 @@ where
 {
     let source = scope.promote(source, error_handler)?;
     let cases = Rc::new(cases);
-    Ok(silex_core::rx!(context; {
+    Ok(silex_core::rx!(ctx; {
         let val = (*$source).clone();
         if let Some(view) = cases.get(&val) {
             view.clone()

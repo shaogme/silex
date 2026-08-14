@@ -3,7 +3,7 @@
 use super::{
     model::{DependencyTransaction, EdgeId, NodeState, ReactiveEdge, ScopeState},
     scheduler::{
-        ActiveObserver, Observer, ScheduledTask, TargetNode, TrackingContext, active_context,
+        ActiveObserver, Observer, ScheduledTask, TargetNode, TrackingContext, active_ctx,
     },
 };
 use crate::{ReactiveError, ReactiveResult, handle::NodeKindTag, internal::RawId};
@@ -367,10 +367,10 @@ impl<'scope> ScopeState<'scope> {
         &self,
         target: RawId,
     ) -> ReactiveResult<Option<TrackingContext>> {
-        let Some(context) = active_context() else {
+        let Some(ctx) = active_ctx() else {
             return Ok(None);
         };
-        let Some(active) = context.observer.as_ref() else {
+        let Some(active) = ctx.observer.as_ref() else {
             return Ok(None);
         };
         if !Rc::ptr_eq(&active.scheduler, &self.scheduler) {
@@ -402,7 +402,7 @@ impl<'scope> ScopeState<'scope> {
                 return Err(ReactiveError::Reentrant);
             }
         }
-        Ok(Some(context))
+        Ok(Some(ctx))
     }
 
     fn scheduler_state(&self) -> Rc<RefCell<ScopeState<'scope>>> {
@@ -416,12 +416,12 @@ impl<'scope> ScopeState<'scope> {
     pub(crate) fn track_read(
         &mut self,
         target: RawId,
-        context: &TrackingContext,
+        ctx: &TrackingContext,
     ) -> ReactiveResult<()> {
-        let Some(active) = context.observer.as_ref() else {
+        let Some(active) = ctx.observer.as_ref() else {
             return Ok(());
         };
-        if context.blocked_scopes.contains(&self.scope_id) {
+        if ctx.blocked_scopes.contains(&self.scope_id) {
             return Ok(());
         }
         if !Rc::ptr_eq(&active.scheduler, &self.scheduler) {

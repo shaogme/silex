@@ -14,7 +14,7 @@ router! {
         Files { rest: PathTail } => "/files/*rest",
         Css(CssRoute) {
             prefix: "/css";
-            layout: |_context, outlet| outlet;
+            layout: |_ctx, outlet| outlet;
         },
         NotFound => "/*",
     }
@@ -70,7 +70,7 @@ fn router_macro_decodes_enum_values_and_falls_back_after_decode_failure() {
 
 #[test]
 fn independent_child_enum_builds_its_own_route_table() {
-    let table = CssRoute::table(|route, _context| match route {
+    let table = CssRoute::table(|route, _ctx| match route {
         CssRoute::Basics => AnyView::from("basics"),
         CssRoute::Theming => AnyView::from("theming"),
     })
@@ -85,7 +85,7 @@ fn independent_child_enum_builds_its_own_route_table() {
 
 #[test]
 fn router_macro_builds_a_route_table_from_an_exhaustive_view_match() {
-    let table = AppRoute::table(|route, _context| match route {
+    let table = AppRoute::table(|route, _ctx| match route {
         AppRoute::Home => AnyView::from("home"),
         AppRoute::User { id } => AnyView::from(id.to_string()),
         AppRoute::Files { rest } => AnyView::from(rest.into_inner()),

@@ -13,13 +13,13 @@ use silex_macros::PropsBuilder;
     render = render_explicit,
 )]
 struct ExplicitProps<'scope> {
-    #[context]
-    context: SilexContext<'scope>,
+    #[ctx]
+    ctx: SilexContext<'scope>,
     children: AnyView<'scope>,
 }
 
 fn render_explicit<'scope>(props: ExplicitProps<'scope>) -> impl View<'scope> {
-    let _ = props.context;
+    let _ = props.ctx;
     props.children
 }
 
@@ -27,8 +27,8 @@ fn main() {
     let mut runtime = Runtime::new();
     let _ = runtime.child(|scope| {
         let error_handler = scope.error_handler(|_| {}).expect("handler");
-        let context = SilexContext::new(scope, error_handler);
-        let view = Explicit(context, AnyView::Empty).build();
+        let ctx = SilexContext::new(scope, error_handler);
+        let view = Explicit(ctx, AnyView::Empty).build();
         let _ = AnyView::new(view);
     });
 }

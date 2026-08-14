@@ -537,22 +537,22 @@ impl<'scope> RouteTable<'scope> {
                 ));
             }
         }
-        let entry = RouteEntry::new(pattern, move |_, context| {
-            let outlet = RouteOutlet::nested(context, child.clone(), prefix.clone()).into_any();
-            Some(layout(context, outlet).into_any())
+        let entry = RouteEntry::new(pattern, move |_, ctx| {
+            let outlet = RouteOutlet::nested(ctx, child.clone(), prefix.clone()).into_any();
+            Some(layout(ctx, outlet).into_any())
         })?;
         table.add_entry(entry)?;
         Ok(table)
     }
 
-    pub fn resolve(&self, path: &str, context: RouterContext<'scope>) -> Option<AnyView<'scope>> {
-        self.resolve_branch(path, context).map(|(_, view)| view)
+    pub fn resolve(&self, path: &str, ctx: RouterContext<'scope>) -> Option<AnyView<'scope>> {
+        self.resolve_branch(path, ctx).map(|(_, view)| view)
     }
 
     pub(crate) fn resolve_branch(
         &self,
         path: &str,
-        context: RouterContext<'scope>,
+        ctx: RouterContext<'scope>,
     ) -> Option<(RouteBranchKey, AnyView<'scope>)> {
         self.matcher
             .matches(path)
@@ -561,7 +561,7 @@ impl<'scope> RouteTable<'scope> {
             .find_map(|matched| {
                 let entry = self.entries.get(matched.route_id())?;
                 let key = route_branch_key(&matched);
-                (entry.handler)(matched, context).map(|view| (key, view))
+                (entry.handler)(matched, ctx).map(|view| (key, view))
             })
     }
 

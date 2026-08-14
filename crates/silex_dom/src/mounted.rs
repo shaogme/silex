@@ -21,10 +21,10 @@ pub use silex_core::{
     DisposeError, DropFailureReport, MountAvailability, MountError,
 };
 
-/// The scoped context exposed to an application mount builder.
+/// The scoped ctx exposed to an application mount builder.
 ///
-/// A builder receives this context for the duration of one root-scope borrow.
-/// It can mount multiple views, but cannot return the context, a scoped view, or
+/// A builder receives this ctx for the duration of one root-scope borrow.
+/// It can mount multiple views, but cannot return the ctx, a scoped view, or
 /// a scoped error handler from the callback.
 pub struct MountContext<'scope> {
     scope: Scope<'scope>,
@@ -521,12 +521,12 @@ impl MountAttempt {
             .expect("mount attempt boundary must exist")
             .staging_parent();
         let mount_result = root.with_scope(|scope| {
-            let context = MountContext::with_cleanup_failures(
+            let ctx = MountContext::with_cleanup_failures(
                 scope,
                 parent,
                 self.provisional_failures.clone(),
             );
-            builder(&context)
+            builder(&ctx)
         });
         let provisional_failures = self.take_provisional_failures();
 

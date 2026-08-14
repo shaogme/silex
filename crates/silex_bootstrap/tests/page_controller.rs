@@ -46,9 +46,9 @@ fn clean_sink() -> CleanupSink {
     CleanupSink::new(|report| assert!(report.is_clean()))
 }
 
-fn mount_text<'scope>(context: &MountContext<'scope>, text: &'static str) -> SilexResult<()> {
-    let handler = context.scope().error_handler(|_: SilexError| {})?;
-    context.mount(Element::with_child("section", text), handler)
+fn mount_text<'scope>(ctx: &MountContext<'scope>, text: &'static str) -> SilexResult<()> {
+    let handler = ctx.scope().error_handler(|_: SilexError| {})?;
+    ctx.mount(Element::with_child("section", text), handler)
 }
 
 fn dispatch(event_name: &str) {
@@ -68,7 +68,7 @@ fn manual_policy_does_not_install_a_listener() {
     let target = target();
     let mut controller = PageController::new(target.clone(), clean_sink());
     controller
-        .mount(Runtime::new(), |context| mount_text(context, "manual"))
+        .mount(Runtime::new(), |ctx| mount_text(ctx, "manual"))
         .expect("mount should succeed");
     let calls = Rc::new(Cell::new(0));
 
@@ -88,7 +88,7 @@ fn pagehide_unmounts_once_and_repeated_events_are_idempotent() {
     let target = target();
     let mut controller = PageController::new(target.clone(), clean_sink());
     controller
-        .mount(Runtime::new(), |context| mount_text(context, "page"))
+        .mount(Runtime::new(), |ctx| mount_text(ctx, "page"))
         .expect("mount should succeed");
     let calls = Rc::new(Cell::new(0));
     controller
@@ -116,7 +116,7 @@ fn removing_page_lifecycle_keeps_the_application_mounted() {
     let target = target();
     let mut controller = PageController::new(target.clone(), clean_sink());
     controller
-        .mount(Runtime::new(), |context| mount_text(context, "kept"))
+        .mount(Runtime::new(), |ctx| mount_text(ctx, "kept"))
         .expect("mount should succeed");
     let calls = Rc::new(Cell::new(0));
     controller
@@ -139,7 +139,7 @@ fn visibility_policy_ignores_events_while_document_is_visible() {
     let target = target();
     let mut controller = PageController::new(target.clone(), clean_sink());
     controller
-        .mount(Runtime::new(), |context| mount_text(context, "visible"))
+        .mount(Runtime::new(), |ctx| mount_text(ctx, "visible"))
         .expect("mount should succeed");
     let calls = Rc::new(Cell::new(0));
     controller
@@ -171,7 +171,7 @@ fn dropping_controller_removes_listener_before_host_cleanup() {
     {
         let mut controller = PageController::new(target.clone(), clean_sink());
         controller
-            .mount(Runtime::new(), |context| mount_text(context, "drop"))
+            .mount(Runtime::new(), |ctx| mount_text(ctx, "drop"))
             .expect("mount should succeed");
         controller
             .install_page_lifecycle(PageLifecyclePolicy::PageHide, reporter.clone())
@@ -190,8 +190,8 @@ fn lifecycle_reentrancy_is_reported_without_blocking_outer_unmount() {
     let target = target();
     let mut controller = PageController::new(target.clone(), clean_sink());
     controller
-        .mount(Runtime::new(), |context| {
-            let scope = context.scope();
+        .mount(Runtime::new(), |ctx| {
+            let scope = ctx.scope();
             let handler = scope.error_handler(|_: SilexError| {})?;
             scope.on_cleanup(
                 || {
@@ -200,7 +200,7 @@ fn lifecycle_reentrancy_is_reported_without_blocking_outer_unmount() {
                 },
                 handler,
             )?;
-            context.mount(Element::with_child("section", "reentrant"), handler)
+            ctx.mount(Element::with_child("section", "reentrant"), handler)
         })
         .expect("mount should succeed");
     let errors = Rc::new(RefCell::new(None));
@@ -234,14 +234,14 @@ fn lifecycle_reporter_receives_cleanup_error() {
     let target = target();
     let mut controller = PageController::new(target.clone(), clean_sink());
     controller
-        .mount(Runtime::new(), |context| {
-            let scope = context.scope();
+        .mount(Runtime::new(), |ctx| {
+            let scope = ctx.scope();
             let handler = scope.error_handler(|_: SilexError| {})?;
             scope.on_cleanup(
                 || -> SilexResult<()> { panic!("page cleanup failure") },
                 handler,
             )?;
-            context.mount(Element::with_child("section", "cleanup-error"), handler)
+            ctx.mount(Element::with_child("section", "cleanup-error"), handler)
         })
         .expect("mount should succeed");
     let errors = Rc::new(RefCell::new(None));

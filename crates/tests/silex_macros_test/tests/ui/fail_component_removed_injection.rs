@@ -7,7 +7,7 @@ use silex_macros::component;
 
 #[component]
 fn RemovedInjection<'scope, Ctx>(
-#[context] context: Ctx,
+#[ctx] ctx: Ctx,
     #[inject(owner)] owner: (),
     
 ) -> impl View<'scope> {

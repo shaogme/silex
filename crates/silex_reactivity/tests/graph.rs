@@ -310,7 +310,7 @@ fn nested_memo_cleanup_does_not_track_the_outer_observer() {
 }
 
 #[test]
-fn batch_delays_effects_and_untrack_preserves_ownership_context() {
+fn batch_delays_effects_and_untrack_preserves_ownership_ctx() {
     let mut runtime = Runtime::new();
     runtime
         .child(|scope| {

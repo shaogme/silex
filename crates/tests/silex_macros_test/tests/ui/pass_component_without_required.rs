@@ -8,9 +8,8 @@ use silex_macros::component;
 
 #[component]
 fn WithoutRequired<'scope, Ctx>(
-#[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     children: AnyView<'scope>,
-    
     #[chain(default)] disabled: bool,
 ) -> impl View<'scope> {
     let _ = (scope, disabled);
@@ -21,8 +20,8 @@ fn main() {
     let mut runtime = Runtime::new();
     let _ = runtime.child(|scope| {
         let error_handler = scope.error_handler(|_| {}).expect("handler");
-        let context = SilexContext::new(scope, error_handler);
-        let view = WithoutRequired(context, AnyView::Empty)
+        let ctx = SilexContext::new(scope, error_handler);
+        let view = WithoutRequired(ctx, AnyView::Empty)
             .build();
         let _ = AnyView::new(view);
     });

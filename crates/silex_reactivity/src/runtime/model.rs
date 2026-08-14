@@ -415,7 +415,7 @@ impl<'scope> ScopeState<'scope> {
         true
     }
 
-    pub(crate) fn set_context(&mut self, owner: Option<RawId>) {
+    pub(crate) fn set_ctx(&mut self, owner: Option<RawId>) {
         self.current_owner = owner;
     }
 

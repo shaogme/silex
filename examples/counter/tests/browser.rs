@@ -90,9 +90,9 @@ fn find_link(target: &DomElement, label: &str) -> HtmlElement {
     panic!("link {label:?} was not found");
 }
 
-fn mount_text<'scope>(context: &MountContext<'scope>) -> SilexResult<()> {
-    let handler = context.scope().error_handler(|_: SilexError| {})?;
-    context.mount(Element::with_child("section", "counter-test"), handler)
+fn mount_text<'scope>(ctx: &MountContext<'scope>) -> SilexResult<()> {
+    let handler = ctx.scope().error_handler(|_: SilexError| {})?;
+    ctx.mount(Element::with_child("section", "counter-test"), handler)
 }
 
 #[wasm_bindgen_test(async)]
@@ -174,7 +174,7 @@ fn counter_mount_failure_preserves_error_and_ready_state() {
     let mut host = AppHost::new(app.clone().into(), sink);
 
     let error = host
-        .mount(Runtime::new(), |_context| {
+        .mount(Runtime::new(), |_ctx| {
             Err(SilexError::recoverable(SilexErrorKind::Framework(
                 "counter mount rejected".to_string(),
             )))

@@ -8,7 +8,7 @@ use silex_macros::component;
 
 #[component]
 fn NoReactiveInputScope<'scope, Ctx>(
-    #[context] context: Ctx,
+    #[ctx] ctx: Ctx,
     #[chain] source: Signal<'scope, bool>,
 ) -> impl View<'scope> {
     source
@@ -19,8 +19,8 @@ fn main() {
     runtime.child(|scope| {
         let source: Signal<'_, bool> = true.into_reactive_input(scope);
         let error_handler = scope.error_handler(|_| {}).expect("handler");
-        let context = SilexContext::new(scope, error_handler);
-        let _ = NoReactiveInputScope(context)
+        let ctx = SilexContext::new(scope, error_handler);
+        let _ = NoReactiveInputScope(ctx)
             .source(source)
             .source(true);
     });

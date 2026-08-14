@@ -57,7 +57,7 @@ global! {
 
 styled! {
     pub MacroStyledValue<'scope><div>(
-        #[context] context: SilexContext<'scope>,
+        #[ctx] ctx: SilexContext<'scope>,
         children: AnyView<'scope>,
         color: silex::core::reactivity::Signal<'scope, Hex>,
     ) {
@@ -67,7 +67,7 @@ styled! {
 
 styled! {
     pub MacroStyledSelector<'scope><div>(
-        #[context] context: SilexContext<'scope>,
+        #[ctx] ctx: SilexContext<'scope>,
         children: AnyView<'scope>,
         selector: silex::core::reactivity::Signal<'scope, String>,
     ) {
@@ -77,7 +77,7 @@ styled! {
 
 styled! {
     pub MacroStyledVariant<'scope><div>(
-        #[context] context: SilexContext<'scope>,
+        #[ctx] ctx: SilexContext<'scope>,
         children: AnyView<'scope>,
         selector: silex::core::reactivity::Signal<'scope, String>,
     ) {
@@ -672,8 +672,8 @@ fn styled_dynamic_value_cleans_inline_property_on_owner_dispose() {
         let scope = root.scope();
         let (color, set_color) = scope.signal(hex("#123456")).unwrap();
         let (owner, error_handler) = test_owner(scope);
-        let context = SilexContext::new(scope, error_handler);
-        let view = MacroStyledValue(context, AnyView::new(()), color).build();
+        let ctx = SilexContext::new(scope, error_handler);
+        let view = MacroStyledValue(ctx, AnyView::new(()), color).build();
         let _ = view
             .mount(&owner, &host, Vec::new(), error_handler)
             .expect("styled value view should mount");
@@ -768,8 +768,8 @@ async fn styled_dynamic_selector_updates_and_detaches_on_owner_dispose() {
         let scope = root.scope();
         let (selector, set_selector) = scope.signal(String::from("macro-selector-a")).unwrap();
         let (owner, error_handler) = test_owner(scope);
-        let context = SilexContext::new(scope, error_handler);
-        let view = MacroStyledSelector(context, AnyView::new(()), selector).build();
+        let ctx = SilexContext::new(scope, error_handler);
+        let view = MacroStyledSelector(ctx, AnyView::new(()), selector).build();
         let _ = view
             .mount(&owner, &host, Vec::new(), error_handler)
             .expect("styled selector view should mount");
@@ -830,8 +830,8 @@ async fn styled_dynamic_variant_switches_rules_and_cleans_on_dispose() {
             .signal(String::from("macro-variant-selector"))
             .unwrap();
         let (owner, error_handler) = test_owner(scope);
-        let context = SilexContext::new(scope, error_handler);
-        let view = MacroStyledVariant(context, AnyView::new(()), selector)
+        let ctx = SilexContext::new(scope, error_handler);
+        let view = MacroStyledVariant(ctx, AnyView::new(()), selector)
             .mode(mode)
             .expect("styled variant mode should be valid")
             .build();

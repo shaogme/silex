@@ -25,7 +25,7 @@ tw_variants! {
 
 styled! {
     pub ScopedPanel<'scope><div>(
-        #[context] context: SilexContext<'scope>,
+        #[ctx] ctx: SilexContext<'scope>,
         children: AnyView<'scope>,
         color: silex::core::reactivity::Signal<'scope, Hex>,
     ) {
@@ -35,7 +35,7 @@ styled! {
 
 styled! {
     pub ScopedSelector<'scope><div>(
-        #[context] context: SilexContext<'scope>,
+        #[ctx] ctx: SilexContext<'scope>,
         children: AnyView<'scope>,
         selector: silex::core::reactivity::Signal<'scope, String>,
     ) {
@@ -45,7 +45,7 @@ styled! {
 
 styled! {
     pub VariantPanel<'scope><div>(
-        #[context] context: SilexContext<'scope>,
+        #[ctx] ctx: SilexContext<'scope>,
         children: AnyView<'scope>,
     ) {
         variants: {

@@ -3,7 +3,7 @@ error[E0277]: the trait bound `BuilderAsViewBuilder<'_, silex_core::SilexContext
    |
 24 |         let _ = AnyView::new(
    |                 ------------ required by a bound introduced by this call
-25 |             BuilderAsView(context, AnyView::Empty),
+25 |             BuilderAsView(ctx, AnyView::Empty),
    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
    |
 help: the trait `Fn()` is not implemented for `BuilderAsViewBuilder<'_, silex_core::SilexContext<'_>>`

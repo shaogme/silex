@@ -68,7 +68,7 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let mut field_defs = Vec::new();
     let mut prop_arg_names = Vec::new();
-    let mut context_field = None;
+    let mut ctx_field = None;
 
     for arg in input_fn.sig.inputs.iter() {
         let fn_arg = match arg {
@@ -95,43 +95,43 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
             }
         };
 
-        let is_context = attrs.iter().any(|attr| attr.path().is_ident("context"));
-        if is_context {
-            if context_field.is_some() {
+        let is_ctx = attrs.iter().any(|attr| attr.path().is_ident("ctx"));
+        if is_ctx {
+            if ctx_field.is_some() {
                 return Err(syn::Error::new_spanned(
                     fn_arg,
-                    "component functions must declare exactly one `#[context]` parameter",
+                    "component functions must declare exactly one `#[ctx]` parameter",
                 ));
             }
             if param_name == "scope" || param_name == "error_handler" {
                 return Err(syn::Error::new_spanned(
                     fn_arg,
-                    "`scope` and `error_handler` are reserved aliases; use another context parameter name",
+                    "`scope` and `error_handler` are reserved aliases; use another ctx parameter name",
                 ));
             }
             if attrs.iter().any(|attr| attr.path().is_ident("chain")) {
                 return Err(syn::Error::new_spanned(
                     fn_arg,
-                    "`#[context]` cannot be combined with `#[chain]`",
+                    "`#[ctx]` cannot be combined with `#[chain]`",
                 ));
             }
-            context_field = Some(param_name.clone());
+            ctx_field = Some(param_name.clone());
         } else if param_name == "scope" || param_name == "error_handler" {
             return Err(syn::Error::new_spanned(
                 fn_arg,
-                "explicit `Scope` and `ErrorReporter` component parameters were removed; declare one `#[context]` parameter",
+                "explicit `Scope` and `ErrorReporter` component parameters were removed; declare one `#[ctx]` parameter",
             ));
-        } else if is_special_context_type(ty) {
+        } else if is_special_ctx_type(ty) {
             return Err(syn::Error::new_spanned(
                 ty,
-                "explicit `Scope` and `ErrorReporter` component parameters were removed; declare one `#[context]` parameter",
+                "explicit `Scope` and `ErrorReporter` component parameters were removed; declare one `#[ctx]` parameter",
             ));
         }
 
         if attrs.iter().any(|attr| attr.path().is_ident("inject")) {
             return Err(syn::Error::new_spanned(
                 fn_arg,
-                "component parameters no longer support #[inject(...)]; declare a `#[context]` parameter",
+                "component parameters no longer support #[inject(...)]; declare a `#[ctx]` parameter",
             ));
         }
 
@@ -142,25 +142,25 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
         prop_arg_names.push(param_name);
     }
 
-    let Some(context_field) = context_field else {
+    let Some(ctx_field) = ctx_field else {
         return Err(syn::Error::new_spanned(
             &input_fn.sig.ident,
-            "component functions must declare exactly one `#[context]` parameter",
+            "component functions must declare exactly one `#[ctx]` parameter",
         ));
     };
-    let context_ty = input_fn
+    let ctx_ty = input_fn
         .sig
         .inputs
         .iter()
         .find_map(|arg| match arg {
             FnArg::Typed(arg)
-                if matches!(arg.pat.as_ref(), Pat::Ident(ident) if ident.ident == context_field) =>
+                if matches!(arg.pat.as_ref(), Pat::Ident(ident) if ident.ident == ctx_field) =>
             {
                 Some(arg.ty.clone())
             }
             _ => None,
         })
-        .expect("context field must be present in component arguments");
+        .expect("ctx field must be present in component arguments");
 
     // Keep generic parameters that only occur in the render return type or bounds
     // represented in Props without adding runtime storage.
@@ -267,7 +267,7 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
             .make_where_clause()
             .predicates
             .push(syn::parse_quote!(
-                #context_ty: #__silex::core::SilexContextProvider<#scope>
+                #ctx_ty: #__silex::core::SilexContextProvider<#scope>
             ));
     }
 
@@ -287,10 +287,10 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
     })?;
     hidden_stmts.push(destructure);
     hidden_stmts.push(syn::parse_quote! {
-        let scope = #__silex::core::SilexContextProvider::scope(&#context_field);
+        let scope = #__silex::core::SilexContextProvider::scope(&#ctx_field);
     });
     hidden_stmts.push(syn::parse_quote! {
-        let error_handler = #__silex::core::SilexContextProvider::error_reporter(&#context_field);
+        let error_handler = #__silex::core::SilexContextProvider::error_reporter(&#ctx_field);
     });
     hidden_stmts.extend(hidden_fn.block.stmts);
     hidden_fn.block.stmts = hidden_stmts;
@@ -363,7 +363,7 @@ fn expression_returns_result(expression: &syn::Expr) -> bool {
     }
 }
 
-fn is_special_context_type(ty: &Type) -> bool {
+fn is_special_ctx_type(ty: &Type) -> bool {
     let Type::Path(type_path) = ty else {
         return false;
     };

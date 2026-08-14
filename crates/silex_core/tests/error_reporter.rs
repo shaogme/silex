@@ -2,7 +2,7 @@ use silex_core::{ErrorHandler, ErrorReporter, Runtime, SilexError, SilexErrorKin
 use std::{cell::RefCell, rc::Rc};
 
 #[test]
-fn reporter_delivers_errors_without_shared_context() {
+fn reporter_delivers_errors_without_shared_ctx() {
     let first = Rc::new(RefCell::new(Vec::new()));
     let second = Rc::new(RefCell::new(Vec::new()));
     let first_for_reporter = first.clone();

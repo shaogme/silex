@@ -185,9 +185,9 @@ fn mounted_app_stages_and_commits_after_the_caller_node() {
         host.clone(),
         CleanupSink::new(|report| assert!(report.is_clean())),
     );
-    app.mount(|context| {
-        let handler = error_handler(context.scope());
-        context.mount(Element::with_child("section", "app"), handler)
+    app.mount(|ctx| {
+        let handler = error_handler(ctx.scope());
+        ctx.mount(Element::with_child("section", "app"), handler)
     })
     .expect("mount should commit");
 
@@ -213,9 +213,9 @@ fn explicit_dispose_cleans_committed_boundary() {
         host.clone(),
         CleanupSink::new(|_| panic!("clean explicit dispose should not report")),
     );
-    app.mount(|context| {
-        let handler = error_handler(context.scope());
-        context.mount(Element::with_child("section", "app"), handler)
+    app.mount(|ctx| {
+        let handler = error_handler(ctx.scope());
+        ctx.mount(Element::with_child("section", "app"), handler)
     })
     .expect("mount should commit");
 
@@ -237,9 +237,9 @@ fn dispose_after_external_host_removal_is_clean_and_keeps_caller_nodes() {
         host.clone(),
         CleanupSink::new(|_| panic!("external removal should be clean")),
     );
-    app.mount(|context| {
-        let handler = error_handler(context.scope());
-        context.mount(Element::with_child("section", "app"), handler)
+    app.mount(|ctx| {
+        let handler = error_handler(ctx.scope());
+        ctx.mount(Element::with_child("section", "app"), handler)
     })
     .expect("mount should commit");
 
@@ -260,9 +260,9 @@ fn dispose_after_external_host_removal_is_clean_and_keeps_caller_nodes() {
 fn mount_error_rolls_back_staging_without_touching_caller_nodes() {
     let host = host_with_caller_node();
     let mut app = MountedApp::new(Runtime::new(), host.clone(), CleanupSink::new(|_| {}));
-    let result = app.mount(|context| {
-        let handler = error_handler(context.scope());
-        context.mount(Element::with_child("section", "partial"), handler)?;
+    let result = app.mount(|ctx| {
+        let handler = error_handler(ctx.scope());
+        ctx.mount(Element::with_child("section", "partial"), handler)?;
         Err(SilexError::recoverable(SilexErrorKind::Framework(
             "primary mount failure".to_string(),
         )))
@@ -281,9 +281,9 @@ fn mount_error_rolls_back_staging_without_touching_caller_nodes() {
     assert_eq!(host.text_content().as_deref(), Some("caller-owned"));
     assert_eq!(host.child_nodes().length(), 1);
 
-    app.mount(|context| {
-        let handler = error_handler(context.scope());
-        context.mount(Element::with_child("section", "retry"), handler)
+    app.mount(|ctx| {
+        let handler = error_handler(ctx.scope());
+        ctx.mount(Element::with_child("section", "retry"), handler)
     })
     .expect("clean rollback should allow retrying the same handle");
     assert!(app.is_active());
@@ -301,14 +301,14 @@ fn mounted_app_remounts_the_same_handle_and_preserves_caller_nodes() {
     let host = host_with_caller_node();
     let mut app = MountedApp::new(Runtime::new(), host.clone(), CleanupSink::new(|_| {}));
 
-    app.mount(|context| {
-        let handler = error_handler(context.scope());
-        context.mount(Element::with_child("section", "first"), handler)
+    app.mount(|ctx| {
+        let handler = error_handler(ctx.scope());
+        ctx.mount(Element::with_child("section", "first"), handler)
     })
     .expect("first mount should commit");
-    app.mount(|context| {
-        let handler = error_handler(context.scope());
-        context.mount(Element::with_child("section", "second"), handler)
+    app.mount(|ctx| {
+        let handler = error_handler(ctx.scope());
+        ctx.mount(Element::with_child("section", "second"), handler)
     })
     .expect("second mount should commit");
 
@@ -335,17 +335,17 @@ fn disposed_handle_can_mount_again_and_dispose_is_idempotent() {
     let mut app = MountedApp::new(Runtime::new(), host.clone(), CleanupSink::new(|_| {}));
 
     app.dispose().expect("ready dispose should be a no-op");
-    app.mount(|context| {
-        let handler = error_handler(context.scope());
-        context.mount(Element::with_child("section", "after-ready"), handler)
+    app.mount(|ctx| {
+        let handler = error_handler(ctx.scope());
+        ctx.mount(Element::with_child("section", "after-ready"), handler)
     })
     .expect("ready handle should mount");
     app.dispose().expect("first dispose should succeed");
     app.dispose().expect("second dispose should be idempotent");
 
-    app.mount(|context| {
-        let handler = error_handler(context.scope());
-        context.mount(Element::with_child("section", "after-dispose"), handler)
+    app.mount(|ctx| {
+        let handler = error_handler(ctx.scope());
+        ctx.mount(Element::with_child("section", "after-dispose"), handler)
     })
     .expect("disposed handle should mount again");
     assert_eq!(
@@ -365,8 +365,8 @@ fn root_cleanup_runs_before_boundary_rollback_is_attempted() {
     let host = host_with_caller_node();
     let cleanups = Rc::new(Cell::new(0));
     let mut app = MountedApp::new(Runtime::new(), host.clone(), CleanupSink::new(|_| {}));
-    let result = app.mount(|context| {
-        let scope = context.scope();
+    let result = app.mount(|ctx| {
+        let scope = ctx.scope();
         let handler = error_handler(scope);
         let root_cleanups = cleanups.clone();
         scope
@@ -378,7 +378,7 @@ fn root_cleanup_runs_before_boundary_rollback_is_attempted() {
                 handler,
             )
             .expect("root cleanup should register");
-        context.mount(
+        ctx.mount(
             CleanupProbe {
                 cleanups: cleanups.clone(),
             },
@@ -409,9 +409,9 @@ fn root_cleanup_runs_before_boundary_rollback_is_attempted() {
 fn composite_cleanup_failure_upgrades_primary_and_records_provisional_owner() {
     let host = host_with_caller_node();
     let mut app = MountedApp::new(Runtime::new(), host.clone(), CleanupSink::new(|_| {}));
-    let result = app.mount(|context| {
-        let handler = error_handler(context.scope());
-        context.mount(PanicRollbackView, handler)
+    let result = app.mount(|ctx| {
+        let handler = error_handler(ctx.scope());
+        ctx.mount(PanicRollbackView, handler)
     });
 
     let error = result.expect_err("mount should fail during composite rollback");
