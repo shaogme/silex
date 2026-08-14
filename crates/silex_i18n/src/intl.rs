@@ -216,7 +216,7 @@ fn civil_date_from_days(days_since_epoch: i64) -> (i64, i64, i64) {
 
 #[cfg(target_arch = "wasm32")]
 mod wasm {
-    use super::IntlError;
+    use super::{IntlError, IntlErrorKind};
     use crate::Locale;
     use js_sys::{Array, Function, Reflect};
     use wasm_bindgen::{JsCast, JsValue};

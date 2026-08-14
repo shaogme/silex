@@ -275,11 +275,11 @@ impl<'scope> Navigator<'scope> {
 
         // 更新信号 (带去重，避免不必要的副作用)
         if self.path.get_untracked()? != logical_path {
-            self.set_path.set(logical_path).map_err(SilexError::fatal)?;
+            self.set_path.set(logical_path)?;
         }
 
         if self.search.get_untracked()? != search {
-            self.set_search.set(search).map_err(SilexError::fatal)?;
+            self.set_search.set(search)?;
         }
         Ok(())
     }

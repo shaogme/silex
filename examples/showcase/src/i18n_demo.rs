@@ -276,11 +276,7 @@ pub fn I18nPage<'scope>(
                         .style(sty().display("block")?.margin_bottom(px(5))?),
                     control_row(div![
                         button("-").on_click(move |_| {
-                            count
-                                .update(|value| *value = value.saturating_sub(1))
-                                .map_err(|error| {
-                                    SilexError::fatal(SilexErrorKind::Reactivity(error))
-                                })?;
+                            count.update(|value| *value = value.saturating_sub(1))?;
                             Ok(())
                         }),
                         span(count.map_fn(scope, |value| value.to_string(), error_handler)?).style(
@@ -289,11 +285,7 @@ pub fn I18nPage<'scope>(
                                 .text_align(TextAlignKeyword::Center)?
                         ),
                         button("+").on_click(move |_| {
-                            count
-                                .update(|value| *value = value.saturating_add(1))
-                                .map_err(|error| {
-                                    SilexError::fatal(SilexErrorKind::Reactivity(error))
-                                })?;
+                            count.update(|value| *value = value.saturating_add(1))?;
                             Ok(())
                         }),
                     ])?,

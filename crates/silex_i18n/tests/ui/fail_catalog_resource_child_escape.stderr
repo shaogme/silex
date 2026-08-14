@@ -8,10 +8,10 @@ error: lifetime may not live long enough
 ...
 12 | /         store.catalog_resource(
 13 | |             move |_locale| async {
-14 | |                 Err::<Catalog, I18nError>(I18nError::Loader("not loaded".to_string()))
-15 | |             },
+14 | |                 Err::<Catalog, I18nError>(I18nError::recoverable(
+15 | |                     silex_i18n::I18nErrorKind::Loader("not loaded".to_string()),
 ...  |
-18 | |         .expect("resource")
+20 | |         .expect("resource")
    | |___________________________^ returning this value requires that `'1` must outlive `'2`
    |
    = note: requirement occurs because of the type `CatalogResource<'_>`, which makes the generic argument `'_` invariant

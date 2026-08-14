@@ -82,9 +82,7 @@ fn RecoverableComponent<'scope>(
             Ok(div!(
                 p("Component is running normally."),
                 button("Trigger Result::Err").on_click(move |_| {
-                    set_should_error
-                        .set(true)
-                        .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+                    set_should_error.set(true)?;
                     Ok(())
                 }),
             ))
@@ -107,9 +105,7 @@ fn PanicToggleComponent<'scope>(
                 div!(
                     p("The panic component is currently hidden."),
                     button("Show Panic Component").on_click(move |_| {
-                        set_show_panic.set(true).map_err(|error| {
-                            SilexError::fatal(SilexErrorKind::Reactivity(error))
-                        })?;
+                        set_show_panic.set(true)?;
                         Ok(())
                     }),
                 )
@@ -126,9 +122,7 @@ fn ImmediatePanic<'scope>(#[context] context: SilexContext<'scope>) -> impl View
     Ok(div!(
         p("Ready to panic?"),
         button("Click to Panic Immediately").on_click(move |_| {
-            set_active
-                .set(true)
-                .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+            set_active.set(true)?;
             Ok(())
         }),
         move || -> SilexResult<String> {

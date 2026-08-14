@@ -71,31 +71,21 @@ pub fn Counter<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
                     if let Some(handle) = timer.get_untracked()? {
                         handle.cancel();
                     }
-                    timer
-                        .set_untracked(None)
-                        .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
-                    set_is_running
-                        .set(false)
-                        .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+                    timer.set_untracked(None)?;
+                    set_is_running.set(false)?;
                 } else {
                     let handle = set_interval(
                         &owner_for_timer,
                         move || -> SilexResult<()> {
-                            set_count.update(|n| *n += 1).map_err(|error| {
-                                SilexError::fatal(SilexErrorKind::Reactivity(error))
-                            })?;
+                            set_count.update(|n| *n += 1)?;
                             Ok(())
                         },
                         Duration::from_millis(1000),
                         error_handler,
                     )
                     .map_err(|error| SilexError::fatal(SilexErrorKind::from(error)))?;
-                    timer
-                        .set_untracked(Some(handle))
-                        .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
-                    set_is_running
-                        .set(true)
-                        .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+                    timer.set_untracked(Some(handle))?;
+                    set_is_running.set(true)?;
                 }
                 Ok(())
             })
@@ -109,9 +99,7 @@ pub fn Counter<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
                 .on(event::input, move |e| {
                     let val_str = event_target_value(&e);
                     if let Ok(n) = val_str.parse::<i32>() {
-                        set_count.set(n).map_err(|error| {
-                            SilexError::fatal(SilexErrorKind::Reactivity(error))
-                        })?;
+                        set_count.set(n)?;
                     }
                     Ok(())
                 })
@@ -141,10 +129,7 @@ pub fn NodeRefDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
             .node_ref(input_ref) // NodeRef 是 Copy 的，无需 clone
             .style(sty().margin_right(px(10))?.padding("5px")?),
         button("Focus Input").on(event::click, move |_| {
-            if let Some(el) = input_ref
-                .get()
-                .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?
-            {
+            if let Some(el) = input_ref.get()? {
                 let _ = el.focus();
             }
             Ok(())
@@ -231,13 +216,9 @@ pub fn EventDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
             name.get()?,
             count.get()?
         ));
-        set_count
-            .update(|n| *n += 1)
-            .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+        set_count.update(|n| *n += 1)?;
         let next_count = count.get()? + 1;
-        set_name
-            .update(|n| *n = format!("Silex {}", next_count))
-            .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+        set_name.update(|n| *n = format!("Silex {}", next_count))?;
         Ok(())
     };
 
@@ -245,14 +226,12 @@ pub fn EventDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
         // For non-Copy types like String, we clone them manually if needed multiple times
         let owned_data = payload.clone();
 
-        set_logs
-            .update(|l| {
-                if l.len() >= 5 {
-                    l.remove(0);
-                }
-                l.push(format!("Consumed: {}", owned_data));
-            })
-            .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+        set_logs.update(|l| {
+            if l.len() >= 5 {
+                l.remove(0);
+            }
+            l.push(format!("Consumed: {}", owned_data));
+        })?;
         Ok(())
     };
 

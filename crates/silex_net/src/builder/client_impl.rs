@@ -377,7 +377,7 @@ macro_rules! impl_net_methods {
                                     && let Ok(value) = result
                                     && let Some(resource) = resource_slot_for_completion.get()
                                 {
-                                    resource.set(value).map_err(SilexError::fatal)?;
+                                    resource.set(value)?;
                                 }
                                 Ok(())
                             },

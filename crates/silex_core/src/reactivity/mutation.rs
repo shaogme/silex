@@ -104,9 +104,7 @@ where
                 if let Some(next_state) =
                     resolve_mutation_result(last_id_for_callback.get(), id, result)
                 {
-                    set_state_for_callback
-                        .set(next_state)
-                        .map_err(SilexError::fatal)?;
+                    set_state_for_callback.set(next_state)?;
                 }
                 Ok(())
             }))?;
@@ -145,9 +143,7 @@ where
                 if let Some(next_state) =
                     resolve_mutation_result(last_id_for_callback.get(), id, result)
                 {
-                    set_state_for_callback
-                        .set(next_state)
-                        .map_err(SilexError::fatal)?;
+                    set_state_for_callback.set(next_state)?;
                 }
                 Ok(())
             }))?;
@@ -188,9 +184,7 @@ where
                     ))
                 })?;
                 last_id.set(id);
-                self.set_state
-                    .set(MutationState::Pending)
-                    .map_err(SilexError::fatal)?;
+                self.set_state.set(MutationState::Pending)?;
                 (id, action(arg))
             }
             MutationAction::Prepared(prepare) => {
@@ -203,9 +197,7 @@ where
                             ))
                         })?;
                         last_id.set(id);
-                        self.set_state
-                            .set(MutationState::Error(error))
-                            .map_err(SilexError::fatal)?;
+                        self.set_state.set(MutationState::Error(error))?;
                         return Ok(());
                     }
                 };
@@ -215,9 +207,7 @@ where
                     ))
                 })?;
                 last_id.set(id);
-                self.set_state
-                    .set(MutationState::Pending)
-                    .map_err(SilexError::fatal)?;
+                self.set_state.set(MutationState::Pending)?;
                 (id, future)
             }
         };

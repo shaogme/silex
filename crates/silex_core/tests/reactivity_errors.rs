@@ -17,7 +17,9 @@ fn core_try_operations_preserve_borrow_conflicts() {
             let read_then_write = read.with(|_| write.set(2));
             assert!(matches!(
                 read_then_write,
-                Ok(Err(ReactiveError::BorrowConflict))
+                Ok(Err(SilexError::Fatal(SilexErrorKind::Reactivity(
+                    ReactiveError::BorrowConflict
+                ))))
             ));
 
             let write_then_read = write.update(|_| read.get());
@@ -31,7 +33,9 @@ fn core_try_operations_preserve_borrow_conflicts() {
             let write_then_write = write.update(|_| write.set(2));
             assert!(matches!(
                 write_then_write,
-                Ok(Err(ReactiveError::BorrowConflict))
+                Ok(Err(SilexError::Fatal(SilexErrorKind::Reactivity(
+                    ReactiveError::BorrowConflict
+                ))))
             ));
 
             assert!(matches!(read.get(), Ok(1)));
@@ -48,7 +52,9 @@ fn core_try_operations_preserve_stored_and_rx_errors() {
             let stored_conflict = stored.with(|_| stored.update(|_| ()));
             assert!(matches!(
                 stored_conflict,
-                Ok(Err(ReactiveError::BorrowConflict))
+                Ok(Err(SilexError::Fatal(SilexErrorKind::Reactivity(
+                    ReactiveError::BorrowConflict
+                ))))
             ));
 
             let (read, write) = scope.signal(1_i32).expect("signal should initialize");
@@ -56,7 +62,9 @@ fn core_try_operations_preserve_stored_and_rx_errors() {
             let rx_conflict = rx.with(|_| write.set(2));
             assert!(matches!(
                 rx_conflict,
-                Ok(Err(ReactiveError::BorrowConflict))
+                Ok(Err(SilexError::Fatal(SilexErrorKind::Reactivity(
+                    ReactiveError::BorrowConflict
+                ))))
             ));
         })
         .expect("child scope should initialize");
@@ -73,13 +81,13 @@ fn node_ref_keeps_empty_value_separate_from_runtime_errors() {
             let node_ref = scope
                 .node_ref::<String>()
                 .expect("node ref should initialize");
-            assert_eq!(node_ref.get(), Ok(None));
+            assert!(matches!(node_ref.get(), Ok(None)));
 
             node_ref.load(String::from("value")).unwrap();
-            assert_eq!(node_ref.get(), Ok(Some(String::from("value"))));
+            assert!(matches!(node_ref.get(), Ok(Some(value)) if value == "value"));
 
             node_ref.clear().unwrap();
-            assert_eq!(node_ref.get(), Ok(None));
+            assert!(matches!(node_ref.get(), Ok(None)));
 
             let node_ref_for_cleanup = node_ref;
             scope
@@ -96,7 +104,9 @@ fn node_ref_keeps_empty_value_separate_from_runtime_errors() {
 
     assert!(matches!(
         stale_error.take(),
-        Some(ReactiveError::NoSuchNode)
+        Some(SilexError::Fatal(SilexErrorKind::Reactivity(
+            ReactiveError::NoSuchNode
+        )))
     ));
 }
 
@@ -118,8 +128,18 @@ fn stale_core_read_returns_no_such_node_and_track_is_inactive() {
                                 ReactiveError::NoSuchNode
                             )))
                         ));
-                        assert!(matches!(write.set(2), Err(ReactiveError::NoSuchNode)));
-                        assert!(matches!(write.notify(), Err(ReactiveError::NoSuchNode)));
+                        assert!(matches!(
+                            write.set(2),
+                            Err(SilexError::Fatal(SilexErrorKind::Reactivity(
+                                ReactiveError::NoSuchNode
+                            )))
+                        ));
+                        assert!(matches!(
+                            write.notify(),
+                            Err(SilexError::Fatal(SilexErrorKind::Reactivity(
+                                ReactiveError::NoSuchNode
+                            )))
+                        ));
                         stale_error_for_cleanup.set(read.get().err());
                         Ok(())
                     },

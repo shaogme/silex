@@ -163,8 +163,7 @@ impl<'scope, T: 'scope> MountState<'scope, T> {
                     .ok_or(SilexError::fatal(ReactiveError::NoSuchNode))
             }),
             MountStateValue::Stored(value) => value
-                .update(|value| value.as_mut().map(callback))
-                .map_err(SilexError::fatal)?
+                .update(|value| value.as_mut().map(callback))?
                 .ok_or(SilexError::fatal(ReactiveError::NoSuchNode)),
         }
     }
@@ -176,8 +175,7 @@ impl<'scope, T: 'scope> MountState<'scope, T> {
                 .with_mut(Option::take)
                 .ok_or(SilexError::fatal(ReactiveError::NoSuchNode)),
             MountStateValue::Stored(value) => value
-                .update(Option::take)
-                .map_err(SilexError::fatal)?
+                .update(Option::take)?
                 .ok_or(SilexError::fatal(ReactiveError::NoSuchNode)),
         }
     }
@@ -188,9 +186,7 @@ impl<'scope, T: 'scope> MountState<'scope, T> {
             MountStateValue::Shared(current) => {
                 Ok(current.with_mut(|current| current.replace(value)))
             }
-            MountStateValue::Stored(current) => current
-                .update(|current| current.replace(value))
-                .map_err(SilexError::fatal),
+            MountStateValue::Stored(current) => current.update(|current| current.replace(value)),
         }
     }
 

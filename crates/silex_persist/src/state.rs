@@ -5,8 +5,7 @@ use crate::{
 };
 use ref_str::LocalStaticRefStr;
 use silex_core::{
-    ErrorReporter, ReactiveError, ReactiveResult, Rx, RxGet, Scope, SilexErrorKind, SilexResult,
-    StoreField,
+    ErrorReporter, ReactiveError, Rx, RxGet, Scope, SilexErrorKind, SilexResult, StoreField,
     reactivity::{PromotionPlan, ReactiveSource, ReadSignal, RwSignal, StoredValue},
     traits::{RxCloneData, RxData, RxRead, RxValue, RxWrite},
 };
@@ -288,12 +287,12 @@ impl<'scope, T: RxData> RxRead for Persistent<'scope, T> {
 }
 
 impl<'scope, T: RxData> RxWrite for Persistent<'scope, T> {
-    fn rx_update_untracked<U>(&self, f: impl FnOnce(&mut Self::Value) -> U) -> ReactiveResult<U> {
+    fn rx_update_untracked<U>(&self, f: impl FnOnce(&mut Self::Value) -> U) -> SilexResult<U> {
         mark_local_value_write(self.controller)?;
         self.value.write_signal().update(f)
     }
 
-    fn rx_notify(&self) -> ReactiveResult<()> {
+    fn rx_notify(&self) -> SilexResult<()> {
         self.value.write_signal().notify()
     }
 }
@@ -642,7 +641,7 @@ where
 
 pub(crate) fn invalidate_debounce<'scope, T>(
     controller: StoredValue<'scope, PersistenceController<'scope, T>>,
-) -> ReactiveResult<()> {
+) -> SilexResult<()> {
     let timer = controller.update_untracked(|controller| {
         controller
             .debounce
@@ -658,7 +657,7 @@ pub(crate) fn invalidate_debounce<'scope, T>(
 
 pub(crate) fn take_controller_resources<'scope, T>(
     controller: StoredValue<'scope, PersistenceController<'scope, T>>,
-) -> ReactiveResult<(
+) -> SilexResult<(
     Option<BackendSubscription<'scope>>,
     Option<HostResourceHandle<'scope>>,
 )> {
@@ -673,17 +672,15 @@ pub(crate) fn take_controller_resources<'scope, T>(
 
 pub(crate) fn mark_local_value_write<'scope, T>(
     controller: StoredValue<'scope, PersistenceController<'scope, T>>,
-) -> ReactiveResult<()> {
-    controller
-        .update(|controller| {
-            controller.value_generation = controller.value_generation.wrapping_add(1);
-        })
-        .map(|_| ())
+) -> SilexResult<()> {
+    controller.update(|controller| {
+        controller.value_generation = controller.value_generation.wrapping_add(1);
+    })
 }
 
 pub(crate) fn take_skip_next_auto_flush<'scope, T>(
     controller: StoredValue<'scope, PersistenceController<'scope, T>>,
-) -> ReactiveResult<bool> {
+) -> SilexResult<bool> {
     controller.update_untracked(|controller| {
         let should_skip =
             controller.skip_next_auto_flush_generation == Some(controller.value_generation);
@@ -694,7 +691,7 @@ pub(crate) fn take_skip_next_auto_flush<'scope, T>(
 
 pub(crate) fn take_suppress_manual_state<'scope, T>(
     controller: StoredValue<'scope, PersistenceController<'scope, T>>,
-) -> ReactiveResult<bool> {
+) -> SilexResult<bool> {
     controller.update_untracked(|controller| {
         let should_suppress =
             controller.suppress_manual_state_generation == Some(controller.value_generation);
@@ -705,23 +702,19 @@ pub(crate) fn take_suppress_manual_state<'scope, T>(
 
 fn arm_external_value_change<'scope, T>(
     controller: StoredValue<'scope, PersistenceController<'scope, T>>,
-) -> ReactiveResult<()> {
-    controller
-        .update_untracked(|controller| {
-            let generation = controller.value_generation.wrapping_add(1);
-            controller.value_generation = generation;
-            controller.skip_next_auto_flush_generation = Some(generation);
-            controller.suppress_manual_state_generation = Some(generation);
-        })
-        .map(|_| ())
+) -> SilexResult<()> {
+    controller.update_untracked(|controller| {
+        let generation = controller.value_generation.wrapping_add(1);
+        controller.value_generation = generation;
+        controller.skip_next_auto_flush_generation = Some(generation);
+        controller.suppress_manual_state_generation = Some(generation);
+    })
 }
 
 fn clear_external_value_markers_on_controller<'scope, T>(
     controller: StoredValue<'scope, PersistenceController<'scope, T>>,
-) -> ReactiveResult<()> {
-    controller
-        .update_untracked(clear_external_value_markers)
-        .map(|_| ())
+) -> SilexResult<()> {
+    controller.update_untracked(clear_external_value_markers)
 }
 
 fn clear_external_value_markers<T>(controller: &mut PersistenceController<'_, T>) {

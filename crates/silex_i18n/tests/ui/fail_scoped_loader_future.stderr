@@ -11,10 +11,10 @@ error[E0521]: borrowed data escapes outside of closure
    |  _________________________^
 14 | |             move |_locale| async move {
 15 | |                 let _ = source.get();
-16 | |                 Err::<Catalog, I18nError>(I18nError::Loader("not loaded".to_string()))
-17 | |             },
-18 | |             None,
-19 | |         );
+16 | |                 Err::<Catalog, I18nError>(I18nError::recoverable(
+...  |
+20 | |             None,
+21 | |         );
    | |         ^
    | |         |
    | |_________`scope` escapes the closure body here

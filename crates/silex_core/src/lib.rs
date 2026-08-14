@@ -67,8 +67,8 @@ pub use traits::{
     ReactiveInput, RuntimeScoped, RxData, RxDefault, RxFrom, RxGet, RxRead, RxValue, RxWrite,
 };
 
+pub use silex_reactivity::ReactiveError;
 pub use silex_reactivity::{CleanupDiagnostic, CleanupError, CleanupPayloadKind};
-pub use silex_reactivity::{ReactiveError, ReactiveResult};
 
 /// Marker for value-producing reactive nodes.
 pub struct RxValueKind;
@@ -285,8 +285,8 @@ macro_rules! batch_read_untracked_recurse {
 pub mod prelude {
     pub use crate::{
         Callback, CompletionOnce, CompletionSender, ErrorHandler, ErrorReporter, NodeRef,
-        ReactiveError, ReactiveResult, Runtime, Rx, Scope, SilexContext, SilexContextProvider,
-        SilexError, SilexErrorKind, SilexResult, StoreField, batch_read, batch_read_untracked,
-        logic::*, reactivity::*, rx, traits::*, unwind_safe,
+        ReactiveError, Runtime, Rx, Scope, SilexContext, SilexContextProvider, SilexError,
+        SilexErrorKind, SilexResult, StoreField, batch_read, batch_read_untracked, logic::*,
+        reactivity::*, rx, traits::*, unwind_safe,
     };
 }

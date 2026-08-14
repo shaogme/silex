@@ -53,16 +53,13 @@ pub fn NavBar<'scope>(
             .build(),
         button(rx!(ctx; if $(settings.theme) == "Light" { "Dark" } else { "Light" }))
             .on_click(move |_| {
-                settings
-                    .theme
-                    .update(|theme| {
-                        *theme = if theme == "Light" {
-                            "Dark".to_string()
-                        } else {
-                            "Light".to_string()
-                        };
-                    })
-                    .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+                settings.theme.update(|theme| {
+                    *theme = if theme == "Light" {
+                        "Dark".to_string()
+                    } else {
+                        "Light".to_string()
+                    };
+                })?;
                 Ok(())
             })
             .style(

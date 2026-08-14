@@ -1,6 +1,6 @@
 use crate::{AppHost, AppHostError, BootstrapError, HostState, UnmountOutcome};
 use js_sys::{Array, Object, Reflect};
-use silex_core::{CleanupDiagnostic, CleanupPayloadKind, SilexError, SilexErrorKind};
+use silex_core::{CleanupDiagnostic, CleanupPayloadKind, SilexError};
 use silex_dom::{CleanupFailure, CleanupOrigin, CleanupReport};
 use wasm_bindgen::{JsValue, prelude::wasm_bindgen};
 
@@ -185,7 +185,7 @@ fn silex_error_to_js(error: &SilexError) -> Result<JsValue, JsValue> {
     };
     let object = Object::new();
     set_property(&object, "strategy", JsValue::from_str(strategy))?;
-    set_property(&object, "kind", JsValue::from_str(silex_error_kind(kind)))?;
+    set_property(&object, "kind", JsValue::from_str(kind.as_str()))?;
     set_property(&object, "message", JsValue::from_str(&error.to_string()))?;
     Ok(object.into())
 }
@@ -218,23 +218,10 @@ fn cleanup_payload_kind_name(kind: CleanupPayloadKind) -> &'static str {
     }
 }
 
-fn silex_error_kind(kind: &SilexErrorKind) -> &'static str {
-    match kind {
-        SilexErrorKind::Dom(_) => "dom",
-        SilexErrorKind::Reactivity(_) => "reactivity",
-        SilexErrorKind::Framework(_) => "framework",
-        SilexErrorKind::Javascript(_) => "javascript",
-        SilexErrorKind::Mount(_) => "mount",
-        SilexErrorKind::Dispose(_) => "dispose",
-        SilexErrorKind::AppHost(_) => "app-host",
-        SilexErrorKind::Bootstrap(_) => "bootstrap",
-        _ => "domain",
-    }
-}
-
 #[cfg(all(test, target_arch = "wasm32"))]
 mod tests {
     use super::*;
+    use silex_core::SilexErrorKind;
     use wasm_bindgen_test::*;
 
     wasm_bindgen_test_configure!(run_in_browser);

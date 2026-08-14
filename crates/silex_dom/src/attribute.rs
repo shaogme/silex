@@ -249,13 +249,16 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
                 owner.on_cleanup(
                     Box::new(move || -> SilexResult<()> {
                         match node_ref_for_cleanup.clear() {
-                            Ok(()) | Err(ReactiveError::NoSuchNode) => Ok(()),
-                            Err(error) => Err(SilexError::fatal(error)),
+                            Ok(()) => Ok(()),
+                            Err(SilexError::Fatal(SilexErrorKind::Reactivity(
+                                ReactiveError::NoSuchNode,
+                            ))) => Ok(()),
+                            Err(error) => Err(error),
                         }
                     }),
                     error_handler,
                 )?;
-                node_ref.load(typed).map_err(SilexError::fatal)
+                node_ref.load(typed)
             },
         ))
     }
@@ -350,8 +353,7 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
     {
         let s = signal.clone();
         let this = self.on_input(move |value| {
-            s.update(|current| *current = T::from(value))
-                .map_err(SilexError::fatal)?;
+            s.update(|current| *current = T::from(value))?;
             Ok(())
         });
 

@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::ReactiveResult;
+use crate::{SilexError, SilexResult};
 
 /// A scope-owned host object reference.
 pub struct NodeRef<'scope, T = ()> {
@@ -26,18 +26,18 @@ impl<'scope, T: 'scope> NodeRef<'scope, T> {
         Self { inner }
     }
 
-    pub fn get(&self) -> ReactiveResult<Option<T>>
+    pub fn get(&self) -> SilexResult<Option<T>>
     where
         T: Clone,
     {
-        self.inner.get()
+        self.inner.get().map_err(SilexError::fatal)
     }
 
-    pub fn load(&self, value: T) -> ReactiveResult<()> {
-        self.inner.set(value)
+    pub fn load(&self, value: T) -> SilexResult<()> {
+        self.inner.set(value).map_err(SilexError::fatal)
     }
 
-    pub fn clear(&self) -> ReactiveResult<()> {
-        self.inner.clear()
+    pub fn clear(&self) -> SilexResult<()> {
+        self.inner.clear().map_err(SilexError::fatal)
     }
 }

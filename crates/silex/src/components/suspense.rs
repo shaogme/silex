@@ -1,4 +1,4 @@
-use silex_core::{SilexError, reactivity::SuspenseContext};
+use silex_core::reactivity::SuspenseContext;
 use silex_dom::prelude::*;
 use silex_html::div;
 use silex_macros::component;
@@ -80,9 +80,7 @@ where
             let content = silex_core::rx!(context; {
                 if *$count == 0 {
                     if *$is_first {
-                        set_is_first
-                            .set(false)
-                            .map_err(SilexError::fatal)?;
+                        set_is_first.set(false)?;
                         initial_view.clone()
                     } else {
                         children(ctx)

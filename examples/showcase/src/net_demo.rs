@@ -89,9 +89,7 @@ pub fn HttpClientDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope>
                 .prop("value", post_id)
                 .on(event::input, move |e| {
                     if let Ok(id) = event_target_value(&e).parse::<i32>() {
-                        set_post_id.set(id).map_err(|error| {
-                            SilexError::fatal(SilexErrorKind::Reactivity(error))
-                        })?;
+                        set_post_id.set(id)?;
                     }
                     Ok(())
                 })
@@ -118,9 +116,7 @@ pub fn HttpClientDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope>
                         .color(AppTheme::TEXT)?
                 ),
             button("Refresh").on(event::click, move |_| {
-                post_resource
-                    .refetch()
-                    .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+                post_resource.refetch()?;
                 Ok(())
             }),
         ]
@@ -299,9 +295,7 @@ pub fn WebSocketDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> 
             socket.send_text(&text).map_err(|error| {
                 SilexError::recoverable(SilexErrorKind::Framework(error.to_string()))
             })?;
-            input_text
-                .set(String::new())
-                .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+            input_text.set(String::new())?;
         }
         Ok(())
     };

@@ -4,8 +4,7 @@ use crate::{
     traits::{RxRead, RxValue},
 };
 use silex_reactivity::{
-    ReactiveResult, ReadSignal as RawReadSignal, WriteSignal as RawWriteSignal,
-    notify as raw_notify,
+    ReadSignal as RawReadSignal, WriteSignal as RawWriteSignal, notify as raw_notify,
 };
 use std::fmt;
 
@@ -209,16 +208,16 @@ impl<'scope, T: 'scope> WriteSignal<'scope, T> {
         self
     }
 
-    pub fn set(&self, value: T) -> ReactiveResult<()> {
-        self.inner.set(value)
+    pub fn set(&self, value: T) -> SilexResult<()> {
+        self.inner.set(value).map_err(SilexError::fatal)
     }
 
-    pub fn update<U>(&self, f: impl FnOnce(&mut T) -> U) -> ReactiveResult<U> {
-        self.inner.update(f)
+    pub fn update<U>(&self, f: impl FnOnce(&mut T) -> U) -> SilexResult<U> {
+        self.inner.update(f).map_err(SilexError::fatal)
     }
 
-    pub fn notify(&self) -> ReactiveResult<()> {
-        raw_notify(&self.inner)
+    pub fn notify(&self) -> SilexResult<()> {
+        raw_notify(&self.inner).map_err(SilexError::fatal)
     }
 }
 
@@ -253,18 +252,18 @@ impl<'scope, T> RwSignal<'scope, T> {
         self.read.get()
     }
 
-    pub fn set(&self, value: T) -> ReactiveResult<()>
+    pub fn set(&self, value: T) -> SilexResult<()>
     where
         T: 'scope,
     {
         self.write.set(value)
     }
 
-    pub fn update(&self, f: impl FnOnce(&mut T)) -> ReactiveResult<()>
+    pub fn update(&self, f: impl FnOnce(&mut T)) -> SilexResult<()>
     where
         T: 'scope,
     {
-        self.write.update(f).map(|_| ())
+        self.write.update(f)
     }
 
     pub fn slice<O, F>(self, getter: F) -> SignalSlice<Self, F, O>

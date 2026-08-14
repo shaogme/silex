@@ -5,7 +5,7 @@ use crate::{
     traits::{RxCloneData, RxData, RxError, RxGet, RxRead, RxValue},
     unwind_safe,
 };
-use silex_reactivity::{CallbackInvokeError, ReactiveResult};
+use silex_reactivity::CallbackInvokeError;
 use std::{cell::Cell, future::Future, marker::PhantomData, rc::Rc};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -141,12 +141,10 @@ where
                     message.id,
                     message.result,
                 ) {
-                    set_state_for_callback
-                        .set(next_state)
-                        .map_err(SilexError::fatal)?;
+                    set_state_for_callback.set(next_state)?;
                 }
                 if let Some(context) = suspense_for_callback {
-                    context.decrement().map_err(SilexError::fatal)?;
+                    context.decrement()?;
                 }
                 Ok(())
             }))?;
@@ -169,11 +167,9 @@ where
                         .map(ResourceState::Reloading)
                         .unwrap_or(ResourceState::Loading)
                 })?;
-                set_state_for_effect
-                    .set(next_state)
-                    .map_err(SilexError::fatal)?;
+                set_state_for_effect.set(next_state)?;
                 if let Some(context) = suspense_for_effect {
-                    context.increment().map_err(SilexError::fatal)?;
+                    context.increment()?;
                 }
                 let settled = Rc::new(Cell::new(false));
                 let settled_for_cleanup = settled.clone();
@@ -183,7 +179,7 @@ where
                         if !settled_for_cleanup.replace(true)
                             && let Some(context) = suspense_for_cleanup
                         {
-                            context.decrement().map_err(SilexError::fatal)?;
+                            context.decrement()?;
                         }
                         Ok(())
                     },
@@ -229,22 +225,18 @@ where
         })
     }
 
-    pub fn refetch(&self) -> ReactiveResult<()> {
-        self.trigger
-            .update(|value| *value = value.wrapping_add(1))
-            .map(|_| ())
+    pub fn refetch(&self) -> SilexResult<()> {
+        self.trigger.update(|value| *value = value.wrapping_add(1))
     }
 
-    pub fn update(&self, f: impl FnOnce(&mut T)) -> ReactiveResult<()> {
-        self.set_state
-            .update(|state| match state {
-                ResourceState::Ready(value) | ResourceState::Reloading(value) => f(value),
-                _ => {}
-            })
-            .map(|_| ())
+    pub fn update(&self, f: impl FnOnce(&mut T)) -> SilexResult<()> {
+        self.set_state.update(|state| match state {
+            ResourceState::Ready(value) | ResourceState::Reloading(value) => f(value),
+            _ => {}
+        })
     }
 
-    pub fn set(&self, value: T) -> ReactiveResult<()> {
+    pub fn set(&self, value: T) -> SilexResult<()> {
         self.set_state.set(ResourceState::Ready(value))
     }
 
@@ -313,14 +305,13 @@ impl<'scope> SuspenseContext<'scope> {
         Ok(Self { count, set_count })
     }
 
-    pub fn increment(&self) -> ReactiveResult<()> {
-        self.set_count.update(|count| *count += 1).map(|_| ())
+    pub fn increment(&self) -> SilexResult<()> {
+        self.set_count.update(|count| *count += 1)
     }
 
-    pub fn decrement(&self) -> ReactiveResult<()> {
+    pub fn decrement(&self) -> SilexResult<()> {
         self.set_count
             .update(|count| *count = count.saturating_sub(1))
-            .map(|_| ())
     }
 }
 

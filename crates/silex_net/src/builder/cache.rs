@@ -208,21 +208,18 @@ where
 
     pub(crate) fn binding(&self, spec: &RequestSpec) -> SilexResult<Option<CacheBinding<T>>> {
         let key = Self::key(spec);
-        self.state
-            .update(|state| {
-                let Some(snapshot) = Self::ensure_entry(state, &key)? else {
-                    return Ok(None);
-                };
-                Ok(Some(Self::begin_binding(state, &key, snapshot)?))
-            })
-            .map_err(SilexError::fatal)?
+        self.state.update(|state| {
+            let Some(snapshot) = Self::ensure_entry(state, &key)? else {
+                return Ok(None);
+            };
+            Ok(Some(Self::begin_binding(state, &key, snapshot)?))
+        })?
     }
 
     pub(crate) fn cached_value(&self, spec: &RequestSpec) -> SilexResult<Option<T>> {
         let key = Self::key(spec);
         self.state
-            .update(|state| Ok(Self::ensure_entry(state, &key)?.flatten()))
-            .map_err(SilexError::fatal)?
+            .update(|state| Ok(Self::ensure_entry(state, &key)?.flatten()))?
     }
 
     pub(crate) fn completion_once_for_binding(
@@ -253,15 +250,13 @@ where
             })?;
             backend.set(&key, &raw)?;
 
-            state
-                .update(|state| {
-                    if let Some(entry) = state.entries.get_mut(&key)
-                        && entry.generation == generation
-                    {
-                        entry.snapshot = Some(value);
-                    }
-                })
-                .map_err(SilexError::fatal)?;
+            state.update(|state| {
+                if let Some(entry) = state.entries.get_mut(&key)
+                    && entry.generation == generation
+                {
+                    entry.snapshot = Some(value);
+                }
+            })?;
             Ok(())
         }))
     }

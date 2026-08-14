@@ -291,8 +291,7 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
         let name = quote::format_ident!("__slx_cond_value_{}", index);
         quote! {
             let #name = __slx_conditions_for_effect[#index]
-                .get()
-                ?;
+                .get()?;
         }
     });
 

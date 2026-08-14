@@ -93,6 +93,40 @@ pub enum SilexErrorKind {
     Bootstrap(Rc<BootstrapError>),
 }
 
+impl SilexErrorKind {
+    /// Return the stable category name exposed by host-facing adapters.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Dom(_) => "dom",
+            Self::Reactivity(_) => "reactivity",
+            Self::Framework(_) => "framework",
+            Self::Javascript(_) => "javascript",
+            #[cfg(feature = "error-persistence")]
+            Self::Persistence(_) => "domain",
+            #[cfg(feature = "error-i18n")]
+            Self::I18n(_) => "domain",
+            #[cfg(feature = "error-router")]
+            Self::Path(_) => "domain",
+            #[cfg(feature = "error-router")]
+            Self::PathParam(_) => "domain",
+            #[cfg(feature = "error-router")]
+            Self::RoutePattern(_) => "domain",
+            #[cfg(feature = "error-net")]
+            Self::Net(_) => "domain",
+            #[cfg(feature = "error-intl")]
+            Self::Intl(_) => "domain",
+            #[cfg(feature = "error-dom")]
+            Self::Mount(_) => "mount",
+            #[cfg(feature = "error-dom")]
+            Self::Dispose(_) => "dispose",
+            #[cfg(feature = "error-bootstrap")]
+            Self::AppHost(_) => "app-host",
+            #[cfg(feature = "error-bootstrap")]
+            Self::Bootstrap(_) => "bootstrap",
+        }
+    }
+}
+
 impl fmt::Display for SilexErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -392,6 +426,23 @@ mod tests {
     fn native_errors_convert_only_to_kinds() {
         let reactive: SilexErrorKind = ReactiveError::NoSuchNode.into();
         assert!(matches!(reactive, SilexErrorKind::Reactivity(_)));
+    }
+
+    #[test]
+    fn error_kind_names_are_stable() {
+        assert_eq!(SilexErrorKind::Dom(String::new()).as_str(), "dom");
+        assert_eq!(
+            SilexErrorKind::Reactivity(ReactiveError::NoSuchNode).as_str(),
+            "reactivity"
+        );
+        assert_eq!(
+            SilexErrorKind::Framework(String::new()).as_str(),
+            "framework"
+        );
+        assert_eq!(
+            SilexErrorKind::Javascript(String::new()).as_str(),
+            "javascript"
+        );
     }
 
     #[cfg(target_arch = "wasm32")]

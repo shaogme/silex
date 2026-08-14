@@ -49,25 +49,23 @@ impl<'scope> TooltipContext<'scope> {
         &self,
         owner: MountOwnerToken<'scope>,
         error_handler: ErrorReporter<'scope>,
-    ) -> ReactiveResult<()> {
+    ) -> SilexResult<()> {
         self.owner.set(Some(owner))?;
         self.error_handler.set(Some(error_handler))
     }
 
     /// Cancels any pending close timeout.
-    pub fn cancel_close_timer(&self) -> ReactiveResult<()> {
-        self.timer
-            .update(|timer| {
-                if let Some(handle) = timer.take() {
-                    handle.cancel();
-                }
-            })
-            .map(|_| ())
+    pub fn cancel_close_timer(&self) -> SilexResult<()> {
+        self.timer.update(|timer| {
+            if let Some(handle) = timer.take() {
+                handle.cancel();
+            }
+        })
     }
 
     /// Schedules a close timeout after `delay_ms` milliseconds (default 150ms grace period).
     pub fn schedule_close_timer(&self, delay_ms: i32) -> SilexResult<()> {
-        self.cancel_close_timer().map_err(SilexError::fatal)?;
+        self.cancel_close_timer()?;
         let Some(owner) = self.owner.with(Clone::clone)? else {
             return Ok(());
         };
@@ -79,24 +77,22 @@ impl<'scope> TooltipContext<'scope> {
         let handle = set_timeout(
             &owner,
             move || -> SilexResult<()> {
-                timer
-                    .update(|slot| *slot = None)
-                    .map_err(SilexError::fatal)?;
-                open.set(false).map_err(SilexError::fatal)?;
+                timer.update(|slot| *slot = None)?;
+                open.set(false)?;
                 Ok(())
             },
             Duration::from_millis(delay_ms.max(0) as u64),
             error_handler,
         )
         .map_err(SilexError::fatal)?;
-        self.timer.set(Some(handle)).map_err(SilexError::fatal)?;
+        self.timer.set(Some(handle))?;
         Ok(())
     }
 
     /// Called on pointer enter (trigger or content): cancels closing and opens tooltip.
     pub fn on_pointer_enter(&self) -> SilexResult<()> {
-        self.cancel_close_timer().map_err(SilexError::fatal)?;
-        self.open.set(true).map_err(SilexError::fatal)?;
+        self.cancel_close_timer()?;
+        self.open.set(true)?;
         Ok(())
     }
 
@@ -110,22 +106,21 @@ impl<'scope> TooltipContext<'scope> {
     }
 
     pub fn close(&self) -> SilexResult<()> {
-        self.cancel_close_timer().map_err(SilexError::fatal)?;
-        self.open.set(false).map_err(SilexError::fatal)?;
+        self.cancel_close_timer()?;
+        self.open.set(false)?;
         Ok(())
     }
 
     pub fn toggle(&self) -> SilexResult<()> {
-        self.cancel_close_timer().map_err(SilexError::fatal)?;
-        self.open.update(|v| *v = !*v).map_err(SilexError::fatal)?;
+        self.cancel_close_timer()?;
+        self.open.update(|v| *v = !*v)?;
         Ok(())
     }
 }
 
 fn owner_binding<'scope>(ctx: TooltipContext<'scope>) -> AttrOp<'scope> {
     AttrOp::custom(move |_, owner, error_handler| {
-        ctx.set_owner(owner.clone(), error_handler)
-            .map_err(SilexError::fatal)?;
+        ctx.set_owner(owner.clone(), error_handler)?;
         Ok(())
     })
 }
@@ -232,9 +227,7 @@ pub fn TooltipTrigger<'scope, Ctx>(
         .on(
             event::mouseenter,
             move |e: web_sys::MouseEvent| -> SilexResult<()> {
-                ctx.anchor
-                    .set(get_event_anchor(&e))
-                    .map_err(SilexError::fatal)?;
+                ctx.anchor.set(get_event_anchor(&e))?;
                 ctx.on_pointer_enter()?;
                 on_mouse_enter.invoke(e)
             },
@@ -253,9 +246,7 @@ pub fn TooltipTrigger<'scope, Ctx>(
                 if let Some(target) = target
                     && let Ok(el) = target.dyn_into::<web_sys::Element>()
                 {
-                    ctx.anchor
-                        .set(get_element_anchor(&el))
-                        .map_err(SilexError::fatal)?;
+                    ctx.anchor.set(get_element_anchor(&el))?;
                 }
                 ctx.on_pointer_enter()?;
                 on_focus.invoke(e)

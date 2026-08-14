@@ -1,8 +1,8 @@
 //! Lifetime-aware reactive traits.
 
 use crate::{
-    Callback, CallbackInvokeError, ErrorReporter, NodeRef, ReactiveResult, Rx, RxInner,
-    RxValueKind, Scope, SilexError, SilexResult,
+    Callback, CallbackInvokeError, ErrorReporter, NodeRef, Rx, RxInner, RxValueKind, Scope,
+    SilexError, SilexResult,
     callback::map_callback_error,
     reactivity::{
         Memo, ReactiveSource, ReadSignal, RwSignal, Signal, SignalSlice, StoredValue, WriteSignal,
@@ -503,34 +503,33 @@ where
 
 /// Unified scoped writes.
 pub trait RxWrite: RxValue {
-    fn rx_update_untracked<U>(&self, f: impl FnOnce(&mut Self::Value) -> U) -> ReactiveResult<U>;
+    fn rx_update_untracked<U>(&self, f: impl FnOnce(&mut Self::Value) -> U) -> SilexResult<U>;
 
-    fn rx_notify(&self) -> ReactiveResult<()>;
+    fn rx_notify(&self) -> SilexResult<()>;
 
-    fn update<U>(&self, f: impl FnOnce(&mut Self::Value) -> U) -> ReactiveResult<U> {
+    fn update<U>(&self, f: impl FnOnce(&mut Self::Value) -> U) -> SilexResult<U> {
         self.rx_update_untracked(f)
     }
 
-    fn set(&self, value: Self::Value) -> ReactiveResult<()>
+    fn set(&self, value: Self::Value) -> SilexResult<()>
     where
         Self::Value: Sized,
     {
         self.update(|current| *current = value)
     }
 
-    fn update_untracked<U>(&self, f: impl FnOnce(&mut Self::Value) -> U) -> ReactiveResult<U> {
+    fn update_untracked<U>(&self, f: impl FnOnce(&mut Self::Value) -> U) -> SilexResult<U> {
         self.rx_update_untracked(f)
     }
 
-    fn set_untracked(&self, value: Self::Value) -> ReactiveResult<()>
+    fn set_untracked(&self, value: Self::Value) -> SilexResult<()>
     where
         Self::Value: Sized,
     {
         self.update_untracked(|current| *current = value)
-            .map(|_| ())
     }
 
-    fn notify(&self) -> ReactiveResult<()> {
+    fn notify(&self) -> SilexResult<()> {
         self.rx_notify()
     }
 
@@ -539,7 +538,7 @@ pub trait RxWrite: RxValue {
         Self: Sized + Clone,
         Self::Value: Sized + Clone,
     {
-        move || self.set(value.clone()).map_err(SilexError::fatal)
+        move || self.set(value.clone())
     }
 
     fn updater<F>(self, f: F) -> impl Fn() -> SilexResult<()> + Clone
@@ -548,11 +547,7 @@ pub trait RxWrite: RxValue {
         Self::Value: Sized,
         F: Fn(&mut Self::Value) + Clone,
     {
-        move || {
-            self.update(f.clone())
-                .map(|_| ())
-                .map_err(SilexError::fatal)
-        }
+        move || self.update(f.clone())
     }
 }
 
@@ -575,12 +570,12 @@ impl<'scope, T: 'scope> RxValue for WriteSignal<'scope, T> {
 }
 
 impl<'scope, T: 'scope> RxWrite for WriteSignal<'scope, T> {
-    fn rx_update_untracked<U>(&self, f: impl FnOnce(&mut T) -> U) -> ReactiveResult<U> {
-        self.inner.update(f)
+    fn rx_update_untracked<U>(&self, f: impl FnOnce(&mut T) -> U) -> SilexResult<U> {
+        self.inner.update(f).map_err(SilexError::fatal)
     }
 
-    fn rx_notify(&self) -> ReactiveResult<()> {
-        raw_notify(&self.inner)
+    fn rx_notify(&self) -> SilexResult<()> {
+        raw_notify(&self.inner).map_err(SilexError::fatal)
     }
 }
 
@@ -599,11 +594,11 @@ impl<'scope, T: 'scope> RxRead for RwSignal<'scope, T> {
 }
 
 impl<'scope, T: 'scope> RxWrite for RwSignal<'scope, T> {
-    fn rx_update_untracked<U>(&self, f: impl FnOnce(&mut T) -> U) -> ReactiveResult<U> {
+    fn rx_update_untracked<U>(&self, f: impl FnOnce(&mut T) -> U) -> SilexResult<U> {
         self.write.rx_update_untracked(f)
     }
 
-    fn rx_notify(&self) -> ReactiveResult<()> {
+    fn rx_notify(&self) -> SilexResult<()> {
         self.write.rx_notify()
     }
 }
@@ -667,11 +662,11 @@ impl<'scope, T: 'scope> RxRead for StoredValue<'scope, T> {
 }
 
 impl<'scope, T: 'scope> RxWrite for StoredValue<'scope, T> {
-    fn rx_update_untracked<U>(&self, f: impl FnOnce(&mut T) -> U) -> ReactiveResult<U> {
-        self.inner.update(f)
+    fn rx_update_untracked<U>(&self, f: impl FnOnce(&mut T) -> U) -> SilexResult<U> {
+        self.inner.update(f).map_err(SilexError::fatal)
     }
 
-    fn rx_notify(&self) -> ReactiveResult<()> {
+    fn rx_notify(&self) -> SilexResult<()> {
         Ok(())
     }
 }

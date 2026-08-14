@@ -21,13 +21,13 @@ impl<'scope> PopoverContext<'scope> {
         })
     }
 
-    pub fn update_anchor_from_element(&self, el: &web_sys::Element) -> ReactiveResult<()> {
+    pub fn update_anchor_from_element(&self, el: &web_sys::Element) -> SilexResult<()> {
         let rect = el.get_bounding_client_rect();
         self.anchor_rect
             .set((rect.top(), rect.left(), rect.width(), rect.height()))
     }
 
-    pub fn update_content_from_element(&self, el: &web_sys::Element) -> ReactiveResult<()> {
+    pub fn update_content_from_element(&self, el: &web_sys::Element) -> SilexResult<()> {
         let rect = el.get_bounding_client_rect();
         if rect.height() > 0.0 {
             self.content_height.set(rect.height())
@@ -36,15 +36,15 @@ impl<'scope> PopoverContext<'scope> {
         }
     }
 
-    pub fn open(&self) -> ReactiveResult<()> {
+    pub fn open(&self) -> SilexResult<()> {
         self.open.set(true)
     }
 
-    pub fn close(&self) -> ReactiveResult<()> {
+    pub fn close(&self) -> SilexResult<()> {
         self.open.set(false)
     }
 
-    pub fn toggle(&self) -> ReactiveResult<()> {
+    pub fn toggle(&self) -> SilexResult<()> {
         self.open.update(|v| *v = !*v)
     }
 }
@@ -155,8 +155,7 @@ pub fn PopoverAnchor<'scope, Ctx>(
                 if let Some(target) = target
                     && let Ok(el) = target.dyn_into::<web_sys::Element>()
                 {
-                    ctx.update_anchor_from_element(&el)
-                        .map_err(SilexError::fatal)?;
+                    ctx.update_anchor_from_element(&el)?;
                 }
                 Ok(())
             },
@@ -189,7 +188,7 @@ pub fn PopoverClose<'scope, Ctx>(
         .attr("data-slot", "popover-close")
         .class(close_cls)
         .on(event::click, move |_| -> SilexResult<()> {
-            ctx.close().map_err(SilexError::fatal)?;
+            ctx.close()?;
             on_click.invoke(())
         }))
 }
@@ -345,7 +344,7 @@ pub fn PopoverContent<'scope, Ctx>(
                 div(()).class(tw!("fixed inset-0 z-50 bg-transparent")).on(
                     event::click,
                     move |_| -> SilexResult<()> {
-                        ctx.close().map_err(SilexError::fatal)?;
+                        ctx.close()?;
                         on_close.invoke(())
                     }
                 ),
@@ -401,10 +400,9 @@ pub fn PopoverTrigger<'scope, Ctx>(
                 if let Some(target) = target
                     && let Ok(el) = target.dyn_into::<web_sys::Element>()
                 {
-                    ctx.update_anchor_from_element(&el)
-                        .map_err(SilexError::fatal)?;
+                    ctx.update_anchor_from_element(&el)?;
                 }
-                ctx.toggle().map_err(SilexError::fatal)?;
+                ctx.toggle()?;
                 on_click.invoke(())
             },
         ))

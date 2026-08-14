@@ -1,6 +1,6 @@
 use crate::{Catalog, I18nError, Locale};
 use silex_core::{
-    SilexError, SilexResult,
+    SilexResult,
     reactivity::{ReadSignal, Resource, ResourceState},
 };
 use std::fmt::Debug;
@@ -52,7 +52,7 @@ impl<'scope, E: Clone + Debug + 'static> CatalogResource<'scope, E> {
     }
 
     pub fn refetch(&self) -> SilexResult<()> {
-        self.resource.refetch().map_err(SilexError::fatal)
+        self.resource.refetch()
     }
 
     pub fn loading(&self) -> SilexResult<bool> {

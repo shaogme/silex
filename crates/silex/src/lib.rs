@@ -8,8 +8,8 @@ pub mod ui;
 pub use components::*;
 pub use silex_core::error::{ErrorHandler, ErrorReporter, SilexError, SilexResult};
 pub use silex_core::{
-    Callback, NodeRef, OwnedScope, ReactiveError, ReactiveResult, RootHandle, Runtime, Rx, Scope,
-    SilexErrorKind, unwind_safe,
+    Callback, NodeRef, OwnedScope, ReactiveError, RootHandle, Runtime, Rx, Scope, SilexErrorKind,
+    unwind_safe,
 };
 
 pub mod reexports {
@@ -83,7 +83,7 @@ pub mod prelude {
     pub use crate::net::*;
     #[cfg(feature = "persistence")]
     pub use crate::persist::*;
-    pub use crate::{ReactiveError, ReactiveResult, SilexError, SilexResult};
+    pub use crate::{ReactiveError, SilexError, SilexResult};
     pub use silex_core::prelude::*;
     pub use silex_css::prelude::*;
     pub use silex_dom::prelude::*;

@@ -110,9 +110,7 @@ fn CounterControls<'scope, Ctx>(
 
     Ok(div!(
         button("-").style(btn_style.clone()).on_click(move |_| {
-            set_count
-                .update(|n| *n -= 1)
-                .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+            set_count.update(|n| *n -= 1)?;
             Ok(())
         }),
         span(count).style(
@@ -123,9 +121,7 @@ fn CounterControls<'scope, Ctx>(
                 .text_align(TextAlignKeyword::Center)?
         ),
         button("+").style(btn_style).on_click(move |_| {
-            set_count
-                .update(|n| *n += 1)
-                .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+            set_count.update(|n| *n += 1)?;
             Ok(())
         }),
     )
@@ -232,9 +228,7 @@ fn HomeView<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scope> 
                     )
                     .value(name)
                     .on_input(move |val| {
-                        set_name.set(val).map_err(|error| {
-                            SilexError::fatal(SilexErrorKind::Reactivity(error))
-                        })?;
+                        set_name.set(val)?;
                         Ok(())
                     })
             )))

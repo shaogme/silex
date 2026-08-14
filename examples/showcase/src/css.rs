@@ -359,28 +359,22 @@ pub fn StylingBasics<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> 
                     set_color.update(|c| {
                         // Toggle between theme text color and warning yellow
                         *c = if *c == AppTheme::TEXT { hex("#fbbf24").into() } else { AppTheme::TEXT };
-                    })
-                    .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+                    })?;
                     set_size.update(|s| {
                         *s = if *s == "medium" { "large".to_string() } else { "medium".to_string() }
-                    })
-                    .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+                    })?;
                     set_border_state.update(|b| {
                         *b = border(px(2), BorderStyleKeyword::Dashed, hex("#f472b6"));
-                    })
-                    .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+                    })?;
                     set_padding_state.update(|p| {
                         *p = padding::block_inline(px(16), px(32));
-                    })
-                    .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+                    })?;
                     set_hover_color.update(|c| {
                         *c = if c.0 == "var(--slx-theme-primary)" { hex("#ec4899").into() } else { AppTheme::PRIMARY };
-                    })
-                    .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+                    })?;
                     set_pseudo_state.update(|s| {
                         *s = if *s == "hover" { "active".to_string() } else { "hover".to_string() }
-                    })
-                    .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+                    })?;
                     Ok(())
                 })
                 .build(),
@@ -404,8 +398,7 @@ pub fn StylingBasics<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> 
                         .type_("button") 
                         .title("Hover me! I'm a native button")
                         .on_click(move |_| {
-                            set_btn_kind.update(|k| *k = if k.as_str() == "primary" { "secondary".to_string() } else { "primary".to_string() })
-                                .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+                            set_btn_kind.update(|k| *k = if k.as_str() == "primary" { "secondary".to_string() } else { "primary".to_string() })?;
                             Ok(())
                         })
                         .build(),
@@ -450,20 +443,17 @@ pub fn StylingBasics<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> 
                 Stack(context, chain!(
                     div![
                         button("Grow").on(event::click, move |_| {
-                            set_count.update(|n| *n += 1)
-                                .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+                            set_count.update(|n| *n += 1)?;
                             Ok(())
                         })
                             .style(sty().padding("8px 16px")?.border_radius(px(6))?.border("1px solid #374151")?.background("#111827")?.color(ColorName::White)?.cursor("pointer")?.margin_right(px(8))?),
                         button("Toggle Box Shadow").on(event::click, move |_| {
-                            set_show_shadow.update(|s| *s = !*s)
-                                .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+                            set_show_shadow.update(|s| *s = !*s)?;
                             Ok(())
                         })
                             .style(sty().padding("8px 16px")?.border_radius(px(6))?.border("1px solid #374151")?.background("#111827")?.color(ColorName::White)?.cursor("pointer")?.margin_right(px(8))?),
                         button("Toggle Border").on(event::click, move |_| {
-                            set_active_border.update(|b| *b = !*b)
-                                .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+                            set_active_border.update(|b| *b = !*b)?;
                             Ok(())
                         })
                             .style(sty().padding("8px 16px")?.border_radius(px(6))?.border("1px solid #374151")?.background("#111827")?.color(ColorName::White)?.cursor("pointer")?),
@@ -534,7 +524,6 @@ pub fn Theming<'scope, Ctx>(
                     global_settings
                         .theme
                         .set("Light".to_string())
-                        .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))
                 })
                 .style(
                     sty()
@@ -552,7 +541,6 @@ pub fn Theming<'scope, Ctx>(
                     global_settings
                         .theme
                         .set("Dark".to_string())
-                        .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))
                 })
                 .style(
                     sty()

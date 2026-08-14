@@ -111,7 +111,7 @@ fn FormControlsShowcase<'scope>(#[context] context: SilexContext<'scope>) -> imp
                     .value(text_val)?
                     .placeholder("Type something...")?
                     .on_input(scope.callback(move |v| {
-                        set_text_val.set(v).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))
+                        set_text_val.set(v)
                     })?).build(),
                 p(rx!(context; format!("Live Bound Value: '{}'", $text_val)))
                     .class(tw!("text-xs text-slate-500 mt-1.5 font-mono"))
@@ -132,7 +132,7 @@ fn FormControlsShowcase<'scope>(#[context] context: SilexContext<'scope>) -> imp
                 Checkbox(context)
                     .checked(checked_val)?
                     .on_change(scope.callback(move |v| {
-                        set_checked_val.set(v).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))
+                        set_checked_val.set(v)
                     })?).build(),
                     span("Enable Notifications").class(tw!("text-sm font-medium text-slate-900 dark:text-slate-100"))
                 )).class(tw!("flex items-center gap-2")),
@@ -141,7 +141,7 @@ fn FormControlsShowcase<'scope>(#[context] context: SilexContext<'scope>) -> imp
                 Switch(context)
                     .checked(switch_val)?
                     .on_change(scope.callback(move |v| {
-                        set_switch_val.set(v).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))
+                        set_switch_val.set(v)
                     })?).build(),
                     span("Airplane Mode").class(tw!("text-sm font-medium text-slate-900 dark:text-slate-100"))
                 )).class(tw!("flex items-center gap-2"))
@@ -168,21 +168,21 @@ fn TabsAndDialogShowcase<'scope>(#[context] context: SilexContext<'scope>) -> im
                         TabsTrigger(context, "Account", "account")
                             .active_tab(active_tab)?
                             .on_select(scope.callback(move |tab: &'static str| {
-                                set_active_tab.set(tab.to_string()).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+                                set_active_tab.set(tab.to_string())?;
                                 Ok(())
                             })?)
                             .build(),
                         TabsTrigger(context, "Password", "password")
                             .active_tab(active_tab)?
                             .on_select(scope.callback(move |tab: &'static str| {
-                                set_active_tab.set(tab.to_string()).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+                                set_active_tab.set(tab.to_string())?;
                                 Ok(())
                             })?)
                             .build(),
                         TabsTrigger(context, "Settings", "settings")
                             .active_tab(active_tab)?
                             .on_select(scope.callback(move |tab: &'static str| {
-                                set_active_tab.set(tab.to_string()).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+                                set_active_tab.set(tab.to_string())?;
                                 Ok(())
                             })?)
                             .build()
@@ -235,7 +235,7 @@ fn TabsAndDialogShowcase<'scope>(#[context] context: SilexContext<'scope>) -> im
                 Button(context, "Open Modal Dialog")
                     .variant("default")?
                     .on_click(move |_| {
-                        set_dialog_open.set(true).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+                        set_dialog_open.set(true)?;
                         Ok(())
                     })
                     .build(),
@@ -260,14 +260,14 @@ fn TabsAndDialogShowcase<'scope>(#[context] context: SilexContext<'scope>) -> im
                         Button(context, "Cancel")
                             .variant("outline")?
                             .on_click(move |_| {
-                                set_dialog_open.set(false).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+                                set_dialog_open.set(false)?;
                                 Ok(())
                             })
                             .build(),
                         Button(context, "Save Changes")
                             .variant("default")?
                             .on_click(move |_| {
-                                set_dialog_open.set(false).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+                                set_dialog_open.set(false)?;
                                 Ok(())
                             })
                             .build()
@@ -276,7 +276,7 @@ fn TabsAndDialogShowcase<'scope>(#[context] context: SilexContext<'scope>) -> im
                 ))
                 .open(dialog_open)?
                 .on_close(scope.callback(move |_| {
-                    set_dialog_open.set(false).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+                    set_dialog_open.set(false)?;
                     Ok(())
                 })?)
                 .build()
@@ -313,11 +313,11 @@ fn FeedbackAndDataShowcase<'scope>(#[context] context: SilexContext<'scope>) -> 
                 Progress(context).value(progress_val)?.class(tw!("mb-3"))?.build(),
                 div(chain!(
                     Button(context, "-10%").variant("outline")?.size("xs")?.on_click(move |_| {
-                        set_progress_val.update(|v| *v = v.saturating_sub(10)).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+                        set_progress_val.update(|v| *v = v.saturating_sub(10))?;
                         Ok(())
                     }).build(),
                     Button(context, "+10%").variant("outline")?.size("xs")?.on_click(move |_| {
-                        set_progress_val.update(|v| *v = (*v + 10).min(100)).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+                        set_progress_val.update(|v| *v = (*v + 10).min(100))?;
                         Ok(())
                     }).build()
                 )).class(tw!("flex justify-end gap-2"))
@@ -469,7 +469,7 @@ fn NewComponentsShowcase<'scope>(#[context] context: SilexContext<'scope>) -> im
                         .min(0.0)?
                         .max(100.0)?
                         .on_change(scope.callback(move |v| {
-                            set_slider_val.set(v).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+                            set_slider_val.set(v)?;
                             Ok(())
                         })?)
                         .build()
@@ -481,7 +481,7 @@ fn NewComponentsShowcase<'scope>(#[context] context: SilexContext<'scope>) -> im
                         .variant("outline")?
                         .pressed(toggle_pressed)?
                         .on_change(scope.callback(move |p| {
-                            set_toggle_pressed.set(p).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+                            set_toggle_pressed.set(p)?;
                             Ok(())
                         })?)
                         .build()
@@ -503,7 +503,7 @@ fn NewComponentsShowcase<'scope>(#[context] context: SilexContext<'scope>) -> im
                             RadioGroupItem(context, "option-1")
                                 .selected_value(radio_val)?
                                 .on_select(scope.callback(move |v: &'static str| {
-                                    set_radio_val.set(v.to_string()).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+                                    set_radio_val.set(v.to_string())?;
                                     Ok(())
                                 })?)
                                 .build(),
@@ -513,7 +513,7 @@ fn NewComponentsShowcase<'scope>(#[context] context: SilexContext<'scope>) -> im
                             RadioGroupItem(context, "option-2")
                                 .selected_value(radio_val)?
                                 .on_select(scope.callback(move |v: &'static str| {
-                                    set_radio_val.set(v.to_string()).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+                                    set_radio_val.set(v.to_string())?;
                                     Ok(())
                                 })?)
                                 .build(),
@@ -529,7 +529,7 @@ fn NewComponentsShowcase<'scope>(#[context] context: SilexContext<'scope>) -> im
                             AccordionTrigger(context, "Is Silex 1:1 compatible?")
                                 .open(accordion_open)?
                                 .on_click(scope.callback(move |_| {
-                                    set_accordion_open.update(|v| *v = !*v).map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+                                    set_accordion_open.update(|v| *v = !*v)?;
                                     Ok(())
                                 })?)
                                 .build(),

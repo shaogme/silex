@@ -256,9 +256,7 @@ struct EventStreamInner<'scope> {
 fn cleanup_stored_inner<'scope>(
     inner: StoredValue<'scope, EventStreamInner<'scope>>,
 ) -> SilexResult<()> {
-    inner
-        .update(EventStreamInner::cleanup)
-        .map_err(SilexError::fatal)?
+    inner.update(EventStreamInner::cleanup)?
 }
 
 impl Drop for EventStreamInner<'_> {
@@ -306,9 +304,7 @@ impl<'scope> EventStreamInner<'scope> {
         self.registration.take();
         self.generation = self.generation.wrapping_add(1);
         let generation = self.generation;
-        self.set_state
-            .set(ConnectionState::Connecting)
-            .map_err(SilexError::fatal)?;
+        self.set_state.set(ConnectionState::Connecting)?;
 
         let source = match source {
             Some(source) => Ok(source),
@@ -321,12 +317,8 @@ impl<'scope> EventStreamInner<'scope> {
         let source = match source {
             Ok(source) => source,
             Err(error) => {
-                self.set_state
-                    .set(ConnectionState::Error)
-                    .map_err(SilexError::fatal)?;
-                self.set_error
-                    .set(Some(error.clone()))
-                    .map_err(SilexError::fatal)?;
+                self.set_state.set(ConnectionState::Error)?;
+                self.set_error.set(Some(error.clone()))?;
                 return Ok((Err(error.clone()), Some(self.defer_error(error))));
             }
         };
@@ -342,12 +334,8 @@ impl<'scope> EventStreamInner<'scope> {
                 Ok((Ok(()), None))
             }
             Err(error) => {
-                self.set_state
-                    .set(ConnectionState::Error)
-                    .map_err(SilexError::fatal)?;
-                self.set_error
-                    .set(Some(error.clone()))
-                    .map_err(SilexError::fatal)?;
+                self.set_state.set(ConnectionState::Error)?;
+                self.set_error.set(Some(error.clone()))?;
                 Ok((Err(error.clone()), Some(self.defer_error(error))))
             }
         }
@@ -360,10 +348,8 @@ impl<'scope> EventStreamInner<'scope> {
         let mut callback = None;
         match event {
             EventStreamEvent::Open { generation } if generation == self.generation => {
-                self.set_state
-                    .set(ConnectionState::Connected)
-                    .map_err(SilexError::fatal)?;
-                self.set_error.set(None).map_err(SilexError::fatal)?;
+                self.set_state.set(ConnectionState::Connected)?;
+                self.set_error.set(None)?;
                 callback = Some(self.defer_open());
             }
             EventStreamEvent::Message {
@@ -371,28 +357,20 @@ impl<'scope> EventStreamInner<'scope> {
                 event,
                 data,
             } if generation == self.generation => {
-                self.messages
-                    .update(|messages| {
-                        messages.push(EventMessage { event, data });
-                        if let Some(max_messages) = self.max_messages {
-                            let excess = messages.len().saturating_sub(max_messages);
-                            if excess > 0 {
-                                messages.drain(..excess);
-                            }
+                self.messages.update(|messages| {
+                    messages.push(EventMessage { event, data });
+                    if let Some(max_messages) = self.max_messages {
+                        let excess = messages.len().saturating_sub(max_messages);
+                        if excess > 0 {
+                            messages.drain(..excess);
                         }
-                    })
-                    .map_err(SilexError::fatal)?;
-                self.set_state
-                    .set(ConnectionState::Connected)
-                    .map_err(SilexError::fatal)?;
+                    }
+                })?;
+                self.set_state.set(ConnectionState::Connected)?;
             }
             EventStreamEvent::Error { generation, error } if generation == self.generation => {
-                self.set_state
-                    .set(ConnectionState::Error)
-                    .map_err(SilexError::fatal)?;
-                self.set_error
-                    .set(Some(error.clone()))
-                    .map_err(SilexError::fatal)?;
+                self.set_state.set(ConnectionState::Error)?;
+                self.set_error.set(Some(error.clone()))?;
                 callback = Some(self.defer_error(error));
             }
             _ => {}
@@ -403,9 +381,7 @@ impl<'scope> EventStreamInner<'scope> {
     fn close(&mut self) -> SilexResult<()> {
         self.registration.take();
         self.generation = self.generation.wrapping_add(1);
-        self.set_state
-            .set(ConnectionState::Closed)
-            .map_err(SilexError::fatal)?;
+        self.set_state.set(ConnectionState::Closed)?;
         Ok(())
     }
 }
@@ -539,14 +515,11 @@ impl<'scope> EventStreamConnection<'scope> {
     }
 
     pub fn clear_messages(&self) -> SilexResult<()> {
-        self.messages.set(Vec::new()).map_err(SilexError::fatal)
+        self.messages.set(Vec::new())
     }
 
     pub fn close(&self) -> SilexResult<()> {
-        let _ = self
-            .inner
-            .update(EventStreamInner::close)
-            .map_err(SilexError::fatal)?;
+        let _ = self.inner.update(EventStreamInner::close)?;
         Ok(())
     }
 
@@ -560,7 +533,6 @@ impl<'scope> EventStreamConnection<'scope> {
         let (result, callbacks) = self
             .inner
             .update(EventStreamInner::try_open_current)
-            .map_err(SilexError::fatal)
             .map_err(NetError::from)??;
         if let Some(callback) = callbacks {
             callback();
@@ -676,9 +648,7 @@ impl<'scope> EventStreamBuilder<'scope> {
         let inner_slot_for_completion = inner_slot.clone();
         let completion = scope.completion_sender(unwind_safe(move |event: EventStreamEvent| {
             if let Some(inner) = inner_slot_for_completion.get() {
-                let callback = inner
-                    .update(|inner| inner.handle_event(event))
-                    .map_err(SilexError::fatal)??;
+                let callback = inner.update(|inner| inner.handle_event(event))??;
                 if let Some(callback) = callback {
                     callback();
                 }
@@ -718,7 +688,6 @@ impl<'scope> EventStreamBuilder<'scope> {
         if auto_connect {
             let (result, callbacks) = inner
                 .update(|inner| inner.try_open_current_with_source(initial_source))
-                .map_err(SilexError::fatal)
                 .map_err(NetError::from)??;
             if let Some(callback) = callbacks {
                 callback();

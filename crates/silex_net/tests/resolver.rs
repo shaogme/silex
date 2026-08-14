@@ -43,7 +43,7 @@ fn foreign_builder_into_resource_is_transactional_before_target_creation() {
 
             assert!(matches!(
                 result,
-                Err(NetError::Fatal(NetErrorKind::InvalidConfiguration(_)))
+                Err(NetError::Fatal(NetErrorKind::Core(_)))
             ));
             assert_eq!(target_scope.runtime_snapshot(), before);
         });

@@ -280,8 +280,7 @@ pub fn ResourceDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
             button("Invalid User").on(event::click, set_user_id.setter(-1)),
             button("Refetch").on(event::click, move |_| {
                 user_resource
-                    .refetch()
-                    .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+                    .refetch()?;
                 Ok(())
             }),
         ].style(sty().display("flex")?.gap(px(10))?.margin_bottom(px(15))?),
@@ -316,8 +315,7 @@ pub fn ResourceDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
                                 // Manually update the local resource data
                                 user_resource.update(|u| {
                                     u.name = "Modified Name".to_string();
-                                })
-                                .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+                                })?;
                                 Ok(())
                             }),
                     ].style(sty().margin_top(px(15))?.border_top("1px solid #eee")?.padding_top(px(10))?)
@@ -665,8 +663,7 @@ pub fn AdaptiveReadDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scop
                         .on(event::input, move |e| {
                             if let Ok(val) = event_target_value(&e).parse::<f64>() {
                                 set_stability
-                                    .set(val)
-                                    .map_err(|error| SilexError::fatal(SilexErrorKind::Reactivity(error)))?;
+                                    .set(val)?;
                             }
                             Ok(())
                         })

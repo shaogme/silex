@@ -247,8 +247,7 @@ fn source_setup(bindings: &[&SourceBinding], error_handler: &Ident) -> TokenStre
         let source = &binding.source;
         quote! {
             let #promoted = __silex_scope
-                .promote(#source, #error_handler)
-                ?;
+                .promote(#source, #error_handler)?;
         }
     });
     quote! {
@@ -457,7 +456,7 @@ mod tests {
 
     #[test]
     fn rejects_non_source_parenthesized_expression() {
-        let input: TokenStream2 = "::silex_core; scope; handler; $(settings.theme.clone())"
+        let input: TokenStream2 = "::silex_core; @context ctx; $(settings.theme.clone())"
             .parse()
             .unwrap();
         let error = expand(input).unwrap_err();
@@ -468,7 +467,7 @@ mod tests {
     #[test]
     fn rewrites_explicit_source_inside_nested_macro() {
         let input: TokenStream2 =
-            "::silex_core; scope; handler; format!(\"Theme: {}\", $(settings.theme))"
+            "::silex_core; @context ctx; format!(\"Theme: {}\", $(settings.theme))"
                 .parse()
                 .unwrap();
         let output = expand(input).unwrap().to_string();
@@ -482,8 +481,7 @@ mod tests {
     fn keeps_legacy_field_access_on_the_root_source() {
         let output = expand(quote! {
             ::silex_core;
-            scope;
-            handler;
+            @context ctx;
             $state.name.clone()
         })
         .unwrap()
@@ -498,7 +496,7 @@ mod tests {
     #[test]
     fn deduplicates_repeated_explicit_sources() {
         let input: TokenStream2 =
-            "::silex_core; scope; handler; $(settings.theme) == $(settings.theme)"
+            "::silex_core; @context ctx; $(settings.theme) == $(settings.theme)"
                 .parse()
                 .unwrap();
         let output = expand(input).unwrap().to_string();
@@ -507,20 +505,20 @@ mod tests {
     }
 
     #[test]
-    fn rejects_missing_scope_section() {
+    fn rejects_missing_context_section() {
         let error = expand(quote! { ::silex_core; $count }).unwrap_err();
-        assert!(error.to_string().contains("explicit scope"));
+        assert!(error.to_string().contains("@context"));
     }
 
     #[test]
-    fn rejects_missing_error_handler() {
-        let error = expand(quote! { ::silex_core; scope; $count }).unwrap_err();
-        assert!(error.to_string().contains("error handler"));
+    fn rejects_missing_context_expression() {
+        let error = expand(quote! { ::silex_core; @context; $count }).unwrap_err();
+        assert!(error.to_string().contains("context cannot be empty"));
     }
 
     #[test]
     fn emits_only_scoped_constructors() {
-        let output = expand(quote! { ::silex_core; scope; handler; $count + 1 })
+        let output = expand(quote! { ::silex_core; @context ctx; $count + 1 })
             .unwrap()
             .to_string();
         assert!(output.contains("memo"));
@@ -531,7 +529,7 @@ mod tests {
 
     #[test]
     fn routes_parameterless_closures_to_memo() {
-        let output = expand(quote! { ::silex_core; scope; handler; || $count + 1 })
+        let output = expand(quote! { ::silex_core; @context ctx; || $count + 1 })
             .unwrap()
             .to_string();
         assert!(output.contains("memo"));
@@ -540,7 +538,7 @@ mod tests {
 
     #[test]
     fn routes_parameterized_closures_to_callback() {
-        let output = expand(quote! { ::silex_core; scope; handler; |value: i32| value + 1 })
+        let output = expand(quote! { ::silex_core; @context ctx; |value: i32| value + 1 })
             .unwrap()
             .to_string();
         assert!(output.contains("callback"));
@@ -551,8 +549,7 @@ mod tests {
     fn keeps_at_fn_on_the_typed_derived_path() {
         let output = expand(quote! {
             ::silex_core;
-            scope;
-            handler;
+            @context ctx;
             @fn $a + $b + $c + $d
         })
         .unwrap()
@@ -567,8 +564,7 @@ mod tests {
     fn propagates_runtime_errors_without_generated_panics() {
         let output = expand(quote! {
             ::silex_core;
-            scope;
-            handler;
+            @context ctx;
             $count + 1
         })
         .unwrap()
