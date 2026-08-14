@@ -1,5 +1,5 @@
 use proc_macro2::{Span, TokenStream};
-use quote::{format_ident, quote};
+use quote::quote;
 use std::collections::HashSet;
 use syn::parse::{Parse, ParseStream};
 use syn::{Error, ExprClosure, Ident, LitStr, Token, Type, Visibility};
@@ -43,7 +43,7 @@ enum RouteNodeKindInput {
     Nested {
         prefix: LitStr,
         layout: ExprClosure,
-        children: syn::punctuated::Punctuated<RouteNodeInput, Token![,]>,
+        child_type: Type,
     },
 }
 
@@ -67,23 +67,35 @@ impl Parse for RouteNodeInput {
             });
         }
 
-        let fields_or_nested = if input.peek(syn::token::Brace) {
+        let fields_or_nested = if input.peek(syn::token::Paren) {
+            let child_content;
+            syn::parenthesized!(child_content in input);
+            let child_type = child_content.parse()?;
+            if !child_content.is_empty() {
+                return Err(child_content.error("unexpected tokens in nested route child type"));
+            }
             let content;
             syn::braced!(content in input);
-            if looks_like_nested(&content) {
-                RouteNodeKindInput::Nested {
-                    prefix: parse_nested_prefix(&content)?,
-                    layout: parse_nested_layout(&content)?,
-                    children: parse_nested_children(&content)?,
-                }
-            } else {
-                RouteNodeKindInput::Leaf {
-                    fields: parse_named_fields(&content)?,
-                    path: {
-                        input.parse::<Token![=>]>()?;
-                        input.parse()?
-                    },
-                }
+            let nested = RouteNodeKindInput::Nested {
+                prefix: parse_nested_prefix(&content)?,
+                layout: parse_nested_layout(&content)?,
+                child_type,
+            };
+            if !content.is_empty() {
+                return Err(content.error(
+                    "nested route body only accepts `prefix` and `layout`; declare children in a separate `router!` enum",
+                ));
+            }
+            nested
+        } else if input.peek(syn::token::Brace) {
+            let content;
+            syn::braced!(content in input);
+            RouteNodeKindInput::Leaf {
+                fields: parse_named_fields(&content)?,
+                path: {
+                    input.parse::<Token![=>]>()?;
+                    input.parse()?
+                },
             }
         } else {
             return Err(Error::new_spanned(
@@ -97,17 +109,6 @@ impl Parse for RouteNodeInput {
             kind: fields_or_nested,
         })
     }
-}
-
-fn looks_like_nested(content: ParseStream<'_>) -> bool {
-    let fork = content.fork();
-    let Ok(keyword) = fork.parse::<Ident>() else {
-        return false;
-    };
-    keyword == "prefix"
-        && fork.parse::<Token![:]>().is_ok()
-        && fork.parse::<LitStr>().is_ok()
-        && fork.parse::<Token![;]>().is_ok()
 }
 
 fn parse_nested_prefix(content: ParseStream<'_>) -> syn::Result<LitStr> {
@@ -139,23 +140,6 @@ fn parse_nested_layout(content: ParseStream<'_>) -> syn::Result<ExprClosure> {
         ));
     }
     Ok(layout)
-}
-
-fn parse_nested_children(
-    content: ParseStream<'_>,
-) -> syn::Result<syn::punctuated::Punctuated<RouteNodeInput, Token![,]>> {
-    let keyword = content.parse::<Ident>()?;
-    if keyword != "children" {
-        return Err(Error::new_spanned(keyword, "expected `children: { ... }`"));
-    }
-    content.parse::<Token![:]>()?;
-    let children_content;
-    syn::braced!(children_content in content);
-    let children = children_content.parse_terminated(RouteNodeInput::parse, Token![,])?;
-    if !content.is_empty() {
-        return Err(content.error("unexpected tokens after nested route children"));
-    }
-    Ok(children)
 }
 
 fn parse_named_fields(content: ParseStream<'_>) -> syn::Result<Vec<RouteField>> {
@@ -196,7 +180,6 @@ struct RouteLeaf {
     name: Ident,
     fields: Vec<RouteField>,
     pattern: String,
-    full_pattern: String,
     segments: Vec<RouteSegment>,
 }
 
@@ -204,8 +187,7 @@ struct NestedRoute {
     name: Ident,
     prefix: String,
     layout: ExprClosure,
-    enum_name: Ident,
-    children: RouteTree,
+    child_type: Type,
 }
 
 enum RouteNode {
@@ -219,28 +201,16 @@ struct RouteTree {
     nodes: Vec<RouteNode>,
 }
 
-struct CompileState {
-    full_patterns: HashSet<Vec<PatternKeySegment>>,
-    enum_names: HashSet<String>,
-}
-
 pub fn router_impl(input: TokenStream) -> syn::Result<TokenStream> {
     let input: RouterInput = syn::parse2(input)?;
-    let mut state = CompileState {
-        full_patterns: HashSet::new(),
-        enum_names: HashSet::new(),
-    };
-    state.enum_names.insert(input.name.to_string());
     let tree = compile_tree(
         input.name,
         input.visibility,
         input.nodes.into_iter().collect(),
-        "/",
-        &mut state,
     )?;
     let silex = crate::crate_path::silex();
     let definitions = generate_enum_definitions(&tree);
-    let implementations = generate_enum_implementations(&silex, &tree, true, &tree);
+    let implementations = generate_enum_implementations(&silex, &tree);
     Ok(quote! {
         #definitions
         #implementations
@@ -251,8 +221,6 @@ fn compile_tree(
     name: Ident,
     visibility: Visibility,
     definitions: Vec<RouteNodeInput>,
-    parent_prefix: &str,
-    state: &mut CompileState,
 ) -> syn::Result<RouteTree> {
     let mut names = HashSet::new();
     let mut local_patterns = HashSet::new();
@@ -270,33 +238,23 @@ fn compile_tree(
             RouteNodeKindInput::Leaf { fields, path } => {
                 let (pattern, segments, key) = parse_pattern(&path)?;
                 validate_fields(&definition.name, &fields, &segments)?;
-                let full_pattern = join_patterns(parent_prefix, &pattern);
-                let full_literal = LitStr::new(&full_pattern, path.span());
-                let (_, _, full_key) = parse_pattern(&full_literal)?;
                 if !local_patterns.insert(key) {
                     return Err(Error::new_spanned(
                         path,
                         "route patterns in one enum must be unique by shape",
                     ));
                 }
-                if !state.full_patterns.insert(full_key) {
-                    return Err(Error::new_spanned(
-                        path,
-                        "complete route patterns must be unique by shape",
-                    ));
-                }
                 nodes.push(RouteNode::Leaf(RouteLeaf {
                     name: definition.name,
                     fields,
                     pattern,
-                    full_pattern,
                     segments,
                 }));
             }
             RouteNodeKindInput::Nested {
                 prefix,
                 layout,
-                children,
+                child_type,
             } => {
                 let prefix_span = prefix.span();
                 let (prefix, prefix_segments, _prefix_key) = parse_pattern(&prefix)?;
@@ -322,40 +280,11 @@ fn compile_tree(
                         "nested route prefix conflicts with another route pattern",
                     ));
                 }
-                let full_prefix = join_patterns(parent_prefix, &prefix);
-                let full_synthetic = if full_prefix == "/" {
-                    String::from("/*")
-                } else {
-                    format!("{full_prefix}/*")
-                };
-                let full_synthetic_literal = LitStr::new(&full_synthetic, prefix_span);
-                let (_, _, full_synthetic_key) = parse_pattern(&full_synthetic_literal)?;
-                if !state.full_patterns.insert(full_synthetic_key) {
-                    return Err(Error::new_spanned(
-                        prefix,
-                        "nested route prefix conflicts with another complete route pattern",
-                    ));
-                }
-                let enum_name = format_ident!("{}Route", definition.name);
-                if !state.enum_names.insert(enum_name.to_string()) {
-                    return Err(Error::new_spanned(
-                        definition.name,
-                        "nested route enum names must be unique",
-                    ));
-                }
-                let children = compile_tree(
-                    enum_name.clone(),
-                    visibility.clone(),
-                    children.into_iter().collect(),
-                    &full_prefix,
-                    state,
-                )?;
                 nodes.push(RouteNode::Nested(NestedRoute {
                     name: definition.name,
                     prefix,
                     layout,
-                    enum_name,
-                    children,
+                    child_type,
                 }));
             }
         }
@@ -558,16 +487,6 @@ fn hex_value(byte: u8) -> Option<u8> {
     }
 }
 
-fn join_patterns(parent: &str, child: &str) -> String {
-    if parent == "/" {
-        child.to_string()
-    } else if child == "/" {
-        parent.to_string()
-    } else {
-        format!("{parent}{child}")
-    }
-}
-
 fn generate_enum_definitions(tree: &RouteTree) -> TokenStream {
     let visibility = &tree.visibility;
     let name = &tree.name;
@@ -587,53 +506,25 @@ fn generate_enum_definitions(tree: &RouteTree) -> TokenStream {
         }
         RouteNode::Nested(nested) => {
             let variant = &nested.name;
-            let enum_name = &nested.enum_name;
-            quote! { #variant(#enum_name) }
+            let child_type = &nested.child_type;
+            quote! { #variant(#child_type) }
         }
     });
-    let nested = tree.nodes.iter().filter_map(|node| match node {
-        RouteNode::Leaf(_) => None,
-        RouteNode::Nested(nested) => Some(generate_enum_definitions(&nested.children)),
-    });
     quote! {
-        #(#nested)*
         #visibility enum #name {
             #(#variants),*
         }
     }
 }
 
-fn generate_enum_implementations(
-    silex: &TokenStream,
-    tree: &RouteTree,
-    is_root: bool,
-    root: &RouteTree,
-) -> TokenStream {
+fn generate_enum_implementations(silex: &TokenStream, tree: &RouteTree) -> TokenStream {
     let path_impl = generate_path_impl(silex, tree);
-    let nested_impls = tree.nodes.iter().filter_map(|node| match node {
-        RouteNode::Leaf(_) => None,
-        RouteNode::Nested(nested) => Some(generate_enum_implementations(
-            silex,
-            &nested.children,
-            false,
-            root,
-        )),
-    });
-    let root_table = if is_root {
-        generate_table_impl(silex, tree, root)
-    } else {
-        TokenStream::new()
-    };
-    let root_match = if is_root {
-        generate_match_path_impl(silex, tree)
-    } else {
-        TokenStream::new()
-    };
+    let table = generate_table_impl(silex, tree);
+    let matcher = generate_match_path_impl(silex, tree);
     quote! {
         #path_impl
-        #root_table
-        #root_match
-        #(#nested_impls)*
+        #table
+        #matcher
     }
 }
 
@@ -727,15 +618,44 @@ fn route_field<'a>(route: &'a RouteLeaf, name: &str) -> &'a RouteField {
 fn generate_match_path_impl(silex: &TokenStream, tree: &RouteTree) -> TokenStream {
     let visibility = &tree.visibility;
     let name = &tree.name;
-    let leaves = collect_leaves(tree);
-    let patterns = leaves.iter().map(|leaf| {
-        let pattern = &leaf.full_pattern;
+    let patterns = tree.nodes.iter().map(|node| {
+        let pattern = match node {
+            RouteNode::Leaf(leaf) => leaf.pattern.clone(),
+            RouteNode::Nested(nested) => nested_pattern(&nested.prefix),
+        };
         quote! { #pattern }
     });
-    let arms = leaves.iter().enumerate().map(|(route_id, leaf)| {
-        let constructor = route_constructor(tree, leaf, quote! { __silex_match });
-        quote! { #route_id => #constructor }
-    });
+    let arms = tree
+        .nodes
+        .iter()
+        .enumerate()
+        .map(|(route_id, node)| match node {
+            RouteNode::Leaf(leaf) => {
+                let constructor = route_constructor(leaf, quote! { __silex_match });
+                quote! { #route_id => #constructor }
+            }
+            RouteNode::Nested(nested) => {
+                let variant = &nested.name;
+                let child_type = &nested.child_type;
+                let prefix = &nested.prefix;
+                quote! {
+                    #route_id => {
+                        match #silex::router::strip_route_prefix(
+                            #prefix,
+                            __silex_match.path(),
+                        ) {
+                            Some(__silex_relative_path) => {
+                                match #child_type::match_path(&__silex_relative_path)? {
+                                    Some(__silex_child) => Some(Self::#variant(__silex_child)),
+                                    None => None,
+                                }
+                            }
+                            None => None,
+                        }
+                    }
+                }
+            }
+        });
     quote! {
         impl #name {
             #visibility fn match_path(
@@ -745,103 +665,53 @@ fn generate_match_path_impl(silex: &TokenStream, tree: &RouteTree) -> TokenStrea
                     #(#patterns),*
                 ])
                 .map_err(|error| #silex::router::PathError::InvalidPath(error.to_string()))?;
-                let __silex_result = __silex_matcher.matches(path)?.into_iter().find_map(|__silex_match| {
-                    match __silex_match.route_id() {
+                for __silex_match in __silex_matcher.matches(path)? {
+                    let __silex_result = match __silex_match.route_id() {
                         #(#arms,)*
                         _ => None,
+                    };
+                    if __silex_result.is_some() {
+                        return Ok(__silex_result);
                     }
-                });
-                Ok(__silex_result)
+                }
+                Ok(None)
             }
         }
     }
 }
 
-fn collect_leaves(tree: &RouteTree) -> Vec<&RouteLeaf> {
-    let mut leaves = Vec::new();
-    collect_leaves_into(tree, &mut leaves);
-    leaves
-}
-
-fn collect_leaves_into<'a>(tree: &'a RouteTree, leaves: &mut Vec<&'a RouteLeaf>) {
-    for node in &tree.nodes {
-        match node {
-            RouteNode::Leaf(leaf) => leaves.push(leaf),
-            RouteNode::Nested(nested) => collect_leaves_into(&nested.children, leaves),
-        }
-    }
-}
-
-fn route_constructor(tree: &RouteTree, leaf: &RouteLeaf, matched: TokenStream) -> TokenStream {
-    let mut path: Vec<(Option<Ident>, Ident)> = Vec::new();
-    if let Some(constructor) = find_constructor(tree, None, leaf, &matched, &mut path) {
-        constructor
+fn nested_pattern(prefix: &str) -> String {
+    if prefix == "/" {
+        String::from("/*")
     } else {
-        quote! { None }
+        format!("{prefix}/*")
     }
 }
 
-fn find_constructor(
-    tree: &RouteTree,
-    current_enum: Option<&Ident>,
-    target: &RouteLeaf,
-    matched: &TokenStream,
-    nested_variants: &mut Vec<(Option<Ident>, Ident)>,
-) -> Option<TokenStream> {
-    for node in &tree.nodes {
-        match node {
-            RouteNode::Leaf(leaf) if std::ptr::eq(leaf, target) => {
-                let variant = &leaf.name;
-                let fields = leaf.fields.iter().map(|field| {
-                    let name = &field.name;
-                    let ty = &field.ty;
-                    let parameter_name = LitStr::new(&name.to_string(), Span::call_site());
-                    quote! { #name: #matched.parse::<#ty>(#parameter_name).ok()? }
-                });
-                let constructor = if let Some(current_enum) = current_enum {
-                    if leaf.fields.is_empty() {
-                        quote! { #current_enum::#variant }
-                    } else {
-                        quote! { #current_enum::#variant { #(#fields),* } }
-                    }
-                } else if leaf.fields.is_empty() {
-                    quote! { Self::#variant }
-                } else {
-                    quote! { Self::#variant { #(#fields),* } }
-                };
-                let mut constructor = constructor;
-                for (parent_enum, nested_variant) in nested_variants.iter().rev() {
-                    if let Some(parent_enum) = parent_enum {
-                        constructor = quote! { #parent_enum::#nested_variant(#constructor) };
-                    } else {
-                        constructor = quote! { Self::#nested_variant(#constructor) };
-                    }
-                }
-                return Some(quote! { Some(#constructor) });
-            }
-            RouteNode::Leaf(_) => {}
-            RouteNode::Nested(nested) => {
-                nested_variants.push((current_enum.cloned(), nested.name.clone()));
-                if let Some(constructor) = find_constructor(
-                    &nested.children,
-                    Some(&nested.enum_name),
-                    target,
-                    matched,
-                    nested_variants,
-                ) {
-                    return Some(constructor);
-                }
-                nested_variants.pop();
-            }
-        }
+fn route_constructor(leaf: &RouteLeaf, matched: TokenStream) -> TokenStream {
+    let variant = &leaf.name;
+    let fields = leaf.fields.iter().map(|field| {
+        let name = &field.name;
+        let ty = &field.ty;
+        let parameter_name = LitStr::new(&name.to_string(), Span::call_site());
+        quote! { #name: #matched.parse::<#ty>(#parameter_name).ok()? }
+    });
+    let constructor = if leaf.fields.is_empty() {
+        quote! { Self::#variant }
+    } else {
+        quote! { Self::#variant { #(#fields),* } }
+    };
+    quote! {
+        (|| {
+            Some(#constructor)
+        })()
     }
-    None
 }
 
-fn generate_table_impl(silex: &TokenStream, tree: &RouteTree, root: &RouteTree) -> TokenStream {
+fn generate_table_impl(silex: &TokenStream, tree: &RouteTree) -> TokenStream {
     let visibility = &tree.visibility;
     let name = &tree.name;
-    let table = generate_table_expression(silex, tree, quote! { __silex_render }, root);
+    let table = generate_table_expression(silex, tree, quote! { __silex_render });
     quote! {
         impl #name {
             #visibility fn table<'scope, F>(
@@ -863,10 +733,9 @@ fn generate_table_expression(
     silex: &TokenStream,
     tree: &RouteTree,
     render: TokenStream,
-    root: &RouteTree,
 ) -> TokenStream {
     let entries = tree.nodes.iter().filter_map(|node| match node {
-        RouteNode::Leaf(leaf) => Some(generate_entry(silex, root, leaf, &render)),
+        RouteNode::Leaf(leaf) => Some(generate_entry(silex, leaf, &render)),
         RouteNode::Nested(_) => None,
     });
     let mut expression = quote! {
@@ -877,7 +746,16 @@ fn generate_table_expression(
             continue;
         };
         let prefix = &nested.prefix;
-        let child = generate_table_expression(silex, &nested.children, render.clone(), root);
+        let child_type = &nested.child_type;
+        let variant = &nested.name;
+        let child = quote! {
+            #child_type::table({
+                let __silex_render = ::std::rc::Rc::clone(&#render);
+                move |__silex_child, __silex_context| {
+                    __silex_render(Self::#variant(__silex_child), __silex_context)
+                }
+            })?
+        };
         let layout = &nested.layout;
         expression = quote! {
             #expression.nest(
@@ -894,14 +772,9 @@ fn generate_table_expression(
     expression
 }
 
-fn generate_entry(
-    silex: &TokenStream,
-    tree: &RouteTree,
-    leaf: &RouteLeaf,
-    render: &TokenStream,
-) -> TokenStream {
+fn generate_entry(silex: &TokenStream, leaf: &RouteLeaf, render: &TokenStream) -> TokenStream {
     let pattern = &leaf.pattern;
-    let constructor = route_constructor(tree, leaf, quote! { __silex_match });
+    let constructor = route_constructor(leaf, quote! { __silex_match });
     quote! {
         #silex::router::RouteEntry::new(
             #pattern,

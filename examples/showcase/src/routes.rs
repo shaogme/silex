@@ -1,5 +1,12 @@
+use crate::{AdvancedRoute, AppRoute, CssRoute};
 use crate::{advanced::UserSettingsStore, css::AppTheme};
 use silex::prelude::*;
+
+fn route_path(route: AppRoute) -> SilexResult<RoutePath> {
+    route
+        .path()
+        .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))
+}
 
 #[component]
 pub fn SelectDemo<'scope>(#[context] _context: RouterContext<'scope>) -> impl View<'scope> {
@@ -12,35 +19,35 @@ pub fn NavBar<'scope>(
     settings: UserSettingsStore<'scope, 'scope>,
 ) -> impl View<'scope> {
     Ok(nav!(
-        Link(ctx, "/")
+        Link(ctx, route_path(AppRoute::Home)?)
             .children("Home")
             .active_class("active")
             .build(),
-        Link(ctx, "/basics")
+        Link(ctx, route_path(AppRoute::Basics)?)
             .children("Basics")
             .active_class("active")
             .build(),
-        Link(ctx, "/flow")
+        Link(ctx, route_path(AppRoute::Flow)?)
             .children("Flow")
             .active_class("active")
             .build(),
-        Link(ctx, "/i18n")
+        Link(ctx, route_path(AppRoute::I18n)?)
             .children("I18n")
             .active_class("active")
             .build(),
-        Link(ctx, "/net")
+        Link(ctx, route_path(AppRoute::Net)?)
             .children("Net")
             .active_class("active")
             .build(),
-        Link(ctx, "/persistence")
+        Link(ctx, route_path(AppRoute::Persistence)?)
             .children("Persistence")
             .active_class("active")
             .build(),
-        Link(ctx, "/css/")
+        Link(ctx, route_path(AppRoute::Css(CssRoute::Basics))?)
             .children("CSS")
             .active_class("active")
             .build(),
-        Link(ctx, "/advanced/")
+        Link(ctx, route_path(AppRoute::Advanced(AdvancedRoute::Index))?)
             .children("Advanced")
             .active_class("active")
             .build(),
@@ -108,38 +115,53 @@ pub fn AdvancedLayout<'scope>(
     Ok(div!(
         h2("Advanced Features"),
         div!(
-            Link(ctx, "/advanced/store")
+            Link(ctx, route_path(AppRoute::Advanced(AdvancedRoute::Store))?)
                 .children("Store Demo")
                 .class("tab")
                 .build(),
-            Link(ctx, "/advanced/query")
+            Link(ctx, route_path(AppRoute::Advanced(AdvancedRoute::Query))?)
                 .children("Query Param")
                 .class("tab")
                 .build(),
-            Link(ctx, "/advanced/storage")
+            Link(ctx, route_path(AppRoute::Advanced(AdvancedRoute::Storage))?)
                 .children("Storage")
                 .class("tab")
                 .build(),
-            Link(ctx, "/advanced/resource")
-                .children("Resource")
-                .class("tab")
-                .build(),
-            Link(ctx, "/advanced/mutation")
-                .children("Mutation")
-                .class("tab")
-                .build(),
-            Link(ctx, "/advanced/suspense")
-                .children("Suspense")
-                .class("tab")
-                .build(),
-            Link(ctx, "/advanced/generics")
-                .children("Generics")
-                .class("tab")
-                .build(),
-            Link(ctx, "/advanced/adaptive")
-                .children("Adaptive Read")
-                .class("tab")
-                .build(),
+            Link(
+                ctx,
+                route_path(AppRoute::Advanced(AdvancedRoute::Resource))?
+            )
+            .children("Resource")
+            .class("tab")
+            .build(),
+            Link(
+                ctx,
+                route_path(AppRoute::Advanced(AdvancedRoute::Mutation))?
+            )
+            .children("Mutation")
+            .class("tab")
+            .build(),
+            Link(
+                ctx,
+                route_path(AppRoute::Advanced(AdvancedRoute::Suspense))?
+            )
+            .children("Suspense")
+            .class("tab")
+            .build(),
+            Link(
+                ctx,
+                route_path(AppRoute::Advanced(AdvancedRoute::Generics))?
+            )
+            .children("Generics")
+            .class("tab")
+            .build(),
+            Link(
+                ctx,
+                route_path(AppRoute::Advanced(AdvancedRoute::Adaptive))?
+            )
+            .children("Adaptive Read")
+            .class("tab")
+            .build(),
         )
         .style(
             sty()
@@ -163,12 +185,15 @@ pub fn CssLayout<'scope>(
             "Silex provides multiple ways to style your applications, from CSS-in-Rust to type-safe builders."
         ),
         div!(
-            Link(ctx, "/css/").children("Basics").class("tab").build(),
-            Link(ctx, "/css/theming")
+            Link(ctx, route_path(AppRoute::Css(CssRoute::Basics))?)
+                .children("Basics")
+                .class("tab")
+                .build(),
+            Link(ctx, route_path(AppRoute::Css(CssRoute::Theming))?)
                 .children("Theme Engine")
                 .class("tab")
                 .build(),
-            Link(ctx, "/css/advanced")
+            Link(ctx, route_path(AppRoute::Css(CssRoute::Advanced))?)
                 .children("Advanced CSS")
                 .class("tab")
                 .build(),
@@ -188,38 +213,43 @@ pub fn CssLayout<'scope>(
 pub fn NotFoundPage<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scope> {
     Ok(div!(
         h1("404 - Page Not Found"),
-        Link(ctx, "/").children("Return Home").class("tab").build(),
+        Link(ctx, route_path(AppRoute::Home)?)
+            .children("Return Home")
+            .class("tab")
+            .build(),
     )
     .style(sty().color(ColorName::Red)?.padding("20px")?))
 }
 
 #[component]
 pub fn HomePage<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scope> {
-    div!(
+    Ok(div!(
         h1("Welcome to Silex Showcase"),
         p("This example application demonstrates the core features of the Silex framework."),
         ul!(
-            li(Link(ctx, "/basics")
+            li(Link(ctx, route_path(AppRoute::Basics)?)
                 .children("Basics: Components, Props, Signals")
                 .build()),
-            li(Link(ctx, "/flow")
+            li(Link(ctx, route_path(AppRoute::Flow)?)
                 .children("Flow Control: Loops, Conditions")
                 .build()),
-            li(Link(ctx, "/i18n")
+            li(Link(ctx, route_path(AppRoute::I18n)?)
                 .children("I18n: Locale, fallback, and plural messages")
                 .build()),
-            li(Link(ctx, "/css/")
+            li(Link(ctx, route_path(AppRoute::Css(CssRoute::Basics))?)
                 .children("CSS: CSS-in-Rust, Themes, and Style Comparison")
                 .build()),
-            li(Link(ctx, "/net")
+            li(Link(ctx, route_path(AppRoute::Net)?)
                 .children("Net: HttpClient, WebSocket, EventStream")
                 .build()),
-            li(Link(ctx, "/persistence")
+            li(Link(ctx, route_path(AppRoute::Persistence)?)
                 .children("Persistence: WebStorage, Query, Sync, Codecs")
                 .build()),
-            li(Link(ctx, "/advanced/")
-                .children("Advanced: Store, Router, Resource, Mutation")
-                .build()),
+            li(
+                Link(ctx, route_path(AppRoute::Advanced(AdvancedRoute::Index))?)
+                    .children("Advanced: Store, Router, Resource, Mutation")
+                    .build()
+            ),
         ),
-    )
+    ))
 }

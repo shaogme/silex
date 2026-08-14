@@ -1,16 +1,19 @@
 use silex_router::{PathTail, dom::view::AnyView, macros::router};
 
 router! {
+    enum UsersRoute {
+        List => "/",
+        Detail { id: u32 } => "/:id",
+        Files { rest: PathTail } => "/files/*rest",
+    }
+}
+
+router! {
     enum AppRoute {
         Home => "/",
-        Users {
+        Users(UsersRoute) {
             prefix: "/users";
             layout: |_context, outlet| outlet;
-            children: {
-                List => "/",
-                Detail { id: u32 } => "/:id",
-                Files { rest: PathTail } => "/files/*rest",
-            }
         },
     }
 }

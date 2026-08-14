@@ -1,8 +1,8 @@
 use crate::{
     RouteOutlet, RouterContext,
     path::{
-        PathError, PathParam, RawPathSegment, normalize_path, percent_decode_segment,
-        raw_path_segments,
+        PathError, PathParam, RawPathSegment, join_route_paths, normalize_path,
+        percent_decode_segment, raw_path_segments,
     },
 };
 use silex_dom::view::{AnyView, View};
@@ -554,6 +554,25 @@ impl<'scope> RouteTable<'scope> {
         } else {
             format!("{prefix}/*")
         };
+        let prefix_route = CompiledRoute::parse(&prefix)?;
+        let synthetic_route = CompiledRoute::parse(&pattern)?;
+        let parent_keys: HashSet<_> = table
+            .matcher
+            .routes
+            .iter()
+            .map(|route| route.key.clone())
+            .collect();
+        for child_route in &child.matcher.routes {
+            let composed_key = compose_pattern_key(&prefix_route.key, &child_route.key);
+            if parent_keys.contains(&composed_key) || composed_key == synthetic_route.key {
+                let composed_pattern = join_route_paths(&prefix, &child_route.pattern)
+                    .map(|path| path.as_str().to_string())
+                    .unwrap_or_else(|_| child_route.pattern.clone());
+                return Err(RoutePatternError::DuplicatePattern {
+                    pattern: composed_pattern,
+                });
+            }
+        }
         let entry = RouteEntry::new(pattern, move |_, context| {
             let outlet = RouteOutlet::nested(context, child.clone(), prefix.clone()).into_any();
             Some(layout(context, outlet).into_any())
@@ -588,6 +607,17 @@ impl<'scope> RouteTable<'scope> {
         self.entries.push(entry);
         Ok(route_id)
     }
+}
+
+fn compose_pattern_key(
+    prefix: &[PatternKeySegment],
+    child: &[PatternKeySegment],
+) -> Vec<PatternKeySegment> {
+    prefix
+        .iter()
+        .cloned()
+        .chain(child.iter().cloned())
+        .collect()
 }
 
 fn normalize_nest_prefix(prefix: &str) -> Result<String, RoutePatternError> {
@@ -699,6 +729,78 @@ mod tests {
         assert_eq!(nested.matcher().pattern(1), Some("/users/*"));
         assert_eq!(nested.match_path("/users/42").unwrap().route_id(), 1);
         assert_eq!(nested.branch_key("/users/1"), nested.branch_key("/users/2"));
+    }
+
+    #[test]
+    fn nesting_rejects_a_child_root_that_conflicts_with_a_parent_leaf() {
+        let child = RouteTable::from_entries(vec![
+            RouteEntry::new("/", |_, _| Some(AnyView::from("child"))).unwrap(),
+        ])
+        .unwrap();
+        let parent = RouteTable::from_entries(vec![
+            RouteEntry::new("/users", |_, _| Some(AnyView::from("parent"))).unwrap(),
+        ])
+        .unwrap();
+
+        assert!(matches!(
+            parent.nest("/users", child, |_, outlet| outlet),
+            Err(RoutePatternError::DuplicatePattern { pattern })
+                if pattern == "/users"
+        ));
+    }
+
+    #[test]
+    fn nesting_rejects_a_child_wildcard_that_duplicates_the_parent_branch() {
+        let child = RouteTable::from_entries(vec![
+            RouteEntry::new("/*rest", |_, _| Some(AnyView::from("child"))).unwrap(),
+        ])
+        .unwrap();
+        let parent = RouteTable::from_entries(Vec::<RouteEntry<'static>>::new()).unwrap();
+
+        assert!(matches!(
+            parent.nest("/users", child, |_, outlet| outlet),
+            Err(RoutePatternError::DuplicatePattern { pattern })
+                if pattern == "/users/*rest"
+        ));
+    }
+
+    #[test]
+    fn nesting_rejects_sibling_prefixes_with_the_same_branch_shape() {
+        let child = RouteTable::from_entries(vec![
+            RouteEntry::new("/", |_, _| Some(AnyView::from("child"))).unwrap(),
+        ])
+        .unwrap();
+        let parent = RouteTable::from_entries(Vec::<RouteEntry<'static>>::new()).unwrap();
+        let parent = parent.nest("/users", child, |_, outlet| outlet).unwrap();
+        let sibling = RouteTable::from_entries(vec![
+            RouteEntry::new("/", |_, _| Some(AnyView::from("sibling"))).unwrap(),
+        ])
+        .unwrap();
+
+        assert!(matches!(
+            parent.nest("/users", sibling, |_, outlet| outlet),
+            Err(RoutePatternError::DuplicatePattern { pattern })
+                if pattern == "/users/*"
+        ));
+    }
+
+    #[test]
+    fn multiple_nesting_levels_compose_relative_patterns_once() {
+        let leaf = RouteTable::from_entries(vec![
+            RouteEntry::new("/", |_, _| Some(AnyView::from("leaf"))).unwrap(),
+        ])
+        .unwrap();
+        let middle = RouteTable::from_entries(Vec::<RouteEntry<'static>>::new())
+            .unwrap()
+            .nest("/users", leaf, |_, outlet| outlet)
+            .unwrap();
+        let root = RouteTable::from_entries(Vec::<RouteEntry<'static>>::new())
+            .unwrap()
+            .nest("/app", middle, |_, outlet| outlet)
+            .unwrap();
+
+        assert!(root.match_path("/app/users/42").is_some());
+        assert_eq!(root.matcher().pattern(0), Some("/app/*"));
     }
 
     #[test]

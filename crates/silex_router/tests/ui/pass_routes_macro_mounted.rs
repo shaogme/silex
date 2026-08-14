@@ -1,20 +1,26 @@
 use silex_router::{dom::view::AnyView, macros::router};
 
 router! {
+    enum UsersRoute {
+        Detail { id: u32 } => "/:id",
+    }
+}
+
+router! {
+    enum AdminRoute {
+        Users(UsersRoute) {
+            prefix: "/users";
+            layout: |_context, outlet| outlet;
+        },
+    }
+}
+
+router! {
     enum AppRoute {
         Home => "/",
-        Admin {
+        Admin(AdminRoute) {
             prefix: "/admin";
             layout: |_context, outlet| outlet;
-            children: {
-                Users {
-                    prefix: "/users";
-                    layout: |_context, outlet| outlet;
-                    children: {
-                        Detail { id: u32 } => "/:id",
-                    }
-                },
-            }
         },
     }
 }

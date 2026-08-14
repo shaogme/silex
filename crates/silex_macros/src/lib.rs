@@ -192,13 +192,17 @@ pub fn derive_props_builder(input: TokenStream) -> TokenStream {
 ///
 /// ```rust,ignore
 /// router! {
+///     pub enum AdminRoute {
+///         Index => "/",
+///     }
+/// }
+///
+/// router! {
 ///     pub enum AppRoute {
 ///         Home => "/",
-///         User { id: u32 } => "/users/:id",
-///         Admin {
+///         Admin(AdminRoute) {
 ///             prefix: "/admin";
 ///             layout: |context, outlet| layout(context, outlet);
-///             children: { Index => "/" }
 ///         },
 ///     }
 /// }

@@ -25,7 +25,7 @@ pub use link::*;
 pub use path::*;
 pub use route_table::*;
 
-use crate::path::strip_path_prefix;
+use crate::path::strip_route_prefix as strip_route_prefix_impl;
 use crate::route_table::RouteBranchKey;
 use silex_core::{SilexContext, SilexContextProvider, SilexError, SilexErrorKind, SilexResult};
 use silex_dom::attribute::PendingAttribute;
@@ -288,6 +288,6 @@ fn nested_outlet_path(prefix: Option<&str>, path: &str) -> Option<String> {
                 path.to_string()
             })
         },
-        |prefix| strip_path_prefix(prefix, path),
+        |prefix| strip_route_prefix_impl(prefix, path),
     )
 }

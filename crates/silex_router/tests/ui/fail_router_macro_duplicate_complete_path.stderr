@@ -1,5 +1,0 @@
-error: complete route patterns must be unique by shape
-  --> tests/ui/fail_router_macro_duplicate_complete_path.rs:12:31
-   |
-12 |         Direct { id: u32 } => "/users/:id",
-   |                               ^^^^^^^^^^^^

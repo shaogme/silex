@@ -22,14 +22,17 @@ use wasm_bindgen_test::*;
 wasm_bindgen_test_configure!(run_in_browser);
 
 router! {
+    enum UsersRoute {
+        Detail { id: u32 } => "/:id",
+    }
+}
+
+router! {
     enum NestedRouteApp {
         Home => "/",
-        Users {
+        Users(UsersRoute) {
             prefix: "/users";
             layout: |_context, outlet| AnyView::from(vec![AnyView::from("users:"), outlet]);
-            children: {
-                Detail { id: u32 } => "/:id",
-            }
         },
     }
 }

@@ -3,17 +3,20 @@ use silex::prelude::*;
 use silex::reexports::*;
 
 router! {
+    pub enum UsersRoute {
+        List => "/",
+        Create => "/new",
+        Detail { id: u32 } => "/:id",
+    }
+}
+
+router! {
     pub enum AppRoute {
         Home => "/",
         Search => "/search",
-        Users {
+        Users(UsersRoute) {
             prefix: "/users";
             layout: |ctx, outlet| UsersLayout(ctx).children(outlet).build();
-            children: {
-                List => "/",
-                Create => "/new",
-                Detail { id: u32 } => "/:id",
-            }
         },
         NotFound => "/*",
     }

@@ -480,7 +480,8 @@ pub(crate) fn raw_path_segments(path: &str) -> Result<Vec<RawPathSegment<'_>>, P
     Ok(segments)
 }
 
-pub(crate) fn strip_path_prefix(prefix: &str, path: &str) -> Option<String> {
+/// Removes a static route prefix after comparing decoded URL segments.
+pub fn strip_route_prefix(prefix: &str, path: &str) -> Option<String> {
     let prefix_segments = raw_path_segments(prefix).ok()?;
     let path_segments = raw_path_segments(path).ok()?;
 
@@ -511,7 +512,7 @@ pub(crate) fn strip_path_prefix(prefix: &str, path: &str) -> Option<String> {
 mod tests {
     use super::{
         PathParam, PathParamError, PathTail, RoutePath, RoutePathBuilder, join_route_paths,
-        normalize_path, percent_decode_segment, percent_encode_segment, strip_path_prefix,
+        normalize_path, percent_decode_segment, percent_encode_segment, strip_route_prefix,
     };
 
     #[test]
@@ -572,18 +573,29 @@ mod tests {
     #[test]
     fn nested_prefix_stripping_respects_segment_boundaries_and_encoding() {
         assert_eq!(
-            strip_path_prefix("/users", "/users/42"),
+            strip_route_prefix("/users", "/users/42"),
             Some(String::from("/42"))
         );
-        assert_eq!(strip_path_prefix("/users", "/username/42"), None);
+        assert_eq!(strip_route_prefix("/users", "/username/42"), None);
         assert_eq!(
-            strip_path_prefix("/a%2Fb", "/a%2Fb/c"),
+            strip_route_prefix("/a%2Fb", "/a%2Fb/c"),
             Some(String::from("/c"))
         );
         assert_eq!(
-            strip_path_prefix("/users", "/users/"),
+            strip_route_prefix("/users", "/users/"),
             Some(String::from("/"))
         );
+        assert_eq!(
+            strip_route_prefix("/users", "/users"),
+            Some(String::from("/"))
+        );
+        assert_eq!(
+            strip_route_prefix("/", "/users/42"),
+            Some(String::from("/users/42"))
+        );
+        assert_eq!(strip_route_prefix("/users", "/users//42"), None);
+        assert_eq!(strip_route_prefix("/users", "/users?tab=all"), None);
+        assert_eq!(strip_route_prefix("/a%2Fb", "/a/b/c"), None);
     }
 
     #[test]

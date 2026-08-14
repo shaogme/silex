@@ -13,6 +13,28 @@ use silex::prelude::*;
 use silex::reexports::*;
 
 router! {
+    pub enum CssRoute {
+        Basics => "/",
+        Theming => "/theming",
+        Advanced => "/advanced",
+    }
+}
+
+router! {
+    pub enum AdvancedRoute {
+        Index => "/",
+        Store => "/store",
+        Query => "/query",
+        Storage => "/storage",
+        Resource => "/resource",
+        Mutation => "/mutation",
+        Suspense => "/suspense",
+        Generics => "/generics",
+        Adaptive => "/adaptive",
+    }
+}
+
+router! {
     pub enum AppRoute {
         Home => "/",
         Basics => "/basics",
@@ -20,29 +42,13 @@ router! {
         I18n => "/i18n",
         Net => "/net",
         Persistence => "/persistence",
-        Css {
+        Css(CssRoute) {
             prefix: "/css";
             layout: |ctx, outlet| routes::CssLayout(ctx, outlet).build();
-            children: {
-                Basics => "/",
-                Theming => "/theming",
-                Advanced => "/advanced",
-            }
         },
-        Advanced {
+        Advanced(AdvancedRoute) {
             prefix: "/advanced";
             layout: |ctx, outlet| routes::AdvancedLayout(ctx, outlet).build();
-            children: {
-                Index => "/",
-                Store => "/store",
-                Query => "/query",
-                Storage => "/storage",
-                Resource => "/resource",
-                Mutation => "/mutation",
-                Suspense => "/suspense",
-                Generics => "/generics",
-                Adaptive => "/adaptive",
-            }
         },
         NotFound => "/*",
     }

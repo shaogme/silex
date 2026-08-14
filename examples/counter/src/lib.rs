@@ -324,10 +324,13 @@ fn NotFound<'scope>(#[context] _context: RouterContext<'scope>) -> AnyView<'scop
 }
 
 #[component]
-fn ErrorPage<'scope, Ctx>(#[context] context: Ctx, error: SilexError) -> AnyView<'scope> {
+fn ErrorPage<'scope, Ctx, Err>(#[context] context: Ctx, error: Err) -> AnyView<'scope>
+where 
+    Err: Into<SilexError>,
+{
     Ok(div!(
         h1("Silex Application Error"),
-        p(error.to_string()),
+        p(error.into().to_string()),
         button("Reload Application").on_click(|_| {
             let window = web_sys::window().ok_or_else(|| {
                 SilexError::fatal(SilexErrorKind::Javascript(

@@ -1,17 +1,20 @@
 use silex_router::{PathTail, dom::view::AnyView, macros::router};
 
 router! {
+    pub enum CssRoute {
+        Basics => "/",
+        Theming => "/theming",
+    }
+}
+
+router! {
     pub enum AppRoute {
         Home => "/",
         User { id: u32 } => "/users/:id",
         Files { rest: PathTail } => "/files/*rest",
-        Css {
+        Css(CssRoute) {
             prefix: "/css";
             layout: |_context, outlet| outlet;
-            children: {
-                Basics => "/",
-                Theming => "/theming",
-            }
         },
         NotFound => "/*",
     }
@@ -48,6 +51,10 @@ fn router_macro_generates_typed_paths_and_matchers() {
 #[test]
 fn router_macro_decodes_enum_values_and_falls_back_after_decode_failure() {
     assert!(matches!(
+        CssRoute::match_path("/theming").expect("child path"),
+        Some(CssRoute::Theming)
+    ));
+    assert!(matches!(
         AppRoute::match_path("/users/42").expect("valid path"),
         Some(AppRoute::User { id: 42 })
     ));
@@ -59,6 +66,21 @@ fn router_macro_decodes_enum_values_and_falls_back_after_decode_failure() {
         AppRoute::match_path("/users/not-a-number").expect("fallback path"),
         Some(AppRoute::NotFound)
     ));
+}
+
+#[test]
+fn independent_child_enum_builds_its_own_route_table() {
+    let table = CssRoute::table(|route, _context| match route {
+        CssRoute::Basics => AnyView::from("basics"),
+        CssRoute::Theming => AnyView::from("theming"),
+    })
+    .expect("child route table should compile");
+
+    assert_eq!(
+        CssRoute::Theming.path().expect("child path").as_str(),
+        "/theming"
+    );
+    assert!(table.match_path("/theming").is_some());
 }
 
 #[test]

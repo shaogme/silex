@@ -1,5 +1,0 @@
-error: route variants in one enum must be unique
-  --> tests/ui/fail_router_macro_duplicate_nested_name.rs:10:9
-   |
-10 |         Users {
-   |         ^^^^^
