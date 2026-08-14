@@ -13,6 +13,7 @@ use wasm_bindgen::{JsCast, JsValue};
 pub(super) struct CompletionRegistrar<'scope> {
     sender: CompletionSenderFactory<'scope>,
     once: CompletionOnceFactory<'scope>,
+    error_sender: ErrorCompletionSenderFactory<'scope>,
 }
 
 type HostCallbackFn<'scope> = Box<dyn FnMut(JsValue) -> SilexResult<()> + 'scope>;
@@ -20,16 +21,20 @@ type CompletionSenderFactory<'scope> =
     Rc<dyn Fn(HostCallbackFn<'scope>) -> SilexResult<CompletionSender<JsValue>> + 'scope>;
 type CompletionOnceFactory<'scope> =
     Rc<dyn Fn(HostCallbackFn<'scope>) -> SilexResult<CompletionOnce<JsValue>> + 'scope>;
+type ErrorCompletionSenderFactory<'scope> =
+    Rc<dyn Fn(ErrorReporter<'scope>) -> SilexResult<CompletionSender<SilexError>> + 'scope>;
 
 impl<'scope> CompletionRegistrar<'scope> {
-    pub(super) fn new<FS, FO>(sender: FS, once: FO) -> Self
+    pub(super) fn new<FS, FO, FE>(sender: FS, once: FO, error_sender: FE) -> Self
     where
         FS: Fn(HostCallbackFn<'scope>) -> SilexResult<CompletionSender<JsValue>> + 'scope,
         FO: Fn(HostCallbackFn<'scope>) -> SilexResult<CompletionOnce<JsValue>> + 'scope,
+        FE: Fn(ErrorReporter<'scope>) -> SilexResult<CompletionSender<SilexError>> + 'scope,
     {
         Self {
             sender: Rc::new(sender),
             once: Rc::new(once),
+            error_sender: Rc::new(error_sender),
         }
     }
 
@@ -45,6 +50,13 @@ impl<'scope> CompletionRegistrar<'scope> {
         callback: HostCallbackFn<'scope>,
     ) -> SilexResult<CompletionOnce<JsValue>> {
         (self.once)(callback)
+    }
+
+    pub(super) fn call_error_sender(
+        &self,
+        error_handler: ErrorReporter<'scope>,
+    ) -> SilexResult<CompletionSender<SilexError>> {
+        (self.error_sender)(error_handler)
     }
 }
 
@@ -233,7 +245,7 @@ impl HostDestination {
 pub(crate) struct HostCallback {
     pub(super) destination: HostDestination,
     pub(super) gate: ResourceGate,
-    pub(super) error_handler: ErrorReporter<'static>,
+    pub(super) error_completion: CompletionSender<SilexError>,
 }
 
 // HostCallback only carries framework-owned gate and Completion state. User
@@ -242,10 +254,12 @@ impl UnwindSafe for HostCallback {}
 
 impl HostCallback {
     fn report_error(&self, error: SilexError) {
-        let handler_result = catch_unwind(AssertUnwindSafe(|| self.error_handler.handle(error)));
-        if let Err(handler_panic) = handler_result {
+        let result = catch_unwind(AssertUnwindSafe(|| self.error_completion.submit(error)));
+        if let Ok(Err(_)) | Err(_) = result {
             let _ = catch_unwind(AssertUnwindSafe(|| self.cancel()));
-            resume_unwind(handler_panic);
+            if let Err(panic) = result {
+                resume_unwind(panic);
+            }
         }
     }
 
@@ -274,12 +288,4 @@ impl HostCallback {
         self.gate.set(false);
         self.destination.cancel();
     }
-}
-
-pub(super) fn erase_error_handler<'scope>(
-    handler: ErrorReporter<'scope>,
-) -> ErrorReporter<'static> {
-    // SAFETY: HostCallback's gate is cleared by owner cleanup before the scoped
-    // storage can be dropped. Dispatch checks the gate before touching this key.
-    unsafe { std::mem::transmute(handler) }
 }

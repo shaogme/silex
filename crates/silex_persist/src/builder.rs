@@ -33,8 +33,8 @@ use std::{
 
 fn submit_completion<T: 'static>(
     token: &CompletionSender<T>,
+    error_token: &CompletionSender<SilexError>,
     value: T,
-    error_handler: ErrorReporter<'static>,
 ) {
     let result = token.submit(value);
     let Err(error) = result else {
@@ -44,17 +44,14 @@ fn submit_completion<T: 'static>(
         CallbackInvokeError::Runtime(error) => SilexError::fatal(SilexErrorKind::Reactivity(error)),
         CallbackInvokeError::User(error) => error,
     };
-    let handler_result = catch_unwind(AssertUnwindSafe(|| error_handler.handle(error)));
-    if let Err(handler_panic) = handler_result {
+    let error_result = catch_unwind(AssertUnwindSafe(|| error_token.submit(error)));
+    if let Ok(Err(_)) | Err(_) = error_result {
         let _ = catch_unwind(AssertUnwindSafe(|| token.cancel()));
-        resume_unwind(handler_panic);
+        let _ = catch_unwind(AssertUnwindSafe(|| error_token.cancel()));
+        if let Err(panic) = error_result {
+            resume_unwind(panic);
+        }
     }
-}
-
-fn erase_error_handler<'scope>(handler: ErrorReporter<'scope>) -> ErrorReporter<'static> {
-    // SAFETY: completion submissions are rejected once the owning scope is
-    // inactive, before this owner-bound handler can be accessed.
-    unsafe { std::mem::transmute(handler) }
 }
 
 /// Typestate marker used before a persistence backend has been selected.
@@ -600,17 +597,23 @@ where
                 .map_err(PersistenceError::from)?;
         }
 
+        let error_handler = self.error_handler;
+        let error_completion =
+            self.scope
+                .completion_sender(unwind_safe(move |error: SilexError| {
+                    error_handler.handle(error).map_err(SilexError::fatal)
+                }))?;
         let mut subscription_error = None;
         if matches!(self.config.sync, SyncStrategy::CrossContext) {
-            let completion_error_handler = erase_error_handler(self.error_handler);
             let token = self.scope.completion_sender(unwind_safe({
                 move |event| {
                     apply_backend_event(controller, value, state, event);
                     Ok(())
                 }
             }))?;
+            let error_completion_for_sink = error_completion.clone();
             let sink: BackendEventSink = Rc::new(move |event| {
-                submit_completion(&token, event, completion_error_handler);
+                submit_completion(&token, &error_completion_for_sink, event);
             });
             match self
                 .backend
@@ -646,7 +649,6 @@ where
         match self.config.mode {
             PersistMode::Immediate => {
                 if let SyncStrategy::Debounce(duration) = self.config.sync {
-                    let completion_error_handler = erase_error_handler(self.error_handler);
                     let completion = self.scope.completion_sender(unwind_safe({
                         move |generation| {
                             let ready = controller.update_untracked(|controller| {
@@ -661,6 +663,7 @@ where
                             Ok(())
                         }
                     }))?;
+                    let error_completion_for_timer = error_completion.clone();
                     let _effect = self
                         .scope
                         .effect(
@@ -705,6 +708,7 @@ where
                                     }
                                     drop(timer);
                                     let completion = completion.clone();
+                                    let error_completion = error_completion_for_timer.clone();
                                     let owner = ScopedMountOwner::new(owner_scope);
                                     let owner_token = owner.token();
                                     match set_timeout(
@@ -712,8 +716,8 @@ where
                                         move || {
                                             submit_completion(
                                                 &completion,
+                                                &error_completion,
                                                 generation,
-                                                completion_error_handler,
                                             );
                                             Ok(())
                                         },

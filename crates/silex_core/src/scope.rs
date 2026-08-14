@@ -358,22 +358,28 @@ impl<'scope> Scope<'scope> {
         self,
         future: F,
         error_handler: ErrorReporter<'scope>,
-    ) -> SilexResult<TaskHandle>
+    ) -> SilexResult<TaskHandle<'scope>>
     where
-        F: Future<Output = ()> + 'static,
+        F: Future<Output = ()> + 'scope,
     {
         if !self.is_active() {
             return Ok(TaskHandle::inactive());
         }
         let (task, cancel) = task::start(future);
-        self.on_cleanup(
+        let cleanup = self.on_cleanup(
             move || {
                 cancel();
                 Ok::<(), SilexError>(())
             },
             error_handler,
-        )?;
-        Ok(task)
+        );
+        match cleanup {
+            Ok(()) => Ok(task),
+            Err(error) => {
+                task.cancel();
+                Err(error)
+            }
+        }
     }
 
     /// Promote a source after validating its complete opaque input set.
@@ -584,22 +590,28 @@ impl<'scope> OwnedScope<'scope> {
         &self,
         future: F,
         error_handler: ErrorReporter<'scope>,
-    ) -> SilexResult<TaskHandle>
+    ) -> SilexResult<TaskHandle<'scope>>
     where
-        F: Future<Output = ()> + 'static,
+        F: Future<Output = ()> + 'scope,
     {
         if !self.is_active() {
             return Ok(TaskHandle::inactive());
         }
         let (task, cancel) = task::start(future);
-        self.on_cleanup(
+        let cleanup = self.on_cleanup(
             move || {
                 cancel();
                 Ok::<(), SilexError>(())
             },
             error_handler,
-        )?;
-        Ok(task)
+        );
+        match cleanup {
+            Ok(()) => Ok(task),
+            Err(error) => {
+                task.cancel();
+                Err(error)
+            }
+        }
     }
 
     pub fn dispose(&self) -> Result<(), silex_reactivity::CleanupError> {

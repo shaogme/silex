@@ -81,18 +81,18 @@ impl<'scope, T, E> PartialEq for Resource<'scope, T, E> {
 
 impl<'scope, T, E> Eq for Resource<'scope, T, E> {}
 
-pub trait ResourceFetcher<S> {
+pub trait ResourceFetcher<'scope, S> {
     type Data;
     type Error;
-    type Future: Future<Output = Result<Self::Data, Self::Error>> + 'static;
+    type Future: Future<Output = Result<Self::Data, Self::Error>> + 'scope;
 
     fn fetch(&self, source: S) -> Self::Future;
 }
 
-impl<S, T, E, F, Fut> ResourceFetcher<S> for F
+impl<'scope, S, T, E, F, Fut> ResourceFetcher<'scope, S> for F
 where
-    F: Fn(S) -> Fut,
-    Fut: Future<Output = Result<T, E>> + 'static,
+    F: Fn(S) -> Fut + 'scope,
+    Fut: Future<Output = Result<T, E>> + 'scope,
 {
     type Data = T;
     type Error = E;
@@ -118,13 +118,8 @@ where
     where
         S: Clone + PartialEq + 'static,
         R: RxRead<Value = S> + ReactiveSource<'scope> + Clone + 'scope,
-        Fetcher: ResourceFetcher<S, Data = T, Error = E> + 'scope,
+        Fetcher: ResourceFetcher<'scope, S, Data = T, Error = E> + 'scope,
     {
-        // SAFETY: the completion destination is gated by the owning scope. A
-        // stale submit returns without touching the erased handler.
-        let completion_error_handler = unsafe {
-            std::mem::transmute::<ErrorReporter<'scope>, ErrorReporter<'static>>(error_handler)
-        };
         let (state, set_state) = scope.signal(ResourceState::Idle)?;
         let trigger = scope.rw_signal(0usize)?;
         let request_id = Rc::new(Cell::new(0usize));
@@ -193,6 +188,7 @@ where
                 request_id_for_effect.set(id);
                 let future = fetcher.fetch(input);
                 let completion = completion.clone();
+                let completion_error_handler = error_handler;
                 scope.spawn_scoped(
                     async move {
                         let result = completion.submit(ResourceCompletion {

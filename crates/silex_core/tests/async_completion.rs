@@ -46,6 +46,24 @@ impl<T> Drop for PendingFuture<T> {
     }
 }
 
+struct ReadyFuture {
+    dropped: Rc<Cell<usize>>,
+}
+
+impl Future for ReadyFuture {
+    type Output = ();
+
+    fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
+        Poll::Ready(())
+    }
+}
+
+impl Drop for ReadyFuture {
+    fn drop(&mut self) {
+        self.dropped.set(self.dropped.get() + 1);
+    }
+}
+
 async fn wait_for_tasks(milliseconds: u32) {
     TimeoutFuture::new(milliseconds).await;
 }
@@ -342,7 +360,72 @@ async fn scoped_task_cancels_and_drops_its_future() {
     assert!(task.is_cancelled());
     wait_for_tasks(0).await;
     assert_eq!(dropped.get(), 1);
+    drop(task);
     root.dispose().expect("root disposal should succeed");
+}
+
+#[wasm_bindgen_test(async)]
+async fn scope_disposal_drops_scoped_task_future_immediately() {
+    let dropped = Rc::new(Cell::new(0));
+    let mut runtime = Runtime::new();
+    runtime
+        .child(|scope| {
+            scope
+                .spawn_scoped(PendingFuture::<()>::new(dropped.clone()), handler(scope))
+                .expect("task should start");
+        })
+        .expect("child scope should run");
+
+    assert_eq!(dropped.get(), 1);
+}
+
+#[wasm_bindgen_test(async)]
+async fn owned_scope_disposal_drops_scoped_task_future_immediately() {
+    let dropped = Rc::new(Cell::new(0));
+    let mut runtime = Runtime::new();
+    let root = runtime.run().expect("root should start");
+    let owned = root
+        .scope()
+        .owned_scope()
+        .expect("owned scope should start");
+    let task = owned
+        .spawn_scoped(
+            PendingFuture::<()>::new(dropped.clone()),
+            handler(root.scope()),
+        )
+        .expect("task should start");
+
+    owned
+        .dispose()
+        .expect("owned scope disposal should succeed");
+    assert_eq!(dropped.get(), 1);
+    assert!(task.is_cancelled());
+    drop(task);
+    drop(owned);
+    root.dispose().expect("root disposal should succeed");
+}
+
+#[wasm_bindgen_test(async)]
+async fn completed_scoped_task_drops_its_future_once() {
+    let dropped = Rc::new(Cell::new(0));
+    let mut runtime = Runtime::new();
+    let root = runtime.run().expect("root should start");
+    let task = root
+        .scope()
+        .spawn_scoped(
+            ReadyFuture {
+                dropped: dropped.clone(),
+            },
+            handler(root.scope()),
+        )
+        .expect("task should start");
+
+    wait_for_tasks(0).await;
+    assert_eq!(dropped.get(), 1);
+    assert!(!task.is_cancelled());
+    drop(task);
+    root.dispose().expect("root disposal should succeed");
+    assert_eq!(dropped.get(), 1);
 }
 
 #[wasm_bindgen_test(async)]

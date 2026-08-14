@@ -93,8 +93,8 @@ fn create_source(url: &str) -> Result<JsEventSource, NetError> {
 
 fn submit_completion<T: 'static>(
     token: &CompletionSender<T>,
+    error_token: &CompletionSender<SilexError>,
     value: T,
-    error_handler: ErrorReporter<'static>,
     gate: Option<&Cell<bool>>,
 ) {
     let result = token.submit(value);
@@ -105,20 +105,17 @@ fn submit_completion<T: 'static>(
         CallbackInvokeError::Runtime(error) => SilexError::fatal(error),
         CallbackInvokeError::User(error) => error,
     };
-    let handler_result = catch_unwind(AssertUnwindSafe(|| error_handler.handle(error)));
-    if let Err(handler_panic) = handler_result {
+    let error_result = catch_unwind(AssertUnwindSafe(|| error_token.submit(error)));
+    if let Ok(Err(_)) | Err(_) = error_result {
         if let Some(gate) = gate {
             gate.set(false);
         }
         let _ = catch_unwind(AssertUnwindSafe(|| token.cancel()));
-        resume_unwind(handler_panic);
+        let _ = catch_unwind(AssertUnwindSafe(|| error_token.cancel()));
+        if let Err(panic) = error_result {
+            resume_unwind(panic);
+        }
     }
-}
-
-fn erase_error_handler<'scope>(handler: ErrorReporter<'scope>) -> ErrorReporter<'static> {
-    // SAFETY: the CompletionSender rejects stale submissions before this
-    // owner-bound handler is accessed after scope disposal.
-    unsafe { std::mem::transmute(handler) }
 }
 
 impl HostRegistration {
@@ -127,18 +124,19 @@ impl HostRegistration {
         event_name: Option<String>,
         generation: u64,
         token: &CompletionSender<EventStreamEvent>,
-        error_handler: ErrorReporter<'static>,
+        error_token: &CompletionSender<SilexError>,
     ) -> Result<Self, NetError> {
         let gate = Rc::new(Cell::new(true));
 
         let open_gate = gate.clone();
         let open_token = token.clone();
+        let open_error_token = error_token.clone();
         let on_open = Closure::wrap(Box::new(move |_event: Event| {
             if open_gate.get() {
                 submit_completion(
                     &open_token,
+                    &open_error_token,
                     EventStreamEvent::Open { generation },
-                    error_handler,
                     Some(&open_gate),
                 );
             }
@@ -146,46 +144,48 @@ impl HostRegistration {
 
         let message_gate = gate.clone();
         let message_token = token.clone();
+        let message_error_token = error_token.clone();
         let on_message = Closure::wrap(Box::new(move |event: MessageEvent| {
             if message_gate.get() {
                 let Some(data) = event.data().as_string() else {
                     submit_completion(
                         &message_token,
+                        &message_error_token,
                         EventStreamEvent::Error {
                             generation,
                             error: NetError::recoverable(NetErrorKind::JsError(
                                 "EventSource message data is not a string".to_string(),
                             )),
                         },
-                        error_handler,
                         Some(&message_gate),
                     );
                     return;
                 };
                 submit_completion(
                     &message_token,
+                    &message_error_token,
                     EventStreamEvent::Message {
                         generation,
                         event: Some(event.type_()),
                         data,
                     },
-                    error_handler,
                     Some(&message_gate),
                 );
             }
         }) as Box<dyn FnMut(MessageEvent)>);
 
         let error_gate = gate.clone();
-        let error_token = token.clone();
+        let event_error_token = token.clone();
+        let event_error_completion_token = error_token.clone();
         let on_error = Closure::wrap(Box::new(move |_event: Event| {
             if error_gate.get() {
                 submit_completion(
-                    &error_token,
+                    &event_error_token,
+                    &event_error_completion_token,
                     EventStreamEvent::Error {
                         generation,
                         error: NetError::recoverable(NetErrorKind::TransportUnavailable),
                     },
-                    error_handler,
                     Some(&error_gate),
                 );
             }
@@ -247,8 +247,8 @@ struct EventStreamInner<'scope> {
     set_state: RwSignal<'scope, ConnectionState>,
     messages: RwSignal<'scope, Vec<EventMessage>>,
     set_error: WriteSignal<'scope, Option<NetError>>,
-    error_handler: ErrorReporter<'scope>,
     completion: CompletionSender<EventStreamEvent>,
+    error_completion: CompletionSender<SilexError>,
     registration: Option<HostRegistration>,
     generation: u64,
 }
@@ -327,7 +327,7 @@ impl<'scope> EventStreamInner<'scope> {
             self.event_name.clone(),
             generation,
             &self.completion,
-            erase_error_handler(self.error_handler),
+            &self.error_completion,
         ) {
             Ok(registration) => {
                 self.registration = Some(registration);
@@ -646,6 +646,9 @@ impl<'scope> EventStreamBuilder<'scope> {
             None::<StoredValue<'scope, EventStreamInner<'scope>>>,
         ));
         let inner_slot_for_completion = inner_slot.clone();
+        let error_completion = scope.completion_sender(unwind_safe(move |error: SilexError| {
+            error_handler.handle(error).map_err(SilexError::fatal)
+        }))?;
         let completion = scope.completion_sender(unwind_safe(move |event: EventStreamEvent| {
             if let Some(inner) = inner_slot_for_completion.get() {
                 let callback = inner.update(|inner| inner.handle_event(event))??;
@@ -664,8 +667,8 @@ impl<'scope> EventStreamBuilder<'scope> {
             set_state: state,
             messages,
             set_error,
-            error_handler,
             completion,
+            error_completion,
             registration: None,
             generation: 0,
         })?;

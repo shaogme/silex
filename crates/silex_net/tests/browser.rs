@@ -1418,7 +1418,7 @@ async fn task_cancel_drops_pending_scoped_future() {
     let root = runtime.run().expect("runtime setup");
     let dropped_for_scope = dropped.clone();
     root.with_scope(|scope| async move {
-        let task: TaskHandle = scope
+        let task: TaskHandle<'_> = scope
             .spawn_scoped(
                 PendingFuture {
                     dropped: dropped_for_scope.clone(),

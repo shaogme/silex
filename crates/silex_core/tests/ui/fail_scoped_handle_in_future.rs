@@ -5,7 +5,7 @@ fn main() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
         scope.child(|child| {
-            let (value, _) = child.signal(1i32);
+            let (value, _) = child.signal(1i32).expect("signal should initialize");
             spawn_local(async move {
                 let _ = value.get();
             });

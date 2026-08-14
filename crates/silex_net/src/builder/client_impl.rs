@@ -33,12 +33,12 @@ struct PreparedClient<T, C> {
     marker: PhantomData<fn() -> T>,
 }
 
-type NetFuture<T> = Pin<Box<dyn Future<Output = Result<T, NetError>> + 'static>>;
+type NetFuture<'scope, T> = Pin<Box<dyn Future<Output = Result<T, NetError>> + 'scope>>;
 
-fn submit_once<T: 'static>(
+fn submit_once<'scope, T: 'static>(
     token: &CompletionOnce<T>,
     value: T,
-    error_handler: ErrorReporter<'static>,
+    error_handler: ErrorReporter<'scope>,
 ) {
     let result = token.submit(value);
     let Err(error) = result else {
@@ -55,12 +55,6 @@ fn submit_once<T: 'static>(
     }
 }
 
-fn erase_error_handler<'scope>(handler: ErrorReporter<'scope>) -> ErrorReporter<'static> {
-    // SAFETY: Completion destinations reject stale submissions before this
-    // owner-bound handler is accessed after scope disposal.
-    unsafe { std::mem::transmute(handler) }
-}
-
 impl<T, C> PreparedClient<T, C> {
     fn apply_interceptors(&self, spec: &mut RequestSpec) {
         for hook in &self.before_send {
@@ -69,12 +63,12 @@ impl<T, C> PreparedClient<T, C> {
     }
 }
 
-async fn execute_prepared<T, C>(
+async fn execute_prepared<'scope, T, C>(
     client: PreparedClient<T, C>,
     spec: RequestSpec,
     fallback: Option<T>,
     cache_token: Option<CompletionOnce<T>>,
-    error_handler: ErrorReporter<'static>,
+    error_handler: ErrorReporter<'scope>,
 ) -> Result<T, NetError>
 where
     T: Clone + 'static,
@@ -198,7 +192,7 @@ macro_rules! impl_net_methods {
                 let cache_token = refresh_binding
                     .map(|binding| self.cache_completion_once_for_binding(binding))
                     .transpose()?;
-                let refresh_error_handler = erase_error_handler(self.error_handler);
+                let refresh_error_handler = self.error_handler;
                 self.scope
                     .spawn_scoped(
                         async move {
@@ -238,14 +232,7 @@ macro_rules! impl_net_methods {
                     None
                 }
             };
-            execute_prepared(
-                client,
-                spec,
-                fallback,
-                cache_token,
-                erase_error_handler(self.error_handler),
-            )
-            .await
+            execute_prepared(client, spec, fallback, cache_token, self.error_handler).await
         }
 
         pub fn into_resource(
@@ -284,7 +271,7 @@ macro_rules! impl_net_methods {
             let cache_policy = None;
             let fetch_client = self.prepared();
             let fetch_error_handler = error_handler;
-            let completion_error_handler = erase_error_handler(fetch_error_handler);
+            let completion_error_handler = fetch_error_handler;
             #[cfg(feature = "persist")]
             let fetch_builder = self.clone();
             let resource_generation = Rc::new(Cell::new(0usize));
@@ -316,7 +303,7 @@ macro_rules! impl_net_methods {
                         Ok(generation) => generation,
                         Err(error) => {
                             return Box::pin(std::future::ready(Err(NetError::from(error))))
-                                as NetFuture<T>;
+                                as NetFuture<'scope, T>;
                         }
                     };
                     resource_generation_for_fetcher.set(generation);
@@ -325,7 +312,8 @@ macro_rules! impl_net_methods {
                     let cache_binding = match fetch_builder.cache_binding(&spec) {
                         Ok(binding) => binding,
                         Err(error) => {
-                            return Box::pin(std::future::ready(Err(error))) as NetFuture<T>;
+                            return Box::pin(std::future::ready(Err(error)))
+                                as NetFuture<'scope, T>;
                         }
                     };
                     #[cfg(feature = "persist")]
@@ -351,7 +339,8 @@ macro_rules! impl_net_methods {
                         let refresh_binding = match fetch_builder.cache_binding(&spec) {
                             Ok(binding) => binding,
                             Err(error) => {
-                                return Box::pin(std::future::ready(Err(error))) as NetFuture<T>;
+                                return Box::pin(std::future::ready(Err(error)))
+                                    as NetFuture<'scope, T>;
                             }
                         };
                         #[cfg(feature = "persist")]
@@ -361,7 +350,8 @@ macro_rules! impl_net_methods {
                         {
                             Ok(token) => token,
                             Err(error) => {
-                                return Box::pin(std::future::ready(Err(error))) as NetFuture<T>;
+                                return Box::pin(std::future::ready(Err(error)))
+                                    as NetFuture<'scope, T>;
                             }
                         };
                         #[cfg(not(feature = "persist"))]
@@ -385,7 +375,7 @@ macro_rules! impl_net_methods {
                             Ok(completion) => completion,
                             Err(error) => {
                                 return Box::pin(std::future::ready(Err(NetError::from(error))))
-                                    as NetFuture<T>;
+                                    as NetFuture<'scope, T>;
                             }
                         };
                         let refresh_error_handler = completion_error_handler;
@@ -405,7 +395,7 @@ macro_rules! impl_net_methods {
                             fetch_error_handler,
                         ) {
                             return Box::pin(std::future::ready(Err(NetError::from(error))))
-                                as NetFuture<T>;
+                                as NetFuture<'scope, T>;
                         }
                     }
 
@@ -423,7 +413,7 @@ macro_rules! impl_net_methods {
                                 Ok(token) => token,
                                 Err(error) => {
                                     return Box::pin(std::future::ready(Err(error)))
-                                        as NetFuture<T>;
+                                        as NetFuture<'scope, T>;
                                 }
                             }
                         }
@@ -446,7 +436,7 @@ macro_rules! impl_net_methods {
                             )
                             .await
                         }
-                    }) as NetFuture<T>
+                    }) as NetFuture<'scope, T>
                 },
                 suspense,
                 error_handler,
@@ -461,7 +451,7 @@ macro_rules! impl_net_methods {
         pub fn as_mutation(&self) -> Result<Mutation<'scope, (), T, NetError>, NetError> {
             self.validate_runtime().map_err(NetError::from)?;
             let builder = self.clone();
-            let completion_error_handler = erase_error_handler(self.error_handler);
+            let completion_error_handler = self.error_handler;
             Mutation::new_with_prepare(
                 self.scope,
                 move |_| {
@@ -517,7 +507,7 @@ macro_rules! impl_net_methods {
         {
             self.validate_runtime().map_err(NetError::from)?;
             let scope = self.scope;
-            let completion_error_handler = erase_error_handler(self.error_handler);
+            let completion_error_handler = self.error_handler;
             Mutation::new_with_prepare(
                 scope,
                 move |input: Input| {

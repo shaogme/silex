@@ -39,10 +39,11 @@ fn resolve_mutation_result<T, E>(
     })
 }
 
-type MutationFuture<T, E> = Pin<Box<dyn Future<Output = Result<T, E>> + 'static>>;
-type RegularMutationAction<'scope, Arg, T, E> = Rc<dyn Fn(Arg) -> MutationFuture<T, E> + 'scope>;
+type MutationFuture<'scope, T, E> = Pin<Box<dyn Future<Output = Result<T, E>> + 'scope>>;
+type RegularMutationAction<'scope, Arg, T, E> =
+    Rc<dyn Fn(Arg) -> MutationFuture<'scope, T, E> + 'scope>;
 type PreparedMutationAction<'scope, Arg, T, E> =
-    Rc<dyn Fn(Arg) -> Result<MutationFuture<T, E>, E> + 'scope>;
+    Rc<dyn Fn(Arg) -> Result<MutationFuture<'scope, T, E>, E> + 'scope>;
 
 enum MutationAction<'scope, Arg, T, E> {
     Regular(RegularMutationAction<'scope, Arg, T, E>),
@@ -93,7 +94,7 @@ where
     ) -> crate::SilexResult<Self>
     where
         F: Fn(Arg) -> Fut + 'scope,
-        Fut: Future<Output = Result<T, E>> + 'static,
+        Fut: Future<Output = Result<T, E>> + 'scope,
     {
         let (state, set_state) = scope.signal(MutationState::Idle)?;
         let last_id = Rc::new(Cell::new(0usize));
@@ -132,7 +133,7 @@ where
     ) -> crate::SilexResult<Self>
     where
         F: Fn(Arg) -> Result<Fut, E> + 'scope,
-        Fut: Future<Output = Result<T, E>> + 'static,
+        Fut: Future<Output = Result<T, E>> + 'scope,
     {
         let (state, set_state) = scope.signal(MutationState::Idle)?;
         let last_id = Rc::new(Cell::new(0usize));
@@ -149,7 +150,7 @@ where
             }))?;
         let inner = scope.stored(MutationInner {
             action: MutationAction::Prepared(Rc::new(move |arg| {
-                prepare(arg).map(|future| Box::pin(future) as MutationFuture<T, E>)
+                prepare(arg).map(|future| Box::pin(future) as MutationFuture<'scope, T, E>)
             })),
             last_id,
             completion,
@@ -211,11 +212,7 @@ where
                 (id, future)
             }
         };
-        // SAFETY: the completion destination rejects stale submissions before
-        // this erased handler can be accessed after owner disposal.
-        let error_handler = unsafe {
-            std::mem::transmute::<ErrorReporter<'scope>, ErrorReporter<'static>>(self.error_handler)
-        };
+        let error_handler = self.error_handler;
         self.scope.spawn_scoped(
             async move {
                 match completion.submit((id, future.await)) {

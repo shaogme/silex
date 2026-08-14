@@ -1,6 +1,4 @@
-use super::host::{
-    CompletionRegistrar, HostCallback, HostDestination, HostResourceHandle, erase_error_handler,
-};
+use super::host::{CompletionRegistrar, HostCallback, HostDestination, HostResourceHandle};
 use super::state::{ActiveRegistrar, MountState};
 use silex_core::{
     CleanupError, ErrorReporter, OwnedScope, ReactiveError, Scope, SilexError, SilexResult,
@@ -259,7 +257,7 @@ impl<'scope> MountOwnerToken<'scope> {
         Ok(HostCallback {
             destination: HostDestination::Sender(self.completion.call_sender(Box::new(callback))?),
             gate: Rc::new(Cell::new(true)),
-            error_handler: erase_error_handler(error_handler),
+            error_completion: self.completion.call_error_sender(error_handler)?,
         })
     }
 
@@ -274,7 +272,7 @@ impl<'scope> MountOwnerToken<'scope> {
         Ok(HostCallback {
             destination: HostDestination::Once(self.completion.call_once(Box::new(callback))?),
             gate: Rc::new(Cell::new(true)),
-            error_handler: erase_error_handler(error_handler),
+            error_completion: self.completion.call_error_sender(error_handler)?,
         })
     }
 
@@ -455,6 +453,7 @@ impl<'scope> MountOwner<'scope> for ScopedMountOwner<'scope> {
         let scope_for_owned = self.scope;
         let scope_for_sender = self.scope;
         let scope_for_once = self.scope;
+        let scope_for_error_sender = self.scope;
         let scope_for_active = self.scope;
         let cleanup_reporter = self.cleanup_reporter.clone();
         MountOwnerToken::new(ViewOwnerTokenParts {
@@ -469,6 +468,11 @@ impl<'scope> MountOwner<'scope> for ScopedMountOwner<'scope> {
             completion: CompletionRegistrar::new(
                 move |callback| scope_for_sender.completion_sender(unwind_safe(callback)),
                 move |callback| scope_for_once.completion_once(unwind_safe(callback)),
+                move |error_handler| {
+                    scope_for_error_sender.completion_sender(unwind_safe(move |error| {
+                        error_handler.handle(error).map_err(SilexError::fatal)
+                    }))
+                },
             ),
             active: ActiveRegistrar::new(move || scope_for_active.is_active()),
             state_scope: Some(self.scope),
@@ -533,6 +537,7 @@ impl<'scope> MountOwner<'scope> for OwnedMountOwner<'scope> {
         let scope_for_owned = self.scope.clone();
         let scope_for_sender = self.scope.clone();
         let scope_for_once = self.scope.clone();
+        let scope_for_error_sender = self.scope.clone();
         let scope_for_active = self.scope.clone();
         let cleanup_reporter = self.cleanup_reporter.clone();
         MountOwnerToken::new(ViewOwnerTokenParts {
@@ -547,6 +552,11 @@ impl<'scope> MountOwner<'scope> for OwnedMountOwner<'scope> {
             completion: CompletionRegistrar::new(
                 move |callback| scope_for_sender.completion_sender(unwind_safe(callback)),
                 move |callback| scope_for_once.completion_once(unwind_safe(callback)),
+                move |error_handler| {
+                    scope_for_error_sender.completion_sender(unwind_safe(move |error| {
+                        error_handler.handle(error).map_err(SilexError::fatal)
+                    }))
+                },
             ),
             active: ActiveRegistrar::new(move || scope_for_active.is_active()),
             state_scope: None,

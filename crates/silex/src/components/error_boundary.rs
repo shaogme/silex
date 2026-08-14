@@ -3,8 +3,6 @@ use std::{
     rc::Rc,
 };
 
-use wasm_bindgen_futures::spawn_local;
-
 use silex_core::{
     CallbackInvokeError, CompletionSender, ErrorReporter, SilexContextProvider, SilexError,
     SilexErrorKind, SilexResult, rx, unwind_safe,
@@ -17,10 +15,10 @@ type ParentHandlerCell<'scope> = SharedCell<Option<MountState<'scope, ErrorRepor
 type ErrorFactory<'scope> = Rc<dyn Fn(SilexError) -> AnyView<'scope> + 'scope>;
 type RecordError<'scope> = Rc<dyn Fn(SilexError) + 'scope>;
 
-fn submit_boundary_error(
+fn submit_boundary_error<'scope>(
     completion: &CompletionSender<SilexError>,
     error: SilexError,
-    error_handler: ErrorReporter<'static>,
+    error_handler: ErrorReporter<'scope>,
 ) {
     let result = completion.submit(error);
     let Err(error) = result else {
@@ -35,12 +33,6 @@ fn submit_boundary_error(
         let _ = catch_unwind(AssertUnwindSafe(|| completion.cancel()));
         resume_unwind(handler_panic);
     }
-}
-
-fn erase_error_handler<'scope>(handler: ErrorReporter<'scope>) -> ErrorReporter<'static> {
-    // SAFETY: the completion destination rejects stale submissions before
-    // this owner-bound handler is accessed after scope disposal.
-    unsafe { std::mem::transmute(handler) }
 }
 
 #[derive(Clone, Copy)]
@@ -209,14 +201,16 @@ where
     let completion_error_handler = scope.error_handler(move |error| {
         let _ = set_error.set(Some(error));
     })?;
-    let completion_error_handler = erase_error_handler(completion_error_handler);
     let reporter_completion = completion.clone();
     let boundary_handler = scope.error_handler(move |error| {
         let completion = reporter_completion.clone();
         let error_handler = completion_error_handler;
-        spawn_local(async move {
-            submit_boundary_error(&completion, error, error_handler);
-        });
+        let _ = scope.spawn_scoped(
+            async move {
+                submit_boundary_error(&completion, error, error_handler);
+            },
+            completion_error_handler,
+        );
     })?;
 
     let parent_handler: ParentHandlerCell<'scope> = SharedCell::new(None);
@@ -285,9 +279,12 @@ where
                     let completion = completion.clone();
                     let error = SilexError::fatal(SilexErrorKind::Javascript(message));
                     let error_handler = completion_error_handler;
-                    spawn_local(async move {
-                        submit_boundary_error(&completion, error, error_handler);
-                    });
+                    let _ = scope.spawn_scoped(
+                        async move {
+                            submit_boundary_error(&completion, error, error_handler);
+                        },
+                        completion_error_handler,
+                    );
                     AnyView::Empty
                 }
             }
