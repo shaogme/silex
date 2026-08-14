@@ -84,14 +84,14 @@ fn App<'scope>(
 
 /// Mount the showcase into the conventional `#app` target.
 pub fn mount_showcase() -> Result<JsAppHost, BootstrapError> {
-    let mut bootstrap = BrowserBootstrap::from_id("app")?;
+    let mut bootstrap = BrowserBootstrap::from_id("app", CleanupSink::console())?;
     bootstrap.mount(Runtime::new(), mount_showcase_view)?;
     bootstrap.into_js_host()
 }
 
 /// Mount the showcase into a caller-provided target node.
 pub fn mount_showcase_into(target: web_sys::Node) -> Result<JsAppHost, BootstrapError> {
-    let mut bootstrap = BrowserBootstrap::new(target);
+    let mut bootstrap = BrowserBootstrap::new(target, CleanupSink::console());
     bootstrap.mount(Runtime::new(), mount_showcase_view)?;
     bootstrap.into_js_host()
 }

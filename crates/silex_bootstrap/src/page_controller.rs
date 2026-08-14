@@ -39,11 +39,6 @@ impl PageController {
         }
     }
 
-    /// Create a controller that reports Drop-only cleanup diagnostics to the console.
-    pub fn with_console_sink(target: Node) -> Self {
-        Self::new(target, CleanupSink::console())
-    }
-
     /// Mount one application through the underlying [`AppHost`].
     pub fn mount<F>(&mut self, runtime: Runtime, builder: F) -> Result<(), BootstrapError>
     where

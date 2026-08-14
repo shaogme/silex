@@ -705,7 +705,7 @@ fn App<'scope>(scope: Scope<'scope>, error_handler: ErrorReporter<'scope>) -> im
 
 /// Mount the UI showcase into the conventional `#app` target.
 pub fn mount_ui() -> Result<JsAppHost, BootstrapError> {
-    let mut bootstrap = BrowserBootstrap::from_id("app")?;
+    let mut bootstrap = BrowserBootstrap::from_id("app", CleanupSink::console())?;
     silex::ui::inject_shadcn_base_styles();
     bootstrap.mount(Runtime::new(), mount_ui_view)?;
     bootstrap.into_js_host()
@@ -713,7 +713,7 @@ pub fn mount_ui() -> Result<JsAppHost, BootstrapError> {
 
 /// Mount the UI showcase into a caller-provided target node.
 pub fn mount_ui_into(target: web_sys::Node) -> Result<JsAppHost, BootstrapError> {
-    let mut bootstrap = BrowserBootstrap::new(target);
+    let mut bootstrap = BrowserBootstrap::new(target, CleanupSink::console());
     silex::ui::inject_shadcn_base_styles();
     bootstrap.mount(Runtime::new(), mount_ui_view)?;
     bootstrap.into_js_host()

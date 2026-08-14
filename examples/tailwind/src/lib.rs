@@ -837,14 +837,14 @@ fn App<'scope>(scope: Scope<'scope>, error_handler: ErrorReporter<'scope>) -> im
 
 /// Mount the Tailwind showcase into the conventional `#app` target.
 pub fn mount_tailwind() -> Result<JsAppHost, BootstrapError> {
-    let mut bootstrap = BrowserBootstrap::from_id("app")?;
+    let mut bootstrap = BrowserBootstrap::from_id("app", CleanupSink::console())?;
     bootstrap.mount(Runtime::new(), mount_tailwind_view)?;
     bootstrap.into_js_host()
 }
 
 /// Mount the Tailwind showcase into a caller-provided target node.
 pub fn mount_tailwind_into(target: web_sys::Node) -> Result<JsAppHost, BootstrapError> {
-    let mut bootstrap = BrowserBootstrap::new(target);
+    let mut bootstrap = BrowserBootstrap::new(target, CleanupSink::console());
     bootstrap.mount(Runtime::new(), mount_tailwind_view)?;
     bootstrap.into_js_host()
 }

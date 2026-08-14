@@ -121,11 +121,6 @@ impl AppHost {
         }
     }
 
-    /// Create a host that reports Drop-only cleanup diagnostics to the console.
-    pub fn with_console_sink(target: Node) -> Self {
-        Self::new(target, CleanupSink::console())
-    }
-
     /// Mount one application when this host is ready.
     pub fn mount<F>(&mut self, runtime: Runtime, builder: F) -> Result<(), AppHostError>
     where

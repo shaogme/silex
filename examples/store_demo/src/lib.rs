@@ -138,14 +138,14 @@ fn DebugPanel<'scope>(
 
 /// Mount the Store demo into the conventional `#app` target.
 pub fn mount_store() -> Result<JsAppHost, BootstrapError> {
-    let mut bootstrap = BrowserBootstrap::from_id("app")?;
+    let mut bootstrap = BrowserBootstrap::from_id("app", CleanupSink::console())?;
     bootstrap.mount(Runtime::new(), mount_store_view)?;
     bootstrap.into_js_host()
 }
 
 /// Mount the Store demo into a caller-provided target node.
 pub fn mount_store_into(target: web_sys::Node) -> Result<JsAppHost, BootstrapError> {
-    let mut bootstrap = BrowserBootstrap::new(target);
+    let mut bootstrap = BrowserBootstrap::new(target, CleanupSink::console());
     bootstrap.mount(Runtime::new(), mount_store_view)?;
     bootstrap.into_js_host()
 }

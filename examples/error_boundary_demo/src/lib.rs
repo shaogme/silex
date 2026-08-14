@@ -156,14 +156,14 @@ fn ImmediatePanic<'scope>(
 
 /// Mount the error boundary demo into the conventional `#app` target.
 pub fn mount_error_boundary_demo() -> Result<JsAppHost, BootstrapError> {
-    let mut bootstrap = BrowserBootstrap::from_id("app")?;
+    let mut bootstrap = BrowserBootstrap::from_id("app", CleanupSink::console())?;
     bootstrap.mount(Runtime::new(), mount_error_boundary_demo_view)?;
     bootstrap.into_js_host()
 }
 
 /// Mount the error boundary demo into a caller-provided target node.
 pub fn mount_error_boundary_demo_into(target: web_sys::Node) -> Result<JsAppHost, BootstrapError> {
-    let mut bootstrap = BrowserBootstrap::new(target);
+    let mut bootstrap = BrowserBootstrap::new(target, CleanupSink::console());
     bootstrap.mount(Runtime::new(), mount_error_boundary_demo_view)?;
     bootstrap.into_js_host()
 }

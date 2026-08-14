@@ -3,7 +3,7 @@ use crate::{
     UnmountOutcome,
 };
 use silex_core::{Runtime, SilexResult};
-use silex_dom::{MountContext, helpers};
+use silex_dom::{CleanupSink, MountContext, helpers};
 use web_sys::{Element, Node};
 
 /// A browser convenience adapter around [`PageController`].
@@ -17,25 +17,25 @@ pub struct BrowserBootstrap {
 
 impl BrowserBootstrap {
     /// Create a browser bootstrap for a caller-owned DOM node.
-    pub fn new(target: Node) -> Self {
+    pub fn new(target: Node, cleanup_sink: CleanupSink) -> Self {
         Self {
-            controller: PageController::with_console_sink(target),
+            controller: PageController::new(target, cleanup_sink),
             policy: PageLifecyclePolicy::Manual,
         }
     }
 
     /// Create a browser bootstrap for a caller-owned element.
-    pub fn from_element(target: Element) -> Self {
-        Self::new(target.into())
+    pub fn from_element(target: Element, cleanup_sink: CleanupSink) -> Self {
+        Self::new(target.into(), cleanup_sink)
     }
 
     /// Resolve an element by id from the current document.
-    pub fn from_id(id: &str) -> Result<Self, BootstrapError> {
+    pub fn from_id(id: &str, cleanup_sink: CleanupSink) -> Result<Self, BootstrapError> {
         let target = helpers::try_document()
             .and_then(|document| document.get_element_by_id(id))
             .map(Node::from)
             .ok_or_else(|| BootstrapError::TargetNotFound(id.to_string()))?;
-        Ok(Self::new(target))
+        Ok(Self::new(target, cleanup_sink))
     }
 
     /// Mount an application through the underlying controller.

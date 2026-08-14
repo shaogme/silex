@@ -434,14 +434,14 @@ fn App<'scope>(
 
 /// Mount the counter application into the conventional `#app` target.
 pub fn mount_counter() -> Result<JsAppHost, BootstrapError> {
-    let mut bootstrap = BrowserBootstrap::from_id("app")?;
+    let mut bootstrap = BrowserBootstrap::from_id("app", CleanupSink::console())?;
     bootstrap.mount(Runtime::new(), mount_counter_view)?;
     bootstrap.into_js_host()
 }
 
 /// Mount the counter application into a caller-provided target node.
 pub fn mount_counter_into(target: web_sys::Node) -> Result<JsAppHost, BootstrapError> {
-    let mut bootstrap = BrowserBootstrap::new(target);
+    let mut bootstrap = BrowserBootstrap::new(target, CleanupSink::console());
     bootstrap.mount(Runtime::new(), mount_counter_view)?;
     bootstrap.into_js_host()
 }

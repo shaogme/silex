@@ -4,7 +4,7 @@ use silex_bootstrap::{
     BootstrapError, BrowserBootstrap, JsAppHost, LifecycleReporter, PageLifecyclePolicy,
 };
 use silex_core::{Runtime, SilexError, SilexResult};
-use silex_dom::{MountContext, element::Element};
+use silex_dom::{CleanupSink, MountContext, element::Element};
 use std::rc::Rc;
 use wasm_bindgen_test::*;
 use web_sys::{Element as DomElement, Node};
@@ -49,7 +49,7 @@ fn reporter() -> LifecycleReporter {
 #[wasm_bindgen_test]
 fn from_id_resolves_target_and_delegates_mount() {
     let target = element("phase-four-target");
-    let mut bootstrap = BrowserBootstrap::from_id("phase-four-target")
+    let mut bootstrap = BrowserBootstrap::from_id("phase-four-target", CleanupSink::console())
         .expect("browser bootstrap should resolve an existing id");
 
     bootstrap
@@ -67,7 +67,8 @@ fn from_id_resolves_target_and_delegates_mount() {
 
 #[wasm_bindgen_test]
 fn missing_id_is_reported_without_a_partial_controller() {
-    let error = match BrowserBootstrap::from_id("missing-phase-four-target") {
+    let error = match BrowserBootstrap::from_id("missing-phase-four-target", CleanupSink::console())
+    {
         Ok(_) => panic!("missing target must not create a controller"),
         Err(error) => error,
     };
@@ -80,7 +81,7 @@ fn missing_id_is_reported_without_a_partial_controller() {
 #[wasm_bindgen_test]
 fn removing_page_lifecycle_allows_manual_js_owner_transfer() {
     let target = element("phase-four-transfer");
-    let mut bootstrap = BrowserBootstrap::from_element(target.clone());
+    let mut bootstrap = BrowserBootstrap::from_element(target.clone(), CleanupSink::console());
     bootstrap
         .mount(Runtime::new(), mount_text)
         .expect("browser bootstrap should mount");
@@ -100,7 +101,7 @@ fn removing_page_lifecycle_allows_manual_js_owner_transfer() {
 #[wasm_bindgen_test]
 fn non_manual_policy_cannot_transfer_listener_ownership_implicitly() {
     let target = element("phase-four-policy");
-    let mut bootstrap = BrowserBootstrap::from_element(target.clone());
+    let mut bootstrap = BrowserBootstrap::from_element(target.clone(), CleanupSink::console());
     bootstrap
         .mount(Runtime::new(), mount_text)
         .expect("browser bootstrap should mount");
