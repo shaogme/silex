@@ -7,7 +7,8 @@ use silex_core::{
 };
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::view::{
-    AnyView, ApplyAttributes, MountErrorHandler, MountInstance, MountOwner, View,
+    AnyView, ApplyAttributes, DynamicRenderer, MountErrorHandler, MountInstance, MountOwner, View,
+    mount_dynamic_view_universal,
 };
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -34,8 +35,18 @@ impl<'scope> View<'scope> for RouterView<'scope> {
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
-        let view = (self.0)();
-        view.mount(owner, parent, attrs, error_handler)
+        let factory = self.0.clone();
+        mount_dynamic_view_universal(
+            owner,
+            parent,
+            attrs,
+            error_handler,
+            DynamicRenderer::new(move |args| {
+                let (parent, attrs, token, error_handler) = args.into_parts();
+                let view = factory();
+                view.mount(&token, &parent, attrs, error_handler)
+            }),
+        )
     }
 }
 

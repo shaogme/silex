@@ -1,21 +1,20 @@
-use silex_router::RouterContext;
 use silex_router::dom::view::AnyView;
-use silex_router::macros::{component, routes};
+use silex_router::macros::router;
+use silex_router::RouterContext;
 
-#[component]
-fn Home<'scope>(
-    #[context] _context: RouterContext<'scope>,
-) -> AnyView<'scope> {
-    AnyView::from("home")
+router! {
+    enum AppRoute {
+        Home => "/",
+    }
 }
 
 fn make_routes<'scope>(context: RouterContext<'scope>) {
-    let routes = routes!(AppRoutes {
-        home "/" => move |ctx| Home(ctx).build(),
-    })
-    .expect("route catalog should compile");
-    let _ = routes.table();
-    let _ = context;
+    let _ = AppRoute::table(move |route, _context| match route {
+        AppRoute::Home => {
+            let _ = context;
+            AnyView::from("home")
+        }
+    });
 }
 
 fn main() {

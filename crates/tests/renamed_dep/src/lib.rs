@@ -5,6 +5,12 @@
 
 use my_silex::prelude::*;
 
+router! {
+    enum RenamedRoute {
+        User { id: u32 } => "/users/:id",
+    }
+}
+
 /// `tw!` 条件分支消费调用方已经创建的 scoped source，`css!` 保持静态路径。
 pub fn badge_class<'scope>(
     wide: my_silex::core::reactivity::Signal<'scope, bool>,
@@ -100,13 +106,9 @@ pub fn card_class_from_str(size: &str) -> Result<String, String> {
 }
 
 pub fn renamed_route_path() -> Result<my_silex::router::RoutePath, String> {
-    let routes = routes!(RenamedRoutes {
-        user "/users/:id" => move |_ctx, id: u32| {
-            my_silex::dom::view::AnyView::from(id.to_string())
-        },
-    })
-    .map_err(|error| error.to_string())?;
-    routes.user(42).map_err(|error| error.to_string())
+    RenamedRoute::User { id: 42 }
+        .path()
+        .map_err(|error| error.to_string())
 }
 
 // `styled!`：展开出 `#[component]`、`inject_style`、`TypedElement` 等一大片绝对路径

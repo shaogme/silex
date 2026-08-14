@@ -31,6 +31,17 @@ impl<'scope> DynamicRenderArgs<'scope> {
             error_handler,
         }
     }
+
+    pub fn into_parts(
+        self,
+    ) -> (
+        Node,
+        Vec<PendingAttribute<'scope>>,
+        MountOwnerToken<'scope>,
+        MountErrorHandler<'scope>,
+    ) {
+        (self.parent, self.attrs, self.owner, self.error_handler)
+    }
 }
 
 pub struct DynamicRenderer<'scope> {

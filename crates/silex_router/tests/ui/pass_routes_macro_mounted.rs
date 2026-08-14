@@ -1,24 +1,31 @@
-use silex_router::dom::view::AnyView;
-use silex_router::macros::routes;
+use silex_router::{dom::view::AnyView, macros::router};
+
+router! {
+    enum AppRoute {
+        Home => "/",
+        Admin {
+            prefix: "/admin";
+            layout: |_context, outlet| outlet;
+            children: {
+                Users {
+                    prefix: "/users";
+                    layout: |_context, outlet| outlet;
+                    children: {
+                        Detail { id: u32 } => "/:id",
+                    }
+                },
+            }
+        },
+    }
+}
 
 fn main() {
-    let users = routes!(UsersRoutes {
-        list "/" => move |_ctx| AnyView::from("list"),
-        detail "/:id" => move |_ctx, id: u32| AnyView::from(id.to_string()),
-    })
-    .expect("route catalog should compile")
-    .at("/users")
-    .expect("mount prefix should be valid");
-
-    let app = routes!(AppRoutes {
-        home "/" => move |_ctx| AnyView::from("home"),
-    })
-    .expect("route catalog should compile");
-
-    let _ = users.list();
-    let _ = users.detail(42);
-    let _ = app
-        .table()
-        .nest(users.prefix(), users.table(), move |_ctx, outlet| outlet)
-        .expect("nested route table should compile");
+    let route = AppRoute::Admin(AdminRoute::Users(UsersRoute::Detail { id: 42 }));
+    let _ = route.path();
+    let _ = AppRoute::table(|route, _context| match route {
+        AppRoute::Home => AnyView::from("home"),
+        AppRoute::Admin(AdminRoute::Users(UsersRoute::Detail { id })) => {
+            AnyView::from(id.to_string())
+        }
+    });
 }

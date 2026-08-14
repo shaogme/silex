@@ -1,5 +1,0 @@
-error: wildcard route parameters must use `PathTail`
- --> tests/ui/fail_routes_macro_wildcard_type.rs:5:51
-  |
-5 |         files "/files/*rest" => move |_ctx, rest: String| {
-  |                                                   ^^^^^^

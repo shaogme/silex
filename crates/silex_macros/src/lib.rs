@@ -188,8 +188,23 @@ pub fn derive_props_builder(input: TokenStream) -> TokenStream {
 
 #[cfg(feature = "route")]
 #[proc_macro]
-pub fn routes(input: TokenStream) -> TokenStream {
-    match route::routes_impl(input.into()) {
+/// Declares typed, exhaustive routes and generates their path/table APIs.
+///
+/// ```rust,ignore
+/// router! {
+///     pub enum AppRoute {
+///         Home => "/",
+///         User { id: u32 } => "/users/:id",
+///         Admin {
+///             prefix: "/admin";
+///             layout: |context, outlet| layout(context, outlet);
+///             children: { Index => "/" }
+///         },
+///     }
+/// }
+/// ```
+pub fn router(input: TokenStream) -> TokenStream {
+    match route::router_impl(input.into()) {
         Ok(tokens) => tokens.into(),
         Err(e) => e.to_compile_error().into(),
     }

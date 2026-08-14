@@ -18,6 +18,73 @@ pub(crate) fn is_active_path(current_path: &str, href: &str) -> bool {
     }
 }
 
+#[derive(Clone, Default)]
+pub struct LinkBehavior {
+    pub target: String,
+    pub download: bool,
+}
+
+#[derive(Clone, Copy)]
+struct ClickModifiers {
+    button: i16,
+    ctrl: bool,
+    meta: bool,
+    shift: bool,
+    alt: bool,
+}
+
+fn click_modifiers(event: &web_sys::MouseEvent) -> ClickModifiers {
+    ClickModifiers {
+        button: event.button(),
+        ctrl: event.ctrl_key(),
+        meta: event.meta_key(),
+        shift: event.shift_key(),
+        alt: event.alt_key(),
+    }
+}
+
+fn is_same_origin_internal_href(href: &str) -> bool {
+    if href.starts_with('/') && !href.starts_with("//") {
+        return true;
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = href;
+        return false;
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        if !(href.starts_with("http://") || href.starts_with("https://")) {
+            return false;
+        }
+        let Some(window) = web_sys::window() else {
+            return false;
+        };
+        let location = window.location();
+        let Ok(origin) = location.origin() else {
+            return false;
+        };
+        let Ok(base) = location.href() else {
+            return false;
+        };
+        let Ok(url) = web_sys::Url::new_with_base(href, &base) else {
+            return false;
+        };
+        url.origin() == origin
+    }
+}
+
+fn should_intercept_click(modifiers: ClickModifiers, behavior: &LinkBehavior, href: &str) -> bool {
+    modifiers.button == 0
+        && !modifiers.ctrl
+        && !modifiers.meta
+        && !modifiers.shift
+        && !modifiers.alt
+        && behavior.target.is_empty()
+        && !behavior.download
+        && is_same_origin_internal_href(href)
+}
+
 #[derive(Clone)]
 pub struct LinkView<'scope> {
     view: SilexResult<AnyView<'scope>>,
@@ -51,6 +118,7 @@ pub fn Link<'scope, T: ToRoute + Clone + 'scope>(
     #[prop(into)]
     #[chain(default)]
     active_class: String,
+    #[chain(default)] behavior: LinkBehavior,
 ) -> LinkView<'scope> {
     let view = (|| -> SilexResult<AnyView<'scope>> {
         let href = to.to_route();
@@ -82,12 +150,21 @@ pub fn Link<'scope, T: ToRoute + Clone + 'scope>(
         // 点击导航逻辑。
         let href_for_click = href.clone();
         let navigator = router_ctx.navigator;
+        let behavior_for_click = behavior.clone();
 
         Ok(a(children)
             .attr("href", display_href)
+            .attr("target", behavior.target.clone())
+            .attr("download", behavior.download.then_some(String::new()))
             .class(is_active_class)
             .on_click(move |e: web_sys::MouseEvent| -> SilexResult<()> {
-                // 阻止默认跳转行为
+                if !should_intercept_click(
+                    click_modifiers(&e),
+                    &behavior_for_click,
+                    &href_for_click,
+                ) {
+                    return Ok(());
+                }
                 e.prevent_default();
                 navigator.push(href_for_click.as_str())
             })
@@ -98,7 +175,7 @@ pub fn Link<'scope, T: ToRoute + Clone + 'scope>(
 
 #[cfg(test)]
 mod tests {
-    use super::is_active_path;
+    use super::{ClickModifiers, LinkBehavior, is_active_path, should_intercept_click};
 
     #[test]
     fn active_matching_respects_path_segments() {
@@ -108,5 +185,55 @@ mod tests {
         assert!(is_active_path("/users/42", "/users/"));
         assert!(!is_active_path("/username", "/user"));
         assert!(!is_active_path("/users2", "/users"));
+    }
+
+    #[test]
+    fn click_interception_only_handles_plain_internal_primary_clicks() {
+        let plain = ClickModifiers {
+            button: 0,
+            ctrl: false,
+            meta: false,
+            shift: false,
+            alt: false,
+        };
+        assert!(should_intercept_click(
+            plain,
+            &LinkBehavior::default(),
+            "/users"
+        ));
+        assert!(!should_intercept_click(
+            ClickModifiers { button: 1, ..plain },
+            &LinkBehavior::default(),
+            "/users",
+        ));
+        assert!(!should_intercept_click(
+            ClickModifiers {
+                ctrl: true,
+                ..plain
+            },
+            &LinkBehavior::default(),
+            "/users",
+        ));
+        assert!(!should_intercept_click(
+            plain,
+            &LinkBehavior {
+                target: String::from("_blank"),
+                download: false,
+            },
+            "/users",
+        ));
+        assert!(!should_intercept_click(
+            plain,
+            &LinkBehavior {
+                target: String::new(),
+                download: true,
+            },
+            "/users",
+        ));
+        assert!(!should_intercept_click(
+            plain,
+            &LinkBehavior::default(),
+            "https://external.example/users",
+        ));
     }
 }

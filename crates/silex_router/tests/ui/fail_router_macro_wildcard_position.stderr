@@ -1,0 +1,5 @@
+error: wildcard route parameters must be the final segment
+ --> tests/ui/fail_router_macro_wildcard_position.rs:5:51
+  |
+5 |         Files { rest: silex_router::PathTail } => "/files/*rest/more",
+  |                                                   ^^^^^^^^^^^^^^^^^^^

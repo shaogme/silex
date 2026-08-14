@@ -1,0 +1,5 @@
+error: wildcard route fields must use `PathTail`
+ --> tests/ui/fail_router_macro_wildcard_type.rs:5:23
+  |
+5 |         Files { rest: String } => "/files/*rest",
+  |                       ^^^^^^

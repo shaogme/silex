@@ -1,22 +1,31 @@
-use silex_router::PathTail;
-use silex_router::dom::view::AnyView;
-use silex_router::macros::routes;
+use silex_router::{PathTail, dom::view::AnyView, macros::router};
+
+router! {
+    enum AppRoute {
+        Home => "/",
+        Users {
+            prefix: "/users";
+            layout: |_context, outlet| outlet;
+            children: {
+                List => "/",
+                Detail { id: u32 } => "/:id",
+                Files { rest: PathTail } => "/files/*rest",
+            }
+        },
+    }
+}
 
 fn main() {
-    let routes = routes!(AppRoutes {
-        home "/" => move |_ctx| AnyView::from("home"),
-        nest users "/users" => move |_ctx, outlet| { outlet } {
-            list "/" => move |_ctx| AnyView::from("list"),
-            detail "/:id" => move |_ctx, id: u32| AnyView::from(id.to_string()),
-            files "/files/*rest" => move |_ctx, rest: PathTail| {
-                AnyView::from(rest.into_inner())
-            },
-        },
+    let _ = AppRoute::Users(UsersRoute::List).path();
+    let _ = AppRoute::Users(UsersRoute::Detail { id: 42 }).path();
+    let _ = AppRoute::Users(UsersRoute::Files {
+        rest: PathTail::from("docs/reference"),
     })
-    .expect("route catalog should compile");
-
-    let _ = routes.table();
-    let _ = routes.users().list();
-    let _ = routes.users().detail(42);
-    let _ = routes.users().files(PathTail::from("docs/reference"));
+    .path();
+    let _ = AppRoute::table(|route, _context| match route {
+        AppRoute::Home => AnyView::from("home"),
+        AppRoute::Users(UsersRoute::List) => AnyView::from("list"),
+        AppRoute::Users(UsersRoute::Detail { id }) => AnyView::from(id.to_string()),
+        AppRoute::Users(UsersRoute::Files { rest }) => AnyView::from(rest.into_inner()),
+    });
 }

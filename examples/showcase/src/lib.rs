@@ -12,6 +12,42 @@ use silex::bootstrap::{BootstrapError, BrowserBootstrap, JsAppHost};
 use silex::prelude::*;
 use silex::reexports::*;
 
+router! {
+    pub enum AppRoute {
+        Home => "/",
+        Basics => "/basics",
+        Flow => "/flow",
+        I18n => "/i18n",
+        Net => "/net",
+        Persistence => "/persistence",
+        Css {
+            prefix: "/css";
+            layout: |ctx, outlet| routes::CssLayout(ctx, outlet).build();
+            children: {
+                Basics => "/",
+                Theming => "/theming",
+                Advanced => "/advanced",
+            }
+        },
+        Advanced {
+            prefix: "/advanced";
+            layout: |ctx, outlet| routes::AdvancedLayout(ctx, outlet).build();
+            children: {
+                Index => "/",
+                Store => "/store",
+                Query => "/query",
+                Storage => "/storage",
+                Resource => "/resource",
+                Mutation => "/mutation",
+                Suspense => "/suspense",
+                Generics => "/generics",
+                Adaptive => "/adaptive",
+            }
+        },
+        NotFound => "/*",
+    }
+}
+
 #[component]
 fn App<'scope>(
     #[context] context: SilexContext<'scope>,
@@ -22,45 +58,47 @@ fn App<'scope>(
         .theme
         .map(scope, |name| css::get_theme(name.as_str()), error_handler)?;
 
-    let routes = routes!(AppRoutes {
-        home "/" => move |ctx| routes::HomePage(ctx).build(),
-        basics "/basics" => move |ctx| basics::BasicsPage(ctx).build(),
-        flow "/flow" => move |ctx| flow_control::FlowPage(ctx).build(),
-        i18n "/i18n" => move |ctx| i18n_demo::I18nPage(ctx, i18n).build(),
-        net "/net" => move |ctx| net_demo::NetDemoPage(ctx).build(),
-        persistence "/persistence" => move |ctx| {
-            persistence::PersistencePage(ctx).build()
-        },
-        nest css "/css" => move |ctx, outlet| {
-            routes::CssLayout(ctx, outlet)
-                .build()
-        } {
-            basics "/" => move |ctx| css::StylingBasics(ctx).build(),
-            theming "/theming" => move |ctx| css::Theming(ctx, store).build(),
-            advanced "/advanced" => move |ctx| css::AdvancedStyling(ctx).build(),
-        },
-        nest advanced "/advanced" => move |ctx, outlet| {
-            routes::AdvancedLayout(ctx, outlet)
-                .build()
-        } {
-            index "/" => move |ctx| routes::SelectDemo(ctx).build(),
-            store "/store" => move |ctx| advanced::StoreDemo(ctx, store).build(),
-            query "/query" => move |ctx| advanced::QueryDemo(ctx, store).build(),
-            storage "/storage" => move |ctx| advanced::StorageDemo(ctx).build(),
-            resource "/resource" => move |ctx| advanced::ResourceDemo(ctx).build(),
-            mutation "/mutation" => move |ctx| advanced::MutationDemo(ctx).build(),
-            suspense "/suspense" => move |ctx| advanced::SuspenseDemo(ctx).build(),
-            generics "/generics" => move |ctx| advanced::GenericsDemo(ctx).build(),
-            adaptive "/adaptive" => move |ctx| advanced::AdaptiveReadDemo(ctx).build(),
-        },
-        not_found "/*" => move |ctx| routes::NotFoundPage(ctx).build(),
+    let table = AppRoute::table(move |route, ctx| match route {
+        AppRoute::Home => routes::HomePage(ctx).build().into_any(),
+        AppRoute::Basics => basics::BasicsPage(ctx).build().into_any(),
+        AppRoute::Flow => flow_control::FlowPage(ctx).build().into_any(),
+        AppRoute::I18n => i18n_demo::I18nPage(ctx, i18n).build().into_any(),
+        AppRoute::Net => net_demo::NetDemoPage(ctx).build().into_any(),
+        AppRoute::Persistence => persistence::PersistencePage(ctx).build().into_any(),
+        AppRoute::Css(CssRoute::Basics) => css::StylingBasics(ctx).build().into_any(),
+        AppRoute::Css(CssRoute::Theming) => css::Theming(ctx, store).build().into_any(),
+        AppRoute::Css(CssRoute::Advanced) => css::AdvancedStyling(ctx).build().into_any(),
+        AppRoute::Advanced(AdvancedRoute::Index) => routes::SelectDemo(ctx).build().into_any(),
+        AppRoute::Advanced(AdvancedRoute::Store) => {
+            advanced::StoreDemo(ctx, store).build().into_any()
+        }
+        AppRoute::Advanced(AdvancedRoute::Query) => {
+            advanced::QueryDemo(ctx, store).build().into_any()
+        }
+        AppRoute::Advanced(AdvancedRoute::Storage) => advanced::StorageDemo(ctx).build().into_any(),
+        AppRoute::Advanced(AdvancedRoute::Resource) => {
+            advanced::ResourceDemo(ctx).build().into_any()
+        }
+        AppRoute::Advanced(AdvancedRoute::Mutation) => {
+            advanced::MutationDemo(ctx).build().into_any()
+        }
+        AppRoute::Advanced(AdvancedRoute::Suspense) => {
+            advanced::SuspenseDemo(ctx).build().into_any()
+        }
+        AppRoute::Advanced(AdvancedRoute::Generics) => {
+            advanced::GenericsDemo(ctx).build().into_any()
+        }
+        AppRoute::Advanced(AdvancedRoute::Adaptive) => {
+            advanced::AdaptiveReadDemo(ctx).build().into_any()
+        }
+        AppRoute::NotFound => routes::NotFoundPage(ctx).build().into_any(),
     })
     .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
 
     Ok(div!(
         css::GlobalStyles(scope, error_handler),
         Router(context)
-            .routes(routes.table())
+            .routes(table)
             .layout(move |ctx, outlet| routes::AppLayout(ctx, outlet, store).build())
             .build()
     )

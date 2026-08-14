@@ -2,6 +2,23 @@ use silex::bootstrap::{BootstrapError, BrowserBootstrap, JsAppHost};
 use silex::prelude::*;
 use silex::reexports::*;
 
+router! {
+    pub enum AppRoute {
+        Home => "/",
+        Search => "/search",
+        Users {
+            prefix: "/users";
+            layout: |ctx, outlet| UsersLayout(ctx).children(outlet).build();
+            children: {
+                List => "/",
+                Create => "/new",
+                Detail { id: u32 } => "/:id",
+            }
+        },
+        NotFound => "/*",
+    }
+}
+
 // ==========================================
 // 辅助组件
 // ==========================================
@@ -145,9 +162,8 @@ fn UsersLayout<'scope>(
 }
 
 fn user_detail_path(id: u32) -> SilexResult<RoutePath> {
-    let encoded = <u32 as PathParam>::encode_segment(&id)
-        .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
-    RoutePath::new(format!("/users/{encoded}"))
+    AppRoute::Users(UsersRoute::Detail { id })
+        .path()
         .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))
 }
 
@@ -191,7 +207,13 @@ fn UserDetail<'scope>(#[context] ctx: RouterContext<'scope>, id: u32) -> impl Vi
                 h3(format!("User Profile: #{}", id)),
                 button("Go Back")
                     .on_click(move |_| {
-                        navigator.push("/users")?;
+                        navigator.push(AppRoute::Users(UsersRoute::List).path().map_err(
+                            |error| {
+                                SilexError::recoverable(SilexErrorKind::Framework(
+                                    error.to_string(),
+                                ))
+                            },
+                        )?)?;
                         Ok(())
                     })
                     .style(
@@ -310,36 +332,24 @@ fn MainLayout<'scope>(
 
 #[component]
 fn App<'scope>(#[context] context: SilexContext<'scope>) -> impl View<'scope> {
-    let users = routes!(UsersRoutes {
-        list "/" => move |ctx| UserList(ctx).build(),
-        create "/new" => move |ctx| CreateUser(ctx).build(),
-        detail "/:id" => move |ctx, id: u32| UserDetail(ctx, id).build(),
+    let home_path = AppRoute::Home
+        .path()
+        .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
+    let users_path = AppRoute::Users(UsersRoute::List)
+        .path()
+        .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
+    let search_path = AppRoute::Search
+        .path()
+        .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
+    let table = AppRoute::table(move |route, ctx| match route {
+        AppRoute::Home => Home(ctx).build().into_any(),
+        AppRoute::Search => SearchPage(ctx).build().into_any(),
+        AppRoute::Users(UsersRoute::List) => UserList(ctx).build().into_any(),
+        AppRoute::Users(UsersRoute::Create) => CreateUser(ctx).build().into_any(),
+        AppRoute::Users(UsersRoute::Detail { id }) => UserDetail(ctx, id).build().into_any(),
+        AppRoute::NotFound => NotFound(ctx).build().into_any(),
     })
-    .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?
-    .at("/users")
     .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
-    let routes = routes!(AppRoutes {
-        home "/" => move |ctx| Home(ctx).build(),
-        search "/search" => move |ctx| SearchPage(ctx).build(),
-        not_found "/*" => move |ctx| NotFound(ctx).build(),
-    })
-    .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
-
-    let home_path = routes
-        .home()
-        .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
-    let users_path = users
-        .list()
-        .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
-    let search_path = routes
-        .search()
-        .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
-    let table = routes
-        .table()
-        .nest(users.prefix(), users.table(), move |ctx, outlet| {
-            UsersLayout(ctx).children(outlet).build()
-        })
-        .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
 
     Ok(Router(context)
         .routes(table)

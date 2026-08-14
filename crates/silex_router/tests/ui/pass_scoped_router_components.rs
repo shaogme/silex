@@ -1,8 +1,14 @@
 use silex_router::core::{Scope, SilexContext};
 use silex_router::dom::attribute::GlobalEventAttributes;
 use silex_router::dom::view::AnyView;
-use silex_router::macros::routes;
+use silex_router::macros::router;
 use silex_router::{Link, RoutePath, Router, RouterContext, RouterContextProps};
+
+router! {
+    enum AppRoute {
+        Home => "/",
+    }
+}
 
 fn compile_scoped_api<'scope>(scope: Scope<'scope>) {
     let (text, _) = scope
@@ -39,14 +45,14 @@ fn compile_scoped_api<'scope>(scope: Scope<'scope>) {
     .active_class("active")
     .on_click(|_| Ok(()))
     .build();
-    let routes = routes!(AppRoutes {
-        home "/" => move |_ctx| AnyView::from("home"),
+    let table = AppRoute::table(|route, _context| match route {
+        AppRoute::Home => AnyView::from("home"),
     })
-    .expect("route catalog should compile");
+    .expect("route table should compile");
     let _router = Router(silex)
-    .base("/app")
-    .routes(routes.table())
-    .build();
+        .base("/app")
+        .routes(table)
+        .build();
 }
 
 fn main() {

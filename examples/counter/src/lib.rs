@@ -2,6 +2,14 @@ use silex::bootstrap::{BootstrapError, BrowserBootstrap, JsAppHost};
 use silex::prelude::*;
 use silex::reexports::*;
 
+router! {
+    pub enum AppRoute {
+        Home => "/",
+        About => "/about",
+        NotFound => "/*",
+    }
+}
+
 #[component]
 fn Card<'scope, Ctx>(
     #[context] context: Ctx,
@@ -358,16 +366,14 @@ fn App<'scope>(
         .padding("20px")?;
 
     let boundary = ErrorBoundary(context, move |boundary_context| {
-        match routes!(AppRoutes {
-            home "/" => move |ctx| {
-                HomeView(ctx).build()
-            },
-            about "/about" => move |ctx| AboutView(ctx).build(),
-            not_found "/*" => move |ctx| NotFound(ctx).build(),
+        match AppRoute::table(|route, ctx| match route {
+            AppRoute::Home => HomeView(ctx).build().into_any(),
+            AppRoute::About => AboutView(ctx).build().into_any(),
+            AppRoute::NotFound => NotFound(ctx).build().into_any(),
         }) {
-            Ok(routes) => div!(
+            Ok(table) => div!(
                 Router(boundary_context)
-                    .routes(routes.table())
+                    .routes(table)
                     .layout(move |ctx, outlet| { div!(NavBar(ctx).build(), outlet) })
                     .build()
             )

@@ -1,5 +1,0 @@
-error: route `user` handler must accept RouterContext plus 1 path parameter(s)
- --> tests/ui/fail_routes_macro_missing_context.rs:5:30
-  |
-5 |         user "/users/:id" => move |id: u32| silex_router::dom::view::AnyView::from(id),
-  |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -1,0 +1,5 @@
+error: route pattern `/users/:id/:id` repeats parameter `id`
+ --> tests/ui/fail_router_macro_duplicate_parameter.rs:5:29
+  |
+5 |         User { id: u32 } => "/users/:id/:id",
+  |                             ^^^^^^^^^^^^^^^^

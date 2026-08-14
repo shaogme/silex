@@ -190,6 +190,65 @@ impl TryFrom<String> for RoutePath {
     }
 }
 
+/// A checked builder used by generated route enums to encode path segments.
+#[derive(Default)]
+pub struct RoutePathBuilder {
+    path: String,
+}
+
+impl RoutePathBuilder {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn push_static(&mut self, segment: &str) -> Result<(), PathParamError> {
+        if segment.is_empty() || segment.contains(['/', '?', '#']) {
+            return Err(PathParamError::InvalidValue(
+                "static route segments must not be empty or contain separators".to_string(),
+            ));
+        }
+        percent_decode_segment(segment).map_err(PathParamError::from)?;
+        self.path.push('/');
+        self.path.push_str(segment);
+        Ok(())
+    }
+
+    pub fn push_param<T>(&mut self, value: &T) -> Result<(), PathParamError>
+    where
+        T: PathParam,
+    {
+        let encoded = value
+            .encode_segment()
+            .map_err(|error| PathParamError::InvalidValue(error.to_string()))?;
+        self.path.push('/');
+        self.path.push_str(&encoded);
+        Ok(())
+    }
+
+    pub fn finish(self) -> Result<RoutePath, PathParamError> {
+        let path = if self.path.is_empty() {
+            "/"
+        } else {
+            self.path.as_str()
+        };
+        RoutePath::new(path).map_err(PathParamError::from)
+    }
+}
+
+/// Joins a static route prefix and a validated relative route path.
+pub fn join_route_paths(prefix: &str, suffix: &str) -> Result<RoutePath, PathError> {
+    let prefix = normalize_path(prefix)?;
+    let suffix = normalize_path(suffix)?;
+    let path = if prefix == "/" {
+        suffix
+    } else if suffix == "/" {
+        prefix
+    } else {
+        format!("{prefix}{suffix}")
+    };
+    RoutePath::new(path)
+}
+
 /// Normalizes a pathname without decoding its segments.
 ///
 /// The final slash is optional, while empty intermediate segments are rejected
@@ -451,8 +510,8 @@ pub(crate) fn strip_path_prefix(prefix: &str, path: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        PathParam, PathParamError, PathTail, RoutePath, normalize_path, percent_decode_segment,
-        percent_encode_segment, strip_path_prefix,
+        PathParam, PathParamError, PathTail, RoutePath, RoutePathBuilder, join_route_paths,
+        normalize_path, percent_decode_segment, percent_encode_segment, strip_path_prefix,
     };
 
     #[test]
@@ -525,5 +584,27 @@ mod tests {
             strip_path_prefix("/users", "/users/"),
             Some(String::from("/"))
         );
+    }
+
+    #[test]
+    fn generated_path_builder_checks_static_and_typed_segments() {
+        let mut builder = RoutePathBuilder::new();
+        builder.push_static("users").unwrap();
+        builder.push_param(&42_u32).unwrap();
+        assert_eq!(builder.finish().unwrap().as_str(), "/users/42");
+
+        let mut builder = RoutePathBuilder::new();
+        assert!(builder.push_static("bad/segment").is_err());
+    }
+
+    #[test]
+    fn route_path_join_preserves_root_and_segment_boundaries() {
+        assert_eq!(join_route_paths("/app", "/").unwrap().as_str(), "/app");
+        assert_eq!(
+            join_route_paths("/app", "/users").unwrap().as_str(),
+            "/app/users"
+        );
+        assert!(join_route_paths("/app", "users").is_err());
+        assert!(join_route_paths("/application", "/users").is_ok());
     }
 }

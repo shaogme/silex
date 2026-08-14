@@ -1,0 +1,5 @@
+error: route patterns in one enum must be unique by shape
+ --> tests/ui/fail_router_macro_duplicate.rs:6:33
+  |
+6 |         Second { name: u32 } => "/users/:name",
+  |                                 ^^^^^^^^^^^^^^

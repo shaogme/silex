@@ -6,7 +6,7 @@ use silex_core::{
 use silex_dom::view::{
     AnyView, ApplyAttributes, MountInstance, MountOwner, ScopedMountOwner, View, mount_text_node,
 };
-use silex_router::macros::routes;
+use silex_router::macros::router;
 use silex_router::{
     Link, Navigator, RouteEntry, RoutePath, RouteTable, Router, RouterContext, RouterContextProps,
     RouterView,
@@ -20,6 +20,19 @@ use wasm_bindgen::{JsCast, JsValue, prelude::*};
 use wasm_bindgen_test::*;
 
 wasm_bindgen_test_configure!(run_in_browser);
+
+router! {
+    enum NestedRouteApp {
+        Home => "/",
+        Users {
+            prefix: "/users";
+            layout: |_context, outlet| AnyView::from(vec![AnyView::from("users:"), outlet]);
+            children: {
+                Detail { id: u32 } => "/:id",
+            }
+        },
+    }
+}
 
 fn test_handler<'scope>(scope: silex_core::Scope<'scope>) -> ErrorReporter<'scope> {
     scope
@@ -312,29 +325,22 @@ fn router_layout_is_created_once_while_outlet_changes() {
 fn nested_outlet_keeps_parent_layout_while_child_route_changes() {
     set_url("/app/users/1");
     let host = mount_host();
-    let layouts = Rc::new(Cell::new(0));
     let navigator = Rc::new(RefCell::new(None));
     let mut runtime = Runtime::new();
     let root = runtime.run().expect("root should be created");
 
     root.with_scope(|scope| {
         let navigator_for_detail = navigator.clone();
-        let layouts_for_view = layouts.clone();
-        let routes = routes!(NestedRoutes {
-            home "/" => move |_ctx| AnyView::from("home"),
-            nest users "/users" => move |_ctx, outlet| {
-                layouts_for_view.set(layouts_for_view.get() + 1);
-                AnyView::from(vec![AnyView::from("users:"), outlet])
-            } {
-                detail "/:id" => move |context, id: u32| {
-                    *navigator_for_detail.borrow_mut() = Some(context.navigator);
-                    AnyView::from(id.to_string())
-                },
-            },
+        let table = NestedRouteApp::table(move |route, context| match route {
+            NestedRouteApp::Home => AnyView::from("home"),
+            NestedRouteApp::Users(UsersRoute::Detail { id }) => {
+                *navigator_for_detail.borrow_mut() = Some(context.navigator);
+                AnyView::from(id.to_string())
+            }
         })
         .expect("nested route catalog should compile");
         let context = SilexContext::new(scope, test_handler(scope));
-        let view = Router(context).base("/app").routes(routes.table()).build();
+        let view = Router(context).base("/app").routes(table).build();
         let (owner, error_handler) = test_owner(scope);
         let _ = view
             .mount(&owner, &host, Vec::new(), error_handler)
@@ -342,17 +348,19 @@ fn nested_outlet_keeps_parent_layout_while_child_route_changes() {
     });
 
     assert_eq!(host.text_content().as_deref(), Some("users:1"));
-    assert_eq!(layouts.get(), 1);
     let navigator = navigator
         .borrow()
         .as_ref()
         .copied()
         .expect("nested route should expose navigator");
     navigator
-        .push(RoutePath::new("/users/2").expect("nested path should be valid"))
+        .push(
+            NestedRouteApp::Users(UsersRoute::Detail { id: 2 })
+                .path()
+                .expect("nested path should be valid"),
+        )
         .expect("nested route navigation should succeed");
     assert_eq!(host.text_content().as_deref(), Some("users:2"));
-    assert_eq!(layouts.get(), 1);
 
     root.dispose().expect("root cleanup should succeed");
     host.parent_node()

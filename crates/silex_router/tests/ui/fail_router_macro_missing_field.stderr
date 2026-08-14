@@ -1,0 +1,5 @@
+error: route `User` declares 0 field(s), but its pattern needs 1 named parameter field(s)
+ --> tests/ui/fail_router_macro_missing_field.rs:5:9
+  |
+5 |         User => "/users/:id",
+  |         ^^^^
