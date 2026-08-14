@@ -302,7 +302,7 @@ fn HomeView<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scope> 
 }
 
 #[component]
-fn AboutView<'scope>(#[context] _context: RouterContext<'scope>) -> AnyView<'scope> {
+fn AboutView<'scope>(#[context] _context: RouterContext<'scope>) -> impl View<'scope> {
     Ok(div!(
         h1("About"),
         p("This is the About Page to demonstrate Silex Router."),
@@ -311,14 +311,14 @@ fn AboutView<'scope>(#[context] _context: RouterContext<'scope>) -> AnyView<'sco
 }
 
 #[component]
-fn NotFound<'scope>(#[context] _context: RouterContext<'scope>) -> AnyView<'scope> {
+fn NotFound<'scope>(#[context] _context: RouterContext<'scope>) -> impl View<'scope> {
     Ok(div(h1("404 - Page Not Found"))
         .style(sty().color(ColorName::Red)?.padding("20px")?)
         .into_any())
 }
 
 #[component]
-fn ErrorPage<'scope, Ctx, Err>(#[context] context: Ctx, error: Err) -> AnyView<'scope>
+fn ErrorPage<'scope, Ctx, Err>(#[context] context: Ctx, error: Err) -> impl View<'scope>
 where
     Err: Into<SilexError>,
 {

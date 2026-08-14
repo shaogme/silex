@@ -697,7 +697,7 @@ fn render_card<'scope>(
     scope: Scope<'scope>,
     id: usize,
     error_handler: ErrorReporter<'scope>,
-) -> AnyView<'scope> {
+) -> impl View<'scope> {
     let context = SilexContext::new(scope, error_handler);
     macro_rules! render_card {
         ($card_id:expr, { $($id:literal => $builder:expr),+ $(,)? }) => {
