@@ -119,10 +119,7 @@ pub fn PopoverDescription<'scope, Ctx>(
 }
 
 #[component]
-pub fn PopoverPortal<'scope, Ctx>(
-    #[ctx] ctx: Ctx,
-    children: AnyView<'scope>,
-) -> impl View<'scope> {
+pub fn PopoverPortal<'scope, Ctx>(#[ctx] ctx: Ctx, children: AnyView<'scope>) -> impl View<'scope> {
     crate::components::Portal(ctx, children).build()
 }
 

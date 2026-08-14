@@ -151,8 +151,7 @@ pub fn HttpClientDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                             .color(ColorName::Red)?
                             .font_weight(FontWeightKeyword::Bold)?
                     ),
-                    p(format!("{:?}", err))
-                        .style(sty(ctx).font_size(em_unit(0.8))?.opacity(0.7)?)
+                    p(format!("{:?}", err)).style(sty(ctx).font_size(em_unit(0.8))?.opacity(0.7)?)
                 ]
                 .style(
                     sty(ctx)
@@ -173,12 +172,11 @@ pub fn HttpClientDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
             })
         }]
         .style(sty(ctx).min_height(px(120))?),
-        hr().style(
-            sty(ctx)
-                .margin("30px 0")?
-                .border("0")?
-                .border_top(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
-        ),
+        hr().style(sty(ctx).margin("30px 0")?.border("0")?.border_top(border(
+            px(1),
+            BorderStyleKeyword::Solid,
+            AppTheme::BORDER
+        ))?),
         h4("Mutations (POST Request)"),
         div![
             div![

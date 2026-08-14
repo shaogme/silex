@@ -318,11 +318,7 @@ fn ErrorHandlingDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                             }
                             Ok(())
                         })
-                        .style(
-                            sty(ctx)
-                                .width(pct(100))?
-                                .accent_color(AppTheme::PRIMARY)?
-                        )
+                        .style(sty(ctx).width(pct(100))?.accent_color(AppTheme::PRIMARY)?)
                 ],
             ],
             div![

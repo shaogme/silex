@@ -95,10 +95,7 @@ pub fn JsonStorageDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
         div![
             p![strong("Hero: "), rx!(ctx; $state.name.clone())],
             p![strong("Level: "), rx!(ctx; $state.level.to_string())],
-            p![
-                strong("Inventory: "),
-                rx!(ctx; $state.inventory.join(", "))
-            ],
+            p![strong("Inventory: "), rx!(ctx; $state.inventory.join(", "))],
         ]
         .style(
             sty(ctx)

@@ -1,7 +1,5 @@
 //! Runtime node and scope-state data structures.
 
-#[cfg(feature = "test-support")]
-use super::scheduler::active_observer_for;
 use super::{
     scheduler::{GlobalScheduler, ScopeId, TargetNode},
     storage::{
@@ -17,10 +15,14 @@ use crate::{
 };
 use slotmap::{SecondaryMap, SlotMap};
 use std::{
-    cell::RefCell,
+    cell::{Ref, RefCell, RefMut},
+    mem::{size_of, take},
     panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
     rc::Rc,
 };
+
+#[cfg(feature = "test-support")]
+use super::scheduler::active_observer_for;
 
 slotmap::new_key_type! {
     pub(crate) struct EdgeId;
@@ -85,7 +87,7 @@ pub(crate) struct NodeCore {
     pub(crate) first_dependency: EdgeId,
 }
 
-const _: () = assert!(std::mem::size_of::<NodeCore>() == 64);
+const _: () = assert!(size_of::<NodeCore>() == 64);
 
 impl NodeCore {
     pub(crate) fn new(kind: NodeKindTag, parent: Option<RawId>, state: NodeState) -> Self {
@@ -137,7 +139,7 @@ pub(crate) struct DependencyTransaction {
 
 /// Iterator over child nodes in an intra-arena sibling chain.
 pub(crate) struct ChildrenIter<'a, 'scope> {
-    state: &'a ScopeState<'scope>,
+    state: &'a ScopeStateInner<'scope>,
     curr: RawId,
 }
 
@@ -161,7 +163,7 @@ impl Iterator for ChildrenIter<'_, '_> {
 
 /// Iterator over edge entries in an intra-arena edge list.
 pub(crate) struct EdgeIter<'a, 'scope> {
-    state: &'a ScopeState<'scope>,
+    state: &'a ScopeStateInner<'scope>,
     curr: EdgeId,
 }
 
@@ -180,7 +182,7 @@ impl Iterator for EdgeIter<'_, '_> {
 }
 
 /// Reactive graph nodes, scheduling state, and stable storage owned by one lexical scope.
-pub(crate) struct ScopeState<'scope> {
+pub(crate) struct ScopeStateInner<'scope> {
     pub(crate) scope_id: ScopeId,
     pub(crate) scheduler: Rc<RefCell<GlobalScheduler>>,
     pub(crate) phase: ScopePhase,
@@ -192,6 +194,58 @@ pub(crate) struct ScopeState<'scope> {
     pub(crate) root_cleanups: Vec<CleanupThunk<'scope>>,
     pub(crate) dependency_transactions: Vec<DependencyTransaction>,
     pub(crate) error_handlers: SlotMap<ErrorHandlerKey, ErrorHandlerEntry<'scope>>,
+}
+
+/// A reference-counted wrapper around the inner scope state.
+#[derive(Clone)]
+pub(crate) struct ScopeState<'scope> {
+    pub(crate) inner: Rc<RefCell<ScopeStateInner<'scope>>>,
+}
+
+impl<'scope> ScopeState<'scope> {
+    pub(crate) fn new(scope_id: ScopeId, scheduler: Rc<RefCell<GlobalScheduler>>) -> Self {
+        Self {
+            inner: Rc::new(RefCell::new(ScopeStateInner::new(scope_id, scheduler))),
+        }
+    }
+
+    pub(crate) fn from_inner(inner: Rc<RefCell<ScopeStateInner<'scope>>>) -> Self {
+        Self { inner }
+    }
+
+    pub(crate) fn into_inner(self) -> Rc<RefCell<ScopeStateInner<'scope>>> {
+        self.inner
+    }
+
+    pub(crate) fn inner(&self) -> &Rc<RefCell<ScopeStateInner<'scope>>> {
+        &self.inner
+    }
+
+    pub(crate) fn try_borrow(&self) -> Result<Ref<'_, ScopeStateInner<'scope>>, ReactiveError> {
+        self.inner
+            .try_borrow()
+            .map_err(|_| ReactiveError::BorrowConflict)
+    }
+
+    pub(crate) fn try_borrow_mut(
+        &self,
+    ) -> Result<RefMut<'_, ScopeStateInner<'scope>>, ReactiveError> {
+        self.inner
+            .try_borrow_mut()
+            .map_err(|_| ReactiveError::BorrowConflict)
+    }
+
+    pub(crate) fn borrow(&self) -> Ref<'_, ScopeStateInner<'scope>> {
+        self.inner.borrow()
+    }
+
+    pub(crate) fn borrow_mut(&self) -> RefMut<'_, ScopeStateInner<'scope>> {
+        self.inner.borrow_mut()
+    }
+
+    pub(crate) fn drop_error_handlers(handlers: SlotMap<ErrorHandlerKey, ErrorHandlerEntry<'_>>) {
+        ScopeStateInner::drop_error_handlers(handlers);
+    }
 }
 
 #[cfg(feature = "test-support")]
@@ -209,7 +263,7 @@ pub struct RuntimeSnapshot {
     pub running_queue: bool,
 }
 
-impl<'scope> ScopeState<'scope> {
+impl<'scope> ScopeStateInner<'scope> {
     pub(crate) fn new(scope_id: ScopeId, scheduler: Rc<RefCell<GlobalScheduler>>) -> Self {
         Self {
             scope_id,
@@ -502,7 +556,7 @@ impl<'scope> ScopeState<'scope> {
     pub(crate) fn take_error_handlers(
         &mut self,
     ) -> SlotMap<ErrorHandlerKey, ErrorHandlerEntry<'scope>> {
-        std::mem::take(&mut self.error_handlers)
+        take(&mut self.error_handlers)
     }
 
     pub(crate) fn drop_error_handlers(

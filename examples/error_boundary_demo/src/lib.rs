@@ -68,9 +68,7 @@ fn App<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
 }
 
 #[component]
-fn RecoverableComponent<'scope>(
-    #[ctx] ctx: SilexContext<'scope>,
-) -> impl View<'scope> + 'scope {
+fn RecoverableComponent<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> + 'scope {
     let (should_error, set_should_error) = scope.signal(false)?;
 
     Ok(move || {
@@ -91,9 +89,7 @@ fn RecoverableComponent<'scope>(
 }
 
 #[component]
-fn PanicToggleComponent<'scope>(
-    #[ctx] ctx: SilexContext<'scope>,
-) -> impl View<'scope> + 'scope {
+fn PanicToggleComponent<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> + 'scope {
     let (show_panic, set_show_panic) = scope.signal(false)?;
     let immediate_panic = ImmediatePanic(ctx).build();
 

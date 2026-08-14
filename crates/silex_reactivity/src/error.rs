@@ -87,10 +87,13 @@ impl<E> ErrorSlot<E> {
     }
 }
 
+pub(crate) type ErrorHandlerCallback<'scope, E> = Box<dyn Fn(E) + 'scope>;
+pub(crate) type ErrorDispatchCallback<'scope> = Box<dyn FnOnce(ErrorPhase) + 'scope>;
+
 /// A typed handler callback. The registry stores only an owner marker; calls
 /// always go through the typed `ErrorHandler<E>` capability.
 pub(crate) struct ErrorHandlerCell<'scope, E> {
-    callback: RefCell<Option<Box<dyn Fn(E) + 'scope>>>,
+    callback: RefCell<Option<ErrorHandlerCallback<'scope, E>>>,
 }
 
 pub(crate) trait ErrorHandlerCall<E> {
@@ -196,7 +199,7 @@ pub(crate) enum ErrorPhase {
 /// An error event keeps its concrete payload and dispatches it directly to a
 /// typed slot or typed handler. No erased value crosses the scheduler.
 pub(crate) struct ErrorEvent<'scope> {
-    dispatch: Option<Box<dyn FnOnce(ErrorPhase) + 'scope>>,
+    dispatch: Option<ErrorDispatchCallback<'scope>>,
 }
 
 impl<'scope> ErrorEvent<'scope> {

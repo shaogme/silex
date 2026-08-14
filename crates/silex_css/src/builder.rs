@@ -85,13 +85,12 @@ impl<'scope> Style<'scope> {
     }
 
     fn nested_style(&self) -> Self {
-        let nested = Self {
+        Self {
             static_rules: Vec::new(),
             dynamic_rules: Vec::new(),
             nested_rules: Vec::new(),
             error_handler: self.error_handler,
-        };
-        nested
+        }
     }
 
     /// 定义媒体查询，例如 `.media("@media (max-width: 600px)", |s| s.width(PX(100)))`
@@ -799,9 +798,8 @@ mod tests {
     /// （`-webkit-font-smoothing` 根本不在 MDN 数据里）只能退回 `styled!`
     #[test]
     fn raw_reaches_properties_the_registry_does_not_cover() {
-        let css = css_of_with_ctx(|ctx| {
-            Style::new(ctx).raw("-webkit-font-smoothing", "antialiased")
-        });
+        let css =
+            css_of_with_ctx(|ctx| Style::new(ctx).raw("-webkit-font-smoothing", "antialiased"));
         assert!(
             css.contains("-webkit-font-smoothing: antialiased;"),
             "{css}"
@@ -811,9 +809,7 @@ mod tests {
     /// 属性名也可能来自调用方：一个 `:` 就能把一条声明劈成两条
     #[test]
     fn a_raw_property_name_cannot_open_a_second_declaration() {
-        let css = css_of_with_ctx(|ctx| {
-            Style::new(ctx).raw("color: red; background", "blue")
-        });
+        let css = css_of_with_ctx(|ctx| Style::new(ctx).raw("color: red; background", "blue"));
         // 只该有一条声明——`@layer` 块 + 规则块 = 2 个花括号，1 个分号
         assert_eq!(css.matches(';').count(), 1, "{css}");
         assert!(!css.contains("color: red"), "{css}");

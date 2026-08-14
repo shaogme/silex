@@ -12,11 +12,8 @@ fn ButtonShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope>
                 ctx,
                 chain!(
                     CardTitle(ctx, "Button & Badge System").build(),
-                    CardDescription(
-                        ctx,
-                        "Standard variants and sizes ported from shadcn/ui."
-                    )
-                    .build()
+                    CardDescription(ctx, "Standard variants and sizes ported from shadcn/ui.")
+                        .build()
                 )
             )
             .build(),
@@ -29,9 +26,7 @@ fn ButtonShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope>
                             "text-xs font-semibold text-slate-500 dark:text-slate-400 w-full mb-1"
                         )),
                         Button(ctx, "Default").variant("default")?.build(),
-                        Button(ctx, "Destructive")
-                            .variant("destructive")?
-                            .build(),
+                        Button(ctx, "Destructive").variant("destructive")?.build(),
                         Button(ctx, "Outline").variant("outline")?.build(),
                         Button(ctx, "Secondary").variant("secondary")?.build(),
                         Button(ctx, "Ghost").variant("ghost")?.build(),
@@ -43,26 +38,14 @@ fn ButtonShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope>
                         span("Sizes").class(tw!(
                             "text-xs font-semibold text-slate-500 dark:text-slate-400 w-full mb-1"
                         )),
-                        Button(ctx, "XS")
-                            .variant("outline")?
-                            .size("xs")?
-                            .build(),
-                        Button(ctx, "Small")
-                            .variant("outline")?
-                            .size("sm")?
-                            .build(),
+                        Button(ctx, "XS").variant("outline")?.size("xs")?.build(),
+                        Button(ctx, "Small").variant("outline")?.size("sm")?.build(),
                         Button(ctx, "Default")
                             .variant("outline")?
                             .size("default")?
                             .build(),
-                        Button(ctx, "Large")
-                            .variant("outline")?
-                            .size("lg")?
-                            .build(),
-                        Button(ctx, "★")
-                            .variant("outline")?
-                            .size("icon")?
-                            .build(),
+                        Button(ctx, "Large").variant("outline")?.size("lg")?.build(),
+                        Button(ctx, "★").variant("outline")?.size("icon")?.build(),
                         Button(ctx, "⚡")
                             .variant("default")?
                             .size("icon-sm")?
@@ -76,9 +59,7 @@ fn ButtonShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope>
                         )),
                         Badge(ctx, "Default").variant("default")?.build(),
                         Badge(ctx, "Secondary").variant("secondary")?.build(),
-                        Badge(ctx, "Destructive")
-                            .variant("destructive")?
-                            .build(),
+                        Badge(ctx, "Destructive").variant("destructive")?.build(),
                         Badge(ctx, "Outline").variant("outline")?.build(),
                         Badge(ctx, "Ghost").variant("ghost")?.build(),
                         Badge(ctx, "Link").variant("link")?.build()
@@ -412,14 +393,8 @@ fn build_popover_content<'scope>(
                 )
                 .build()?,
                 div(chain!(
-                    Input(ctx)
-                        .value("100%")?
-                        .placeholder("Width")?
-                        .build()?,
-                    Input(ctx)
-                        .value("300px")?
-                        .placeholder("Height")?
-                        .build()?
+                    Input(ctx).value("100%")?.placeholder("Width")?.build()?,
+                    Input(ctx).value("300px")?.placeholder("Height")?.build()?
                 ))
                 .class(tw!("grid gap-2 py-2")),
                 div(chain!(

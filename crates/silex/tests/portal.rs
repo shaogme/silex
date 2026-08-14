@@ -52,9 +52,8 @@ async fn portal_modal_does_not_duplicate_content_after_repeated_toggles() {
     let root = runtime.run().expect("root runtime should start");
 
     let (set_show_modal, errors) = root.with_scope(|scope| {
-        let (show_modal, set_show_modal) = scope
-            .signal(false)
-            .expect("modal signal should be created");
+        let (show_modal, set_show_modal) =
+            scope.signal(false).expect("modal signal should be created");
         let errors = Rc::new(Cell::new(0));
         let errors_for_handler = errors.clone();
         let error_handler = scope
@@ -78,7 +77,8 @@ async fn portal_modal_does_not_duplicate_content_after_repeated_toggles() {
                 .build(),
         ];
         let owner = ScopedMountOwner::new(scope);
-        let _ = view.mount(&owner, host.as_ref(), Vec::new(), error_handler)
+        let _ = view
+            .mount(&owner, host.as_ref(), Vec::new(), error_handler)
             .expect("portal demo should mount");
         (set_show_modal, errors)
     });

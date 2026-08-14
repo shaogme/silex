@@ -95,9 +95,7 @@ enum CleanupPlanStep {
     Exit(RawId),
 }
 
-fn collect_final_cleanup_plan<'scope>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
-) -> FinalCleanupPlan<'scope> {
+fn collect_final_cleanup_plan<'scope>(state: &ScopeState<'scope>) -> FinalCleanupPlan<'scope> {
     let roots = state
         .try_borrow()
         .expect("ScopeState borrow failed during cleanup plan collection")
@@ -178,7 +176,7 @@ fn run_final_cleanup_plan<'scope>(
     first_panic
 }
 
-pub(crate) fn dispose_all<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>) {
+pub(crate) fn dispose_all<'scope>(state: &ScopeState<'scope>) {
     let scheduler = state
         .try_borrow()
         .expect("ScopeState borrow failed during dispose_all")
@@ -219,7 +217,7 @@ enum DisposeStep<'scope> {
 }
 
 pub(crate) fn dispose_nodes_collect<'scope>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
+    state: &ScopeState<'scope>,
     roots: Vec<RawId>,
 ) -> CleanupOutcome<'scope> {
     let scheduler = state
@@ -318,7 +316,7 @@ pub(crate) fn dispose_nodes_collect<'scope>(
     }
 }
 
-pub(crate) fn dispose_nodes<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, roots: Vec<RawId>) {
+pub(crate) fn dispose_nodes<'scope>(state: &ScopeState<'scope>, roots: Vec<RawId>) {
     let scheduler = state
         .try_borrow()
         .expect("ScopeState borrow failed during dispose_nodes")

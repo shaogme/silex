@@ -61,7 +61,7 @@ enum EvaluationMode {
 }
 
 pub(crate) fn prepare_read<'scope>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
+    state: &ScopeState<'scope>,
     id: RawId,
     track: bool,
 ) -> ReactiveResult<()> {
@@ -110,7 +110,7 @@ pub(crate) fn prepare_read<'scope>(
 }
 
 pub(crate) fn prepare_fallible_read<'scope>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
+    state: &ScopeState<'scope>,
     id: RawId,
     track: bool,
 ) -> EvaluationResult<'scope, ()> {
@@ -156,7 +156,7 @@ pub(crate) fn prepare_fallible_read<'scope>(
 }
 
 fn evaluate_root<'scope>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
+    state: &ScopeState<'scope>,
     id: RawId,
     mode: EvaluationMode,
 ) -> EvaluationResult<'scope, ()> {
@@ -185,7 +185,7 @@ fn evaluate_root<'scope>(
 }
 
 fn evaluate<'scope>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
+    state: &ScopeState<'scope>,
     id: RawId,
     stack: &mut Vec<TargetNode>,
     mode: EvaluationMode,
@@ -373,7 +373,7 @@ fn drop_storage<'scope>(
 }
 
 fn run_node<'scope>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
+    state: &ScopeState<'scope>,
     id: RawId,
     mode: EvaluationMode,
 ) -> EvaluationResult<'scope, bool> {
@@ -697,7 +697,7 @@ fn run_node<'scope>(
 }
 
 pub(crate) fn run_initial<'scope>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
+    state: &ScopeState<'scope>,
     id: RawId,
 ) -> EvaluationResult<'scope, ()> {
     match run_node(state, id, EvaluationMode::Initial)? {
@@ -706,7 +706,7 @@ pub(crate) fn run_initial<'scope>(
     }
 }
 
-pub(crate) fn flush_if_idle<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>) {
+pub(crate) fn flush_if_idle<'scope>(state: &ScopeState<'scope>) {
     let scheduler = state.borrow().scheduler.clone();
     let should_flush = scheduler.borrow().should_flush();
     if should_flush {

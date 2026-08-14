@@ -17,13 +17,13 @@ note: required by a bound in `require_send`
 3 | fn require_send<T: Send>() {}
   |                    ^^^^ required by this bound in `require_send`
 
-error[E0277]: `Rc<RefCell<silex_reactivity::runtime::model::ScopeState<'static>>>` cannot be shared between threads safely
+error[E0277]: `Rc<RefCell<silex_reactivity::runtime::model::ScopeStateInner<'static>>>` cannot be shared between threads safely
  --> tests/ui/fail_send_handler.rs:6:20
   |
 6 |     require_send::<ErrorHandler<'static, ()>>();
-  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^ `Rc<RefCell<silex_reactivity::runtime::model::ScopeState<'static>>>` cannot be shared between threads safely
+  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^ `Rc<RefCell<silex_reactivity::runtime::model::ScopeStateInner<'static>>>` cannot be shared between threads safely
   |
-  = help: within `silex_reactivity::scope::ScopeStorage`, the trait `Sync` is not implemented for `Rc<RefCell<silex_reactivity::runtime::model::ScopeState<'static>>>`
+  = help: within `silex_reactivity::scope::ScopeStorage`, the trait `Sync` is not implemented for `Rc<RefCell<silex_reactivity::runtime::model::ScopeStateInner<'static>>>`
 note: required because it appears within the type `silex_reactivity::scope::ScopeStorage`
  --> src/scope.rs
   |

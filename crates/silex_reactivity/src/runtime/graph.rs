@@ -1,15 +1,13 @@
 //! Dependency tracking and node subscription operations on ScopeState.
 
 use super::{
-    model::{DependencyTransaction, EdgeId, NodeState, ReactiveEdge, ScopeState},
-    scheduler::{
-        ActiveObserver, Observer, ScheduledTask, TargetNode, TrackingContext, active_ctx,
-    },
+    model::{DependencyTransaction, EdgeId, NodeState, ReactiveEdge, ScopeState, ScopeStateInner},
+    scheduler::{ActiveObserver, Observer, ScheduledTask, TargetNode, TrackingContext, active_ctx},
 };
 use crate::{ReactiveError, ReactiveResult, handle::NodeKindTag, internal::RawId};
-use std::{cell::RefCell, collections::VecDeque, rc::Rc};
+use std::{collections::VecDeque, rc::Rc};
 
-impl<'scope> ScopeState<'scope> {
+impl<'scope> ScopeStateInner<'scope> {
     pub(crate) fn begin_dependency_transaction(&mut self, observer: RawId) {
         let previous = self
             .dependency_edges_of(observer)
@@ -351,10 +349,7 @@ impl<'scope> ScopeState<'scope> {
             .is_some_and(|node| node.is_computation())
     }
 
-    fn observer_state(
-        &self,
-        active: &ActiveObserver,
-    ) -> ReactiveResult<Rc<RefCell<ScopeState<'scope>>>> {
+    fn observer_state(&self, active: &ActiveObserver) -> ReactiveResult<ScopeState<'scope>> {
         active
             .scheduler
             .borrow()
@@ -377,7 +372,7 @@ impl<'scope> ScopeState<'scope> {
             return Err(ReactiveError::RuntimeMismatch);
         }
         let observer_scope = self.observer_state(active)?;
-        let same_scope = Rc::ptr_eq(&observer_scope, &self.scheduler_state());
+        let same_scope = Rc::ptr_eq(observer_scope.inner(), self.scheduler_state().inner());
         if same_scope
             && self.observer_is_computation(active.observer)
             && active.observer.node == target
@@ -405,7 +400,7 @@ impl<'scope> ScopeState<'scope> {
         Ok(Some(ctx))
     }
 
-    fn scheduler_state(&self) -> Rc<RefCell<ScopeState<'scope>>> {
+    fn scheduler_state(&self) -> ScopeState<'scope> {
         self.scheduler
             .borrow()
             .get_scope_for_edge_cleanup(self.scope_id)
@@ -435,7 +430,7 @@ impl<'scope> ScopeState<'scope> {
             scope_id: active.observer.scope_id,
             node: active.observer.node,
         };
-        if Rc::ptr_eq(&observer_scope, &self.scheduler_state()) {
+        if Rc::ptr_eq(observer_scope.inner(), self.scheduler_state().inner()) {
             if active.observer.node == target || !self.observer_is_computation(active.observer) {
                 return Err(ReactiveError::Reentrant);
             }

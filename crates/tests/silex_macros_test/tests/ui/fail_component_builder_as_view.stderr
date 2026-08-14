@@ -1,10 +1,10 @@
 error[E0277]: the trait bound `BuilderAsViewBuilder<'_, silex_core::SilexContext<'_>>: silex_dom::view::View<'_>` is not satisfied
-  --> tests/ui/fail_component_builder_as_view.rs:25:13
+  --> tests/ui/fail_component_builder_as_view.rs:24:13
    |
-24 |         let _ = AnyView::new(
+23 |         let _ = AnyView::new(
    |                 ------------ required by a bound introduced by this call
-25 |             BuilderAsView(ctx, AnyView::Empty),
-   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+24 |             BuilderAsView(ctx, AnyView::Empty),
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
    |
 help: the trait `Fn()` is not implemented for `BuilderAsViewBuilder<'_, silex_core::SilexContext<'_>>`
   --> tests/ui/fail_component_builder_as_view.rs:9:1

@@ -43,8 +43,7 @@ pub(crate) fn active_ctx() -> Option<TrackingContext> {
 #[cfg(feature = "test-support")]
 pub(crate) fn active_observer_for(scheduler: &Rc<RefCell<GlobalScheduler>>) -> Option<Observer> {
     active_ctx().and_then(|ctx| {
-        ctx
-            .observer
+        ctx.observer
             .and_then(|active| Rc::ptr_eq(&active.scheduler, scheduler).then_some(active.observer))
     })
 }
@@ -234,10 +233,7 @@ impl GlobalScheduler {
         self.epoch
     }
 
-    pub(crate) fn alloc_scope<'scope>(
-        &mut self,
-        state: &Rc<RefCell<ScopeState<'scope>>>,
-    ) -> ScopeId {
+    pub(crate) fn alloc_scope<'scope>(&mut self, state: &ScopeState<'scope>) -> ScopeId {
         let id = self.free_scope_ids.pop().unwrap_or_else(|| {
             let id = self.next_scope_id;
             self.next_scope_id = self.next_scope_id.wrapping_add(1);
@@ -302,7 +298,7 @@ impl GlobalScheduler {
             .collect()
     }
 
-    pub(crate) fn get_scope<'scope>(&self, id: ScopeId) -> Option<Rc<RefCell<ScopeState<'scope>>>> {
+    pub(crate) fn get_scope<'scope>(&self, id: ScopeId) -> Option<ScopeState<'scope>> {
         if !self.is_scope_active(id) {
             return None;
         }
@@ -312,11 +308,11 @@ impl GlobalScheduler {
     pub(crate) fn get_scope_for_edge_cleanup<'scope>(
         &self,
         id: ScopeId,
-    ) -> Option<Rc<RefCell<ScopeState<'scope>>>> {
+    ) -> Option<ScopeState<'scope>> {
         self.get_registered_scope(id)
     }
 
-    fn get_registered_scope<'scope>(&self, id: ScopeId) -> Option<Rc<RefCell<ScopeState<'scope>>>> {
+    fn get_registered_scope<'scope>(&self, id: ScopeId) -> Option<ScopeState<'scope>> {
         let entry = self.scopes.get(id.0 as usize)?.as_ref()?;
         entry.owner.upgrade().map(|owner| owner.state())
     }
@@ -352,10 +348,7 @@ mod tests {
     #[test]
     fn scope_slots_are_reused_only_after_release() {
         let scheduler = GlobalScheduler::new();
-        let first = std::rc::Rc::new(std::cell::RefCell::new(ScopeState::new(
-            ScopeId(0),
-            scheduler.clone(),
-        )));
+        let first = ScopeState::new(ScopeId(0), scheduler.clone());
         let first_id = scheduler.borrow_mut().alloc_scope(&first);
         first.borrow_mut().scope_id = first_id;
         scheduler.borrow_mut().deactivate_scope(first_id);
@@ -366,10 +359,7 @@ mod tests {
                 .is_some()
         );
 
-        let second = std::rc::Rc::new(std::cell::RefCell::new(ScopeState::new(
-            ScopeId(0),
-            scheduler.clone(),
-        )));
+        let second = ScopeState::new(ScopeId(0), scheduler.clone());
         let second_id = scheduler.borrow_mut().alloc_scope(&second);
         assert_ne!(first_id, second_id);
 
@@ -381,10 +371,7 @@ mod tests {
                 .is_none()
         );
 
-        let third = std::rc::Rc::new(std::cell::RefCell::new(ScopeState::new(
-            ScopeId(0),
-            scheduler.clone(),
-        )));
+        let third = ScopeState::new(ScopeId(0), scheduler.clone());
         let third_id = scheduler.borrow_mut().alloc_scope(&third);
 
         assert_eq!(first_id, third_id);

@@ -495,10 +495,9 @@ mod tests {
 
     #[test]
     fn deduplicates_repeated_explicit_sources() {
-        let input: TokenStream2 =
-            "::silex_core; @ctx ctx; $(settings.theme) == $(settings.theme)"
-                .parse()
-                .unwrap();
+        let input: TokenStream2 = "::silex_core; @ctx ctx; $(settings.theme) == $(settings.theme)"
+            .parse()
+            .unwrap();
         let output = expand(input).unwrap().to_string();
 
         assert_eq!(output.matches("promote").count(), 1);

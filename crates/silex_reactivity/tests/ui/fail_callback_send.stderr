@@ -1,10 +1,10 @@
-error[E0277]: `Rc<RefCell<silex_reactivity::runtime::model::ScopeState<'static>>>` cannot be shared between threads safely
+error[E0277]: `Rc<RefCell<silex_reactivity::runtime::model::ScopeStateInner<'static>>>` cannot be shared between threads safely
  --> tests/ui/fail_callback_send.rs:6:20
   |
 6 |     require_send::<Callback<'static, ()>>();
-  |                    ^^^^^^^^^^^^^^^^^^^^^ `Rc<RefCell<silex_reactivity::runtime::model::ScopeState<'static>>>` cannot be shared between threads safely
+  |                    ^^^^^^^^^^^^^^^^^^^^^ `Rc<RefCell<silex_reactivity::runtime::model::ScopeStateInner<'static>>>` cannot be shared between threads safely
   |
-  = help: within `silex_reactivity::scope::ScopeStorage`, the trait `Sync` is not implemented for `Rc<RefCell<silex_reactivity::runtime::model::ScopeState<'static>>>`
+  = help: within `silex_reactivity::scope::ScopeStorage`, the trait `Sync` is not implemented for `Rc<RefCell<silex_reactivity::runtime::model::ScopeStateInner<'static>>>`
 note: required because it appears within the type `silex_reactivity::scope::ScopeStorage`
  --> src/scope.rs
   |

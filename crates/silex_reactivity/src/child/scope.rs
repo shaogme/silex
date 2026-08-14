@@ -52,7 +52,7 @@ impl<'scope> PartialEq for Scope<'scope> {
 impl<'scope> Eq for Scope<'scope> {}
 
 impl<'scope> Scope<'scope> {
-    fn state(&self) -> Rc<RefCell<runtime::ScopeState<'scope>>> {
+    fn state(&self) -> runtime::ScopeState<'scope> {
         self.storage.owner_token(PhantomData).state()
     }
 
@@ -463,11 +463,11 @@ pub struct OwnedScope<'scope> {
 }
 
 impl<'scope> OwnedScope<'scope> {
-    fn state<'owner>(&'owner self) -> Rc<RefCell<runtime::ScopeState<'owner>>> {
+    fn state<'owner>(&'owner self) -> runtime::ScopeState<'owner> {
         self.storage.owner_token(PhantomData).state()
     }
 
-    fn new(scheduler: std::rc::Rc<std::cell::RefCell<crate::runtime::GlobalScheduler>>) -> Self {
+    fn new(scheduler: Rc<RefCell<runtime::GlobalScheduler>>) -> Self {
         Self {
             storage: Box::new(ScopeStorage::new(scheduler)),
             active: Cell::new(true),
@@ -703,7 +703,7 @@ mod tests {
         }
     }
 
-    fn snapshot<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>) -> Snapshot {
+    fn snapshot<'scope>(state: &ScopeState<'scope>) -> Snapshot {
         let state_ref = state.borrow();
         let queue = state_ref.scheduler.borrow().global_queue.len();
         Snapshot {
@@ -817,25 +817,34 @@ mod tests {
 
     struct DropProbe<'scope> {
         scope: Scope<'scope>,
-        state: Rc<RefCell<ScopeState<'scope>>>,
+        state: ScopeState<'scope>,
         expected: Snapshot,
         observations: Observations,
     }
 
-    type Observations = Rc<RefCell<Vec<(Snapshot, Vec<ReactiveResult<()>>)>>>;
+    #[derive(Debug, PartialEq, Eq)]
+    struct Observation {
+        snapshot: Snapshot,
+        results: Vec<ReactiveResult<()>>,
+    }
+
+    type Observations = Rc<RefCell<Vec<Observation>>>;
 
     impl Drop for DropProbe<'_> {
         fn drop(&mut self) {
             let result = rejected_creations(self.scope);
             let actual = snapshot(&self.state);
             assert_eq!(actual, self.expected);
-            self.observations.borrow_mut().push((actual, result));
+            self.observations.borrow_mut().push(Observation {
+                snapshot: actual,
+                results: result,
+            });
         }
     }
 
     fn drop_probe<'scope>(
         scope: Scope<'scope>,
-        state: Rc<RefCell<ScopeState<'scope>>>,
+        state: ScopeState<'scope>,
         expected: Snapshot,
         observations: Observations,
     ) -> DropProbe<'scope> {
@@ -915,15 +924,16 @@ mod tests {
 
         let observations = observations.borrow();
         assert_eq!(observations.len(), 3);
-        for (_, result) in observations.iter() {
+        for observation in observations.iter() {
             assert!(
-                result
+                observation
+                    .results
                     .iter()
                     .all(|value| *value == Err(ReactiveError::NoSuchNode))
             );
         }
         assert_eq!(
-            observations[0].0,
+            observations[0].snapshot,
             Snapshot {
                 nodes: 2,
                 data: 2,
@@ -933,7 +943,7 @@ mod tests {
             }
         );
         assert_eq!(
-            observations[1].0,
+            observations[1].snapshot,
             Snapshot {
                 nodes: 1,
                 data: 1,
@@ -943,7 +953,7 @@ mod tests {
             }
         );
         assert_eq!(
-            observations[2].0,
+            observations[2].snapshot,
             Snapshot {
                 nodes: 0,
                 data: 0,

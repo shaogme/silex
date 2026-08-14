@@ -1,8 +1,8 @@
 error[E0277]: the trait bound `ReadSignal<'_, Hex>: silex_dom::view::View<'_>` is not satisfied
-  --> tests/ui/fail_macro_styled_child_escape.rs:27:30
+  --> tests/ui/fail_macro_styled_child_escape.rs:27:26
    |
 27 |         ScopedPanel(ctx, color, color)
-   |         -----------          ^^^^^ the trait `silex_dom::view::View<'_>` is not implemented for `ReadSignal<'_, Hex>`
+   |         -----------      ^^^^^ the trait `silex_dom::view::View<'_>` is not implemented for `ReadSignal<'_, Hex>`
    |         |
    |         required by a bound introduced by this call
    |

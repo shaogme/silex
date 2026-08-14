@@ -13,8 +13,8 @@
 //! operation; it does not extend the lifetime of payloads beyond the owner.
 
 use crate::{
-    runtime::ScopeState,
     runtime::storage::{CallbackThunk, TypedNodeRef, TypedSlot},
+    runtime::{ScopeState, ScopeStateInner},
 };
 use std::{
     cell::RefCell,
@@ -23,7 +23,7 @@ use std::{
     rc::{Rc, Weak},
 };
 
-pub(crate) type ErasedScopeState = RefCell<ScopeState<'static>>;
+pub(crate) type ErasedScopeState = RefCell<ScopeStateInner<'static>>;
 
 /// A typed capability to access one owner while its lexical lifetime is live.
 pub(crate) struct OwnerToken<'scope> {
@@ -52,8 +52,8 @@ impl<'scope> OwnerToken<'scope> {
     }
 
     /// Return the state with the lifetime carried by this owner token.
-    pub(crate) fn state(&self) -> Rc<RefCell<ScopeState<'scope>>> {
-        restore_state(self.state.clone())
+    pub(crate) fn state(&self) -> ScopeState<'scope> {
+        ScopeState::from_inner(restore_state(self.state.clone()))
     }
 }
 
@@ -64,8 +64,8 @@ pub(crate) struct WeakOwnerToken {
 }
 
 impl WeakOwnerToken {
-    pub(crate) fn from_typed<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>) -> Self {
-        let erased = erase_state(state.clone());
+    pub(crate) fn from_typed<'scope>(state: &ScopeState<'scope>) -> Self {
+        let erased = erase_state(state.inner().clone());
         Self {
             state: Rc::downgrade(&erased),
         }
@@ -83,7 +83,7 @@ impl WeakOwnerToken {
 }
 
 /// Erase only the lifetime parameter while retaining the exact `Rc` identity.
-fn erase_state<'scope>(state: Rc<RefCell<ScopeState<'scope>>>) -> Rc<ErasedScopeState> {
+fn erase_state<'scope>(state: Rc<RefCell<ScopeStateInner<'scope>>>) -> Rc<ErasedScopeState> {
     // SAFETY: `OwnerToken` is the only API that can restore this representation.
     // The owner controls disposal, and all weak users are gated by the scheduler
     // registry before they can create a typed token.
@@ -91,7 +91,7 @@ fn erase_state<'scope>(state: Rc<RefCell<ScopeState<'scope>>>) -> Rc<ErasedScope
 }
 
 /// Restore a state lifetime under the proof carried by `OwnerToken`.
-fn restore_state<'scope>(state: Rc<ErasedScopeState>) -> Rc<RefCell<ScopeState<'scope>>> {
+fn restore_state<'scope>(state: Rc<ErasedScopeState>) -> Rc<RefCell<ScopeStateInner<'scope>>> {
     // SAFETY: callers can obtain a typed state only through `OwnerToken`; its
     // lifetime is supplied by the lexical owner or by a validated registry
     // lookup. Disposal removes registry access before owner payloads are dropped.
@@ -147,7 +147,7 @@ mod tests {
     fn store_borrowed<'scope>(
         storage: &'scope ScopeStorage,
         value: &'scope str,
-    ) -> Rc<RefCell<ScopeState<'scope>>> {
+    ) -> ScopeState<'scope> {
         let state = storage.owner_token(PhantomData).state();
         let slot = storage.alloc_slot(value);
         state

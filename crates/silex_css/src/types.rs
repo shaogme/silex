@@ -609,9 +609,7 @@ mod tests {
             )*};
         }
             for_all_length_units!(check);
-            let _ = Style::new(ctx)
-                .width(pct(50))
-                .expect("width should build");
+            let _ = Style::new(ctx).width(pct(50)).expect("width should build");
             let _ = pct(50) + px(1);
         });
     }

@@ -19,22 +19,19 @@ pub fn ListDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
         h3("List Rendering with Error Handling"),
         p("Demonstrates explicit error handling in For component to avoid crashes."),
         // Error display
-        Show(
-            ctx,
-            error_msg.map(scope, |e| e.is_some(), error_handler)?,
-        )
-        .children(
-            div(rx!(ctx; $error_msg.clone().unwrap_or_default())).style(
-                sty(ctx)
-                    .color(hex("#d32f2f"))?
-                    .background(hex("#ffebee"))?
-                    .padding(px(10))?
-                    .border_radius(px(4))?
-                    .margin_bottom(px(10))?
-                    .border(format!("1px solid {}", hex("#ef9a9a")))?,
+        Show(ctx, error_msg.map(scope, |e| e.is_some(), error_handler)?,)
+            .children(
+                div(rx!(ctx; $error_msg.clone().unwrap_or_default())).style(
+                    sty(ctx)
+                        .color(hex("#d32f2f"))?
+                        .background(hex("#ffebee"))?
+                        .padding(px(10))?
+                        .border_radius(px(4))?
+                        .margin_bottom(px(10))?
+                        .border(format!("1px solid {}", hex("#ef9a9a")))?,
+                )
             )
-        )
-        .build(),
+            .build(),
         ul(For(ctx, list, |item| item.clone())
             .children(|item, _idx| li(item))
             .row_error_handler(list_error_handler)
@@ -68,12 +65,7 @@ pub fn ListDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                 Ok(())
             }),
         ]
-        .style(
-            sty(ctx)
-                .display("flex")?
-                .gap(px(10))?
-                .margin_top(px(10))?
-        ),
+        .style(sty(ctx).display("flex")?.gap(px(10))?.margin_top(px(10))?),
     ])
 }
 
@@ -163,8 +155,7 @@ pub fn SwitchDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
         )?
         .case(
             1,
-            div("Content for Tab 2")
-                .style(sty(ctx).padding(px(10))?.background(AppTheme::BORDER)?),
+            div("Content for Tab 2").style(sty(ctx).padding(px(10))?.background(AppTheme::BORDER)?),
         )?
         .case(
             2,
@@ -231,11 +222,11 @@ pub fn PortalDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                         ]
                         .style(
                             sty(ctx)
-                            .background(AppTheme::SURFACE)?
-                            .padding(px(20))?
-                            .border_radius(px(8))?
-                            .box_shadow("0 4px 12px rgba(0,0,0,0.2)")?
-                            .min_width(px(300))?
+                                .background(AppTheme::SURFACE)?
+                                .padding(px(20))?
+                                .border_radius(px(8))?
+                                .box_shadow("0 4px 12px rgba(0,0,0,0.2)")?
+                                .min_width(px(300))?
                         )
                     ]
                     .style(

@@ -247,11 +247,7 @@ pub fn EventDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
             p(name.map_fn(scope, |n| format!("Current Name: {}", n), error_handler)?),
             p(count.map(scope, |c| format!("Current Count: {}", c), error_handler)?),
         ]
-        .style(
-            sty(ctx)
-                .margin_bottom(px(10))?
-                .font_family("monospace")?
-        ),
+        .style(sty(ctx).margin_bottom(px(10))?.font_family("monospace")?),
         button("Log & Update (Standard)")
             .on(event::click, on_click)
             .style(sty(ctx).margin_right(px(10))?),

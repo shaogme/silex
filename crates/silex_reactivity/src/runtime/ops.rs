@@ -4,24 +4,25 @@ use super::{
     dispose::dispose_nodes,
     eval::{EvaluationError, flush_if_idle, prepare_fallible_read, prepare_read},
     model::{ScopeState, StoredAccessMode},
-    scheduler::{GlobalScheduler, TargetNode},
+    scheduler::{GlobalScheduler, ObserverFrame, TargetNode},
     storage::{CallbackThunk, CallbackThunkError, TypedNodeRef},
 };
 use crate::{
     CallbackInvokeError, CallbackInvokeResult, ReactiveError, ReactiveResult,
-    error::{ErrorHandlerCall, ErrorHandlerKey},
+    error::{ErrorHandlerCall, ErrorHandlerKey, ErrorSlot},
     handle::NodeKindTag,
     internal::RawId,
     scope::ScopeStorage,
 };
 use std::{
     cell::RefCell,
+    marker::PhantomData,
     panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
     rc::Rc,
 };
 
 fn value_scheduler<'scope>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
+    state: &ScopeState<'scope>,
     id: RawId,
     reactive: bool,
 ) -> ReactiveResult<Rc<RefCell<GlobalScheduler>>> {
@@ -33,7 +34,7 @@ fn value_scheduler<'scope>(
 }
 
 fn stored_scheduler<'scope>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
+    state: &ScopeState<'scope>,
     id: RawId,
 ) -> ReactiveResult<(Rc<RefCell<GlobalScheduler>>, StoredAccessMode)> {
     let state_ref = state
@@ -44,7 +45,7 @@ fn stored_scheduler<'scope>(
 }
 
 fn node_ref_scheduler<'scope>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
+    state: &ScopeState<'scope>,
     id: RawId,
 ) -> ReactiveResult<Rc<RefCell<GlobalScheduler>>> {
     let state_ref = state
@@ -63,7 +64,7 @@ pub(crate) fn invoke_error_handler<'scope, E>(
 where
     E: 'scope,
 {
-    let state = storage.owner_token(std::marker::PhantomData).state();
+    let state = storage.owner_token(PhantomData).state();
     {
         let state_ref = state
             .try_borrow()
@@ -89,7 +90,7 @@ fn read_typed<'scope, T, R>(
 }
 
 pub(crate) fn with_signal<'scope, T, R>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
+    state: &ScopeState<'scope>,
     id: RawId,
     value: TypedNodeRef<'scope, T>,
     track: bool,
@@ -103,10 +104,10 @@ pub(crate) fn with_signal<'scope, T, R>(
 }
 
 pub(crate) fn with_fallible_signal<'scope, T, E, R>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
+    state: &ScopeState<'scope>,
     id: RawId,
     value: TypedNodeRef<'scope, T>,
-    errors: &'scope crate::error::ErrorSlot<E>,
+    errors: &'scope ErrorSlot<E>,
     track: bool,
     f: impl FnOnce(&T) -> Result<R, ReactiveError>,
 ) -> CallbackInvokeResult<R, E>
@@ -134,7 +135,7 @@ where
     result.map_err(CallbackInvokeError::Runtime)
 }
 
-fn commit_signal<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> ReactiveResult<()> {
+fn commit_signal<'scope>(state: &ScopeState<'scope>, id: RawId) -> ReactiveResult<()> {
     let mut state_ref = state
         .try_borrow_mut()
         .map_err(|_| ReactiveError::BorrowConflict)?;
@@ -153,7 +154,7 @@ fn commit_signal<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> 
 }
 
 pub(crate) fn update_signal<'scope, T, R>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
+    state: &ScopeState<'scope>,
     id: RawId,
     value: TypedNodeRef<'scope, T>,
     f: impl FnOnce(&mut T) -> (R, bool),
@@ -171,7 +172,7 @@ pub(crate) fn update_signal<'scope, T, R>(
 }
 
 pub(crate) fn with_stored<'scope, T, R>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
+    state: &ScopeState<'scope>,
     id: RawId,
     value: TypedNodeRef<'scope, T>,
     f: impl FnOnce(&T) -> R,
@@ -185,7 +186,7 @@ pub(crate) fn with_stored<'scope, T, R>(
 }
 
 pub(crate) fn update_stored<'scope, T, R>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
+    state: &ScopeState<'scope>,
     id: RawId,
     value: TypedNodeRef<'scope, T>,
     f: impl FnOnce(&mut T) -> R,
@@ -202,7 +203,7 @@ pub(crate) fn update_stored<'scope, T, R>(
 }
 
 pub(crate) fn node_ref_get<'scope, T: Clone>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
+    state: &ScopeState<'scope>,
     id: RawId,
     value: TypedNodeRef<'scope, Option<T>>,
 ) -> ReactiveResult<Option<T>> {
@@ -211,7 +212,7 @@ pub(crate) fn node_ref_get<'scope, T: Clone>(
 }
 
 pub(crate) fn node_ref_set<'scope, T>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
+    state: &ScopeState<'scope>,
     id: RawId,
     slot: TypedNodeRef<'scope, Option<T>>,
     value: T,
@@ -226,7 +227,7 @@ pub(crate) fn node_ref_set<'scope, T>(
 }
 
 pub(crate) fn node_ref_clear<'scope, T>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
+    state: &ScopeState<'scope>,
     id: RawId,
     slot: TypedNodeRef<'scope, Option<T>>,
 ) -> ReactiveResult<()> {
@@ -240,7 +241,7 @@ pub(crate) fn node_ref_clear<'scope, T>(
 }
 
 pub(crate) fn invoke_callback<'scope, T, E>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
+    state: &ScopeState<'scope>,
     id: RawId,
     callback: TypedNodeRef<'scope, CallbackThunk<'scope, T, E>>,
     arg: T,
@@ -271,10 +272,7 @@ where
     result
 }
 
-pub(crate) fn stop_effect<'scope>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
-    id: RawId,
-) -> ReactiveResult<bool> {
+pub(crate) fn stop_effect<'scope>(state: &ScopeState<'scope>, id: RawId) -> ReactiveResult<bool> {
     let (scheduler, target) = {
         let state_ref = state
             .try_borrow()
@@ -309,10 +307,7 @@ pub(crate) fn stop_effect<'scope>(
     Ok(true)
 }
 
-pub(crate) fn notify<'scope>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
-    id: RawId,
-) -> ReactiveResult<()> {
+pub(crate) fn notify<'scope>(state: &ScopeState<'scope>, id: RawId) -> ReactiveResult<()> {
     let should_flush = {
         let mut state_ref = state
             .try_borrow_mut()
@@ -334,12 +329,9 @@ pub(crate) fn notify<'scope>(
     Ok(())
 }
 
-pub(crate) fn with_untracked<'scope, R>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
-    f: impl FnOnce() -> R,
-) -> R {
+pub(crate) fn with_untracked<'scope, R>(state: &ScopeState<'scope>, f: impl FnOnce() -> R) -> R {
     let scheduler = state.borrow().scheduler.clone();
-    let frame = super::scheduler::ObserverFrame::push_untracked(scheduler);
+    let frame = ObserverFrame::push_untracked(scheduler);
     let result = catch_unwind(AssertUnwindSafe(f));
     drop(frame);
     match result {
@@ -348,10 +340,7 @@ pub(crate) fn with_untracked<'scope, R>(
     }
 }
 
-pub(crate) fn with_batch<'scope, R>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
-    f: impl FnOnce() -> R,
-) -> R {
+pub(crate) fn with_batch<'scope, R>(state: &ScopeState<'scope>, f: impl FnOnce() -> R) -> R {
     let scheduler = state.borrow().scheduler.clone();
     scheduler.borrow_mut().batch_depth += 1;
     let result = catch_unwind(AssertUnwindSafe(f));

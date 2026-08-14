@@ -2,7 +2,12 @@ use crate::{
     runtime::{self, GlobalScheduler, ScopeId, ScopeState, run_global_queue},
     unsafe_boundary::{ErasedScopeState, OwnerToken},
 };
-use std::{cell::RefCell, marker::PhantomData, rc::Rc};
+use std::{
+    cell::RefCell,
+    marker::PhantomData,
+    panic::{AssertUnwindSafe, catch_unwind},
+    rc::Rc,
+};
 
 /// Stable storage for one lexical scope and its lifetime-bound payloads.
 pub(crate) struct ScopeStorage {
@@ -25,7 +30,7 @@ impl DisposePhaseGuard {
     }
 
     fn finish(&mut self) -> Result<(), Box<dyn std::any::Any + Send>> {
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let result = catch_unwind(AssertUnwindSafe(|| {
             self.state.borrow_mut().finish_dispose();
         }));
         if result.is_ok() {
@@ -40,7 +45,7 @@ impl Drop for DisposePhaseGuard {
         if self.finished {
             return;
         }
-        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = catch_unwind(AssertUnwindSafe(|| {
             self.state.borrow_mut().finish_dispose();
         }));
     }
@@ -48,13 +53,12 @@ impl Drop for DisposePhaseGuard {
 
 impl ScopeStorage {
     pub(crate) fn new(scheduler: Rc<RefCell<GlobalScheduler>>) -> Self {
-        let state: Rc<ErasedScopeState> =
-            Rc::new(RefCell::new(ScopeState::new(ScopeId(0), scheduler.clone())));
+        let state = ScopeState::new(ScopeId(0), scheduler.clone());
         let scope_id = scheduler.borrow_mut().alloc_scope(&state);
         state.borrow_mut().scope_id = scope_id;
         Self {
             scope_id,
-            state,
+            state: state.into_inner(),
             arena: bumpalo::Bump::new(),
         }
     }
@@ -107,27 +111,28 @@ impl ScopeStorage {
             }
             state.scheduler.clone()
         };
+        let typed_state = self.owner_token(PhantomData).state();
         let mut phase_guard = DisposePhaseGuard::new(self.state.clone());
-        let deactivate_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let deactivate_result = catch_unwind(AssertUnwindSafe(|| {
             scheduler.borrow_mut().deactivate_scope(self.scope_id);
         }));
-        let dispose_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            runtime::dispose_all(&self.state);
+        let dispose_result = catch_unwind(AssertUnwindSafe(|| {
+            runtime::dispose_all(&typed_state);
         }));
         let finish_result = phase_guard.finish();
-        let flush_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let flush_result = catch_unwind(AssertUnwindSafe(|| {
             let should_flush = scheduler.borrow().should_flush();
             if should_flush {
                 run_global_queue(&scheduler);
             }
         }));
-        let clear_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let clear_result = catch_unwind(AssertUnwindSafe(|| {
             let handlers = self.state.borrow_mut().take_error_handlers();
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            catch_unwind(AssertUnwindSafe(|| {
                 ScopeState::drop_error_handlers(handlers);
             }))
         }));
-        let release_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let release_result = catch_unwind(AssertUnwindSafe(|| {
             assert!(
                 self.state.borrow().ready_for_scope_release(),
                 "scope registry entry cannot be released before node and edge cleanup"

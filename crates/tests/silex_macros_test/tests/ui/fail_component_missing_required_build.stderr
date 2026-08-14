@@ -1,12 +1,12 @@
 error[E0599]: no method named `build` found for struct `MissingRequiredBuildBuilder<'_, PropMissing, silex_core::SilexContext<'_>>` in the current scope
-  --> tests/ui/fail_component_missing_required_build.rs:26:14
+  --> tests/ui/fail_component_missing_required_build.rs:25:14
    |
  9 |   #[component]
    |   ------------ method `build` not found for this struct
 ...
-25 |           let _ = MissingRequiredBuild(ctx, AnyView::Empty)
+24 |           let _ = MissingRequiredBuild(ctx, AnyView::Empty)
    |  _________________-
-26 | |             .build();
+25 | |             .build();
    | |             -^^^^^ method not found in `MissingRequiredBuildBuilder<'_, PropMissing, silex_core::SilexContext<'_>>`
    | |_____________|
    |

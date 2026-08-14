@@ -480,8 +480,7 @@ impl BuilderContext {
         let ctx_field = self.ctx_field.as_ref();
         let setter_generic = self.reactive_input_generic_ident();
         let scope_expr = if reactive_input {
-            let ctx_field =
-                ctx_field.expect("reactive input setters require a ctx field");
+            let ctx_field = ctx_field.expect("reactive input setters require a ctx field");
             if field.required {
                 quote! {
                     #__silex::core::SilexContextProvider::scope(&#ctx_field)

@@ -479,8 +479,7 @@ fn query_memo_handles_empty_multiple_duplicate_delete_and_reactive_changes() {
         assert_eq!(initial.get("second"), Some(&String::from("two")));
         assert_eq!(initial.get("tag"), Some(&String::from("last")));
 
-        ctx
-            .navigator
+        ctx.navigator
             .set_query("tag", None)
             .expect("query key should be removed");
         let after_delete = query.get().expect("query should be readable");

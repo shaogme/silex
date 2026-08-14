@@ -1,8 +1,8 @@
 error[E0599]: no method named `mandatory` found for struct `ProductRequiredSetterComponent<'scope, Ctx>` in the current scope
-  --> tests/ui/fail_component_product_required_setter.rs:28:25
+  --> tests/ui/fail_component_product_required_setter.rs:27:25
    |
  9 | #[component]
    | ------------ method `mandatory` not found for this struct
 ...
-28 |         let _ = product.mandatory(String::from("replacement"));
+27 |         let _ = product.mandatory(String::from("replacement"));
    |                         ^^^^^^^^^ method not found in `ProductRequiredSetterComponent<'_, silex_core::SilexContext<'_>>`

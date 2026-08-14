@@ -15,6 +15,11 @@ use std::{
     rc::Rc,
 };
 
+struct ActiveOwner<'scope> {
+    owner: OwnerToken<'scope>,
+    state: ScopeState<'scope>,
+}
+
 /// Wrap a repeating callback with an explicit unwind-safety assertion.
 ///
 /// `AssertUnwindSafe` itself only implements `FnOnce`; this adapter preserves
@@ -61,9 +66,7 @@ impl<T, E> CompletionState<T, E> {
         }
     }
 
-    fn current_owner<'scope>(
-        &self,
-    ) -> Result<Option<(OwnerToken<'scope>, Rc<RefCell<ScopeState<'scope>>>)>, ReactiveError> {
+    fn current_owner<'scope>(&self) -> Result<Option<ActiveOwner<'scope>>, ReactiveError> {
         if !self
             .scheduler
             .try_borrow()
@@ -77,18 +80,14 @@ impl<T, E> CompletionState<T, E> {
             return Ok(None);
         };
         let state = owner.state();
-        Ok(Some((owner, state)))
+        Ok(Some(ActiveOwner { owner, state }))
     }
 
-    fn current_state<'scope>(
-        &self,
-    ) -> Result<Option<Rc<RefCell<ScopeState<'scope>>>>, ReactiveError> {
-        Ok(self.current_owner()?.map(|(_, state)| state))
+    fn current_state<'scope>(&self) -> Result<Option<ScopeState<'scope>>, ReactiveError> {
+        Ok(self.current_owner()?.map(|active| active.state))
     }
 
-    fn begin_once<'scope>(
-        &self,
-    ) -> Result<Option<(OwnerToken<'scope>, Rc<RefCell<ScopeState<'scope>>>)>, ReactiveError> {
+    fn begin_once<'scope>(&self) -> Result<Option<ActiveOwner<'scope>>, ReactiveError> {
         if self.phase.replace(CompletionPhase::Completing) != CompletionPhase::Active {
             return Ok(None);
         }
@@ -114,13 +113,13 @@ impl<T, E> CompletionState<T, E> {
         if self.phase.get() != CompletionPhase::Active {
             return Ok(false);
         }
-        let (owner, state) = match self.current_owner() {
-            Ok(Some(owner)) => owner,
+        let active = match self.current_owner() {
+            Ok(Some(active)) => active,
             Ok(None) => return Ok(false),
             Err(error) => return Err(CallbackThunkError::Runtime(error)),
         };
-        let typed_callback = self.typed_callback.restore(&owner);
-        runtime::invoke_callback(&state, self.callback, typed_callback, value).map(|()| true)
+        let typed_callback = self.typed_callback.restore(&active.owner);
+        runtime::invoke_callback(&active.state, self.callback, typed_callback, value).map(|()| true)
     }
 }
 
@@ -161,7 +160,7 @@ impl<T, E> Drop for CompletionOnce<T, E> {
 
 impl<T: 'static, E> CompletionOnce<T, E> {
     pub fn submit(&self, value: T) -> CompletionSubmitResult<E> {
-        let (owner, state) = match self.state.begin_once() {
+        let ActiveOwner { owner, state } = match self.state.begin_once() {
             Ok(Some(owner)) => owner,
             Ok(None) => return Ok(false),
             Err(error) => {
@@ -237,7 +236,7 @@ impl<T: 'static, E> CompletionSender<T, E> {
 
 fn create_completion_state<'scope, T: 'static, E, F>(
     storage: &'scope ScopeStorage,
-    state: Rc<RefCell<ScopeState<'scope>>>,
+    state: ScopeState<'scope>,
     callback: F,
 ) -> Result<Rc<CompletionState<T, E>>, ReactiveError>
 where
@@ -281,7 +280,7 @@ where
 
 pub(crate) fn create_completion_once<'scope, T: 'static, E, F>(
     storage: &'scope ScopeStorage,
-    state: Rc<RefCell<ScopeState<'scope>>>,
+    state: ScopeState<'scope>,
     callback: F,
 ) -> Result<CompletionOnce<T, E>, ReactiveError>
 where
@@ -296,7 +295,7 @@ where
 
 pub(crate) fn create_completion_sender<'scope, T: 'static, E, F>(
     storage: &'scope ScopeStorage,
-    state: Rc<RefCell<ScopeState<'scope>>>,
+    state: ScopeState<'scope>,
     callback: F,
 ) -> Result<CompletionSender<T, E>, ReactiveError>
 where

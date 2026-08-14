@@ -263,9 +263,7 @@ fn FiltersAndReactivityDemo<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl Vi
 }
 
 #[component]
-fn ThemeSystemAndDiagnosticsDemo<'scope>(
-    #[ctx] ctx: SilexContext<'scope>,
-) -> impl View<'scope> {
+fn ThemeSystemAndDiagnosticsDemo<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
     let theme_box_cls = tw_verbose!(
         "p-4 bg-theme(primary/50) text-theme(border/80) border border-solid border-slate-300 dark:border-slate-700 rounded-2xl shadow-sm transition-colors duration-300"
     );
@@ -291,9 +289,7 @@ fn ThemeSystemAndDiagnosticsDemo<'scope>(
 }
 
 #[component]
-fn ContainerQueriesAndDceDemo<'scope>(
-    #[ctx] ctx: SilexContext<'scope>,
-) -> impl View<'scope> {
+fn ContainerQueriesAndDceDemo<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
     div(chain!(
         div(chain!(
             span("6. Container Queries & DCE").class(tw!("text-xs font-black text-emerald-600 dark:text-emerald-500 uppercase tracking-widest")),
@@ -352,9 +348,7 @@ fn StandardColorPaletteDemo<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl Vi
 }
 
 #[component]
-fn ReactiveConditionalTwDemo<'scope>(
-    #[ctx] ctx: SilexContext<'scope>,
-) -> impl View<'scope> {
+fn ReactiveConditionalTwDemo<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
     let (is_active, set_is_active) = scope.signal(false)?;
 
     let card_cls = tw!(
@@ -452,9 +446,7 @@ fn NewSyntaxExpansionDemo<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View
 }
 
 #[component]
-fn FractionalAndDirectionalDemo<'scope>(
-    #[ctx] ctx: SilexContext<'scope>,
-) -> impl View<'scope> {
+fn FractionalAndDirectionalDemo<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
     div(chain!(
         div(chain!(
             span("10. Fractional Sizing & Inset Positioning").class(tw!("text-xs font-black text-teal-600 dark:text-teal-400 uppercase tracking-widest")),
@@ -590,9 +582,7 @@ fn TailwindVariantsCvaDemo<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl Vie
 }
 
 #[component]
-fn SilexTomlDesignTokensDemo<'scope>(
-    #[ctx] ctx: SilexContext<'scope>,
-) -> impl View<'scope> {
+fn SilexTomlDesignTokensDemo<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
     div(chain!(
         div(chain!(
             span("12. silex.toml & Design Tokens").class(tw!("text-xs font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest")),

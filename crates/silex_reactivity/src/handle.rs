@@ -6,11 +6,9 @@
 
 use crate::{internal::RawId, runtime::ScopeState, scope::ScopeStorage};
 use std::{
-    cell::RefCell,
     fmt,
     hash::{Hash, Hasher},
     marker::PhantomData,
-    rc::Rc,
 };
 
 mod sealed {
@@ -87,7 +85,7 @@ impl<'scope, K: NodeKind> Handle<'scope, K> {
         }
     }
 
-    pub(crate) fn state(&self) -> Rc<RefCell<ScopeState<'scope>>> {
+    pub(crate) fn state(&self) -> ScopeState<'scope> {
         self.storage.owner_token(PhantomData).state()
     }
 

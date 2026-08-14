@@ -20,7 +20,7 @@ pub(crate) use eval::run_global_queue;
 pub(crate) use input::{create_derived, create_effect, create_memo, create_previous, create_watch};
 #[cfg(feature = "test-support")]
 pub use model::RuntimeSnapshot;
-pub(crate) use model::ScopeState;
+pub(crate) use model::{ScopeState, ScopeStateInner};
 pub(crate) use ops::{
     invoke_callback, invoke_error_handler, node_ref_clear, node_ref_get, node_ref_set, notify,
     stop_effect, update_signal, update_stored, with_batch, with_fallible_signal, with_signal,

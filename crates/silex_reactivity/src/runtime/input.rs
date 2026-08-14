@@ -18,11 +18,7 @@ use crate::{
     internal::RawId,
     scope::ScopeStorage,
 };
-use std::{
-    cell::RefCell,
-    panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
-    rc::Rc,
-};
+use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 
 #[derive(Clone, Copy)]
 pub(crate) enum ComputationKind {
@@ -55,7 +51,7 @@ pub(crate) struct TypedComputation<'scope, T, E> {
 }
 
 pub(crate) fn create_computation<'scope>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
+    state: &ScopeState<'scope>,
     spec: ComputationSpec<'scope>,
 ) -> Result<RawId, EvaluationError<'scope>> {
     let active = state
@@ -112,7 +108,7 @@ pub(crate) fn create_computation<'scope>(
 }
 
 fn finish_creation<'scope, E>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
+    state: &ScopeState<'scope>,
     result: Result<RawId, EvaluationError<'scope>>,
     errors: &'scope ErrorSlot<E>,
 ) -> ComputationInitResult<RawId, E> {
@@ -133,7 +129,7 @@ fn finish_creation<'scope, E>(
 
 pub(crate) fn create_effect<'scope, E, F>(
     storage: &'scope ScopeStorage,
-    state: &Rc<RefCell<ScopeState<'scope>>>,
+    state: &ScopeState<'scope>,
     callback: F,
     handler: ErrorHandler<'scope, E>,
 ) -> ComputationInitResult<RawId, E>
@@ -154,7 +150,7 @@ where
 
 pub(crate) fn create_previous<'scope, T, E, F>(
     storage: &'scope ScopeStorage,
-    state: &Rc<RefCell<ScopeState<'scope>>>,
+    state: &ScopeState<'scope>,
     callback: F,
     handler: ErrorHandler<'scope, E>,
 ) -> ComputationInitResult<RawId, E>
@@ -182,7 +178,7 @@ where
 
 pub(crate) fn create_watch<'scope, T, E, G, C>(
     storage: &'scope ScopeStorage,
-    state: &Rc<RefCell<ScopeState<'scope>>>,
+    state: &ScopeState<'scope>,
     getter: G,
     callback: C,
     handler: ErrorHandler<'scope, E>,
@@ -216,7 +212,7 @@ where
 
 pub(crate) fn create_memo<'scope, T, E, F>(
     storage: &'scope ScopeStorage,
-    state: &Rc<RefCell<ScopeState<'scope>>>,
+    state: &ScopeState<'scope>,
     callback: F,
     handler: ErrorHandler<'scope, E>,
 ) -> ComputationInitResult<TypedComputation<'scope, T, E>, E>
@@ -239,7 +235,7 @@ where
 
 pub(crate) fn create_derived<'scope, T, E, F>(
     storage: &'scope ScopeStorage,
-    state: &Rc<RefCell<ScopeState<'scope>>>,
+    state: &ScopeState<'scope>,
     callback: F,
     handler: ErrorHandler<'scope, E>,
 ) -> ComputationInitResult<TypedComputation<'scope, T, E>, E>

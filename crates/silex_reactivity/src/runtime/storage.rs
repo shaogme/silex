@@ -281,8 +281,10 @@ pub(crate) enum CallbackThunkError<E> {
     User(E),
 }
 
+pub(crate) type ThunkCallback<'scope, T, E> = Box<dyn FnMut(T) -> Result<(), E> + 'scope>;
+
 pub(crate) struct CallbackThunk<'scope, T, E> {
-    callback: Box<dyn FnMut(T) -> Result<(), E> + 'scope>,
+    callback: ThunkCallback<'scope, T, E>,
 }
 
 impl<'scope, T, E> CallbackThunk<'scope, T, E> {
@@ -300,8 +302,11 @@ impl<'scope, T, E> CallbackThunk<'scope, T, E> {
     }
 }
 
+pub(crate) type CleanupCallback<'scope> =
+    Box<dyn FnOnce() -> Result<(), ErrorEvent<'scope>> + 'scope>;
+
 pub(crate) struct CleanupThunk<'scope> {
-    callback: Option<Box<dyn FnOnce() -> Result<(), ErrorEvent<'scope>> + 'scope>>,
+    callback: Option<CleanupCallback<'scope>>,
 }
 
 impl<'scope> CleanupThunk<'scope> {
@@ -322,8 +327,11 @@ impl<'scope> CleanupThunk<'scope> {
     }
 }
 
+pub(crate) type EffectCallback<'scope> =
+    Box<dyn FnMut() -> Result<(), ErrorEvent<'scope>> + 'scope>;
+
 pub(crate) struct EffectBehavior<'scope> {
-    callback: Box<dyn FnMut() -> Result<(), ErrorEvent<'scope>> + 'scope>,
+    callback: EffectCallback<'scope>,
 }
 
 impl<'scope> EffectBehavior<'scope> {
@@ -371,9 +379,12 @@ impl<'scope> ComputationBehavior<'scope> for EffectBehavior<'scope> {
     fn clear(&mut self) {}
 }
 
+pub(crate) type ValueComputeCallback<'scope, T, E> =
+    Box<dyn FnMut(Option<&T>) -> Result<T, E> + 'scope>;
+
 pub(crate) struct PreviousBehavior<'scope, T, E> {
     slot: &'scope TypedSlot<T>,
-    callback: Box<dyn FnMut(Option<&T>) -> Result<T, E> + 'scope>,
+    callback: ValueComputeCallback<'scope, T, E>,
     pending: Option<T>,
     handler: ErrorHandler<'scope, E>,
     errors: &'scope ErrorSlot<E>,
@@ -446,10 +457,14 @@ where
     }
 }
 
+pub(crate) type WatchGetterCallback<'scope, T, E> = Box<dyn FnMut() -> Result<T, E> + 'scope>;
+pub(crate) type WatchActionCallback<'scope, T, E> =
+    Box<dyn FnMut(&T, Option<&T>) -> Result<(), E> + 'scope>;
+
 pub(crate) struct WatchBehavior<'scope, T, E> {
     slot: &'scope TypedSlot<T>,
-    getter: Box<dyn FnMut() -> Result<T, E> + 'scope>,
-    callback: Box<dyn FnMut(&T, Option<&T>) -> Result<(), E> + 'scope>,
+    getter: WatchGetterCallback<'scope, T, E>,
+    callback: WatchActionCallback<'scope, T, E>,
     pending: Option<T>,
     initialized: bool,
     immediate: bool,
@@ -554,7 +569,7 @@ where
 
 pub(crate) struct MemoBehavior<'scope, T, E> {
     slot: &'scope TypedSlot<T>,
-    callback: Box<dyn FnMut(Option<&T>) -> Result<T, E> + 'scope>,
+    callback: ValueComputeCallback<'scope, T, E>,
     pending: Option<T>,
     handler: ErrorHandler<'scope, E>,
     errors: &'scope ErrorSlot<E>,
@@ -630,9 +645,11 @@ where
     }
 }
 
+pub(crate) type DerivedCallback<'scope, T, E> = Box<dyn FnMut() -> Result<T, E> + 'scope>;
+
 pub(crate) struct DerivedBehavior<'scope, T, E> {
     slot: &'scope TypedSlot<T>,
-    callback: Box<dyn FnMut() -> Result<T, E> + 'scope>,
+    callback: DerivedCallback<'scope, T, E>,
     pending: Option<T>,
     handler: ErrorHandler<'scope, E>,
     errors: &'scope ErrorSlot<E>,
