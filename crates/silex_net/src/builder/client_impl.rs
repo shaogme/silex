@@ -15,7 +15,7 @@ use silex_core::{
 };
 
 use crate::{
-    NetError, Transport,
+    NetError, NetErrorKind, Transport,
     builder::HttpClientBuilder,
     codec::ResponseCodec,
     state::{CachePolicy, RequestSpec, RetryPolicy},
@@ -90,10 +90,10 @@ where
     for attempt in 1..=attempts {
         let response = match client.transport.send(spec.clone()).await {
             Ok(response) if response.ok() => Ok(response),
-            Ok(response) => Err(NetError::HttpStatus {
+            Ok(response) => Err(NetError::recoverable(NetErrorKind::HttpStatus {
                 status: response.status,
                 body: response.raw_body,
-            }),
+            })),
             Err(error) => Err(error),
         };
         let response = match response {
@@ -147,7 +147,9 @@ where
         return Ok(value);
     }
     Err(last_error.unwrap_or_else(|| {
-        NetError::InvalidConfiguration("request retry policy produced no attempts".to_string())
+        NetError::fatal(NetErrorKind::InvalidConfiguration(
+            "request retry policy produced no attempts".to_string(),
+        ))
     }))
 }
 
@@ -270,11 +272,7 @@ macro_rules! impl_net_methods {
             let request_builder = self.clone();
             let request_source = scope
                 .memo(
-                    move |_| {
-                        request_builder.resolve_spec_tracked().map_err(|error| {
-                            SilexError::fatal(SilexErrorKind::Framework(format!("{error}")))
-                        })
-                    },
+                    move |_| Ok(request_builder.resolve_spec_tracked()?),
                     error_handler,
                 )
                 .map(|memo| memo.into_rx())

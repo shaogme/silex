@@ -1,5 +1,6 @@
 use crate::{
-    DecodePolicy, PersistMode, PersistenceError, RemovePolicy, SyncStrategy, WriteDefault,
+    DecodePolicy, PersistMode, PersistenceError, PersistenceErrorKind, RemovePolicy, SyncStrategy,
+    WriteDefault,
     backend::{
         BackendEventSink, LocalStorageBackend, PersistenceBackend, QueryBackend,
         SessionStorageBackend,
@@ -408,9 +409,9 @@ where
     pub fn build(self) -> Result<Persistent<'scope, T>, PersistenceError> {
         let key = self.key.clone();
         let default = self.config.default.ok_or_else(|| {
-            PersistenceError::InvalidConfiguration(
+            PersistenceError::fatal(PersistenceErrorKind::InvalidConfiguration(
                 "persistent builder is missing a default value".to_string(),
-            )
+            ))
         })?;
         let initial_default = default();
         let value = self
@@ -489,7 +490,11 @@ where
                 },
                 self.error_handler,
             )
-            .map_err(|error| PersistenceError::InvalidConfiguration(error.to_string()))?;
+            .map_err(|error| {
+                PersistenceError::fatal(PersistenceErrorKind::InvalidConfiguration(
+                    error.to_string(),
+                ))
+            })?;
 
         let mut had_missing_value = false;
         let mut initial_error = false;
@@ -530,7 +535,7 @@ where
                 value.set_untracked(default())?;
                 state.set_untracked(PersistenceState::Ready(String::new()))?;
             }
-            Err(PersistenceError::BackendUnavailable) => {
+            Err(PersistenceError::Recoverable(PersistenceErrorKind::BackendUnavailable)) => {
                 value.set_untracked(default())?;
                 state.set_untracked(PersistenceState::Unavailable)?;
                 controller
@@ -620,15 +625,19 @@ where
                         .map_err(PersistenceError::from)?;
                 }
                 Err(error) => match error.into_error() {
-                    PersistenceError::BackendUnavailable => {}
-                    PersistenceError::InvalidConfiguration(message) => {
+                    PersistenceError::Recoverable(PersistenceErrorKind::BackendUnavailable) => {}
+                    PersistenceError::Fatal(PersistenceErrorKind::InvalidConfiguration(
+                        message,
+                    )) => {
                         let fallback_default = initial_default.clone();
                         controller
                             .update_untracked(|controller| {
                                 controller.default = Rc::new(move || fallback_default.clone());
                             })
                             .map_err(PersistenceError::from)?;
-                        return Err(PersistenceError::InvalidConfiguration(message));
+                        return Err(PersistenceError::fatal(
+                            PersistenceErrorKind::InvalidConfiguration(message),
+                        ));
                     }
                     error => subscription_error = Some(error.message()),
                 },
@@ -777,7 +786,9 @@ where
                             self.error_handler,
                         )
                         .map_err(|error| {
-                            PersistenceError::InvalidConfiguration(error.to_string())
+                            PersistenceError::fatal(PersistenceErrorKind::InvalidConfiguration(
+                                error.to_string(),
+                            ))
                         })?;
                 } else {
                     let _effect = self
@@ -805,7 +816,9 @@ where
                             self.error_handler,
                         )
                         .map_err(|error| {
-                            PersistenceError::InvalidConfiguration(error.to_string())
+                            PersistenceError::fatal(PersistenceErrorKind::InvalidConfiguration(
+                                error.to_string(),
+                            ))
                         })?;
                 }
             }
@@ -875,7 +888,11 @@ where
                         },
                         self.error_handler,
                     )
-                    .map_err(|error| PersistenceError::InvalidConfiguration(error.to_string()))?;
+                    .map_err(|error| {
+                        PersistenceError::fatal(PersistenceErrorKind::InvalidConfiguration(
+                            error.to_string(),
+                        ))
+                    })?;
             }
         }
 

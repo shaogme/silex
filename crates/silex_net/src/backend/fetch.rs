@@ -8,7 +8,7 @@ use web_sys::{
 };
 
 use crate::{
-    NetError,
+    NetError, NetErrorKind,
     backend::TransportFuture,
     state::{CredentialsMode, HttpResponse, RequestBody, RequestSpec},
 };
@@ -107,7 +107,7 @@ impl HttpBackend {
 
 impl BrowserTransport {
     pub async fn send(spec: RequestSpec) -> Result<HttpResponse, NetError> {
-        let window = web_sys::window().ok_or(NetError::BrowserUnavailable)?;
+        let window = web_sys::window().ok_or(NetError::fatal(NetErrorKind::BrowserUnavailable))?;
 
         let init = RequestInit::new();
         init.set_method(spec.method.as_str());
@@ -128,7 +128,7 @@ impl BrowserTransport {
         for (name, value) in &spec.headers {
             headers
                 .append(name, value)
-                .map_err(|err| NetError::JsError(format!("{err:?}")))?;
+                .map_err(|err| NetError::recoverable(NetErrorKind::JsError(format!("{err:?}"))))?;
         }
         init.set_headers(headers.as_ref());
 
@@ -177,11 +177,11 @@ impl BrowserTransport {
                 let aborted = is_abort_error(&error);
                 abort_guard.complete();
                 return Err(if timed_out {
-                    NetError::Timeout
+                    NetError::recoverable(NetErrorKind::Timeout)
                 } else if aborted {
-                    NetError::Aborted
+                    NetError::recoverable(NetErrorKind::Aborted)
                 } else {
-                    NetError::TransportUnavailable
+                    NetError::recoverable(NetErrorKind::TransportUnavailable)
                 });
             }
         };
@@ -190,7 +190,9 @@ impl BrowserTransport {
             Ok(response) => response,
             Err(error) => {
                 abort_guard.complete();
-                return Err(NetError::JsError(format!("{error:?}")));
+                return Err(NetError::recoverable(NetErrorKind::JsError(format!(
+                    "{error:?}"
+                ))));
             }
         };
 
@@ -206,9 +208,9 @@ impl BrowserTransport {
                 Some(body) => body,
                 None => {
                     abort_guard.complete();
-                    return Err(NetError::JsError(
+                    return Err(NetError::recoverable(NetErrorKind::JsError(
                         "fetch response body is not a string".to_string(),
-                    ));
+                    )));
                 }
             },
             Err(error) => {
@@ -216,11 +218,11 @@ impl BrowserTransport {
                 let aborted = is_abort_error(&error);
                 abort_guard.complete();
                 return Err(if timed_out {
-                    NetError::Timeout
+                    NetError::recoverable(NetErrorKind::Timeout)
                 } else if aborted {
-                    NetError::Aborted
+                    NetError::recoverable(NetErrorKind::Aborted)
                 } else {
-                    NetError::JsError(format!("{error:?}"))
+                    NetError::recoverable(NetErrorKind::JsError(format!("{error:?}")))
                 });
             }
         };
@@ -231,10 +233,10 @@ impl BrowserTransport {
         abort_guard.complete();
 
         if !response.ok() {
-            return Err(NetError::HttpStatus {
+            return Err(NetError::recoverable(NetErrorKind::HttpStatus {
                 status,
                 body: raw_body,
-            });
+            }));
         }
 
         Ok(HttpResponse {

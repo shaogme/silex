@@ -15,7 +15,7 @@ readme.workspace = true
 workspace = true
 
 [dependencies]
-silex_core.workspace = true
+silex_core = { workspace = true, features = ["error-i18n"] }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 silex_persist = { workspace = true, optional = true }
@@ -41,9 +41,9 @@ web-sys = { workspace = true, optional = true, features = [
 [features]
 default = []
 json = ["dep:serde", "dep:serde_json"]
-persist = ["dep:silex_persist"]
+persist = ["dep:silex_persist", "silex_core/error-i18n-persistence"]
 browser = ["dep:js-sys", "dep:wasm-bindgen", "dep:web-sys"]
-intl = ["browser"]
+intl = ["browser", "silex_core/error-intl"]
 macros = ["dep:silex_i18n_macros"]
 browser-tests = ["browser", "persist", "dep:silex_dom", "dep:silex_router"]
 

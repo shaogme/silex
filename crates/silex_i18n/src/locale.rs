@@ -1,4 +1,4 @@
-use crate::I18nError;
+use crate::{I18nError, I18nErrorKind};
 use std::{
     fmt::{Display, Formatter},
     str::FromStr,
@@ -18,39 +18,41 @@ impl Locale {
     pub fn parse(value: impl AsRef<str>) -> Result<Self, I18nError> {
         let value = value.as_ref();
         if value.is_empty() {
-            return Err(I18nError::InvalidLocale("locale must not be empty".into()));
+            return Err(I18nError::recoverable(I18nErrorKind::InvalidLocale(
+                "locale must not be empty".into(),
+            )));
         }
         if value
             .chars()
             .any(|character| character.is_control() || character.is_whitespace())
         {
-            return Err(I18nError::InvalidLocale(
+            return Err(I18nError::recoverable(I18nErrorKind::InvalidLocale(
                 "locale must not contain whitespace or control characters".into(),
-            ));
+            )));
         }
 
         let value = value.replace('_', "-");
         let subtags: Vec<&str> = value.split('-').collect();
         if subtags.iter().any(|subtag| subtag.is_empty()) {
-            return Err(I18nError::InvalidLocale(
+            return Err(I18nError::recoverable(I18nErrorKind::InvalidLocale(
                 "locale must not contain empty subtags".into(),
-            ));
+            )));
         }
         if subtags[0].is_empty()
             || !subtags[0].bytes().all(|byte| byte.is_ascii_alphabetic())
             || subtags[0].len() > 8
         {
-            return Err(I18nError::InvalidLocale(
+            return Err(I18nError::recoverable(I18nErrorKind::InvalidLocale(
                 "the language subtag must contain 1 to 8 ASCII letters".into(),
-            ));
+            )));
         }
         if subtags
             .iter()
             .any(|subtag| !subtag.bytes().all(|byte| byte.is_ascii_alphanumeric()))
         {
-            return Err(I18nError::InvalidLocale(
+            return Err(I18nError::recoverable(I18nErrorKind::InvalidLocale(
                 "locale subtags must contain only ASCII letters and digits".into(),
-            ));
+            )));
         }
 
         let normalized = subtags

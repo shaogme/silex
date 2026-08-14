@@ -16,7 +16,7 @@ use silex_core::{
 };
 
 use crate::{
-    NetError,
+    NetError, NetErrorKind,
     builder::{IntoNetValue, ValueResolver},
     state::{ConnectionState, RetryPolicy},
 };
@@ -164,9 +164,9 @@ impl HostRegistration {
                         &message_token,
                         WebSocketEvent::Error {
                             generation,
-                            error: NetError::JsError(
+                            error: NetError::recoverable(NetErrorKind::JsError(
                                 "WebSocket message data is not a string".to_string(),
-                            ),
+                            )),
                         },
                         error_handler,
                         Some(&message_gate),
@@ -190,7 +190,7 @@ impl HostRegistration {
                     &error_token,
                     WebSocketEvent::Error {
                         generation,
-                        error: NetError::JsError(event.message()),
+                        error: NetError::recoverable(NetErrorKind::JsError(event.message())),
                     },
                     error_handler,
                     Some(&error_gate),
@@ -567,9 +567,10 @@ impl<'scope> WebSocketConnection<'scope> {
                         .get()?
                         .map(|raw| {
                             serde_json::from_str(&raw).map_err(|error| {
-                                SilexError::fatal(silex_core::SilexErrorKind::Framework(format!(
+                                NetError::recoverable(NetErrorKind::DecodeError(format!(
                                     "decode WebSocket message failed: {error}"
                                 )))
+                                .into()
                             })
                         })
                         .transpose()
@@ -598,27 +599,37 @@ impl<'scope> WebSocketConnection<'scope> {
             .with(|inner| {
                 let state = inner.state.get().map_err(NetError::from)?;
                 if matches!(state, ConnectionState::Closed) {
-                    return Err(NetError::ConnectionClosed);
+                    return Err(NetError::recoverable(NetErrorKind::ConnectionClosed));
                 }
                 if !matches!(state, ConnectionState::Connected) {
-                    return Err(NetError::ConnectionNotReady { state });
+                    return Err(NetError::recoverable(NetErrorKind::ConnectionNotReady {
+                        state,
+                    }));
                 }
                 let Some(registration) = &inner.registration else {
-                    return Err(NetError::ConnectionClosed);
+                    return Err(NetError::recoverable(NetErrorKind::ConnectionClosed));
                 };
                 match registration.socket.ready_state() {
                     JsWebSocket::OPEN => registration
                         .socket
                         .send_with_str(&message)
                         .map_err(NetError::from),
-                    JsWebSocket::CONNECTING => Err(NetError::ConnectionNotReady {
-                        state: ConnectionState::Connecting,
-                    }),
-                    JsWebSocket::CLOSING => Err(NetError::ConnectionNotReady {
-                        state: ConnectionState::Closing,
-                    }),
-                    JsWebSocket::CLOSED => Err(NetError::ConnectionClosed),
-                    _ => Err(NetError::ConnectionNotReady { state }),
+                    JsWebSocket::CONNECTING => {
+                        Err(NetError::recoverable(NetErrorKind::ConnectionNotReady {
+                            state: ConnectionState::Connecting,
+                        }))
+                    }
+                    JsWebSocket::CLOSING => {
+                        Err(NetError::recoverable(NetErrorKind::ConnectionNotReady {
+                            state: ConnectionState::Closing,
+                        }))
+                    }
+                    JsWebSocket::CLOSED => {
+                        Err(NetError::recoverable(NetErrorKind::ConnectionClosed))
+                    }
+                    _ => Err(NetError::recoverable(NetErrorKind::ConnectionNotReady {
+                        state,
+                    })),
                 }
             })
             .map_err(NetError::from)
@@ -634,8 +645,9 @@ impl<'scope> WebSocketConnection<'scope> {
     where
         T: serde::Serialize,
     {
-        let payload = serde_json::to_string(value)
-            .map_err(|error| NetError::SerializeError(error.to_string()))?;
+        let payload = serde_json::to_string(value).map_err(|error| {
+            NetError::recoverable(NetErrorKind::SerializeError(error.to_string()))
+        })?;
         self.send(payload)
     }
 

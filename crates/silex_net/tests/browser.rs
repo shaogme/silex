@@ -14,7 +14,7 @@ use silex_core::reactivity::{MutationState, ResourceState};
 use silex_core::{ErrorReporter, Runtime, Scope, TaskHandle};
 use silex_net::{
     BrowserTransport, EventStream, EventStreamConnection, HttpMethod, HttpResponse, NetError,
-    RequestBody, RequestSpec, RetryPolicy, Transport, TransportFuture, WebSocket,
+    NetErrorKind, RequestBody, RequestSpec, RetryPolicy, Transport, TransportFuture, WebSocket,
     WebSocketConnection,
 };
 use wasm_bindgen::{JsCast, JsValue};
@@ -544,11 +544,17 @@ async fn resource_runs_interceptor_once_and_rejects_custom_status() {
                 })
                 .retry(RetryPolicy::new(3, std::time::Duration::ZERO).no_jitter())
                 .on_error(move |_, error| {
-                    assert!(matches!(error, NetError::HttpStatus { status: 503, .. }));
+                    assert!(matches!(
+                        error,
+                        NetError::Recoverable(NetErrorKind::HttpStatus { status: 503, .. })
+                    ));
                     error_calls_for_hook.set(error_calls_for_hook.get() + 1);
                 })
                 .on_retry(move |_, _, _, error| {
-                    assert!(matches!(error, NetError::HttpStatus { status: 503, .. }));
+                    assert!(matches!(
+                        error,
+                        NetError::Recoverable(NetErrorKind::HttpStatus { status: 503, .. })
+                    ));
                     retry_calls_for_hook.set(retry_calls_for_hook.get() + 1);
                 })
                 .as_resource(source, None)
@@ -556,7 +562,10 @@ async fn resource_runs_interceptor_once_and_rejects_custom_status() {
         TimeoutFuture::new(1).await;
         assert!(matches!(
             resource.state.get().unwrap(),
-            ResourceState::Error(NetError::HttpStatus { status: 503, .. })
+            ResourceState::Error(NetError::Recoverable(NetErrorKind::HttpStatus {
+                status: 503,
+                ..
+            }))
         ));
         assert_eq!(transport_calls.get(), 3);
         assert_eq!(error_calls.get(), 3);
@@ -625,7 +634,7 @@ async fn mutation_preflight_error_does_not_enter_pending() {
             mutation.mutate(()).unwrap();
             assert!(matches!(
                 mutation.state.get().unwrap(),
-                MutationState::Error(NetError::InvalidConfiguration(_))
+                MutationState::Error(NetError::Fatal(NetErrorKind::InvalidConfiguration(_)))
             ));
         });
     });
@@ -1466,7 +1475,8 @@ async fn websocket_host_bridge_covers_events_retry_and_manual_close() {
                 move |error| {
                     assert!(matches!(
                         error,
-                        NetError::JsError(message) if message == "broken"
+                        NetError::Recoverable(NetErrorKind::JsError(message))
+                            if message == "broken"
                     ));
                     errors.set(errors.get() + 1);
                 }
@@ -1482,9 +1492,9 @@ async fn websocket_host_bridge_covers_events_retry_and_manual_close() {
         assert_eq!(mock_instance_count("__silex_test_socket_instances"), 1);
         assert_eq!(
             socket.send_text("too-early"),
-            Err(NetError::ConnectionNotReady {
+            Err(NetError::Recoverable(NetErrorKind::ConnectionNotReady {
                 state: silex_net::ConnectionState::Connecting
-            })
+            }))
         );
         mock_call0("__silex_test_socket", "emitOpen");
         TimeoutFuture::new(0).await;
@@ -1522,7 +1532,8 @@ async fn websocket_host_bridge_covers_events_retry_and_manual_close() {
         assert_eq!(errors.get(), 1);
         assert!(matches!(
             socket.error().get().unwrap(),
-            Some(NetError::JsError(message)) if message == "broken"
+            Some(NetError::Recoverable(NetErrorKind::JsError(message)))
+                if message == "broken"
         ));
         assert_eq!(closed.get(), 2);
         TimeoutFuture::new(0).await;
@@ -1542,9 +1553,9 @@ async fn websocket_host_bridge_covers_events_retry_and_manual_close() {
         );
         assert_eq!(
             socket.send_text("during-close"),
-            Err(NetError::ConnectionNotReady {
+            Err(NetError::Recoverable(NetErrorKind::ConnectionNotReady {
                 state: silex_net::ConnectionState::Closing
-            })
+            }))
         );
         assert!(!mock_property_is_cleared("__silex_test_socket", "onclose"));
         mock_call0("__silex_test_socket", "emitClose");
@@ -1555,7 +1566,7 @@ async fn websocket_host_bridge_covers_events_retry_and_manual_close() {
         );
         assert_eq!(
             socket.send_text("after-close"),
-            Err(NetError::ConnectionClosed)
+            Err(NetError::Recoverable(NetErrorKind::ConnectionClosed))
         );
         assert!(mock_property_is_cleared("__silex_test_socket", "onopen"));
         assert!(mock_property_is_cleared("__silex_test_socket", "onmessage"));
@@ -1671,12 +1682,18 @@ async fn websocket_constructor_failure_reports_error_before_connection_creation(
             .on_error({
                 let errors = errors.clone();
                 move |error| {
-                    assert!(matches!(error, NetError::JsError(_)));
+                    assert!(matches!(
+                        error,
+                        NetError::Recoverable(NetErrorKind::JsError(_))
+                    ));
                     errors.set(errors.get() + 1);
                 }
             })
             .build();
-        assert!(matches!(result, Err(NetError::JsError(_))));
+        assert!(matches!(
+            result,
+            Err(NetError::Recoverable(NetErrorKind::JsError(_)))
+        ));
         assert_eq!(errors.get(), 1);
         assert_eq!(mock_instance_count("__silex_test_socket_instances"), 0);
 
@@ -1686,14 +1703,20 @@ async fn websocket_constructor_failure_reports_error_before_connection_creation(
             .on_error({
                 let reconnect_errors = reconnect_errors.clone();
                 move |error| {
-                    assert!(matches!(error, NetError::JsError(_)));
+                    assert!(matches!(
+                        error,
+                        NetError::Recoverable(NetErrorKind::JsError(_))
+                    ));
                     reconnect_errors.set(reconnect_errors.get() + 1);
                 }
             })
             .build()
             .expect("websocket setup");
         set_url.set("mock://failure".to_string()).unwrap();
-        assert!(matches!(socket.reconnect(), Err(NetError::JsError(_))));
+        assert!(matches!(
+            socket.reconnect(),
+            Err(NetError::Recoverable(NetErrorKind::JsError(_)))
+        ));
         assert_eq!(
             socket.state().get().unwrap(),
             silex_net::ConnectionState::Error
@@ -1788,7 +1811,10 @@ async fn event_stream_host_bridge_covers_named_messages_reconnect_and_cleanup() 
             .on_error({
                 let errors = errors.clone();
                 move |error| {
-                    assert!(matches!(error, NetError::TransportUnavailable));
+                    assert!(matches!(
+                        error,
+                        NetError::Recoverable(NetErrorKind::TransportUnavailable)
+                    ));
                     errors.set(errors.get() + 1);
                 }
             })
@@ -1848,7 +1874,7 @@ async fn event_stream_host_bridge_covers_named_messages_reconnect_and_cleanup() 
         assert_eq!(errors.get(), 1);
         assert_eq!(
             stream.error().get().unwrap(),
-            Some(NetError::TransportUnavailable)
+            Some(NetError::Recoverable(NetErrorKind::TransportUnavailable))
         );
         assert_eq!(
             stream.state().get().unwrap(),
@@ -1946,12 +1972,18 @@ async fn event_stream_constructor_failure_reports_error_before_connection_creati
             .on_error({
                 let errors = errors.clone();
                 move |error| {
-                    assert!(matches!(error, NetError::JsError(_)));
+                    assert!(matches!(
+                        error,
+                        NetError::Recoverable(NetErrorKind::JsError(_))
+                    ));
                     errors.set(errors.get() + 1);
                 }
             })
             .build();
-        assert!(matches!(result, Err(NetError::JsError(_))));
+        assert!(matches!(
+            result,
+            Err(NetError::Recoverable(NetErrorKind::JsError(_)))
+        ));
         assert_eq!(errors.get(), 1);
         assert_eq!(
             mock_instance_count("__silex_test_event_source_instances"),
@@ -1964,14 +1996,20 @@ async fn event_stream_constructor_failure_reports_error_before_connection_creati
             .on_error({
                 let reconnect_errors = reconnect_errors.clone();
                 move |error| {
-                    assert!(matches!(error, NetError::JsError(_)));
+                    assert!(matches!(
+                        error,
+                        NetError::Recoverable(NetErrorKind::JsError(_))
+                    ));
                     reconnect_errors.set(reconnect_errors.get() + 1);
                 }
             })
             .build()
             .expect("event stream setup");
         set_url.set("mock://failure".to_string()).unwrap();
-        assert!(matches!(stream.reconnect(), Err(NetError::JsError(_))));
+        assert!(matches!(
+            stream.reconnect(),
+            Err(NetError::Recoverable(NetErrorKind::JsError(_)))
+        ));
         assert_eq!(
             stream.state().get().unwrap(),
             silex_net::ConnectionState::Error

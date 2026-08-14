@@ -15,11 +15,12 @@ pub use codec::CacheCodec;
 #[cfg(feature = "json")]
 pub use codec::NetJsonCodec;
 pub use codec::{ResponseCodec, TextCodec};
+pub use silex_core::{NetConnectionState as ConnectionState, NetError, NetErrorKind};
 #[cfg(feature = "persist")]
 pub use state::{CacheConfig, CacheEviction};
 pub use state::{
-    CachePolicy, ConnectionState, CredentialsMode, EventMessage, HttpMethod, HttpResponse,
-    RequestBody, RequestSpec, RetryPolicy,
+    CachePolicy, CredentialsMode, EventMessage, HttpMethod, HttpResponse, RequestBody, RequestSpec,
+    RetryPolicy,
 };
 
 #[cfg(feature = "persist")]
@@ -37,65 +38,14 @@ pub mod reexports {
     pub use web_sys;
 }
 
-use silex_core::SilexError;
-use std::fmt;
-use wasm_bindgen::JsValue;
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum NetError {
-    BrowserUnavailable,
-    TransportUnavailable,
-    Timeout,
-    Aborted,
-    HttpStatus { status: u16, body: String },
-    DecodeError(String),
-    SerializeError(String),
-    ConnectionNotReady { state: ConnectionState },
-    ConnectionClosed,
-    JsError(String),
-    InvalidConfiguration(String),
-}
-
-impl fmt::Display for NetError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "{self:?}")
-    }
-}
-
-impl From<JsValue> for NetError {
-    fn from(value: JsValue) -> Self {
-        Self::JsError(format!("{value:?}"))
-    }
-}
-
-impl From<SilexError> for NetError {
-    fn from(value: SilexError) -> Self {
-        Self::InvalidConfiguration(value.to_string())
-    }
-}
-
-impl NetError {
-    pub fn is_retryable(&self) -> bool {
-        match self {
-            Self::Timeout | Self::TransportUnavailable => true,
-            Self::HttpStatus { status, .. } => Self::is_retryable_http_status(*status),
-            _ => false,
-        }
-    }
-
-    pub fn is_retryable_http_status(status: u16) -> bool {
-        matches!(status, 408 | 429 | 500..=599)
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::NetError;
+    use super::{NetError, NetErrorKind};
 
     #[test]
     fn abort_is_not_retryable_but_timeout_is() {
-        assert!(!NetError::Aborted.is_retryable());
-        assert!(NetError::Timeout.is_retryable());
+        assert!(!NetError::recoverable(NetErrorKind::Aborted).is_retryable());
+        assert!(NetError::recoverable(NetErrorKind::Timeout).is_retryable());
         assert!(NetError::is_retryable_http_status(503));
         assert!(!NetError::is_retryable_http_status(404));
     }

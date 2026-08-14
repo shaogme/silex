@@ -50,7 +50,7 @@ fn is_same_origin_internal_href(href: &str) -> bool {
     #[cfg(not(target_arch = "wasm32"))]
     {
         let _ = href;
-        return false;
+        false
     }
     #[cfg(target_arch = "wasm32")]
     {

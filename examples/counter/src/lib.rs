@@ -325,7 +325,7 @@ fn NotFound<'scope>(#[context] _context: RouterContext<'scope>) -> AnyView<'scop
 
 #[component]
 fn ErrorPage<'scope, Ctx, Err>(#[context] context: Ctx, error: Err) -> AnyView<'scope>
-where 
+where
     Err: Into<SilexError>,
 {
     Ok(div!(

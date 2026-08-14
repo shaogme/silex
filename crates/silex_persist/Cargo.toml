@@ -15,7 +15,7 @@ readme.workspace = true
 workspace = true
 
 [dependencies]
-silex_core.workspace = true
+silex_core = { workspace = true, features = ["error-persistence"] }
 silex_dom.workspace = true
 silex_router.workspace = true
 ref_str = "0.2"

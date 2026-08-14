@@ -1,8 +1,67 @@
 use std::fmt;
 
+#[cfg(any(feature = "error-dom", feature = "error-bootstrap"))]
+use std::rc::Rc;
+
 pub use silex_reactivity::ErrorHandler;
 use silex_reactivity::ReactiveError;
 use wasm_bindgen::JsValue;
+
+#[cfg(feature = "error-bootstrap")]
+mod bootstrap;
+#[cfg(feature = "error-bootstrap")]
+pub use bootstrap::{AppHostError, BootstrapError, HostState, UnmountOutcome};
+
+#[cfg(feature = "error-dom")]
+mod dom;
+#[cfg(feature = "error-dom")]
+pub use dom::{
+    CleanupFailure, CleanupFailureDiagnostic, CleanupOrigin, CleanupReport, CleanupSink,
+    DisposeError, DropFailureReport, MountAvailability, MountError,
+};
+
+#[cfg(feature = "error-i18n")]
+mod i18n;
+#[cfg(feature = "error-i18n")]
+pub use i18n::{I18nError, I18nErrorKind};
+
+#[cfg(feature = "error-intl")]
+mod intl;
+#[cfg(feature = "error-intl")]
+pub use intl::{IntlError, IntlErrorKind};
+
+#[cfg(feature = "error-net")]
+mod net;
+#[cfg(feature = "error-net")]
+pub use net::{NetConnectionState, NetError, NetErrorKind};
+
+#[cfg(feature = "error-persistence")]
+mod persistence;
+#[cfg(feature = "error-persistence")]
+pub use persistence::{PersistenceError, PersistenceErrorKind};
+
+#[cfg(feature = "error-router")]
+mod router;
+#[cfg(feature = "error-router")]
+pub use router::{
+    PathError, PathErrorKind, PathParamError, PathParamErrorKind, RoutePatternError,
+    RoutePatternErrorKind,
+};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ErrorSeverity {
+    Recoverable,
+    Fatal,
+}
+
+impl fmt::Display for ErrorSeverity {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Recoverable => "recoverable",
+            Self::Fatal => "fatal",
+        })
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum SilexErrorKind {
@@ -10,6 +69,28 @@ pub enum SilexErrorKind {
     Reactivity(ReactiveError),
     Framework(String),
     Javascript(String),
+    #[cfg(feature = "error-persistence")]
+    Persistence(PersistenceError),
+    #[cfg(feature = "error-i18n")]
+    I18n(I18nError),
+    #[cfg(feature = "error-router")]
+    Path(PathError),
+    #[cfg(feature = "error-router")]
+    PathParam(PathParamError),
+    #[cfg(feature = "error-router")]
+    RoutePattern(RoutePatternError),
+    #[cfg(feature = "error-net")]
+    Net(NetError),
+    #[cfg(feature = "error-intl")]
+    Intl(IntlError),
+    #[cfg(feature = "error-dom")]
+    Mount(Rc<MountError>),
+    #[cfg(feature = "error-dom")]
+    Dispose(Rc<DisposeError>),
+    #[cfg(feature = "error-bootstrap")]
+    AppHost(Rc<AppHostError>),
+    #[cfg(feature = "error-bootstrap")]
+    Bootstrap(Rc<BootstrapError>),
 }
 
 impl fmt::Display for SilexErrorKind {
@@ -19,6 +100,28 @@ impl fmt::Display for SilexErrorKind {
             Self::Reactivity(error) => write!(f, "Reactivity Error: {error}"),
             Self::Framework(msg) => write!(f, "Framework Error: {msg}"),
             Self::Javascript(msg) => write!(f, "JavaScript Error: {msg}"),
+            #[cfg(feature = "error-persistence")]
+            Self::Persistence(error) => write!(f, "persistence error: {error}"),
+            #[cfg(feature = "error-i18n")]
+            Self::I18n(error) => write!(f, "i18n error: {error}"),
+            #[cfg(feature = "error-router")]
+            Self::Path(error) => write!(f, "route path error: {error}"),
+            #[cfg(feature = "error-router")]
+            Self::PathParam(error) => write!(f, "route parameter error: {error}"),
+            #[cfg(feature = "error-router")]
+            Self::RoutePattern(error) => write!(f, "route pattern error: {error}"),
+            #[cfg(feature = "error-net")]
+            Self::Net(error) => write!(f, "network error: {error}"),
+            #[cfg(feature = "error-intl")]
+            Self::Intl(error) => write!(f, "Intl error: {error}"),
+            #[cfg(feature = "error-dom")]
+            Self::Mount(error) => write!(f, "mount error: {error}"),
+            #[cfg(feature = "error-dom")]
+            Self::Dispose(error) => write!(f, "dispose error: {error}"),
+            #[cfg(feature = "error-bootstrap")]
+            Self::AppHost(error) => write!(f, "application host error: {error}"),
+            #[cfg(feature = "error-bootstrap")]
+            Self::Bootstrap(error) => write!(f, "bootstrap error: {error}"),
         }
     }
 }
@@ -28,9 +131,67 @@ impl std::error::Error for SilexErrorKind {
         match self {
             Self::Reactivity(error) => Some(error),
             Self::Dom(_) | Self::Framework(_) | Self::Javascript(_) => None,
+            #[cfg(feature = "error-persistence")]
+            Self::Persistence(error) => Some(error),
+            #[cfg(feature = "error-i18n")]
+            Self::I18n(error) => Some(error),
+            #[cfg(feature = "error-router")]
+            Self::Path(error) => Some(error),
+            #[cfg(feature = "error-router")]
+            Self::PathParam(error) => Some(error),
+            #[cfg(feature = "error-router")]
+            Self::RoutePattern(error) => Some(error),
+            #[cfg(feature = "error-net")]
+            Self::Net(error) => Some(error),
+            #[cfg(feature = "error-intl")]
+            Self::Intl(error) => Some(error),
+            #[cfg(feature = "error-dom")]
+            Self::Mount(error) => Some(&**error),
+            #[cfg(feature = "error-dom")]
+            Self::Dispose(error) => Some(&**error),
+            #[cfg(feature = "error-bootstrap")]
+            Self::AppHost(error) => Some(&**error),
+            #[cfg(feature = "error-bootstrap")]
+            Self::Bootstrap(error) => Some(&**error),
         }
     }
 }
+
+impl PartialEq for SilexErrorKind {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Dom(left), Self::Dom(right))
+            | (Self::Framework(left), Self::Framework(right))
+            | (Self::Javascript(left), Self::Javascript(right)) => left == right,
+            (Self::Reactivity(left), Self::Reactivity(right)) => left == right,
+            #[cfg(feature = "error-persistence")]
+            (Self::Persistence(left), Self::Persistence(right)) => left == right,
+            #[cfg(feature = "error-i18n")]
+            (Self::I18n(left), Self::I18n(right)) => left == right,
+            #[cfg(feature = "error-router")]
+            (Self::Path(left), Self::Path(right)) => left == right,
+            #[cfg(feature = "error-router")]
+            (Self::PathParam(left), Self::PathParam(right)) => left == right,
+            #[cfg(feature = "error-router")]
+            (Self::RoutePattern(left), Self::RoutePattern(right)) => left == right,
+            #[cfg(feature = "error-net")]
+            (Self::Net(left), Self::Net(right)) => left == right,
+            #[cfg(feature = "error-intl")]
+            (Self::Intl(left), Self::Intl(right)) => left == right,
+            #[cfg(feature = "error-dom")]
+            (Self::Mount(left), Self::Mount(right)) => Rc::ptr_eq(left, right),
+            #[cfg(feature = "error-dom")]
+            (Self::Dispose(left), Self::Dispose(right)) => Rc::ptr_eq(left, right),
+            #[cfg(feature = "error-bootstrap")]
+            (Self::AppHost(left), Self::AppHost(right)) => Rc::ptr_eq(left, right),
+            #[cfg(feature = "error-bootstrap")]
+            (Self::Bootstrap(left), Self::Bootstrap(right)) => Rc::ptr_eq(left, right),
+            _ => false,
+        }
+    }
+}
+
+impl Eq for SilexErrorKind {}
 
 impl From<ReactiveError> for SilexErrorKind {
     fn from(error: ReactiveError) -> Self {
@@ -68,6 +229,13 @@ impl SilexError {
         matches!(self, Self::Fatal(_))
     }
 
+    pub fn severity(&self) -> ErrorSeverity {
+        match self {
+            Self::Recoverable(_) => ErrorSeverity::Recoverable,
+            Self::Fatal(_) => ErrorSeverity::Fatal,
+        }
+    }
+
     pub fn kind(&self) -> &SilexErrorKind {
         match self {
             Self::Recoverable(kind) | Self::Fatal(kind) => kind,
@@ -82,6 +250,83 @@ impl SilexError {
 
     pub fn into_fatal(self) -> Self {
         Self::Fatal(self.into_kind())
+    }
+}
+
+#[cfg(feature = "error-persistence")]
+impl From<PersistenceError> for SilexError {
+    fn from(error: PersistenceError) -> Self {
+        error.into_silex_error()
+    }
+}
+
+#[cfg(feature = "error-i18n")]
+impl From<I18nError> for SilexError {
+    fn from(error: I18nError) -> Self {
+        error.into_silex_error()
+    }
+}
+
+#[cfg(feature = "error-router")]
+impl From<PathError> for SilexError {
+    fn from(error: PathError) -> Self {
+        error.into_silex_error()
+    }
+}
+
+#[cfg(feature = "error-router")]
+impl From<PathParamError> for SilexError {
+    fn from(error: PathParamError) -> Self {
+        error.into_silex_error()
+    }
+}
+
+#[cfg(feature = "error-router")]
+impl From<RoutePatternError> for SilexError {
+    fn from(error: RoutePatternError) -> Self {
+        error.into_silex_error()
+    }
+}
+
+#[cfg(feature = "error-net")]
+impl From<NetError> for SilexError {
+    fn from(error: NetError) -> Self {
+        error.into_silex_error()
+    }
+}
+
+#[cfg(feature = "error-intl")]
+impl From<IntlError> for SilexError {
+    fn from(error: IntlError) -> Self {
+        error.into_silex_error()
+    }
+}
+
+#[cfg(feature = "error-dom")]
+impl From<MountError> for SilexError {
+    fn from(error: MountError) -> Self {
+        Self::Fatal(SilexErrorKind::Mount(Rc::new(error)))
+    }
+}
+
+#[cfg(feature = "error-dom")]
+impl From<DisposeError> for SilexError {
+    fn from(error: DisposeError) -> Self {
+        Self::Fatal(SilexErrorKind::Dispose(Rc::new(error)))
+    }
+}
+
+#[cfg(feature = "error-bootstrap")]
+impl From<AppHostError> for SilexError {
+    fn from(error: AppHostError) -> Self {
+        Self::Fatal(SilexErrorKind::AppHost(Rc::new(error)))
+    }
+}
+
+#[cfg(feature = "error-bootstrap")]
+impl From<BootstrapError> for SilexError {
+    fn from(error: BootstrapError) -> Self {
+        Self::Fatal(SilexErrorKind::Bootstrap(Rc::new(error)))
     }
 }
 

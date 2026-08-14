@@ -11,7 +11,9 @@ fn escaped() -> CatalogResource<'static, I18nError> {
             .expect("valid store");
         store.catalog_resource(
             move |_locale| async {
-                Err::<Catalog, I18nError>(I18nError::Loader("not loaded".to_string()))
+                Err::<Catalog, I18nError>(I18nError::recoverable(
+                    silex_i18n::I18nErrorKind::Loader("not loaded".to_string()),
+                ))
             },
             None,
         )

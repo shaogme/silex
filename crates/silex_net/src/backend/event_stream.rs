@@ -14,7 +14,7 @@ use silex_core::{
 };
 
 use crate::{
-    NetError,
+    NetError, NetErrorKind,
     builder::{IntoNetValue, ValueResolver},
     state::{ConnectionState, EventMessage},
 };
@@ -153,9 +153,9 @@ impl HostRegistration {
                         &message_token,
                         EventStreamEvent::Error {
                             generation,
-                            error: NetError::JsError(
+                            error: NetError::recoverable(NetErrorKind::JsError(
                                 "EventSource message data is not a string".to_string(),
-                            ),
+                            )),
                         },
                         error_handler,
                         Some(&message_gate),
@@ -183,7 +183,7 @@ impl HostRegistration {
                     &error_token,
                     EventStreamEvent::Error {
                         generation,
-                        error: NetError::TransportUnavailable,
+                        error: NetError::recoverable(NetErrorKind::TransportUnavailable),
                     },
                     error_handler,
                     Some(&error_gate),
@@ -458,9 +458,10 @@ impl<'scope> EventStreamConnection<'scope> {
                         .into_iter()
                         .map(|message| {
                             serde_json::from_str(&message.data).map_err(|error| {
-                                SilexError::fatal(silex_core::SilexErrorKind::Framework(format!(
+                                NetError::recoverable(NetErrorKind::DecodeError(format!(
                                     "decode EventStream message failed: {error}"
                                 )))
+                                .into()
                             })
                         })
                         .collect()
@@ -485,9 +486,10 @@ impl<'scope> EventStreamConnection<'scope> {
                         .last()
                         .map(|message| {
                             serde_json::from_str(&message.data).map_err(|error| {
-                                SilexError::fatal(silex_core::SilexErrorKind::Framework(format!(
+                                NetError::recoverable(NetErrorKind::DecodeError(format!(
                                     "decode EventStream message failed: {error}"
                                 )))
+                                .into()
                             })
                         })
                         .transpose()
@@ -514,9 +516,10 @@ impl<'scope> EventStreamConnection<'scope> {
                         .take(limit)
                         .map(|message| {
                             serde_json::from_str(&message.data).map_err(|error| {
-                                SilexError::fatal(silex_core::SilexErrorKind::Framework(format!(
+                                NetError::recoverable(NetErrorKind::DecodeError(format!(
                                     "decode EventStream message failed: {error}"
                                 )))
+                                .into()
                             })
                         })
                         .collect()

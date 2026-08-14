@@ -16,7 +16,7 @@ workspace = true
 
 [dependencies]
 silex_vtable.workspace = true
-silex_core.workspace = true
+silex_core = { workspace = true, features = ["error-dom"] }
 wasm-bindgen.workspace = true
 web-sys = { workspace = true, features = [
     "Node",

@@ -1,5 +1,5 @@
 use silex_core::{ErrorReporter, Runtime};
-use silex_net::{EventStream, NetError, WebSocket};
+use silex_net::{EventStream, NetError, NetErrorKind, WebSocket};
 
 fn test_handler<'scope>(scope: silex_core::Scope<'scope>) -> ErrorReporter<'scope> {
     scope.error_handler(|_| {}).unwrap()
@@ -19,8 +19,14 @@ fn foreign_connection_url_is_rejected_before_host_registration() {
         target_root.with_scope(|target_scope| {
             let socket = WebSocket::lazy(target_scope, url, test_handler(target_scope)).build();
             let stream = EventStream::lazy(target_scope, url, test_handler(target_scope)).build();
-            assert!(matches!(socket, Err(NetError::InvalidConfiguration(_))));
-            assert!(matches!(stream, Err(NetError::InvalidConfiguration(_))));
+            assert!(matches!(
+                socket,
+                Err(NetError::Fatal(NetErrorKind::InvalidConfiguration(_)))
+            ));
+            assert!(matches!(
+                stream,
+                Err(NetError::Fatal(NetErrorKind::InvalidConfiguration(_)))
+            ));
         });
     });
 

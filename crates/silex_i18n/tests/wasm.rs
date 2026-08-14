@@ -84,8 +84,8 @@ fn catalog_resource_rejects_foreign_suspense_before_allocating_nodes() {
 
     assert!(matches!(
         result,
-        Err(silex_i18n::I18nError::Reactivity(
-            ReactiveError::RuntimeMismatch
+        Err(silex_i18n::I18nError::Fatal(
+            silex_i18n::I18nErrorKind::Reactivity(ReactiveError::RuntimeMismatch),
         ))
     ));
     assert_eq!(target_scope.runtime_snapshot(), before);

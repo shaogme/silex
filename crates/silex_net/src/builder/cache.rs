@@ -109,9 +109,7 @@ where
         key: &str,
     ) -> SilexResult<()> {
         if matches!(config.eviction, CacheEviction::RemovePersisted) {
-            backend
-                .remove(key)
-                .map_err(|error| SilexError::fatal(SilexErrorKind::Framework(error.to_string())))?;
+            backend.remove(key)?;
         }
         Ok(())
     }
@@ -130,14 +128,9 @@ where
     }
 
     fn load_snapshot(state: &CacheState<T>, key: &str) -> SilexResult<Option<T>> {
-        let raw = match state.backend.get(key) {
-            Ok(Some(raw)) => raw,
-            Ok(None) => return Ok(None),
-            Err(error) => {
-                return Err(SilexError::fatal(SilexErrorKind::Framework(
-                    error.to_string(),
-                )));
-            }
+        let raw = match state.backend.get(key)? {
+            Some(raw) => raw,
+            None => return Ok(None),
         };
         match (state.decode)(&raw) {
             Ok(value) => Ok(Some(value)),
@@ -258,11 +251,7 @@ where
                     "encode HTTP cache value failed: {error}"
                 )))
             })?;
-            backend.set(&key, &raw).map_err(|error| {
-                SilexError::fatal(SilexErrorKind::Framework(format!(
-                    "write HTTP cache value failed: {error}"
-                )))
-            })?;
+            backend.set(&key, &raw)?;
 
             state
                 .update(|state| {

@@ -19,7 +19,36 @@ use silex_reactivity::{
 
 pub use callback::Callback;
 pub use context::{SilexContext, SilexContextProvider};
-pub use error::{ErrorHandler, ErrorReporter, SilexError, SilexErrorKind, SilexResult};
+pub use error::{
+    ErrorHandler, ErrorReporter, ErrorSeverity, SilexError, SilexErrorKind, SilexResult,
+};
+
+#[cfg(feature = "error-persistence")]
+pub use error::{PersistenceError, PersistenceErrorKind};
+
+#[cfg(feature = "error-i18n")]
+pub use error::{I18nError, I18nErrorKind};
+
+#[cfg(feature = "error-router")]
+pub use error::{
+    PathError, PathErrorKind, PathParamError, PathParamErrorKind, RoutePatternError,
+    RoutePatternErrorKind,
+};
+
+#[cfg(feature = "error-net")]
+pub use error::{NetConnectionState, NetError, NetErrorKind};
+
+#[cfg(feature = "error-intl")]
+pub use error::{IntlError, IntlErrorKind};
+
+#[cfg(feature = "error-dom")]
+pub use error::{
+    CleanupFailure, CleanupFailureDiagnostic, CleanupOrigin, CleanupReport, CleanupSink,
+    DisposeError, DropFailureReport, MountAvailability, MountError,
+};
+
+#[cfg(feature = "error-bootstrap")]
+pub use error::{AppHostError, BootstrapError, HostState, UnmountOutcome};
 pub use node_ref::NodeRef;
 pub use reactivity::{
     Constant, Effect, Memo, Mutation, PromotionPlan, ReactiveSource, ReadSignal, Resource,

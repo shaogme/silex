@@ -224,6 +224,11 @@ fn silex_error_kind(kind: &SilexErrorKind) -> &'static str {
         SilexErrorKind::Reactivity(_) => "reactivity",
         SilexErrorKind::Framework(_) => "framework",
         SilexErrorKind::Javascript(_) => "javascript",
+        SilexErrorKind::Mount(_) => "mount",
+        SilexErrorKind::Dispose(_) => "dispose",
+        SilexErrorKind::AppHost(_) => "app-host",
+        SilexErrorKind::Bootstrap(_) => "bootstrap",
+        _ => "domain",
     }
 }
 

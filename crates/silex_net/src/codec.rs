@@ -1,4 +1,6 @@
 use crate::NetError;
+#[cfg(feature = "json")]
+use crate::NetErrorKind;
 #[cfg(feature = "persist")]
 use silex_persist::PersistCodec;
 
@@ -52,7 +54,8 @@ where
     T: serde::de::DeserializeOwned + Clone + 'static,
 {
     fn decode(&self, raw: &str) -> Result<T, NetError> {
-        serde_json::from_str(raw).map_err(|err| NetError::DecodeError(err.to_string()))
+        serde_json::from_str(raw)
+            .map_err(|err| NetError::recoverable(NetErrorKind::DecodeError(err.to_string())))
     }
 }
 

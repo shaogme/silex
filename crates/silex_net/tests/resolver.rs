@@ -1,5 +1,5 @@
 use silex_core::{ErrorReporter, Runtime};
-use silex_net::{HttpClient, NetError};
+use silex_net::{HttpClient, NetError, NetErrorKind};
 
 fn test_handler<'scope>(scope: silex_core::Scope<'scope>) -> ErrorReporter<'scope> {
     scope.error_handler(|_| {}).unwrap()
@@ -41,7 +41,10 @@ fn foreign_builder_into_resource_is_transactional_before_target_creation() {
             let before = target_scope.runtime_snapshot();
             let result = HttpClient::get(target_scope, source, handler).into_resource(None);
 
-            assert!(matches!(result, Err(NetError::InvalidConfiguration(_))));
+            assert!(matches!(
+                result,
+                Err(NetError::Fatal(NetErrorKind::InvalidConfiguration(_)))
+            ));
             assert_eq!(target_scope.runtime_snapshot(), before);
         });
     });

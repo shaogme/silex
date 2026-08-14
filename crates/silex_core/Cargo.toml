@@ -15,7 +15,16 @@ readme.workspace = true
 workspace = true
 
 [features]
+default = []
 test-support = ["silex_reactivity/test-support"]
+error-persistence = []
+error-i18n = []
+error-i18n-persistence = ["error-i18n", "error-persistence"]
+error-router = []
+error-net = []
+error-intl = []
+error-dom = []
+error-bootstrap = ["error-dom"]
 
 [dependencies]
 silex_reactivity.workspace = true

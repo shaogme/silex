@@ -1,4 +1,4 @@
-use crate::PersistenceError;
+use crate::{PersistenceError, PersistenceErrorKind};
 use std::borrow::Cow;
 use std::fmt::Display;
 use std::marker::PhantomData;
@@ -121,12 +121,12 @@ where
 }
 
 pub(crate) fn map_encode_error(message: String) -> PersistenceError {
-    PersistenceError::EncodeFailed(message)
+    PersistenceError::recoverable(PersistenceErrorKind::EncodeFailed(message))
 }
 
 pub(crate) fn map_decode_error(raw: &str, message: String) -> PersistenceError {
-    PersistenceError::DecodeFailed {
+    PersistenceError::recoverable(PersistenceErrorKind::DecodeFailed {
         raw: raw.to_string(),
         message,
-    }
+    })
 }

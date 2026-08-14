@@ -13,7 +13,9 @@ fn main() {
         let _resource = store.catalog_resource(
             move |_locale| async move {
                 let _ = source.get();
-                Err::<Catalog, I18nError>(I18nError::Loader("not loaded".to_string()))
+                Err::<Catalog, I18nError>(I18nError::recoverable(
+                    silex_i18n::I18nErrorKind::Loader("not loaded".to_string()),
+                ))
             },
             None,
         );

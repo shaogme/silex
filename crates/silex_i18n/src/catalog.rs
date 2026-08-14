@@ -1,4 +1,4 @@
-use crate::{I18nError, Locale, PluralCategory};
+use crate::{I18nError, I18nErrorKind, Locale, PluralCategory};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -46,14 +46,16 @@ impl PluralForms {
         for (category, template) in forms {
             let category = category.into();
             let category = PluralCategory::from_name(&category).ok_or_else(|| {
-                I18nError::InvalidCatalog(format!(
+                I18nError::recoverable(I18nErrorKind::InvalidCatalog(format!(
                     "invalid plural category '{category}' for '{key}'"
-                ))
+                )))
             })?;
             if parsed.contains_key(&category) {
-                return Err(I18nError::InvalidCatalog(format!(
-                    "duplicate plural category '{}' for '{key}'",
-                    category.as_str()
+                return Err(I18nError::recoverable(I18nErrorKind::InvalidCatalog(
+                    format!(
+                        "duplicate plural category '{}' for '{key}'",
+                        category.as_str()
+                    ),
                 )));
             }
             let template = template.into();
@@ -62,9 +64,9 @@ impl PluralForms {
         }
 
         if !parsed.contains_key(&PluralCategory::Other) {
-            return Err(I18nError::MissingOther {
+            return Err(I18nError::recoverable(I18nErrorKind::MissingOther {
                 key: key.to_string(),
-            });
+            }));
         }
 
         Ok(Self { forms: parsed })
@@ -156,12 +158,12 @@ impl Catalog {
         for (key, value) in entries {
             let key = key.into();
             if key.is_empty() {
-                return Err(I18nError::InvalidCatalog(
+                return Err(I18nError::recoverable(I18nErrorKind::InvalidCatalog(
                     "catalog keys must not be empty".into(),
-                ));
+                )));
             }
             if messages.contains_key(&key) {
-                return Err(I18nError::DuplicateKey(key));
+                return Err(I18nError::recoverable(I18nErrorKind::DuplicateKey(key)));
             }
             let message = match value.into() {
                 CatalogValue::Text(template) => Message::Text(tokenize_template(&key, &template)?),
@@ -194,10 +196,15 @@ impl Catalog {
 
     #[cfg(feature = "json")]
     pub fn from_json(locale: Locale, source: impl AsRef<str>) -> Result<Self, I18nError> {
-        let value: serde_json::Value = serde_json::from_str(source.as_ref())
-            .map_err(|error| I18nError::InvalidCatalog(format!("invalid JSON: {error}")))?;
+        let value: serde_json::Value = serde_json::from_str(source.as_ref()).map_err(|error| {
+            I18nError::recoverable(I18nErrorKind::InvalidCatalog(format!(
+                "invalid JSON: {error}"
+            )))
+        })?;
         let object = value.as_object().ok_or_else(|| {
-            I18nError::InvalidCatalog("the catalog root must be a JSON object".into())
+            I18nError::recoverable(I18nErrorKind::InvalidCatalog(
+                "the catalog root must be a JSON object".into(),
+            ))
         })?;
 
         let mut leaves = HashMap::new();
@@ -251,16 +258,18 @@ fn tokenize_template(key: &str, template: &str) -> Result<Vec<Segment>, I18nErro
                 let close = template[index + 1..]
                     .find('}')
                     .map(|offset| index + 1 + offset)
-                    .ok_or_else(|| I18nError::InvalidMessage {
-                        key: key.to_string(),
-                        reason: "placeholder is missing a closing brace".into(),
+                    .ok_or_else(|| {
+                        I18nError::recoverable(I18nErrorKind::InvalidMessage {
+                            key: key.to_string(),
+                            reason: "placeholder is missing a closing brace".into(),
+                        })
                     })?;
                 let name = &template[index + 1..close];
                 if name.is_empty() {
-                    return Err(I18nError::InvalidMessage {
+                    return Err(I18nError::recoverable(I18nErrorKind::InvalidMessage {
                         key: key.to_string(),
                         reason: "placeholder name must not be empty".into(),
-                    });
+                    }));
                 }
                 if !name
                     .bytes()
@@ -270,20 +279,20 @@ fn tokenize_template(key: &str, template: &str) -> Result<Vec<Segment>, I18nErro
                         .next()
                         .is_some_and(|byte| byte.is_ascii_digit())
                 {
-                    return Err(I18nError::InvalidMessage {
+                    return Err(I18nError::recoverable(I18nErrorKind::InvalidMessage {
                         key: key.to_string(),
                         reason: format!("invalid placeholder name '{name}'"),
-                    });
+                    }));
                 }
                 segments.push(Segment::Argument(name.to_string()));
                 index = close + 1;
                 literal_start = index;
             }
             b'}' => {
-                return Err(I18nError::InvalidMessage {
+                return Err(I18nError::recoverable(I18nErrorKind::InvalidMessage {
                     key: key.to_string(),
                     reason: "placeholder has an unexpected closing brace".into(),
-                });
+                }));
             }
             _ => index += 1,
         }
@@ -308,21 +317,21 @@ fn visit_json_value(
             .any(|key| PluralCategory::from_name(key).is_some())
         {
             if !object.contains_key("other") {
-                return Err(I18nError::MissingOther {
+                return Err(I18nError::recoverable(I18nErrorKind::MissingOther {
                     key: path.to_string(),
-                });
+                }));
             }
             let mut forms = BTreeMap::new();
             for (category, value) in object {
                 if PluralCategory::from_name(category).is_none() {
-                    return Err(I18nError::InvalidCatalog(format!(
-                        "invalid plural category '{category}' for '{path}'"
+                    return Err(I18nError::recoverable(I18nErrorKind::InvalidCatalog(
+                        format!("invalid plural category '{category}' for '{path}'"),
                     )));
                 }
                 let template = value.as_str().ok_or_else(|| {
-                    I18nError::InvalidCatalog(format!(
+                    I18nError::recoverable(I18nErrorKind::InvalidCatalog(format!(
                         "plural form '{path}.{category}' must be a string"
-                    ))
+                    )))
                 })?;
                 forms.insert(category.clone(), template.to_string());
             }
@@ -338,9 +347,9 @@ fn visit_json_value(
         }
         for (key, child) in object {
             if key.is_empty() {
-                return Err(I18nError::InvalidCatalog(
+                return Err(I18nError::recoverable(I18nErrorKind::InvalidCatalog(
                     "catalog object keys must not be empty".into(),
-                ));
+                )));
             }
             let child_path = if path.is_empty() {
                 key.clone()
@@ -353,8 +362,8 @@ fn visit_json_value(
     }
 
     if value.as_str().is_none() {
-        return Err(I18nError::InvalidCatalog(format!(
-            "message '{path}' must be a string or plural object"
+        return Err(I18nError::recoverable(I18nErrorKind::InvalidCatalog(
+            format!("message '{path}' must be a string or plural object"),
         )));
     }
     insert_json_leaf(
@@ -397,7 +406,7 @@ fn has_leaf_ancestor(path: &str, leaves: &HashMap<String, CatalogValue>) -> bool
 
 #[cfg(feature = "json")]
 fn json_path_collision(path: &str) -> I18nError {
-    I18nError::InvalidCatalog(format!(
+    I18nError::recoverable(I18nErrorKind::InvalidCatalog(format!(
         "catalog path '{path}' is both a message and an object"
-    ))
+    )))
 }

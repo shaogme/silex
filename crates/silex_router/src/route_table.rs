@@ -5,6 +5,7 @@ use crate::{
         percent_decode_segment, raw_path_segments,
     },
 };
+pub use silex_core::{RoutePatternError, RoutePatternErrorKind};
 use silex_dom::view::{AnyView, View};
 use std::{
     collections::{BTreeMap, HashSet},
@@ -106,55 +107,6 @@ impl<E: Display> Display for RouteMatchError<E> {
 
 impl<E: Display + std::fmt::Debug + 'static> Error for RouteMatchError<E> {}
 
-/// Errors raised while compiling a route pattern.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum RoutePatternError {
-    Path(PathError),
-    InvalidPattern { pattern: String, reason: String },
-    DuplicateParameter { pattern: String, name: String },
-    DuplicatePattern { pattern: String },
-}
-
-impl Display for RoutePatternError {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
-        match self {
-            Self::Path(error) => Display::fmt(error, formatter),
-            Self::InvalidPattern { pattern, reason } => {
-                write!(formatter, "invalid route pattern '{pattern}': {reason}")
-            }
-            Self::DuplicateParameter { pattern, name } => {
-                write!(
-                    formatter,
-                    "route pattern '{pattern}' repeats parameter '{name}'"
-                )
-            }
-            Self::DuplicatePattern { pattern } => {
-                write!(
-                    formatter,
-                    "route pattern '{pattern}' is declared more than once"
-                )
-            }
-        }
-    }
-}
-
-impl Error for RoutePatternError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            Self::Path(error) => Some(error),
-            Self::InvalidPattern { .. }
-            | Self::DuplicateParameter { .. }
-            | Self::DuplicatePattern { .. } => None,
-        }
-    }
-}
-
-impl From<PathError> for RoutePatternError {
-    fn from(error: PathError) -> Self {
-        Self::Path(error)
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum PatternKeySegment {
     Static(String),
@@ -189,26 +141,32 @@ impl CompiledRoute {
             if let Some(name) = raw.strip_prefix(':') {
                 validate_parameter_name(&normalized, name)?;
                 if !names.insert(name.to_string()) {
-                    return Err(RoutePatternError::DuplicateParameter {
-                        pattern: normalized.clone(),
-                        name: name.to_string(),
-                    });
+                    return Err(RoutePatternError::fatal(
+                        RoutePatternErrorKind::DuplicateParameter {
+                            pattern: normalized.clone(),
+                            name: name.to_string(),
+                        },
+                    ));
                 }
                 segments.push(PatternSegment::Param(name.to_string()));
             } else if let Some(name) = raw.strip_prefix('*') {
                 if index + 1 != raw_segments.len() {
-                    return Err(RoutePatternError::InvalidPattern {
-                        pattern: normalized.clone(),
-                        reason: "wildcard must be the final segment".to_string(),
-                    });
+                    return Err(RoutePatternError::fatal(
+                        RoutePatternErrorKind::InvalidPattern {
+                            pattern: normalized.clone(),
+                            reason: "wildcard must be the final segment".to_string(),
+                        },
+                    ));
                 }
                 if !name.is_empty() {
                     validate_parameter_name(&normalized, name)?;
                     if !names.insert(name.to_string()) {
-                        return Err(RoutePatternError::DuplicateParameter {
-                            pattern: normalized.clone(),
-                            name: name.to_string(),
-                        });
+                        return Err(RoutePatternError::fatal(
+                            RoutePatternErrorKind::DuplicateParameter {
+                                pattern: normalized.clone(),
+                                name: name.to_string(),
+                            },
+                        ));
                     }
                 }
                 segments.push(PatternSegment::Wildcard(if name.is_empty() {
@@ -245,10 +203,12 @@ fn validate_parameter_name(pattern: &str, name: &str) -> Result<(), RoutePattern
         .is_some_and(|character| character == '_' || character.is_ascii_alphabetic());
     let valid_rest = chars.all(|character| character == '_' || character.is_ascii_alphanumeric());
     if !valid_first || !valid_rest {
-        return Err(RoutePatternError::InvalidPattern {
-            pattern: pattern.to_string(),
-            reason: format!("invalid parameter name '{name}'"),
-        });
+        return Err(RoutePatternError::fatal(
+            RoutePatternErrorKind::InvalidPattern {
+                pattern: pattern.to_string(),
+                reason: format!("invalid parameter name '{name}'"),
+            },
+        ));
     }
     Ok(())
 }
@@ -430,9 +390,11 @@ impl RouteMatcher {
 
     fn add_compiled(&mut self, route: CompiledRoute) -> Result<RouteId, RoutePatternError> {
         if self.routes.iter().any(|existing| existing.key == route.key) {
-            return Err(RoutePatternError::DuplicatePattern {
-                pattern: route.pattern,
-            });
+            return Err(RoutePatternError::fatal(
+                RoutePatternErrorKind::DuplicatePattern {
+                    pattern: route.pattern,
+                },
+            ));
         }
 
         let route_id = self.routes.len();
@@ -568,9 +530,11 @@ impl<'scope> RouteTable<'scope> {
                 let composed_pattern = join_route_paths(&prefix, &child_route.pattern)
                     .map(|path| path.as_str().to_string())
                     .unwrap_or_else(|_| child_route.pattern.clone());
-                return Err(RoutePatternError::DuplicatePattern {
-                    pattern: composed_pattern,
-                });
+                return Err(RoutePatternError::fatal(
+                    RoutePatternErrorKind::DuplicatePattern {
+                        pattern: composed_pattern,
+                    },
+                ));
             }
         }
         let entry = RouteEntry::new(pattern, move |_, context| {
@@ -624,10 +588,12 @@ fn normalize_nest_prefix(prefix: &str) -> Result<String, RoutePatternError> {
     let normalized = normalize_path(prefix)?;
     for segment in raw_path_segments(&normalized)? {
         if segment.raw.starts_with([':', '*']) {
-            return Err(RoutePatternError::InvalidPattern {
-                pattern: normalized,
-                reason: "nested route prefixes must contain only static segments".to_string(),
-            });
+            return Err(RoutePatternError::fatal(
+                RoutePatternErrorKind::InvalidPattern {
+                    pattern: normalized,
+                    reason: "nested route prefixes must contain only static segments".to_string(),
+                },
+            ));
         }
     }
     Ok(normalized)
@@ -635,7 +601,7 @@ fn normalize_nest_prefix(prefix: &str) -> Result<String, RoutePatternError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{RouteEntry, RouteMatcher, RoutePatternError, RouteTable};
+    use super::{RouteEntry, RouteMatcher, RoutePatternError, RoutePatternErrorKind, RouteTable};
     use crate::path::PathTail;
     use silex_dom::view::AnyView;
 
@@ -693,15 +659,21 @@ mod tests {
     fn invalid_patterns_are_rejected_before_matching() {
         assert!(matches!(
             RouteMatcher::from_patterns(["/:id/:id"]),
-            Err(RoutePatternError::DuplicateParameter { .. })
+            Err(RoutePatternError::Fatal(
+                RoutePatternErrorKind::DuplicateParameter { .. }
+            ))
         ));
         assert!(matches!(
             RouteMatcher::from_patterns(["/files/*rest/more"]),
-            Err(RoutePatternError::InvalidPattern { .. })
+            Err(RoutePatternError::Fatal(
+                RoutePatternErrorKind::InvalidPattern { .. }
+            ))
         ));
         assert!(matches!(
             RouteMatcher::from_patterns(["/:id", "/:name"]),
-            Err(RoutePatternError::DuplicatePattern { .. })
+            Err(RoutePatternError::Fatal(
+                RoutePatternErrorKind::DuplicatePattern { .. }
+            ))
         ));
         assert!(RouteMatcher::from_patterns(["/a//b"]).is_err());
     }
@@ -744,7 +716,7 @@ mod tests {
 
         assert!(matches!(
             parent.nest("/users", child, |_, outlet| outlet),
-            Err(RoutePatternError::DuplicatePattern { pattern })
+            Err(RoutePatternError::Fatal(RoutePatternErrorKind::DuplicatePattern { pattern }))
                 if pattern == "/users"
         ));
     }
@@ -759,7 +731,7 @@ mod tests {
 
         assert!(matches!(
             parent.nest("/users", child, |_, outlet| outlet),
-            Err(RoutePatternError::DuplicatePattern { pattern })
+            Err(RoutePatternError::Fatal(RoutePatternErrorKind::DuplicatePattern { pattern }))
                 if pattern == "/users/*rest"
         ));
     }
@@ -779,7 +751,7 @@ mod tests {
 
         assert!(matches!(
             parent.nest("/users", sibling, |_, outlet| outlet),
-            Err(RoutePatternError::DuplicatePattern { pattern })
+            Err(RoutePatternError::Fatal(RoutePatternErrorKind::DuplicatePattern { pattern }))
                 if pattern == "/users/*"
         ));
     }

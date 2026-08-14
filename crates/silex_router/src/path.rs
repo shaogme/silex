@@ -1,62 +1,14 @@
+use silex_core::SilexError;
 use std::{
-    error::Error,
     fmt::{Display, Formatter, Result as FmtResult},
     ops::Deref,
 };
 
-/// Errors raised while validating or decoding a local route path.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum PathError {
-    InvalidPath(String),
-    InvalidPercentEncoding,
-    InvalidUtf8,
-}
-
-impl Display for PathError {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
-        match self {
-            Self::InvalidPath(reason) => write!(formatter, "invalid route path: {reason}"),
-            Self::InvalidPercentEncoding => formatter.write_str("invalid percent encoding"),
-            Self::InvalidUtf8 => formatter.write_str("percent-decoded path is not valid UTF-8"),
-        }
-    }
-}
-
-impl Error for PathError {}
-
-/// Errors raised while converting a decoded path parameter to a Rust value.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum PathParamError {
-    InvalidPercentEncoding,
-    InvalidUtf8,
-    InvalidValue(String),
-}
-
-impl Display for PathParamError {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
-        match self {
-            Self::InvalidPercentEncoding => formatter.write_str("invalid percent encoding"),
-            Self::InvalidUtf8 => formatter.write_str("percent-decoded path is not valid UTF-8"),
-            Self::InvalidValue(value) => write!(formatter, "invalid path parameter: {value}"),
-        }
-    }
-}
-
-impl Error for PathParamError {}
-
-impl From<PathError> for PathParamError {
-    fn from(error: PathError) -> Self {
-        match error {
-            PathError::InvalidPercentEncoding => Self::InvalidPercentEncoding,
-            PathError::InvalidUtf8 => Self::InvalidUtf8,
-            PathError::InvalidPath(reason) => Self::InvalidValue(reason),
-        }
-    }
-}
+pub use silex_core::{PathError, PathErrorKind, PathParamError, PathParamErrorKind};
 
 /// Converts a typed value to and from one URL path segment.
 pub trait PathParam: Sized + 'static {
-    type Error: Display;
+    type Error: std::error::Error + Into<SilexError> + 'static;
 
     fn decode_segment(value: &str) -> Result<Self, Self::Error>;
     fn encode_segment(&self) -> Result<String, Self::Error>;
@@ -203,8 +155,10 @@ impl RoutePathBuilder {
 
     pub fn push_static(&mut self, segment: &str) -> Result<(), PathParamError> {
         if segment.is_empty() || segment.contains(['/', '?', '#']) {
-            return Err(PathParamError::InvalidValue(
-                "static route segments must not be empty or contain separators".to_string(),
+            return Err(PathParamError::recoverable(
+                PathParamErrorKind::InvalidValue(
+                    "static route segments must not be empty or contain separators".to_string(),
+                ),
             ));
         }
         percent_decode_segment(segment).map_err(PathParamError::from)?;
@@ -217,9 +171,9 @@ impl RoutePathBuilder {
     where
         T: PathParam,
     {
-        let encoded = value
-            .encode_segment()
-            .map_err(|error| PathParamError::InvalidValue(error.to_string()))?;
+        let encoded = value.encode_segment().map_err(|error| {
+            PathParamError::recoverable(PathParamErrorKind::InvalidValue(error.to_string()))
+        })?;
         self.path.push('/');
         self.path.push_str(&encoded);
         Ok(())
@@ -264,15 +218,15 @@ pub fn normalize_path(path: &str) -> Result<String, PathError> {
         .iter()
         .any(|byte| matches!(byte, b'?' | b'#'))
     {
-        return Err(PathError::InvalidPath(
+        return Err(PathError::recoverable(PathErrorKind::InvalidPath(
             "query strings and fragments are not route paths".to_string(),
-        ));
+        )));
     }
 
     if !path.starts_with('/') {
-        return Err(PathError::InvalidPath(
+        return Err(PathError::recoverable(PathErrorKind::InvalidPath(
             "route paths must start with '/'".to_string(),
-        ));
+        )));
     }
 
     if path == "/" {
@@ -280,9 +234,9 @@ pub fn normalize_path(path: &str) -> Result<String, PathError> {
     }
 
     if path.contains("//") {
-        return Err(PathError::InvalidPath(
+        return Err(PathError::recoverable(PathErrorKind::InvalidPath(
             "empty path segments are not allowed".to_string(),
-        ));
+        )));
     }
 
     let normalized = path.strip_suffix('/').unwrap_or(path);
@@ -302,7 +256,9 @@ pub fn percent_decode_segment(value: &str) -> Result<String, PathError> {
     while index < bytes.len() {
         if bytes[index] == b'%' {
             if index + 2 >= bytes.len() {
-                return Err(PathError::InvalidPercentEncoding);
+                return Err(PathError::recoverable(
+                    PathErrorKind::InvalidPercentEncoding,
+                ));
             }
             let high = decode_hex(bytes[index + 1])?;
             let low = decode_hex(bytes[index + 2])?;
@@ -314,7 +270,7 @@ pub fn percent_decode_segment(value: &str) -> Result<String, PathError> {
         }
     }
 
-    String::from_utf8(decoded).map_err(|_| PathError::InvalidUtf8)
+    String::from_utf8(decoded).map_err(|_| PathError::recoverable(PathErrorKind::InvalidUtf8))
 }
 
 /// Encodes one decoded value for use as a URL path segment.
@@ -340,7 +296,9 @@ fn decode_hex(byte: u8) -> Result<u8, PathError> {
         b'0'..=b'9' => Ok(byte - b'0'),
         b'a'..=b'f' => Ok(byte - b'a' + 10),
         b'A'..=b'F' => Ok(byte - b'A' + 10),
-        _ => Err(PathError::InvalidPercentEncoding),
+        _ => Err(PathError::recoverable(
+            PathErrorKind::InvalidPercentEncoding,
+        )),
     }
 }
 
@@ -402,7 +360,9 @@ macro_rules! impl_scalar_path_param {
                 fn decode_segment(value: &str) -> Result<Self, Self::Error> {
                     let decoded = percent_decode_segment(value).map_err(PathParamError::from)?;
                     decoded.parse::<$type>().map_err(|error| {
-                        PathParamError::InvalidValue(error.to_string())
+                        PathParamError::recoverable(PathParamErrorKind::InvalidValue(
+                            error.to_string(),
+                        ))
                     })
                 }
 
@@ -424,12 +384,14 @@ impl PathParam for char {
     fn decode_segment(value: &str) -> Result<Self, Self::Error> {
         let decoded = percent_decode_segment(value).map_err(PathParamError::from)?;
         let mut chars = decoded.chars();
-        let character = chars
-            .next()
-            .ok_or_else(|| PathParamError::InvalidValue("expected one character".to_string()))?;
-        if chars.next().is_some() {
-            return Err(PathParamError::InvalidValue(
+        let character = chars.next().ok_or_else(|| {
+            PathParamError::recoverable(PathParamErrorKind::InvalidValue(
                 "expected one character".to_string(),
+            ))
+        })?;
+        if chars.next().is_some() {
+            return Err(PathParamError::recoverable(
+                PathParamErrorKind::InvalidValue("expected one character".to_string()),
             ));
         }
         Ok(character)
@@ -465,9 +427,9 @@ pub(crate) fn raw_path_segments(path: &str) -> Result<Vec<RawPathSegment<'_>>, P
     let mut start = 1;
     for raw in path[1..end].split('/') {
         if raw.is_empty() {
-            return Err(PathError::InvalidPath(
+            return Err(PathError::recoverable(PathErrorKind::InvalidPath(
                 "empty path segments are not allowed".to_string(),
-            ));
+            )));
         }
         let segment_end = start + raw.len();
         segments.push(RawPathSegment {
@@ -511,8 +473,9 @@ pub fn strip_route_prefix(prefix: &str, path: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        PathParam, PathParamError, PathTail, RoutePath, RoutePathBuilder, join_route_paths,
-        normalize_path, percent_decode_segment, percent_encode_segment, strip_route_prefix,
+        PathParam, PathParamError, PathParamErrorKind, PathTail, RoutePath, RoutePathBuilder,
+        join_route_paths, normalize_path, percent_decode_segment, percent_encode_segment,
+        strip_route_prefix,
     };
 
     #[test]
@@ -538,7 +501,9 @@ mod tests {
         assert_eq!(String::decode_segment("a%2Fb").unwrap(), "a/b");
         assert!(matches!(
             u32::decode_segment("not-a-number"),
-            Err(PathParamError::InvalidValue(_))
+            Err(PathParamError::Recoverable(
+                PathParamErrorKind::InvalidValue(_)
+            ))
         ));
     }
 

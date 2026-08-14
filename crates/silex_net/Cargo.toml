@@ -15,7 +15,7 @@ readme.workspace = true
 workspace = true
 
 [dependencies]
-silex_core.workspace = true
+silex_core = { workspace = true, features = ["error-net"] }
 silex_persist = { workspace = true, optional = true }
 wasm-bindgen.workspace = true
 web-sys = { workspace = true, features = [

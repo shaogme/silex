@@ -1,4 +1,4 @@
-use crate::PersistenceError;
+use crate::{PersistenceError, PersistenceErrorKind};
 use js_sys::Object;
 use ref_str::LocalStaticRefStr;
 use silex_core::{ErrorReporter, Rx, Scope, SilexResult};
@@ -135,9 +135,9 @@ impl<const IS_LOCAL: bool> WebStorageBackend<IS_LOCAL> {
     }
 
     fn storage(&self) -> Result<&Storage, PersistenceError> {
-        self.storage
-            .as_ref()
-            .ok_or(PersistenceError::BackendUnavailable)
+        self.storage.as_ref().ok_or(PersistenceError::recoverable(
+            PersistenceErrorKind::BackendUnavailable,
+        ))
     }
 }
 
@@ -183,13 +183,15 @@ impl<'scope> QueryBackend<'scope> {
     }
 
     fn navigator(&self) -> Result<&Navigator<'scope>, PersistenceError> {
-        self.navigator
-            .as_ref()
-            .ok_or(PersistenceError::BackendUnavailable)
+        self.navigator.as_ref().ok_or(PersistenceError::recoverable(
+            PersistenceErrorKind::BackendUnavailable,
+        ))
     }
 
     fn query_map(&self) -> Result<Rx<'scope, HashMap<String, String>>, PersistenceError> {
-        self.query_map.ok_or(PersistenceError::BackendUnavailable)
+        self.query_map.ok_or(PersistenceError::recoverable(
+            PersistenceErrorKind::BackendUnavailable,
+        ))
     }
 }
 
@@ -276,8 +278,8 @@ impl<'scope> PersistenceBackend<'scope> for QueryBackend<'scope> {
                 error_handler,
             )
             .map_err(|error| {
-                BackendSubscribeError::new(PersistenceError::InvalidConfiguration(
-                    error.to_string(),
+                BackendSubscribeError::new(PersistenceError::fatal(
+                    PersistenceErrorKind::InvalidConfiguration(error.to_string()),
                 ))
             })?;
 
@@ -368,7 +370,9 @@ impl StorageDispatcher {
             return Ok(());
         }
 
-        let window = web_sys::window().ok_or(PersistenceError::BackendUnavailable)?;
+        let window = web_sys::window().ok_or(PersistenceError::recoverable(
+            PersistenceErrorKind::BackendUnavailable,
+        ))?;
         let local_storage = self.local_storage.clone();
         let session_storage = self.session_storage.clone();
 
@@ -424,7 +428,10 @@ impl StorageDispatcher {
         window
             .add_event_listener_with_callback("storage", closure.as_ref().unchecked_ref())
             .map_err(|error| {
-                PersistenceError::ReadFailed(format!("add storage listener failed: {:?}", error))
+                PersistenceError::recoverable(PersistenceErrorKind::ReadFailed(format!(
+                    "add storage listener failed: {:?}",
+                    error
+                )))
             })?;
         self.closure = Some(closure);
         Ok(())
@@ -433,19 +440,28 @@ impl StorageDispatcher {
 
 fn storage_get(storage: &Storage, key: &str) -> Result<Option<String>, PersistenceError> {
     storage.get_item(key).map_err(|error| {
-        PersistenceError::ReadFailed(format!("storage get_item failed: {:?}", error))
+        PersistenceError::recoverable(PersistenceErrorKind::ReadFailed(format!(
+            "storage get_item failed: {:?}",
+            error
+        )))
     })
 }
 
 fn storage_set(storage: &Storage, key: &str, value: &str) -> Result<(), PersistenceError> {
     storage.set_item(key, value).map_err(|error| {
-        PersistenceError::WriteFailed(format!("storage set_item failed: {:?}", error))
+        PersistenceError::recoverable(PersistenceErrorKind::WriteFailed(format!(
+            "storage set_item failed: {:?}",
+            error
+        )))
     })
 }
 
 fn storage_remove(storage: &Storage, key: &str) -> Result<(), PersistenceError> {
     storage.remove_item(key).map_err(|error| {
-        PersistenceError::RemoveFailed(format!("storage remove_item failed: {:?}", error))
+        PersistenceError::recoverable(PersistenceErrorKind::RemoveFailed(format!(
+            "storage remove_item failed: {:?}",
+            error
+        )))
     })
 }
 
@@ -475,13 +491,22 @@ fn subscribe_storage(
 }
 
 fn storage_handle(kind: StorageAreaKind) -> Result<Storage, PersistenceError> {
-    let window = web_sys::window().ok_or(PersistenceError::BackendUnavailable)?;
+    let window = web_sys::window().ok_or(PersistenceError::recoverable(
+        PersistenceErrorKind::BackendUnavailable,
+    ))?;
     let storage = match kind {
         StorageAreaKind::Local => window.local_storage(),
         StorageAreaKind::Session => window.session_storage(),
     }
-    .map_err(|error| PersistenceError::ReadFailed(format!("storage unavailable: {:?}", error)))?
-    .ok_or(PersistenceError::BackendUnavailable)?;
+    .map_err(|error| {
+        PersistenceError::recoverable(PersistenceErrorKind::ReadFailed(format!(
+            "storage unavailable: {:?}",
+            error
+        )))
+    })?
+    .ok_or(PersistenceError::recoverable(
+        PersistenceErrorKind::BackendUnavailable,
+    ))?;
     Ok(storage)
 }
 
@@ -575,7 +600,9 @@ mod tests {
     fn query_backend_unavailable_reports_backend_unavailable() {
         assert!(matches!(
             QueryBackend::<'static>::unavailable().get("q"),
-            Err(PersistenceError::BackendUnavailable)
+            Err(PersistenceError::Recoverable(
+                PersistenceErrorKind::BackendUnavailable,
+            ))
         ));
 
         let mut runtime = Runtime::new();
@@ -592,7 +619,12 @@ mod tests {
                             .expect("error handler should be registered"),
                     )
                     .map_err(|error| error.into_error());
-                assert!(matches!(result, Err(PersistenceError::BackendUnavailable)));
+                assert!(matches!(
+                    result,
+                    Err(PersistenceError::Recoverable(
+                        PersistenceErrorKind::BackendUnavailable
+                    ))
+                ));
             })
             .expect("unavailable backend test scope should run");
     }
@@ -621,7 +653,9 @@ mod tests {
                     .map_err(|error| error.into_error());
                 assert!(matches!(
                     result,
-                    Err(PersistenceError::InvalidConfiguration(_))
+                    Err(PersistenceError::Fatal(
+                        PersistenceErrorKind::InvalidConfiguration(_)
+                    ))
                 ));
             });
         });

@@ -11,6 +11,9 @@ use silex_core::CompletionOnce;
 use silex_core::{ErrorReporter, Scope, SilexResult};
 use std::{marker::PhantomData, rc::Rc, time::Duration};
 
+#[cfg(any(feature = "json", feature = "persist"))]
+use crate::NetErrorKind;
+
 pub mod client_impl;
 pub mod helper;
 pub mod resolver;
@@ -391,8 +394,9 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
     where
         TBody: serde::Serialize,
     {
-        let raw = serde_json::to_string(&value)
-            .map_err(|error| NetError::SerializeError(error.to_string()))?;
+        let raw = serde_json::to_string(&value).map_err(|error| {
+            NetError::recoverable(NetErrorKind::SerializeError(error.to_string()))
+        })?;
         self.body = BodyResolver::Json(ValueResolver::static_value(raw));
         if !self
             .headers
@@ -463,8 +467,10 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
         T: Clone + 'static,
     {
         if !cache.belongs_to(self.scope) {
-            return Err(crate::NetError::InvalidConfiguration(
-                "HTTP cache scope does not match its builder scope".to_string(),
+            return Err(crate::NetError::fatal(
+                crate::NetErrorKind::InvalidConfiguration(
+                    "HTTP cache scope does not match its builder scope".to_string(),
+                ),
             ));
         }
         self.cache = Some(CacheSpec { policy, cache });
@@ -532,9 +538,9 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
             .cache
             .as_ref()
             .ok_or_else(|| {
-                NetError::InvalidConfiguration(
+                NetError::fatal(NetErrorKind::InvalidConfiguration(
                     "cache binding requires cache configuration".to_string(),
-                )
+                ))
             })?
             .cache
             .completion_once_for_binding(self.scope, binding)?)
@@ -689,6 +695,8 @@ mod tests {
     #[cfg(feature = "json")]
     use crate::NetError;
     #[cfg(feature = "json")]
+    use crate::NetErrorKind;
+    #[cfg(feature = "json")]
     use silex_core::reactivity::MutationState;
 
     #[cfg(feature = "json")]
@@ -815,7 +823,7 @@ mod tests {
                     .json_body(FailingSerialize);
                 assert!(matches!(
                     result,
-                    Err(NetError::SerializeError(message))
+                    Err(NetError::Recoverable(NetErrorKind::SerializeError(message)))
                         if message.contains("serialization failed")
                 ));
             })
@@ -840,7 +848,7 @@ mod tests {
                 mutation.mutate(()).unwrap();
                 assert!(matches!(
                     mutation.state.get().unwrap(),
-                    MutationState::Error(NetError::SerializeError(_))
+                    MutationState::Error(NetError::Recoverable(NetErrorKind::SerializeError(_)))
                 ));
             })
             .unwrap();

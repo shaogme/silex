@@ -42,8 +42,8 @@ enum RouteNodeKindInput {
     },
     Nested {
         prefix: LitStr,
-        layout: ExprClosure,
-        child_type: Type,
+        layout: Box<ExprClosure>,
+        child_type: Box<Type>,
     },
 }
 
@@ -78,8 +78,8 @@ impl Parse for RouteNodeInput {
             syn::braced!(content in input);
             let nested = RouteNodeKindInput::Nested {
                 prefix: parse_nested_prefix(&content)?,
-                layout: parse_nested_layout(&content)?,
-                child_type,
+                layout: Box::new(parse_nested_layout(&content)?),
+                child_type: Box::new(child_type),
             };
             if !content.is_empty() {
                 return Err(content.error(
@@ -186,8 +186,8 @@ struct RouteLeaf {
 struct NestedRoute {
     name: Ident,
     prefix: String,
-    layout: ExprClosure,
-    child_type: Type,
+    layout: Box<ExprClosure>,
+    child_type: Box<Type>,
 }
 
 enum RouteNode {
@@ -542,8 +542,10 @@ fn generate_path_impl(silex: &TokenStream, tree: &RouteTree) -> TokenStream {
             {
                 return quote! {
                     Self::#variant => Err(
-                        #silex::router::PathParamError::InvalidValue(
+                        #silex::router::PathParamError::recoverable(
+                            #silex::router::PathParamErrorKind::InvalidValue(
                             "anonymous wildcard routes cannot be encoded".to_string(),
+                            ),
                         )
                     )
                 };
@@ -563,8 +565,10 @@ fn generate_path_impl(silex: &TokenStream, tree: &RouteTree) -> TokenStream {
                     quote! { __silex_path.push_param(#ident)?; }
                 }
                 RouteSegment::Wildcard { name: None } => quote! {
-                    return Err(#silex::router::PathParamError::InvalidValue(
-                        "anonymous wildcard routes cannot be encoded".to_string(),
+                    return Err(#silex::router::PathParamError::recoverable(
+                        #silex::router::PathParamErrorKind::InvalidValue(
+                            "anonymous wildcard routes cannot be encoded".to_string(),
+                        ),
                     ));
                 },
             });
@@ -664,7 +668,11 @@ fn generate_match_path_impl(silex: &TokenStream, tree: &RouteTree) -> TokenStrea
                 let __silex_matcher = #silex::router::RouteMatcher::from_patterns([
                     #(#patterns),*
                 ])
-                .map_err(|error| #silex::router::PathError::InvalidPath(error.to_string()))?;
+                .map_err(|error| {
+                    #silex::router::PathError::recoverable(
+                        #silex::router::PathErrorKind::InvalidPath(error.to_string()),
+                    )
+                })?;
                 for __silex_match in __silex_matcher.matches(path)? {
                     let __silex_result = match __silex_match.route_id() {
                         #(#arms,)*
@@ -723,7 +731,7 @@ fn generate_table_impl(silex: &TokenStream, tree: &RouteTree) -> TokenStream {
                     + 'scope,
             {
                 let __silex_render = ::std::rc::Rc::new(render);
-                Ok(#table)
+                #table
             }
         }
     }
@@ -738,8 +746,10 @@ fn generate_table_expression(
         RouteNode::Leaf(leaf) => Some(generate_entry(silex, leaf, &render)),
         RouteNode::Nested(_) => None,
     });
-    let mut expression = quote! {
-        #silex::router::RouteTable::from_entries(::std::vec![#(#entries?),*])?
+    let mut statements = quote! {
+        let mut __silex_table = #silex::router::RouteTable::from_entries(
+            ::std::vec![#(#entries?),*]
+        )?;
     };
     for node in &tree.nodes {
         let RouteNode::Nested(nested) = node else {
@@ -757,8 +767,9 @@ fn generate_table_expression(
             })?
         };
         let layout = &nested.layout;
-        expression = quote! {
-            #expression.nest(
+        statements = quote! {
+            #statements
+            __silex_table = __silex_table.nest(
                 #prefix,
                 #child,
                 move |__silex_context, __silex_outlet| {
@@ -766,10 +777,13 @@ fn generate_table_expression(
                         (#layout)(__silex_context, __silex_outlet)
                     )
                 },
-            )?
+            )?;
         };
     }
-    expression
+    quote! {
+        #statements
+        Ok(__silex_table)
+    }
 }
 
 fn generate_entry(silex: &TokenStream, leaf: &RouteLeaf, render: &TokenStream) -> TokenStream {

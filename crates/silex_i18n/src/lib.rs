@@ -3,7 +3,6 @@
 #[cfg(feature = "browser")]
 mod browser;
 mod catalog;
-mod error;
 #[cfg(feature = "intl")]
 mod intl;
 mod loader;
@@ -12,7 +11,6 @@ mod plural;
 mod runtime;
 
 pub use catalog::{Catalog, CatalogValue, Message, PluralForms, Segment};
-pub use error::I18nError;
 pub use loader::{CatalogLoadError, CatalogResource};
 pub use locale::Locale;
 pub use plural::{PluralCategory, plural_category};
@@ -23,7 +21,7 @@ pub use silex_core::reactivity::{
     Effect, Memo, ReadSignal, Resource, ResourceState, RwSignal, StoredValue, SuspenseContext,
 };
 pub use silex_core::traits::{RxGet, RxRead, RxWrite};
-pub use silex_core::{RootHandle, Runtime, Scope};
+pub use silex_core::{I18nError, I18nErrorKind, RootHandle, Runtime, Scope};
 #[cfg(feature = "persist")]
 pub use silex_persist::Persistent;
 
@@ -35,8 +33,8 @@ pub use browser::{
 
 #[cfg(feature = "intl")]
 pub use intl::{
-    DateTimeFormat, DateTimeFormatter, Intl, IntlError, NumberFormat, NumberFormatter,
-    format_date_time, format_number,
+    DateTimeFormat, DateTimeFormatter, Intl, IntlError, IntlErrorKind, NumberFormat,
+    NumberFormatter, format_date_time, format_number,
 };
 
 #[cfg(feature = "macros")]
@@ -166,7 +164,10 @@ mod tests {
     fn locale_constructor_reports_invalid_input() {
         let error = Locale::new("en US").expect_err("invalid locale must return an error");
 
-        assert!(matches!(error, I18nError::InvalidLocale(_)));
+        assert!(matches!(
+            error,
+            I18nError::Recoverable(I18nErrorKind::InvalidLocale(_))
+        ));
     }
 
     #[test]
@@ -314,7 +315,7 @@ mod tests {
 
         assert!(matches!(
             &error,
-            I18nError::Reactivity(ReactiveError::RuntimeMismatch)
+            I18nError::Fatal(I18nErrorKind::Reactivity(ReactiveError::RuntimeMismatch))
         ));
         assert!(error.to_string().contains("响应式节点属于不同的 Runtime"));
     }
@@ -395,14 +396,20 @@ mod tests {
     fn rejects_invalid_messages() {
         let error = Catalog::from_entries(locale("en"), [("bad", "Hello {name")])
             .expect_err("unclosed placeholder must fail");
-        assert!(matches!(error, I18nError::InvalidMessage { .. }));
+        assert!(matches!(
+            error,
+            I18nError::Recoverable(I18nErrorKind::InvalidMessage { .. })
+        ));
 
         let error = Catalog::from_entries(
             locale("en"),
             [("items", CatalogValue::plural([("one", "one")]))],
         )
         .expect_err("plural messages require other");
-        assert!(matches!(error, I18nError::MissingOther { .. }));
+        assert!(matches!(
+            error,
+            I18nError::Recoverable(I18nErrorKind::MissingOther { .. })
+        ));
     }
 
     #[cfg(all(feature = "persist", target_arch = "wasm32"))]
@@ -594,7 +601,9 @@ mod tests {
 
                 assert!(matches!(
                     result,
-                    Err(I18nError::Reactivity(ReactiveError::RuntimeMismatch))
+                    Err(I18nError::Fatal(I18nErrorKind::Reactivity(
+                        ReactiveError::RuntimeMismatch,
+                    )))
                 ));
                 assert_eq!(target_scope.runtime_snapshot(), before);
                 assert_eq!(
@@ -635,13 +644,19 @@ mod tests {
             r#"{ "home": "Silex", "home.title": "Title" }"#,
         )
         .expect_err("message/object collision must fail");
-        assert!(matches!(error, I18nError::InvalidCatalog(_)));
+        assert!(matches!(
+            error,
+            I18nError::Recoverable(I18nErrorKind::InvalidCatalog(_))
+        ));
 
         let error = Catalog::from_json(
             locale("en"),
             r#"{ "items": { "one": "one", "manyy": "many", "other": "other" } }"#,
         )
         .expect_err("unknown plural category must fail");
-        assert!(matches!(error, I18nError::InvalidCatalog(_)));
+        assert!(matches!(
+            error,
+            I18nError::Recoverable(I18nErrorKind::InvalidCatalog(_))
+        ));
     }
 }

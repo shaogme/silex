@@ -1,24 +1,5 @@
 use crate::Locale;
-use std::fmt::{Display, Formatter};
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum IntlError {
-    InvalidValue(String),
-    JavaScript(String),
-    Unsupported(&'static str),
-}
-
-impl Display for IntlError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::InvalidValue(value) => write!(f, "invalid Intl value: {value}"),
-            Self::JavaScript(reason) => write!(f, "Intl operation failed: {reason}"),
-            Self::Unsupported(formatter) => write!(f, "Intl formatter is unsupported: {formatter}"),
-        }
-    }
-}
-
-impl std::error::Error for IntlError {}
+pub use silex_core::{IntlError, IntlErrorKind};
 
 #[derive(Clone, Debug)]
 pub struct NumberFormat {
@@ -40,7 +21,9 @@ impl NumberFormat {
 
     pub fn format(&self, value: f64) -> Result<String, IntlError> {
         if !value.is_finite() {
-            return Err(IntlError::InvalidValue("number must be finite".to_string()));
+            return Err(IntlError::recoverable(IntlErrorKind::InvalidValue(
+                "number must be finite".to_string(),
+            )));
         }
 
         #[cfg(target_arch = "wasm32")]
@@ -76,9 +59,9 @@ impl DateTimeFormat {
     /// Formats a Unix timestamp expressed in milliseconds.
     pub fn format(&self, timestamp_millis: f64) -> Result<String, IntlError> {
         if !timestamp_millis.is_finite() {
-            return Err(IntlError::InvalidValue(
+            return Err(IntlError::recoverable(IntlErrorKind::InvalidValue(
                 "timestamp must be finite".to_string(),
-            ));
+            )));
         }
 
         #[cfg(target_arch = "wasm32")]
@@ -255,7 +238,11 @@ mod wasm {
         let constructor = Reflect::get(&intl, &JsValue::from_str(name))
             .map_err(js_error)?
             .dyn_into::<Function>()
-            .map_err(|_| IntlError::JavaScript(format!("Intl.{name} is not a constructor")))?;
+            .map_err(|_| {
+                IntlError::recoverable(IntlErrorKind::JavaScript(format!(
+                    "Intl.{name} is not a constructor"
+                )))
+            })?;
         let arguments = Array::new();
         arguments.push(&JsValue::from_str(locale.as_str()));
         Reflect::construct(&constructor, &arguments).map_err(js_error)
@@ -265,20 +252,28 @@ mod wasm {
         let format = Reflect::get(formatter, &JsValue::from_str("format"))
             .map_err(js_error)?
             .dyn_into::<Function>()
-            .map_err(|_| IntlError::JavaScript("Intl formatter has no format method".into()))?;
+            .map_err(|_| {
+                IntlError::recoverable(IntlErrorKind::JavaScript(
+                    "Intl formatter has no format method".into(),
+                ))
+            })?;
         format
             .call1(formatter, &value)
             .map_err(js_error)?
             .as_string()
-            .ok_or_else(|| IntlError::JavaScript("Intl format did not return a string".into()))
+            .ok_or_else(|| {
+                IntlError::recoverable(IntlErrorKind::JavaScript(
+                    "Intl format did not return a string".into(),
+                ))
+            })
     }
 
     fn js_error(value: JsValue) -> IntlError {
-        IntlError::JavaScript(
+        IntlError::recoverable(IntlErrorKind::JavaScript(
             value
                 .as_string()
                 .unwrap_or_else(|| "unknown JavaScript error".to_string()),
-        )
+        ))
     }
 }
 

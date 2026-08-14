@@ -1,6 +1,8 @@
 use crate::backend::{BackendEvent, BackendSubscription};
 use crate::builder::PersistentBuilder;
-use crate::{DecodePolicy, NoBackend, NoCodec, PersistenceError, RemovePolicy};
+use crate::{
+    DecodePolicy, NoBackend, NoCodec, PersistenceError, PersistenceErrorKind, RemovePolicy,
+};
 use ref_str::LocalStaticRefStr;
 use silex_core::{
     ErrorReporter, ReactiveError, ReactiveResult, Rx, RxGet, Scope, SilexErrorKind, SilexResult,
@@ -177,7 +179,9 @@ where
         if self.scope.is_active() {
             Ok(())
         } else {
-            Err(PersistenceError::Reactivity(ReactiveError::NoSuchNode))
+            Err(PersistenceError::Fatal(PersistenceErrorKind::Reactivity(
+                ReactiveError::NoSuchNode,
+            )))
         }
     }
 
@@ -218,7 +222,9 @@ where
             Err(error) => return Err(PersistenceError::from(error)),
         };
         match self.set(default()) {
-            Err(PersistenceError::Reactivity(ReactiveError::NoSuchNode)) => Ok(()),
+            Err(PersistenceError::Fatal(PersistenceErrorKind::Reactivity(
+                ReactiveError::NoSuchNode,
+            ))) => Ok(()),
             result => result,
         }
     }
@@ -533,7 +539,7 @@ where
                 .map_err(PersistenceError::from)?;
             Ok(())
         }
-        Err(PersistenceError::DecodeFailed { raw, message }) => {
+        Err(PersistenceError::Recoverable(PersistenceErrorKind::DecodeFailed { raw, message })) => {
             let policy = controller
                 .with_untracked(|controller| controller.decode_policy)
                 .map_err(PersistenceError::from)?;
@@ -725,14 +731,21 @@ fn clear_external_value_markers<T>(controller: &mut PersistenceController<'_, T>
 
 fn set_error_state(state: RwSignal<'_, PersistenceState>, error: &PersistenceError) {
     let next = match error {
-        PersistenceError::ReadFailed(message) => PersistenceState::ReadError(message.clone()),
-        PersistenceError::DecodeFailed { raw, message } => {
+        PersistenceError::Recoverable(PersistenceErrorKind::ReadFailed(message))
+        | PersistenceError::Fatal(PersistenceErrorKind::ReadFailed(message)) => {
+            PersistenceState::ReadError(message.clone())
+        }
+        PersistenceError::Recoverable(PersistenceErrorKind::DecodeFailed { raw, message })
+        | PersistenceError::Fatal(PersistenceErrorKind::DecodeFailed { raw, message }) => {
             PersistenceState::DecodeError(DecodeErrorInfo {
                 raw: raw.clone(),
                 message: message.clone(),
             })
         }
-        PersistenceError::BackendUnavailable => PersistenceState::Unavailable,
+        PersistenceError::Recoverable(PersistenceErrorKind::BackendUnavailable)
+        | PersistenceError::Fatal(PersistenceErrorKind::BackendUnavailable) => {
+            PersistenceState::Unavailable
+        }
         _ => PersistenceState::WriteError(error.message()),
     };
     let _ = state.write_signal().set(next);

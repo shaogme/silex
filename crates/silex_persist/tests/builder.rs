@@ -3,7 +3,8 @@ use silex_core::{ErrorReporter, ReactiveError, Runtime, Scope, SilexResult};
 use silex_persist::{
     BackendEvent, BackendEventSink, BackendSubscribeError, BackendSubscription, DecodePolicy,
     NoDefault, ParseCodec, PersistCodec, PersistMode, PersistenceBackend, PersistenceError,
-    PersistenceState, Persistent, PersistentBuilder, RemovePolicy, SyncStrategy, WriteDefault,
+    PersistenceErrorKind, PersistenceState, Persistent, PersistentBuilder, RemovePolicy,
+    SyncStrategy, WriteDefault,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -59,8 +60,10 @@ impl MockBackend {
 
     fn failing_subscription() -> Self {
         Self {
-            fail_subscription: Rc::new(RefCell::new(Some(PersistenceError::InvalidConfiguration(
-                "mock subscription configuration failure".to_string(),
+            fail_subscription: Rc::new(RefCell::new(Some(PersistenceError::fatal(
+                PersistenceErrorKind::InvalidConfiguration(
+                    "mock subscription configuration failure".to_string(),
+                ),
             )))),
             ..Self::default()
         }
@@ -98,8 +101,8 @@ impl<'scope> PersistenceBackend<'scope> for MockBackend {
 
     fn set(&self, key: &str, value: &str) -> Result<(), PersistenceError> {
         if *self.fail_writes.borrow() {
-            return Err(PersistenceError::WriteFailed(
-                "mock backend write failure".to_string(),
+            return Err(PersistenceError::recoverable(
+                PersistenceErrorKind::WriteFailed("mock backend write failure".to_string()),
             ));
         }
         self.state
@@ -113,8 +116,8 @@ impl<'scope> PersistenceBackend<'scope> for MockBackend {
 
     fn remove(&self, key: &str) -> Result<(), PersistenceError> {
         if *self.fail_removes.borrow() {
-            return Err(PersistenceError::RemoveFailed(
-                "mock backend remove failure".to_string(),
+            return Err(PersistenceError::recoverable(
+                PersistenceErrorKind::RemoveFailed("mock backend remove failure".to_string()),
             ));
         }
         self.state.borrow_mut().remove(key);
@@ -279,9 +282,9 @@ impl<'scope> PersistenceBackend<'scope> for FailingSubscriptionResourceBackend {
             cleanup_calls.set(cleanup_calls.get() + 1);
         });
         Err(BackendSubscribeError::with_cleanup(
-            PersistenceError::InvalidConfiguration(
+            PersistenceError::fatal(PersistenceErrorKind::InvalidConfiguration(
                 "resource backend subscription failure".to_string(),
-            ),
+            )),
             cleanup,
         ))
     }
@@ -465,8 +468,8 @@ fn manual_encode_failure_sets_write_error_for_effect_and_flush() {
         );
         assert_eq!(
             value.flush(),
-            Err(PersistenceError::EncodeFailed(
-                "mock codec encode failure".to_string()
+            Err(PersistenceError::recoverable(
+                PersistenceErrorKind::EncodeFailed("mock codec encode failure".to_string())
             ))
         );
         assert_eq!(
@@ -941,7 +944,9 @@ fn stale_persistent_operations_return_no_such_node_during_root_cleanup() {
                         .push(value.flush().expect_err("stale flush must fail"));
                     assert_eq!(
                         value.set(2),
-                        Err(PersistenceError::Reactivity(ReactiveError::NoSuchNode))
+                        Err(PersistenceError::fatal(PersistenceErrorKind::Reactivity(
+                            ReactiveError::NoSuchNode,
+                        )))
                     );
                     value.reset()?;
                     Ok(())
@@ -958,9 +963,9 @@ fn stale_persistent_operations_return_no_such_node_during_root_cleanup() {
     assert_eq!(
         errors.borrow().as_slice(),
         &[
-            PersistenceError::Reactivity(ReactiveError::NoSuchNode),
-            PersistenceError::Reactivity(ReactiveError::NoSuchNode),
-            PersistenceError::Reactivity(ReactiveError::NoSuchNode),
+            PersistenceError::fatal(PersistenceErrorKind::Reactivity(ReactiveError::NoSuchNode)),
+            PersistenceError::fatal(PersistenceErrorKind::Reactivity(ReactiveError::NoSuchNode)),
+            PersistenceError::fatal(PersistenceErrorKind::Reactivity(ReactiveError::NoSuchNode)),
         ]
     );
     assert_eq!(backend.writes.borrow().len(), writes_before_dispose);
@@ -986,7 +991,7 @@ fn subscription_configuration_failure_does_not_create_binding_nodes() {
 
         assert!(matches!(
             result,
-            Err(PersistenceError::InvalidConfiguration(message))
+            Err(PersistenceError::Fatal(PersistenceErrorKind::InvalidConfiguration(message)))
                 if message == "mock subscription configuration failure"
         ));
         assert_eq!(Rc::strong_count(&marker), marker_count_before);
@@ -1013,7 +1018,7 @@ fn subscription_error_rolls_back_resources_created_before_failure() {
 
         assert!(matches!(
             result,
-            Err(PersistenceError::InvalidConfiguration(message))
+            Err(PersistenceError::Fatal(PersistenceErrorKind::InvalidConfiguration(message)))
                 if message == "resource backend subscription failure"
         ));
         assert_eq!(backend.active_resources.get(), 0);
