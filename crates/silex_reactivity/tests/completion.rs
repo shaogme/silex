@@ -328,6 +328,33 @@ fn repeating_completion_reports_borrow_conflict_and_remains_active() {
 }
 
 #[test]
+fn completion_callback_can_cancel_itself_without_borrow_panic() {
+    let mut runtime = Runtime::new();
+    runtime
+        .child(|scope| {
+            let destination = Rc::new(RefCell::new(None::<CompletionSender<i32, ()>>));
+            let destination_in_callback = destination.clone();
+            let sender = scope
+                .completion_sender(unwind_safe(move |_: i32| {
+                    let sender = destination_in_callback
+                        .borrow()
+                        .as_ref()
+                        .cloned()
+                        .expect("completion sender should be available");
+                    sender.cancel();
+                    Ok::<(), ()>(())
+                }))
+                .expect("completion registration");
+            *destination.borrow_mut() = Some(sender.clone());
+
+            assert!(sender.submit(1).expect("completion submit"));
+            assert!(!sender.submit(2).expect("closed completion submit"));
+            destination.borrow_mut().take();
+        })
+        .expect("test operation should succeed");
+}
+
+#[test]
 fn once_completion_returns_user_error_and_closes() {
     let mut runtime = Runtime::new();
     runtime

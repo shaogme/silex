@@ -2,13 +2,11 @@
 
 use crate::{
     error::{CallbackInvokeError, CompletionSubmitResult, ReactiveError, map_callback_error},
-    internal::{
-        RawId,
-        value::{AnyValue, CallbackThunk, CallbackThunkError},
-    },
+    internal::RawId,
+    runtime::storage::{CallbackThunk, CallbackThunkError},
     runtime::{self, GlobalScheduler, ScopeId, ScopeState},
     scope::ScopeStorage,
-    unsafe_boundary::WeakOwnerToken,
+    unsafe_boundary::{ErasedCallbackRef, OwnerToken, WeakOwnerToken, erase_callback_ref},
 };
 use std::{
     cell::{Cell, RefCell},
@@ -36,33 +34,36 @@ enum CompletionPhase {
     Closed,
 }
 
-struct CompletionState {
+struct CompletionState<T, E> {
     state: WeakOwnerToken,
     scheduler: Rc<RefCell<GlobalScheduler>>,
     scope_id: ScopeId,
     callback: RawId,
+    typed_callback: ErasedCallbackRef<T, E>,
     phase: Cell<CompletionPhase>,
 }
 
-impl CompletionState {
+impl<T, E> CompletionState<T, E> {
     fn new(
         state: WeakOwnerToken,
         scheduler: Rc<RefCell<GlobalScheduler>>,
         scope_id: ScopeId,
         callback: RawId,
+        typed_callback: ErasedCallbackRef<T, E>,
     ) -> Self {
         Self {
             state,
             scheduler,
             scope_id,
             callback,
+            typed_callback,
             phase: Cell::new(CompletionPhase::Active),
         }
     }
 
-    fn current_state<'scope>(
+    fn current_owner<'scope>(
         &self,
-    ) -> Result<Option<Rc<RefCell<ScopeState<'scope>>>>, ReactiveError> {
+    ) -> Result<Option<(OwnerToken<'scope>, Rc<RefCell<ScopeState<'scope>>>)>, ReactiveError> {
         if !self
             .scheduler
             .try_borrow()
@@ -75,15 +76,24 @@ impl CompletionState {
         let Some(owner) = self.state.upgrade() else {
             return Ok(None);
         };
-        Ok(Some(owner.state()))
+        let state = owner.state();
+        Ok(Some((owner, state)))
     }
 
-    fn begin_once<'scope>(&self) -> Result<Option<Rc<RefCell<ScopeState<'scope>>>>, ReactiveError> {
+    fn current_state<'scope>(
+        &self,
+    ) -> Result<Option<Rc<RefCell<ScopeState<'scope>>>>, ReactiveError> {
+        Ok(self.current_owner()?.map(|(_, state)| state))
+    }
+
+    fn begin_once<'scope>(
+        &self,
+    ) -> Result<Option<(OwnerToken<'scope>, Rc<RefCell<ScopeState<'scope>>>)>, ReactiveError> {
         if self.phase.replace(CompletionPhase::Completing) != CompletionPhase::Active {
             return Ok(None);
         }
-        match self.current_state()? {
-            Some(state) => Ok(Some(state)),
+        match self.current_owner()? {
+            Some(owner) => Ok(Some(owner)),
             None => {
                 self.phase.set(CompletionPhase::Closed);
                 Ok(None)
@@ -100,23 +110,21 @@ impl CompletionState {
         }
     }
 
-    fn submit_repeating<'scope, T: 'static>(
-        &self,
-        value: T,
-    ) -> Result<bool, CallbackThunkError<'scope>> {
+    fn submit_repeating(&self, value: T) -> Result<bool, CallbackThunkError<E>> {
         if self.phase.get() != CompletionPhase::Active {
             return Ok(false);
         }
-        let state = match self.current_state() {
-            Ok(Some(state)) => state,
+        let (owner, state) = match self.current_owner() {
+            Ok(Some(owner)) => owner,
             Ok(None) => return Ok(false),
             Err(error) => return Err(CallbackThunkError::Runtime(error)),
         };
-        runtime::invoke_callback(&state, self.callback, AnyValue::new(value)).map(|()| true)
+        let typed_callback = self.typed_callback.restore(&owner);
+        runtime::invoke_callback(&state, self.callback, typed_callback, value).map(|()| true)
     }
 }
 
-fn drop_completion_state(state: &CompletionState) {
+fn drop_completion_state<T, E>(state: &CompletionState<T, E>) {
     let result = catch_unwind(AssertUnwindSafe(|| state.close_and_dispose()));
     if let Err(panic) = result
         && !std::thread::panicking()
@@ -130,7 +138,7 @@ fn drop_completion_state(state: &CompletionState) {
 /// Clones share the same terminal state. Dropping the final active clone cancels
 /// the destination without invoking the user callback.
 pub struct CompletionOnce<T, E> {
-    state: Rc<CompletionState>,
+    state: Rc<CompletionState<T, E>>,
     marker: PhantomData<fn(T) -> E>,
 }
 
@@ -152,12 +160,9 @@ impl<T, E> Drop for CompletionOnce<T, E> {
 }
 
 impl<T: 'static, E> CompletionOnce<T, E> {
-    pub fn submit<'scope>(&self, value: T) -> CompletionSubmitResult<E>
-    where
-        E: 'scope,
-    {
-        let state = match self.state.begin_once() {
-            Ok(Some(state)) => state,
+    pub fn submit(&self, value: T) -> CompletionSubmitResult<E> {
+        let (owner, state) = match self.state.begin_once() {
+            Ok(Some(owner)) => owner,
             Ok(None) => return Ok(false),
             Err(error) => {
                 self.state.close_and_dispose();
@@ -165,7 +170,8 @@ impl<T: 'static, E> CompletionOnce<T, E> {
             }
         };
         let callback_result = catch_unwind(AssertUnwindSafe(|| {
-            runtime::invoke_callback(&state, self.state.callback, AnyValue::new(value))
+            let typed_callback = self.state.typed_callback.restore(&owner);
+            runtime::invoke_callback(&state, self.state.callback, typed_callback, value)
         }));
         let dispose_result = catch_unwind(AssertUnwindSafe(|| {
             self.state.close_and_dispose();
@@ -191,7 +197,7 @@ impl<T: 'static, E> CompletionOnce<T, E> {
 /// A callback panic is terminal: the callback node is disposed before the panic
 /// is resumed, and later submissions return `Ok(false)`.
 pub struct CompletionSender<T, E> {
-    state: Rc<CompletionState>,
+    state: Rc<CompletionState<T, E>>,
     marker: PhantomData<fn(T) -> E>,
 }
 
@@ -213,10 +219,7 @@ impl<T, E> Drop for CompletionSender<T, E> {
 }
 
 impl<T: 'static, E> CompletionSender<T, E> {
-    pub fn submit<'scope>(&self, value: T) -> CompletionSubmitResult<E>
-    where
-        E: 'scope,
-    {
+    pub fn submit(&self, value: T) -> CompletionSubmitResult<E> {
         let callback_result = catch_unwind(AssertUnwindSafe(|| self.state.submit_repeating(value)));
         match callback_result {
             Ok(result) => result.map_err(map_callback_error),
@@ -233,10 +236,10 @@ impl<T: 'static, E> CompletionSender<T, E> {
 }
 
 fn create_completion_state<'scope, T: 'static, E, F>(
-    storage: &ScopeStorage,
+    storage: &'scope ScopeStorage,
     state: Rc<RefCell<ScopeState<'scope>>>,
     callback: F,
-) -> Result<Rc<CompletionState>, ReactiveError>
+) -> Result<Rc<CompletionState<T, E>>, ReactiveError>
 where
     E: 'scope,
     F: FnMut(T) -> Result<(), E> + 'scope,
@@ -251,24 +254,33 @@ where
         state_ref.scheduler.clone()
     };
 
-    let thunk = CallbackThunk::new_typed_fallible(callback);
-    let callback = {
-        let mut state_ref = state
-            .try_borrow_mut()
-            .map_err(|_| ReactiveError::BorrowConflict)?;
-        state_ref.create_callback(thunk)?
+    let thunk = storage.alloc_slot(CallbackThunk::new(callback));
+    let callback = match state
+        .try_borrow_mut()
+        .map_err(|_| ReactiveError::BorrowConflict)
+        .and_then(|mut state_ref| state_ref.create_callback(thunk))
+    {
+        Ok(callback) => callback,
+        Err(error) => {
+            thunk.slot().clear();
+            return Err(error);
+        }
     };
     let weak = WeakOwnerToken::from_typed(&state);
+    // SAFETY: The typed callback is dereferenced only after `current_state`
+    // validates the weak owner token. Disposal clears the node slot first.
+    let typed_callback = unsafe { erase_callback_ref(thunk) };
     Ok(Rc::new(CompletionState::new(
         weak,
         scheduler,
         storage.scope_id,
         callback,
+        typed_callback,
     )))
 }
 
 pub(crate) fn create_completion_once<'scope, T: 'static, E, F>(
-    storage: &ScopeStorage,
+    storage: &'scope ScopeStorage,
     state: Rc<RefCell<ScopeState<'scope>>>,
     callback: F,
 ) -> Result<CompletionOnce<T, E>, ReactiveError>
@@ -283,7 +295,7 @@ where
 }
 
 pub(crate) fn create_completion_sender<'scope, T: 'static, E, F>(
-    storage: &ScopeStorage,
+    storage: &'scope ScopeStorage,
     state: Rc<RefCell<ScopeState<'scope>>>,
     callback: F,
 ) -> Result<CompletionSender<T, E>, ReactiveError>

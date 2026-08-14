@@ -112,6 +112,8 @@ fn callback_reads_are_untracked_and_dynamic_getter_dependencies_replace() {
             assert_eq!(calls.get(), 0);
             set_left.set(2).expect("test operation should succeed");
             assert_eq!(calls.get(), 1);
+            set_probe.set(2).expect("test operation should succeed");
+            assert_eq!(calls.get(), 1);
             set_switch
                 .set(false)
                 .expect("test operation should succeed");

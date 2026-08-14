@@ -274,7 +274,7 @@ pub fn HttpClientDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope>
 }
 
 #[component]
-pub fn WebSocketDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
+pub fn WebSocketDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> + 'scope {
     let url = scope.rw_signal("wss://echo.websocket.org".to_string())?;
     let socket = WebSocket::lazy(scope, url.get_untracked()?, error_handler)
         .build()

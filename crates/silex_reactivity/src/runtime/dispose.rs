@@ -3,10 +3,11 @@
 use super::{
     model::{EdgeId, NodeData, ScopeState},
     scheduler::{GlobalScheduler, ObserverFrame, TargetNode},
+    storage::CleanupThunk,
 };
 use crate::{
     error::{ErrorEvent, ErrorPhase},
-    internal::{RawId, value::CleanupThunk},
+    internal::RawId,
 };
 use std::{
     any::Any,

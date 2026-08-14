@@ -26,3 +26,108 @@ note: required by a bound in `require_send`
   |
 3 | fn require_send<T: Send>() {}
   |                    ^^^^ required by this bound in `require_send`
+
+error[E0277]: `Cell<NonNull<bumpalo::ChunkFooter>>` cannot be shared between threads safely
+ --> tests/ui/fail_callback_send.rs:6:20
+  |
+6 |     require_send::<Callback<'static, ()>>();
+  |                    ^^^^^^^^^^^^^^^^^^^^^ `Cell<NonNull<bumpalo::ChunkFooter>>` cannot be shared between threads safely
+  |
+  = help: within `silex_reactivity::scope::ScopeStorage`, the trait `Sync` is not implemented for `Cell<NonNull<bumpalo::ChunkFooter>>`
+  = note: if you want to do aliasing and mutation between multiple threads, use `std::sync::RwLock`
+note: required because it appears within the type `bumpalo::Bump`
+ --> $CARGO/bumpalo-$VERSION/src/lib.rs
+  |
+  | pub struct Bump<const MIN_ALIGN: usize = 1> {
+  |            ^^^^
+note: required because it appears within the type `silex_reactivity::scope::ScopeStorage`
+ --> src/scope.rs
+  |
+  | pub(crate) struct ScopeStorage {
+  |                   ^^^^^^^^^^^^
+  = note: required for `&'static silex_reactivity::scope::ScopeStorage` to implement `Send`
+note: required because it appears within the type `Handle<'static, silex_reactivity::kind::Callback>`
+ --> src/handle.rs
+  |
+  | pub struct Handle<'scope, K: NodeKind> {
+  |            ^^^^^^
+note: required because it appears within the type `silex_reactivity::Callback<'static, ()>`
+ --> src/child/node.rs
+  |
+  | pub struct Callback<'scope, T, E = ReactiveError> {
+  |            ^^^^^^^^
+note: required by a bound in `require_send`
+ --> tests/ui/fail_callback_send.rs:3:20
+  |
+3 | fn require_send<T: Send>() {}
+  |                    ^^^^ required by this bound in `require_send`
+
+error[E0277]: `Cell<Option<usize>>` cannot be shared between threads safely
+ --> tests/ui/fail_callback_send.rs:6:20
+  |
+6 |     require_send::<Callback<'static, ()>>();
+  |                    ^^^^^^^^^^^^^^^^^^^^^ `Cell<Option<usize>>` cannot be shared between threads safely
+  |
+  = help: within `silex_reactivity::scope::ScopeStorage`, the trait `Sync` is not implemented for `Cell<Option<usize>>`
+  = note: if you want to do aliasing and mutation between multiple threads, use `std::sync::RwLock`
+note: required because it appears within the type `bumpalo::Bump`
+ --> $CARGO/bumpalo-$VERSION/src/lib.rs
+  |
+  | pub struct Bump<const MIN_ALIGN: usize = 1> {
+  |            ^^^^
+note: required because it appears within the type `silex_reactivity::scope::ScopeStorage`
+ --> src/scope.rs
+  |
+  | pub(crate) struct ScopeStorage {
+  |                   ^^^^^^^^^^^^
+  = note: required for `&'static silex_reactivity::scope::ScopeStorage` to implement `Send`
+note: required because it appears within the type `Handle<'static, silex_reactivity::kind::Callback>`
+ --> src/handle.rs
+  |
+  | pub struct Handle<'scope, K: NodeKind> {
+  |            ^^^^^^
+note: required because it appears within the type `silex_reactivity::Callback<'static, ()>`
+ --> src/child/node.rs
+  |
+  | pub struct Callback<'scope, T, E = ReactiveError> {
+  |            ^^^^^^^^
+note: required by a bound in `require_send`
+ --> tests/ui/fail_callback_send.rs:3:20
+  |
+3 | fn require_send<T: Send>() {}
+  |                    ^^^^ required by this bound in `require_send`
+
+error[E0277]: `RefCell<Option<silex_reactivity::runtime::storage::CallbackThunk<'static, (), ReactiveError>>>` cannot be shared between threads safely
+ --> tests/ui/fail_callback_send.rs:6:20
+  |
+6 |     require_send::<Callback<'static, ()>>();
+  |                    ^^^^^^^^^^^^^^^^^^^^^ `RefCell<Option<silex_reactivity::runtime::storage::CallbackThunk<'static, (), ReactiveError>>>` cannot be shared between threads safely
+  |
+  = help: within `silex_reactivity::runtime::storage::TypedSlot<silex_reactivity::runtime::storage::CallbackThunk<'static, (), ReactiveError>>`, the trait `Sync` is not implemented for `RefCell<Option<silex_reactivity::runtime::storage::CallbackThunk<'static, (), ReactiveError>>>`
+  = note: if you want to do aliasing and mutation between multiple threads, use `std::sync::RwLock` instead
+note: required because it appears within the type `silex_reactivity::runtime::storage::LeaseCell<Option<silex_reactivity::runtime::storage::CallbackThunk<'static, (), ReactiveError>>>`
+ --> src/runtime/storage.rs
+  |
+  | pub(crate) struct LeaseCell<T> {
+  |                   ^^^^^^^^^
+note: required because it appears within the type `silex_reactivity::runtime::storage::TypedSlot<silex_reactivity::runtime::storage::CallbackThunk<'static, (), ReactiveError>>`
+ --> src/runtime/storage.rs
+  |
+  | pub(crate) struct TypedSlot<T> {
+  |                   ^^^^^^^^^
+  = note: required for `&'static silex_reactivity::runtime::storage::TypedSlot<silex_reactivity::runtime::storage::CallbackThunk<'static, (), ReactiveError>>` to implement `Send`
+note: required because it appears within the type `silex_reactivity::runtime::storage::TypedNodeRef<'static, silex_reactivity::runtime::storage::CallbackThunk<'static, (), ReactiveError>>`
+ --> src/runtime/storage.rs
+  |
+  | pub(crate) struct TypedNodeRef<'scope, T> {
+  |                   ^^^^^^^^^^^^
+note: required because it appears within the type `silex_reactivity::Callback<'static, ()>`
+ --> src/child/node.rs
+  |
+  | pub struct Callback<'scope, T, E = ReactiveError> {
+  |            ^^^^^^^^
+note: required by a bound in `require_send`
+ --> tests/ui/fail_callback_send.rs:3:20
+  |
+3 | fn require_send<T: Send>() {}
+  |                    ^^^^ required by this bound in `require_send`

@@ -9,5 +9,5 @@ error[E0308]: mismatched types
 note: method defined here
   --> src/completion.rs
    |
-   |     pub fn submit<'scope>(&self, value: T) -> CompletionSubmitResult<E>
+   |     pub fn submit(&self, value: T) -> CompletionSubmitResult<E> {
    |            ^^^^^^

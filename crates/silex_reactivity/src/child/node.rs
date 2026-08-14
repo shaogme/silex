@@ -4,10 +4,11 @@ use std::{fmt, marker::PhantomData};
 
 use crate::{
     CallbackInvokeResult, ErrorHandler, ReactiveError, ReactiveResult,
+    error::ErrorSlot,
     error::map_callback_error,
     handle::{CallbackId, DerivedId, EffectId, MemoId, NodeRefId, SignalId, StoredId},
-    internal::value::{AnyValue, CallbackThunkError},
     runtime,
+    runtime::storage::{CallbackThunk, CallbackThunkError, TypedNodeRef},
 };
 
 /// Options controlling the initial callback and one-shot behavior of a watcher.
@@ -37,6 +38,7 @@ impl WatchOptions {
 /// Scope-owned typed callbacks.
 pub struct Callback<'scope, T, E = ReactiveError> {
     pub(crate) handle: CallbackId<'scope>,
+    pub(crate) callback: TypedNodeRef<'scope, CallbackThunk<'scope, T, E>>,
     pub(crate) marker: PhantomData<fn(T) -> E>,
 }
 
@@ -50,19 +52,16 @@ impl<T, E> Clone for Callback<'_, T, E> {
 
 impl<'scope, T: 'scope, E: 'scope> Callback<'scope, T, E> {
     pub fn invoke(&self, arg: T) -> CallbackInvokeResult<(), E> {
-        runtime::invoke_callback(&self.handle.state(), self.handle.raw(), AnyValue::new(arg))
+        runtime::invoke_callback(&self.handle.state(), self.handle.raw(), self.callback, arg)
             .map_err(map_callback_error)
     }
 
     pub fn dispatch(&self, arg: T, error_handler: ErrorHandler<'scope, E>) -> ReactiveResult<()> {
-        match runtime::invoke_callback(&self.handle.state(), self.handle.raw(), AnyValue::new(arg))
+        match runtime::invoke_callback(&self.handle.state(), self.handle.raw(), self.callback, arg)
         {
             Ok(()) => Ok(()),
             Err(CallbackThunkError::Runtime(error)) => Err(error),
-            Err(CallbackThunkError::User(value)) => {
-                let error = unsafe { value.downcast::<E>() }.ok_or(ReactiveError::TypeMismatch)?;
-                error_handler.handle(error)
-            }
+            Err(CallbackThunkError::User(error)) => error_handler.handle(error),
         }
     }
 }
@@ -111,12 +110,16 @@ impl<'scope> Effect<'scope> {
 /// Scoped lazy memo.
 pub struct Memo<'scope, T, E> {
     pub(crate) handle: MemoId<'scope>,
+    pub(crate) value: TypedNodeRef<'scope, T>,
+    pub(crate) errors: &'scope ErrorSlot<E>,
     pub(crate) marker: PhantomData<fn() -> (T, E)>,
 }
 
 /// Scoped derived value whose callback may return a user-defined error.
 pub struct Derived<'scope, T, E> {
     pub(crate) handle: DerivedId<'scope>,
+    pub(crate) value: TypedNodeRef<'scope, T>,
+    pub(crate) errors: &'scope ErrorSlot<E>,
     pub(crate) marker: PhantomData<fn() -> (T, E)>,
 }
 
@@ -152,19 +155,25 @@ impl<'scope, T: 'scope, E: 'scope> Memo<'scope, T, E> {
     }
 
     pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> CallbackInvokeResult<R, E> {
-        runtime::with_fallible_signal(&self.handle.state(), self.handle.raw(), true, |value| {
-            unsafe { value.downcast_ref::<T>() }
-                .map(f)
-                .ok_or(ReactiveError::TypeMismatch)
-        })
+        runtime::with_fallible_signal(
+            &self.handle.state(),
+            self.handle.raw(),
+            self.value,
+            self.errors,
+            true,
+            |value| Ok(f(value)),
+        )
     }
 
     pub fn with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> CallbackInvokeResult<R, E> {
-        runtime::with_fallible_signal(&self.handle.state(), self.handle.raw(), false, |value| {
-            unsafe { value.downcast_ref::<T>() }
-                .map(f)
-                .ok_or(ReactiveError::TypeMismatch)
-        })
+        runtime::with_fallible_signal(
+            &self.handle.state(),
+            self.handle.raw(),
+            self.value,
+            self.errors,
+            false,
+            |value| Ok(f(value)),
+        )
     }
 }
 
@@ -184,19 +193,25 @@ impl<'scope, T: 'scope, E: 'scope> Derived<'scope, T, E> {
     }
 
     pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> CallbackInvokeResult<R, E> {
-        runtime::with_fallible_signal(&self.handle.state(), self.handle.raw(), true, |value| {
-            unsafe { value.downcast_ref::<T>() }
-                .map(f)
-                .ok_or(ReactiveError::TypeMismatch)
-        })
+        runtime::with_fallible_signal(
+            &self.handle.state(),
+            self.handle.raw(),
+            self.value,
+            self.errors,
+            true,
+            |value| Ok(f(value)),
+        )
     }
 
     pub fn with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> CallbackInvokeResult<R, E> {
-        runtime::with_fallible_signal(&self.handle.state(), self.handle.raw(), false, |value| {
-            unsafe { value.downcast_ref::<T>() }
-                .map(f)
-                .ok_or(ReactiveError::TypeMismatch)
-        })
+        runtime::with_fallible_signal(
+            &self.handle.state(),
+            self.handle.raw(),
+            self.value,
+            self.errors,
+            false,
+            |value| Ok(f(value)),
+        )
     }
 }
 
@@ -207,6 +222,7 @@ impl<'scope, T: 'scope, E: 'scope> Derived<'scope, T, E> {
 /// Scope-owned host object references.
 pub struct NodeRef<'scope, T> {
     pub(crate) handle: NodeRefId<'scope>,
+    pub(crate) value: TypedNodeRef<'scope, Option<T>>,
     pub(crate) marker: PhantomData<fn() -> T>,
 }
 
@@ -220,17 +236,17 @@ impl<'scope, T> Clone for NodeRef<'scope, T> {
 
 impl<'scope, T: Clone + 'scope> NodeRef<'scope, T> {
     pub fn get(&self) -> ReactiveResult<Option<T>> {
-        runtime::node_ref_get(&self.handle.state(), self.handle.raw())
+        runtime::node_ref_get(&self.handle.state(), self.handle.raw(), self.value)
     }
 }
 
 impl<'scope, T: 'scope> NodeRef<'scope, T> {
     pub fn set(&self, value: T) -> ReactiveResult<()> {
-        runtime::node_ref_set(&self.handle.state(), self.handle.raw(), value)
+        runtime::node_ref_set(&self.handle.state(), self.handle.raw(), self.value, value)
     }
 
     pub fn clear(&self) -> ReactiveResult<()> {
-        runtime::node_ref_clear::<T>(&self.handle.state(), self.handle.raw())
+        runtime::node_ref_clear(&self.handle.state(), self.handle.raw(), self.value)
     }
 }
 
@@ -241,12 +257,14 @@ impl<'scope, T: 'scope> NodeRef<'scope, T> {
 /// Read capability for a signal or memo-like node.
 pub struct ReadSignal<'scope, T> {
     pub(crate) handle: SignalId<'scope>,
+    pub(crate) value: TypedNodeRef<'scope, T>,
     pub(crate) marker: PhantomData<fn() -> T>,
 }
 
 /// Write capability for a signal.
 pub struct WriteSignal<'scope, T> {
     pub(crate) handle: SignalId<'scope>,
+    pub(crate) value: TypedNodeRef<'scope, T>,
     pub(crate) marker: PhantomData<fn() -> T>,
 }
 
@@ -285,81 +303,82 @@ impl<'scope, T: 'scope> ReadSignal<'scope, T> {
     where
         T: Clone,
     {
-        runtime::with_signal(&self.handle.state(), self.handle.raw(), true, |value| {
-            unsafe { value.downcast_ref::<T>() }
-                .cloned()
-                .ok_or(ReactiveError::TypeMismatch)
-        })?
+        runtime::with_signal(
+            &self.handle.state(),
+            self.handle.raw(),
+            self.value,
+            true,
+            Clone::clone,
+        )
     }
 
     pub fn get_untracked(&self) -> ReactiveResult<T>
     where
         T: Clone,
     {
-        runtime::with_signal(&self.handle.state(), self.handle.raw(), false, |value| {
-            unsafe { value.downcast_ref::<T>() }
-                .cloned()
-                .ok_or(ReactiveError::TypeMismatch)
-        })?
+        runtime::with_signal(
+            &self.handle.state(),
+            self.handle.raw(),
+            self.value,
+            false,
+            Clone::clone,
+        )
     }
 
     pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
-        runtime::with_signal(&self.handle.state(), self.handle.raw(), true, |value| {
-            unsafe { value.downcast_ref::<T>() }
-                .map(f)
-                .ok_or(ReactiveError::TypeMismatch)
-        })?
+        runtime::with_signal(&self.handle.state(), self.handle.raw(), self.value, true, f)
     }
 
     pub fn with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
-        runtime::with_signal(&self.handle.state(), self.handle.raw(), false, |value| {
-            unsafe { value.downcast_ref::<T>() }
-                .map(f)
-                .ok_or(ReactiveError::TypeMismatch)
-        })?
+        runtime::with_signal(
+            &self.handle.state(),
+            self.handle.raw(),
+            self.value,
+            false,
+            f,
+        )
     }
 }
 
 impl<'scope, T: 'scope> WriteSignal<'scope, T> {
     pub fn set(&self, value: T) -> ReactiveResult<()> {
-        runtime::update_signal(&self.handle.state(), self.handle.raw(), |stored| {
-            let incoming = value;
-            let Some(stored) = (unsafe { stored.downcast_mut::<T>() }) else {
-                return (Err(ReactiveError::TypeMismatch), false);
-            };
-            *stored = incoming;
-            (Ok(()), true)
-        })?
+        runtime::update_signal(
+            &self.handle.state(),
+            self.handle.raw(),
+            self.value,
+            |stored| {
+                *stored = value;
+                ((), true)
+            },
+        )
     }
 
     pub fn update<R>(&self, f: impl FnOnce(&mut T) -> R) -> ReactiveResult<R> {
-        let mut f = Some(f);
-        runtime::update_signal(&self.handle.state(), self.handle.raw(), |stored| {
-            let Some(stored) = (unsafe { stored.downcast_mut::<T>() }) else {
-                return (Err(ReactiveError::TypeMismatch), false);
-            };
-            let Some(f) = f.take() else {
-                return (Err(ReactiveError::Reentrant), false);
-            };
-            (Ok(f(stored)), true)
-        })?
+        runtime::update_signal(
+            &self.handle.state(),
+            self.handle.raw(),
+            self.value,
+            |stored| (f(stored), true),
+        )
     }
 
     pub fn set_if_changed(&self, value: T) -> ReactiveResult<bool>
     where
         T: PartialEq,
     {
-        runtime::update_signal(&self.handle.state(), self.handle.raw(), |stored| {
-            let incoming = value;
-            let Some(stored) = (unsafe { stored.downcast_mut::<T>() }) else {
-                return (Err(ReactiveError::TypeMismatch), false);
-            };
-            if *stored == incoming {
-                return (Ok(false), false);
-            }
-            *stored = incoming;
-            (Ok(true), true)
-        })?
+        runtime::update_signal(
+            &self.handle.state(),
+            self.handle.raw(),
+            self.value,
+            |stored| {
+                let incoming = value;
+                if *stored == incoming {
+                    return (false, false);
+                }
+                *stored = incoming;
+                (true, true)
+            },
+        )
     }
 }
 
@@ -421,6 +440,7 @@ pub fn notify<'scope, T>(signal: &WriteSignal<'scope, T>) -> ReactiveResult<()> 
 /// reruns, single-node stops, or asynchronous use after the cleanup returns.
 pub struct StoredValue<'scope, T> {
     pub(crate) handle: StoredId<'scope>,
+    pub(crate) value: TypedNodeRef<'scope, T>,
     pub(crate) marker: PhantomData<fn() -> T>,
 }
 
@@ -434,19 +454,11 @@ impl<'scope, T> Clone for StoredValue<'scope, T> {
 
 impl<'scope, T: 'scope> StoredValue<'scope, T> {
     pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
-        runtime::with_stored(&self.handle.state(), self.handle.raw(), |value| {
-            unsafe { value.downcast_ref::<T>() }
-                .map(f)
-                .ok_or(ReactiveError::TypeMismatch)
-        })?
+        runtime::with_stored(&self.handle.state(), self.handle.raw(), self.value, f)
     }
 
     pub fn update<R>(&self, f: impl FnOnce(&mut T) -> R) -> ReactiveResult<R> {
-        runtime::update_stored(&self.handle.state(), self.handle.raw(), |value| {
-            unsafe { value.downcast_mut::<T>() }
-                .map(f)
-                .ok_or(ReactiveError::TypeMismatch)
-        })?
+        runtime::update_stored(&self.handle.state(), self.handle.raw(), self.value, f)
     }
 }
 

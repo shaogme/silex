@@ -1,142 +1,114 @@
-//! Operations on values, callbacks, and runtime execution scoping.
+//! Typed operations on values, callbacks, and runtime execution scoping.
 
 use super::{
     dispose::dispose_nodes,
     eval::{EvaluationError, flush_if_idle, prepare_fallible_read, prepare_read},
     model::{ScopeState, StoredAccessMode},
     scheduler::{GlobalScheduler, TargetNode},
-    storage::NodeStorage,
+    storage::{CallbackThunk, CallbackThunkError, TypedNodeRef},
 };
 use crate::{
     CallbackInvokeError, CallbackInvokeResult, ReactiveError, ReactiveResult,
-    error::ErrorHandlerKey,
+    error::{ErrorHandlerCall, ErrorHandlerKey},
     handle::NodeKindTag,
-    internal::{
-        RawId,
-        value::{AnyValue, CallbackThunkError},
-    },
+    internal::RawId,
     scope::ScopeStorage,
 };
 use std::{
     cell::RefCell,
-    marker::PhantomData,
     panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
     rc::Rc,
 };
 
-fn lookup_value_storage<'scope>(
+fn value_scheduler<'scope>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     id: RawId,
     reactive: bool,
-) -> ReactiveResult<(Rc<NodeStorage<'scope>>, Rc<RefCell<GlobalScheduler>>)> {
+) -> ReactiveResult<Rc<RefCell<GlobalScheduler>>> {
     let state_ref = state
         .try_borrow()
         .map_err(|_| ReactiveError::BorrowConflict)?;
-    let storage = state_ref.value_storage(id, reactive)?;
-    Ok((storage, state_ref.scheduler.clone()))
+    let _ = state_ref.value_storage(id, reactive)?;
+    Ok(state_ref.scheduler.clone())
 }
 
-fn lookup_stored_value_storage<'scope>(
+fn stored_scheduler<'scope>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     id: RawId,
-) -> ReactiveResult<(
-    Rc<NodeStorage<'scope>>,
-    Rc<RefCell<GlobalScheduler>>,
-    StoredAccessMode,
-)> {
+) -> ReactiveResult<(Rc<RefCell<GlobalScheduler>>, StoredAccessMode)> {
     let state_ref = state
         .try_borrow()
         .map_err(|_| ReactiveError::BorrowConflict)?;
-    let (storage, mode) = state_ref.stored_value_storage(id)?;
-    Ok((storage, state_ref.scheduler.clone(), mode))
+    let (_, mode) = state_ref.stored_value_storage(id)?;
+    Ok((state_ref.scheduler.clone(), mode))
 }
 
-fn lookup_node_ref_storage<'scope>(
+fn node_ref_scheduler<'scope>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     id: RawId,
-) -> ReactiveResult<(Rc<NodeStorage<'scope>>, Rc<RefCell<GlobalScheduler>>)> {
+) -> ReactiveResult<Rc<RefCell<GlobalScheduler>>> {
     let state_ref = state
         .try_borrow()
         .map_err(|_| ReactiveError::BorrowConflict)?;
-    let storage = state_ref.node_ref_storage(id)?;
-    Ok((storage, state_ref.scheduler.clone()))
-}
-
-fn lookup_callback_storage<'scope>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
-    id: RawId,
-) -> ReactiveResult<(Rc<NodeStorage<'scope>>, Rc<RefCell<GlobalScheduler>>)> {
-    let state_ref = state
-        .try_borrow()
-        .map_err(|_| ReactiveError::BorrowConflict)?;
-    let storage = state_ref.callback_storage(id)?;
-    Ok((storage, state_ref.scheduler.clone()))
+    let _ = state_ref.node_ref_storage(id)?;
+    Ok(state_ref.scheduler.clone())
 }
 
 pub(crate) fn invoke_error_handler<'scope, E>(
     storage: &ScopeStorage,
     key: ErrorHandlerKey,
+    callback: &'scope dyn ErrorHandlerCall<E>,
     error: E,
 ) -> ReactiveResult<()>
 where
     E: 'scope,
 {
-    let state: Rc<RefCell<ScopeState<'scope>>> = storage.owner_token(PhantomData).state();
-    let callback = {
+    let state = storage.owner_token(std::marker::PhantomData).state();
+    {
         let state_ref = state
             .try_borrow()
             .map_err(|_| ReactiveError::BorrowConflict)?;
-        state_ref
-            .error_handlers
-            .get(key)
-            .map(|entry| entry.callback.clone())
-            .ok_or(ReactiveError::NoSuchNode)?
-    };
-    callback(AnyValue::new(error));
+        if state_ref.error_handlers.get(key).is_none() {
+            return Err(ReactiveError::NoSuchNode);
+        }
+    }
+    callback.call(error);
     Ok(())
 }
 
-fn read_value<'scope, R>(
-    storage: &NodeStorage<'scope>,
+fn read_typed<'scope, T, R>(
+    slot: TypedNodeRef<'scope, T>,
     scheduler: Rc<RefCell<GlobalScheduler>>,
-    f: impl FnOnce(&AnyValue<'scope>) -> R,
+    f: impl FnOnce(&T) -> R,
 ) -> ReactiveResult<R> {
-    match storage {
-        NodeStorage::Value(cell) => {
-            let lease = cell.try_read(scheduler)?;
-            let result = f(&lease);
-            drop(lease);
-            Ok(result)
-        }
-        NodeStorage::Computation(computation) => {
-            let lease = computation.value.try_read(scheduler)?;
-            let value = lease.as_ref().ok_or(ReactiveError::Reentrant)?;
-            let result = f(value);
-            drop(lease);
-            Ok(result)
-        }
-        NodeStorage::Callback(_) => Err(ReactiveError::WrongKind),
-    }
+    let lease = slot.slot().try_read(scheduler)?;
+    let value = lease.as_ref().ok_or(ReactiveError::NoSuchNode)?;
+    let result = f(value);
+    drop(lease);
+    Ok(result)
 }
 
-pub(crate) fn with_signal<'scope, R>(
+pub(crate) fn with_signal<'scope, T, R>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     id: RawId,
+    value: TypedNodeRef<'scope, T>,
     track: bool,
-    f: impl FnOnce(&AnyValue<'scope>) -> R,
+    f: impl FnOnce(&T) -> R,
 ) -> ReactiveResult<R> {
     prepare_read(state, id, track)?;
-    let (storage, scheduler) = lookup_value_storage(state, id, true)?;
-    let result = read_value(&storage, scheduler, f)?;
+    let scheduler = value_scheduler(state, id, true)?;
+    let result = read_typed(value, scheduler, f)?;
     flush_if_idle(state);
     Ok(result)
 }
 
-pub(crate) fn with_fallible_signal<'scope, R, E>(
+pub(crate) fn with_fallible_signal<'scope, T, E, R>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     id: RawId,
+    value: TypedNodeRef<'scope, T>,
+    errors: &'scope crate::error::ErrorSlot<E>,
     track: bool,
-    f: impl FnOnce(&AnyValue<'scope>) -> Result<R, ReactiveError>,
+    f: impl FnOnce(&T) -> Result<R, ReactiveError>,
 ) -> CallbackInvokeResult<R, E>
 where
     E: 'scope,
@@ -144,22 +116,17 @@ where
     if let Err(error) = prepare_fallible_read(state, id, track) {
         return Err(match error {
             EvaluationError::Runtime(error) => CallbackInvokeError::Runtime(error),
-            EvaluationError::User(value) => unsafe {
-                value
-                    .downcast::<E>()
-                    .map(CallbackInvokeError::User)
-                    .unwrap_or(CallbackInvokeError::Runtime(ReactiveError::TypeMismatch))
-            },
+            EvaluationError::User => CallbackInvokeError::User(errors.take()),
             EvaluationError::Callback(_) => {
                 CallbackInvokeError::Runtime(ReactiveError::TypeMismatch)
             }
         });
     }
-    let (storage, scheduler) = match lookup_value_storage(state, id, true) {
-        Ok(value) => value,
+    let scheduler = match value_scheduler(state, id, true) {
+        Ok(scheduler) => scheduler,
         Err(error) => return Err(CallbackInvokeError::Runtime(error)),
     };
-    let result = match read_value(&storage, scheduler, f) {
+    let result = match read_typed(value, scheduler, f) {
         Ok(result) => result,
         Err(error) => return Err(CallbackInvokeError::Runtime(error)),
     };
@@ -185,17 +152,16 @@ fn commit_signal<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>, id: RawId) -> 
     Ok(())
 }
 
-pub(crate) fn update_signal<'scope, R>(
+pub(crate) fn update_signal<'scope, T, R>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     id: RawId,
-    f: impl FnOnce(&mut AnyValue<'scope>) -> (R, bool),
+    value: TypedNodeRef<'scope, T>,
+    f: impl FnOnce(&mut T) -> (R, bool),
 ) -> ReactiveResult<R> {
-    let (storage, scheduler) = lookup_value_storage(state, id, false)?;
-    let NodeStorage::Value(cell) = storage.as_ref() else {
-        return Err(ReactiveError::WrongKind);
-    };
-    let mut lease = cell.try_write(scheduler)?;
-    let (result, changed) = f(&mut lease);
+    let scheduler = value_scheduler(state, id, false)?;
+    let mut lease = value.slot().try_write(scheduler)?;
+    let stored = lease.as_mut().ok_or(ReactiveError::NoSuchNode)?;
+    let (result, changed) = f(stored);
     drop(lease);
     if changed {
         commit_signal(state, id)?;
@@ -204,17 +170,30 @@ pub(crate) fn update_signal<'scope, R>(
     Ok(result)
 }
 
-pub(crate) fn with_stored<'scope, R>(
+pub(crate) fn with_stored<'scope, T, R>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     id: RawId,
-    f: impl FnOnce(&AnyValue<'scope>) -> R,
+    value: TypedNodeRef<'scope, T>,
+    f: impl FnOnce(&T) -> R,
 ) -> ReactiveResult<R> {
-    let (storage, scheduler, mode) = lookup_stored_value_storage(state, id)?;
-    let NodeStorage::Value(cell) = storage.as_ref() else {
-        return Err(ReactiveError::WrongKind);
-    };
-    let lease = cell.try_read(scheduler)?;
-    let result = f(&lease);
+    let (scheduler, mode) = stored_scheduler(state, id)?;
+    let result = read_typed(value, scheduler, f)?;
+    if mode == StoredAccessMode::Active {
+        flush_if_idle(state);
+    }
+    Ok(result)
+}
+
+pub(crate) fn update_stored<'scope, T, R>(
+    state: &Rc<RefCell<ScopeState<'scope>>>,
+    id: RawId,
+    value: TypedNodeRef<'scope, T>,
+    f: impl FnOnce(&mut T) -> R,
+) -> ReactiveResult<R> {
+    let (scheduler, mode) = stored_scheduler(state, id)?;
+    let mut lease = value.slot().try_write(scheduler)?;
+    let stored = lease.as_mut().ok_or(ReactiveError::NoSuchNode)?;
+    let result = f(stored);
     drop(lease);
     if mode == StoredAccessMode::Active {
         flush_if_idle(state);
@@ -222,72 +201,72 @@ pub(crate) fn with_stored<'scope, R>(
     Ok(result)
 }
 
-pub(crate) fn update_stored<'scope, R>(
+pub(crate) fn node_ref_get<'scope, T: Clone>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     id: RawId,
-    f: impl FnOnce(&mut AnyValue<'scope>) -> R,
-) -> ReactiveResult<R> {
-    let (storage, scheduler, mode) = lookup_stored_value_storage(state, id)?;
-    let NodeStorage::Value(cell) = storage.as_ref() else {
-        return Err(ReactiveError::WrongKind);
-    };
-    let mut lease = cell.try_write(scheduler)?;
-    let result = f(&mut lease);
-    drop(lease);
-    if mode == StoredAccessMode::Active {
-        flush_if_idle(state);
-    }
-    Ok(result)
+    value: TypedNodeRef<'scope, Option<T>>,
+) -> ReactiveResult<Option<T>> {
+    let scheduler = node_ref_scheduler(state, id)?;
+    read_typed(value, scheduler, Clone::clone)
 }
 
-fn with_node_ref<'scope, R>(
+pub(crate) fn node_ref_set<'scope, T>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     id: RawId,
-    f: impl FnOnce(&AnyValue<'scope>) -> R,
-) -> ReactiveResult<R> {
-    let (storage, scheduler) = lookup_node_ref_storage(state, id)?;
-    let NodeStorage::Value(cell) = storage.as_ref() else {
-        return Err(ReactiveError::WrongKind);
-    };
-    let lease = cell.try_read(scheduler)?;
-    let result = f(&lease);
+    slot: TypedNodeRef<'scope, Option<T>>,
+    value: T,
+) -> ReactiveResult<()> {
+    let scheduler = node_ref_scheduler(state, id)?;
+    let mut lease = slot.slot().try_write(scheduler)?;
+    let stored = lease.as_mut().ok_or(ReactiveError::NoSuchNode)?;
+    *stored = Some(value);
     drop(lease);
     flush_if_idle(state);
-    Ok(result)
+    Ok(())
 }
 
-fn update_node_ref<'scope, R>(
+pub(crate) fn node_ref_clear<'scope, T>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     id: RawId,
-    f: impl FnOnce(&mut AnyValue<'scope>) -> R,
-) -> ReactiveResult<R> {
-    let (storage, scheduler) = lookup_node_ref_storage(state, id)?;
-    let NodeStorage::Value(cell) = storage.as_ref() else {
-        return Err(ReactiveError::WrongKind);
-    };
-    let mut lease = cell.try_write(scheduler)?;
-    let result = f(&mut lease);
+    slot: TypedNodeRef<'scope, Option<T>>,
+) -> ReactiveResult<()> {
+    let scheduler = node_ref_scheduler(state, id)?;
+    let mut lease = slot.slot().try_write(scheduler)?;
+    let stored = lease.as_mut().ok_or(ReactiveError::NoSuchNode)?;
+    *stored = None;
     drop(lease);
     flush_if_idle(state);
-    Ok(result)
+    Ok(())
 }
 
-pub(crate) fn invoke_callback<'scope>(
+pub(crate) fn invoke_callback<'scope, T, E>(
     state: &Rc<RefCell<ScopeState<'scope>>>,
     id: RawId,
-    arg: AnyValue<'scope>,
-) -> Result<(), CallbackThunkError<'scope>> {
-    let (storage, scheduler) =
-        lookup_callback_storage(state, id).map_err(CallbackThunkError::Runtime)?;
-    let NodeStorage::Callback(cell) = storage.as_ref() else {
-        return Err(CallbackThunkError::Runtime(ReactiveError::WrongKind));
-    };
-    let result = {
-        let mut lease = cell
-            .try_write(scheduler)
+    callback: TypedNodeRef<'scope, CallbackThunk<'scope, T, E>>,
+    arg: T,
+) -> Result<(), CallbackThunkError<E>>
+where
+    T: 'scope,
+    E: 'scope,
+{
+    let (scheduler, _storage) = {
+        let state_ref = state
+            .try_borrow()
+            .map_err(|_| CallbackThunkError::Runtime(ReactiveError::BorrowConflict))?;
+        let storage = state_ref
+            .callback_storage(id)
             .map_err(CallbackThunkError::Runtime)?;
-        lease.call(arg)
+        (state_ref.scheduler.clone(), storage)
     };
+    let mut lease = callback
+        .slot()
+        .try_write(scheduler)
+        .map_err(CallbackThunkError::Runtime)?;
+    let callback = lease
+        .as_mut()
+        .ok_or(CallbackThunkError::Runtime(ReactiveError::NoSuchNode))?;
+    let result = callback.call(arg).map_err(CallbackThunkError::User);
+    drop(lease);
     flush_if_idle(state);
     result
 }
@@ -328,40 +307,6 @@ pub(crate) fn stop_effect<'scope>(
         (Ok(()), Ok(())) => {}
     }
     Ok(true)
-}
-
-pub(crate) fn node_ref_get<'scope, T: Clone>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
-    id: RawId,
-) -> ReactiveResult<Option<T>> {
-    with_node_ref(state, id, |value| {
-        unsafe { value.downcast_ref::<Option<T>>() }
-            .cloned()
-            .ok_or(ReactiveError::TypeMismatch)
-    })?
-}
-
-pub(crate) fn node_ref_set<'scope, T>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
-    id: RawId,
-    value: T,
-) -> ReactiveResult<()> {
-    update_node_ref(state, id, |stored| {
-        unsafe { stored.downcast_mut::<Option<T>>() }
-            .map(|slot| *slot = Some(value))
-            .ok_or(ReactiveError::TypeMismatch)
-    })?
-}
-
-pub(crate) fn node_ref_clear<'scope, T>(
-    state: &Rc<RefCell<ScopeState<'scope>>>,
-    id: RawId,
-) -> ReactiveResult<()> {
-    update_node_ref(state, id, |stored| {
-        unsafe { stored.downcast_mut::<Option<T>>() }
-            .map(|slot| *slot = None)
-            .ok_or(ReactiveError::TypeMismatch)
-    })?
 }
 
 pub(crate) fn notify<'scope>(
@@ -418,133 +363,5 @@ pub(crate) fn with_batch<'scope, R>(
     match result {
         Ok(value) => value,
         Err(panic) => resume_unwind(panic),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{
-        Scope,
-        internal::value::AnyValue,
-        runtime::{
-            dispose_nodes,
-            model::NodeState,
-            scheduler::{GlobalScheduler, ScheduledTask},
-        },
-        scope::ScopeStorage,
-    };
-    use std::{marker::PhantomData, rc::Rc};
-
-    #[test]
-    fn disposing_a_node_during_a_read_does_not_require_put_back() {
-        let storage = ScopeStorage::new(GlobalScheduler::new());
-        let state = storage.owner_token(PhantomData).state();
-        let raw = state
-            .borrow_mut()
-            .create_signal(AnyValue::new(7_i32))
-            .expect("test scope should be active");
-
-        let result = with_signal(&state, raw, false, |value| {
-            assert_eq!(unsafe { value.downcast_ref::<i32>() }, Some(&7));
-            dispose_nodes(&state, vec![raw]);
-        });
-
-        assert!(result.is_ok());
-        assert!(!state.borrow().node_exists(raw));
-        storage.dispose();
-    }
-
-    #[test]
-    fn final_cleanup_stored_access_does_not_flush_another_scope() {
-        let scheduler = GlobalScheduler::new();
-        let active_storage = ScopeStorage::new(scheduler.clone());
-        let disposing_storage = ScopeStorage::new(scheduler.clone());
-        let active_scope = Scope {
-            storage: &active_storage,
-            _marker: PhantomData,
-        };
-        let disposing_scope = Scope {
-            storage: &disposing_storage,
-            _marker: PhantomData,
-        };
-        let (source, _) = active_scope
-            .signal(0_i32)
-            .expect("fallible reactive creation");
-        let runs = Rc::new(std::cell::Cell::new(0));
-        let runs_in_effect = runs.clone();
-        let effect = active_scope
-            .effect(
-                move || {
-                    let _ = source.get();
-                    runs_in_effect.set(runs_in_effect.get() + 1);
-                    Ok(())
-                },
-                active_scope
-                    .error_handler(|_: ()| {})
-                    .expect("handler registration"),
-            )
-            .expect("effect should initialize");
-        assert_eq!(runs.get(), 1);
-
-        {
-            let state = effect.handle.state();
-            let mut state_ref = state.borrow_mut();
-            let scope_id = state_ref.scope_id;
-            let node = state_ref
-                .nodes
-                .get_mut(effect.handle.raw())
-                .expect("effect node should exist");
-            node.state = NodeState::Dirty;
-            node.queued = true;
-            drop(state_ref);
-            scheduler.borrow_mut().enqueue_effect(ScheduledTask {
-                scope_id,
-                node: effect.handle.raw(),
-            });
-        }
-
-        let stored = disposing_scope
-            .stored(1_i32)
-            .expect("fallible reactive creation");
-        let runs_in_cleanup = runs.clone();
-        disposing_scope
-            .on_cleanup(
-                move || {
-                    assert_eq!(runs_in_cleanup.get(), 1);
-                    stored
-                        .update(|value| *value = 2)
-                        .expect("stored value should be writable during final cleanup");
-                    assert_eq!(runs_in_cleanup.get(), 1);
-                    Ok(())
-                },
-                disposing_scope
-                    .error_handler(|_: ()| {})
-                    .expect("handler registration"),
-            )
-            .expect("cleanup should register");
-
-        disposing_storage.dispose_untracked();
-        assert_eq!(runs.get(), 2);
-
-        active_storage.dispose_untracked();
-    }
-
-    #[test]
-    fn disposed_stored_value_cannot_access_a_reused_scope_id() {
-        let scheduler = GlobalScheduler::new();
-        let first_storage = ScopeStorage::new(scheduler.clone());
-        let first_scope = Scope {
-            storage: &first_storage,
-            _marker: PhantomData,
-        };
-        let stored = first_scope
-            .stored(1_i32)
-            .expect("fallible reactive creation");
-        first_storage.dispose_untracked();
-
-        let replacement = ScopeStorage::new(scheduler);
-        assert_eq!(stored.with(|value| *value), Err(ReactiveError::NoSuchNode));
-        replacement.dispose_untracked();
     }
 }

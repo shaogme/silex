@@ -13,10 +13,10 @@ mod input;
 mod model;
 mod ops;
 mod scheduler;
-mod storage;
+pub(crate) mod storage;
 
 pub(crate) use dispose::{dispose_all, dispose_nodes};
-pub(crate) use eval::{run_global_queue, run_initial};
+pub(crate) use eval::run_global_queue;
 pub(crate) use input::{create_derived, create_effect, create_memo, create_previous, create_watch};
 #[cfg(feature = "test-support")]
 pub use model::RuntimeSnapshot;

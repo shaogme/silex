@@ -3,16 +3,13 @@
 use super::{
     dispose::{dispatch_cleanup_errors, dispose_nodes, dispose_nodes_collect, run_cleanups},
     model::{NodeState, ScopeState},
-    scheduler::{GlobalScheduler, Observer, ObserverFrame, TargetNode},
-    storage::NodeStorage,
+    scheduler::{GlobalScheduler, Observer, ObserverFrame, ScopeId, TargetNode},
+    storage::{CleanupThunk, NodeStorage},
 };
 use crate::{
     ReactiveError, ReactiveResult,
     error::{ErrorEvent, ErrorPhase},
-    internal::{
-        RawId,
-        value::{AnyValue, Computation},
-    },
+    internal::RawId,
 };
 use std::{
     any::Any,
@@ -26,18 +23,16 @@ const MAX_QUEUE_ITERATIONS: usize = 100_000;
 
 type PanicData = Box<dyn Any + Send>;
 
-struct ComputationResult<'scope> {
-    produced_value: Option<AnyValue<'scope>>,
+struct ComputationResult {
     commit_value: bool,
     notify: bool,
     stop_after_run: bool,
-    initialize_watch: bool,
 }
 
 pub(crate) enum EvaluationError<'scope> {
     Runtime(ReactiveError),
     Callback(ErrorEvent<'scope>),
-    User(AnyValue<'scope>),
+    User,
 }
 
 impl<'scope> From<ReactiveError> for EvaluationError<'scope> {
@@ -51,7 +46,7 @@ impl fmt::Display for EvaluationError<'_> {
         match self {
             Self::Runtime(error) => error.fmt(f),
             Self::Callback(_) => f.write_str("callback returned an error"),
-            Self::User(_) => f.write_str("callback returned a user error"),
+            Self::User => f.write_str("callback returned a user error"),
         }
     }
 }
@@ -99,7 +94,7 @@ pub(crate) fn prepare_read<'scope>(
             EvaluationError::Callback(_) => {
                 unreachable!("deferred callback errors are consumed by their handler")
             }
-            EvaluationError::User(_) => {
+            EvaluationError::User => {
                 unreachable!("user errors are only produced by fallible reads")
             }
         })?;
@@ -314,7 +309,7 @@ fn evaluate<'scope>(
 fn execute_computation<'scope>(
     storage: &NodeStorage<'scope>,
     scheduler: Rc<RefCell<GlobalScheduler>>,
-) -> EvaluationResult<'scope, ComputationResult<'scope>> {
+) -> EvaluationResult<'scope, ComputationResult> {
     let NodeStorage::Computation(computation) = storage else {
         return Err(EvaluationError::Runtime(ReactiveError::WrongKind));
     };
@@ -323,132 +318,43 @@ fn execute_computation<'scope>(
         .computation
         .try_write(scheduler.clone())
         .map_err(EvaluationError::Runtime)?;
-    let result = match &mut *computation_lease {
-        Computation::Effect(callback) => {
-            callback.call().map_err(EvaluationError::Callback)?;
-            ComputationResult {
-                produced_value: None,
-                commit_value: false,
-                notify: false,
-                stop_after_run: false,
-                initialize_watch: false,
-            }
+    let result = match computation_lease.execute(scheduler) {
+        Ok(result) => result,
+        Err(super::storage::ComputationExecutionError::Runtime(error)) => {
+            return Err(EvaluationError::Runtime(error));
         }
-        Computation::Previous(callback) => {
-            let value_lease = computation
-                .value
-                .try_read(scheduler.clone())
-                .map_err(EvaluationError::Runtime)?;
-            let value = callback
-                .compute((*value_lease).as_ref())
-                .map_err(EvaluationError::Callback)?;
-            drop(value_lease);
-            ComputationResult {
-                produced_value: Some(value),
-                commit_value: true,
-                notify: false,
-                stop_after_run: false,
-                initialize_watch: false,
-            }
-        }
-        Computation::Watch(callback) => {
-            let old_lease = computation
-                .value
-                .try_read(scheduler.clone())
-                .map_err(EvaluationError::Runtime)?;
-            let old = (*old_lease).as_ref();
-            let new_value = callback.get().map_err(EvaluationError::Callback)?;
-            let first_run = !callback.initialized();
-            let changed = if first_run {
-                true
-            } else {
-                old.is_none_or(|old| !new_value.try_eq(old))
-            };
-            let should_callback = if first_run {
-                callback.immediate()
-            } else {
-                changed
-            };
-            if should_callback {
-                let _observer_frame = ObserverFrame::push_untracked(scheduler.clone());
-                callback
-                    .call(&new_value, old)
-                    .map_err(EvaluationError::Callback)?;
-            }
-            drop(old_lease);
-            ComputationResult {
-                produced_value: Some(new_value),
-                commit_value: first_run || changed,
-                notify: false,
-                stop_after_run: should_callback && callback.once(),
-                initialize_watch: first_run,
-            }
-        }
-        Computation::Memo(callback) => {
-            let old_lease = computation
-                .value
-                .try_read(scheduler.clone())
-                .map_err(EvaluationError::Runtime)?;
-            let old = (*old_lease).as_ref();
-            let new_value = callback.compute(old).map_err(EvaluationError::Callback)?;
-            drop(old_lease);
-            let changed = {
-                let old_lease = computation
-                    .value
-                    .try_read(scheduler)
-                    .map_err(EvaluationError::Runtime)?;
-                let old = (*old_lease).as_ref();
-                old.is_none_or(|old| !new_value.try_eq(old))
-            };
-            ComputationResult {
-                produced_value: Some(new_value),
-                commit_value: changed,
-                notify: changed,
-                stop_after_run: false,
-                initialize_watch: false,
-            }
-        }
-        Computation::Derived(callback) => {
-            let new_value = callback.compute().map_err(EvaluationError::Callback)?;
-            ComputationResult {
-                produced_value: Some(new_value),
-                commit_value: true,
-                notify: true,
-                stop_after_run: false,
-                initialize_watch: false,
-            }
+        Err(super::storage::ComputationExecutionError::Callback(error)) => {
+            return Err(EvaluationError::Callback(error));
         }
     };
     drop(computation_lease);
-    Ok(result)
+    Ok(ComputationResult {
+        commit_value: result.commit_value,
+        notify: result.notify,
+        stop_after_run: result.stop_after_run,
+    })
 }
 
 fn commit_computation_value<'scope>(
     storage: &NodeStorage<'scope>,
     scheduler: Rc<RefCell<GlobalScheduler>>,
-    value: AnyValue<'scope>,
-    initialize_watch: bool,
 ) -> ReactiveResult<()> {
     let NodeStorage::Computation(computation) = storage else {
         return Err(ReactiveError::WrongKind);
     };
-    if initialize_watch {
-        let mut computation_lease = computation.computation.try_write(scheduler.clone())?;
-        let Computation::Watch(watch) = &mut *computation_lease else {
-            return Err(ReactiveError::WrongKind);
-        };
-        let mut value_lease = computation.value.try_write(scheduler.clone())?;
-        let previous = (*value_lease).replace(value);
-        watch.mark_initialized();
-        drop(value_lease);
-        drop(computation_lease);
-        drop(previous);
-    } else {
-        let mut value_lease = computation.value.try_write(scheduler)?;
-        let previous = (*value_lease).replace(value);
-        drop(value_lease);
-        drop(previous);
-    }
+    let mut computation_lease = computation.computation.try_write(scheduler.clone())?;
+    computation_lease.commit(scheduler)
+}
+
+fn discard_computation_pending<'scope>(
+    storage: &NodeStorage<'scope>,
+    scheduler: Rc<RefCell<GlobalScheduler>>,
+) -> ReactiveResult<()> {
+    let NodeStorage::Computation(computation) = storage else {
+        return Err(ReactiveError::WrongKind);
+    };
+    let mut computation_lease = computation.computation.try_write(scheduler)?;
+    computation_lease.discard_pending();
     Ok(())
 }
 
@@ -456,14 +362,6 @@ fn remember_panic(first: &mut Option<PanicData>, panic: PanicData) {
     if first.is_none() {
         *first = Some(panic);
     }
-}
-
-fn drop_value<'scope>(
-    scheduler: Rc<RefCell<GlobalScheduler>>,
-    value: Option<AnyValue<'scope>>,
-) -> Option<PanicData> {
-    let _observer_frame = ObserverFrame::push_untracked(scheduler);
-    catch_unwind(AssertUnwindSafe(|| drop(value))).err()
 }
 
 fn drop_storage<'scope>(
@@ -479,7 +377,16 @@ fn run_node<'scope>(
     id: RawId,
     mode: EvaluationMode,
 ) -> EvaluationResult<'scope, bool> {
-    let (storage, first_child, cleanups, previous_owner, scheduler, scope_id) = {
+    struct RunningNodeContext<'scope> {
+        storage: Rc<NodeStorage<'scope>>,
+        first_child: RawId,
+        cleanups: Vec<CleanupThunk<'scope>>,
+        previous_owner: Option<RawId>,
+        scheduler: Rc<RefCell<GlobalScheduler>>,
+        scope_id: ScopeId,
+    }
+
+    let node_context = {
         let mut state_ref = state
             .try_borrow_mut()
             .map_err(|_| EvaluationError::Runtime(ReactiveError::BorrowConflict))?;
@@ -507,15 +414,24 @@ fn run_node<'scope>(
             node.first_child = RawId::DANGLING;
         }
         state_ref.current_owner = Some(id);
-        (
+        RunningNodeContext {
             storage,
             first_child,
             cleanups,
             previous_owner,
             scheduler,
             scope_id,
-        )
+        }
     };
+
+    let RunningNodeContext {
+        storage,
+        first_child,
+        cleanups,
+        previous_owner,
+        scheduler,
+        scope_id,
+    } = node_context;
 
     let children_to_dispose: Vec<RawId> = state
         .try_borrow()
@@ -526,7 +442,7 @@ fn run_node<'scope>(
     let mut observer_frame = None;
     let mut cleanup_errors = Vec::new();
     let outcome = catch_unwind(AssertUnwindSafe(
-        || -> EvaluationResult<'scope, ComputationResult<'scope>> {
+        || -> EvaluationResult<'scope, ComputationResult> {
             let child_dispose = catch_unwind(AssertUnwindSafe(|| {
                 dispose_nodes_collect(state, children_to_dispose)
             }));
@@ -552,11 +468,9 @@ fn run_node<'scope>(
                     .map_err(|_| EvaluationError::Runtime(ReactiveError::BorrowConflict))?;
                 if !state_ref.node_exists(id) {
                     return Ok(ComputationResult {
-                        produced_value: None,
                         commit_value: false,
                         notify: false,
                         stop_after_run: false,
-                        initialize_watch: false,
                     });
                 }
                 let scheduler = state_ref.scheduler.clone();
@@ -620,17 +534,10 @@ fn run_node<'scope>(
         }));
         match commit_dependencies {
             Ok(Ok(())) => {
-                if computation_result.commit_value
-                    && let Some(value) = std::mem::take(&mut computation_result.produced_value)
-                {
+                if computation_result.commit_value {
                     let commit = catch_unwind(AssertUnwindSafe(|| {
                         let _observer_frame = ObserverFrame::push_untracked(scheduler.clone());
-                        commit_computation_value(
-                            &storage,
-                            scheduler.clone(),
-                            value,
-                            computation_result.initialize_watch,
-                        )
+                        commit_computation_value(&storage, scheduler.clone())
                     }));
                     match commit {
                         Ok(Ok(())) => {}
@@ -668,13 +575,6 @@ fn run_node<'scope>(
                 operation_error = Some(EvaluationError::Runtime(error));
             }
             Err(panic) => panic_data = Some(panic),
-        }
-    }
-
-    if let Some(computation_result) = result.as_mut() {
-        let value = std::mem::take(&mut computation_result.produced_value);
-        if let Some(panic) = drop_value(scheduler.clone(), value) {
-            remember_panic(&mut panic_data, panic);
         }
     }
 
@@ -732,6 +632,14 @@ fn run_node<'scope>(
     }
 
     if failed {
+        let discard = catch_unwind(AssertUnwindSafe(|| {
+            discard_computation_pending(&storage, scheduler.clone())
+        }));
+        match discard {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => operation_error = Some(EvaluationError::Runtime(error)),
+            Err(panic) => remember_panic(&mut panic_data, panic),
+        }
         let child_dispose = catch_unwind(AssertUnwindSafe(|| {
             dispose_nodes_collect(state, failed_children)
         }));
@@ -778,10 +686,8 @@ fn run_node<'scope>(
                 return Ok(true);
             }
             (EvaluationMode::Read, EvaluationError::Callback(error)) => {
-                let value = error
-                    .dispatch(ErrorPhase::Read)
-                    .expect("read callback error must retain its payload");
-                return Err(EvaluationError::User(value));
+                error.dispatch(ErrorPhase::Read);
+                return Err(EvaluationError::User);
             }
             (_, error) => return Err(error),
         }

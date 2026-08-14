@@ -4,19 +4,16 @@
 use super::scheduler::active_observer_for;
 use super::{
     scheduler::{GlobalScheduler, ScopeId, TargetNode},
-    storage::{ComputationStorage, LeaseCell, NodeStorage},
+    storage::{
+        CallbackThunk, CleanupThunk, ComputationBehavior, ComputationStorage, NodeStorage,
+        TypedNodeRef,
+    },
 };
 use crate::{
     ReactiveError, ReactiveResult,
     error::{ErrorHandlerEntry, ErrorHandlerKey},
     handle::NodeKindTag,
-    internal::{
-        RawId,
-        value::{
-            AnyValue, CallbackThunk, CleanupThunk, Computation, DerivedThunk, EffectThunk,
-            MemoThunk, PreviousThunk, WatchThunk,
-        },
-    },
+    internal::RawId,
 };
 use slotmap::{SecondaryMap, SlotMap};
 use std::{
@@ -422,116 +419,63 @@ impl<'scope> ScopeState<'scope> {
         self.current_owner = owner;
     }
 
-    pub(crate) fn create_signal(&mut self, value: AnyValue<'scope>) -> ReactiveResult<RawId> {
+    pub(crate) fn create_signal<T: 'scope>(
+        &mut self,
+        value: TypedNodeRef<'scope, T>,
+    ) -> ReactiveResult<RawId> {
         let parent = self.parent_for_new_node();
         let epoch = self.scheduler.borrow().current_epoch();
         let mut node = NodeCore::new(NodeKindTag::Signal, parent, NodeState::Clean);
         node.updated_epoch = epoch;
         node.last_computed_epoch = epoch;
         self.register(node, move || {
-            NodeData::new(Rc::new(NodeStorage::Value(LeaseCell::new(value))))
+            NodeData::new(Rc::new(NodeStorage::value(value.slot())))
         })
     }
 
-    pub(super) fn register_effect(
+    pub(super) fn register_computation(
         &mut self,
-        callback: EffectThunk<'scope>,
+        kind: NodeKindTag,
+        callback: Box<dyn ComputationBehavior<'scope> + 'scope>,
     ) -> ReactiveResult<RawId> {
         let parent = self.parent_for_new_node();
-        self.register(
-            NodeCore::new(NodeKindTag::Effect, parent, NodeState::Dirty),
-            move || {
-                NodeData::new(Rc::new(NodeStorage::Computation(ComputationStorage::new(
-                    Computation::Effect(callback),
-                ))))
-            },
-        )
-    }
-
-    pub(super) fn register_previous(
-        &mut self,
-        callback: PreviousThunk<'scope>,
-    ) -> ReactiveResult<RawId> {
-        let parent = self.parent_for_new_node();
-        self.register(
-            NodeCore::new(NodeKindTag::Effect, parent, NodeState::Dirty),
-            move || {
-                NodeData::new(Rc::new(NodeStorage::Computation(ComputationStorage::new(
-                    Computation::Previous(callback),
-                ))))
-            },
-        )
-    }
-
-    pub(super) fn register_watch(&mut self, callback: WatchThunk<'scope>) -> ReactiveResult<RawId> {
-        let parent = self.parent_for_new_node();
-        self.register(
-            NodeCore::new(NodeKindTag::Effect, parent, NodeState::Dirty),
-            move || {
-                NodeData::new(Rc::new(NodeStorage::Computation(ComputationStorage::new(
-                    Computation::Watch(callback),
-                ))))
-            },
-        )
-    }
-
-    pub(super) fn register_memo(
-        &mut self,
-        callback: MemoThunk<'scope>,
-        derived: bool,
-    ) -> ReactiveResult<RawId> {
-        let parent = self.parent_for_new_node();
-        let kind = if derived {
-            NodeKindTag::Derived
-        } else {
-            NodeKindTag::Memo
-        };
         self.register(NodeCore::new(kind, parent, NodeState::Dirty), move || {
             NodeData::new(Rc::new(NodeStorage::Computation(ComputationStorage::new(
-                Computation::Memo(callback),
+                callback,
             ))))
         })
     }
 
-    pub(super) fn register_derived(
+    pub(crate) fn create_stored<T: 'scope>(
         &mut self,
-        callback: DerivedThunk<'scope>,
+        value: TypedNodeRef<'scope, T>,
     ) -> ReactiveResult<RawId> {
         let parent = self.parent_for_new_node();
         self.register(
-            NodeCore::new(NodeKindTag::Derived, parent, NodeState::Dirty),
-            move || {
-                NodeData::new(Rc::new(NodeStorage::Computation(ComputationStorage::new(
-                    Computation::Derived(callback),
-                ))))
-            },
-        )
-    }
-
-    pub(crate) fn create_stored(&mut self, value: AnyValue<'scope>) -> ReactiveResult<RawId> {
-        let parent = self.parent_for_new_node();
-        self.register(
             NodeCore::new(NodeKindTag::Stored, parent, NodeState::Clean),
-            move || NodeData::new(Rc::new(NodeStorage::Value(LeaseCell::new(value)))),
+            move || NodeData::new(Rc::new(NodeStorage::value(value.slot()))),
         )
     }
 
-    pub(crate) fn create_callback(
+    pub(crate) fn create_callback<T: 'scope, E: 'scope>(
         &mut self,
-        callback: CallbackThunk<'scope>,
+        callback: TypedNodeRef<'scope, CallbackThunk<'scope, T, E>>,
     ) -> ReactiveResult<RawId> {
         let parent = self.parent_for_new_node();
         self.register(
             NodeCore::new(NodeKindTag::Callback, parent, NodeState::Clean),
-            move || NodeData::new(Rc::new(NodeStorage::Callback(LeaseCell::new(callback)))),
+            move || NodeData::new(Rc::new(NodeStorage::callback(callback.slot()))),
         )
     }
 
-    pub(crate) fn create_node_ref(&mut self, value: AnyValue<'scope>) -> ReactiveResult<RawId> {
+    pub(crate) fn create_node_ref<T: 'scope>(
+        &mut self,
+        value: TypedNodeRef<'scope, Option<T>>,
+    ) -> ReactiveResult<RawId> {
         let parent = self.parent_for_new_node();
         self.register(
             NodeCore::new(NodeKindTag::NodeRef, parent, NodeState::Clean),
-            move || NodeData::new(Rc::new(NodeStorage::Value(LeaseCell::new(value)))),
+            move || NodeData::new(Rc::new(NodeStorage::value(value.slot()))),
         )
     }
 
@@ -566,7 +510,7 @@ impl<'scope> ScopeState<'scope> {
     ) {
         let mut first_panic = None;
         for (_, entry) in handlers {
-            if let Err(panic) = catch_unwind(AssertUnwindSafe(|| drop(entry)))
+            if let Err(panic) = catch_unwind(AssertUnwindSafe(|| entry.owner.clear()))
                 && first_panic.is_none()
             {
                 first_panic = Some(panic);
@@ -587,7 +531,9 @@ impl<'scope> ScopeState<'scope> {
                 .data
                 .get(id)
                 .and_then(|data| match data.storage.as_ref() {
-                    NodeStorage::Computation(storage) => Some(storage.value.is_initialized()),
+                    NodeStorage::Computation(storage) => storage
+                        .computation
+                        .try_peek(|behavior| behavior.has_value()),
                     _ => None,
                 })
                 .unwrap_or(false),

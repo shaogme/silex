@@ -19,8 +19,8 @@ use crate::{
     },
     error::ErrorHandlerEntry,
     handle::Handle,
-    internal::value::{AnyValue, CallbackThunk, CleanupThunk},
     runtime,
+    runtime::storage::{CallbackThunk, CleanupThunk},
     scope::ScopeStorage,
 };
 
@@ -91,13 +91,21 @@ impl<'scope> Scope<'scope> {
         E: 'scope,
         F: Fn(E) + 'scope,
     {
-        let entry = ErrorHandlerEntry::new::<E, F>(handler);
         let state = self.state();
-        let key = state
+        let callback = self.storage.alloc_handler(handler);
+        let key = match state
             .try_borrow_mut()
-            .map_err(|_| ReactiveError::BorrowConflict)?
-            .register_error_handler(entry)?;
-        Ok(ErrorHandler::from_parts(self.storage, key))
+            .map_err(|_| ReactiveError::BorrowConflict)
+            .and_then(|mut state| {
+                state.register_error_handler(ErrorHandlerEntry { owner: callback })
+            }) {
+            Ok(key) => key,
+            Err(error) => {
+                callback.clear();
+                return Err(error);
+            }
+        };
+        Ok(ErrorHandler::from_parts(self.storage, key, callback))
     }
 
     #[cfg(feature = "test-support")]
@@ -184,14 +192,22 @@ impl<'scope> Scope<'scope> {
         E: 'scope,
         F: FnMut(T) -> Result<(), E> + 'scope,
     {
-        let thunk = CallbackThunk::new_typed_fallible(f);
+        let thunk = self.storage.alloc_slot(CallbackThunk::new(f));
         let state = self.state();
-        let raw = state
+        let raw = match state
             .try_borrow_mut()
-            .map_err(|_| ReactiveError::BorrowConflict)?
-            .create_callback(thunk)?;
+            .map_err(|_| ReactiveError::BorrowConflict)
+            .and_then(|mut state| state.create_callback(thunk))
+        {
+            Ok(raw) => raw,
+            Err(error) => {
+                thunk.slot().clear();
+                return Err(error);
+            }
+        };
         Ok(Callback {
             handle: Handle::new(self.storage, raw),
+            callback: thunk,
             marker: PhantomData,
         })
     }
@@ -207,7 +223,7 @@ impl<'scope> Scope<'scope> {
         F: FnMut() -> Result<(), E> + 'scope,
     {
         let state = self.state();
-        runtime::create_effect(&state, f, error_handler).map(|raw| Effect {
+        runtime::create_effect(self.storage, &state, f, error_handler).map(|raw| Effect {
             handle: Handle::new(self.storage, raw),
         })
     }
@@ -224,7 +240,7 @@ impl<'scope> Scope<'scope> {
         F: FnMut(Option<&T>) -> Result<T, E> + 'scope,
     {
         let state = self.state();
-        runtime::create_previous(&state, f, error_handler).map(|raw| Effect {
+        runtime::create_previous(self.storage, &state, f, error_handler).map(|raw| Effect {
             handle: Handle::new(self.storage, raw),
         })
     }
@@ -259,7 +275,15 @@ impl<'scope> Scope<'scope> {
         C: FnMut(&T, Option<&T>) -> Result<(), E> + 'scope,
     {
         let state = self.state();
-        runtime::create_watch(&state, getter, callback, error_handler, options).map(|raw| Effect {
+        runtime::create_watch(
+            self.storage,
+            &state,
+            getter,
+            callback,
+            error_handler,
+            options,
+        )
+        .map(|raw| Effect {
             handle: Handle::new(self.storage, raw),
         })
     }
@@ -277,10 +301,12 @@ impl<'scope> Scope<'scope> {
         F: FnMut(Option<&T>) -> Result<T, E> + 'scope,
     {
         let state = self.state();
-        let raw = runtime::create_memo(&state, f, error_handler)?;
-        let handle = Handle::new(self.storage, raw);
+        let created = runtime::create_memo(self.storage, &state, f, error_handler)?;
+        let handle = Handle::new(self.storage, created.raw);
         Ok(Memo {
             handle,
+            value: created.value,
+            errors: created.errors,
             marker: PhantomData,
         })
     }
@@ -297,23 +323,34 @@ impl<'scope> Scope<'scope> {
         F: FnMut() -> Result<T, E> + 'scope,
     {
         let state = self.state();
-        let raw = runtime::create_derived(&state, f, error_handler)?;
-        let handle = Handle::new(self.storage, raw);
+        let created = runtime::create_derived(self.storage, &state, f, error_handler)?;
+        let handle = Handle::new(self.storage, created.raw);
         Ok(Derived {
             handle,
+            value: created.value,
+            errors: created.errors,
             marker: PhantomData,
         })
     }
 
     /// Create an empty host reference.
     pub fn node_ref<T: 'scope>(&self) -> ReactiveResult<NodeRef<'scope, T>> {
+        let slot = self.storage.alloc_slot(None::<T>);
         let state = self.state();
-        let raw = state
+        let raw = match state
             .try_borrow_mut()
-            .map_err(|_| ReactiveError::BorrowConflict)?
-            .create_node_ref(AnyValue::new(Option::<T>::None))?;
+            .map_err(|_| ReactiveError::BorrowConflict)
+            .and_then(|mut state| state.create_node_ref(slot))
+        {
+            Ok(raw) => raw,
+            Err(error) => {
+                slot.slot().clear();
+                return Err(error);
+            }
+        };
         Ok(NodeRef {
             handle: Handle::new(self.storage, raw),
+            value: slot,
             marker: PhantomData,
         })
     }
@@ -323,19 +360,29 @@ impl<'scope> Scope<'scope> {
         &self,
         value: T,
     ) -> ReactiveResult<(ReadSignal<'scope, T>, WriteSignal<'scope, T>)> {
+        let slot = self.storage.alloc_slot(value);
         let state = self.state();
-        let raw = state
+        let raw = match state
             .try_borrow_mut()
-            .map_err(|_| ReactiveError::BorrowConflict)?
-            .create_signal(AnyValue::new(value))?;
+            .map_err(|_| ReactiveError::BorrowConflict)
+            .and_then(|mut state| state.create_signal(slot))
+        {
+            Ok(raw) => raw,
+            Err(error) => {
+                slot.slot().clear();
+                return Err(error);
+            }
+        };
         let handle = Handle::new(self.storage, raw);
         Ok((
             ReadSignal {
                 handle,
+                value: slot,
                 marker: PhantomData,
             },
             WriteSignal {
                 handle,
+                value: slot,
                 marker: PhantomData,
             },
         ))
@@ -350,13 +397,22 @@ impl<'scope> Scope<'scope> {
 
     /// Store a non-reactive value under this scope.
     pub fn stored<T: 'scope>(&self, value: T) -> ReactiveResult<StoredValue<'scope, T>> {
+        let slot = self.storage.alloc_slot(value);
         let state = self.state();
-        let raw = state
+        let raw = match state
             .try_borrow_mut()
-            .map_err(|_| ReactiveError::BorrowConflict)?
-            .create_stored(AnyValue::new(value))?;
+            .map_err(|_| ReactiveError::BorrowConflict)
+            .and_then(|mut state| state.create_stored(slot))
+        {
+            Ok(raw) => raw,
+            Err(error) => {
+                slot.slot().clear();
+                return Err(error);
+            }
+        };
         Ok(StoredValue {
             handle: Handle::new(self.storage, raw),
+            value: slot,
             marker: PhantomData,
         })
     }
@@ -407,7 +463,7 @@ pub struct OwnedScope<'scope> {
 }
 
 impl<'scope> OwnedScope<'scope> {
-    fn state(&self) -> Rc<RefCell<runtime::ScopeState<'scope>>> {
+    fn state<'owner>(&'owner self) -> Rc<RefCell<runtime::ScopeState<'owner>>> {
         self.storage.owner_token(PhantomData).state()
     }
 
@@ -443,14 +499,14 @@ impl<'scope> OwnedScope<'scope> {
     /// The returned effect handle borrows this owner and cannot outlive
     /// that borrow. The effect itself remains owned by `OwnedScope` until
     /// [`OwnedScope::dispose`] or `Drop`.
-    pub fn effect<E, F>(
-        &self,
+    pub fn effect<'owner, E, F>(
+        &'owner self,
         f: F,
-        error_handler: ErrorHandler<'scope, E>,
-    ) -> ComputationInitResult<Effect<'_>, E>
+        error_handler: ErrorHandler<'owner, E>,
+    ) -> ComputationInitResult<Effect<'owner>, E>
     where
-        E: 'scope,
-        F: FnMut() -> Result<(), E> + 'scope,
+        E: 'owner,
+        F: FnMut() -> Result<(), E> + 'owner,
     {
         if !self.active.get() {
             return Err(ComputationInitError::Registration(
@@ -458,20 +514,20 @@ impl<'scope> OwnedScope<'scope> {
             ));
         }
         let state = self.state();
-        runtime::create_effect(&state, f, error_handler).map(|raw| Effect {
+        runtime::create_effect(&self.storage, &state, f, error_handler).map(|raw| Effect {
             handle: Handle::new(&self.storage, raw),
         })
     }
 
-    pub fn effect_with_previous<T, E, F>(
-        &self,
+    pub fn effect_with_previous<'owner, T, E, F>(
+        &'owner self,
         f: F,
-        error_handler: ErrorHandler<'scope, E>,
-    ) -> ComputationInitResult<Effect<'_>, E>
+        error_handler: ErrorHandler<'owner, E>,
+    ) -> ComputationInitResult<Effect<'owner>, E>
     where
-        T: 'scope,
-        E: 'scope,
-        F: FnMut(Option<&T>) -> Result<T, E> + 'scope,
+        T: 'owner,
+        E: 'owner,
+        F: FnMut(Option<&T>) -> Result<T, E> + 'owner,
     {
         if !self.active.get() {
             return Err(ComputationInitError::Registration(
@@ -479,39 +535,39 @@ impl<'scope> OwnedScope<'scope> {
             ));
         }
         let state = self.state();
-        runtime::create_previous(&state, f, error_handler).map(|raw| Effect {
+        runtime::create_previous(&self.storage, &state, f, error_handler).map(|raw| Effect {
             handle: Handle::new(&self.storage, raw),
         })
     }
 
     /// Create a getter-based watcher owned by this persistent scope.
-    pub fn watch_getter<T, E, G, C>(
-        &self,
+    pub fn watch_getter<'owner, T, E, G, C>(
+        &'owner self,
         getter: G,
         callback: C,
-        error_handler: ErrorHandler<'scope, E>,
-    ) -> ComputationInitResult<Effect<'_>, E>
+        error_handler: ErrorHandler<'owner, E>,
+    ) -> ComputationInitResult<Effect<'owner>, E>
     where
-        T: PartialEq + 'scope,
-        E: 'scope,
-        G: FnMut() -> Result<T, E> + 'scope,
-        C: FnMut(&T, Option<&T>) -> Result<(), E> + 'scope,
+        T: PartialEq + 'owner,
+        E: 'owner,
+        G: FnMut() -> Result<T, E> + 'owner,
+        C: FnMut(&T, Option<&T>) -> Result<(), E> + 'owner,
     {
         self.watch_getter_with_options(getter, callback, error_handler, WatchOptions::default())
     }
 
-    pub fn watch_getter_with_options<T, E, G, C>(
-        &self,
+    pub fn watch_getter_with_options<'owner, T, E, G, C>(
+        &'owner self,
         getter: G,
         callback: C,
-        error_handler: ErrorHandler<'scope, E>,
+        error_handler: ErrorHandler<'owner, E>,
         options: WatchOptions,
-    ) -> ComputationInitResult<Effect<'_>, E>
+    ) -> ComputationInitResult<Effect<'owner>, E>
     where
-        T: PartialEq + 'scope,
-        E: 'scope,
-        G: FnMut() -> Result<T, E> + 'scope,
-        C: FnMut(&T, Option<&T>) -> Result<(), E> + 'scope,
+        T: PartialEq + 'owner,
+        E: 'owner,
+        G: FnMut() -> Result<T, E> + 'owner,
+        C: FnMut(&T, Option<&T>) -> Result<(), E> + 'owner,
     {
         if !self.active.get() {
             return Err(ComputationInitError::Registration(
@@ -519,7 +575,15 @@ impl<'scope> OwnedScope<'scope> {
             ));
         }
         let state = self.state();
-        runtime::create_watch(&state, getter, callback, error_handler, options).map(|raw| Effect {
+        runtime::create_watch(
+            &self.storage,
+            &state,
+            getter,
+            callback,
+            error_handler,
+            options,
+        )
+        .map(|raw| Effect {
             handle: Handle::new(&self.storage, raw),
         })
     }
@@ -531,14 +595,14 @@ impl<'scope> OwnedScope<'scope> {
     /// remains synchronously accessible in that window, while the owner is
     /// still inactive for all ordinary APIs. This guarantee is limited to
     /// final owner disposal and does not apply to effect reruns or node stops.
-    pub fn on_cleanup<E, F>(
-        &self,
+    pub fn on_cleanup<'owner, E, F>(
+        &'owner self,
         f: F,
-        error_handler: ErrorHandler<'scope, E>,
+        error_handler: ErrorHandler<'owner, E>,
     ) -> ReactiveResult<()>
     where
-        E: 'scope,
-        F: FnOnce() -> Result<(), E> + 'scope,
+        E: 'owner,
+        F: FnOnce() -> Result<(), E> + 'owner,
     {
         if !self.active.get() {
             return Err(ReactiveError::NoSuchNode);
@@ -631,6 +695,14 @@ mod tests {
         queue: usize,
     }
 
+    struct ImmediateDropProbe(Rc<Cell<usize>>);
+
+    impl Drop for ImmediateDropProbe {
+        fn drop(&mut self) {
+            self.0.set(self.0.get() + 1);
+        }
+    }
+
     fn snapshot<'scope>(state: &Rc<RefCell<ScopeState<'scope>>>) -> Snapshot {
         let state_ref = state.borrow();
         let queue = state_ref.scheduler.borrow().global_queue.len();
@@ -701,6 +773,46 @@ mod tests {
                 queue: 0,
             }
         );
+    }
+
+    #[test]
+    fn rejected_value_creation_drops_allocated_payload_immediately() {
+        let storage = ScopeStorage::new(GlobalScheduler::new());
+        let scope = Scope {
+            storage: &storage,
+            _marker: PhantomData,
+        };
+        let dropped = Rc::new(Cell::new(0));
+        let dropped_in_cleanup = dropped.clone();
+        let scope_in_cleanup = scope;
+        scope
+            .on_cleanup(
+                move || {
+                    let signal =
+                        scope_in_cleanup.signal(ImmediateDropProbe(dropped_in_cleanup.clone()));
+                    assert!(matches!(signal, Err(ReactiveError::NoSuchNode)));
+                    assert_eq!(dropped_in_cleanup.get(), 1);
+
+                    let stored =
+                        scope_in_cleanup.stored(ImmediateDropProbe(dropped_in_cleanup.clone()));
+                    assert!(matches!(stored, Err(ReactiveError::NoSuchNode)));
+                    assert_eq!(dropped_in_cleanup.get(), 2);
+
+                    let callback_probe = ImmediateDropProbe(dropped_in_cleanup.clone());
+                    let callback = scope_in_cleanup.callback(move |_: ()| {
+                        let _probe = &callback_probe;
+                        Ok::<(), ()>(())
+                    });
+                    assert!(matches!(callback, Err(ReactiveError::NoSuchNode)));
+                    assert_eq!(dropped_in_cleanup.get(), 3);
+                    Ok(())
+                },
+                handler(scope),
+            )
+            .expect("cleanup should register");
+
+        storage.dispose_untracked();
+        assert_eq!(dropped.get(), 3);
     }
 
     struct DropProbe<'scope> {

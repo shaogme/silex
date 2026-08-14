@@ -558,7 +558,7 @@ impl<'scope> WebSocketConnection<'scope> {
             .map(|memo| memo.into_rx())
     }
 
-    pub fn state_str(&self) -> SilexResult<Rx<'scope, &'static str>> {
+    pub fn state_str(&self) -> SilexResult<Rx<'scope, &'scope str>> {
         self.memo_state(|state| state.as_str())
     }
 

@@ -7,7 +7,7 @@ use super::{
     },
 };
 use crate::{ReactiveError, ReactiveResult, handle::NodeKindTag, internal::RawId};
-use std::collections::VecDeque;
+use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
 impl<'scope> ScopeState<'scope> {
     pub(crate) fn begin_dependency_transaction(&mut self, observer: RawId) {
@@ -354,7 +354,7 @@ impl<'scope> ScopeState<'scope> {
     fn observer_state(
         &self,
         active: &ActiveObserver,
-    ) -> ReactiveResult<std::rc::Rc<std::cell::RefCell<ScopeState<'scope>>>> {
+    ) -> ReactiveResult<Rc<RefCell<ScopeState<'scope>>>> {
         active
             .scheduler
             .borrow()
@@ -373,14 +373,21 @@ impl<'scope> ScopeState<'scope> {
         let Some(active) = context.observer.as_ref() else {
             return Ok(None);
         };
-        if !std::rc::Rc::ptr_eq(&active.scheduler, &self.scheduler) {
+        if !Rc::ptr_eq(&active.scheduler, &self.scheduler) {
             return Err(ReactiveError::RuntimeMismatch);
+        }
+        let observer_scope = self.observer_state(active)?;
+        let same_scope = Rc::ptr_eq(&observer_scope, &self.scheduler_state());
+        if same_scope
+            && self.observer_is_computation(active.observer)
+            && active.observer.node == target
+        {
+            return Err(ReactiveError::Reentrant);
         }
         if !self.is_active() || !self.has_value(target) {
             return Err(ReactiveError::NoSuchNode);
         }
-        let observer_scope = self.observer_state(active)?;
-        if std::rc::Rc::ptr_eq(&observer_scope, &self.scheduler_state()) {
+        if same_scope {
             if !self.observer_is_computation(active.observer) || active.observer.node == target {
                 return Err(ReactiveError::Reentrant);
             }
@@ -398,7 +405,7 @@ impl<'scope> ScopeState<'scope> {
         Ok(Some(context))
     }
 
-    fn scheduler_state(&self) -> std::rc::Rc<std::cell::RefCell<ScopeState<'scope>>> {
+    fn scheduler_state(&self) -> Rc<RefCell<ScopeState<'scope>>> {
         self.scheduler
             .borrow()
             .get_scope_for_edge_cleanup(self.scope_id)
@@ -417,7 +424,7 @@ impl<'scope> ScopeState<'scope> {
         if context.blocked_scopes.contains(&self.scope_id) {
             return Ok(());
         }
-        if !std::rc::Rc::ptr_eq(&active.scheduler, &self.scheduler) {
+        if !Rc::ptr_eq(&active.scheduler, &self.scheduler) {
             return Err(ReactiveError::RuntimeMismatch);
         }
         if !self.is_active() || !self.has_value(target) {
@@ -428,7 +435,7 @@ impl<'scope> ScopeState<'scope> {
             scope_id: active.observer.scope_id,
             node: active.observer.node,
         };
-        if std::rc::Rc::ptr_eq(&observer_scope, &self.scheduler_state()) {
+        if Rc::ptr_eq(&observer_scope, &self.scheduler_state()) {
             if active.observer.node == target || !self.observer_is_computation(active.observer) {
                 return Err(ReactiveError::Reentrant);
             }
@@ -535,7 +542,10 @@ mod tests {
         runtime::{dispose::dispose_nodes, scheduler::GlobalScheduler},
         scope::ScopeStorage,
     };
-    use std::{marker::PhantomData, panic::AssertUnwindSafe, panic::catch_unwind};
+    use std::{
+        marker::PhantomData,
+        panic::{AssertUnwindSafe, catch_unwind},
+    };
 
     fn child(runtime: &mut Runtime, f: impl for<'scope> FnOnce(Scope<'scope>)) {
         let _ = runtime.child(f);
@@ -717,11 +727,11 @@ mod tests {
         let observer_storage = ScopeStorage::new(scheduler);
         let source_scope = Scope {
             storage: &source_storage,
-            _marker: std::marker::PhantomData,
+            _marker: PhantomData,
         };
         let observer_scope = Scope {
             storage: &observer_storage,
-            _marker: std::marker::PhantomData,
+            _marker: PhantomData,
         };
         let (source, _) = source_scope
             .signal(0_i32)

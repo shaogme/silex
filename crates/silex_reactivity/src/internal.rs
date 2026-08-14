@@ -1,7 +1,5 @@
 //! 响应式运行时的安全内部数据结构。
 
-pub(crate) mod value;
-
 slotmap::new_key_type! {
     /// Generational node identifier owned by a reactive runtime scope.
     pub(crate) struct RawId;

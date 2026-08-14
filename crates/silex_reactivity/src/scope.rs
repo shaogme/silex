@@ -8,6 +8,7 @@ use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 pub(crate) struct ScopeStorage {
     pub(crate) scope_id: ScopeId,
     pub(crate) state: Rc<ErasedScopeState>,
+    pub(crate) arena: bumpalo::Bump,
 }
 
 struct DisposePhaseGuard {
@@ -51,7 +52,44 @@ impl ScopeStorage {
             Rc::new(RefCell::new(ScopeState::new(ScopeId(0), scheduler.clone())));
         let scope_id = scheduler.borrow_mut().alloc_scope(&state);
         state.borrow_mut().scope_id = scope_id;
-        Self { scope_id, state }
+        Self {
+            scope_id,
+            state,
+            arena: bumpalo::Bump::new(),
+        }
+    }
+
+    pub(crate) fn alloc_slot<'scope, T: 'scope>(
+        &'scope self,
+        value: T,
+    ) -> crate::runtime::storage::TypedNodeRef<'scope, T> {
+        crate::runtime::storage::TypedNodeRef::from_slot(
+            self.arena
+                .alloc(crate::runtime::storage::TypedSlot::new(value)),
+        )
+    }
+
+    pub(crate) fn alloc_empty_slot<'scope, T: 'scope>(
+        &'scope self,
+    ) -> crate::runtime::storage::TypedNodeRef<'scope, T> {
+        crate::runtime::storage::TypedNodeRef::from_slot(
+            self.arena
+                .alloc(crate::runtime::storage::TypedSlot::empty()),
+        )
+    }
+
+    pub(crate) fn alloc_error_slot<'scope, E: 'scope>(
+        &'scope self,
+    ) -> &'scope crate::error::ErrorSlot<E> {
+        self.arena.alloc(crate::error::ErrorSlot::new())
+    }
+
+    pub(crate) fn alloc_handler<'scope, E: 'scope, F: Fn(E) + 'scope>(
+        &'scope self,
+        handler: F,
+    ) -> &'scope crate::error::ErrorHandlerCell<'scope, E> {
+        self.arena
+            .alloc(crate::error::ErrorHandlerCell::new(handler))
     }
 
     pub(crate) fn owner_token<'scope>(

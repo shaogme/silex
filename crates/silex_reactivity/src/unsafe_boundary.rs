@@ -12,10 +12,14 @@
 //! The token keeps the state allocation alive for the duration of the typed
 //! operation; it does not extend the lifetime of payloads beyond the owner.
 
-use crate::runtime::ScopeState;
+use crate::{
+    runtime::ScopeState,
+    runtime::storage::{CallbackThunk, TypedNodeRef, TypedSlot},
+};
 use std::{
     cell::RefCell,
     marker::PhantomData,
+    ptr::NonNull,
     rc::{Rc, Weak},
 };
 
@@ -94,19 +98,61 @@ fn restore_state<'scope>(state: Rc<ErasedScopeState>) -> Rc<RefCell<ScopeState<'
     unsafe { std::mem::transmute(state) }
 }
 
+/// Erase the callback payload lifetime for an asynchronous destination.
+///
+/// The destination stores only a weak owner token and must first validate that
+/// token through the scheduler before dereferencing this capability. Disposal
+/// clears the callback slot before the arena is released, so the erased
+/// lifetime cannot be observed after the owner ends.
+#[derive(Clone, Copy)]
+pub(crate) struct ErasedCallbackRef<T, E> {
+    pointer: NonNull<()>,
+    marker: PhantomData<fn(T) -> E>,
+}
+
+pub(crate) unsafe fn erase_callback_ref<'scope, T, E>(
+    callback: TypedNodeRef<'scope, CallbackThunk<'scope, T, E>>,
+) -> ErasedCallbackRef<T, E> {
+    // SAFETY: See the function-level safety contract. This changes only the
+    // lifetime carried by a typed arena reference; the owner gate controls all
+    // subsequent dereferences and drops the slot before arena teardown.
+    ErasedCallbackRef {
+        pointer: NonNull::from(callback.slot()).cast(),
+        marker: PhantomData,
+    }
+}
+
+impl<T, E> ErasedCallbackRef<T, E> {
+    pub(crate) fn restore<'scope>(
+        &self,
+        _owner: &OwnerToken<'scope>,
+    ) -> TypedNodeRef<'scope, CallbackThunk<'scope, T, E>> {
+        // SAFETY: The owner token proves that the scope arena is still live.
+        // This reference was created from that arena's callback slot and is
+        // restored only by a completion state carrying the matching token.
+        let slot = unsafe {
+            self.pointer
+                .cast::<TypedSlot<CallbackThunk<'scope, T, E>>>()
+                .as_ref()
+        };
+        TypedNodeRef::from_slot(slot)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{internal::value::AnyValue, runtime::GlobalScheduler, scope::ScopeStorage};
+    use crate::{runtime::GlobalScheduler, scope::ScopeStorage};
 
     fn store_borrowed<'scope>(
-        storage: &ScopeStorage,
+        storage: &'scope ScopeStorage,
         value: &'scope str,
     ) -> Rc<RefCell<ScopeState<'scope>>> {
         let state = storage.owner_token(PhantomData).state();
+        let slot = storage.alloc_slot(value);
         state
             .borrow_mut()
-            .create_stored(AnyValue::new(value))
+            .create_stored(slot)
             .expect("owner token should preserve the lexical payload lifetime");
         state
     }
