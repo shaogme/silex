@@ -261,7 +261,7 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
     let prefix = split_at_semicolon(&mut tokens).ok_or_else(|| {
         Error::new(
             proc_macro2::Span::call_site(),
-            "rx! requires prefix; scope; error_handler; body",
+            "rx! requires a context and body",
         )
     })?;
     if prefix.is_empty() {
@@ -273,7 +273,7 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
     let scope_tokens = split_at_semicolon(&mut tokens).ok_or_else(|| {
         Error::new(
             proc_macro2::Span::call_site(),
-            "rx! requires an explicit scope before the body",
+            "rx! requires `@context <context>; body`",
         )
     })?;
     if scope_tokens.is_empty() {
@@ -282,20 +282,32 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
             "rx! scope cannot be empty",
         ));
     }
-    let scope: Expr = parse2(scope_tokens)?;
-    let error_handler_tokens = split_at_semicolon(&mut tokens).ok_or_else(|| {
-        Error::new(
-            proc_macro2::Span::call_site(),
-            "rx! requires an explicit error handler before the body",
-        )
-    })?;
-    if error_handler_tokens.is_empty() {
+    let mut scope_tokens_iter = scope_tokens.into_iter();
+    let is_context = matches!(
+        (scope_tokens_iter.next(), scope_tokens_iter.next()),
+        (Some(TokenTree::Punct(punct)), Some(TokenTree::Ident(identifier)))
+            if punct.as_char() == '@' && identifier == "context"
+    );
+    if !is_context {
         return Err(Error::new(
             proc_macro2::Span::call_site(),
-            "rx! error handler cannot be empty",
+            "rx! requires `rx!(ctx; body)` and no longer accepts explicit scope or error handler arguments",
         ));
     }
-    let error_handler: Expr = parse2(error_handler_tokens)?;
+    let context_tokens: TokenStream2 = scope_tokens_iter.collect();
+    if context_tokens.is_empty() {
+        return Err(Error::new(
+            proc_macro2::Span::call_site(),
+            "rx! context cannot be empty",
+        ));
+    }
+    let context: Expr = parse2(context_tokens)?;
+    let scope: Expr = parse2(quote! {
+        #prefix::SilexContextProvider::scope(&(#context))
+    })?;
+    let error_handler: Expr = parse2(quote! {
+        #prefix::SilexContextProvider::error_reporter(&(#context))
+    })?;
     let body: TokenStream2 = tokens.collect();
     if body.is_empty() {
         let error_handler_ident = format_ident!("__silex_error_handler");
@@ -410,7 +422,7 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
 }
 
 /// `rx!` process macro. The first section is a dependency prefix, followed by
-/// the explicit scope, error handler, and body expressions.
+/// `@context`, a component context, and the body expression.
 #[proc_macro]
 pub fn rx(input: TokenStream) -> TokenStream {
     match expand(TokenStream2::from(input)) {

@@ -19,10 +19,7 @@ impl Default for Settings {
 }
 
 #[component]
-pub fn PersistencePage<'scope>(
-    ctx: RouterContext<'scope>,
-    error_handler: ErrorReporter<'scope>,
-) -> impl View<'scope> {
+pub fn PersistencePage<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scope> {
     let scope = ctx.scope();
     Ok(div![
         h2("Comprehensive Persistence Demo")
@@ -31,26 +28,26 @@ pub fn PersistencePage<'scope>(
 
         div![
             // 1. Storage Backends Comparison
-            BackendGrid(ctx, error_handler).build(),
+            BackendGrid(ctx).build(),
 
             // 2. Manual Control & Flash
-            ManualFlushDemo(scope, error_handler).build(),
+            ManualFlushDemo(ctx).build(),
 
             // 3. Debounced Persistence
-            DebounceDemo(scope, error_handler).build(),
+            DebounceDemo(ctx).build(),
 
             // 4. Error Handling & JSON
-            ErrorHandlingDemo(scope, error_handler).build(),
+            ErrorHandlingDemo(ctx).build(),
         ].style(sty().display("flex")?.flex_direction(FlexDirectionKeyword::Column)?.gap(px(30))?.margin_top(px(20))?)
     ]
     .style(sty().max_width(px(1000))?.margin("0 auto")?.padding("20px")?))
 }
 
 #[component]
-fn Card<'scope>(
+fn Card<'scope, Ctx>(
+    #[context] context: Ctx,
     children: AnyView<'scope>,
     #[chain] title: &'static str,
-    #[chain] error_handler: ErrorReporter<'scope>,
 ) -> impl View<'scope> {
     Ok(div![
         h3(title).style(
@@ -74,10 +71,7 @@ fn Card<'scope>(
 }
 
 #[component]
-fn BackendGrid<'scope>(
-    ctx: RouterContext<'scope>,
-    error_handler: ErrorReporter<'scope>,
-) -> impl View<'scope> {
+fn BackendGrid<'scope>(#[context] ctx: RouterContext<'scope>) -> impl View<'scope> {
     let scope = ctx.scope();
     let local = Persistent::builder(scope, "demo-local", error_handler)
         .local()
@@ -97,84 +91,83 @@ fn BackendGrid<'scope>(
         .default("Stored in URL Query".to_string())
         .build()?;
 
-    Ok(Card(chain!(
-        p("Different storage areas serving different lifetimes and visibility needs."),
-        div![
+    Ok(Card(
+        ctx,
+        chain!(
+            p("Different storage areas serving different lifetimes and visibility needs."),
             div![
-                label("LocalStorage").style(
-                    sty()
-                        .display("block")?
-                        .font_weight(FontWeightKeyword::Bold)?
-                        .margin_bottom(px(5))?
-                ),
-                input().bind_value(local).style(
-                    sty()
-                        .width(pct(100))?
-                        .padding(px(8))?
-                        .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
-                        .border_radius(px(4))?
-                        .background(AppTheme::SURFACE_ALT)?
-                        .color(AppTheme::TEXT)?
-                ),
-                small("Persistent cross-sessions & tabs.")
-                    .style(sty().display("block")?.margin_top(px(5))?.opacity(0.7)?)
-            ],
-            div![
-                label("SessionStorage").style(
-                    sty()
-                        .display("block")?
-                        .font_weight(FontWeightKeyword::Bold)?
-                        .margin_bottom(px(5))?
-                ),
-                input().bind_value(session).style(
-                    sty()
-                        .width(pct(100))?
-                        .padding(px(8))?
-                        .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
-                        .border_radius(px(4))?
-                        .background(AppTheme::SURFACE_ALT)?
-                        .color(AppTheme::TEXT)?
-                ),
-                small("Scoped to this tab/window.")
-                    .style(sty().display("block")?.margin_top(px(5))?.opacity(0.7)?)
-            ],
-            div![
-                label("URL Query").style(
-                    sty()
-                        .display("block")?
-                        .font_weight(FontWeightKeyword::Bold)?
-                        .margin_bottom(px(5))?
-                ),
-                input().bind_value(query).style(
-                    sty()
-                        .width(pct(100))?
-                        .padding(px(8))?
-                        .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
-                        .border_radius(px(4))?
-                        .background(AppTheme::SURFACE_ALT)?
-                        .color(AppTheme::TEXT)?
-                ),
-                small("Synced to browser address bar.")
-                    .style(sty().display("block")?.margin_top(px(5))?.opacity(0.7)?)
-            ],
-        ]
-        .style(
-            sty()
-                .display("grid")?
-                .grid_template_columns("repeat(auto-fit, minmax(280px, 1fr))")?
-                .gap(px(20))?
-        )
-    ))
-    .error_handler(error_handler)
+                div![
+                    label("LocalStorage").style(
+                        sty()
+                            .display("block")?
+                            .font_weight(FontWeightKeyword::Bold)?
+                            .margin_bottom(px(5))?
+                    ),
+                    input().bind_value(local).style(
+                        sty()
+                            .width(pct(100))?
+                            .padding(px(8))?
+                            .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
+                            .border_radius(px(4))?
+                            .background(AppTheme::SURFACE_ALT)?
+                            .color(AppTheme::TEXT)?
+                    ),
+                    small("Persistent cross-sessions & tabs.")
+                        .style(sty().display("block")?.margin_top(px(5))?.opacity(0.7)?)
+                ],
+                div![
+                    label("SessionStorage").style(
+                        sty()
+                            .display("block")?
+                            .font_weight(FontWeightKeyword::Bold)?
+                            .margin_bottom(px(5))?
+                    ),
+                    input().bind_value(session).style(
+                        sty()
+                            .width(pct(100))?
+                            .padding(px(8))?
+                            .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
+                            .border_radius(px(4))?
+                            .background(AppTheme::SURFACE_ALT)?
+                            .color(AppTheme::TEXT)?
+                    ),
+                    small("Scoped to this tab/window.")
+                        .style(sty().display("block")?.margin_top(px(5))?.opacity(0.7)?)
+                ],
+                div![
+                    label("URL Query").style(
+                        sty()
+                            .display("block")?
+                            .font_weight(FontWeightKeyword::Bold)?
+                            .margin_bottom(px(5))?
+                    ),
+                    input().bind_value(query).style(
+                        sty()
+                            .width(pct(100))?
+                            .padding(px(8))?
+                            .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
+                            .border_radius(px(4))?
+                            .background(AppTheme::SURFACE_ALT)?
+                            .color(AppTheme::TEXT)?
+                    ),
+                    small("Synced to browser address bar.")
+                        .style(sty().display("block")?.margin_top(px(5))?.opacity(0.7)?)
+                ],
+            ]
+            .style(
+                sty()
+                    .display("grid")?
+                    .grid_template_columns("repeat(auto-fit, minmax(280px, 1fr))")?
+                    .gap(px(20))?
+            )
+        ),
+    )
     .title("1. Backends Comparison")
     .build())
 }
 
 #[component]
-fn ManualFlushDemo<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
-) -> impl View<'scope> {
+fn ManualFlushDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
     let draft = Persistent::builder(scope, "demo-draft", error_handler)
         .local()
         .string()
@@ -182,7 +175,7 @@ fn ManualFlushDemo<'scope>(
         .default(String::new())
         .build()?;
 
-    Ok(Card(chain!(
+    Ok(Card(context, chain!(
         p("Sometimes you don't want every keystroke saved. Use Manual mode for 'Save' button behavior."),
         div![
             textarea("")
@@ -219,14 +212,11 @@ fn ManualFlushDemo<'scope>(
                 }
             ].style(sty().margin_top(px(15))?.font_size(em_unit(0.9))?)
         ]
-    )).error_handler(error_handler).title("2. Manual Persistence (Draft Mode)").build())
+    )).title("2. Manual Persistence (Draft Mode)").build())
 }
 
 #[component]
-fn DebounceDemo<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
-) -> impl View<'scope> {
+fn DebounceDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
     let debounced = Persistent::builder(scope, "demo-debounced", error_handler)
         .local()
         .string()
@@ -236,7 +226,7 @@ fn DebounceDemo<'scope>(
         .default(String::new())
         .build()?;
 
-    Ok(Card(chain!(
+    Ok(Card(context, chain!(
         p("Optimizes performance by delaying the write operation until 1.5s after the last change."),
         div![
             input()
@@ -272,14 +262,11 @@ fn DebounceDemo<'scope>(
                 }
             ].style(sty().margin_top(px(15))?.background("rgba(0,0,0,0.05)")?.padding("12px")?.border_radius(px(6))?.font_family("monospace")?)
         ]
-    )).error_handler(error_handler).title("3. Debounced Syncing").build())
+    )).title("3. Debounced Syncing").build())
 }
 
 #[component]
-fn ErrorHandlingDemo<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
-) -> impl View<'scope> {
+fn ErrorHandlingDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
     let settings = Persistent::builder(scope, "demo-complex-settings", error_handler)
         .local()
         .json::<Settings>()
@@ -287,105 +274,107 @@ fn ErrorHandlingDemo<'scope>(
         .default(Settings::default())
         .build()?;
 
-    Ok(Card(chain!(
-        p("Using JSON codec for complex types with built-in error recovery policies."),
-        div![
+    Ok(Card(
+        context,
+        chain!(
+            p("Using JSON codec for complex types with built-in error recovery policies."),
             div![
-                label("Username").style(sty().display("block")?.margin_bottom(px(5))?),
-                input()
-                    .prop(
-                        "value",
-                        settings.map(scope, |s| s.username.clone(), error_handler)?
-                    )
-                    .on(event::input, move |e| {
-                        settings.update(|s| s.username = event_target_value(&e))?;
-                        Ok(())
-                    })
-                    .style(
-                        sty()
-                            .width(pct(100))?
-                            .padding(px(8))?
-                            .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
-                            .border_radius(px(4))?
-                            .background(AppTheme::SURFACE_ALT)?
-                            .color(AppTheme::TEXT)?
-                    )
-            ],
-            div![
-                label(rx!(scope; error_handler; format!("Volume Level: {}%", $settings.volume)))
-                    .style(
+                div![
+                    label("Username").style(sty().display("block")?.margin_bottom(px(5))?),
+                    input()
+                        .prop(
+                            "value",
+                            settings.map(scope, |s| s.username.clone(), error_handler)?
+                        )
+                        .on(event::input, move |e| {
+                            settings.update(|s| s.username = event_target_value(&e))?;
+                            Ok(())
+                        })
+                        .style(
+                            sty()
+                                .width(pct(100))?
+                                .padding(px(8))?
+                                .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
+                                .border_radius(px(4))?
+                                .background(AppTheme::SURFACE_ALT)?
+                                .color(AppTheme::TEXT)?
+                        )
+                ],
+                div![
+                    label(rx!(context; format!("Volume Level: {}%", $settings.volume))).style(
                         sty()
                             .display("block")?
                             .margin_top(px(15))?
                             .margin_bottom(px(5))?
                     ),
-                input()
-                    .attr("type", "range")
-                    .attr("min", "0")
-                    .attr("max", "100")
-                    .prop("value", settings.map(scope, |s| s.volume, error_handler)?)
-                    .on(event::input, move |e| {
-                        if let Ok(v) = event_target_value(&e).parse::<u32>() {
-                            settings.update(|s| s.volume = v)?;
-                        }
+                    input()
+                        .attr("type", "range")
+                        .attr("min", "0")
+                        .attr("max", "100")
+                        .prop("value", settings.map(scope, |s| s.volume, error_handler)?)
+                        .on(event::input, move |e| {
+                            if let Ok(v) = event_target_value(&e).parse::<u32>() {
+                                settings.update(|s| s.volume = v)?;
+                            }
+                            Ok(())
+                        })
+                        .style(sty().width(pct(100))?.accent_color(AppTheme::PRIMARY)?)
+                ],
+            ],
+            div![
+                h4("Health Check").style(sty().margin_bottom(px(10))?),
+                move || {
+                    Ok(match settings.state().get()? {
+                        PersistenceState::DecodeError(err) => div![
+                            p("⚠️ Decode Error detected!").style(
+                                sty()
+                                    .color(hex("#f44336"))?
+                                    .font_weight(FontWeightKeyword::Bold)?
+                            ),
+                            pre(format!("Raw Content: {}\nReason: {}", err.raw, err.message))
+                                .style(
+                                    sty()
+                                        .background("#fff0f0")?
+                                        .color(hex("#b71c1c"))?
+                                        .padding("12px")?
+                                        .border_radius(px(4))?
+                                        .font_size(em_unit(0.85))?
+                                        .overflow("auto")?
+                                        .border("1px solid #ffcdd2")?
+                                )
+                        ]
+                        .into_any(),
+                        _ => p("✅ Ready: Backend content is valid JSON.")
+                            .style(sty().color(hex("#4caf50"))?)
+                            .into_any(),
+                    })
+                },
+                button("Reset to Factory Defaults")
+                    .on(event::click, move |_| {
+                        settings.reset()?;
                         Ok(())
                     })
-                    .style(sty().width(pct(100))?.accent_color(AppTheme::PRIMARY)?)
-            ],
-        ],
-        div![
-            h4("Health Check").style(sty().margin_bottom(px(10))?),
-            move || {
-                Ok(match settings.state().get()? {
-                    PersistenceState::DecodeError(err) => div![
-                        p("⚠️ Decode Error detected!").style(
-                            sty()
-                                .color(hex("#f44336"))?
-                                .font_weight(FontWeightKeyword::Bold)?
-                        ),
-                        pre(format!("Raw Content: {}\nReason: {}", err.raw, err.message)).style(
-                            sty()
-                                .background("#fff0f0")?
-                                .color(hex("#b71c1c"))?
-                                .padding("12px")?
-                                .border_radius(px(4))?
-                                .font_size(em_unit(0.85))?
-                                .overflow("auto")?
-                                .border("1px solid #ffcdd2")?
-                        )
-                    ]
-                    .into_any(),
-                    _ => p("✅ Ready: Backend content is valid JSON.")
-                        .style(sty().color(hex("#4caf50"))?)
-                        .into_any(),
-                })
-            },
-            button("Reset to Factory Defaults")
-                .on(event::click, move |_| {
-                    settings.reset()?;
-                    Ok(())
-                })
-                .style(
-                    sty()
-                        .margin_top(px(15))?
-                        .background(ColorKeyword::Transparent)?
-                        .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
-                        .padding(padding::block_inline(px(6), px(12)))?
-                        .border_radius(px(4))?
-                        .cursor(CursorKeyword::Pointer)?
-                        .color(AppTheme::TEXT)?
-                )
-        ]
-        .style(
-            sty()
-                .margin_top(px(25))?
-                .padding(px(15))?
-                .background(AppTheme::SURFACE_ALT)?
-                .border_radius(px(8))?
-                .border(border(px(1), BorderStyleKeyword::Dashed, AppTheme::BORDER))?
-        )
-    ))
-    .error_handler(error_handler)
+                    .style(
+                        sty()
+                            .margin_top(px(15))?
+                            .background(ColorKeyword::Transparent)?
+                            .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
+                            .padding(padding::block_inline(px(6), px(12)))?
+                            .border_radius(px(4))?
+                            .cursor(CursorKeyword::Pointer)?
+                            .color(AppTheme::TEXT)?
+                    )
+            ]
+            .style(
+                sty()
+                    .margin_top(px(25))?
+                    .padding(px(15))?
+                    .background(AppTheme::SURFACE_ALT)?
+                    .border_radius(px(8))?
+                    .border(border(px(1), BorderStyleKeyword::Dashed, AppTheme::BORDER))?
+            )
+        ),
+    )
     .title("4. Error Handling & JSON")
     .build())
 }

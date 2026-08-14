@@ -14,61 +14,54 @@ use silex::reexports::*;
 
 #[component]
 fn App<'scope>(
-    scope: Scope<'scope>,
+    #[context] context: SilexContext<'scope>,
     i18n: I18nStore<'scope>,
     store: UserSettingsStore<'scope, 'scope>,
-    error_handler: ErrorReporter<'scope>,
 ) -> impl View<'scope> + 'scope {
     let theme = store
         .theme
         .map(scope, |name| css::get_theme(name.as_str()), error_handler)?;
 
     let routes = routes!(AppRoutes {
-        home "/" => move |ctx| routes::HomePage(ctx).error_handler(error_handler).build(),
-        basics "/basics" => move |_ctx| basics::BasicsPage(scope, error_handler).build(),
-        flow "/flow" => move |_ctx| flow_control::FlowPage(scope, error_handler).build(),
-        i18n "/i18n" => move |ctx| i18n_demo::I18nPage(i18n, ctx, error_handler).build(),
-        net "/net" => move |_ctx| net_demo::NetDemoPage(scope, error_handler).build(),
+        home "/" => move |ctx| routes::HomePage(ctx).build(),
+        basics "/basics" => move |ctx| basics::BasicsPage(ctx).build(),
+        flow "/flow" => move |ctx| flow_control::FlowPage(ctx).build(),
+        i18n "/i18n" => move |ctx| i18n_demo::I18nPage(ctx, i18n).build(),
+        net "/net" => move |ctx| net_demo::NetDemoPage(ctx).build(),
         persistence "/persistence" => move |ctx| {
-            persistence::PersistencePage(ctx, error_handler).build()
+            persistence::PersistencePage(ctx).build()
         },
         nest css "/css" => move |ctx, outlet| {
             routes::CssLayout(ctx, outlet)
-                .error_handler(error_handler)
                 .build()
         } {
-            basics "/" => move |_ctx| css::StylingBasics(scope, error_handler).build(),
-            theming "/theming" => move |_ctx| css::Theming(scope, store, error_handler).build(),
-            advanced "/advanced" => move |_ctx| css::AdvancedStyling(scope, error_handler).build(),
+            basics "/" => move |ctx| css::StylingBasics(ctx).build(),
+            theming "/theming" => move |ctx| css::Theming(ctx, store).build(),
+            advanced "/advanced" => move |ctx| css::AdvancedStyling(ctx).build(),
         },
         nest advanced "/advanced" => move |ctx, outlet| {
             routes::AdvancedLayout(ctx, outlet)
-                .error_handler(error_handler)
                 .build()
         } {
-            index "/" => move |_ctx| routes::SelectDemo().error_handler(error_handler).build(),
-            store "/store" => move |_ctx| advanced::StoreDemo(scope, store, error_handler).build(),
-            query "/query" => move |ctx| advanced::QueryDemo(ctx, store, error_handler).build(),
-            storage "/storage" => move |_ctx| advanced::StorageDemo(scope, error_handler).build(),
-            resource "/resource" => move |_ctx| advanced::ResourceDemo(scope, error_handler).build(),
-            mutation "/mutation" => move |_ctx| advanced::MutationDemo(scope, error_handler).build(),
-            suspense "/suspense" => move |_ctx| advanced::SuspenseDemo(scope, error_handler).build(),
-            generics "/generics" => move |_ctx| {
-                advanced::GenericsDemo(scope)
-                    .error_handler(error_handler)
-                    .build()
-            },
-            adaptive "/adaptive" => move |_ctx| advanced::AdaptiveReadDemo(scope, error_handler).build(),
+            index "/" => move |ctx| routes::SelectDemo(ctx).build(),
+            store "/store" => move |ctx| advanced::StoreDemo(ctx, store).build(),
+            query "/query" => move |ctx| advanced::QueryDemo(ctx, store).build(),
+            storage "/storage" => move |ctx| advanced::StorageDemo(ctx).build(),
+            resource "/resource" => move |ctx| advanced::ResourceDemo(ctx).build(),
+            mutation "/mutation" => move |ctx| advanced::MutationDemo(ctx).build(),
+            suspense "/suspense" => move |ctx| advanced::SuspenseDemo(ctx).build(),
+            generics "/generics" => move |ctx| advanced::GenericsDemo(ctx).build(),
+            adaptive "/adaptive" => move |ctx| advanced::AdaptiveReadDemo(ctx).build(),
         },
-        not_found "/*" => move |ctx| routes::NotFoundPage(ctx).error_handler(error_handler).build(),
+        not_found "/*" => move |ctx| routes::NotFoundPage(ctx).build(),
     })
     .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
 
     Ok(div!(
         css::GlobalStyles(scope, error_handler),
-        Router(scope, error_handler)
+        Router(context)
             .routes(routes.table())
-            .layout(move |ctx, outlet| routes::AppLayout(ctx, outlet, store, error_handler).build())
+            .layout(move |ctx, outlet| routes::AppLayout(ctx, outlet, store).build())
             .build()
     )
     .apply(theme_variables(theme))
@@ -169,7 +162,7 @@ fn mount_showcase_view<'scope>(context: &MountContext<'scope>) -> SilexResult<()
     let store = UserSettingsStore::from_handles(scope, theme, notifications, username)?;
 
     context.mount(
-        App(scope, i18n, store, error_handler).build(),
+        App(SilexContext::new(scope, error_handler), i18n, store).build(),
         error_handler,
     )
 }

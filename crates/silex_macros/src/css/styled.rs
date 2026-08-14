@@ -170,13 +170,16 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
     let parsed: StyledComponent = syn::parse2(input)?;
     let tag = &parsed.tag;
     let name = &parsed.name;
-    let explicit_error_handler = find_error_handler_parameter(&parsed.props).ok_or_else(|| {
+    find_context_parameter(&parsed.props).ok_or_else(|| {
         syn::Error::new(
             name.span(),
-            "styled! components must declare an explicit error_handler parameter",
+            "styled! components must declare exactly one #[context] parameter",
         )
     })?;
-    let dynamic_error_handler = quote! { #explicit_error_handler };
+    // `component` generates these aliases from the context field after it
+    // destructures the props. CSS expressions can therefore keep using the
+    // same local names as ordinary component bodies.
+    let dynamic_error_handler = quote! { error_handler };
 
     let compile_result = CssCompiler::compile_with_prefix(
         parsed.css_block,
@@ -1057,6 +1060,21 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
     })
 }
 
+fn find_context_parameter(params: &Punctuated<FnArg, Token![,]>) -> Option<Ident> {
+    params.iter().find_map(|param| {
+        let FnArg::Typed(arg) = param else {
+            return None;
+        };
+        let Pat::Ident(pattern) = arg.pat.as_ref() else {
+            return None;
+        };
+        arg.attrs
+            .iter()
+            .any(|attr| attr.path().is_ident("context"))
+            .then(|| pattern.ident.clone())
+    })
+}
+
 fn find_error_handler_parameter(params: &Punctuated<FnArg, Token![,]>) -> Option<Ident> {
     params.iter().find_map(|param| {
         let FnArg::Typed(arg) = param else {
@@ -1068,10 +1086,14 @@ fn find_error_handler_parameter(params: &Punctuated<FnArg, Token![,]>) -> Option
         let Type::Path(type_path) = arg.ty.as_ref() else {
             return None;
         };
-        let is_error_handler = type_path.path.segments.last().is_some_and(|segment| {
-            segment.ident == "ErrorReporter" || segment.ident == "ErrorHandler"
-        });
-        is_error_handler.then(|| pattern.ident.clone())
+        type_path
+            .path
+            .segments
+            .last()
+            .is_some_and(|segment| {
+                segment.ident == "ErrorReporter" || segment.ident == "ErrorHandler"
+            })
+            .then(|| pattern.ident.clone())
     })
 }
 
@@ -1170,7 +1192,7 @@ mod tests {
     fn test_styled_inline_tailwind_variants() {
         let input = quote::quote! {
             Card<'scope><button>(
-                error_handler: ErrorReporter<'scope>,
+                #[context] context: SilexContext<'scope>,
                 id: String,
                 children: AnyView<'scope>,
             ) {
@@ -1193,7 +1215,7 @@ mod tests {
     fn dynamic_styled_styles_are_injected_by_an_owner_bound_attribute() {
         let input = quote::quote! {
             Panel<'scope><div>(
-                error_handler: ErrorReporter<'scope>,
+                #[context] context: SilexContext<'scope>,
                 children: AnyView<'scope>,
                 color: Signal<'scope, Hex>,
             ) {
@@ -1208,11 +1230,11 @@ mod tests {
     }
 
     #[test]
-    fn dynamic_styled_styles_use_explicit_error_handler_without_owner() {
+    fn dynamic_styled_styles_use_context_without_owner() {
         let input = quote::quote! {
             Panel<'scope><div>(
                 children: AnyView<'scope>,
-                error_handler: ErrorReporter<'scope>,
+                #[context] context: SilexContext<'scope>,
                 color: Signal<'scope, Hex>,
             ) {
                 color: $(color);
@@ -1227,7 +1249,7 @@ mod tests {
     fn dynamic_styled_rules_use_one_runtime_binding() {
         let input = quote::quote! {
             Panel<'scope><div>(
-                error_handler: ErrorReporter<'scope>,
+                #[context] context: SilexContext<'scope>,
                 children: AnyView<'scope>,
                 selector: Signal<'scope, String>,
             ) {

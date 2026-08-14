@@ -27,7 +27,7 @@ pub use route_table::*;
 
 use crate::path::strip_path_prefix;
 use crate::route_table::RouteBranchKey;
-use silex_core::{ErrorReporter, Scope, SilexError, SilexErrorKind, SilexResult};
+use silex_core::{SilexContext, SilexContextProvider, SilexError, SilexErrorKind, SilexResult};
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::helpers::window_event_listener_untyped;
 use silex_dom::view::{
@@ -66,9 +66,8 @@ impl ToRoute for RoutePath {
 }
 
 fn create_router_context<'scope>(
-    scope: Scope<'scope>,
+    silex: SilexContext<'scope>,
     base: &str,
-    error_handler: ErrorReporter<'scope>,
 ) -> SilexResult<RouterContext<'scope>> {
     let window = web_sys::window().ok_or_else(|| {
         SilexError::fatal(SilexErrorKind::Javascript(
@@ -80,11 +79,12 @@ fn create_router_context<'scope>(
     let initial_search = location.search().map_err(SilexError::fatal)?;
     let base_path = context::normalize_base_path(base);
     let initial_path = context::strip_base_path(&base_path, &raw_path);
+    let scope = silex.scope();
     let (path, set_path) = scope.signal(initial_path)?;
     let (search, set_search) = scope.signal(initial_search)?;
 
     RouterContext::new(
-        scope,
+        silex,
         RouterContextProps {
             base_path,
             path,
@@ -92,7 +92,6 @@ fn create_router_context<'scope>(
             set_path,
             set_search,
         },
-        error_handler,
     )
 }
 
@@ -126,8 +125,7 @@ impl<'scope> RouterLayoutInput<'scope> {
 /// `.build()` 处理。
 #[component]
 pub fn Router<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+    #[context] context: SilexContext<'scope>,
     #[chain] routes: RouteTable<'scope>,
     #[prop(into)]
     #[chain(default = String::from("/"))]
@@ -136,7 +134,7 @@ pub fn Router<'scope>(
     #[chain(default)]
     layout: RouterLayoutInput<'scope>,
 ) -> RouterView<'scope> {
-    let context = create_router_context(scope, &base, error_handler);
+    let context = create_router_context(context, &base);
     RouterView {
         context,
         routes,
@@ -165,7 +163,7 @@ impl<'scope> RouterView<'scope> {
             routes,
             layout,
         } = self;
-        let context = context?;
+        let context = SilexContextProvider::with_error_reporter(context?, error_handler);
         let token = owner.token();
         let navigator = context.navigator;
         let listener = window_event_listener_untyped(

@@ -1,8 +1,8 @@
 error[E0277]: the trait bound `ReadSignal<'_, Hex>: silex_dom::view::View<'_>` is not satisfied
-  --> tests/ui/fail_macro_styled_child_escape.rs:25:39
+  --> tests/ui/fail_macro_styled_child_escape.rs:27:30
    |
-25 |         ScopedPanel(AnyView::new(()), color)
-   |         -----------                   ^^^^^ the trait `silex_dom::view::View<'_>` is not implemented for `ReadSignal<'_, Hex>`
+27 |         ScopedPanel(context, color, color)
+   |         -----------          ^^^^^ the trait `silex_dom::view::View<'_>` is not implemented for `ReadSignal<'_, Hex>`
    |         |
    |         required by a bound introduced by this call
    |
@@ -22,28 +22,9 @@ note: required by a bound in `ScopedPanel`
    |
 11 | / styled! {
 12 | |     pub ScopedPanel<'scope><div>(
-13 | |         error_handler: silex_core::ErrorReporter<'scope>,
+13 | |         #[context] context: silex_core::SilexContext<'scope>,
 14 | |         children: AnyView<'scope>,
 ...  |
 19 | | }
    | |_^ required by this bound in `ScopedPanel`
    = note: this error originates in the macro `impl_view_forward_to_rx` which comes from the expansion of the derive macro `::silex::macros::PropsBuilder` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0061]: this function takes 3 arguments but 2 arguments were supplied
-  --> tests/ui/fail_macro_styled_child_escape.rs:25:9
-   |
-25 |         ScopedPanel(AnyView::new(()), color)
-   |         ^^^^^^^^^^^ ---------------- argument #1 of type `ErrorHandler<'_, SilexError>` is missing
-   |
-note: function defined here
-  --> tests/ui/fail_macro_styled_child_escape.rs:12:9
-   |
-12 |     pub ScopedPanel<'scope><div>(
-   |         ^^^^^^^^^^^
-13 |         error_handler: silex_core::ErrorReporter<'scope>,
-   |         ------------------------------------------------
-help: provide the argument
-   |
-25 -         ScopedPanel(AnyView::new(()), color)
-25 +         ScopedPanel(/* ErrorHandler<'_, SilexError> */, color, AnyView::new(()))
-   |

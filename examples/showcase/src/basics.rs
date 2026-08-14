@@ -4,10 +4,10 @@ use silex::{core::log::console_log, prelude::*};
 use std::time::Duration;
 
 #[component]
-pub fn Greeting<'scope>(
+pub fn Greeting<'scope, Ctx>(
+    #[context] context: Ctx,
     name: Signal<'scope, String>,
     #[chain(default)] punctuation: String,
-    #[chain] error_handler: ErrorReporter<'scope>,
 ) -> impl View<'scope> {
     let full_punctuation = if punctuation.is_empty() {
         "!".to_string()
@@ -32,12 +32,9 @@ pub fn Greeting<'scope>(
 }
 
 #[component]
-pub fn Counter<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
-) -> impl View<'scope> {
+pub fn Counter<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
     let (count, set_count) = scope.signal(0)?;
-    let double_count = rx!(scope; error_handler; $count * 2);
+    let double_count = rx!(context; $count * 2);
     let owner_for_timer = ScopedMountOwner::new(scope).token();
 
     // Timer Handle for Auto Increment (StoredValue: doesn't trigger UI updates itself)
@@ -64,7 +61,7 @@ pub fn Counter<'scope>(
         .style(sty().display("flex")?.gap(px(10))?.align_items("center")?),
         // Auto Increment Demo using set_interval and StoredValue
         div![
-            button(rx!(scope; error_handler; if *$is_running {
+            button(rx!(context; if *$is_running {
                 "Stop Auto Inc"
             } else {
                 "Start Auto Inc"
@@ -121,7 +118,7 @@ pub fn Counter<'scope>(
         ]
         .style(sty().margin_bottom(px(10))?),
         div!["Double: ", double_count]
-            .classes(rx!(scope; error_handler; if *$count % 2 == 0 { "even" } else { "odd" }))
+            .classes(rx!(context; if *$count % 2 == 0 { "even" } else { "odd" }))
             .style(
                 sty()
                     .margin_top(px(5))?
@@ -132,10 +129,7 @@ pub fn Counter<'scope>(
 }
 
 #[component]
-pub fn NodeRefDemo<'scope>(
-    scope: Scope<'scope>,
-    #[chain] error_handler: ErrorReporter<'scope>,
-) -> impl View<'scope> {
+pub fn NodeRefDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
     use silex::reexports::web_sys::HtmlInputElement;
     let input_ref = scope.node_ref::<HtmlInputElement>()?;
 
@@ -164,9 +158,9 @@ pub fn NodeRefDemo<'scope>(
     ))
 }
 #[component]
-pub fn SvgIconDemo<'scope>(#[chain] error_handler: ErrorReporter<'scope>) -> impl View<'scope> {
+pub fn SvgIconDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
     #[component]
-    fn ShieldCheck<'scope>(#[chain] error_handler: ErrorReporter<'scope>) -> impl View<'scope> {
+    fn ShieldCheck<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
         svg(path()
             .attr("stroke-linecap", "round")
             .attr("stroke-linejoin", "round")
@@ -183,14 +177,13 @@ pub fn SvgIconDemo<'scope>(#[chain] error_handler: ErrorReporter<'scope>) -> imp
         h3("SVG Icon forwarding"),
         p("SVG icons with attribute forwarding."),
         div![
-            ShieldCheck().error_handler(error_handler).build().style(
+            ShieldCheck(context).build().style(
                 sty()
                     .width(px(32))?
                     .height(px(32))?
                     .color(ColorName::Green)?
             ),
-            ShieldCheck()
-                .error_handler(error_handler)
+            ShieldCheck(context)
                 .build()
                 .style(
                     sty()
@@ -204,8 +197,7 @@ pub fn SvgIconDemo<'scope>(#[chain] error_handler: ErrorReporter<'scope>) -> imp
                     console_log("Icon Clicked!");
                     Ok(())
                 }),
-            ShieldCheck()
-                .error_handler(error_handler)
+            ShieldCheck(context)
                 .build()
                 .attr("width", "50")
                 .attr("height", "50")
@@ -224,10 +216,7 @@ pub fn SvgIconDemo<'scope>(#[chain] error_handler: ErrorReporter<'scope>) -> imp
 }
 
 #[component]
-pub fn EventDemo<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
-) -> impl View<'scope> {
+pub fn EventDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
     let (name, set_name) = scope.signal("Silex".to_string())?;
     let (count, set_count) = scope.signal(0)?;
 
@@ -281,8 +270,7 @@ pub fn EventDemo<'scope>(
         div![].style(sty().height(px(1))?.background("#ccc")?.margin("15px 0")?),
         p("2. Non-Copy types: Clone manually inside the closure."),
         button("Consume Payload").on(event::click, on_click_inner),
-        ul(For(logs, |l| l.clone())
-            .error_handler(error_handler)
+        ul(For(context, logs, |l| l.clone())
             .children(move |l, _idx| li(l).style(log_item_style.clone()))
             .build())
         .style(
@@ -303,10 +291,7 @@ pub fn EventDemo<'scope>(
 }
 
 #[component]
-pub fn BasicsPage<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
-) -> impl View<'scope> {
+pub fn BasicsPage<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
     let name_signal = scope.rw_signal("Developer".to_string())?;
 
     Ok(div![
@@ -330,11 +315,11 @@ pub fn BasicsPage<'scope>(
                 .border_radius(px(4))?
                 .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
         ),
-        Greeting(name_signal).error_handler(error_handler).build(),
-        Counter(scope, error_handler).build(),
-        EventDemo(scope, error_handler).build(),
-        NodeRefDemo(scope).error_handler(error_handler).build(),
-        SvgIconDemo::<'scope>().error_handler(error_handler).build(),
+        Greeting(context, name_signal).build(),
+        Counter(context).build(),
+        EventDemo(context).build(),
+        NodeRefDemo(context).build(),
+        SvgIconDemo(context).build(),
         // AttributeDemo omitted for brevity, logic is same as previous
     ])
 }

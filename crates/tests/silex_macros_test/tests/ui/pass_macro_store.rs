@@ -94,8 +94,9 @@ fn main() {
             },
         )
         .unwrap();
-        let theme = rx!(scope; error_handler; $(settings.theme).clone());
-        let label = rx!(scope; error_handler; format!("Theme: {}", $(settings.theme)));
+        let context = SilexContext::new(scope, error_handler);
+        let theme = rx!(context; $(settings.theme).clone());
+        let label = rx!(context; format!("Theme: {}", $(settings.theme)));
         assert_eq!(theme.get()?, "Light");
         assert_eq!(label.get()?, "Theme: Light");
 

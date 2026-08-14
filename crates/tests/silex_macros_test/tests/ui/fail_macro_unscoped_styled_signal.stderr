@@ -1,4 +1,4 @@
-error: styled! components must declare an explicit error_handler parameter
+error: styled! components must declare exactly one #[context] parameter
  --> tests/ui/fail_macro_unscoped_styled_signal.rs:8:9
   |
 8 |     pub UnscopedPanel<div>(

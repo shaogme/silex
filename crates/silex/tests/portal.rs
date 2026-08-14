@@ -60,12 +60,13 @@ async fn portal_modal_does_not_duplicate_content_after_repeated_toggles() {
         let error_handler = scope
             .error_handler(move |_| errors_for_handler.set(errors_for_handler.get() + 1))
             .expect("test error handler should be registered");
+        let context = SilexContext::new(scope, error_handler);
         let view = div![
             button("Toggle Modal"),
-            Show(scope, error_handler, show_modal)
+            Show(context, show_modal)
                 .children(
                     Portal(
-                        error_handler,
+                        context,
                         div![
                             h4("I am a Modal!"),
                             p("I am rendered via Portal directly into the body, but I share context!")

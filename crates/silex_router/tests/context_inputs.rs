@@ -1,5 +1,6 @@
 use silex_core::{
-    ErrorReporter, ReactiveError, Runtime, Scope, SilexError, SilexErrorKind, SilexResult,
+    ErrorReporter, ReactiveError, Runtime, Scope, SilexContext, SilexError, SilexErrorKind,
+    SilexResult,
 };
 use silex_router::{RouterContext, RouterContextProps};
 
@@ -40,7 +41,7 @@ fn foreign_search_is_rejected_before_query_memo_creation() {
             .signal(String::new())
             .expect("search signal should be created");
         let result = RouterContext::new(
-            scope,
+            SilexContext::new(scope, test_handler(scope)),
             RouterContextProps {
                 base_path: String::from("/"),
                 path,
@@ -48,7 +49,6 @@ fn foreign_search_is_rejected_before_query_memo_creation() {
                 set_path,
                 set_search,
             },
-            test_handler(scope),
         );
 
         assert_runtime_mismatch(result);
@@ -77,7 +77,7 @@ fn foreign_write_destination_is_rejected_before_context_creation() {
             .signal(String::new())
             .expect("search signal should be created");
         let result = RouterContext::new(
-            scope,
+            SilexContext::new(scope, test_handler(scope)),
             RouterContextProps {
                 base_path: String::from("/"),
                 path,
@@ -85,7 +85,6 @@ fn foreign_write_destination_is_rejected_before_context_creation() {
                 set_path: foreign_set_path,
                 set_search,
             },
-            test_handler(scope),
         );
 
         assert_runtime_mismatch(result);

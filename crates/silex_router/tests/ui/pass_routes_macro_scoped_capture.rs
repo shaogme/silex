@@ -1,24 +1,21 @@
-use silex_core::ErrorReporter;
 use silex_router::RouterContext;
 use silex_router::dom::view::AnyView;
 use silex_router::macros::{component, routes};
 
 #[component]
 fn Home<'scope>(
-    ctx: RouterContext<'scope>,
-    #[chain] error_handler: ErrorReporter<'scope>,
+    #[context] _context: RouterContext<'scope>,
 ) -> AnyView<'scope> {
-    let _ = ctx;
-    let _ = error_handler;
     AnyView::from("home")
 }
 
-fn make_routes<'scope>(reporter: ErrorReporter<'scope>) {
+fn make_routes<'scope>(context: RouterContext<'scope>) {
     let routes = routes!(AppRoutes {
-        home "/" => move |ctx| Home(ctx).error_handler(reporter).build(),
+        home "/" => move |ctx| Home(ctx).build(),
     })
     .expect("route catalog should compile");
     let _ = routes.table();
+    let _ = context;
 }
 
 fn main() {

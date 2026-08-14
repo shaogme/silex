@@ -1,4 +1,4 @@
-use silex_core::{ErrorReporter, Scope, reactivity::ReactiveSource};
+use silex_core::{SilexContextProvider, reactivity::ReactiveSource};
 use silex_dom::prelude::*;
 use silex_macros::component;
 
@@ -6,15 +6,14 @@ use silex_macros::component;
 ///
 /// 使用方式：
 /// ```rust,ignore
-/// Show(scope, condition)
+/// Show(context, condition)
 ///     .children(view)
 ///     .fallback(fallback_view)
 ///     .build()
 /// ```
 #[component]
-pub fn Show<'scope, C>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+pub fn Show<'scope, Ctx, C>(
+    #[context] context: Ctx,
     when: C,
     #[prop(render)]
     #[chain]
@@ -27,7 +26,7 @@ where
     C: ReactiveSource<'scope, Value = bool> + Clone + 'scope,
 {
     let condition = scope.promote(when, error_handler)?;
-    Ok(silex_core::rx!(scope; error_handler; if *$condition {
+    Ok(silex_core::rx!(context; if *$condition {
         children.clone()
     } else {
         fallback.clone()
@@ -38,13 +37,9 @@ where
 
 /// Signal 扩展特质，提供 .when() 语法糖
 pub trait SignalShowExt<'scope>: ReactiveSource<'scope, Value = bool> + Clone + Sized {
-    fn when<V>(
-        self,
-        scope: Scope<'scope>,
-        error_handler: ErrorReporter<'scope>,
-        view: V,
-    ) -> ShowBuilder<'scope, PropFixed, Self>
+    fn when<Ctx, V>(self, context: Ctx, view: V) -> ShowBuilder<'scope, PropFixed, Ctx, Self>
     where
+        Ctx: SilexContextProvider<'scope>,
         V: View<'scope> + 'scope;
 }
 
@@ -52,15 +47,11 @@ impl<'scope, S> SignalShowExt<'scope> for S
 where
     S: ReactiveSource<'scope, Value = bool> + Clone,
 {
-    fn when<V>(
-        self,
-        scope: Scope<'scope>,
-        error_handler: ErrorReporter<'scope>,
-        view: V,
-    ) -> ShowBuilder<'scope, PropFixed, Self>
+    fn when<Ctx, V>(self, context: Ctx, view: V) -> ShowBuilder<'scope, PropFixed, Ctx, Self>
     where
+        Ctx: SilexContextProvider<'scope>,
         V: View<'scope> + 'scope,
     {
-        Show(scope, error_handler, self).children(view)
+        Show(context, self).children(view)
     }
 }

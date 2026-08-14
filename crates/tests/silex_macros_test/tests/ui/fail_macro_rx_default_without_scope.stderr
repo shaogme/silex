@@ -1,5 +1,19 @@
-error: RxDefault requires an explicit `scope: Scope<'scope>` parameter; scoped reactive defaults cannot create an implicit runtime
-  --> tests/ui/fail_macro_rx_default_without_scope.rs:12:23
+error: component functions must declare exactly one `#[context]` parameter
+  --> tests/ui/fail_macro_rx_default_without_scope.rs:10:4
    |
-12 |     #[chain(default)] value: Signal<'scope, i32>,
-   |                       ^^^^^
+10 | fn MissingRxDefaultScope<'scope>(
+   |    ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `silex_core::prelude::*`
+ --> tests/ui/fail_macro_rx_default_without_scope.rs:5:5
+  |
+5 | use silex_core::prelude::*;
+  |     ^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `silex_dom::prelude::*`
+ --> tests/ui/fail_macro_rx_default_without_scope.rs:6:5
+  |
+6 | use silex_dom::prelude::*;
+  |     ^^^^^^^^^^^^^^^^^^^^^

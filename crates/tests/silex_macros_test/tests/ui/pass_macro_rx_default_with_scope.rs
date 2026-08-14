@@ -7,10 +7,10 @@ use silex_dom::prelude::*;
 use silex_macros::component;
 
 #[component]
-fn RxDefaultWithScope<'scope>(
-    scope: Scope<'scope>,
+fn RxDefaultWithScope<'scope, Ctx>(
+#[context] context: Ctx,
     children: AnyView<'scope>,
-    #[chain] error_handler: ErrorReporter<'scope>,
+    
     #[chain(default)] signal: Signal<'scope, i32>,
     #[chain(default)] read: ReadSignal<'scope, i32>,
     #[chain(default)] rw: RwSignal<'scope, i32>,
@@ -27,10 +27,10 @@ fn RxDefaultWithScope<'scope>(
 }
 
 #[component]
-fn RxDefaultExplicit<'scope>(
-    scope: Scope<'scope>,
+fn RxDefaultExplicit<'scope, Ctx>(
+#[context] context: Ctx,
     children: AnyView<'scope>,
-    #[chain] error_handler: ErrorReporter<'scope>,
+    
     #[prop(into)]
     #[chain(default = "column")]
     direction: Signal<'scope, String>,
@@ -41,9 +41,9 @@ fn RxDefaultExplicit<'scope>(
 }
 
 #[component]
-fn OptionalRxDefault<'scope>(
+fn OptionalRxDefault<'scope, Ctx>(
     children: AnyView<'scope>,
-    #[chain] error_handler: ErrorReporter<'scope>,
+    #[context] context: Ctx,
     #[chain(default)] value: Option<Signal<'scope, i32>>,
 ) -> impl View<'scope> {
     let _ = value;

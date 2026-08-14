@@ -1,7 +1,7 @@
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use std::collections::HashSet;
-use syn::{FnArg, GenericParam, ItemFn, Pat, PathArguments, Type, visit::Visit};
+use syn::{FnArg, GenericParam, ItemFn, Pat, Type, visit::Visit};
 
 struct GenericUsage {
     type_and_const_names: HashSet<String>,
@@ -66,14 +66,9 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
     let vis = input_fn.vis.clone();
     let generics = input_fn.sig.generics.clone();
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
-    let scope_lifetime = generics.params.iter().find_map(|param| match param {
-        GenericParam::Lifetime(def) if def.lifetime.ident == "scope" => Some(def.lifetime.clone()),
-        _ => None,
-    });
-
     let mut field_defs = Vec::new();
     let mut prop_arg_names = Vec::new();
-    let mut has_error_handler = false;
+    let mut context_field = None;
 
     for arg in input_fn.sig.inputs.iter() {
         let fn_arg = match arg {
@@ -100,26 +95,43 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
             }
         };
 
-        if param_name == "error_handler" {
-            let Some(scope) = scope_lifetime.as_ref() else {
+        let is_context = attrs.iter().any(|attr| attr.path().is_ident("context"));
+        if is_context {
+            if context_field.is_some() {
                 return Err(syn::Error::new_spanned(
-                    ty,
-                    "component error_handler requires a component lifetime named 'scope",
-                ));
-            };
-            if !is_error_handler_type(ty, scope) {
-                return Err(syn::Error::new_spanned(
-                    ty,
-                    "component error_handler must be ErrorReporter<'scope>",
+                    fn_arg,
+                    "component functions must declare exactly one `#[context]` parameter",
                 ));
             }
-            has_error_handler = true;
+            if param_name == "scope" || param_name == "error_handler" {
+                return Err(syn::Error::new_spanned(
+                    fn_arg,
+                    "`scope` and `error_handler` are reserved aliases; use another context parameter name",
+                ));
+            }
+            if attrs.iter().any(|attr| attr.path().is_ident("chain")) {
+                return Err(syn::Error::new_spanned(
+                    fn_arg,
+                    "`#[context]` cannot be combined with `#[chain]`",
+                ));
+            }
+            context_field = Some(param_name.clone());
+        } else if param_name == "scope" || param_name == "error_handler" {
+            return Err(syn::Error::new_spanned(
+                fn_arg,
+                "explicit `Scope` and `ErrorReporter` component parameters were removed; declare one `#[context]` parameter",
+            ));
+        } else if is_special_context_type(ty) {
+            return Err(syn::Error::new_spanned(
+                ty,
+                "explicit `Scope` and `ErrorReporter` component parameters were removed; declare one `#[context]` parameter",
+            ));
         }
 
         if attrs.iter().any(|attr| attr.path().is_ident("inject")) {
             return Err(syn::Error::new_spanned(
                 fn_arg,
-                "component parameters no longer support #[inject(...)]; declare error_handler explicitly",
+                "component parameters no longer support #[inject(...)]; declare a `#[context]` parameter",
             ));
         }
 
@@ -130,12 +142,25 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
         prop_arg_names.push(param_name);
     }
 
-    if !has_error_handler {
+    let Some(context_field) = context_field else {
         return Err(syn::Error::new_spanned(
             &input_fn.sig.ident,
-            "component functions must declare an explicit error_handler: ErrorReporter<'scope> parameter",
+            "component functions must declare exactly one `#[context]` parameter",
         ));
-    }
+    };
+    let context_ty = input_fn
+        .sig
+        .inputs
+        .iter()
+        .find_map(|arg| match arg {
+            FnArg::Typed(arg)
+                if matches!(arg.pat.as_ref(), Pat::Ident(ident) if ident.ident == context_field) =>
+            {
+                Some(arg.ty.clone())
+            }
+            _ => None,
+        })
+        .expect("context field must be present in component arguments");
 
     // Keep generic parameters that only occur in the render return type or bounds
     // represented in Props without adding runtime storage.
@@ -232,6 +257,19 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
     hidden_fn
         .attrs
         .push(syn::parse_quote!(#[allow(non_snake_case, unused_variables, unused_mut)]));
+    if let Some(scope) = generics.params.iter().find_map(|param| match param {
+        GenericParam::Lifetime(def) if def.lifetime.ident == "scope" => Some(def.lifetime.clone()),
+        _ => None,
+    }) {
+        hidden_fn
+            .sig
+            .generics
+            .make_where_clause()
+            .predicates
+            .push(syn::parse_quote!(
+                #context_ty: #__silex::core::SilexContextProvider<#scope>
+            ));
+    }
 
     let fallible_render = is_fallible_render(&input_fn.sig.output, &input_fn.block);
     if fallible_render
@@ -248,6 +286,12 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
         let #props_name { #(#prop_arg_names,)* .. } = props;
     })?;
     hidden_stmts.push(destructure);
+    hidden_stmts.push(syn::parse_quote! {
+        let scope = #__silex::core::SilexContextProvider::scope(&#context_field);
+    });
+    hidden_stmts.push(syn::parse_quote! {
+        let error_handler = #__silex::core::SilexContextProvider::error_reporter(&#context_field);
+    });
     hidden_stmts.extend(hidden_fn.block.stmts);
     hidden_fn.block.stmts = hidden_stmts;
 
@@ -319,24 +363,15 @@ fn expression_returns_result(expression: &syn::Expr) -> bool {
     }
 }
 
-fn is_error_handler_type(ty: &Type, scope: &syn::Lifetime) -> bool {
+fn is_special_context_type(ty: &Type) -> bool {
     let Type::Path(type_path) = ty else {
         return false;
     };
     let Some(segment) = type_path.path.segments.last() else {
         return false;
     };
-    if !matches!(
-        segment.ident.to_string().as_str(),
-        "ErrorReporter" | "ErrorHandler"
-    ) {
-        return false;
-    }
-    let PathArguments::AngleBracketed(arguments) = &segment.arguments else {
-        return false;
-    };
     matches!(
-        arguments.args.first(),
-        Some(syn::GenericArgument::Lifetime(lifetime)) if lifetime.ident == scope.ident
+        segment.ident.to_string().as_str(),
+        "Scope" | "ErrorReporter" | "ErrorHandler"
     )
 }

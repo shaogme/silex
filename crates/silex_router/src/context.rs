@@ -1,6 +1,7 @@
 use crate::ToRoute;
 use silex_core::{
-    ErrorReporter, Rx, Scope, SilexError, SilexErrorKind, SilexResult,
+    ErrorReporter, Rx, Scope, SilexContext, SilexContextProvider, SilexError, SilexErrorKind,
+    SilexResult,
     reactivity::{ReadSignal, StoredValue, WriteSignal},
     traits::RxGet,
 };
@@ -41,6 +42,7 @@ impl<'scope> View<'scope> for RouterView<'scope> {
 /// 路由上下文，存储当前的路由状态
 #[derive(Clone, Copy)]
 pub struct RouterContext<'scope> {
+    silex: SilexContext<'scope>,
     /// 基础路径 (e.g. "/app")
     pub base_path: StoredValue<'scope, String>,
     /// 当前路径 (pathname, relative to base_path)
@@ -49,17 +51,16 @@ pub struct RouterContext<'scope> {
     pub search: ReadSignal<'scope, String>,
     /// 导航控制器
     pub navigator: Navigator<'scope>,
-    scope: Scope<'scope>,
     query: Rx<'scope, HashMap<String, String>>,
 }
 
 impl<'scope> RouterContext<'scope> {
     /// Create a RouterContext after validating every read and write source.
     pub fn new(
-        scope: Scope<'scope>,
+        silex: SilexContext<'scope>,
         props: RouterContextProps<'scope>,
-        error_handler: ErrorReporter<'scope>,
     ) -> SilexResult<Self> {
+        let scope = silex.scope();
         let RouterContextProps {
             base_path: raw_base_path,
             path,
@@ -86,7 +87,7 @@ impl<'scope> RouterContext<'scope> {
                     let search = search.get()?;
                     parse_query(&search)
                 },
-                error_handler,
+                silex.error_reporter(),
             )
             .map(|memo| memo.into_rx())?;
         Ok(Self {
@@ -94,18 +95,39 @@ impl<'scope> RouterContext<'scope> {
             path,
             search,
             navigator,
-            scope,
+            silex,
             query,
         })
     }
 
     pub fn scope(self) -> Scope<'scope> {
-        self.scope
+        self.silex.scope()
+    }
+
+    pub fn error_reporter(self) -> ErrorReporter<'scope> {
+        self.silex.error_reporter()
     }
 
     /// 获取解析后的查询参数 Memo
     pub fn query_map(self) -> Rx<'scope, HashMap<String, String>> {
         self.query
+    }
+}
+
+impl<'scope> SilexContextProvider<'scope> for RouterContext<'scope> {
+    fn scope(&self) -> Scope<'scope> {
+        self.silex.scope()
+    }
+
+    fn error_reporter(&self) -> ErrorReporter<'scope> {
+        self.silex.error_reporter()
+    }
+
+    fn with_error_reporter(self, reporter: ErrorReporter<'scope>) -> Self {
+        Self {
+            silex: self.silex.with_error_reporter(reporter),
+            ..self
+        }
     }
 }
 

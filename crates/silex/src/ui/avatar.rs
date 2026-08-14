@@ -4,9 +4,8 @@ use silex_html::{MediaAttributes, div, img, span};
 use silex_macros::{component, tw, tw_variants};
 
 #[component]
-pub fn Avatar<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+pub fn Avatar<'scope, Ctx>(
+    #[context] context: Ctx,
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
@@ -29,7 +28,7 @@ pub fn Avatar<'scope>(
         }
     };
 
-    let cls = rx!(scope; error_handler; {
+    let cls = rx!(context; {
         let base_cls = avatar_variants.get($size);
         let extra = $class;
         if extra.is_empty() {
@@ -39,7 +38,7 @@ pub fn Avatar<'scope>(
         }
     });
 
-    let data_sz = rx!(scope; error_handler; {
+    let data_sz = rx!(context; {
         let sz = $size;
         if sz.is_empty() {
             "default".to_string()
@@ -55,9 +54,8 @@ pub fn Avatar<'scope>(
 }
 
 #[component]
-pub fn AvatarImage<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+pub fn AvatarImage<'scope, Ctx>(
+    #[context] context: Ctx,
     #[prop(into)]
     #[chain(default)]
     src: Signal<'scope, String>,
@@ -68,7 +66,7 @@ pub fn AvatarImage<'scope>(
     #[chain(default)]
     class: Signal<'scope, String>,
 ) -> impl View<'scope> {
-    let cls = rx!(scope; error_handler; {
+    let cls = rx!(context; {
         let base_cls = tw!("aspect-square size-full object-cover");
         let extra = $class;
         if extra.is_empty() {
@@ -86,9 +84,8 @@ pub fn AvatarImage<'scope>(
 }
 
 #[component]
-pub fn AvatarFallback<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+pub fn AvatarFallback<'scope, Ctx>(
+    #[context] context: Ctx,
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
@@ -111,7 +108,7 @@ pub fn AvatarFallback<'scope>(
         }
     };
 
-    let cls = rx!(scope; error_handler; {
+    let cls = rx!(context; {
         let base_cls = avatar_fallback_variants.get($variant);
         let extra = $class;
         if extra.is_empty() {
@@ -127,15 +124,14 @@ pub fn AvatarFallback<'scope>(
 }
 
 #[component]
-pub fn AvatarBadge<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+pub fn AvatarBadge<'scope, Ctx>(
+    #[context] context: Ctx,
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
     class: Signal<'scope, String>,
 ) -> impl View<'scope> {
-    let cls = rx!(scope; error_handler; {
+    let cls = rx!(context; {
         let base_cls = tw!(
             "absolute right-0 bottom-0 z-10 inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground ring-2 ring-background select-none group-data-[size=sm]/avatar:size-2 group-data-[size=default]/avatar:size-2.5 group-data-[size=lg]/avatar:size-3"
         );
@@ -151,15 +147,14 @@ pub fn AvatarBadge<'scope>(
 }
 
 #[component]
-pub fn AvatarGroup<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+pub fn AvatarGroup<'scope, Ctx>(
+    #[context] context: Ctx,
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
     class: Signal<'scope, String>,
 ) -> impl View<'scope> {
-    let cls = rx!(scope; error_handler; {
+    let cls = rx!(context; {
         let base_cls = tw!(
             "group/avatar-group flex -space-x-2 *:data-[slot=avatar]:ring-2 *:data-[slot=avatar]:ring-background"
         );
@@ -175,15 +170,14 @@ pub fn AvatarGroup<'scope>(
 }
 
 #[component]
-pub fn AvatarGroupCount<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+pub fn AvatarGroupCount<'scope, Ctx>(
+    #[context] context: Ctx,
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
     class: Signal<'scope, String>,
 ) -> impl View<'scope> {
-    let cls = rx!(scope; error_handler; {
+    let cls = rx!(context; {
         let base_cls = tw!(
             "relative flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-sm text-muted-foreground ring-2 ring-background group-has-data-[size=lg]/avatar-group:size-10 group-has-data-[size=sm]/avatar-group:size-6"
         );

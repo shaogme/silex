@@ -13,35 +13,27 @@ help: consider using `Result::expect` to unwrap the `Result<_, SilexError>` valu
 20 |         let source: Signal<'_, bool> = true.into_reactive_input(scope).expect("REASON");
    |                                                                       +++++++++++++++++
 
-error[E0277]: the trait bound `silex_core::Signal<'_, bool>: From<bool>` is not satisfied
-  --> tests/ui/fail_macro_reactive_input_without_scope.rs:25:21
+error[E0599]: no method named `source` found for enum `Result<T, E>` in the current scope
+  --> tests/ui/fail_macro_reactive_input_without_scope.rs:25:14
    |
-25 |             .source(true);
-   |              ------ ^^^^ the trait `From<bool>` is not implemented for `silex_core::Signal<'_, bool>`
-   |              |
-   |              required by a bound introduced by this call
+23 |           let _ = NoReactiveInputScope(context)
+   |                   -----------------------------
+   |                   |
+   |  _________________method `source` is available on `NoReactiveInputScopeBuilder<'_, PropMissing, silex_core::SilexContext<'_>>`
+   | |
+24 | |             .source(source)
+25 | |             .source(true);
+   | |             -^^^^^^ method not found in `Result<NoReactiveInputScopeBuilder<'_, PropFixed, silex_core::SilexContext<'_>>, SilexError>`
+   | |_____________|
    |
-help: `silex_core::Signal<'_, T>` implements trait `From<T>`
-  --> $WORKSPACE/crates/silex_core/src/reactivity/signal.rs
    |
-   | impl<'scope, T: 'scope> From<ReadSignal<'scope, T>> for Signal<'scope, T> {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<ReadSignal<'_, T>>`
-...
-   | impl<'scope, T: 'scope> From<RwSignal<'scope, T>> for Signal<'scope, T> {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<RwSignal<'_, T>>`
-...
-   | impl<'scope, T: 'scope> From<Memo<'scope, T>> for Signal<'scope, T> {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<Memo<'_, T>>`
-...
-   | impl<'scope, T: 'scope> From<StoredValue<'scope, T>> for Signal<'scope, T> {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `From<StoredValue<'_, T>>`
-   = note: required for `bool` to implement `Into<silex_core::Signal<'_, bool>>`
-note: required by a bound in `NoReactiveInputScopeBuilder::<'scope, PSource, PErrorHandler>::source`
+note: the method `source` exists on the type `NoReactiveInputScopeBuilder<'_, PropFixed, silex_core::SilexContext<'_>>`
   --> tests/ui/fail_macro_reactive_input_without_scope.rs:9:1
    |
  9 | #[component]
-   | ^^^^^^^^^^^^ required by this bound in `NoReactiveInputScopeBuilder::<'scope, PSource, PErrorHandler>::source`
-10 | fn NoReactiveInputScope<'scope>(
-11 |     #[chain] source: Signal<'scope, bool>,
-   |              ------ required by a bound in this associated function
+   | ^^^^^^^^^^^^
    = note: this error originates in the derive macro `::silex::macros::PropsBuilder` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: consider using `Result::expect` to unwrap the `NoReactiveInputScopeBuilder<'_, PropFixed, silex_core::SilexContext<'_>>` value, panicking if the value is a `Result::Err`
+   |
+24 |             .source(source).expect("REASON")
+   |                            +++++++++++++++++

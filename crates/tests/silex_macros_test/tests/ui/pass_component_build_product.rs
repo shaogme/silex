@@ -7,10 +7,10 @@ use silex_dom::prelude::*;
 use silex_macros::component;
 
 #[component]
-fn BuiltProduct<'scope>(
-    scope: Scope<'scope>,
+fn BuiltProduct<'scope, Ctx>(
+#[context] context: Ctx,
     children: AnyView<'scope>,
-    #[chain] error_handler: ErrorReporter<'scope>,
+    
     #[chain] label: String,
 ) -> impl View<'scope> {
     let _ = (scope, label);
@@ -21,8 +21,8 @@ fn main() {
     let mut runtime = Runtime::new();
     let _ = runtime.child(|scope| {
         let error_handler = scope.error_handler(|_| {}).expect("handler");
-        let view = BuiltProduct(scope, AnyView::Empty)
-            .error_handler(error_handler)
+        let context = SilexContext::new(scope, error_handler);
+        let view = BuiltProduct(context, AnyView::Empty)
             .label(String::from("Save"))
             .build();
         let _ = AnyView::new(view);

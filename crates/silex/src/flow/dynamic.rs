@@ -1,4 +1,4 @@
-use silex_core::{ErrorReporter, Scope, reactivity::ReactiveSource};
+use silex_core::reactivity::ReactiveSource;
 use silex_dom::prelude::*;
 use silex_macros::component;
 
@@ -23,15 +23,11 @@ use silex_macros::component;
 /// })).build();
 /// ```
 #[component]
-pub fn Dynamic<'scope, V, FView>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
-    view_fn: FView,
-) -> impl View<'scope>
+pub fn Dynamic<'scope, Ctx, V, FView>(#[context] context: Ctx, view_fn: FView) -> impl View<'scope>
 where
     V: View<'scope> + Clone + 'scope,
     FView: ReactiveSource<'scope, Value = V> + Clone + 'scope,
 {
     let view_fn = scope.promote(view_fn, error_handler)?;
-    Ok(silex_core::rx!(scope; error_handler; (*$view_fn).clone().into_any()))
+    Ok(silex_core::rx!(context; (*$view_fn).clone().into_any()))
 }

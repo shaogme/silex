@@ -7,10 +7,10 @@ use silex_dom::prelude::*;
 use silex_macros::component;
 
 #[component]
-fn FallibleWithoutQuestion<'scope>(
-    scope: Scope<'scope>,
+fn FallibleWithoutQuestion<'scope, Ctx>(
+#[context] context: Ctx,
     children: AnyView<'scope>,
-    #[chain] error_handler: ErrorReporter<'scope>,
+    
     #[chain(default)] callback: Callback<'scope, String>,
 ) -> impl View<'scope> {
     let _ = (scope, callback);
@@ -21,11 +21,11 @@ fn main() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
         let error_handler = scope.error_handler(|_| {}).expect("handler");
-        let _view: FallibleWithoutQuestionComponent = FallibleWithoutQuestion(
-            scope,
+        let context = SilexContext::new(scope, error_handler);
+        let _view: FallibleWithoutQuestionComponent<SilexContext<'_>> = FallibleWithoutQuestion(
+            context,
             AnyView::Empty,
         )
-        .error_handler(error_handler)
         .build();
     });
 }

@@ -112,8 +112,8 @@ pub fn renamed_route_path() -> Result<my_silex::router::RoutePath, String> {
 // `styled!`：展开出 `#[component]`、`inject_style`、`TypedElement` 等一大片绝对路径
 styled! {
     pub Panel<'scope> <div> (
-        #[chain] error_handler: my_silex::ErrorReporter<'scope>,
-        children: AnyView,
+        #[context] context: my_silex::core::SilexContext<'scope>,
+        children: AnyView<'scope>,
     ) {
         display: flex;
         flex-direction: column;
@@ -123,7 +123,7 @@ styled! {
 
 styled! {
     pub ScopedPanel<'scope><div> (
-        #[chain] error_handler: my_silex::ErrorReporter<'scope>,
+        #[context] context: my_silex::core::SilexContext<'scope>,
         children: AnyView<'scope>,
         color: my_silex::core::reactivity::Signal<'scope, my_silex::css::types::Hex>,
     ) {
@@ -132,9 +132,8 @@ styled! {
 }
 
 #[component]
-fn RenamedReactiveInput<'scope>(
-    scope: my_silex::Scope<'scope>,
-    #[chain] error_handler: my_silex::ErrorReporter<'scope>,
+fn RenamedReactiveInput<'scope, Ctx>(
+    #[context] context: Ctx,
     children: AnyView<'scope>,
     #[chain(default)] value: my_silex::core::reactivity::Signal<'scope, String>,
 ) -> impl View<'scope> {
@@ -146,10 +145,8 @@ pub fn renamed_reactive_input<'scope>(scope: my_silex::Scope<'scope>) -> impl Vi
     let error_handler = scope
         .error_handler(|_| {})
         .expect("handler should register");
-    match RenamedReactiveInput(scope, AnyView::Empty)
-        .error_handler(error_handler)
-        .value("renamed")
-    {
+    let context = my_silex::core::SilexContext::new(scope, error_handler);
+    match RenamedReactiveInput(context, AnyView::Empty).value("renamed") {
         Ok(builder) => builder.build().into_any(),
         Err(error) => AnyView::from(error.to_string()),
     }

@@ -131,9 +131,8 @@ fn owner_binding<'scope>(ctx: TooltipContext<'scope>) -> AttrOp<'scope> {
 }
 
 #[component]
-pub fn TooltipProvider<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+pub fn TooltipProvider<'scope, Ctx>(
+    #[context] context: Ctx,
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
@@ -142,7 +141,7 @@ pub fn TooltipProvider<'scope>(
     #[chain(default)]
     class: Signal<'scope, String>,
 ) -> impl View<'scope> {
-    let provider_cls = rx!(scope; error_handler; {
+    let provider_cls = rx!(context; {
         let base = tw!("relative");
         let extra = $class;
         if extra.is_empty() {
@@ -152,7 +151,7 @@ pub fn TooltipProvider<'scope>(
         }
     });
 
-    let delay_attr = rx!(scope; error_handler; {
+    let delay_attr = rx!(context; {
         let d = *$delay_duration;
         if d > 0.0 {
             format!("{:.0}ms", d)
@@ -168,9 +167,8 @@ pub fn TooltipProvider<'scope>(
 }
 
 #[component]
-pub fn Tooltip<'scope, C, V>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+pub fn Tooltip<'scope, Ctx, C, V>(
+    #[context] context: Ctx,
     children: C,
     #[prop(into)]
     #[chain(default)]
@@ -181,7 +179,7 @@ where
     V: View<'scope> + 'scope,
 {
     let ctx = TooltipContext::new(scope)?;
-    let root_cls = rx!(scope; error_handler; {
+    let root_cls = rx!(context; {
         let base = tw!("relative inline-block");
         let extra = $class;
         if extra.is_empty() {
@@ -197,9 +195,8 @@ where
 }
 
 #[component]
-pub fn TooltipTrigger<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+pub fn TooltipTrigger<'scope, Ctx>(
+    #[context] context: Ctx,
     children: AnyView<'scope>,
     #[chain] ctx: TooltipContext<'scope>,
     #[prop(into)]
@@ -218,7 +215,7 @@ pub fn TooltipTrigger<'scope>(
     #[chain(default)]
     on_blur: Callback<'scope, web_sys::FocusEvent>,
 ) -> impl View<'scope> {
-    let trigger_cls = rx!(scope; error_handler; {
+    let trigger_cls = rx!(context; {
         let base = tw!("inline-block cursor-pointer");
         let extra = $class;
         if extra.is_empty() {
@@ -274,9 +271,8 @@ pub fn TooltipTrigger<'scope>(
 }
 
 #[component]
-pub fn TooltipContent<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+pub fn TooltipContent<'scope, Ctx>(
+    #[context] context: Ctx,
     children: AnyView<'scope>,
     #[chain] ctx: TooltipContext<'scope>,
     #[prop(into)]
@@ -294,12 +290,12 @@ pub fn TooltipContent<'scope>(
 ) -> impl View<'scope> {
     let stored_children = scope.stored(children)?;
 
-    let side_val = rx!(scope; error_handler; {
+    let side_val = rx!(context; {
         let s = (*$side).clone();
         if s.is_empty() { "top".to_string() } else { s }
     });
 
-    let offset_val = rx!(scope; error_handler; {
+    let offset_val = rx!(context; {
         let o = *$side_offset;
         if o == 0.0 { 4.0 } else { o }
     });
@@ -308,7 +304,7 @@ pub fn TooltipContent<'scope>(
         tw!("fixed left-0 top-0 z-50 min-w-max will-change-transform pointer-events-none");
 
     let anchor = ctx.anchor;
-    let wrapper_style = rx!(scope; error_handler; {
+    let wrapper_style = rx!(context; {
         let (t, l, w, h) = *$anchor;
         let s = (*$side_val).clone();
         let offset = *$offset_val;
@@ -325,7 +321,7 @@ pub fn TooltipContent<'scope>(
         )
     });
 
-    let content_cls = rx!(scope; error_handler; {
+    let content_cls = rx!(context; {
         let s = (*$side_val).clone();
         let pos_cls = match s.as_str() {
             "bottom" => tw!("slide-in-from-top-2 -translate-x-1/2"),
@@ -345,7 +341,7 @@ pub fn TooltipContent<'scope>(
         }
     });
 
-    let arrow_cls = rx!(scope; error_handler; {
+    let arrow_cls = rx!(context; {
         let s = (*$side_val).clone();
         match s.as_str() {
             "bottom" => tw!("absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 size-2 rotate-45 bg-slate-900 dark:bg-slate-50 pointer-events-none"),
@@ -356,7 +352,7 @@ pub fn TooltipContent<'scope>(
     });
 
     let ctx_open = ctx.open;
-    Ok(rx!(scope; error_handler; {
+    Ok(rx!(context; {
         if *$ctx_open {
             let children_view = stored_children.with(|children| children.clone());
             let arrow_view = if !*$hide_arrow {
@@ -366,7 +362,7 @@ pub fn TooltipContent<'scope>(
             };
 
             crate::components::Portal(
-                error_handler,
+                context,
                 div(div(chain!(children_view, arrow_view))
                     .attr("data-slot", "tooltip-content")
                     .attr("data-side", side_val)

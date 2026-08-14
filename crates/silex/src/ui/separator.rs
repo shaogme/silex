@@ -4,9 +4,8 @@ use silex_html::div;
 use silex_macros::{component, tw};
 
 #[component]
-pub fn Separator<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+pub fn Separator<'scope, Ctx>(
+    #[context] context: Ctx,
     #[prop(into)]
     #[chain(default)]
     orientation: Signal<'scope, String>,
@@ -14,7 +13,7 @@ pub fn Separator<'scope>(
     #[chain(default)]
     class: Signal<'scope, String>,
 ) -> impl View<'scope> {
-    let cls = rx!(scope; error_handler; {
+    let cls = rx!(context; {
         let orient = $orientation;
         let base_cls = if orient.as_str() == "vertical" {
             tw!("shrink-0 bg-slate-200 dark:bg-slate-800 h-full w-[1px]")

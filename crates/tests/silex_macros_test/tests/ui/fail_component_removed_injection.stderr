@@ -1,4 +1,4 @@
-error: component parameters no longer support #[inject(...)]; declare error_handler explicitly
+error: component parameters no longer support #[inject(...)]; declare a `#[context]` parameter
   --> tests/ui/fail_component_removed_injection.rs:11:5
    |
 11 |     #[inject(owner)] owner: (),

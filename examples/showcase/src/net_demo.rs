@@ -33,10 +33,7 @@ pub struct CreatePostInput {
 }
 
 #[component]
-pub fn HttpClientDemo<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
-) -> impl View<'scope> {
+pub fn HttpClientDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
     let (post_id, set_post_id) = scope.signal(1)?;
     let search_query = scope.rw_signal(String::new())?;
 
@@ -218,10 +215,7 @@ pub fn HttpClientDemo<'scope>(
                         })?;
                         Ok(())
                     })
-                    .attr(
-                        "disabled",
-                        rx!(scope; error_handler; create_post_mutation.loading()?)
-                    )
+                    .attr("disabled", rx!(context; create_post_mutation.loading()?))
                     .style(
                         sty()
                             .padding("10px 20px")?
@@ -284,10 +278,7 @@ pub fn HttpClientDemo<'scope>(
 }
 
 #[component]
-pub fn WebSocketDemo<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
-) -> impl View<'scope> {
+pub fn WebSocketDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
     let url = scope.rw_signal("wss://echo.websocket.org".to_string())?;
     let socket = WebSocket::lazy(scope, url.get_untracked()?, error_handler)
         .build()
@@ -330,34 +321,32 @@ pub fn WebSocketDemo<'scope>(
                     .background(AppTheme::SURFACE)?
                     .color(AppTheme::TEXT)?
             ),
-            button(
-                rx!(scope; error_handler; if *$is_connected { "Disconnect" } else { "Connect" })
-            )
-            .on(event::click, move |_| {
-                socket.toggle().map_err(|error| {
-                    SilexError::recoverable(SilexErrorKind::Framework(error.to_string()))
-                })?;
-                Ok(())
-            })
-            .style(
-                sty()
-                    .padding("8px 16px")?
-                    .margin_left(px(10))?
-                    .border_radius(px(4))?
-                    .cursor("pointer")?
-            ),
+            button(rx!(context; if *$is_connected { "Disconnect" } else { "Connect" }))
+                .on(event::click, move |_| {
+                    socket.toggle().map_err(|error| {
+                        SilexError::recoverable(SilexErrorKind::Framework(error.to_string()))
+                    })?;
+                    Ok(())
+                })
+                .style(
+                    sty()
+                        .padding("8px 16px")?
+                        .margin_left(px(10))?
+                        .border_radius(px(4))?
+                        .cursor("pointer")?
+                ),
         ]
         .style(sty().display("flex")?.margin_bottom(px(20))?),
         div![
             span("Status: "),
-            strong(state_text).style(rx!(scope; error_handler; @fn if *$is_connected {
+            strong(state_text).style(rx!(context; @fn if *$is_connected {
                 sty().color(ColorName::Green)?
             } else {
                 sty().color(ColorName::Red)?
             })),
         ]
         .style(sty().margin_bottom(px(15))?),
-        Show(scope, error_handler, is_connected)
+        Show(context, is_connected)
             .children(div![
                 div![
                     input()
@@ -415,10 +404,7 @@ pub fn WebSocketDemo<'scope>(
 }
 
 #[component]
-pub fn EventStreamDemo<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
-) -> impl View<'scope> {
+pub fn EventStreamDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
     let url = scope.rw_signal("https://stream.wikimedia.org/v2/stream/recentchange".to_string())?;
     let stream = EventStream::lazy(scope, url.get_untracked()?, error_handler)
         .build()
@@ -445,48 +431,79 @@ pub fn EventStreamDemo<'scope>(
 
     Ok(div![
         h3("EventSource (SSE) Demo"),
-        p("One-way server-to-client streaming parsed directly into strongly typed Rust structs (Wikimedia Recent Changes)."),
-
+        p(
+            "One-way server-to-client streaming parsed directly into strongly typed Rust structs (Wikimedia Recent Changes)."
+        ),
         div![
-            input()
-                .bind_value(url)
-                .style(sty().flex_grow(1)?.padding("8px")?.border_radius(px(4))?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?.background(AppTheme::SURFACE)?.color(AppTheme::TEXT)?),
-            button(rx!(scope; error_handler; if *$is_connected { "Stop Stream" } else { "Start Stream" }))
+            input().bind_value(url).style(
+                sty()
+                    .flex_grow(1)?
+                    .padding("8px")?
+                    .border_radius(px(4))?
+                    .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
+                    .background(AppTheme::SURFACE)?
+                    .color(AppTheme::TEXT)?
+            ),
+            button(rx!(context; if *$is_connected { "Stop Stream" } else { "Start Stream" }))
                 .on(event::click, move |_| {
-                    stream.toggle().map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
+                    stream.toggle().map_err(|error| {
+                        SilexError::recoverable(SilexErrorKind::Framework(error.to_string()))
+                    })?;
                     Ok(())
                 })
-                .style(sty().padding("8px 16px")?.margin_left(px(10))?.border_radius(px(4))?.cursor("pointer")?),
+                .style(
+                    sty()
+                        .padding("8px 16px")?
+                        .margin_left(px(10))?
+                        .border_radius(px(4))?
+                        .cursor("pointer")?
+                ),
             button("Clear Log")
                 .on(event::click, move |_| {
                     stream.clear_messages()?;
                     Ok(())
                 })
-                .style(sty().padding("8px 16px")?.margin_left(px(10))?.border_radius(px(4))?.cursor("pointer")?.background("transparent")?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?.color(AppTheme::TEXT)?),
-        ].style(sty().display("flex")?.margin_bottom(px(20))?),
-
+                .style(
+                    sty()
+                        .padding("8px 16px")?
+                        .margin_left(px(10))?
+                        .border_radius(px(4))?
+                        .cursor("pointer")?
+                        .background("transparent")?
+                        .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
+                        .color(AppTheme::TEXT)?
+                ),
+        ]
+        .style(sty().display("flex")?.margin_bottom(px(20))?),
         div![
             h4("Stream Log (Wikipedia Edits):"),
-                ul(For(logs, |item| item.id.unwrap_or(0).to_string() + &item.title)
-                    .error_handler(error_handler)
-                    .children(move |change, _idx| {
+            ul(For(context, logs, |item| item.id.unwrap_or(0).to_string()
+                + &item.title)
+            .children(move |change, _idx| {
                 li(div![
                     span(format!("[{}] ", change.wiki)).style(stream_wiki_style.clone()),
                     span(format!("{} ", change.title)).style(stream_title_style.clone()),
                     span(format!("by {}", change.user)).style(stream_user_style.clone()),
                     span(format!(" ({})", change.change_type)).style(stream_type_style.clone())
-                ]).style(stream_row_style.clone())
-                }).build())
-            .style(sty().max_height(px(320))?.overflow_y(OverflowKeyword::Auto)?.background(AppTheme::SURFACE)?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?.padding("15px")?.border_radius(px(8))?)
+                ])
+                .style(stream_row_style.clone())
+            })
+            .build())
+            .style(
+                sty()
+                    .max_height(px(320))?
+                    .overflow_y(OverflowKeyword::Auto)?
+                    .background(AppTheme::SURFACE)?
+                    .border(border(px(1), BorderStyleKeyword::Solid, AppTheme::BORDER))?
+                    .padding("15px")?
+                    .border_radius(px(8))?
+            )
         ]
     ])
 }
 
 #[component]
-pub fn NetDemoPage<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
-) -> impl View<'scope> {
+pub fn NetDemoPage<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
     let (active_tab, set_active_tab) = scope.signal("http")?;
 
     inject_css! {
@@ -505,21 +522,21 @@ pub fn NetDemoPage<'scope>(
         div![
             button("HTTP Client")
                 .on(event::click, set_active_tab.setter("http"))
-                .classes(rx!(scope; error_handler; if *$active_tab == "http" { "active" } else { "" })),
+                .classes(rx!(context; if *$active_tab == "http" { "active" } else { "" })),
             button("WebSocket")
                 .on(event::click, set_active_tab.setter("ws"))
-                .classes(rx!(scope; error_handler; if *$active_tab == "ws" { "active" } else { "" })),
+                .classes(rx!(context; if *$active_tab == "ws" { "active" } else { "" })),
             button("EventStream")
                 .on(event::click, set_active_tab.setter("sse"))
-                .classes(rx!(scope; error_handler; if *$active_tab == "sse" { "active" } else { "" })),
+                .classes(rx!(context; if *$active_tab == "sse" { "active" } else { "" })),
         ].class("tab-nav"),
 
         // Content
         div![
             move || { Ok(match active_tab.get()? {
-                "http" => HttpClientDemo(scope, error_handler).build().into_any(),
-                "ws" => WebSocketDemo(scope, error_handler).build().into_any(),
-                "sse" => EventStreamDemo(scope, error_handler).build().into_any(),
+                "http" => HttpClientDemo(context).build().into_any(),
+                "ws" => WebSocketDemo(context).build().into_any(),
+                "sse" => EventStreamDemo(context).build().into_any(),
                 _ => "".into_any(),
             })
             }

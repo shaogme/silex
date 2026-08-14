@@ -1,6 +1,6 @@
 use crate::{ToRoute, context::RouterContext};
+use silex_core::SilexResult;
 use silex_core::traits::RxGet;
-use silex_core::{ErrorReporter, SilexResult};
 use silex_dom::prelude::*;
 use silex_dom::view::{MountErrorHandler, MountOwner};
 use silex_html::a;
@@ -45,8 +45,7 @@ impl<'scope> View<'scope> for LinkView<'scope> {
 /// 类似于 HTML 的 `<a>` 标签，但会拦截点击事件并使用 Router 导航，而不是刷新页面。
 #[component]
 pub fn Link<'scope, T: ToRoute + Clone + 'scope>(
-    router_ctx: RouterContext<'scope>,
-    #[chain] error_handler: ErrorReporter<'scope>,
+    #[context] router_ctx: RouterContext<'scope>,
     to: T,
     #[chain] children: AnyView<'scope>,
     #[prop(into)]
@@ -71,7 +70,7 @@ pub fn Link<'scope, T: ToRoute + Clone + 'scope>(
             let href_for_rx = href.clone();
             let class_name = active_class.clone();
 
-            let is_active = silex_core::rx!(router_ctx.scope(); error_handler; {
+            let is_active = silex_core::rx!(router_ctx; {
                 let current_path = $path_signal;
                 is_active_path(current_path, &href_for_rx)
             });

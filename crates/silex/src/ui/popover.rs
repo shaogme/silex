@@ -50,15 +50,14 @@ impl<'scope> PopoverContext<'scope> {
 }
 
 #[component]
-pub fn PopoverHeader<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+pub fn PopoverHeader<'scope, Ctx>(
+    #[context] context: Ctx,
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
     class: Signal<'scope, String>,
 ) -> impl View<'scope> {
-    let header_cls = rx!(scope; error_handler; {
+    let header_cls = rx!(context; {
         let base = tw!("flex flex-col gap-1 text-sm");
         let extra = $class;
         if extra.is_empty() {
@@ -74,15 +73,14 @@ pub fn PopoverHeader<'scope>(
 }
 
 #[component]
-pub fn PopoverTitle<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+pub fn PopoverTitle<'scope, Ctx>(
+    #[context] context: Ctx,
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
     class: Signal<'scope, String>,
 ) -> impl View<'scope> {
-    let title_cls = rx!(scope; error_handler; {
+    let title_cls = rx!(context; {
         let base = tw!("font-medium leading-none");
         let extra = $class;
         if extra.is_empty() {
@@ -98,15 +96,14 @@ pub fn PopoverTitle<'scope>(
 }
 
 #[component]
-pub fn PopoverDescription<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+pub fn PopoverDescription<'scope, Ctx>(
+    #[context] context: Ctx,
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
     class: Signal<'scope, String>,
 ) -> impl View<'scope> {
-    let desc_cls = rx!(scope; error_handler; {
+    let desc_cls = rx!(context; {
         let base = tw!("text-muted-foreground text-sm m-0");
         let extra = $class;
         if extra.is_empty() {
@@ -122,24 +119,23 @@ pub fn PopoverDescription<'scope>(
 }
 
 #[component]
-pub fn PopoverPortal<'scope>(
-    error_handler: ErrorReporter<'scope>,
+pub fn PopoverPortal<'scope, Ctx>(
+    #[context] context: Ctx,
     children: AnyView<'scope>,
 ) -> impl View<'scope> {
-    crate::components::Portal(error_handler, children).build()
+    crate::components::Portal(context, children).build()
 }
 
 #[component]
-pub fn PopoverAnchor<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+pub fn PopoverAnchor<'scope, Ctx>(
+    #[context] context: Ctx,
     children: AnyView<'scope>,
     #[chain] ctx: PopoverContext<'scope>,
     #[prop(into)]
     #[chain(default)]
     class: Signal<'scope, String>,
 ) -> impl View<'scope> {
-    let anchor_cls = rx!(scope; error_handler; {
+    let anchor_cls = rx!(context; {
         let base = tw!("inline-block");
         let extra = $class;
         if extra.is_empty() {
@@ -168,9 +164,8 @@ pub fn PopoverAnchor<'scope>(
 }
 
 #[component]
-pub fn PopoverClose<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+pub fn PopoverClose<'scope, Ctx>(
+    #[context] context: Ctx,
     children: AnyView<'scope>,
     #[chain] ctx: PopoverContext<'scope>,
     #[prop(into)]
@@ -180,7 +175,7 @@ pub fn PopoverClose<'scope>(
     #[chain(default)]
     class: Signal<'scope, String>,
 ) -> impl View<'scope> {
-    let close_cls = rx!(scope; error_handler; {
+    let close_cls = rx!(context; {
         let base = tw!("inline-flex items-center justify-center cursor-pointer");
         let extra = $class;
         if extra.is_empty() {
@@ -200,9 +195,8 @@ pub fn PopoverClose<'scope>(
 }
 
 #[component]
-pub fn PopoverContent<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+pub fn PopoverContent<'scope, Ctx>(
+    #[context] context: Ctx,
     children: AnyView<'scope>,
     #[chain] ctx: PopoverContext<'scope>,
     #[prop(into)]
@@ -224,7 +218,7 @@ pub fn PopoverContent<'scope>(
     #[chain(default)]
     on_close: Callback<'scope, ()>,
 ) -> impl View<'scope> {
-    let side_val = rx!(scope; error_handler; {
+    let side_val = rx!(context; {
         let s = (*$side).clone();
         if s.is_empty() {
             "bottom".to_string()
@@ -233,7 +227,7 @@ pub fn PopoverContent<'scope>(
         }
     });
 
-    let align_val = rx!(scope; error_handler; {
+    let align_val = rx!(context; {
         let a = (*$align).clone();
         if a.is_empty() {
             "center".to_string()
@@ -242,7 +236,7 @@ pub fn PopoverContent<'scope>(
         }
     });
 
-    let offset_val = rx!(scope; error_handler; {
+    let offset_val = rx!(context; {
         let o = *$side_offset;
         if o == 0.0 { 4.0 } else { o }
     });
@@ -251,7 +245,7 @@ pub fn PopoverContent<'scope>(
         tw!("fixed left-0 top-0 z-50 min-w-max will-change-transform pointer-events-none");
 
     let anchor_rect = ctx.anchor_rect;
-    let wrapper_style = rx!(scope; error_handler; {
+    let wrapper_style = rx!(context; {
         let (t, l, w, h) = *$anchor_rect;
         let s = (*$side_val).clone();
         let a = (*$align_val).clone();
@@ -302,7 +296,7 @@ pub fn PopoverContent<'scope>(
         )
     });
 
-    let content_cls = rx!(scope; error_handler; {
+    let content_cls = rx!(context; {
         let s = (*$side_val).clone();
         let a = (*$align_val).clone();
 
@@ -342,11 +336,11 @@ pub fn PopoverContent<'scope>(
 
     let stored = scope.stored(children)?;
     let ctx_open = ctx.open;
-    let is_open = rx!(scope; error_handler; *$open || *$ctx_open);
+    let is_open = rx!(context; *$open || *$ctx_open);
 
-    Ok(rx!(scope; error_handler; {
+    Ok(rx!(context; {
         if *$is_open {
-            crate::components::Portal(error_handler, chain!(
+            crate::components::Portal(context, chain!(
                 // Overlay for click-outside
                 div(()).class(tw!("fixed inset-0 z-50 bg-transparent")).on(
                     event::click,
@@ -376,9 +370,8 @@ pub fn PopoverContent<'scope>(
 }
 
 #[component]
-pub fn PopoverTrigger<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+pub fn PopoverTrigger<'scope, Ctx>(
+    #[context] context: Ctx,
     children: AnyView<'scope>,
     #[chain] ctx: PopoverContext<'scope>,
     #[prop(into)]
@@ -388,7 +381,7 @@ pub fn PopoverTrigger<'scope>(
     #[chain(default)]
     class: Signal<'scope, String>,
 ) -> impl View<'scope> {
-    let trigger_cls = rx!(scope; error_handler; {
+    let trigger_cls = rx!(context; {
         let base = tw!("inline-block cursor-pointer");
         let extra = $class;
         if extra.is_empty() {
@@ -418,9 +411,8 @@ pub fn PopoverTrigger<'scope>(
 }
 
 #[component]
-pub fn Popover<'scope, C, V>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+pub fn Popover<'scope, Ctx, C, V>(
+    #[context] context: Ctx,
     children: C,
     #[prop(into)]
     #[chain(default)]
@@ -431,7 +423,7 @@ where
     V: View<'scope> + 'scope,
 {
     let ctx = PopoverContext::new(scope)?;
-    let root_cls = rx!(scope; error_handler; {
+    let root_cls = rx!(context; {
         let base = tw!("relative inline-block");
         let extra = $class;
         if extra.is_empty() {

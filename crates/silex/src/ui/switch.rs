@@ -4,9 +4,8 @@ use silex_html::{button, span};
 use silex_macros::{component, tw};
 
 #[component]
-pub fn Switch<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+pub fn Switch<'scope, Ctx>(
+    #[context] context: Ctx,
     #[prop(into)]
     #[chain(default)]
     checked: Signal<'scope, bool>,
@@ -20,7 +19,7 @@ pub fn Switch<'scope>(
     #[chain(default)]
     on_change: Callback<'scope, bool>,
 ) -> impl View<'scope> {
-    let track_cls = rx!(scope; error_handler; {
+    let track_cls = rx!(context; {
         let is_checked = *$checked;
         let is_sm = $size.as_str() == "sm";
 
@@ -46,7 +45,7 @@ pub fn Switch<'scope>(
         }
     });
 
-    let thumb_cls = rx!(scope; error_handler; {
+    let thumb_cls = rx!(context; {
         let is_checked = *$checked;
         let is_sm = $size.as_str() == "sm";
 

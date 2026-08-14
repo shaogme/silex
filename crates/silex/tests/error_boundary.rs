@@ -4,7 +4,9 @@ use std::{cell::Cell, rc::Rc};
 
 use js_sys::Promise;
 use silex::components::ErrorBoundary;
-use silex_core::{ErrorReporter, ReadSignal, Runtime, SilexError, SilexErrorKind, SilexResult};
+use silex_core::{
+    ErrorReporter, ReadSignal, Runtime, SilexContext, SilexError, SilexErrorKind, SilexResult,
+};
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::document;
 use silex_dom::view::{ApplyAttributes, MountInstance, MountOwner, ScopedMountOwner, View};
@@ -137,8 +139,8 @@ fn initial_child_error_switches_to_fallback_without_parent_dispatch() {
     runtime
         .child(|scope| {
             let (owner, error_handler) = test_owner(scope, parent_errors.clone());
-            let view = ErrorBoundary(scope, |_| InitialFailure)
-                .error_handler(error_handler)
+            let context = SilexContext::new(scope, error_handler);
+            let view = ErrorBoundary(context, |_| InitialFailure)
                 .fallback(|error| format!("fallback: {error}"))
                 .build();
 
@@ -166,8 +168,8 @@ async fn deferred_child_error_reaches_boundary_and_disposes_child() {
         let (failed, set_failed) = scope.signal(false).expect("test signal should be created");
         let (owner, error_handler) = test_owner(scope, parent_errors.clone());
         let child = DeferredFailure { source: failed };
-        let view = ErrorBoundary(scope, move |_| child)
-            .error_handler(error_handler)
+        let context = SilexContext::new(scope, error_handler);
+        let view = ErrorBoundary(context, move |_| child)
             .fallback(|_| "fallback")
             .build();
 
@@ -200,10 +202,10 @@ async fn child_factory_handler_reaches_boundary_fallback() {
 
     root.with_scope(|scope| {
         let (owner, error_handler) = test_owner(scope, parent_errors.clone());
-        let view = ErrorBoundary(scope, move |child_handler| ConstructedHandlerFailure {
-            handler: child_handler,
+        let context = SilexContext::new(scope, error_handler);
+        let view = ErrorBoundary(context, move |child_context| ConstructedHandlerFailure {
+            handler: child_context.error_reporter(),
         })
-        .error_handler(error_handler)
         .fallback(|error| format!("boundary: {error}"))
         .build();
 

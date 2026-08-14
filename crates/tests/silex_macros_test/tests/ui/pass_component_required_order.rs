@@ -7,10 +7,10 @@ use silex_dom::prelude::*;
 use silex_macros::component;
 
 #[component]
-fn RequiredOrder<'scope>(
-    scope: Scope<'scope>,
+fn RequiredOrder<'scope, Ctx>(
+#[context] context: Ctx,
     children: AnyView<'scope>,
-    #[chain] error_handler: ErrorReporter<'scope>,
+    
     #[chain] first: String,
     #[chain] second: String,
 ) -> impl View<'scope> {
@@ -22,8 +22,8 @@ fn main() {
     let mut runtime = Runtime::new();
     let _ = runtime.child(|scope| {
         let error_handler = scope.error_handler(|_| {}).expect("handler");
-        let view = RequiredOrder(scope, AnyView::Empty)
-            .error_handler(error_handler)
+        let context = SilexContext::new(scope, error_handler);
+        let view = RequiredOrder(context, AnyView::Empty)
             .second(String::from("second"))
             .first(String::from("first"))
             .second(String::from("override"))

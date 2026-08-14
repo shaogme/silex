@@ -1,4 +1,4 @@
-use silex_core::{ErrorReporter, Scope, SilexError, reactivity::SuspenseContext};
+use silex_core::{SilexError, reactivity::SuspenseContext};
 use silex_dom::prelude::*;
 use silex_html::div;
 use silex_macros::component;
@@ -29,9 +29,8 @@ pub enum SuspenseMode {
 /// .build()
 /// ```
 #[component]
-pub fn Suspense<'scope, CH, R>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+pub fn Suspense<'scope, Ctx, CH, R>(
+    #[context] context: Ctx,
     children: CH,
     #[chain(default = AnyView::Empty)] fallback: AnyView<'scope>,
     #[chain(default)] mode: SuspenseMode,
@@ -52,12 +51,12 @@ where
     match mode {
         SuspenseMode::KeepAlive => {
             let count = ctx.count;
-            let content_display = silex_core::rx!(scope; error_handler; if *$count > 0 {
+            let content_display = silex_core::rx!(context; if *$count > 0 {
                 "display: none".to_string()
             } else {
                 "display: block".to_string()
             });
-            let fallback_display = silex_core::rx!(scope; error_handler; if *$count > 0 {
+            let fallback_display = silex_core::rx!(context; if *$count > 0 {
                 "display: block".to_string()
             } else {
                 "display: none".to_string()
@@ -78,7 +77,7 @@ where
             let initial_view = initial_view.clone();
             let children = children.clone();
             let fallback = fallback.clone();
-            let content = silex_core::rx!(scope; error_handler; {
+            let content = silex_core::rx!(context; {
                 if *$count == 0 {
                     if *$is_first {
                         set_is_first
@@ -92,7 +91,7 @@ where
                     AnyView::Empty
                 }
             });
-            let fallback_view = silex_core::rx!(scope; error_handler; {
+            let fallback_view = silex_core::rx!(context; {
                 if *$count > 0 {
                     fallback.clone()
                 } else {

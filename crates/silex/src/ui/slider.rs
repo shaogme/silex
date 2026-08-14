@@ -44,9 +44,8 @@ fn calculate_slider_value(
 }
 
 #[component]
-pub fn Slider<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+pub fn Slider<'scope, Ctx>(
+    #[context] context: Ctx,
     #[prop(into)]
     #[chain(default)]
     value: Signal<'scope, f64>,
@@ -72,9 +71,9 @@ pub fn Slider<'scope>(
     #[chain(default)]
     on_change: Callback<'scope, f64>,
 ) -> impl View<'scope> {
-    let min_val = rx!(scope; error_handler; *$min);
+    let min_val = rx!(context; *$min);
 
-    let max_val = rx!(scope; error_handler; {
+    let max_val = rx!(context; {
         let mn = *$min;
         let mx = *$max;
         if mx <= mn {
@@ -88,19 +87,19 @@ pub fn Slider<'scope>(
         }
     });
 
-    let step_val = rx!(scope; error_handler; {
+    let step_val = rx!(context; {
         let s = *$step;
         if s <= 0.0 { 1.0 } else { s }
     });
 
-    let is_vertical = rx!(scope; error_handler; $orientation.as_str() == "vertical");
-    let orient = rx!(scope; error_handler; if *$is_vertical {
+    let is_vertical = rx!(context; $orientation.as_str() == "vertical");
+    let orient = rx!(context; if *$is_vertical {
         "vertical"
     } else {
         "horizontal"
     });
 
-    let root_cls = rx!(scope; error_handler; {
+    let root_cls = rx!(context; {
         let base = tw!(
             "relative flex w-full touch-none items-center select-none data-[disabled]:opacity-50 data-[orientation=vertical]:h-full data-[orientation=vertical]:min-h-44 data-[orientation=vertical]:w-auto data-[orientation=vertical]:flex-col"
         );
@@ -112,7 +111,7 @@ pub fn Slider<'scope>(
         }
     });
 
-    let pct = rx!(scope; error_handler; {
+    let pct = rx!(context; {
         let v = *$value;
         let mn = *$min_val;
         let mx = *$max_val;
@@ -123,7 +122,7 @@ pub fn Slider<'scope>(
         }
     });
 
-    let range_style = rx!(scope; error_handler; {
+    let range_style = rx!(context; {
         let p = *$pct;
         if *$is_vertical {
             format!("height: {}%;", p)
@@ -132,7 +131,7 @@ pub fn Slider<'scope>(
         }
     });
 
-    let thumb_style = rx!(scope; error_handler; {
+    let thumb_style = rx!(context; {
         let p = *$pct;
         if *$is_vertical {
             format!("bottom: {}%;", p)
@@ -141,7 +140,7 @@ pub fn Slider<'scope>(
         }
     });
 
-    let input_val_str = rx!(scope; error_handler; $value.to_string());
+    let input_val_str = rx!(context; $value.to_string());
     let is_dragging = Rc::new(Cell::new(false));
 
     let handle_down = {
@@ -247,7 +246,7 @@ pub fn Slider<'scope>(
     ))
     .attr("data-slot", "slider")
     .attr("data-orientation", orient)
-    .attr("data-disabled", rx!(scope; error_handler; *$disabled))
+    .attr("data-disabled", rx!(context; *$disabled))
     .class(root_cls)
     .on_pointer_down(handle_down)
     .on_pointer_move(handle_move)

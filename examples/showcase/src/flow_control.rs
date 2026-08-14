@@ -4,10 +4,7 @@ use crate::css::AppTheme;
 use silex::prelude::*;
 
 #[component]
-pub fn ListDemo<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
-) -> impl View<'scope> {
+pub fn ListDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
     let (list, set_list) = scope.signal(Ok(vec![
         Cow::Borrowed("Apple"),
         Cow::Borrowed("Banana"),
@@ -23,12 +20,11 @@ pub fn ListDemo<'scope>(
         p("Demonstrates explicit error handling in For component to avoid crashes."),
         // Error display
         Show(
-            scope,
-            error_handler,
+            context,
             error_msg.map(scope, |e| e.is_some(), error_handler)?,
         )
         .children(
-            div(rx!(scope; error_handler; $error_msg.clone().unwrap_or_default())).style(
+            div(rx!(context; $error_msg.clone().unwrap_or_default())).style(
                 sty()
                     .color(hex("#d32f2f"))?
                     .background(hex("#ffebee"))?
@@ -39,9 +35,9 @@ pub fn ListDemo<'scope>(
             )
         )
         .build(),
-        ul(For(list, |item| item.clone())
+        ul(For(context, list, |item| item.clone())
             .children(|item, _idx| li(item))
-            .error_handler(list_error_handler)
+            .row_error_handler(list_error_handler)
             .build()),
         div![
             button("Add Item").on(event::click, move |_| {
@@ -87,17 +83,14 @@ pub fn ListDemo<'scope>(
 }
 
 #[component]
-pub fn ShowDemo<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
-) -> impl View<'scope> {
+pub fn ShowDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
     let (visible, set_visible) = scope.signal(true)?;
 
     Ok(div![
         h3("Conditional Rendering with Show"),
         p("Demonstrates passing a Signal directly to Show as condition."),
         button("Toggle Visibility").on(event::click, set_visible.updater(|v| *v = !*v)),
-        Show(scope, error_handler, visible)
+        Show(context, visible)
             .children(
                 div("✅ Content is visible!").style(
                     sty()
@@ -119,10 +112,7 @@ pub fn ShowDemo<'scope>(
 }
 
 #[component]
-pub fn DynamicDemo<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
-) -> impl View<'scope> {
+pub fn DynamicDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
     let (mode, set_mode) = scope.signal("A")?;
 
     Ok(div![
@@ -136,8 +126,7 @@ pub fn DynamicDemo<'scope>(
         .style(sty().display("flex")?.gap(px(10))?.margin_bottom(px(10))?),
         // You can also use Dynamic(mode.map(|m| { view_match!(m, { ... }) })).
         Dynamic(
-            scope,
-            error_handler,
+            context,
             mode.map(
                 scope,
                 |m| {
@@ -158,13 +147,10 @@ pub fn DynamicDemo<'scope>(
 }
 
 #[component]
-pub fn SwitchDemo<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
-) -> impl View<'scope> {
+pub fn SwitchDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
     let (tab, set_tab) = scope.signal(0)?;
 
-    let switch = Switch(scope, error_handler, tab)
+    let switch = Switch(context, tab)
         .fallback(div("Fallback (Should not happen)"))
         .build()
         .case(
@@ -199,17 +185,13 @@ pub fn SwitchDemo<'scope>(
 }
 
 #[component]
-pub fn IndexDemo<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
-) -> impl View<'scope> {
+pub fn IndexDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
     let (items, set_items) = scope.signal(vec!["Item A", "Item B", "Item C"])?;
 
     Ok(div![
         h3("Index For Loop Demo"),
         p("Optimized for list updates by index."),
-        Index(items)
-            .error_handler(error_handler)
+        Index(context, items)
             .children(|item, idx| div![strong(format!("{}: ", idx)), item])
             .build(),
         button("Append Item")
@@ -224,19 +206,16 @@ pub fn IndexDemo<'scope>(
 }
 
 #[component]
-pub fn PortalDemo<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
-) -> impl View<'scope> {
+pub fn PortalDemo<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
     let (show_modal, set_show_modal) = scope.signal(false)?;
 
     Ok(div![
         h3("Portal Demo"),
         button("Toggle Modal").on(event::click, set_show_modal.updater(|v| *v = !*v)),
-        Show(scope, error_handler, show_modal)
+        Show(context, show_modal)
             .children(
                 Portal(
-                    error_handler,
+                    context,
                     div![
                         div![
                             h4("I am a Modal!"),
@@ -273,18 +252,15 @@ pub fn PortalDemo<'scope>(
 }
 
 #[component]
-pub fn FlowPage<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
-) -> impl View<'scope> {
+pub fn FlowPage<'scope, Ctx>(#[context] context: Ctx) -> impl View<'scope> {
     Ok(div![
         h2("Control Flow"),
-        ListDemo(scope, error_handler).build(),
-        ShowDemo(scope, error_handler).build(),
-        DynamicDemo(scope, error_handler).build(),
-        SwitchDemo(scope, error_handler).build(),
-        IndexDemo(scope, error_handler).build(),
-        PortalDemo(scope, error_handler).build(),
+        ListDemo(context).build(),
+        ShowDemo(context).build(),
+        DynamicDemo(context).build(),
+        SwitchDemo(context).build(),
+        IndexDemo(context).build(),
+        PortalDemo(context).build(),
     ]
     .style(
         sty()

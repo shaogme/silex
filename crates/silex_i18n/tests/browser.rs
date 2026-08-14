@@ -1,7 +1,7 @@
 #![cfg(all(target_arch = "wasm32", feature = "browser-tests"))]
 
 use gloo_timers::future::TimeoutFuture;
-use silex_core::{ErrorReporter, Runtime, Scope};
+use silex_core::{ErrorReporter, Runtime, Scope, SilexContext};
 use silex_dom::view::{ScopedMountOwner, View};
 use silex_i18n::{Catalog, I18nBuilder, Locale, detect_browser_locale, t};
 #[cfg(feature = "intl")]
@@ -165,7 +165,7 @@ fn query_binding_follows_router_search_signal() {
             .signal("?lang=en-US".to_string())
             .expect("search signals");
         let ctx = RouterContext::new(
-            scope,
+            SilexContext::new(scope, test_handler(scope)),
             RouterContextProps {
                 base_path: "/".to_string(),
                 path,
@@ -173,7 +173,6 @@ fn query_binding_follows_router_search_signal() {
                 set_path,
                 set_search,
             },
-            test_handler(scope),
         )
         .expect("valid router context");
         let binding = silex_i18n::Persistent::builder(scope, "lang", test_handler(scope))
@@ -269,7 +268,7 @@ async fn translated_memo_updates_the_existing_text_node() {
             .create_element("div")
             .expect("parent element");
         let (owner, error_handler) = test_owner(scope);
-        t!(i18n, "title")
+        let _mount = t!(i18n, "title")
             .expect("translation")
             .mount(&owner, parent.as_ref(), Vec::new(), error_handler)
             .expect("translation should mount");
@@ -308,7 +307,7 @@ fn translated_memo_is_removed_when_its_root_is_disposed() {
             .build()
             .expect("valid i18n store");
         let (owner, error_handler) = test_owner(scope);
-        t!(i18n, "title")
+        let _mount = t!(i18n, "title")
             .expect("translation")
             .mount(&owner, parent.as_ref(), Vec::new(), error_handler)
             .expect("translation should mount");

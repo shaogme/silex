@@ -1,11 +1,9 @@
-use silex_core::{ErrorReporter, Scope};
 use silex_dom::prelude::*;
 use silex_macros::styled;
 
 styled! {
-    pub Textarea<'scope><textarea>(
-        scope: Scope<'scope>,
-        #[chain] error_handler: ErrorReporter<'scope>,
+    pub Textarea<'scope, Ctx><textarea>(
+        #[context] context: Ctx,
     ) {
         @apply flex field-sizing-content min-h-16 w-full rounded-md border border-input bg-transparent px-3 py-2 text-base shadow-xs transition-[color,box-shadow] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:aria-invalid:ring-destructive/40;
     }

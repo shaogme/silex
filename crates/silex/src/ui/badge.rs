@@ -4,9 +4,8 @@ use silex_html::span;
 use silex_macros::{component, tw_variants};
 
 #[component]
-pub fn Badge<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+pub fn Badge<'scope, Ctx>(
+    #[context] context: Ctx,
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
@@ -32,7 +31,7 @@ pub fn Badge<'scope>(
         }
     };
 
-    let cls = rx!(scope; error_handler; {
+    let cls = rx!(context; {
         let base_cls = badge_variants.get($variant);
         let extra = $class;
         if extra.is_empty() {

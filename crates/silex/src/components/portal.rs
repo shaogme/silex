@@ -1,4 +1,4 @@
-use silex_core::{ErrorReporter, SilexError, SilexErrorKind};
+use silex_core::{SilexError, SilexErrorKind};
 use silex_dom::prelude::*;
 use silex_dom::view::{MountErrorHandler, MountOwner};
 use silex_macros::component;
@@ -106,8 +106,8 @@ impl<'scope> ApplyAttributes<'scope> for PortalView<'scope> {}
 /// Portal 组件：将子视图渲染到当前 DOM 树之外的节点（默认是 document.body）。
 /// 但保持响应式上下文（Context）的连通性。
 #[component]
-pub fn Portal<'scope>(
-    error_handler: ErrorReporter<'scope>,
+pub fn Portal<'scope, Ctx>(
+    #[context] context: Ctx,
     #[prop(into)] children: AnyView<'scope>,
     #[chain(default)] mount_to: Option<Node>,
 ) -> impl View<'scope> {

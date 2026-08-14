@@ -4,9 +4,8 @@ use silex_html::{button, div};
 use silex_macros::{component, tw, tw_variants};
 
 #[component]
-pub fn Tabs<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+pub fn Tabs<'scope, Ctx>(
+    #[context] context: Ctx,
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
@@ -15,7 +14,7 @@ pub fn Tabs<'scope>(
     #[chain(default)]
     class: Signal<'scope, String>,
 ) -> impl View<'scope> {
-    let cls = rx!(scope; error_handler; {
+    let cls = rx!(context; {
         let base = tw!("group/tabs flex gap-2 data-[orientation=horizontal]:flex-col");
         let extra = $class;
         if extra.is_empty() {
@@ -25,7 +24,7 @@ pub fn Tabs<'scope>(
         }
     });
 
-    let orient = rx!(scope; error_handler; {
+    let orient = rx!(context; {
         let o = $orientation;
         if o.is_empty() {
             "horizontal".to_string()
@@ -42,9 +41,8 @@ pub fn Tabs<'scope>(
 }
 
 #[component]
-pub fn TabsList<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+pub fn TabsList<'scope, Ctx>(
+    #[context] context: Ctx,
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
@@ -66,7 +64,7 @@ pub fn TabsList<'scope>(
         }
     };
 
-    let cls = rx!(scope; error_handler; {
+    let cls = rx!(context; {
         let base_cls = list_variants.get($variant);
         let extra = $class;
         if extra.is_empty() {
@@ -76,7 +74,7 @@ pub fn TabsList<'scope>(
         }
     });
 
-    let var_attr = rx!(scope; error_handler; {
+    let var_attr = rx!(context; {
         let v = $variant;
         if v.is_empty() {
             "default".to_string()
@@ -92,9 +90,8 @@ pub fn TabsList<'scope>(
 }
 
 #[component]
-pub fn TabsTrigger<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+pub fn TabsTrigger<'scope, Ctx>(
+    #[context] context: Ctx,
     children: AnyView<'scope>,
     value: &'static str,
     #[prop(into)]
@@ -107,7 +104,7 @@ pub fn TabsTrigger<'scope>(
     #[chain(default)]
     on_select: Callback<'scope, &'static str>,
 ) -> impl View<'scope> {
-    let cls = rx!(scope; error_handler; {
+    let cls = rx!(context; {
         let base = tw!(
             "relative inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap text-foreground/60 transition-all group-data-[orientation=vertical]/tabs:w-full group-data-[orientation=vertical]/tabs:justify-start hover:text-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-50 group-data-[variant=default]/tabs-list:data-[state=active]:shadow-sm group-data-[variant=line]/tabs-list:data-[state=active]:shadow-none dark:text-muted-foreground dark:hover:text-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 group-data-[variant=line]/tabs-list:bg-transparent group-data-[variant=line]/tabs-list:data-[state=active]:bg-transparent dark:group-data-[variant=line]/tabs-list:data-[state=active]:border-transparent dark:group-data-[variant=line]/tabs-list:data-[state=active]:bg-transparent data-[state=active]:bg-background data-[state=active]:text-foreground dark:data-[state=active]:border-input dark:data-[state=active]:bg-input/30 dark:data-[state=active]:text-foreground after:absolute after:bg-foreground after:opacity-0 after:transition-opacity group-data-[orientation=horizontal]/tabs:after:inset-x-0 group-data-[orientation=horizontal]/tabs:after:bottom-[-5px] group-data-[orientation=horizontal]/tabs:after:h-0.5 group-data-[orientation=vertical]/tabs:after:inset-y-0 group-data-[orientation=vertical]/tabs:after:-right-1 group-data-[orientation=vertical]/tabs:after:w-0.5 group-data-[variant=line]/tabs-list:data-[state=active]:after:opacity-100"
         );
@@ -119,7 +116,7 @@ pub fn TabsTrigger<'scope>(
         }
     });
 
-    let state_attr = rx!(scope; error_handler; {
+    let state_attr = rx!(context; {
         if $active_tab.as_str() == value {
             "active"
         } else {
@@ -136,9 +133,8 @@ pub fn TabsTrigger<'scope>(
 }
 
 #[component]
-pub fn TabsContent<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+pub fn TabsContent<'scope, Ctx>(
+    #[context] context: Ctx,
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
@@ -150,7 +146,7 @@ pub fn TabsContent<'scope>(
     #[chain(default)]
     class: Signal<'scope, String>,
 ) -> impl View<'scope> {
-    let cls = rx!(scope; error_handler; {
+    let cls = rx!(context; {
         let base = tw!("flex-1 outline-none");
         let extra = $class;
         if extra.is_empty() {
@@ -160,7 +156,7 @@ pub fn TabsContent<'scope>(
         }
     });
 
-    let state_attr = rx!(scope; error_handler; {
+    let state_attr = rx!(context; {
         let val = value;
         if !val.is_empty() && $active_tab.as_str() == val {
             "active"

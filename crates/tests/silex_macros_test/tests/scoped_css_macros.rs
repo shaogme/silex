@@ -2,7 +2,7 @@
 
 extern crate silex_macros_test as silex;
 
-use silex::core::{ErrorReporter, Runtime, Rx, Scope, SilexResult};
+use silex::core::{ErrorReporter, Runtime, Rx, Scope, SilexContext, SilexResult};
 use silex::css::types::Hex;
 use silex::dom::attribute::{
     AttrOp, AttributeBuilder, AttributeGroup, GlobalAttributes, ReactiveBindingTarget,
@@ -25,7 +25,7 @@ tw_variants! {
 
 styled! {
     pub ScopedPanel<'scope><div>(
-        #[chain] error_handler: ErrorReporter<'scope>,
+        #[context] context: SilexContext<'scope>,
         children: AnyView<'scope>,
         color: silex::core::reactivity::Signal<'scope, Hex>,
     ) {
@@ -35,7 +35,7 @@ styled! {
 
 styled! {
     pub ScopedSelector<'scope><div>(
-        #[chain] error_handler: ErrorReporter<'scope>,
+        #[context] context: SilexContext<'scope>,
         children: AnyView<'scope>,
         selector: silex::core::reactivity::Signal<'scope, String>,
     ) {
@@ -45,7 +45,7 @@ styled! {
 
 styled! {
     pub VariantPanel<'scope><div>(
-        #[chain] error_handler: ErrorReporter<'scope>,
+        #[context] context: SilexContext<'scope>,
         children: AnyView<'scope>,
     ) {
         variants: {

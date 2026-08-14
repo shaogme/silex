@@ -1,4 +1,4 @@
-use silex_core::{ErrorReporter, Scope, SilexError, SilexErrorKind, reactivity::ReactiveSource};
+use silex_core::{SilexContextProvider, SilexError, SilexErrorKind, reactivity::ReactiveSource};
 use silex_dom::prelude::*;
 use silex_macros::component;
 use std::collections::HashMap;
@@ -13,16 +13,15 @@ use std::rc::Rc;
 /// use silex::prelude::*;
 /// let (count, set_count) = scope.signal(0);
 ///
-/// Switch(scope, count)
+/// Switch(context, count)
 ///     .fallback("Default View")
 ///     .build()
 ///     .case(0, "Zero")?
 ///     .case(1, "One")?;
 /// ```
 #[component]
-pub fn Switch<'scope, Source, T>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+pub fn Switch<'scope, Ctx, Source, T>(
+    #[context] context: Ctx,
     source: Source,
     #[chain(default)] cases: HashMap<T, AnyView<'scope>>,
     #[prop(render)]
@@ -35,7 +34,7 @@ where
 {
     let source = scope.promote(source, error_handler)?;
     let cases = Rc::new(cases);
-    Ok(silex_core::rx!(scope; error_handler; {
+    Ok(silex_core::rx!(context; {
         let val = (*$source).clone();
         if let Some(view) = cases.get(&val) {
             view.clone()
@@ -45,8 +44,9 @@ where
     }))
 }
 
-impl<'scope, Source, T> SwitchComponent<'scope, Source, T>
+impl<'scope, Ctx, Source, T> SwitchComponent<'scope, Ctx, Source, T>
 where
+    Ctx: SilexContextProvider<'scope>,
     Source: ReactiveSource<'scope, Value = T> + Clone + 'scope,
     T: Eq + Hash + Clone + 'scope,
 {

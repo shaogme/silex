@@ -177,7 +177,7 @@ pub fn store(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// `#[component]` 会通过隐藏的 `silex_component` metadata 传入生成名称；
 /// standalone derive 未提供 metadata 时保留 `<PropsName>Builder` 的 fallback。
 #[cfg(feature = "component")]
-#[proc_macro_derive(PropsBuilder, attributes(prop, chain, silex_component))]
+#[proc_macro_derive(PropsBuilder, attributes(prop, chain, context, silex_component))]
 pub fn derive_props_builder(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     match props_builder::derive_props_builder_impl(input) {

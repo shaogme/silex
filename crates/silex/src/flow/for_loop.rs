@@ -1,6 +1,6 @@
 use silex_core::reactivity::ReactiveSource;
 use silex_core::traits::{ForLoopSource, RxRead};
-use silex_core::{ErrorHandler, ErrorReporter, SilexError};
+use silex_core::{ErrorHandler, SilexError};
 use silex_dom::prelude::*;
 use silex_dom::view::{AnyView, RenderOnlyKeyedListView, RowUpdater, StatefulKeyedListView};
 use silex_macros::component;
@@ -68,7 +68,8 @@ impl<'scope, Item: 'scope> ForStatefulRenderer<'scope, Item> {
 ///     .build()
 /// ```
 #[component]
-pub fn For<'scope, ItemsFn, IS, Item, Key, KF>(
+pub fn For<'scope, Ctx, ItemsFn, IS, Item, Key, KF>(
+    #[context] context: Ctx,
     each: ItemsFn,
     key: KF,
     #[prop(render_fn(Item, usize))]
@@ -77,7 +78,6 @@ pub fn For<'scope, ItemsFn, IS, Item, Key, KF>(
     #[prop(into)]
     #[chain(default)]
     row_error_handler: Option<ErrorHandler<'scope, SilexError>>,
-    #[chain] error_handler: ErrorReporter<'scope>,
     #[chain(default)] _scope: PhantomData<&'scope ()>,
 ) -> RenderOnlyKeyedListView<'scope, ItemsFn, IS, Item, Key>
 where
@@ -112,7 +112,8 @@ where
 ///     .build()
 /// ```
 #[component]
-pub fn ForStateful<'scope, ItemsFn, IS, Item, Key, KF>(
+pub fn ForStateful<'scope, Ctx, ItemsFn, IS, Item, Key, KF>(
+    #[context] context: Ctx,
     each: ItemsFn,
     key: KF,
     #[prop(render_fn(Item, usize, RowUpdater<'scope, Item>))]
@@ -121,7 +122,6 @@ pub fn ForStateful<'scope, ItemsFn, IS, Item, Key, KF>(
     #[prop(into)]
     #[chain(default)]
     row_error_handler: Option<ErrorHandler<'scope, SilexError>>,
-    #[chain] error_handler: ErrorReporter<'scope>,
     #[chain(default)] _scope: PhantomData<&'scope ()>,
 ) -> StatefulKeyedListView<'scope, ItemsFn, IS, Item, Key>
 where

@@ -81,9 +81,8 @@ fn locale_button<'scope>(
 
 #[component]
 pub fn I18nPage<'scope>(
+    #[context] ctx: RouterContext<'scope>,
     i18n: I18nStore<'scope>,
-    ctx: RouterContext<'scope>,
-    error_handler: ErrorReporter<'scope>,
 ) -> impl View<'scope> {
     let scope = ctx.scope();
     let available_locales = [

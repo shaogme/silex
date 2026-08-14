@@ -6,8 +6,8 @@ use std::{
 use wasm_bindgen_futures::spawn_local;
 
 use silex_core::{
-    CallbackInvokeError, CompletionSender, ErrorReporter, Scope, SilexError, SilexErrorKind,
-    SilexResult, rx, unwind_safe,
+    CallbackInvokeError, CompletionSender, ErrorReporter, SilexContextProvider, SilexError,
+    SilexErrorKind, SilexResult, rx, unwind_safe,
 };
 use silex_dom::prelude::*;
 use silex_dom::view::{MountOwner, MountState, SharedCell};
@@ -161,7 +161,6 @@ struct ErrorBoundaryView<'scope> {
     view: AnyView<'scope>,
     phase_handler: ErrorReporter<'scope>,
     parent_handler: ParentHandlerCell<'scope>,
-    parent_handler_override: Option<ErrorReporter<'scope>>,
 }
 
 impl<'scope> ApplyAttributes<'scope> for ErrorBoundaryView<'scope> {
@@ -178,9 +177,8 @@ impl<'scope> View<'scope> for ErrorBoundaryView<'scope> {
         attrs: Vec<PendingAttribute<'scope>>,
         error_handler: ErrorReporter<'scope>,
     ) -> silex_core::SilexResult<MountInstance<'scope>> {
-        let parent_handler = self.parent_handler_override.unwrap_or(error_handler);
         let token = owner.token();
-        let parent_state = token.owner_state(parent_handler)?;
+        let parent_state = token.owner_state(error_handler)?;
         self.parent_handler.set(Some(parent_state));
         self.view.mount(owner, parent, attrs, self.phase_handler)
     }
@@ -191,16 +189,15 @@ impl<'scope> View<'scope> for ErrorBoundaryView<'scope> {
 /// The child factory receives the boundary handler so scope-bound services can
 /// bind their construction-time effects to this boundary before mount.
 #[component]
-pub fn ErrorBoundary<'scope, FB, CH, V1, V2>(
-    scope: Scope<'scope>,
-    #[chain] error_handler: ErrorReporter<'scope>,
+pub fn ErrorBoundary<'scope, Ctx, FB, CH, V1, V2>(
+    #[context] context: Ctx,
     children: CH,
     #[chain] fallback: FB,
-    #[chain(default)] parent_error_handler: Option<ErrorReporter<'scope>>,
 ) -> impl View<'scope>
 where
+    Ctx: SilexContextProvider<'scope>,
     FB: Fn(SilexError) -> V1 + Clone + 'scope,
-    CH: Fn(ErrorReporter<'scope>) -> V2 + Clone + 'scope,
+    CH: Fn(Ctx) -> V2 + Clone + 'scope,
     V1: View<'scope> + 'scope,
     V2: View<'scope> + 'scope,
 {
@@ -249,9 +246,10 @@ where
 
     let fallback = fallback.clone();
     let children = children.clone();
-    let child_handler = boundary_handler;
+    let child_context = SilexContextProvider::with_error_reporter(context, boundary_handler);
     let parent_handler_for_view = parent_handler.clone();
-    let view = rx!(scope; phase_handler; {
+    let phase_context = SilexContextProvider::with_error_reporter(context, phase_handler);
+    let view = rx!(phase_context; {
         if let Some(error) = (*$error).clone() {
             ErrorBoundaryBranch::fallback(
                 fallback(error),
@@ -264,7 +262,7 @@ where
         } else {
             let result = catch_unwind(AssertUnwindSafe({
                 let children = children.clone();
-                move || children(child_handler).into_any()
+                move || children(child_context).into_any()
             }));
 
             match result {
@@ -300,6 +298,5 @@ where
         view: view.into_any(),
         phase_handler,
         parent_handler,
-        parent_handler_override: parent_error_handler,
     })
 }

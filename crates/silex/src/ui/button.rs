@@ -4,9 +4,8 @@ use silex_html::button;
 use silex_macros::{component, tw_variants};
 
 #[component]
-pub fn Button<'scope>(
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+pub fn Button<'scope, Ctx>(
+    #[context] context: Ctx,
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
@@ -46,7 +45,7 @@ pub fn Button<'scope>(
         }
     };
 
-    let cls = rx!(scope; error_handler; {
+    let cls = rx!(context; {
         let base_cls = button_variants.get($variant, $size);
         let extra = $class;
         if extra.is_empty() {

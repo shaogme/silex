@@ -6,10 +6,10 @@ use silex_core::{ErrorReporter, Scope};
 use silex_macros::component;
 
 #[component]
-fn RemovedInjection<'scope>(
-    scope: Scope<'scope>,
+fn RemovedInjection<'scope, Ctx>(
+#[context] context: Ctx,
     #[inject(owner)] owner: (),
-    #[chain] error_handler: ErrorReporter<'scope>,
+    
 ) -> impl View<'scope> {
     let _ = (scope, owner, error_handler);
     ()

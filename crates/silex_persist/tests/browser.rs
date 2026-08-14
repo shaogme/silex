@@ -1,7 +1,7 @@
 #![cfg(target_arch = "wasm32")]
 
 use gloo_timers::future::TimeoutFuture;
-use silex_core::{ErrorReporter, RootHandle, Runtime, Scope, SilexResult};
+use silex_core::{ErrorReporter, RootHandle, Runtime, Scope, SilexContext, SilexResult};
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::view::{
     AnyView, ApplyAttributes, IndexedListView, MountInstance, MountOwner, ScopedMountOwner, View,
@@ -608,7 +608,7 @@ fn query_binding_uses_target_scope_and_updates_only_its_key() {
             .signal("?page=2&other=keep".to_string())
             .expect("search signal should be created");
         let context = RouterContext::new(
-            scope,
+            SilexContext::new(scope, test_handler(scope)),
             RouterContextProps {
                 base_path: "/".to_string(),
                 path,
@@ -616,7 +616,6 @@ fn query_binding_uses_target_scope_and_updates_only_its_key() {
                 set_path,
                 set_search,
             },
-            test_handler(scope),
         )
         .expect("router context should be created");
         let page = Persistent::builder(scope, "page", test_handler(scope))
@@ -657,7 +656,7 @@ fn query_backend_writes_one_push_and_one_url_update_per_change() {
             .signal("?keep=yes".to_string())
             .expect("search signal should be created");
         let context = RouterContext::new(
-            scope,
+            SilexContext::new(scope, test_handler(scope)),
             RouterContextProps {
                 base_path: "/".to_string(),
                 path,
@@ -665,7 +664,6 @@ fn query_backend_writes_one_push_and_one_url_update_per_change() {
                 set_path,
                 set_search,
             },
-            test_handler(scope),
         )
         .expect("router context should be created");
         let search_updates = Rc::new(Cell::new(0));
