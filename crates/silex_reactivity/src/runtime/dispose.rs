@@ -1,7 +1,7 @@
 //! Node hierarchy disposal and scope cleanup execution.
 
 use super::{
-    model::{EdgeId, NodeData, ScopeState},
+    model::{NodeData, ScopeState},
     scheduler::{GlobalScheduler, ObserverFrame, TargetNode},
     storage::CleanupThunk,
 };
@@ -109,7 +109,7 @@ enum CleanupPlanStep {
 fn collect_final_cleanup_plan<'scope>(
     state: &ScopeState<'scope>,
 ) -> Result<FinalCleanupPlan<'scope>, ReactiveError> {
-    let roots = state.try_borrow()?.roots.clone();
+    let roots = state.try_borrow()?.roots.to_vec();
     let mut stack = Vec::with_capacity(roots.len());
     stack.extend(roots.into_iter().rev().map(CleanupPlanStep::Enter));
     let mut node_batches = Vec::new();
@@ -208,7 +208,7 @@ pub(crate) fn dispose_all<'scope>(state: &ScopeState<'scope>) -> CleanupOutcome<
 
     loop {
         let roots = match state.try_borrow() {
-            Ok(state_ref) => state_ref.roots.clone(),
+            Ok(state_ref) => state_ref.roots.to_vec(),
             Err(error) => {
                 outcome.runtime_errors.push(error);
                 return outcome;
@@ -271,7 +271,7 @@ fn preflight_node_disposal<'scope>(
 ) -> Result<(), ReactiveError> {
     let (scope_id, scheduler, external_scope_ids) = {
         let state_ref = state.try_borrow()?;
-        let mut external_scope_ids = Vec::new();
+        let mut external_scope_ids = HashSet::new();
         for id in nodes {
             let Some(_) = state_ref.nodes.get(*id) else {
                 continue;
@@ -281,7 +281,7 @@ fn preflight_node_disposal<'scope>(
                 .chain(state_ref.subscriber_edges_of(*id))
             {
                 if edge.target.scope_id != state_ref.scope_id {
-                    external_scope_ids.push(edge.target.scope_id);
+                    external_scope_ids.insert(edge.target.scope_id);
                 }
             }
         }
@@ -337,10 +337,7 @@ pub(crate) fn dispose_nodes_collect<'scope>(
                         scope_id: state_ref.scope_id,
                         node: id,
                     };
-                    let subscriber_edges: Vec<(EdgeId, TargetNode)> = state_ref
-                        .subscriber_edges_of(id)
-                        .map(|(edge_id, edge)| (edge_id, edge.target))
-                        .collect();
+                    let subscribers = state_ref.take_subscribers(id);
                     let scheduler = state_ref.scheduler.clone();
                     scheduler
                         .try_borrow_mut()
@@ -348,8 +345,7 @@ pub(crate) fn dispose_nodes_collect<'scope>(
                         .cancel_effect(source_target);
 
                     state_ref.clear_dependencies(id)?;
-                    for (edge_id, subscriber) in subscriber_edges {
-                        state_ref.edges.remove(edge_id);
+                    for subscriber in subscribers {
                         if subscriber.scope_id == state_ref.scope_id {
                             state_ref.remove_dependency(subscriber.node, source_target);
                         } else if let Some(observer_state) = scheduler
@@ -370,11 +366,12 @@ pub(crate) fn dispose_nodes_collect<'scope>(
                     let children: Vec<RawId> =
                         state_ref.children_of_head(node.first_child).collect();
                     let data = state_ref.data.remove(id);
-                    state_ref.nodes.remove(id);
                     if state_ref.current_owner == Some(id) {
                         state_ref.current_owner = None;
                     }
-                    state_ref.unlink_child(node.parent, id, node.next_sibling);
+                    state_ref.unlink_child(node.parent, id);
+                    state_ref.adjacency.remove(id);
+                    state_ref.nodes.remove(id);
                     (children, data)
                 };
                 stack.push(DisposeStep::Exit(data));

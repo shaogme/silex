@@ -14,6 +14,7 @@ mod native {
 
     const SIGNAL_SIZES: &[usize] = &[1, 64, 1024, 4096];
     const GRAPH_SIZES: &[usize] = &[1, 8, 32, 128];
+    const DEPENDENCY_SIZES: &[usize] = &[10, 100, 1_000, 10_000];
     const OWNER_SIZES: &[usize] = &[1, 16, 128, 512];
 
     fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, ()> {
@@ -915,6 +916,255 @@ mod native {
         group.finish();
     }
 
+    fn bench_dependency_create(c: &mut Criterion) {
+        let mut group = c.benchmark_group("graph/dependency-create");
+
+        for &size in DEPENDENCY_SIZES {
+            group.throughput(Throughput::Elements(size as u64));
+            group.bench_with_input(BenchmarkId::from_parameter(size), &size, |bench, &size| {
+                bench.iter_custom(|iterations| {
+                    let mut total = Duration::ZERO;
+                    for iteration in 0..iterations {
+                        let mut runtime = Runtime::new();
+                        let root = runtime.run().expect("benchmark root creation");
+                        let start = Instant::now();
+                        root.with_scope(|scope| {
+                            let reads: Vec<_> = (0..size)
+                                .map(|index| {
+                                    scope
+                                        .signal((iteration as i32) ^ (index as i32))
+                                        .expect("benchmark signal creation")
+                                        .0
+                                })
+                                .collect();
+                            let reads_in_effect = reads.clone();
+                            scope
+                                .effect(
+                                    move || {
+                                        for read in &reads_in_effect {
+                                            black_box(read.get().expect("benchmark read"));
+                                        }
+                                        Ok(())
+                                    },
+                                    handler(scope),
+                                )
+                                .expect("benchmark effect creation");
+                            black_box(reads.len());
+                        });
+                        total += start.elapsed();
+                        root.dispose().expect("benchmark root disposal");
+                    }
+                    total
+                });
+            });
+        }
+
+        group.finish();
+    }
+
+    fn bench_dependency_rerun(c: &mut Criterion) {
+        let mut group = c.benchmark_group("graph/dependency-rerun");
+
+        for &size in DEPENDENCY_SIZES {
+            group.throughput(Throughput::Elements(size as u64));
+            group.bench_with_input(BenchmarkId::from_parameter(size), &size, |bench, &size| {
+                let mut runtime = Runtime::new();
+                runtime
+                    .child(|scope| {
+                        let mut signals = Vec::with_capacity(size);
+                        for index in 0..size {
+                            signals.push(
+                                scope
+                                    .signal(index as i32)
+                                    .expect("benchmark signal creation"),
+                            );
+                        }
+                        let reads: Vec<_> = signals.iter().map(|(read, _)| *read).collect();
+                        let trigger = signals[0].1;
+                        scope
+                            .effect(
+                                move || {
+                                    for read in &reads {
+                                        black_box(read.get().expect("benchmark read"));
+                                    }
+                                    Ok(())
+                                },
+                                handler(scope),
+                            )
+                            .expect("benchmark effect creation");
+
+                        let mut value = 0i32;
+                        bench.iter(|| {
+                            value = value.wrapping_add(1);
+                            trigger
+                                .set(black_box(value))
+                                .expect("benchmark signal update");
+                        });
+                    })
+                    .expect("benchmark scope execution");
+            });
+        }
+
+        group.finish();
+    }
+
+    fn bench_dependency_switch(c: &mut Criterion) {
+        let mut group = c.benchmark_group("graph/dependency-switch");
+
+        for &size in DEPENDENCY_SIZES {
+            group.throughput(Throughput::Elements(size as u64));
+            group.bench_with_input(BenchmarkId::from_parameter(size), &size, |bench, &size| {
+                let mut runtime = Runtime::new();
+                runtime
+                    .child(|scope| {
+                        let (switch, set_switch) =
+                            scope.signal(false).expect("benchmark switch creation");
+                        let mut left = Vec::with_capacity(size);
+                        let mut right = Vec::with_capacity(size);
+                        for index in 0..size {
+                            left.push(
+                                scope
+                                    .signal(index as i32)
+                                    .expect("benchmark left signal creation")
+                                    .0,
+                            );
+                            right.push(
+                                scope
+                                    .signal((index as i32).wrapping_neg())
+                                    .expect("benchmark right signal creation")
+                                    .0,
+                            );
+                        }
+                        scope
+                            .effect(
+                                move || {
+                                    let reads = if switch.get().expect("benchmark switch read") {
+                                        &right
+                                    } else {
+                                        &left
+                                    };
+                                    for read in reads {
+                                        black_box(read.get().expect("benchmark dependency read"));
+                                    }
+                                    Ok(())
+                                },
+                                handler(scope),
+                            )
+                            .expect("benchmark effect creation");
+
+                        let mut selected = false;
+                        bench.iter(|| {
+                            selected = !selected;
+                            set_switch
+                                .set(black_box(selected))
+                                .expect("benchmark switch update");
+                        });
+                    })
+                    .expect("benchmark scope execution");
+            });
+        }
+
+        group.finish();
+    }
+
+    fn bench_dependency_dispose(c: &mut Criterion) {
+        let mut group = c.benchmark_group("graph/dependency-dispose");
+
+        for &size in DEPENDENCY_SIZES {
+            group.throughput(Throughput::Elements(size as u64));
+            group.bench_with_input(BenchmarkId::from_parameter(size), &size, |bench, &size| {
+                bench.iter_custom(|iterations| {
+                    let mut total = Duration::ZERO;
+                    for _ in 0..iterations {
+                        let mut runtime = Runtime::new();
+                        let root = runtime.run().expect("benchmark root creation");
+                        root.with_scope(|scope| {
+                            let reads: Vec<_> = (0..size)
+                                .map(|index| {
+                                    scope
+                                        .signal(index as i32)
+                                        .expect("benchmark signal creation")
+                                        .0
+                                })
+                                .collect();
+                            let reads_in_effect = reads.clone();
+                            scope
+                                .effect(
+                                    move || {
+                                        for read in &reads_in_effect {
+                                            black_box(read.get().expect("benchmark read"));
+                                        }
+                                        Ok(())
+                                    },
+                                    handler(scope),
+                                )
+                                .expect("benchmark effect creation");
+                            black_box(reads.len());
+                        });
+
+                        let start = Instant::now();
+                        root.dispose().expect("benchmark root disposal");
+                        total += start.elapsed();
+                    }
+                    total
+                });
+            });
+        }
+
+        group.finish();
+    }
+
+    fn bench_dependency_dispose_cross_scope(c: &mut Criterion) {
+        let mut group = c.benchmark_group("graph/dependency-dispose-cross-scope");
+
+        for &size in DEPENDENCY_SIZES {
+            group.throughput(Throughput::Elements(size as u64));
+            group.bench_with_input(BenchmarkId::from_parameter(size), &size, |bench, &size| {
+                let mut runtime = Runtime::new();
+                let root = runtime.run().expect("benchmark root creation");
+                root.with_scope(|scope| {
+                    let mut signals = Vec::with_capacity(size);
+                    for index in 0..size {
+                        signals.push(
+                            scope
+                                .signal(index as i32)
+                                .expect("benchmark signal creation")
+                                .0,
+                        );
+                    }
+                    bench.iter_custom(|iterations| {
+                        let mut total = Duration::ZERO;
+                        for _ in 0..iterations {
+                            let owner = scope.owned_scope().expect("benchmark owner creation");
+                            let child = owner.child().expect("benchmark child creation");
+                            let reads_in_effect = signals.clone();
+                            child
+                                .effect(
+                                    move || {
+                                        for read in &reads_in_effect {
+                                            black_box(read.get().expect("benchmark read"));
+                                        }
+                                        Ok(())
+                                    },
+                                    handler(scope),
+                                )
+                                .expect("benchmark effect creation");
+
+                            let start = Instant::now();
+                            child.dispose().expect("benchmark child disposal");
+                            owner.dispose().expect("benchmark owner disposal");
+                            total += start.elapsed();
+                        }
+                        total
+                    });
+                });
+                root.dispose().expect("benchmark root disposal");
+            });
+        }
+
+        group.finish();
+    }
+
     fn bench_owner_churn(c: &mut Criterion) {
         let mut group = c.benchmark_group("owner/churn");
 
@@ -1098,6 +1348,11 @@ mod native {
             bench_graph_memo_chain_cross_scope,
             bench_graph_memo_diamond_cross_scope,
             bench_graph_memo_equal_write,
+            bench_dependency_create,
+            bench_dependency_rerun,
+            bench_dependency_switch,
+            bench_dependency_dispose,
+            bench_dependency_dispose_cross_scope,
             bench_owner_churn,
             bench_signal_create_heap,
             bench_completion_message,

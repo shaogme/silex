@@ -1,7 +1,7 @@
 //! Dependency tracking and node subscription operations on ScopeState.
 
 use super::{
-    model::{DependencyTransaction, EdgeId, NodeState, ReactiveEdge, ScopeState, ScopeStateInner},
+    model::{DependencyTransaction, NodeState, ReactiveEdge, ScopeState, ScopeStateInner},
     scheduler::{ActiveObserver, Observer, ScheduledTask, TargetNode, TrackingContext, active_ctx},
 };
 use crate::{ReactiveError, ReactiveResult, handle::NodeKindTag, internal::RawId};
@@ -19,8 +19,8 @@ impl<'scope> ScopeStateInner<'scope> {
         self.dependency_transactions.push(DependencyTransaction {
             observer,
             previous,
-            current: Vec::new(),
-            removed: Vec::new(),
+            current: HashSet::new(),
+            removed: HashSet::new(),
         });
     }
 
@@ -30,22 +30,25 @@ impl<'scope> ScopeStateInner<'scope> {
             .iter_mut()
             .rev()
             .find(|transaction| transaction.observer == observer)
-            && !transaction.current.contains(&target)
         {
-            transaction.current.push(target);
+            transaction.current.insert(target);
         }
     }
 
-    fn ensure_dependency_scopes_available(
+    fn ensure_dependency_scopes_available<'a>(
         &self,
-        dependencies: &[TargetNode],
+        dependencies: impl IntoIterator<Item = &'a TargetNode>,
     ) -> ReactiveResult<()> {
         let scheduler = self
             .scheduler
             .try_borrow()
             .map_err(|_| ReactiveError::BorrowConflict)?;
+        let mut scope_ids = HashSet::new();
         for dependency in dependencies {
             if dependency.scope_id == self.scope_id {
+                continue;
+            }
+            if !scope_ids.insert(dependency.scope_id) {
                 continue;
             }
             if let Some(dependency_scope) =
@@ -144,14 +147,13 @@ impl<'scope> ScopeStateInner<'scope> {
             let transaction = &self.dependency_transactions[index];
             (transaction.previous.clone(), transaction.current.clone())
         };
-        let removed: Vec<TargetNode> = previous
-            .into_iter()
-            .filter(|dependency| !current.contains(dependency))
-            .collect();
-        self.ensure_dependency_scopes_available(&removed)?;
+        let removed: Vec<TargetNode> = previous.difference(&current).copied().collect();
+        self.ensure_dependency_scopes_available(removed.iter())?;
         for dependency in removed {
             self.remove_dependency_pair(observer, dependency)?;
-            self.dependency_transactions[index].removed.push(dependency);
+            self.dependency_transactions[index]
+                .removed
+                .insert(dependency);
         }
         Ok(())
     }
@@ -180,16 +182,15 @@ impl<'scope> ScopeStateInner<'scope> {
         let transaction = self.dependency_transactions[index].clone();
         let to_remove: Vec<TargetNode> = transaction
             .current
-            .iter()
+            .difference(&transaction.previous)
             .copied()
-            .filter(|dependency| !transaction.previous.contains(dependency))
             .collect();
-        self.ensure_dependency_scopes_available(&to_remove)?;
-        self.ensure_dependency_scopes_available(&transaction.removed)?;
+        self.ensure_dependency_scopes_available(to_remove.iter())?;
+        self.ensure_dependency_scopes_available(transaction.removed.iter())?;
         for dependency in to_remove {
             self.remove_dependency_pair(observer, dependency)?;
         }
-        for dependency in transaction.removed {
+        for dependency in transaction.removed.iter().copied() {
             self.restore_dependency_pair(observer, dependency)?;
         }
         self.dependency_transactions.remove(index);
@@ -197,144 +198,100 @@ impl<'scope> ScopeStateInner<'scope> {
     }
 
     pub(crate) fn add_subscriber(&mut self, target_id: RawId, sub_target: TargetNode) {
-        if self
-            .subscriber_edges_of(target_id)
-            .any(|(_, edge)| edge.target == sub_target)
-        {
+        let Some(adjacency) = self.adjacency.get_mut(target_id) else {
+            return;
+        };
+        if adjacency.subscribers.contains_key(&sub_target) {
             return;
         }
-        let old_first = self
-            .nodes
-            .get(target_id)
-            .map(|n| n.first_subscriber)
-            .unwrap_or(EdgeId::DANGLING);
-        let edge_id = self.edges.insert(ReactiveEdge {
-            target: sub_target,
-            next: old_first,
-        });
-        if let Some(node) = self.nodes.get_mut(target_id) {
-            node.first_subscriber = edge_id;
-        }
+        let edge_id = self.edges.insert(ReactiveEdge { target: sub_target });
+        adjacency.subscribers.insert(sub_target, edge_id);
     }
 
     pub(crate) fn add_dependency(&mut self, observer_id: RawId, dep_target: TargetNode) {
-        if self
-            .dependency_edges_of(observer_id)
-            .any(|(_, edge)| edge.target == dep_target)
-        {
+        let Some(adjacency) = self.adjacency.get_mut(observer_id) else {
+            return;
+        };
+        if adjacency.dependencies.contains_key(&dep_target) {
             return;
         }
-        let old_first = self
-            .nodes
-            .get(observer_id)
-            .map(|n| n.first_dependency)
-            .unwrap_or(EdgeId::DANGLING);
-        let edge_id = self.edges.insert(ReactiveEdge {
-            target: dep_target,
-            next: old_first,
-        });
-        if let Some(node) = self.nodes.get_mut(observer_id) {
-            node.first_dependency = edge_id;
-        }
+        let edge_id = self.edges.insert(ReactiveEdge { target: dep_target });
+        adjacency.dependencies.insert(dep_target, edge_id);
     }
 
     pub(crate) fn remove_subscriber(&mut self, target_id: RawId, sub_target: TargetNode) {
-        let Some(node) = self.nodes.get(target_id) else {
-            return;
-        };
-        let mut prev_edge = EdgeId::DANGLING;
-        let mut curr_edge = node.first_subscriber;
-        while curr_edge.is_valid() {
-            let Some(edge) = self.edges.get(curr_edge).copied() else {
-                break;
-            };
-            if edge.target == sub_target {
-                if prev_edge.is_dangling() {
-                    if let Some(node) = self.nodes.get_mut(target_id) {
-                        node.first_subscriber = edge.next;
-                    }
-                } else if let Some(prev) = self.edges.get_mut(prev_edge) {
-                    prev.next = edge.next;
-                }
-                self.edges.remove(curr_edge);
-                break;
-            }
-            prev_edge = curr_edge;
-            curr_edge = edge.next;
+        let edge_id = self
+            .adjacency
+            .get_mut(target_id)
+            .and_then(|adjacency| adjacency.subscribers.remove(&sub_target));
+        if let Some(edge_id) = edge_id {
+            self.edges.remove(edge_id);
         }
     }
 
     pub(crate) fn remove_dependency(&mut self, observer_id: RawId, dep_target: TargetNode) {
-        let Some(node) = self.nodes.get(observer_id) else {
-            return;
-        };
-        let mut prev_edge = EdgeId::DANGLING;
-        let mut curr_edge = node.first_dependency;
-        while curr_edge.is_valid() {
-            let Some(edge) = self.edges.get(curr_edge).copied() else {
-                break;
-            };
-            if edge.target == dep_target {
-                if prev_edge.is_dangling() {
-                    if let Some(node) = self.nodes.get_mut(observer_id) {
-                        node.first_dependency = edge.next;
-                    }
-                } else if let Some(prev) = self.edges.get_mut(prev_edge) {
-                    prev.next = edge.next;
-                }
-                self.edges.remove(curr_edge);
-                break;
-            }
-            prev_edge = curr_edge;
-            curr_edge = edge.next;
+        let edge_id = self
+            .adjacency
+            .get_mut(observer_id)
+            .and_then(|adjacency| adjacency.dependencies.remove(&dep_target));
+        if let Some(edge_id) = edge_id {
+            self.edges.remove(edge_id);
         }
     }
 
+    pub(crate) fn take_subscribers(&mut self, source: RawId) -> Vec<TargetNode> {
+        let entries: Vec<_> = self
+            .adjacency
+            .get_mut(source)
+            .map(|adjacency| adjacency.subscribers.drain().collect())
+            .unwrap_or_default();
+        let mut targets = Vec::with_capacity(entries.len());
+        for (target, edge_id) in entries {
+            self.edges.remove(edge_id);
+            targets.push(target);
+        }
+        targets
+    }
+
     pub(crate) fn clear_dependencies(&mut self, observer_id: RawId) -> ReactiveResult<()> {
+        let dependencies: Vec<TargetNode> = self
+            .dependency_edges_of(observer_id)
+            .map(|(_, edge)| edge.target)
+            .collect();
+        self.ensure_dependency_scopes_available(dependencies.iter())?;
+
+        let edge_ids: Vec<_> = self
+            .adjacency
+            .get_mut(observer_id)
+            .map(|adjacency| {
+                adjacency
+                    .dependencies
+                    .drain()
+                    .map(|(_, edge_id)| edge_id)
+                    .collect()
+            })
+            .unwrap_or_default();
+        for edge_id in edge_ids {
+            self.edges.remove(edge_id);
+        }
+
         let self_sub = TargetNode {
             scope_id: self.scope_id,
             node: observer_id,
         };
-
-        let dependencies: Vec<(EdgeId, ReactiveEdge)> =
-            self.dependency_edges_of(observer_id).collect();
-        for (_, edge) in &dependencies {
-            if edge.target.scope_id != self.scope_id
-                && let Some(dep_scope) = self
-                    .scheduler
-                    .try_borrow()
-                    .map_err(|_| ReactiveError::BorrowConflict)?
-                    .get_scope_for_edge_cleanup(edge.target.scope_id)
+        for dependency in dependencies {
+            if dependency.scope_id == self.scope_id {
+                self.remove_subscriber(dependency.node, self_sub);
+            } else if let Some(dep_scope) = self
+                .scheduler
+                .try_borrow()
+                .map_err(|_| ReactiveError::BorrowConflict)?
+                .get_scope_for_edge_cleanup(dependency.scope_id)
             {
                 dep_scope
                     .try_borrow_mut()
-                    .map_err(|_| ReactiveError::BorrowConflict)?;
-            }
-        }
-
-        if let Some(node) = self.nodes.get_mut(observer_id) {
-            node.first_dependency = EdgeId::DANGLING;
-        }
-
-        for (edge_id, _) in dependencies {
-            let Some(edge) = self.edges.remove(edge_id) else {
-                break;
-            };
-            let dep = edge.target;
-            if dep.scope_id == self.scope_id {
-                self.remove_subscriber(dep.node, self_sub);
-            } else {
-                let dep_scope = self
-                    .scheduler
-                    .try_borrow()
                     .map_err(|_| ReactiveError::BorrowConflict)?
-                    .get_scope_for_edge_cleanup(dep.scope_id);
-                if let Some(dep_scope) = dep_scope {
-                    let mut dep_state = dep_scope
-                        .try_borrow_mut()
-                        .map_err(|_| ReactiveError::BorrowConflict)?;
-                    dep_state.remove_subscriber(dep.node, self_sub);
-                }
+                    .remove_subscriber(dependency.node, self_sub);
             }
         }
         Ok(())
@@ -475,6 +432,7 @@ impl<'scope> ScopeStateInner<'scope> {
             .map(|(_, edge)| edge.target)
             .collect();
         let mut visited = HashSet::new();
+        let mut external_scope_ids = HashSet::new();
         let mut external_scopes = Vec::new();
 
         // Read the complete propagation frontier before changing any node. This
@@ -527,10 +485,7 @@ impl<'scope> ScopeStateInner<'scope> {
                 );
             }
             drop(state_ref);
-            if !external_scopes
-                .iter()
-                .any(|scope: &ScopeState<'scope>| Rc::ptr_eq(scope.inner(), target_scope.inner()))
-            {
+            if external_scope_ids.insert(target.scope_id) {
                 external_scopes.push(target_scope);
             }
         }

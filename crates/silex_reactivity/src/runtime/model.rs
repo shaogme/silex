@@ -16,6 +16,7 @@ use crate::{
 use slotmap::{SecondaryMap, SlotMap};
 use std::{
     cell::{Ref, RefCell, RefMut},
+    collections::{HashMap, HashSet, hash_map},
     mem::{size_of, take},
     panic::{AssertUnwindSafe, catch_unwind},
     rc::Rc,
@@ -28,24 +29,9 @@ slotmap::new_key_type! {
     pub(crate) struct EdgeId;
 }
 
-impl EdgeId {
-    pub(crate) const DANGLING: Self = Self(slotmap::KeyData::from_ffi(u64::MAX));
-
-    #[inline]
-    pub(crate) fn is_dangling(self) -> bool {
-        self == Self::DANGLING
-    }
-
-    #[inline]
-    pub(crate) fn is_valid(self) -> bool {
-        self != Self::DANGLING
-    }
-}
-
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ReactiveEdge {
     pub(crate) target: TargetNode,
-    pub(crate) next: EdgeId,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -84,11 +70,10 @@ pub(crate) struct NodeCore {
     pub(crate) parent: RawId,
     pub(crate) first_child: RawId,
     pub(crate) next_sibling: RawId,
-    pub(crate) first_subscriber: EdgeId,
-    pub(crate) first_dependency: EdgeId,
+    pub(crate) prev_sibling: RawId,
 }
 
-const _: () = assert!(size_of::<NodeCore>() == 64);
+const _: () = assert!(size_of::<NodeCore>() == 56);
 
 impl NodeCore {
     pub(crate) fn new(kind: NodeKindTag, parent: Option<RawId>, state: NodeState) -> Self {
@@ -103,8 +88,7 @@ impl NodeCore {
             parent: RawId::from_option(parent),
             first_child: RawId::DANGLING,
             next_sibling: RawId::DANGLING,
-            first_subscriber: EdgeId::DANGLING,
-            first_dependency: EdgeId::DANGLING,
+            prev_sibling: RawId::DANGLING,
         }
     }
 
@@ -133,9 +117,120 @@ impl<'scope> NodeData<'scope> {
 #[derive(Clone)]
 pub(crate) struct DependencyTransaction {
     pub(crate) observer: RawId,
-    pub(crate) previous: Vec<TargetNode>,
-    pub(crate) current: Vec<TargetNode>,
-    pub(crate) removed: Vec<TargetNode>,
+    pub(crate) previous: HashSet<TargetNode>,
+    pub(crate) current: HashSet<TargetNode>,
+    pub(crate) removed: HashSet<TargetNode>,
+}
+
+/// Direct indexes for the two directions of a node's reactive edges.
+///
+/// The edge arena remains the owner of stable edge ids, while these maps are
+/// the hot-path adjacency structure. This keeps insertion, duplicate checks,
+/// and removal independent of the number of neighboring edges.
+pub(crate) struct NodeAdjacency {
+    pub(crate) subscribers: HashMap<TargetNode, EdgeId>,
+    pub(crate) dependencies: HashMap<TargetNode, EdgeId>,
+}
+
+impl NodeAdjacency {
+    pub(crate) fn new() -> Self {
+        Self {
+            subscribers: HashMap::new(),
+            dependencies: HashMap::new(),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct RootLink {
+    previous: RawId,
+    next: RawId,
+}
+
+/// Ordered root index with constant-time removal.
+///
+/// Roots are not part of a node's child list, so keeping a separate index
+/// avoids shifting or retaining the complete root collection during disposal.
+#[derive(Clone)]
+pub(crate) struct RootSet {
+    links: HashMap<RawId, RootLink>,
+    first: RawId,
+    last: RawId,
+}
+
+impl RootSet {
+    pub(crate) fn new() -> Self {
+        Self {
+            links: HashMap::new(),
+            first: RawId::DANGLING,
+            last: RawId::DANGLING,
+        }
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn len(&self) -> usize {
+        self.links.len()
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.links.is_empty()
+    }
+
+    pub(crate) fn push(&mut self, root: RawId) {
+        let previous = self.last;
+        self.links.insert(
+            root,
+            RootLink {
+                previous,
+                next: RawId::DANGLING,
+            },
+        );
+        if previous.is_dangling() {
+            self.first = root;
+        } else if let Some(previous_link) = self.links.get_mut(&previous) {
+            previous_link.next = root;
+        }
+        self.last = root;
+    }
+
+    pub(crate) fn remove(&mut self, root: RawId) {
+        let Some(link) = self.links.remove(&root) else {
+            return;
+        };
+        if link.previous.is_dangling() {
+            self.first = link.next;
+        } else if let Some(previous) = self.links.get_mut(&link.previous) {
+            previous.next = link.next;
+        }
+        if link.next.is_dangling() {
+            self.last = link.previous;
+        } else if let Some(next) = self.links.get_mut(&link.next) {
+            next.previous = link.previous;
+        }
+    }
+
+    pub(crate) fn to_vec(&self) -> Vec<RawId> {
+        let mut roots = Vec::with_capacity(self.links.len());
+        let mut current = self.first;
+        while current.is_valid() {
+            roots.push(current);
+            current = self
+                .links
+                .get(&current)
+                .map(|link| link.next)
+                .unwrap_or(RawId::DANGLING);
+        }
+        roots
+    }
+}
+
+impl IntoIterator for RootSet {
+    type Item = RawId;
+    type IntoIter = std::vec::IntoIter<RawId>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.to_vec().into_iter()
+    }
 }
 
 /// Iterator over child nodes in an intra-arena sibling chain.
@@ -162,23 +257,17 @@ impl Iterator for ChildrenIter<'_, '_> {
     }
 }
 
-/// Iterator over edge entries in an intra-arena edge list.
-pub(crate) struct EdgeIter<'a, 'scope> {
-    state: &'a ScopeStateInner<'scope>,
-    curr: EdgeId,
+/// Iterator over entries in a node's direct edge index.
+pub(crate) struct EdgeIter<'a> {
+    inner: Option<hash_map::Iter<'a, TargetNode, EdgeId>>,
 }
 
-impl Iterator for EdgeIter<'_, '_> {
+impl Iterator for EdgeIter<'_> {
     type Item = (EdgeId, ReactiveEdge);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.curr.is_dangling() {
-            return None;
-        }
-        let edge_id = self.curr;
-        let edge = self.state.edges.get(edge_id).copied()?;
-        self.curr = edge.next;
-        Some((edge_id, edge))
+        let (target, edge_id) = self.inner.as_mut()?.next()?;
+        Some((*edge_id, ReactiveEdge { target: *target }))
     }
 }
 
@@ -190,7 +279,8 @@ pub(crate) struct ScopeStateInner<'scope> {
     pub(crate) nodes: SlotMap<RawId, NodeCore>,
     pub(crate) data: SecondaryMap<RawId, NodeData<'scope>>,
     pub(crate) edges: SlotMap<EdgeId, ReactiveEdge>,
-    pub(crate) roots: Vec<RawId>,
+    pub(crate) adjacency: SecondaryMap<RawId, NodeAdjacency>,
+    pub(crate) roots: RootSet,
     pub(crate) current_owner: Option<RawId>,
     pub(crate) root_cleanups: Vec<CleanupThunk<'scope>>,
     pub(crate) dependency_transactions: Vec<DependencyTransaction>,
@@ -275,7 +365,8 @@ impl<'scope> ScopeStateInner<'scope> {
             nodes: SlotMap::with_key(),
             data: SecondaryMap::new(),
             edges: SlotMap::with_key(),
-            roots: Vec::new(),
+            adjacency: SecondaryMap::new(),
+            roots: RootSet::new(),
             current_owner: None,
             root_cleanups: Vec::new(),
             dependency_transactions: Vec::new(),
@@ -319,28 +410,22 @@ impl<'scope> ScopeStateInner<'scope> {
     }
 
     #[inline]
-    pub(crate) fn subscriber_edges_of(&self, node_id: RawId) -> EdgeIter<'_, 'scope> {
-        let first = self
-            .nodes
-            .get(node_id)
-            .map(|n| n.first_subscriber)
-            .unwrap_or(EdgeId::DANGLING);
+    pub(crate) fn subscriber_edges_of(&self, node_id: RawId) -> EdgeIter<'_> {
         EdgeIter {
-            state: self,
-            curr: first,
+            inner: self
+                .adjacency
+                .get(node_id)
+                .map(|adjacency| adjacency.subscribers.iter()),
         }
     }
 
     #[inline]
-    pub(crate) fn dependency_edges_of(&self, node_id: RawId) -> EdgeIter<'_, 'scope> {
-        let first = self
-            .nodes
-            .get(node_id)
-            .map(|n| n.first_dependency)
-            .unwrap_or(EdgeId::DANGLING);
+    pub(crate) fn dependency_edges_of(&self, node_id: RawId) -> EdgeIter<'_> {
         EdgeIter {
-            state: self,
-            curr: first,
+            inner: self
+                .adjacency
+                .get(node_id)
+                .map(|adjacency| adjacency.dependencies.iter()),
         }
     }
 
@@ -356,38 +441,40 @@ impl<'scope> ScopeStateInner<'scope> {
             .unwrap_or(RawId::DANGLING);
         if let Some(child_node) = self.nodes.get_mut(child) {
             child_node.next_sibling = old_first;
+            child_node.prev_sibling = RawId::DANGLING;
+        }
+        if old_first.is_valid()
+            && let Some(old_first_node) = self.nodes.get_mut(old_first)
+        {
+            old_first_node.prev_sibling = child;
         }
         if let Some(parent_node) = self.nodes.get_mut(parent) {
             parent_node.first_child = child;
         }
     }
 
-    pub(crate) fn unlink_child(&mut self, parent: RawId, child: RawId, child_next_sibling: RawId) {
+    pub(crate) fn unlink_child(&mut self, parent: RawId, child: RawId) {
         if parent.is_dangling() {
-            self.roots.retain(|&root| root != child);
+            self.roots.remove(child);
             return;
         }
-        let Some(parent_node) = self.nodes.get_mut(parent) else {
+        if !self.nodes.contains_key(parent) {
+            return;
+        }
+        let Some(child_node) = self.nodes.get(child).copied() else {
             return;
         };
-        if parent_node.first_child == child {
-            parent_node.first_child = child_next_sibling;
-            return;
-        }
-        let mut curr = parent_node.first_child;
-        while curr.is_valid() {
-            let next = self
-                .nodes
-                .get(curr)
-                .map(|n| n.next_sibling)
-                .unwrap_or(RawId::DANGLING);
-            if next == child {
-                if let Some(curr_node) = self.nodes.get_mut(curr) {
-                    curr_node.next_sibling = child_next_sibling;
-                }
-                break;
+        if child_node.prev_sibling.is_dangling() {
+            if let Some(parent_node) = self.nodes.get_mut(parent) {
+                parent_node.first_child = child_node.next_sibling;
             }
-            curr = next;
+        } else if let Some(previous) = self.nodes.get_mut(child_node.prev_sibling) {
+            previous.next_sibling = child_node.next_sibling;
+        }
+        if child_node.next_sibling.is_valid()
+            && let Some(next) = self.nodes.get_mut(child_node.next_sibling)
+        {
+            next.prev_sibling = child_node.prev_sibling;
         }
     }
 
@@ -400,6 +487,7 @@ impl<'scope> ScopeStateInner<'scope> {
         let parent = node.parent;
         let id = self.nodes.insert(node);
         self.data.insert(id, make_data());
+        self.adjacency.insert(id, NodeAdjacency::new());
         self.link_child(parent, id);
         Ok(id)
     }
@@ -472,6 +560,7 @@ impl<'scope> ScopeStateInner<'scope> {
             && self.nodes.is_empty()
             && self.data.is_empty()
             && self.edges.is_empty()
+            && self.adjacency.is_empty()
             && self.roots.is_empty()
             && self.root_cleanups.is_empty()
             && self.dependency_transactions.is_empty()
