@@ -27,6 +27,9 @@ fn submit_boundary_error<'scope>(
     let error = match error {
         CallbackInvokeError::Runtime(error) => SilexError::fatal(SilexErrorKind::Reactivity(error)),
         CallbackInvokeError::User(error) => error,
+        CallbackInvokeError::Handler(error) => {
+            SilexError::fatal(SilexErrorKind::Reactivity(error.reason()))
+        }
     };
     let handler_result = catch_unwind(AssertUnwindSafe(|| error_handler.handle(error)));
     if let Err(handler_panic) = handler_result {

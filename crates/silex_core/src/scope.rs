@@ -419,8 +419,8 @@ impl<'scope> Scope<'scope> {
         self.inner.untrack(f)
     }
 
-    pub fn batch<R>(self, f: impl FnOnce() -> R) -> R {
-        self.inner.batch(f)
+    pub fn batch<R>(self, f: impl FnOnce() -> R) -> SilexResult<R> {
+        self.inner.batch(f).map_err(SilexError::fatal)
     }
 
     /// Register a cleanup callback for this scope or the current computation.

@@ -1,11 +1,11 @@
 //! Long-lived root owner and cleanup error handling.
 
-use crate::{Scope, runtime::GlobalScheduler, scope::ScopeStorage};
+use crate::{HandlerError, ReactiveError, Scope, runtime::GlobalScheduler, scope::ScopeStorage};
 use std::{
     any::Any,
     cell::Cell,
     fmt,
-    panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
+    panic::{AssertUnwindSafe, catch_unwind},
     rc::Rc,
 };
 
@@ -62,9 +62,17 @@ fn diagnostic_for(panic: &(dyn Any + Send)) -> CleanupDiagnostic {
     }
 }
 
-/// A cleanup failure returned by an explicit root disposal.
+/// A failure collected during explicit disposal.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CleanupFailure {
+    Runtime(ReactiveError),
+    Handler(HandlerError),
+    Panic(CleanupDiagnostic),
+}
+
+/// Cleanup failures returned by an explicit root or owner disposal.
 pub struct CleanupError {
-    panic: Box<dyn std::any::Any + Send>,
+    failures: Vec<CleanupFailure>,
     diagnostic: CleanupDiagnostic,
 }
 
@@ -77,7 +85,41 @@ impl fmt::Debug for CleanupError {
 impl CleanupError {
     fn new(panic: Box<dyn std::any::Any + Send>) -> Self {
         let diagnostic = diagnostic_for(panic.as_ref());
-        Self { panic, diagnostic }
+        let _ = catch_unwind(AssertUnwindSafe(|| drop(panic)));
+        Self {
+            failures: vec![CleanupFailure::Panic(diagnostic.clone())],
+            diagnostic,
+        }
+    }
+
+    pub(crate) fn from_failures(failures: Vec<CleanupFailure>) -> Option<Self> {
+        if failures.is_empty() {
+            return None;
+        }
+        let diagnostic = failures
+            .iter()
+            .find_map(|failure| match failure {
+                CleanupFailure::Panic(diagnostic) => Some(diagnostic.clone()),
+                CleanupFailure::Runtime(_) | CleanupFailure::Handler(_) => None,
+            })
+            .unwrap_or(CleanupDiagnostic {
+                message: "runtime cleanup failure".to_string(),
+                payload_kind: CleanupPayloadKind::Unknown,
+            });
+        Some(Self {
+            failures,
+            diagnostic,
+        })
+    }
+
+    pub(crate) fn panic_failure(panic: Box<dyn std::any::Any + Send>) -> CleanupFailure {
+        let diagnostic = diagnostic_for(panic.as_ref());
+        let _ = catch_unwind(AssertUnwindSafe(|| drop(panic)));
+        CleanupFailure::Panic(diagnostic)
+    }
+
+    pub fn failures(&self) -> &[CleanupFailure] {
+        &self.failures
     }
 
     /// Adapt a caught framework panic into a cleanup error.
@@ -96,13 +138,7 @@ impl CleanupError {
 
     /// Consume the error and return only its stable, owned diagnostic.
     pub fn into_diagnostic(self) -> CleanupDiagnostic {
-        let Self { panic, diagnostic } = self;
-        let _ = catch_unwind(AssertUnwindSafe(|| drop(panic)));
-        diagnostic
-    }
-
-    fn resume(self) -> ! {
-        resume_unwind(self.panic)
+        self.diagnostic
     }
 }
 
@@ -161,14 +197,15 @@ impl RootHandle {
             return Ok(());
         }
 
-        self.disposed = true;
-        self.runtime_slot.set(false);
-        let result = catch_unwind(AssertUnwindSafe(|| {
-            self.storage.dispose_untracked();
-        }));
+        let result = catch_unwind(AssertUnwindSafe(|| self.storage.dispose_untracked()));
 
         match result {
-            Ok(()) => Ok(()),
+            Ok(Ok(())) => {
+                self.disposed = true;
+                self.runtime_slot.set(false);
+                Ok(())
+            }
+            Ok(Err(error)) => Err(error),
             Err(panic) => Err(CleanupError::new(panic)),
         }
     }
@@ -176,8 +213,6 @@ impl RootHandle {
 
 impl Drop for RootHandle {
     fn drop(&mut self) {
-        if let Err(error) = self.dispose_inner() {
-            error.resume();
-        }
+        let _ = self.dispose_inner();
     }
 }

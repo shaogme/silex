@@ -165,7 +165,7 @@ mod tests {
         let state = store_borrowed(&storage, value.as_str());
 
         assert_eq!(state.borrow().nodes.len(), 1);
-        storage.dispose_untracked();
+        let _ = storage.dispose_untracked();
         assert!(state.borrow().nodes.is_empty());
     }
 }

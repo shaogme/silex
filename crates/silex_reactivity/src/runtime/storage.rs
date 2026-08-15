@@ -84,11 +84,9 @@ impl LeaseTicket {
 
 impl Drop for LeaseTicket {
     fn drop(&mut self) {
-        let mut scheduler = self
-            .scheduler
-            .try_borrow_mut()
-            .expect("scheduler lease count must not be borrowed while a lease drops");
-        scheduler.active_leases = scheduler.active_leases.saturating_sub(1);
+        if let Ok(mut scheduler) = self.scheduler.try_borrow_mut() {
+            scheduler.active_leases = scheduler.active_leases.saturating_sub(1);
+        }
     }
 }
 
@@ -233,21 +231,22 @@ pub(crate) trait ComputationBehavior<'scope> {
 }
 
 pub(crate) struct ComputationStorage<'scope> {
-    pub(crate) computation: LeaseCell<Box<dyn ComputationBehavior<'scope> + 'scope>>,
+    pub(crate) computation: LeaseCell<Option<Box<dyn ComputationBehavior<'scope> + 'scope>>>,
 }
 
 impl<'scope> ComputationStorage<'scope> {
     pub(crate) fn new(computation: Box<dyn ComputationBehavior<'scope> + 'scope>) -> Self {
         Self {
-            computation: LeaseCell::new(computation),
+            computation: LeaseCell::new(Some(computation)),
         }
     }
 }
 
 impl Drop for ComputationStorage<'_> {
     fn drop(&mut self) {
-        let computation = self.computation.value.get_mut();
-        computation.clear();
+        if let Some(computation) = self.computation.value.get_mut().as_mut() {
+            computation.clear();
+        }
     }
 }
 

@@ -341,7 +341,7 @@ fn completion_callback_can_cancel_itself_without_borrow_panic() {
                         .as_ref()
                         .cloned()
                         .expect("completion sender should be available");
-                    sender.cancel();
+                    let _ = sender.cancel();
                     Ok::<(), ()>(())
                 }))
                 .expect("completion registration");

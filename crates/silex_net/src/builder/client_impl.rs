@@ -47,6 +47,7 @@ fn submit_once<'scope, T: 'static>(
     let error = match error {
         CallbackInvokeError::Runtime(error) => SilexError::fatal(error),
         CallbackInvokeError::User(error) => error,
+        CallbackInvokeError::Handler(error) => SilexError::fatal(error.reason()),
     };
     let handler_result = catch_unwind(AssertUnwindSafe(|| error_handler.handle(error)));
     if let Err(handler_panic) = handler_result {

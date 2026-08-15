@@ -8,9 +8,11 @@ use super::{
 };
 use crate::{
     ReactiveError, ReactiveResult,
-    error::{ErrorEvent, ErrorPhase},
+    error::{ErrorContext, ErrorEvent, ErrorPhase, HandlerError},
+    handle::NodeKindTag,
     internal::RawId,
 };
+use slotmap::Key;
 use std::{
     any::Any,
     cell::RefCell,
@@ -23,6 +25,30 @@ const MAX_QUEUE_ITERATIONS: usize = 100_000;
 
 type PanicData = Box<dyn Any + Send>;
 
+fn node_error_context(state: &ScopeState<'_>, id: RawId, phase: &'static str) -> ErrorContext {
+    let Ok(state_ref) = state.try_borrow() else {
+        return ErrorContext::new(phase);
+    };
+    let Some(node) = state_ref.nodes.get(id) else {
+        return ErrorContext::new(phase);
+    };
+    let node_kind = match node.kind {
+        NodeKindTag::Signal => "signal",
+        NodeKindTag::Memo => "memo",
+        NodeKindTag::Derived => "derived",
+        NodeKindTag::Effect => "effect",
+        NodeKindTag::Stored => "stored",
+        NodeKindTag::Callback => "callback",
+        NodeKindTag::NodeRef => "node ref",
+    };
+    ErrorContext {
+        owner: Some(state_ref.scope_id.0),
+        node_kind: Some(node_kind),
+        node_id: Some(id.data().as_ffi()),
+        phase,
+    }
+}
+
 struct ComputationResult {
     commit_value: bool,
     notify: bool,
@@ -32,6 +58,7 @@ struct ComputationResult {
 pub(crate) enum EvaluationError<'scope> {
     Runtime(ReactiveError),
     Callback(ErrorEvent<'scope>),
+    Handler(HandlerError),
     User,
 }
 
@@ -46,6 +73,7 @@ impl fmt::Display for EvaluationError<'_> {
         match self {
             Self::Runtime(error) => error.fmt(f),
             Self::Callback(_) => f.write_str("callback returned an error"),
+            Self::Handler(error) => error.fmt(f),
             Self::User => f.write_str("callback returned a user error"),
         }
     }
@@ -94,6 +122,7 @@ pub(crate) fn prepare_read<'scope>(
             EvaluationError::Callback(_) => {
                 unreachable!("deferred callback errors are consumed by their handler")
             }
+            EvaluationError::Handler(error) => ReactiveError::Handler(error),
             EvaluationError::User => {
                 unreachable!("user errors are only produced by fallible reads")
             }
@@ -105,7 +134,7 @@ pub(crate) fn prepare_read<'scope>(
             .map_err(|_| ReactiveError::BorrowConflict)?
             .track_read(id, &ctx)?;
     }
-    flush_if_idle(state);
+    flush_if_idle(state)?;
     Ok(())
 }
 
@@ -151,7 +180,7 @@ pub(crate) fn prepare_fallible_read<'scope>(
             .track_read(id, &ctx)
             .map_err(EvaluationError::Runtime)?;
     }
-    flush_if_idle(state);
+    flush_if_idle(state).map_err(EvaluationError::Runtime)?;
     Ok(())
 }
 
@@ -177,7 +206,7 @@ fn evaluate_root<'scope>(
     }
     match result {
         Ok(result) => {
-            flush_if_idle(state);
+            flush_if_idle(state).map_err(EvaluationError::Runtime)?;
             result
         }
         Err(panic) => resume_unwind(panic),
@@ -307,6 +336,8 @@ fn evaluate<'scope>(
 }
 
 fn execute_computation<'scope>(
+    state: &ScopeState<'scope>,
+    id: RawId,
     storage: &NodeStorage<'scope>,
     scheduler: Rc<RefCell<GlobalScheduler>>,
 ) -> EvaluationResult<'scope, ComputationResult> {
@@ -318,7 +349,49 @@ fn execute_computation<'scope>(
         .computation
         .try_write(scheduler.clone())
         .map_err(EvaluationError::Runtime)?;
-    let result = match computation_lease.execute(scheduler) {
+    let mut behavior = mem::take(&mut *computation_lease)
+        .ok_or(EvaluationError::Runtime(ReactiveError::NoSuchNode))?;
+    drop(computation_lease);
+
+    let result = catch_unwind(AssertUnwindSafe(|| behavior.execute(scheduler.clone())));
+    let should_restore = {
+        let state_ref = state
+            .try_borrow()
+            .map_err(|_| EvaluationError::Runtime(ReactiveError::BorrowConflict))?;
+        state_ref
+            .try_is_active()
+            .map_err(EvaluationError::Runtime)?
+            && state_ref.node_exists(id)
+    };
+    let restore_result = if should_restore {
+        match computation.computation.try_write(scheduler.clone()) {
+            Ok(mut computation_lease) => {
+                if computation_lease.is_some() {
+                    behavior.clear();
+                    Err(ReactiveError::BorrowConflict)
+                } else {
+                    *computation_lease = Some(behavior);
+                    Ok(())
+                }
+            }
+            Err(error) => {
+                behavior.clear();
+                Err(error)
+            }
+        }
+    } else {
+        behavior.clear();
+        Ok(())
+    };
+
+    let result = match result {
+        Ok(result) => {
+            restore_result.map_err(EvaluationError::Runtime)?;
+            result
+        }
+        Err(panic) => resume_unwind(panic),
+    };
+    let result = match result {
         Ok(result) => result,
         Err(super::storage::ComputationExecutionError::Runtime(error)) => {
             return Err(EvaluationError::Runtime(error));
@@ -327,7 +400,6 @@ fn execute_computation<'scope>(
             return Err(EvaluationError::Callback(error));
         }
     };
-    drop(computation_lease);
     Ok(ComputationResult {
         commit_value: result.commit_value,
         notify: result.notify,
@@ -343,7 +415,11 @@ fn commit_computation_value<'scope>(
         return Err(ReactiveError::WrongKind);
     };
     let mut computation_lease = computation.computation.try_write(scheduler.clone())?;
-    computation_lease.commit(scheduler)
+    computation_lease
+        .as_mut()
+        .as_mut()
+        .ok_or(ReactiveError::NoSuchNode)?
+        .commit(scheduler)
 }
 
 fn discard_computation_pending<'scope>(
@@ -354,7 +430,11 @@ fn discard_computation_pending<'scope>(
         return Err(ReactiveError::WrongKind);
     };
     let mut computation_lease = computation.computation.try_write(scheduler)?;
-    computation_lease.discard_pending();
+    computation_lease
+        .as_mut()
+        .as_mut()
+        .ok_or(ReactiveError::NoSuchNode)?
+        .discard_pending();
     Ok(())
 }
 
@@ -447,16 +527,17 @@ fn run_node<'scope>(
                 dispose_nodes_collect(state, children_to_dispose)
             }));
             let mut cleanup_panic = match child_dispose {
-                Ok(child_outcome) => {
+                Ok(Ok(mut child_outcome)) => {
                     cleanup_errors.extend(child_outcome.errors);
-                    child_outcome.panic
+                    child_outcome.panics.pop()
                 }
+                Ok(Err(error)) => return Err(EvaluationError::Runtime(error)),
                 Err(panic) => Some(panic),
             };
             let cleanup_outcome = run_cleanups(scheduler.clone(), cleanups);
             cleanup_errors.extend(cleanup_outcome.errors);
             if cleanup_panic.is_none() {
-                cleanup_panic = cleanup_outcome.panic;
+                cleanup_panic = cleanup_outcome.panics.into_iter().next();
             }
             if let Some(panic) = cleanup_panic {
                 resume_unwind(panic);
@@ -489,7 +570,7 @@ fn run_node<'scope>(
                 }
             }
 
-            execute_computation(&storage, scheduler.clone())
+            execute_computation(state, id, &storage, scheduler.clone())
         },
     ));
 
@@ -616,7 +697,9 @@ fn run_node<'scope>(
             } else if notify && committed {
                 node.updated_epoch = now_epoch;
                 node.version = node.version.wrapping_add(1);
-                state_ref.queue_dependents(id);
+                state_ref
+                    .queue_dependents(id)
+                    .map_err(EvaluationError::Runtime)?;
             }
         }
         if failed {
@@ -632,29 +715,36 @@ fn run_node<'scope>(
     }
 
     if failed {
-        let discard = catch_unwind(AssertUnwindSafe(|| {
-            discard_computation_pending(&storage, scheduler.clone())
-        }));
-        match discard {
-            Ok(Ok(())) => {}
-            Ok(Err(error)) => operation_error = Some(EvaluationError::Runtime(error)),
-            Err(panic) => remember_panic(&mut panic_data, panic),
+        let node_still_exists = state
+            .try_borrow()
+            .map(|state_ref| state_ref.node_exists(id))
+            .unwrap_or(false);
+        if node_still_exists {
+            let discard = catch_unwind(AssertUnwindSafe(|| {
+                discard_computation_pending(&storage, scheduler.clone())
+            }));
+            match discard {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => operation_error = Some(EvaluationError::Runtime(error)),
+                Err(panic) => remember_panic(&mut panic_data, panic),
+            }
         }
         let child_dispose = catch_unwind(AssertUnwindSafe(|| {
             dispose_nodes_collect(state, failed_children)
         }));
         match child_dispose {
-            Ok(outcome) => {
+            Ok(Ok(outcome)) => {
                 cleanup_errors.extend(outcome.errors);
-                if let Some(panic) = outcome.panic {
+                for panic in outcome.panics {
                     remember_panic(&mut panic_data, panic);
                 }
             }
+            Ok(Err(error)) => operation_error = Some(EvaluationError::Runtime(error)),
             Err(panic) => remember_panic(&mut panic_data, panic),
         }
         let cleanup_outcome = run_cleanups(scheduler.clone(), failed_cleanups);
         cleanup_errors.extend(cleanup_outcome.errors);
-        if let Some(panic) = cleanup_outcome.panic {
+        for panic in cleanup_outcome.panics {
             remember_panic(&mut panic_data, panic);
         }
     }
@@ -663,16 +753,20 @@ fn run_node<'scope>(
         remember_panic(&mut panic_data, panic);
     }
 
-    if let Some(panic) = dispatch_cleanup_errors(scheduler.clone(), cleanup_errors) {
+    let dispatch_outcome = dispatch_cleanup_errors(scheduler.clone(), cleanup_errors);
+    for panic in dispatch_outcome.panics {
         remember_panic(&mut panic_data, panic);
+    }
+    if let Some(error) = dispatch_outcome.handler_errors.into_iter().next() {
+        operation_error = Some(EvaluationError::Handler(error));
     }
 
     if stop_after_run && !failed && committed {
-        let stop_result = catch_unwind(AssertUnwindSafe(|| {
-            dispose_nodes(state, vec![id]);
-        }));
-        if let Err(panic) = stop_result {
-            remember_panic(&mut panic_data, panic);
+        let stop_result = catch_unwind(AssertUnwindSafe(|| dispose_nodes(state, vec![id])));
+        match stop_result {
+            Ok(Ok(_)) => {}
+            Ok(Err(error)) => operation_error = Some(EvaluationError::Runtime(error)),
+            Err(panic) => remember_panic(&mut panic_data, panic),
         }
     }
     if let Some(panic) = panic_data {
@@ -681,18 +775,27 @@ fn run_node<'scope>(
     if let Some(error) = operation_error {
         match (mode, error) {
             (EvaluationMode::Deferred, EvaluationError::Callback(error)) => {
-                error.dispatch(ErrorPhase::Deferred);
-                flush_if_idle(state);
-                return Ok(true);
+                match error.dispatch_with_context(
+                    ErrorPhase::Deferred,
+                    node_error_context(state, id, "deferred"),
+                ) {
+                    Ok(()) => {
+                        flush_if_idle(state).map_err(EvaluationError::Runtime)?;
+                        return Ok(true);
+                    }
+                    Err(error) => return Err(EvaluationError::Handler(error)),
+                }
             }
             (EvaluationMode::Read, EvaluationError::Callback(error)) => {
-                error.dispatch(ErrorPhase::Read);
+                error
+                    .dispatch_with_context(ErrorPhase::Read, node_error_context(state, id, "read"))
+                    .map_err(EvaluationError::Handler)?;
                 return Err(EvaluationError::User);
             }
             (_, error) => return Err(error),
         }
     }
-    flush_if_idle(state);
+    flush_if_idle(state).map_err(EvaluationError::Runtime)?;
     Ok(true)
 }
 
@@ -706,17 +809,23 @@ pub(crate) fn run_initial<'scope>(
     }
 }
 
-pub(crate) fn flush_if_idle<'scope>(state: &ScopeState<'scope>) {
-    let scheduler = state.borrow().scheduler.clone();
-    let should_flush = scheduler.borrow().should_flush();
+pub(crate) fn flush_if_idle<'scope>(state: &ScopeState<'scope>) -> ReactiveResult<()> {
+    let scheduler = state.try_borrow()?.scheduler.clone();
+    let should_flush = scheduler
+        .try_borrow()
+        .map_err(|_| ReactiveError::BorrowConflict)?
+        .should_flush();
     if should_flush {
-        run_global_queue(&scheduler);
+        run_global_queue(&scheduler)?;
     }
+    Ok(())
 }
 
-pub(crate) fn run_global_queue(scheduler: &Rc<RefCell<GlobalScheduler>>) {
+pub(crate) fn run_global_queue(scheduler: &Rc<RefCell<GlobalScheduler>>) -> ReactiveResult<()> {
     let acquired = {
-        let mut sched = scheduler.borrow_mut();
+        let mut sched = scheduler
+            .try_borrow_mut()
+            .map_err(|_| ReactiveError::BorrowConflict)?;
         if sched.running_queue {
             false
         } else {
@@ -725,57 +834,100 @@ pub(crate) fn run_global_queue(scheduler: &Rc<RefCell<GlobalScheduler>>) {
         }
     };
     if !acquired {
-        return;
+        return Ok(());
     }
-    let outcome = catch_unwind(AssertUnwindSafe(|| {
+    let outcome = catch_unwind(AssertUnwindSafe(|| -> ReactiveResult<()> {
         let mut iterations = 0;
         loop {
-            let next_task = scheduler.borrow_mut().global_queue.pop_front();
+            let next_task = scheduler
+                .try_borrow_mut()
+                .map_err(|_| ReactiveError::BorrowConflict)?
+                .global_queue
+                .pop_front();
             let Some(task) = next_task else {
                 break;
             };
-            if !scheduler.borrow().is_scope_active(task.scope_id) {
+            if !scheduler
+                .try_borrow()
+                .map_err(|_| ReactiveError::BorrowConflict)?
+                .is_scope_active(task.scope_id)
+            {
                 continue;
             }
             iterations += 1;
-            assert!(
-                iterations <= MAX_QUEUE_ITERATIONS,
-                "silex_reactivity: effect 队列超过 {MAX_QUEUE_ITERATIONS} 次仍未收敛"
-            );
-            let scope_state = scheduler.borrow().get_scope(task.scope_id);
+            if iterations > MAX_QUEUE_ITERATIONS {
+                return Err(ReactiveError::NonConvergent {
+                    iterations,
+                    last_scope: Some(task.scope_id.0),
+                    last_node: Some(task.node.data().as_ffi()),
+                });
+            }
+            let scope_state = scheduler
+                .try_borrow()
+                .map_err(|_| ReactiveError::BorrowConflict)?
+                .get_scope(task.scope_id);
             if let Some(scope_state) = scope_state {
                 {
                     let mut state_ref = scope_state
                         .try_borrow_mut()
-                        .expect("ScopeState borrow failed in run_global_queue");
+                        .map_err(|_| ReactiveError::BorrowConflict)?;
                     if let Some(node) = state_ref.nodes.get_mut(task.node) {
                         node.queued = false;
                     }
                 }
-                if let Err(error) = evaluate_root(&scope_state, task.node, EvaluationMode::Deferred)
-                {
-                    panic!("silex_reactivity: effect queue evaluation failed: {error}");
-                }
+                evaluate_root(&scope_state, task.node, EvaluationMode::Deferred).map_err(
+                    |error| match error {
+                        EvaluationError::Runtime(error) => error,
+                        EvaluationError::Handler(error) => ReactiveError::Handler(error),
+                        EvaluationError::Callback(_) | EvaluationError::User => {
+                            ReactiveError::TypeMismatch
+                        }
+                    },
+                )?;
             }
         }
+        Ok(())
     }));
 
-    if outcome.is_err() {
-        recover_after_queue_error(scheduler);
-    }
-    scheduler.borrow_mut().running_queue = false;
+    let result = match outcome {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(error)) => {
+            recover_after_queue_error(scheduler);
+            Err(error)
+        }
+        Err(panic) => {
+            recover_after_queue_error(scheduler);
+            let _ = scheduler.try_borrow_mut().map(|mut scheduler| {
+                scheduler.running_queue = false;
+            });
+            resume_unwind(panic)
+        }
+    };
+    scheduler
+        .try_borrow_mut()
+        .map_err(|_| ReactiveError::BorrowConflict)?
+        .running_queue = false;
 
-    if let Err(panic) = outcome {
-        resume_unwind(panic);
-    }
+    result
 }
 
 fn recover_after_queue_error(scheduler: &Rc<RefCell<GlobalScheduler>>) {
-    let scope_ids = scheduler.borrow().active_scope_ids();
-    scheduler.borrow_mut().global_queue.clear();
+    let Ok(scope_ids) = scheduler
+        .try_borrow()
+        .map(|scheduler| scheduler.active_scope_ids())
+    else {
+        return;
+    };
+    if let Ok(mut scheduler_ref) = scheduler.try_borrow_mut() {
+        scheduler_ref.global_queue.clear();
+    }
 
     for scope_id in scope_ids {
-        let Some(scope_state) = scheduler.borrow().get_scope(scope_id) else {
+        let Some(scope_state) = scheduler
+            .try_borrow()
+            .ok()
+            .and_then(|scheduler| scheduler.get_scope(scope_id))
+        else {
             continue;
         };
         let Ok(mut state) = scope_state.try_borrow_mut() else {

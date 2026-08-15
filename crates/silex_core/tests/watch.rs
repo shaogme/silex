@@ -84,10 +84,12 @@ fn tuple_source_watch_tracks_promoted_values_inside_a_batch() {
                 )
                 .expect("watch should register");
 
-            scope.batch(|| {
-                set_first.set(3).expect("signal should be writable");
-                set_second.set(4).expect("signal should be writable");
-            });
+            scope
+                .batch(|| {
+                    set_first.set(3).expect("signal should be writable");
+                    set_second.set(4).expect("signal should be writable");
+                })
+                .expect("batch should flush");
             assert_eq!(calls.borrow().as_slice(), &[((3, 4), Some((1, 2)))]);
         })
         .expect("child scope should initialize");

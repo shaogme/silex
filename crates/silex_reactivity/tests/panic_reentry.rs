@@ -313,7 +313,7 @@ fn batch_panic_restores_depth_and_flushes_pending_effects() {
                 .expect("effect should initialize");
 
             let panic = catch_unwind(AssertUnwindSafe(|| {
-                scope.batch(|| {
+                let _ = scope.batch(|| {
                     set_source.set(1).expect("test operation should succeed");
                     panic!("batch panic");
                 });

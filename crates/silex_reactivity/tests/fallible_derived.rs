@@ -103,6 +103,7 @@ fn deferred_error_is_dispatched_and_next_read_can_retry() {
                             .map_err(|error| match error {
                                 CallbackInvokeError::User(error) => error,
                                 CallbackInvokeError::Runtime(_) => TestError::Rejected,
+                                CallbackInvokeError::Handler(_) => TestError::Rejected,
                             })
                     },
                     handler(scope, errors.clone()),

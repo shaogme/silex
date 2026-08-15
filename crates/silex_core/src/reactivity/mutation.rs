@@ -223,6 +223,9 @@ where
                     Err(CallbackInvokeError::User(error)) => {
                         let _ = error_handler.handle(error);
                     }
+                    Err(CallbackInvokeError::Handler(error)) => {
+                        let _ = error_handler.handle(SilexError::fatal(error.reason()));
+                    }
                 }
             },
             self.error_handler,

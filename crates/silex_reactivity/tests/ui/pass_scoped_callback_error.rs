@@ -34,6 +34,7 @@ fn main() {
                 assert_eq!(error.calls.get(), 1);
             }
             CallbackInvokeError::Runtime(_) => panic!("expected a user error"),
+            CallbackInvokeError::Handler(_) => panic!("expected a user error"),
         }
         })
         .expect("child scope should complete");

@@ -139,6 +139,7 @@ fn deferred_errors_use_the_handler_without_notifying_dependents() {
                         memo.get().map(|_| ()).map_err(|error| match error {
                             CallbackInvokeError::User(error) => error,
                             CallbackInvokeError::Runtime(_) => "runtime",
+                            CallbackInvokeError::Handler(_) => "runtime",
                         })?;
                         effect_runs_in_effect.set(effect_runs_in_effect.get() + 1);
                         Ok(())
@@ -195,6 +196,7 @@ fn untracked_reads_do_not_subscribe_the_outer_effect_and_still_propagate_errors(
                         memo.with_untracked(|_| ()).map_err(|error| match error {
                             CallbackInvokeError::Runtime(_) => "runtime",
                             CallbackInvokeError::User(error) => error,
+                            CallbackInvokeError::Handler(_) => "runtime",
                         })?;
                         effect_runs_in_effect.set(effect_runs_in_effect.get() + 1);
                         Ok(())

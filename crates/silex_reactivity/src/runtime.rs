@@ -80,7 +80,8 @@ impl Runtime {
         let dispose_result = catch_unwind(AssertUnwindSafe(|| storage.dispose_untracked()));
         drop(observer_frame);
         match (result, dispose_result) {
-            (Ok(value), Ok(())) => Ok(value),
+            (Ok(value), Ok(Ok(()))) => Ok(value),
+            (Ok(_), Ok(Err(_))) => Err(ReactiveError::BorrowConflict),
             (Err(panic), _) => resume_unwind(panic),
             (Ok(_), Err(panic)) => resume_unwind(panic),
         }

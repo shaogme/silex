@@ -8,7 +8,7 @@ use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct ScopeId(pub(crate) u32);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct TargetNode {
     pub(crate) scope_id: ScopeId,
     pub(crate) node: RawId,
@@ -139,11 +139,9 @@ impl InitialFlushGuard {
 
 impl Drop for InitialFlushGuard {
     fn drop(&mut self) {
-        let mut scheduler = self
-            .scheduler
-            .try_borrow_mut()
-            .expect("initial flush guard must release without a scheduler borrow");
-        scheduler.initial_flush_depth = scheduler.initial_flush_depth.saturating_sub(1);
+        if let Ok(mut scheduler) = self.scheduler.try_borrow_mut() {
+            scheduler.initial_flush_depth = scheduler.initial_flush_depth.saturating_sub(1);
+        }
     }
 }
 

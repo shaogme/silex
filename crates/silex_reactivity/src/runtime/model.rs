@@ -17,7 +17,7 @@ use slotmap::{SecondaryMap, SlotMap};
 use std::{
     cell::{Ref, RefCell, RefMut},
     mem::{size_of, take},
-    panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
+    panic::{AssertUnwindSafe, catch_unwind},
     rc::Rc,
 };
 
@@ -59,15 +59,16 @@ pub(crate) enum NodeState {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ScopePhase {
     Active,
-    FinalCleanup,
-    DisposingNodes,
-    Disposed,
+    Quiescing,
+    RunningCleanup,
+    Detaching,
+    Released,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum StoredAccessMode {
     Active,
-    FinalCleanup,
+    RunningCleanup,
 }
 
 #[derive(Clone, Copy)]
@@ -243,8 +244,10 @@ impl<'scope> ScopeState<'scope> {
         self.inner.borrow_mut()
     }
 
-    pub(crate) fn drop_error_handlers(handlers: SlotMap<ErrorHandlerKey, ErrorHandlerEntry<'_>>) {
-        ScopeStateInner::drop_error_handlers(handlers);
+    pub(crate) fn drop_error_handlers(
+        handlers: SlotMap<ErrorHandlerKey, ErrorHandlerEntry<'_>>,
+    ) -> Vec<Box<dyn std::any::Any + Send>> {
+        ScopeStateInner::drop_error_handlers(handlers)
     }
 }
 
@@ -402,7 +405,11 @@ impl<'scope> ScopeStateInner<'scope> {
     }
 
     pub(crate) fn is_active(&self) -> bool {
-        self.phase == ScopePhase::Active && self.scheduler.borrow().is_scope_active(self.scope_id)
+        self.phase == ScopePhase::Active
+            && self
+                .scheduler
+                .try_borrow()
+                .is_ok_and(|scheduler| scheduler.is_scope_active(self.scope_id))
     }
 
     pub(crate) fn try_is_active(&self) -> ReactiveResult<bool> {
@@ -416,30 +423,52 @@ impl<'scope> ScopeStateInner<'scope> {
             .is_scope_active(self.scope_id))
     }
 
-    pub(crate) fn begin_final_cleanup(&mut self) -> bool {
-        if self.phase != ScopePhase::Active {
-            return false;
+    pub(crate) fn begin_quiescing(&mut self) -> ReactiveResult<bool> {
+        match self.phase {
+            ScopePhase::Active => {
+                self.phase = ScopePhase::Quiescing;
+                Ok(true)
+            }
+            ScopePhase::Released => Ok(false),
+            ScopePhase::Quiescing | ScopePhase::RunningCleanup | ScopePhase::Detaching => Ok(true),
         }
-        self.phase = ScopePhase::FinalCleanup;
-        true
     }
 
-    pub(crate) fn begin_node_disposal(&mut self) {
-        assert_eq!(
-            self.phase,
-            ScopePhase::FinalCleanup,
-            "node disposal must begin after final cleanup",
-        );
-        self.phase = ScopePhase::DisposingNodes;
+    pub(crate) fn begin_cleanup(&mut self) -> ReactiveResult<()> {
+        match self.phase {
+            ScopePhase::Quiescing => {
+                self.phase = ScopePhase::RunningCleanup;
+                Ok(())
+            }
+            ScopePhase::RunningCleanup | ScopePhase::Detaching => Ok(()),
+            ScopePhase::Active => Err(ReactiveError::Reentrant),
+            ScopePhase::Released => Err(ReactiveError::NoSuchNode),
+        }
     }
 
-    pub(crate) fn finish_dispose(&mut self) {
+    pub(crate) fn begin_detaching(&mut self) -> ReactiveResult<()> {
+        match self.phase {
+            ScopePhase::RunningCleanup => {
+                self.phase = ScopePhase::Detaching;
+                Ok(())
+            }
+            ScopePhase::Detaching => Ok(()),
+            ScopePhase::Active | ScopePhase::Quiescing => Err(ReactiveError::Reentrant),
+            ScopePhase::Released => Err(ReactiveError::NoSuchNode),
+        }
+    }
+
+    pub(crate) fn finish_dispose(&mut self) -> ReactiveResult<()> {
+        if self.phase != ScopePhase::Detaching {
+            return Err(ReactiveError::Reentrant);
+        }
         self.current_owner = None;
-        self.phase = ScopePhase::Disposed;
+        self.phase = ScopePhase::Released;
+        Ok(())
     }
 
     pub(crate) fn ready_for_scope_release(&self) -> bool {
-        self.phase == ScopePhase::Disposed
+        self.phase == ScopePhase::Released
             && self.nodes.is_empty()
             && self.data.is_empty()
             && self.edges.is_empty()
@@ -449,7 +478,7 @@ impl<'scope> ScopeStateInner<'scope> {
     }
 
     pub(crate) fn allows_final_cleanup_stored_access(&self) -> bool {
-        self.phase == ScopePhase::FinalCleanup
+        self.phase == ScopePhase::RunningCleanup
     }
 
     pub(crate) fn node_exists(&self, id: RawId) -> bool {
@@ -561,18 +590,14 @@ impl<'scope> ScopeStateInner<'scope> {
 
     pub(crate) fn drop_error_handlers(
         handlers: SlotMap<ErrorHandlerKey, ErrorHandlerEntry<'scope>>,
-    ) {
-        let mut first_panic = None;
+    ) -> Vec<Box<dyn std::any::Any + Send>> {
+        let mut panics = Vec::new();
         for (_, entry) in handlers {
-            if let Err(panic) = catch_unwind(AssertUnwindSafe(|| entry.owner.clear()))
-                && first_panic.is_none()
-            {
-                first_panic = Some(panic);
+            if let Err(panic) = catch_unwind(AssertUnwindSafe(|| entry.owner.clear())) {
+                panics.push(panic);
             }
         }
-        if let Some(panic) = first_panic {
-            resume_unwind(panic);
-        }
+        panics
     }
 
     pub(crate) fn has_value(&self, id: RawId) -> bool {
@@ -585,9 +610,11 @@ impl<'scope> ScopeStateInner<'scope> {
                 .data
                 .get(id)
                 .and_then(|data| match data.storage.as_ref() {
-                    NodeStorage::Computation(storage) => storage
-                        .computation
-                        .try_peek(|behavior| behavior.has_value()),
+                    NodeStorage::Computation(storage) => storage.computation.try_peek(|behavior| {
+                        behavior
+                            .as_ref()
+                            .is_some_and(|behavior| behavior.has_value())
+                    }),
                     _ => None,
                 })
                 .unwrap_or(false),
@@ -642,7 +669,7 @@ impl<'scope> ScopeStateInner<'scope> {
         let mode = if self.is_active() {
             StoredAccessMode::Active
         } else if self.allows_final_cleanup_stored_access() {
-            StoredAccessMode::FinalCleanup
+            StoredAccessMode::RunningCleanup
         } else {
             return Err(ReactiveError::NoSuchNode);
         };

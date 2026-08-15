@@ -36,6 +36,7 @@ where
 enum CompletionPhase {
     Active,
     Completing,
+    Closing,
     Closed,
 }
 
@@ -100,13 +101,21 @@ impl<T, E> CompletionState<T, E> {
         }
     }
 
-    fn close_and_dispose(&self) {
-        if self.phase.replace(CompletionPhase::Closed) == CompletionPhase::Closed {
-            return;
+    fn close_and_dispose(&self) -> Result<(), ReactiveError> {
+        if self.phase.get() == CompletionPhase::Closed {
+            return Ok(());
         }
-        if let Ok(Some(state)) = self.current_state() {
-            runtime::dispose_nodes(&state, vec![self.callback]);
+        self.phase.set(CompletionPhase::Closing);
+        let Some(state) = self.current_state()? else {
+            self.phase.set(CompletionPhase::Closed);
+            return Ok(());
+        };
+        let outcome = runtime::dispose_nodes(&state, vec![self.callback])?;
+        if let Some(error) = outcome.handler_errors.into_iter().next() {
+            return Err(ReactiveError::Handler(error));
         }
+        self.phase.set(CompletionPhase::Closed);
+        Ok(())
     }
 
     fn submit_repeating(&self, value: T) -> Result<bool, CallbackThunkError<E>> {
@@ -124,12 +133,7 @@ impl<T, E> CompletionState<T, E> {
 }
 
 fn drop_completion_state<T, E>(state: &CompletionState<T, E>) {
-    let result = catch_unwind(AssertUnwindSafe(|| state.close_and_dispose()));
-    if let Err(panic) = result
-        && !std::thread::panicking()
-    {
-        resume_unwind(panic);
-    }
+    let _ = catch_unwind(AssertUnwindSafe(|| state.close_and_dispose()));
 }
 
 /// A destination that accepts one completion and then disposes its callback node.
@@ -164,7 +168,7 @@ impl<T: 'static, E> CompletionOnce<T, E> {
             Ok(Some(owner)) => owner,
             Ok(None) => return Ok(false),
             Err(error) => {
-                self.state.close_and_dispose();
+                let _ = self.state.close_and_dispose();
                 return Err(CallbackInvokeError::Runtime(error));
             }
         };
@@ -172,20 +176,20 @@ impl<T: 'static, E> CompletionOnce<T, E> {
             let typed_callback = self.state.typed_callback.restore(&owner);
             runtime::invoke_callback(&state, self.state.callback, typed_callback, value)
         }));
-        let dispose_result = catch_unwind(AssertUnwindSafe(|| {
-            self.state.close_and_dispose();
-        }));
+        let dispose_result = catch_unwind(AssertUnwindSafe(|| self.state.close_and_dispose()));
 
         match (callback_result, dispose_result) {
             (Err(panic), _) => resume_unwind(panic),
             (Ok(_), Err(panic)) => resume_unwind(panic),
-            (Ok(Ok(())), Ok(())) => Ok(true),
-            (Ok(Err(error)), Ok(())) => Err(map_callback_error(error)),
+            (Ok(Ok(())), Ok(Ok(()))) => Ok(true),
+            (Ok(Ok(())), Ok(Err(error))) => Err(CallbackInvokeError::Runtime(error)),
+            (Ok(Err(error)), Ok(Ok(()))) => Err(map_callback_error(error)),
+            (Ok(Err(error)), Ok(Err(_))) => Err(map_callback_error(error)),
         }
     }
 
-    pub fn cancel(&self) {
-        self.state.close_and_dispose();
+    pub fn cancel(&self) -> Result<(), ReactiveError> {
+        self.state.close_and_dispose()
     }
 }
 
@@ -229,8 +233,8 @@ impl<T: 'static, E> CompletionSender<T, E> {
         }
     }
 
-    pub fn cancel(&self) {
-        self.state.close_and_dispose();
+    pub fn cancel(&self) -> Result<(), ReactiveError> {
+        self.state.close_and_dispose()
     }
 }
 

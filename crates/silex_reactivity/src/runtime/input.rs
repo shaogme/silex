@@ -83,23 +83,37 @@ pub(crate) fn create_computation<'scope>(
     match result {
         Ok(Ok(())) => {
             drop(initial_flush_guard);
-            flush_if_idle(state);
+            flush_if_idle(state).map_err(EvaluationError::Runtime)?;
             Ok(raw)
         }
         Ok(Err(error)) => {
             let dispose = catch_unwind(AssertUnwindSafe(|| dispose_nodes(state, vec![raw])));
-            if let Err(panic) = dispose {
-                drop(initial_flush_guard);
-                resume_unwind(panic);
+            match dispose {
+                Err(panic) => {
+                    drop(initial_flush_guard);
+                    resume_unwind(panic);
+                }
+                Ok(Err(dispose_error)) => {
+                    drop(initial_flush_guard);
+                    return Err(EvaluationError::Runtime(dispose_error));
+                }
+                Ok(Ok(_)) => {}
             }
             drop(initial_flush_guard);
             Err(error)
         }
         Err(panic) => {
             let dispose = catch_unwind(AssertUnwindSafe(|| dispose_nodes(state, vec![raw])));
-            if let Err(dispose_panic) = dispose {
-                drop(initial_flush_guard);
-                resume_unwind(dispose_panic);
+            match dispose {
+                Err(dispose_panic) => {
+                    drop(initial_flush_guard);
+                    resume_unwind(dispose_panic);
+                }
+                Ok(Err(dispose_error)) => {
+                    drop(initial_flush_guard);
+                    return Err(EvaluationError::Runtime(dispose_error));
+                }
+                Ok(Ok(_)) => {}
             }
             drop(initial_flush_guard);
             resume_unwind(panic);
@@ -116,11 +130,16 @@ fn finish_creation<'scope, E>(
         Ok(raw) => Ok(raw),
         Err(EvaluationError::Runtime(error)) => Err(ComputationInitError::Registration(error)),
         Err(EvaluationError::Callback(error)) => {
-            error.dispatch(ErrorPhase::Initial);
+            error.dispatch(ErrorPhase::Initial).map_err(|error| {
+                ComputationInitError::Registration(ReactiveError::Handler(error))
+            })?;
             let initial = errors.take();
-            flush_if_idle(state);
+            flush_if_idle(state).map_err(ComputationInitError::Registration)?;
             Err(ComputationInitError::Initial(initial))
         }
+        Err(EvaluationError::Handler(error)) => Err(ComputationInitError::Registration(
+            ReactiveError::Handler(error),
+        )),
         Err(EvaluationError::User) => Err(ComputationInitError::Registration(
             ReactiveError::TypeMismatch,
         )),

@@ -6,27 +6,45 @@ use super::{
     storage::CleanupThunk,
 };
 use crate::{
-    error::{ErrorEvent, ErrorPhase},
+    ReactiveError,
+    error::{ErrorEvent, ErrorPhase, HandlerError},
     internal::RawId,
 };
 use std::{
     any::Any,
     cell::RefCell,
+    collections::HashSet,
     mem,
-    panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
+    panic::{AssertUnwindSafe, catch_unwind},
     rc::Rc,
 };
 
-type PanicData = Box<dyn Any + Send>;
+pub(crate) type PanicData = Box<dyn Any + Send>;
 
+/// Results collected while disposal continues after an individual callback
+/// or payload drop fails.
 pub(crate) struct CleanupOutcome<'scope> {
     pub(crate) errors: Vec<ErrorEvent<'scope>>,
-    pub(crate) panic: Option<PanicData>,
+    pub(crate) panics: Vec<PanicData>,
+    pub(crate) handler_errors: Vec<HandlerError>,
+    pub(crate) runtime_errors: Vec<ReactiveError>,
 }
 
-fn remember_panic(first_panic: &mut Option<PanicData>, panic: PanicData) {
-    if first_panic.is_none() {
-        *first_panic = Some(panic);
+impl<'scope> CleanupOutcome<'scope> {
+    fn new() -> Self {
+        Self {
+            errors: Vec::new(),
+            panics: Vec::new(),
+            handler_errors: Vec::new(),
+            runtime_errors: Vec::new(),
+        }
+    }
+
+    fn append(&mut self, mut other: Self) {
+        self.errors.append(&mut other.errors);
+        self.panics.append(&mut other.panics);
+        self.handler_errors.append(&mut other.handler_errors);
+        self.runtime_errors.append(&mut other.runtime_errors);
     }
 }
 
@@ -35,40 +53,34 @@ pub(crate) fn run_cleanups<'scope>(
     cleanups: Vec<CleanupThunk<'scope>>,
 ) -> CleanupOutcome<'scope> {
     let _observer_frame = ObserverFrame::push_untracked(scheduler);
-    let mut first_panic = None;
-    let mut errors = Vec::new();
+    let mut outcome = CleanupOutcome::new();
     for cleanup in cleanups {
         match catch_unwind(AssertUnwindSafe(|| cleanup.call())) {
             Ok(Ok(())) => {}
-            Ok(Err(error)) => errors.push(error),
-            Err(panic) => remember_panic(&mut first_panic, panic),
+            Ok(Err(error)) => outcome.errors.push(error),
+            Err(panic) => outcome.panics.push(panic),
         }
     }
-    CleanupOutcome {
-        errors,
-        panic: first_panic,
-    }
+    outcome
 }
 
 pub(crate) fn dispatch_cleanup_errors<'scope>(
     scheduler: Rc<RefCell<GlobalScheduler>>,
     errors: Vec<ErrorEvent<'scope>>,
-) -> Option<PanicData> {
+) -> CleanupOutcome<'scope> {
+    let mut outcome = CleanupOutcome::new();
     if errors.is_empty() {
-        return None;
+        return outcome;
     }
-    let mut first_panic = None;
-    {
-        let _observer_frame = ObserverFrame::push_untracked(scheduler);
-        for error in errors {
-            if let Err(panic) = catch_unwind(AssertUnwindSafe(|| {
-                error.dispatch(ErrorPhase::Deferred);
-            })) {
-                remember_panic(&mut first_panic, panic);
-            }
+    let _observer_frame = ObserverFrame::push_untracked(scheduler);
+    for error in errors {
+        match catch_unwind(AssertUnwindSafe(|| error.dispatch(ErrorPhase::Deferred))) {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => outcome.handler_errors.push(error),
+            Err(panic) => outcome.panics.push(panic),
         }
     }
-    first_panic
+    outcome
 }
 
 fn drop_node_data<'scope>(
@@ -77,10 +89,9 @@ fn drop_node_data<'scope>(
 ) -> CleanupOutcome<'scope> {
     let NodeData { storage, cleanups } = data;
     let mut outcome = run_cleanups(scheduler.clone(), cleanups);
-
     let _observer_frame = ObserverFrame::push_untracked(scheduler);
     if let Err(panic) = catch_unwind(AssertUnwindSafe(|| drop(storage))) {
-        remember_panic(&mut outcome.panic, panic);
+        outcome.panics.push(panic);
     }
     outcome
 }
@@ -95,12 +106,10 @@ enum CleanupPlanStep {
     Exit(RawId),
 }
 
-fn collect_final_cleanup_plan<'scope>(state: &ScopeState<'scope>) -> FinalCleanupPlan<'scope> {
-    let roots = state
-        .try_borrow()
-        .expect("ScopeState borrow failed during cleanup plan collection")
-        .roots
-        .clone();
+fn collect_final_cleanup_plan<'scope>(
+    state: &ScopeState<'scope>,
+) -> Result<FinalCleanupPlan<'scope>, ReactiveError> {
+    let roots = state.try_borrow()?.roots.clone();
     let mut stack = Vec::with_capacity(roots.len());
     stack.extend(roots.into_iter().rev().map(CleanupPlanStep::Enter));
     let mut node_batches = Vec::new();
@@ -109,9 +118,7 @@ fn collect_final_cleanup_plan<'scope>(state: &ScopeState<'scope>) -> FinalCleanu
         match step {
             CleanupPlanStep::Enter(id) => {
                 let children = {
-                    let state_ref = state
-                        .try_borrow()
-                        .expect("ScopeState borrow failed during cleanup plan collection");
+                    let state_ref = state.try_borrow()?;
                     let Some(node) = state_ref.nodes.get(id).copied() else {
                         continue;
                     };
@@ -124,8 +131,7 @@ fn collect_final_cleanup_plan<'scope>(state: &ScopeState<'scope>) -> FinalCleanu
             }
             CleanupPlanStep::Exit(id) => {
                 let cleanups = state
-                    .try_borrow_mut()
-                    .expect("ScopeState borrow_mut failed during cleanup plan collection")
+                    .try_borrow_mut()?
                     .data
                     .get_mut(id)
                     .map(|data| mem::take(&mut data.cleanups))
@@ -137,197 +143,260 @@ fn collect_final_cleanup_plan<'scope>(state: &ScopeState<'scope>) -> FinalCleanu
         }
     }
 
-    let root_cleanups = mem::take(
-        &mut state
-            .try_borrow_mut()
-            .expect("ScopeState borrow_mut failed during cleanup plan collection")
-            .root_cleanups,
-    );
-    FinalCleanupPlan {
+    let root_cleanups = mem::take(&mut state.try_borrow_mut()?.root_cleanups);
+    Ok(FinalCleanupPlan {
         node_batches,
         root_cleanups,
-    }
+    })
 }
 
 fn run_final_cleanup_plan<'scope>(
     scheduler: Rc<RefCell<GlobalScheduler>>,
     plan: FinalCleanupPlan<'scope>,
-) -> Option<PanicData> {
-    let mut first_panic = None;
+) -> CleanupOutcome<'scope> {
+    let mut outcome = CleanupOutcome::new();
     let mut node_errors = Vec::new();
     for cleanups in plan.node_batches {
-        let outcome = run_cleanups(scheduler.clone(), cleanups);
-        node_errors.extend(outcome.errors);
-        if let Some(panic) = outcome.panic {
-            remember_panic(&mut first_panic, panic);
-        }
+        let mut node_outcome = run_cleanups(scheduler.clone(), cleanups);
+        node_errors.append(&mut node_outcome.errors);
+        outcome.append(node_outcome);
     }
-    if let Some(panic) = dispatch_cleanup_errors(scheduler.clone(), node_errors) {
-        remember_panic(&mut first_panic, panic);
-    }
+    outcome.append(dispatch_cleanup_errors(scheduler.clone(), node_errors));
 
-    let root_outcome = run_cleanups(scheduler.clone(), plan.root_cleanups);
-    if let Some(panic) = root_outcome.panic {
-        remember_panic(&mut first_panic, panic);
-    }
-    if let Some(panic) = dispatch_cleanup_errors(scheduler, root_outcome.errors) {
-        remember_panic(&mut first_panic, panic);
-    }
-    first_panic
+    let mut root_outcome = run_cleanups(scheduler.clone(), plan.root_cleanups);
+    let root_errors = mem::take(&mut root_outcome.errors);
+    outcome.append(root_outcome);
+    outcome.append(dispatch_cleanup_errors(scheduler, root_errors));
+    outcome
 }
 
-pub(crate) fn dispose_all<'scope>(state: &ScopeState<'scope>) {
-    let scheduler = state
-        .try_borrow()
-        .expect("ScopeState borrow failed during dispose_all")
-        .scheduler
-        .clone();
-    let plan = collect_final_cleanup_plan(state);
-    let mut first_panic = run_final_cleanup_plan(scheduler.clone(), plan);
+pub(crate) fn dispose_all<'scope>(state: &ScopeState<'scope>) -> CleanupOutcome<'scope> {
+    let mut outcome = CleanupOutcome::new();
+    let scheduler = match state.try_borrow() {
+        Ok(state_ref) => state_ref.scheduler.clone(),
+        Err(error) => {
+            outcome.runtime_errors.push(error);
+            return outcome;
+        }
+    };
 
-    state
+    let cleanup_plan = match state.try_borrow_mut() {
+        Ok(mut state_ref) => state_ref.begin_cleanup().err(),
+        Err(error) => Some(error),
+    };
+    if let Some(error) = cleanup_plan {
+        outcome.runtime_errors.push(error);
+        return outcome;
+    }
+
+    let plan = match collect_final_cleanup_plan(state) {
+        Ok(plan) => plan,
+        Err(error) => {
+            outcome.runtime_errors.push(error);
+            return outcome;
+        }
+    };
+    outcome.append(run_final_cleanup_plan(scheduler.clone(), plan));
+
+    if let Err(error) = state
         .try_borrow_mut()
-        .expect("ScopeState borrow_mut failed during dispose_all")
-        .begin_node_disposal();
+        .and_then(|mut state| state.begin_detaching())
+    {
+        outcome.runtime_errors.push(error);
+        return outcome;
+    }
 
     loop {
-        let roots = state
-            .try_borrow()
-            .expect("ScopeState borrow failed during dispose_all")
-            .roots
-            .clone();
+        let roots = match state.try_borrow() {
+            Ok(state_ref) => state_ref.roots.clone(),
+            Err(error) => {
+                outcome.runtime_errors.push(error);
+                return outcome;
+            }
+        };
         if roots.is_empty() {
             break;
         }
-        let result = catch_unwind(AssertUnwindSafe(|| dispose_nodes(state, roots)));
-        if let Err(panic) = result {
-            remember_panic(&mut first_panic, panic);
-            break;
+        match dispose_nodes_collect(state, roots) {
+            Ok(mut node_outcome) => {
+                let errors = mem::take(&mut node_outcome.errors);
+                outcome.append(node_outcome);
+                outcome.append(dispatch_cleanup_errors(scheduler.clone(), errors));
+            }
+            Err(error) => {
+                outcome.runtime_errors.push(error);
+                return outcome;
+            }
         }
     }
 
-    if let Some(panic) = first_panic {
-        resume_unwind(panic);
+    if let Err(error) = state
+        .try_borrow_mut()
+        .and_then(|mut state| state.finish_dispose())
+    {
+        outcome.runtime_errors.push(error);
     }
+    outcome
 }
 
 enum DisposeStep<'scope> {
     Enter(RawId),
-    Exit { data: Option<NodeData<'scope>> },
+    Exit(Option<NodeData<'scope>>),
+}
+
+fn collect_disposal_nodes<'scope>(
+    state: &ScopeState<'scope>,
+    roots: &[RawId],
+) -> Result<Vec<RawId>, ReactiveError> {
+    let state_ref = state.try_borrow()?;
+    let mut pending = roots.to_vec();
+    let mut visited = HashSet::new();
+    let mut nodes = Vec::new();
+    while let Some(id) = pending.pop() {
+        if !visited.insert(id) {
+            continue;
+        }
+        let Some(node) = state_ref.nodes.get(id) else {
+            continue;
+        };
+        nodes.push(id);
+        pending.extend(state_ref.children_of_head(node.first_child));
+    }
+    Ok(nodes)
+}
+
+fn preflight_node_disposal<'scope>(
+    state: &ScopeState<'scope>,
+    nodes: &[RawId],
+) -> Result<(), ReactiveError> {
+    let (scope_id, scheduler, external_scope_ids) = {
+        let state_ref = state.try_borrow()?;
+        let mut external_scope_ids = Vec::new();
+        for id in nodes {
+            let Some(_) = state_ref.nodes.get(*id) else {
+                continue;
+            };
+            for (_, edge) in state_ref
+                .dependency_edges_of(*id)
+                .chain(state_ref.subscriber_edges_of(*id))
+            {
+                if edge.target.scope_id != state_ref.scope_id {
+                    external_scope_ids.push(edge.target.scope_id);
+                }
+            }
+        }
+        (
+            state_ref.scope_id,
+            state_ref.scheduler.clone(),
+            external_scope_ids,
+        )
+    };
+
+    scheduler
+        .try_borrow_mut()
+        .map_err(|_| ReactiveError::BorrowConflict)?;
+    for external_scope_id in external_scope_ids {
+        if external_scope_id == scope_id {
+            continue;
+        }
+        if let Some(scope) = scheduler
+            .try_borrow()
+            .map_err(|_| ReactiveError::BorrowConflict)?
+            .get_scope_for_edge_cleanup(external_scope_id)
+        {
+            scope
+                .try_borrow_mut()
+                .map_err(|_| ReactiveError::BorrowConflict)?;
+        }
+    }
+    state.try_borrow_mut()?;
+    Ok(())
 }
 
 pub(crate) fn dispose_nodes_collect<'scope>(
     state: &ScopeState<'scope>,
     roots: Vec<RawId>,
-) -> CleanupOutcome<'scope> {
-    let scheduler = state
-        .try_borrow()
-        .expect("ScopeState borrow failed during dispose_nodes")
-        .scheduler
-        .clone();
-    {
-        let _observer_frame = ObserverFrame::push_untracked(scheduler.clone());
-        let mut first_panic = None;
-        let mut cleanup_errors = Vec::new();
-        let mut stack = Vec::with_capacity(roots.len());
-        stack.extend(roots.into_iter().rev().map(DisposeStep::Enter));
-        while let Some(step) = stack.pop() {
-            match step {
-                DisposeStep::Enter(id) => {
-                    let mut state_ref = state
-                        .try_borrow_mut()
-                        .expect("ScopeState borrow_mut failed during dispose_nodes");
-                    let (children, data) = if let Some(node) = state_ref.nodes.get(id).copied() {
-                        let source_target = TargetNode {
-                            scope_id: state_ref.scope_id,
-                            node: id,
-                        };
-                        let subscriber_edges: Vec<(EdgeId, TargetNode)> = state_ref
-                            .subscriber_edges_of(id)
-                            .map(|(edge_id, edge)| (edge_id, edge.target))
-                            .collect();
-                        let scheduler = state_ref.scheduler.clone();
-                        scheduler.borrow_mut().cancel_effect(source_target);
-                        for (_, subscriber) in &subscriber_edges {
-                            if subscriber.scope_id == state_ref.scope_id {
-                                continue;
-                            }
-                            let observer_state = scheduler
-                                .borrow()
-                                .get_scope_for_edge_cleanup(subscriber.scope_id);
-                            if let Some(observer_state) = observer_state {
-                                observer_state
-                                    .try_borrow_mut()
-                                    .expect("observer scope borrow failed during dispose_nodes");
-                            }
-                        }
+) -> Result<CleanupOutcome<'scope>, ReactiveError> {
+    let scheduler = state.try_borrow()?.scheduler.clone();
+    let disposal_nodes = collect_disposal_nodes(state, &roots)?;
+    preflight_node_disposal(state, &disposal_nodes)?;
+    let _observer_frame = ObserverFrame::push_untracked(scheduler.clone());
+    let mut outcome = CleanupOutcome::new();
+    let mut stack = Vec::with_capacity(roots.len());
+    stack.extend(roots.into_iter().rev().map(DisposeStep::Enter));
 
-                        state_ref.clear_dependencies(id);
-
-                        for (edge_id, subscriber) in subscriber_edges {
-                            state_ref.edges.remove(edge_id);
-                            if subscriber.scope_id == state_ref.scope_id {
-                                state_ref.remove_dependency(subscriber.node, source_target);
-                            } else if let Some(observer_state) = scheduler
-                                .borrow()
-                                .get_scope_for_edge_cleanup(subscriber.scope_id)
-                            {
-                                observer_state
-                                    .try_borrow_mut()
-                                    .expect("observer scope borrow failed during dispose_nodes")
-                                    .remove_dependency(subscriber.node, source_target);
-                            }
-                        }
-
-                        state_ref
-                            .dependency_transactions
-                            .retain(|transaction| transaction.observer != id);
-                        let children: Vec<RawId> =
-                            state_ref.children_of_head(node.first_child).collect();
-                        let data = state_ref.data.remove(id);
-                        state_ref.nodes.remove(id);
-                        if state_ref.current_owner == Some(id) {
-                            state_ref.current_owner = None;
-                        }
-                        state_ref.unlink_child(node.parent, id, node.next_sibling);
-                        (children, data)
-                    } else {
-                        (Vec::new(), None)
+    while let Some(step) = stack.pop() {
+        match step {
+            DisposeStep::Enter(id) => {
+                let (children, data) = {
+                    let mut state_ref = state.try_borrow_mut()?;
+                    let Some(node) = state_ref.nodes.get(id).copied() else {
+                        continue;
                     };
-                    drop(state_ref);
-                    stack.push(DisposeStep::Exit { data });
-                    stack.extend(children.into_iter().rev().map(DisposeStep::Enter));
-                }
-                DisposeStep::Exit { data } => {
-                    if let Some(data) = data {
-                        let outcome = drop_node_data(scheduler.clone(), data);
-                        cleanup_errors.extend(outcome.errors);
-                        if let Some(panic) = outcome.panic {
-                            remember_panic(&mut first_panic, panic);
+                    let source_target = TargetNode {
+                        scope_id: state_ref.scope_id,
+                        node: id,
+                    };
+                    let subscriber_edges: Vec<(EdgeId, TargetNode)> = state_ref
+                        .subscriber_edges_of(id)
+                        .map(|(edge_id, edge)| (edge_id, edge.target))
+                        .collect();
+                    let scheduler = state_ref.scheduler.clone();
+                    scheduler
+                        .try_borrow_mut()
+                        .map_err(|_| ReactiveError::BorrowConflict)?
+                        .cancel_effect(source_target);
+
+                    state_ref.clear_dependencies(id)?;
+                    for (edge_id, subscriber) in subscriber_edges {
+                        state_ref.edges.remove(edge_id);
+                        if subscriber.scope_id == state_ref.scope_id {
+                            state_ref.remove_dependency(subscriber.node, source_target);
+                        } else if let Some(observer_state) = scheduler
+                            .try_borrow()
+                            .map_err(|_| ReactiveError::BorrowConflict)?
+                            .get_scope_for_edge_cleanup(subscriber.scope_id)
+                        {
+                            observer_state
+                                .try_borrow_mut()
+                                .map_err(|_| ReactiveError::BorrowConflict)?
+                                .remove_dependency(subscriber.node, source_target);
                         }
                     }
+
+                    state_ref
+                        .dependency_transactions
+                        .retain(|transaction| transaction.observer != id);
+                    let children: Vec<RawId> =
+                        state_ref.children_of_head(node.first_child).collect();
+                    let data = state_ref.data.remove(id);
+                    state_ref.nodes.remove(id);
+                    if state_ref.current_owner == Some(id) {
+                        state_ref.current_owner = None;
+                    }
+                    state_ref.unlink_child(node.parent, id, node.next_sibling);
+                    (children, data)
+                };
+                stack.push(DisposeStep::Exit(data));
+                stack.extend(children.into_iter().rev().map(DisposeStep::Enter));
+            }
+            DisposeStep::Exit(data) => {
+                if let Some(data) = data {
+                    outcome.append(drop_node_data(scheduler.clone(), data));
                 }
             }
         }
-        CleanupOutcome {
-            errors: cleanup_errors,
-            panic: first_panic,
-        }
     }
+    Ok(outcome)
 }
 
-pub(crate) fn dispose_nodes<'scope>(state: &ScopeState<'scope>, roots: Vec<RawId>) {
-    let scheduler = state
-        .try_borrow()
-        .expect("ScopeState borrow failed during dispose_nodes")
-        .scheduler
-        .clone();
-    let outcome = dispose_nodes_collect(state, roots);
-    let mut first_panic = outcome.panic;
-    if let Some(panic) = dispatch_cleanup_errors(scheduler, outcome.errors) {
-        remember_panic(&mut first_panic, panic);
-    }
-    if let Some(panic) = first_panic {
-        resume_unwind(panic);
-    }
+pub(crate) fn dispose_nodes<'scope>(
+    state: &ScopeState<'scope>,
+    roots: Vec<RawId>,
+) -> Result<CleanupOutcome<'scope>, ReactiveError> {
+    let scheduler = state.try_borrow()?.scheduler.clone();
+    let mut outcome = dispose_nodes_collect(state, roots)?;
+    let errors = mem::take(&mut outcome.errors);
+    outcome.append(dispatch_cleanup_errors(scheduler, errors));
+    Ok(outcome)
 }

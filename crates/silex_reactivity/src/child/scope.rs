@@ -135,7 +135,8 @@ impl<'scope> Scope<'scope> {
         let dispose_result = catch_unwind(AssertUnwindSafe(|| storage.dispose_untracked()));
         drop(observer_frame);
         match (result, dispose_result) {
-            (Ok(value), Ok(())) => Ok(value),
+            (Ok(value), Ok(Ok(()))) => Ok(value),
+            (Ok(_), Ok(Err(_))) => Err(ReactiveError::BorrowConflict),
             (Err(panic), _) => resume_unwind(panic),
             (Ok(_), Err(panic)) => resume_unwind(panic),
         }
@@ -149,7 +150,7 @@ impl<'scope> Scope<'scope> {
     }
 
     /// Defer effect queue flushing until the outermost batch returns.
-    pub fn batch<R>(&self, f: impl FnOnce() -> R) -> R {
+    pub fn batch<R>(&self, f: impl FnOnce() -> R) -> ReactiveResult<R> {
         let state = self.state();
         runtime::with_batch(&state, f)
     }
@@ -658,11 +659,15 @@ impl<'scope> OwnedScope<'scope> {
     /// Dispose this owner exactly once. Cleanup panics follow the same
     /// propagation rules as lexical scope disposal.
     pub fn dispose(&self) -> Result<(), CleanupError> {
-        if !self.active.replace(false) {
+        if !self.active.get() {
             return Ok(());
         }
         match catch_unwind(AssertUnwindSafe(|| self.storage.dispose_untracked())) {
-            Ok(()) => Ok(()),
+            Ok(Ok(())) => {
+                self.active.set(false);
+                Ok(())
+            }
+            Ok(Err(error)) => Err(error),
             Err(panic) => Err(CleanupError::from_panic(panic)),
         }
     }
@@ -760,7 +765,7 @@ mod tests {
             .expect("cleanup should register");
 
         let before_dispose = snapshot(&state);
-        storage.dispose_untracked();
+        let _ = storage.dispose_untracked();
 
         assert_eq!(*observed.borrow(), Some(before_dispose));
         assert_eq!(
@@ -811,7 +816,7 @@ mod tests {
             )
             .expect("cleanup should register");
 
-        storage.dispose_untracked();
+        let _ = storage.dispose_untracked();
         assert_eq!(dropped.get(), 3);
     }
 
@@ -920,7 +925,7 @@ mod tests {
             ))
             .expect("node ref should accept the probe while active");
 
-        storage.dispose_untracked();
+        let _ = storage.dispose_untracked();
 
         let observations = observations.borrow();
         assert_eq!(observations.len(), 3);
@@ -987,7 +992,7 @@ mod tests {
             )
             .expect("cleanup should register");
 
-        storage.dispose_untracked();
+        let _ = storage.dispose_untracked();
 
         assert!(*child_rejected.borrow());
         assert!(*owned_rejected.borrow());
@@ -1011,14 +1016,14 @@ mod tests {
                     let replacement = ScopeStorage::new(scheduler_in_cleanup.clone());
                     allocated_id_in_cleanup.set(Some(replacement.scope_id));
                     assert_ne!(replacement.scope_id, disposing_id);
-                    replacement.dispose_untracked();
+                    let _ = replacement.dispose_untracked();
                     Ok(())
                 },
                 handler(scope),
             )
             .expect("cleanup should register");
 
-        storage.dispose_untracked();
+        let _ = storage.dispose_untracked();
 
         assert_ne!(allocated_id.get(), Some(disposing_id));
     }
@@ -1031,7 +1036,7 @@ mod tests {
             storage: &storage,
             _marker: PhantomData,
         };
-        storage.dispose_untracked();
+        let _ = storage.dispose_untracked();
 
         let replacement = ScopeStorage::new(scheduler);
         assert!(matches!(
@@ -1041,7 +1046,7 @@ mod tests {
         assert!(replacement.is_active());
         assert_eq!(replacement.state.borrow().nodes.len(), 0);
 
-        replacement.dispose_untracked();
+        let _ = replacement.dispose_untracked();
     }
 
     #[test]
@@ -1055,7 +1060,7 @@ mod tests {
             .callback(|_: ()| Ok::<(), ()>(()))
             .expect("callback should register");
 
-        storage.dispose_untracked();
+        let _ = storage.dispose_untracked();
 
         assert!(matches!(
             callback.invoke(()),
@@ -1083,6 +1088,6 @@ mod tests {
 
         drop(state_borrow);
         owner.dispose().expect("owner disposal");
-        storage.dispose_untracked();
+        let _ = storage.dispose_untracked();
     }
 }

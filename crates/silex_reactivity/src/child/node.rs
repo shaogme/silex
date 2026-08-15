@@ -3,7 +3,7 @@
 use std::{fmt, marker::PhantomData};
 
 use crate::{
-    CallbackInvokeResult, ErrorHandler, ReactiveError, ReactiveResult,
+    CallbackInvokeResult, ErrorHandler, HandlerError, ReactiveError, ReactiveResult,
     error::ErrorSlot,
     error::map_callback_error,
     handle::{CallbackId, DerivedId, EffectId, MemoId, NodeRefId, SignalId, StoredId},
@@ -56,11 +56,18 @@ impl<'scope, T: 'scope, E: 'scope> Callback<'scope, T, E> {
             .map_err(map_callback_error)
     }
 
-    pub fn dispatch(&self, arg: T, error_handler: ErrorHandler<'scope, E>) -> ReactiveResult<()> {
+    pub fn dispatch(
+        &self,
+        arg: T,
+        error_handler: ErrorHandler<'scope, E>,
+    ) -> Result<(), HandlerError> {
         match runtime::invoke_callback(&self.handle.state(), self.handle.raw(), self.callback, arg)
         {
             Ok(()) => Ok(()),
-            Err(CallbackThunkError::Runtime(error)) => Err(error),
+            Err(CallbackThunkError::Runtime(error)) => Err(HandlerError::new(
+                error,
+                crate::ErrorContext::new("callback dispatch"),
+            )),
             Err(CallbackThunkError::User(error)) => error_handler.handle(error),
         }
     }

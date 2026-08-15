@@ -1,6 +1,7 @@
 use super::state::{ResourceGate, SharedCell};
 use silex_core::{
-    CallbackInvokeError, CompletionOnce, CompletionSender, ErrorReporter, SilexError, SilexResult,
+    CallbackInvokeError, CompletionOnce, CompletionSender, ErrorReporter, ReactiveError,
+    SilexError, SilexResult,
 };
 use std::{
     cell::Cell,
@@ -232,7 +233,7 @@ impl HostDestination {
         }
     }
 
-    fn cancel(&self) {
+    fn cancel(&self) -> Result<(), ReactiveError> {
         match self {
             Self::Once(destination) => destination.cancel(),
             Self::Sender(destination) => destination.cancel(),
@@ -277,6 +278,10 @@ impl HostCallback {
                 self.report_error(SilexError::fatal(error));
                 self.gate.get()
             }
+            Err(CallbackInvokeError::Handler(error)) => {
+                self.report_error(SilexError::fatal(error.reason()));
+                self.gate.get()
+            }
         }
     }
 
@@ -286,6 +291,6 @@ impl HostCallback {
 
     pub(crate) fn cancel(&self) {
         self.gate.set(false);
-        self.destination.cancel();
+        let _ = self.destination.cancel();
     }
 }

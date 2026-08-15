@@ -7,6 +7,7 @@ pub(crate) fn map_callback_error(error: CallbackInvokeError<SilexError>) -> Sile
     match error {
         CallbackInvokeError::Runtime(error) => SilexError::fatal(error),
         CallbackInvokeError::User(error) => error,
+        CallbackInvokeError::Handler(error) => SilexError::fatal(error.reason()),
     }
 }
 
@@ -43,6 +44,7 @@ impl<'scope, T: 'scope> Callback<'scope, T> {
         self.inner.invoke(value).map_err(|error| match error {
             CallbackInvokeError::Runtime(error) => SilexError::fatal(error),
             CallbackInvokeError::User(error) => error,
+            CallbackInvokeError::Handler(error) => SilexError::fatal(error.reason()),
         })
     }
 

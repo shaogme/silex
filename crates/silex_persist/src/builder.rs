@@ -43,6 +43,9 @@ fn submit_completion<T: 'static>(
     let error = match error {
         CallbackInvokeError::Runtime(error) => SilexError::fatal(SilexErrorKind::Reactivity(error)),
         CallbackInvokeError::User(error) => error,
+        CallbackInvokeError::Handler(error) => {
+            SilexError::fatal(SilexErrorKind::Reactivity(error.reason()))
+        }
     };
     let error_result = catch_unwind(AssertUnwindSafe(|| error_token.submit(error)));
     if let Ok(Err(_)) | Err(_) = error_result {
@@ -601,7 +604,9 @@ where
         let error_completion =
             self.scope
                 .completion_sender(unwind_safe(move |error: SilexError| {
-                    error_handler.handle(error).map_err(SilexError::fatal)
+                    error_handler
+                        .handle(error)
+                        .map_err(|error| SilexError::fatal(error.reason()))
                 }))?;
         let mut subscription_error = None;
         if matches!(self.config.sync, SyncStrategy::CrossContext) {

@@ -1,4 +1,4 @@
-use silex_reactivity::{ErrorHandler, Memo, Runtime, Scope, notify};
+use silex_reactivity::{ErrorHandler, Memo, ReactiveError, Runtime, Scope, notify};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -333,11 +333,13 @@ fn batch_delays_effects_and_untrack_preserves_ownership_ctx() {
                 )
                 .expect("effect should initialize");
 
-            scope.batch(|| {
-                set_source.set(1).expect("test operation should succeed");
-                set_hidden.set(2).expect("test operation should succeed");
-                assert_eq!(seen.get(), 0);
-            });
+            scope
+                .batch(|| {
+                    set_source.set(1).expect("test operation should succeed");
+                    set_hidden.set(2).expect("test operation should succeed");
+                    assert_eq!(seen.get(), 0);
+                })
+                .expect("batch should flush");
             assert_eq!(seen.get(), 3);
 
             let tracked = Rc::new(Cell::new(0));
@@ -780,10 +782,7 @@ fn cyclic_effect_queue_failure_does_not_poison_unrelated_effects() {
                 .expect("effect should initialize");
 
             assert_eq!(runs.get(), 1);
-            let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                set_source.set(1).expect("source update should succeed");
-            }));
-            assert!(panic.is_err());
+            assert_eq!(set_source.set(1), Err(ReactiveError::Reentrant));
 
             let independent_runs = Rc::new(Cell::new(0));
             let (independent, set_independent) =

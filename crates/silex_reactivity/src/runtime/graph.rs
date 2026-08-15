@@ -5,7 +5,10 @@ use super::{
     scheduler::{ActiveObserver, Observer, ScheduledTask, TargetNode, TrackingContext, active_ctx},
 };
 use crate::{ReactiveError, ReactiveResult, handle::NodeKindTag, internal::RawId};
-use std::{collections::VecDeque, rc::Rc};
+use std::{
+    collections::{HashSet, VecDeque},
+    rc::Rc,
+};
 
 impl<'scope> ScopeStateInner<'scope> {
     pub(crate) fn begin_dependency_transaction(&mut self, observer: RawId) {
@@ -37,7 +40,10 @@ impl<'scope> ScopeStateInner<'scope> {
         &self,
         dependencies: &[TargetNode],
     ) -> ReactiveResult<()> {
-        let scheduler = self.scheduler.borrow();
+        let scheduler = self
+            .scheduler
+            .try_borrow()
+            .map_err(|_| ReactiveError::BorrowConflict)?;
         for dependency in dependencies {
             if dependency.scope_id == self.scope_id {
                 continue;
@@ -70,7 +76,8 @@ impl<'scope> ScopeStateInner<'scope> {
 
         let dependency_scope = self
             .scheduler
-            .borrow()
+            .try_borrow()
+            .map_err(|_| ReactiveError::BorrowConflict)?
             .get_scope_for_edge_cleanup(dependency.scope_id);
         let Some(dependency_scope) = dependency_scope else {
             self.remove_dependency(observer, dependency);
@@ -107,7 +114,8 @@ impl<'scope> ScopeStateInner<'scope> {
 
         let dependency_scope = self
             .scheduler
-            .borrow()
+            .try_borrow()
+            .map_err(|_| ReactiveError::BorrowConflict)?
             .get_scope_for_edge_cleanup(dependency.scope_id);
         let Some(dependency_scope) = dependency_scope else {
             return Ok(());
@@ -282,7 +290,7 @@ impl<'scope> ScopeStateInner<'scope> {
         }
     }
 
-    pub(crate) fn clear_dependencies(&mut self, observer_id: RawId) {
+    pub(crate) fn clear_dependencies(&mut self, observer_id: RawId) -> ReactiveResult<()> {
         let self_sub = TargetNode {
             scope_id: self.scope_id,
             node: observer_id,
@@ -294,12 +302,13 @@ impl<'scope> ScopeStateInner<'scope> {
             if edge.target.scope_id != self.scope_id
                 && let Some(dep_scope) = self
                     .scheduler
-                    .borrow()
+                    .try_borrow()
+                    .map_err(|_| ReactiveError::BorrowConflict)?
                     .get_scope_for_edge_cleanup(edge.target.scope_id)
             {
                 dep_scope
                     .try_borrow_mut()
-                    .expect("dep_scope borrow failed during clear_dependencies");
+                    .map_err(|_| ReactiveError::BorrowConflict)?;
             }
         }
 
@@ -317,16 +326,18 @@ impl<'scope> ScopeStateInner<'scope> {
             } else {
                 let dep_scope = self
                     .scheduler
-                    .borrow()
+                    .try_borrow()
+                    .map_err(|_| ReactiveError::BorrowConflict)?
                     .get_scope_for_edge_cleanup(dep.scope_id);
                 if let Some(dep_scope) = dep_scope {
                     let mut dep_state = dep_scope
                         .try_borrow_mut()
-                        .expect("dep_scope borrow failed during clear_dependencies");
+                        .map_err(|_| ReactiveError::BorrowConflict)?;
                     dep_state.remove_subscriber(dep.node, self_sub);
                 }
             }
         }
+        Ok(())
     }
 
     fn track_pair(&mut self, observer: Observer, target: RawId) {
@@ -352,7 +363,8 @@ impl<'scope> ScopeStateInner<'scope> {
     fn observer_state(&self, active: &ActiveObserver) -> ReactiveResult<ScopeState<'scope>> {
         active
             .scheduler
-            .borrow()
+            .try_borrow()
+            .map_err(|_| ReactiveError::BorrowConflict)?
             .get_scope_for_edge_cleanup(active.observer.scope_id)
             .ok_or(ReactiveError::NoSuchNode)
     }
@@ -372,7 +384,7 @@ impl<'scope> ScopeStateInner<'scope> {
             return Err(ReactiveError::RuntimeMismatch);
         }
         let observer_scope = self.observer_state(active)?;
-        let same_scope = Rc::ptr_eq(observer_scope.inner(), self.scheduler_state().inner());
+        let same_scope = Rc::ptr_eq(observer_scope.inner(), self.scheduler_state()?.inner());
         if same_scope
             && self.observer_is_computation(active.observer)
             && active.observer.node == target
@@ -400,11 +412,12 @@ impl<'scope> ScopeStateInner<'scope> {
         Ok(Some(ctx))
     }
 
-    fn scheduler_state(&self) -> ScopeState<'scope> {
+    fn scheduler_state(&self) -> ReactiveResult<ScopeState<'scope>> {
         self.scheduler
-            .borrow()
+            .try_borrow()
+            .map_err(|_| ReactiveError::BorrowConflict)?
             .get_scope_for_edge_cleanup(self.scope_id)
-            .expect("active source scope must remain registered")
+            .ok_or(ReactiveError::NoSuchNode)
     }
 
     /// Record one tracked read after the source has been evaluated.
@@ -430,7 +443,7 @@ impl<'scope> ScopeStateInner<'scope> {
             scope_id: active.observer.scope_id,
             node: active.observer.node,
         };
-        if Rc::ptr_eq(observer_scope.inner(), self.scheduler_state().inner()) {
+        if Rc::ptr_eq(observer_scope.inner(), self.scheduler_state()?.inner()) {
             if active.observer.node == target || !self.observer_is_computation(active.observer) {
                 return Err(ReactiveError::Reentrant);
             }
@@ -455,15 +468,88 @@ impl<'scope> ScopeStateInner<'scope> {
         Ok(())
     }
 
-    pub(crate) fn queue_dependents(&mut self, source: RawId) {
+    pub(crate) fn queue_dependents(&mut self, source: RawId) -> ReactiveResult<()> {
+        let scheduler = self.scheduler.clone();
         let mut walk: VecDeque<TargetNode> = self
             .subscriber_edges_of(source)
             .map(|(_, edge)| edge.target)
             .collect();
+        let mut visited = HashSet::new();
+        let mut external_scopes = Vec::new();
 
-        let scheduler = self.scheduler.clone();
-
+        // Read the complete propagation frontier before changing any node. This
+        // is the cross-scope preflight: a borrow conflict cannot leave a half-
+        // marked dependency chain behind.
         while let Some(target) = walk.pop_front() {
+            if !visited.insert(target) {
+                continue;
+            }
+            if target.scope_id == self.scope_id {
+                let Some(node) = self.nodes.get(target.node) else {
+                    continue;
+                };
+                if !matches!(node.state, NodeState::Clean | NodeState::Dirty) {
+                    continue;
+                }
+                if node.kind != NodeKindTag::Effect {
+                    walk.extend(
+                        self.subscriber_edges_of(target.node)
+                            .map(|(_, edge)| edge.target),
+                    );
+                }
+                continue;
+            }
+
+            let target_scope = scheduler
+                .try_borrow()
+                .map_err(|_| ReactiveError::BorrowConflict)?
+                .get_scope(target.scope_id);
+            let Some(target_scope) = target_scope else {
+                continue;
+            };
+            let state_ref = target_scope
+                .try_borrow()
+                .map_err(|_| ReactiveError::BorrowConflict)?;
+            if !state_ref.is_active() {
+                continue;
+            }
+            let Some(node) = state_ref.nodes.get(target.node) else {
+                continue;
+            };
+            if !matches!(node.state, NodeState::Clean | NodeState::Dirty) {
+                continue;
+            }
+            if node.kind != NodeKindTag::Effect {
+                walk.extend(
+                    state_ref
+                        .subscriber_edges_of(target.node)
+                        .map(|(_, edge)| edge.target),
+                );
+            }
+            drop(state_ref);
+            if !external_scopes
+                .iter()
+                .any(|scope: &ScopeState<'scope>| Rc::ptr_eq(scope.inner(), target_scope.inner()))
+            {
+                external_scopes.push(target_scope);
+            }
+        }
+
+        for scope in &external_scopes {
+            scope
+                .try_borrow_mut()
+                .map_err(|_| ReactiveError::BorrowConflict)?;
+        }
+
+        let mut walk = self
+            .subscriber_edges_of(source)
+            .map(|(_, edge)| edge.target)
+            .collect::<VecDeque<_>>();
+        let mut visited = HashSet::new();
+        while let Some(target) = walk.pop_front() {
+            if !visited.insert(target) {
+                continue;
+            }
             if target.scope_id == self.scope_id {
                 let Some(node) = self.nodes.get_mut(target.node) else {
                     continue;
@@ -475,10 +561,13 @@ impl<'scope> ScopeStateInner<'scope> {
                 if node.kind == NodeKindTag::Effect {
                     if !node.queued {
                         node.queued = true;
-                        scheduler.borrow_mut().enqueue_effect(ScheduledTask {
-                            scope_id: target.scope_id,
-                            node: target.node,
-                        });
+                        scheduler
+                            .try_borrow_mut()
+                            .map_err(|_| ReactiveError::BorrowConflict)?
+                            .enqueue_effect(ScheduledTask {
+                                scope_id: target.scope_id,
+                                node: target.node,
+                            });
                     }
                 } else {
                     walk.extend(
@@ -487,13 +576,16 @@ impl<'scope> ScopeStateInner<'scope> {
                     );
                 }
             } else {
-                let target_scope = scheduler.borrow().get_scope(target.scope_id);
+                let target_scope = scheduler
+                    .try_borrow()
+                    .map_err(|_| ReactiveError::BorrowConflict)?
+                    .get_scope(target.scope_id);
                 let Some(target_scope) = target_scope else {
                     continue;
                 };
                 let mut state_ref = target_scope
                     .try_borrow_mut()
-                    .expect("target_scope borrow failed during queue_dependents");
+                    .map_err(|_| ReactiveError::BorrowConflict)?;
                 let Some(node) = state_ref.nodes.get_mut(target.node) else {
                     continue;
                 };
@@ -505,10 +597,13 @@ impl<'scope> ScopeStateInner<'scope> {
                     if !node.queued {
                         node.queued = true;
                         drop(state_ref);
-                        scheduler.borrow_mut().enqueue_effect(ScheduledTask {
-                            scope_id: target.scope_id,
-                            node: target.node,
-                        });
+                        scheduler
+                            .try_borrow_mut()
+                            .map_err(|_| ReactiveError::BorrowConflict)?
+                            .enqueue_effect(ScheduledTask {
+                                scope_id: target.scope_id,
+                                node: target.node,
+                            });
                     }
                 } else {
                     walk.extend(
@@ -519,6 +614,7 @@ impl<'scope> ScopeStateInner<'scope> {
                 }
             }
         }
+        Ok(())
     }
 
     pub(crate) fn is_settled(&self, id: RawId) -> bool {
@@ -537,10 +633,7 @@ mod tests {
         runtime::{dispose::dispose_nodes, scheduler::GlobalScheduler},
         scope::ScopeStorage,
     };
-    use std::{
-        marker::PhantomData,
-        panic::{AssertUnwindSafe, catch_unwind},
-    };
+    use std::marker::PhantomData;
 
     fn child(runtime: &mut Runtime, f: impl for<'scope> FnOnce(Scope<'scope>)) {
         let _ = runtime.child(f);
@@ -624,7 +717,7 @@ mod tests {
                     1
                 );
 
-                dispose_nodes(&source_state, vec![source_raw]);
+                let _ = dispose_nodes(&source_state, vec![source_raw]);
 
                 assert_eq!(
                     effect_state
@@ -665,11 +758,9 @@ mod tests {
                 };
                 let source_borrow = source_state.borrow_mut();
                 let mut child_borrow = child_state.borrow_mut();
-                let panic = catch_unwind(AssertUnwindSafe(|| {
-                    child_borrow.clear_dependencies(effect_raw);
-                }));
+                let result = child_borrow.clear_dependencies(effect_raw);
 
-                assert!(panic.is_err());
+                assert_eq!(result, Err(ReactiveError::BorrowConflict));
                 assert_eq!(
                     source_borrow
                         .subscriber_edges_of(source_raw)
@@ -699,7 +790,7 @@ mod tests {
                 drop(child_borrow);
                 drop(source_borrow);
 
-                child_state.borrow_mut().clear_dependencies(effect_raw);
+                let _ = child_state.borrow_mut().clear_dependencies(effect_raw);
                 assert_eq!(
                     source_state
                         .borrow()
@@ -783,7 +874,7 @@ mod tests {
             .borrow_mut()
             .rollback_dependency_transaction(effect_raw)
             .expect("rollback should discard the pending transaction");
-        observer_storage.dispose_untracked();
-        source_storage.dispose_untracked();
+        let _ = observer_storage.dispose_untracked();
+        let _ = source_storage.dispose_untracked();
     }
 }

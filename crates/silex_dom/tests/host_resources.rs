@@ -1061,8 +1061,8 @@ fn timeout_lifecycle_handles_creation_failure_repeated_cancel_reentry_and_stale_
             error_handler,
         )
         .expect("cancelable timeout should register");
-        canceled.cancel();
-        canceled.cancel();
+        let _ = canceled.cancel();
+        let _ = canceled.cancel();
         spy.fire_timeout(0);
         assert_eq!(canceled_calls.get(), 0);
 

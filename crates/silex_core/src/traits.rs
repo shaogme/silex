@@ -629,6 +629,7 @@ impl<'scope, T: 'scope> RxRead for Rx<'scope, T, RxValueKind> {
             RxInner::Derived(derived) => derived.with(f).map_err(|error| match error {
                 CallbackInvokeError::Runtime(error) => SilexError::fatal(error),
                 CallbackInvokeError::User(error) => error,
+                CallbackInvokeError::Handler(error) => SilexError::fatal(error.reason()),
             }),
             RxInner::Stored(stored) => stored.with(f).map_err(SilexError::fatal),
         }
@@ -641,6 +642,7 @@ impl<'scope, T: 'scope> RxRead for Rx<'scope, T, RxValueKind> {
             RxInner::Derived(derived) => derived.with_untracked(f).map_err(|error| match error {
                 CallbackInvokeError::Runtime(error) => SilexError::fatal(error),
                 CallbackInvokeError::User(error) => error,
+                CallbackInvokeError::Handler(error) => SilexError::fatal(error.reason()),
             }),
             RxInner::Stored(stored) => stored.with(f).map_err(SilexError::fatal),
         }

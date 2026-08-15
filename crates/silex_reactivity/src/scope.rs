@@ -1,4 +1,6 @@
 use crate::{
+    ReactiveError,
+    root::{CleanupError, CleanupFailure},
     runtime::{self, GlobalScheduler, ScopeId, ScopeState, run_global_queue},
     unsafe_boundary::{ErasedScopeState, OwnerToken},
 };
@@ -14,41 +16,6 @@ pub(crate) struct ScopeStorage {
     pub(crate) scope_id: ScopeId,
     pub(crate) state: Rc<ErasedScopeState>,
     pub(crate) arena: bumpalo::Bump,
-}
-
-struct DisposePhaseGuard {
-    state: Rc<ErasedScopeState>,
-    finished: bool,
-}
-
-impl DisposePhaseGuard {
-    fn new(state: Rc<ErasedScopeState>) -> Self {
-        Self {
-            state,
-            finished: false,
-        }
-    }
-
-    fn finish(&mut self) -> Result<(), Box<dyn std::any::Any + Send>> {
-        let result = catch_unwind(AssertUnwindSafe(|| {
-            self.state.borrow_mut().finish_dispose();
-        }));
-        if result.is_ok() {
-            self.finished = true;
-        }
-        result
-    }
-}
-
-impl Drop for DisposePhaseGuard {
-    fn drop(&mut self) {
-        if self.finished {
-            return;
-        }
-        let _ = catch_unwind(AssertUnwindSafe(|| {
-            self.state.borrow_mut().finish_dispose();
-        }));
-    }
 }
 
 impl ScopeStorage {
@@ -103,79 +70,117 @@ impl ScopeStorage {
         OwnerToken::from_storage(self.state.clone(), owner)
     }
 
-    pub(crate) fn dispose(&self) {
-        let scheduler = {
-            let mut state = self.state.borrow_mut();
-            if !state.begin_final_cleanup() {
-                return;
+    pub(crate) fn dispose(&self) -> Result<(), CleanupError> {
+        let mut failures = Vec::new();
+        let scheduler = match self.state.try_borrow() {
+            Ok(state) => state.scheduler.clone(),
+            Err(_) => {
+                failures.push(CleanupFailure::Runtime(ReactiveError::BorrowConflict));
+                return match CleanupError::from_failures(failures) {
+                    Some(error) => Err(error),
+                    None => Ok(()),
+                };
             }
-            state.scheduler.clone()
         };
+
+        let should_dispose = match self.state.try_borrow_mut() {
+            Ok(mut state) => match state.begin_quiescing() {
+                Ok(value) => value,
+                Err(error) => {
+                    failures.push(CleanupFailure::Runtime(error));
+                    false
+                }
+            },
+            Err(_) => {
+                failures.push(CleanupFailure::Runtime(ReactiveError::BorrowConflict));
+                false
+            }
+        };
+        if !should_dispose {
+            return CleanupError::from_failures(failures).map_or(Ok(()), Err);
+        }
+
+        if scheduler
+            .try_borrow_mut()
+            .map_err(|_| ReactiveError::BorrowConflict)
+            .map(|mut scheduler| scheduler.deactivate_scope(self.scope_id))
+            .is_err()
+        {
+            failures.push(CleanupFailure::Runtime(ReactiveError::BorrowConflict));
+        }
+
         let typed_state = self.owner_token(PhantomData).state();
-        let mut phase_guard = DisposePhaseGuard::new(self.state.clone());
-        let deactivate_result = catch_unwind(AssertUnwindSafe(|| {
-            scheduler.borrow_mut().deactivate_scope(self.scope_id);
-        }));
-        let dispose_result = catch_unwind(AssertUnwindSafe(|| {
-            runtime::dispose_all(&typed_state);
-        }));
-        let finish_result = phase_guard.finish();
-        let flush_result = catch_unwind(AssertUnwindSafe(|| {
-            let should_flush = scheduler.borrow().should_flush();
-            if should_flush {
-                run_global_queue(&scheduler);
+        let report = catch_unwind(AssertUnwindSafe(|| runtime::dispose_all(&typed_state)));
+        match report {
+            Ok(report) => {
+                failures.extend(
+                    report
+                        .runtime_errors
+                        .into_iter()
+                        .map(CleanupFailure::Runtime),
+                );
+                failures.extend(
+                    report
+                        .handler_errors
+                        .into_iter()
+                        .map(CleanupFailure::Handler),
+                );
+                failures.extend(report.panics.into_iter().map(CleanupError::panic_failure));
             }
-        }));
-        let clear_result = catch_unwind(AssertUnwindSafe(|| {
-            let handlers = self.state.borrow_mut().take_error_handlers();
-            catch_unwind(AssertUnwindSafe(|| {
-                ScopeState::drop_error_handlers(handlers);
-            }))
-        }));
-        let release_result = catch_unwind(AssertUnwindSafe(|| {
-            assert!(
-                self.state.borrow().ready_for_scope_release(),
-                "scope registry entry cannot be released before node and edge cleanup"
-            );
-            scheduler.borrow_mut().release_scope_id(self.scope_id);
-        }));
-        let mut first_panic = deactivate_result.err();
-        if let Err(panic) = dispose_result
-            && first_panic.is_none()
-        {
-            first_panic = Some(panic);
+            Err(panic) => failures.push(CleanupError::panic_failure(panic)),
         }
-        if let Err(panic) = finish_result
-            && first_panic.is_none()
-        {
-            first_panic = Some(panic);
-        }
-        if let Err(panic) = flush_result
-            && first_panic.is_none()
-        {
-            first_panic = Some(panic);
-        }
-        match clear_result {
-            Ok(Ok(())) => {}
-            Ok(Err(panic)) | Err(panic) if first_panic.is_none() => {
-                first_panic = Some(panic);
+
+        let ready_for_release = match self.state.try_borrow() {
+            Ok(state) => state.ready_for_scope_release(),
+            Err(_) => {
+                failures.push(CleanupFailure::Runtime(ReactiveError::BorrowConflict));
+                false
             }
-            Ok(Err(_)) | Err(_) => {}
+        };
+        if ready_for_release {
+            let handlers = match self.state.try_borrow_mut() {
+                Ok(mut state) => Some(state.take_error_handlers()),
+                Err(_) => {
+                    failures.push(CleanupFailure::Runtime(ReactiveError::BorrowConflict));
+                    None
+                }
+            };
+            if let Some(handlers) = handlers {
+                let panics = ScopeState::drop_error_handlers(handlers);
+                failures.extend(panics.into_iter().map(CleanupError::panic_failure));
+            }
+            if scheduler
+                .try_borrow_mut()
+                .map_err(|_| ReactiveError::BorrowConflict)
+                .map(|mut scheduler| scheduler.release_scope_id(self.scope_id))
+                .is_err()
+            {
+                failures.push(CleanupFailure::Runtime(ReactiveError::BorrowConflict));
+            }
         }
-        if let Err(panic) = release_result
-            && first_panic.is_none()
-        {
-            first_panic = Some(panic);
+
+        let should_flush = match scheduler.try_borrow() {
+            Ok(scheduler) => scheduler.should_flush(),
+            Err(_) => {
+                failures.push(CleanupFailure::Runtime(ReactiveError::BorrowConflict));
+                false
+            }
+        };
+        if should_flush {
+            match run_global_queue(&scheduler) {
+                Ok(()) => {}
+                Err(error) => failures.push(CleanupFailure::Runtime(error)),
+            }
         }
-        if let Some(panic) = first_panic {
-            std::panic::resume_unwind(panic);
-        }
+
+        CleanupError::from_failures(failures).map_or(Ok(()), Err)
     }
 
-    pub(crate) fn dispose_untracked(&self) {
+    pub(crate) fn dispose_untracked(&self) -> Result<(), CleanupError> {
         let frame = runtime::ObserverFrame::push(self.scheduler(), None);
-        self.dispose();
+        let result = self.dispose();
         drop(frame);
+        result
     }
 
     pub(crate) fn scheduler(&self) -> Rc<RefCell<GlobalScheduler>> {

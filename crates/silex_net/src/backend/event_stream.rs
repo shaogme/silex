@@ -104,6 +104,7 @@ fn submit_completion<T: 'static>(
     let error = match error {
         CallbackInvokeError::Runtime(error) => SilexError::fatal(error),
         CallbackInvokeError::User(error) => error,
+        CallbackInvokeError::Handler(error) => SilexError::fatal(error.reason()),
     };
     let error_result = catch_unwind(AssertUnwindSafe(|| error_token.submit(error)));
     if let Ok(Err(_)) | Err(_) = error_result {
@@ -269,7 +270,7 @@ impl<'scope> EventStreamInner<'scope> {
     fn cleanup(&mut self) -> SilexResult<()> {
         self.registration.take();
         self.generation = self.generation.wrapping_add(1);
-        self.completion.cancel();
+        let _ = self.completion.cancel();
         Ok(())
     }
 
@@ -647,7 +648,9 @@ impl<'scope> EventStreamBuilder<'scope> {
         ));
         let inner_slot_for_completion = inner_slot.clone();
         let error_completion = scope.completion_sender(unwind_safe(move |error: SilexError| {
-            error_handler.handle(error).map_err(SilexError::fatal)
+            error_handler
+                .handle(error)
+                .map_err(|error| SilexError::fatal(error.reason()))
         }))?;
         let completion = scope.completion_sender(unwind_safe(move |event: EventStreamEvent| {
             if let Some(inner) = inner_slot_for_completion.get() {

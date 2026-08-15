@@ -470,7 +470,9 @@ impl<'scope> MountOwner<'scope> for ScopedMountOwner<'scope> {
                 move |callback| scope_for_once.completion_once(unwind_safe(callback)),
                 move |error_handler| {
                     scope_for_error_sender.completion_sender(unwind_safe(move |error| {
-                        error_handler.handle(error).map_err(SilexError::fatal)
+                        error_handler
+                            .handle(error)
+                            .map_err(|error| SilexError::fatal(error.reason()))
                     }))
                 },
             ),
@@ -554,7 +556,9 @@ impl<'scope> MountOwner<'scope> for OwnedMountOwner<'scope> {
                 move |callback| scope_for_once.completion_once(unwind_safe(callback)),
                 move |error_handler| {
                     scope_for_error_sender.completion_sender(unwind_safe(move |error| {
-                        error_handler.handle(error).map_err(SilexError::fatal)
+                        error_handler
+                            .handle(error)
+                            .map_err(|error| SilexError::fatal(error.reason()))
                     }))
                 },
             ),

@@ -225,7 +225,7 @@ fn explicit_root_dispose_does_not_run_cleanup_again() {
 }
 
 #[test]
-fn direct_root_drop_still_resumes_cleanup_panic() {
+fn direct_root_drop_is_best_effort_when_cleanup_panics() {
     let panic = catch_unwind(AssertUnwindSafe(|| {
         let mut runtime = Runtime::new();
         let root = runtime.run().expect("runtime root creation");
@@ -237,7 +237,7 @@ fn direct_root_drop_still_resumes_cleanup_panic() {
         drop(root);
     }));
 
-    assert!(panic.is_err());
+    assert!(panic.is_ok());
 }
 
 #[test]
