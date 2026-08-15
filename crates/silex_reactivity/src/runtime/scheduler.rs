@@ -1,4 +1,4 @@
-//! Global flat scheduler and scope bitmask lifetime tracking.
+//! Global scheduler, execution contexts, and scope lifetime tracking.
 
 use super::model::ScopeState;
 use crate::{ReactiveError, internal::RawId, unsafe_boundary::WeakOwnerToken};
@@ -21,36 +21,44 @@ pub(crate) struct Observer {
 }
 
 #[derive(Clone)]
-pub(crate) struct TrackingContext {
-    pub(crate) observer: Option<ActiveObserver>,
+pub(crate) struct ExecutionContext {
+    pub(crate) scheduler: Rc<RefCell<GlobalScheduler>>,
+    pub(crate) observer: Option<Observer>,
     pub(crate) blocked_scopes: Vec<ScopeId>,
 }
 
-#[derive(Clone)]
-pub(crate) struct ActiveObserver {
-    pub(crate) scheduler: Rc<RefCell<GlobalScheduler>>,
-    pub(crate) observer: Observer,
-}
-
 thread_local! {
-    static ACTIVE_CONTEXT: RefCell<Vec<TrackingContext>> = const { RefCell::new(Vec::new()) };
+    static ACTIVE_CONTEXT: RefCell<Vec<ExecutionContext>> = const { RefCell::new(Vec::new()) };
 }
 
-pub(crate) fn active_ctx() -> Option<TrackingContext> {
-    ACTIVE_CONTEXT.with(|stack| stack.borrow().last().cloned())
+/// Return the context relevant to `scheduler` from the current execution stack.
+///
+/// A frame for another scheduler only contributes a foreign observer. An
+/// untracked frame is intentionally skipped, so untracking one runtime does
+/// not disable tracking for every runtime on this thread.
+pub(crate) fn active_ctx(scheduler: &Rc<RefCell<GlobalScheduler>>) -> Option<ExecutionContext> {
+    ACTIVE_CONTEXT.with(|stack| {
+        stack.borrow().iter().rev().find_map(|context| {
+            if Rc::ptr_eq(&context.scheduler, scheduler) || context.observer.is_some() {
+                Some(context.clone())
+            } else {
+                None
+            }
+        })
+    })
 }
 
 #[cfg(feature = "test-support")]
 pub(crate) fn active_observer_for(scheduler: &Rc<RefCell<GlobalScheduler>>) -> Option<Observer> {
-    active_ctx().and_then(|ctx| {
+    active_ctx(scheduler).and_then(|ctx| {
         ctx.observer
-            .and_then(|active| Rc::ptr_eq(&active.scheduler, scheduler).then_some(active.observer))
+            .filter(|_| Rc::ptr_eq(&ctx.scheduler, scheduler))
     })
 }
 
-/// Restores the previous tracking ctx when the surrounding operation
-/// unwinds. The ctx is process-local only; runtime state remains owned by
-/// the explicit scheduler stored in each handle.
+/// Restores the previous execution context when the surrounding operation
+/// unwinds. The stack is thread-local, but every frame is owned by one
+/// scheduler and runtime state remains owned by that scheduler.
 pub(crate) struct ObserverFrame {
     active: bool,
 }
@@ -61,20 +69,19 @@ impl ObserverFrame {
         observer: Option<Observer>,
     ) -> Self {
         ACTIVE_CONTEXT.with(|stack| {
-            stack.borrow_mut().push(TrackingContext {
-                observer: observer.map(|observer| ActiveObserver {
-                    scheduler,
-                    observer,
-                }),
+            stack.borrow_mut().push(ExecutionContext {
+                scheduler,
+                observer,
                 blocked_scopes: Vec::new(),
             });
         });
         Self { active: true }
     }
 
-    pub(crate) fn push_untracked(_scheduler: Rc<RefCell<GlobalScheduler>>) -> Self {
+    pub(crate) fn push_untracked(scheduler: Rc<RefCell<GlobalScheduler>>) -> Self {
         ACTIVE_CONTEXT.with(|stack| {
-            stack.borrow_mut().push(TrackingContext {
+            stack.borrow_mut().push(ExecutionContext {
+                scheduler,
                 observer: None,
                 blocked_scopes: Vec::new(),
             });
@@ -83,21 +90,23 @@ impl ObserverFrame {
     }
 
     pub(crate) fn push_child(scheduler: Rc<RefCell<GlobalScheduler>>, scope_id: ScopeId) -> Self {
-        let inherited = active_ctx().and_then(|mut ctx| {
-            let active = ctx.observer.take()?;
-            if !Rc::ptr_eq(&active.scheduler, &scheduler) {
+        let inherited = active_ctx(&scheduler).and_then(|mut ctx| {
+            if !Rc::ptr_eq(&ctx.scheduler, &scheduler) {
                 return None;
             }
+            let observer = ctx.observer.take()?;
             ctx.blocked_scopes.push(scope_id);
-            Some(TrackingContext {
-                observer: Some(active),
+            Some(ExecutionContext {
+                scheduler: scheduler.clone(),
+                observer: Some(observer),
                 blocked_scopes: ctx.blocked_scopes,
             })
         });
         ACTIVE_CONTEXT.with(|stack| {
             stack
                 .borrow_mut()
-                .push(inherited.unwrap_or(TrackingContext {
+                .push(inherited.unwrap_or(ExecutionContext {
+                    scheduler,
                     observer: None,
                     blocked_scopes: Vec::new(),
                 }));
@@ -342,6 +351,45 @@ impl GlobalScheduler {
 mod tests {
     use super::*;
     use crate::runtime::ScopeState;
+
+    #[test]
+    fn untracked_frame_only_masks_its_scheduler() {
+        let tracked_scheduler = GlobalScheduler::new();
+        let untracked_scheduler = GlobalScheduler::new();
+        let observer = ObserverFrame::push(
+            tracked_scheduler.clone(),
+            Some(Observer {
+                scope_id: ScopeId(0),
+                node: RawId::DANGLING,
+            }),
+        );
+        let untracked = ObserverFrame::push_untracked(untracked_scheduler.clone());
+
+        assert!(active_ctx(&tracked_scheduler).is_some_and(|context| context.observer.is_some()));
+        assert!(active_ctx(&untracked_scheduler).is_some_and(|context| context.observer.is_none()));
+
+        drop(untracked);
+        drop(observer);
+    }
+
+    #[test]
+    fn foreign_observer_remains_visible_for_runtime_validation() {
+        let observer_scheduler = GlobalScheduler::new();
+        let source_scheduler = GlobalScheduler::new();
+        let observer_frame = ObserverFrame::push(
+            observer_scheduler.clone(),
+            Some(Observer {
+                scope_id: ScopeId(0),
+                node: RawId::DANGLING,
+            }),
+        );
+
+        let context = active_ctx(&source_scheduler).expect("foreign observer context");
+        assert_eq!(context.observer.expect("observer").scope_id, ScopeId(0));
+        assert!(Rc::ptr_eq(&context.scheduler, &observer_scheduler));
+
+        drop(observer_frame);
+    }
 
     #[test]
     fn scope_slots_are_reused_only_after_release() {

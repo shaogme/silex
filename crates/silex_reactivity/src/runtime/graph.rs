@@ -2,7 +2,7 @@
 
 use super::{
     model::{DependencyTransaction, NodeState, ReactiveEdge, ScopeState, ScopeStateInner},
-    scheduler::{ActiveObserver, Observer, ScheduledTask, TargetNode, TrackingContext, active_ctx},
+    scheduler::{ExecutionContext, Observer, ScheduledTask, TargetNode, active_ctx},
 };
 use crate::{ReactiveError, ReactiveResult, handle::NodeKindTag, internal::RawId};
 use std::{
@@ -317,12 +317,13 @@ impl<'scope> ScopeStateInner<'scope> {
             .is_some_and(|node| node.is_computation())
     }
 
-    fn observer_state(&self, active: &ActiveObserver) -> ReactiveResult<ScopeState<'scope>> {
-        active
+    fn observer_state(&self, context: &ExecutionContext) -> ReactiveResult<ScopeState<'scope>> {
+        let observer = context.observer.ok_or(ReactiveError::NoSuchNode)?;
+        context
             .scheduler
             .try_borrow()
             .map_err(|_| ReactiveError::BorrowConflict)?
-            .get_scope_for_edge_cleanup(active.observer.scope_id)
+            .get_scope_for_edge_cleanup(observer.scope_id)
             .ok_or(ReactiveError::NoSuchNode)
     }
 
@@ -330,29 +331,26 @@ impl<'scope> ScopeStateInner<'scope> {
     pub(crate) fn preflight_track_read(
         &self,
         target: RawId,
-    ) -> ReactiveResult<Option<TrackingContext>> {
-        let Some(ctx) = active_ctx() else {
+    ) -> ReactiveResult<Option<ExecutionContext>> {
+        let Some(ctx) = active_ctx(&self.scheduler) else {
             return Ok(None);
         };
-        let Some(active) = ctx.observer.as_ref() else {
+        let Some(observer) = ctx.observer else {
             return Ok(None);
         };
-        if !Rc::ptr_eq(&active.scheduler, &self.scheduler) {
+        if !Rc::ptr_eq(&ctx.scheduler, &self.scheduler) {
             return Err(ReactiveError::RuntimeMismatch);
         }
-        let observer_scope = self.observer_state(active)?;
+        let observer_scope = self.observer_state(&ctx)?;
         let same_scope = Rc::ptr_eq(observer_scope.inner(), self.scheduler_state()?.inner());
-        if same_scope
-            && self.observer_is_computation(active.observer)
-            && active.observer.node == target
-        {
+        if same_scope && self.observer_is_computation(observer) && observer.node == target {
             return Err(ReactiveError::Reentrant);
         }
         if !self.is_active() || !self.has_value(target) {
             return Err(ReactiveError::NoSuchNode);
         }
         if same_scope {
-            if !self.observer_is_computation(active.observer) || active.observer.node == target {
+            if !self.observer_is_computation(observer) || observer.node == target {
                 return Err(ReactiveError::Reentrant);
             }
         } else {
@@ -360,8 +358,8 @@ impl<'scope> ScopeStateInner<'scope> {
                 .try_borrow_mut()
                 .map_err(|_| ReactiveError::BorrowConflict)?;
             if !observer_state.is_active()
-                || !observer_state.observer_is_computation(active.observer)
-                || observer_state.scope_id == self.scope_id && active.observer.node == target
+                || !observer_state.observer_is_computation(observer)
+                || observer_state.scope_id == self.scope_id && observer.node == target
             {
                 return Err(ReactiveError::Reentrant);
             }
@@ -381,45 +379,45 @@ impl<'scope> ScopeStateInner<'scope> {
     pub(crate) fn track_read(
         &mut self,
         target: RawId,
-        ctx: &TrackingContext,
+        ctx: &ExecutionContext,
     ) -> ReactiveResult<()> {
-        let Some(active) = ctx.observer.as_ref() else {
+        let Some(observer) = ctx.observer else {
             return Ok(());
         };
         if ctx.blocked_scopes.contains(&self.scope_id) {
             return Ok(());
         }
-        if !Rc::ptr_eq(&active.scheduler, &self.scheduler) {
+        if !Rc::ptr_eq(&ctx.scheduler, &self.scheduler) {
             return Err(ReactiveError::RuntimeMismatch);
         }
         if !self.is_active() || !self.has_value(target) {
             return Err(ReactiveError::NoSuchNode);
         }
-        let observer_scope = self.observer_state(active)?;
+        let observer_scope = self.observer_state(ctx)?;
         let observer_target = TargetNode {
-            scope_id: active.observer.scope_id,
-            node: active.observer.node,
+            scope_id: observer.scope_id,
+            node: observer.node,
         };
         if Rc::ptr_eq(observer_scope.inner(), self.scheduler_state()?.inner()) {
-            if active.observer.node == target || !self.observer_is_computation(active.observer) {
+            if observer.node == target || !self.observer_is_computation(observer) {
                 return Err(ReactiveError::Reentrant);
             }
-            self.track_pair(active.observer, target);
+            self.track_pair(observer, target);
             return Ok(());
         }
 
         let mut observer_state = observer_scope
             .try_borrow_mut()
             .map_err(|_| ReactiveError::BorrowConflict)?;
-        if !observer_state.is_active() || !observer_state.observer_is_computation(active.observer) {
+        if !observer_state.is_active() || !observer_state.observer_is_computation(observer) {
             return Err(ReactiveError::NoSuchNode);
         }
         let observer_dep = TargetNode {
             scope_id: self.scope_id,
             node: target,
         };
-        observer_state.observe_dependency(active.observer.node, observer_dep);
-        observer_state.add_dependency(active.observer.node, observer_dep);
+        observer_state.observe_dependency(observer.node, observer_dep);
+        observer_state.add_dependency(observer.node, observer_dep);
         drop(observer_state);
         self.add_subscriber(target, observer_target);
         Ok(())

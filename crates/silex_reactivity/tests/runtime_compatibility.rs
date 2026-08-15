@@ -115,3 +115,36 @@ fn foreign_untracked_reads_are_allowed_without_subscription() {
     target_root.dispose().expect("target root disposal");
     foreign_root.dispose().expect("foreign root disposal");
 }
+
+#[test]
+fn untrack_only_masks_the_runtime_that_owns_the_scope() {
+    let mut foreign_runtime = Runtime::new();
+    let foreign_root = foreign_runtime.run().expect("foreign root");
+    let mut target_runtime = Runtime::new();
+    let target_root = target_runtime.run().expect("target root");
+    let runs = Rc::new(Cell::new(0));
+
+    foreign_root.with_scope(|foreign_scope| {
+        target_root.with_scope(|target_scope| {
+            let (source, set_source) = target_scope.signal(1_i32).expect("target source");
+            let runs_in_effect = runs.clone();
+            target_scope
+                .effect(
+                    move || {
+                        foreign_scope.untrack(|| source.get())?;
+                        runs_in_effect.set(runs_in_effect.get() + 1);
+                        Ok(())
+                    },
+                    handler::<ReactiveError>(target_scope),
+                )
+                .expect("effect should initialize");
+
+            assert_eq!(runs.get(), 1);
+            set_source.set(2).expect("target source update");
+            assert_eq!(runs.get(), 2);
+        });
+    });
+
+    target_root.dispose().expect("target root disposal");
+    foreign_root.dispose().expect("foreign root disposal");
+}

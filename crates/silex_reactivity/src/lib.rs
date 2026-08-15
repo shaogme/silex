@@ -6,10 +6,12 @@
 //! [`RootHandle::scope`] capability and use the same node types as lexical
 //! scopes.
 //!
-//! The runtime deliberately has no thread-local fallback. Computations are
-//! stored inside the state for their scope, and handles retain a safe reference
-//! to their owning storage. User callbacks are always invoked after the mutable
-//! state borrow has been released.
+//! The runtime deliberately has no thread-local runtime-state fallback.
+//! Computations are stored inside the state for their scope, and handles retain
+//! a safe reference to their owning storage. Tracking execution contexts use a
+//! thread-local stack only as a dynamic call boundary; every frame is bound to
+//! its scheduler, so `untrack` cannot mask another runtime. User callbacks are
+//! always invoked after the mutable state borrow has been released.
 //!
 //! Lexical handles cannot escape [`Scope::child`]. Root handles borrow stable
 //! storage, so a root node cannot outlive the owner that stores it.

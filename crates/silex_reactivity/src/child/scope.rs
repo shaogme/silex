@@ -142,8 +142,9 @@ impl<'scope> Scope<'scope> {
         }
     }
 
-    /// Run a closure without recording signal dependencies. Ownership is
-    /// unchanged because both observer slots are temporarily cleared.
+    /// Run a closure without recording signal dependencies for this runtime.
+    /// Ownership is unchanged because this runtime's observer frame is
+    /// temporarily cleared; contexts belonging to other runtimes are kept.
     pub fn untrack<R>(&self, f: impl FnOnce() -> R) -> R {
         let state = self.state();
         runtime::with_untracked(&state, f)
