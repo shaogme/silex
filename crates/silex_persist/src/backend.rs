@@ -572,7 +572,8 @@ mod tests {
                         callback,
                         scope
                             .error_handler(|_| {})
-                            .expect("error handler should be registered"),
+                            .expect("error handler should be registered")
+                            .view(),
                     )
                     .unwrap();
                 assert_eq!(backend.get("q").unwrap(), None);
@@ -616,7 +617,8 @@ mod tests {
                         Rc::new(|_| {}),
                         scope
                             .error_handler(|_| {})
-                            .expect("error handler should be registered"),
+                            .expect("error handler should be registered")
+                            .view(),
                     )
                     .map_err(|error| error.into_error());
                 assert!(matches!(
@@ -648,7 +650,8 @@ mod tests {
                         Rc::new(|_| {}),
                         target_scope
                             .error_handler(|_| {})
-                            .expect("error handler should be registered"),
+                            .expect("error handler should be registered")
+                            .view(),
                     )
                     .map_err(|error| error.into_error());
                 assert!(matches!(

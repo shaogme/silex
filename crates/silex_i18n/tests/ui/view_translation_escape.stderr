@@ -1,12 +1,12 @@
 error: lifetime may not live long enough
-  --> tests/ui/view_translation_escape.rs:13:9
+  --> tests/ui/view_translation_escape.rs:14:9
    |
  6 |     runtime.child(|scope| {
    |                    ------ return type of closure is AnyView<'2>
    |                    |
    |                    has type `silex_i18n::Scope<'1>`
 ...
-13 |         AnyView::new(t!(store, "missing.key").expect("translation"))
+14 |         AnyView::new(t!(store, "missing.key").expect("translation"))
    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ returning this value requires that `'1` must outlive `'2`
    |
    = note: requirement occurs because of the type `AnyView<'_>`, which makes the generic argument `'_` invariant

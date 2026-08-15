@@ -1,7 +1,7 @@
-use silex_reactivity::ErrorHandler;
+use silex_reactivity::ErrorHandlerToken;
 
 fn require_send<T: Send>() {}
 
 fn main() {
-    require_send::<ErrorHandler<'static, ()>>();
+    require_send::<ErrorHandlerToken<'static, ()>>();
 }

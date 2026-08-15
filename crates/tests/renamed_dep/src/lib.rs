@@ -147,7 +147,7 @@ pub fn renamed_reactive_input<'scope>(scope: my_silex::Scope<'scope>) -> impl Vi
     let error_handler = scope
         .error_handler(|_| {})
         .expect("handler should register");
-    let ctx = my_silex::core::SilexContext::new(scope, error_handler);
+    let ctx = my_silex::core::SilexContext::new(scope, error_handler.view());
     match RenamedReactiveInput(ctx, AnyView::Empty).value("renamed") {
         Ok(builder) => builder.build().into_any(),
         Err(error) => AnyView::from(error.to_string()),

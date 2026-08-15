@@ -31,12 +31,12 @@ fn typed_key_macro_keeps_reactive_arguments_inside_the_memo() {
                 ],
             )
             .expect("valid catalog");
-            let store =
-                I18nBuilder::new(scope, scope.error_handler(|_| {}).expect("error handler"))
-                    .locale(Locale::new("en").expect("valid locale"))
-                    .catalog(catalog)
-                    .build()
-                    .expect("valid store");
+            let handler = scope.error_handler(|_| {}).expect("error handler");
+            let store = I18nBuilder::new(scope, handler.view())
+                .locale(Locale::new("en").expect("valid locale"))
+                .catalog(catalog)
+                .build()
+                .expect("valid store");
             let name = scope.rw_signal("Alice".to_string()).expect("name signal");
             let greeting = t!(
                 store,
@@ -75,14 +75,14 @@ fn typed_key_memo_tracks_fallback_and_catalog_revision() {
                 [("welcome.user", CatalogValue::from("Hallo, {name}!"))],
             )
             .expect("valid german catalog");
-            let store =
-                I18nBuilder::new(scope, scope.error_handler(|_| {}).expect("error handler"))
-                    .locale(Locale::new("es-MX").expect("valid locale"))
-                    .fallback_locale(Locale::new("fr").expect("valid locale"))
-                    .catalog(french)
-                    .catalog(german)
-                    .build()
-                    .expect("valid store");
+            let handler = scope.error_handler(|_| {}).expect("error handler");
+            let store = I18nBuilder::new(scope, handler.view())
+                .locale(Locale::new("es-MX").expect("valid locale"))
+                .fallback_locale(Locale::new("fr").expect("valid locale"))
+                .catalog(french)
+                .catalog(german)
+                .build()
+                .expect("valid store");
             let name = scope.rw_signal("Alice".to_string()).expect("name signal");
             let greeting = t!(
                 store,

@@ -64,6 +64,12 @@ pub(crate) struct WeakOwnerToken {
 }
 
 impl WeakOwnerToken {
+    pub(crate) fn from_erased(state: Rc<ErasedScopeState>) -> Self {
+        Self {
+            state: Rc::downgrade(&state),
+        }
+    }
+
     pub(crate) fn from_typed<'scope>(state: &ScopeState<'scope>) -> Self {
         let erased = erase_state(state.inner().clone());
         Self {

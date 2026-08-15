@@ -17,10 +17,8 @@ fn main() {
                 [("home.title", "Home")],
             )
             .expect("valid catalog");
-            let store = I18nBuilder::new(
-                scope,
-                scope.error_handler(|_| {}).expect("error handler"),
-            )
+            let handler = scope.error_handler(|_| {}).expect("error handler");
+            let store = I18nBuilder::new(scope, handler.view())
             .locale(Locale::new("en-US").expect("valid locale"))
             .catalog(catalog)
             .build()

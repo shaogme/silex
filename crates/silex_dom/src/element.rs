@@ -10,7 +10,7 @@ use std::rc::Rc;
 use wasm_bindgen::{JsCast, JsValue, convert::FromWasmAbi, prelude::*};
 use web_sys::Element as WebElem;
 
-use silex_core::{ReactiveError, SilexError, SilexResult};
+use silex_core::{ErrorHandlerInput, ReactiveError, SilexError, SilexResult};
 
 pub mod tags;
 pub use tags::*;
@@ -320,16 +320,17 @@ impl<'scope, T: Tag> From<TypedElement<'scope, T>> for Element<'scope> {
     }
 }
 
-pub fn bind_event<'scope, E, F, M>(
+pub fn bind_event<'scope, E, F, M, H>(
     dom_element: &WebElem,
     event: E,
     callback: F,
     owner: &MountOwnerToken<'scope>,
-    error_handler: crate::view::MountErrorHandler<'scope>,
+    error_handler: H,
 ) -> SilexResult<()>
 where
     E: crate::event::EventDescriptor + 'static,
     F: EventHandler<'scope, E::EventType, M> + 'scope,
+    H: ErrorHandlerInput<'scope>,
 {
     let handler = callback.into_handler();
     bind_event_impl(
@@ -337,20 +338,22 @@ where
         event.name().to_string(),
         handler,
         owner,
-        error_handler,
+        error_handler.handler_ref(),
     )
 }
 
-pub fn bind_event_impl<'scope, E>(
+pub fn bind_event_impl<'scope, E, H>(
     dom_element: &WebElem,
     event_name: String,
     mut handler: Box<dyn FnMut(E) -> SilexResult<()> + 'scope>,
     owner: &MountOwnerToken<'scope>,
-    error_handler: crate::view::MountErrorHandler<'scope>,
+    error_handler: H,
 ) -> SilexResult<()>
 where
     E: FromWasmAbi + JsCast + 'static,
+    H: ErrorHandlerInput<'scope>,
 {
+    let error_handler = error_handler.handler_ref();
     if !owner.is_active() {
         return Err(SilexError::fatal(ReactiveError::NoSuchNode));
     }

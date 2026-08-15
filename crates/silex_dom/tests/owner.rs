@@ -1,6 +1,8 @@
 #![cfg(target_arch = "wasm32")]
 
-use silex_core::{ErrorReporter, Runtime, Scope, SilexError, SilexErrorKind, SilexResult};
+use silex_core::{
+    ErrorHandlerToken, ErrorReporter, Runtime, Scope, SilexError, SilexErrorKind, SilexResult,
+};
 use silex_dom::attribute::{AttrOp, CombinedStyles, PendingAttribute, ReactiveBindingPlan};
 use silex_dom::element::Element;
 use silex_dom::view::{
@@ -18,13 +20,15 @@ use web_sys::Node;
 
 wasm_bindgen_test_configure!(run_in_browser);
 
-fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
+fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope> {
     scope
         .error_handler(|_| {})
         .expect("error handler should register")
 }
 
-fn test_owner<'scope>(scope: Scope<'scope>) -> (ScopedMountOwner<'scope>, ErrorReporter<'scope>) {
+fn test_owner<'scope>(
+    scope: Scope<'scope>,
+) -> (ScopedMountOwner<'scope>, ErrorHandlerToken<'scope>) {
     let error_handler = test_handler(scope);
     (ScopedMountOwner::new(scope), error_handler)
 }
@@ -192,7 +196,7 @@ fn native_owner_error_handler_separates_initial_deferred_and_cleanup_errors() {
             let owner = ScopedMountOwner::new(scope);
             let result = owner.effect(
                 Box::new(|| Err(SilexError::recoverable(SilexErrorKind::Framework("initial effect failure".to_string())))),
-                error_handler,
+                error_handler.view(),
             );
             assert!(matches!(
                 result,
@@ -237,7 +241,7 @@ fn native_owner_error_handler_separates_initial_deferred_and_cleanup_errors() {
                     runs_for_effect.set(runs_for_effect.get() + 1);
                     Ok(())
                 }),
-                error_handler,
+                error_handler.view(),
             )
             .expect("initial effect run should succeed");
         assert_eq!(runs.get(), 1);
@@ -249,7 +253,7 @@ fn native_owner_error_handler_separates_initial_deferred_and_cleanup_errors() {
                         "cleanup failure".to_string(),
                     )))
                 }),
-                error_handler,
+                error_handler.view(),
             )
             .expect("cleanup registration should succeed");
 
@@ -285,7 +289,7 @@ fn element_child_failure_rolls_back_provisional_owner_and_dom() {
             );
 
             assert!(matches!(
-                view.mount(&owner, &host, Vec::new(), error_handler),
+                view.mount(&owner, &host, Vec::new(), error_handler.view()),
                 Err(SilexError::Recoverable(SilexErrorKind::Framework(message))) if message == "child mount rejected"
             ));
         })
@@ -319,7 +323,7 @@ fn composite_view_failure_rolls_back_only_its_mount_transaction() {
             ];
 
             assert!(matches!(
-            view.mount(&owner, &host.clone(), Vec::new(), error_handler),
+            view.mount(&owner, &host.clone(), Vec::new(), error_handler.view()),
                 Err(SilexError::Recoverable(SilexErrorKind::Framework(message))) if message == "child mount rejected"
             ));
         })
@@ -363,7 +367,7 @@ fn indexed_list_failure_restores_previous_rows_and_can_retry() {
         };
 
         let _ = list
-            .mount(&owner, &host.clone(), Vec::new(), error_handler)
+            .mount(&owner, &host.clone(), Vec::new(), error_handler.view())
             .expect("indexed list should mount");
         assert_eq!(host.text_content().as_deref(), Some("1;2;"));
 
@@ -413,7 +417,7 @@ fn deferred_row_render_failure_keeps_previous_content_and_recovers() {
         };
 
         let _ = view
-            .mount(&owner, &host.clone(), Vec::new(), error_handler)
+            .mount(&owner, &host.clone(), Vec::new(), error_handler.view())
             .expect("dynamic view should mount");
         assert_eq!(host.text_content().as_deref(), Some("1;"));
 
@@ -455,7 +459,7 @@ fn render_only_keyed_rows_follow_collection_changes() {
                 };
                 let (owner, error_handler) = test_owner(child);
                 let _ = list
-                    .mount(&owner, &host, Vec::new(), error_handler)
+                    .mount(&owner, &host, Vec::new(), error_handler.view())
                     .expect("render-only keyed list should mount");
                 assert_eq!(host.text_content().as_deref(), Some("1:0;2:1;"));
 
@@ -512,7 +516,7 @@ fn keyed_list_initial_duplicate_key_is_a_mount_error() {
             let (owner, error_handler) = test_owner(scope);
 
             assert!(matches!(
-                list.mount(&owner, &host, Vec::new(), error_handler),
+                list.mount(&owner, &host, Vec::new(), error_handler.view()),
                 Err(SilexError::Fatal(SilexErrorKind::Framework(message))) if message == "duplicate key in keyed list"
             ));
         })
@@ -546,7 +550,7 @@ fn dynamic_render_owner_cleans_children_on_rerun_and_root_dispose() {
         };
         let (owner, error_handler) = test_owner(scope);
         let _ = view
-            .mount(&owner, &host, Vec::new(), error_handler)
+            .mount(&owner, &host, Vec::new(), error_handler.view())
             .expect("dynamic view should mount");
         assert_eq!(host.text_content().as_deref(), Some("0"));
 
@@ -594,7 +598,7 @@ fn combined_reactive_styles_clean_up_properties_on_scope_dispose() {
             });
 
             operation
-                .apply(&element, &token, error_handler)
+                .apply(&element, &token, error_handler.view())
                 .expect("combined styles can be applied");
             assert!(
                 element
@@ -703,7 +707,7 @@ fn branch_replaces_row_owner_and_keyed_list_reorders_ranges() {
                 };
                 let (list_owner, error_handler) = test_owner(child);
                 let _ = list
-                    .mount(&list_owner, &host, Vec::new(), error_handler)
+                    .mount(&list_owner, &host, Vec::new(), error_handler.view())
                     .expect("keyed list should mount");
                 assert_eq!(host.text_content().as_deref(), Some("b11:0;2:1;3:2;"));
 
@@ -751,7 +755,7 @@ fn indexed_list_preserves_position_identity_across_diff() {
                 };
                 let (owner, error_handler) = test_owner(child);
                 let _ = list
-                    .mount(&owner, &host, Vec::new(), error_handler)
+                    .mount(&owner, &host, Vec::new(), error_handler.view())
                     .expect("indexed list should mount");
                 assert_eq!(host.text_content().as_deref(), Some("1:0;2:1;"));
 
@@ -822,7 +826,7 @@ fn repeated_branch_and_list_replacement_keeps_owner_lifecycle_stable() {
                 };
                 let (list_owner, error_handler) = test_owner(child);
                 let _ = list
-                    .mount(&list_owner, &host, Vec::new(), error_handler)
+                    .mount(&list_owner, &host, Vec::new(), error_handler.view())
                     .expect("indexed list should mount");
 
                 for values in [vec![1, 2, 3], vec![3], vec![4, 5], vec![6, 7, 8, 9]] {
@@ -907,7 +911,7 @@ fn stateful_keyed_rows_preserve_mounts_and_invalidate_old_updaters() {
                 };
                 let (owner, error_handler) = test_owner(child);
                 let _ = view
-                    .mount(&owner, &host, Vec::new(), error_handler)
+                    .mount(&owner, &host, Vec::new(), error_handler.view())
                     .expect("branch view should mount");
                 assert_eq!(host.text_content().as_deref(), Some("1:0;2:1;"));
                 assert_eq!(mounts.get(), 2);
@@ -998,7 +1002,7 @@ fn rejected_stateful_factory_cleans_uncommitted_row_range() {
                 };
                 let (owner, error_handler) = test_owner(child);
                 let _ = list
-                    .mount(&owner, &host, Vec::new(), error_handler)
+                    .mount(&owner, &host, Vec::new(), error_handler.view())
                     .expect("keyed list should mount");
                 assert_eq!(host.text_content().as_deref(), Some("1:0;"));
                 assert_eq!(comment_count(&host), 4);

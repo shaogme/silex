@@ -1,4 +1,4 @@
-error[E0599]: no method named `cache_with_default` found for struct `HttpClientBuilder<'scope, T, C>` in the current scope
+error[E0599]: no method named `cache_with_default` found for struct `HttpClientBuilder<'scope, T, C, H>` in the current scope
   --> tests/ui/fail_cache_without_persist.rs:12:10
    |
  7 |           let _builder = HttpClient::get(
@@ -8,6 +8,6 @@ error[E0599]: no method named `cache_with_default` found for struct `HttpClientB
 10 | |             scope.error_handler(|_| {}).unwrap(),
 11 | |         )
 12 | |         .cache_with_default(CachePolicy::CacheFirst, "default".to_string());
-   | |         -^^^^^^^^^^^^^^^^^^ method not found in `HttpClientBuilder<'_, std::string::String, TextCodec>`
+   | |         -^^^^^^^^^^^^^^^^^^ method not found in `HttpClientBuilder<'_, std::string::String, TextCodec, silex_reactivity::error::ErrorHandlerToken<'_, SilexError>>`
    | |_________|
    |

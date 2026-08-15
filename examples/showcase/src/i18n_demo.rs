@@ -88,6 +88,7 @@ pub fn I18nPage<'scope>(
     i18n: I18nStore<'scope>,
 ) -> impl View<'scope> {
     let scope = ctx.scope();
+    let error_handler = ctx.error_reporter();
     let available_locales = [
         parse_locale("en-US")?,
         parse_locale("zh-CN")?,

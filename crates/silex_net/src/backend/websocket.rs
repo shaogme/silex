@@ -11,8 +11,9 @@ use wasm_bindgen::{JsCast, closure::Closure};
 use web_sys::{Event, MessageEvent, WebSocket as JsWebSocket};
 
 use silex_core::{
-    CallbackInvokeError, CompletionSender, ErrorReporter, ReadSignal, Rx, Scope, SilexError,
-    SilexResult, StoredValue, TaskHandle, WriteSignal, unwind_safe,
+    CallbackInvokeError, CompletionSender, ErrorHandlerInput, ErrorReporter, ReactiveError,
+    ReadSignal, Rx, Scope, SilexError, SilexResult, StoredValue, TaskHandle, WriteSignal,
+    unwind_safe,
 };
 
 use crate::{
@@ -24,27 +25,36 @@ use crate::{
 pub struct WebSocket;
 
 impl WebSocket {
-    pub fn connect<'scope>(
+    pub fn connect<'scope, H>(
         scope: Scope<'scope>,
         url: impl IntoNetValue<'scope>,
-        error_handler: ErrorReporter<'scope>,
-    ) -> WebSocketBuilder<'scope> {
+        error_handler: H,
+    ) -> WebSocketBuilder<'scope, H>
+    where
+        H: ErrorHandlerInput<'scope>,
+    {
         WebSocketBuilder::new(scope, url.into_net_value(), error_handler)
     }
 
-    pub fn open<'scope>(
+    pub fn open<'scope, H>(
         scope: Scope<'scope>,
         url: impl IntoNetValue<'scope>,
-        error_handler: ErrorReporter<'scope>,
-    ) -> Result<WebSocketConnection<'scope>, NetError> {
+        error_handler: H,
+    ) -> Result<WebSocketConnection<'scope>, NetError>
+    where
+        H: ErrorHandlerInput<'scope>,
+    {
         Self::connect(scope, url, error_handler).build()
     }
 
-    pub fn lazy<'scope>(
+    pub fn lazy<'scope, H>(
         scope: Scope<'scope>,
         url: impl IntoNetValue<'scope>,
-        error_handler: ErrorReporter<'scope>,
-    ) -> WebSocketBuilder<'scope> {
+        error_handler: H,
+    ) -> WebSocketBuilder<'scope, H>
+    where
+        H: ErrorHandlerInput<'scope>,
+    {
         Self::connect(scope, url, error_handler).auto_connect(false)
     }
 }
@@ -116,7 +126,7 @@ fn submit_completion<T: 'static>(
     let error = match error {
         CallbackInvokeError::Runtime(error) => SilexError::fatal(error),
         CallbackInvokeError::User(error) => error,
-        CallbackInvokeError::Handler(error) => SilexError::fatal(error.reason()),
+        CallbackInvokeError::Handler(error) => SilexError::fatal(ReactiveError::Handler(error)),
     };
     let error_result = catch_unwind(AssertUnwindSafe(|| error_token.submit(error)));
     if let Ok(Err(_)) | Err(_) = error_result {
@@ -665,9 +675,9 @@ impl<'scope> WebSocketConnection<'scope> {
 }
 
 #[derive(Clone)]
-pub struct WebSocketBuilder<'scope> {
+pub struct WebSocketBuilder<'scope, H = ErrorReporter<'scope>> {
     scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+    error_handler: H,
     url: ValueResolver<'scope>,
     protocols: Vec<String>,
     auto_connect: bool,
@@ -677,12 +687,8 @@ pub struct WebSocketBuilder<'scope> {
     on_close: Vec<Rc<dyn Fn(u16, String) + 'scope>>,
 }
 
-impl<'scope> WebSocketBuilder<'scope> {
-    fn new(
-        scope: Scope<'scope>,
-        url: ValueResolver<'scope>,
-        error_handler: ErrorReporter<'scope>,
-    ) -> Self {
+impl<'scope, H> WebSocketBuilder<'scope, H> {
+    fn new(scope: Scope<'scope>, url: ValueResolver<'scope>, error_handler: H) -> Self {
         Self {
             scope,
             error_handler,
@@ -731,7 +737,10 @@ impl<'scope> WebSocketBuilder<'scope> {
         self
     }
 
-    pub fn build(self) -> Result<WebSocketConnection<'scope>, NetError> {
+    pub fn build(self) -> Result<WebSocketConnection<'scope>, NetError>
+    where
+        H: ErrorHandlerInput<'scope>,
+    {
         let Self {
             scope,
             error_handler,
@@ -743,6 +752,7 @@ impl<'scope> WebSocketBuilder<'scope> {
             on_error,
             on_close,
         } = self;
+        let error_handler = error_handler.handler_ref();
         url.validate_runtime(scope).map_err(NetError::from)?;
         let initial_socket = if auto_connect {
             match url
@@ -773,10 +783,14 @@ impl<'scope> WebSocketBuilder<'scope> {
             None::<StoredValue<'scope, WebSocketInner<'scope>>>,
         ));
         let inner_slot_for_completion = inner_slot.clone();
+        let error_lease = error_handler
+            .lease()
+            .map_err(|error| NetError::from(SilexError::fatal(ReactiveError::Handler(error))))?;
+        let error_completion_lease = error_lease.clone();
         let error_completion = scope.completion_sender(unwind_safe(move |error: SilexError| {
-            error_handler
+            error_completion_lease
                 .handle(error)
-                .map_err(|error| SilexError::fatal(error.reason()))
+                .map_err(|error| SilexError::fatal(ReactiveError::Handler(error)))
         }))?;
         let completion = scope.completion_sender(unwind_safe(move |event: WebSocketEvent| {
             if let Some(inner) = inner_slot_for_completion.get() {

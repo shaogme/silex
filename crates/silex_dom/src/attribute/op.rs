@@ -308,13 +308,16 @@ impl<'scope> AttrOp<'scope> {
         Self::Custom(Rc::new(callback))
     }
 
-    pub fn apply(
+    pub fn apply<H>(
         self,
         el: &Element,
         owner: &MountOwnerToken<'scope>,
-        error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()> {
-        self.apply_unchecked(el, owner, error_handler)
+        error_handler: H,
+    ) -> SilexResult<()>
+    where
+        H: ErrorHandlerInput<'scope>,
+    {
+        self.apply_unchecked(el, owner, error_handler.handler_ref())
     }
 
     fn apply_unchecked(

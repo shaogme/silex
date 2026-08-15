@@ -59,7 +59,7 @@ async fn portal_modal_does_not_duplicate_content_after_repeated_toggles() {
         let error_handler = scope
             .error_handler(move |_| errors_for_handler.set(errors_for_handler.get() + 1))
             .expect("test error handler should be registered");
-        let ctx = SilexContext::new(scope, error_handler);
+        let ctx = SilexContext::new(scope, error_handler.view());
         let view = div![
             button("Toggle Modal"),
             Show(ctx, show_modal)
@@ -78,7 +78,7 @@ async fn portal_modal_does_not_duplicate_content_after_repeated_toggles() {
         ];
         let owner = ScopedMountOwner::new(scope);
         let _ = view
-            .mount(&owner, host.as_ref(), Vec::new(), error_handler)
+            .mount(&owner, host.as_ref(), Vec::new(), error_handler.view())
             .expect("portal demo should mount");
         (set_show_modal, errors)
     });

@@ -4,14 +4,19 @@ use std::{
 };
 
 use silex_core::{
-    CallbackInvokeError, CompletionSender, ErrorReporter, SilexContextProvider, SilexError,
-    SilexErrorKind, SilexResult, rx, unwind_safe,
+    CallbackInvokeError, CompletionSender, ErrorHandlerToken, ErrorReporter, HandlerLease,
+    ReactiveError, SilexContextProvider, SilexError, SilexErrorKind, SilexResult, rx, unwind_safe,
 };
 use silex_dom::prelude::*;
 use silex_dom::view::{MountOwner, MountState, SharedCell};
 use silex_macros::component;
 
-type ParentHandlerCell<'scope> = SharedCell<Option<MountState<'scope, ErrorReporter<'scope>>>>;
+struct ParentHandler<'scope> {
+    reporter: ErrorReporter<'scope>,
+    lease: HandlerLease<'scope>,
+}
+
+type ParentHandlerCell<'scope> = SharedCell<Option<MountState<'scope, ParentHandler<'scope>>>>;
 type ErrorFactory<'scope> = Rc<dyn Fn(SilexError) -> AnyView<'scope> + 'scope>;
 type RecordError<'scope> = Rc<dyn Fn(SilexError) + 'scope>;
 
@@ -28,7 +33,7 @@ fn submit_boundary_error<'scope>(
         CallbackInvokeError::Runtime(error) => SilexError::fatal(SilexErrorKind::Reactivity(error)),
         CallbackInvokeError::User(error) => error,
         CallbackInvokeError::Handler(error) => {
-            SilexError::fatal(SilexErrorKind::Reactivity(error.reason()))
+            SilexError::fatal(SilexErrorKind::Reactivity(ReactiveError::Handler(error)))
         }
     };
     let handler_result = catch_unwind(AssertUnwindSafe(|| error_handler.handle(error)));
@@ -93,7 +98,7 @@ impl<'scope> ErrorBoundaryBranch<'scope> {
         let handler = self.parent_handler.with(|state| {
             state
                 .as_ref()
-                .and_then(|state| state.with(|handler| *handler).ok())
+                .and_then(|state| state.with(|handler| handler.reporter).ok())
         });
         handler.ok_or_else(|| {
             SilexError::fatal(SilexErrorKind::Framework(
@@ -156,6 +161,9 @@ struct ErrorBoundaryView<'scope> {
     view: AnyView<'scope>,
     phase_handler: ErrorReporter<'scope>,
     parent_handler: ParentHandlerCell<'scope>,
+    _boundary_handler: ErrorHandlerToken<'scope>,
+    _phase_handler: ErrorHandlerToken<'scope>,
+    _completion_error_handler: ErrorHandlerToken<'scope>,
 }
 
 impl<'scope> ApplyAttributes<'scope> for ErrorBoundaryView<'scope> {
@@ -173,7 +181,13 @@ impl<'scope> View<'scope> for ErrorBoundaryView<'scope> {
         error_handler: ErrorReporter<'scope>,
     ) -> silex_core::SilexResult<MountInstance<'scope>> {
         let token = owner.token();
-        let parent_state = token.owner_state(error_handler)?;
+        let lease = error_handler
+            .lease()
+            .map_err(|error| SilexError::fatal(ReactiveError::Handler(error)))?;
+        let parent_state = token.owner_state(ParentHandler {
+            reporter: error_handler,
+            lease,
+        })?;
         self.parent_handler.set(Some(parent_state));
         self.view.mount(owner, parent, attrs, self.phase_handler)
     }
@@ -204,23 +218,26 @@ where
     let completion_error_handler = scope.error_handler(move |error| {
         let _ = set_error.set(Some(error));
     })?;
+    let completion_error_handler_for_boundary = completion_error_handler.clone();
     let reporter_completion = completion.clone();
     let boundary_handler = scope.error_handler(move |error| {
         let completion = reporter_completion.clone();
-        let error_handler = completion_error_handler;
+        let error_handler = completion_error_handler_for_boundary.view();
         let _ = scope.spawn_scoped(
             async move {
                 submit_boundary_error(&completion, error, error_handler);
             },
-            completion_error_handler,
+            error_handler,
         );
     })?;
+    let boundary_handler_view = boundary_handler.view();
 
     let parent_handler: ParentHandlerCell<'scope> = SharedCell::new(None);
     let fallback = Rc::new(move |error: SilexError| fallback(error).into_any());
     let record_error = Rc::new(move |error: SilexError| {
         let _ = set_error.set(Some(error));
     });
+    let boundary_handler_for_phase = boundary_handler.clone();
     let phase_handler = {
         let parent_handler = parent_handler.clone();
         scope.error_handler(move |error_value| {
@@ -228,29 +245,31 @@ where
                 let parent = parent_handler.with(|state| {
                     state
                         .as_ref()
-                        .and_then(|state| state.with(|handler| *handler).ok())
+                        .and_then(|state| state.with(|handler| handler.lease.clone()).ok())
                 });
                 if let Some(parent) = parent {
                     let _ = parent.handle(error_value);
                 } else {
-                    let _ = boundary_handler.handle(error_value);
+                    let _ = boundary_handler_for_phase.handle(error_value);
                 }
             } else {
-                let _ = boundary_handler.handle(error_value);
+                let _ = boundary_handler_for_phase.handle(error_value);
             }
         })?
     };
 
     let fallback = fallback.clone();
     let children = children.clone();
-    let child_ctx = SilexContextProvider::with_error_reporter(ctx, boundary_handler);
+    let child_ctx = SilexContextProvider::with_error_reporter(ctx, boundary_handler_view);
     let parent_handler_for_view = parent_handler.clone();
-    let phase_ctx = SilexContextProvider::with_error_reporter(ctx, phase_handler);
+    let phase_handler_view = phase_handler.view();
+    let phase_ctx = SilexContextProvider::with_error_reporter(ctx, phase_handler_view);
+    let completion_error_handler_view = completion_error_handler.view();
     let view = rx!(phase_ctx; {
         if let Some(error) = (*$error).clone() {
             ErrorBoundaryBranch::fallback(
                 fallback(error),
-                boundary_handler,
+                boundary_handler_view,
                 parent_handler_for_view.clone(),
                 fallback.clone(),
                 record_error.clone(),
@@ -265,7 +284,7 @@ where
             match result {
                 Ok(view) => ErrorBoundaryBranch::child(
                     view,
-                    boundary_handler,
+                    boundary_handler_view,
                     parent_handler_for_view.clone(),
                     fallback.clone(),
                     record_error.clone(),
@@ -281,12 +300,12 @@ where
                     };
                     let completion = completion.clone();
                     let error = SilexError::fatal(SilexErrorKind::Javascript(message));
-                    let error_handler = completion_error_handler;
+                    let error_handler = completion_error_handler_view;
                     let _ = scope.spawn_scoped(
                         async move {
                             submit_boundary_error(&completion, error, error_handler);
                         },
-                        completion_error_handler,
+                        error_handler,
                     );
                     AnyView::Empty
                 }
@@ -296,7 +315,10 @@ where
 
     Ok(ErrorBoundaryView {
         view: view.into_any(),
-        phase_handler,
+        phase_handler: phase_handler_view,
         parent_handler,
+        _boundary_handler: boundary_handler,
+        _phase_handler: phase_handler,
+        _completion_error_handler: completion_error_handler,
     })
 }

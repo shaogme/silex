@@ -10,8 +10,9 @@ use std::{
 
 use gloo_timers::future::sleep;
 use silex_core::{
-    CallbackInvokeError, CompletionOnce, ErrorReporter, Mutation, ReactiveSource, Resource, RxGet,
-    RxRead, SilexError, SilexErrorKind, SuspenseContext, unwind_safe,
+    CallbackInvokeError, CompletionOnce, ErrorHandlerInput, ErrorReporter, Mutation, ReactiveError,
+    ReactiveSource, Resource, RxGet, RxRead, SilexError, SilexErrorKind, SuspenseContext,
+    unwind_safe,
 };
 
 use crate::{
@@ -47,7 +48,7 @@ fn submit_once<'scope, T: 'static>(
     let error = match error {
         CallbackInvokeError::Runtime(error) => SilexError::fatal(error),
         CallbackInvokeError::User(error) => error,
-        CallbackInvokeError::Handler(error) => SilexError::fatal(error.reason()),
+        CallbackInvokeError::Handler(error) => SilexError::fatal(ReactiveError::Handler(error)),
     };
     let handler_result = catch_unwind(AssertUnwindSafe(|| error_handler.handle(error)));
     if let Err(handler_panic) = handler_result {
@@ -193,7 +194,7 @@ macro_rules! impl_net_methods {
                 let cache_token = refresh_binding
                     .map(|binding| self.cache_completion_once_for_binding(binding))
                     .transpose()?;
-                let refresh_error_handler = self.error_handler;
+                let refresh_error_handler = self.error_handler.handler_ref();
                 self.scope
                     .spawn_scoped(
                         async move {
@@ -206,7 +207,7 @@ macro_rules! impl_net_methods {
                             )
                             .await;
                         },
-                        self.error_handler,
+                        self.error_handler.handler_ref(),
                     )
                     .map_err(NetError::from)?;
                 return Ok(value);
@@ -233,7 +234,14 @@ macro_rules! impl_net_methods {
                     None
                 }
             };
-            execute_prepared(client, spec, fallback, cache_token, self.error_handler).await
+            execute_prepared(
+                client,
+                spec,
+                fallback,
+                cache_token,
+                self.error_handler.handler_ref(),
+            )
+            .await
         }
 
         pub fn into_resource(
@@ -256,8 +264,8 @@ macro_rules! impl_net_methods {
         {
             self.validate_runtime().map_err(NetError::from)?;
             let scope = self.scope;
-            let error_handler = self.error_handler;
-            let request_builder = self.clone();
+            let error_handler = self.error_handler.handler_ref();
+            let request_builder = self.cloned_with_handler(error_handler);
             let request_source = scope
                 .memo(
                     move |_| Ok(request_builder.resolve_spec_tracked()?),
@@ -274,7 +282,7 @@ macro_rules! impl_net_methods {
             let fetch_error_handler = error_handler;
             let completion_error_handler = fetch_error_handler;
             #[cfg(feature = "persist")]
-            let fetch_builder = self.clone();
+            let fetch_builder = self.cloned_with_handler(error_handler);
             let resource_generation = Rc::new(Cell::new(0usize));
             let resource_slot = Rc::new(Cell::new(None::<Resource<'scope, T, NetError>>));
             let resource_generation_for_fetcher = resource_generation.clone();
@@ -451,8 +459,8 @@ macro_rules! impl_net_methods {
 
         pub fn as_mutation(&self) -> Result<Mutation<'scope, (), T, NetError>, NetError> {
             self.validate_runtime().map_err(NetError::from)?;
-            let builder = self.clone();
-            let completion_error_handler = self.error_handler;
+            let builder = self.cloned_with_handler(self.error_handler.handler_ref());
+            let completion_error_handler = self.error_handler.handler_ref();
             Mutation::new_with_prepare(
                 self.scope,
                 move |_| {
@@ -493,7 +501,7 @@ macro_rules! impl_net_methods {
                         .await
                     })
                 },
-                self.error_handler,
+                self.error_handler.handler_ref(),
             )
             .map_err(NetError::from)
         }
@@ -508,7 +516,7 @@ macro_rules! impl_net_methods {
         {
             self.validate_runtime().map_err(NetError::from)?;
             let scope = self.scope;
-            let completion_error_handler = self.error_handler;
+            let completion_error_handler = self.error_handler.handler_ref();
             Mutation::new_with_prepare(
                 scope,
                 move |input: Input| {
@@ -550,7 +558,7 @@ macro_rules! impl_net_methods {
                         .await
                     })
                 },
-                self.error_handler,
+                self.error_handler.handler_ref(),
             )
             .map_err(NetError::from)
         }
@@ -558,37 +566,41 @@ macro_rules! impl_net_methods {
 }
 
 #[cfg(all(feature = "json", feature = "persist"))]
-impl<'scope, T, C> HttpClientBuilder<'scope, T, C>
+impl<'scope, T, C, H> HttpClientBuilder<'scope, T, C, H>
 where
     T: Clone + 'static,
     C: ResponseCodec<T> + Clone + 'static,
+    H: Clone + ErrorHandlerInput<'scope>,
 {
     impl_net_methods!();
 }
 
 #[cfg(all(feature = "json", not(feature = "persist")))]
-impl<'scope, T, C> HttpClientBuilder<'scope, T, C>
+impl<'scope, T, C, H> HttpClientBuilder<'scope, T, C, H>
 where
     T: Clone + 'static,
     C: ResponseCodec<T> + Clone + 'static,
+    H: Clone + ErrorHandlerInput<'scope>,
 {
     impl_net_methods!();
 }
 
 #[cfg(all(not(feature = "json"), feature = "persist"))]
-impl<'scope, T, C> HttpClientBuilder<'scope, T, C>
+impl<'scope, T, C, H> HttpClientBuilder<'scope, T, C, H>
 where
     T: Clone + 'static,
     C: ResponseCodec<T> + Clone + 'static,
+    H: Clone + ErrorHandlerInput<'scope>,
 {
     impl_net_methods!();
 }
 
 #[cfg(all(not(feature = "json"), not(feature = "persist")))]
-impl<'scope, T, C> HttpClientBuilder<'scope, T, C>
+impl<'scope, T, C, H> HttpClientBuilder<'scope, T, C, H>
 where
     T: Clone + 'static,
     C: ResponseCodec<T> + Clone + 'static,
+    H: Clone + ErrorHandlerInput<'scope>,
 {
     impl_net_methods!();
 }

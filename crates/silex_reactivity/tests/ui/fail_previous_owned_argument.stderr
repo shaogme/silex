@@ -11,7 +11,7 @@ error[E0631]: type mismatch in closure arguments
 note: required by a bound in `silex_reactivity::Scope::<'scope>::effect_with_previous`
  --> src/child/scope.rs
   |
-  |     pub fn effect_with_previous<T, E, F>(
+  |     pub fn effect_with_previous<T, E, F, H>(
   |            -------------------- required by a bound in this associated function
 ...
   |         F: FnMut(Option<&T>) -> Result<T, E> + 'scope,

@@ -582,7 +582,7 @@ impl<'scope> ScopeStateInner<'scope> {
 mod tests {
     use super::*;
     use crate::{
-        ErrorHandler, Runtime, Scope,
+        ErrorHandlerToken, Runtime, Scope,
         runtime::{dispose::dispose_nodes, scheduler::GlobalScheduler},
         scope::ScopeStorage,
     };
@@ -592,7 +592,7 @@ mod tests {
         let _ = runtime.child(f);
     }
 
-    fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, ()> {
+    fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope, ()> {
         scope.error_handler(|_| {}).expect("handler registration")
     }
 

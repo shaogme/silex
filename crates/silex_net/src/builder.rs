@@ -8,7 +8,7 @@ use crate::{
 };
 #[cfg(feature = "persist")]
 use silex_core::CompletionOnce;
-use silex_core::{ErrorReporter, Scope, SilexResult};
+use silex_core::{ErrorHandlerInput, ErrorReporter, Scope, SilexResult};
 use std::{marker::PhantomData, rc::Rc, time::Duration};
 
 #[cfg(any(feature = "json", feature = "persist"))]
@@ -87,9 +87,9 @@ impl<'scope> BodyResolver<'scope> {
 }
 
 #[derive(Clone)]
-pub struct HttpClientBuilder<'scope, T, C> {
+pub struct HttpClientBuilder<'scope, T, C, H = ErrorReporter<'scope>> {
     pub(crate) scope: Scope<'scope>,
-    pub(crate) error_handler: ErrorReporter<'scope>,
+    pub(crate) error_handler: H,
     pub(crate) method: HttpMethod,
     pub(crate) url: ValueResolver<'scope>,
     pub(crate) headers: Vec<(String, ValueResolver<'scope>)>,
@@ -113,15 +113,16 @@ pub struct HttpClientBuilder<'scope, T, C> {
 pub struct HttpClient;
 
 impl HttpClient {
-    pub fn builder_with_codec<'scope, T, C>(
+    pub fn builder_with_codec<'scope, T, C, H>(
         scope: Scope<'scope>,
         method: HttpMethod,
         url: impl IntoNetValue<'scope>,
         response_codec: C,
-        error_handler: ErrorReporter<'scope>,
-    ) -> HttpClientBuilder<'scope, T, C>
+        error_handler: H,
+    ) -> HttpClientBuilder<'scope, T, C, H>
     where
         C: ResponseCodec<T>,
+        H: ErrorHandlerInput<'scope>,
     {
         HttpClientBuilder::new(
             scope,
@@ -132,12 +133,15 @@ impl HttpClient {
         )
     }
 
-    pub fn builder<'scope>(
+    pub fn builder<'scope, H>(
         scope: Scope<'scope>,
         method: HttpMethod,
         url: impl IntoNetValue<'scope>,
-        error_handler: ErrorReporter<'scope>,
-    ) -> HttpClientBuilder<'scope, String, TextCodec> {
+        error_handler: H,
+    ) -> HttpClientBuilder<'scope, String, TextCodec, H>
+    where
+        H: ErrorHandlerInput<'scope>,
+    {
         HttpClientBuilder::new(
             scope,
             method,
@@ -147,54 +151,69 @@ impl HttpClient {
         )
     }
 
-    pub fn get<'scope>(
+    pub fn get<'scope, H>(
         scope: Scope<'scope>,
         url: impl IntoNetValue<'scope>,
-        error_handler: ErrorReporter<'scope>,
-    ) -> HttpClientBuilder<'scope, String, TextCodec> {
+        error_handler: H,
+    ) -> HttpClientBuilder<'scope, String, TextCodec, H>
+    where
+        H: ErrorHandlerInput<'scope>,
+    {
         Self::builder(scope, HttpMethod::Get, url, error_handler)
     }
 
-    pub fn post<'scope>(
+    pub fn post<'scope, H>(
         scope: Scope<'scope>,
         url: impl IntoNetValue<'scope>,
-        error_handler: ErrorReporter<'scope>,
-    ) -> HttpClientBuilder<'scope, String, TextCodec> {
+        error_handler: H,
+    ) -> HttpClientBuilder<'scope, String, TextCodec, H>
+    where
+        H: ErrorHandlerInput<'scope>,
+    {
         Self::builder(scope, HttpMethod::Post, url, error_handler)
     }
 
-    pub fn put<'scope>(
+    pub fn put<'scope, H>(
         scope: Scope<'scope>,
         url: impl IntoNetValue<'scope>,
-        error_handler: ErrorReporter<'scope>,
-    ) -> HttpClientBuilder<'scope, String, TextCodec> {
+        error_handler: H,
+    ) -> HttpClientBuilder<'scope, String, TextCodec, H>
+    where
+        H: ErrorHandlerInput<'scope>,
+    {
         Self::builder(scope, HttpMethod::Put, url, error_handler)
     }
 
-    pub fn patch<'scope>(
+    pub fn patch<'scope, H>(
         scope: Scope<'scope>,
         url: impl IntoNetValue<'scope>,
-        error_handler: ErrorReporter<'scope>,
-    ) -> HttpClientBuilder<'scope, String, TextCodec> {
+        error_handler: H,
+    ) -> HttpClientBuilder<'scope, String, TextCodec, H>
+    where
+        H: ErrorHandlerInput<'scope>,
+    {
         Self::builder(scope, HttpMethod::Patch, url, error_handler)
     }
 
-    pub fn delete<'scope>(
+    pub fn delete<'scope, H>(
         scope: Scope<'scope>,
         url: impl IntoNetValue<'scope>,
-        error_handler: ErrorReporter<'scope>,
-    ) -> HttpClientBuilder<'scope, String, TextCodec> {
+        error_handler: H,
+    ) -> HttpClientBuilder<'scope, String, TextCodec, H>
+    where
+        H: ErrorHandlerInput<'scope>,
+    {
         Self::builder(scope, HttpMethod::Delete, url, error_handler)
     }
 }
 
-impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
+impl<'scope, T, C, H> HttpClientBuilder<'scope, T, C, H> {
     fn new(
         scope: Scope<'scope>,
         method: HttpMethod,
         url: ValueResolver<'scope>,
         response_codec: C,
-        error_handler: ErrorReporter<'scope>,
+        error_handler: H,
     ) -> Self {
         Self {
             scope,
@@ -216,6 +235,38 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
             on_retry: Vec::new(),
             on_error: Vec::new(),
             retry: None,
+            _marker: PhantomData,
+        }
+    }
+
+    pub(crate) fn cloned_with_handler<K>(
+        &self,
+        error_handler: K,
+    ) -> HttpClientBuilder<'scope, T, C, K>
+    where
+        T: Clone,
+        C: Clone,
+    {
+        HttpClientBuilder {
+            scope: self.scope,
+            error_handler,
+            method: self.method,
+            url: self.url.clone(),
+            headers: self.headers.clone(),
+            query: self.query.clone(),
+            path_params: self.path_params.clone(),
+            timeout: self.timeout,
+            credentials: self.credentials,
+            body: self.body.clone(),
+            response_codec: self.response_codec.clone(),
+            transport: self.transport.clone(),
+            #[cfg(feature = "persist")]
+            cache: self.cache.clone(),
+            before_send: self.before_send.clone(),
+            after_response: self.after_response.clone(),
+            on_retry: self.on_retry.clone(),
+            on_error: self.on_error.clone(),
+            retry: self.retry,
             _marker: PhantomData,
         }
     }
@@ -631,7 +682,7 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
         })
     }
 
-    pub fn text(self) -> HttpClientBuilder<'scope, String, TextCodec> {
+    pub fn text(self) -> HttpClientBuilder<'scope, String, TextCodec, H> {
         HttpClientBuilder {
             scope: self.scope,
             error_handler: self.error_handler,
@@ -657,7 +708,7 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
     }
 
     #[cfg(feature = "json")]
-    pub fn json<U>(self) -> HttpClientBuilder<'scope, U, NetJsonCodec<U>>
+    pub fn json<U>(self) -> HttpClientBuilder<'scope, U, NetJsonCodec<U>, H>
     where
         U: serde::de::DeserializeOwned + Clone + 'static,
     {
@@ -690,7 +741,7 @@ impl<'scope, T, C> HttpClientBuilder<'scope, T, C> {
 mod tests {
     use super::{HttpClient, IntoNetValue, ValueResolver};
     use crate::state::RequestBody;
-    use silex_core::{ErrorReporter, Runtime, Scope};
+    use silex_core::{ErrorHandlerToken, Runtime, Scope};
 
     #[cfg(feature = "json")]
     use crate::NetError;
@@ -714,8 +765,22 @@ mod tests {
         }
     }
 
-    fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
+    fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope> {
         scope.error_handler(|_| {}).unwrap()
+    }
+
+    #[test]
+    fn builder_keeps_token_owner_until_drop() {
+        let mut runtime = Runtime::new();
+        runtime
+            .child(|scope| {
+                let token = test_handler(scope);
+                let builder = HttpClient::get(scope, "https://example.test", token);
+                assert_eq!(scope.runtime_snapshot().handlers, 1);
+                drop(builder);
+                assert_eq!(scope.runtime_snapshot().handlers, 0);
+            })
+            .unwrap();
     }
 
     #[test]

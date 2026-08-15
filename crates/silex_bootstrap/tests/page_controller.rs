@@ -198,7 +198,7 @@ fn lifecycle_reentrancy_is_reported_without_blocking_outer_unmount() {
                     dispatch("pagehide");
                     Ok(())
                 },
-                handler,
+                &handler,
             )?;
             ctx.mount(Element::with_child("section", "reentrant"), handler)
         })
@@ -239,7 +239,7 @@ fn lifecycle_reporter_receives_cleanup_error() {
             let handler = scope.error_handler(|_: SilexError| {})?;
             scope.on_cleanup(
                 || -> SilexResult<()> { panic!("page cleanup failure") },
-                handler,
+                &handler,
             )?;
             ctx.mount(Element::with_child("section", "cleanup-error"), handler)
         })

@@ -17,7 +17,7 @@ fn main() {
     runtime
         .child(|scope| -> SilexResult<()> {
             let error_handler = scope.error_handler(|_| {})?;
-            let ctx = SilexContext::new(scope, error_handler);
+            let ctx = SilexContext::new(scope, error_handler.view());
             let patch = rx!(
                 ctx;
                 @fn PatchThemePatch::default().primary(hex("#ff69b4"))

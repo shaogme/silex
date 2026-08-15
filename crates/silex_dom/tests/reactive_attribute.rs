@@ -2,7 +2,9 @@
 
 use std::borrow::Cow;
 
-use silex_core::{ErrorReporter, Runtime, Scope, SilexError, SilexErrorKind, SilexResult};
+use silex_core::{
+    ErrorHandlerToken, ErrorReporter, Runtime, Scope, SilexError, SilexErrorKind, SilexResult,
+};
 use silex_dom::attribute::AttributeBuilder;
 use silex_dom::element::Element;
 use silex_dom::view::{
@@ -15,7 +17,7 @@ use web_sys::{Element as DomElement, Node};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
-fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
+fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope> {
     scope
         .error_handler(|_| {})
         .expect("error handler should register")
@@ -83,7 +85,7 @@ fn reactive_static_str_attribute_updates() {
             let owner = ScopedMountOwner::new(scope);
             let view = Element::new("button").attr("data-state", read.into_rx());
             let _ = view
-                .mount(&owner, &host, Vec::new(), error_handler)
+                .mount(&owner, &host, Vec::new(), error_handler.view())
                 .expect("reactive view should mount");
 
             let element = mounted(&host);
@@ -116,7 +118,7 @@ fn reactive_borrowed_str_attribute_updates() {
             let owner = ScopedMountOwner::new(scope);
             let view = Element::new("div").attr("data-value", read.into_rx());
             let _ = view
-                .mount(&owner, &host, Vec::new(), error_handler)
+                .mount(&owner, &host, Vec::new(), error_handler.view())
                 .expect("reactive view should mount");
 
             let element = mounted(&host);
@@ -149,7 +151,7 @@ fn reactive_cow_attribute_updates() {
             let owner = ScopedMountOwner::new(scope);
             let view = Element::new("span").attr("data-state", read.into_rx());
             let _ = view
-                .mount(&owner, &host, Vec::new(), error_handler)
+                .mount(&owner, &host, Vec::new(), error_handler.view())
                 .expect("reactive view should mount");
 
             let element = mounted(&host);
@@ -182,7 +184,7 @@ fn reactive_string_reference_attribute_updates() {
             let owner = ScopedMountOwner::new(scope);
             let view = Element::new("p").attr("data-text", read.into_rx());
             let _ = view
-                .mount(&owner, &host, Vec::new(), error_handler)
+                .mount(&owner, &host, Vec::new(), error_handler.view())
                 .expect("reactive view should mount");
 
             let element = mounted(&host);
@@ -217,7 +219,7 @@ fn reactive_str_classes_merge_update_and_cleanup() {
             .attr("class", "static")
             .attr("class", read.into_rx());
         let _ = view
-            .mount(&owner, &host, Vec::new(), error_handler)
+            .mount(&owner, &host, Vec::new(), error_handler.view())
             .expect("reactive view should mount");
 
         element = mounted(&host);
@@ -252,7 +254,7 @@ fn reactive_str_stylesheet_merges_update_and_cleanup() {
             .attr("style", "display: block;")
             .attr("style", read.into_rx());
         let _ = view
-            .mount(&owner, &host, Vec::new(), error_handler)
+            .mount(&owner, &host, Vec::new(), error_handler.view())
             .expect("reactive view should mount");
 
         element = mounted(&host);
@@ -292,7 +294,7 @@ fn reactive_cow_style_property_updates_and_cleans_up() {
             .attr("style", ("color", read.into_rx()))
             .attr("style", ("display", "block"));
         let _ = view
-            .mount(&owner, &host, Vec::new(), error_handler)
+            .mount(&owner, &host, Vec::new(), error_handler.view())
             .expect("reactive view should mount");
 
         element = mounted(&host);
@@ -330,7 +332,7 @@ fn reactive_borrowed_str_style_property_updates_and_cleans_up() {
             .attr("style", ("color", read.into_rx()))
             .attr("style", ("display", "block"));
         let _ = view
-            .mount(&owner, &host, Vec::new(), error_handler)
+            .mount(&owner, &host, Vec::new(), error_handler.view())
             .expect("reactive view should mount");
 
         element = mounted(&host);
@@ -362,7 +364,7 @@ fn reactive_string_reference_style_property_updates_and_cleans_up() {
             .attr("style", ("color", read.into_rx()))
             .attr("style", ("display", "block"));
         let _ = view
-            .mount(&owner, &host, Vec::new(), error_handler)
+            .mount(&owner, &host, Vec::new(), error_handler.view())
             .expect("reactive view should mount");
 
         element = mounted(&host);
@@ -394,7 +396,7 @@ fn reactive_style_property_restores_static_value_after_dispose() {
             .attr("style", ("color", read.into_rx()))
             .attr("style", ("color", "green"));
         let _ = view
-            .mount(&owner, &host, Vec::new(), error_handler)
+            .mount(&owner, &host, Vec::new(), error_handler.view())
             .expect("reactive view should mount");
 
         element = mounted(&host);
@@ -427,7 +429,7 @@ fn reactive_style_plan_cleans_up_after_failed_mount() {
             })
             .attr("style", ("color", read.into_rx()));
             assert!(
-                view.mount(&owner, &host, Vec::new(), error_handler)
+                view.mount(&owner, &host, Vec::new(), error_handler.view())
                     .is_err()
             );
         })

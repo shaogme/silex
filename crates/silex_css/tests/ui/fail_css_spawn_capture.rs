@@ -12,7 +12,7 @@ fn main() {
         let error_handler = scope
             .error_handler(|_| {})
             .expect("handler should register");
-        let style = Style::new(SilexContext::new(scope, error_handler))
+        let style = Style::new(SilexContext::new(scope, error_handler.view()))
             .raw("--color", value)
             .expect("style should build");
         require_static(style);

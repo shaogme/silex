@@ -285,6 +285,7 @@ pub(crate) struct ScopeStateInner<'scope> {
     pub(crate) root_cleanups: Vec<CleanupThunk<'scope>>,
     pub(crate) dependency_transactions: Vec<DependencyTransaction>,
     pub(crate) error_handlers: SlotMap<ErrorHandlerKey, ErrorHandlerEntry<'scope>>,
+    pub(crate) pending_error_handlers: Vec<(ErrorHandlerKey, std::ptr::NonNull<()>)>,
 }
 
 /// A reference-counted wrapper around the inner scope state.
@@ -371,6 +372,7 @@ impl<'scope> ScopeStateInner<'scope> {
             root_cleanups: Vec::new(),
             dependency_transactions: Vec::new(),
             error_handlers: SlotMap::with_key(),
+            pending_error_handlers: Vec::new(),
         }
     }
 
@@ -389,7 +391,11 @@ impl<'scope> ScopeStateInner<'scope> {
             edges: self.edges.len(),
             roots: self.roots.len(),
             cleanups,
-            handlers: self.error_handlers.len(),
+            handlers: self
+                .error_handlers
+                .values()
+                .filter(|entry| entry.owner.is_active())
+                .count(),
             queue: scheduler.global_queue.len(),
             epoch: scheduler.current_epoch(),
             observer: active_observer_for(&self.scheduler).is_some(),
@@ -665,10 +671,42 @@ impl<'scope> ScopeStateInner<'scope> {
         &mut self,
         entry: ErrorHandlerEntry<'scope>,
     ) -> ReactiveResult<ErrorHandlerKey> {
+        self.sweep_error_handlers();
         if !self.try_is_active()? {
             return Err(ReactiveError::NoSuchNode);
         }
         Ok(self.error_handlers.insert(entry))
+    }
+
+    pub(crate) fn remove_error_handler(
+        &mut self,
+        key: ErrorHandlerKey,
+        identity: std::ptr::NonNull<()>,
+    ) {
+        if self
+            .error_handlers
+            .get(key)
+            .is_some_and(|entry| entry.identity == identity)
+        {
+            self.error_handlers.remove(key);
+        }
+    }
+
+    pub(crate) fn sweep_error_handlers(&mut self) {
+        self.pending_error_handlers
+            .extend(self.error_handlers.iter().filter_map(|(key, entry)| {
+                (!entry.owner.is_active() || entry.owner.is_pending_retire())
+                    .then_some((key, entry.identity))
+            }));
+        for (key, identity) in take(&mut self.pending_error_handlers) {
+            if self
+                .error_handlers
+                .get(key)
+                .is_some_and(|entry| entry.identity == identity)
+            {
+                self.error_handlers.remove(key);
+            }
+        }
     }
 
     pub(crate) fn take_error_handlers(
@@ -682,7 +720,7 @@ impl<'scope> ScopeStateInner<'scope> {
     ) -> Vec<Box<dyn std::any::Any + Send>> {
         let mut panics = Vec::new();
         for (_, entry) in handlers {
-            if let Err(panic) = catch_unwind(AssertUnwindSafe(|| entry.owner.clear())) {
+            if let Err(panic) = catch_unwind(AssertUnwindSafe(|| entry.owner.force_retire())) {
                 panics.push(panic);
             }
         }

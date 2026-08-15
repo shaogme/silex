@@ -493,7 +493,7 @@ mod tests {
                 let error_handler = scope
                     .error_handler(|_| {})
                     .expect("test error handler should register");
-                let css = Style::new(SilexContext::new(scope, error_handler))
+                let css = Style::new(SilexContext::new(scope, error_handler.view()))
                     .width(css_min!(px(600), pct(100)))
                     .expect("width should build")
                     .font_size(css_max!(rem(1), vw(4)))

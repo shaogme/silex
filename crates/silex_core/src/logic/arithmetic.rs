@@ -1,17 +1,14 @@
-use crate::{ErrorReporter, Memo, Rx, RxValueKind, SilexResult, reactivity::ReactiveSource};
+use crate::{ErrorHandlerInput, Memo, Rx, RxValueKind, SilexResult, reactivity::ReactiveSource};
 use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Not, Rem, Shl, Shr, Sub};
 
 macro_rules! binary_method {
     ($name:ident, $trait:ident, $op:ident) => {
-        pub fn $name<R>(
-            self,
-            right: R,
-            error_handler: ErrorReporter<'scope>,
-        ) -> SilexResult<Rx<'scope, T>>
+        pub fn $name<R, H>(self, right: R, error_handler: H) -> SilexResult<Rx<'scope, T>>
         where
             T: PartialEq + 'scope,
             for<'a> &'a T: $trait<&'a T, Output = T>,
             R: ReactiveSource<'scope, Value = T>,
+            H: ErrorHandlerInput<'scope>,
         {
             binary_op(self, right, ops_impl::$op::<T>, error_handler)
         }
@@ -20,10 +17,11 @@ macro_rules! binary_method {
 
 macro_rules! unary_method {
     ($name:ident, $trait:ident, $op:ident) => {
-        pub fn $name(self, error_handler: ErrorReporter<'scope>) -> SilexResult<Rx<'scope, T>>
+        pub fn $name<H>(self, error_handler: H) -> SilexResult<Rx<'scope, T>>
         where
             T: PartialEq + 'scope,
             for<'a> &'a T: $trait<Output = T>,
+            H: ErrorHandlerInput<'scope>,
         {
             unary_op(self, ops_impl::$op::<T>, error_handler)
         }
@@ -75,16 +73,18 @@ pub mod ops_impl {
     }
 }
 
-fn binary_op<'scope, T, R>(
+fn binary_op<'scope, T, R, H>(
     left: Rx<'scope, T>,
     right: R,
     op: fn(&T, &T) -> T,
-    error_handler: ErrorReporter<'scope>,
+    error_handler: H,
 ) -> SilexResult<Rx<'scope, T>>
 where
     T: PartialEq + 'scope,
     R: ReactiveSource<'scope, Value = T>,
+    H: ErrorHandlerInput<'scope>,
 {
+    let error_handler = error_handler.handler_ref();
     let scope = left.scope();
     let right = right.into_promotion_plan();
     let right = right.materialize(scope, error_handler)?;
@@ -96,14 +96,16 @@ where
         .map(Memo::into_rx)
 }
 
-fn unary_op<'scope, T>(
+fn unary_op<'scope, T, H>(
     value: Rx<'scope, T>,
     op: fn(&T) -> T,
-    error_handler: ErrorReporter<'scope>,
+    error_handler: H,
 ) -> SilexResult<Rx<'scope, T>>
 where
     T: PartialEq + 'scope,
+    H: ErrorHandlerInput<'scope>,
 {
+    let error_handler = error_handler.handler_ref();
     let scope = value.scope();
     scope
         .memo(move |_| value.with(op), error_handler)

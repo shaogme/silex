@@ -55,14 +55,6 @@ impl ScopeStorage {
         self.arena.alloc(crate::error::ErrorSlot::new())
     }
 
-    pub(crate) fn alloc_handler<'scope, E: 'scope, F: Fn(E) + 'scope>(
-        &'scope self,
-        handler: F,
-    ) -> &'scope crate::error::ErrorHandlerCell<'scope, E> {
-        self.arena
-            .alloc(crate::error::ErrorHandlerCell::new(handler))
-    }
-
     pub(crate) fn owner_token<'scope>(
         &self,
         owner: PhantomData<fn(&'scope ()) -> &'scope ()>,
@@ -137,6 +129,9 @@ impl ScopeStorage {
                 false
             }
         };
+        if let Ok(mut state) = self.state.try_borrow_mut() {
+            state.sweep_error_handlers();
+        }
         if ready_for_release {
             let handlers = match self.state.try_borrow_mut() {
                 Ok(mut state) => Some(state.take_error_handlers()),

@@ -5,15 +5,15 @@ error[E0061]: this function takes 3 arguments but 1 argument was supplied
   |             ^^^^^^^^^^^^^^^^^^^-----------
   |                                ||
   |                                |argument #1 of type `silex_core::scope::Scope<'_>` is missing
-  |                                argument #3 of type `silex_reactivity::error::ErrorHandler<'_, silex_core::error::SilexError>` is missing
+  |                                argument #3 is missing
   |
 note: associated function defined here
  --> src/state.rs
   |
-  |     pub fn builder(
+  |     pub fn builder<H>(
   |            ^^^^^^^
 help: provide the arguments
   |
 4 -     let _ = Persistent::builder("counter");
-4 +     let _ = Persistent::builder(/* silex_core::scope::Scope<'_> */, "counter", /* silex_reactivity::error::ErrorHandler<'_, silex_core::error::SilexError> */);
+4 +     let _ = Persistent::builder(/* silex_core::scope::Scope<'_> */, "counter", /* error_handler */);
   |

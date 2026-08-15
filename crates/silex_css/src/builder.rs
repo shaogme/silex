@@ -612,9 +612,9 @@ mod tests {
     use super::*;
     use crate::layers;
     use crate::types::{hex, px};
-    use silex_core::{ErrorReporter, Runtime, Scope, SilexContext};
+    use silex_core::{ErrorHandlerToken, Runtime, Scope, SilexContext};
 
-    fn discard_test_errors<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
+    fn discard_test_errors<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope> {
         scope
             .error_handler(|_| {})
             .expect("test error handler should register")
@@ -631,7 +631,8 @@ mod tests {
         let mut runtime = Runtime::new();
         runtime
             .child(|scope| {
-                f(SilexContext::new(scope, discard_test_errors(scope)));
+                let error_handler = discard_test_errors(scope);
+                f(SilexContext::new(scope, error_handler.view()));
             })
             .expect("test ctx should initialize");
     }
@@ -642,7 +643,10 @@ mod tests {
     {
         let mut runtime = Runtime::new();
         runtime
-            .child(|scope| css_of(build(SilexContext::new(scope, discard_test_errors(scope)))))
+            .child(|scope| {
+                let error_handler = discard_test_errors(scope);
+                css_of(build(SilexContext::new(scope, error_handler.view())))
+            })
             .expect("test ctx should initialize")
     }
 
@@ -822,7 +826,8 @@ mod tests {
         runtime
             .child(|scope| {
                 let signal = scope.rw_signal(px(1)).expect("signal should initialize");
-                let rendered = Style::new(SilexContext::new(scope, discard_test_errors(scope)))
+                let error_handler = discard_test_errors(scope);
+                let rendered = Style::new(SilexContext::new(scope, error_handler.view()))
                     .var("--gap", signal)
                     .expect("reactive style should build")
                     .render();
@@ -896,7 +901,8 @@ mod tests {
         runtime
             .child(|scope| {
                 let signal = scope.rw_signal(px(1)).expect("signal should initialize");
-                let rendered = Style::new(SilexContext::new(scope, discard_test_errors(scope)))
+                let error_handler = discard_test_errors(scope);
+                let rendered = Style::new(SilexContext::new(scope, error_handler.view()))
                     .width(signal)
                     .expect("reactive style should build")
                     .render();

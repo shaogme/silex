@@ -5,7 +5,9 @@ fn main() {
     runtime.child(|scope| {
         let _ = scope.effect(
             || {},
-            scope.error_handler(|_: SilexError| {}),
+            scope
+                .error_handler(|_: SilexError| {})
+                .expect("handler should register"),
         );
     });
 }

@@ -20,12 +20,10 @@ fn compile_scoped_api<'scope>(scope: Scope<'scope>) {
     let (search, set_search) = scope
         .signal(String::new())
         .expect("search signal should be created");
-    let silex = SilexContext::new(
-        scope,
-        scope
-            .error_handler(|_| {})
-            .expect("error handler should be registered"),
-    );
+    let error_handler = scope
+        .error_handler(|_| {})
+        .expect("error handler should be registered");
+    let silex = SilexContext::new(scope, error_handler.view());
     let ctx = RouterContext::new(
         silex,
         RouterContextProps {

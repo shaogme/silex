@@ -439,7 +439,7 @@ pub(crate) fn generate_css_output(
         let Some(error_handler) = error_handler else {
             return Err(syn::Error::new(
                 span,
-                "动态 `css!` 必须显式提供 ErrorReporter；请使用 `css!(error_handler; { ... })`",
+                "动态 `css!` 必须显式提供 ErrorReporter 或 ErrorHandlerToken；请使用 `css!(error_handler; { ... })`",
             ));
         };
         // Generate DynamicCss struct
@@ -496,7 +496,8 @@ pub(crate) fn generate_css_output(
             {
                 #common_inits
                 #static_value_inits
-                let __slx_css_error_handler = #error_handler;
+                let __slx_css_error_handler =
+                    #__silex::core::ErrorHandlerInput::handler_ref(&#error_handler);
                 #dynamic_result
             }
         })

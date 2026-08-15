@@ -1,8 +1,8 @@
-use silex_core::{ErrorHandler, Runtime, RxGet, RxRead, Scope, SilexError, SilexResult};
+use silex_core::{ErrorHandlerToken, Runtime, RxGet, RxRead, Scope, SilexResult};
 use std::cell::Cell;
 use std::rc::Rc;
 
-fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, SilexError> {
+fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope> {
     scope
         .error_handler(|_| {})
         .expect("error handler should register")

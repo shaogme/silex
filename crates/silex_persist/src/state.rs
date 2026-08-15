@@ -1,11 +1,12 @@
 use crate::backend::{BackendEvent, BackendSubscription};
 use crate::builder::PersistentBuilder;
 use crate::{
-    DecodePolicy, NoBackend, NoCodec, PersistenceError, PersistenceErrorKind, RemovePolicy,
+    DecodePolicy, NoBackend, NoCodec, NoDefault, PersistenceError, PersistenceErrorKind,
+    RemovePolicy,
 };
 use ref_str::LocalStaticRefStr;
 use silex_core::{
-    ErrorReporter, ReactiveError, Rx, RxGet, Scope, SilexErrorKind, SilexResult, StoreField,
+    ErrorHandlerInput, ReactiveError, Rx, RxGet, Scope, SilexErrorKind, SilexResult, StoreField,
     reactivity::{PromotionPlan, ReactiveSource, ReadSignal, RwSignal, StoredValue},
     traits::{RxCloneData, RxData, RxRead, RxValue, RxWrite},
 };
@@ -127,11 +128,14 @@ impl<'scope, T: 'scope> StoreField<'scope, T> for Persistent<'scope, T> {}
 
 impl<'scope> Persistent<'scope, ()> {
     /// Starts a new persistent binding builder for the given backend key.
-    pub fn builder(
+    pub fn builder<H>(
         scope: Scope<'scope>,
         key: impl Into<LocalStaticRefStr>,
-        error_handler: ErrorReporter<'scope>,
-    ) -> PersistentBuilder<'scope, NoBackend, NoCodec> {
+        error_handler: H,
+    ) -> PersistentBuilder<'scope, NoBackend, NoCodec, (), NoDefault, H>
+    where
+        H: ErrorHandlerInput<'scope>,
+    {
         PersistentBuilder::new(scope, key, error_handler)
     }
 }

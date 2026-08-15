@@ -2,14 +2,14 @@ error[E0061]: this method takes 2 arguments but 1 argument was supplied
  --> tests/ui/fail_missing_error_handler.rs:6:23
   |
 6 |         let _ = scope.effect(|| Ok::<(), SilexError>(()));
-  |                       ^^^^^^----------------------------- argument #2 of type `ErrorHandler<'_, SilexError>` is missing
+  |                       ^^^^^^----------------------------- argument #2 is missing
   |
 note: method defined here
  --> src/scope.rs
   |
-  |     pub fn effect<F>(
+  |     pub fn effect<F, H>(self, f: F, error_handler: H) -> SilexResult<Effect<'scope>>
   |            ^^^^^^
 help: provide the argument
   |
-6 |         let _ = scope.effect(|| Ok::<(), SilexError>(()), /* ErrorHandler<'_, SilexError> */);
-  |                                                         ++++++++++++++++++++++++++++++++++++
+6 |         let _ = scope.effect(|| Ok::<(), SilexError>(()), /* error_handler */);
+  |                                                         +++++++++++++++++++++

@@ -1,6 +1,8 @@
 #![cfg(target_arch = "wasm32")]
 
-use silex_core::{ErrorReporter, RootHandle, Runtime, Scope, SilexError, SilexErrorKind};
+use silex_core::{
+    ErrorHandlerToken, ErrorReporter, RootHandle, Runtime, Scope, SilexError, SilexErrorKind,
+};
 use silex_dom::{
     attribute::{AttrOp, AttributeBuilder, PendingAttribute},
     document,
@@ -25,13 +27,15 @@ use web_sys::{Element as WebElement, Event, MouseEvent, Node};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
-fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
+fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope> {
     scope
         .error_handler(|_| {})
         .expect("error handler should register")
 }
 
-fn test_owner<'scope>(scope: Scope<'scope>) -> (ScopedMountOwner<'scope>, ErrorReporter<'scope>) {
+fn test_owner<'scope>(
+    scope: Scope<'scope>,
+) -> (ScopedMountOwner<'scope>, ErrorHandlerToken<'scope>) {
     let error_handler = test_handler(scope);
     (ScopedMountOwner::new(scope), error_handler)
 }
@@ -347,7 +351,7 @@ fn fallible_dom_primitives_and_attribute_mount_failures_are_observable() {
                 Err(SilexError::recoverable(SilexErrorKind::Framework("attribute rejected".to_string())))
             }));
             assert!(matches!(
-                view.mount(&owner, &host.clone().into(), Vec::new(), error_handler),
+                view.mount(&owner, &host.clone().into(), Vec::new(), error_handler.view()),
                 Err(SilexError::Recoverable(SilexErrorKind::Framework(message))) if message == "attribute rejected"
             ));
         })
@@ -373,7 +377,12 @@ fn element_listener_removes_physically_and_drops_on_root_dispose() {
         let token = owner.token();
         let element = Element::new("button");
         let instance = element
-            .mount(&owner, &host.clone().into(), Vec::new(), error_handler)
+            .mount(
+                &owner,
+                &host.clone().into(),
+                Vec::new(),
+                error_handler.view(),
+            )
             .expect("element should mount");
         let mounted_element = instance
             .first_node()
@@ -398,7 +407,7 @@ fn element_listener_removes_physically_and_drops_on_root_dispose() {
                 Ok(())
             },
             &token,
-            error_handler,
+            &error_handler,
         )
         .expect("element listener can be registered");
 
@@ -462,7 +471,7 @@ fn element_listener_panic_closes_destination_before_owner_cleanup() {
                 panic!("element callback panic");
             },
             &token,
-            error_handler,
+            &error_handler,
         )
         .expect("element listener should register");
     }
@@ -503,7 +512,7 @@ fn render_rerun_replaces_old_window_listener() {
             calls: calls_for_view.clone(),
         };
         let _ = view
-            .mount(&owner, &host_node, Vec::new(), error_handler)
+            .mount(&owner, &host_node, Vec::new(), error_handler.view())
             .expect("view should mount");
 
         let window = web_sys::window().expect("window is available");
@@ -592,7 +601,7 @@ fn keyed_reorder_keeps_window_resources_until_row_delete() {
                 };
                 let (owner, error_handler) = test_owner(child);
                 let _ = list
-                    .mount(&owner, &host_node, Vec::new(), error_handler)
+                    .mount(&owner, &host_node, Vec::new(), error_handler.view())
                     .expect("keyed list should mount");
                 assert_eq!(spy.count("event_add:silex-window-resource"), 2);
 
@@ -633,7 +642,7 @@ fn window_listener_cancel_is_idempotent_and_owner_keeps_final_control() {
                 let _ = &probe;
                 Ok(())
             },
-            error_handler,
+            &error_handler,
         )
         .expect("window listener should register");
         *handle_slot.borrow_mut() = Some(handle);
@@ -693,7 +702,7 @@ async fn cancelable_host_tasks_are_cleared_before_dispatch() {
                 Ok(())
             },
             Duration::from_millis(100),
-            error_handler,
+            &error_handler,
         )
         .expect("timeout should register");
 
@@ -707,7 +716,7 @@ async fn cancelable_host_tasks_are_cleared_before_dispatch() {
                 Ok(())
             },
             Duration::from_millis(100),
-            error_handler,
+            &error_handler,
         )
         .expect("interval should register");
 
@@ -720,7 +729,7 @@ async fn cancelable_host_tasks_are_cleared_before_dispatch() {
                 let _ = &frame_probe;
                 Ok(())
             },
-            error_handler,
+            &error_handler,
         )
         .expect("animation frame should register");
 
@@ -733,7 +742,7 @@ async fn cancelable_host_tasks_are_cleared_before_dispatch() {
                 let _ = &idle_probe;
                 Ok(())
             },
-            error_handler,
+            &error_handler,
         )
         .expect("idle callback should register");
     }
@@ -781,7 +790,7 @@ async fn active_host_tasks_execute_and_interval_cancel_is_idempotent() {
                 Ok(())
             },
             Duration::from_millis(0),
-            error_handler,
+            &error_handler,
         )
         .expect("timeout should register");
 
@@ -793,7 +802,7 @@ async fn active_host_tasks_execute_and_interval_cancel_is_idempotent() {
                 Ok(())
             },
             Duration::from_millis(5),
-            error_handler,
+            &error_handler,
         )
         .expect("interval should register");
         *interval_slot.borrow_mut() = Some(interval);
@@ -805,7 +814,7 @@ async fn active_host_tasks_execute_and_interval_cancel_is_idempotent() {
                 frame_calls_for_callback.set(frame_calls_for_callback.get() + 1);
                 Ok(())
             },
-            error_handler,
+            &error_handler,
         )
         .expect("animation frame should register");
 
@@ -816,7 +825,7 @@ async fn active_host_tasks_execute_and_interval_cancel_is_idempotent() {
                 idle_calls_for_callback.set(idle_calls_for_callback.get() + 1);
                 Ok(())
             },
-            error_handler,
+            &error_handler,
         )
         .expect("idle callback should register");
     }
@@ -867,7 +876,7 @@ async fn microtask_cancel_and_owner_dispose_only_gate_user_callbacks() {
                 canceled_calls_for_task.set(canceled_calls_for_task.get() + 1);
                 Ok(())
             },
-            error_handler,
+            &error_handler,
         )
         .expect("microtask should queue");
         *canceled_slot.borrow_mut() = Some(canceled);
@@ -961,9 +970,13 @@ fn debounce_timeout_creation_failure_reaches_owner_handler() {
                 .expect("error handler should register");
             let owner = silex_dom::view::ScopedMountOwner::new(scope);
             let token = owner.token();
-            let mut debounce =
-                debounce(&token, Duration::from_millis(0), |_| Ok(()), error_handler)
-                    .expect("debounce should initialize");
+            let mut debounce = debounce(
+                &token,
+                Duration::from_millis(0),
+                |_| Ok(()),
+                error_handler.view(),
+            )
+            .expect("debounce should initialize");
             spy.fail_next_timeout();
             debounce(1_i32);
         })
@@ -1041,7 +1054,7 @@ fn timeout_lifecycle_handles_creation_failure_repeated_cancel_reentry_and_stale_
                     Ok(())
                 },
                 Duration::from_millis(0),
-                error_handler,
+                &error_handler,
             )
             .is_err()
         );
@@ -1058,11 +1071,11 @@ fn timeout_lifecycle_handles_creation_failure_repeated_cancel_reentry_and_stale_
                 Ok(())
             },
             Duration::from_millis(0),
-            error_handler,
+            &error_handler,
         )
         .expect("cancelable timeout should register");
-        let _ = canceled.cancel();
-        let _ = canceled.cancel();
+        canceled.cancel();
+        canceled.cancel();
         spy.fire_timeout(0);
         assert_eq!(canceled_calls.get(), 0);
 
@@ -1074,7 +1087,7 @@ fn timeout_lifecycle_handles_creation_failure_repeated_cancel_reentry_and_stale_
                 values_for_debounce.borrow_mut().push(value);
                 Ok(())
             },
-            error_handler,
+            &error_handler,
         )
         .expect("debounce should initialize");
         debounce(1);
@@ -1093,7 +1106,7 @@ fn timeout_lifecycle_handles_creation_failure_repeated_cancel_reentry_and_stale_
                 Ok(())
             },
             Duration::from_millis(0),
-            error_handler,
+            &error_handler,
         )
         .expect("reentrant timeout should register");
     }

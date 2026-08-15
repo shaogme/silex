@@ -9,8 +9,9 @@ use wasm_bindgen::{JsCast, closure::Closure};
 use web_sys::{Event, EventSource as JsEventSource, MessageEvent};
 
 use silex_core::{
-    CallbackInvokeError, CompletionSender, ErrorReporter, ReadSignal, RwSignal, Rx, Scope,
-    SilexError, SilexResult, StoredValue, WriteSignal, unwind_safe,
+    CallbackInvokeError, CompletionSender, ErrorHandlerInput, ErrorReporter, ReactiveError,
+    ReadSignal, RwSignal, Rx, Scope, SilexError, SilexResult, StoredValue, WriteSignal,
+    unwind_safe,
 };
 
 use crate::{
@@ -27,27 +28,36 @@ use crate::{
 pub struct EventStream;
 
 impl EventStream {
-    pub fn builder<'scope>(
+    pub fn builder<'scope, H>(
         scope: Scope<'scope>,
         url: impl IntoNetValue<'scope>,
-        error_handler: ErrorReporter<'scope>,
-    ) -> EventStreamBuilder<'scope> {
+        error_handler: H,
+    ) -> EventStreamBuilder<'scope, H>
+    where
+        H: ErrorHandlerInput<'scope>,
+    {
         EventStreamBuilder::new(scope, url.into_net_value(), error_handler)
     }
 
-    pub fn open<'scope>(
+    pub fn open<'scope, H>(
         scope: Scope<'scope>,
         url: impl IntoNetValue<'scope>,
-        error_handler: ErrorReporter<'scope>,
-    ) -> Result<EventStreamConnection<'scope>, NetError> {
+        error_handler: H,
+    ) -> Result<EventStreamConnection<'scope>, NetError>
+    where
+        H: ErrorHandlerInput<'scope>,
+    {
         Self::builder(scope, url, error_handler).build()
     }
 
-    pub fn lazy<'scope>(
+    pub fn lazy<'scope, H>(
         scope: Scope<'scope>,
         url: impl IntoNetValue<'scope>,
-        error_handler: ErrorReporter<'scope>,
-    ) -> EventStreamBuilder<'scope> {
+        error_handler: H,
+    ) -> EventStreamBuilder<'scope, H>
+    where
+        H: ErrorHandlerInput<'scope>,
+    {
         Self::builder(scope, url, error_handler).auto_connect(false)
     }
 }
@@ -104,7 +114,7 @@ fn submit_completion<T: 'static>(
     let error = match error {
         CallbackInvokeError::Runtime(error) => SilexError::fatal(error),
         CallbackInvokeError::User(error) => error,
-        CallbackInvokeError::Handler(error) => SilexError::fatal(error.reason()),
+        CallbackInvokeError::Handler(error) => SilexError::fatal(ReactiveError::Handler(error)),
     };
     let error_result = catch_unwind(AssertUnwindSafe(|| error_token.submit(error)));
     if let Ok(Err(_)) | Err(_) = error_result {
@@ -552,9 +562,9 @@ impl<'scope> EventStreamConnection<'scope> {
 }
 
 #[derive(Clone)]
-pub struct EventStreamBuilder<'scope> {
+pub struct EventStreamBuilder<'scope, H = ErrorReporter<'scope>> {
     scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+    error_handler: H,
     url: ValueResolver<'scope>,
     event_name: Option<String>,
     auto_connect: bool,
@@ -563,12 +573,8 @@ pub struct EventStreamBuilder<'scope> {
     on_error: Vec<Rc<dyn Fn(NetError) + 'scope>>,
 }
 
-impl<'scope> EventStreamBuilder<'scope> {
-    fn new(
-        scope: Scope<'scope>,
-        url: ValueResolver<'scope>,
-        error_handler: ErrorReporter<'scope>,
-    ) -> Self {
+impl<'scope, H> EventStreamBuilder<'scope, H> {
+    fn new(scope: Scope<'scope>, url: ValueResolver<'scope>, error_handler: H) -> Self {
         Self {
             scope,
             error_handler,
@@ -606,7 +612,10 @@ impl<'scope> EventStreamBuilder<'scope> {
         self
     }
 
-    pub fn build(self) -> Result<EventStreamConnection<'scope>, NetError> {
+    pub fn build(self) -> Result<EventStreamConnection<'scope>, NetError>
+    where
+        H: ErrorHandlerInput<'scope>,
+    {
         let Self {
             scope,
             error_handler,
@@ -617,6 +626,7 @@ impl<'scope> EventStreamBuilder<'scope> {
             on_open,
             on_error,
         } = self;
+        let error_handler = error_handler.handler_ref();
         url.validate_runtime(scope).map_err(NetError::from)?;
         let initial_source = if auto_connect {
             match url
@@ -647,10 +657,14 @@ impl<'scope> EventStreamBuilder<'scope> {
             None::<StoredValue<'scope, EventStreamInner<'scope>>>,
         ));
         let inner_slot_for_completion = inner_slot.clone();
+        let error_lease = error_handler
+            .lease()
+            .map_err(|error| NetError::from(SilexError::fatal(ReactiveError::Handler(error))))?;
+        let error_completion_lease = error_lease.clone();
         let error_completion = scope.completion_sender(unwind_safe(move |error: SilexError| {
-            error_handler
+            error_completion_lease
                 .handle(error)
-                .map_err(|error| SilexError::fatal(error.reason()))
+                .map_err(|error| SilexError::fatal(ReactiveError::Handler(error)))
         }))?;
         let completion = scope.completion_sender(unwind_safe(move |event: EventStreamEvent| {
             if let Some(inner) = inner_slot_for_completion.get() {

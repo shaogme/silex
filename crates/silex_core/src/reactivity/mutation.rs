@@ -1,10 +1,10 @@
 use crate::{
-    CompletionSender, ErrorReporter, Scope, SilexError, SilexErrorKind,
+    CompletionSender, ErrorHandlerInput, ErrorReporter, Scope, SilexError, SilexErrorKind,
     reactivity::{ReadSignal, StoredValue, WriteSignal},
     traits::{RxCloneData, RxData, RxError, RxRead, RxValue},
     unwind_safe,
 };
-use silex_reactivity::CallbackInvokeError;
+use silex_reactivity::{CallbackInvokeError, ReactiveError};
 use std::{cell::Cell, future::Future, pin::Pin, rc::Rc};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -87,15 +87,25 @@ where
     T: RxData + 'static,
     E: RxError + 'static,
 {
-    pub fn new<F, Fut>(
+    pub fn new<F, Fut, H>(
         scope: Scope<'scope>,
         action: F,
-        error_handler: ErrorReporter<'scope>,
+        error_handler: H,
     ) -> crate::SilexResult<Self>
     where
         F: Fn(Arg) -> Fut + 'scope,
         Fut: Future<Output = Result<T, E>> + 'scope,
+        H: Clone + ErrorHandlerInput<'scope>,
     {
+        let handler_owner = error_handler.clone();
+        let error_handler = error_handler.handler_ref();
+        scope.on_cleanup(
+            move || {
+                drop(handler_owner);
+                Ok::<(), SilexError>(())
+            },
+            error_handler,
+        )?;
         let (state, set_state) = scope.signal(MutationState::Idle)?;
         let last_id = Rc::new(Cell::new(0usize));
         let last_id_for_callback = last_id.clone();
@@ -126,15 +136,25 @@ where
 
     /// Create a mutation whose owned future is prepared before `Pending` is
     /// published. Preparation errors become `Error` without starting a task.
-    pub fn new_with_prepare<F, Fut>(
+    pub fn new_with_prepare<F, Fut, H>(
         scope: Scope<'scope>,
         prepare: F,
-        error_handler: ErrorReporter<'scope>,
+        error_handler: H,
     ) -> crate::SilexResult<Self>
     where
         F: Fn(Arg) -> Result<Fut, E> + 'scope,
         Fut: Future<Output = Result<T, E>> + 'scope,
+        H: Clone + ErrorHandlerInput<'scope>,
     {
+        let handler_owner = error_handler.clone();
+        let error_handler = error_handler.handler_ref();
+        scope.on_cleanup(
+            move || {
+                drop(handler_owner);
+                Ok::<(), SilexError>(())
+            },
+            error_handler,
+        )?;
         let (state, set_state) = scope.signal(MutationState::Idle)?;
         let last_id = Rc::new(Cell::new(0usize));
         let last_id_for_callback = last_id.clone();
@@ -224,7 +244,8 @@ where
                         let _ = error_handler.handle(error);
                     }
                     Err(CallbackInvokeError::Handler(error)) => {
-                        let _ = error_handler.handle(SilexError::fatal(error.reason()));
+                        let _ =
+                            error_handler.handle(SilexError::fatal(ReactiveError::Handler(error)));
                     }
                 }
             },

@@ -1,8 +1,8 @@
 use super::host::{CompletionRegistrar, HostCallback, HostDestination, HostResourceHandle};
 use super::state::{ActiveRegistrar, MountState};
 use silex_core::{
-    CleanupError, ErrorReporter, OwnedScope, ReactiveError, Scope, SilexError, SilexResult,
-    unwind_safe,
+    CleanupError, ErrorHandler, ErrorHandlerInput, OwnedScope, ReactiveError, Scope, SilexError,
+    SilexResult, unwind_safe,
 };
 use std::{cell::Cell, rc::Rc};
 use wasm_bindgen::JsValue;
@@ -14,7 +14,7 @@ use wasm_bindgen::JsValue;
 /// the original mount call.
 pub type MountEffect<'scope> = Box<dyn FnMut() -> SilexResult<()> + 'scope>;
 pub type MountCleanup<'scope> = Box<dyn FnOnce() -> SilexResult<()> + 'scope>;
-pub type MountErrorHandler<'scope> = ErrorReporter<'scope>;
+pub type MountErrorHandler<'scope> = ErrorHandler<'scope>;
 pub(crate) type CleanupReporter = Rc<dyn Fn(CleanupError)>;
 
 #[derive(Clone)]
@@ -204,24 +204,21 @@ impl<'scope> MountOwnerToken<'scope> {
         }
     }
 
-    pub fn effect(
-        &self,
-        callback: MountEffect<'scope>,
-        error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()> {
-        self.effect.call(callback, error_handler)
+    pub fn effect<H>(&self, callback: MountEffect<'scope>, error_handler: H) -> SilexResult<()>
+    where
+        H: ErrorHandlerInput<'scope>,
+    {
+        self.effect.call(callback, error_handler.handler_ref())
     }
 
-    pub fn effect_with_previous<T, F>(
-        &self,
-        callback: F,
-        error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()>
+    pub fn effect_with_previous<T, F, H>(&self, callback: F, error_handler: H) -> SilexResult<()>
     where
         T: 'scope,
         F: FnMut(Option<&T>) -> SilexResult<T> + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
-        self.previous_effect.register(callback, error_handler)
+        self.previous_effect
+            .register(callback, error_handler.handler_ref())
     }
 
     pub fn owner_state<T: 'scope>(&self, value: T) -> SilexResult<MountState<'scope, T>> {
@@ -234,26 +231,27 @@ impl<'scope> MountOwnerToken<'scope> {
         })
     }
 
-    pub fn on_cleanup(
-        &self,
-        cleanup: MountCleanup<'scope>,
-        error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()> {
-        self.cleanup.call(cleanup, error_handler)
+    pub fn on_cleanup<H>(&self, cleanup: MountCleanup<'scope>, error_handler: H) -> SilexResult<()>
+    where
+        H: ErrorHandlerInput<'scope>,
+    {
+        self.cleanup.call(cleanup, error_handler.handler_ref())
     }
 
     pub fn owned_scope(&self) -> SilexResult<OwnedScope<'scope>> {
         self.owned_scope.call()
     }
 
-    pub(crate) fn host_callback<F>(
+    pub(crate) fn host_callback<F, H>(
         &self,
         callback: F,
-        error_handler: MountErrorHandler<'scope>,
+        error_handler: H,
     ) -> SilexResult<HostCallback>
     where
         F: FnMut(JsValue) -> SilexResult<()> + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
+        let error_handler = error_handler.handler_ref();
         Ok(HostCallback {
             destination: HostDestination::Sender(self.completion.call_sender(Box::new(callback))?),
             gate: Rc::new(Cell::new(true)),
@@ -261,14 +259,16 @@ impl<'scope> MountOwnerToken<'scope> {
         })
     }
 
-    pub(crate) fn host_callback_once<F>(
+    pub(crate) fn host_callback_once<F, H>(
         &self,
         callback: F,
-        error_handler: MountErrorHandler<'scope>,
+        error_handler: H,
     ) -> SilexResult<HostCallback>
     where
         F: FnMut(JsValue) -> SilexResult<()> + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
+        let error_handler = error_handler.handler_ref();
         Ok(HostCallback {
             destination: HostDestination::Once(self.completion.call_once(Box::new(callback))?),
             gate: Rc::new(Cell::new(true)),
@@ -284,15 +284,17 @@ impl<'scope> MountOwnerToken<'scope> {
         self.cleanup_reporter.clone()
     }
 
-    pub(crate) fn host_resource_for_callback<F>(
+    pub(crate) fn host_resource_for_callback<F, H>(
         &self,
         callback: &HostCallback,
         cancel: F,
-        error_handler: MountErrorHandler<'scope>,
+        error_handler: H,
     ) -> SilexResult<HostResourceHandle<'scope>>
     where
         F: FnOnce() + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
+        let error_handler = error_handler.handler_ref();
         let callback_for_cancel = callback.clone();
         let resource = HostResourceHandle::with_gate(callback.gate.clone(), move || {
             callback_for_cancel.cancel();
@@ -301,16 +303,18 @@ impl<'scope> MountOwnerToken<'scope> {
         self.register_host_resource(resource, error_handler)
     }
 
-    pub(crate) fn host_resource_for_js_callback<F>(
+    pub(crate) fn host_resource_for_js_callback<F, H>(
         &self,
         callback: &HostCallback,
         resource: HostResourceHandle<'scope>,
         cancel: F,
-        error_handler: MountErrorHandler<'scope>,
+        error_handler: H,
     ) -> SilexResult<HostResourceHandle<'scope>>
     where
         F: FnOnce() + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
+        let error_handler = error_handler.handler_ref();
         let callback_for_cancel = callback.clone();
         resource.install_cancel(move || {
             callback_for_cancel.cancel();
@@ -410,14 +414,11 @@ impl<'scope> ScopedMountOwner<'scope> {
         }
     }
 
-    pub fn effect_with_previous<T, F>(
-        &self,
-        callback: F,
-        error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()>
+    pub fn effect_with_previous<T, F, H>(&self, callback: F, error_handler: H) -> SilexResult<()>
     where
         T: 'scope,
         F: FnMut(Option<&T>) -> SilexResult<T> + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
         self.scope
             .effect_with_previous(callback, error_handler)
@@ -469,10 +470,13 @@ impl<'scope> MountOwner<'scope> for ScopedMountOwner<'scope> {
                 move |callback| scope_for_sender.completion_sender(unwind_safe(callback)),
                 move |callback| scope_for_once.completion_once(unwind_safe(callback)),
                 move |error_handler| {
+                    let lease = error_handler
+                        .lease()
+                        .map_err(|error| SilexError::fatal(ReactiveError::Handler(error)))?;
                     scope_for_error_sender.completion_sender(unwind_safe(move |error| {
-                        error_handler
+                        lease
                             .handle(error)
-                            .map_err(|error| SilexError::fatal(error.reason()))
+                            .map_err(|error| SilexError::fatal(ReactiveError::Handler(error)))
                     }))
                 },
             ),
@@ -555,10 +559,13 @@ impl<'scope> MountOwner<'scope> for OwnedMountOwner<'scope> {
                 move |callback| scope_for_sender.completion_sender(unwind_safe(callback)),
                 move |callback| scope_for_once.completion_once(unwind_safe(callback)),
                 move |error_handler| {
+                    let lease = error_handler
+                        .lease()
+                        .map_err(|error| SilexError::fatal(ReactiveError::Handler(error)))?;
                     scope_for_error_sender.completion_sender(unwind_safe(move |error| {
-                        error_handler
+                        lease
                             .handle(error)
-                            .map_err(|error| SilexError::fatal(error.reason()))
+                            .map_err(|error| SilexError::fatal(ReactiveError::Handler(error)))
                     }))
                 },
             ),
@@ -602,7 +609,7 @@ mod tests {
                         seen_in_callback.set(seen_in_callback.get() + 1);
                         Ok(())
                     },
-                    handler,
+                    handler.view(),
                 )
                 .expect("host callback should register");
             assert!(bridge.dispatch(JsValue::UNDEFINED));
@@ -643,7 +650,7 @@ mod tests {
                             "host",
                         ))))
                     },
-                    handler,
+                    handler.view(),
                 )
                 .expect("host callback should register")
         };
@@ -671,7 +678,7 @@ mod tests {
                             "host",
                         ))))
                     },
-                    handler,
+                    handler.view(),
                 )
                 .expect("host callback should register")
         };
@@ -713,7 +720,7 @@ mod tests {
                 .error_handler(|_| {})
                 .expect("error handler should register");
             let callback = token
-                .host_callback(|_| Ok(()), handler)
+                .host_callback(|_| Ok(()), handler.view())
                 .expect("host callback should register");
             let handle = token
                 .host_resource_for_callback(
@@ -721,7 +728,7 @@ mod tests {
                     move || {
                         cancelled_in_cleanup.set(cancelled_in_cleanup.get() + 1);
                     },
-                    handler,
+                    handler.view(),
                 )
                 .expect("host resource should register");
             drop(handle);
@@ -751,7 +758,7 @@ mod tests {
                             runs_for_effect.set(runs_for_effect.get() + 1);
                             Ok(())
                         }),
-                        handler,
+                        handler.view(),
                     )
                     .expect("owner effect should initialize");
                 assert_eq!(runs.get(), 1);
@@ -848,7 +855,8 @@ mod tests {
                     }),
                     scope
                         .error_handler(|_| {})
-                        .expect("error handler should register"),
+                        .expect("error handler should register")
+                        .view(),
                 )
                 .expect("cleanup should register");
         }

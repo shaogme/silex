@@ -1,7 +1,7 @@
 #![cfg(target_arch = "wasm32")]
 
 use js_sys::{Array, Reflect};
-use silex_core::{ErrorReporter, Runtime, Scope, SilexContext};
+use silex_core::{ErrorHandlerToken, Runtime, Scope, SilexContext};
 use silex_css::{
     CssPart, DynamicCss, IntoCssReactive,
     prelude::{
@@ -25,13 +25,15 @@ use web_sys::{Element, Node};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
-fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
+fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope> {
     scope
         .error_handler(|_| {})
         .expect("test error handler should register")
 }
 
-fn test_owner<'scope>(scope: Scope<'scope>) -> (ScopedMountOwner<'scope>, ErrorReporter<'scope>) {
+fn test_owner<'scope>(
+    scope: Scope<'scope>,
+) -> (ScopedMountOwner<'scope>, ErrorHandlerToken<'scope>) {
     let error_handler = test_handler(scope);
     (ScopedMountOwner::new(scope), error_handler)
 }
@@ -155,10 +157,10 @@ fn style_updates_inline_values_and_cleans_on_scope_dispose() {
                 .expect("signal should initialize");
             let (owner, error_handler) = test_owner(scope);
             let token = owner.token();
-            let class_name = Style::new(SilexContext::new(scope, test_handler(scope)))
+            let class_name = Style::new(SilexContext::new(scope, error_handler.view()))
                 .raw("--test-color", value)
                 .expect("style should build")
-                .apply_to_element(&element, &token, error_handler)
+                .apply_to_element(&element, &token, error_handler.view())
                 .expect("style can be applied");
 
             assert!(element.class_list().contains(&class_name));
@@ -210,7 +212,7 @@ fn theme_updates_variables_and_cleans_on_scope_dispose() {
             let (owner, error_handler) = test_owner(scope);
             let token = owner.token();
             theme_variables(theme)
-                .apply(&element, ApplyTarget::Apply, &token, error_handler)
+                .apply(&element, ApplyTarget::Apply, &token, error_handler.view())
                 .expect("theme variables can be applied");
 
             assert!(
@@ -259,10 +261,10 @@ fn svg_style_updates_inline_values_and_cleans_on_scope_dispose() {
                 .expect("signal should initialize");
             let (owner, error_handler) = test_owner(scope);
             let token = owner.token();
-            Style::new(SilexContext::new(scope, test_handler(scope)))
+            Style::new(SilexContext::new(scope, error_handler.view()))
                 .raw("--svg-color", value)
                 .expect("style should build")
-                .apply_to_element(&element, &token, error_handler)
+                .apply_to_element(&element, &token, error_handler.view())
                 .expect("svg style can be applied");
             assert!(
                 element
@@ -320,7 +322,7 @@ fn dynamic_css_replaces_rule_class_and_cleans_on_scope_dispose() {
             );
 
             dynamic
-                .apply(&element, ApplyTarget::Class, &token, error_handler)
+                .apply(&element, ApplyTarget::Class, &token, error_handler.view())
                 .expect("dynamic style can be applied");
             let first_class = element.class_name();
             assert!(first_class.contains("slx-owner-test"));
@@ -366,7 +368,7 @@ async fn pending_dynamic_sheet_operations_do_not_survive_owner_dispose() {
                 vec![value.into_css_reactive()],
             );
             dynamic
-                .apply(&element, ApplyTarget::Class, &token, error_handler)
+                .apply(&element, ApplyTarget::Class, &token, error_handler.view())
                 .expect("dynamic style can be applied");
             assert!(element.class_name().contains("slx-pending-owner"));
         })
@@ -395,7 +397,7 @@ async fn global_theme_stylesheets_are_isolated_per_owner() {
                         color: String::from("owner-red"),
                     })
                     .expect("first theme should initialize"),
-                first_error_handler,
+                first_error_handler.view(),
             )
             .expect("first global theme can be registered");
             set_global_theme(
@@ -405,7 +407,7 @@ async fn global_theme_stylesheets_are_isolated_per_owner() {
                         color: String::from("owner-blue"),
                     })
                     .expect("second theme should initialize"),
-                second_error_handler,
+                second_error_handler.view(),
             )
             .expect("second global theme can be registered");
         });
@@ -442,7 +444,7 @@ fn theme_patch_removes_variables_that_disappear_from_the_next_round() {
             let (owner, error_handler) = test_owner(scope);
             let token = owner.token();
             theme_patch(patch)
-                .apply(&element, ApplyTarget::Apply, &token, error_handler)
+                .apply(&element, ApplyTarget::Apply, &token, error_handler.view())
                 .expect("theme patch can be applied");
             let initial = element.get_attribute("style").unwrap_or_default();
             assert!(initial.contains("--patch-old"), "{initial}");
@@ -496,7 +498,7 @@ fn foreign_runtime_css_read_is_rejected_during_custom_callback() {
                     Ok(())
                 });
                 operation
-                    .apply(&element, &token, error_handler)
+                    .apply(&element, &token, error_handler.view())
                     .expect_err("foreign runtime read should be rejected");
             })
             .expect("local child scope should initialize");

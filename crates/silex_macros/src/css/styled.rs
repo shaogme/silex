@@ -918,9 +918,10 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
     let error_handler = find_error_handler_parameter(&params).ok_or_else(|| {
         syn::Error::new(
             c_name.span(),
-            "global! 的动态 CSS 必须声明显式 ErrorReporter 参数",
+            "global! 的动态 CSS 必须声明显式 ErrorReporter 或 ErrorHandlerToken 参数",
         )
     })?;
+    let error_handler_ref = quote::format_ident!("__slx_global_error_handler");
 
     for arg in &mut params {
         if let FnArg::Typed(arg) = arg {
@@ -964,7 +965,7 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
         getter_decls.push(quote! {
             let #getter = #__silex::css::make_property_val::<#prop_type, _>(
                 #expression,
-                #error_handler,
+                #error_handler_ref,
             )?;
         });
         replacement_getters.push(quote! {
@@ -1019,7 +1020,7 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
                 quote::format_ident!("__slx_global_selector_source_{index}_{expression_index}");
             getter_decls.push(quote! {
                 let #source = #__silex::css::IntoCssReactive::into_css_reactive(#expression);
-                let #getter = #source.map(|value| value.to_string(), #error_handler)?;
+                let #getter = #source.map(|value| value.to_string(), #error_handler_ref)?;
             });
             positional.push(quote! { #getter.clone() });
         }
@@ -1049,6 +1050,8 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
         {
             #assertions
             #static_value_decls
+            let #error_handler_ref =
+                #__silex::core::ErrorHandlerInput::handler_ref(&#error_handler);
             let #static_values_ident: ::std::vec::Vec<::std::string::String> =
                 #static_value_tokens;
             #(#getter_decls)*
@@ -1091,7 +1094,9 @@ fn find_error_handler_parameter(params: &Punctuated<FnArg, Token![,]>) -> Option
             .segments
             .last()
             .is_some_and(|segment| {
-                segment.ident == "ErrorReporter" || segment.ident == "ErrorHandler"
+                segment.ident == "ErrorReporter"
+                    || segment.ident == "ErrorHandler"
+                    || segment.ident == "ErrorHandlerToken"
             })
             .then(|| pattern.ident.clone())
     })
@@ -1277,6 +1282,25 @@ mod tests {
         let code = global_impl(input).unwrap().to_string();
         assert!(code.contains("with_static_replacements"), "{code}");
         assert!(code.contains("with_static_values"), "{code}");
+    }
+
+    #[test]
+    fn dynamic_global_normalizes_a_token_owner_before_reuse() {
+        let input = quote::quote! {
+            pub Global<'scope>(
+                error_handler: ErrorHandlerToken<'scope>,
+                color: Signal<'scope, Hex>,
+            ) {
+                body {
+                    color: $(color);
+                    border-color: $(color);
+                }
+            }
+        };
+        let code = global_impl(input).unwrap().to_string();
+        assert!(code.contains("ErrorHandlerInput"), "{code}");
+        assert!(code.contains("handler_ref"), "{code}");
+        assert!(code.contains("__slx_global_error_handler"), "{code}");
     }
 
     #[test]

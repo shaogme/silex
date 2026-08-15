@@ -11,7 +11,7 @@ use std::{
 use gloo_timers::future::TimeoutFuture;
 use js_sys::{Array, Function, Reflect};
 use silex_core::reactivity::{MutationState, ResourceState};
-use silex_core::{ErrorReporter, Runtime, Scope, TaskHandle};
+use silex_core::{ErrorHandlerToken, Runtime, Scope, TaskHandle};
 use silex_net::{
     BrowserTransport, EventStream, EventStreamConnection, HttpMethod, HttpResponse, NetError,
     NetErrorKind, RequestBody, RequestSpec, RetryPolicy, Transport, TransportFuture, WebSocket,
@@ -22,7 +22,7 @@ use wasm_bindgen_test::*;
 
 wasm_bindgen_test_configure!(run_in_browser);
 
-fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
+fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope> {
     scope.error_handler(|_| {}).expect("error handler setup")
 }
 

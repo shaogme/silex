@@ -23,7 +23,7 @@ fn main() {
     let view = runtime.child(|scope| {
         let (color, _) = scope.signal(silex_css::types::hex("#fff")).unwrap();
         let error_handler = scope.error_handler(|_| {}).unwrap();
-        let ctx = silex_core::SilexContext::new(scope, error_handler);
+        let ctx = silex_core::SilexContext::new(scope, error_handler.view());
         ScopedPanel(ctx, color, color)
     });
     let _ = view;

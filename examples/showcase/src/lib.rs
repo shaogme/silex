@@ -135,9 +135,11 @@ pub fn mount_showcase_into(target: web_sys::Node) -> Result<JsAppHost, Bootstrap
 
 fn mount_showcase_view<'scope>(ctx: &MountContext<'scope>) -> SilexResult<()> {
     let scope = ctx.scope();
-    let error_handler = scope.error_handler(|error: SilexError| {
+    let error_handler_token = scope.error_handler(|error: SilexError| {
         web_sys::console::error_1(&error.to_string().into());
     })?;
+
+    let error_handler = error_handler_token.view();
 
     let parse_locale = |value: &str| {
         Locale::new(value)

@@ -19,7 +19,8 @@ fn high_level_root_uses_the_borrowed_scope_api() {
                 },
                 scope
                     .error_handler(|_: SilexError| {})
-                    .expect("error handler should register"),
+                    .expect("error handler should register")
+                    .view(),
             )
             .expect("effect should register");
 

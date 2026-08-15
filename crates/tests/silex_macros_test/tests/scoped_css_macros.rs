@@ -128,7 +128,7 @@ fn dynamic_css_keeps_the_source_scope() {
         .child(|scope| {
             let (read, _) = scope.signal(silex::css::types::px(4)).unwrap();
             let error_handler = scope.error_handler(|_| {}).unwrap();
-            let dynamic = dynamic_width(read.into_rx(), error_handler).unwrap();
+            let dynamic = dynamic_width(read.into_rx(), error_handler.view()).unwrap();
             assert_eq!(dynamic.vars.len(), 1);
         })
         .unwrap();
@@ -141,7 +141,7 @@ fn dynamic_tw_accepts_the_explicit_error_handler_syntax() {
         .child(|scope| {
             let (read, _) = scope.signal(silex::css::types::px(4)).unwrap();
             let error_handler = scope.error_handler(|_| {}).unwrap();
-            let dynamic = dynamic_tw_width(read.into_rx(), error_handler).unwrap();
+            let dynamic = dynamic_tw_width(read.into_rx(), error_handler.view()).unwrap();
             assert_eq!(dynamic.vars.len(), 1);
         })
         .unwrap();

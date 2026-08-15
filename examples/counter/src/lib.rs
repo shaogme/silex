@@ -423,7 +423,7 @@ fn mount_counter_view<'scope>(ctx: &MountContext<'scope>) -> SilexResult<()> {
     let error_handler = scope.error_handler(move |error: SilexError| {
         let _ = set_root_error.set(Some(error));
     })?;
-    let silex_ctx = SilexContext::new(scope, error_handler);
+    let silex_ctx = SilexContext::new(scope, error_handler.view());
     let app = App(silex_ctx, root_error).build();
     ctx.mount(app, error_handler)
 }

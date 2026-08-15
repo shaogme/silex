@@ -446,7 +446,7 @@ mod tests {
                 let error_handler = scope
                     .error_handler(|_| {})
                     .expect("test error handler should register");
-                f(SilexContext::new(scope, error_handler))
+                f(SilexContext::new(scope, error_handler.view()))
             })
             .expect("test ctx should initialize")
     }

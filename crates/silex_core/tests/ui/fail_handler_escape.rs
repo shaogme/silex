@@ -1,12 +1,12 @@
-use silex_core::{ErrorHandler, Runtime, Scope, SilexError};
+use silex_core::{ErrorHandlerToken, Runtime, Scope};
 
 fn make_handler<'scope>(
     scope: Scope<'scope>,
     value: &'scope str,
-) -> ErrorHandler<'static, SilexError> {
+) -> ErrorHandlerToken<'static> {
     scope.error_handler(move |_| {
         assert_eq!(value, "scoped");
-    })
+    }).expect("handler should register")
 }
 
 fn main() {

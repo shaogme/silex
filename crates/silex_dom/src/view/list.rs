@@ -6,7 +6,7 @@ use crate::attribute::PendingAttribute;
 use crate::view::{AnyView, ApplyAttributes, MountErrorHandler, MountInstance, MountOwner, View};
 use silex_core::reactivity::ReactiveSource;
 use silex_core::traits::{ForLoopSource, RxRead};
-use silex_core::{ErrorHandler, SilexError, SilexErrorKind, SilexResult};
+use silex_core::{ErrorHandlerToken, SilexError, SilexErrorKind, SilexResult};
 use std::{
     collections::{HashMap, HashSet},
     mem,
@@ -20,7 +20,7 @@ pub struct RenderOnlyKeyedListView<'scope, IF, IS, T, K> {
     pub each: IF,
     pub key_fn: Rc<dyn Fn(&T) -> K + 'scope>,
     pub view_fn: Rc<dyn Fn(T, usize) -> AnyView<'scope> + 'scope>,
-    pub error_handler: Option<ErrorHandler<'scope, SilexError>>,
+    pub error_handler: Option<ErrorHandlerToken<'scope>>,
     pub _marker: std::marker::PhantomData<(IS, T)>,
 }
 
@@ -29,7 +29,7 @@ pub struct StatefulKeyedListView<'scope, IF, IS, T, K> {
     pub each: IF,
     pub key_fn: Rc<dyn Fn(&T) -> K + 'scope>,
     pub view_fn: Rc<dyn Fn(T, usize, RowUpdater<'scope, T>) -> AnyView<'scope> + 'scope>,
-    pub error_handler: Option<ErrorHandler<'scope, SilexError>>,
+    pub error_handler: Option<ErrorHandlerToken<'scope>>,
     pub _marker: std::marker::PhantomData<(IS, T)>,
 }
 
@@ -85,7 +85,7 @@ where
             source: self.each.clone(),
             key_fn: self.key_fn.clone(),
             factory: RowFactory::RenderOnly(self.view_fn.clone()),
-            error_handler: self.error_handler,
+            error_handler: self.error_handler.clone(),
             attrs,
             parent_error_handler: error_handler,
             _marker: std::marker::PhantomData,
@@ -115,7 +115,7 @@ where
             source: self.each.clone(),
             key_fn: self.key_fn.clone(),
             factory: RowFactory::Stateful(self.view_fn.clone()),
-            error_handler: self.error_handler,
+            error_handler: self.error_handler.clone(),
             attrs,
             parent_error_handler: error_handler,
             _marker: std::marker::PhantomData,
@@ -327,7 +327,7 @@ struct KeyedListMountArgs<'owner, 'scope, IF, IS, T, K> {
     source: IF,
     key_fn: Rc<dyn Fn(&T) -> K + 'scope>,
     factory: RowFactory<'scope, T>,
-    error_handler: Option<ErrorHandler<'scope, SilexError>>,
+    error_handler: Option<ErrorHandlerToken<'scope>>,
     attrs: Vec<PendingAttribute<'scope>>,
     parent_error_handler: MountErrorHandler<'scope>,
     _marker: std::marker::PhantomData<IS>,
@@ -354,7 +354,9 @@ where
         ..
     } = args;
     let scope = Rc::new(owner.owned_scope()?);
-    let error_handler = error_handler.unwrap_or(parent_error_handler);
+    let error_handler = error_handler
+        .map(|handler| handler.view())
+        .unwrap_or(parent_error_handler);
     let local_owner = OwnedMountOwner::new(scope.clone());
     let token = local_owner.token();
     let range = NodeRange::append(parent, "for")?;

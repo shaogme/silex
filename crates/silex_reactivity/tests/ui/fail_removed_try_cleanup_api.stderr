@@ -7,11 +7,9 @@ error[E0599]: no method named `try_on_cleanup` found for struct `silex_reactivit
 help: there is a method `on_cleanup` with a similar name, but with different arguments
  --> src/child/scope.rs
   |
-  | /     pub fn on_cleanup<E, F>(
-  | |         &self,
-  | |         f: F,
-  | |         error_handler: ErrorHandler<'scope, E>,
-... |
+  | /     pub fn on_cleanup<E, F, H>(&self, f: F, error_handler: H) -> ReactiveResult<()>
+  | |     where
   | |         E: 'scope,
   | |         F: FnOnce() -> Result<(), E> + 'scope,
-  | |______________________________________________^
+  | |         H: ErrorHandlerInput<'scope, E>,
+  | |________________________________________^

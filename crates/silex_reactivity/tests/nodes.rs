@@ -1,6 +1,6 @@
 use silex_reactivity::{
-    Callback, CallbackInvokeError, Derived, Effect, ErrorHandler, Memo, NodeRef, ReactiveError,
-    ReadSignal, Runtime, Scope, StoredValue, WriteSignal,
+    Callback, CallbackInvokeError, Derived, Effect, ErrorHandlerToken, Memo, NodeRef,
+    ReactiveError, ReadSignal, Runtime, Scope, StoredValue, WriteSignal,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -8,7 +8,7 @@ use std::{
     rc::Rc,
 };
 
-fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, ()> {
+fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope, ()> {
     scope.error_handler(|_| {}).expect("handler registration")
 }
 

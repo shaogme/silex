@@ -1,9 +1,19 @@
 //! Explicit runtime operation errors and typed callback error channels.
 
 use crate::{
-    runtime::invoke_error_handler, runtime::storage::CallbackThunkError, scope::ScopeStorage,
+    runtime::{
+        ScopeState, acquire_error_handler_lease, invoke_error_handler, storage::CallbackThunkError,
+    },
+    scope::ScopeStorage,
+    unsafe_boundary::WeakOwnerToken,
 };
-use std::{cell::RefCell, fmt, marker::PhantomData};
+use std::{
+    cell::{Cell, RefCell},
+    fmt,
+    marker::PhantomData,
+    ptr::NonNull,
+    rc::Rc,
+};
 
 slotmap::new_key_type! {
     pub(crate) struct ErrorHandlerKey;
@@ -98,9 +108,12 @@ pub struct HandlerError {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum HandlerReason {
+pub enum HandlerReason {
     BorrowConflict,
     NoSuchNode,
+    Inactive,
+    GenerationMismatch,
+    ScopeReleased,
     Internal,
 }
 
@@ -115,12 +128,29 @@ impl HandlerError {
         Self { reason, context }
     }
 
-    pub fn reason(&self) -> ReactiveError {
-        match self.reason {
-            HandlerReason::BorrowConflict => ReactiveError::BorrowConflict,
-            HandlerReason::NoSuchNode => ReactiveError::NoSuchNode,
-            HandlerReason::Internal => ReactiveError::TypeMismatch,
+    pub(crate) const fn inactive(context: ErrorContext) -> Self {
+        Self {
+            reason: HandlerReason::Inactive,
+            context,
         }
+    }
+
+    pub(crate) const fn generation_mismatch(context: ErrorContext) -> Self {
+        Self {
+            reason: HandlerReason::GenerationMismatch,
+            context,
+        }
+    }
+
+    pub(crate) const fn scope_released(context: ErrorContext) -> Self {
+        Self {
+            reason: HandlerReason::ScopeReleased,
+            context,
+        }
+    }
+
+    pub fn reason(&self) -> HandlerReason {
+        self.reason
     }
 
     pub fn context(&self) -> &ErrorContext {
@@ -135,7 +165,7 @@ impl HandlerError {
 
 impl fmt::Display for HandlerError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "错误 handler dispatch 失败：{}", self.reason())
+        write!(f, "错误 handler dispatch 失败：{:?}", self.reason())
     }
 }
 
@@ -176,105 +206,443 @@ pub(crate) type ErrorHandlerCallback<'scope, E> = Box<dyn Fn(E) + 'scope>;
 pub(crate) type ErrorDispatchCallback<'scope> =
     Box<dyn FnOnce(ErrorPhase) -> Result<(), HandlerError> + 'scope>;
 
-/// A typed handler callback. The registry stores only an owner marker; calls
-/// always go through the typed `ErrorHandler<E>` capability.
-pub(crate) struct ErrorHandlerCell<'scope, E> {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum HandlerState {
+    Active,
+    Closing,
+    Retired,
+}
+
+struct InFlightGuard<'a, 'scope, E> {
+    record: &'a HandlerRecord<'scope, E>,
+}
+
+impl<E> Drop for InFlightGuard<'_, '_, E> {
+    fn drop(&mut self) {
+        self.record
+            .in_flight
+            .set(self.record.in_flight.get().saturating_sub(1));
+        self.record.maybe_retire();
+    }
+}
+
+/// A heap-owned typed callback record. The registry keeps a type-erased owner
+/// for lifecycle bookkeeping, while all callback invocation remains typed.
+pub(crate) struct HandlerRecord<'scope, E> {
     callback: RefCell<Option<ErrorHandlerCallback<'scope, E>>>,
+    state: Cell<HandlerState>,
+    strong_count: Cell<usize>,
+    lease_count: Cell<usize>,
+    in_flight: Cell<usize>,
+    pending_retire: Cell<bool>,
+    owner: WeakOwnerToken,
+    key: Cell<Option<ErrorHandlerKey>>,
 }
 
-pub(crate) trait ErrorHandlerCall<E> {
-    fn call(&self, error: E) -> ReactiveResult<()>;
-}
-
-impl<'scope, E> ErrorHandlerCell<'scope, E> {
-    pub(crate) fn new<F>(callback: F) -> Self
+impl<'scope, E> HandlerRecord<'scope, E> {
+    pub(crate) fn new<F>(callback: F, owner: WeakOwnerToken) -> Self
     where
         F: Fn(E) + 'scope,
     {
         Self {
             callback: RefCell::new(Some(Box::new(callback))),
+            state: Cell::new(HandlerState::Active),
+            strong_count: Cell::new(1),
+            lease_count: Cell::new(0),
+            in_flight: Cell::new(0),
+            pending_retire: Cell::new(false),
+            owner,
+            key: Cell::new(None),
         }
     }
 
-    pub(crate) fn call(&self, error: E) -> ReactiveResult<()> {
-        let callback = self
-            .callback
-            .try_borrow_mut()
-            .map_err(|_| ReactiveError::BorrowConflict)?
-            .take()
-            .ok_or(ReactiveError::NoSuchNode)?;
+    pub(crate) fn set_key(&self, key: ErrorHandlerKey) {
+        self.key.set(Some(key));
+    }
+
+    pub(crate) fn identity(&self) -> NonNull<()> {
+        NonNull::from(self).cast()
+    }
+
+    fn is_active(&self) -> bool {
+        self.state.get() == HandlerState::Active
+    }
+
+    fn add_strong(&self) {
+        self.strong_count
+            .set(self.strong_count.get().saturating_add(1));
+    }
+
+    fn release_strong(&self) {
+        self.strong_count
+            .set(self.strong_count.get().saturating_sub(1));
+        if self.strong_count.get() == 0 {
+            self.begin_closing();
+        }
+    }
+
+    fn begin_closing(&self) {
+        if self.state.get() == HandlerState::Active {
+            self.state.set(HandlerState::Closing);
+        }
+        self.maybe_retire();
+    }
+
+    fn add_lease(&self, context: ErrorContext) -> Result<(), HandlerError> {
+        if !self.is_active() {
+            return Err(Self::inactive_error(context));
+        }
+        self.lease_count
+            .set(self.lease_count.get().saturating_add(1));
+        Ok(())
+    }
+
+    fn release_lease(&self) {
+        self.lease_count
+            .set(self.lease_count.get().saturating_sub(1));
+        self.maybe_retire();
+    }
+
+    fn inactive_error(context: ErrorContext) -> HandlerError {
+        match context.phase {
+            "handler scope" => HandlerError::scope_released(context),
+            _ => HandlerError::inactive(context),
+        }
+    }
+
+    fn can_dispatch(&self, allow_closing: bool, context: ErrorContext) -> Result<(), HandlerError> {
+        match self.state.get() {
+            HandlerState::Active => Ok(()),
+            HandlerState::Closing if allow_closing && self.lease_count.get() > 0 => Ok(()),
+            HandlerState::Closing | HandlerState::Retired => Err(Self::inactive_error(context)),
+        }
+    }
+
+    pub(crate) fn call(
+        &self,
+        error: E,
+        context: ErrorContext,
+        allow_closing: bool,
+    ) -> Result<(), HandlerError> {
+        self.can_dispatch(allow_closing, context)?;
+        self.in_flight.set(self.in_flight.get().saturating_add(1));
+        let guard = InFlightGuard { record: self };
+        let callback = match self.callback.try_borrow_mut() {
+            Ok(mut callback) => match callback.take() {
+                Some(callback) => callback,
+                None => {
+                    drop(guard);
+                    return Err(Self::inactive_error(context));
+                }
+            },
+            Err(_) => {
+                drop(guard);
+                return Err(HandlerError::new(ReactiveError::BorrowConflict, context));
+            }
+        };
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| callback(error)));
-        let mut callbacks = self
-            .callback
-            .try_borrow_mut()
-            .map_err(|_| ReactiveError::BorrowConflict)?;
-        *callbacks = Some(callback);
+        let restore = self.state.get() == HandlerState::Active
+            || (allow_closing && self.lease_count.get() > 0);
+        if restore && let Ok(mut callbacks) = self.callback.try_borrow_mut() {
+            *callbacks = Some(callback);
+        }
+        drop(guard);
         match result {
             Ok(()) => Ok(()),
             Err(panic) => std::panic::resume_unwind(panic),
         }
     }
 
-    pub(crate) fn clear(&self) {
-        self.callback.borrow_mut().take();
+    pub(crate) fn force_retire(&self) {
+        self.state.set(HandlerState::Retired);
+        let callback_cleared = match self.callback.try_borrow_mut() {
+            Ok(mut callback) => {
+                let callback = callback.take();
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(callback))).is_ok()
+            }
+            Err(_) => false,
+        };
+        self.pending_retire.set(!callback_cleared);
+        self.strong_count.set(0);
+        self.lease_count.set(0);
+        self.in_flight.set(0);
+    }
+
+    fn maybe_retire(&self) {
+        if self.state.get() == HandlerState::Active
+            || self.strong_count.get() != 0
+            || self.lease_count.get() != 0
+            || self.in_flight.get() != 0
+        {
+            return;
+        }
+        self.state.set(HandlerState::Retired);
+        let callback_cleared = match self.callback.try_borrow_mut() {
+            Ok(mut callback) => {
+                let callback = callback.take();
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(callback))).is_ok()
+            }
+            Err(_) => false,
+        };
+        if !callback_cleared || !self.remove_from_registry() {
+            self.pending_retire.set(true);
+        } else {
+            self.pending_retire.set(false);
+        }
+    }
+
+    fn remove_from_registry(&self) -> bool {
+        let Some(key) = self.key.get() else {
+            return true;
+        };
+        let Some(owner) = self.owner.upgrade() else {
+            return true;
+        };
+        let state: ScopeState<'scope> = owner.state();
+        if let Ok(mut state) = state.try_borrow_mut() {
+            state.remove_error_handler(key, self.identity());
+            true
+        } else {
+            false
+        }
+    }
+
+    pub(crate) fn lease(
+        &self,
+        owner: Rc<dyn HandlerOwner + 'scope>,
+        pointer: NonNull<()>,
+    ) -> HandlerLease<'scope, E> {
+        HandlerLease {
+            inner: Rc::new(HandlerLeaseInner {
+                owner,
+                record: pointer.cast(),
+            }),
+            marker: PhantomData,
+        }
     }
 }
 
-impl<E> ErrorHandlerCall<E> for ErrorHandlerCell<'_, E> {
-    fn call(&self, error: E) -> ReactiveResult<()> {
-        self.call(error)
+impl<E> Drop for HandlerRecord<'_, E> {
+    fn drop(&mut self) {
+        let callback = self.callback.get_mut().take();
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(callback)));
     }
 }
 
 pub(crate) trait HandlerOwner {
-    fn clear(&self);
+    fn is_active(&self) -> bool;
+    fn is_pending_retire(&self) -> bool;
+    fn add_lease(&self, context: ErrorContext) -> Result<(), HandlerError>;
+    fn release_lease(&self);
+    fn force_retire(&self);
 }
 
-impl<E> HandlerOwner for ErrorHandlerCell<'_, E> {
-    fn clear(&self) {
-        self.clear();
+impl<E> HandlerOwner for HandlerRecord<'_, E> {
+    fn is_active(&self) -> bool {
+        self.is_active()
+    }
+
+    fn is_pending_retire(&self) -> bool {
+        self.pending_retire.get()
+    }
+
+    fn add_lease(&self, context: ErrorContext) -> Result<(), HandlerError> {
+        self.add_lease(context)
+    }
+
+    fn release_lease(&self) {
+        self.release_lease();
+    }
+
+    fn force_retire(&self) {
+        self.force_retire();
     }
 }
 
 pub(crate) struct ErrorHandlerEntry<'scope> {
-    pub(crate) owner: &'scope dyn HandlerOwner,
+    pub(crate) owner: Rc<dyn HandlerOwner + 'scope>,
+    pub(crate) identity: NonNull<()>,
 }
 
-/// A copyable, scoped destination for callback errors.
-pub struct ErrorHandler<'scope, E> {
+/// A copyable, non-owning dispatch capability for callback errors.
+pub struct ErrorHandlerRef<'scope, E> {
     storage: &'scope ScopeStorage,
     key: ErrorHandlerKey,
-    callback: &'scope dyn ErrorHandlerCall<E>,
-    marker: PhantomData<fn(E)>,
+    record: NonNull<()>,
+    marker: PhantomData<fn(E) -> &'scope ()>,
 }
 
-impl<E> Copy for ErrorHandler<'_, E> {}
+impl<E> Copy for ErrorHandlerRef<'_, E> {}
 
-impl<E> Clone for ErrorHandler<'_, E> {
+impl<E> Clone for ErrorHandlerRef<'_, E> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<'scope, E> ErrorHandler<'scope, E> {
-    pub(crate) fn from_parts(
+impl<'scope, E: 'scope> ErrorHandlerRef<'scope, E> {
+    pub(crate) fn from_record(
         storage: &'scope ScopeStorage,
         key: ErrorHandlerKey,
-        callback: &'scope dyn ErrorHandlerCall<E>,
+        record: &HandlerRecord<'scope, E>,
     ) -> Self {
         Self {
             storage,
             key,
-            callback,
+            record: record.identity(),
             marker: PhantomData,
         }
     }
 
-    pub fn handle(&self, error: E) -> Result<(), HandlerError>
-    where
-        E: 'scope,
-    {
-        invoke_error_handler(self.storage, self.key, self.callback, error)
+    pub fn handle(&self, error: E) -> Result<(), HandlerError> {
+        invoke_error_handler(self, error)
+    }
+
+    pub fn lease(&self) -> Result<HandlerLease<'scope, E>, HandlerError> {
+        acquire_error_handler_lease(self)
+    }
+
+    pub(crate) fn storage(&self) -> &'scope ScopeStorage {
+        self.storage
+    }
+
+    pub(crate) const fn key(&self) -> ErrorHandlerKey {
+        self.key
+    }
+
+    pub(crate) const fn record(&self) -> NonNull<()> {
+        self.record
+    }
+
+    pub(crate) unsafe fn restore_record(&self) -> &'scope HandlerRecord<'scope, E> {
+        // SAFETY: Runtime lookup validates both the generation key and the
+        // record identity before this pointer is restored. The record is
+        // kept alive by the registry or by the HandlerLease owner.
+        unsafe { self.record.cast::<HandlerRecord<'scope, E>>().as_ref() }
+    }
+}
+
+/// The RAII owner for one registered error callback.
+pub struct ErrorHandlerToken<'scope, E> {
+    view: ErrorHandlerRef<'scope, E>,
+    record: Rc<HandlerRecord<'scope, E>>,
+    closed: Cell<bool>,
+}
+
+impl<'scope, E> Clone for ErrorHandlerToken<'scope, E> {
+    fn clone(&self) -> Self {
+        self.record.add_strong();
+        Self {
+            view: self.view,
+            record: self.record.clone(),
+            closed: Cell::new(false),
+        }
+    }
+}
+
+impl<'scope, E: 'scope> ErrorHandlerToken<'scope, E> {
+    pub(crate) fn from_record(
+        storage: &'scope ScopeStorage,
+        key: ErrorHandlerKey,
+        record: Rc<HandlerRecord<'scope, E>>,
+    ) -> Self {
+        let view = ErrorHandlerRef::from_record(storage, key, &record);
+        Self {
+            view,
+            record,
+            closed: Cell::new(false),
+        }
+    }
+
+    pub fn view(&self) -> ErrorHandlerRef<'scope, E> {
+        self.view
+    }
+
+    pub fn handle(&self, error: E) -> Result<(), HandlerError> {
+        self.view.handle(error)
+    }
+
+    pub fn close(&self) -> Result<(), HandlerError> {
+        if !self.closed.replace(true) {
+            self.record.begin_closing();
+            self.record.release_strong();
+        }
+        Ok(())
+    }
+}
+
+impl<E> Drop for ErrorHandlerToken<'_, E> {
+    fn drop(&mut self) {
+        if !self.closed.get() {
+            self.record.release_strong();
+        }
+    }
+}
+
+/// A public input accepted by computation and cleanup APIs.
+#[doc(hidden)]
+pub trait ErrorHandlerInput<'scope, E> {
+    fn handler_ref(&self) -> ErrorHandlerRef<'scope, E>;
+}
+
+impl<'scope, E> ErrorHandlerInput<'scope, E> for ErrorHandlerToken<'scope, E> {
+    fn handler_ref(&self) -> ErrorHandlerRef<'scope, E> {
+        self.view
+    }
+}
+
+impl<'scope, E> ErrorHandlerInput<'scope, E> for ErrorHandlerRef<'scope, E> {
+    fn handler_ref(&self) -> ErrorHandlerRef<'scope, E> {
+        *self
+    }
+}
+
+impl<'scope, E, T> ErrorHandlerInput<'scope, E> for &T
+where
+    T: ErrorHandlerInput<'scope, E> + ?Sized,
+{
+    fn handler_ref(&self) -> ErrorHandlerRef<'scope, E> {
+        T::handler_ref(self)
+    }
+}
+
+struct HandlerLeaseInner<'scope> {
+    owner: Rc<dyn HandlerOwner + 'scope>,
+    record: NonNull<()>,
+}
+
+impl Drop for HandlerLeaseInner<'_> {
+    fn drop(&mut self) {
+        self.owner.release_lease();
+    }
+}
+
+pub struct HandlerLease<'scope, E> {
+    inner: Rc<HandlerLeaseInner<'scope>>,
+    marker: PhantomData<fn(E) -> &'scope ()>,
+}
+
+impl<'scope, E> Clone for HandlerLease<'scope, E> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<'scope, E> HandlerLease<'scope, E> {
+    pub fn handle(&self, error: E) -> Result<(), HandlerError> {
+        // SAFETY: The lease owns the type-erased record owner and the pointer
+        // was validated against the same registry entry before the lease was
+        // created.
+        let record = unsafe {
+            self.inner
+                .record
+                .cast::<HandlerRecord<'scope, E>>()
+                .as_ref()
+        };
+        record.call(error, ErrorContext::new("handler callback"), true)
     }
 }
 
@@ -302,9 +670,10 @@ pub(crate) struct ErrorEvent<'scope> {
 impl<'scope> ErrorEvent<'scope> {
     pub(crate) fn new<E: 'scope>(
         error: E,
-        handler: ErrorHandler<'scope, E>,
+        handler: &HandlerLease<'scope, E>,
         slot: &'scope ErrorSlot<E>,
     ) -> Self {
+        let handler = handler.clone();
         let mut error = Some(error);
         Self {
             dispatch: Some(Box::new(move |phase| {
@@ -318,7 +687,8 @@ impl<'scope> ErrorEvent<'scope> {
         }
     }
 
-    pub(crate) fn deferred<E: 'scope>(error: E, handler: ErrorHandler<'scope, E>) -> Self {
+    pub(crate) fn deferred<E: 'scope>(error: E, handler: &HandlerLease<'scope, E>) -> Self {
+        let handler = handler.clone();
         let mut error = Some(error);
         Self {
             dispatch: Some(Box::new(move |_| {

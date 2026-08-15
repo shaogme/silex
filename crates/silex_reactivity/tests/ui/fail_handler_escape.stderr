@@ -2,7 +2,7 @@ error: lifetime may not live long enough
   --> tests/ui/fail_handler_escape.rs:9:13
    |
  6 |           .child(|scope| {
-   |                   ------ return type of closure is ErrorHandler<'2, ()>
+   |                   ------ return type of closure is ErrorHandlerToken<'2, ()>
    |                   |
    |                   has type `silex_reactivity::Scope<'1>`
 ...
@@ -12,6 +12,10 @@ error: lifetime may not live long enough
 12 | |                 })
 13 | |                 .expect("error handler registration should succeed")
    | |____________________________________________________________________^ returning this value requires that `'1` must outlive `'2`
+   |
+   = note: requirement occurs because of the type `ErrorHandlerToken<'_, ()>`, which makes the generic argument `'_` invariant
+   = note: the struct `ErrorHandlerToken<'scope, E>` is invariant over the parameter `'scope`
+   = help: see <https://doc.rust-lang.org/nomicon/subtyping.html> for more information about variance
 
 error[E0515]: cannot return value referencing local variable `local`
   --> tests/ui/fail_handler_escape.rs:9:13

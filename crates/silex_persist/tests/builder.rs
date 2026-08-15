@@ -1,5 +1,5 @@
 use ref_str::LocalStaticRefStr;
-use silex_core::{ErrorReporter, ReactiveError, Runtime, Scope, SilexResult};
+use silex_core::{ErrorHandlerToken, ErrorReporter, ReactiveError, Runtime, Scope, SilexResult};
 use silex_persist::{
     BackendEvent, BackendEventSink, BackendSubscribeError, BackendSubscription, DecodePolicy,
     NoDefault, ParseCodec, PersistCodec, PersistMode, PersistenceBackend, PersistenceError,
@@ -15,7 +15,7 @@ use std::{
 
 type SubscriptionMap = Rc<RefCell<HashMap<LocalStaticRefStr, Vec<(usize, BackendEventSink)>>>>;
 
-fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
+fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope> {
     scope
         .error_handler(|_| {})
         .expect("test error handler should be registered")

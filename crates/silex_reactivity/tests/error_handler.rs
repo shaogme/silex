@@ -14,18 +14,18 @@ fn error_handler_clone_keeps_scoped_callback_contract() {
                     assert_eq!(error, label);
                 })
                 .expect("handler registration");
-            let cloned = handler;
+            let cloned = handler.clone();
 
             cloned.handle("scoped").expect("handler dispatch");
             scope
-                .effect(|| Ok::<(), &'static str>(()), handler)
+                .effect(|| Ok::<(), &'static str>(()), &handler)
                 .expect("effect should initialize");
         })
         .expect("test operation should succeed");
 }
 
 #[test]
-fn error_handler_is_copy_without_copying_error_or_callback() {
+fn error_handler_ref_is_copy_without_copying_error_or_callback() {
     fn assert_copy<T: Copy>(_: T) {}
 
     let mut runtime = Runtime::new();
@@ -33,12 +33,13 @@ fn error_handler_is_copy_without_copying_error_or_callback() {
     runtime
         .child(|scope| {
             let seen_in_handler = seen.clone();
-            let handler = scope
+            let token = scope
                 .error_handler(move |error: NonCopyError| {
                     assert_eq!(error.0, "first");
                     seen_in_handler.set(seen_in_handler.get() + 1);
                 })
                 .expect("handler registration");
+            let handler = token.view();
             assert_copy(handler);
             let copy = handler;
 
@@ -91,11 +92,12 @@ fn parent_handler_can_be_passed_to_a_child_scope() {
     runtime
         .child(|scope| {
             let seen_in_handler = seen.clone();
-            let handler = scope
+            let token = scope
                 .error_handler(move |_: &'static str| {
                     seen_in_handler.set(seen_in_handler.get() + 1);
                 })
                 .expect("handler registration");
+            let handler = token.view();
 
             scope
                 .child(|child| {
@@ -141,7 +143,7 @@ fn handler_callback_can_read_and_update_signals() {
                             Ok(())
                         }
                     },
-                    handler,
+                    &handler,
                 )
                 .expect("effect should initialize");
 
@@ -151,4 +153,152 @@ fn handler_callback_can_read_and_update_signals() {
         .expect("test operation should succeed");
 
     assert_eq!(observed.get(), 1);
+}
+
+struct DropCapture(Rc<Cell<usize>>);
+
+impl Drop for DropCapture {
+    fn drop(&mut self) {
+        self.0.set(self.0.get() + 1);
+    }
+}
+
+#[test]
+fn dropping_the_last_token_retires_the_callback_immediately() {
+    let mut runtime = Runtime::new();
+    let drops = Rc::new(Cell::new(0));
+
+    runtime
+        .child(|scope| {
+            let capture = DropCapture(drops.clone());
+            let token = scope
+                .error_handler(move |_: ()| {
+                    let _ = &capture;
+                })
+                .expect("handler registration");
+            let view = token.view();
+
+            drop(token);
+            assert_eq!(drops.get(), 1);
+            assert!(view.handle(()).is_err());
+        })
+        .expect("test operation should succeed");
+}
+
+#[test]
+fn computation_lease_survives_token_drop_but_view_becomes_stale() {
+    let mut runtime = Runtime::new();
+    let drops = Rc::new(Cell::new(0));
+    let handled = Rc::new(Cell::new(0));
+    let should_fail = Rc::new(Cell::new(false));
+
+    runtime
+        .child(|scope| {
+            let (source, set_source) = scope.signal(0_i32).expect("signal registration");
+            let capture = DropCapture(drops.clone());
+            let handled_in_callback = handled.clone();
+            let should_fail_in_callback = should_fail.clone();
+            let token = scope
+                .error_handler(move |_: &'static str| {
+                    let _ = &capture;
+                    handled_in_callback.set(handled_in_callback.get() + 1);
+                })
+                .expect("handler registration");
+            let view = token.view();
+            let effect = scope
+                .effect(
+                    move || {
+                        source.get().expect("signal read");
+                        if should_fail_in_callback.get() {
+                            Err("deferred")
+                        } else {
+                            Ok(())
+                        }
+                    },
+                    view,
+                )
+                .expect("effect registration");
+
+            drop(token);
+            assert!(view.handle("stale").is_err());
+            should_fail.set(true);
+            set_source.set(1).expect("signal update");
+            assert_eq!(handled.get(), 1);
+            effect.stop().expect("effect disposal");
+            assert_eq!(drops.get(), 1);
+        })
+        .expect("test operation should succeed");
+}
+
+#[test]
+fn cloned_tokens_share_the_registration_owner() {
+    let mut runtime = Runtime::new();
+    runtime
+        .child(|scope| {
+            let token = scope
+                .error_handler(|_: ()| {})
+                .expect("handler registration");
+            let clone = token.clone();
+            let view = token.view();
+
+            drop(token);
+            view.handle(()).expect("clone should keep handler active");
+            drop(clone);
+            assert!(view.handle(()).is_err());
+        })
+        .expect("test operation should succeed");
+}
+
+#[test]
+fn stale_view_cannot_dispatch_a_reused_registration_slot() {
+    let mut runtime = Runtime::new();
+    let seen = Rc::new(Cell::new(0));
+
+    runtime
+        .child(|scope| {
+            let old = scope
+                .error_handler(|_: ()| {})
+                .expect("old handler registration");
+            let stale = old.view();
+            drop(old);
+
+            let seen_in_new_handler = seen.clone();
+            let current = scope
+                .error_handler(move |_: ()| {
+                    seen_in_new_handler.set(seen_in_new_handler.get() + 1);
+                })
+                .expect("new handler registration");
+            current.handle(()).expect("current handler dispatch");
+            assert!(stale.handle(()).is_err());
+        })
+        .expect("test operation should succeed");
+
+    assert_eq!(seen.get(), 1);
+}
+
+#[test]
+#[cfg(feature = "test-support")]
+fn retired_handlers_are_excluded_from_active_snapshots() {
+    let mut runtime = Runtime::new();
+
+    runtime
+        .child(|scope| {
+            let token = scope
+                .error_handler(|_: ()| {})
+                .expect("handler registration");
+            let view = token.view();
+            assert_eq!(scope.runtime_snapshot().handlers, 1);
+
+            drop(token);
+            assert_eq!(scope.runtime_snapshot().handlers, 0);
+            assert!(view.handle(()).is_err());
+
+            let replacement = scope
+                .error_handler(|_: ()| {})
+                .expect("replacement handler registration");
+            assert_eq!(scope.runtime_snapshot().handlers, 1);
+            drop(replacement);
+            assert_eq!(scope.runtime_snapshot().handlers, 0);
+        })
+        .expect("test operation should succeed");
 }

@@ -1,6 +1,6 @@
-use silex_reactivity::{ErrorHandler, Runtime, Scope};
+use silex_reactivity::{ErrorHandlerToken, Runtime, Scope};
 
-fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, ()> {
+fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope, ()> {
     scope.error_handler(|_| {}).expect("handler registration")
 }
 

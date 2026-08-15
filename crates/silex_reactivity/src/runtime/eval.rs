@@ -810,6 +810,9 @@ pub(crate) fn run_initial<'scope>(
 }
 
 pub(crate) fn flush_if_idle<'scope>(state: &ScopeState<'scope>) -> ReactiveResult<()> {
+    if let Ok(mut state_ref) = state.try_borrow_mut() {
+        state_ref.sweep_error_handlers();
+    }
     let scheduler = state.try_borrow()?.scheduler.clone();
     let should_flush = scheduler
         .try_borrow()

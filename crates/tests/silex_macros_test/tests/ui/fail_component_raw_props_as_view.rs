@@ -19,11 +19,9 @@ fn RawPropsAsView<'scope, Ctx>(
 fn main() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
+        let error_handler = scope.error_handler(|_| {}).expect("handler");
         let props = RawPropsAsViewProps {
-            ctx: SilexContext::new(
-                scope,
-                scope.error_handler(|_| {}).expect("handler"),
-            ),
+            ctx: SilexContext::new(scope, error_handler.view()),
             children: AnyView::Empty,
             __silex_scope_marker: PhantomData,
         };

@@ -1,10 +1,10 @@
-use silex_reactivity::{ErrorHandler, ReactiveError, Runtime, Scope, unwind_safe};
+use silex_reactivity::{ErrorHandlerToken, ReactiveError, Runtime, Scope, unwind_safe};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
 };
 
-fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, ()> {
+fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope, ()> {
     scope.error_handler(|_| {}).expect("handler registration")
 }
 

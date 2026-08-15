@@ -1,20 +1,5 @@
-error[E0308]: mismatched types
- --> tests/ui/fail_error_reporter_report.rs:6:43
-  |
-6 |         let reporter: ErrorReporter<'_> = scope.error_handler(|_: SilexError| {});
-  |                       -----------------   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `ErrorHandler<'_, SilexError>`, found `Result<ErrorHandler<'_, ...>, ...>`
-  |                       |
-  |                       expected due to this
-  |
-  = note: expected struct `ErrorHandler<'_, SilexError>`
-               found enum `Result<ErrorHandler<'_, SilexError>, SilexError>`
-help: consider using `Result::expect` to unwrap the `Result<ErrorHandler<'_, SilexError>, SilexError>` value, panicking if the value is a `Result::Err`
-  |
-6 |         let reporter: ErrorReporter<'_> = scope.error_handler(|_: SilexError| {}).expect("REASON");
-  |                                                                                  +++++++++++++++++
-
-error[E0599]: no method named `report` found for struct `ErrorHandler<'scope, E>` in the current scope
- --> tests/ui/fail_error_reporter_report.rs:7:18
-  |
-7 |         reporter.report(SilexError::recoverable(SilexErrorKind::Framework(String::from("removed"))));
-  |                  ^^^^^^ method not found in `ErrorHandler<'_, SilexError>`
+error[E0599]: no method named `report` found for struct `silex_reactivity::error::ErrorHandlerRef<'scope, E>` in the current scope
+  --> tests/ui/fail_error_reporter_report.rs:10:18
+   |
+10 |         reporter.report(SilexError::recoverable(SilexErrorKind::Framework(String::from("removed"))));
+   |                  ^^^^^^ method not found in `silex_reactivity::error::ErrorHandlerRef<'_, SilexError>`

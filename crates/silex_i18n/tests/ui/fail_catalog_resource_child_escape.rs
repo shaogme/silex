@@ -3,9 +3,10 @@ use silex_i18n::{Catalog, CatalogResource, I18nBuilder, I18nError, Runtime};
 fn escaped() -> CatalogResource<'static, I18nError> {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
+        let handler = scope.error_handler(|_| {}).expect("error handler");
         let store = I18nBuilder::new(
             scope,
-            scope.error_handler(|_| {}).expect("error handler"),
+            handler.view(),
         )
             .build()
             .expect("valid store");

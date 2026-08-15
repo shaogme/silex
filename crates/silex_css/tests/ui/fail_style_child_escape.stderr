@@ -6,7 +6,7 @@ error: lifetime may not live long enough
    |                                  |
    |                                  has type `silex_core::Scope<'1>`
 ...
-13 | /         Style::new(SilexContext::new(scope, error_handler))
+13 | /         Style::new(SilexContext::new(scope, error_handler.view()))
 14 | |             .raw("--color", value)
 15 | |             .expect("style should build")
    | |_________________________________________^ returning this value requires that `'1` must outlive `'2`

@@ -5,7 +5,7 @@ use crate::{
     view::{CleanupReporter, MountInstance, ScopedMountOwner, View},
 };
 use silex_core::{
-    CleanupError, ErrorReporter, RootHandle, Runtime, Scope, SilexError, SilexErrorKind,
+    CleanupError, ErrorHandlerInput, RootHandle, Runtime, Scope, SilexError, SilexErrorKind,
     SilexResult, log::console_error,
 };
 use std::{
@@ -67,51 +67,55 @@ impl<'scope> MountContext<'scope> {
     }
 
     /// Mount one owned view into the transaction staging parent.
-    pub fn mount<V>(&self, view: V, error_handler: ErrorReporter<'scope>) -> SilexResult<()>
+    pub fn mount<V, H>(&self, view: V, error_handler: H) -> SilexResult<()>
     where
         V: View<'scope> + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
         self.mount_with_attributes(view, Vec::new(), error_handler)
     }
 
     /// 挂载一个工厂并返回这次挂载产生的物理实例。
-    pub fn mount_instance<V>(
+    pub fn mount_instance<V, H>(
         &self,
         view: V,
-        error_handler: ErrorReporter<'scope>,
+        error_handler: H,
     ) -> SilexResult<MountInstance<'scope>>
     where
         V: View<'scope> + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
         self.mount_instance_with_attributes(view, Vec::new(), error_handler)
     }
 
     /// Mount one owned view with top-level pending attributes.
-    pub fn mount_with_attributes<V>(
+    pub fn mount_with_attributes<V, H>(
         &self,
         view: V,
         attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: ErrorReporter<'scope>,
+        error_handler: H,
     ) -> SilexResult<()>
     where
         V: View<'scope> + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
         self.mount_instance_with_attributes(view, attrs, error_handler)
             .map(|_| ())
     }
 
     /// 带顶层属性地创建一次独立挂载实例。
-    pub fn mount_instance_with_attributes<V>(
+    pub fn mount_instance_with_attributes<V, H>(
         &self,
         view: V,
         attrs: Vec<PendingAttribute<'scope>>,
-        error_handler: ErrorReporter<'scope>,
+        error_handler: H,
     ) -> SilexResult<MountInstance<'scope>>
     where
         V: View<'scope> + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
         let owner = self.owner();
-        view.mount(&owner, &self.parent, attrs, error_handler)
+        view.mount(&owner, &self.parent, attrs, error_handler.handler_ref())
     }
 }
 

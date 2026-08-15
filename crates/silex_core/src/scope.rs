@@ -1,7 +1,7 @@
 //! High-level runtime and scope wrappers.
 
 use crate::{
-    Callback, CompletionOnce, CompletionSender, ErrorHandler, ErrorReporter, NodeRef, Rx,
+    Callback, CompletionOnce, CompletionSender, ErrorHandlerInput, ErrorHandlerToken, NodeRef, Rx,
     SilexError, SilexResult, TaskHandle,
     reactivity::{
         Effect, Memo, ReactiveSource, ReadSignal, RwSignal, StoredValue, WatchOptions, WriteSignal,
@@ -88,7 +88,7 @@ impl<'scope> Eq for Scope<'scope> {}
 
 impl<'scope> Scope<'scope> {
     /// Register an application error destination owned by this scope.
-    pub fn error_handler<F>(self, handler: F) -> SilexResult<ErrorReporter<'scope>>
+    pub fn error_handler<F>(self, handler: F) -> SilexResult<ErrorHandlerToken<'scope>>
     where
         F: Fn(SilexError) + 'scope,
     {
@@ -138,15 +138,13 @@ impl<'scope> Scope<'scope> {
     }
 
     /// Create a fallible memo without additional framework-declared inputs.
-    pub fn memo<T, F>(
-        self,
-        f: F,
-        error_handler: ErrorHandler<'scope, SilexError>,
-    ) -> SilexResult<Memo<'scope, T>>
+    pub fn memo<T, F, H>(self, f: F, error_handler: H) -> SilexResult<Memo<'scope, T>>
     where
         T: PartialEq + 'scope,
         F: FnMut(Option<&T>) -> SilexResult<T> + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
+        let error_handler = error_handler.handler_ref();
         self.inner
             .memo(f, error_handler)
             .map(|memo| Memo::from_inner(memo, self))
@@ -174,15 +172,13 @@ impl<'scope> Scope<'scope> {
     }
 
     /// Create a derived value without additional framework-declared inputs.
-    pub fn derived<T, F>(
-        self,
-        f: F,
-        error_handler: ErrorHandler<'scope, SilexError>,
-    ) -> SilexResult<Rx<'scope, T>>
+    pub fn derived<T, F, H>(self, f: F, error_handler: H) -> SilexResult<Rx<'scope, T>>
     where
         T: 'scope,
         F: FnMut() -> SilexResult<T> + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
+        let error_handler = error_handler.handler_ref();
         self.inner
             .derived(f, error_handler)
             .map_err(|error| match error {
@@ -192,14 +188,12 @@ impl<'scope> Scope<'scope> {
             .map(|derived| Rx::from_derived(derived, self))
     }
 
-    pub fn effect<F>(
-        self,
-        f: F,
-        error_handler: ErrorHandler<'scope, SilexError>,
-    ) -> SilexResult<Effect<'scope>>
+    pub fn effect<F, H>(self, f: F, error_handler: H) -> SilexResult<Effect<'scope>>
     where
         F: FnMut() -> SilexResult<()> + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
+        let error_handler = error_handler.handler_ref();
         let effect = self
             .inner
             .effect(f, error_handler)
@@ -215,15 +209,17 @@ impl<'scope> Scope<'scope> {
     /// The first run receives `None`. A returned value is committed as the
     /// previous value for the next run; if the callback fails or panics, the
     /// last successfully committed value remains available for retry.
-    pub fn effect_with_previous<T, F>(
+    pub fn effect_with_previous<T, F, H>(
         self,
         f: F,
-        error_handler: ErrorHandler<'scope, SilexError>,
+        error_handler: H,
     ) -> SilexResult<Effect<'scope>>
     where
         T: 'scope,
         F: FnMut(Option<&T>) -> SilexResult<T> + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
+        let error_handler = error_handler.handler_ref();
         let effect =
             self.inner
                 .effect_with_previous(f, error_handler)
@@ -234,63 +230,68 @@ impl<'scope> Scope<'scope> {
         Ok(Effect::from_inner(effect))
     }
 
-    pub fn watch<S, C>(
+    pub fn watch<S, C, H>(
         self,
         source: S,
         callback: C,
-        error_handler: ErrorHandler<'scope, SilexError>,
+        error_handler: H,
     ) -> SilexResult<Effect<'scope>>
     where
         S: ReactiveSource<'scope>,
         S::Value: Sized + Clone + PartialEq + RxData + 'scope,
         C: FnMut(&S::Value, Option<&S::Value>) -> SilexResult<()> + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
         self.watch_with_options(source, callback, error_handler, WatchOptions::default())
     }
 
-    pub fn watch_with_options<S, C>(
+    pub fn watch_with_options<S, C, H>(
         self,
         source: S,
         callback: C,
-        error_handler: ErrorHandler<'scope, SilexError>,
+        error_handler: H,
         options: WatchOptions,
     ) -> SilexResult<Effect<'scope>>
     where
         S: ReactiveSource<'scope>,
         S::Value: Sized + Clone + PartialEq + RxData + 'scope,
         C: FnMut(&S::Value, Option<&S::Value>) -> SilexResult<()> + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
         let plan = source.into_promotion_plan();
-        let source = plan.materialize(self, error_handler)?;
+        let source = plan.materialize(self, error_handler.handler_ref())?;
         self.watch_getter_with_options(move || source.get(), callback, error_handler, options)
     }
 
-    pub fn watch_getter<T, G, C>(
+    pub fn watch_getter<T, G, C, H>(
         self,
         getter: G,
         callback: C,
-        error_handler: ErrorHandler<'scope, SilexError>,
+        error_handler: H,
     ) -> SilexResult<Effect<'scope>>
     where
         T: PartialEq + 'scope,
         G: FnMut() -> SilexResult<T> + 'scope,
         C: FnMut(&T, Option<&T>) -> SilexResult<()> + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
         self.watch_getter_with_options(getter, callback, error_handler, WatchOptions::default())
     }
 
-    pub fn watch_getter_with_options<T, G, C>(
+    pub fn watch_getter_with_options<T, G, C, H>(
         self,
         getter: G,
         callback: C,
-        error_handler: ErrorHandler<'scope, SilexError>,
+        error_handler: H,
         options: WatchOptions,
     ) -> SilexResult<Effect<'scope>>
     where
         T: PartialEq + 'scope,
         G: FnMut() -> SilexResult<T> + 'scope,
         C: FnMut(&T, Option<&T>) -> SilexResult<()> + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
+        let error_handler = error_handler.handler_ref();
         self.inner
             .watch_getter_with_options(getter, callback, error_handler, options)
             .map_err(|error| match error {
@@ -354,13 +355,10 @@ impl<'scope> Scope<'scope> {
     }
 
     /// Spawn a task owned by this persistent scope or the currently running computation.
-    pub fn spawn_scoped<F>(
-        self,
-        future: F,
-        error_handler: ErrorReporter<'scope>,
-    ) -> SilexResult<TaskHandle<'scope>>
+    pub fn spawn_scoped<F, H>(self, future: F, error_handler: H) -> SilexResult<TaskHandle<'scope>>
     where
         F: Future<Output = ()> + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
         if !self.is_active() {
             return Ok(TaskHandle::inactive());
@@ -386,16 +384,15 @@ impl<'scope> Scope<'scope> {
     ///
     /// Plan materialization is the only step allowed to register target
     /// nodes, so a foreign input fails before any target mutation.
-    pub fn promote<T>(
-        self,
-        value: T,
-        error_handler: ErrorReporter<'scope>,
-    ) -> SilexResult<Rx<'scope, T::Value>>
+    pub fn promote<T, H>(self, value: T, error_handler: H) -> SilexResult<Rx<'scope, T::Value>>
     where
         T: ReactiveSource<'scope>,
         T::Value: Sized + RxData + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
-        value.into_promotion_plan().materialize(self, error_handler)
+        value
+            .into_promotion_plan()
+            .materialize(self, error_handler.handler_ref())
     }
 
     #[cfg(feature = "test-support")]
@@ -431,14 +428,12 @@ impl<'scope> Scope<'scope> {
     /// even though [`Scope::is_active`] is already `false`. Other scope APIs
     /// remain unavailable. This guarantee applies only to final scope disposal,
     /// not to effect reruns or single-node stops.
-    pub fn on_cleanup<F>(
-        &self,
-        f: F,
-        error_handler: ErrorHandler<'scope, SilexError>,
-    ) -> SilexResult<()>
+    pub fn on_cleanup<F, H>(&self, f: F, error_handler: H) -> SilexResult<()>
     where
         F: FnOnce() -> SilexResult<()> + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
+        let error_handler = error_handler.handler_ref();
         self.inner
             .on_cleanup(f, error_handler)
             .map_err(SilexError::fatal)
@@ -468,14 +463,12 @@ impl<'scope> OwnedScope<'scope> {
 
     /// Register and immediately run an owner-bound effect without extra
     /// framework-declared inputs.
-    pub fn effect<F>(
-        &self,
-        f: F,
-        error_handler: ErrorHandler<'scope, SilexError>,
-    ) -> SilexResult<Effect<'_>>
+    pub fn effect<F, H>(&self, f: F, error_handler: H) -> SilexResult<Effect<'_>>
     where
         F: FnMut() -> SilexResult<()> + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
+        let error_handler = error_handler.handler_ref();
         self.inner
             .effect(f, error_handler)
             .map(Effect::from_inner)
@@ -485,15 +478,13 @@ impl<'scope> OwnedScope<'scope> {
             })
     }
 
-    pub fn effect_with_previous<T, F>(
-        &self,
-        f: F,
-        error_handler: ErrorHandler<'scope, SilexError>,
-    ) -> SilexResult<Effect<'_>>
+    pub fn effect_with_previous<T, F, H>(&self, f: F, error_handler: H) -> SilexResult<Effect<'_>>
     where
         T: 'scope,
         F: FnMut(Option<&T>) -> SilexResult<T> + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
+        let error_handler = error_handler.handler_ref();
         self.inner
             .effect_with_previous(f, error_handler)
             .map(Effect::from_inner)
@@ -503,32 +494,36 @@ impl<'scope> OwnedScope<'scope> {
             })
     }
 
-    pub fn watch_getter<T, G, C>(
+    pub fn watch_getter<T, G, C, H>(
         &self,
         getter: G,
         callback: C,
-        error_handler: ErrorHandler<'scope, SilexError>,
+        error_handler: H,
     ) -> SilexResult<Effect<'_>>
     where
         T: PartialEq + 'scope,
         G: FnMut() -> SilexResult<T> + 'scope,
         C: FnMut(&T, Option<&T>) -> SilexResult<()> + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
+        let error_handler = error_handler.handler_ref();
         self.watch_getter_with_options(getter, callback, error_handler, WatchOptions::default())
     }
 
-    pub fn watch_getter_with_options<T, G, C>(
+    pub fn watch_getter_with_options<T, G, C, H>(
         &self,
         getter: G,
         callback: C,
-        error_handler: ErrorHandler<'scope, SilexError>,
+        error_handler: H,
         options: WatchOptions,
     ) -> SilexResult<Effect<'_>>
     where
         T: PartialEq + 'scope,
         G: FnMut() -> SilexResult<T> + 'scope,
         C: FnMut(&T, Option<&T>) -> SilexResult<()> + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
+        let error_handler = error_handler.handler_ref();
         self.inner
             .watch_getter_with_options(getter, callback, error_handler, options)
             .map(Effect::from_inner)
@@ -544,14 +539,12 @@ impl<'scope> OwnedScope<'scope> {
     /// a same-scope [`StoredValue`] before the payload is dropped. The owner is
     /// still inactive for ordinary APIs, and this guarantee does not apply to
     /// effect reruns or single-node stops.
-    pub fn on_cleanup<F>(
-        &self,
-        f: F,
-        error_handler: ErrorHandler<'scope, SilexError>,
-    ) -> SilexResult<()>
+    pub fn on_cleanup<F, H>(&self, f: F, error_handler: H) -> SilexResult<()>
     where
         F: FnOnce() -> SilexResult<()> + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
+        let error_handler = error_handler.handler_ref();
         self.inner
             .on_cleanup(f, error_handler)
             .map_err(SilexError::fatal)
@@ -586,13 +579,10 @@ impl<'scope> OwnedScope<'scope> {
     }
 
     /// Spawn a task owned by this persistent scope or the currently running computation.
-    pub fn spawn_scoped<F>(
-        &self,
-        future: F,
-        error_handler: ErrorReporter<'scope>,
-    ) -> SilexResult<TaskHandle<'scope>>
+    pub fn spawn_scoped<F, H>(&self, future: F, error_handler: H) -> SilexResult<TaskHandle<'scope>>
     where
         F: Future<Output = ()> + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
         if !self.is_active() {
             return Ok(TaskHandle::inactive());

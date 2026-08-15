@@ -409,6 +409,6 @@ fn mount_router_view<'scope>(ctx: &MountContext<'scope>) -> SilexResult<()> {
     let error_handler = scope.error_handler(|error: SilexError| {
         web_sys::console::error_1(&error.to_string().into());
     })?;
-    let silex_ctx = SilexContext::new(scope, error_handler);
+    let silex_ctx = SilexContext::new(scope, error_handler.view());
     ctx.mount(App(silex_ctx).build(), error_handler)
 }

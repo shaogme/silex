@@ -1,4 +1,6 @@
-use silex_reactivity::{CallbackInvokeError, ComputationInitError, ErrorHandler, Runtime, Scope};
+use silex_reactivity::{
+    CallbackInvokeError, ComputationInitError, ErrorHandlerToken, Runtime, Scope,
+};
 use std::{cell::RefCell, rc::Rc};
 
 #[derive(Debug, PartialEq)]
@@ -9,7 +11,7 @@ enum TestError {
 fn handler<'scope>(
     scope: Scope<'scope>,
     errors: Rc<RefCell<Vec<TestError>>>,
-) -> ErrorHandler<'scope, TestError> {
+) -> ErrorHandlerToken<'scope, TestError> {
     scope
         .error_handler(move |error| errors.borrow_mut().push(error))
         .expect("handler registration")

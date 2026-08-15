@@ -4,9 +4,10 @@ fn main() {
     let mut runtime = Runtime::new();
     let root = runtime.run().expect("root scope");
     root.with_scope(|scope| {
+        let handler = scope.error_handler(|_| {}).expect("error handler");
         let store = I18nBuilder::new(
             scope,
-            scope.error_handler(|_| {}).expect("error handler"),
+            handler.view(),
         )
             .build()
             .expect("valid store");

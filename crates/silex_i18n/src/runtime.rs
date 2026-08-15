@@ -5,7 +5,7 @@ use crate::{
 #[cfg(feature = "browser")]
 use silex_core::Effect;
 use silex_core::{
-    ErrorReporter, Memo, Rx, Scope, SilexError, SilexResult,
+    ErrorReporter, Memo, ReactiveError, Rx, Scope, SilexError, SilexResult,
     reactivity::{ReadSignal, Resource, ResourceState, RwSignal, StoredValue, SuspenseContext},
 };
 use std::{
@@ -188,6 +188,9 @@ impl<'scope> I18nBuilder<'scope> {
             #[cfg(feature = "persist")]
             locale_binding,
         } = self;
+        let _handler_lease = error_handler
+            .lease()
+            .map_err(|error| I18nError::from(ReactiveError::Handler(error)))?;
 
         let catalog_locale = catalogs.first().map(|catalog| catalog.locale().clone());
 
@@ -367,11 +370,12 @@ impl<'scope> I18nStore<'scope> {
 
         let state = resource.state;
         let store = *self;
+        let store_for_effect = store;
         self.scope
             .effect(
                 move || -> SilexResult<()> {
                     if let ResourceState::Ready(catalog) = state.get()? {
-                        store.insert_catalog(catalog)?;
+                        store_for_effect.insert_catalog(catalog)?;
                     }
                     Ok(())
                 },

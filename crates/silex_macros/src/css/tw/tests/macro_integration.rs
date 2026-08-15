@@ -56,7 +56,7 @@ fn dynamic_tw_accepts_an_explicit_error_handler() {
     let output = tw_impl(quote!(error_handler; "p-[$(padding)]")).unwrap();
     let code = output.to_string();
     assert!(
-        code.contains("let __slx_css_error_handler = error_handler"),
+        code.contains("ErrorHandlerInput") && code.contains("handler_ref"),
         "{code}"
     );
     assert!(code.contains("with_var"), "{code}");
@@ -67,7 +67,7 @@ fn dynamic_tw_accepts_a_braced_body_with_an_explicit_error_handler() {
     let output = tw_impl(quote!(error_handler; { "p-[$(padding)]" })).unwrap();
     let code = output.to_string();
     assert!(
-        code.contains("let __slx_css_error_handler = error_handler"),
+        code.contains("ErrorHandlerInput") && code.contains("handler_ref"),
         "{code}"
     );
     assert!(code.contains("with_var"), "{code}");

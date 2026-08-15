@@ -216,7 +216,7 @@ fn failed_old_dispose_does_not_restore_or_replace_the_old_app() {
         let handler = scope.error_handler(|_: SilexError| {})?;
         scope.on_cleanup(
             || -> SilexResult<()> { panic!("old app cleanup failure") },
-            handler,
+            &handler,
         )?;
         ctx.mount(Element::with_child("section", "old"), handler)
     })
@@ -299,7 +299,7 @@ fn app_host_drop_delegates_cleanup_once_to_mounted_app() {
                     cleanups.set(cleanups.get() + 1);
                     Ok(())
                 },
-                handler,
+                &handler,
             )?;
             ctx.mount(Element::with_child("section", "owned"), handler)
         })

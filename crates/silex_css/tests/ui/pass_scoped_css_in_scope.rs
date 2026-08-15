@@ -11,7 +11,7 @@ fn main() {
         let error_handler = scope
             .error_handler(|_| {})
             .expect("handler should register");
-        let _style = Style::new(SilexContext::new(scope, error_handler))
+        let _style = Style::new(SilexContext::new(scope, error_handler.view()))
             .raw("--color", value)
             .expect("style should build");
         let _dynamic = DynamicCss::new("scoped").with_rule(

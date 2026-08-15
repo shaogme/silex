@@ -33,8 +33,8 @@ pub use crate::{
     completion::{CompletionOnce, CompletionSender, unwind_safe},
     error::{
         CallbackInvokeError, CallbackInvokeResult, CompletionSubmitResult, ComputationInitError,
-        ComputationInitResult, ErrorContext, ErrorHandler, HandlerError, ReactiveError,
-        ReactiveResult,
+        ComputationInitResult, ErrorContext, ErrorHandlerInput, ErrorHandlerRef, ErrorHandlerToken,
+        HandlerError, HandlerLease, HandlerReason, ReactiveError, ReactiveResult,
     },
     handle::{
         CallbackId, DerivedId, EffectId, Handle, MemoId, NodeKind, NodeKindTag, NodeRefId,

@@ -119,12 +119,12 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
         } else if param_name == "scope" || param_name == "error_handler" {
             return Err(syn::Error::new_spanned(
                 fn_arg,
-                "explicit `Scope` and `ErrorReporter` component parameters were removed; declare one `#[ctx]` parameter",
+                "explicit `Scope`, `ErrorReporter`, and `ErrorHandlerToken` component parameters were removed; declare one `#[ctx]` parameter",
             ));
         } else if is_special_ctx_type(ty) {
             return Err(syn::Error::new_spanned(
                 ty,
-                "explicit `Scope` and `ErrorReporter` component parameters were removed; declare one `#[ctx]` parameter",
+                "explicit `Scope`, `ErrorReporter`, and `ErrorHandlerToken` component parameters were removed; declare one `#[ctx]` parameter",
             ));
         }
 
@@ -372,6 +372,6 @@ fn is_special_ctx_type(ty: &Type) -> bool {
     };
     matches!(
         segment.ident.to_string().as_str(),
-        "Scope" | "ErrorReporter" | "ErrorHandler"
+        "Scope" | "ErrorReporter" | "ErrorHandler" | "ErrorHandlerToken"
     )
 }

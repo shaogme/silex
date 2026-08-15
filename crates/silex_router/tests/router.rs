@@ -1,7 +1,8 @@
 #![cfg(target_arch = "wasm32")]
 
 use silex_core::{
-    ErrorReporter, ReadSignal, Runtime, SilexContext, SilexError, SilexErrorKind, SilexResult,
+    ErrorHandlerToken, ErrorReporter, ReadSignal, Runtime, SilexContext, SilexError,
+    SilexErrorKind, SilexResult,
 };
 use silex_dom::view::{
     AnyView, ApplyAttributes, MountInstance, MountOwner, ScopedMountOwner, View, mount_text_node,
@@ -37,7 +38,7 @@ router! {
     }
 }
 
-fn test_handler<'scope>(scope: silex_core::Scope<'scope>) -> ErrorReporter<'scope> {
+fn test_handler<'scope>(scope: silex_core::Scope<'scope>) -> ErrorHandlerToken<'scope> {
     scope
         .error_handler(|_| {})
         .expect("test error handler should be registered")
@@ -45,7 +46,7 @@ fn test_handler<'scope>(scope: silex_core::Scope<'scope>) -> ErrorReporter<'scop
 
 fn test_owner<'scope>(
     scope: silex_core::Scope<'scope>,
-) -> (ScopedMountOwner<'scope>, ErrorReporter<'scope>) {
+) -> (ScopedMountOwner<'scope>, ErrorHandlerToken<'scope>) {
     let error_handler = test_handler(scope);
     (ScopedMountOwner::new(scope), error_handler)
 }
@@ -202,14 +203,15 @@ fn router_navigation_uses_required_table_and_updates_outlet() {
     let root = runtime.run().expect("root should be created");
 
     root.with_scope(|scope| {
-        let ctx = SilexContext::new(scope, test_handler(scope));
+        let context_error_handler = test_handler(scope);
+        let ctx = SilexContext::new(scope, context_error_handler.view());
         let view = Router(ctx)
             .base("/app")
             .routes(navigation_table(navigator.clone()))
             .build();
         let (owner, error_handler) = test_owner(scope);
         let _ = view
-            .mount(&owner, &host, Vec::new(), error_handler)
+            .mount(&owner, &host, Vec::new(), error_handler.view())
             .expect("router view should mount");
 
         assert_eq!(host.text_content().as_deref(), Some("7"));
@@ -288,7 +290,8 @@ fn router_layout_is_created_once_while_outlet_changes() {
         ])
         .expect("route table should compile");
         let layouts_for_view = layouts.clone();
-        let ctx = SilexContext::new(scope, test_handler(scope));
+        let context_error_handler = test_handler(scope);
+        let ctx = SilexContext::new(scope, context_error_handler.view());
         let view = Router(ctx)
             .base("/app")
             .routes(table)
@@ -299,7 +302,7 @@ fn router_layout_is_created_once_while_outlet_changes() {
             .build();
         let (owner, error_handler) = test_owner(scope);
         let _ = view
-            .mount(&owner, &host, Vec::new(), error_handler)
+            .mount(&owner, &host, Vec::new(), error_handler.view())
             .expect("router view should mount");
     });
 
@@ -342,11 +345,12 @@ fn nested_outlet_keeps_parent_layout_while_child_route_changes() {
             }
         })
         .expect("nested route catalog should compile");
-        let ctx = SilexContext::new(scope, test_handler(scope));
+        let context_error_handler = test_handler(scope);
+        let ctx = SilexContext::new(scope, context_error_handler.view());
         let view = Router(ctx).base("/app").routes(table).build();
         let (owner, error_handler) = test_owner(scope);
         let _ = view
-            .mount(&owner, &host, Vec::new(), error_handler)
+            .mount(&owner, &host, Vec::new(), error_handler.view())
             .expect("nested router should mount");
     });
 
@@ -387,8 +391,9 @@ fn link_requires_ctx_and_tracks_active_path() {
         let (search, set_search) = scope
             .signal(String::new())
             .expect("search signal should be created");
+        let context_error_handler = test_handler(scope);
         let ctx = RouterContext::new(
-            SilexContext::new(scope, test_handler(scope)),
+            SilexContext::new(scope, context_error_handler.view()),
             RouterContextProps {
                 base_path: String::from("/app"),
                 path,
@@ -407,7 +412,7 @@ fn link_requires_ctx_and_tracks_active_path() {
         .active_class("active")
         .build();
         let _ = link
-            .mount(&owner, &host, Vec::new(), error_handler)
+            .mount(&owner, &host, Vec::new(), error_handler.view())
             .expect("link should mount");
 
         let element: web_sys::Element = host
@@ -447,8 +452,9 @@ fn query_memo_handles_empty_multiple_duplicate_delete_and_reactive_changes() {
                 "?empty&blank=&first=one&second=two&tag=first&tag=last",
             ))
             .expect("search signal should be created");
+        let context_error_handler = test_handler(scope);
         let ctx = RouterContext::new(
-            SilexContext::new(scope, test_handler(scope)),
+            SilexContext::new(scope, context_error_handler.view()),
             RouterContextProps {
                 base_path: String::from("/"),
                 path,
@@ -461,13 +467,14 @@ fn query_memo_handles_empty_multiple_duplicate_delete_and_reactive_changes() {
         let query = ctx.query_map();
         let snapshots = Rc::new(RefCell::new(Vec::<HashMap<String, String>>::new()));
         let snapshots_for_effect = snapshots.clone();
+        let effect_error_handler = test_handler(scope);
         scope
             .effect(
                 move || -> SilexResult<()> {
                     snapshots_for_effect.borrow_mut().push(query.get()?);
                     Ok(())
                 },
-                test_handler(scope),
+                effect_error_handler.view(),
             )
             .expect("query effect can be registered");
 
@@ -552,11 +559,12 @@ fn router_owner_dispose_removes_listener_and_ignores_late_popstate() {
                 .expect("route should compile"),
             ])
             .expect("route table should compile");
-            let ctx = SilexContext::new(scope, test_handler(scope));
+            let context_error_handler = test_handler(scope);
+            let ctx = SilexContext::new(scope, context_error_handler.view());
             let view = Router(ctx).base("/app").routes(table).build();
             let (owner, error_handler) = test_owner(scope);
             let _ = view
-                .mount(&owner, &host, Vec::new(), error_handler)
+                .mount(&owner, &host, Vec::new(), error_handler.view())
                 .expect("router view should mount");
 
             assert_eq!(host.text_content().as_deref(), Some("lexical"));
@@ -600,11 +608,12 @@ fn router_does_not_mount_outlet_when_listener_registration_fails() {
             .expect("route should compile"),
         ])
         .expect("route table should compile");
-        let ctx = SilexContext::new(scope, test_handler(scope));
+        let context_error_handler = test_handler(scope);
+        let ctx = SilexContext::new(scope, context_error_handler.view());
         let view = Router(ctx).base("/app").routes(table).build();
         let (owner, error_handler) = test_owner(scope);
         assert!(matches!(
-            view.mount(&owner, &host, Vec::new(), error_handler),
+            view.mount(&owner, &host, Vec::new(), error_handler.view()),
             Err(SilexError::Fatal(SilexErrorKind::Javascript(_)))
         ));
     });
@@ -674,7 +683,7 @@ fn router_view_factory_keeps_scoped_dynamic_owner_cleanup() {
         }));
         let (owner, error_handler) = test_owner(scope);
         let _ = factory
-            .mount(&owner, &host, Vec::new(), error_handler)
+            .mount(&owner, &host, Vec::new(), error_handler.view())
             .expect("router factory should mount");
 
         assert_eq!(host.text_content().as_deref(), Some("factory-one"));

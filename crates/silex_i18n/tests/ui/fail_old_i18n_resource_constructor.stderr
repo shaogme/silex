@@ -7,9 +7,9 @@ error[E0061]: this function takes 5 arguments but 0 arguments were supplied
 note: associated function defined here
  --> $WORKSPACE/crates/silex_core/src/reactivity/resource.rs
   |
-  |     pub fn new<S, R, Fetcher>(
+  |     pub fn new<S, R, Fetcher, H>(
   |            ^^^
 help: provide the arguments
   |
-4 |     let _resource = Resource::<i32, String>::new(/* silex_i18n::Scope<'_> */, /* source */, /* fetcher */, /* Option<SuspenseContext<'_>> */, /* silex_reactivity::error::ErrorHandler<'_, silex_core::error::SilexError> */);
-  |                                                  +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+4 |     let _resource = Resource::<i32, String>::new(/* silex_i18n::Scope<'_> */, /* source */, /* fetcher */, /* Option<SuspenseContext<'_>> */, /* error_handler */);
+  |                                                  ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

@@ -2,7 +2,7 @@
 
 use gloo_timers::future::TimeoutFuture;
 use silex_core::{
-    ErrorHandler, Runtime, Scope, SilexError,
+    ErrorHandlerToken, Runtime, Scope,
     reactivity::{Mutation, MutationState, Resource, ResourceState, SuspenseContext},
 };
 use std::{
@@ -68,7 +68,7 @@ async fn wait_for_tasks(milliseconds: u32) {
     TimeoutFuture::new(milliseconds).await;
 }
 
-fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, SilexError> {
+fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope> {
     scope
         .error_handler(|_| {})
         .expect("error handler should register")

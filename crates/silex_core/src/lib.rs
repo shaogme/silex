@@ -20,7 +20,8 @@ use silex_reactivity::{
 pub use callback::Callback;
 pub use context::{SilexContext, SilexContextProvider};
 pub use error::{
-    ErrorHandler, ErrorReporter, ErrorSeverity, SilexError, SilexErrorKind, SilexResult,
+    ErrorHandler, ErrorHandlerInput, ErrorHandlerToken, ErrorReporter, ErrorSeverity, HandlerLease,
+    SilexError, SilexErrorKind, SilexResult,
 };
 
 #[cfg(feature = "error-persistence")]
@@ -168,14 +169,11 @@ impl<'scope, T: 'scope> Rx<'scope, T, RxValueKind> {
         self.scope
     }
 
-    pub fn map<U, F>(
-        self,
-        f: F,
-        error_handler: ErrorHandler<'scope, SilexError>,
-    ) -> SilexResult<Rx<'scope, U>>
+    pub fn map<U, F, H>(self, f: F, error_handler: H) -> SilexResult<Rx<'scope, U>>
     where
         U: 'scope,
         F: Fn(&T) -> U + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
         let scope = self.scope;
         scope.derived(move || self.with(|value| f(value)), error_handler)
@@ -284,9 +282,9 @@ macro_rules! batch_read_untracked_recurse {
 
 pub mod prelude {
     pub use crate::{
-        Callback, CompletionOnce, CompletionSender, ErrorHandler, ErrorReporter, NodeRef,
-        ReactiveError, Runtime, Rx, Scope, SilexContext, SilexContextProvider, SilexError,
-        SilexErrorKind, SilexResult, StoreField, batch_read, batch_read_untracked, logic::*,
-        reactivity::*, rx, traits::*, unwind_safe,
+        Callback, CompletionOnce, CompletionSender, ErrorHandler, ErrorHandlerInput,
+        ErrorHandlerToken, ErrorReporter, NodeRef, ReactiveError, Runtime, Rx, Scope, SilexContext,
+        SilexContextProvider, SilexError, SilexErrorKind, SilexResult, StoreField, batch_read,
+        batch_read_untracked, logic::*, reactivity::*, rx, traits::*, unwind_safe,
     };
 }

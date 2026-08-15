@@ -23,7 +23,7 @@ fn main() {
     let mut runtime = Runtime::new();
     let _ = runtime.child(|scope| {
         let error_handler = scope.error_handler(|_| {}).expect("handler");
-        let ctx = SilexContext::new(scope, error_handler);
+        let ctx = SilexContext::new(scope, error_handler.view());
         let view = Standalone(ctx, AnyView::Empty).build();
         let _ = AnyView::new(view);
     });

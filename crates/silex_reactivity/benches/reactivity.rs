@@ -4,7 +4,7 @@ fn main() {}
 #[cfg(not(target_arch = "wasm32"))]
 mod native {
     use criterion::{BenchmarkId, Criterion, Throughput, criterion_group};
-    use silex_reactivity::{ErrorHandler, Runtime, Scope, unwind_safe};
+    use silex_reactivity::{ErrorHandlerToken, Runtime, Scope, unwind_safe};
     use std::{
         cell::Cell,
         hint::black_box,
@@ -17,7 +17,7 @@ mod native {
     const DEPENDENCY_SIZES: &[usize] = &[10, 100, 1_000, 10_000];
     const OWNER_SIZES: &[usize] = &[1, 16, 128, 512];
 
-    fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, ()> {
+    fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope, ()> {
         scope.error_handler(|_| {}).expect("handler registration")
     }
 
@@ -1176,8 +1176,10 @@ mod native {
                 root.with_scope(|scope| {
                     let (source, _) = scope.signal(0i32).expect("fallible reactive creation");
                     let cleanup_count = Rc::new(Cell::new(0usize));
-                    let effect_handler = handler(scope);
-                    let cleanup_handler = handler(scope);
+                    let effect_token = handler(scope);
+                    let effect_handler = effect_token.view();
+                    let cleanup_token = handler(scope);
+                    let cleanup_handler = cleanup_token.view();
                     let mut owners = Vec::with_capacity(rows);
 
                     for _ in 0..rows {

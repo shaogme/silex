@@ -16,8 +16,8 @@ use crate::{
 };
 use ref_str::LocalStaticRefStr;
 use silex_core::{
-    CallbackInvokeError, CompletionSender, ErrorReporter, RxRead, Scope, SilexError,
-    SilexErrorKind, SilexResult,
+    CallbackInvokeError, CompletionSender, ErrorHandlerInput, ErrorHandlerToken, ReactiveError,
+    RxRead, Scope, SilexError, SilexErrorKind, SilexResult,
     traits::{RxGet, RxWrite},
     unwind_safe,
 };
@@ -44,7 +44,7 @@ fn submit_completion<T: 'static>(
         CallbackInvokeError::Runtime(error) => SilexError::fatal(SilexErrorKind::Reactivity(error)),
         CallbackInvokeError::User(error) => error,
         CallbackInvokeError::Handler(error) => {
-            SilexError::fatal(SilexErrorKind::Reactivity(error.reason()))
+            SilexError::fatal(SilexErrorKind::Reactivity(ReactiveError::Handler(error)))
         }
     };
     let error_result = catch_unwind(AssertUnwindSafe(|| error_token.submit(error)));
@@ -89,12 +89,12 @@ impl<'scope, T: 'scope> PersistConfig<'scope, T> {
 }
 
 /// Builder for creating a scoped `Persistent<'scope, T>` binding.
-pub struct PersistentBuilder<'scope, B, C, T = (), D = NoDefault>
+pub struct PersistentBuilder<'scope, B, C, T = (), D = NoDefault, H = ErrorHandlerToken<'scope>>
 where
     T: 'scope,
 {
     scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+    error_handler: H,
     key: LocalStaticRefStr,
     backend: B,
     codec: C,
@@ -102,12 +102,11 @@ where
     _marker: PhantomData<D>,
 }
 
-impl<'scope> PersistentBuilder<'scope, NoBackend, NoCodec, (), NoDefault> {
-    pub fn new(
-        scope: Scope<'scope>,
-        key: impl Into<LocalStaticRefStr>,
-        error_handler: ErrorReporter<'scope>,
-    ) -> Self {
+impl<'scope, H> PersistentBuilder<'scope, NoBackend, NoCodec, (), NoDefault, H>
+where
+    H: ErrorHandlerInput<'scope>,
+{
+    pub fn new(scope: Scope<'scope>, key: impl Into<LocalStaticRefStr>, error_handler: H) -> Self {
         Self {
             scope,
             error_handler,
@@ -120,12 +119,13 @@ impl<'scope> PersistentBuilder<'scope, NoBackend, NoCodec, (), NoDefault> {
     }
 }
 
-impl<'scope, C, T, D> PersistentBuilder<'scope, NoBackend, C, T, D>
+impl<'scope, C, T, D, H> PersistentBuilder<'scope, NoBackend, C, T, D, H>
 where
     T: 'scope,
+    H: ErrorHandlerInput<'scope>,
 {
     /// Select a custom persistence backend.
-    pub fn backend<B>(self, backend: B) -> PersistentBuilder<'scope, B, C, T, D>
+    pub fn backend<B>(self, backend: B) -> PersistentBuilder<'scope, B, C, T, D, H>
     where
         B: PersistenceBackend<'scope>,
     {
@@ -140,7 +140,7 @@ where
         }
     }
 
-    pub fn local(self) -> PersistentBuilder<'scope, LocalStorageBackend, C, T, D> {
+    pub fn local(self) -> PersistentBuilder<'scope, LocalStorageBackend, C, T, D, H> {
         PersistentBuilder {
             scope: self.scope,
             error_handler: self.error_handler,
@@ -152,7 +152,7 @@ where
         }
     }
 
-    pub fn session(self) -> PersistentBuilder<'scope, SessionStorageBackend, C, T, D> {
+    pub fn session(self) -> PersistentBuilder<'scope, SessionStorageBackend, C, T, D, H> {
         PersistentBuilder {
             scope: self.scope,
             error_handler: self.error_handler,
@@ -167,7 +167,7 @@ where
     pub fn query(
         self,
         ctx: RouterContext<'scope>,
-    ) -> PersistentBuilder<'scope, QueryBackend<'scope>, C, T, D> {
+    ) -> PersistentBuilder<'scope, QueryBackend<'scope>, C, T, D, H> {
         PersistentBuilder {
             scope: self.scope,
             error_handler: self.error_handler,
@@ -180,12 +180,13 @@ where
     }
 }
 
-impl<'scope, B, T, D> PersistentBuilder<'scope, B, NoCodec, T, D>
+impl<'scope, B, T, D, H> PersistentBuilder<'scope, B, NoCodec, T, D, H>
 where
     T: 'scope,
+    H: ErrorHandlerInput<'scope>,
 {
     /// Select a custom codec and its persisted value type.
-    pub fn custom_codec<U, C>(self, codec: C) -> PersistentBuilder<'scope, B, C, U, D>
+    pub fn custom_codec<U, C>(self, codec: C) -> PersistentBuilder<'scope, B, C, U, D, H>
     where
         C: PersistCodec<U> + 'scope,
         U: 'scope,
@@ -208,7 +209,7 @@ where
         }
     }
 
-    pub fn string(self) -> PersistentBuilder<'scope, B, StringCodec, String, D> {
+    pub fn string(self) -> PersistentBuilder<'scope, B, StringCodec, String, D, H> {
         PersistentBuilder {
             scope: self.scope,
             error_handler: self.error_handler,
@@ -227,7 +228,7 @@ where
         }
     }
 
-    pub fn cow(self) -> PersistentBuilder<'scope, B, StringCodec, Cow<'scope, str>, D> {
+    pub fn cow(self) -> PersistentBuilder<'scope, B, StringCodec, Cow<'scope, str>, D, H> {
         PersistentBuilder {
             scope: self.scope,
             error_handler: self.error_handler,
@@ -246,7 +247,7 @@ where
         }
     }
 
-    pub fn parse<U>(self) -> PersistentBuilder<'scope, B, ParseCodec<U>, U, D>
+    pub fn parse<U>(self) -> PersistentBuilder<'scope, B, ParseCodec<U>, U, D, H>
     where
         U: std::fmt::Display + std::str::FromStr + Clone + 'scope,
         <U as std::str::FromStr>::Err: std::fmt::Display,
@@ -270,7 +271,7 @@ where
     }
 
     #[cfg(feature = "json")]
-    pub fn json<U>(self) -> PersistentBuilder<'scope, B, crate::PersistJsonCodec<U>, U, D>
+    pub fn json<U>(self) -> PersistentBuilder<'scope, B, crate::PersistJsonCodec<U>, U, D, H>
     where
         U: serde::Serialize + serde::de::DeserializeOwned + Clone + 'scope,
     {
@@ -293,9 +294,10 @@ where
     }
 }
 
-impl<'scope, B, C, T, D> PersistentBuilder<'scope, B, C, T, D>
+impl<'scope, B, C, T, D, H> PersistentBuilder<'scope, B, C, T, D, H>
 where
     T: 'scope,
+    H: ErrorHandlerInput<'scope>,
 {
     pub fn write_default(mut self, policy: WriteDefault) -> Self {
         self.config.write_default = policy;
@@ -323,11 +325,12 @@ where
     }
 }
 
-impl<'scope, B, C, T, D> PersistentBuilder<'scope, B, C, T, D>
+impl<'scope, B, C, T, D, H> PersistentBuilder<'scope, B, C, T, D, H>
 where
     T: Clone + 'scope,
+    H: ErrorHandlerInput<'scope>,
 {
-    pub fn default(self, value: T) -> PersistentBuilder<'scope, B, C, T, HasDefault> {
+    pub fn default(self, value: T) -> PersistentBuilder<'scope, B, C, T, HasDefault, H> {
         let value = Rc::new(value);
         PersistentBuilder {
             scope: self.scope,
@@ -353,7 +356,7 @@ where
     pub fn default_with(
         self,
         f: impl Fn() -> T + 'scope,
-    ) -> PersistentBuilder<'scope, B, C, T, HasDefault> {
+    ) -> PersistentBuilder<'scope, B, C, T, HasDefault, H> {
         PersistentBuilder {
             scope: self.scope,
             error_handler: self.error_handler,
@@ -373,14 +376,15 @@ where
     }
 }
 
-impl<'scope, B, C, T, D> PersistentBuilder<'scope, B, C, T, D>
+impl<'scope, B, C, T, D, H> PersistentBuilder<'scope, B, C, T, D, H>
 where
     C: PersistCodec<T> + 'scope,
     T: Clone + 'scope,
+    H: ErrorHandlerInput<'scope>,
 {
     pub fn optional(
         self,
-    ) -> PersistentBuilder<'scope, B, OptionCodec<C, T>, Option<T>, HasDefault> {
+    ) -> PersistentBuilder<'scope, B, OptionCodec<C, T>, Option<T>, HasDefault, H> {
         PersistentBuilder {
             scope: self.scope,
             error_handler: self.error_handler,
@@ -400,14 +404,16 @@ where
     }
 }
 
-impl<'scope, B, C, T> PersistentBuilder<'scope, B, C, T, HasDefault>
+impl<'scope, B, C, T, H> PersistentBuilder<'scope, B, C, T, HasDefault, H>
 where
     B: PersistenceBackend<'scope>,
     C: PersistCodec<T> + 'scope,
     T: Clone + PartialEq + 'scope,
+    H: ErrorHandlerInput<'scope>,
 {
     pub fn build(self) -> Result<Persistent<'scope, T>, PersistenceError> {
         let key = self.key.clone();
+        let error_handler = self.error_handler.handler_ref();
         let default = self.config.default.ok_or_else(|| {
             PersistenceError::fatal(PersistenceErrorKind::InvalidConfiguration(
                 "persistent builder is missing a default value".to_string(),
@@ -487,7 +493,7 @@ where
                     drop(subscription);
                     Ok(())
                 },
-                self.error_handler,
+                error_handler,
             )
             .map_err(|error| {
                 PersistenceError::fatal(PersistenceErrorKind::InvalidConfiguration(
@@ -600,13 +606,18 @@ where
                 .map_err(PersistenceError::from)?;
         }
 
-        let error_handler = self.error_handler;
+        let error_lease = error_handler.lease().map_err(|error| {
+            PersistenceError::fatal(PersistenceErrorKind::InvalidConfiguration(
+                error.to_string(),
+            ))
+        })?;
+        let completion_error_lease = error_lease.clone();
         let error_completion =
             self.scope
                 .completion_sender(unwind_safe(move |error: SilexError| {
-                    error_handler
+                    completion_error_lease
                         .handle(error)
-                        .map_err(|error| SilexError::fatal(error.reason()))
+                        .map_err(|error| SilexError::fatal(ReactiveError::Handler(error)))
                 }))?;
         let mut subscription_error = None;
         if matches!(self.config.sync, SyncStrategy::CrossContext) {
@@ -622,7 +633,7 @@ where
             });
             match self
                 .backend
-                .subscribe(self.scope, key.clone(), sink, self.error_handler)
+                .subscribe(self.scope, key.clone(), sink, error_handler)
             {
                 Ok(binding) => {
                     controller
@@ -674,7 +685,7 @@ where
                         .effect(
                             {
                                 let owner_scope = self.scope;
-                                let owner_error_handler = self.error_handler;
+                                let owner_error_handler = error_handler;
                                 move || -> SilexResult<()> {
                                     let current = value.get()?;
                                     let should_skip = take_skip_next_auto_flush(controller)?;
@@ -760,7 +771,7 @@ where
                                     Ok(())
                                 }
                             },
-                            self.error_handler,
+                            error_handler,
                         )
                         .map_err(|error| {
                             PersistenceError::fatal(PersistenceErrorKind::InvalidConfiguration(
@@ -783,7 +794,7 @@ where
                                 }
                                 Ok(())
                             },
-                            self.error_handler,
+                            error_handler,
                         )
                         .map_err(|error| {
                             PersistenceError::fatal(PersistenceErrorKind::InvalidConfiguration(
@@ -835,7 +846,7 @@ where
                             }
                             Ok(())
                         },
-                        self.error_handler,
+                        error_handler,
                     )
                     .map_err(|error| {
                         PersistenceError::fatal(PersistenceErrorKind::InvalidConfiguration(

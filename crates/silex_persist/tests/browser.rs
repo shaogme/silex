@@ -1,7 +1,9 @@
 #![cfg(target_arch = "wasm32")]
 
 use gloo_timers::future::TimeoutFuture;
-use silex_core::{ErrorReporter, RootHandle, Runtime, Scope, SilexContext, SilexResult};
+use silex_core::{
+    ErrorHandlerToken, ErrorReporter, RootHandle, Runtime, Scope, SilexContext, SilexResult,
+};
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::view::{
     AnyView, ApplyAttributes, IndexedListView, MountInstance, MountOwner, ScopedMountOwner, View,
@@ -20,13 +22,15 @@ use web_sys::{Node, StorageEvent, window};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
-fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
+fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope> {
     scope
         .error_handler(|_| {})
         .expect("test error handler should be registered")
 }
 
-fn test_owner<'scope>(scope: Scope<'scope>) -> (ScopedMountOwner<'scope>, ErrorReporter<'scope>) {
+fn test_owner<'scope>(
+    scope: Scope<'scope>,
+) -> (ScopedMountOwner<'scope>, ErrorHandlerToken<'scope>) {
     let error_handler = test_handler(scope);
     (ScopedMountOwner::new(scope), error_handler)
 }
@@ -482,7 +486,7 @@ fn local_storage_binding_round_trip_uses_explicit_scope() {
             PersistenceState::Ready("saved".to_string())
         );
 
-        let _ = binding
+        binding
             .set("updated".to_string())
             .expect("reactive update should succeed");
         assert_eq!(
@@ -607,8 +611,9 @@ fn query_binding_uses_target_scope_and_updates_only_its_key() {
         let (search, set_search) = scope
             .signal("?page=2&other=keep".to_string())
             .expect("search signal should be created");
+        let context_handler = test_handler(scope);
         let ctx = RouterContext::new(
-            SilexContext::new(scope, test_handler(scope)),
+            SilexContext::new(scope, context_handler.view()),
             RouterContextProps {
                 base_path: "/".to_string(),
                 path,
@@ -655,8 +660,9 @@ fn query_backend_writes_one_push_and_one_url_update_per_change() {
         let (search, set_search) = scope
             .signal("?keep=yes".to_string())
             .expect("search signal should be created");
+        let context_handler = test_handler(scope);
         let ctx = RouterContext::new(
-            SilexContext::new(scope, test_handler(scope)),
+            SilexContext::new(scope, context_handler.view()),
             RouterContextProps {
                 base_path: "/".to_string(),
                 path,
@@ -739,7 +745,7 @@ fn persistent_view_updates_and_stops_with_root() {
             .expect("persistent binding should build");
         let (owner, error_handler) = test_owner(scope);
         let _ = binding
-            .mount(&owner, parent.as_ref(), Vec::new(), error_handler)
+            .mount(&owner, parent.as_ref(), Vec::new(), error_handler.view())
             .expect("persistent view should mount");
         assert_eq!(parent.text_content(), Some("one".to_string()));
         binding
@@ -785,7 +791,7 @@ fn persistent_view_stops_after_lexical_owner_dispose() {
                 binding,
                 node: captured_node_for_child,
             }
-            .mount(&owner, parent.as_ref(), Vec::new(), error_handler)
+            .mount(&owner, parent.as_ref(), Vec::new(), error_handler.view())
             .expect("captured persistent view should mount");
             assert_eq!(parent.text_content(), Some("one".to_string()));
             binding.set("two".to_string()).expect("reactive update should succeed");
@@ -857,7 +863,7 @@ fn persistent_view_stops_after_row_owner_dispose() {
         };
         let (owner, error_handler) = test_owner(scope);
         let _ = list
-            .mount(&owner, parent.as_ref(), Vec::new(), error_handler)
+            .mount(&owner, parent.as_ref(), Vec::new(), error_handler.view())
             .expect("persistent list should mount");
         assert_eq!(parent.text_content(), Some("one".to_string()));
 

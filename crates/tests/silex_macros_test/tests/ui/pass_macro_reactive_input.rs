@@ -29,8 +29,8 @@ fn main() {
             let (read_int, _) = scope.signal(1_i32)?;
             let rw_bool = scope.rw_signal(false)?;
             let error_handler = scope.error_handler(|_| {})?;
-            let ctx = SilexContext::new(scope, error_handler);
-            let memo_float = scope.memo(|_| Ok(1.0_f64), error_handler)?;
+            let ctx = SilexContext::new(scope, error_handler.view());
+            let memo_float = scope.memo(|_| Ok(1.0_f64), error_handler.view())?;
             let stored_char = scope.stored('s')?;
             let rx_usize = scope.constant(1_usize)?;
 

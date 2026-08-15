@@ -3,20 +3,18 @@
 use super::{
     dispose::dispose_nodes,
     eval::{EvaluationError, flush_if_idle, prepare_fallible_read, prepare_read},
-    model::{ScopeState, StoredAccessMode},
+    model::{ScopePhase, ScopeState, StoredAccessMode},
     scheduler::{GlobalScheduler, ObserverFrame, TargetNode},
     storage::{CallbackThunk, CallbackThunkError, TypedNodeRef},
 };
 use crate::{
     CallbackInvokeError, CallbackInvokeResult, ReactiveError, ReactiveResult,
-    error::{ErrorContext, ErrorHandlerCall, ErrorHandlerKey, ErrorSlot, HandlerError},
+    error::{ErrorContext, ErrorHandlerRef, ErrorSlot, HandlerError, HandlerLease},
     handle::NodeKindTag,
     internal::RawId,
-    scope::ScopeStorage,
 };
 use std::{
     cell::RefCell,
-    marker::PhantomData,
     mem,
     panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
     rc::Rc,
@@ -57,33 +55,74 @@ fn node_ref_scheduler<'scope>(
 }
 
 pub(crate) fn invoke_error_handler<'scope, E>(
-    storage: &ScopeStorage,
-    key: ErrorHandlerKey,
-    callback: &'scope dyn ErrorHandlerCall<E>,
+    handler: &ErrorHandlerRef<'scope, E>,
     error: E,
 ) -> Result<(), HandlerError>
 where
     E: 'scope,
 {
-    let state = storage.owner_token(PhantomData).state();
+    let state = handler
+        .storage()
+        .owner_token(std::marker::PhantomData)
+        .state();
     let owner = {
         let state_ref = state
             .try_borrow()
             .map_err(|error| HandlerError::new(error, ErrorContext::new("handler state lookup")))?;
-        if state_ref.error_handlers.get(key).is_none() {
-            return Err(HandlerError::new(
-                ReactiveError::NoSuchNode,
-                ErrorContext::new("handler registry lookup"),
-            ));
+        let context = ErrorContext::new("handler registry lookup").with_owner(state_ref.scope_id.0);
+        if state_ref.phase == ScopePhase::Released {
+            return Err(HandlerError::scope_released(context));
+        }
+        let entry = state_ref
+            .error_handlers
+            .get(handler.key())
+            .ok_or_else(|| HandlerError::generation_mismatch(context))?;
+        if entry.identity != handler.record() {
+            return Err(HandlerError::generation_mismatch(context));
+        }
+        if !entry.owner.is_active() {
+            return Err(HandlerError::inactive(context));
         }
         state_ref.scope_id.0
     };
-    callback.call(error).map_err(|error| {
-        HandlerError::new(
-            error,
-            ErrorContext::new("handler callback").with_owner(owner),
-        )
-    })
+    let record = unsafe { handler.restore_record() };
+    record.call(
+        error,
+        ErrorContext::new("handler callback").with_owner(owner),
+        false,
+    )
+}
+
+pub(crate) fn acquire_error_handler_lease<'scope, E>(
+    handler: &ErrorHandlerRef<'scope, E>,
+) -> Result<HandlerLease<'scope, E>, HandlerError>
+where
+    E: 'scope,
+{
+    let state = handler
+        .storage()
+        .owner_token(std::marker::PhantomData)
+        .state();
+    let owner = {
+        let state_ref = state
+            .try_borrow()
+            .map_err(|error| HandlerError::new(error, ErrorContext::new("handler state lookup")))?;
+        let context = ErrorContext::new("handler lease").with_owner(state_ref.scope_id.0);
+        if state_ref.phase == ScopePhase::Released {
+            return Err(HandlerError::scope_released(context));
+        }
+        let entry = state_ref
+            .error_handlers
+            .get(handler.key())
+            .ok_or_else(|| HandlerError::generation_mismatch(context))?;
+        if entry.identity != handler.record() {
+            return Err(HandlerError::generation_mismatch(context));
+        }
+        entry.owner.add_lease(context)?;
+        entry.owner.clone()
+    };
+    let record = unsafe { handler.restore_record() };
+    Ok(record.lease(owner, handler.record()))
 }
 
 fn read_typed<'scope, T, R>(

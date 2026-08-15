@@ -1,15 +1,16 @@
 error: lifetime may not live long enough
-  --> tests/ui/fail_store_child_escape.rs:6:9
+  --> tests/ui/fail_store_child_escape.rs:7:9
    |
  5 |       runtime.child(|scope| {
    |                      ------ return type of closure is I18nStore<'2>
    |                      |
    |                      has type `silex_i18n::Scope<'1>`
- 6 | /         I18nBuilder::new(
- 7 | |             scope,
- 8 | |             scope.error_handler(|_| {}).expect("error handler"),
+ 6 |           let handler = scope.error_handler(|_| {}).expect("error handler");
+ 7 | /         I18nBuilder::new(
+ 8 | |             scope,
+ 9 | |             handler.view(),
 ...  |
-11 | |             .expect("valid store")
+12 | |             .expect("valid store")
    | |__________________________________^ returning this value requires that `'1` must outlive `'2`
    |
    = note: requirement occurs because of the type `I18nStore<'_>`, which makes the generic argument `'_` invariant

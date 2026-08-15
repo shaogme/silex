@@ -22,9 +22,9 @@ pub(crate) use input::{create_derived, create_effect, create_memo, create_previo
 pub use model::RuntimeSnapshot;
 pub(crate) use model::{ScopeState, ScopeStateInner};
 pub(crate) use ops::{
-    invoke_callback, invoke_error_handler, node_ref_clear, node_ref_get, node_ref_set, notify,
-    stop_effect, update_signal, update_stored, with_batch, with_fallible_signal, with_signal,
-    with_stored, with_untracked,
+    acquire_error_handler_lease, invoke_callback, invoke_error_handler, node_ref_clear,
+    node_ref_get, node_ref_set, notify, stop_effect, update_signal, update_stored, with_batch,
+    with_fallible_signal, with_signal, with_stored, with_untracked,
 };
 pub(crate) use scheduler::{GlobalScheduler, ObserverFrame, ScopeId};
 

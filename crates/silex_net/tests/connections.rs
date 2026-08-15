@@ -1,7 +1,7 @@
-use silex_core::{ErrorReporter, Runtime};
+use silex_core::{ErrorHandlerToken, Runtime};
 use silex_net::{EventStream, NetError, NetErrorKind, WebSocket};
 
-fn test_handler<'scope>(scope: silex_core::Scope<'scope>) -> ErrorReporter<'scope> {
+fn test_handler<'scope>(scope: silex_core::Scope<'scope>) -> ErrorHandlerToken<'scope> {
     scope.error_handler(|_| {}).unwrap()
 }
 

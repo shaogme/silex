@@ -75,9 +75,9 @@ mod tests {
             let second = scope
                 .error_handler(|_: SilexError| {})
                 .expect("second reporter should be registered");
-            let ctx = SilexContext::new(scope, first);
+            let ctx = SilexContext::new(scope, first.view());
 
-            assert!(ctx.with_error_reporter(second).scope() == scope);
+            assert!(ctx.with_error_reporter(second.view()).scope() == scope);
         });
     }
 }

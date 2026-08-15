@@ -1,5 +1,5 @@
-use silex_reactivity::ErrorHandler;
+use silex_reactivity::ErrorHandlerToken;
 
 fn main() {
-    let _: ErrorHandler<'static, ()> = ErrorHandler::new(|_: ()| {});
+    let _: ErrorHandlerToken<'static, ()> = ErrorHandlerToken::new(|_: ()| {});
 }

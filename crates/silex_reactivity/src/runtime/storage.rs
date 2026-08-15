@@ -3,7 +3,7 @@
 use super::scheduler::{GlobalScheduler, ObserverFrame};
 use crate::{
     ReactiveError, ReactiveResult,
-    error::{ErrorEvent, ErrorHandler, ErrorSlot},
+    error::{ErrorEvent, ErrorSlot, HandlerLease},
 };
 use std::{
     cell::{Ref, RefCell, RefMut},
@@ -309,14 +309,14 @@ pub(crate) struct CleanupThunk<'scope> {
 }
 
 impl<'scope> CleanupThunk<'scope> {
-    pub(crate) fn new<E, F>(callback: F, handler: ErrorHandler<'scope, E>) -> Self
+    pub(crate) fn new<E, F>(callback: F, handler: HandlerLease<'scope, E>) -> Self
     where
         E: 'scope,
         F: FnOnce() -> Result<(), E> + 'scope,
     {
         Self {
             callback: Some(Box::new(move || {
-                callback().map_err(|error| ErrorEvent::deferred(error, handler))
+                callback().map_err(|error| ErrorEvent::deferred(error, &handler))
             })),
         }
     }
@@ -336,7 +336,7 @@ pub(crate) struct EffectBehavior<'scope> {
 impl<'scope> EffectBehavior<'scope> {
     pub(crate) fn new<E, F>(
         callback: F,
-        handler: ErrorHandler<'scope, E>,
+        handler: HandlerLease<'scope, E>,
         slot: &'scope ErrorSlot<E>,
     ) -> Self
     where
@@ -346,7 +346,7 @@ impl<'scope> EffectBehavior<'scope> {
         let mut callback = callback;
         Self {
             callback: Box::new(move || {
-                callback().map_err(|error| ErrorEvent::new(error, handler, slot))
+                callback().map_err(|error| ErrorEvent::new(error, &handler, slot))
             }),
         }
     }
@@ -385,7 +385,7 @@ pub(crate) struct PreviousBehavior<'scope, T, E> {
     slot: &'scope TypedSlot<T>,
     callback: ValueComputeCallback<'scope, T, E>,
     pending: Option<T>,
-    handler: ErrorHandler<'scope, E>,
+    handler: HandlerLease<'scope, E>,
     errors: &'scope ErrorSlot<E>,
 }
 
@@ -393,7 +393,7 @@ impl<'scope, T, E> PreviousBehavior<'scope, T, E> {
     pub(crate) fn new<F>(
         slot: &'scope TypedSlot<T>,
         callback: F,
-        handler: ErrorHandler<'scope, E>,
+        handler: HandlerLease<'scope, E>,
         errors: &'scope ErrorSlot<E>,
     ) -> Self
     where
@@ -427,7 +427,7 @@ where
         let result = (self.callback)(old.as_ref());
         drop(old);
         self.pending = Some(result.map_err(|error| {
-            ComputationExecutionError::Callback(ErrorEvent::new(error, self.handler, self.errors))
+            ComputationExecutionError::Callback(ErrorEvent::new(error, &self.handler, self.errors))
         })?);
         Ok(ComputationOutcome {
             commit_value: true,
@@ -468,7 +468,7 @@ pub(crate) struct WatchBehavior<'scope, T, E> {
     initialized: bool,
     immediate: bool,
     once: bool,
-    handler: ErrorHandler<'scope, E>,
+    handler: HandlerLease<'scope, E>,
     errors: &'scope ErrorSlot<E>,
 }
 
@@ -477,7 +477,7 @@ impl<'scope, T, E> WatchBehavior<'scope, T, E> {
         slot: &'scope TypedSlot<T>,
         getter: G,
         callback: C,
-        handler: ErrorHandler<'scope, E>,
+        handler: HandlerLease<'scope, E>,
         errors: &'scope ErrorSlot<E>,
         immediate: bool,
         once: bool,
@@ -516,7 +516,7 @@ where
             .try_read(scheduler.clone())
             .map_err(ComputationExecutionError::Runtime)?;
         let new = (self.getter)().map_err(|error| {
-            ComputationExecutionError::Callback(ErrorEvent::new(error, self.handler, self.errors))
+            ComputationExecutionError::Callback(ErrorEvent::new(error, &self.handler, self.errors))
         })?;
         let first_run = !self.initialized;
         let changed = first_run || old.as_ref().is_none_or(|value| *value != new);
@@ -529,7 +529,7 @@ where
             callback_result.map_err(|error| {
                 ComputationExecutionError::Callback(ErrorEvent::new(
                     error,
-                    self.handler,
+                    &self.handler,
                     self.errors,
                 ))
             })?;
@@ -570,7 +570,7 @@ pub(crate) struct MemoBehavior<'scope, T, E> {
     slot: &'scope TypedSlot<T>,
     callback: ValueComputeCallback<'scope, T, E>,
     pending: Option<T>,
-    handler: ErrorHandler<'scope, E>,
+    handler: HandlerLease<'scope, E>,
     errors: &'scope ErrorSlot<E>,
 }
 
@@ -578,7 +578,7 @@ impl<'scope, T, E> MemoBehavior<'scope, T, E> {
     pub(crate) fn new<F>(
         slot: &'scope TypedSlot<T>,
         callback: F,
-        handler: ErrorHandler<'scope, E>,
+        handler: HandlerLease<'scope, E>,
         errors: &'scope ErrorSlot<E>,
     ) -> Self
     where
@@ -610,7 +610,7 @@ where
             .try_read(scheduler.clone())
             .map_err(ComputationExecutionError::Runtime)?;
         let new = (self.callback)(old.as_ref()).map_err(|error| {
-            ComputationExecutionError::Callback(ErrorEvent::new(error, self.handler, self.errors))
+            ComputationExecutionError::Callback(ErrorEvent::new(error, &self.handler, self.errors))
         })?;
         let changed = old.as_ref().is_none_or(|value| *value != new);
         drop(old);
@@ -650,7 +650,7 @@ pub(crate) struct DerivedBehavior<'scope, T, E> {
     slot: &'scope TypedSlot<T>,
     callback: DerivedCallback<'scope, T, E>,
     pending: Option<T>,
-    handler: ErrorHandler<'scope, E>,
+    handler: HandlerLease<'scope, E>,
     errors: &'scope ErrorSlot<E>,
 }
 
@@ -658,7 +658,7 @@ impl<'scope, T, E> DerivedBehavior<'scope, T, E> {
     pub(crate) fn new<F>(
         slot: &'scope TypedSlot<T>,
         callback: F,
-        handler: ErrorHandler<'scope, E>,
+        handler: HandlerLease<'scope, E>,
         errors: &'scope ErrorSlot<E>,
     ) -> Self
     where
@@ -686,7 +686,7 @@ where
         _scheduler: std::rc::Rc<RefCell<GlobalScheduler>>,
     ) -> Result<ComputationOutcome, ComputationExecutionError<'scope>> {
         self.pending = Some((self.callback)().map_err(|error| {
-            ComputationExecutionError::Callback(ErrorEvent::new(error, self.handler, self.errors))
+            ComputationExecutionError::Callback(ErrorEvent::new(error, &self.handler, self.errors))
         })?);
         Ok(ComputationOutcome {
             commit_value: true,

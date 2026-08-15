@@ -3,9 +3,10 @@ use silex_i18n::{I18nBuilder, Runtime, Rx, t};
 fn escaped() -> Rx<'static, String> {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
+        let handler = scope.error_handler(|_| {}).expect("error handler");
         let store = I18nBuilder::new(
             scope,
-            scope.error_handler(|_| {}).expect("error handler"),
+            handler.view(),
         )
             .build()
             .expect("valid store");

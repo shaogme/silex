@@ -1,4 +1,4 @@
-use silex_reactivity::{ErrorHandler, Runtime};
+use silex_reactivity::{ErrorHandlerToken, Runtime};
 
 fn main() {
     let mut runtime = Runtime::new();
@@ -13,5 +13,5 @@ fn main() {
                 .expect("error handler registration should succeed")
         })
         .expect("child scope should succeed");
-    let _: ErrorHandler<'static, ()> = handler;
+    let _: ErrorHandlerToken<'static, ()> = handler;
 }

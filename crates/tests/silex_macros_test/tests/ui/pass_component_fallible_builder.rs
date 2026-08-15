@@ -20,7 +20,7 @@ fn FallibleBuilder<'scope, Ctx>(
 fn build_view<'scope>(scope: Scope<'scope>) -> SilexResult<impl View<'scope>> {
     let callback = scope.callback(|_: String| Ok(()))?;
     let error_handler = scope.error_handler(|_| {})?;
-    let ctx = SilexContext::new(scope, error_handler);
+    let ctx = SilexContext::new(scope, error_handler.view());
     Ok(FallibleBuilder(ctx, AnyView::Empty)
         .value(String::from("ready"))
         .callback(callback)

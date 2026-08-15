@@ -1,7 +1,7 @@
 use super::any::AnyView;
 use super::owner::{MountErrorHandler, MountOwner};
 use crate::attribute::PendingAttribute;
-use silex_core::{ErrorReporter, ReactiveSource, Rx, RxData, RxValue, Scope, SilexResult};
+use silex_core::{ErrorHandlerInput, ReactiveSource, Rx, RxData, RxValue, Scope, SilexResult};
 use std::{
     fmt::{Debug, Display, Formatter, Result as FmtResult},
     marker::PhantomData,
@@ -121,15 +121,16 @@ impl<'a, T: RxValue> RxValue for Prop<'a, T> {
 }
 
 impl<'a, T> Prop<'a, T> {
-    pub fn promote<'scope>(
+    pub fn promote<'scope, H>(
         self,
         scope: Scope<'scope>,
-        error_handler: ErrorReporter<'scope>,
+        error_handler: H,
     ) -> SilexResult<Rx<'scope, T::Value>>
     where
         'a: 'scope,
         T: ReactiveSource<'scope> + Clone,
         T::Value: Sized + RxData + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
         scope.promote(self.into_owned(), error_handler)
     }

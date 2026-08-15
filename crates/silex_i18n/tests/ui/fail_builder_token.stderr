@@ -1,0 +1,15 @@
+error[E0308]: mismatched types
+ --> tests/ui/fail_builder_token.rs:7:46
+  |
+7 |         let _store = I18nBuilder::new(scope, handler);
+  |                      ----------------        ^^^^^^^ expected `ErrorHandlerRef<'_, SilexError>`, found `ErrorHandlerToken<'_, SilexError>`
+  |                      |
+  |                      arguments to this function are incorrect
+  |
+  = note: expected struct `silex_reactivity::error::ErrorHandlerRef<'_, silex_core::error::SilexError>`
+             found struct `silex_reactivity::error::ErrorHandlerToken<'_, silex_core::error::SilexError>`
+note: associated function defined here
+ --> src/runtime.rs
+  |
+  |     pub fn new(scope: Scope<'scope>, error_handler: ErrorReporter<'scope>) -> Self {
+  |            ^^^

@@ -1,4 +1,6 @@
-use silex_core::{ErrorHandler, ErrorReporter, Runtime, SilexError, SilexErrorKind};
+use silex_core::{
+    ErrorHandler, ErrorHandlerToken, ErrorReporter, Runtime, SilexError, SilexErrorKind,
+};
 use std::{cell::RefCell, rc::Rc};
 
 #[test]
@@ -73,9 +75,10 @@ fn error_reporter_is_the_reactivity_handler_alias() {
     let mut runtime = Runtime::new();
     runtime
         .child(|scope| {
-            let handler: ErrorHandler<'_, SilexError> = scope
+            let token: ErrorHandlerToken<'_> = scope
                 .error_handler(|_| {})
                 .expect("handler should register");
+            let handler: ErrorHandler<'_> = token.view();
             let reporter: ErrorReporter<'_> = handler;
 
             reporter

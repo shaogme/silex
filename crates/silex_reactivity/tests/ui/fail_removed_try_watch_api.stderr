@@ -13,11 +13,11 @@ error[E0599]: no method named `try_watch_getter_from` found for struct `silex_re
 help: there is a method `watch_getter` with a similar name, but with different arguments
  --> src/child/scope.rs
   |
-  | /     pub fn watch_getter<T, E, G, C>(
+  | /     pub fn watch_getter<T, E, G, C, H>(
   | |         &self,
   | |         getter: G,
   | |         callback: C,
 ... |
-  | |         G: FnMut() -> Result<T, E> + 'scope,
   | |         C: FnMut(&T, Option<&T>) -> Result<(), E> + 'scope,
-  | |___________________________________________________________^
+  | |         H: ErrorHandlerInput<'scope, E>,
+  | |________________________________________^

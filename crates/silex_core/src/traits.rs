@@ -1,14 +1,14 @@
 //! Lifetime-aware reactive traits.
 
 use crate::{
-    Callback, CallbackInvokeError, ErrorReporter, NodeRef, Rx, RxInner, RxValueKind, Scope,
+    Callback, CallbackInvokeError, ErrorHandlerInput, NodeRef, Rx, RxInner, RxValueKind, Scope,
     SilexError, SilexResult,
     callback::map_callback_error,
     reactivity::{
         Memo, ReactiveSource, ReadSignal, RwSignal, Signal, SignalSlice, StoredValue, WriteSignal,
     },
 };
-use silex_reactivity::notify as raw_notify;
+use silex_reactivity::{ReactiveError, notify as raw_notify};
 use std::fmt::Debug;
 
 /// Values accepted by the scoped runtime.
@@ -629,7 +629,9 @@ impl<'scope, T: 'scope> RxRead for Rx<'scope, T, RxValueKind> {
             RxInner::Derived(derived) => derived.with(f).map_err(|error| match error {
                 CallbackInvokeError::Runtime(error) => SilexError::fatal(error),
                 CallbackInvokeError::User(error) => error,
-                CallbackInvokeError::Handler(error) => SilexError::fatal(error.reason()),
+                CallbackInvokeError::Handler(error) => {
+                    SilexError::fatal(ReactiveError::Handler(error))
+                }
             }),
             RxInner::Stored(stored) => stored.with(f).map_err(SilexError::fatal),
         }
@@ -642,7 +644,9 @@ impl<'scope, T: 'scope> RxRead for Rx<'scope, T, RxValueKind> {
             RxInner::Derived(derived) => derived.with_untracked(f).map_err(|error| match error {
                 CallbackInvokeError::Runtime(error) => SilexError::fatal(error),
                 CallbackInvokeError::User(error) => error,
-                CallbackInvokeError::Handler(error) => SilexError::fatal(error.reason()),
+                CallbackInvokeError::Handler(error) => {
+                    SilexError::fatal(ReactiveError::Handler(error))
+                }
             }),
             RxInner::Stored(stored) => stored.with(f).map_err(SilexError::fatal),
         }
@@ -786,18 +790,20 @@ impl_tuple_rx_traits!(A: 0, B: 1, C: 2, D: 3, E: 4, F: 5);
 
 /// Reactive helpers for `Option<T>` values.
 pub trait RxOptionExt<T>: RxRead<Value = Option<T>> + Clone {
-    fn map_or<'scope, U>(
+    fn map_or<'scope, U, H>(
         &self,
         scope: Scope<'scope>,
         default: U,
         f: impl Fn(&T) -> U + 'scope,
-        error_handler: ErrorReporter<'scope>,
+        error_handler: H,
     ) -> SilexResult<Rx<'scope, U>>
     where
         Self: ReactiveSource<'scope> + 'scope,
         U: Clone + 'scope,
         T: 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
+        let error_handler = error_handler.handler_ref();
         let source = scope.promote(self.clone(), error_handler)?;
         scope.derived(
             move || source.with(|value| value.as_ref().map(&f).unwrap_or_else(|| default.clone())),
@@ -805,16 +811,18 @@ pub trait RxOptionExt<T>: RxRead<Value = Option<T>> + Clone {
         )
     }
 
-    fn unwrap_or<'scope>(
+    fn unwrap_or<'scope, H>(
         &self,
         scope: Scope<'scope>,
         default: T,
-        error_handler: ErrorReporter<'scope>,
+        error_handler: H,
     ) -> SilexResult<Rx<'scope, T>>
     where
         Self: ReactiveSource<'scope> + 'scope,
         T: PartialEq + Clone + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
+        let error_handler = error_handler.handler_ref();
         let source = scope.promote(self.clone(), error_handler)?;
         scope
             .memo(
@@ -826,18 +834,20 @@ pub trait RxOptionExt<T>: RxRead<Value = Option<T>> + Clone {
             .map(|memo| memo.into_rx())
     }
 
-    fn map_or_else<'scope, U>(
+    fn map_or_else<'scope, U, H>(
         &self,
         scope: Scope<'scope>,
         default: impl Fn() -> U + 'scope,
         f: impl Fn(&T) -> U + 'scope,
-        error_handler: ErrorReporter<'scope>,
+        error_handler: H,
     ) -> SilexResult<Rx<'scope, U>>
     where
         Self: ReactiveSource<'scope> + 'scope,
         U: 'scope,
         T: 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
+        let error_handler = error_handler.handler_ref();
         let source = scope.promote(self.clone(), error_handler)?;
         scope.derived(
             move || source.with(|value| value.as_ref().map(&f).unwrap_or_else(&default)),
@@ -845,17 +855,19 @@ pub trait RxOptionExt<T>: RxRead<Value = Option<T>> + Clone {
         )
     }
 
-    fn and_then<'scope, U>(
+    fn and_then<'scope, U, H>(
         &self,
         scope: Scope<'scope>,
         f: impl Fn(&T) -> Option<U> + 'scope,
-        error_handler: ErrorReporter<'scope>,
+        error_handler: H,
     ) -> SilexResult<Rx<'scope, Option<U>>>
     where
         Self: ReactiveSource<'scope> + 'scope,
         U: 'scope,
         T: 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
+        let error_handler = error_handler.handler_ref();
         let source = scope.promote(self.clone(), error_handler)?;
         scope.derived(
             move || source.with(|value| value.as_ref().and_then(&f)),
@@ -863,16 +875,18 @@ pub trait RxOptionExt<T>: RxRead<Value = Option<T>> + Clone {
         )
     }
 
-    fn is_some_and<'scope>(
+    fn is_some_and<'scope, H>(
         &self,
         scope: Scope<'scope>,
         f: impl Fn(&T) -> bool + 'scope,
-        error_handler: ErrorReporter<'scope>,
+        error_handler: H,
     ) -> SilexResult<Rx<'scope, bool>>
     where
         Self: ReactiveSource<'scope> + 'scope,
         T: 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
+        let error_handler = error_handler.handler_ref();
         let source = scope.promote(self.clone(), error_handler)?;
         scope
             .memo(

@@ -1,16 +1,38 @@
-error[E0277]: `(dyn silex_reactivity::error::ErrorHandlerCall<()> + 'static)` cannot be shared between threads safely
+error[E0277]: `Rc<silex_reactivity::error::HandlerRecord<'static, ()>>` cannot be sent between threads safely
  --> tests/ui/fail_send_handler.rs:6:20
   |
-6 |     require_send::<ErrorHandler<'static, ()>>();
-  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^ `(dyn silex_reactivity::error::ErrorHandlerCall<()> + 'static)` cannot be shared between threads safely
+6 |     require_send::<ErrorHandlerToken<'static, ()>>();
+  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Rc<silex_reactivity::error::HandlerRecord<'static, ()>>` cannot be sent between threads safely
   |
-  = help: the trait `Sync` is not implemented for `(dyn silex_reactivity::error::ErrorHandlerCall<()> + 'static)`
-  = note: required for `&'static (dyn silex_reactivity::error::ErrorHandlerCall<()> + 'static)` to implement `Send`
-note: required because it appears within the type `ErrorHandler<'static, ()>`
+  = help: within `ErrorHandlerToken<'static, ()>`, the trait `Send` is not implemented for `Rc<silex_reactivity::error::HandlerRecord<'static, ()>>`
+note: required because it appears within the type `ErrorHandlerToken<'static, ()>`
  --> src/error.rs
   |
-  | pub struct ErrorHandler<'scope, E> {
-  |            ^^^^^^^^^^^^
+  | pub struct ErrorHandlerToken<'scope, E> {
+  |            ^^^^^^^^^^^^^^^^^
+note: required by a bound in `require_send`
+ --> tests/ui/fail_send_handler.rs:3:20
+  |
+3 | fn require_send<T: Send>() {}
+  |                    ^^^^ required by this bound in `require_send`
+
+error[E0277]: `NonNull<()>` cannot be sent between threads safely
+ --> tests/ui/fail_send_handler.rs:6:20
+  |
+6 |     require_send::<ErrorHandlerToken<'static, ()>>();
+  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `NonNull<()>` cannot be sent between threads safely
+  |
+  = help: within `ErrorHandlerToken<'static, ()>`, the trait `Send` is not implemented for `NonNull<()>`
+note: required because it appears within the type `ErrorHandlerRef<'static, ()>`
+ --> src/error.rs
+  |
+  | pub struct ErrorHandlerRef<'scope, E> {
+  |            ^^^^^^^^^^^^^^^
+note: required because it appears within the type `ErrorHandlerToken<'static, ()>`
+ --> src/error.rs
+  |
+  | pub struct ErrorHandlerToken<'scope, E> {
+  |            ^^^^^^^^^^^^^^^^^
 note: required by a bound in `require_send`
  --> tests/ui/fail_send_handler.rs:3:20
   |
@@ -20,8 +42,8 @@ note: required by a bound in `require_send`
 error[E0277]: `Rc<RefCell<silex_reactivity::runtime::model::ScopeStateInner<'static>>>` cannot be shared between threads safely
  --> tests/ui/fail_send_handler.rs:6:20
   |
-6 |     require_send::<ErrorHandler<'static, ()>>();
-  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^ `Rc<RefCell<silex_reactivity::runtime::model::ScopeStateInner<'static>>>` cannot be shared between threads safely
+6 |     require_send::<ErrorHandlerToken<'static, ()>>();
+  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Rc<RefCell<silex_reactivity::runtime::model::ScopeStateInner<'static>>>` cannot be shared between threads safely
   |
   = help: within `silex_reactivity::scope::ScopeStorage`, the trait `Sync` is not implemented for `Rc<RefCell<silex_reactivity::runtime::model::ScopeStateInner<'static>>>`
 note: required because it appears within the type `silex_reactivity::scope::ScopeStorage`
@@ -30,11 +52,16 @@ note: required because it appears within the type `silex_reactivity::scope::Scop
   | pub(crate) struct ScopeStorage {
   |                   ^^^^^^^^^^^^
   = note: required for `&'static silex_reactivity::scope::ScopeStorage` to implement `Send`
-note: required because it appears within the type `ErrorHandler<'static, ()>`
+note: required because it appears within the type `ErrorHandlerRef<'static, ()>`
  --> src/error.rs
   |
-  | pub struct ErrorHandler<'scope, E> {
-  |            ^^^^^^^^^^^^
+  | pub struct ErrorHandlerRef<'scope, E> {
+  |            ^^^^^^^^^^^^^^^
+note: required because it appears within the type `ErrorHandlerToken<'static, ()>`
+ --> src/error.rs
+  |
+  | pub struct ErrorHandlerToken<'scope, E> {
+  |            ^^^^^^^^^^^^^^^^^
 note: required by a bound in `require_send`
  --> tests/ui/fail_send_handler.rs:3:20
   |
@@ -44,8 +71,8 @@ note: required by a bound in `require_send`
 error[E0277]: `Cell<NonNull<bumpalo::ChunkFooter>>` cannot be shared between threads safely
  --> tests/ui/fail_send_handler.rs:6:20
   |
-6 |     require_send::<ErrorHandler<'static, ()>>();
-  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^ `Cell<NonNull<bumpalo::ChunkFooter>>` cannot be shared between threads safely
+6 |     require_send::<ErrorHandlerToken<'static, ()>>();
+  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Cell<NonNull<bumpalo::ChunkFooter>>` cannot be shared between threads safely
   |
   = help: within `silex_reactivity::scope::ScopeStorage`, the trait `Sync` is not implemented for `Cell<NonNull<bumpalo::ChunkFooter>>`
   = note: if you want to do aliasing and mutation between multiple threads, use `std::sync::RwLock`
@@ -60,11 +87,16 @@ note: required because it appears within the type `silex_reactivity::scope::Scop
   | pub(crate) struct ScopeStorage {
   |                   ^^^^^^^^^^^^
   = note: required for `&'static silex_reactivity::scope::ScopeStorage` to implement `Send`
-note: required because it appears within the type `ErrorHandler<'static, ()>`
+note: required because it appears within the type `ErrorHandlerRef<'static, ()>`
  --> src/error.rs
   |
-  | pub struct ErrorHandler<'scope, E> {
-  |            ^^^^^^^^^^^^
+  | pub struct ErrorHandlerRef<'scope, E> {
+  |            ^^^^^^^^^^^^^^^
+note: required because it appears within the type `ErrorHandlerToken<'static, ()>`
+ --> src/error.rs
+  |
+  | pub struct ErrorHandlerToken<'scope, E> {
+  |            ^^^^^^^^^^^^^^^^^
 note: required by a bound in `require_send`
  --> tests/ui/fail_send_handler.rs:3:20
   |
@@ -74,8 +106,8 @@ note: required by a bound in `require_send`
 error[E0277]: `Cell<Option<usize>>` cannot be shared between threads safely
  --> tests/ui/fail_send_handler.rs:6:20
   |
-6 |     require_send::<ErrorHandler<'static, ()>>();
-  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^ `Cell<Option<usize>>` cannot be shared between threads safely
+6 |     require_send::<ErrorHandlerToken<'static, ()>>();
+  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Cell<Option<usize>>` cannot be shared between threads safely
   |
   = help: within `silex_reactivity::scope::ScopeStorage`, the trait `Sync` is not implemented for `Cell<Option<usize>>`
   = note: if you want to do aliasing and mutation between multiple threads, use `std::sync::RwLock`
@@ -90,11 +122,16 @@ note: required because it appears within the type `silex_reactivity::scope::Scop
   | pub(crate) struct ScopeStorage {
   |                   ^^^^^^^^^^^^
   = note: required for `&'static silex_reactivity::scope::ScopeStorage` to implement `Send`
-note: required because it appears within the type `ErrorHandler<'static, ()>`
+note: required because it appears within the type `ErrorHandlerRef<'static, ()>`
  --> src/error.rs
   |
-  | pub struct ErrorHandler<'scope, E> {
-  |            ^^^^^^^^^^^^
+  | pub struct ErrorHandlerRef<'scope, E> {
+  |            ^^^^^^^^^^^^^^^
+note: required because it appears within the type `ErrorHandlerToken<'static, ()>`
+ --> src/error.rs
+  |
+  | pub struct ErrorHandlerToken<'scope, E> {
+  |            ^^^^^^^^^^^^^^^^^
 note: required by a bound in `require_send`
  --> tests/ui/fail_send_handler.rs:3:20
   |

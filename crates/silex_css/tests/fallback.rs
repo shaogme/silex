@@ -1,7 +1,7 @@
 #![cfg(all(target_arch = "wasm32", feature = "test-style-fallback"))]
 
 use js_sys::Promise;
-use silex_core::{ErrorReporter, Runtime, Scope};
+use silex_core::{ErrorHandlerToken, Runtime, Scope};
 use silex_css::{CssPart, DynamicCss, DynamicStyleManager, IntoCssReactive, prelude::inject_style};
 use silex_dom::{
     attribute::{ApplyTarget, ApplyToDom},
@@ -15,13 +15,15 @@ use web_sys::{Document, Element, HtmlStyleElement, Node};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
-fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
+fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope> {
     scope
         .error_handler(|_| {})
         .expect("test error handler should register")
 }
 
-fn test_owner<'scope>(scope: Scope<'scope>) -> (ScopedMountOwner<'scope>, ErrorReporter<'scope>) {
+fn test_owner<'scope>(
+    scope: Scope<'scope>,
+) -> (ScopedMountOwner<'scope>, ErrorHandlerToken<'scope>) {
     let error_handler = test_handler(scope);
     (ScopedMountOwner::new(scope), error_handler)
 }
@@ -147,7 +149,7 @@ async fn style_tag_fallback_injects_updates_and_detaches_on_owner_dispose() {
                 vec![value.into_css_reactive()],
             );
             dynamic
-                .apply(&element, ApplyTarget::Class, &token, error_handler)
+                .apply(&element, ApplyTarget::Class, &token, error_handler.view())
                 .expect("dynamic style can be applied");
             let initial =
                 style_text_containing("slx-fallback-dynamic").expect("fallback style exists");

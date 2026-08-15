@@ -5,7 +5,8 @@ fn main() {
     let mut runtime = Runtime::new();
     runtime
         .child(|scope| {
-            let error_handler: ErrorReporter<'_> = scope.error_handler(|_| {}).expect("handler");
+            let token = scope.error_handler(|_| {}).expect("handler");
+            let error_handler: ErrorReporter<'_> = token.view();
             let _owner = ScopedMountOwner::new(scope);
             let _token = _owner.token();
             let _ = error_handler;

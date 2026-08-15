@@ -12,16 +12,17 @@ use super::node::{
     WriteSignal,
 };
 use crate::{
-    CleanupError, ComputationInitError, ComputationInitResult, ErrorHandler, ReactiveError,
-    ReactiveResult,
+    CleanupError, ComputationInitError, ComputationInitResult, ErrorHandlerInput,
+    ErrorHandlerToken, ReactiveError, ReactiveResult,
     completion::{
         CompletionOnce, CompletionSender, create_completion_once, create_completion_sender,
     },
-    error::ErrorHandlerEntry,
+    error::{ErrorHandlerEntry, HandlerOwner, HandlerRecord},
     handle::Handle,
     runtime,
     runtime::storage::{CallbackThunk, CleanupThunk},
     scope::ScopeStorage,
+    unsafe_boundary::WeakOwnerToken,
 };
 
 #[cfg(feature = "test-support")]
@@ -81,31 +82,29 @@ impl<'scope> Scope<'scope> {
         Rc::ptr_eq(&self.storage.scheduler(), &other.storage.scheduler())
     }
 
-    /// Register a callback owned by this scope and return a copyable handle.
-    ///
-    /// The callback remains in the scope registry until disposal. Creating a
-    /// handler in a frequently rerun reactive callback therefore grows the
-    /// registry until the owning scope ends.
-    pub fn error_handler<E, F>(&self, handler: F) -> ReactiveResult<ErrorHandler<'scope, E>>
+    /// Register a callback owned by this scope and return its RAII token.
+    pub fn error_handler<E, F>(&self, handler: F) -> ReactiveResult<ErrorHandlerToken<'scope, E>>
     where
         E: 'scope,
         F: Fn(E) + 'scope,
     {
         let state = self.state();
-        let callback = self.storage.alloc_handler(handler);
-        let key = match state
+        let record = Rc::new(HandlerRecord::new(
+            handler,
+            WeakOwnerToken::from_erased(self.storage.state.clone()),
+        ));
+        let owner: Rc<dyn HandlerOwner + 'scope> = record.clone();
+        let key = state
             .try_borrow_mut()
             .map_err(|_| ReactiveError::BorrowConflict)
             .and_then(|mut state| {
-                state.register_error_handler(ErrorHandlerEntry { owner: callback })
-            }) {
-            Ok(key) => key,
-            Err(error) => {
-                callback.clear();
-                return Err(error);
-            }
-        };
-        Ok(ErrorHandler::from_parts(self.storage, key, callback))
+                state.register_error_handler(ErrorHandlerEntry {
+                    owner,
+                    identity: record.identity(),
+                })
+            })?;
+        record.set_key(key);
+        Ok(ErrorHandlerToken::from_record(self.storage, key, record))
     }
 
     #[cfg(feature = "test-support")]
@@ -166,16 +165,17 @@ impl<'scope> Scope<'scope> {
     /// though the ordinary scope capability is already inactive. This window
     /// applies only to final scope disposal, not to an effect rerun or a
     /// single-node stop; other scope APIs remain unavailable.
-    pub fn on_cleanup<E, F>(
-        &self,
-        f: F,
-        error_handler: ErrorHandler<'scope, E>,
-    ) -> ReactiveResult<()>
+    pub fn on_cleanup<E, F, H>(&self, f: F, error_handler: H) -> ReactiveResult<()>
     where
         E: 'scope,
         F: FnOnce() -> Result<(), E> + 'scope,
+        H: ErrorHandlerInput<'scope, E>,
     {
-        let thunk = CleanupThunk::new(f, error_handler);
+        let handler = error_handler
+            .handler_ref()
+            .lease()
+            .map_err(ReactiveError::Handler)?;
+        let thunk = CleanupThunk::new(f, handler);
         let state = self.state();
         let mut state = state
             .try_borrow_mut()
@@ -215,59 +215,66 @@ impl<'scope> Scope<'scope> {
     }
 
     /// Create an effect owned by this scope and run it once immediately.
-    pub fn effect<E, F>(
+    pub fn effect<E, F, H>(
         &self,
         f: F,
-        error_handler: ErrorHandler<'scope, E>,
+        error_handler: H,
     ) -> ComputationInitResult<Effect<'scope>, E>
     where
         E: 'scope,
         F: FnMut() -> Result<(), E> + 'scope,
+        H: ErrorHandlerInput<'scope, E>,
     {
         let state = self.state();
-        runtime::create_effect(self.storage, &state, f, error_handler).map(|raw| Effect {
-            handle: Handle::new(self.storage, raw),
+        runtime::create_effect(self.storage, &state, f, error_handler.handler_ref()).map(|raw| {
+            Effect {
+                handle: Handle::new(self.storage, raw),
+            }
         })
     }
 
     /// Create an effect that receives the value returned by its previous run.
-    pub fn effect_with_previous<T, E, F>(
+    pub fn effect_with_previous<T, E, F, H>(
         &self,
         f: F,
-        error_handler: ErrorHandler<'scope, E>,
+        error_handler: H,
     ) -> ComputationInitResult<Effect<'scope>, E>
     where
         T: 'scope,
         E: 'scope,
         F: FnMut(Option<&T>) -> Result<T, E> + 'scope,
+        H: ErrorHandlerInput<'scope, E>,
     {
         let state = self.state();
-        runtime::create_previous(self.storage, &state, f, error_handler).map(|raw| Effect {
-            handle: Handle::new(self.storage, raw),
+        runtime::create_previous(self.storage, &state, f, error_handler.handler_ref()).map(|raw| {
+            Effect {
+                handle: Handle::new(self.storage, raw),
+            }
         })
     }
 
     /// Create a getter-based watcher.
-    pub fn watch_getter<T, E, G, C>(
+    pub fn watch_getter<T, E, G, C, H>(
         &self,
         getter: G,
         callback: C,
-        error_handler: ErrorHandler<'scope, E>,
+        error_handler: H,
     ) -> ComputationInitResult<Effect<'scope>, E>
     where
         T: PartialEq + 'scope,
         E: 'scope,
         G: FnMut() -> Result<T, E> + 'scope,
         C: FnMut(&T, Option<&T>) -> Result<(), E> + 'scope,
+        H: ErrorHandlerInput<'scope, E>,
     {
         self.watch_getter_with_options(getter, callback, error_handler, WatchOptions::default())
     }
 
-    pub fn watch_getter_with_options<T, E, G, C>(
+    pub fn watch_getter_with_options<T, E, G, C, H>(
         &self,
         getter: G,
         callback: C,
-        error_handler: ErrorHandler<'scope, E>,
+        error_handler: H,
         options: WatchOptions,
     ) -> ComputationInitResult<Effect<'scope>, E>
     where
@@ -275,6 +282,7 @@ impl<'scope> Scope<'scope> {
         E: 'scope,
         G: FnMut() -> Result<T, E> + 'scope,
         C: FnMut(&T, Option<&T>) -> Result<(), E> + 'scope,
+        H: ErrorHandlerInput<'scope, E>,
     {
         let state = self.state();
         runtime::create_watch(
@@ -282,7 +290,7 @@ impl<'scope> Scope<'scope> {
             &state,
             getter,
             callback,
-            error_handler,
+            error_handler.handler_ref(),
             options,
         )
         .map(|raw| Effect {
@@ -292,18 +300,19 @@ impl<'scope> Scope<'scope> {
 
     /// Create a lazy memo whose dependents are notified only when its value
     /// changes according to `PartialEq`.
-    pub fn memo<T, E, F>(
+    pub fn memo<T, E, F, H>(
         &self,
         f: F,
-        error_handler: ErrorHandler<'scope, E>,
+        error_handler: H,
     ) -> ComputationInitResult<Memo<'scope, T, E>, E>
     where
         T: PartialEq + 'scope,
         E: 'scope,
         F: FnMut(Option<&T>) -> Result<T, E> + 'scope,
+        H: ErrorHandlerInput<'scope, E>,
     {
         let state = self.state();
-        let created = runtime::create_memo(self.storage, &state, f, error_handler)?;
+        let created = runtime::create_memo(self.storage, &state, f, error_handler.handler_ref())?;
         let handle = Handle::new(self.storage, created.raw);
         Ok(Memo {
             handle,
@@ -314,18 +323,20 @@ impl<'scope> Scope<'scope> {
     }
 
     /// Create a lazy derived value without equality gating.
-    pub fn derived<T, E, F>(
+    pub fn derived<T, E, F, H>(
         &self,
         f: F,
-        error_handler: ErrorHandler<'scope, E>,
+        error_handler: H,
     ) -> ComputationInitResult<Derived<'scope, T, E>, E>
     where
         T: 'scope,
         E: 'scope,
         F: FnMut() -> Result<T, E> + 'scope,
+        H: ErrorHandlerInput<'scope, E>,
     {
         let state = self.state();
-        let created = runtime::create_derived(self.storage, &state, f, error_handler)?;
+        let created =
+            runtime::create_derived(self.storage, &state, f, error_handler.handler_ref())?;
         let handle = Handle::new(self.storage, created.raw);
         Ok(Derived {
             handle,
@@ -501,14 +512,15 @@ impl<'scope> OwnedScope<'scope> {
     /// The returned effect handle borrows this owner and cannot outlive
     /// that borrow. The effect itself remains owned by `OwnedScope` until
     /// [`OwnedScope::dispose`] or `Drop`.
-    pub fn effect<'owner, E, F>(
+    pub fn effect<'owner, E, F, H>(
         &'owner self,
         f: F,
-        error_handler: ErrorHandler<'owner, E>,
+        error_handler: H,
     ) -> ComputationInitResult<Effect<'owner>, E>
     where
         E: 'owner,
         F: FnMut() -> Result<(), E> + 'owner,
+        H: ErrorHandlerInput<'owner, E>,
     {
         if !self.active.get() {
             return Err(ComputationInitError::Registration(
@@ -516,20 +528,23 @@ impl<'scope> OwnedScope<'scope> {
             ));
         }
         let state = self.state();
-        runtime::create_effect(&self.storage, &state, f, error_handler).map(|raw| Effect {
-            handle: Handle::new(&self.storage, raw),
+        runtime::create_effect(&self.storage, &state, f, error_handler.handler_ref()).map(|raw| {
+            Effect {
+                handle: Handle::new(&self.storage, raw),
+            }
         })
     }
 
-    pub fn effect_with_previous<'owner, T, E, F>(
+    pub fn effect_with_previous<'owner, T, E, F, H>(
         &'owner self,
         f: F,
-        error_handler: ErrorHandler<'owner, E>,
+        error_handler: H,
     ) -> ComputationInitResult<Effect<'owner>, E>
     where
         T: 'owner,
         E: 'owner,
         F: FnMut(Option<&T>) -> Result<T, E> + 'owner,
+        H: ErrorHandlerInput<'owner, E>,
     {
         if !self.active.get() {
             return Err(ComputationInitError::Registration(
@@ -537,32 +552,35 @@ impl<'scope> OwnedScope<'scope> {
             ));
         }
         let state = self.state();
-        runtime::create_previous(&self.storage, &state, f, error_handler).map(|raw| Effect {
-            handle: Handle::new(&self.storage, raw),
+        runtime::create_previous(&self.storage, &state, f, error_handler.handler_ref()).map(|raw| {
+            Effect {
+                handle: Handle::new(&self.storage, raw),
+            }
         })
     }
 
     /// Create a getter-based watcher owned by this persistent scope.
-    pub fn watch_getter<'owner, T, E, G, C>(
+    pub fn watch_getter<'owner, T, E, G, C, H>(
         &'owner self,
         getter: G,
         callback: C,
-        error_handler: ErrorHandler<'owner, E>,
+        error_handler: H,
     ) -> ComputationInitResult<Effect<'owner>, E>
     where
         T: PartialEq + 'owner,
         E: 'owner,
         G: FnMut() -> Result<T, E> + 'owner,
         C: FnMut(&T, Option<&T>) -> Result<(), E> + 'owner,
+        H: ErrorHandlerInput<'owner, E>,
     {
         self.watch_getter_with_options(getter, callback, error_handler, WatchOptions::default())
     }
 
-    pub fn watch_getter_with_options<'owner, T, E, G, C>(
+    pub fn watch_getter_with_options<'owner, T, E, G, C, H>(
         &'owner self,
         getter: G,
         callback: C,
-        error_handler: ErrorHandler<'owner, E>,
+        error_handler: H,
         options: WatchOptions,
     ) -> ComputationInitResult<Effect<'owner>, E>
     where
@@ -570,6 +588,7 @@ impl<'scope> OwnedScope<'scope> {
         E: 'owner,
         G: FnMut() -> Result<T, E> + 'owner,
         C: FnMut(&T, Option<&T>) -> Result<(), E> + 'owner,
+        H: ErrorHandlerInput<'owner, E>,
     {
         if !self.active.get() {
             return Err(ComputationInitError::Registration(
@@ -582,7 +601,7 @@ impl<'scope> OwnedScope<'scope> {
             &state,
             getter,
             callback,
-            error_handler,
+            error_handler.handler_ref(),
             options,
         )
         .map(|raw| Effect {
@@ -597,19 +616,20 @@ impl<'scope> OwnedScope<'scope> {
     /// remains synchronously accessible in that window, while the owner is
     /// still inactive for all ordinary APIs. This guarantee is limited to
     /// final owner disposal and does not apply to effect reruns or node stops.
-    pub fn on_cleanup<'owner, E, F>(
-        &'owner self,
-        f: F,
-        error_handler: ErrorHandler<'owner, E>,
-    ) -> ReactiveResult<()>
+    pub fn on_cleanup<'owner, E, F, H>(&'owner self, f: F, error_handler: H) -> ReactiveResult<()>
     where
         E: 'owner,
         F: FnOnce() -> Result<(), E> + 'owner,
+        H: ErrorHandlerInput<'owner, E>,
     {
         if !self.active.get() {
             return Err(ReactiveError::NoSuchNode);
         }
-        let cleanup = CleanupThunk::new(f, error_handler);
+        let handler = error_handler
+            .handler_ref()
+            .lease()
+            .map_err(ReactiveError::Handler)?;
+        let cleanup = CleanupThunk::new(f, handler);
         let state = self.state();
         let mut state = state
             .try_borrow_mut()
@@ -730,7 +750,7 @@ mod tests {
         ]
     }
 
-    fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, ()> {
+    fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope, ()> {
         scope.error_handler(|_| {}).expect("handler registration")
     }
 

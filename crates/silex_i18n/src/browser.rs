@@ -404,13 +404,11 @@ mod tests {
         let mut runtime = silex_core::Runtime::new();
         runtime
             .child(|scope| {
-                let store = crate::I18nBuilder::new(
-                    scope,
-                    scope.error_handler(|_| {}).expect("error handler"),
-                )
-                .locale(Locale::new("en-US").expect("valid locale"))
-                .build()
-                .expect("valid i18n store");
+                let handler = scope.error_handler(|_| {}).expect("error handler");
+                let store = crate::I18nBuilder::new(scope, handler.view())
+                    .locale(Locale::new("en-US").expect("valid locale"))
+                    .build()
+                    .expect("valid i18n store");
                 let before = scope.runtime_snapshot();
                 let effect = sync_document_metadata(store).expect("metadata effect can be created");
                 assert_eq!(scope.runtime_snapshot(), before);

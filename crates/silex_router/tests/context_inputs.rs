@@ -1,10 +1,10 @@
 use silex_core::{
-    ErrorReporter, ReactiveError, Runtime, Scope, SilexContext, SilexError, SilexErrorKind,
+    ErrorHandlerToken, ReactiveError, Runtime, Scope, SilexContext, SilexError, SilexErrorKind,
     SilexResult,
 };
 use silex_router::{RouterContext, RouterContextProps};
 
-fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
+fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope> {
     scope
         .error_handler(|_| {})
         .expect("test error handler should be registered")
@@ -40,8 +40,9 @@ fn foreign_search_is_rejected_before_query_memo_creation() {
         let (_, set_search) = scope
             .signal(String::new())
             .expect("search signal should be created");
+        let error_handler = test_handler(scope);
         let result = RouterContext::new(
-            SilexContext::new(scope, test_handler(scope)),
+            SilexContext::new(scope, error_handler.view()),
             RouterContextProps {
                 base_path: String::from("/"),
                 path,
@@ -76,8 +77,9 @@ fn foreign_write_destination_is_rejected_before_ctx_creation() {
         let (search, set_search) = scope
             .signal(String::new())
             .expect("search signal should be created");
+        let error_handler = test_handler(scope);
         let result = RouterContext::new(
-            SilexContext::new(scope, test_handler(scope)),
+            SilexContext::new(scope, error_handler.view()),
             RouterContextProps {
                 base_path: String::from("/"),
                 path,

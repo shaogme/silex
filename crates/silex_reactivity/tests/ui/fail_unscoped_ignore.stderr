@@ -1,5 +1,5 @@
-error[E0599]: no associated function or constant named `ignore` found for struct `ErrorHandler<'scope, E>` in the current scope
- --> tests/ui/fail_unscoped_ignore.rs:4:54
+error[E0599]: no associated function or constant named `ignore` found for struct `ErrorHandlerToken<'scope, E>` in the current scope
+ --> tests/ui/fail_unscoped_ignore.rs:4:64
   |
-4 |     let _: ErrorHandler<'static, ()> = ErrorHandler::ignore();
-  |                                                      ^^^^^^ associated function or constant not found in `ErrorHandler<'_, _>`
+4 |     let _: ErrorHandlerToken<'static, ()> = ErrorHandlerToken::ignore();
+  |                                                                ^^^^^^ associated function or constant not found in `ErrorHandlerToken<'_, _>`

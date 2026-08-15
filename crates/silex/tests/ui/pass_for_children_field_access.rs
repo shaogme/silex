@@ -10,7 +10,8 @@ fn main() {
     let mut runtime = Runtime::new();
     let _ = runtime.child(|scope| {
         let error_handler = scope.error_handler(|_| {}).expect("handler");
-        let ctx = SilexContext::new(scope, error_handler);
+        let row_handler = scope.error_handler(|_| {}).expect("row handler");
+        let ctx = SilexContext::new(scope, error_handler.view());
         let (keyed_entries, _) = scope
             .signal(vec![Entry {
                 id: 1,
@@ -21,6 +22,7 @@ fn main() {
             .children(|entry, index| {
                 div(format!("{index}: {}", entry.title))
             })
+            .row_error_handler(row_handler)
             .build();
 
         let (indexed_entries, _) = scope

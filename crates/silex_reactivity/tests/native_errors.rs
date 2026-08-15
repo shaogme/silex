@@ -1,4 +1,4 @@
-use silex_reactivity::{ComputationInitError, ErrorHandler, Runtime, Scope};
+use silex_reactivity::{ComputationInitError, ErrorHandlerToken, Runtime, Scope};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -7,7 +7,7 @@ use std::{
 fn collecting_handler<'scope>(
     scope: Scope<'scope>,
     errors: Rc<RefCell<Vec<&'static str>>>,
-) -> ErrorHandler<'scope, &'static str> {
+) -> ErrorHandlerToken<'scope, &'static str> {
     scope
         .error_handler(move |error| errors.borrow_mut().push(error))
         .expect("handler registration")
@@ -25,7 +25,8 @@ fn initial_callback_error_returns_without_calling_the_handler() {
             let (source, set_source) = scope.signal(0_i32).expect("fallible reactive creation");
             let cleanup_runs_in_callback = cleanup_runs.clone();
             let callback_runs_in_callback = callback_runs.clone();
-            let cleanup_handler = collecting_handler(scope, errors.clone());
+            let cleanup_token = collecting_handler(scope, errors.clone());
+            let cleanup_handler = cleanup_token.view();
             let result = scope.effect(
                 move || {
                     callback_runs_in_callback.set(callback_runs_in_callback.get() + 1);
@@ -71,7 +72,8 @@ fn initial_failure_does_not_reenter_from_rollback_cleanup() {
             let callback_runs_in_callback = callback_runs.clone();
             let register_cleanup_in_callback = register_cleanup.clone();
             let setter_in_cleanup = set_source;
-            let cleanup_handler = collecting_handler(scope, errors.clone());
+            let cleanup_token = collecting_handler(scope, errors.clone());
+            let cleanup_handler = cleanup_token.view();
             let result = scope.effect(
                 move || {
                     callback_runs_in_callback.set(callback_runs_in_callback.get() + 1);
@@ -115,16 +117,19 @@ fn nested_node_cleanup_errors_wait_for_outer_run_recovery() {
             let (source, set_source) = scope.signal(0_i32).expect("fallible reactive creation");
             let registered_cleanup_runs_in_handler = registered_cleanup_runs.clone();
             let scope_in_handler = scope;
-            let recovered_cleanup_handler = scope
+            let recovered_cleanup_token = scope
                 .error_handler(|_: &'static str| {})
                 .expect("handler registration");
-            let nested_effect_handler = scope
+            let recovered_cleanup_handler = recovered_cleanup_token.view();
+            let nested_effect_token = scope
                 .error_handler(|_: ()| {})
                 .expect("handler registration");
-            let outer_effect_handler = scope
+            let nested_effect_handler = nested_effect_token.view();
+            let outer_effect_token = scope
                 .error_handler(|_: ()| {})
                 .expect("handler registration");
-            let cleanup_error_handler = scope
+            let outer_effect_handler = outer_effect_token.view();
+            let cleanup_error_token = scope
                 .error_handler(move |_: &'static str| {
                     let registered_cleanup_runs = registered_cleanup_runs_in_handler.clone();
                     scope_in_handler
@@ -138,6 +143,7 @@ fn nested_node_cleanup_errors_wait_for_outer_run_recovery() {
                         .expect("recovered owner should accept a root cleanup");
                 })
                 .expect("handler registration");
+            let cleanup_error_handler = cleanup_error_token.view();
             let first_run_in_effect = first_run.clone();
             let cleanup_error_handler_in_effect = cleanup_error_handler;
             scope

@@ -3,7 +3,7 @@ use super::contract::{ApplyAttributes, MountInstance, View};
 use super::owner::{MountErrorHandler, MountOwner, MountOwnerToken, OwnedMountOwner};
 use super::row::{NodeRange, RowInstance, RowInstanceConfig, RowRenderContext, RowRenderer};
 use crate::attribute::PendingAttribute;
-use silex_core::{SilexError, SilexErrorKind, SilexResult};
+use silex_core::{ErrorHandlerInput, SilexError, SilexErrorKind, SilexResult};
 use std::{
     panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
     rc::Rc,
@@ -203,11 +203,11 @@ impl<K: PartialEq, S> PartialEq for BranchEvaluation<K, S> {
 impl<K: Eq, S> Eq for BranchEvaluation<K, S> {}
 
 /// Mount a stable branch whose evaluation can report a runtime error.
-pub fn mount_branch_stable_cached<'scope, K, S, KeyFn, BranchFn>(
+pub fn mount_branch_stable_cached<'scope, K, S, KeyFn, BranchFn, H>(
     owner: &dyn MountOwner<'scope>,
     parent: &Node,
     attrs: Vec<PendingAttribute<'scope>>,
-    error_handler: MountErrorHandler<'scope>,
+    error_handler: H,
     key_fn: KeyFn,
     branch_fn: BranchFn,
 ) -> SilexResult<MountInstance<'scope>>
@@ -216,7 +216,9 @@ where
     S: Clone + 'scope,
     KeyFn: Fn() -> SilexResult<BranchEvaluation<K, S>> + Clone + 'scope,
     BranchFn: Fn(BranchEvaluation<K, S>) -> AnyView<'scope> + 'scope,
+    H: ErrorHandlerInput<'scope>,
 {
+    let error_handler = error_handler.handler_ref();
     let render = RowRenderer::new(
         move |args: RowRenderContext<'scope, BranchEvaluation<K, S>>| {
             let RowRenderContext {

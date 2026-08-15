@@ -19,7 +19,7 @@ fn main() {
     runtime.child(|scope| {
         let source: Signal<'_, bool> = true.into_reactive_input(scope);
         let error_handler = scope.error_handler(|_| {}).expect("handler");
-        let ctx = SilexContext::new(scope, error_handler);
+        let ctx = SilexContext::new(scope, error_handler.view());
         let _ = NoReactiveInputScope(ctx)
             .source(source)
             .source(true);

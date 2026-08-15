@@ -1,22 +1,27 @@
 #![cfg(target_arch = "wasm32")]
 
 use gloo_timers::future::TimeoutFuture;
-use silex_core::{ErrorReporter, ReactiveError, Runtime, Scope, SilexResult};
+use silex_core::{ErrorHandlerToken, ReactiveError, Runtime, Scope, SilexResult};
 use silex_i18n::{
     Catalog, CatalogLoadError, I18nBuilder, I18nStore, Locale, ResourceState, SuspenseContext, t,
 };
 use std::{cell::Cell, rc::Rc};
 use wasm_bindgen_test::*;
 
-fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
+fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope> {
     scope.error_handler(|_| {}).expect("error handler")
 }
 
-fn store<'scope>(scope: Scope<'scope>, locale: &str) -> I18nStore<'scope> {
-    I18nBuilder::new(scope, test_handler(scope))
+fn store<'scope>(
+    scope: Scope<'scope>,
+    locale: &str,
+) -> (I18nStore<'scope>, ErrorHandlerToken<'scope>) {
+    let handler = test_handler(scope);
+    let store = I18nBuilder::new(scope, handler.view())
         .locale(Locale::new(locale).expect("valid locale"))
         .build()
-        .expect("valid i18n store")
+        .expect("valid i18n store");
+    (store, handler)
 }
 
 fn catalog(locale: Locale, title: &str) -> Result<Catalog, String> {
@@ -33,7 +38,7 @@ async fn catalog_resource_loads_and_updates_suspense() {
     let mut runtime = Runtime::new();
     let root = runtime.run().expect("root scope");
     root.with_scope(|scope| async move {
-        let i18n = store(scope, "en-US");
+        let (i18n, _handler) = store(scope, "en-US");
         let calls_for_loader = calls.clone();
         let suspense = SuspenseContext::new(scope).expect("suspense ctx");
         let resource = i18n
@@ -74,7 +79,7 @@ fn catalog_resource_rejects_foreign_suspense_before_allocating_nodes() {
     let target_root = target_runtime.run().expect("root scope");
     let foreign_scope = foreign_root.scope();
     let target_scope = target_root.scope();
-    let i18n = store(target_scope, "en-US");
+    let (i18n, _handler) = store(target_scope, "en-US");
     let suspense = SuspenseContext::new(foreign_scope).expect("suspense ctx");
     let before = target_scope.runtime_snapshot();
     let result = i18n.catalog_resource(
@@ -90,6 +95,7 @@ fn catalog_resource_rejects_foreign_suspense_before_allocating_nodes() {
     ));
     assert_eq!(target_scope.runtime_snapshot(), before);
     assert_eq!(suspense.count.get_untracked().expect("reactive value"), 0);
+    drop(_handler);
     target_root.dispose().expect("target root cleanup");
     foreign_root.dispose().expect("foreign root cleanup");
 }
@@ -100,7 +106,8 @@ async fn catalog_resource_uses_store_catalog_without_calling_loader() {
     let mut runtime = Runtime::new();
     let root = runtime.run().expect("root scope");
     root.with_scope(|scope| async move {
-        let i18n = I18nBuilder::new(scope, test_handler(scope))
+        let handler = test_handler(scope);
+        let i18n = I18nBuilder::new(scope, handler.view())
             .locale(Locale::new("en-US").expect("valid locale"))
             .catalog(
                 catalog(Locale::new("en-US").expect("valid locale"), "Cached")
@@ -144,7 +151,7 @@ async fn catalog_resource_refetch_uses_cache_without_incrementing_loader_calls()
     let mut runtime = Runtime::new();
     let root = runtime.run().expect("root scope");
     root.with_scope(|scope| async move {
-        let i18n = store(scope, "en-US");
+        let (i18n, _handler) = store(scope, "en-US");
         let suspense = SuspenseContext::new(scope).expect("suspense ctx");
         let calls_for_loader = calls.clone();
         let resource = i18n
@@ -190,7 +197,7 @@ async fn catalog_resource_reports_loader_errors() {
     let mut runtime = Runtime::new();
     let root = runtime.run().expect("root scope");
     root.with_scope(|scope| async move {
-        let i18n = store(scope, "en-US");
+        let (i18n, _handler) = store(scope, "en-US");
         let suspense = SuspenseContext::new(scope).expect("suspense ctx");
         let resource = i18n.catalog_resource(
             |_| async { Err::<Catalog, _>("invalid catalog payload".to_string()) },
@@ -220,7 +227,7 @@ async fn catalog_resource_error_refetch_balances_suspense_and_recovers() {
     let mut runtime = Runtime::new();
     let root = runtime.run().expect("root scope");
     root.with_scope(|scope| async move {
-        let i18n = store(scope, "en-US");
+        let (i18n, _handler) = store(scope, "en-US");
         let suspense = SuspenseContext::new(scope).expect("suspense ctx");
         let calls_for_loader = calls.clone();
         let resource = i18n
@@ -279,7 +286,7 @@ async fn catalog_resource_rejects_a_catalog_for_the_wrong_locale() {
     let mut runtime = Runtime::new();
     let root = runtime.run().expect("root scope");
     root.with_scope(|scope| async move {
-        let i18n = store(scope, requested.as_str());
+        let (i18n, _handler) = store(scope, requested.as_str());
         let suspense = SuspenseContext::new(scope).expect("suspense ctx");
         let loaded_for_loader = loaded.clone();
         let resource = i18n
@@ -315,7 +322,7 @@ async fn catalog_resource_discards_old_locale_response() {
     let mut runtime = Runtime::new();
     let root = runtime.run().expect("root scope");
     root.with_scope(|scope| async move {
-        let i18n = store(scope, "en-US");
+        let (i18n, _handler) = store(scope, "en-US");
         let suspense = SuspenseContext::new(scope).expect("suspense ctx");
         let en_for_loader = en.clone();
         let resource = i18n
@@ -368,7 +375,7 @@ async fn catalog_resource_completion_is_cancelled_after_root_dispose() {
     let mut runtime = Runtime::new();
     let root = runtime.run().expect("root scope");
     root.with_scope(|scope| async move {
-        let i18n = store(scope, "en-US");
+        let (i18n, _handler) = store(scope, "en-US");
         let suspense = SuspenseContext::new(scope).expect("suspense ctx");
         let resource = i18n
             .catalog_resource(
@@ -391,7 +398,7 @@ async fn catalog_resource_completion_is_cancelled_after_root_dispose() {
                     resource_state_runs_for_effect.set(resource_state_runs_for_effect.get() + 1);
                     Ok(())
                 },
-                test_handler(scope),
+                test_handler(scope).view(),
             )
             .expect("resource state effect can be registered");
         let translation = t!(i18n, "title").expect("translation");
@@ -403,7 +410,7 @@ async fn catalog_resource_completion_is_cancelled_after_root_dispose() {
                     translation_runs_for_effect.set(translation_runs_for_effect.get() + 1);
                     Ok(())
                 },
-                test_handler(scope),
+                test_handler(scope).view(),
             )
             .expect("translation effect can be registered");
 

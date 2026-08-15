@@ -2,14 +2,14 @@ error[E0061]: this method takes 2 arguments but 1 argument was supplied
  --> tests/ui/fail_memo_missing_error_handler.rs:5:41
   |
 5 |     let _ = runtime.child(|scope| scope.memo(|_| Ok::<i32, ()>(1)));
-  |                                         ^^^^---------------------- argument #2 of type `ErrorHandler<'_, ()>` is missing
+  |                                         ^^^^---------------------- argument #2 is missing
   |
 note: method defined here
  --> src/child/scope.rs
   |
-  |     pub fn memo<T, E, F>(
+  |     pub fn memo<T, E, F, H>(
   |            ^^^^
 help: provide the argument
   |
-5 |     let _ = runtime.child(|scope| scope.memo(|_| Ok::<i32, ()>(1), /* ErrorHandler<'_, ()> */));
-  |                                                                  ++++++++++++++++++++++++++++
+5 |     let _ = runtime.child(|scope| scope.memo(|_| Ok::<i32, ()>(1), /* error_handler */));
+  |                                                                  +++++++++++++++++++++

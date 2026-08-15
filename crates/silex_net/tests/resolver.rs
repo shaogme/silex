@@ -1,7 +1,7 @@
-use silex_core::{ErrorReporter, Runtime};
+use silex_core::{ErrorHandlerToken, Runtime};
 use silex_net::{HttpClient, NetError, NetErrorKind};
 
-fn test_handler<'scope>(scope: silex_core::Scope<'scope>) -> ErrorReporter<'scope> {
+fn test_handler<'scope>(scope: silex_core::Scope<'scope>) -> ErrorHandlerToken<'scope> {
     scope.error_handler(|_| {}).unwrap()
 }
 
@@ -39,7 +39,7 @@ fn foreign_builder_into_resource_is_transactional_before_target_creation() {
         target_root.with_scope(|target_scope| {
             let handler = test_handler(target_scope);
             let before = target_scope.runtime_snapshot();
-            let result = HttpClient::get(target_scope, source, handler).into_resource(None);
+            let result = HttpClient::get(target_scope, source, &handler).into_resource(None);
 
             assert!(matches!(
                 result,

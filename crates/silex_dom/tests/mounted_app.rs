@@ -1,6 +1,8 @@
 #![cfg(target_arch = "wasm32")]
 
-use silex_core::{ErrorReporter, Runtime, SilexError, SilexErrorKind, SilexResult};
+use silex_core::{
+    ErrorHandlerToken, ErrorReporter, Runtime, SilexError, SilexErrorKind, SilexResult,
+};
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::element::Element;
 use silex_dom::mounted::{CleanupOrigin, CleanupSink, MountAvailability, MountedApp};
@@ -28,7 +30,7 @@ fn host_with_caller_node() -> Node {
     host
 }
 
-fn error_handler<'scope>(scope: silex_core::Scope<'scope>) -> ErrorReporter<'scope> {
+fn error_handler<'scope>(scope: silex_core::Scope<'scope>) -> ErrorHandlerToken<'scope> {
     scope
         .error_handler(|_: SilexError| {})
         .expect("error handler should register")
@@ -92,10 +94,10 @@ fn any_view_factory_creates_independent_mount_instances() {
         });
 
         let first = view
-            .mount(&owner, &host, Vec::new(), handler)
+            .mount(&owner, &host, Vec::new(), handler.view())
             .expect("first factory mount should succeed");
         let second = view
-            .mount(&owner, &host, Vec::new(), handler)
+            .mount(&owner, &host, Vec::new(), handler.view())
             .expect("second factory mount should succeed");
 
         assert_eq!(first.len(), 1);
@@ -375,14 +377,14 @@ fn root_cleanup_runs_before_boundary_rollback_is_attempted() {
                     root_cleanups.set(root_cleanups.get() + 1);
                     Ok(())
                 },
-                handler,
+                &handler,
             )
             .expect("root cleanup should register");
         ctx.mount(
             CleanupProbe {
                 cleanups: cleanups.clone(),
             },
-            handler,
+            &handler,
         )?;
         Err(SilexError::recoverable(SilexErrorKind::Framework(
             "mount rejected".to_string(),

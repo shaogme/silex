@@ -1,5 +1,5 @@
 use silex_reactivity::{
-    CallbackInvokeError, ErrorHandler, ReactiveError, ReadSignal, Runtime, Scope, notify,
+    CallbackInvokeError, ErrorHandlerToken, ReactiveError, ReadSignal, Runtime, Scope, notify,
     unwind_safe,
 };
 use std::{
@@ -8,7 +8,7 @@ use std::{
     rc::Rc,
 };
 
-fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, ()> {
+fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope, ()> {
     scope.error_handler(|_| {}).expect("handler registration")
 }
 

@@ -150,7 +150,7 @@ fn mount_error_boundary_demo_view<'scope>(ctx: &MountContext<'scope>) -> SilexRe
         web_sys::console::error_1(&error.to_string().into());
     })?;
     ctx.mount(
-        App(SilexContext::new(scope, error_handler)).build(),
+        App(SilexContext::new(scope, error_handler.view())).build(),
         error_handler,
     )
 }

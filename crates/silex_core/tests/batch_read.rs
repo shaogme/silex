@@ -1,11 +1,11 @@
 use silex_core::{
-    ErrorHandler, ReadSignal, Runtime, Scope, SilexError, SilexResult, batch_read,
+    ErrorHandlerToken, ReadSignal, Runtime, Scope, SilexError, SilexResult, batch_read,
     batch_read_untracked,
 };
 use std::cell::Cell;
 use std::rc::Rc;
 
-fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, SilexError> {
+fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope> {
     scope
         .error_handler(|_| {})
         .expect("error handler registration")

@@ -20,7 +20,7 @@ fn main() {
     let mut runtime = Runtime::new();
     runtime.child(|scope| {
         let error_handler = scope.error_handler(|_| {}).expect("handler");
-        let ctx = SilexContext::new(scope, error_handler);
+        let ctx = SilexContext::new(scope, error_handler.view());
         let _view: FallibleWithoutQuestionComponent<SilexContext<'_>> = FallibleWithoutQuestion(
             ctx,
             AnyView::Empty,

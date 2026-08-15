@@ -1,5 +1,6 @@
 use crate::{
-    ErrorHandler, Rx, RxValueKind, Scope, SilexError, SilexResult, callback::map_callback_error,
+    ErrorHandlerInput, Rx, RxValueKind, Scope, SilexError, SilexResult,
+    callback::map_callback_error,
 };
 use std::fmt;
 
@@ -61,14 +62,11 @@ impl<'scope, T: 'scope> Memo<'scope, T> {
         self.inner.with_untracked(f).map_err(map_callback_error)
     }
 
-    pub fn map<U, F>(
-        self,
-        f: F,
-        error_handler: ErrorHandler<'scope, SilexError>,
-    ) -> SilexResult<Rx<'scope, U>>
+    pub fn map<U, F, H>(self, f: F, error_handler: H) -> SilexResult<Rx<'scope, U>>
     where
         U: 'scope,
         F: Fn(&T) -> U + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
         let scope = self.scope;
         scope.derived(move || self.with(|value| f(value)), error_handler)

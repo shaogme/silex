@@ -1,11 +1,11 @@
 use crate::reactivity::ReactiveSource;
 use crate::{
-    ErrorReporter, Rx, Scope, SilexError, SilexErrorKind, SilexResult,
+    ErrorHandlerInput, Rx, Scope, SilexError, SilexErrorKind, SilexResult,
     reactivity::{ReadSignal, RwSignal, WriteSignal},
     traits::{RxCloneData, RxData, RxError, RxGet, RxRead, RxValue},
     unwind_safe,
 };
-use silex_reactivity::CallbackInvokeError;
+use silex_reactivity::{CallbackInvokeError, ReactiveError};
 use std::{cell::Cell, future::Future, marker::PhantomData, rc::Rc};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -108,18 +108,28 @@ where
     T: RxCloneData + 'static,
     E: RxError + 'static,
 {
-    pub fn new<S, R, Fetcher>(
+    pub fn new<S, R, Fetcher, H>(
         scope: Scope<'scope>,
         source: R,
         fetcher: Fetcher,
         suspense: Option<SuspenseContext<'scope>>,
-        error_handler: ErrorReporter<'scope>,
+        error_handler: H,
     ) -> crate::SilexResult<Self>
     where
         S: Clone + PartialEq + 'static,
         R: RxRead<Value = S> + ReactiveSource<'scope> + Clone + 'scope,
         Fetcher: ResourceFetcher<'scope, S, Data = T, Error = E> + 'scope,
+        H: Clone + ErrorHandlerInput<'scope>,
     {
+        let handler_owner = error_handler.clone();
+        let error_handler = error_handler.handler_ref();
+        scope.on_cleanup(
+            move || {
+                drop(handler_owner);
+                Ok::<(), SilexError>(())
+            },
+            error_handler,
+        )?;
         let (state, set_state) = scope.signal(ResourceState::Idle)?;
         let trigger = scope.rw_signal(0usize)?;
         let request_id = Rc::new(Cell::new(0usize));
@@ -206,7 +216,7 @@ where
                             }
                             Err(CallbackInvokeError::Handler(error)) => {
                                 let _ = completion_error_handler
-                                    .handle(SilexError::fatal(error.reason()));
+                                    .handle(SilexError::fatal(ReactiveError::Handler(error)));
                             }
                         }
                     },
@@ -252,15 +262,16 @@ where
         self.value()
     }
 
-    pub fn map<U, F>(
+    pub fn map<U, F, H>(
         &self,
         scope: Scope<'scope>,
         f: F,
-        error_handler: ErrorReporter<'scope>,
+        error_handler: H,
     ) -> crate::SilexResult<Rx<'scope, U>>
     where
         U: 'scope,
         F: Fn(Option<&T>) -> U + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
         let resource = *self;
         scope.derived(

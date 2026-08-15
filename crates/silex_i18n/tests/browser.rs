@@ -1,7 +1,7 @@
 #![cfg(all(target_arch = "wasm32", feature = "browser-tests"))]
 
 use gloo_timers::future::TimeoutFuture;
-use silex_core::{ErrorReporter, Runtime, Scope, SilexContext};
+use silex_core::{ErrorHandlerToken, Runtime, Scope, SilexContext};
 use silex_dom::view::{ScopedMountOwner, View};
 use silex_i18n::{Catalog, I18nBuilder, Locale, detect_browser_locale, t};
 #[cfg(feature = "intl")]
@@ -15,11 +15,13 @@ use web_sys::window;
 
 wasm_bindgen_test_configure!(run_in_browser);
 
-fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorReporter<'scope> {
+fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope> {
     scope.error_handler(|_| {}).expect("error handler")
 }
 
-fn test_owner<'scope>(scope: Scope<'scope>) -> (ScopedMountOwner<'scope>, ErrorReporter<'scope>) {
+fn test_owner<'scope>(
+    scope: Scope<'scope>,
+) -> (ScopedMountOwner<'scope>, ErrorHandlerToken<'scope>) {
     let error_handler = test_handler(scope);
     (ScopedMountOwner::new(scope), error_handler)
 }
@@ -29,11 +31,16 @@ const BINDING_KEY: &str = "silex-i18n-wasm-binding";
 #[cfg(feature = "persist")]
 const EVENT_KEY: &str = "silex-i18n-wasm-storage-event";
 
-fn store<'scope>(scope: silex_core::Scope<'scope>, locale: &str) -> silex_i18n::I18nStore<'scope> {
-    I18nBuilder::new(scope, test_handler(scope))
+fn store<'scope>(
+    scope: silex_core::Scope<'scope>,
+    locale: &str,
+) -> (silex_i18n::I18nStore<'scope>, ErrorHandlerToken<'scope>) {
+    let handler = test_handler(scope);
+    let store = I18nBuilder::new(scope, handler.view())
         .locale(Locale::new(locale).expect("valid locale"))
         .build()
-        .expect("valid i18n store")
+        .expect("valid i18n store");
+    (store, handler)
 }
 
 async fn wait_for_reactivity(milliseconds: u32) {
@@ -71,7 +78,8 @@ fn local_storage_binding_round_trips_locale() {
             .expect("binding update");
         binding.flush().expect("persist initial locale");
 
-        let i18n = I18nBuilder::new(scope, test_handler(scope))
+        let handler = test_handler(scope);
+        let i18n = I18nBuilder::new(scope, handler.view())
             .locale(Locale::new("en-US").expect("valid locale"))
             .locale_binding(binding)
             .build()
@@ -164,8 +172,9 @@ fn query_binding_follows_router_search_signal() {
         let (search, set_search) = scope
             .signal("?lang=en-US".to_string())
             .expect("search signals");
+        let context_handler = test_handler(scope);
         let ctx = RouterContext::new(
-            SilexContext::new(scope, test_handler(scope)),
+            SilexContext::new(scope, context_handler.view()),
             RouterContextProps {
                 base_path: "/".to_string(),
                 path,
@@ -210,7 +219,7 @@ fn browser_locale_and_document_metadata_use_real_window() {
     let mut runtime = Runtime::new();
     let root_handle = runtime.run().expect("root scope");
     let (old_lang, old_dir) = root_handle.with_scope(|scope| {
-        let i18n = store(scope, "en-US");
+        let (i18n, _handler) = store(scope, "en-US");
         let root = window()
             .expect("window")
             .document()
@@ -256,7 +265,8 @@ async fn translated_memo_updates_the_existing_text_node() {
             [("title", "中文")],
         )
         .expect("valid Chinese catalog");
-        let i18n = I18nBuilder::new(scope, test_handler(scope))
+        let handler = test_handler(scope);
+        let i18n = I18nBuilder::new(scope, handler.view())
             .locale(Locale::new("en-US").expect("valid locale"))
             .catalogs([en, zh])
             .build()
@@ -270,7 +280,7 @@ async fn translated_memo_updates_the_existing_text_node() {
         let (owner, error_handler) = test_owner(scope);
         let _mount = t!(i18n, "title")
             .expect("translation")
-            .mount(&owner, parent.as_ref(), Vec::new(), error_handler)
+            .mount(&owner, parent.as_ref(), Vec::new(), error_handler.view())
             .expect("translation should mount");
 
         assert_eq!(parent.text_content(), Some("English".to_string()));
@@ -301,7 +311,8 @@ fn translated_memo_is_removed_when_its_root_is_disposed() {
             [("title", "English")],
         )
         .expect("valid catalog");
-        let i18n = I18nBuilder::new(scope, test_handler(scope))
+        let handler = test_handler(scope);
+        let i18n = I18nBuilder::new(scope, handler.view())
             .locale(Locale::new("en-US").expect("valid locale"))
             .catalog(catalog)
             .build()
@@ -309,7 +320,7 @@ fn translated_memo_is_removed_when_its_root_is_disposed() {
         let (owner, error_handler) = test_owner(scope);
         let _mount = t!(i18n, "title")
             .expect("translation")
-            .mount(&owner, parent.as_ref(), Vec::new(), error_handler)
+            .mount(&owner, parent.as_ref(), Vec::new(), error_handler.view())
             .expect("translation should mount");
         assert_eq!(parent.text_content(), Some("English".to_string()));
         assert_eq!(parent.child_nodes().length(), 1);
@@ -337,7 +348,8 @@ fn foreign_translation_source_does_not_mount_or_allocate_foreign_owner_nodes() {
         [("title", "English")],
     )
     .expect("valid catalog");
-    let i18n = I18nBuilder::new(target_scope, test_handler(target_scope))
+    let handler = test_handler(target_scope);
+    let i18n = I18nBuilder::new(target_scope, handler.view())
         .locale(Locale::new("en-US").expect("valid locale"))
         .catalog(catalog)
         .build()
@@ -348,12 +360,13 @@ fn foreign_translation_source_does_not_mount_or_allocate_foreign_owner_nodes() {
         let (owner, error_handler) = test_owner(foreign_scope);
         assert!(
             translation
-                .mount(&owner, parent.as_ref(), Vec::new(), error_handler)
+                .mount(&owner, parent.as_ref(), Vec::new(), error_handler.view())
                 .is_err()
         );
     }
 
     assert!(parent.first_child().is_none());
+    drop(handler);
     target_root.dispose().expect("target root cleanup");
     foreign_root.dispose().expect("foreign root cleanup");
 }
@@ -372,7 +385,7 @@ fn metadata_owner_cleanup_does_not_overwrite_newer_owner() {
     let mut first_runtime = Runtime::new();
     let first_root = first_runtime.run().expect("root scope");
     first_root.with_scope(|scope| {
-        let i18n = store(scope, "en-US");
+        let (i18n, _handler) = store(scope, "en-US");
         let _metadata = i18n
             .sync_document_metadata()
             .expect("metadata effect can be registered");
@@ -381,7 +394,7 @@ fn metadata_owner_cleanup_does_not_overwrite_newer_owner() {
     let mut second_runtime = Runtime::new();
     let second_root = second_runtime.run().expect("root scope");
     second_root.with_scope(|scope| {
-        let i18n = store(scope, "zh-CN");
+        let (i18n, _handler) = store(scope, "zh-CN");
         let _metadata = i18n
             .sync_document_metadata()
             .expect("metadata effect can be registered");
@@ -416,7 +429,7 @@ fn metadata_cleanup_preserves_external_attribute_changes() {
     let mut runtime = Runtime::new();
     let root = runtime.run().expect("root scope");
     root.with_scope(|scope| {
-        let i18n = store(scope, "en-US");
+        let (i18n, _handler) = store(scope, "en-US");
         let _metadata = i18n
             .sync_document_metadata()
             .expect("metadata effect can be registered");
@@ -452,7 +465,7 @@ fn metadata_effect_stop_prevents_later_locale_updates() {
     let mut runtime = Runtime::new();
     let root = runtime.run().expect("root scope");
     root.with_scope(|scope| {
-        let i18n = store(scope, "en-US");
+        let (i18n, _handler) = store(scope, "en-US");
         let metadata = i18n
             .sync_document_metadata()
             .expect("metadata effect can be registered");
@@ -486,12 +499,12 @@ fn metadata_owner_reclaims_latest_locale_after_newer_owner_disposes() {
     let second_root = second_runtime.run().expect("root scope");
 
     first_root.with_scope(|first_scope| {
-        let first_i18n = store(first_scope, "en-US");
+        let (first_i18n, _first_handler) = store(first_scope, "en-US");
         let _first_metadata = first_i18n
             .sync_document_metadata()
             .expect("metadata effect can be registered");
         second_root.with_scope(|second_scope| {
-            let second_i18n = store(second_scope, "zh-CN");
+            let (second_i18n, _second_handler) = store(second_scope, "zh-CN");
             let _second_metadata = second_i18n
                 .sync_document_metadata()
                 .expect("metadata effect can be registered");
@@ -532,7 +545,7 @@ fn metadata_stop_and_scope_cleanup_are_idempotent() {
     let mut runtime = Runtime::new();
     let root = runtime.run().expect("root scope");
     root.with_scope(|scope| {
-        let i18n = store(scope, "en-US");
+        let (i18n, _handler) = store(scope, "en-US");
         let metadata = i18n
             .sync_document_metadata()
             .expect("metadata effect can be registered");

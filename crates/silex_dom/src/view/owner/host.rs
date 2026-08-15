@@ -1,7 +1,7 @@
 use super::state::{ResourceGate, SharedCell};
 use silex_core::{
-    CallbackInvokeError, CompletionOnce, CompletionSender, ErrorReporter, ReactiveError,
-    SilexError, SilexResult,
+    CallbackInvokeError, CompletionOnce, CompletionSender, ErrorHandler, ReactiveError, SilexError,
+    SilexResult,
 };
 use std::{
     cell::Cell,
@@ -23,14 +23,14 @@ type CompletionSenderFactory<'scope> =
 type CompletionOnceFactory<'scope> =
     Rc<dyn Fn(HostCallbackFn<'scope>) -> SilexResult<CompletionOnce<JsValue>> + 'scope>;
 type ErrorCompletionSenderFactory<'scope> =
-    Rc<dyn Fn(ErrorReporter<'scope>) -> SilexResult<CompletionSender<SilexError>> + 'scope>;
+    Rc<dyn Fn(ErrorHandler<'scope>) -> SilexResult<CompletionSender<SilexError>> + 'scope>;
 
 impl<'scope> CompletionRegistrar<'scope> {
     pub(super) fn new<FS, FO, FE>(sender: FS, once: FO, error_sender: FE) -> Self
     where
         FS: Fn(HostCallbackFn<'scope>) -> SilexResult<CompletionSender<JsValue>> + 'scope,
         FO: Fn(HostCallbackFn<'scope>) -> SilexResult<CompletionOnce<JsValue>> + 'scope,
-        FE: Fn(ErrorReporter<'scope>) -> SilexResult<CompletionSender<SilexError>> + 'scope,
+        FE: Fn(ErrorHandler<'scope>) -> SilexResult<CompletionSender<SilexError>> + 'scope,
     {
         Self {
             sender: Rc::new(sender),
@@ -55,7 +55,7 @@ impl<'scope> CompletionRegistrar<'scope> {
 
     pub(super) fn call_error_sender(
         &self,
-        error_handler: ErrorReporter<'scope>,
+        error_handler: ErrorHandler<'scope>,
     ) -> SilexResult<CompletionSender<SilexError>> {
         (self.error_sender)(error_handler)
     }
@@ -279,7 +279,7 @@ impl HostCallback {
                 self.gate.get()
             }
             Err(CallbackInvokeError::Handler(error)) => {
-                self.report_error(SilexError::fatal(error.reason()));
+                self.report_error(SilexError::fatal(ReactiveError::Handler(error)));
                 self.gate.get()
             }
         }

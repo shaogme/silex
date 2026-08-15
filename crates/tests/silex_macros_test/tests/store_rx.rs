@@ -25,7 +25,7 @@ fn explicit_store_field_source_tracks_only_selected_field() {
             )
             .unwrap();
             let error_handler = scope.error_handler(|_: SilexError| {}).unwrap();
-            let ctx = SilexContext::new(scope, error_handler);
+            let ctx = SilexContext::new(scope, error_handler.view());
             let theme = rx!(ctx; $(settings.theme).clone());
             let runs = Rc::new(Cell::new(0));
             let runs_for_effect = runs.clone();
@@ -37,7 +37,7 @@ fn explicit_store_field_source_tracks_only_selected_field() {
                         runs_for_effect.set(runs_for_effect.get() + 1);
                         Ok(())
                     },
-                    error_handler,
+                    error_handler.view(),
                 )
                 .unwrap();
 

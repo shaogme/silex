@@ -11,7 +11,7 @@ use super::{
     },
 };
 use crate::{
-    ComputationInitError, ComputationInitResult, ErrorHandler, ReactiveError,
+    ComputationInitError, ComputationInitResult, ErrorHandlerRef, ReactiveError,
     child::WatchOptions,
     error::{ErrorPhase, ErrorSlot},
     handle::NodeKindTag,
@@ -150,12 +150,20 @@ pub(crate) fn create_effect<'scope, E, F>(
     storage: &'scope ScopeStorage,
     state: &ScopeState<'scope>,
     callback: F,
-    handler: ErrorHandler<'scope, E>,
+    handler: ErrorHandlerRef<'scope, E>,
 ) -> ComputationInitResult<RawId, E>
 where
     E: 'scope,
     F: FnMut() -> Result<(), E> + 'scope,
 {
+    let handler = match handler.lease() {
+        Ok(handler) => handler,
+        Err(error) => {
+            return Err(ComputationInitError::Registration(ReactiveError::Handler(
+                error,
+            )));
+        }
+    };
     let errors = storage.alloc_error_slot();
     let result = create_computation(
         state,
@@ -171,13 +179,21 @@ pub(crate) fn create_previous<'scope, T, E, F>(
     storage: &'scope ScopeStorage,
     state: &ScopeState<'scope>,
     callback: F,
-    handler: ErrorHandler<'scope, E>,
+    handler: ErrorHandlerRef<'scope, E>,
 ) -> ComputationInitResult<RawId, E>
 where
     T: 'scope,
     E: 'scope,
     F: FnMut(Option<&T>) -> Result<T, E> + 'scope,
 {
+    let handler = match handler.lease() {
+        Ok(handler) => handler,
+        Err(error) => {
+            return Err(ComputationInitError::Registration(ReactiveError::Handler(
+                error,
+            )));
+        }
+    };
     let value = storage.alloc_empty_slot::<T>();
     let errors = storage.alloc_error_slot();
     let result = create_computation(
@@ -200,7 +216,7 @@ pub(crate) fn create_watch<'scope, T, E, G, C>(
     state: &ScopeState<'scope>,
     getter: G,
     callback: C,
-    handler: ErrorHandler<'scope, E>,
+    handler: ErrorHandlerRef<'scope, E>,
     options: WatchOptions,
 ) -> ComputationInitResult<RawId, E>
 where
@@ -209,6 +225,14 @@ where
     G: FnMut() -> Result<T, E> + 'scope,
     C: FnMut(&T, Option<&T>) -> Result<(), E> + 'scope,
 {
+    let handler = match handler.lease() {
+        Ok(handler) => handler,
+        Err(error) => {
+            return Err(ComputationInitError::Registration(ReactiveError::Handler(
+                error,
+            )));
+        }
+    };
     let value = storage.alloc_empty_slot::<T>();
     let errors = storage.alloc_error_slot();
     let result = create_computation(
@@ -233,13 +257,21 @@ pub(crate) fn create_memo<'scope, T, E, F>(
     storage: &'scope ScopeStorage,
     state: &ScopeState<'scope>,
     callback: F,
-    handler: ErrorHandler<'scope, E>,
+    handler: ErrorHandlerRef<'scope, E>,
 ) -> ComputationInitResult<TypedComputation<'scope, T, E>, E>
 where
     T: PartialEq + 'scope,
     E: 'scope,
     F: FnMut(Option<&T>) -> Result<T, E> + 'scope,
 {
+    let handler = match handler.lease() {
+        Ok(handler) => handler,
+        Err(error) => {
+            return Err(ComputationInitError::Registration(ReactiveError::Handler(
+                error,
+            )));
+        }
+    };
     let value = storage.alloc_empty_slot::<T>();
     let errors = storage.alloc_error_slot();
     let result = create_computation(
@@ -256,13 +288,21 @@ pub(crate) fn create_derived<'scope, T, E, F>(
     storage: &'scope ScopeStorage,
     state: &ScopeState<'scope>,
     callback: F,
-    handler: ErrorHandler<'scope, E>,
+    handler: ErrorHandlerRef<'scope, E>,
 ) -> ComputationInitResult<TypedComputation<'scope, T, E>, E>
 where
     T: 'scope,
     E: 'scope,
     F: FnMut() -> Result<T, E> + 'scope,
 {
+    let handler = match handler.lease() {
+        Ok(handler) => handler,
+        Err(error) => {
+            return Err(ComputationInitError::Registration(ReactiveError::Handler(
+                error,
+            )));
+        }
+    };
     let value = storage.alloc_empty_slot::<T>();
     let errors = storage.alloc_error_slot();
     let result = create_computation(

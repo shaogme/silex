@@ -1,5 +1,6 @@
 use silex_reactivity::{
-    CleanupPayloadKind, CompletionOnce, ErrorHandler, ReactiveError, Runtime, Scope, unwind_safe,
+    CleanupPayloadKind, CompletionOnce, ErrorHandlerToken, ReactiveError, Runtime, Scope,
+    unwind_safe,
 };
 use std::{
     cell::Cell,
@@ -7,7 +8,7 @@ use std::{
     rc::Rc,
 };
 
-fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, ()> {
+fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope, ()> {
     scope.error_handler(|_| {}).expect("handler registration")
 }
 

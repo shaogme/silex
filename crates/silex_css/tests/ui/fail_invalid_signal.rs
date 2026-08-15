@@ -12,6 +12,6 @@ fn main() {
         let error_handler = scope
             .error_handler(|_| {})
             .expect("handler should register");
-        let _ = Style::new(SilexContext::new(scope, error_handler)).border_top_width(color_sig);
+        let _ = Style::new(SilexContext::new(scope, error_handler.view())).border_top_width(color_sig);
     });
 }

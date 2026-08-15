@@ -3,8 +3,7 @@ use std::fmt;
 #[cfg(any(feature = "error-dom", feature = "error-bootstrap"))]
 use std::rc::Rc;
 
-pub use silex_reactivity::ErrorHandler;
-use silex_reactivity::ReactiveError;
+use silex_reactivity::{ErrorHandlerRef, ReactiveError};
 use wasm_bindgen::JsValue;
 
 #[cfg(feature = "error-bootstrap")]
@@ -381,7 +380,44 @@ impl std::error::Error for SilexError {
 
 pub type SilexResult<T> = Result<T, SilexError>;
 
-pub type ErrorReporter<'scope> = ErrorHandler<'scope, SilexError>;
+/// Compatibility alias for the non-owning handler view.
+pub type ErrorHandler<'scope> = ErrorHandlerRef<'scope, SilexError>;
+
+/// A copyable error dispatch capability for framework-level errors.
+pub type ErrorReporter<'scope> = ErrorHandler<'scope>;
+
+/// The RAII owner for one framework error callback registration.
+pub type ErrorHandlerToken<'scope> = silex_reactivity::ErrorHandlerToken<'scope, SilexError>;
+
+/// An owning runtime lease for one framework error callback registration.
+pub type HandlerLease<'scope> = silex_reactivity::HandlerLease<'scope, SilexError>;
+
+/// A framework-level handler input accepted by computation and cleanup APIs.
+#[doc(hidden)]
+pub trait ErrorHandlerInput<'scope> {
+    fn handler_ref(&self) -> ErrorHandler<'scope>;
+}
+
+impl<'scope> ErrorHandlerInput<'scope> for ErrorHandlerToken<'scope> {
+    fn handler_ref(&self) -> ErrorHandler<'scope> {
+        self.view()
+    }
+}
+
+impl<'scope> ErrorHandlerInput<'scope> for ErrorHandler<'scope> {
+    fn handler_ref(&self) -> ErrorHandler<'scope> {
+        *self
+    }
+}
+
+impl<'scope, T> ErrorHandlerInput<'scope> for &T
+where
+    T: ErrorHandlerInput<'scope> + ?Sized,
+{
+    fn handler_ref(&self) -> ErrorHandler<'scope> {
+        T::handler_ref(self)
+    }
+}
 
 #[cfg(test)]
 mod tests {

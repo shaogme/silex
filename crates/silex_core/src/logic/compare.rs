@@ -1,13 +1,13 @@
 use crate::{
-    ErrorReporter, Memo, Rx, Scope, SilexResult, reactivity::ReactiveSource, traits::RxRead,
+    ErrorHandlerInput, Memo, Rx, Scope, SilexResult, reactivity::ReactiveSource, traits::RxRead,
 };
 
-fn compare<'scope, A, B, F>(
+fn compare<'scope, A, B, F, H>(
     scope: Scope<'scope>,
     left: A,
     right: B,
     compare: F,
-    error_handler: ErrorReporter<'scope>,
+    error_handler: H,
 ) -> SilexResult<Rx<'scope, bool>>
 where
     A: ReactiveSource<'scope> + 'scope,
@@ -15,7 +15,9 @@ where
     A::Value: Sized + PartialEq + 'scope,
     B::Value: Sized + PartialEq + 'scope,
     F: Fn(&A::Value, &B::Value) -> bool + 'scope,
+    H: ErrorHandlerInput<'scope>,
 {
+    let error_handler = error_handler.handler_ref();
     let left = left.into_promotion_plan();
     let right = right.into_promotion_plan();
     let left = left.materialize(scope, error_handler)?;
@@ -29,43 +31,46 @@ where
 }
 
 pub trait ReactivePartialEq: RxRead + Clone {
-    fn equals<'scope, O>(
+    fn equals<'scope, O, H>(
         &self,
         scope: Scope<'scope>,
         other: O,
-        error_handler: ErrorReporter<'scope>,
+        error_handler: H,
     ) -> SilexResult<Rx<'scope, bool>>
     where
         Self: ReactiveSource<'scope> + 'scope,
         O: ReactiveSource<'scope, Value = Self::Value> + 'scope,
-        Self::Value: PartialEq + Sized + 'scope;
+        Self::Value: PartialEq + Sized + 'scope,
+        H: ErrorHandlerInput<'scope>;
 
-    fn not_equals<'scope, O>(
+    fn not_equals<'scope, O, H>(
         &self,
         scope: Scope<'scope>,
         other: O,
-        error_handler: ErrorReporter<'scope>,
+        error_handler: H,
     ) -> SilexResult<Rx<'scope, bool>>
     where
         Self: ReactiveSource<'scope> + 'scope,
         O: ReactiveSource<'scope, Value = Self::Value> + 'scope,
-        Self::Value: PartialEq + Sized + 'scope;
+        Self::Value: PartialEq + Sized + 'scope,
+        H: ErrorHandlerInput<'scope>;
 }
 
 impl<S> ReactivePartialEq for S
 where
     S: RxRead + Clone,
 {
-    fn equals<'scope, O>(
+    fn equals<'scope, O, H>(
         &self,
         scope: Scope<'scope>,
         other: O,
-        error_handler: ErrorReporter<'scope>,
+        error_handler: H,
     ) -> SilexResult<Rx<'scope, bool>>
     where
         Self: ReactiveSource<'scope> + 'scope,
         O: ReactiveSource<'scope, Value = Self::Value> + 'scope,
         Self::Value: PartialEq + Sized + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
         compare(
             scope,
@@ -76,16 +81,17 @@ where
         )
     }
 
-    fn not_equals<'scope, O>(
+    fn not_equals<'scope, O, H>(
         &self,
         scope: Scope<'scope>,
         other: O,
-        error_handler: ErrorReporter<'scope>,
+        error_handler: H,
     ) -> SilexResult<Rx<'scope, bool>>
     where
         Self: ReactiveSource<'scope> + 'scope,
         O: ReactiveSource<'scope, Value = Self::Value> + 'scope,
         Self::Value: PartialEq + Sized + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
         compare(
             scope,
@@ -98,65 +104,70 @@ where
 }
 
 pub trait ReactivePartialOrd: RxRead + Clone {
-    fn greater_than<'scope, O>(
+    fn greater_than<'scope, O, H>(
         &self,
         scope: Scope<'scope>,
         other: O,
-        error_handler: ErrorReporter<'scope>,
+        error_handler: H,
     ) -> SilexResult<Rx<'scope, bool>>
     where
         Self: ReactiveSource<'scope> + 'scope,
         O: ReactiveSource<'scope, Value = Self::Value> + 'scope,
-        Self::Value: PartialOrd + Sized + 'scope;
+        Self::Value: PartialOrd + Sized + 'scope,
+        H: ErrorHandlerInput<'scope>;
 
-    fn less_than<'scope, O>(
+    fn less_than<'scope, O, H>(
         &self,
         scope: Scope<'scope>,
         other: O,
-        error_handler: ErrorReporter<'scope>,
+        error_handler: H,
     ) -> SilexResult<Rx<'scope, bool>>
     where
         Self: ReactiveSource<'scope> + 'scope,
         O: ReactiveSource<'scope, Value = Self::Value> + 'scope,
-        Self::Value: PartialOrd + Sized + 'scope;
+        Self::Value: PartialOrd + Sized + 'scope,
+        H: ErrorHandlerInput<'scope>;
 
-    fn greater_than_or_equals<'scope, O>(
+    fn greater_than_or_equals<'scope, O, H>(
         &self,
         scope: Scope<'scope>,
         other: O,
-        error_handler: ErrorReporter<'scope>,
+        error_handler: H,
     ) -> SilexResult<Rx<'scope, bool>>
     where
         Self: ReactiveSource<'scope> + 'scope,
         O: ReactiveSource<'scope, Value = Self::Value> + 'scope,
-        Self::Value: PartialOrd + Sized + 'scope;
+        Self::Value: PartialOrd + Sized + 'scope,
+        H: ErrorHandlerInput<'scope>;
 
-    fn less_than_or_equals<'scope, O>(
+    fn less_than_or_equals<'scope, O, H>(
         &self,
         scope: Scope<'scope>,
         other: O,
-        error_handler: ErrorReporter<'scope>,
+        error_handler: H,
     ) -> SilexResult<Rx<'scope, bool>>
     where
         Self: ReactiveSource<'scope> + 'scope,
         O: ReactiveSource<'scope, Value = Self::Value> + 'scope,
-        Self::Value: PartialOrd + Sized + 'scope;
+        Self::Value: PartialOrd + Sized + 'scope,
+        H: ErrorHandlerInput<'scope>;
 }
 
 impl<S> ReactivePartialOrd for S
 where
     S: RxRead + Clone,
 {
-    fn greater_than<'scope, O>(
+    fn greater_than<'scope, O, H>(
         &self,
         scope: Scope<'scope>,
         other: O,
-        error_handler: ErrorReporter<'scope>,
+        error_handler: H,
     ) -> SilexResult<Rx<'scope, bool>>
     where
         Self: ReactiveSource<'scope> + 'scope,
         O: ReactiveSource<'scope, Value = Self::Value> + 'scope,
         Self::Value: PartialOrd + Sized + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
         compare(
             scope,
@@ -167,16 +178,17 @@ where
         )
     }
 
-    fn less_than<'scope, O>(
+    fn less_than<'scope, O, H>(
         &self,
         scope: Scope<'scope>,
         other: O,
-        error_handler: ErrorReporter<'scope>,
+        error_handler: H,
     ) -> SilexResult<Rx<'scope, bool>>
     where
         Self: ReactiveSource<'scope> + 'scope,
         O: ReactiveSource<'scope, Value = Self::Value> + 'scope,
         Self::Value: PartialOrd + Sized + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
         compare(
             scope,
@@ -187,16 +199,17 @@ where
         )
     }
 
-    fn greater_than_or_equals<'scope, O>(
+    fn greater_than_or_equals<'scope, O, H>(
         &self,
         scope: Scope<'scope>,
         other: O,
-        error_handler: ErrorReporter<'scope>,
+        error_handler: H,
     ) -> SilexResult<Rx<'scope, bool>>
     where
         Self: ReactiveSource<'scope> + 'scope,
         O: ReactiveSource<'scope, Value = Self::Value> + 'scope,
         Self::Value: PartialOrd + Sized + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
         compare(
             scope,
@@ -207,16 +220,17 @@ where
         )
     }
 
-    fn less_than_or_equals<'scope, O>(
+    fn less_than_or_equals<'scope, O, H>(
         &self,
         scope: Scope<'scope>,
         other: O,
-        error_handler: ErrorReporter<'scope>,
+        error_handler: H,
     ) -> SilexResult<Rx<'scope, bool>>
     where
         Self: ReactiveSource<'scope> + 'scope,
         O: ReactiveSource<'scope, Value = Self::Value> + 'scope,
         Self::Value: PartialOrd + Sized + 'scope,
+        H: ErrorHandlerInput<'scope>,
     {
         compare(
             scope,

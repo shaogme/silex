@@ -1,10 +1,10 @@
-use silex_reactivity::{ErrorHandler, Memo, ReactiveError, Runtime, Scope, notify};
+use silex_reactivity::{ErrorHandlerToken, Memo, ReactiveError, Runtime, Scope, notify};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
 };
 
-fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandler<'scope, ()> {
+fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope, ()> {
     scope.error_handler(|_| {}).expect("handler registration")
 }
 
@@ -237,7 +237,8 @@ fn nested_memo_cleanup_does_not_track_the_outer_observer() {
             let scope_for_cleanup = scope;
             let probe_for_cleanup = probe;
             let cleanup_runs_in_cleanup = cleanup_runs.clone();
-            let cleanup_handler = handler(scope);
+            let cleanup_token = handler(scope);
+            let cleanup_handler = cleanup_token.view();
             let inner = scope
                 .memo(
                     move |_| {
