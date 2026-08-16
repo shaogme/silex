@@ -4,14 +4,14 @@ use silex_css::prelude::Style;
 
 fn main() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let (value, _) = scope
+    runtime.with_transient(|owner| {
+        let (value, _) = owner
             .signal(String::from("red"))
             .expect("signal should initialize");
-        let error_handler = scope
+        let error_handler = owner
             .error_handler(|_| {})
             .expect("handler should register");
-        let _style = Style::new(SilexContext::new(scope, error_handler.view()))
+        let _style = Style::new(SilexContext::new(owner, error_handler.view()))
             .raw("--color", value)
             .expect("style should build");
         let _dynamic = DynamicCss::new("scoped").with_rule(
@@ -19,5 +19,5 @@ fn main() {
             vec![value.into_css_reactive()],
         );
     })
-    .expect("child scope should run");
+    .expect("transient owner should run");
 }

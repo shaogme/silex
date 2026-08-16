@@ -2,7 +2,7 @@ use silex_core::{Resource, Runtime};
 use silex_net::{HttpClient, NetError};
 
 fn escape(runtime: &mut Runtime) -> Resource<'static, std::string::String, NetError> {
-    runtime.child(|scope| {
+    runtime.with_transient(|scope| {
         HttpClient::get(
             scope,
             "https://example.test",

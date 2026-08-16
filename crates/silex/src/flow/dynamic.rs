@@ -11,9 +11,9 @@ use silex_macros::component;
 /// ```rust, ignore
 /// use silex::prelude::*;
 ///
-/// let (component_name, set_component_name) = scope.signal("A");
+/// let (component_name, set_component_name) = owner.signal("A");
 ///
-/// Dynamic(scope, rx!(scope; {
+/// Dynamic(ctx, rx!(ctx; {
 ///     let name = component_name.get();
 ///     if name == "A" {
 ///         "Component A"
@@ -28,6 +28,6 @@ where
     V: View<'scope> + Clone + 'scope,
     FView: ReactiveSource<'scope, Value = V> + Clone + 'scope,
 {
-    let view_fn = scope.promote(view_fn, error_handler)?;
+    let view_fn = owner.promote(view_fn, error_handler)?;
     Ok(silex_core::rx!(ctx; (*$view_fn).clone().into_any()))
 }

@@ -11,7 +11,7 @@ use std::{
 use gloo_timers::future::TimeoutFuture;
 use js_sys::{Array, Function, Reflect};
 use silex_core::reactivity::{MutationState, ResourceState};
-use silex_core::{ErrorHandlerToken, Runtime, Scope, TaskHandle};
+use silex_core::{ErrorHandlerToken, OwnerAccess, Runtime, TaskHandle};
 use silex_net::{
     BrowserTransport, EventStream, EventStreamConnection, HttpMethod, HttpResponse, NetError,
     NetErrorKind, RequestBody, RequestSpec, RetryPolicy, Transport, TransportFuture, WebSocket,
@@ -22,7 +22,7 @@ use wasm_bindgen_test::*;
 
 wasm_bindgen_test_configure!(run_in_browser);
 
-fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope> {
+fn test_handler<'scope>(scope: OwnerAccess<'scope>) -> ErrorHandlerToken<'scope> {
     scope.error_handler(|_| {}).expect("error handler setup")
 }
 
@@ -448,8 +448,9 @@ async fn browser_transport_fetches_data_url() {
 #[wasm_bindgen_test(async)]
 async fn http_resource_resolves_owned_request() {
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime setup");
-    root.with_scope(|scope| async move {
+    let root = runtime.owner().expect("runtime setup");
+    let scope = root.access();
+    async move {
         let (source, _) = scope.signal(1_u32).unwrap();
         let resource =
             silex_net::HttpClient::get(scope, "data:text/plain,hello", test_handler(scope))
@@ -460,16 +461,17 @@ async fn http_resource_resolves_owned_request() {
             resource.state.get().unwrap(),
             ResourceState::Ready(value) if value == "hello"
         ));
-    })
+    }
     .await;
-    root.dispose().expect("root cleanup");
+    root.close().expect("root cleanup");
 }
 
 #[wasm_bindgen_test(async)]
 async fn transport_receives_query_before_url_fragment() {
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime setup");
-    root.with_scope(|scope| async move {
+    let root = runtime.owner().expect("runtime setup");
+    let scope = root.access();
+    async move {
         let urls = Rc::new(RefCell::new(Vec::new()));
         let result = silex_net::HttpClient::get(
             scope,
@@ -487,16 +489,17 @@ async fn transport_receives_query_before_url_fragment() {
             urls.borrow().as_slice(),
             ["https://example.test/path?q=one#fragment?not-a-query"]
         );
-    })
+    }
     .await;
-    root.dispose().expect("root cleanup");
+    root.close().expect("root cleanup");
 }
 
 #[wasm_bindgen_test(async)]
 async fn resource_runs_interceptor_once_and_rejects_custom_status() {
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime setup");
-    root.with_scope(|scope| async move {
+    let root = runtime.owner().expect("runtime setup");
+    let scope = root.access();
+    async move {
         let (source, _) = scope.signal(1_u32).unwrap();
         let interceptor_calls = Rc::new(Cell::new(0));
         let transport_calls = Rc::new(Cell::new(0));
@@ -521,13 +524,14 @@ async fn resource_runs_interceptor_once_and_rejects_custom_status() {
         ));
         assert_eq!(interceptor_calls.get(), 1);
         assert_eq!(transport_calls.get(), 1);
-    })
+    }
     .await;
-    root.dispose().expect("root cleanup");
+    root.close().expect("root cleanup");
 
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime setup");
-    root.with_scope(|scope| async move {
+    let root = runtime.owner().expect("runtime setup");
+    let scope = root.access();
+    async move {
         let (source, _) = scope.signal(1_u32).unwrap();
         let transport_calls = Rc::new(Cell::new(0));
         let error_calls = Rc::new(Cell::new(0));
@@ -570,16 +574,17 @@ async fn resource_runs_interceptor_once_and_rejects_custom_status() {
         assert_eq!(transport_calls.get(), 3);
         assert_eq!(error_calls.get(), 3);
         assert_eq!(retry_calls.get(), 2);
-    })
+    }
     .await;
-    root.dispose().expect("root cleanup");
+    root.close().expect("root cleanup");
 }
 
 #[wasm_bindgen_test(async)]
 async fn resource_replacement_keeps_new_request_result() {
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime setup");
-    root.with_scope(|scope| async move {
+    let root = runtime.owner().expect("runtime setup");
+    let scope = root.access();
+    async move {
         let (query, set_query) = scope.signal("first".to_string()).unwrap();
         let (source, _) = scope.signal(1_u32).unwrap();
         let calls = Rc::new(Cell::new(0));
@@ -603,50 +608,49 @@ async fn resource_replacement_keeps_new_request_result() {
             ResourceState::Ready(value) if value == "second"
         ));
         assert_eq!(calls.get(), 2);
-    })
+    }
     .await;
-    root.dispose().expect("root cleanup");
+    root.close().expect("root cleanup");
 }
 
 #[wasm_bindgen_test(async)]
 async fn mutation_preflight_error_does_not_enter_pending() {
     let mut source_runtime = Runtime::new();
     let mut target_runtime = Runtime::new();
-    let source_root = source_runtime.run().expect("source runtime setup");
-    let target_root = target_runtime.run().expect("target runtime setup");
-    source_root.with_scope(|source_scope| {
-        let (foreign, _) = source_scope.signal("foreign".to_string()).unwrap();
-        target_root.with_scope(|target_scope| {
-            let mutation = silex_net::HttpClient::post(
-                target_scope,
-                "https://example.test/mutate",
-                test_handler(target_scope),
-            )
-            .as_mutation_with(move |_| {
-                Ok(silex_net::HttpClient::post(
-                    target_scope,
-                    "https://example.test/mutate",
-                    test_handler(target_scope),
-                )
-                .text_body(foreign))
-            })
-            .expect("mutation setup");
-            mutation.mutate(()).unwrap();
-            assert!(matches!(
-                mutation.state.get().unwrap(),
-                MutationState::Error(NetError::Fatal(NetErrorKind::InvalidConfiguration(_)))
-            ));
-        });
-    });
-    source_root.dispose().expect("source root cleanup");
-    target_root.dispose().expect("target root cleanup");
+    let source_root = source_runtime.owner().expect("source runtime setup");
+    let target_root = target_runtime.owner().expect("target runtime setup");
+    let source_scope = source_root.access();
+    let target_scope = target_root.access();
+    let (foreign, _) = source_scope.signal("foreign".to_string()).unwrap();
+    let mutation = silex_net::HttpClient::post(
+        target_scope,
+        "https://example.test/mutate",
+        test_handler(target_scope),
+    )
+    .as_mutation_with(move |_| {
+        Ok(silex_net::HttpClient::post(
+            target_scope,
+            "https://example.test/mutate",
+            test_handler(target_scope),
+        )
+        .text_body(foreign))
+    })
+    .expect("mutation setup");
+    mutation.mutate(()).unwrap();
+    assert!(matches!(
+        mutation.state.get().unwrap(),
+        MutationState::Error(NetError::Fatal(NetErrorKind::InvalidConfiguration(_)))
+    ));
+    source_root.close().expect("source root cleanup");
+    target_root.close().expect("target root cleanup");
 }
 
 #[wasm_bindgen_test(async)]
 async fn mutation_commits_only_the_latest_completion() {
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime setup");
-    root.with_scope(|scope| async move {
+    let root = runtime.owner().expect("runtime setup");
+    let scope = root.access();
+    async move {
         let calls = Rc::new(Cell::new(0));
         let mutation =
             silex_net::HttpClient::get(scope, "https://example.test/mutation", test_handler(scope))
@@ -677,17 +681,18 @@ async fn mutation_commits_only_the_latest_completion() {
             MutationState::Success(value) if value == "two"
         ));
         assert_eq!(calls.get(), 2);
-    })
+    }
     .await;
-    root.dispose().expect("root cleanup");
+    root.close().expect("root cleanup");
 }
 
 #[cfg(feature = "persist")]
 #[wasm_bindgen_test(async)]
 async fn cache_first_does_not_treat_default_as_history() {
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime setup");
-    root.with_scope(|scope| async move {
+    let root = runtime.owner().expect("runtime setup");
+    let scope = root.access();
+    async move {
         let (source, _) = scope.signal(1_u32).unwrap();
         let resource =
             silex_net::HttpClient::get(scope, "data:text/plain,cache", test_handler(scope))
@@ -709,9 +714,9 @@ async fn cache_first_does_not_treat_default_as_history() {
             resource.state.get().unwrap(),
             ResourceState::Ready(value) if value == "cache"
         ));
-    })
+    }
     .await;
-    root.dispose().expect("root cleanup");
+    root.close().expect("root cleanup");
 }
 
 #[cfg(feature = "persist")]
@@ -742,12 +747,13 @@ async fn cache_controller_bounds_dynamic_keys_and_removes_evicted_history() {
     }
 
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime setup");
+    let root = runtime.owner().expect("runtime setup");
     let storage_for_scope = storage.clone();
     let first_key_for_scope = first_key.clone();
     let second_key_for_scope = second_key.clone();
     let third_key_for_scope = third_key.clone();
-    root.with_scope(|scope| async move {
+    let scope = root.access();
+    async move {
         let (query, set_query) = scope.signal(String::new()).unwrap();
         let calls = Rc::new(Cell::new(0));
         let client = silex_net::HttpClient::get(scope, url, test_handler(scope))
@@ -796,9 +802,9 @@ async fn cache_controller_bounds_dynamic_keys_and_removes_evicted_history() {
                 .expect("read third key"),
             Some("network".to_string())
         );
-    })
+    }
     .await;
-    root.dispose().expect("root cleanup");
+    root.close().expect("root cleanup");
 
     assert!(
         storage
@@ -836,10 +842,11 @@ async fn cache_controller_expires_scope_entries_with_ttl() {
         .expect("seed ttl history");
 
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime setup");
+    let root = runtime.owner().expect("runtime setup");
     let storage_for_scope = storage.clone();
     let storage_key_for_scope = storage_key.clone();
-    root.with_scope(|scope| async move {
+    let scope = root.access();
+    async move {
         let calls = Rc::new(Cell::new(0));
         let client = silex_net::HttpClient::get(scope, url, test_handler(scope))
             .credentials(silex_net::CredentialsMode::Omit)
@@ -872,9 +879,9 @@ async fn cache_controller_expires_scope_entries_with_ttl() {
                 .expect("read refreshed ttl key"),
             Some("network".to_string())
         );
-    })
+    }
     .await;
-    root.dispose().expect("root cleanup");
+    root.close().expect("root cleanup");
     storage.remove_item(&storage_key).expect("cleanup ttl key");
 }
 
@@ -902,8 +909,9 @@ async fn json_cache_codec_round_trips_persisted_values() {
         .expect("seed json history");
 
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime setup");
-    root.with_scope(|scope| async move {
+    let root = runtime.owner().expect("runtime setup");
+    let scope = root.access();
+    async move {
         let calls = Rc::new(Cell::new(0));
         let result = silex_net::HttpClient::get(scope, url, test_handler(scope))
             .credentials(silex_net::CredentialsMode::Omit)
@@ -929,9 +937,9 @@ async fn json_cache_codec_round_trips_persisted_values() {
             .expect("json cache request");
         assert_eq!(result, 7);
         assert_eq!(calls.get(), 0);
-    })
+    }
     .await;
-    root.dispose().expect("root cleanup");
+    root.close().expect("root cleanup");
     storage.remove_item(&storage_key).expect("cleanup json key");
 }
 
@@ -964,11 +972,12 @@ async fn cache_completion_cannot_recreate_an_evicted_key() {
         .expect("seed first history");
 
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime setup");
+    let root = runtime.owner().expect("runtime setup");
     let storage_for_scope = storage.clone();
     let first_key_for_scope = first_key.clone();
     let second_key_for_scope = second_key.clone();
-    root.with_scope(|scope| async move {
+    let scope = root.access();
+    async move {
         let (query, set_query) = scope.signal("first".to_string()).unwrap();
         let (source, _) = scope.signal(1_u32).unwrap();
         let calls = Rc::new(Cell::new(0));
@@ -1016,9 +1025,9 @@ async fn cache_completion_cannot_recreate_an_evicted_key() {
                 .expect("read current completion key"),
             Some("fresh".to_string())
         );
-    })
+    }
     .await;
-    root.dispose().expect("root cleanup");
+    root.close().expect("root cleanup");
     storage.remove_item(&first_key).expect("cleanup first key");
     storage
         .remove_item(&second_key)
@@ -1048,8 +1057,9 @@ async fn credentialed_request_skips_persistent_history() {
         .expect("seed cache history");
 
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime setup");
-    root.with_scope(|scope| async move {
+    let root = runtime.owner().expect("runtime setup");
+    let scope = root.access();
+    async move {
         let calls = Rc::new(Cell::new(0));
         let result = silex_net::HttpClient::get(scope, url, test_handler(scope))
             .cache(
@@ -1073,9 +1083,9 @@ async fn credentialed_request_skips_persistent_history() {
             .expect("credentialed request should use network");
         assert_eq!(result, "network");
         assert_eq!(calls.get(), 1);
-    })
+    }
     .await;
-    root.dispose().expect("root cleanup");
+    root.close().expect("root cleanup");
     storage
         .remove_item(&storage_key)
         .expect("remove cache history");
@@ -1104,8 +1114,9 @@ async fn non_idempotent_request_does_not_create_persistent_cache() {
         .expect("clear cache history");
 
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime setup");
-    root.with_scope(|scope| async move {
+    let root = runtime.owner().expect("runtime setup");
+    let scope = root.access();
+    async move {
         let calls = Rc::new(Cell::new(0));
         let result = silex_net::HttpClient::post(scope, url, test_handler(scope))
             .credentials(silex_net::CredentialsMode::Omit)
@@ -1130,9 +1141,9 @@ async fn non_idempotent_request_does_not_create_persistent_cache() {
             .expect("non-idempotent request should use network");
         assert_eq!(result, "network");
         assert_eq!(calls.get(), 1);
-    })
+    }
     .await;
-    root.dispose().expect("root cleanup");
+    root.close().expect("root cleanup");
     assert!(
         storage
             .get_item(&storage_key)
@@ -1164,8 +1175,9 @@ async fn custom_transport_must_opt_into_persistent_cache() {
         .expect("seed cache history");
 
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime setup");
-    root.with_scope(|scope| async move {
+    let root = runtime.owner().expect("runtime setup");
+    let scope = root.access();
+    async move {
         let calls = Rc::new(Cell::new(0));
         let result = silex_net::HttpClient::get(scope, url, test_handler(scope))
             .credentials(silex_net::CredentialsMode::Omit)
@@ -1187,9 +1199,9 @@ async fn custom_transport_must_opt_into_persistent_cache() {
             .expect("untrusted transport should use network");
         assert_eq!(result, "two");
         assert_eq!(calls.get(), 1);
-    })
+    }
     .await;
-    root.dispose().expect("root cleanup");
+    root.close().expect("root cleanup");
     storage
         .remove_item(&storage_key)
         .expect("remove cache history");
@@ -1218,8 +1230,9 @@ async fn cache_first_reloads_history_when_request_key_changes() {
         .expect("seed cache history");
 
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime setup");
-    root.with_scope(|scope| async move {
+    let root = runtime.owner().expect("runtime setup");
+    let scope = root.access();
+    async move {
         let (query, set_query) = scope.signal("first".to_string()).unwrap();
         let (source, _) = scope.signal(1_u32).unwrap();
         let calls = Rc::new(Cell::new(0));
@@ -1266,9 +1279,9 @@ async fn cache_first_reloads_history_when_request_key_changes() {
             ResourceState::Ready(value) if value == "history"
         ));
         assert_eq!(calls.get(), 1);
-    })
+    }
     .await;
-    root.dispose().expect("root cleanup");
+    root.close().expect("root cleanup");
     storage
         .remove_item(&storage_key)
         .expect("remove cache history");
@@ -1297,8 +1310,9 @@ async fn swr_rejects_stale_same_key_cache_write() {
         .expect("seed cache history");
 
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime setup");
-    root.with_scope(|scope| async move {
+    let root = runtime.owner().expect("runtime setup");
+    let scope = root.access();
+    async move {
         let (source, set_source) = scope.signal(1_u32).unwrap();
         let calls = Rc::new(Cell::new(0));
         let resource = silex_net::HttpClient::get(scope, url, test_handler(scope))
@@ -1335,9 +1349,9 @@ async fn swr_rejects_stale_same_key_cache_write() {
             calls.get()
         );
         assert_eq!(calls.get(), 2);
-    })
+    }
     .await;
-    root.dispose().expect("root cleanup");
+    root.close().expect("root cleanup");
     assert_eq!(
         storage
             .get_item(&storage_key)
@@ -1373,8 +1387,9 @@ async fn network_first_uses_history_after_retryable_failure() {
         .expect("seed cache history");
 
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime setup");
-    root.with_scope(|scope| async move {
+    let root = runtime.owner().expect("runtime setup");
+    let scope = root.access();
+    async move {
         let (source, _) = scope.signal(1_u32).unwrap();
         let calls = Rc::new(Cell::new(0));
         let resource = silex_net::HttpClient::get(scope, url, test_handler(scope))
@@ -1403,9 +1418,9 @@ async fn network_first_uses_history_after_retryable_failure() {
             ResourceState::Ready(value) if value == "history"
         ));
         assert_eq!(calls.get(), 1);
-    })
+    }
     .await;
-    root.dispose().expect("root cleanup");
+    root.close().expect("root cleanup");
     storage
         .remove_item(&storage_key)
         .expect("remove cache history");
@@ -1415,9 +1430,10 @@ async fn network_first_uses_history_after_retryable_failure() {
 async fn task_cancel_drops_pending_scoped_future() {
     let dropped = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime setup");
+    let root = runtime.owner().expect("runtime setup");
     let dropped_for_scope = dropped.clone();
-    root.with_scope(|scope| async move {
+    let scope = root.access();
+    async move {
         let task: TaskHandle<'_> = scope
             .spawn_scoped(
                 PendingFuture {
@@ -1431,9 +1447,9 @@ async fn task_cancel_drops_pending_scoped_future() {
         task.cancel();
         TimeoutFuture::new(0).await;
         assert_eq!(dropped_for_scope.get(), 1);
-    })
+    }
     .await;
-    root.dispose().expect("root cleanup");
+    root.close().expect("root cleanup");
     assert_eq!(dropped.get(), 1);
 }
 
@@ -1441,7 +1457,7 @@ async fn task_cancel_drops_pending_scoped_future() {
 fn lazy_connections_validate_scope_without_opening_host_resources() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let socket = WebSocket::lazy(scope, "wss://example.test", test_handler(scope))
                 .build()
                 .expect("websocket setup");
@@ -1459,8 +1475,9 @@ fn lazy_connections_validate_scope_without_opening_host_resources() {
 async fn websocket_host_bridge_covers_events_retry_and_manual_close() {
     let _host = MockHost::websocket();
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime setup");
-    root.with_scope(|scope| async move {
+    let root = runtime.owner().expect("runtime setup");
+    let scope = root.access();
+    async move {
         let opened = Rc::new(Cell::new(0));
         let errors = Rc::new(Cell::new(0));
         let closed = Rc::new(Cell::new(0));
@@ -1577,17 +1594,18 @@ async fn websocket_host_bridge_covers_events_retry_and_manual_close() {
             socket.raw_message().get().unwrap().as_deref(),
             Some("first")
         );
-    })
+    }
     .await;
-    root.dispose().expect("root cleanup");
+    root.close().expect("root cleanup");
 }
 
 #[wasm_bindgen_test(async)]
 async fn websocket_retry_window_counts_continuous_pre_open_failures() {
     let _host = MockHost::websocket();
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime setup");
-    root.with_scope(|scope| async move {
+    let root = runtime.owner().expect("runtime setup");
+    let scope = root.access();
+    async move {
         let socket = WebSocket::lazy(scope, "ws://mock", test_handler(scope))
             .reconnect_policy(RetryPolicy::new(3, std::time::Duration::ZERO).no_jitter())
             .build()
@@ -1618,17 +1636,18 @@ async fn websocket_retry_window_counts_continuous_pre_open_failures() {
             4,
             "manual reconnect must start a fresh retry window"
         );
-    })
+    }
     .await;
-    root.dispose().expect("root cleanup");
+    root.close().expect("root cleanup");
 }
 
 #[wasm_bindgen_test(async)]
 async fn websocket_callbacks_can_control_connection_after_state_restore() {
     let _host = MockHost::websocket();
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime setup");
-    root.with_scope(|scope| async move {
+    let root = runtime.owner().expect("runtime setup");
+    let scope = root.access();
+    async move {
         let connection_slot: Rc<Cell<Option<WebSocketConnection<'_>>>> = Rc::new(Cell::new(None));
         let send_succeeded = Rc::new(Cell::new(false));
         let connection_for_open = connection_slot.clone();
@@ -1666,17 +1685,18 @@ async fn websocket_callbacks_can_control_connection_after_state_restore() {
             socket.state().get().unwrap(),
             silex_net::ConnectionState::Connecting
         );
-    })
+    }
     .await;
-    root.dispose().expect("root cleanup");
+    root.close().expect("root cleanup");
 }
 
 #[wasm_bindgen_test(async)]
 async fn websocket_constructor_failure_reports_error_before_connection_creation() {
     let _host = MockHost::websocket();
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime setup");
-    root.with_scope(|scope| async move {
+    let root = runtime.owner().expect("runtime setup");
+    let scope = root.access();
+    async move {
         let errors = Rc::new(Cell::new(0));
         let result = WebSocket::connect(scope, "mock://failure", test_handler(scope))
             .on_error({
@@ -1723,17 +1743,18 @@ async fn websocket_constructor_failure_reports_error_before_connection_creation(
         );
         assert_eq!(reconnect_errors.get(), 1);
         assert_eq!(mock_instance_count("__silex_test_socket_instances"), 0);
-    })
+    }
     .await;
-    root.dispose().expect("root cleanup");
+    root.close().expect("root cleanup");
 }
 
 #[wasm_bindgen_test(async)]
 async fn websocket_retry_stops_after_max_elapsed() {
     let _host = MockHost::websocket();
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime setup");
-    root.with_scope(|scope| async move {
+    let root = runtime.owner().expect("runtime setup");
+    let scope = root.access();
+    async move {
         let socket = WebSocket::lazy(scope, "ws://mock", test_handler(scope))
             .reconnect_policy(
                 RetryPolicy::new(3, std::time::Duration::from_millis(5))
@@ -1750,34 +1771,33 @@ async fn websocket_retry_stops_after_max_elapsed() {
             socket.state().get().unwrap(),
             silex_net::ConnectionState::Closed
         );
-    })
+    }
     .await;
-    root.dispose().expect("root cleanup");
+    root.close().expect("root cleanup");
 }
 
 #[wasm_bindgen_test(async)]
 async fn websocket_owner_dispose_removes_active_host_registration() {
     let _host = MockHost::websocket();
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime setup");
+    let root = runtime.owner().expect("runtime setup");
     let opened = Rc::new(Cell::new(0));
     let opened_for_scope = opened.clone();
-    root.with_scope(|scope| {
-        let opened_for_assert = opened.clone();
-        async move {
-            let socket = WebSocket::lazy(scope, "ws://mock", test_handler(scope))
-                .on_open(move || opened_for_scope.set(opened_for_scope.get() + 1))
-                .build()
-                .expect("websocket setup");
-            socket.reconnect().expect("websocket reconnect");
-            mock_call0("__silex_test_socket", "emitOpen");
-            TimeoutFuture::new(0).await;
-            assert_eq!(opened_for_assert.get(), 1);
-        }
-    })
+    let scope = root.access();
+    let opened_for_assert = opened.clone();
+    async move {
+        let socket = WebSocket::lazy(scope, "ws://mock", test_handler(scope))
+            .on_open(move || opened_for_scope.set(opened_for_scope.get() + 1))
+            .build()
+            .expect("websocket setup");
+        socket.reconnect().expect("websocket reconnect");
+        mock_call0("__silex_test_socket", "emitOpen");
+        TimeoutFuture::new(0).await;
+        assert_eq!(opened_for_assert.get(), 1);
+    }
     .await;
 
-    root.dispose().expect("root cleanup");
+    root.close().expect("root cleanup");
     assert!(mock_property_is_cleared("__silex_test_socket", "onopen"));
     assert!(mock_property_is_cleared("__silex_test_socket", "onmessage"));
     assert!(mock_property_is_cleared("__silex_test_socket", "onerror"));
@@ -1797,8 +1817,9 @@ async fn websocket_owner_dispose_removes_active_host_registration() {
 async fn event_stream_host_bridge_covers_named_messages_reconnect_and_cleanup() {
     let _host = MockHost::event_source();
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime setup");
-    root.with_scope(|scope| async move {
+    let root = runtime.owner().expect("runtime setup");
+    let scope = root.access();
+    async move {
         let opened = Rc::new(Cell::new(0));
         let errors = Rc::new(Cell::new(0));
         let stream = EventStream::lazy(scope, "http://mock", test_handler(scope))
@@ -1914,17 +1935,18 @@ async fn event_stream_host_bridge_covers_named_messages_reconnect_and_cleanup() 
         );
         mock_call2("__silex_test_event_source", "emitNamed", "update", "late");
         assert_eq!(stream.raw_messages().get().unwrap().len(), 2);
-    })
+    }
     .await;
-    root.dispose().expect("root cleanup");
+    root.close().expect("root cleanup");
 }
 
 #[wasm_bindgen_test(async)]
 async fn event_stream_callbacks_can_control_connection_after_state_restore() {
     let _host = MockHost::event_source();
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime setup");
-    root.with_scope(|scope| async move {
+    let root = runtime.owner().expect("runtime setup");
+    let scope = root.access();
+    async move {
         let connection_slot: Rc<Cell<Option<EventStreamConnection<'_>>>> = Rc::new(Cell::new(None));
         let opened = Rc::new(Cell::new(0));
         let connection_for_open = connection_slot.clone();
@@ -1956,17 +1978,18 @@ async fn event_stream_callbacks_can_control_connection_after_state_restore() {
             stream.state().get().unwrap(),
             silex_net::ConnectionState::Connecting
         );
-    })
+    }
     .await;
-    root.dispose().expect("root cleanup");
+    root.close().expect("root cleanup");
 }
 
 #[wasm_bindgen_test(async)]
 async fn event_stream_constructor_failure_reports_error_before_connection_creation() {
     let _host = MockHost::event_source();
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime setup");
-    root.with_scope(|scope| async move {
+    let root = runtime.owner().expect("runtime setup");
+    let scope = root.access();
+    async move {
         let errors = Rc::new(Cell::new(0));
         let result = EventStream::builder(scope, "mock://failure", test_handler(scope))
             .on_error({
@@ -2019,35 +2042,34 @@ async fn event_stream_constructor_failure_reports_error_before_connection_creati
             mock_instance_count("__silex_test_event_source_instances"),
             0
         );
-    })
+    }
     .await;
-    root.dispose().expect("root cleanup");
+    root.close().expect("root cleanup");
 }
 
 #[wasm_bindgen_test(async)]
 async fn event_stream_owner_dispose_removes_active_host_registration() {
     let _host = MockHost::event_source();
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime setup");
+    let root = runtime.owner().expect("runtime setup");
     let opened = Rc::new(Cell::new(0));
     let opened_for_scope = opened.clone();
-    root.with_scope(|scope| {
-        let opened_for_assert = opened.clone();
-        async move {
-            let stream = EventStream::lazy(scope, "http://mock", test_handler(scope))
-                .event("update")
-                .on_open(move || opened_for_scope.set(opened_for_scope.get() + 1))
-                .build()
-                .expect("event stream setup");
-            stream.reconnect().expect("event stream reconnect");
-            mock_call0("__silex_test_event_source", "emitOpen");
-            TimeoutFuture::new(0).await;
-            assert_eq!(opened_for_assert.get(), 1);
-        }
-    })
+    let scope = root.access();
+    let opened_for_assert = opened.clone();
+    async move {
+        let stream = EventStream::lazy(scope, "http://mock", test_handler(scope))
+            .event("update")
+            .on_open(move || opened_for_scope.set(opened_for_scope.get() + 1))
+            .build()
+            .expect("event stream setup");
+        stream.reconnect().expect("event stream reconnect");
+        mock_call0("__silex_test_event_source", "emitOpen");
+        TimeoutFuture::new(0).await;
+        assert_eq!(opened_for_assert.get(), 1);
+    }
     .await;
 
-    root.dispose().expect("root cleanup");
+    root.close().expect("root cleanup");
     assert!(mock_property_is_cleared(
         "__silex_test_event_source",
         "onopen"

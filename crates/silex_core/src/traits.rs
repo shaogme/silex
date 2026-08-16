@@ -1,14 +1,14 @@
 //! Lifetime-aware reactive traits.
 
 use crate::{
-    Callback, CallbackInvokeError, ErrorHandlerInput, NodeRef, Rx, RxInner, RxValueKind, Scope,
-    SilexError, SilexResult,
+    Callback, ErrorHandlerInput, NodeRef, OwnerAccess, Rx, RxInner, RxValueKind, SilexError,
+    SilexResult,
     callback::map_callback_error,
     reactivity::{
-        Memo, ReactiveSource, ReadSignal, RwSignal, Signal, SignalSlice, StoredValue, WriteSignal,
+        Computed, ReactiveSource, ReadSignal, RwSignal, Signal, SignalSlice, StoredValue,
+        WriteSignal,
     },
 };
-use silex_reactivity::{ReactiveError, notify as raw_notify};
 use std::fmt::Debug;
 
 /// Values accepted by the scoped runtime.
@@ -21,16 +21,16 @@ impl<T: Clone> RxCloneData for T {}
 pub trait RxError: Clone + Debug {}
 impl<T: Clone + Debug> RxError for T {}
 
-/// Construct a scope-owned reactive wrapper from an explicit value.
+/// Construct a owner-owned reactive wrapper from an explicit value.
 ///
-/// Unlike [`From`], this trait receives the [`Scope`] that owns the node.
+/// Unlike [`From`], this trait receives the [`OwnerAccess`] that owns the node.
 /// Implementations must create every node, callback, and owner resource from
-/// that scope. They must not create a [`crate::Runtime`], a detached scope, or use
+/// that owner. They must not create a [`crate::Runtime`], a detached owner, or use
 /// thread-local runtime state.
-pub trait RxFrom<'scope>: Sized {
-    type Value: 'scope;
+pub trait RxFrom<'owner>: Sized {
+    type Value: 'owner;
 
-    fn rx_from<V>(scope: Scope<'scope>, value: V) -> SilexResult<Self>
+    fn rx_from<V>(owner: OwnerAccess<'owner>, value: V) -> SilexResult<Self>
     where
         V: Into<Self::Value>;
 }
@@ -38,42 +38,42 @@ pub trait RxFrom<'scope>: Sized {
 /// Convert an existing scoped reactive source or an explicitly supported
 /// value into a target reactive wrapper.
 ///
-/// Unlike [`Into`], this trait receives the [`Scope`] that owns a node created
+/// Unlike [`Into`], this trait receives the [`OwnerAccess`] that owns a node created
 /// for a constant value. Existing sources are converted without materializing
 /// another node, so their runtime provenance remains attached to the original
 /// handle.
 #[diagnostic::on_unimplemented(
     message = "reactive input must be an existing scoped source or an explicitly supported value",
-    note = "constant reactive inputs require a Scope<'scope> and only the framework-supported value types are accepted"
+    note = "constant reactive inputs require a OwnerAccess<'owner> and only the framework-supported value types are accepted"
 )]
-pub trait ReactiveInput<'scope, Target>: Sized {
-    fn into_reactive_input(self, scope: Scope<'scope>) -> SilexResult<Target>;
+pub trait ReactiveInput<'owner, Target>: Sized {
+    fn into_reactive_input(self, owner: OwnerAccess<'owner>) -> SilexResult<Target>;
 }
 
-/// Construct a scope-owned reactive wrapper from its value's default.
+/// Construct a owner-owned reactive wrapper from its value's default.
 ///
 /// Every [`RxFrom`] implementation automatically implements this trait. The
 /// default operation only delegates to [`RxFrom::rx_from`], so it cannot
-/// create a [`crate::Runtime`], a detached scope, or thread-local runtime state.
-pub trait RxDefault<'scope>: RxFrom<'scope> {
-    fn rx_default(scope: Scope<'scope>) -> SilexResult<Self>
+/// create a [`crate::Runtime`], a detached owner, or thread-local runtime state.
+pub trait RxDefault<'owner>: RxFrom<'owner> {
+    fn rx_default(owner: OwnerAccess<'owner>) -> SilexResult<Self>
     where
         Self::Value: Default,
     {
-        Self::rx_from(scope, Self::Value::default())
+        Self::rx_from(owner, Self::Value::default())
     }
 }
 
-impl<'scope, T> RxDefault<'scope> for T where T: RxFrom<'scope> {}
+impl<'owner, T> RxDefault<'owner> for T where T: RxFrom<'owner> {}
 
-impl<'scope, T: 'scope> RxFrom<'scope> for Signal<'scope, T> {
+impl<'owner, T: 'owner> RxFrom<'owner> for Signal<'owner, T> {
     type Value = T;
 
-    fn rx_from<V>(scope: Scope<'scope>, value: V) -> SilexResult<Self>
+    fn rx_from<V>(owner: OwnerAccess<'owner>, value: V) -> SilexResult<Self>
     where
         V: Into<Self::Value>,
     {
-        scope.stored(value.into()).map(Into::into)
+        owner.stored(value.into()).map(Into::into)
     }
 }
 
@@ -91,48 +91,48 @@ pub trait RxRead: RxValue {
 
 /// Exposes the runtime provenance retained by a scoped reactive source.
 pub trait RuntimeScoped {
-    fn runtime_scope(&self) -> Scope<'_>;
+    fn owner_access(&self) -> OwnerAccess<'_>;
 }
 
-impl<'scope, T, M> RuntimeScoped for Rx<'scope, T, M> {
-    fn runtime_scope(&self) -> Scope<'_> {
-        self.scope
+impl<'owner, T, M> RuntimeScoped for Rx<'owner, T, M> {
+    fn owner_access(&self) -> OwnerAccess<'_> {
+        self.owner
     }
 }
 
-impl<'scope, T> RuntimeScoped for ReadSignal<'scope, T> {
-    fn runtime_scope(&self) -> Scope<'_> {
-        self.scope
+impl<'owner, T> RuntimeScoped for ReadSignal<'owner, T> {
+    fn owner_access(&self) -> OwnerAccess<'_> {
+        self.owner
     }
 }
 
-impl<'scope, T> RuntimeScoped for WriteSignal<'scope, T> {
-    fn runtime_scope(&self) -> Scope<'_> {
-        self.scope
+impl<'owner, T> RuntimeScoped for WriteSignal<'owner, T> {
+    fn owner_access(&self) -> OwnerAccess<'_> {
+        self.owner
     }
 }
 
-impl<'scope, T> RuntimeScoped for RwSignal<'scope, T> {
-    fn runtime_scope(&self) -> Scope<'_> {
-        self.read.runtime_scope()
+impl<'owner, T> RuntimeScoped for RwSignal<'owner, T> {
+    fn owner_access(&self) -> OwnerAccess<'_> {
+        self.read.owner_access()
     }
 }
 
-impl<'scope, T> RuntimeScoped for Memo<'scope, T> {
-    fn runtime_scope(&self) -> Scope<'_> {
-        self.scope
+impl<'owner, T> RuntimeScoped for Computed<'owner, T> {
+    fn owner_access(&self) -> OwnerAccess<'_> {
+        self.owner
     }
 }
 
-impl<'scope, T> RuntimeScoped for StoredValue<'scope, T> {
-    fn runtime_scope(&self) -> Scope<'_> {
-        self.scope
+impl<'owner, T> RuntimeScoped for StoredValue<'owner, T> {
+    fn owner_access(&self) -> OwnerAccess<'_> {
+        self.owner
     }
 }
 
-impl<'scope, T> RuntimeScoped for Signal<'scope, T> {
-    fn runtime_scope(&self) -> Scope<'_> {
-        self.rx.runtime_scope()
+impl<'owner, T> RuntimeScoped for Signal<'owner, T> {
+    fn owner_access(&self) -> OwnerAccess<'_> {
+        self.rx.owner_access()
     }
 }
 
@@ -140,187 +140,199 @@ impl<S, F, O: ?Sized> RuntimeScoped for SignalSlice<S, F, O>
 where
     S: RuntimeScoped,
 {
-    fn runtime_scope(&self) -> Scope<'_> {
-        self.source.runtime_scope()
+    fn owner_access(&self) -> OwnerAccess<'_> {
+        self.source.owner_access()
     }
 }
 
-impl<'scope, T: 'scope> RxFrom<'scope> for ReadSignal<'scope, T> {
+impl<'owner, T: 'owner> RxFrom<'owner> for ReadSignal<'owner, T> {
     type Value = T;
 
-    fn rx_from<V>(scope: Scope<'scope>, value: V) -> SilexResult<Self>
+    fn rx_from<V>(owner: OwnerAccess<'owner>, value: V) -> SilexResult<Self>
     where
         V: Into<Self::Value>,
     {
-        scope.signal(value.into()).map(|(read, _)| read)
+        owner.signal(value.into()).map(|(read, _)| read)
     }
 }
 
-impl<'scope, T: 'scope> RxFrom<'scope> for RwSignal<'scope, T> {
+impl<'owner, T: 'owner> RxFrom<'owner> for RwSignal<'owner, T> {
     type Value = T;
 
-    fn rx_from<V>(scope: Scope<'scope>, value: V) -> SilexResult<Self>
+    fn rx_from<V>(owner: OwnerAccess<'owner>, value: V) -> SilexResult<Self>
     where
         V: Into<Self::Value>,
     {
-        scope.rw_signal(value.into())
+        owner.rw_signal(value.into())
     }
 }
 
-impl<'scope, T: Clone + PartialEq + 'scope> RxFrom<'scope> for Memo<'scope, T> {
+impl<'owner, T: Clone + PartialEq + 'owner> RxFrom<'owner> for Computed<'owner, T> {
     type Value = T;
 
-    fn rx_from<V>(scope: Scope<'scope>, value: V) -> SilexResult<Self>
+    fn rx_from<V>(owner: OwnerAccess<'owner>, value: V) -> SilexResult<Self>
     where
         V: Into<Self::Value>,
     {
         let value = value.into();
-        scope.memo_infallible(move |_| value.clone())
+        let handler = owner.error_handler(|_: SilexError| {
+            unreachable!("constant computed cannot report a user error")
+        })?;
+        owner.computed(move || Ok::<T, SilexError>(value.clone()), handler)
     }
 }
 
-impl<'scope, T: 'scope> RxFrom<'scope> for StoredValue<'scope, T> {
+impl<'owner, T: 'owner> RxFrom<'owner> for StoredValue<'owner, T> {
     type Value = T;
 
-    fn rx_from<V>(scope: Scope<'scope>, value: V) -> SilexResult<Self>
+    fn rx_from<V>(owner: OwnerAccess<'owner>, value: V) -> SilexResult<Self>
     where
         V: Into<Self::Value>,
     {
-        scope.stored(value.into())
+        owner.stored(value.into())
     }
 }
 
-impl<'scope, T: 'scope> RxFrom<'scope> for Rx<'scope, T, RxValueKind> {
+impl<'owner, T: 'owner> RxFrom<'owner> for Rx<'owner, T, RxValueKind> {
     type Value = T;
 
-    fn rx_from<V>(scope: Scope<'scope>, value: V) -> SilexResult<Self>
+    fn rx_from<V>(owner: OwnerAccess<'owner>, value: V) -> SilexResult<Self>
     where
         V: Into<Self::Value>,
     {
-        scope.constant(value.into())
+        owner.constant(value.into())
     }
 }
 
-impl<'scope, T: 'scope> RxFrom<'scope> for Callback<'scope, T> {
+impl<'owner, T: 'owner> RxFrom<'owner> for Callback<'owner, T> {
     type Value = ();
 
-    fn rx_from<V>(scope: Scope<'scope>, _value: V) -> SilexResult<Self>
+    fn rx_from<V>(owner: OwnerAccess<'owner>, _value: V) -> SilexResult<Self>
     where
         V: Into<Self::Value>,
     {
-        scope.callback(|_: T| Ok::<(), SilexError>(()))
+        owner.callback(|_: T| Ok::<(), SilexError>(()))
     }
 }
 
-impl<'scope, T: 'scope> RxFrom<'scope> for NodeRef<'scope, T> {
+impl<'owner, T: 'owner> RxFrom<'owner> for NodeRef<'owner, T> {
     type Value = ();
 
-    fn rx_from<V>(scope: Scope<'scope>, _value: V) -> SilexResult<Self>
+    fn rx_from<V>(owner: OwnerAccess<'owner>, _value: V) -> SilexResult<Self>
     where
         V: Into<Self::Value>,
     {
-        scope.node_ref()
+        owner.node_ref()
     }
 }
 
-impl<'scope, T: 'scope> ReactiveInput<'scope, Signal<'scope, T>> for Signal<'scope, T> {
-    fn into_reactive_input(self, _scope: Scope<'scope>) -> SilexResult<Signal<'scope, T>> {
+impl<'owner, T: 'owner> ReactiveInput<'owner, Signal<'owner, T>> for Signal<'owner, T> {
+    fn into_reactive_input(self, _scope: OwnerAccess<'owner>) -> SilexResult<Signal<'owner, T>> {
         Ok(self)
     }
 }
 
-impl<'scope, T: 'scope> ReactiveInput<'scope, Signal<'scope, T>> for ReadSignal<'scope, T> {
-    fn into_reactive_input(self, _scope: Scope<'scope>) -> SilexResult<Signal<'scope, T>> {
+impl<'owner, T: 'owner> ReactiveInput<'owner, Signal<'owner, T>> for ReadSignal<'owner, T> {
+    fn into_reactive_input(self, _scope: OwnerAccess<'owner>) -> SilexResult<Signal<'owner, T>> {
         Ok(self.into())
     }
 }
 
-impl<'scope, T: 'scope> ReactiveInput<'scope, Signal<'scope, T>> for RwSignal<'scope, T> {
-    fn into_reactive_input(self, _scope: Scope<'scope>) -> SilexResult<Signal<'scope, T>> {
+impl<'owner, T: 'owner> ReactiveInput<'owner, Signal<'owner, T>> for RwSignal<'owner, T> {
+    fn into_reactive_input(self, _scope: OwnerAccess<'owner>) -> SilexResult<Signal<'owner, T>> {
         Ok(self.into())
     }
 }
 
-impl<'scope, T: 'scope> ReactiveInput<'scope, Signal<'scope, T>> for Memo<'scope, T> {
-    fn into_reactive_input(self, _scope: Scope<'scope>) -> SilexResult<Signal<'scope, T>> {
+impl<'owner, T: 'owner> ReactiveInput<'owner, Signal<'owner, T>> for Computed<'owner, T> {
+    fn into_reactive_input(self, _scope: OwnerAccess<'owner>) -> SilexResult<Signal<'owner, T>> {
         Ok(self.into())
     }
 }
 
-impl<'scope, T: 'scope> ReactiveInput<'scope, Signal<'scope, T>> for StoredValue<'scope, T> {
-    fn into_reactive_input(self, _scope: Scope<'scope>) -> SilexResult<Signal<'scope, T>> {
+impl<'owner, T: 'owner> ReactiveInput<'owner, Signal<'owner, T>> for StoredValue<'owner, T> {
+    fn into_reactive_input(self, _scope: OwnerAccess<'owner>) -> SilexResult<Signal<'owner, T>> {
         Ok(self.into())
     }
 }
 
-impl<'scope, T: 'scope> ReactiveInput<'scope, Signal<'scope, T>> for Rx<'scope, T, RxValueKind> {
-    fn into_reactive_input(self, _scope: Scope<'scope>) -> SilexResult<Signal<'scope, T>> {
+impl<'owner, T: 'owner> ReactiveInput<'owner, Signal<'owner, T>> for Rx<'owner, T, RxValueKind> {
+    fn into_reactive_input(self, _scope: OwnerAccess<'owner>) -> SilexResult<Signal<'owner, T>> {
         Ok(self.into_signal())
     }
 }
 
-impl<'scope, T: 'scope> ReactiveInput<'scope, ReadSignal<'scope, T>> for ReadSignal<'scope, T> {
-    fn into_reactive_input(self, _scope: Scope<'scope>) -> SilexResult<ReadSignal<'scope, T>> {
+impl<'owner, T: 'owner> ReactiveInput<'owner, ReadSignal<'owner, T>> for ReadSignal<'owner, T> {
+    fn into_reactive_input(
+        self,
+        _scope: OwnerAccess<'owner>,
+    ) -> SilexResult<ReadSignal<'owner, T>> {
         Ok(self)
     }
 }
 
-impl<'scope, T: 'scope> ReactiveInput<'scope, ReadSignal<'scope, T>> for RwSignal<'scope, T> {
-    fn into_reactive_input(self, _scope: Scope<'scope>) -> SilexResult<ReadSignal<'scope, T>> {
+impl<'owner, T: 'owner> ReactiveInput<'owner, ReadSignal<'owner, T>> for RwSignal<'owner, T> {
+    fn into_reactive_input(
+        self,
+        _scope: OwnerAccess<'owner>,
+    ) -> SilexResult<ReadSignal<'owner, T>> {
         Ok(self.read_signal())
     }
 }
 
-impl<'scope, T: 'scope> ReactiveInput<'scope, RwSignal<'scope, T>> for RwSignal<'scope, T> {
-    fn into_reactive_input(self, _scope: Scope<'scope>) -> SilexResult<RwSignal<'scope, T>> {
+impl<'owner, T: 'owner> ReactiveInput<'owner, RwSignal<'owner, T>> for RwSignal<'owner, T> {
+    fn into_reactive_input(self, _scope: OwnerAccess<'owner>) -> SilexResult<RwSignal<'owner, T>> {
         Ok(self)
     }
 }
 
-impl<'scope, T: 'scope> ReactiveInput<'scope, Memo<'scope, T>> for Memo<'scope, T> {
-    fn into_reactive_input(self, _scope: Scope<'scope>) -> SilexResult<Memo<'scope, T>> {
+impl<'owner, T: 'owner> ReactiveInput<'owner, Computed<'owner, T>> for Computed<'owner, T> {
+    fn into_reactive_input(self, _scope: OwnerAccess<'owner>) -> SilexResult<Computed<'owner, T>> {
         Ok(self)
     }
 }
 
-impl<'scope, T: 'scope> ReactiveInput<'scope, StoredValue<'scope, T>> for StoredValue<'scope, T> {
-    fn into_reactive_input(self, _scope: Scope<'scope>) -> SilexResult<StoredValue<'scope, T>> {
+impl<'owner, T: 'owner> ReactiveInput<'owner, StoredValue<'owner, T>> for StoredValue<'owner, T> {
+    fn into_reactive_input(
+        self,
+        _scope: OwnerAccess<'owner>,
+    ) -> SilexResult<StoredValue<'owner, T>> {
         Ok(self)
     }
 }
 
-impl<'scope, T: 'scope> ReactiveInput<'scope, Rx<'scope, T>> for Signal<'scope, T> {
-    fn into_reactive_input(self, _scope: Scope<'scope>) -> SilexResult<Rx<'scope, T>> {
+impl<'owner, T: 'owner> ReactiveInput<'owner, Rx<'owner, T>> for Signal<'owner, T> {
+    fn into_reactive_input(self, _scope: OwnerAccess<'owner>) -> SilexResult<Rx<'owner, T>> {
         Ok(self.into_rx())
     }
 }
 
-impl<'scope, T: 'scope> ReactiveInput<'scope, Rx<'scope, T>> for ReadSignal<'scope, T> {
-    fn into_reactive_input(self, _scope: Scope<'scope>) -> SilexResult<Rx<'scope, T>> {
+impl<'owner, T: 'owner> ReactiveInput<'owner, Rx<'owner, T>> for ReadSignal<'owner, T> {
+    fn into_reactive_input(self, _scope: OwnerAccess<'owner>) -> SilexResult<Rx<'owner, T>> {
         Ok(self.into_rx())
     }
 }
 
-impl<'scope, T: 'scope> ReactiveInput<'scope, Rx<'scope, T>> for RwSignal<'scope, T> {
-    fn into_reactive_input(self, _scope: Scope<'scope>) -> SilexResult<Rx<'scope, T>> {
+impl<'owner, T: 'owner> ReactiveInput<'owner, Rx<'owner, T>> for RwSignal<'owner, T> {
+    fn into_reactive_input(self, _scope: OwnerAccess<'owner>) -> SilexResult<Rx<'owner, T>> {
         Ok(self.into_rx())
     }
 }
 
-impl<'scope, T: 'scope> ReactiveInput<'scope, Rx<'scope, T>> for Memo<'scope, T> {
-    fn into_reactive_input(self, _scope: Scope<'scope>) -> SilexResult<Rx<'scope, T>> {
+impl<'owner, T: 'owner> ReactiveInput<'owner, Rx<'owner, T>> for Computed<'owner, T> {
+    fn into_reactive_input(self, _scope: OwnerAccess<'owner>) -> SilexResult<Rx<'owner, T>> {
         Ok(self.into_rx())
     }
 }
 
-impl<'scope, T: 'scope> ReactiveInput<'scope, Rx<'scope, T>> for StoredValue<'scope, T> {
-    fn into_reactive_input(self, _scope: Scope<'scope>) -> SilexResult<Rx<'scope, T>> {
+impl<'owner, T: 'owner> ReactiveInput<'owner, Rx<'owner, T>> for StoredValue<'owner, T> {
+    fn into_reactive_input(self, _scope: OwnerAccess<'owner>) -> SilexResult<Rx<'owner, T>> {
         Ok(self.into_rx())
     }
 }
 
-impl<'scope, T: 'scope> ReactiveInput<'scope, Rx<'scope, T>> for Rx<'scope, T, RxValueKind> {
-    fn into_reactive_input(self, _scope: Scope<'scope>) -> SilexResult<Rx<'scope, T>> {
+impl<'owner, T: 'owner> ReactiveInput<'owner, Rx<'owner, T>> for Rx<'owner, T, RxValueKind> {
+    fn into_reactive_input(self, _scope: OwnerAccess<'owner>) -> SilexResult<Rx<'owner, T>> {
         Ok(self)
     }
 }
@@ -328,57 +340,57 @@ impl<'scope, T: 'scope> ReactiveInput<'scope, Rx<'scope, T>> for Rx<'scope, T, R
 macro_rules! impl_reactive_input_values {
     ($($value:ty),* $(,)?) => {
         $(
-            impl<'scope> ReactiveInput<'scope, Signal<'scope, $value>> for $value {
+            impl<'owner> ReactiveInput<'owner, Signal<'owner, $value>> for $value {
                 fn into_reactive_input(
                     self,
-                    scope: Scope<'scope>,
-                ) -> SilexResult<Signal<'scope, $value>> {
-                    <Signal<'scope, $value> as RxFrom<'scope>>::rx_from(scope, self)
+                    owner: OwnerAccess<'owner>,
+                ) -> SilexResult<Signal<'owner, $value>> {
+                    <Signal<'owner, $value> as RxFrom<'owner>>::rx_from(owner, self)
                 }
             }
 
-            impl<'scope> ReactiveInput<'scope, ReadSignal<'scope, $value>> for $value {
+            impl<'owner> ReactiveInput<'owner, ReadSignal<'owner, $value>> for $value {
                 fn into_reactive_input(
                     self,
-                    scope: Scope<'scope>,
-                ) -> SilexResult<ReadSignal<'scope, $value>> {
-                    <ReadSignal<'scope, $value> as RxFrom<'scope>>::rx_from(scope, self)
+                    owner: OwnerAccess<'owner>,
+                ) -> SilexResult<ReadSignal<'owner, $value>> {
+                    <ReadSignal<'owner, $value> as RxFrom<'owner>>::rx_from(owner, self)
                 }
             }
 
-            impl<'scope> ReactiveInput<'scope, RwSignal<'scope, $value>> for $value {
+            impl<'owner> ReactiveInput<'owner, RwSignal<'owner, $value>> for $value {
                 fn into_reactive_input(
                     self,
-                    scope: Scope<'scope>,
-                ) -> SilexResult<RwSignal<'scope, $value>> {
-                    <RwSignal<'scope, $value> as RxFrom<'scope>>::rx_from(scope, self)
+                    owner: OwnerAccess<'owner>,
+                ) -> SilexResult<RwSignal<'owner, $value>> {
+                    <RwSignal<'owner, $value> as RxFrom<'owner>>::rx_from(owner, self)
                 }
             }
 
-            impl<'scope> ReactiveInput<'scope, Memo<'scope, $value>> for $value {
+            impl<'owner> ReactiveInput<'owner, Computed<'owner, $value>> for $value {
                 fn into_reactive_input(
                     self,
-                    scope: Scope<'scope>,
-                ) -> SilexResult<Memo<'scope, $value>> {
-                    <Memo<'scope, $value> as RxFrom<'scope>>::rx_from(scope, self)
+                    owner: OwnerAccess<'owner>,
+                ) -> SilexResult<Computed<'owner, $value>> {
+                    <Computed<'owner, $value> as RxFrom<'owner>>::rx_from(owner, self)
                 }
             }
 
-            impl<'scope> ReactiveInput<'scope, StoredValue<'scope, $value>> for $value {
+            impl<'owner> ReactiveInput<'owner, StoredValue<'owner, $value>> for $value {
                 fn into_reactive_input(
                     self,
-                    scope: Scope<'scope>,
-                ) -> SilexResult<StoredValue<'scope, $value>> {
-                    <StoredValue<'scope, $value> as RxFrom<'scope>>::rx_from(scope, self)
+                    owner: OwnerAccess<'owner>,
+                ) -> SilexResult<StoredValue<'owner, $value>> {
+                    <StoredValue<'owner, $value> as RxFrom<'owner>>::rx_from(owner, self)
                 }
             }
 
-            impl<'scope> ReactiveInput<'scope, Rx<'scope, $value>> for $value {
+            impl<'owner> ReactiveInput<'owner, Rx<'owner, $value>> for $value {
                 fn into_reactive_input(
                     self,
-                    scope: Scope<'scope>,
-                ) -> SilexResult<Rx<'scope, $value>> {
-                    <Rx<'scope, $value> as RxFrom<'scope>>::rx_from(scope, self)
+                    owner: OwnerAccess<'owner>,
+                ) -> SilexResult<Rx<'owner, $value>> {
+                    <Rx<'owner, $value> as RxFrom<'owner>>::rx_from(owner, self)
                 }
             }
         )*
@@ -409,69 +421,69 @@ impl_reactive_input_values!(
 macro_rules! impl_reactive_input_str_values {
     ($($target:ty),* $(,)?) => {
         $(
-            impl<'scope, 'value> ReactiveInput<'scope, Signal<'scope, $target>>
+            impl<'owner, 'value> ReactiveInput<'owner, Signal<'owner, $target>>
                 for &'value str
             {
                 fn into_reactive_input(
                     self,
-                    scope: Scope<'scope>,
-                ) -> SilexResult<Signal<'scope, $target>> {
-                    <Signal<'scope, $target> as RxFrom<'scope>>::rx_from(scope, self)
+                    owner: OwnerAccess<'owner>,
+                ) -> SilexResult<Signal<'owner, $target>> {
+                    <Signal<'owner, $target> as RxFrom<'owner>>::rx_from(owner, self)
                 }
             }
 
-            impl<'scope, 'value> ReactiveInput<'scope, ReadSignal<'scope, $target>>
+            impl<'owner, 'value> ReactiveInput<'owner, ReadSignal<'owner, $target>>
                 for &'value str
             {
                 fn into_reactive_input(
                     self,
-                    scope: Scope<'scope>,
-                ) -> SilexResult<ReadSignal<'scope, $target>> {
-                    <ReadSignal<'scope, $target> as RxFrom<'scope>>::rx_from(scope, self)
+                    owner: OwnerAccess<'owner>,
+                ) -> SilexResult<ReadSignal<'owner, $target>> {
+                    <ReadSignal<'owner, $target> as RxFrom<'owner>>::rx_from(owner, self)
                 }
             }
 
-            impl<'scope, 'value> ReactiveInput<'scope, RwSignal<'scope, $target>>
+            impl<'owner, 'value> ReactiveInput<'owner, RwSignal<'owner, $target>>
                 for &'value str
             {
                 fn into_reactive_input(
                     self,
-                    scope: Scope<'scope>,
-                ) -> SilexResult<RwSignal<'scope, $target>> {
-                    <RwSignal<'scope, $target> as RxFrom<'scope>>::rx_from(scope, self)
+                    owner: OwnerAccess<'owner>,
+                ) -> SilexResult<RwSignal<'owner, $target>> {
+                    <RwSignal<'owner, $target> as RxFrom<'owner>>::rx_from(owner, self)
                 }
             }
 
-            impl<'scope, 'value> ReactiveInput<'scope, Memo<'scope, $target>>
+            impl<'owner, 'value> ReactiveInput<'owner, Computed<'owner, $target>>
                 for &'value str
             {
                 fn into_reactive_input(
                     self,
-                    scope: Scope<'scope>,
-                ) -> SilexResult<Memo<'scope, $target>> {
-                    <Memo<'scope, $target> as RxFrom<'scope>>::rx_from(scope, self)
+                    owner: OwnerAccess<'owner>,
+                ) -> SilexResult<Computed<'owner, $target>> {
+                    <Computed<'owner, $target> as RxFrom<'owner>>::rx_from(owner, self)
                 }
             }
 
-            impl<'scope, 'value> ReactiveInput<'scope, StoredValue<'scope, $target>>
+            impl<'owner, 'value> ReactiveInput<'owner, StoredValue<'owner, $target>>
                 for &'value str
             {
                 fn into_reactive_input(
                     self,
-                    scope: Scope<'scope>,
-                ) -> SilexResult<StoredValue<'scope, $target>> {
-                    <StoredValue<'scope, $target> as RxFrom<'scope>>::rx_from(scope, self)
+                    owner: OwnerAccess<'owner>,
+                ) -> SilexResult<StoredValue<'owner, $target>> {
+                    <StoredValue<'owner, $target> as RxFrom<'owner>>::rx_from(owner, self)
                 }
             }
 
-            impl<'scope, 'value> ReactiveInput<'scope, Rx<'scope, $target>>
+            impl<'owner, 'value> ReactiveInput<'owner, Rx<'owner, $target>>
                 for &'value str
             {
                 fn into_reactive_input(
                     self,
-                    scope: Scope<'scope>,
-                ) -> SilexResult<Rx<'scope, $target>> {
-                    <Rx<'scope, $target> as RxFrom<'scope>>::rx_from(scope, self)
+                    owner: OwnerAccess<'owner>,
+                ) -> SilexResult<Rx<'owner, $target>> {
+                    <Rx<'owner, $target> as RxFrom<'owner>>::rx_from(owner, self)
                 }
             }
         )*
@@ -551,11 +563,11 @@ pub trait RxWrite: RxValue {
     }
 }
 
-impl<'scope, T: 'scope> RxValue for ReadSignal<'scope, T> {
+impl<'owner, T: 'owner> RxValue for ReadSignal<'owner, T> {
     type Value = T;
 }
 
-impl<'scope, T: 'scope> RxRead for ReadSignal<'scope, T> {
+impl<'owner, T: 'owner> RxRead for ReadSignal<'owner, T> {
     fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         self.inner.with(f).map_err(SilexError::fatal)
     }
@@ -565,25 +577,25 @@ impl<'scope, T: 'scope> RxRead for ReadSignal<'scope, T> {
     }
 }
 
-impl<'scope, T: 'scope> RxValue for WriteSignal<'scope, T> {
+impl<'owner, T: 'owner> RxValue for WriteSignal<'owner, T> {
     type Value = T;
 }
 
-impl<'scope, T: 'scope> RxWrite for WriteSignal<'scope, T> {
+impl<'owner, T: 'owner> RxWrite for WriteSignal<'owner, T> {
     fn rx_update_untracked<U>(&self, f: impl FnOnce(&mut T) -> U) -> SilexResult<U> {
         self.inner.update(f).map_err(SilexError::fatal)
     }
 
     fn rx_notify(&self) -> SilexResult<()> {
-        raw_notify(&self.inner).map_err(SilexError::fatal)
+        self.inner.notify().map_err(SilexError::fatal)
     }
 }
 
-impl<'scope, T: 'scope> RxValue for RwSignal<'scope, T> {
+impl<'owner, T: 'owner> RxValue for RwSignal<'owner, T> {
     type Value = T;
 }
 
-impl<'scope, T: 'scope> RxRead for RwSignal<'scope, T> {
+impl<'owner, T: 'owner> RxRead for RwSignal<'owner, T> {
     fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         self.read.with(f)
     }
@@ -593,7 +605,7 @@ impl<'scope, T: 'scope> RxRead for RwSignal<'scope, T> {
     }
 }
 
-impl<'scope, T: 'scope> RxWrite for RwSignal<'scope, T> {
+impl<'owner, T: 'owner> RxWrite for RwSignal<'owner, T> {
     fn rx_update_untracked<U>(&self, f: impl FnOnce(&mut T) -> U) -> SilexResult<U> {
         self.write.rx_update_untracked(f)
     }
@@ -603,11 +615,11 @@ impl<'scope, T: 'scope> RxWrite for RwSignal<'scope, T> {
     }
 }
 
-impl<'scope, T: 'scope> RxValue for Signal<'scope, T> {
+impl<'owner, T: 'owner> RxValue for Signal<'owner, T> {
     type Value = T;
 }
 
-impl<'scope, T: 'scope> RxRead for Signal<'scope, T> {
+impl<'owner, T: 'owner> RxRead for Signal<'owner, T> {
     fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         self.rx.with(f)
     }
@@ -617,22 +629,15 @@ impl<'scope, T: 'scope> RxRead for Signal<'scope, T> {
     }
 }
 
-impl<'scope, T: 'scope> RxValue for Rx<'scope, T, RxValueKind> {
+impl<'owner, T: 'owner> RxValue for Rx<'owner, T, RxValueKind> {
     type Value = T;
 }
 
-impl<'scope, T: 'scope> RxRead for Rx<'scope, T, RxValueKind> {
+impl<'owner, T: 'owner> RxRead for Rx<'owner, T, RxValueKind> {
     fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         match &self.inner {
             RxInner::Signal(signal) => signal.with(f).map_err(SilexError::fatal),
-            RxInner::Memo(memo) => memo.with(f).map_err(map_callback_error),
-            RxInner::Derived(derived) => derived.with(f).map_err(|error| match error {
-                CallbackInvokeError::Runtime(error) => SilexError::fatal(error),
-                CallbackInvokeError::User(error) => error,
-                CallbackInvokeError::Handler(error) => {
-                    SilexError::fatal(ReactiveError::Handler(error))
-                }
-            }),
+            RxInner::Computed(computed) => computed.with(f).map_err(map_callback_error),
             RxInner::Stored(stored) => stored.with(f).map_err(SilexError::fatal),
         }
     }
@@ -640,24 +645,17 @@ impl<'scope, T: 'scope> RxRead for Rx<'scope, T, RxValueKind> {
     fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         match &self.inner {
             RxInner::Signal(signal) => signal.with_untracked(f).map_err(SilexError::fatal),
-            RxInner::Memo(memo) => memo.with_untracked(f).map_err(map_callback_error),
-            RxInner::Derived(derived) => derived.with_untracked(f).map_err(|error| match error {
-                CallbackInvokeError::Runtime(error) => SilexError::fatal(error),
-                CallbackInvokeError::User(error) => error,
-                CallbackInvokeError::Handler(error) => {
-                    SilexError::fatal(ReactiveError::Handler(error))
-                }
-            }),
+            RxInner::Computed(computed) => computed.with_untracked(f).map_err(map_callback_error),
             RxInner::Stored(stored) => stored.with(f).map_err(SilexError::fatal),
         }
     }
 }
 
-impl<'scope, T: 'scope> RxValue for StoredValue<'scope, T> {
+impl<'owner, T: 'owner> RxValue for StoredValue<'owner, T> {
     type Value = T;
 }
 
-impl<'scope, T: 'scope> RxRead for StoredValue<'scope, T> {
+impl<'owner, T: 'owner> RxRead for StoredValue<'owner, T> {
     fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         self.inner.with(f).map_err(SilexError::fatal)
     }
@@ -667,7 +665,7 @@ impl<'scope, T: 'scope> RxRead for StoredValue<'scope, T> {
     }
 }
 
-impl<'scope, T: 'scope> RxWrite for StoredValue<'scope, T> {
+impl<'owner, T: 'owner> RxWrite for StoredValue<'owner, T> {
     fn rx_update_untracked<U>(&self, f: impl FnOnce(&mut T) -> U) -> SilexResult<U> {
         self.inner.update(f).map_err(SilexError::fatal)
     }
@@ -677,7 +675,7 @@ impl<'scope, T: 'scope> RxWrite for StoredValue<'scope, T> {
     }
 }
 
-impl<'scope, T: 'scope> RxValue for Memo<'scope, T> {
+impl<'owner, T: 'owner> RxValue for Computed<'owner, T> {
     type Value = T;
 }
 
@@ -716,7 +714,7 @@ impl RxValue for &str {
     type Value = String;
 }
 
-impl<'scope, T: 'scope> RxRead for Memo<'scope, T> {
+impl<'owner, T: 'owner> RxRead for Computed<'owner, T> {
     fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         self.inner.with(f).map_err(map_callback_error)
     }
@@ -790,110 +788,118 @@ impl_tuple_rx_traits!(A: 0, B: 1, C: 2, D: 3, E: 4, F: 5);
 
 /// Reactive helpers for `Option<T>` values.
 pub trait RxOptionExt<T>: RxRead<Value = Option<T>> + Clone {
-    fn map_or<'scope, U, H>(
+    fn map_or<'owner, U, H>(
         &self,
-        scope: Scope<'scope>,
+        owner: OwnerAccess<'owner>,
         default: U,
-        f: impl Fn(&T) -> U + 'scope,
+        f: impl Fn(&T) -> U + 'owner,
         error_handler: H,
-    ) -> SilexResult<Rx<'scope, U>>
+    ) -> SilexResult<Rx<'owner, U>>
     where
-        Self: ReactiveSource<'scope> + 'scope,
-        U: Clone + 'scope,
-        T: 'scope,
-        H: ErrorHandlerInput<'scope>,
+        Self: ReactiveSource<'owner> + 'owner,
+        U: Clone + 'owner,
+        T: 'owner,
+        H: ErrorHandlerInput<'owner>,
     {
         let error_handler = error_handler.handler_ref();
-        let source = scope.promote(self.clone(), error_handler)?;
-        scope.derived(
-            move || source.with(|value| value.as_ref().map(&f).unwrap_or_else(|| default.clone())),
-            error_handler,
-        )
+        let source = owner.promote(self.clone(), error_handler)?;
+        owner
+            .computed_always(
+                move || {
+                    source.with(|value| value.as_ref().map(&f).unwrap_or_else(|| default.clone()))
+                },
+                error_handler,
+            )
+            .map(Computed::into_rx)
     }
 
-    fn unwrap_or<'scope, H>(
+    fn unwrap_or<'owner, H>(
         &self,
-        scope: Scope<'scope>,
+        owner: OwnerAccess<'owner>,
         default: T,
         error_handler: H,
-    ) -> SilexResult<Rx<'scope, T>>
+    ) -> SilexResult<Rx<'owner, T>>
     where
-        Self: ReactiveSource<'scope> + 'scope,
-        T: PartialEq + Clone + 'scope,
-        H: ErrorHandlerInput<'scope>,
+        Self: ReactiveSource<'owner> + 'owner,
+        T: PartialEq + Clone + 'owner,
+        H: ErrorHandlerInput<'owner>,
     {
         let error_handler = error_handler.handler_ref();
-        let source = scope.promote(self.clone(), error_handler)?;
-        scope
-            .memo(
-                move |_| {
+        let source = owner.promote(self.clone(), error_handler)?;
+        owner
+            .computed(
+                move || {
                     source.with(|value| value.as_ref().cloned().unwrap_or_else(|| default.clone()))
                 },
                 error_handler,
             )
-            .map(|memo| memo.into_rx())
+            .map(|computed| computed.into_rx())
     }
 
-    fn map_or_else<'scope, U, H>(
+    fn map_or_else<'owner, U, H>(
         &self,
-        scope: Scope<'scope>,
-        default: impl Fn() -> U + 'scope,
-        f: impl Fn(&T) -> U + 'scope,
+        owner: OwnerAccess<'owner>,
+        default: impl Fn() -> U + 'owner,
+        f: impl Fn(&T) -> U + 'owner,
         error_handler: H,
-    ) -> SilexResult<Rx<'scope, U>>
+    ) -> SilexResult<Rx<'owner, U>>
     where
-        Self: ReactiveSource<'scope> + 'scope,
-        U: 'scope,
-        T: 'scope,
-        H: ErrorHandlerInput<'scope>,
+        Self: ReactiveSource<'owner> + 'owner,
+        U: 'owner,
+        T: 'owner,
+        H: ErrorHandlerInput<'owner>,
     {
         let error_handler = error_handler.handler_ref();
-        let source = scope.promote(self.clone(), error_handler)?;
-        scope.derived(
-            move || source.with(|value| value.as_ref().map(&f).unwrap_or_else(&default)),
-            error_handler,
-        )
-    }
-
-    fn and_then<'scope, U, H>(
-        &self,
-        scope: Scope<'scope>,
-        f: impl Fn(&T) -> Option<U> + 'scope,
-        error_handler: H,
-    ) -> SilexResult<Rx<'scope, Option<U>>>
-    where
-        Self: ReactiveSource<'scope> + 'scope,
-        U: 'scope,
-        T: 'scope,
-        H: ErrorHandlerInput<'scope>,
-    {
-        let error_handler = error_handler.handler_ref();
-        let source = scope.promote(self.clone(), error_handler)?;
-        scope.derived(
-            move || source.with(|value| value.as_ref().and_then(&f)),
-            error_handler,
-        )
-    }
-
-    fn is_some_and<'scope, H>(
-        &self,
-        scope: Scope<'scope>,
-        f: impl Fn(&T) -> bool + 'scope,
-        error_handler: H,
-    ) -> SilexResult<Rx<'scope, bool>>
-    where
-        Self: ReactiveSource<'scope> + 'scope,
-        T: 'scope,
-        H: ErrorHandlerInput<'scope>,
-    {
-        let error_handler = error_handler.handler_ref();
-        let source = scope.promote(self.clone(), error_handler)?;
-        scope
-            .memo(
-                move |_| source.with(|value| value.as_ref().is_some_and(&f)),
+        let source = owner.promote(self.clone(), error_handler)?;
+        owner
+            .computed_always(
+                move || source.with(|value| value.as_ref().map(&f).unwrap_or_else(&default)),
                 error_handler,
             )
-            .map(|memo| memo.into_rx())
+            .map(Computed::into_rx)
+    }
+
+    fn and_then<'owner, U, H>(
+        &self,
+        owner: OwnerAccess<'owner>,
+        f: impl Fn(&T) -> Option<U> + 'owner,
+        error_handler: H,
+    ) -> SilexResult<Rx<'owner, Option<U>>>
+    where
+        Self: ReactiveSource<'owner> + 'owner,
+        U: 'owner,
+        T: 'owner,
+        H: ErrorHandlerInput<'owner>,
+    {
+        let error_handler = error_handler.handler_ref();
+        let source = owner.promote(self.clone(), error_handler)?;
+        owner
+            .computed_always(
+                move || source.with(|value| value.as_ref().and_then(&f)),
+                error_handler,
+            )
+            .map(Computed::into_rx)
+    }
+
+    fn is_some_and<'owner, H>(
+        &self,
+        owner: OwnerAccess<'owner>,
+        f: impl Fn(&T) -> bool + 'owner,
+        error_handler: H,
+    ) -> SilexResult<Rx<'owner, bool>>
+    where
+        Self: ReactiveSource<'owner> + 'owner,
+        T: 'owner,
+        H: ErrorHandlerInput<'owner>,
+    {
+        let error_handler = error_handler.handler_ref();
+        let source = owner.promote(self.clone(), error_handler)?;
+        owner
+            .computed(
+                move || source.with(|value| value.as_ref().is_some_and(&f)),
+                error_handler,
+            )
+            .map(|computed| computed.into_rx())
     }
 
     fn if_some_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<Option<U>> {

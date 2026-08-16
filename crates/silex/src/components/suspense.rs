@@ -42,7 +42,7 @@ where
     let children = Rc::new(move |cx: SuspenseContext<'scope>| children(cx).into_any());
 
     // 创建属于此 Suspense 边界的上下文
-    let context = SuspenseContext::new(scope)?;
+    let context = SuspenseContext::new(owner)?;
 
     // 在组件初始化时（稳定作用域）执行一次工厂闭包。
     // 确保 Resource 实例绑定到稳定的组件作用域。
@@ -73,7 +73,7 @@ where
         }
         SuspenseMode::Unmount => {
             let count = context.count;
-            let (is_first, set_is_first) = scope.signal(true)?;
+            let (is_first, set_is_first) = owner.signal(true)?;
             let initial_view = initial_view.clone();
             let children = children.clone();
             let fallback = fallback.clone();

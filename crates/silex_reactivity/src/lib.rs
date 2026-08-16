@@ -1,10 +1,8 @@
 //! Explicit, single-threaded scoped reactivity runtime.
 //!
-//! A user owns a [`Runtime`] and starts one long-lived root with
-//! [`Runtime::run`]. The returned [`RootHandle`] owns the root until explicit
-//! disposal or Drop. Root nodes are created through the borrowed
-//! [`RootHandle::scope`] capability and use the same node types as lexical
-//! scopes.
+//! A user owns a [`Runtime`] and creates a persistent [`OwnerHandle`] or a
+//! callback-scoped transient owner. Typed node payloads stay tied to the
+//! [`OwnerAccess`] lifetime.
 //!
 //! The runtime deliberately has no thread-local runtime-state fallback.
 //! Computations are stored inside the state for their scope, and handles retain
@@ -13,33 +11,34 @@
 //! its scheduler, so `untrack` cannot mask another runtime. User callbacks are
 //! always invoked after the mutable state borrow has been released.
 //!
-//! Lexical handles cannot escape [`Scope::child`]. Root handles borrow stable
-//! storage, so a root node cannot outlive the owner that stores it.
+//! Transient owner access cannot escape its higher-ranked callback. A
+//! persistent owner can be explicitly closed and is also closed best-effort
+//! on drop.
 
 #![deny(unreachable_pub)]
 
-mod child;
 mod completion;
 mod error;
 mod handle;
 mod internal;
+mod owner;
 mod root;
 mod runtime;
-mod scope;
 mod unsafe_boundary;
 
 pub use crate::{
-    child::*,
     completion::{CompletionOnce, CompletionSender, unwind_safe},
     error::{
         CallbackInvokeError, CallbackInvokeResult, CompletionSubmitResult, ComputationInitError,
-        ComputationInitResult, ErrorContext, ErrorHandlerInput, ErrorHandlerRef, ErrorHandlerToken,
-        HandlerError, HandlerLease, HandlerReason, ReactiveError, ReactiveResult,
+        ComputationInitResult, ErrorContext, ErrorHandlerAnchor, ErrorHandlerInput,
+        ErrorHandlerRef, ErrorHandlerToken, HandlerError, HandlerLease, HandlerReason,
+        ReactiveError, ReactiveResult,
     },
-    handle::{
-        CallbackId, DerivedId, EffectId, Handle, MemoId, NodeKind, NodeKindTag, NodeRefId,
-        SignalId, StoredId, kind,
+    owner::{
+        Callback, Computed, EffectHandle, NodeRef, ReadSignal, RwSignal, StoredValue, WatchOptions,
+        WriteSignal,
     },
+    owner::{OwnerAccess, OwnerHandle, PersistentOwnerAccess},
     root::*,
     runtime::Runtime,
 };

@@ -39,7 +39,7 @@ fn clean_sink() -> CleanupSink {
 }
 
 fn mount_text<'scope>(ctx: &MountContext<'scope>) -> SilexResult<()> {
-    let handler = ctx.scope().error_handler(|_: SilexError| {})?;
+    let handler = ctx.access().error_handler(|_: SilexError| {})?;
     ctx.mount(Element::with_child("section", "js-owner"), handler)
 }
 

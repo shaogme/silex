@@ -612,10 +612,10 @@ mod tests {
     use super::*;
     use crate::layers;
     use crate::types::{hex, px};
-    use silex_core::{ErrorHandlerToken, Runtime, Scope, SilexContext};
+    use silex_core::{ErrorHandlerToken, OwnerAccess, Runtime, SilexContext};
 
-    fn discard_test_errors<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope> {
-        scope
+    fn discard_test_errors<'scope>(owner: OwnerAccess<'scope>) -> ErrorHandlerToken<'scope> {
+        owner
             .error_handler(|_| {})
             .expect("test error handler should register")
     }
@@ -630,9 +630,9 @@ mod tests {
     {
         let mut runtime = Runtime::new();
         runtime
-            .child(|scope| {
-                let error_handler = discard_test_errors(scope);
-                f(SilexContext::new(scope, error_handler.view()));
+            .with_transient(|owner| {
+                let error_handler = discard_test_errors(owner);
+                f(SilexContext::new(owner, error_handler.view()));
             })
             .expect("test ctx should initialize");
     }
@@ -643,9 +643,9 @@ mod tests {
     {
         let mut runtime = Runtime::new();
         runtime
-            .child(|scope| {
-                let error_handler = discard_test_errors(scope);
-                css_of(build(SilexContext::new(scope, error_handler.view())))
+            .with_transient(|owner| {
+                let error_handler = discard_test_errors(owner);
+                css_of(build(SilexContext::new(owner, error_handler.view())))
             })
             .expect("test ctx should initialize")
     }
@@ -824,10 +824,10 @@ mod tests {
     fn a_custom_property_can_be_reactive() {
         let mut runtime = silex_core::Runtime::new();
         runtime
-            .child(|scope| {
-                let signal = scope.rw_signal(px(1)).expect("signal should initialize");
-                let error_handler = discard_test_errors(scope);
-                let rendered = Style::new(SilexContext::new(scope, error_handler.view()))
+            .with_transient(|owner| {
+                let signal = owner.rw_signal(px(1)).expect("signal should initialize");
+                let error_handler = discard_test_errors(owner);
+                let rendered = Style::new(SilexContext::new(owner, error_handler.view()))
                     .var("--gap", signal)
                     .expect("reactive style should build")
                     .render();
@@ -856,28 +856,28 @@ mod tests {
 
         let mut runtime = Runtime::new();
         runtime
-            .child(|scope| {
-                let outer = scope.rw_signal(0).expect("outer signal should initialize");
-                let inner_dep = scope.rw_signal(0).expect("inner signal should initialize");
+            .with_transient(|owner| {
+                let outer = owner.rw_signal(0).expect("outer signal should initialize");
+                let inner_dep = owner.rw_signal(0).expect("inner signal should initialize");
                 let inner_runs = Rc::new(Cell::new(0));
 
                 let counter = inner_runs.clone();
-                scope
+                owner
                     .effect(
                         move || -> SilexResult<()> {
                             outer.get()?;
                             let counter = counter.clone();
-                            scope.effect(
+                            owner.effect(
                                 move || -> SilexResult<()> {
                                     inner_dep.get()?;
                                     counter.set(counter.get() + 1);
                                     Ok(())
                                 },
-                                discard_test_errors(scope),
+                                discard_test_errors(owner),
                             )?;
                             Ok(())
                         },
-                        discard_test_errors(scope),
+                        discard_test_errors(owner),
                     )
                     .expect("nested effects can be registered");
 
@@ -899,10 +899,10 @@ mod tests {
     fn dynamic_values_become_a_css_variable_reference() {
         let mut runtime = silex_core::Runtime::new();
         runtime
-            .child(|scope| {
-                let signal = scope.rw_signal(px(1)).expect("signal should initialize");
-                let error_handler = discard_test_errors(scope);
-                let rendered = Style::new(SilexContext::new(scope, error_handler.view()))
+            .with_transient(|owner| {
+                let signal = owner.rw_signal(px(1)).expect("signal should initialize");
+                let error_handler = discard_test_errors(owner);
+                let rendered = Style::new(SilexContext::new(owner, error_handler.view()))
                     .width(signal)
                     .expect("reactive style should build")
                     .render();

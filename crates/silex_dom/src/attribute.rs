@@ -436,8 +436,8 @@ mod tests {
     fn test_known_prop_reactive_bool_into_op() {
         let mut runtime = Runtime::new();
         runtime
-            .child(|scope| {
-                let signal = scope.rw_signal(true).expect("signal should initialize");
+            .with_transient(|owner| {
+                let signal = owner.rw_signal(true).expect("signal should initialize");
                 let target = ApplyTarget::Known(KnownProp::Disabled);
                 let pending = PendingAttribute::build(signal.into_storable(), target);
                 match pending {
@@ -452,7 +452,7 @@ mod tests {
                     _ => panic!("Expected AttrOp::Reactive for KnownProp reactive bool"),
                 }
             })
-            .expect("child scope should initialize");
+            .expect("transient owner should initialize");
     }
 
     #[test]
@@ -483,28 +483,28 @@ mod tests {
     fn test_tuple_reactive_bool_class_into_op() {
         let mut runtime = Runtime::new();
         runtime
-            .child(|scope| {
-                let signal = scope.rw_signal(true).expect("signal should initialize");
+            .with_transient(|owner| {
+                let signal = owner.rw_signal(true).expect("signal should initialize");
                 let rx = signal.into_rx();
                 let op = ("active", rx).into_op(ApplyTarget::Class);
                 assert_eq!(op, AttrOp::class_toggle(Cow::Borrowed("active"), rx));
             })
-            .expect("child scope should initialize");
+            .expect("transient owner should initialize");
     }
 
     #[test]
     fn test_tuple_reactive_string_style_into_op() {
         let mut runtime = Runtime::new();
         runtime
-            .child(|scope| {
-                let signal = scope
+            .with_transient(|owner| {
+                let signal = owner
                     .rw_signal("10px".to_string())
                     .expect("signal should initialize");
                 let rx = signal.into_rx();
                 let op = ("margin", rx).into_op(ApplyTarget::Style);
                 assert_eq!(op, AttrOp::style_property(Cow::Borrowed("margin"), rx));
             })
-            .expect("child scope should initialize");
+            .expect("transient owner should initialize");
     }
 
     #[test]
@@ -520,8 +520,8 @@ mod tests {
     fn test_consolidate_attributes_dedup_and_combine() {
         let mut runtime = Runtime::new();
         runtime
-            .child(|scope| {
-                let signal = scope.rw_signal(true).expect("signal should initialize");
+            .with_transient(|owner| {
+                let signal = owner.rw_signal(true).expect("signal should initialize");
 
                 let attrs = vec![
                     PendingAttribute::build("btn", ApplyTarget::Class),
@@ -545,6 +545,6 @@ mod tests {
                     _ => panic!("Expected AttrOp::CombinedClasses"),
                 }
             })
-            .expect("child scope should initialize");
+            .expect("transient owner should initialize");
     }
 }

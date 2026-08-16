@@ -3,10 +3,11 @@
 use std::{fmt, marker::PhantomData};
 
 use crate::{
-    CallbackInvokeResult, ErrorHandlerInput, HandlerError, ReactiveError, ReactiveResult,
+    CallbackInvokeResult, ErrorContext, ErrorHandlerInput, HandlerError, ReactiveError,
+    ReactiveResult,
     error::ErrorSlot,
     error::map_callback_error,
-    handle::{CallbackId, DerivedId, EffectId, MemoId, NodeRefId, SignalId, StoredId},
+    handle::{CallbackId, ComputedId, EffectId, NodeRefId, SignalId, StoredId},
     runtime,
     runtime::storage::{CallbackThunk, CallbackThunkError, TypedNodeRef},
 };
@@ -66,7 +67,7 @@ impl<'scope, T: 'scope, E: 'scope> Callback<'scope, T, E> {
             Ok(()) => Ok(()),
             Err(CallbackThunkError::Runtime(error)) => Err(HandlerError::new(
                 error,
-                crate::ErrorContext::new("callback dispatch"),
+                ErrorContext::new("callback dispatch"),
             )),
             Err(CallbackThunkError::User(error)) => error_handler
                 .handler_ref()
@@ -77,117 +78,59 @@ impl<'scope, T: 'scope, E: 'scope> Callback<'scope, T, E> {
 }
 
 // =============================================================================
-// Effect
+// EffectHandle
 // =============================================================================
 
 /// Scoped effects.
-pub struct Effect<'scope> {
+pub struct EffectHandle<'scope> {
     pub(crate) handle: EffectId<'scope>,
 }
 
-impl Copy for Effect<'_> {}
+impl Copy for EffectHandle<'_> {}
 
-impl Clone for Effect<'_> {
+impl Clone for EffectHandle<'_> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl fmt::Debug for Effect<'_> {
+impl fmt::Debug for EffectHandle<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Effect").finish_non_exhaustive()
+        f.debug_struct("EffectHandle").finish_non_exhaustive()
     }
 }
 
-impl<'scope> PartialEq for Effect<'scope> {
+impl<'scope> PartialEq for EffectHandle<'scope> {
     fn eq(&self, other: &Self) -> bool {
         self.handle == other.handle
     }
 }
 
-impl<'scope> Eq for Effect<'scope> {}
+impl<'scope> Eq for EffectHandle<'scope> {}
 
-impl<'scope> Effect<'scope> {
+impl<'scope> EffectHandle<'scope> {
     pub fn stop(&self) -> ReactiveResult<bool> {
         runtime::stop_effect(&self.handle.state(), self.handle.raw())
     }
 }
 
-// =============================================================================
-// Memo & Derived
-// =============================================================================
-
-/// Scoped lazy memo.
-pub struct Memo<'scope, T, E> {
-    pub(crate) handle: MemoId<'scope>,
+/// Unified computed value returned by the explicit computed APIs.
+pub struct Computed<'scope, T, E> {
+    pub(crate) handle: ComputedId<'scope>,
     pub(crate) value: TypedNodeRef<'scope, T>,
     pub(crate) errors: &'scope ErrorSlot<E>,
     pub(crate) marker: PhantomData<fn() -> (T, E)>,
 }
 
-/// Scoped derived value whose callback may return a user-defined error.
-pub struct Derived<'scope, T, E> {
-    pub(crate) handle: DerivedId<'scope>,
-    pub(crate) value: TypedNodeRef<'scope, T>,
-    pub(crate) errors: &'scope ErrorSlot<E>,
-    pub(crate) marker: PhantomData<fn() -> (T, E)>,
-}
+impl<'scope, T, E> Copy for Computed<'scope, T, E> {}
 
-impl<'scope, T, E> Copy for Memo<'scope, T, E> {}
-
-impl<'scope, T, E> Clone for Memo<'scope, T, E> {
+impl<'scope, T, E> Clone for Computed<'scope, T, E> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<'scope, T, E> Copy for Derived<'scope, T, E> {}
-
-impl<'scope, T, E> Clone for Derived<'scope, T, E> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<'scope, T: 'scope, E: 'scope> Memo<'scope, T, E> {
-    pub fn get(&self) -> CallbackInvokeResult<T, E>
-    where
-        T: Clone,
-    {
-        self.with(Clone::clone)
-    }
-
-    pub fn get_untracked(&self) -> CallbackInvokeResult<T, E>
-    where
-        T: Clone,
-    {
-        self.with_untracked(Clone::clone)
-    }
-
-    pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> CallbackInvokeResult<R, E> {
-        runtime::with_fallible_signal(
-            &self.handle.state(),
-            self.handle.raw(),
-            self.value,
-            self.errors,
-            true,
-            |value| Ok(f(value)),
-        )
-    }
-
-    pub fn with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> CallbackInvokeResult<R, E> {
-        runtime::with_fallible_signal(
-            &self.handle.state(),
-            self.handle.raw(),
-            self.value,
-            self.errors,
-            false,
-            |value| Ok(f(value)),
-        )
-    }
-}
-
-impl<'scope, T: 'scope, E: 'scope> Derived<'scope, T, E> {
+impl<'scope, T: 'scope, E: 'scope> Computed<'scope, T, E> {
     pub fn get(&self) -> CallbackInvokeResult<T, E>
     where
         T: Clone,
@@ -351,6 +294,10 @@ impl<'scope, T: 'scope> ReadSignal<'scope, T> {
 }
 
 impl<'scope, T: 'scope> WriteSignal<'scope, T> {
+    pub fn notify(&self) -> ReactiveResult<()> {
+        runtime::notify(&self.handle.state(), self.handle.raw())
+    }
+
     pub fn set(&self, value: T) -> ReactiveResult<()> {
         runtime::update_signal(
             &self.handle.state(),
@@ -431,12 +378,6 @@ impl<'scope, T: 'scope> RwSignal<'scope, T> {
     }
 }
 
-/// Notify dependents after a silent update.
-pub fn notify<'scope, T>(signal: &WriteSignal<'scope, T>) -> ReactiveResult<()> {
-    let state = signal.handle.state();
-    runtime::notify(&state, signal.handle.raw())
-}
-
 // =============================================================================
 // StoredValue
 // =============================================================================
@@ -472,19 +413,12 @@ impl<'scope, T: 'scope> StoredValue<'scope, T> {
     }
 }
 
-impl<'scope, T, E> PartialEq for Memo<'scope, T, E> {
+impl<'scope, T, E> PartialEq for Computed<'scope, T, E> {
     fn eq(&self, other: &Self) -> bool {
         self.handle == other.handle
     }
 }
-impl<'scope, T, E> Eq for Memo<'scope, T, E> {}
-
-impl<'scope, T, E> PartialEq for Derived<'scope, T, E> {
-    fn eq(&self, other: &Self) -> bool {
-        self.handle == other.handle
-    }
-}
-impl<'scope, T, E> Eq for Derived<'scope, T, E> {}
+impl<'scope, T, E> Eq for Computed<'scope, T, E> {}
 
 impl<'scope, T> PartialEq for ReadSignal<'scope, T> {
     fn eq(&self, other: &Self) -> bool {

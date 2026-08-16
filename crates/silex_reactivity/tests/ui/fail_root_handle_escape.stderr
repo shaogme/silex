@@ -1,7 +1,7 @@
 error[E0505]: cannot move out of `root` because it is borrowed
   --> tests/ui/fail_root_handle_escape.rs:11:10
    |
- 5 |     let root = runtime.run().expect("root creation should succeed");
+ 5 |     let root = runtime.owner().expect("root creation should succeed");
    |         ---- binding `root` declared here
  6 |     let signal = root
    |                  ---- borrow of `root` occurs here

@@ -228,7 +228,7 @@ fn GroupAndPeerDemo<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scop
 
 #[component]
 fn FiltersAndReactivityDemo<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
-    let (count, set_count) = scope.signal(16)?;
+    let (count, set_count) = owner.signal(16)?;
     let pad_val = rx!(ctx; format!("{}px", $count));
 
     Ok(div(chain!(
@@ -349,7 +349,7 @@ fn StandardColorPaletteDemo<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl Vi
 
 #[component]
 fn ReactiveConditionalTwDemo<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
-    let (is_active, set_is_active) = scope.signal(false)?;
+    let (is_active, set_is_active) = owner.signal(false)?;
 
     let card_cls = tw!(
         "p-6 bg-white dark:bg-slate-800 border rounded-3xl shadow-lg hover:shadow-xl transition-all duration-300 flex flex-col h-fit",
@@ -491,8 +491,8 @@ fn FractionalAndDirectionalDemo<'scope>(#[ctx] ctx: SilexContext<'scope>) -> imp
 
 #[component]
 fn TailwindVariantsCvaDemo<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
-    let (intent, set_intent) = scope.signal("primary".to_string())?;
-    let (size, set_size) = scope.signal("md".to_string())?;
+    let (intent, set_intent) = owner.signal("primary".to_string())?;
+    let (size, set_size) = owner.signal("md".to_string())?;
 
     let button_variants = tw_variants! {
         base: "font-semibold rounded-xl transition-all duration-300 flex items-center justify-center cursor-pointer border-0 outline-none shadow-md hover:scale-105",
@@ -684,11 +684,11 @@ const CARDS_REGISTRY: &[CardMeta] = &[
 ];
 
 fn render_card<'scope>(
-    scope: Scope<'scope>,
+    owner: OwnerAccess<'scope>,
     id: usize,
     error_handler: ErrorReporter<'scope>,
 ) -> impl View<'scope> {
-    let ctx = SilexContext::new(scope, error_handler);
+    let ctx = SilexContext::new(owner, error_handler);
     macro_rules! render_card {
         ($card_id:expr, { $($id:literal => $builder:expr),+ $(,)? }) => {
             match $card_id {
@@ -736,13 +736,13 @@ fn is_in_left_column(target_id: usize, current_cat: DemoCategory) -> bool {
 }
 
 fn render_column<'scope>(
-    scope: Scope<'scope>,
+    owner: OwnerAccess<'scope>,
     is_left: bool,
     category: Persistent<'scope, DemoCategory>,
     error_handler: ErrorReporter<'scope>,
 ) -> SilexResult<impl View<'scope>> {
     let visible_card_ids = category.map(
-        scope,
+        owner,
         move |cat| {
             CARDS_REGISTRY
                 .iter()
@@ -757,9 +757,9 @@ fn render_column<'scope>(
         error_handler,
     )?;
 
-    let ctx = SilexContext::new(scope, error_handler);
+    let ctx = SilexContext::new(owner, error_handler);
     Ok(Index(ctx, visible_card_ids)
-        .children(move |id, _| render_card(scope, id, error_handler))
+        .children(move |id, _| render_card(owner, id, error_handler))
         .build())
 }
 
@@ -769,13 +769,13 @@ fn current_cat_matches(card_cat: DemoCategory, current_cat: DemoCategory) -> boo
 
 #[component]
 fn App<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
-    let is_dark = Persistent::builder(scope, "silex-tailwind-dark", error_handler)
+    let is_dark = Persistent::builder(owner, "silex-tailwind-dark", error_handler)
         .local()
         .parse::<bool>()
         .default(true)
         .build()?;
 
-    let category = Persistent::builder(scope, "silex-tailwind-category", error_handler)
+    let category = Persistent::builder(owner, "silex-tailwind-category", error_handler)
         .local()
         .parse::<DemoCategory>()
         .default(DemoCategory::All)
@@ -787,8 +787,8 @@ fn App<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
 
             // Dashboard Content Grid: Dynamic Height-Sensing Greedy Masonry Allocation
             div(chain!(
-                div(render_column(scope, true, category, error_handler)?).class(tw!("flex flex-col gap-6 w-full")),
-                div(render_column(scope, false, category, error_handler)?).class(tw!("flex flex-col gap-6 w-full"))
+                div(render_column(owner, true, category, error_handler)?).class(tw!("flex flex-col gap-6 w-full")),
+                div(render_column(owner, false, category, error_handler)?).class(tw!("flex flex-col gap-6 w-full"))
             ))
             .class(tw!("grid grid-cols-1 md:grid-cols-2 gap-6 items-start w-full max-w-6xl mx-auto"))
         ))
@@ -812,10 +812,10 @@ pub fn mount_tailwind_into(target: web_sys::Node) -> Result<JsAppHost, Bootstrap
 }
 
 fn mount_tailwind_view<'scope>(ctx: &MountContext<'scope>) -> SilexResult<()> {
-    let scope = ctx.scope();
-    let error_handler = scope.error_handler(|error: SilexError| {
+    let owner = ctx.access();
+    let error_handler = owner.error_handler(|error: SilexError| {
         web_sys::console::error_1(&error.to_string().into());
     })?;
-    let silex_ctx = SilexContext::new(scope, error_handler.view());
+    let silex_ctx = SilexContext::new(owner, error_handler.view());
     ctx.mount(App(silex_ctx).build(), error_handler)
 }

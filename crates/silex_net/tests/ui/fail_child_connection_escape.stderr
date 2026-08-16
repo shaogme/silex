@@ -1,10 +1,10 @@
 error: lifetime may not live long enough
   --> tests/ui/fail_child_connection_escape.rs:6:9
    |
- 5 |       runtime.child(|scope| {
-   |                      ------ return type of closure is WebSocketConnection<'2>
-   |                      |
-   |                      has type `silex_core::Scope<'1>`
+ 5 |       runtime.with_transient(|scope| {
+   |                               ------ return type of closure is WebSocketConnection<'2>
+   |                               |
+   |                               has type `OwnerAccess<'1>`
  6 | /         WebSocket::lazy(
  7 | |             scope,
  8 | |             "wss://example.test",

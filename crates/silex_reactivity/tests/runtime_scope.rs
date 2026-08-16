@@ -1,5 +1,5 @@
 use silex_reactivity::{
-    CallbackInvokeError, ErrorHandlerToken, ReactiveError, ReadSignal, Runtime, Scope, notify,
+    CallbackInvokeError, ErrorHandlerToken, OwnerAccess, ReactiveError, ReadSignal, Runtime,
     unwind_safe,
 };
 use std::{
@@ -8,7 +8,7 @@ use std::{
     rc::Rc,
 };
 
-fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope, ()> {
+fn handler<'scope>(scope: OwnerAccess<'scope>) -> ErrorHandlerToken<'scope, ()> {
     scope.error_handler(|_| {}).expect("handler registration")
 }
 
@@ -42,11 +42,11 @@ fn runtime_run_provides_scoped_signal_and_effect() {
     let runs = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (count, set_count) = scope.signal(0i32).expect("fallible reactive creation");
             let doubled = scope
-                .memo(
-                    move |_| Ok(count.get().expect("reactive read") * 2),
+                .computed(
+                    move || Ok(count.get().expect("reactive read") * 2),
                     handler(scope),
                 )
                 .expect("memo creation");
@@ -81,7 +81,7 @@ fn non_static_effect_can_capture_data_and_scoped_signal() {
     let external = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (signal, set_signal) = scope.signal(1i32).expect("fallible reactive creation");
             let external_in_effect = external.clone();
             scope
@@ -107,9 +107,9 @@ fn child_scope_is_lexical_and_cleans_up_its_nodes() {
     let cleaned = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             scope
-                .child(|child| {
+                .with_transient(|child| {
                     let (local, set_local) =
                         child.signal(0i32).expect("fallible reactive creation");
                     let runs = cleaned.clone();
@@ -138,10 +138,10 @@ fn child_effect_reacts_to_parent_signal_and_detaches_on_exit() {
     let runs = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (parent, set_parent) = scope.signal(0i32).expect("fallible reactive creation");
             scope
-                .child(|child| {
+                .with_transient(|child| {
                     let runs_in_effect = runs.clone();
                     child
                         .effect(
@@ -171,7 +171,7 @@ fn child_cleanup_runs_when_scoped_run_ends() {
     let cleaned = Rc::new(Cell::new(false));
     let cleaned_in_scope = cleaned.clone();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             scope
                 .on_cleanup(
                     move || {
@@ -195,7 +195,7 @@ fn final_cleanup_updates_stored_value_before_payload_drop() {
     let dropped_value = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let value = Rc::new(Cell::new(1));
             let stored = scope
                 .stored(CleanupStoredProbe {
@@ -238,10 +238,10 @@ fn payload_drop_cannot_track_through_either_observer_slot() {
     let tracked = Rc::new(Cell::new(false));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, _) = scope.signal(0_i32).expect("source creation");
             scope
-                .child(|child| {
+                .with_transient(|child| {
                     child
                         .stored(TrackDuringDrop {
                             source,
@@ -265,7 +265,7 @@ fn computation_cleanup_can_access_its_child_stored_value_before_root_cleanup() {
     let dropped_value = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let scope_in_effect = scope;
             let events_in_effect = events.clone();
             let observed_value_in_effect = observed_value.clone();
@@ -332,7 +332,7 @@ fn final_cleanup_keeps_only_stored_value_access_available() {
     let observed = Rc::new(Cell::new(false));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (signal, setter) = scope.signal(1_i32).expect("fallible reactive creation");
             let stored = scope.stored(1_i32).expect("fallible reactive creation");
             let node_ref = scope.node_ref::<i32>().expect("node ref creation");
@@ -386,7 +386,7 @@ fn final_cleanup_releases_stored_value_lease_after_panic() {
     let updated = Rc::new(Cell::new(false));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let stored = scope.stored(1_i32).expect("fallible reactive creation");
             let updated_in_cleanup = updated.clone();
             scope
@@ -415,7 +415,7 @@ fn final_cleanup_releases_stored_value_lease_after_panic() {
 fn child_scope_is_inactive_after_scope_returns() {
     let mut runtime = Runtime::new();
     let (token, read_cell) = runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let cell = Rc::new(Cell::new(10));
             let cell_in_callback = cell.clone();
             let token = scope
@@ -439,7 +439,7 @@ fn cleanup_order_follows_lexical_scope_order() {
     let events = Rc::new(RefCell::new(Vec::new()));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let parent_events = events.clone();
             scope
                 .on_cleanup(
@@ -452,7 +452,7 @@ fn cleanup_order_follows_lexical_scope_order() {
                 .expect("cleanup should register");
 
             scope
-                .child(|child| {
+                .with_transient(|child| {
                     let child_events = events.clone();
                     child
                         .on_cleanup(
@@ -480,11 +480,11 @@ fn child_scope_panic_cleans_up_before_parent_continues() {
     let parent_continued = Rc::new(Cell::new(false));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let cleaned_in_child = cleaned.clone();
             let panic = catch_unwind(AssertUnwindSafe(|| {
                 scope
-                    .child(|child| {
+                    .with_transient(|child| {
                         child
                             .on_cleanup(
                                 move || {
@@ -512,10 +512,10 @@ fn child_scope_panic_cleans_up_before_parent_continues() {
 fn child_callback_panic_is_not_replaced_by_cleanup_panic() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let panic = catch_unwind(AssertUnwindSafe(|| {
                 scope
-                    .child(|child| {
+                    .with_transient(|child| {
                         child
                             .on_cleanup(|| panic!("cleanup panic"), handler(child))
                             .expect("cleanup should register");
@@ -536,7 +536,7 @@ fn parent_effect_tracks_parent_reads_inside_child_callback() {
     let runs = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(0i32).expect("fallible reactive creation");
             let parent_scope = scope;
             let runs_in_effect = runs.clone();
@@ -544,7 +544,7 @@ fn parent_effect_tracks_parent_reads_inside_child_callback() {
                 .effect(
                     move || {
                         parent_scope
-                            .child(|_| {
+                            .with_transient(|_| {
                                 source.get().expect("test operation should succeed");
                             })
                             .expect("test operation should succeed");
@@ -568,7 +568,7 @@ fn parent_effect_tracks_parent_reads_inside_nested_child_callback() {
     let runs = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(0i32).expect("signal creation");
             let parent_scope = scope;
             let runs_in_effect = runs.clone();
@@ -576,7 +576,7 @@ fn parent_effect_tracks_parent_reads_inside_nested_child_callback() {
                 .effect(
                     move || {
                         parent_scope
-                            .child(|_| {
+                            .with_transient(|_| {
                                 source.get().expect("source read");
                             })
                             .expect("child should complete");
@@ -600,7 +600,7 @@ fn nested_child_frames_keep_parent_tracking_at_the_outer_boundary() {
     let runs = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (outer, set_outer) = scope.signal(0_i32).expect("outer source creation");
             let (inner, set_inner) = scope.signal(0_i32).expect("inner source creation");
             let (deep, set_deep) = scope.signal(0_i32).expect("deep source creation");
@@ -610,13 +610,13 @@ fn nested_child_frames_keep_parent_tracking_at_the_outer_boundary() {
                 .effect(
                     move || {
                         parent_scope
-                            .child(|level1| {
+                            .with_transient(|level1| {
                                 outer.get().expect("outer read");
                                 level1
-                                    .child(|level2| {
+                                    .with_transient(|level2| {
                                         inner.get().expect("inner read");
                                         level2
-                                            .child(|_level3| {
+                                            .with_transient(|_level3| {
                                                 deep.get().expect("deep read");
                                             })
                                             .expect("level3 should complete");
@@ -648,7 +648,7 @@ fn nested_child_panic_restores_the_parent_observer_frame() {
     let runs = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(0_i32).expect("source creation");
             let parent_scope = scope;
             let runs_in_effect = runs.clone();
@@ -657,11 +657,11 @@ fn nested_child_panic_restores_the_parent_observer_frame() {
                     move || {
                         let panic = catch_unwind(AssertUnwindSafe(|| {
                             parent_scope
-                                .child(|level1| {
+                                .with_transient(|level1| {
                                     level1
-                                        .child(|level2| {
+                                        .with_transient(|level2| {
                                             level2
-                                                .child(|_| panic!("nested child panic"))
+                                                .with_transient(|_| panic!("nested child panic"))
                                                 .expect("level3 should complete");
                                         })
                                         .expect("level2 should complete");
@@ -691,7 +691,7 @@ fn cleanup_track_is_untracked_and_does_not_add_a_dependency() {
     let cleanup_track_succeeded = Rc::new(Cell::new(false));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(0i32).expect("source creation");
             let (other, set_other) = scope.signal(0i32).expect("other creation");
             let runs_in_effect = runs.clone();
@@ -733,7 +733,7 @@ fn untrack_blocks_ordinary_reads() {
     let runs = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(0_i32).expect("source creation");
             let (other, set_other) = scope.signal(0_i32).expect("other creation");
             let runs_in_effect = runs.clone();
@@ -765,7 +765,7 @@ fn child_local_signal_does_not_keep_parent_effect_queued_after_exit() {
     let runs = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let parent_scope = scope;
             let runs_in_effect = runs.clone();
             let result = catch_unwind(AssertUnwindSafe(|| {
@@ -774,7 +774,7 @@ fn child_local_signal_does_not_keep_parent_effect_queued_after_exit() {
                         move || {
                             runs_in_effect.set(runs_in_effect.get() + 1);
                             parent_scope
-                                .child(|child| {
+                                .with_transient(|child| {
                                     let (local, set_local) =
                                         child.signal(0i32).expect("fallible reactive creation");
                                     local.get().expect("test operation should succeed");
@@ -800,7 +800,7 @@ fn cleanup_can_reenter_an_active_parent_scope() {
     let seen = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(0i32).expect("fallible reactive creation");
             let seen_in_effect = seen.clone();
             scope
@@ -814,7 +814,7 @@ fn cleanup_can_reenter_an_active_parent_scope() {
                 .expect("effect should initialize");
 
             scope
-                .child(|child| {
+                .with_transient(|child| {
                     child
                         .on_cleanup(
                             move || {
@@ -839,7 +839,7 @@ fn panic_in_scoped_run_still_drops_the_scope() {
     let cleaned_in_scope = cleaned.clone();
     let panic = catch_unwind(AssertUnwindSafe(|| {
         runtime
-            .child(|scope| {
+            .with_transient(|scope| {
                 scope
                     .on_cleanup(
                         move || {
@@ -857,7 +857,7 @@ fn panic_in_scoped_run_still_drops_the_scope() {
     assert!(cleaned.get());
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (signal, set_signal) = scope.signal(1i32).expect("fallible reactive creation");
             set_signal.set(2).expect("test operation should succeed");
             assert_eq!(signal.get(), Ok(2));
@@ -870,7 +870,7 @@ fn cleanup_panic_does_not_poison_runtime() {
     let mut runtime = Runtime::new();
     let panic = catch_unwind(AssertUnwindSafe(|| {
         runtime
-            .child(|scope| {
+            .with_transient(|scope| {
                 scope
                     .on_cleanup(|| panic!("cleanup panic"), handler(scope))
                     .expect("cleanup should register");
@@ -880,7 +880,7 @@ fn cleanup_panic_does_not_poison_runtime() {
     assert!(panic.is_err());
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (signal, set_signal) = scope.signal(1i32).expect("fallible reactive creation");
             set_signal.set(2).expect("test operation should succeed");
             assert_eq!(signal.get(), Ok(2));
@@ -896,7 +896,7 @@ fn cleanup_panic_does_not_skip_remaining_cleanups() {
 
     let panic = catch_unwind(AssertUnwindSafe(|| {
         runtime
-            .child(|scope| {
+            .with_transient(|scope| {
                 scope
                     .on_cleanup(|| panic!("first cleanup panic"), handler(scope))
                     .expect("cleanup should register");
@@ -927,7 +927,7 @@ fn cleanup_panic_does_not_skip_other_nodes_or_root_cleanup() {
 
     let panic = catch_unwind(AssertUnwindSafe(|| {
         runtime
-            .child(|scope| {
+            .with_transient(|scope| {
                 let scope_copy = scope;
                 scope
                     .effect(
@@ -991,7 +991,7 @@ fn scope_cleanup_can_register_another_cleanup() {
     let second_ran_in_scope = second_ran.clone();
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let scope_copy = scope;
             let second_cleanup_handler = handler(scope);
             scope
@@ -1028,7 +1028,7 @@ fn effect_cleanup_can_register_cleanup_for_the_next_run() {
     let second_cleanup_ran = Rc::new(Cell::new(false));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(0i32).expect("fallible reactive creation");
             let scope_copy = scope;
             let register_initial_cleanup = Rc::new(Cell::new(true));
@@ -1083,7 +1083,7 @@ fn child_cleanup_panic_still_flushes_parent_queue() {
     let runs = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope
                 .signal(RefCell::new(0i32))
                 .expect("fallible reactive creation");
@@ -1106,7 +1106,7 @@ fn child_cleanup_panic_still_flushes_parent_queue() {
 
             let panic = catch_unwind(AssertUnwindSafe(|| {
                 scope
-                    .child(|child| {
+                    .with_transient(|child| {
                         let source_in_cleanup = source;
                         let setter_in_cleanup = set_source;
                         let runs_in_cleanup = runs.clone();
@@ -1115,7 +1115,8 @@ fn child_cleanup_panic_still_flushes_parent_queue() {
                                 move || {
                                     source_in_cleanup
                                         .with(|_| {
-                                            notify(&setter_in_cleanup)
+                                            setter_in_cleanup
+                                                .notify()
                                                 .expect("test operation should succeed");
                                             assert_eq!(runs_in_cleanup.get(), 1);
                                             panic!("child cleanup panic");
@@ -1142,7 +1143,7 @@ fn completion_token_accepts_active_submissions_and_rejects_after_scope() {
     let seen = Rc::new(Cell::new(0));
     let seen_in_scope = seen.clone();
     let token = runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let seen_in_callback = seen_in_scope.clone();
             let token = scope
                 .completion_sender(unwind_safe(move |value: i32| {
@@ -1166,9 +1167,9 @@ fn completion_token_rejects_submission_after_scope_deactivation() {
     let callback_called = Rc::new(Cell::new(false));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             scope
-                .child(|child| {
+                .with_transient(|child| {
                     let callback_called_in_child = callback_called.clone();
                     let token = child
                         .completion_once(unwind_safe(move |_: i32| {
@@ -1213,7 +1214,7 @@ fn lexical_completion_can_capture_scope_local_data() {
     let seen = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let local = String::from("scoped");
             let seen_in_callback = seen.clone();
             let token = scope
@@ -1235,11 +1236,11 @@ fn handles_are_invalid_after_their_scope_and_runtimes_are_isolated() {
     let mut first = Runtime::new();
     let mut second = Runtime::new();
     first
-        .child(|scope| {
+        .with_transient(|scope| {
             let (signal, _) = scope.signal(1i32).expect("fallible reactive creation");
             assert_eq!(signal.get(), Ok(1));
             second
-                .child(|other| {
+                .with_transient(|other| {
                     let (other_signal, _) = other.signal(2i32).expect("fallible reactive creation");
                     assert_eq!(other_signal.get(), Ok(2));
                     assert_eq!(signal.get(), Ok(1));
@@ -1251,9 +1252,9 @@ fn handles_are_invalid_after_their_scope_and_runtimes_are_isolated() {
 
     let mut gone = Runtime::new();
     let token = gone
-        .child(|scope| {
+        .with_transient(|scope| {
             scope
-                .child(|child| {
+                .with_transient(|child| {
                     let (signal, _) = child.signal(1i32).expect("fallible reactive creation");
                     assert_eq!(signal.get(), Ok(1));
                 })

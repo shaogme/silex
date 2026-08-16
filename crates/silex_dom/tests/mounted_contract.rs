@@ -8,21 +8,20 @@ use std::{cell::RefCell, rc::Rc};
 #[test]
 fn mount_and_dispose_errors_keep_their_separate_ownership() {
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root should start");
-    root.with_scope(|scope| {
-        scope
+    let root = runtime.owner().expect("root should start");
+    root.with_access(|owner| {
+        let handler = owner
+            .error_handler(|_: SilexError| {})
+            .expect("error handler should register");
+        owner
             .on_cleanup(
-                || panic!("root cleanup"),
-                scope
-                    .error_handler(|_: SilexError| {})
-                    .expect("error handler should register"),
+                || -> silex_core::SilexResult<()> { panic!("root cleanup") },
+                handler.view(),
             )
             .expect("cleanup should register");
     });
 
-    let cleanup = root
-        .dispose()
-        .expect_err("cleanup panic should be returned");
+    let cleanup = root.close().expect_err("cleanup panic should be returned");
     let report = CleanupReport::from_parts(
         vec![CleanupFailure::new(CleanupOrigin::Root, cleanup)],
         vec![SilexError::recoverable(SilexErrorKind::Framework(

@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use super::{ApplyToDom, Attr, AttrOp, AttributeGroup, ReactiveBinding};
 use crate::view::Prop;
-use silex_core::{Memo, ReadSignal, RwSignal, Rx, RxValueKind, Signal, StoredValue};
+use silex_core::{Computed, ReadSignal, RwSignal, Rx, RxValueKind, Signal, StoredValue};
 // --- IntoStorable: 允许非 'static 类型转换为可存储类型 ---
 
 /// 将值转换为可存储的类型。
@@ -114,7 +114,7 @@ where
     }
 }
 
-impl<'scope, T> IntoStorable<'scope> for Memo<'scope, T>
+impl<'scope, T> IntoStorable<'scope> for Computed<'scope, T>
 where
     T: ReactiveBinding<'scope> + Clone + 'scope,
 {

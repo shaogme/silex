@@ -8,7 +8,7 @@ mod public_global {
     use super::global;
 
     global! {
-        pub PublicGlobal<'scope>(scope: silex_core::Scope<'scope>) {
+        pub PublicGlobal<'owner>(owner: silex_core::OwnerAccess<'owner>) {
             body { color: red; }
         }
     }
@@ -18,7 +18,7 @@ mod crate_global {
     use super::global;
 
     global! {
-        pub(crate) CrateGlobal<'scope>(scope: silex_core::Scope<'scope>) {
+        pub(crate) CrateGlobal<'owner>(owner: silex_core::OwnerAccess<'owner>) {
             body { color: green; }
         }
     }
@@ -28,7 +28,7 @@ mod super_global {
     use super::global;
 
     global! {
-        pub(super) SuperGlobal<'scope>(scope: silex_core::Scope<'scope>) {
+        pub(super) SuperGlobal<'owner>(owner: silex_core::OwnerAccess<'owner>) {
             body { color: blue; }
         }
     }
@@ -36,9 +36,9 @@ mod super_global {
 
 fn main() {
     let mut runtime = silex_core::Runtime::new();
-    let _ = runtime.child(|scope| {
-        let _ = public_global::PublicGlobal(scope);
-        let _ = crate_global::CrateGlobal(scope);
-        let _ = super_global::SuperGlobal(scope);
+    let _ = runtime.with_transient(|owner| {
+        let _ = public_global::PublicGlobal(owner);
+        let _ = crate_global::CrateGlobal(owner);
+        let _ = super_global::SuperGlobal(owner);
     });
 }

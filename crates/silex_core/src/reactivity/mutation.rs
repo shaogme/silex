@@ -1,5 +1,5 @@
 use crate::{
-    CompletionSender, ErrorHandlerInput, ErrorReporter, Scope, SilexError, SilexErrorKind,
+    CompletionSender, ErrorHandlerInput, ErrorReporter, OwnerAccess, SilexError, SilexErrorKind,
     reactivity::{ReadSignal, StoredValue, WriteSignal},
     traits::{RxCloneData, RxData, RxError, RxRead, RxValue},
     unwind_safe,
@@ -39,18 +39,18 @@ fn resolve_mutation_result<T, E>(
     })
 }
 
-type MutationFuture<'scope, T, E> = Pin<Box<dyn Future<Output = Result<T, E>> + 'scope>>;
-type RegularMutationAction<'scope, Arg, T, E> =
-    Rc<dyn Fn(Arg) -> MutationFuture<'scope, T, E> + 'scope>;
-type PreparedMutationAction<'scope, Arg, T, E> =
-    Rc<dyn Fn(Arg) -> Result<MutationFuture<'scope, T, E>, E> + 'scope>;
+type MutationFuture<'owner, T, E> = Pin<Box<dyn Future<Output = Result<T, E>> + 'owner>>;
+type RegularMutationAction<'owner, Arg, T, E> =
+    Rc<dyn Fn(Arg) -> MutationFuture<'owner, T, E> + 'owner>;
+type PreparedMutationAction<'owner, Arg, T, E> =
+    Rc<dyn Fn(Arg) -> Result<MutationFuture<'owner, T, E>, E> + 'owner>;
 
-enum MutationAction<'scope, Arg, T, E> {
-    Regular(RegularMutationAction<'scope, Arg, T, E>),
-    Prepared(PreparedMutationAction<'scope, Arg, T, E>),
+enum MutationAction<'owner, Arg, T, E> {
+    Regular(RegularMutationAction<'owner, Arg, T, E>),
+    Prepared(PreparedMutationAction<'owner, Arg, T, E>),
 }
 
-impl<'scope, Arg, T, E> Clone for MutationAction<'scope, Arg, T, E> {
+impl<'owner, Arg, T, E> Clone for MutationAction<'owner, Arg, T, E> {
     fn clone(&self) -> Self {
         match self {
             Self::Regular(action) => Self::Regular(action.clone()),
@@ -59,59 +59,59 @@ impl<'scope, Arg, T, E> Clone for MutationAction<'scope, Arg, T, E> {
     }
 }
 
-struct MutationInner<'scope, Arg, T, E> {
-    action: MutationAction<'scope, Arg, T, E>,
+struct MutationInner<'owner, Arg, T, E> {
+    action: MutationAction<'owner, Arg, T, E>,
     last_id: Rc<Cell<usize>>,
     completion: CompletionSender<(usize, Result<T, E>)>,
 }
 
-pub struct Mutation<'scope, Arg, T, E = SilexError> {
-    pub state: ReadSignal<'scope, MutationState<T, E>>,
-    set_state: WriteSignal<'scope, MutationState<T, E>>,
-    inner: StoredValue<'scope, MutationInner<'scope, Arg, T, E>>,
-    scope: Scope<'scope>,
-    error_handler: ErrorReporter<'scope>,
+pub struct Mutation<'owner, Arg, T, E = SilexError> {
+    pub state: ReadSignal<'owner, MutationState<T, E>>,
+    set_state: WriteSignal<'owner, MutationState<T, E>>,
+    inner: StoredValue<'owner, MutationInner<'owner, Arg, T, E>>,
+    owner: OwnerAccess<'owner>,
+    error_handler: ErrorReporter<'owner>,
 }
 
-impl<'scope, Arg, T, E> Copy for Mutation<'scope, Arg, T, E> {}
+impl<'owner, Arg, T, E> Copy for Mutation<'owner, Arg, T, E> {}
 
-impl<'scope, Arg, T, E> Clone for Mutation<'scope, Arg, T, E> {
+impl<'owner, Arg, T, E> Clone for Mutation<'owner, Arg, T, E> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<'scope, Arg, T, E> Mutation<'scope, Arg, T, E>
+impl<'owner, Arg, T, E> Mutation<'owner, Arg, T, E>
 where
-    Arg: RxData + 'scope,
+    Arg: RxData + 'owner,
     T: RxData + 'static,
     E: RxError + 'static,
 {
     pub fn new<F, Fut, H>(
-        scope: Scope<'scope>,
+        owner: OwnerAccess<'owner>,
         action: F,
         error_handler: H,
     ) -> crate::SilexResult<Self>
     where
-        F: Fn(Arg) -> Fut + 'scope,
-        Fut: Future<Output = Result<T, E>> + 'scope,
-        H: Clone + ErrorHandlerInput<'scope>,
+        F: Fn(Arg) -> Fut + 'owner,
+        Fut: Future<Output = Result<T, E>> + 'owner,
+        H: Clone + ErrorHandlerInput<'owner>,
     {
         let handler_owner = error_handler.clone();
         let error_handler = error_handler.handler_ref();
-        scope.on_cleanup(
+        owner.on_cleanup(
             move || {
                 drop(handler_owner);
                 Ok::<(), SilexError>(())
             },
             error_handler,
         )?;
-        let (state, set_state) = scope.signal(MutationState::Idle)?;
+        let (state, set_state) = owner.signal(MutationState::Idle)?;
         let last_id = Rc::new(Cell::new(0usize));
         let last_id_for_callback = last_id.clone();
         let set_state_for_callback = set_state;
         let completion =
-            scope.completion_sender(unwind_safe(move |(id, result): (usize, Result<T, E>)| {
+            owner.completion_sender(unwind_safe(move |(id, result): (usize, Result<T, E>)| {
                 if let Some(next_state) =
                     resolve_mutation_result(last_id_for_callback.get(), id, result)
                 {
@@ -119,7 +119,7 @@ where
                 }
                 Ok(())
             }))?;
-        let inner = scope.stored(MutationInner {
+        let inner = owner.stored(MutationInner {
             action: MutationAction::Regular(Rc::new(move |arg| Box::pin(action(arg)))),
             last_id,
             completion,
@@ -129,7 +129,7 @@ where
             state,
             set_state,
             inner,
-            scope,
+            owner,
             error_handler,
         })
     }
@@ -137,30 +137,30 @@ where
     /// Create a mutation whose owned future is prepared before `Pending` is
     /// published. Preparation errors become `Error` without starting a task.
     pub fn new_with_prepare<F, Fut, H>(
-        scope: Scope<'scope>,
+        owner: OwnerAccess<'owner>,
         prepare: F,
         error_handler: H,
     ) -> crate::SilexResult<Self>
     where
-        F: Fn(Arg) -> Result<Fut, E> + 'scope,
-        Fut: Future<Output = Result<T, E>> + 'scope,
-        H: Clone + ErrorHandlerInput<'scope>,
+        F: Fn(Arg) -> Result<Fut, E> + 'owner,
+        Fut: Future<Output = Result<T, E>> + 'owner,
+        H: Clone + ErrorHandlerInput<'owner>,
     {
         let handler_owner = error_handler.clone();
         let error_handler = error_handler.handler_ref();
-        scope.on_cleanup(
+        owner.on_cleanup(
             move || {
                 drop(handler_owner);
                 Ok::<(), SilexError>(())
             },
             error_handler,
         )?;
-        let (state, set_state) = scope.signal(MutationState::Idle)?;
+        let (state, set_state) = owner.signal(MutationState::Idle)?;
         let last_id = Rc::new(Cell::new(0usize));
         let last_id_for_callback = last_id.clone();
         let set_state_for_callback = set_state;
         let completion =
-            scope.completion_sender(unwind_safe(move |(id, result): (usize, Result<T, E>)| {
+            owner.completion_sender(unwind_safe(move |(id, result): (usize, Result<T, E>)| {
                 if let Some(next_state) =
                     resolve_mutation_result(last_id_for_callback.get(), id, result)
                 {
@@ -168,9 +168,9 @@ where
                 }
                 Ok(())
             }))?;
-        let inner = scope.stored(MutationInner {
+        let inner = owner.stored(MutationInner {
             action: MutationAction::Prepared(Rc::new(move |arg| {
-                prepare(arg).map(|future| Box::pin(future) as MutationFuture<'scope, T, E>)
+                prepare(arg).map(|future| Box::pin(future) as MutationFuture<'owner, T, E>)
             })),
             last_id,
             completion,
@@ -180,13 +180,13 @@ where
             state,
             set_state,
             inner,
-            scope,
+            owner,
             error_handler,
         })
     }
 
     pub fn mutate(&self, arg: Arg) -> crate::SilexResult<()> {
-        if !self.scope.is_active() {
+        if !self.owner.is_active() {
             return Ok(());
         }
 
@@ -233,7 +233,7 @@ where
             }
         };
         let error_handler = self.error_handler;
-        self.scope.spawn_scoped(
+        self.owner.spawn_scoped(
             async move {
                 match completion.submit((id, future.await)) {
                     Ok(_) => {}
@@ -246,6 +246,10 @@ where
                     Err(CallbackInvokeError::Handler(error)) => {
                         let _ =
                             error_handler.handle(SilexError::fatal(ReactiveError::Handler(error)));
+                    }
+                    Err(CallbackInvokeError::Close(error)) => {
+                        let _ =
+                            error_handler.handle(SilexError::fatal(SilexErrorKind::Close(error)));
                     }
                 }
             },
@@ -284,20 +288,20 @@ where
     }
 }
 
-impl<'scope, Arg, T, E> RxValue for Mutation<'scope, Arg, T, E>
+impl<'owner, Arg, T, E> RxValue for Mutation<'owner, Arg, T, E>
 where
-    Arg: RxData + 'scope,
-    T: RxData + 'scope,
-    E: RxError + 'scope,
+    Arg: RxData + 'owner,
+    T: RxData + 'owner,
+    E: RxError + 'owner,
 {
     type Value = Option<T>;
 }
 
-impl<'scope, Arg, T, E> RxRead for Mutation<'scope, Arg, T, E>
+impl<'owner, Arg, T, E> RxRead for Mutation<'owner, Arg, T, E>
 where
-    Arg: RxData + 'scope,
-    T: RxCloneData + 'scope,
-    E: RxError + 'scope,
+    Arg: RxData + 'owner,
+    T: RxCloneData + 'owner,
+    E: RxError + 'owner,
 {
     fn with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> crate::SilexResult<U> {
         self.state.with(|state| f(&state.value().cloned()))

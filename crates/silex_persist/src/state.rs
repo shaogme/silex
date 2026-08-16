@@ -6,7 +6,8 @@ use crate::{
 };
 use ref_str::LocalStaticRefStr;
 use silex_core::{
-    ErrorHandlerInput, ReactiveError, Rx, RxGet, Scope, SilexErrorKind, SilexResult, StoreField,
+    ErrorHandlerInput, OwnerAccess, ReactiveError, Rx, RxGet, SilexErrorKind, SilexResult,
+    StoreField,
     reactivity::{PromotionPlan, ReactiveSource, ReadSignal, RwSignal, StoredValue},
     traits::{RxCloneData, RxData, RxRead, RxValue, RxWrite},
 };
@@ -42,13 +43,13 @@ pub enum PersistenceState {
     WriteError(String),
 }
 
-pub(crate) struct ScopedDebounceState<'scope> {
+pub(crate) struct OwnerDebounceState<'scope> {
     pending: bool,
     generation: u64,
     timer: Option<HostResourceHandle<'scope>>,
 }
 
-impl<'scope> ScopedDebounceState<'scope> {
+impl<'scope> OwnerDebounceState<'scope> {
     pub(crate) fn new() -> Self {
         Self {
             pending: false,
@@ -113,12 +114,12 @@ pub(crate) struct PersistenceController<'scope, T: 'scope> {
     pub encode: PersistenceEncodeFn<'scope, T>,
     pub decode: PersistenceDecodeFn<'scope, T>,
     pub should_remove: Rc<dyn Fn(&T) -> bool + 'scope>,
-    pub debounce: Option<ScopedDebounceState<'scope>>,
+    pub debounce: Option<OwnerDebounceState<'scope>>,
     pub subscription: Option<BackendSubscription<'scope>>,
 }
 
 pub struct Persistent<'scope, T> {
-    pub(crate) scope: Scope<'scope>,
+    pub(crate) owner: OwnerAccess<'scope>,
     pub(crate) value: RwSignal<'scope, T>,
     pub(crate) state: RwSignal<'scope, PersistenceState>,
     pub(crate) controller: StoredValue<'scope, PersistenceController<'scope, T>>,
@@ -129,14 +130,14 @@ impl<'scope, T: 'scope> StoreField<'scope, T> for Persistent<'scope, T> {}
 impl<'scope> Persistent<'scope, ()> {
     /// Starts a new persistent binding builder for the given backend key.
     pub fn builder<H>(
-        scope: Scope<'scope>,
+        owner: OwnerAccess<'scope>,
         key: impl Into<LocalStaticRefStr>,
         error_handler: H,
     ) -> PersistentBuilder<'scope, NoBackend, NoCodec, (), NoDefault, H>
     where
         H: ErrorHandlerInput<'scope>,
     {
-        PersistentBuilder::new(scope, key, error_handler)
+        PersistentBuilder::new(owner, key, error_handler)
     }
 }
 
@@ -179,7 +180,7 @@ where
     }
 
     fn validate_owner(&self) -> Result<(), PersistenceError> {
-        if self.scope.is_active() {
+        if self.owner.is_active() {
             Ok(())
         } else {
             Err(PersistenceError::Fatal(PersistenceErrorKind::Reactivity(
@@ -650,7 +651,7 @@ pub(crate) fn invalidate_debounce<'scope, T>(
         controller
             .debounce
             .as_mut()
-            .and_then(ScopedDebounceState::invalidate)
+            .and_then(OwnerDebounceState::invalidate)
     })?;
     if let Some(timer) = &timer {
         timer.cancel();
@@ -669,7 +670,7 @@ pub(crate) fn take_controller_resources<'scope, T>(
         let timer = controller
             .debounce
             .as_mut()
-            .and_then(ScopedDebounceState::invalidate);
+            .and_then(OwnerDebounceState::invalidate);
         (controller.subscription.take(), timer)
     })
 }

@@ -3,7 +3,7 @@ use std::fmt;
 #[cfg(any(feature = "error-dom", feature = "error-bootstrap"))]
 use std::rc::Rc;
 
-use silex_reactivity::{ErrorHandlerRef, ReactiveError};
+use silex_reactivity::{CloseError, ErrorHandlerRef, ReactiveError};
 use wasm_bindgen::JsValue;
 
 #[cfg(feature = "error-bootstrap")]
@@ -16,7 +16,7 @@ mod dom;
 #[cfg(feature = "error-dom")]
 pub use dom::{
     CleanupFailure, CleanupFailureDiagnostic, CleanupOrigin, CleanupReport, CleanupSink,
-    DisposeError, DropFailureReport, MountAvailability, MountError,
+    DisposeError, DropFailureReport, MountAvailability, MountError, RollbackError,
 };
 
 #[cfg(feature = "error-i18n")]
@@ -66,6 +66,7 @@ impl fmt::Display for ErrorSeverity {
 pub enum SilexErrorKind {
     Dom(String),
     Reactivity(ReactiveError),
+    Close(CloseError),
     Framework(String),
     Javascript(String),
     #[cfg(feature = "error-persistence")]
@@ -98,6 +99,7 @@ impl SilexErrorKind {
         match self {
             Self::Dom(_) => "dom",
             Self::Reactivity(_) => "reactivity",
+            Self::Close(_) => "reactivity-close",
             Self::Framework(_) => "framework",
             Self::Javascript(_) => "javascript",
             #[cfg(feature = "error-persistence")]
@@ -131,6 +133,7 @@ impl fmt::Display for SilexErrorKind {
         match self {
             Self::Dom(msg) => write!(f, "DOM Error: {msg}"),
             Self::Reactivity(error) => write!(f, "Reactivity Error: {error}"),
+            Self::Close(error) => write!(f, "Reactivity close error: {error:?}"),
             Self::Framework(msg) => write!(f, "Framework Error: {msg}"),
             Self::Javascript(msg) => write!(f, "JavaScript Error: {msg}"),
             #[cfg(feature = "error-persistence")]
@@ -163,7 +166,7 @@ impl std::error::Error for SilexErrorKind {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Reactivity(error) => Some(error),
-            Self::Dom(_) | Self::Framework(_) | Self::Javascript(_) => None,
+            Self::Dom(_) | Self::Close(_) | Self::Framework(_) | Self::Javascript(_) => None,
             #[cfg(feature = "error-persistence")]
             Self::Persistence(error) => Some(error),
             #[cfg(feature = "error-i18n")]
@@ -197,6 +200,7 @@ impl PartialEq for SilexErrorKind {
             | (Self::Framework(left), Self::Framework(right))
             | (Self::Javascript(left), Self::Javascript(right)) => left == right,
             (Self::Reactivity(left), Self::Reactivity(right)) => left == right,
+            (Self::Close(left), Self::Close(right)) => left == right,
             #[cfg(feature = "error-persistence")]
             (Self::Persistence(left), Self::Persistence(right)) => left == right,
             #[cfg(feature = "error-i18n")]
@@ -380,7 +384,7 @@ impl std::error::Error for SilexError {
 
 pub type SilexResult<T> = Result<T, SilexError>;
 
-/// Compatibility alias for the non-owning handler view.
+/// Non-owning handler view for framework error dispatch.
 pub type ErrorHandler<'scope> = ErrorHandlerRef<'scope, SilexError>;
 
 /// A copyable error dispatch capability for framework-level errors.
@@ -388,6 +392,9 @@ pub type ErrorReporter<'scope> = ErrorHandler<'scope>;
 
 /// The RAII owner for one framework error callback registration.
 pub type ErrorHandlerToken<'scope> = silex_reactivity::ErrorHandlerToken<'scope, SilexError>;
+
+/// An owning handler reference retained by a framework lifecycle context.
+pub type ErrorHandlerAnchor<'scope> = silex_reactivity::ErrorHandlerAnchor<'scope, SilexError>;
 
 /// An owning runtime lease for one framework error callback registration.
 pub type HandlerLease<'scope> = silex_reactivity::HandlerLease<'scope, SilexError>;
@@ -399,6 +406,12 @@ pub trait ErrorHandlerInput<'scope> {
 }
 
 impl<'scope> ErrorHandlerInput<'scope> for ErrorHandlerToken<'scope> {
+    fn handler_ref(&self) -> ErrorHandler<'scope> {
+        self.view()
+    }
+}
+
+impl<'scope> ErrorHandlerInput<'scope> for ErrorHandlerAnchor<'scope> {
     fn handler_ref(&self) -> ErrorHandler<'scope> {
         self.view()
     }

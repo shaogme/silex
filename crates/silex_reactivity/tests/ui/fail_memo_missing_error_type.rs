@@ -1,5 +1,5 @@
-use silex_reactivity::Memo;
+use silex_reactivity::Computed;
 
 fn main() {
-    let _: Option<Memo<'_, i32>> = None;
+    let _: Option<Computed<'_, i32>> = None;
 }

@@ -1,19 +1,19 @@
 error: lifetime may not live long enough
-  --> tests/ui/fail_catalog_resource_child_escape.rs:13:9
+  --> tests/ui/fail_catalog_resource_child_escape.rs:11:13
    |
- 5 |       runtime.child(|scope| {
-   |                      ------ return type of closure is CatalogResource<'2>
-   |                      |
-   |                      has type `silex_i18n::Scope<'1>`
+ 6 |           .with_transient(|owner| {
+   |                            ------ return type of closure is CatalogResource<'2>
+   |                            |
+   |                            has type `OwnerAccess<'1>`
 ...
-13 | /         store.catalog_resource(
-14 | |             move |_locale| async {
-15 | |                 Err::<Catalog, I18nError>(I18nError::recoverable(
-16 | |                     silex_i18n::I18nErrorKind::Loader("not loaded".to_string()),
+11 | /             store
+12 | |                 .catalog_resource(
+13 | |                     move |_locale| async {
+14 | |                         Err::<Catalog, I18nError>(I18nError::recoverable(
 ...  |
-21 | |         .expect("resource")
-   | |___________________________^ returning this value requires that `'1` must outlive `'2`
+20 | |                 .expect("resource")
+   | |___________________________________^ returning this value requires that `'1` must outlive `'2`
    |
    = note: requirement occurs because of the type `CatalogResource<'_>`, which makes the generic argument `'_` invariant
-   = note: the struct `CatalogResource<'scope, E>` is invariant over the parameter `'scope`
+   = note: the struct `CatalogResource<'owner, E>` is invariant over the parameter `'owner`
    = help: see <https://doc.rust-lang.org/nomicon/subtyping.html> for more information about variance

@@ -1,6 +1,6 @@
 use std::{borrow::Cow, rc::Rc};
 
-use silex_core::{Memo, ReadSignal, RwSignal, Rx, Scope, Signal, SilexResult};
+use silex_core::{Computed, OwnerAccess, ReadSignal, RwSignal, Rx, Signal, SilexResult};
 
 #[cfg(feature = "persist")]
 use silex_persist::Persistent;
@@ -16,7 +16,7 @@ enum ResolverKind<'scope> {
     Dynamic {
         tracked: Rc<dyn Fn() -> SilexResult<String> + 'scope>,
         untracked: Rc<dyn Fn() -> SilexResult<String> + 'scope>,
-        validate: Rc<dyn Fn(Scope<'scope>) -> SilexResult<()> + 'scope>,
+        validate: Rc<dyn Fn(OwnerAccess<'scope>) -> SilexResult<()> + 'scope>,
     },
 }
 
@@ -46,7 +46,7 @@ impl<'scope> ValueResolver<'scope> {
     where
         F: Fn() -> SilexResult<String> + 'scope,
         U: Fn() -> SilexResult<String> + 'scope,
-        V: Fn(Scope<'scope>) -> SilexResult<()> + 'scope,
+        V: Fn(OwnerAccess<'scope>) -> SilexResult<()> + 'scope,
     {
         Self {
             kind: ResolverKind::Dynamic {
@@ -57,7 +57,7 @@ impl<'scope> ValueResolver<'scope> {
         }
     }
 
-    pub(crate) fn validate_runtime(&self, scope: Scope<'scope>) -> SilexResult<()> {
+    pub(crate) fn validate_runtime(&self, scope: OwnerAccess<'scope>) -> SilexResult<()> {
         match self {
             Self {
                 kind: ResolverKind::Static(_),
@@ -150,7 +150,8 @@ impl_into_net_value_for_rx!(RwSignal<'scope, T>, |value: RwSignal<'scope, T>| {
 impl_into_net_value_for_rx!(Signal<'scope, T>, |value: Signal<'scope, T>| {
     value.into_rx()
 });
-impl_into_net_value_for_rx!(Memo<'scope, T>, |value: Memo<'scope, T>| value.into_rx());
+impl_into_net_value_for_rx!(Computed<'scope, T>, |value: Computed<'scope, T>| value
+    .into_rx());
 
 #[cfg(feature = "persist")]
 impl_into_net_value_for_rx!(Persistent<'scope, T>, |value: Persistent<'scope, T>| value
@@ -203,7 +204,7 @@ mod tests {
     fn reactive_resolver_tracks_and_reads_untracked_values() {
         let mut runtime = Runtime::new();
         runtime
-            .child(|scope| {
+            .with_transient(|scope| {
                 let (value, set_value) = scope.signal(1_i32).unwrap();
                 let resolver = value.into_net_value();
 
@@ -218,7 +219,7 @@ mod tests {
     fn dynamic_resolver_can_read_multiple_sources() {
         let mut runtime = Runtime::new();
         runtime
-            .child(|scope| {
+            .with_transient(|scope| {
                 let (first, _) = scope.signal("a".to_string()).unwrap();
                 let (second, _) = scope.signal("b".to_string()).unwrap();
                 let tracked_first = first;

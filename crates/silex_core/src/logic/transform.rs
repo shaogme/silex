@@ -1,12 +1,12 @@
 use crate::{
-    ErrorHandlerInput, Rx, Scope, SilexResult, reactivity::ReactiveSource, traits::RxRead,
+    ErrorHandlerInput, OwnerAccess, Rx, SilexResult, reactivity::ReactiveSource, traits::RxRead,
 };
 
-/// Create a typed derived node in an explicit scope.
+/// Create a typed computed node in an explicit owner.
 pub trait Map: RxRead + Clone {
     fn map<'scope, U, F, H>(
         self,
-        scope: Scope<'scope>,
+        owner: OwnerAccess<'scope>,
         f: F,
         error_handler: H,
     ) -> SilexResult<Rx<'scope, U>>
@@ -19,7 +19,7 @@ pub trait Map: RxRead + Clone {
 
     fn map_fn<'scope, U, H>(
         self,
-        scope: Scope<'scope>,
+        owner: OwnerAccess<'scope>,
         f: fn(&Self::Value) -> U,
         error_handler: H,
     ) -> SilexResult<Rx<'scope, U>>
@@ -36,7 +36,7 @@ where
 {
     fn map<'scope, U, F, H>(
         self,
-        scope: Scope<'scope>,
+        owner: OwnerAccess<'scope>,
         f: F,
         error_handler: H,
     ) -> SilexResult<Rx<'scope, U>>
@@ -48,13 +48,15 @@ where
         H: ErrorHandlerInput<'scope>,
     {
         let error_handler = error_handler.handler_ref();
-        let source = scope.promote(self, error_handler)?;
-        scope.derived(move || source.with(|value| f(value)), error_handler)
+        let source = owner.promote(self, error_handler)?;
+        owner
+            .computed_always(move || source.with(|value| f(value)), error_handler)
+            .map(crate::Computed::into_rx)
     }
 
     fn map_fn<'scope, U, H>(
         self,
-        scope: Scope<'scope>,
+        owner: OwnerAccess<'scope>,
         f: fn(&Self::Value) -> U,
         error_handler: H,
     ) -> SilexResult<Rx<'scope, U>>
@@ -65,15 +67,17 @@ where
         H: ErrorHandlerInput<'scope>,
     {
         let error_handler = error_handler.handler_ref();
-        let source = scope.promote(self, error_handler)?;
-        scope.derived(move || source.with(f), error_handler)
+        let source = owner.promote(self, error_handler)?;
+        owner
+            .computed_always(move || source.with(f), error_handler)
+            .map(crate::Computed::into_rx)
     }
 }
 
-pub trait Memoize: RxRead + Clone {
-    fn memo<'scope, H>(
+pub trait ComputedSource: RxRead + Clone {
+    fn computed<'scope, H>(
         self,
-        scope: Scope<'scope>,
+        owner: OwnerAccess<'scope>,
         error_handler: H,
     ) -> SilexResult<Rx<'scope, Self::Value>>
     where
@@ -82,13 +86,13 @@ pub trait Memoize: RxRead + Clone {
         H: ErrorHandlerInput<'scope>;
 }
 
-impl<S> Memoize for S
+impl<S> ComputedSource for S
 where
     S: RxRead + Clone,
 {
-    fn memo<'scope, H>(
+    fn computed<'scope, H>(
         self,
-        scope: Scope<'scope>,
+        owner: OwnerAccess<'scope>,
         error_handler: H,
     ) -> SilexResult<Rx<'scope, Self::Value>>
     where
@@ -97,9 +101,9 @@ where
         H: ErrorHandlerInput<'scope>,
     {
         let error_handler = error_handler.handler_ref();
-        let source = scope.promote(self, error_handler)?;
-        scope
-            .memo(move |_| source.get(), error_handler)
-            .map(|memo| memo.into_rx())
+        let source = owner.promote(self, error_handler)?;
+        owner
+            .computed(move || source.get(), error_handler)
+            .map(|computed| computed.into_rx())
     }
 }

@@ -2,39 +2,40 @@
 
 use crate::{
     attribute::PendingAttribute,
-    view::{CleanupReporter, MountInstance, ScopedMountOwner, View},
+    view::{CleanupReporter, MountInstance, MountOwnerToken, View},
 };
 use silex_core::{
-    CleanupError, ErrorHandlerInput, RootHandle, Runtime, Scope, SilexError, SilexErrorKind,
+    CloseError, ErrorHandlerInput, OwnerAccess, OwnerHandle, Runtime, SilexError, SilexErrorKind,
     SilexResult, log::console_error,
 };
 use std::{
+    any::Any,
     cell::RefCell,
     fmt,
-    panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
+    panic::{AssertUnwindSafe, catch_unwind},
     rc::Rc,
 };
 use web_sys::Node;
 
 pub use silex_core::{
     CleanupFailure, CleanupFailureDiagnostic, CleanupOrigin, CleanupReport, CleanupSink,
-    DisposeError, DropFailureReport, MountAvailability, MountError,
+    DisposeError, DropFailureReport, MountAvailability, MountError, RollbackError,
 };
 
-/// The scoped ctx exposed to an application mount builder.
+/// The owner-bound context exposed to an application mount builder.
 ///
-/// A builder receives this ctx for the duration of one root-scope borrow.
-/// It can mount multiple views, but cannot return the ctx, a scoped view, or
-/// a scoped error handler from the callback.
+/// A builder receives this context for the duration of one root owner borrow.
+/// It can mount multiple views, but cannot return the context, an owner-bound
+/// view, or an owner-bound error handler from the callback.
 pub struct MountContext<'scope> {
-    scope: Scope<'scope>,
+    access: OwnerAccess<'scope>,
+    owner: MountOwnerToken<'scope>,
     parent: Node,
-    cleanup_reporter: CleanupReporter,
 }
 
 impl<'scope> MountContext<'scope> {
     fn with_cleanup_failures(
-        scope: Scope<'scope>,
+        access: OwnerAccess<'scope>,
         parent: Node,
         cleanup_failures: Rc<RefCell<Vec<CleanupFailure>>>,
     ) -> Self {
@@ -44,16 +45,17 @@ impl<'scope> MountContext<'scope> {
                 .borrow_mut()
                 .push(CleanupFailure::new(CleanupOrigin::ProvisionalOwner, error));
         });
+        let owner = MountOwnerToken::with_cleanup_reporter(access, cleanup_reporter);
         Self {
-            scope,
+            access,
+            owner,
             parent,
-            cleanup_reporter,
         }
     }
 
-    /// Borrow the explicit scope capability used by this transaction.
-    pub fn scope(&self) -> Scope<'scope> {
-        self.scope
+    /// Borrow the explicit owner capability used by this transaction.
+    pub fn access(&self) -> OwnerAccess<'scope> {
+        self.access
     }
 
     /// Return the detached staging parent for advanced view adapters.
@@ -61,9 +63,9 @@ impl<'scope> MountContext<'scope> {
         &self.parent
     }
 
-    /// Create an owner adapter for this mount scope.
-    pub fn owner(&self) -> ScopedMountOwner<'scope> {
-        ScopedMountOwner::with_cleanup_reporter(self.scope, self.cleanup_reporter.clone())
+    /// Return the owner capability for this mount transaction.
+    pub fn owner(&self) -> MountOwnerToken<'scope> {
+        self.owner.clone()
     }
 
     /// Mount one owned view into the transaction staging parent.
@@ -234,7 +236,7 @@ enum MountState {
 }
 
 struct MountSession {
-    root: RootHandle,
+    root: OwnerHandle,
     boundary: MountBoundary,
     generation: u64,
 }
@@ -326,7 +328,7 @@ impl MountedApp {
             }
             Err(panic) => {
                 self.state = MountState::Poisoned;
-                resume_unwind(panic)
+                Err(MountError::poisoned(panic_error("mount operation", panic)))
             }
         }
     }
@@ -388,7 +390,7 @@ impl MountedApp {
     where
         F: for<'scope> FnOnce(&MountContext<'scope>) -> SilexResult<()>,
     {
-        let root = match self.runtime.run() {
+        let root = match self.runtime.owner() {
             Ok(root) => root,
             Err(primary) => return Err(MountError::new(primary, CleanupReport::new())),
         };
@@ -423,13 +425,13 @@ impl Drop for MountedApp {
 }
 
 fn cleanup_parts(
-    root: &mut Option<RootHandle>,
+    root: &mut Option<OwnerHandle>,
     boundary: &mut Option<MountBoundary>,
 ) -> CleanupReport {
     let mut cleanup_failures = Vec::new();
 
     if let Some(root) = root.take()
-        && let Some(failure) = dispose_root_safely(root)
+        && let Some(failure) = close_root_safely(root)
     {
         cleanup_failures.push(failure);
     }
@@ -440,7 +442,7 @@ fn cleanup_parts(
             Err(panic) => {
                 cleanup_failures.push(CleanupFailure::new(
                     CleanupOrigin::MountBoundary,
-                    CleanupError::from_panic(panic),
+                    CloseError::from_panic(panic),
                 ));
                 Vec::new()
             }
@@ -452,15 +454,23 @@ fn cleanup_parts(
     CleanupReport::from_parts(cleanup_failures, boundary_errors)
 }
 
-fn dispose_root_safely(root: RootHandle) -> Option<CleanupFailure> {
-    match catch_unwind(AssertUnwindSafe(|| root.dispose())) {
+fn close_root_safely(root: OwnerHandle) -> Option<CleanupFailure> {
+    match catch_unwind(AssertUnwindSafe(|| root.close())) {
         Ok(Ok(())) => None,
         Ok(Err(error)) => Some(CleanupFailure::new(CleanupOrigin::Root, error)),
         Err(panic) => Some(CleanupFailure::new(
             CleanupOrigin::Root,
-            CleanupError::from_panic(panic),
+            CloseError::from_panic(panic),
         )),
     }
+}
+
+fn panic_error(operation: &str, panic: Box<dyn Any + Send>) -> SilexError {
+    let close_error = CloseError::from_panic(panic);
+    SilexError::fatal(SilexErrorKind::Framework(format!(
+        "{operation} panicked: {}",
+        close_error.diagnostic().message()
+    )))
 }
 
 fn record_drop_report(sink: &CleanupSink, report: CleanupReport) {
@@ -491,7 +501,7 @@ fn record_drop_report(sink: &CleanupSink, report: CleanupReport) {
 }
 
 struct MountAttempt {
-    root: Option<RootHandle>,
+    root: Option<OwnerHandle>,
     boundary: Option<MountBoundary>,
     cleanup_sink: CleanupSink,
     provisional_failures: Rc<RefCell<Vec<CleanupFailure>>>,
@@ -500,7 +510,7 @@ struct MountAttempt {
 
 impl MountAttempt {
     fn new(
-        root: RootHandle,
+        root: OwnerHandle,
         cleanup_sink: CleanupSink,
         provisional_failures: Rc<RefCell<Vec<CleanupFailure>>>,
         generation: u64,
@@ -524,18 +534,20 @@ impl MountAttempt {
             .as_ref()
             .expect("mount attempt boundary must exist")
             .staging_parent();
-        let mount_result = root.with_scope(|scope| {
-            let ctx = MountContext::with_cleanup_failures(
-                scope,
-                parent,
-                self.provisional_failures.clone(),
-            );
-            builder(&ctx)
-        });
+        let mount_result = catch_unwind(AssertUnwindSafe(|| {
+            root.with_access(|access| {
+                let ctx = MountContext::with_cleanup_failures(
+                    access,
+                    parent,
+                    self.provisional_failures.clone(),
+                );
+                builder(&ctx)
+            })
+        }));
         let provisional_failures = self.take_provisional_failures();
 
         match mount_result {
-            Ok(()) => {
+            Ok(Ok(())) => {
                 if let Err(primary) = self
                     .boundary
                     .as_mut()
@@ -554,7 +566,10 @@ impl MountAttempt {
                 }
                 self.publish()
             }
-            Err(primary) => self.fail(primary, provisional_failures),
+            Ok(Err(primary)) => self.fail(primary, provisional_failures),
+            Err(panic) => {
+                self.fail_panic(panic_error("mount builder", panic), provisional_failures)
+            }
         }
     }
 
@@ -565,6 +580,15 @@ impl MountAttempt {
     ) -> Result<MountSession, MountError> {
         let rollback = self.abort(provisional_failures);
         Err(MountError::new(primary, rollback))
+    }
+
+    fn fail_panic(
+        mut self,
+        primary: SilexError,
+        provisional_failures: Vec<CleanupFailure>,
+    ) -> Result<MountSession, MountError> {
+        let rollback = self.abort(provisional_failures);
+        Err(MountError::poisoned_with_report(primary, rollback))
     }
 
     fn abort(&mut self, provisional_failures: Vec<CleanupFailure>) -> CleanupReport {
@@ -606,16 +630,17 @@ mod tests {
     use super::*;
     use std::panic::{AssertUnwindSafe, catch_unwind};
 
-    fn root_with_cleanup_panic(message: &'static str) -> RootHandle {
+    fn root_with_cleanup_panic(message: &'static str) -> OwnerHandle {
         let mut runtime = Runtime::new();
-        let root = runtime.run().expect("root should be created");
-        root.with_scope(|scope| {
-            scope
+        let root = runtime.owner().expect("root should be created");
+        root.with_access(|owner| {
+            let handler = owner
+                .error_handler(|_: SilexError| {})
+                .expect("error handler should register");
+            owner
                 .on_cleanup(
-                    move || panic!("{message}"),
-                    scope
-                        .error_handler(|_: SilexError| {})
-                        .expect("error handler should register"),
+                    move || -> SilexResult<()> { panic!("{message}") },
+                    handler.view(),
                 )
                 .expect("cleanup should register");
         });

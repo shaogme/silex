@@ -2,7 +2,7 @@
 
 extern crate silex_macros_test as silex;
 
-use silex::core::{ErrorReporter, Runtime, Rx, Scope, SilexContext, SilexResult};
+use silex::core::{ErrorReporter, OwnerAccess, Runtime, Rx, SilexContext, SilexResult};
 use silex::css::types::Hex;
 use silex::dom::attribute::{
     AttrOp, AttributeBuilder, AttributeGroup, GlobalAttributes, ReactiveBindingTarget,
@@ -24,29 +24,29 @@ tw_variants! {
 }
 
 styled! {
-    pub ScopedPanel<'scope><div>(
-        #[ctx] ctx: SilexContext<'scope>,
-        children: AnyView<'scope>,
-        color: silex::core::reactivity::Signal<'scope, Hex>,
+    pub ScopedPanel<'owner><div>(
+        #[ctx] ctx: SilexContext<'owner>,
+        children: AnyView<'owner>,
+        color: silex::core::reactivity::Signal<'owner, Hex>,
     ) {
         color: $(color);
     }
 }
 
 styled! {
-    pub ScopedSelector<'scope><div>(
-        #[ctx] ctx: SilexContext<'scope>,
-        children: AnyView<'scope>,
-        selector: silex::core::reactivity::Signal<'scope, String>,
+    pub ScopedSelector<'owner><div>(
+        #[ctx] ctx: SilexContext<'owner>,
+        children: AnyView<'owner>,
+        selector: silex::core::reactivity::Signal<'owner, String>,
     ) {
         $selector { color: red; }
     }
 }
 
 styled! {
-    pub VariantPanel<'scope><div>(
-        #[ctx] ctx: SilexContext<'scope>,
-        children: AnyView<'scope>,
+    pub VariantPanel<'owner><div>(
+        #[ctx] ctx: SilexContext<'owner>,
+        children: AnyView<'owner>,
     ) {
         variants: {
             mode: {
@@ -58,37 +58,37 @@ styled! {
 }
 
 global! {
-    pub StaticGlobal<'scope>(scope: Scope<'scope>) {
+    pub StaticGlobal<'owner>(owner: OwnerAccess<'owner>) {
         body { color: red; }
     }
 }
 
 global! {
-    pub ScopedGlobal<'scope>(
-        error_handler: ErrorReporter<'scope>,
-        color: silex::core::reactivity::Signal<'scope, Hex>,
-        selector: silex::core::reactivity::Signal<'scope, String>,
+    pub ScopedGlobal<'owner>(
+        error_handler: ErrorReporter<'owner>,
+        color: silex::core::reactivity::Signal<'owner, Hex>,
+        selector: silex::core::reactivity::Signal<'owner, String>,
     ) {
         :root { color: $(color); }
         $selector { border-color: $(color); }
     }
 }
 
-fn dynamic_width<'scope>(
-    source: Rx<'scope, silex::css::types::Px>,
-    error_handler: ErrorReporter<'scope>,
-) -> SilexResult<silex::css::DynamicCss<'scope>> {
+fn dynamic_width<'owner>(
+    source: Rx<'owner, silex::css::types::Px>,
+    error_handler: ErrorReporter<'owner>,
+) -> SilexResult<silex::css::DynamicCss<'owner>> {
     css!(error_handler; width: $(source);)
 }
 
-fn dynamic_tw_width<'scope>(
-    source: Rx<'scope, silex::css::types::Px>,
-    error_handler: ErrorReporter<'scope>,
-) -> SilexResult<silex::css::DynamicCss<'scope>> {
+fn dynamic_tw_width<'owner>(
+    source: Rx<'owner, silex::css::types::Px>,
+    error_handler: ErrorReporter<'owner>,
+) -> SilexResult<silex::css::DynamicCss<'owner>> {
     tw!(error_handler; "w-[$(source)]")
 }
 
-fn conditional_class<'scope>(condition: Rx<'scope, bool>) -> AttrOp<'scope> {
+fn conditional_class<'owner>(condition: Rx<'owner, bool>) -> AttrOp<'owner> {
     tw!(
         "inline-flex",
         (
@@ -99,9 +99,9 @@ fn conditional_class<'scope>(condition: Rx<'scope, bool>) -> AttrOp<'scope> {
     )
 }
 
-fn conditional_classes<'scope>(
-    condition: silex::core::reactivity::ReadSignal<'scope, bool>,
-) -> AttributeGroup<'scope> {
+fn conditional_classes<'owner>(
+    condition: silex::core::reactivity::ReadSignal<'owner, bool>,
+) -> AttributeGroup<'owner> {
     silex::macros::classes!["active" => condition]
 }
 
@@ -109,8 +109,8 @@ fn conditional_classes<'scope>(
 fn conditional_tw_expands_to_a_scoped_attribute_operation() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
-            let (read, _) = scope.signal(true).unwrap();
+        .with_transient(|owner| {
+            let (read, _) = owner.signal(true).unwrap();
             let operation = conditional_class(read.into_rx());
 
             match operation {
@@ -125,9 +125,9 @@ fn conditional_tw_expands_to_a_scoped_attribute_operation() {
 fn dynamic_css_keeps_the_source_scope() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
-            let (read, _) = scope.signal(silex::css::types::px(4)).unwrap();
-            let error_handler = scope.error_handler(|_| {}).unwrap();
+        .with_transient(|owner| {
+            let (read, _) = owner.signal(silex::css::types::px(4)).unwrap();
+            let error_handler = owner.error_handler(|_| {}).unwrap();
             let dynamic = dynamic_width(read.into_rx(), error_handler.view()).unwrap();
             assert_eq!(dynamic.vars.len(), 1);
         })
@@ -138,9 +138,9 @@ fn dynamic_css_keeps_the_source_scope() {
 fn dynamic_tw_accepts_the_explicit_error_handler_syntax() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
-            let (read, _) = scope.signal(silex::css::types::px(4)).unwrap();
-            let error_handler = scope.error_handler(|_| {}).unwrap();
+        .with_transient(|owner| {
+            let (read, _) = owner.signal(silex::css::types::px(4)).unwrap();
+            let error_handler = owner.error_handler(|_| {}).unwrap();
             let dynamic = dynamic_tw_width(read.into_rx(), error_handler.view()).unwrap();
             assert_eq!(dynamic.vars.len(), 1);
         })
@@ -151,8 +151,8 @@ fn dynamic_tw_accepts_the_explicit_error_handler_syntax() {
 fn classes_converts_signal_to_a_scoped_attribute_group() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
-            let (condition, _) = scope.signal(true).unwrap();
+        .with_transient(|owner| {
+            let (condition, _) = owner.signal(true).unwrap();
             let group = conditional_classes(condition);
             assert_eq!(group.0.len(), 1);
             assert!(matches!(

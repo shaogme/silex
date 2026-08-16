@@ -1,18 +1,17 @@
 use silex_core::Runtime;
 use silex_dom::attribute::PendingAttribute;
-use silex_dom::view::{AnyView, DynamicRenderer, MountInstance, MountOwner, ScopedMountOwner};
+use silex_dom::view::{AnyView, DynamicRenderer, MountInstance, MountOwnerToken};
 
 fn main() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|owner| {
             let borrowed_view = String::from("borrowed-view");
             let _direct_view: AnyView<'_> = AnyView::new(borrowed_view.as_str());
-            let (read, _) = scope.signal(borrowed_view.as_str()).expect("signal");
+            let (read, _) = owner.signal(borrowed_view.as_str()).expect("signal");
             let _view: AnyView<'_> = AnyView::new(read);
 
-            let owner = ScopedMountOwner::new(scope);
-            let _token = owner.token();
+            let _token = MountOwnerToken::new(owner);
 
             let borrowed_attr = String::from("borrowed-attribute");
             let _attr: PendingAttribute<'_> = PendingAttribute::new_listener(move |_| {
@@ -26,5 +25,5 @@ fn main() {
                 Ok(MountInstance::from_nodes(Vec::new()))
             });
         })
-        .expect("child scope should initialize");
+        .expect("transient owner should initialize");
 }

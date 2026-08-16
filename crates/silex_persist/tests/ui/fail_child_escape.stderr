@@ -1,18 +1,18 @@
 error: lifetime may not live long enough
-  --> tests/ui/fail_child_escape.rs:7:9
+  --> tests/ui/fail_child_escape.rs:8:13
    |
- 6 |       runtime.child(|scope| {
-   |                      ------ return type of closure is Persistent<'2, i32>
-   |                      |
-   |                      has type `silex_core::Scope<'1>`
- 7 | /         Persistent::builder(
- 8 | |             scope,
- 9 | |             "counter",
-10 | |             scope
+ 7 |           .with_transient(|owner| {
+   |                            ------ return type of closure is Persistent<'2, i32>
+   |                            |
+   |                            has type `OwnerAccess<'1>`
+ 8 | /             Persistent::builder(
+ 9 | |                 owner,
+10 | |                 "counter",
+11 | |                 owner
 ...  |
-17 | |         .build()
-18 | |         .expect("persistent binding should build")
-   | |__________________________________________________^ returning this value requires that `'1` must outlive `'2`
+18 | |             .build()
+19 | |             .expect("persistent binding should build")
+   | |______________________________________________________^ returning this value requires that `'1` must outlive `'2`
    |
    = note: requirement occurs because of the type `Persistent<'_, i32>`, which makes the generic argument `'_` invariant
    = note: the struct `Persistent<'scope, T>` is invariant over the parameter `'scope`

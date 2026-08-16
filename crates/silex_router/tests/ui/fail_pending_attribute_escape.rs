@@ -5,8 +5,8 @@ fn require_static<T: 'static>(_: T) {}
 
 fn main() {
     let mut runtime = Runtime::new();
-    let attribute = runtime.child(|scope| {
-        let (value, _) = scope.signal(1_i32).expect("value signal should be created");
+    let attribute = runtime.with_transient(|owner| {
+        let (value, _) = owner.signal(1_i32).expect("value signal should be created");
         PendingAttribute::new_scoped(move |_, _, _| {
             let _ = value.get();
             Ok(())

@@ -4,13 +4,13 @@ use silex_dom::mounted::{CleanupReport, CleanupSink, DropFailureReport, MountErr
 fn main() {
     let sink = CleanupSink::new(|report| assert!(report.is_clean()));
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root should be created");
+    let root = runtime.owner().expect("root should be created");
 
-    root.with_scope(|scope| {
-        let _handler = scope
+    root.with_access(|owner| {
+        let _handler = owner
             .error_handler(|_: SilexError| {})
             .expect("error handler should register");
-        let _stored = scope.stored("scoped").expect("stored should initialize");
+        let _stored = owner.stored("owned").expect("stored should initialize");
     });
 
     let mount = MountError::new(
@@ -20,5 +20,5 @@ fn main() {
     let (_, rollback, _) = mount.into_parts();
     assert!(rollback.is_clean());
     sink.record(DropFailureReport::new());
-    root.dispose().expect("root should dispose");
+    root.close().expect("root should close");
 }

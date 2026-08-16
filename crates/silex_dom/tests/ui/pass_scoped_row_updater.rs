@@ -5,8 +5,8 @@ use std::{marker::PhantomData, rc::Rc};
 fn main() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
-            let (items, _) = scope.signal(vec![1i32]).expect("signal");
+        .with_transient(|owner| {
+            let (items, _) = owner.signal(vec![1i32]).expect("signal");
             let view = StatefulKeyedListView {
                 each: items,
                 key_fn: Rc::new(|item: &i32| *item),
@@ -19,5 +19,5 @@ fn main() {
             };
             let _ = view;
         })
-        .expect("child scope should initialize");
+        .expect("transient owner should initialize");
 }

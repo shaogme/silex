@@ -4,14 +4,14 @@ use super::{
     dispose::dispose_nodes,
     eval::{EvaluationError, flush_if_idle, prepare_fallible_read, prepare_read},
     model::{ScopePhase, ScopeState, StoredAccessMode},
-    scheduler::{GlobalScheduler, ObserverFrame, TargetNode},
+    scheduler::{GlobalScheduler, ObserverFrame, TargetNode, validate_active_scheduler},
     storage::{CallbackThunk, CallbackThunkError, TypedNodeRef},
 };
 use crate::{
     CallbackInvokeError, CallbackInvokeResult, ReactiveError, ReactiveResult,
     error::{ErrorContext, ErrorHandlerRef, ErrorSlot, HandlerError, HandlerLease},
     handle::NodeKindTag,
-    internal::RawId,
+    internal::NodeId,
 };
 use std::{
     cell::RefCell,
@@ -22,35 +22,41 @@ use std::{
 
 fn value_scheduler<'scope>(
     state: &ScopeState<'scope>,
-    id: RawId,
+    id: NodeId,
     reactive: bool,
+    validate_runtime: bool,
 ) -> ReactiveResult<Rc<RefCell<GlobalScheduler>>> {
     let state_ref = state
         .try_borrow()
         .map_err(|_| ReactiveError::BorrowConflict)?;
     let _ = state_ref.value_storage(id, reactive)?;
+    if validate_runtime {
+        validate_active_scheduler(&state_ref.scheduler)?;
+    }
     Ok(state_ref.scheduler.clone())
 }
 
 fn stored_scheduler<'scope>(
     state: &ScopeState<'scope>,
-    id: RawId,
+    id: NodeId,
 ) -> ReactiveResult<(Rc<RefCell<GlobalScheduler>>, StoredAccessMode)> {
     let state_ref = state
         .try_borrow()
         .map_err(|_| ReactiveError::BorrowConflict)?;
     let (_, mode) = state_ref.stored_value_storage(id)?;
+    validate_active_scheduler(&state_ref.scheduler)?;
     Ok((state_ref.scheduler.clone(), mode))
 }
 
 fn node_ref_scheduler<'scope>(
     state: &ScopeState<'scope>,
-    id: RawId,
+    id: NodeId,
 ) -> ReactiveResult<Rc<RefCell<GlobalScheduler>>> {
     let state_ref = state
         .try_borrow()
         .map_err(|_| ReactiveError::BorrowConflict)?;
     let _ = state_ref.node_ref_storage(id)?;
+    validate_active_scheduler(&state_ref.scheduler)?;
     Ok(state_ref.scheduler.clone())
 }
 
@@ -61,15 +67,12 @@ pub(crate) fn invoke_error_handler<'scope, E>(
 where
     E: 'scope,
 {
-    let state = handler
-        .storage()
-        .owner_token(std::marker::PhantomData)
-        .state();
+    let state = handler.storage().owner_token().state();
     let owner = {
         let state_ref = state
             .try_borrow()
             .map_err(|error| HandlerError::new(error, ErrorContext::new("handler state lookup")))?;
-        let context = ErrorContext::new("handler registry lookup").with_owner(state_ref.scope_id.0);
+        let context = ErrorContext::new("handler registry lookup").with_owner(state_ref.owner_id.0);
         if state_ref.phase == ScopePhase::Released {
             return Err(HandlerError::scope_released(context));
         }
@@ -83,7 +86,7 @@ where
         if !entry.owner.is_active() {
             return Err(HandlerError::inactive(context));
         }
-        state_ref.scope_id.0
+        state_ref.owner_id.0
     };
     let record = unsafe { handler.restore_record() };
     record.call(
@@ -99,15 +102,12 @@ pub(crate) fn acquire_error_handler_lease<'scope, E>(
 where
     E: 'scope,
 {
-    let state = handler
-        .storage()
-        .owner_token(std::marker::PhantomData)
-        .state();
+    let state = handler.storage().owner_token().state();
     let owner = {
         let state_ref = state
             .try_borrow()
             .map_err(|error| HandlerError::new(error, ErrorContext::new("handler state lookup")))?;
-        let context = ErrorContext::new("handler lease").with_owner(state_ref.scope_id.0);
+        let context = ErrorContext::new("handler lease").with_owner(state_ref.owner_id.0);
         if state_ref.phase == ScopePhase::Released {
             return Err(HandlerError::scope_released(context));
         }
@@ -139,13 +139,13 @@ fn read_typed<'scope, T, R>(
 
 pub(crate) fn with_signal<'scope, T, R>(
     state: &ScopeState<'scope>,
-    id: RawId,
+    id: NodeId,
     value: TypedNodeRef<'scope, T>,
     track: bool,
     f: impl FnOnce(&T) -> R,
 ) -> ReactiveResult<R> {
     prepare_read(state, id, track)?;
-    let scheduler = value_scheduler(state, id, true)?;
+    let scheduler = value_scheduler(state, id, true, track)?;
     let result = read_typed(value, scheduler, f)?;
     flush_if_idle(state)?;
     Ok(result)
@@ -153,7 +153,7 @@ pub(crate) fn with_signal<'scope, T, R>(
 
 pub(crate) fn with_fallible_signal<'scope, T, E, R>(
     state: &ScopeState<'scope>,
-    id: RawId,
+    id: NodeId,
     value: TypedNodeRef<'scope, T>,
     errors: &'scope ErrorSlot<E>,
     track: bool,
@@ -167,12 +167,12 @@ where
             EvaluationError::Runtime(error) => CallbackInvokeError::Runtime(error),
             EvaluationError::User => CallbackInvokeError::User(errors.take()),
             EvaluationError::Callback(_) => {
-                CallbackInvokeError::Runtime(ReactiveError::TypeMismatch)
+                CallbackInvokeError::Runtime(ReactiveError::InvariantViolation)
             }
             EvaluationError::Handler(error) => CallbackInvokeError::Handler(error),
         });
     }
-    let scheduler = match value_scheduler(state, id, true) {
+    let scheduler = match value_scheduler(state, id, true, track) {
         Ok(scheduler) => scheduler,
         Err(error) => return Err(CallbackInvokeError::Runtime(error)),
     };
@@ -184,7 +184,7 @@ where
     result.map_err(CallbackInvokeError::Runtime)
 }
 
-fn commit_signal<'scope>(state: &ScopeState<'scope>, id: RawId) -> ReactiveResult<()> {
+fn commit_signal<'scope>(state: &ScopeState<'scope>, id: NodeId) -> ReactiveResult<()> {
     let mut state_ref = state
         .try_borrow_mut()
         .map_err(|_| ReactiveError::BorrowConflict)?;
@@ -204,11 +204,11 @@ fn commit_signal<'scope>(state: &ScopeState<'scope>, id: RawId) -> ReactiveResul
 
 pub(crate) fn update_signal<'scope, T, R>(
     state: &ScopeState<'scope>,
-    id: RawId,
+    id: NodeId,
     value: TypedNodeRef<'scope, T>,
     f: impl FnOnce(&mut T) -> (R, bool),
 ) -> ReactiveResult<R> {
-    let scheduler = value_scheduler(state, id, false)?;
+    let scheduler = value_scheduler(state, id, false, true)?;
     let mut lease = value.slot().try_write(scheduler)?;
     let stored = lease.as_mut().ok_or(ReactiveError::NoSuchNode)?;
     let (result, changed) = f(stored);
@@ -220,9 +220,37 @@ pub(crate) fn update_signal<'scope, T, R>(
     Ok(result)
 }
 
+pub(crate) fn notify<'scope>(state: &ScopeState<'scope>, id: NodeId) -> ReactiveResult<()> {
+    let scheduler = state
+        .try_borrow()
+        .map_err(|_| ReactiveError::BorrowConflict)?
+        .scheduler
+        .clone();
+    validate_active_scheduler(&scheduler)?;
+    let should_flush = {
+        let mut state_ref = state
+            .try_borrow_mut()
+            .map_err(|_| ReactiveError::BorrowConflict)?;
+        if !state_ref.is_active() {
+            return Err(ReactiveError::NoSuchNode);
+        }
+        if !state_ref.node_exists(id) {
+            return Err(ReactiveError::NoSuchNode);
+        }
+        if state_ref.mark_notified(id) {
+            state_ref.queue_dependents(id)?;
+        }
+        state_ref.scheduler.borrow().should_flush()
+    };
+    if should_flush {
+        flush_if_idle(state)?;
+    }
+    Ok(())
+}
+
 pub(crate) fn with_stored<'scope, T, R>(
     state: &ScopeState<'scope>,
-    id: RawId,
+    id: NodeId,
     value: TypedNodeRef<'scope, T>,
     f: impl FnOnce(&T) -> R,
 ) -> ReactiveResult<R> {
@@ -236,7 +264,7 @@ pub(crate) fn with_stored<'scope, T, R>(
 
 pub(crate) fn update_stored<'scope, T, R>(
     state: &ScopeState<'scope>,
-    id: RawId,
+    id: NodeId,
     value: TypedNodeRef<'scope, T>,
     f: impl FnOnce(&mut T) -> R,
 ) -> ReactiveResult<R> {
@@ -253,7 +281,7 @@ pub(crate) fn update_stored<'scope, T, R>(
 
 pub(crate) fn node_ref_get<'scope, T: Clone>(
     state: &ScopeState<'scope>,
-    id: RawId,
+    id: NodeId,
     value: TypedNodeRef<'scope, Option<T>>,
 ) -> ReactiveResult<Option<T>> {
     let scheduler = node_ref_scheduler(state, id)?;
@@ -262,7 +290,7 @@ pub(crate) fn node_ref_get<'scope, T: Clone>(
 
 pub(crate) fn node_ref_set<'scope, T>(
     state: &ScopeState<'scope>,
-    id: RawId,
+    id: NodeId,
     slot: TypedNodeRef<'scope, Option<T>>,
     value: T,
 ) -> ReactiveResult<()> {
@@ -277,7 +305,7 @@ pub(crate) fn node_ref_set<'scope, T>(
 
 pub(crate) fn node_ref_clear<'scope, T>(
     state: &ScopeState<'scope>,
-    id: RawId,
+    id: NodeId,
     slot: TypedNodeRef<'scope, Option<T>>,
 ) -> ReactiveResult<()> {
     let scheduler = node_ref_scheduler(state, id)?;
@@ -291,7 +319,7 @@ pub(crate) fn node_ref_clear<'scope, T>(
 
 pub(crate) fn invoke_callback<'scope, T, E>(
     state: &ScopeState<'scope>,
-    id: RawId,
+    id: NodeId,
     callback_ref: TypedNodeRef<'scope, CallbackThunk<'scope, T, E>>,
     arg: T,
 ) -> Result<(), CallbackThunkError<E>>
@@ -306,7 +334,9 @@ where
         let storage = state_ref
             .callback_storage(id)
             .map_err(CallbackThunkError::Runtime)?;
-        (state_ref.scheduler.clone(), storage)
+        let scheduler = state_ref.scheduler.clone();
+        validate_active_scheduler(&scheduler).map_err(CallbackThunkError::Runtime)?;
+        (scheduler, storage)
     };
     let mut lease = callback_ref
         .slot()
@@ -366,7 +396,7 @@ where
     result
 }
 
-pub(crate) fn stop_effect<'scope>(state: &ScopeState<'scope>, id: RawId) -> ReactiveResult<bool> {
+pub(crate) fn stop_effect<'scope>(state: &ScopeState<'scope>, id: NodeId) -> ReactiveResult<bool> {
     let (scheduler, target) = {
         let state_ref = state
             .try_borrow()
@@ -384,7 +414,7 @@ pub(crate) fn stop_effect<'scope>(state: &ScopeState<'scope>, id: RawId) -> Reac
         (
             scheduler,
             TargetNode {
-                scope_id: state_ref.scope_id,
+                owner_id: state_ref.owner_id,
                 node: id,
             },
         )
@@ -408,28 +438,6 @@ pub(crate) fn stop_effect<'scope>(state: &ScopeState<'scope>, id: RawId) -> Reac
         (Ok(Ok(_)), Ok(Err(error))) => return Err(error),
     }
     Ok(true)
-}
-
-pub(crate) fn notify<'scope>(state: &ScopeState<'scope>, id: RawId) -> ReactiveResult<()> {
-    let should_flush = {
-        let mut state_ref = state
-            .try_borrow_mut()
-            .map_err(|_| ReactiveError::BorrowConflict)?;
-        if !state_ref.is_active() {
-            return Err(ReactiveError::NoSuchNode);
-        }
-        if !state_ref.node_exists(id) {
-            return Err(ReactiveError::NoSuchNode);
-        }
-        if state_ref.mark_notified(id) {
-            state_ref.queue_dependents(id)?;
-        }
-        state_ref.scheduler.borrow().should_flush()
-    };
-    if should_flush {
-        flush_if_idle(state)?;
-    }
-    Ok(())
 }
 
 pub(crate) fn with_untracked<'scope, R>(state: &ScopeState<'scope>, f: impl FnOnce() -> R) -> R {

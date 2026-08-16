@@ -1,11 +1,10 @@
 use super::contract::{ApplyAttributes, MountInstance, View, ViewCons, ViewNil};
-use super::owner::{MountErrorHandler, MountOwner, OwnedMountOwner};
+use super::owner::{MountErrorHandler, MountOwner, MountOwnerToken, OwnerMount};
 use crate::attribute::PendingAttribute;
-use silex_core::{CleanupError, OwnedScope, SilexError, SilexResult};
+use silex_core::{CloseError, SilexError, SilexErrorKind, SilexResult};
 use std::{
     borrow::Cow,
-    panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
-    rc::Rc,
+    panic::{AssertUnwindSafe, catch_unwind},
 };
 use web_sys::Node;
 
@@ -24,16 +23,11 @@ where
         MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>>,
 {
-    let scope = Rc::new(owner.owned_scope()?);
-    let owner_token = owner.token();
-    let provisional_owner = owner_token.cleanup_reporter().map_or_else(
-        || OwnedMountOwner::new(scope.clone()),
-        |reporter| OwnedMountOwner::with_cleanup_reporter(scope.clone(), reporter),
-    );
+    let provisional_owner = OwnerMount::new(owner.child());
     let fragment: Node = crate::document().create_document_fragment().into();
 
     if let Err(error) = mount(&provisional_owner, &fragment, attrs, error_handler) {
-        return rollback_composite_scope_with_primary(owner, &scope, error);
+        return rollback_composite_scope_with_primary(owner, &provisional_owner, error);
     }
 
     let fragment_children = fragment.child_nodes();
@@ -41,19 +35,20 @@ where
         .filter_map(|index| fragment_children.item(index))
         .collect();
 
-    let scope_for_cleanup = scope.clone();
+    let owner_for_cleanup = provisional_owner.token();
     if let Err(error) = owner.on_cleanup(
         Box::new(move || {
-            let _ = scope_for_cleanup.dispose();
-            Ok(())
+            owner_for_cleanup
+                .close()
+                .map_err(|error| SilexError::fatal(SilexErrorKind::Close(error)))
         }),
         error_handler,
     ) {
-        return rollback_composite_scope_with_primary(owner, &scope, error);
+        return rollback_composite_scope_with_primary(owner, &provisional_owner, error);
     }
 
     if let Err(error) = parent.append_child(&fragment).map_err(SilexError::fatal) {
-        return rollback_composite_scope_with_primary(owner, &scope, error);
+        return rollback_composite_scope_with_primary(owner, &provisional_owner, error);
     }
     Ok(MountInstance::from_nodes(nodes))
 }
@@ -77,26 +72,22 @@ where
     mount_composite(owner, parent, attrs, error_handler, mount)
 }
 
-fn rollback_composite_scope<'scope>(scope: &Rc<OwnedScope<'scope>>) -> Result<(), CleanupError> {
-    match catch_unwind(AssertUnwindSafe(|| scope.dispose())) {
+fn rollback_composite_scope<'scope>(owner: &MountOwnerToken<'scope>) -> Result<(), CloseError> {
+    match catch_unwind(AssertUnwindSafe(|| owner.close())) {
         Ok(result) => result,
-        Err(panic) => resume_unwind(panic),
+        Err(panic) => Err(CloseError::from_panic(panic)),
     }
 }
 
 fn rollback_composite_scope_with_primary<'scope>(
     owner: &dyn MountOwner<'scope>,
-    scope: &Rc<OwnedScope<'scope>>,
+    provisional_owner: &OwnerMount<'scope>,
     primary: SilexError,
 ) -> SilexResult<MountInstance<'scope>> {
-    match rollback_composite_scope(scope) {
+    match rollback_composite_scope(&provisional_owner.token()) {
         Ok(()) => Err(primary),
         Err(cleanup) => {
-            if let Some(reporter) = owner.token().cleanup_reporter() {
-                reporter(cleanup);
-            } else {
-                let _ = cleanup.into_diagnostic();
-            }
+            owner.token().report_close_error(cleanup);
             Err(primary.into_fatal())
         }
     }

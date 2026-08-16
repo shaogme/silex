@@ -1,11 +1,13 @@
 //! Explicit runtime operation errors and typed callback error channels.
 
 use crate::{
+    owner::ScopeStorage,
+    root::CloseError,
     runtime::{
-        ScopeState, acquire_error_handler_lease, invoke_error_handler, storage::CallbackThunkError,
+        ScopePhase, ScopeState, acquire_error_handler_lease, invoke_error_handler,
+        storage::CallbackThunkError,
     },
-    scope::ScopeStorage,
-    unsafe_boundary::WeakOwnerToken,
+    unsafe_boundary::{OwnerToken, WeakOwnerToken},
 };
 use std::{
     cell::{Cell, RefCell},
@@ -24,11 +26,11 @@ slotmap::new_key_type! {
 pub enum ReactiveError {
     NoSuchNode,
     WrongKind,
-    TypeMismatch,
     BorrowConflict,
     Reentrant,
     RuntimeAlreadyRunning,
     RuntimeMismatch,
+    InvariantViolation,
     Handler(HandlerError),
     NonConvergent {
         iterations: usize,
@@ -40,7 +42,10 @@ pub enum ReactiveError {
 impl ReactiveError {
     #[inline]
     pub fn is_bug(self) -> bool {
-        matches!(self, Self::WrongKind | Self::TypeMismatch | Self::Reentrant)
+        matches!(
+            self,
+            Self::WrongKind | Self::Reentrant | Self::InvariantViolation
+        )
     }
 }
 
@@ -49,11 +54,11 @@ impl fmt::Display for ReactiveError {
         let message = match self {
             Self::NoSuchNode => "节点不存在或所属 scope 已结束",
             Self::WrongKind => "句柄指向的节点不是这个操作要求的种类",
-            Self::TypeMismatch => "节点里存放的不是请求的类型",
             Self::BorrowConflict => "同一节点上的动态借用发生冲突",
             Self::Reentrant => "响应式计算或回调发生递归调用",
             Self::RuntimeAlreadyRunning => "响应式 Runtime 已经在运行中",
             Self::RuntimeMismatch => "响应式节点属于不同的 Runtime scheduler family",
+            Self::InvariantViolation => "响应式运行时内部状态不一致",
             Self::Handler(error) => return error.fmt(f),
             Self::NonConvergent { .. } => "响应式 effect 队列在预算内未收敛",
         };
@@ -70,6 +75,7 @@ pub enum CallbackInvokeError<E> {
     Runtime(ReactiveError),
     User(E),
     Handler(HandlerError),
+    Close(CloseError),
 }
 
 pub type CallbackInvokeResult<T, E> = Result<T, CallbackInvokeError<E>>;
@@ -395,10 +401,13 @@ impl<'scope, E> HandlerRecord<'scope, E> {
         let Some(key) = self.key.get() else {
             return true;
         };
-        let Some(owner) = self.owner.upgrade() else {
+        let Some(state) = self.owner.upgrade_erased() else {
             return true;
         };
-        let state: ScopeState<'scope> = owner.state();
+        // SAFETY: this weak identity was captured from the same registered
+        // handler owner. The registry entry is removed only after the owner
+        // state has finished its close transaction.
+        let state: ScopeState<'scope> = unsafe { OwnerToken::from_validated(state).state() };
         if let Ok(mut state) = state.try_borrow_mut() {
             state.remove_error_handler(key, self.identity());
             true
@@ -502,6 +511,50 @@ impl<'scope, E: 'scope> ErrorHandlerRef<'scope, E> {
         acquire_error_handler_lease(self)
     }
 
+    #[doc(hidden)]
+    pub fn anchor(&self) -> Result<ErrorHandlerAnchor<'scope, E>, HandlerError> {
+        let state = self.storage.owner_token().state();
+        {
+            let state_ref = state.try_borrow().map_err(|error| {
+                HandlerError::new(error, ErrorContext::new("handler state lookup"))
+            })?;
+            let context = ErrorContext::new("handler token").with_owner(state_ref.owner_id.0);
+            if state_ref.phase == ScopePhase::Released {
+                return Err(HandlerError::scope_released(context));
+            }
+            let entry = state_ref
+                .error_handlers
+                .get(self.key)
+                .ok_or_else(|| HandlerError::generation_mismatch(context))?;
+            if entry.identity != self.record {
+                return Err(HandlerError::generation_mismatch(context));
+            }
+            if !entry.owner.is_active() {
+                return Err(HandlerError::inactive(context));
+            }
+        }
+
+        let pointer = self.record.cast::<HandlerRecord<'scope, E>>().as_ptr();
+        // SAFETY: the registry validation above proves that this pointer is
+        // the live Rc allocation for the current handler generation.
+        unsafe { Rc::increment_strong_count(pointer) };
+        // SAFETY: increment_strong_count created exactly one Rc strong ref.
+        let record = unsafe { Rc::from_raw(pointer) };
+        record.add_strong();
+        Ok(ErrorHandlerAnchor::from_record(
+            self.storage,
+            self.key,
+            record,
+        ))
+    }
+
+    #[doc(hidden)]
+    pub fn is_same_handler(&self, other: &Self) -> bool {
+        std::ptr::eq(self.storage, other.storage)
+            && self.key == other.key
+            && self.record == other.record
+    }
+
     pub(crate) fn storage(&self) -> &'scope ScopeStorage {
         self.storage
     }
@@ -519,6 +572,50 @@ impl<'scope, E: 'scope> ErrorHandlerRef<'scope, E> {
         // record identity before this pointer is restored. The record is
         // kept alive by the registry or by the HandlerLease owner.
         unsafe { self.record.cast::<HandlerRecord<'scope, E>>().as_ref() }
+    }
+}
+
+/// An owning handler reference retained by a framework lifecycle context.
+///
+/// Unlike [`ErrorHandlerRef`], this value keeps the registered callback alive
+/// after the caller drops its [`ErrorHandlerToken`]. It is deliberately
+/// separate from the public token so a lifecycle context cannot close the
+/// caller's registration accidentally.
+pub struct ErrorHandlerAnchor<'scope, E> {
+    view: ErrorHandlerRef<'scope, E>,
+    record: Rc<HandlerRecord<'scope, E>>,
+}
+
+impl<'scope, E: 'scope> ErrorHandlerAnchor<'scope, E> {
+    fn from_record(
+        storage: &'scope ScopeStorage,
+        key: ErrorHandlerKey,
+        record: Rc<HandlerRecord<'scope, E>>,
+    ) -> Self {
+        Self {
+            view: ErrorHandlerRef::from_record(storage, key, &record),
+            record,
+        }
+    }
+
+    pub fn view(&self) -> ErrorHandlerRef<'scope, E> {
+        self.view
+    }
+}
+
+impl<E> Clone for ErrorHandlerAnchor<'_, E> {
+    fn clone(&self) -> Self {
+        self.record.add_strong();
+        Self {
+            view: self.view,
+            record: self.record.clone(),
+        }
+    }
+}
+
+impl<E> Drop for ErrorHandlerAnchor<'_, E> {
+    fn drop(&mut self) {
+        self.record.release_strong();
     }
 }
 
@@ -586,6 +683,12 @@ pub trait ErrorHandlerInput<'scope, E> {
 }
 
 impl<'scope, E> ErrorHandlerInput<'scope, E> for ErrorHandlerToken<'scope, E> {
+    fn handler_ref(&self) -> ErrorHandlerRef<'scope, E> {
+        self.view
+    }
+}
+
+impl<'scope, E> ErrorHandlerInput<'scope, E> for ErrorHandlerAnchor<'scope, E> {
     fn handler_ref(&self) -> ErrorHandlerRef<'scope, E> {
         self.view
     }

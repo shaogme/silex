@@ -1,5 +1,5 @@
 use silex_reactivity::{
-    CallbackInvokeError, ErrorHandlerToken, Memo, ReactiveError, Runtime, Scope,
+    CallbackInvokeError, Computed, ErrorHandlerToken, OwnerAccess, ReactiveError, Runtime,
 };
 use std::{
     cell::Cell,
@@ -7,7 +7,7 @@ use std::{
     rc::Rc,
 };
 
-fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope, ()> {
+fn handler<'scope>(scope: OwnerAccess<'scope>) -> ErrorHandlerToken<'scope, ()> {
     scope.error_handler(|_| {}).expect("handler registration")
 }
 
@@ -15,7 +15,7 @@ fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope, ()> {
 fn panic_in_update_keeps_the_value_and_releases_the_lease() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (signal, set_signal) = scope.signal(1i32).expect("fallible reactive creation");
             let panic = catch_unwind(AssertUnwindSafe(|| {
                 set_signal
@@ -28,7 +28,7 @@ fn panic_in_update_keeps_the_value_and_releases_the_lease() {
         .expect("test operation should succeed");
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (signal, set_signal) = scope.signal(1i32).expect("fallible reactive creation");
             set_signal.set(2).expect("test operation should succeed");
             assert_eq!(signal.get(), Ok(2));
@@ -40,7 +40,7 @@ fn panic_in_update_keeps_the_value_and_releases_the_lease() {
 fn shared_reads_succeed_but_write_conflicts_are_reported() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (signal, set_signal) = scope.signal(1i32).expect("fallible reactive creation");
 
             let nested_read = signal
@@ -71,13 +71,13 @@ fn shared_reads_succeed_but_write_conflicts_are_reported() {
 fn recursive_memo_read_reports_reentrant_instead_of_borrow_conflict() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
-            let slot: Rc<Cell<Option<Memo<'_, i32, ()>>>> = Rc::new(Cell::new(None));
+        .with_transient(|scope| {
+            let slot: Rc<Cell<Option<Computed<'_, i32, ()>>>> = Rc::new(Cell::new(None));
             let slot_in_memo = slot.clone();
             let (source, set_source) = scope.signal(1_i32).expect("fallible reactive creation");
             let memo = scope
-                .memo(
-                    move |_| {
+                .computed(
+                    move || {
                         let value = source.get().expect("reactive read");
                         if let Some(memo) = slot_in_memo.get() {
                             assert_eq!(
@@ -105,7 +105,7 @@ fn panic_in_effect_does_not_block_the_next_notification() {
     let should_panic = Rc::new(Cell::new(false));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(0i32).expect("fallible reactive creation");
             let runs_in_effect = runs.clone();
             let panic_in_effect = should_panic.clone();
@@ -146,7 +146,7 @@ fn cleanup_panic_during_effect_rerun_does_not_skip_remaining_cleanups() {
     let remaining_cleanup_ran = Rc::new(Cell::new(false));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(0i32).expect("fallible reactive creation");
             let scope_copy = scope;
             let register_cleanups = Rc::new(Cell::new(true));
@@ -214,12 +214,12 @@ fn panic_in_memo_keeps_the_previous_value_and_allows_retry() {
     let should_panic = Rc::new(Cell::new(false));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(1i32).expect("fallible reactive creation");
             let panic_in_memo = should_panic.clone();
             let memo = scope
-                .memo(
-                    move |_| {
+                .computed(
+                    move || {
                         let value = source.get().expect("reactive read");
                         if panic_in_memo.replace(false) {
                             panic!("memo panic");
@@ -264,12 +264,12 @@ fn panic_in_memo_equality_keeps_the_previous_value_and_allows_retry() {
     let should_panic = Rc::new(Cell::new(false));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(1i32).expect("fallible reactive creation");
             let panic_in_eq = should_panic.clone();
             let memo = scope
-                .memo(
-                    move |_| {
+                .computed(
+                    move || {
                         Ok(PanicOnCompare {
                             value: source.get().expect("reactive read"),
                             should_panic: panic_in_eq.clone(),
@@ -301,7 +301,7 @@ fn batch_panic_restores_depth_and_flushes_pending_effects() {
     let seen = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(0i32).expect("fallible reactive creation");
             let seen_in_effect = seen.clone();
             scope
@@ -336,7 +336,7 @@ fn untrack_panic_restores_the_active_dependency_observer() {
     let first_run = Rc::new(Cell::new(true));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(0i32).expect("fallible reactive creation");
             let (tracked, set_tracked) = scope.signal(0i32).expect("fallible reactive creation");
             let scope_copy = scope;
@@ -375,7 +375,7 @@ fn child_callback_panic_restores_the_outer_observer_frame() {
     let runs = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let parent_scope = scope;
             let (source, _) = scope.signal(0i32).expect("fallible reactive creation");
             let (tail, set_tail) = scope.signal(0i32).expect("fallible reactive creation");
@@ -386,7 +386,7 @@ fn child_callback_panic_restores_the_outer_observer_frame() {
                         source.get().expect("test operation should succeed");
                         let panic = catch_unwind(AssertUnwindSafe(|| {
                             parent_scope
-                                .child(|_| panic!("child callback panic"))
+                                .with_transient(|_| panic!("child callback panic"))
                                 .expect("test operation should succeed");
                         }));
                         assert!(panic.is_err());

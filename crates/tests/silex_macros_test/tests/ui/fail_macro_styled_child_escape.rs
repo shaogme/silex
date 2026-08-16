@@ -9,10 +9,10 @@ use silex_dom::prelude::AnyView;
 use silex_macros::styled;
 
 styled! {
-    pub ScopedPanel<'scope><div>(
-        #[ctx] ctx: silex_core::SilexContext<'scope>,
-        children: AnyView<'scope>,
-        color: silex_core::reactivity::Signal<'scope, Hex>,
+    pub ScopedPanel<'owner><div>(
+        #[ctx] ctx: silex_core::SilexContext<'owner>,
+        children: AnyView<'owner>,
+        color: silex_core::reactivity::Signal<'owner, Hex>,
     ) {
         color: $(color);
     }
@@ -20,10 +20,10 @@ styled! {
 
 fn main() {
     let mut runtime = Runtime::new();
-    let view = runtime.child(|scope| {
-        let (color, _) = scope.signal(silex_css::types::hex("#fff")).unwrap();
-        let error_handler = scope.error_handler(|_| {}).unwrap();
-        let ctx = silex_core::SilexContext::new(scope, error_handler.view());
+    let view = runtime.with_transient(|owner| {
+        let (color, _) = owner.signal(silex_css::types::hex("#fff")).unwrap();
+        let error_handler = owner.error_handler(|_| {}).unwrap();
+        let ctx = silex_core::SilexContext::new(owner, error_handler.view());
         ScopedPanel(ctx, color, color)
     });
     let _ = view;

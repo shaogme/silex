@@ -1,11 +1,11 @@
 error[E0521]: borrowed data escapes outside of closure
   --> tests/ui/fail_scoped_handle_in_future.rs:9:13
    |
- 7 |           scope.child(|child| {
-   |                        -----
-   |                        |
-   |                        `child` is a reference that is only valid in the closure body
-   |                        has type `silex_core::Scope<'1>`
+ 7 |           owner.with_transient(|child| {
+   |                                 -----
+   |                                 |
+   |                                 `child` is a reference that is only valid in the closure body
+   |                                 has type `OwnerAccess<'1>`
  8 |               let (value, _) = child.signal(1i32).expect("signal should initialize");
  9 | /             spawn_local(async move {
 10 | |                 let _ = value.get();

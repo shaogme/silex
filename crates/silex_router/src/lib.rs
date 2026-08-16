@@ -31,7 +31,8 @@ use silex_core::{SilexContext, SilexContextProvider, SilexError, SilexErrorKind,
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::helpers::window_event_listener_untyped;
 use silex_dom::view::{
-    AnyView, ApplyAttributes, BranchEvaluation, MountErrorHandler, MountInstance, MountOwner, View,
+    AnyView, ApplyAttributes, BranchEvaluation, BranchRenderContext, MountErrorHandler,
+    MountInstance, MountOwner, View,
 };
 use silex_macros::component;
 use std::rc::Rc;
@@ -79,9 +80,9 @@ fn create_router_ctx<'scope>(
     let initial_search = location.search().map_err(SilexError::fatal)?;
     let base_path = context::normalize_base_path(base);
     let initial_path = context::strip_base_path(&base_path, &raw_path);
-    let scope = silex.scope();
-    let (path, set_path) = scope.signal(initial_path)?;
-    let (search, set_search) = scope.signal(initial_search)?;
+    let owner = silex.owner();
+    let (path, set_path) = owner.signal(initial_path)?;
+    let (search, set_search) = owner.signal(initial_search)?;
 
     RouterContext::new(
         silex,
@@ -265,13 +266,14 @@ impl<'scope> View<'scope> for RouteOutlet<'scope> {
                     .unwrap_or(RouteBranchKey::Empty);
                 Ok(BranchEvaluation::new(key, snapshot))
             },
-            move |evaluation| {
+            move |evaluation, branch_context: BranchRenderContext<'scope>| {
                 let (_, path) = evaluation.into_parts();
                 let Some(path) = path else {
                     return AnyView::Empty;
                 };
+                let branch_ctx = ctx.for_branch(branch_context.owner());
                 routes
-                    .resolve_branch(&path, ctx)
+                    .resolve_branch(&path, branch_ctx)
                     .map(|(_, view)| view)
                     .unwrap_or(AnyView::Empty)
             },

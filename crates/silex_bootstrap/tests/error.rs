@@ -1,21 +1,21 @@
 use silex_bootstrap::AppHostError;
-use silex_core::{CleanupError, Runtime, SilexError, SilexErrorKind};
+use silex_core::{CloseError, Runtime, SilexError, SilexErrorKind};
 use silex_dom::{CleanupFailure, CleanupOrigin, CleanupReport, DisposeError, MountError};
 
-fn cleanup_error() -> CleanupError {
+fn cleanup_error() -> CloseError {
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root runtime should start");
-    root.with_scope(|scope| {
-        scope
+    let root = runtime.owner().expect("root runtime should start");
+    root.with_access(|owner| {
+        owner
             .on_cleanup(
                 || panic!("host cleanup failure"),
-                scope
+                owner
                     .error_handler(|_: SilexError| {})
                     .expect("cleanup error handler should be registered"),
             )
             .expect("cleanup should register");
     });
-    root.dispose().expect_err("cleanup should fail")
+    root.close().expect_err("cleanup should fail")
 }
 
 #[test]

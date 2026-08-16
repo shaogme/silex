@@ -11,7 +11,7 @@ use std::rc::Rc;
 /// # Example
 /// ```rust, ignore
 /// use silex::prelude::*;
-/// let (count, set_count) = scope.signal(0);
+/// let (count, set_count) = owner.signal(0);
 ///
 /// Switch(ctx, count)
 ///     .fallback("Default View")
@@ -32,7 +32,7 @@ where
     Source: ReactiveSource<'scope, Value = T> + Clone + 'scope,
     T: Eq + Hash + Clone + 'scope,
 {
-    let source = scope.promote(source, error_handler)?;
+    let source = owner.promote(source, error_handler)?;
     let cases = Rc::new(cases);
     Ok(silex_core::rx!(ctx; {
         let val = (*$source).clone();

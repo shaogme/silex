@@ -1,11 +1,11 @@
 #![cfg(target_arch = "wasm32")]
 
 use silex_core::{
-    ErrorHandlerToken, ErrorReporter, ReadSignal, Runtime, SilexContext, SilexError,
+    ErrorHandlerToken, ErrorReporter, OwnerAccess, ReadSignal, Runtime, SilexContext, SilexError,
     SilexErrorKind, SilexResult,
 };
 use silex_dom::view::{
-    AnyView, ApplyAttributes, MountInstance, MountOwner, ScopedMountOwner, View, mount_text_node,
+    AnyView, ApplyAttributes, MountInstance, MountOwner, MountOwnerToken, View, mount_text_node,
 };
 use silex_router::macros::router;
 use silex_router::{
@@ -38,17 +38,17 @@ router! {
     }
 }
 
-fn test_handler<'scope>(scope: silex_core::Scope<'scope>) -> ErrorHandlerToken<'scope> {
-    scope
+fn test_handler<'owner>(owner: OwnerAccess<'owner>) -> ErrorHandlerToken<'owner> {
+    owner
         .error_handler(|_| {})
         .expect("test error handler should be registered")
 }
 
-fn test_owner<'scope>(
-    scope: silex_core::Scope<'scope>,
-) -> (ScopedMountOwner<'scope>, ErrorHandlerToken<'scope>) {
-    let error_handler = test_handler(scope);
-    (ScopedMountOwner::new(scope), error_handler)
+fn test_owner<'owner>(
+    owner: OwnerAccess<'owner>,
+) -> (MountOwnerToken<'owner>, ErrorHandlerToken<'owner>) {
+    let error_handler = test_handler(owner);
+    (MountOwnerToken::new(owner), error_handler)
 }
 
 #[wasm_bindgen(inline_js = r#"
@@ -164,9 +164,9 @@ fn mount_host() -> web_sys::Node {
     host
 }
 
-fn navigation_table<'scope>(
-    navigator: Rc<RefCell<Option<Navigator<'scope>>>>,
-) -> RouteTable<'scope> {
+fn navigation_table<'owner>(
+    navigator: Rc<RefCell<Option<Navigator<'owner>>>>,
+) -> RouteTable<'owner> {
     let home_navigator = navigator.clone();
     let user_navigator = navigator.clone();
     let fallback = RouteEntry::new("/*", move |_, _| Some(AnyView::from("not found")))
@@ -198,60 +198,59 @@ fn router_navigation_uses_required_table_and_updates_outlet() {
     set_url("/app/users/7?tab=initial");
     let spy = RouterListenerSpy::new();
     let host = mount_host();
-    let navigator = Rc::new(RefCell::new(None));
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root should be created");
+    let root = runtime.owner().expect("root should be created");
 
-    root.with_scope(|scope| {
-        let context_error_handler = test_handler(scope);
-        let ctx = SilexContext::new(scope, context_error_handler.view());
+    root.with_access(|owner| {
+        let navigator = Rc::new(RefCell::new(None));
+        let context_error_handler = test_handler(owner);
+        let ctx = SilexContext::new(owner, context_error_handler.view());
         let view = Router(ctx)
             .base("/app")
             .routes(navigation_table(navigator.clone()))
             .build();
-        let (owner, error_handler) = test_owner(scope);
+        let (owner, error_handler) = test_owner(owner);
         let _ = view
             .mount(&owner, &host, Vec::new(), error_handler.view())
             .expect("router view should mount");
 
         assert_eq!(host.text_content().as_deref(), Some("7"));
         assert_eq!(spy.count("add"), 1);
+        let navigator = navigator
+            .borrow()
+            .as_ref()
+            .copied()
+            .expect("route handler should expose navigator");
+        navigator
+            .push(RoutePath::new("/home").expect("route path should be valid"))
+            .expect("home navigation should succeed");
+        assert_eq!(host.text_content().as_deref(), Some("home"));
+        assert_eq!(
+            web_sys::window().unwrap().location().pathname().unwrap(),
+            "/app/home"
+        );
+
+        let history_length = web_sys::window().unwrap().history().unwrap().length();
+        navigator
+            .replace("/users/8?tab=replaced")
+            .expect("replace navigation should succeed");
+        assert_eq!(host.text_content().as_deref(), Some("8"));
+        assert_eq!(
+            web_sys::window().unwrap().history().unwrap().length(),
+            history_length,
+            "replace must reuse the current history entry"
+        );
+        assert_eq!(
+            web_sys::window().unwrap().location().search().unwrap(),
+            "?tab=replaced"
+        );
+
+        set_url("/app/users/9?tab=popstate");
+        dispatch_popstate();
+        assert_eq!(host.text_content().as_deref(), Some("9"));
     });
 
-    let navigator = navigator
-        .borrow()
-        .as_ref()
-        .copied()
-        .expect("route handler should expose navigator");
-    navigator
-        .push(RoutePath::new("/home").expect("route path should be valid"))
-        .expect("home navigation should succeed");
-    assert_eq!(host.text_content().as_deref(), Some("home"));
-    assert_eq!(
-        web_sys::window().unwrap().location().pathname().unwrap(),
-        "/app/home"
-    );
-
-    let history_length = web_sys::window().unwrap().history().unwrap().length();
-    navigator
-        .replace("/users/8?tab=replaced")
-        .expect("replace navigation should succeed");
-    assert_eq!(host.text_content().as_deref(), Some("8"));
-    assert_eq!(
-        web_sys::window().unwrap().history().unwrap().length(),
-        history_length,
-        "replace must reuse the current history entry"
-    );
-    assert_eq!(
-        web_sys::window().unwrap().location().search().unwrap(),
-        "?tab=replaced"
-    );
-
-    set_url("/app/users/9?tab=popstate");
-    dispatch_popstate();
-    assert_eq!(host.text_content().as_deref(), Some("9"));
-
-    root.dispose().expect("root cleanup should succeed");
+    root.close().expect("root cleanup should succeed");
     assert_eq!(spy.count("remove"), 1);
     set_url("/app/users/10");
     dispatch_popstate();
@@ -268,12 +267,12 @@ fn router_navigation_uses_required_table_and_updates_outlet() {
 fn router_layout_is_created_once_while_outlet_changes() {
     set_url("/app/one");
     let host = mount_host();
-    let navigator = Rc::new(RefCell::new(None));
     let layouts = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root should be created");
+    let root = runtime.owner().expect("root should be created");
 
-    root.with_scope(|scope| {
+    root.with_access(|owner| {
+        let navigator = Rc::new(RefCell::new(None));
         let navigator_for_one = navigator.clone();
         let navigator_for_two = navigator.clone();
         let table = RouteTable::from_entries(vec![
@@ -290,8 +289,8 @@ fn router_layout_is_created_once_while_outlet_changes() {
         ])
         .expect("route table should compile");
         let layouts_for_view = layouts.clone();
-        let context_error_handler = test_handler(scope);
-        let ctx = SilexContext::new(scope, context_error_handler.view());
+        let context_error_handler = test_handler(owner);
+        let ctx = SilexContext::new(owner, context_error_handler.view());
         let view = Router(ctx)
             .base("/app")
             .routes(table)
@@ -300,26 +299,25 @@ fn router_layout_is_created_once_while_outlet_changes() {
                 outlet
             })
             .build();
-        let (owner, error_handler) = test_owner(scope);
+        let (owner, error_handler) = test_owner(owner);
         let _ = view
             .mount(&owner, &host, Vec::new(), error_handler.view())
             .expect("router view should mount");
+        assert_eq!(host.text_content().as_deref(), Some("one"));
+        assert_eq!(layouts.get(), 1);
+        let navigator = navigator
+            .borrow()
+            .as_ref()
+            .copied()
+            .expect("route handler should expose navigator");
+        navigator
+            .push(RoutePath::new("/two").expect("route path should be valid"))
+            .expect("second route navigation should succeed");
+        assert_eq!(host.text_content().as_deref(), Some("two"));
+        assert_eq!(layouts.get(), 1);
     });
 
-    assert_eq!(host.text_content().as_deref(), Some("one"));
-    assert_eq!(layouts.get(), 1);
-    let navigator = navigator
-        .borrow()
-        .as_ref()
-        .copied()
-        .expect("route handler should expose navigator");
-    navigator
-        .push(RoutePath::new("/two").expect("route path should be valid"))
-        .expect("second route navigation should succeed");
-    assert_eq!(host.text_content().as_deref(), Some("two"));
-    assert_eq!(layouts.get(), 1);
-
-    root.dispose().expect("root cleanup should succeed");
+    root.close().expect("root cleanup should succeed");
     host.parent_node()
         .expect("host has a parent")
         .remove_child(&host)
@@ -331,11 +329,11 @@ fn router_layout_is_created_once_while_outlet_changes() {
 fn nested_outlet_keeps_parent_layout_while_child_route_changes() {
     set_url("/app/users/1");
     let host = mount_host();
-    let navigator = Rc::new(RefCell::new(None));
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root should be created");
+    let root = runtime.owner().expect("root should be created");
 
-    root.with_scope(|scope| {
+    root.with_access(|owner| {
+        let navigator = Rc::new(RefCell::new(None));
         let navigator_for_detail = navigator.clone();
         let table = NestedRouteApp::table(move |route, ctx| match route {
             NestedRouteApp::Home => AnyView::from("home"),
@@ -345,31 +343,30 @@ fn nested_outlet_keeps_parent_layout_while_child_route_changes() {
             }
         })
         .expect("nested route catalog should compile");
-        let context_error_handler = test_handler(scope);
-        let ctx = SilexContext::new(scope, context_error_handler.view());
+        let context_error_handler = test_handler(owner);
+        let ctx = SilexContext::new(owner, context_error_handler.view());
         let view = Router(ctx).base("/app").routes(table).build();
-        let (owner, error_handler) = test_owner(scope);
+        let (owner, error_handler) = test_owner(owner);
         let _ = view
             .mount(&owner, &host, Vec::new(), error_handler.view())
             .expect("nested router should mount");
+        assert_eq!(host.text_content().as_deref(), Some("users:1"));
+        let navigator = navigator
+            .borrow()
+            .as_ref()
+            .copied()
+            .expect("nested route should expose navigator");
+        navigator
+            .push(
+                NestedRouteApp::Users(UsersRoute::Detail { id: 2 })
+                    .path()
+                    .expect("nested path should be valid"),
+            )
+            .expect("nested route navigation should succeed");
+        assert_eq!(host.text_content().as_deref(), Some("users:2"));
     });
 
-    assert_eq!(host.text_content().as_deref(), Some("users:1"));
-    let navigator = navigator
-        .borrow()
-        .as_ref()
-        .copied()
-        .expect("nested route should expose navigator");
-    navigator
-        .push(
-            NestedRouteApp::Users(UsersRoute::Detail { id: 2 })
-                .path()
-                .expect("nested path should be valid"),
-        )
-        .expect("nested route navigation should succeed");
-    assert_eq!(host.text_content().as_deref(), Some("users:2"));
-
-    root.dispose().expect("root cleanup should succeed");
+    root.close().expect("root cleanup should succeed");
     host.parent_node()
         .expect("host has a parent")
         .remove_child(&host)
@@ -382,18 +379,18 @@ fn link_requires_ctx_and_tracks_active_path() {
     set_url("/");
     let host = mount_host();
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root should be created");
+    let root = runtime.owner().expect("root should be created");
 
-    root.with_scope(|scope| {
-        let (path, set_path) = scope
+    root.with_access(|owner| {
+        let (path, set_path) = owner
             .signal(String::from("/users"))
             .expect("path signal should be created");
-        let (search, set_search) = scope
+        let (search, set_search) = owner
             .signal(String::new())
             .expect("search signal should be created");
-        let context_error_handler = test_handler(scope);
+        let context_error_handler = test_handler(owner);
         let ctx = RouterContext::new(
-            SilexContext::new(scope, context_error_handler.view()),
+            SilexContext::new(owner, context_error_handler.view()),
             RouterContextProps {
                 base_path: String::from("/app"),
                 path,
@@ -403,7 +400,7 @@ fn link_requires_ctx_and_tracks_active_path() {
             },
         )
         .expect("router ctx should be created");
-        let (owner, error_handler) = test_owner(scope);
+        let (owner, error_handler) = test_owner(owner);
         let link = Link(
             ctx,
             RoutePath::new("/users").expect("route path should be valid"),
@@ -429,7 +426,7 @@ fn link_requires_ctx_and_tracks_active_path() {
         assert_eq!(element.class_name(), "");
     });
 
-    root.dispose().expect("root cleanup should succeed");
+    root.close().expect("root cleanup should succeed");
     host.parent_node()
         .expect("host has a parent")
         .remove_child(&host)
@@ -438,23 +435,23 @@ fn link_requires_ctx_and_tracks_active_path() {
 }
 
 #[wasm_bindgen_test]
-fn query_memo_handles_empty_multiple_duplicate_delete_and_reactive_changes() {
+fn query_computed_handles_empty_multiple_duplicate_delete_and_reactive_changes() {
     set_url("/query?empty&blank=&first=one&second=two&tag=first&tag=last");
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root should be created");
+    let root = runtime.owner().expect("root should be created");
 
-    root.with_scope(|scope| {
-        let (path, set_path) = scope
+    root.with_access(|owner| {
+        let (path, set_path) = owner
             .signal(String::from("/query"))
             .expect("path signal should be created");
-        let (search, set_search) = scope
+        let (search, set_search) = owner
             .signal(String::from(
                 "?empty&blank=&first=one&second=two&tag=first&tag=last",
             ))
             .expect("search signal should be created");
-        let context_error_handler = test_handler(scope);
+        let context_error_handler = test_handler(owner);
         let ctx = RouterContext::new(
-            SilexContext::new(scope, context_error_handler.view()),
+            SilexContext::new(owner, context_error_handler.view()),
             RouterContextProps {
                 base_path: String::from("/"),
                 path,
@@ -467,8 +464,8 @@ fn query_memo_handles_empty_multiple_duplicate_delete_and_reactive_changes() {
         let query = ctx.query_map();
         let snapshots = Rc::new(RefCell::new(Vec::<HashMap<String, String>>::new()));
         let snapshots_for_effect = snapshots.clone();
-        let effect_error_handler = test_handler(scope);
-        scope
+        let effect_error_handler = test_handler(owner);
+        owner
             .effect(
                 move || -> SilexResult<()> {
                     snapshots_for_effect.borrow_mut().push(query.get()?);
@@ -507,7 +504,7 @@ fn query_memo_handles_empty_multiple_duplicate_delete_and_reactive_changes() {
         assert_eq!(snapshots.borrow().len(), 4);
     });
 
-    root.dispose().expect("root cleanup should succeed");
+    root.close().expect("root cleanup should succeed");
     set_url("/");
 }
 
@@ -516,16 +513,16 @@ struct RouterCleanupView {
     cleanups: Rc<Cell<u32>>,
 }
 
-impl<'scope> ApplyAttributes<'scope> for RouterCleanupView {}
+impl<'owner> ApplyAttributes<'owner> for RouterCleanupView {}
 
-impl<'scope> View<'scope> for RouterCleanupView {
+impl<'owner> View<'owner> for RouterCleanupView {
     fn mount(
         &self,
-        owner: &dyn MountOwner<'scope>,
+        owner: &dyn MountOwner<'owner>,
         parent: &web_sys::Node,
-        _attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
-        error_handler: ErrorReporter<'scope>,
-    ) -> SilexResult<MountInstance<'scope>> {
+        _attrs: Vec<silex_dom::attribute::PendingAttribute<'owner>>,
+        error_handler: ErrorReporter<'owner>,
+    ) -> SilexResult<MountInstance<'owner>> {
         let cleanups = self.cleanups.clone();
         owner.on_cleanup(
             Box::new(move || {
@@ -539,7 +536,7 @@ impl<'scope> View<'scope> for RouterCleanupView {
 }
 
 #[wasm_bindgen_test]
-fn router_owner_dispose_removes_listener_and_ignores_late_popstate() {
+fn router_owner_close_removes_listener_and_ignores_late_popstate() {
     set_url("/app/users");
     let spy = RouterListenerSpy::new();
     let host = mount_host();
@@ -547,7 +544,7 @@ fn router_owner_dispose_removes_listener_and_ignores_late_popstate() {
     let mut runtime = Runtime::new();
 
     runtime
-        .child(|scope| {
+        .with_transient(|owner| {
             let cleanups_for_route = cleanups.clone();
             let table = RouteTable::from_entries(vec![
                 RouteEntry::new("/users", move |_, _| {
@@ -559,10 +556,10 @@ fn router_owner_dispose_removes_listener_and_ignores_late_popstate() {
                 .expect("route should compile"),
             ])
             .expect("route table should compile");
-            let context_error_handler = test_handler(scope);
-            let ctx = SilexContext::new(scope, context_error_handler.view());
+            let context_error_handler = test_handler(owner);
+            let ctx = SilexContext::new(owner, context_error_handler.view());
             let view = Router(ctx).base("/app").routes(table).build();
-            let (owner, error_handler) = test_owner(scope);
+            let (owner, error_handler) = test_owner(owner);
             let _ = view
                 .mount(&owner, &host, Vec::new(), error_handler.view())
                 .expect("router view should mount");
@@ -570,7 +567,7 @@ fn router_owner_dispose_removes_listener_and_ignores_late_popstate() {
             assert_eq!(host.text_content().as_deref(), Some("lexical"));
             assert_eq!(spy.count("add"), 1);
         })
-        .expect("router child scope should run");
+        .expect("router child owner should run");
 
     assert_eq!(spy.count("remove"), 1);
     assert_eq!(cleanups.get(), 1);
@@ -596,9 +593,9 @@ fn router_does_not_mount_outlet_when_listener_registration_fails() {
     let host = mount_host();
     let route_calls = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root should be created");
+    let root = runtime.owner().expect("root should be created");
 
-    root.with_scope(|scope| {
+    root.with_access(|owner| {
         let calls = route_calls.clone();
         let table = RouteTable::from_entries(vec![
             RouteEntry::new("/home", move |_, _| {
@@ -608,10 +605,10 @@ fn router_does_not_mount_outlet_when_listener_registration_fails() {
             .expect("route should compile"),
         ])
         .expect("route table should compile");
-        let context_error_handler = test_handler(scope);
-        let ctx = SilexContext::new(scope, context_error_handler.view());
+        let context_error_handler = test_handler(owner);
+        let ctx = SilexContext::new(owner, context_error_handler.view());
         let view = Router(ctx).base("/app").routes(table).build();
-        let (owner, error_handler) = test_owner(scope);
+        let (owner, error_handler) = test_owner(owner);
         assert!(matches!(
             view.mount(&owner, &host, Vec::new(), error_handler.view()),
             Err(SilexError::Fatal(SilexErrorKind::Javascript(_)))
@@ -623,7 +620,7 @@ fn router_does_not_mount_outlet_when_listener_registration_fails() {
     assert_eq!(spy.count("remove"), 0);
     assert_eq!(host.text_content().as_deref(), Some(""));
 
-    root.dispose().expect("root cleanup should succeed");
+    root.close().expect("root cleanup should succeed");
     host.parent_node()
         .expect("host has a parent")
         .remove_child(&host)
@@ -631,21 +628,21 @@ fn router_does_not_mount_outlet_when_listener_registration_fails() {
     set_url("/");
 }
 
-struct FactoryTextView<'scope> {
-    text: ReadSignal<'scope, String>,
+struct FactoryTextView<'owner> {
+    text: ReadSignal<'owner, String>,
     cleanups: Rc<Cell<u32>>,
 }
 
-impl<'scope> ApplyAttributes<'scope> for FactoryTextView<'scope> {}
+impl<'owner> ApplyAttributes<'owner> for FactoryTextView<'owner> {}
 
-impl<'scope> View<'scope> for FactoryTextView<'scope> {
+impl<'owner> View<'owner> for FactoryTextView<'owner> {
     fn mount(
         &self,
-        owner: &dyn MountOwner<'scope>,
+        owner: &dyn MountOwner<'owner>,
         parent: &web_sys::Node,
-        _attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
-        error_handler: ErrorReporter<'scope>,
-    ) -> SilexResult<MountInstance<'scope>> {
+        _attrs: Vec<silex_dom::attribute::PendingAttribute<'owner>>,
+        error_handler: ErrorReporter<'owner>,
+    ) -> SilexResult<MountInstance<'owner>> {
         let cleanups = self.cleanups.clone();
         owner.on_cleanup(
             Box::new(move || {
@@ -666,10 +663,10 @@ fn router_view_factory_keeps_scoped_dynamic_owner_cleanup() {
     let cleanups = Rc::new(Cell::new(0));
     let factory_calls = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root should be created");
+    let root = runtime.owner().expect("root should be created");
 
-    root.with_scope(|scope| {
-        let (text, set_text) = scope
+    root.with_access(|owner| {
+        let (text, set_text) = owner
             .signal(String::from("factory-one"))
             .expect("text signal should be created");
         let cleanups_for_factory = cleanups.clone();
@@ -681,7 +678,7 @@ fn router_view_factory_keeps_scoped_dynamic_owner_cleanup() {
                 cleanups: cleanups_for_factory.clone(),
             })
         }));
-        let (owner, error_handler) = test_owner(scope);
+        let (owner, error_handler) = test_owner(owner);
         let _ = factory
             .mount(&owner, &host, Vec::new(), error_handler.view())
             .expect("router factory should mount");
@@ -697,7 +694,7 @@ fn router_view_factory_keeps_scoped_dynamic_owner_cleanup() {
         assert_eq!(cleanups.get(), 1);
     });
 
-    root.dispose().expect("root cleanup should succeed");
+    root.close().expect("root cleanup should succeed");
     assert_eq!(cleanups.get(), 2);
     assert_eq!(host.text_content().as_deref(), Some(""));
     host.parent_node()

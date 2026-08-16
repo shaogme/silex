@@ -1,16 +1,16 @@
-use super::owner::OwnedMountOwner;
+use super::owner::MountOwner;
 use super::row::{
     NodeRange, RowInstance, RowInstanceConfig, RowRenderContext, RowRenderer, RowUpdater,
 };
 use crate::attribute::PendingAttribute;
-use crate::view::{AnyView, ApplyAttributes, MountErrorHandler, MountInstance, MountOwner, View};
+use crate::view::{AnyView, ApplyAttributes, MountErrorHandler, MountInstance, View};
 use silex_core::reactivity::ReactiveSource;
 use silex_core::traits::{ForLoopSource, RxRead};
-use silex_core::{ErrorHandlerToken, SilexError, SilexErrorKind, SilexResult};
+use silex_core::{CloseError, ErrorHandlerToken, SilexError, SilexErrorKind, SilexResult};
 use std::{
     collections::{HashMap, HashSet},
     mem,
-    panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
+    panic::{AssertUnwindSafe, catch_unwind},
     rc::Rc,
 };
 use web_sys::Node;
@@ -168,8 +168,7 @@ where
     IS: ForLoopSource<Item = T> + 'scope,
     T: Clone + 'scope,
 {
-    let scope = Rc::new(owner.owned_scope()?);
-    let local_owner = OwnedMountOwner::new(scope.clone());
+    let local_owner = owner.child();
     let range = NodeRange::append(parent, "for")?;
     let token = local_owner.token();
     let stateful = factory.is_stateful();
@@ -181,6 +180,7 @@ where
             parent,
             attrs,
             owner: token,
+            branch_context: _,
             error_handler,
             updater,
         } = args;
@@ -198,16 +198,17 @@ where
     if let Err(error) = local_owner.on_cleanup(
         Box::new(move || {
             let mut rows = cleanup_rows.take_for_cleanup().unwrap_or_default();
-            let panic = dispose_rows(&mut rows);
+            let close_error = dispose_rows(&mut rows);
             cleanup_range.remove();
-            if let Some(panic) = panic {
-                resume_unwind(panic);
-            }
-            Ok(())
+            close_error.map_or(Ok(()), |error| {
+                Err(SilexError::fatal(SilexErrorKind::Close(error)))
+            })
         }),
         error_handler,
     ) {
-        let _ = scope.dispose();
+        if let Err(close_error) = local_owner.close() {
+            local_owner.report_close_error(close_error);
+        }
         range.remove();
         return Err(error);
     }
@@ -244,6 +245,7 @@ where
                             item,
                             index,
                             stateful,
+                            branch_runtime: false,
                             error_handler,
                         },
                     )?;
@@ -260,34 +262,27 @@ where
                         Vec::new()
                     };
                     rows.append(&mut pending);
-                    let cleanup_panic = dispose_rows(&mut removed);
+                    let cleanup_error = dispose_rows(&mut removed);
                     effect_rows.replace(rows)?;
-                    if let Some(panic) = cleanup_panic {
-                        resume_unwind(panic);
-                    }
-                    Ok(())
+                    cleanup_error.map_or(Ok(()), |error| {
+                        Err(SilexError::fatal(SilexErrorKind::Close(error)))
+                    })
                 }
                 Ok(Err(error)) => {
-                    let restore_panic = restore_indexed_rows(&mut rows, &updated);
-                    let cleanup_panic = dispose_rows(&mut pending);
+                    let restore_error = restore_indexed_rows(&mut rows, &updated);
+                    let cleanup_error = dispose_rows(&mut pending);
                     effect_rows.replace(rows)?;
-                    if let Some(panic) = restore_panic {
-                        resume_unwind(panic);
-                    }
-                    if let Some(panic) = cleanup_panic {
-                        resume_unwind(panic);
+                    if let Some(close_error) = combine_close_errors(restore_error, cleanup_error) {
+                        report_close_failure(error_handler, close_error);
                     }
                     Err(error)
                 }
                 Err(panic) => {
-                    let restore_panic = restore_indexed_rows(&mut rows, &updated);
-                    let cleanup_panic = dispose_rows(&mut pending);
+                    let restore_error = restore_indexed_rows(&mut rows, &updated);
+                    let cleanup_error = dispose_rows(&mut pending);
                     effect_rows.replace(rows)?;
-                    if let Some(panic) = restore_panic {
-                        resume_unwind(panic);
-                    }
-                    if let Some(panic) = cleanup_panic {
-                        resume_unwind(panic);
+                    if let Some(close_error) = combine_close_errors(restore_error, cleanup_error) {
+                        report_close_failure(error_handler, close_error);
                     }
                     Err(SilexError::fatal(SilexErrorKind::Javascript(
                         panic_message("Indexed list", panic),
@@ -297,28 +292,193 @@ where
         }),
         error_handler,
     ) {
-        let _ = scope.dispose();
+        if let Err(close_error) = local_owner.close() {
+            local_owner.report_close_error(close_error);
+        }
         range.remove();
         return Err(error);
     }
 
-    let scope_for_cleanup = scope.clone();
+    let owner_for_cleanup = local_owner.clone();
     if let Err(error) = owner.on_cleanup(
         Box::new(move || {
-            let _ = scope_for_cleanup.dispose();
-            Ok(())
+            owner_for_cleanup
+                .close()
+                .map_err(|error| SilexError::fatal(SilexErrorKind::Close(error)))
         }),
         error_handler,
     ) {
-        let _ = scope.dispose();
+        if let Err(close_error) = local_owner.close() {
+            local_owner.report_close_error(close_error);
+        }
         return Err(error);
     }
     Ok(MountInstance::from_nodes(vec![range.start, range.end]))
 }
 
+#[derive(Clone, Copy)]
+enum KeyedRowPhase {
+    Pending,
+    Active,
+}
+
+/// A keyed row keeps identity separate from the row runtime state. The
+/// `RowInstance` owns the logical item/index, physical range, row/render
+/// owners, and updater generation; this wrapper adds the key and transaction
+/// phase used by keyed diffing.
+struct KeyedRow<'scope, T, K> {
+    key: K,
+    row: RowInstance<'scope, T>,
+    phase: KeyedRowPhase,
+}
+
+impl<'scope, T: Clone + 'scope, K> KeyedRow<'scope, T, K> {
+    fn pending(key: K, row: RowInstance<'scope, T>) -> Self {
+        Self {
+            key,
+            row,
+            phase: KeyedRowPhase::Pending,
+        }
+    }
+
+    fn activate(&mut self) {
+        self.phase = KeyedRowPhase::Active;
+    }
+
+    fn snapshot(&self) -> (T, usize)
+    where
+        T: Clone,
+    {
+        self.row.snapshot()
+    }
+
+    fn update(&mut self, item: T, index: usize) -> SilexResult<()> {
+        self.row.update(item, index)
+    }
+
+    fn append_to(&self, target: &Node) -> SilexResult<()> {
+        self.row.append_to(target)
+    }
+
+    fn dispose(&mut self) -> Result<(), CloseError> {
+        self.row.dispose()
+    }
+}
+
 struct KeyedRows<'scope, T, K> {
-    rows: HashMap<K, RowInstance<'scope, T>>,
+    rows: HashMap<K, KeyedRow<'scope, T, K>>,
     order: Vec<K>,
+}
+
+enum KeyedRowOperation<K, T> {
+    Reuse { key: K, item: T, index: usize },
+    Insert { key: K, item: T, index: usize },
+}
+
+struct KeyedDiffPlan<K, T> {
+    operations: Vec<KeyedRowOperation<K, T>>,
+    next_order: Vec<K>,
+    removed: Vec<K>,
+}
+
+fn commit_keyed_order<'scope, T: Clone + 'scope, K>(
+    rows: &HashMap<K, KeyedRow<'scope, T, K>>,
+    pending: &HashMap<K, KeyedRow<'scope, T, K>>,
+    old_order: &[K],
+    next_order: &[K],
+    end: &Node,
+) -> SilexResult<()>
+where
+    K: std::hash::Hash + Eq,
+{
+    let Some(parent) = end.parent_node() else {
+        return Err(SilexError::fatal(SilexErrorKind::Dom(
+            "cannot commit keyed order without a parent".to_string(),
+        )));
+    };
+    let document = crate::document();
+    let ordered: Node = document.create_document_fragment().into();
+    let removed: Node = document.create_document_fragment().into();
+
+    for key in next_order {
+        if !rows.contains_key(key) && !pending.contains_key(key) {
+            return Err(SilexError::fatal(SilexErrorKind::Framework(
+                "keyed list row disappeared during commit".to_string(),
+            )));
+        }
+    }
+
+    for key in old_order {
+        if !next_order.iter().any(|next_key| next_key == key) {
+            let row = rows.get(key).ok_or_else(|| {
+                SilexError::fatal(SilexErrorKind::Framework(
+                    "keyed list removed row disappeared during commit".to_string(),
+                ))
+            })?;
+            row.append_to(&removed)?;
+        }
+    }
+
+    for key in next_order {
+        if let Some(row) = rows.get(key) {
+            row.append_to(&ordered)?;
+        } else if let Some(row) = pending.get(key) {
+            row.append_to(&ordered)?;
+        }
+    }
+
+    parent
+        .insert_before(&ordered, Some(end))
+        .map(|_| {
+            drop(removed);
+        })
+        .map_err(SilexError::fatal)
+}
+
+fn plan_keyed_update<T, K>(
+    old_rows: &HashMap<K, KeyedRow<'_, T, K>>,
+    old_order: &[K],
+    keys: Vec<K>,
+    values: Vec<T>,
+) -> SilexResult<KeyedDiffPlan<K, T>>
+where
+    K: std::hash::Hash + Eq + Clone,
+{
+    let mut operations = Vec::with_capacity(keys.len());
+    let mut next_order = Vec::with_capacity(keys.len());
+    let mut seen = HashSet::with_capacity(keys.len());
+    for (index, (key, item)) in keys.into_iter().zip(values).enumerate() {
+        if !seen.insert(key.clone()) {
+            return Err(SilexError::fatal(SilexErrorKind::Framework(
+                "duplicate key in keyed list".to_string(),
+            )));
+        }
+        let operation = if old_rows.contains_key(&key) {
+            KeyedRowOperation::Reuse {
+                key: key.clone(),
+                item,
+                index,
+            }
+        } else {
+            KeyedRowOperation::Insert {
+                key: key.clone(),
+                item,
+                index,
+            }
+        };
+        operations.push(operation);
+        next_order.push(key);
+    }
+    let removed = old_order
+        .iter()
+        .filter(|key| !seen.contains(*key))
+        .cloned()
+        .collect();
+    Ok(KeyedDiffPlan {
+        operations,
+        next_order,
+        removed,
+    })
 }
 
 struct KeyedListMountArgs<'owner, 'scope, IF, IS, T, K> {
@@ -353,11 +513,10 @@ where
         parent_error_handler,
         ..
     } = args;
-    let scope = Rc::new(owner.owned_scope()?);
+    let local_owner = owner.child();
     let error_handler = error_handler
         .map(|handler| handler.view())
         .unwrap_or(parent_error_handler);
-    let local_owner = OwnedMountOwner::new(scope.clone());
     let token = local_owner.token();
     let range = NodeRange::append(parent, "for")?;
     let stateful = factory.is_stateful();
@@ -369,6 +528,7 @@ where
             parent,
             attrs,
             owner: token,
+            branch_context: _,
             error_handler,
             updater,
         } = args;
@@ -390,16 +550,17 @@ where
                 return Ok(());
             };
             let mut rows = mem::take(&mut state.rows).into_values().collect::<Vec<_>>();
-            let panic = dispose_rows(&mut rows);
+            let close_error = dispose_keyed_rows(&mut rows);
             cleanup_range.remove();
-            if let Some(panic) = panic {
-                resume_unwind(panic);
-            }
-            Ok(())
+            close_error.map_or(Ok(()), |error| {
+                Err(SilexError::fatal(SilexErrorKind::Close(error)))
+            })
         }),
         error_handler,
     ) {
-        let _ = scope.dispose();
+        if let Err(close_error) = local_owner.close() {
+            local_owner.report_close_error(close_error);
+        }
         range.remove();
         return Err(error);
     }
@@ -439,113 +600,107 @@ where
             let mut state = effect_state.take()?;
             let mut old_rows = mem::take(&mut state.rows);
             let old_order = mem::take(&mut state.order);
-            let mut pending = HashMap::with_capacity(keys.len());
-            let mut seen = HashSet::with_capacity(keys.len());
-            let mut next_order = Vec::with_capacity(keys.len());
+            let plan = match plan_keyed_update(&old_rows, &old_order, keys, values) {
+                Ok(plan) => plan,
+                Err(error) => {
+                    state.rows = old_rows;
+                    state.order = old_order;
+                    effect_state.replace(state)?;
+                    return Err(error);
+                }
+            };
+            let mut pending = HashMap::with_capacity(plan.operations.len());
             let mut updated = Vec::new();
             let result = catch_unwind(AssertUnwindSafe(|| -> SilexResult<()> {
-                for (index, (key, item)) in keys.iter().cloned().zip(values).enumerate() {
-                    if let Some(row) = old_rows.get_mut(&key) {
+                for operation in &plan.operations {
+                    if let KeyedRowOperation::Reuse { key, item, index } = operation {
+                        let Some(row) = old_rows.get_mut(key) else {
+                            return Err(SilexError::fatal(SilexErrorKind::Framework(
+                                "keyed list reused row disappeared during planning".to_string(),
+                            )));
+                        };
                         let previous = row.snapshot();
-                        row.update(item, index)?;
+                        row.update(item.clone(), *index)?;
                         updated.push((key.clone(), previous));
-                        seen.insert(key.clone());
-                        next_order.push(key);
                         continue;
                     }
-                    let row_range = NodeRange::before(&end, "for-row")?;
+                    let KeyedRowOperation::Insert { key, item, index } = operation else {
+                        continue;
+                    };
+                    let row_range = NodeRange::detached("for-row")?;
                     let row = RowInstance::new(
                         &token,
                         RowInstanceConfig {
                             range: row_range,
                             render: render.clone(),
                             attrs: attrs.clone(),
-                            item,
-                            index,
+                            item: item.clone(),
+                            index: *index,
                             stateful,
+                            branch_runtime: false,
                             error_handler,
                         },
                     )?;
-                    seen.insert(key.clone());
-                    next_order.push(key.clone());
-                    pending.insert(key, row);
+                    let keyed_row = KeyedRow::pending(key.clone(), row);
+                    pending.insert(keyed_row.key.clone(), keyed_row);
                 }
                 Ok(())
             }));
 
             let result = match result {
                 Ok(Ok(())) => {
-                    let move_result = (|| -> SilexResult<()> {
-                        for key in &next_order {
-                            if let Some(row) = old_rows.get(key) {
-                                row.move_before(&end)?;
-                            } else if let Some(row) = pending.get(key) {
-                                row.move_before(&end)?;
-                            } else {
-                                return Err(SilexError::fatal(SilexErrorKind::Framework(
-                                    "keyed list row disappeared during diff".to_string(),
-                                )));
-                            }
-                        }
-                        Ok(())
-                    })();
+                    let move_result =
+                        commit_keyed_order(&old_rows, &pending, &old_order, &plan.next_order, &end);
                     if let Err(error) = move_result {
                         restore_keyed_order(&old_rows, &old_order, &end);
-                        let restore_panic = restore_keyed_rows(&mut old_rows, &updated);
-                        let cleanup_panic = dispose_map(&mut pending);
+                        let restore_error = restore_keyed_rows(&mut old_rows, &updated);
+                        let cleanup_error = dispose_map(&mut pending);
                         state.rows = old_rows;
                         state.order = old_order;
-                        if let Some(panic) = restore_panic {
-                            resume_unwind(panic);
-                        }
-                        if let Some(panic) = cleanup_panic {
-                            resume_unwind(panic);
+                        if let Some(close_error) =
+                            combine_close_errors(restore_error, cleanup_error)
+                        {
+                            report_close_failure(error_handler, close_error);
                         }
                         return Err(error);
                     }
 
                     let mut removed = Vec::new();
-                    for key in &old_order {
-                        if !seen.contains(key)
-                            && let Some(row) = old_rows.remove(key)
-                        {
+                    for key in &plan.removed {
+                        if let Some(row) = old_rows.remove(key) {
                             removed.push(row);
                         }
                     }
-                    old_rows.extend(pending.drain());
-                    let cleanup_panic = dispose_rows(&mut removed);
-                    state.rows = old_rows;
-                    state.order = next_order;
-                    if let Some(panic) = cleanup_panic {
-                        resume_unwind(panic);
+                    for (key, mut row) in pending.drain() {
+                        row.activate();
+                        old_rows.insert(key, row);
                     }
-                    Ok(())
+                    let cleanup_error = dispose_keyed_rows(&mut removed);
+                    state.rows = old_rows;
+                    state.order = plan.next_order;
+                    cleanup_error.map_or(Ok(()), |error| {
+                        Err(SilexError::fatal(SilexErrorKind::Close(error)))
+                    })
                 }
                 Ok(Err(error)) => {
                     restore_keyed_order(&old_rows, &old_order, &end);
-                    let restore_panic = restore_keyed_rows(&mut old_rows, &updated);
-                    let cleanup_panic = dispose_map(&mut pending);
+                    let restore_error = restore_keyed_rows(&mut old_rows, &updated);
+                    let cleanup_error = dispose_map(&mut pending);
                     state.rows = old_rows;
                     state.order = old_order;
-                    if let Some(panic) = restore_panic {
-                        resume_unwind(panic);
-                    }
-                    if let Some(panic) = cleanup_panic {
-                        resume_unwind(panic);
+                    if let Some(close_error) = combine_close_errors(restore_error, cleanup_error) {
+                        report_close_failure(error_handler, close_error);
                     }
                     Err(error)
                 }
                 Err(panic) => {
                     restore_keyed_order(&old_rows, &old_order, &end);
-                    let restore_panic = restore_keyed_rows(&mut old_rows, &updated);
-                    let cleanup_panic = dispose_map(&mut pending);
+                    let restore_error = restore_keyed_rows(&mut old_rows, &updated);
+                    let cleanup_error = dispose_map(&mut pending);
                     state.rows = old_rows;
                     state.order = old_order;
-                    if let Some(panic) = restore_panic {
-                        resume_unwind(panic);
-                    }
-                    if let Some(panic) = cleanup_panic {
-                        resume_unwind(panic);
+                    if let Some(close_error) = combine_close_errors(restore_error, cleanup_error) {
+                        report_close_failure(error_handler, close_error);
                     }
                     Err(SilexError::fatal(SilexErrorKind::Javascript(
                         panic_message("Keyed list", panic),
@@ -557,85 +712,109 @@ where
         }),
         error_handler,
     ) {
-        let _ = scope.dispose();
+        if let Err(close_error) = local_owner.close() {
+            local_owner.report_close_error(close_error);
+        }
         return Err(error);
     }
 
-    let scope_for_cleanup = scope.clone();
+    let owner_for_cleanup = local_owner.clone();
     if let Err(error) = owner.on_cleanup(
         Box::new(move || {
-            let _ = scope_for_cleanup.dispose();
-            Ok(())
+            owner_for_cleanup
+                .close()
+                .map_err(|error| SilexError::fatal(SilexErrorKind::Close(error)))
         }),
         parent_error_handler,
     ) {
-        let _ = scope.dispose();
+        if let Err(close_error) = local_owner.close() {
+            local_owner.report_close_error(close_error);
+        }
         return Err(error);
     }
     Ok(MountInstance::from_nodes(vec![range.start, range.end]))
 }
 
 fn dispose_map<'scope, T: Clone + 'scope, K>(
-    rows: &mut HashMap<K, RowInstance<'scope, T>>,
-) -> Option<Box<dyn std::any::Any + Send>> {
+    rows: &mut HashMap<K, KeyedRow<'scope, T, K>>,
+) -> Option<CloseError> {
     let mut values = rows.drain().map(|(_, row)| row).collect::<Vec<_>>();
-    dispose_rows(&mut values)
+    dispose_keyed_rows(&mut values)
 }
 
 fn restore_indexed_rows<'scope, T: Clone + 'scope>(
     rows: &mut [RowInstance<'scope, T>],
     updated: &[(usize, (T, usize))],
-) -> Option<Box<dyn std::any::Any + Send>> {
-    let mut first_panic = None;
+) -> Option<CloseError> {
+    let mut errors = Vec::new();
     for (index, (item, row_index)) in updated.iter().rev() {
         let result = catch_unwind(AssertUnwindSafe(|| {
-            let _ = rows[*index].update(item.clone(), *row_index);
+            rows[*index].update(item.clone(), *row_index)
         }));
-        if let Err(panic) = result
-            && first_panic.is_none()
-        {
-            first_panic = Some(panic);
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => errors.push(CloseError::from_panic(Box::new(format!(
+                "indexed row rollback failed: {error}"
+            )))),
+            Err(panic) => errors.push(CloseError::from_panic(panic)),
         }
     }
-    first_panic
+    CloseError::combine(errors)
 }
 
 fn restore_keyed_rows<'scope, T: Clone + 'scope, K>(
-    rows: &mut HashMap<K, RowInstance<'scope, T>>,
+    rows: &mut HashMap<K, KeyedRow<'scope, T, K>>,
     updated: &[(K, (T, usize))],
-) -> Option<Box<dyn std::any::Any + Send>>
+) -> Option<CloseError>
 where
     K: std::hash::Hash + Eq,
 {
-    let mut first_panic = None;
+    let mut errors = Vec::new();
     for (key, (item, index)) in updated.iter().rev() {
         let Some(row) = rows.get_mut(key) else {
             continue;
         };
-        let result = catch_unwind(AssertUnwindSafe(|| {
-            let _ = row.update(item.clone(), *index);
-        }));
-        if let Err(panic) = result
-            && first_panic.is_none()
-        {
-            first_panic = Some(panic);
+        let result = catch_unwind(AssertUnwindSafe(|| row.update(item.clone(), *index)));
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => errors.push(CloseError::from_panic(Box::new(format!(
+                "keyed row rollback failed: {error}"
+            )))),
+            Err(panic) => errors.push(CloseError::from_panic(panic)),
         }
     }
-    first_panic
+    CloseError::combine(errors)
 }
 
-fn restore_keyed_order<'scope, T, K>(
-    rows: &HashMap<K, RowInstance<'scope, T>>,
+fn restore_keyed_order<'scope, T: Clone + 'scope, K>(
+    rows: &HashMap<K, KeyedRow<'scope, T, K>>,
     order: &[K],
     end: &Node,
 ) where
     K: std::hash::Hash + Eq,
 {
+    let fragment: Node = crate::document().create_document_fragment().into();
     for key in order {
         if let Some(row) = rows.get(key) {
-            let _ = row.move_before(end);
+            let _ = row.append_to(&fragment);
         }
     }
+    if let Some(parent) = end.parent_node() {
+        let _ = parent.insert_before(&fragment, Some(end));
+    }
+}
+
+fn combine_close_errors(
+    first: Option<CloseError>,
+    second: Option<CloseError>,
+) -> Option<CloseError> {
+    CloseError::combine(first.into_iter().chain(second))
+}
+
+fn report_close_failure(error_handler: MountErrorHandler<'_>, error: CloseError) {
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        error_handler.handle(SilexError::fatal(SilexErrorKind::Close(error)))
+    }));
 }
 
 fn panic_message(prefix: &str, panic: Box<dyn std::any::Any + Send>) -> String {
@@ -650,14 +829,28 @@ fn panic_message(prefix: &str, panic: Box<dyn std::any::Any + Send>) -> String {
 
 fn dispose_rows<'scope, T: Clone + 'scope>(
     rows: &mut Vec<RowInstance<'scope, T>>,
-) -> Option<Box<dyn std::any::Any + Send>> {
-    let mut first_panic = None;
+) -> Option<CloseError> {
+    let mut errors = Vec::new();
     for mut row in rows.drain(..) {
-        if let Err(panic) = catch_unwind(AssertUnwindSafe(|| row.dispose()))
-            && first_panic.is_none()
-        {
-            first_panic = Some(panic);
+        match catch_unwind(AssertUnwindSafe(|| row.dispose())) {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => errors.push(error),
+            Err(panic) => errors.push(CloseError::from_panic(panic)),
         }
     }
-    first_panic
+    CloseError::combine(errors)
+}
+
+fn dispose_keyed_rows<'scope, T: Clone + 'scope, K>(
+    rows: &mut Vec<KeyedRow<'scope, T, K>>,
+) -> Option<CloseError> {
+    let mut errors = Vec::new();
+    for mut row in rows.drain(..) {
+        match catch_unwind(AssertUnwindSafe(|| row.dispose())) {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => errors.push(error),
+            Err(panic) => errors.push(CloseError::from_panic(panic)),
+        }
+    }
+    CloseError::combine(errors)
 }

@@ -18,7 +18,7 @@ tw_variants! {
 }
 
 global! {
-    pub StaticGlobal<'scope>(scope: silex_core::Scope<'scope>) {
+    pub StaticGlobal<'owner>(owner: silex_core::OwnerAccess<'owner>) {
         body { color: red; }
     }
 }

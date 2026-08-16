@@ -1,59 +1,59 @@
-use crate::{ErrorReporter, Scope};
+use crate::{ErrorReporter, OwnerAccess};
 
 /// The explicit component ctx shared by Silex's core components.
 #[derive(Clone, Copy)]
-pub struct SilexContext<'scope> {
-    scope: Scope<'scope>,
-    error_reporter: ErrorReporter<'scope>,
+pub struct SilexContext<'owner> {
+    owner: OwnerAccess<'owner>,
+    error_reporter: ErrorReporter<'owner>,
 }
 
-impl<'scope> SilexContext<'scope> {
-    /// Creates a ctx from the scope and its root error destination.
-    pub fn new(scope: Scope<'scope>, error_reporter: ErrorReporter<'scope>) -> Self {
+impl<'owner> SilexContext<'owner> {
+    /// Creates a ctx from the owner and its root error destination.
+    pub fn new(owner: OwnerAccess<'owner>, error_reporter: ErrorReporter<'owner>) -> Self {
         Self {
-            scope,
+            owner,
             error_reporter,
         }
     }
 
-    /// Returns the runtime scope carried by this ctx.
-    pub fn scope(self) -> Scope<'scope> {
-        self.scope
+    /// Returns the runtime owner carried by this ctx.
+    pub fn owner(self) -> OwnerAccess<'owner> {
+        self.owner
     }
 
     /// Returns the error destination carried by this ctx.
-    pub fn error_reporter(self) -> ErrorReporter<'scope> {
+    pub fn error_reporter(self) -> ErrorReporter<'owner> {
         self.error_reporter
     }
 
     /// Returns this ctx with only its error destination replaced.
-    pub fn with_error_reporter(self, error_reporter: ErrorReporter<'scope>) -> Self {
+    pub fn with_error_reporter(self, error_reporter: ErrorReporter<'owner>) -> Self {
         Self {
-            scope: self.scope,
+            owner: self.owner,
             error_reporter,
         }
     }
 }
 
 /// The capabilities required by a component ctx.
-pub trait SilexContextProvider<'scope>: Clone + Copy + 'scope {
-    fn scope(&self) -> Scope<'scope>;
+pub trait SilexContextProvider<'owner>: Clone + Copy + 'owner {
+    fn owner(&self) -> OwnerAccess<'owner>;
 
-    fn error_reporter(&self) -> ErrorReporter<'scope>;
+    fn error_reporter(&self) -> ErrorReporter<'owner>;
 
-    fn with_error_reporter(self, reporter: ErrorReporter<'scope>) -> Self;
+    fn with_error_reporter(self, reporter: ErrorReporter<'owner>) -> Self;
 }
 
-impl<'scope> SilexContextProvider<'scope> for SilexContext<'scope> {
-    fn scope(&self) -> Scope<'scope> {
-        SilexContext::scope(*self)
+impl<'owner> SilexContextProvider<'owner> for SilexContext<'owner> {
+    fn owner(&self) -> OwnerAccess<'owner> {
+        SilexContext::owner(*self)
     }
 
-    fn error_reporter(&self) -> ErrorReporter<'scope> {
+    fn error_reporter(&self) -> ErrorReporter<'owner> {
         SilexContext::error_reporter(*self)
     }
 
-    fn with_error_reporter(self, reporter: ErrorReporter<'scope>) -> Self {
+    fn with_error_reporter(self, reporter: ErrorReporter<'owner>) -> Self {
         SilexContext::with_error_reporter(self, reporter)
     }
 }
@@ -66,18 +66,18 @@ mod tests {
     #[test]
     fn replacing_reporter_preserves_scope() {
         let mut runtime = Runtime::new();
-        let root = runtime.run().expect("runtime root should be created");
+        let root = runtime.owner().expect("runtime root should be created");
 
-        root.with_scope(|scope| {
-            let first = scope
+        root.with_access(|owner| {
+            let first = owner
                 .error_handler(|_: SilexError| {})
                 .expect("first reporter should be registered");
-            let second = scope
+            let second = owner
                 .error_handler(|_: SilexError| {})
                 .expect("second reporter should be registered");
-            let ctx = SilexContext::new(scope, first.view());
+            let ctx = SilexContext::new(owner, first.view());
 
-            assert!(ctx.with_error_reporter(second.view()).scope() == scope);
+            assert!(ctx.with_error_reporter(second.view()).owner() == owner);
         });
     }
 }

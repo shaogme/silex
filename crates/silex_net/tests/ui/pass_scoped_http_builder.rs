@@ -1,6 +1,6 @@
 use silex_net::HttpClient;
 
-fn build<'scope>(scope: silex_core::Scope<'scope>) {
+fn build<'scope>(scope: silex_core::OwnerAccess<'scope>) {
         let (post_id, _) = scope.signal(1_i32).unwrap();
         let query = scope.rw_signal(String::new()).unwrap();
         let token = scope.rw_signal("token".to_string()).unwrap();

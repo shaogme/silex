@@ -8,7 +8,7 @@ use super::{
 use crate::{
     ReactiveError,
     error::{ErrorEvent, ErrorPhase, HandlerError},
-    internal::RawId,
+    internal::NodeId,
 };
 use std::{
     any::Any,
@@ -102,8 +102,8 @@ pub(crate) struct FinalCleanupPlan<'scope> {
 }
 
 enum CleanupPlanStep {
-    Enter(RawId),
-    Exit(RawId),
+    Enter(NodeId),
+    Exit(NodeId),
 }
 
 fn collect_final_cleanup_plan<'scope>(
@@ -240,14 +240,14 @@ pub(crate) fn dispose_all<'scope>(state: &ScopeState<'scope>) -> CleanupOutcome<
 }
 
 enum DisposeStep<'scope> {
-    Enter(RawId),
+    Enter(NodeId),
     Exit(Option<NodeData<'scope>>),
 }
 
 fn collect_disposal_nodes<'scope>(
     state: &ScopeState<'scope>,
-    roots: &[RawId],
-) -> Result<Vec<RawId>, ReactiveError> {
+    roots: &[NodeId],
+) -> Result<Vec<NodeId>, ReactiveError> {
     let state_ref = state.try_borrow()?;
     let mut pending = roots.to_vec();
     let mut visited = HashSet::new();
@@ -267,11 +267,11 @@ fn collect_disposal_nodes<'scope>(
 
 fn preflight_node_disposal<'scope>(
     state: &ScopeState<'scope>,
-    nodes: &[RawId],
+    nodes: &[NodeId],
 ) -> Result<(), ReactiveError> {
-    let (scope_id, scheduler, external_scope_ids) = {
+    let (owner_id, scheduler, external_owner_ids) = {
         let state_ref = state.try_borrow()?;
-        let mut external_scope_ids = HashSet::new();
+        let mut external_owner_ids = HashSet::new();
         for id in nodes {
             let Some(_) = state_ref.nodes.get(*id) else {
                 continue;
@@ -280,29 +280,29 @@ fn preflight_node_disposal<'scope>(
                 .dependency_edges_of(*id)
                 .chain(state_ref.subscriber_edges_of(*id))
             {
-                if edge.target.scope_id != state_ref.scope_id {
-                    external_scope_ids.insert(edge.target.scope_id);
+                if edge.target.owner_id != state_ref.owner_id {
+                    external_owner_ids.insert(edge.target.owner_id);
                 }
             }
         }
         (
-            state_ref.scope_id,
+            state_ref.owner_id,
             state_ref.scheduler.clone(),
-            external_scope_ids,
+            external_owner_ids,
         )
     };
 
     scheduler
         .try_borrow_mut()
         .map_err(|_| ReactiveError::BorrowConflict)?;
-    for external_scope_id in external_scope_ids {
-        if external_scope_id == scope_id {
+    for external_owner_id in external_owner_ids {
+        if external_owner_id == owner_id {
             continue;
         }
         if let Some(scope) = scheduler
             .try_borrow()
             .map_err(|_| ReactiveError::BorrowConflict)?
-            .get_scope_for_edge_cleanup(external_scope_id)
+            .get_scope_for_edge_cleanup(external_owner_id)
         {
             scope
                 .try_borrow_mut()
@@ -315,7 +315,7 @@ fn preflight_node_disposal<'scope>(
 
 pub(crate) fn dispose_nodes_collect<'scope>(
     state: &ScopeState<'scope>,
-    roots: Vec<RawId>,
+    roots: Vec<NodeId>,
 ) -> Result<CleanupOutcome<'scope>, ReactiveError> {
     let scheduler = state.try_borrow()?.scheduler.clone();
     let disposal_nodes = collect_disposal_nodes(state, &roots)?;
@@ -334,7 +334,7 @@ pub(crate) fn dispose_nodes_collect<'scope>(
                         continue;
                     };
                     let source_target = TargetNode {
-                        scope_id: state_ref.scope_id,
+                        owner_id: state_ref.owner_id,
                         node: id,
                     };
                     let subscribers = state_ref.take_subscribers(id);
@@ -346,12 +346,12 @@ pub(crate) fn dispose_nodes_collect<'scope>(
 
                     state_ref.clear_dependencies(id)?;
                     for subscriber in subscribers {
-                        if subscriber.scope_id == state_ref.scope_id {
+                        if subscriber.owner_id == state_ref.owner_id {
                             state_ref.remove_dependency(subscriber.node, source_target);
                         } else if let Some(observer_state) = scheduler
                             .try_borrow()
                             .map_err(|_| ReactiveError::BorrowConflict)?
-                            .get_scope_for_edge_cleanup(subscriber.scope_id)
+                            .get_scope_for_edge_cleanup(subscriber.owner_id)
                         {
                             observer_state
                                 .try_borrow_mut()
@@ -363,7 +363,7 @@ pub(crate) fn dispose_nodes_collect<'scope>(
                     state_ref
                         .dependency_transactions
                         .retain(|transaction| transaction.observer != id);
-                    let children: Vec<RawId> =
+                    let children: Vec<NodeId> =
                         state_ref.children_of_head(node.first_child).collect();
                     let data = state_ref.data.remove(id);
                     if state_ref.current_owner == Some(id) {
@@ -389,7 +389,7 @@ pub(crate) fn dispose_nodes_collect<'scope>(
 
 pub(crate) fn dispose_nodes<'scope>(
     state: &ScopeState<'scope>,
-    roots: Vec<RawId>,
+    roots: Vec<NodeId>,
 ) -> Result<CleanupOutcome<'scope>, ReactiveError> {
     let scheduler = state.try_borrow()?.scheduler.clone();
     let mut outcome = dispose_nodes_collect(state, roots)?;

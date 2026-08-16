@@ -4,9 +4,9 @@ fn require_static<T: 'static>(_: T) {}
 
 fn main() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    runtime.with_transient(|owner| {
         let value = String::from("scoped");
-        let token: ErrorHandlerToken<'_> = scope
+        let token: ErrorHandlerToken<'_> = owner
             .error_handler(|_| {
                 let _ = &value;
             })

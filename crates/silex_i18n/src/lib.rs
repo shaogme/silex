@@ -18,10 +18,11 @@ pub use runtime::I18nVariant;
 pub use runtime::{Argument, I18nBuilder, I18nStore, MissingArgumentPolicy, MissingKeyPolicy};
 pub use silex_core::Rx;
 pub use silex_core::reactivity::{
-    Effect, Memo, ReadSignal, Resource, ResourceState, RwSignal, StoredValue, SuspenseContext,
+    Computed, EffectHandle, ReadSignal, Resource, ResourceState, RwSignal, StoredValue,
+    SuspenseContext,
 };
 pub use silex_core::traits::{RxGet, RxRead, RxWrite};
-pub use silex_core::{I18nError, I18nErrorKind, RootHandle, Runtime, Scope};
+pub use silex_core::{I18nError, I18nErrorKind, OwnerAccess, OwnerHandle, Runtime};
 #[cfg(feature = "persist")]
 pub use silex_persist::Persistent;
 
@@ -45,7 +46,7 @@ macro_rules! t {
     ($store:expr, $key:literal $(, $name:ident = $value:expr)* $(,)?) => {{
         let __silex_i18n_store = ($store);
         let __silex_i18n_store_for_translation = __silex_i18n_store;
-        __silex_i18n_store.__memo(move || {
+        __silex_i18n_store.__computed(move || {
             let __silex_i18n_arguments = ::std::vec![
                 $(
                     $crate::Argument::new(
@@ -61,7 +62,7 @@ macro_rules! t {
     ($store:expr, $variant:expr $(,)?) => {{
         let __silex_i18n_store = ($store);
         let __silex_i18n_store_for_translation = __silex_i18n_store;
-        __silex_i18n_store.__memo(move || {
+        __silex_i18n_store.__computed(move || {
             let __silex_i18n_variant = $variant;
             __silex_i18n_store_for_translation
                 .translate_variant_now(&__silex_i18n_variant)
@@ -74,13 +75,11 @@ mod tests {
     use super::*;
     #[cfg(feature = "persist")]
     use silex_core::ErrorReporter;
-    use silex_core::{
-        ErrorHandlerToken, ReactiveError, Runtime, Scope, SilexError, SilexErrorKind,
-    };
+    use silex_core::{ErrorHandlerToken, ReactiveError, Runtime, SilexError, SilexErrorKind};
     use std::{cell::Cell, rc::Rc};
 
-    fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope> {
-        scope.error_handler(|_| {}).expect("error handler")
+    fn test_handler<'owner>(owner: OwnerAccess<'owner>) -> ErrorHandlerToken<'owner> {
+        owner.error_handler(|_| {}).expect("error handler")
     }
 
     fn locale(value: &str) -> Locale {
@@ -98,15 +97,15 @@ mod tests {
     fn copied_stores_use_runtime_leases_without_owning_the_handler() {
         let mut runtime = Runtime::new();
         runtime
-            .child(|scope| {
-                let handler = test_handler(scope);
-                let store = I18nBuilder::new(scope, handler.view())
+            .with_transient(|owner| {
+                let handler = test_handler(owner);
+                let store = I18nBuilder::new(owner, handler.view())
                     .locale(locale("en"))
                     .build()
                     .expect("valid i18n store");
                 let first = store;
                 let second = store;
-                let before_nodes = scope.runtime_snapshot();
+                let before_nodes = owner.runtime_snapshot();
 
                 let first_translation = t!(first, "first").expect("first memo");
                 let second_translation = t!(second, "second").expect("second memo");
@@ -125,9 +124,9 @@ mod tests {
                 #[cfg(feature = "browser")]
                 let _metadata = second.sync_document_metadata().expect("metadata effect");
 
-                assert_eq!(scope.runtime_snapshot().handlers, before_nodes.handlers);
+                assert_eq!(owner.runtime_snapshot().handlers, before_nodes.handlers);
                 drop(handler);
-                assert_eq!(scope.runtime_snapshot().handlers, 0);
+                assert_eq!(owner.runtime_snapshot().handlers, 0);
                 assert_eq!(first_translation.get().expect("first translation"), "first");
                 assert_eq!(
                     second_translation.get().expect("second translation"),
@@ -143,7 +142,7 @@ mod tests {
                     SilexError::Fatal(SilexErrorKind::Reactivity(ReactiveError::Handler(_)))
                 ));
             })
-            .expect("child scope");
+            .expect("child owner");
     }
 
     #[cfg(feature = "persist")]
@@ -179,7 +178,7 @@ mod tests {
     }
 
     #[cfg(feature = "persist")]
-    impl<'scope> PersistenceBackend<'scope> for InputBackend {
+    impl<'owner> PersistenceBackend<'owner> for InputBackend {
         fn get(&self, _key: &str) -> Result<Option<String>, PersistenceError> {
             self.get_calls.set(self.get_calls.get() + 1);
             Ok(self.value.borrow().clone())
@@ -198,11 +197,11 @@ mod tests {
 
         fn subscribe(
             &self,
-            _scope: Scope<'scope>,
+            _scope: OwnerAccess<'owner>,
             _key: impl Into<ref_str::LocalStaticRefStr>,
             _sink: BackendEventSink,
-            _error_handler: ErrorReporter<'scope>,
-        ) -> Result<BackendSubscription<'scope>, BackendSubscribeError<'scope>> {
+            _error_handler: ErrorReporter<'owner>,
+        ) -> Result<BackendSubscription<'owner>, BackendSubscribeError<'owner>> {
             self.subscribe_calls.set(self.subscribe_calls.get() + 1);
             self.active_subscriptions
                 .set(self.active_subscriptions.get() + 1);
@@ -241,7 +240,7 @@ mod tests {
     fn translates_with_locale_fallback_and_interpolation() {
         let mut runtime = Runtime::new();
         runtime
-            .child(|scope| {
+            .with_transient(|owner| {
                 let en = Catalog::from_entries(
                     locale("en-US"),
                     [("welcome.user", "Hello, {name}!"), ("only.en", "English")],
@@ -250,15 +249,15 @@ mod tests {
                 let zh =
                     Catalog::from_entries(locale("zh-CN"), [("welcome.user", "你好，{name}！")])
                         .expect("valid catalog");
-                let handler = test_handler(scope);
-                let store = I18nBuilder::new(scope, handler.view())
+                let handler = test_handler(owner);
+                let store = I18nBuilder::new(owner, handler.view())
                     .locale(locale("zh-CN"))
                     .fallback_locale(locale("en-US"))
                     .catalog(en)
                     .catalog(zh)
                     .build()
                     .expect("valid i18n store");
-                let name = scope.rw_signal("Alice".to_string()).expect("name signal");
+                let name = owner.rw_signal("Alice".to_string()).expect("name signal");
                 let greeting = t!(store, "welcome.user", name = name.get()).expect("translation");
                 assert_eq!(greeting.get().expect("translation value"), "你好，Alice！");
                 name.set("Bob".to_string()).expect("name update");
@@ -279,20 +278,20 @@ mod tests {
                     .expect("fallback update");
                 assert_eq!(greeting.get().expect("translation value"), "Hello, Bob!");
             })
-            .expect("child scope");
+            .expect("child owner");
     }
 
     #[test]
     fn catalog_revision_invalidates_existing_translation_memo() {
         let mut runtime = Runtime::new();
         runtime
-            .child(|scope| {
+            .with_transient(|owner| {
                 let initial = Catalog::from_entries(locale("en"), [("title", "Old")])
                     .expect("valid initial catalog");
                 let replacement = Catalog::from_entries(locale("en"), [("title", "New")])
                     .expect("valid replacement catalog");
-                let handler = test_handler(scope);
-                let store = I18nBuilder::new(scope, handler.view())
+                let handler = test_handler(owner);
+                let store = I18nBuilder::new(owner, handler.view())
                     .locale(locale("en"))
                     .catalog(initial)
                     .build()
@@ -307,22 +306,22 @@ mod tests {
                     .expect("catalog removal");
                 assert_eq!(title.get().expect("translation value"), "title");
             })
-            .expect("child scope");
+            .expect("child owner");
     }
 
     #[test]
     fn catalog_cache_updates_before_translation_memo_reruns() {
         let mut runtime = Runtime::new();
         runtime
-            .child(|scope| {
+            .with_transient(|owner| {
                 let initial = Catalog::from_entries(locale("en"), [("title", "Old")])
                     .expect("valid initial catalog");
                 let same = Catalog::from_entries(locale("en"), [("title", "Old")])
                     .expect("valid equal catalog");
                 let replacement = Catalog::from_entries(locale("en"), [("title", "New")])
                     .expect("valid replacement catalog");
-                let handler = test_handler(scope);
-                let store = I18nBuilder::new(scope, handler.view())
+                let handler = test_handler(owner);
+                let store = I18nBuilder::new(owner, handler.view())
                     .locale(locale("en"))
                     .catalog(initial)
                     .build()
@@ -330,7 +329,7 @@ mod tests {
                 let runs = Rc::new(Cell::new(0));
                 let store_for_translation = store;
                 let translation = store
-                    .__memo({
+                    .__computed({
                         let runs = runs.clone();
                         move || {
                             runs.set(runs.get() + 1);
@@ -350,18 +349,18 @@ mod tests {
                 assert_eq!(translation.get().expect("translation value"), "New");
                 assert_eq!(runs.get(), 2);
             })
-            .expect("child scope");
+            .expect("child owner");
     }
 
     #[test]
     fn missing_key_and_argument_policies_are_independent() {
         let mut runtime = Runtime::new();
         runtime
-            .child(|scope| {
+            .with_transient(|owner| {
                 let catalog = Catalog::from_entries(locale("en"), [("greeting", "Hi, {name}!")])
                     .expect("valid catalog");
-                let handler = test_handler(scope);
-                let store = I18nBuilder::new(scope, handler.view())
+                let handler = test_handler(owner);
+                let store = I18nBuilder::new(owner, handler.view())
                     .locale(locale("en"))
                     .catalog(catalog)
                     .missing_key(MissingKeyPolicy::Empty)
@@ -378,7 +377,7 @@ mod tests {
                     "Hi, !"
                 );
             })
-            .expect("child scope");
+            .expect("child owner");
     }
 
     #[test]
@@ -396,7 +395,7 @@ mod tests {
     fn selects_plural_forms_and_keeps_missing_arguments() {
         let mut runtime = Runtime::new();
         runtime
-            .child(|scope| {
+            .with_transient(|owner| {
                 let catalog = Catalog::from_entries(
                     locale("en"),
                     [(
@@ -408,8 +407,8 @@ mod tests {
                     )],
                 )
                 .expect("valid catalog");
-                let handler = test_handler(scope);
-                let store = I18nBuilder::new(scope, handler.view())
+                let handler = test_handler(owner);
+                let store = I18nBuilder::new(owner, handler.view())
                     .locale(locale("en"))
                     .catalog(catalog)
                     .build()
@@ -432,14 +431,14 @@ mod tests {
                     "You have {count} items."
                 );
             })
-            .expect("child scope");
+            .expect("child owner");
     }
 
     #[test]
     fn uses_the_fallback_catalog_locale_for_plural_rules() {
         let mut runtime = Runtime::new();
         runtime
-            .child(|scope| {
+            .with_transient(|owner| {
                 let fallback = Catalog::from_entries(
                     locale("en"),
                     [(
@@ -448,8 +447,8 @@ mod tests {
                     )],
                 )
                 .expect("valid catalog");
-                let handler = test_handler(scope);
-                let store = I18nBuilder::new(scope, handler.view())
+                let handler = test_handler(owner);
+                let store = I18nBuilder::new(owner, handler.view())
                     .locale(locale("zh-CN"))
                     .fallback_locale(locale("en"))
                     .catalog(fallback)
@@ -463,7 +462,7 @@ mod tests {
                     "one item"
                 );
             })
-            .expect("child scope");
+            .expect("child owner");
     }
 
     #[test]
@@ -491,16 +490,16 @@ mod tests {
     fn locale_binding_takes_precedence_over_builder_locale() {
         let mut runtime = Runtime::new();
         runtime
-            .child(|scope| {
-                let binding_handler = test_handler(scope);
-                let saved = Persistent::builder(scope, "silex-test-locale", binding_handler)
+            .with_transient(|owner| {
+                let binding_handler = test_handler(owner);
+                let saved = Persistent::builder(owner, "silex-test-locale", binding_handler)
                     .local()
                     .parse::<Locale>()
                     .default(locale("en-US"))
                     .build()
                     .expect("locale binding");
-                let handler = test_handler(scope);
-                let store = I18nBuilder::new(scope, handler.view())
+                let handler = test_handler(owner);
+                let store = I18nBuilder::new(owner, handler.view())
                     .locale(locale("zh-CN"))
                     .locale_binding(saved)
                     .build()
@@ -511,7 +510,7 @@ mod tests {
                     locale("en-US")
                 );
             })
-            .expect("child scope");
+            .expect("child owner");
     }
 
     #[cfg(feature = "persist")]
@@ -519,16 +518,16 @@ mod tests {
     fn locale_binding_stays_in_sync_inside_one_runtime() {
         let mut runtime = Runtime::new();
         runtime
-            .child(|scope| {
+            .with_transient(|owner| {
                 let binding =
-                    Persistent::builder(scope, "silex-memory-locale", test_handler(scope))
+                    Persistent::builder(owner, "silex-memory-locale", test_handler(owner))
                         .backend(InputBackend::new())
                         .parse::<Locale>()
                         .default(locale("en-US"))
                         .build()
                         .expect("locale binding");
-                let handler = test_handler(scope);
-                let store = I18nBuilder::new(scope, handler.view())
+                let handler = test_handler(owner);
+                let store = I18nBuilder::new(owner, handler.view())
                     .locale(locale("zh-CN"))
                     .locale_binding(binding)
                     .build()
@@ -549,27 +548,27 @@ mod tests {
                     locale("de-DE")
                 );
             })
-            .expect("child scope");
+            .expect("child owner");
     }
 
     #[cfg(feature = "persist")]
     #[test]
     fn locale_binding_supports_root_and_child_scopes_in_one_runtime() {
         let mut runtime = Runtime::new();
-        let root = runtime.run().expect("root scope");
+        let root = runtime.owner().expect("root owner");
         let root_backend = InputBackend::new();
         let child_backend = InputBackend::new();
 
-        root.with_scope(|scope| {
-            let root_binding_handler = test_handler(scope);
-            let root_binding = Persistent::builder(scope, "root-locale", root_binding_handler)
+        root.with_access(|owner| {
+            let root_binding_handler = test_handler(owner);
+            let root_binding = Persistent::builder(owner, "root-locale", root_binding_handler)
                 .backend(root_backend.clone())
                 .parse::<Locale>()
                 .default(locale("en-US"))
                 .build()
                 .expect("root locale binding");
-            let root_handler = test_handler(scope);
-            let root_store = I18nBuilder::new(scope, root_handler.view())
+            let root_handler = test_handler(owner);
+            let root_store = I18nBuilder::new(owner, root_handler.view())
                 .locale_binding(root_binding)
                 .build()
                 .expect("root binding should build");
@@ -580,17 +579,17 @@ mod tests {
                 locale("ja-JP")
             );
 
-            scope
-                .child(|child_scope| {
+            owner
+                .with_transient(|child_owner| {
                     let child_binding =
-                        Persistent::builder(child_scope, "child-locale", test_handler(child_scope))
+                        Persistent::builder(child_owner, "child-locale", test_handler(child_owner))
                             .backend(child_backend.clone())
                             .parse::<Locale>()
                             .default(locale("en-US"))
                             .build()
                             .expect("child locale binding");
-                    let child_handler = test_handler(child_scope);
-                    let child_store = I18nBuilder::new(child_scope, child_handler.view())
+                    let child_handler = test_handler(child_owner);
+                    let child_store = I18nBuilder::new(child_owner, child_handler.view())
                         .locale(locale("zh-CN"))
                         .locale_binding(child_binding)
                         .build()
@@ -605,14 +604,14 @@ mod tests {
                     );
                     assert_eq!(child_backend.subscribe_calls.get(), 1);
                 })
-                .expect("child scope");
+                .expect("child owner");
 
             assert_eq!(root_backend.subscribe_calls.get(), 1);
             assert_eq!(root_backend.active_subscriptions.get(), 1);
             assert_eq!(child_backend.active_subscriptions.get(), 0);
         });
 
-        root.dispose().expect("root cleanup");
+        root.close().expect("root cleanup");
         assert_eq!(root_backend.active_subscriptions.get(), 0);
     }
 
@@ -621,16 +620,16 @@ mod tests {
     fn locale_binding_suppresses_equal_bidirectional_writes() {
         let mut runtime = Runtime::new();
         runtime
-            .child(|scope| {
+            .with_transient(|owner| {
                 let backend = InputBackend::new();
-                let binding = Persistent::builder(scope, "equal-locale", test_handler(scope))
+                let binding = Persistent::builder(owner, "equal-locale", test_handler(owner))
                     .backend(backend.clone())
                     .parse::<Locale>()
                     .default(locale("en-US"))
                     .build()
                     .expect("locale binding");
-                let handler = test_handler(scope);
-                let store = I18nBuilder::new(scope, handler.view())
+                let handler = test_handler(owner);
+                let store = I18nBuilder::new(owner, handler.view())
                     .locale(locale("en-US"))
                     .locale_binding(binding)
                     .build()
@@ -643,66 +642,35 @@ mod tests {
                 assert_eq!(backend.set_calls.get(), writes_after_build);
                 assert_eq!(backend.subscribe_calls.get(), 1);
             })
-            .expect("child scope");
+            .expect("child owner");
     }
 
-    #[cfg(feature = "persist")]
     #[test]
-    fn foreign_runtime_binding_fails_before_i18n_node_creation() {
+    fn foreign_runtime_locale_source_is_rejected_before_target_creation() {
         let mut foreign_runtime = Runtime::new();
-        let foreign_root = foreign_runtime.run().expect("foreign root scope");
+        let foreign_root = foreign_runtime.owner().expect("foreign root owner");
         let mut target_runtime = Runtime::new();
-        let target_root = target_runtime.run().expect("target root scope");
+        let target_root = target_runtime.owner().expect("target root owner");
 
-        foreign_root.with_scope(|foreign_scope| {
-            let backend = InputBackend::new();
-            let binding = Persistent::builder(
-                foreign_scope,
-                "foreign-i18n-locale",
-                test_handler(foreign_scope),
-            )
-            .backend(backend.clone())
-            .parse::<Locale>()
-            .default(locale("en-US"))
-            .build()
-            .expect("foreign locale binding");
-            let before_backend = (
-                backend.get_calls.get(),
-                backend.set_calls.get(),
-                backend.subscribe_calls.get(),
-                backend.active_subscriptions.get(),
-            );
-
-            target_root.with_scope(|target_scope| {
-                let handler = test_handler(target_scope);
-                let before = target_scope.runtime_snapshot();
-                let result = I18nBuilder::new(target_scope, handler.view())
-                    .locale_binding(binding)
-                    .build();
-
+        foreign_root.with_access(|foreign_owner| {
+            let (source, _) = foreign_owner
+                .signal(locale("en-US"))
+                .expect("foreign source");
+            target_root.with_access(|target_owner| {
+                let before = target_owner.runtime_snapshot();
+                let error = target_owner
+                    .validate_runtime(&source)
+                    .expect_err("foreign source should be rejected");
                 assert!(matches!(
-                    result,
-                    Err(I18nError::Fatal(I18nErrorKind::Reactivity(
-                        ReactiveError::RuntimeMismatch,
-                    )))
+                    error,
+                    SilexError::Fatal(SilexErrorKind::Reactivity(ReactiveError::RuntimeMismatch,))
                 ));
-                assert_eq!(target_scope.runtime_snapshot(), before);
-                assert_eq!(
-                    (
-                        backend.get_calls.get(),
-                        backend.set_calls.get(),
-                        backend.subscribe_calls.get(),
-                        backend.active_subscriptions.get(),
-                    ),
-                    before_backend
-                );
+                assert_eq!(target_owner.runtime_snapshot(), before);
             });
-
-            assert_eq!(backend.active_subscriptions.get(), 1);
         });
 
-        target_root.dispose().expect("target root cleanup");
-        foreign_root.dispose().expect("foreign root cleanup");
+        target_root.close().expect("target root cleanup");
+        foreign_root.close().expect("foreign root cleanup");
     }
 
     #[cfg(feature = "json")]

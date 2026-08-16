@@ -34,8 +34,8 @@ mod tests {
         let mut runtime = Runtime::new();
 
         runtime
-            .child(|scope| {
-                let field = scope.rw_signal(42).expect("rw signal should initialize");
+            .with_transient(|owner| {
+                let field = owner.rw_signal(42).expect("rw signal should initialize");
                 assert_store_field(field);
                 assert_eq!(field.get().expect("field should be readable"), 42);
             })

@@ -1,5 +1,5 @@
 use silex_reactivity::{
-    ComputationInitError, Effect, ErrorHandlerToken, Runtime, Scope, WatchOptions,
+    ComputationInitError, EffectHandle, ErrorHandlerToken, OwnerAccess, Runtime, WatchOptions,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -7,7 +7,7 @@ use std::{
     rc::Rc,
 };
 
-fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope, ()> {
+fn handler<'scope>(scope: OwnerAccess<'scope>) -> ErrorHandlerToken<'scope, ()> {
     scope.error_handler(|_| {}).expect("handler registration")
 }
 
@@ -18,7 +18,7 @@ fn getter_watch_commits_values_and_gates_equal_updates() {
     let calls = Rc::new(RefCell::new(Vec::new()));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(1_i32).expect("fallible reactive creation");
             let getter_runs_in_getter = getter_runs.clone();
             let calls_in_callback = calls.clone();
@@ -53,7 +53,7 @@ fn immediate_once_watch_stops_after_the_initial_callback() {
     let calls = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(1_i32).expect("fallible reactive creation");
             let calls_in_callback = calls.clone();
             let watcher = scope
@@ -84,7 +84,7 @@ fn callback_reads_are_untracked_and_dynamic_getter_dependencies_replace() {
     let calls = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (switch, set_switch) = scope.signal(true).expect("fallible reactive creation");
             let (left, set_left) = scope.signal(1_i32).expect("fallible reactive creation");
             let (right, set_right) = scope.signal(10_i32).expect("fallible reactive creation");
@@ -135,7 +135,7 @@ fn stop_cancels_future_runs_and_runs_cleanup_once() {
     let cleanups = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(0_i32).expect("fallible reactive creation");
             let calls_in_callback = calls.clone();
             let cleanups_in_callback = cleanups.clone();
@@ -183,7 +183,7 @@ fn callback_panic_keeps_the_old_snapshot_for_a_later_retry() {
     let calls = Rc::new(RefCell::new(Vec::new()));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(0_i32).expect("fallible reactive creation");
             let should_panic_in_callback = should_panic.clone();
             let calls_in_callback = calls.clone();
@@ -215,7 +215,7 @@ fn initial_watch_panic_rolls_back_the_registered_node() {
     let getter_runs = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(0_i32).expect("fallible reactive creation");
             let getter_runs_in_getter = getter_runs.clone();
             let panic = catch_unwind(AssertUnwindSafe(|| {
@@ -245,16 +245,16 @@ fn initial_watch_panic_rolls_back_the_registered_node() {
 fn foreign_watch_reads_fail_before_callback_execution() {
     let mut first = Runtime::new();
     let mut second = Runtime::new();
-    let first_root = first.run().expect("first root");
-    let second_root = second.run().expect("second root");
+    let first_root = first.owner().expect("first root");
+    let second_root = second.owner().expect("second root");
     let getter_runs = Rc::new(Cell::new(0));
     let callback_runs = Rc::new(Cell::new(0));
 
-    let result = first_root.with_scope(|foreign_scope| {
+    let result = first_root.with_access(|foreign_scope| {
         let (foreign_source, _) = foreign_scope
             .signal(1_i32)
             .expect("foreign signal should initialize");
-        second_root.with_scope(|scope| {
+        second_root.with_access(|scope| {
             let getter_runs_in_getter = getter_runs.clone();
             let callback_runs_in_callback = callback_runs.clone();
             scope
@@ -277,25 +277,26 @@ fn foreign_watch_reads_fail_before_callback_execution() {
     assert_eq!(getter_runs.get(), 1);
     assert_eq!(callback_runs.get(), 0);
 
-    second_root.dispose().expect("second root disposal");
-    first_root.dispose().expect("first root disposal");
+    second_root.close().expect("second root disposal");
+    first_root.close().expect("first root disposal");
 }
 
 #[test]
 fn owner_disposal_makes_a_watcher_handle_stopped() {
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime root creation");
+    let root = runtime.owner().expect("runtime root creation");
     {
-        let scope = root.scope();
-        let owner = scope.owned_scope().expect("fallible reactive creation");
+        let scope = root.access();
+        let owner = scope.create_child().expect("fallible reactive creation");
         let watcher = owner
+            .access()
             .watch_getter(|| Ok(1_i32), |_, _| Ok(()), handler(scope))
             .expect("watch should initialize");
 
-        owner.dispose().expect("owner disposal");
+        owner.close().expect("owner disposal");
         assert_eq!(watcher.stop(), Ok(false));
     }
-    root.dispose().expect("root disposal should succeed");
+    root.close().expect("root disposal should succeed");
 }
 
 #[test]
@@ -304,7 +305,7 @@ fn ordinary_effects_can_be_stopped_through_the_same_handle() {
     let runs = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(0_i32).expect("fallible reactive creation");
             let runs_in_effect = runs.clone();
             let effect = scope
@@ -333,9 +334,9 @@ fn stopping_the_current_effect_does_not_write_back_deleted_metadata() {
     let runs = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(0_i32).expect("fallible reactive creation");
-            let slot: Rc<Cell<Option<Effect<'_>>>> = Rc::new(Cell::new(None));
+            let slot: Rc<Cell<Option<EffectHandle<'_>>>> = Rc::new(Cell::new(None));
             let slot_in_effect = slot.clone();
             let runs_in_effect = runs.clone();
             let effect = scope

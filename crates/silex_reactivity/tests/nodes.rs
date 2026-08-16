@@ -1,6 +1,6 @@
 use silex_reactivity::{
-    Callback, CallbackInvokeError, Derived, Effect, ErrorHandlerToken, Memo, NodeRef,
-    ReactiveError, ReadSignal, Runtime, Scope, StoredValue, WriteSignal,
+    Callback, CallbackInvokeError, Computed, EffectHandle, ErrorHandlerToken, NodeRef, OwnerAccess,
+    ReactiveError, ReadSignal, Runtime, StoredValue, WriteSignal,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -8,7 +8,7 @@ use std::{
     rc::Rc,
 };
 
-fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope, ()> {
+fn handler<'scope>(scope: OwnerAccess<'scope>) -> ErrorHandlerToken<'scope, ()> {
     scope.error_handler(|_| {}).expect("handler registration")
 }
 
@@ -68,18 +68,18 @@ fn all_public_node_capabilities_are_copy() {
 
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let signal = scope.rw_signal(0i32).expect("fallible reactive creation");
             let read = signal.read();
             let write = signal.write();
             let memo = scope
-                .memo(
-                    move |_| Ok(read.get().expect("reactive read")),
+                .computed(
+                    move || Ok(read.get().expect("reactive read")),
                     handler(scope),
                 )
                 .expect("memo creation");
             let derived = scope
-                .derived(move || Ok(1i32), handler(scope))
+                .computed_always(move || Ok(1i32), handler(scope))
                 .expect("derived creation");
             let effect = scope
                 .effect(|| Ok(()), handler(scope))
@@ -102,9 +102,9 @@ fn all_public_node_capabilities_are_copy() {
 
             let _: Option<ReadSignal<'_, i32>> = Some(read);
             let _: Option<WriteSignal<'_, i32>> = Some(write);
-            let _: Option<Memo<'_, i32, ()>> = Some(memo);
-            let _: Option<Derived<'_, i32, ()>> = Some(derived);
-            let _: Option<Effect<'_>> = Some(effect);
+            let _: Option<Computed<'_, i32, ()>> = Some(memo);
+            let _: Option<Computed<'_, i32, ()>> = Some(derived);
+            let _: Option<EffectHandle<'_>> = Some(effect);
             let _: Option<StoredValue<'_, i32>> = Some(stored);
             let _: Option<Callback<'_, ()>> = Some(callback);
             let _: Option<NodeRef<'_, i32>> = Some(node_ref);
@@ -116,7 +116,7 @@ fn all_public_node_capabilities_are_copy() {
 fn stored_callback_and_node_ref_are_scope_owned() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let stored = scope
                 .stored(String::from("before"))
                 .expect("fallible reactive creation");
@@ -157,7 +157,7 @@ fn callback_user_error_is_returned_and_callback_remains_reusable() {
     let seen = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let calls_in_callback = calls.clone();
             let seen_in_callback = seen.clone();
             let callback = scope
@@ -191,7 +191,7 @@ fn callback_runtime_error_and_user_reactive_error_are_distinct() {
     let mut runtime = Runtime::new();
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let callback = scope
                 .callback(|_: ()| Err::<(), ReactiveError>(ReactiveError::NoSuchNode))
                 .expect("callback should initialize");
@@ -211,7 +211,7 @@ fn callback_dispatches_user_error_once_after_releasing_its_lease() {
     let observed = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (signal, set_signal) = scope.signal(0_i32).expect("fallible reactive creation");
             let handler_calls_in_handler = handler_calls.clone();
             let handler = scope
@@ -245,7 +245,7 @@ fn callback_dispatches_user_error_once_after_releasing_its_lease() {
 fn recursive_callback_invocation_reports_borrow_conflict() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let slot: Rc<RefCell<Option<Callback<'_, (), ReactiveError>>>> =
                 Rc::new(RefCell::new(None));
             let slot_in_callback = slot.clone();
@@ -276,7 +276,7 @@ fn callback_panic_keeps_callback_available_for_the_next_invoke() {
     let should_panic = Rc::new(Cell::new(true));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let called_in_callback = called.clone();
             let panic_in_callback = should_panic.clone();
             let callback = scope
@@ -304,7 +304,7 @@ fn callback_panic_keeps_callback_available_for_the_next_invoke() {
 fn stored_update_panic_keeps_the_stored_value_and_releases_the_lease() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let stored = scope
                 .stored(String::from("before"))
                 .expect("fallible reactive creation");
@@ -332,7 +332,7 @@ fn stored_update_panic_keeps_the_stored_value_and_releases_the_lease() {
 fn updating_one_signal_can_read_another_signal() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(1i32).expect("fallible reactive creation");
             let (other, set_other) = scope.signal(2i32).expect("fallible reactive creation");
             set_source
@@ -357,7 +357,7 @@ fn updating_another_signal_during_read_defers_effect_flush() {
     let runs = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, _set_source) = scope.signal(0i32).expect("fallible reactive creation");
             let (other, set_other) = scope.signal(0i32).expect("fallible reactive creation");
             let runs_in_effect = runs.clone();
@@ -392,7 +392,7 @@ fn computation_payload_drop_observes_disposed_scope() {
     let error = Rc::new(Cell::new(None));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let scope_copy = scope;
             let called_in_outer = called.clone();
             let error_in_outer = error.clone();
@@ -430,7 +430,7 @@ fn computation_payload_drop_observes_disposed_scope() {
 fn nested_memo_child_payload_drop_does_not_track_the_outer_observer() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (outer_source, set_outer_source) =
                 scope.signal(0i32).expect("fallible reactive creation");
             let (inner_source, set_inner_source) =
@@ -442,8 +442,8 @@ fn nested_memo_child_payload_drop_does_not_track_the_outer_observer() {
             let probe_for_child = probe;
             let drops_in_child = drops.clone();
             let inner = scope
-                .memo(
-                    move |_| {
+                .computed(
+                    move || {
                         let value = inner_source.get().expect("reactive read");
                         if first_inner_run.replace(false) {
                             scope_for_child
@@ -508,7 +508,7 @@ fn nested_memo_child_payload_drop_does_not_track_the_outer_observer() {
 fn nested_memo_result_drop_does_not_track_the_outer_observer() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (outer_source, set_outer_source) =
                 scope.signal(0i32).expect("fallible reactive creation");
             let (inner_source, set_inner_source) =
@@ -516,10 +516,10 @@ fn nested_memo_result_drop_does_not_track_the_outer_observer() {
             let (probe, set_probe) = scope.signal(0i32).expect("fallible reactive creation");
             let drops = Rc::new(Cell::new(0));
             let inner = scope
-                .memo(
+                .computed(
                     {
                         let drops = drops.clone();
-                        move |_| {
+                        move || {
                             inner_source.get().expect("reactive read");
                             Ok(ReadOnDrop {
                                 probe,
@@ -582,7 +582,7 @@ fn child_payloads_drop_before_parent_computation_payload() {
     let mut runtime = Runtime::new();
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let scope_copy = scope;
             let parent_event = DropEvent {
                 label: "parent",
@@ -659,7 +659,7 @@ fn child_callback_payload_drop_can_schedule_an_active_parent_effect() {
     let error = Rc::new(Cell::new(None));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(0i32).expect("fallible reactive creation");
             let seen_in_effect = seen.clone();
             scope
@@ -674,7 +674,7 @@ fn child_callback_payload_drop_can_schedule_an_active_parent_effect() {
 
             let setter = set_source;
             scope
-                .child(|child| {
+                .with_transient(|child| {
                     let drop_probe = ReenterOnDrop {
                         setter,
                         called: called.clone(),
@@ -703,7 +703,7 @@ fn stored_value_update_flushes_after_the_write_lease_is_released() {
     let seen = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(0i32).expect("fallible reactive creation");
             let stored = scope.stored(0i32).expect("fallible reactive creation");
             let seen_in_effect = seen.clone();

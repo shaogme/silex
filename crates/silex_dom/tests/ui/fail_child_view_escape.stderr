@@ -3,12 +3,12 @@ error[E0308]: mismatched types
   |
 6 |     let _view: AnyView<'static> =
   |                ---------------- expected due to this
-7 |         runtime.child(|scope| AnyView::new(scope.signal(0i32).expect("signal").0));
-  |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `AnyView<'_>`, found `Result<AnyView<'_>, SilexError>`
+7 |         runtime.with_transient(|owner| AnyView::new(owner.signal(0i32).expect("signal").0));
+  |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `AnyView<'_>`, found `Result<AnyView<'_>, SilexError>`
   |
   = note: expected enum `AnyView<'static>`
              found enum `Result<AnyView<'_>, SilexError>`
 help: consider using `Result::expect` to unwrap the `Result<AnyView<'_>, SilexError>` value, panicking if the value is a `Result::Err`
   |
-7 |         runtime.child(|scope| AnyView::new(scope.signal(0i32).expect("signal").0)).expect("REASON");
-  |                                                                                   +++++++++++++++++
+7 |         runtime.with_transient(|owner| AnyView::new(owner.signal(0i32).expect("signal").0)).expect("REASON");
+  |                                                                                            +++++++++++++++++

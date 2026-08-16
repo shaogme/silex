@@ -2,10 +2,10 @@ use silex_core::{Runtime, SilexError};
 
 fn main() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let _ = scope.try_on_cleanup(
+    runtime.with_transient(|owner| {
+        let _ = owner.try_on_cleanup(
             || Ok::<(), SilexError>(()),
-            scope.error_handler(|_: SilexError| {}),
+            owner.error_handler(|_: SilexError| {}),
         );
     });
 }

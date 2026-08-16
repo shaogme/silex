@@ -2,13 +2,13 @@ use crate::attribute::PendingAttribute;
 use crate::element::{Element, TypedElement, tags::Tag};
 use crate::view::{
     AnyView, ApplyAttributes, DynamicRenderArgs, DynamicRenderer, MountErrorHandler, MountInstance,
-    MountOwner, OwnedMountOwner, View, ViewCons, mount_dynamic_view_universal,
+    MountOwner, View, ViewCons, mount_dynamic_view_universal,
 };
-use silex_core::reactivity::{Memo, ReadSignal, RwSignal, Signal, StoredValue};
+use silex_core::reactivity::{Computed, ReadSignal, RwSignal, Signal, StoredValue};
 use silex_core::traits::RxCloneData;
-use silex_core::{Rx, RxValueKind, SilexError, SilexResult};
+use silex_core::{Rx, RxValueKind, SilexError, SilexErrorKind, SilexResult};
+use std::borrow::Cow;
 use std::fmt::Display;
-use std::{borrow::Cow, rc::Rc};
 use web_sys::Node;
 
 pub(crate) fn mount_reactive_text<'scope, T>(
@@ -20,8 +20,7 @@ pub(crate) fn mount_reactive_text<'scope, T>(
 where
     T: Display + RxCloneData + 'scope,
 {
-    let scope = Rc::new(owner.owned_scope()?);
-    let local_owner = OwnedMountOwner::new(scope.clone());
+    let local_owner = owner.child();
     let parent = parent.clone();
     let node: Node = crate::document().create_text_node("").into();
     parent.append_child(&node).map_err(SilexError::fatal)?;
@@ -38,7 +37,9 @@ where
         if let Some(parent) = node.parent_node() {
             let _ = parent.remove_child(&node);
         }
-        let _ = scope.dispose();
+        if let Err(close_error) = local_owner.close() {
+            local_owner.report_close_error(close_error);
+        }
         return Err(error);
     }
 
@@ -51,18 +52,23 @@ where
         }),
         error_handler,
     ) {
-        let _ = scope.dispose();
+        if let Err(close_error) = local_owner.close() {
+            local_owner.report_close_error(close_error);
+        }
         return Err(error);
     }
-    let scope_for_cleanup = scope.clone();
+    let owner_for_cleanup = local_owner.clone();
     if let Err(error) = owner.on_cleanup(
         Box::new(move || {
-            let _ = scope_for_cleanup.dispose();
-            Ok(())
+            owner_for_cleanup
+                .close()
+                .map_err(|error| SilexError::fatal(SilexErrorKind::Close(error)))
         }),
         error_handler,
     ) {
-        let _ = scope.dispose();
+        if let Err(close_error) = local_owner.close() {
+            local_owner.report_close_error(close_error);
+        }
         return Err(error);
     }
     Ok(MountInstance::from_nodes(vec![node]))
@@ -225,4 +231,4 @@ macro_rules! impl_view_forward_to_rx {
     };
 }
 
-impl_view_forward_to_rx!(ReadSignal, RwSignal, Signal, Memo, StoredValue);
+impl_view_forward_to_rx!(ReadSignal, RwSignal, Signal, Computed, StoredValue);

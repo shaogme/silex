@@ -1,14 +1,15 @@
 //! Typed payload slots and erased node behavior.
 
-use super::scheduler::{GlobalScheduler, ObserverFrame};
+use super::scheduler::GlobalScheduler;
 use crate::{
     ReactiveError, ReactiveResult,
-    error::{ErrorEvent, ErrorSlot, HandlerLease},
+    error::{ErrorEvent, HandlerLease},
 };
 use std::{
     cell::{Ref, RefCell, RefMut},
     marker::PhantomData,
     ops::{Deref, DerefMut},
+    rc::Rc,
 };
 
 /// A value cell that never moves its contents out while user code runs.
@@ -326,118 +327,85 @@ impl<'scope> CleanupThunk<'scope> {
     }
 }
 
-pub(crate) type EffectCallback<'scope> =
-    Box<dyn FnMut() -> Result<(), ErrorEvent<'scope>> + 'scope>;
-
-pub(crate) struct EffectBehavior<'scope> {
-    callback: EffectCallback<'scope>,
+/// Result produced by one unified computation evaluator.
+pub(crate) struct ComputedEvaluation<T> {
+    pub(crate) value: T,
+    pub(crate) stop_after_run: bool,
 }
 
-impl<'scope> EffectBehavior<'scope> {
-    pub(crate) fn new<E, F>(
-        callback: F,
-        handler: HandlerLease<'scope, E>,
-        slot: &'scope ErrorSlot<E>,
-    ) -> Self
-    where
-        E: 'scope,
-        F: FnMut() -> Result<(), E> + 'scope,
-    {
-        let mut callback = callback;
-        Self {
-            callback: Box::new(move || {
-                callback().map_err(|error| ErrorEvent::new(error, &handler, slot))
-            }),
-        }
-    }
-}
+pub(crate) type ComputedEvaluator<'scope, T> = Box<
+    dyn for<'value> FnMut(
+            Option<&T>,
+            Rc<RefCell<GlobalScheduler>>,
+        )
+            -> Result<ComputedEvaluation<T>, ComputationExecutionError<'scope>>
+        + 'scope,
+>;
+pub(crate) type ChangePredicate<'scope, T> =
+    Box<dyn for<'value> Fn(Option<&'value T>, &'value T) -> bool + 'scope>;
 
-impl<'scope> ComputationBehavior<'scope> for EffectBehavior<'scope> {
-    fn execute(
-        &mut self,
-        _scheduler: std::rc::Rc<RefCell<GlobalScheduler>>,
-    ) -> Result<ComputationOutcome, ComputationExecutionError<'scope>> {
-        (self.callback)().map_err(ComputationExecutionError::Callback)?;
-        Ok(ComputationOutcome {
-            commit_value: false,
-            notify: false,
-            stop_after_run: false,
-        })
-    }
-
-    fn commit(&mut self, _scheduler: std::rc::Rc<RefCell<GlobalScheduler>>) -> ReactiveResult<()> {
-        Ok(())
-    }
-
-    fn discard_pending(&mut self) {}
-
-    fn has_value(&self) -> bool {
-        false
-    }
-
-    fn clear(&mut self) {}
-}
-
-pub(crate) type ValueComputeCallback<'scope, T, E> =
-    Box<dyn FnMut(Option<&T>) -> Result<T, E> + 'scope>;
-
-pub(crate) struct PreviousBehavior<'scope, T, E> {
-    slot: &'scope TypedSlot<T>,
-    callback: ValueComputeCallback<'scope, T, E>,
+/// Shared evaluator/output-policy kernel for effects, previous effects,
+/// computed values, and watchers.
+pub(crate) struct ComputedNode<'scope, T, E> {
+    slot: Option<&'scope TypedSlot<T>>,
+    evaluator: ComputedEvaluator<'scope, T>,
+    changed: ChangePredicate<'scope, T>,
+    notify: bool,
     pending: Option<T>,
-    handler: HandlerLease<'scope, E>,
-    errors: &'scope ErrorSlot<E>,
+    marker: PhantomData<fn() -> E>,
 }
 
-impl<'scope, T, E> PreviousBehavior<'scope, T, E> {
-    pub(crate) fn new<F>(
-        slot: &'scope TypedSlot<T>,
-        callback: F,
-        handler: HandlerLease<'scope, E>,
-        errors: &'scope ErrorSlot<E>,
-    ) -> Self
-    where
-        T: 'scope,
-        E: 'scope,
-        F: FnMut(Option<&T>) -> Result<T, E> + 'scope,
-    {
+impl<'scope, T, E> ComputedNode<'scope, T, E> {
+    pub(crate) fn new(
+        slot: Option<&'scope TypedSlot<T>>,
+        evaluator: ComputedEvaluator<'scope, T>,
+        changed: ChangePredicate<'scope, T>,
+        notify: bool,
+    ) -> Self {
         Self {
             slot,
-            callback: Box::new(callback),
+            evaluator,
+            changed,
+            notify,
             pending: None,
-            handler,
-            errors,
+            marker: PhantomData,
         }
     }
 }
 
-impl<'scope, T, E> ComputationBehavior<'scope> for PreviousBehavior<'scope, T, E>
+impl<'scope, T, E> ComputationBehavior<'scope> for ComputedNode<'scope, T, E>
 where
     T: 'scope,
     E: 'scope,
 {
     fn execute(
         &mut self,
-        scheduler: std::rc::Rc<RefCell<GlobalScheduler>>,
+        scheduler: Rc<RefCell<GlobalScheduler>>,
     ) -> Result<ComputationOutcome, ComputationExecutionError<'scope>> {
         let old = self
             .slot
-            .try_read(scheduler)
+            .map(|slot| slot.try_read(scheduler.clone()))
+            .transpose()
             .map_err(ComputationExecutionError::Runtime)?;
-        let result = (self.callback)(old.as_ref());
+        let old_value = old.as_ref().and_then(|lease| lease.deref().as_ref());
+        let evaluation = (self.evaluator)(old_value, scheduler)?;
+        let changed = (self.changed)(old_value, &evaluation.value);
         drop(old);
-        self.pending = Some(result.map_err(|error| {
-            ComputationExecutionError::Callback(ErrorEvent::new(error, &self.handler, self.errors))
-        })?);
+        if changed && self.slot.is_some() {
+            self.pending = Some(evaluation.value);
+        }
         Ok(ComputationOutcome {
-            commit_value: true,
-            notify: false,
-            stop_after_run: false,
+            commit_value: changed && self.slot.is_some(),
+            notify: changed && self.notify,
+            stop_after_run: evaluation.stop_after_run,
         })
     }
 
-    fn commit(&mut self, scheduler: std::rc::Rc<RefCell<GlobalScheduler>>) -> ReactiveResult<()> {
-        let mut value = self.slot.try_write(scheduler)?;
+    fn commit(&mut self, scheduler: Rc<RefCell<GlobalScheduler>>) -> ReactiveResult<()> {
+        let Some(slot) = self.slot else {
+            return Ok(());
+        };
+        let mut value = slot.try_write(scheduler)?;
         *value = self.pending.take();
         Ok(())
     }
@@ -447,271 +415,14 @@ where
     }
 
     fn has_value(&self) -> bool {
-        self.slot.is_initialized()
+        self.slot.is_some_and(TypedSlot::is_initialized)
     }
 
     fn clear(&mut self) {
         self.pending = None;
-        self.slot.clear();
-    }
-}
-
-pub(crate) type WatchGetterCallback<'scope, T, E> = Box<dyn FnMut() -> Result<T, E> + 'scope>;
-pub(crate) type WatchActionCallback<'scope, T, E> =
-    Box<dyn FnMut(&T, Option<&T>) -> Result<(), E> + 'scope>;
-
-pub(crate) struct WatchBehavior<'scope, T, E> {
-    slot: &'scope TypedSlot<T>,
-    getter: WatchGetterCallback<'scope, T, E>,
-    callback: WatchActionCallback<'scope, T, E>,
-    pending: Option<T>,
-    initialized: bool,
-    immediate: bool,
-    once: bool,
-    handler: HandlerLease<'scope, E>,
-    errors: &'scope ErrorSlot<E>,
-}
-
-impl<'scope, T, E> WatchBehavior<'scope, T, E> {
-    pub(crate) fn new<G, C>(
-        slot: &'scope TypedSlot<T>,
-        getter: G,
-        callback: C,
-        handler: HandlerLease<'scope, E>,
-        errors: &'scope ErrorSlot<E>,
-        immediate: bool,
-        once: bool,
-    ) -> Self
-    where
-        T: 'scope,
-        E: 'scope,
-        G: FnMut() -> Result<T, E> + 'scope,
-        C: FnMut(&T, Option<&T>) -> Result<(), E> + 'scope,
-    {
-        Self {
-            slot,
-            getter: Box::new(getter),
-            callback: Box::new(callback),
-            pending: None,
-            initialized: false,
-            immediate,
-            once,
-            handler,
-            errors,
+        if let Some(slot) = self.slot {
+            slot.clear();
         }
-    }
-}
-
-impl<'scope, T, E> ComputationBehavior<'scope> for WatchBehavior<'scope, T, E>
-where
-    T: PartialEq + 'scope,
-    E: 'scope,
-{
-    fn execute(
-        &mut self,
-        scheduler: std::rc::Rc<RefCell<GlobalScheduler>>,
-    ) -> Result<ComputationOutcome, ComputationExecutionError<'scope>> {
-        let old = self
-            .slot
-            .try_read(scheduler.clone())
-            .map_err(ComputationExecutionError::Runtime)?;
-        let new = (self.getter)().map_err(|error| {
-            ComputationExecutionError::Callback(ErrorEvent::new(error, &self.handler, self.errors))
-        })?;
-        let first_run = !self.initialized;
-        let changed = first_run || old.as_ref().is_none_or(|value| *value != new);
-        let should_callback = if first_run { self.immediate } else { changed };
-        if should_callback {
-            let callback_result = {
-                let _observer_frame = ObserverFrame::push_untracked(scheduler.clone());
-                (self.callback)(&new, old.as_ref())
-            };
-            callback_result.map_err(|error| {
-                ComputationExecutionError::Callback(ErrorEvent::new(
-                    error,
-                    &self.handler,
-                    self.errors,
-                ))
-            })?;
-        }
-        drop(old);
-        if first_run || changed {
-            self.pending = Some(new);
-        }
-        Ok(ComputationOutcome {
-            commit_value: first_run || changed,
-            notify: false,
-            stop_after_run: should_callback && self.once,
-        })
-    }
-
-    fn commit(&mut self, scheduler: std::rc::Rc<RefCell<GlobalScheduler>>) -> ReactiveResult<()> {
-        let mut value = self.slot.try_write(scheduler)?;
-        *value = self.pending.take();
-        self.initialized = true;
-        Ok(())
-    }
-
-    fn discard_pending(&mut self) {
-        self.pending = None;
-    }
-
-    fn has_value(&self) -> bool {
-        self.slot.is_initialized()
-    }
-
-    fn clear(&mut self) {
-        self.pending = None;
-        self.slot.clear();
-    }
-}
-
-pub(crate) struct MemoBehavior<'scope, T, E> {
-    slot: &'scope TypedSlot<T>,
-    callback: ValueComputeCallback<'scope, T, E>,
-    pending: Option<T>,
-    handler: HandlerLease<'scope, E>,
-    errors: &'scope ErrorSlot<E>,
-}
-
-impl<'scope, T, E> MemoBehavior<'scope, T, E> {
-    pub(crate) fn new<F>(
-        slot: &'scope TypedSlot<T>,
-        callback: F,
-        handler: HandlerLease<'scope, E>,
-        errors: &'scope ErrorSlot<E>,
-    ) -> Self
-    where
-        T: 'scope,
-        E: 'scope,
-        F: FnMut(Option<&T>) -> Result<T, E> + 'scope,
-    {
-        Self {
-            slot,
-            callback: Box::new(callback),
-            pending: None,
-            handler,
-            errors,
-        }
-    }
-}
-
-impl<'scope, T, E> ComputationBehavior<'scope> for MemoBehavior<'scope, T, E>
-where
-    T: PartialEq + 'scope,
-    E: 'scope,
-{
-    fn execute(
-        &mut self,
-        scheduler: std::rc::Rc<RefCell<GlobalScheduler>>,
-    ) -> Result<ComputationOutcome, ComputationExecutionError<'scope>> {
-        let old = self
-            .slot
-            .try_read(scheduler.clone())
-            .map_err(ComputationExecutionError::Runtime)?;
-        let new = (self.callback)(old.as_ref()).map_err(|error| {
-            ComputationExecutionError::Callback(ErrorEvent::new(error, &self.handler, self.errors))
-        })?;
-        let changed = old.as_ref().is_none_or(|value| *value != new);
-        drop(old);
-        if changed {
-            self.pending = Some(new);
-        }
-        Ok(ComputationOutcome {
-            commit_value: changed,
-            notify: changed,
-            stop_after_run: false,
-        })
-    }
-
-    fn commit(&mut self, scheduler: std::rc::Rc<RefCell<GlobalScheduler>>) -> ReactiveResult<()> {
-        let mut value = self.slot.try_write(scheduler)?;
-        *value = self.pending.take();
-        Ok(())
-    }
-
-    fn discard_pending(&mut self) {
-        self.pending = None;
-    }
-
-    fn has_value(&self) -> bool {
-        self.slot.is_initialized()
-    }
-
-    fn clear(&mut self) {
-        self.pending = None;
-        self.slot.clear();
-    }
-}
-
-pub(crate) type DerivedCallback<'scope, T, E> = Box<dyn FnMut() -> Result<T, E> + 'scope>;
-
-pub(crate) struct DerivedBehavior<'scope, T, E> {
-    slot: &'scope TypedSlot<T>,
-    callback: DerivedCallback<'scope, T, E>,
-    pending: Option<T>,
-    handler: HandlerLease<'scope, E>,
-    errors: &'scope ErrorSlot<E>,
-}
-
-impl<'scope, T, E> DerivedBehavior<'scope, T, E> {
-    pub(crate) fn new<F>(
-        slot: &'scope TypedSlot<T>,
-        callback: F,
-        handler: HandlerLease<'scope, E>,
-        errors: &'scope ErrorSlot<E>,
-    ) -> Self
-    where
-        T: 'scope,
-        E: 'scope,
-        F: FnMut() -> Result<T, E> + 'scope,
-    {
-        Self {
-            slot,
-            callback: Box::new(callback),
-            pending: None,
-            handler,
-            errors,
-        }
-    }
-}
-
-impl<'scope, T, E> ComputationBehavior<'scope> for DerivedBehavior<'scope, T, E>
-where
-    T: 'scope,
-    E: 'scope,
-{
-    fn execute(
-        &mut self,
-        _scheduler: std::rc::Rc<RefCell<GlobalScheduler>>,
-    ) -> Result<ComputationOutcome, ComputationExecutionError<'scope>> {
-        self.pending = Some((self.callback)().map_err(|error| {
-            ComputationExecutionError::Callback(ErrorEvent::new(error, &self.handler, self.errors))
-        })?);
-        Ok(ComputationOutcome {
-            commit_value: true,
-            notify: true,
-            stop_after_run: false,
-        })
-    }
-
-    fn commit(&mut self, scheduler: std::rc::Rc<RefCell<GlobalScheduler>>) -> ReactiveResult<()> {
-        let mut value = self.slot.try_write(scheduler)?;
-        *value = self.pending.take();
-        Ok(())
-    }
-
-    fn discard_pending(&mut self) {
-        self.pending = None;
-    }
-
-    fn has_value(&self) -> bool {
-        self.slot.is_initialized()
-    }
-
-    fn clear(&mut self) {
-        self.pending = None;
-        self.slot.clear();
     }
 }
 

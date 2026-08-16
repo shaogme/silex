@@ -1,6 +1,6 @@
 use silex_reactivity::{
-    CleanupPayloadKind, CompletionOnce, ErrorHandlerToken, ReactiveError, Runtime, Scope,
-    unwind_safe,
+    CleanupFailure, CleanupPayloadKind, CloseError, ClosePhase, CloseSource, CloseTransaction,
+    CompletionOnce, ErrorHandlerToken, OwnerAccess, ReactiveError, Runtime, unwind_safe,
 };
 use std::{
     cell::Cell,
@@ -8,7 +8,7 @@ use std::{
     rc::Rc,
 };
 
-fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope, ()> {
+fn handler<'scope>(scope: OwnerAccess<'scope>) -> ErrorHandlerToken<'scope, ()> {
     scope.error_handler(|_| {}).expect("handler registration")
 }
 
@@ -16,10 +16,10 @@ fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope, ()> {
 fn root_scope_uses_the_same_nodes_as_lexical_scope() {
     let mut runtime = Runtime::new();
     let seen = Rc::new(Cell::new(0));
-    let root = runtime.run().expect("runtime root creation");
+    let root = runtime.owner().expect("runtime root creation");
 
     {
-        let scope = root.scope();
+        let scope = root.access();
         let (value, set_value) = scope.signal(0i32).expect("fallible reactive creation");
         let seen_for_effect = seen.clone();
         let _effect = scope
@@ -37,16 +37,35 @@ fn root_scope_uses_the_same_nodes_as_lexical_scope() {
     }
 
     assert!(root.is_active());
-    root.dispose().expect("root disposal should succeed");
+    root.close().expect("root disposal should succeed");
+}
+
+#[test]
+fn close_transaction_preserves_phase_source_and_order() {
+    let first = CloseError::from_panic(Box::new("child failure"));
+    let second = CloseError::from_panic(Box::new("cleanup failure"));
+    let mut transaction = CloseTransaction::new();
+    transaction.push_error(ClosePhase::Child, CloseSource::Child, first);
+    transaction.push_error(ClosePhase::Cleanup, CloseSource::Cleanup, second);
+
+    let error = transaction
+        .finish()
+        .expect("transaction should contain errors");
+    assert_eq!(error.entries().len(), 2);
+    assert_eq!(error.entries()[0].phase(), ClosePhase::Child);
+    assert_eq!(error.entries()[0].source(), CloseSource::Child);
+    assert_eq!(error.entries()[1].phase(), ClosePhase::Cleanup);
+    assert_eq!(error.entries()[1].source(), CloseSource::Cleanup);
+    assert!(matches!(error.failures()[0], CleanupFailure::Panic(_)));
 }
 
 #[test]
 fn root_completion_is_invalidated_by_dispose() {
     let mut runtime = Runtime::new();
     let seen = Rc::new(Cell::new(0));
-    let root = runtime.run().expect("runtime root creation");
+    let root = runtime.owner().expect("runtime root creation");
     let token: CompletionOnce<i32, ()> = {
-        let scope = root.scope();
+        let scope = root.access();
         let seen_for_callback = seen.clone();
         scope
             .completion_once(unwind_safe(move |value: i32| {
@@ -59,7 +78,7 @@ fn root_completion_is_invalidated_by_dispose() {
     assert!(token.submit(7).expect("completion submit"));
     assert_eq!(seen.get(), 7);
 
-    root.dispose().expect("root disposal should succeed");
+    root.close().expect("root disposal should succeed");
     assert!(!token.submit(8).expect("stale completion submit"));
     assert_eq!(seen.get(), 7);
 }
@@ -69,8 +88,8 @@ fn root_cleanup_runs_once_on_drop() {
     let cleaned = Rc::new(Cell::new(0));
     {
         let mut runtime = Runtime::new();
-        let root = runtime.run().expect("runtime root creation");
-        let scope = root.scope();
+        let root = runtime.owner().expect("runtime root creation");
+        let scope = root.access();
         let cleaned_for_scope = cleaned.clone();
         scope
             .on_cleanup(
@@ -89,9 +108,9 @@ fn root_cleanup_runs_once_on_drop() {
 fn root_final_cleanup_can_update_a_stored_value_before_drop() {
     let mut runtime = Runtime::new();
     let observed = Rc::new(Cell::new(0));
-    let root = runtime.run().expect("runtime root creation");
+    let root = runtime.owner().expect("runtime root creation");
 
-    root.with_scope(|scope| {
+    root.with_access(|scope| {
         let stored = scope.stored(1_i32).expect("fallible reactive creation");
         let observed_in_cleanup = observed.clone();
         let scope_in_cleanup = scope;
@@ -115,36 +134,34 @@ fn root_final_cleanup_can_update_a_stored_value_before_drop() {
             .expect("cleanup should register");
     });
 
-    root.dispose().expect("root disposal should succeed");
+    root.close().expect("root disposal should succeed");
     assert_eq!(observed.get(), 1);
 }
 
 #[test]
 fn root_cleanup_panic_is_reported_by_explicit_dispose() {
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime root creation");
-    let scope = root.scope();
+    let root = runtime.owner().expect("runtime root creation");
+    let scope = root.access();
     scope
         .on_cleanup(|| panic!("cleanup panic"), handler(scope))
         .expect("cleanup should register");
 
-    let result = root.dispose();
+    let result = root.close();
     assert!(result.is_err());
 }
 
 #[test]
 fn cleanup_error_exposes_stable_string_diagnostic_without_resuming_panic() {
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime root creation");
-    root.with_scope(|scope| {
+    let root = runtime.owner().expect("runtime root creation");
+    root.with_access(|scope| {
         scope
             .on_cleanup(|| panic!("cleanup panic"), handler(scope))
             .expect("cleanup should register");
     });
 
-    let error = root
-        .dispose()
-        .expect_err("cleanup panic should be returned");
+    let error = root.close().expect_err("cleanup panic should be returned");
     assert_eq!(error.diagnostic().message(), "cleanup panic");
     assert_eq!(
         error.diagnostic().payload_kind(),
@@ -158,16 +175,14 @@ fn cleanup_error_exposes_stable_string_diagnostic_without_resuming_panic() {
 #[test]
 fn cleanup_error_uses_unknown_diagnostic_for_non_string_payloads() {
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime root creation");
-    root.with_scope(|scope| {
+    let root = runtime.owner().expect("runtime root creation");
+    root.with_access(|scope| {
         scope
             .on_cleanup(|| std::panic::panic_any(42_u32), handler(scope))
             .expect("cleanup should register");
     });
 
-    let error = root
-        .dispose()
-        .expect_err("cleanup panic should be returned");
+    let error = root.close().expect_err("cleanup panic should be returned");
     assert_eq!(
         error.diagnostic().payload_kind(),
         CleanupPayloadKind::Unknown
@@ -189,16 +204,14 @@ fn diagnostic_conversion_does_not_resume_a_payload_drop_panic() {
     }
 
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime root creation");
-    root.with_scope(|scope| {
+    let root = runtime.owner().expect("runtime root creation");
+    root.with_access(|scope| {
         scope
             .on_cleanup(|| std::panic::panic_any(PanicOnDrop), handler(scope))
             .expect("cleanup should register");
     });
 
-    let error = root
-        .dispose()
-        .expect_err("cleanup panic should be returned");
+    let error = root.close().expect_err("cleanup panic should be returned");
     let diagnostic = error.into_diagnostic();
     assert_eq!(diagnostic.payload_kind(), CleanupPayloadKind::Unknown);
 }
@@ -207,8 +220,8 @@ fn diagnostic_conversion_does_not_resume_a_payload_drop_panic() {
 fn explicit_root_dispose_does_not_run_cleanup_again() {
     let cleaned = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime root creation");
-    root.with_scope(|scope| {
+    let root = runtime.owner().expect("runtime root creation");
+    root.with_access(|scope| {
         let cleaned = cleaned.clone();
         scope
             .on_cleanup(
@@ -221,7 +234,7 @@ fn explicit_root_dispose_does_not_run_cleanup_again() {
             .expect("cleanup should register");
     });
 
-    root.dispose().expect("root disposal should succeed");
+    root.close().expect("root disposal should succeed");
     assert_eq!(cleaned.get(), 1);
 }
 
@@ -229,8 +242,8 @@ fn explicit_root_dispose_does_not_run_cleanup_again() {
 fn direct_root_drop_is_best_effort_when_cleanup_panics() {
     let panic = catch_unwind(AssertUnwindSafe(|| {
         let mut runtime = Runtime::new();
-        let root = runtime.run().expect("runtime root creation");
-        root.with_scope(|scope| {
+        let root = runtime.owner().expect("runtime root creation");
+        root.with_access(|scope| {
             scope
                 .on_cleanup(|| panic!("direct drop panic"), handler(scope))
                 .expect("cleanup should register");
@@ -244,60 +257,60 @@ fn direct_root_drop_is_best_effort_when_cleanup_panics() {
 #[test]
 fn runtime_rejects_run_while_root_is_active() {
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime root creation");
+    let root = runtime.owner().expect("runtime root creation");
 
     assert!(matches!(
-        runtime.run(),
+        runtime.owner(),
         Err(ReactiveError::RuntimeAlreadyRunning)
     ));
 
-    root.dispose().expect("root disposal should succeed");
-    let next_root = runtime.run().expect("runtime root creation");
-    next_root.dispose().expect("second root should dispose");
+    root.close().expect("root disposal should succeed");
+    let next_root = runtime.owner().expect("runtime root creation");
+    next_root.close().expect("second root should dispose");
 }
 
 #[test]
 fn try_run_reports_an_active_root_without_mutating_the_runtime_slot() {
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("first root should be created");
+    let root = runtime.owner().expect("first root should be created");
 
     assert!(matches!(
-        runtime.run(),
+        runtime.owner(),
         Err(ReactiveError::RuntimeAlreadyRunning)
     ));
 
     drop(root);
     let next_root = runtime
-        .run()
+        .owner()
         .expect("runtime should be reusable after root drop");
-    next_root.dispose().expect("second root should dispose");
+    next_root.close().expect("second root should dispose");
 }
 
 #[test]
 fn root_with_scope_keeps_non_static_payload_borrowed() {
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime root creation");
+    let root = runtime.owner().expect("runtime root creation");
     let text = String::from("root-local");
 
-    root.with_scope(|scope| {
+    root.with_access(|scope| {
         let text_ref = &text;
         let stored = scope.stored(text_ref).expect("fallible reactive creation");
         assert_eq!(stored.with(|value| value.as_str()), Ok("root-local"));
     });
 
-    root.dispose().expect("root disposal should succeed");
+    root.close().expect("root disposal should succeed");
 }
 
 #[test]
 fn scope_callbacks_receive_copyable_scope_values() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope: Scope<'_>| {
+        .with_transient(|scope: OwnerAccess<'_>| {
             let copied = scope;
             assert!(scope == copied);
 
             scope
-                .child(|child: Scope<'_>| {
+                .with_transient(|child: OwnerAccess<'_>| {
                     let copied = child;
                     assert!(child == copied);
                 })
@@ -305,10 +318,10 @@ fn scope_callbacks_receive_copyable_scope_values() {
         })
         .expect("test operation should succeed");
 
-    let root = runtime.run().expect("runtime root creation");
-    root.with_scope(|scope: Scope<'_>| {
+    let root = runtime.owner().expect("runtime root creation");
+    root.with_access(|scope: OwnerAccess<'_>| {
         let copied = scope;
         assert!(scope == copied);
     });
-    root.dispose().expect("root disposal should succeed");
+    root.close().expect("root disposal should succeed");
 }

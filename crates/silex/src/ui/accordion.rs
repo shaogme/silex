@@ -127,7 +127,7 @@ pub fn AccordionContent<'scope, Ctx>(
         }
     });
 
-    let stored = scope.stored(children)?;
+    let stored = owner.stored(children)?;
 
     Ok(rx!(ctx; {
         if *$open {

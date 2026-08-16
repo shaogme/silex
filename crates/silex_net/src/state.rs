@@ -95,34 +95,6 @@ pub struct RequestSpec {
 }
 
 impl RequestSpec {
-    #[cfg(feature = "persist")]
-    pub(crate) fn legacy_cache_key(&self) -> String {
-        let mut headers = self
-            .headers
-            .iter()
-            .map(|(name, value)| (name.to_ascii_lowercase(), value.clone()))
-            .collect::<Vec<_>>();
-        headers.sort();
-
-        let mut key = String::from("net-request-v1");
-        append_segment(&mut key, self.method.as_str());
-        append_segment(&mut key, &canonical_url(&self.url));
-        append_segment(&mut key, &headers.len().to_string());
-        for (name, value) in headers {
-            append_segment(&mut key, &name);
-            append_segment(&mut key, &value);
-        }
-        if let Some(timeout) = self.timeout {
-            append_segment(&mut key, "timeout");
-            append_segment(&mut key, &timeout.as_secs().to_string());
-            append_segment(&mut key, &timeout.subsec_nanos().to_string());
-        } else {
-            append_segment(&mut key, "no-timeout");
-        }
-        append_segment(&mut key, &self.body.fingerprint());
-        key
-    }
-
     pub fn cache_key(&self) -> String {
         let mut headers = self
             .headers

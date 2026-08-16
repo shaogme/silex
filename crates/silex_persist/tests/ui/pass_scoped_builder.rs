@@ -1,11 +1,11 @@
-use silex_core::Scope;
+use silex_core::OwnerAccess;
 use silex_persist::Persistent;
 
-fn build<'scope>(scope: Scope<'scope>) -> Persistent<'scope, i32> {
+fn build<'scope>(owner: OwnerAccess<'scope>) -> Persistent<'scope, i32> {
     Persistent::builder(
-        scope,
+        owner,
         "counter",
-        scope
+        owner
             .error_handler(|_| {})
             .expect("error handler should be registered"),
     )

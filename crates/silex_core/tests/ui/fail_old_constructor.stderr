@@ -1,4 +1,4 @@
-error[E0599]: no associated function or constant named `pair` found for struct `Signal<'scope, T>` in the current scope
+error[E0599]: no associated function or constant named `pair` found for struct `Signal<'owner, T>` in the current scope
  --> tests/ui/fail_old_constructor.rs:4:21
   |
 4 |     let _ = Signal::pair(1);

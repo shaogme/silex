@@ -62,7 +62,7 @@ fn App<'scope>(
 ) -> impl View<'scope> + 'scope {
     let theme = store
         .theme
-        .map(scope, |name| css::get_theme(name.as_str()), error_handler)?;
+        .map(owner, |name| css::get_theme(name.as_str()), error_handler)?;
 
     let table = AppRoute::table(move |route, ctx| match route {
         AppRoute::Home => routes::HomePage(ctx).build().into_any(),
@@ -102,7 +102,7 @@ fn App<'scope>(
     .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
 
     Ok(div!(
-        css::GlobalStyles(scope, error_handler),
+        css::GlobalStyles(owner, error_handler),
         Router(ctx)
             .routes(table)
             .layout(move |ctx, outlet| routes::AppLayout(ctx, outlet, store).build())
@@ -134,8 +134,8 @@ pub fn mount_showcase_into(target: web_sys::Node) -> Result<JsAppHost, Bootstrap
 }
 
 fn mount_showcase_view<'scope>(ctx: &MountContext<'scope>) -> SilexResult<()> {
-    let scope = ctx.scope();
-    let error_handler_token = scope.error_handler(|error: SilexError| {
+    let owner = ctx.access();
+    let error_handler_token = owner.error_handler(|error: SilexError| {
         web_sys::console::error_1(&error.to_string().into());
     })?;
 
@@ -172,12 +172,12 @@ fn mount_showcase_view<'scope>(ctx: &MountContext<'scope>) -> SilexResult<()> {
     let fallback_locale = parse_locale("en-US")?;
     let browser_locale =
         resolve_requested_locale(navigator_languages(), &available_locales, &fallback_locale);
-    let locale_binding = Persistent::builder(scope, "silex-showcase-locale", error_handler)
+    let locale_binding = Persistent::builder(owner, "silex-showcase-locale", error_handler)
         .local()
         .parse::<Locale>()
         .default(browser_locale.clone())
         .build()?;
-    let i18n = I18nBuilder::new(scope, error_handler)
+    let i18n = I18nBuilder::new(owner, error_handler)
         .locale(browser_locale)
         .fallback_locale(fallback_locale)
         .locale_binding(locale_binding)
@@ -189,26 +189,26 @@ fn mount_showcase_view<'scope>(ctx: &MountContext<'scope>) -> SilexResult<()> {
         .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
     let _metadata_effect = i18n.sync_document_metadata()?;
 
-    let theme = Persistent::builder(scope, "silex-showcase-theme", error_handler)
+    let theme = Persistent::builder(owner, "silex-showcase-theme", error_handler)
         .local()
         .string()
         .default("Light".to_string())
         .build()?;
     let notifications =
-        Persistent::builder(scope, "showcase-settings-notif_enabled", error_handler)
+        Persistent::builder(owner, "showcase-settings-notif_enabled", error_handler)
             .local()
             .parse::<bool>()
             .default(true)
             .build()?;
-    let username = Persistent::builder(scope, "showcase-settings-username", error_handler)
+    let username = Persistent::builder(owner, "showcase-settings-username", error_handler)
         .local()
         .cow()
         .default(std::borrow::Cow::Borrowed("Guest"))
         .build()?;
-    let store = UserSettingsStore::from_handles(scope, theme, notifications, username)?;
+    let store = UserSettingsStore::from_handles(owner, theme, notifications, username)?;
 
     ctx.mount(
-        App(SilexContext::new(scope, error_handler), i18n, store).build(),
+        App(SilexContext::new(owner, error_handler), i18n, store).build(),
         error_handler,
     )
 }

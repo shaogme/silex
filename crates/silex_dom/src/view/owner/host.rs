@@ -1,7 +1,7 @@
 use super::state::{ResourceGate, SharedCell};
 use silex_core::{
-    CallbackInvokeError, CompletionOnce, CompletionSender, ErrorHandler, ReactiveError, SilexError,
-    SilexResult,
+    CallbackInvokeError, CloseError, CompletionOnce, CompletionSender, ReactiveError, SilexError,
+    SilexErrorKind,
 };
 use std::{
     cell::Cell,
@@ -9,57 +9,6 @@ use std::{
     rc::Rc,
 };
 use wasm_bindgen::{JsCast, JsValue};
-
-#[derive(Clone)]
-pub(super) struct CompletionRegistrar<'scope> {
-    sender: CompletionSenderFactory<'scope>,
-    once: CompletionOnceFactory<'scope>,
-    error_sender: ErrorCompletionSenderFactory<'scope>,
-}
-
-type HostCallbackFn<'scope> = Box<dyn FnMut(JsValue) -> SilexResult<()> + 'scope>;
-type CompletionSenderFactory<'scope> =
-    Rc<dyn Fn(HostCallbackFn<'scope>) -> SilexResult<CompletionSender<JsValue>> + 'scope>;
-type CompletionOnceFactory<'scope> =
-    Rc<dyn Fn(HostCallbackFn<'scope>) -> SilexResult<CompletionOnce<JsValue>> + 'scope>;
-type ErrorCompletionSenderFactory<'scope> =
-    Rc<dyn Fn(ErrorHandler<'scope>) -> SilexResult<CompletionSender<SilexError>> + 'scope>;
-
-impl<'scope> CompletionRegistrar<'scope> {
-    pub(super) fn new<FS, FO, FE>(sender: FS, once: FO, error_sender: FE) -> Self
-    where
-        FS: Fn(HostCallbackFn<'scope>) -> SilexResult<CompletionSender<JsValue>> + 'scope,
-        FO: Fn(HostCallbackFn<'scope>) -> SilexResult<CompletionOnce<JsValue>> + 'scope,
-        FE: Fn(ErrorHandler<'scope>) -> SilexResult<CompletionSender<SilexError>> + 'scope,
-    {
-        Self {
-            sender: Rc::new(sender),
-            once: Rc::new(once),
-            error_sender: Rc::new(error_sender),
-        }
-    }
-
-    pub(super) fn call_sender(
-        &self,
-        callback: HostCallbackFn<'scope>,
-    ) -> SilexResult<CompletionSender<JsValue>> {
-        (self.sender)(callback)
-    }
-
-    pub(super) fn call_once(
-        &self,
-        callback: HostCallbackFn<'scope>,
-    ) -> SilexResult<CompletionOnce<JsValue>> {
-        (self.once)(callback)
-    }
-
-    pub(super) fn call_error_sender(
-        &self,
-        error_handler: ErrorHandler<'scope>,
-    ) -> SilexResult<CompletionSender<SilexError>> {
-        (self.error_sender)(error_handler)
-    }
-}
 
 type CancelAction<'scope> = SharedCell<Option<Box<dyn FnOnce() + 'scope>>>;
 
@@ -233,7 +182,7 @@ impl HostDestination {
         }
     }
 
-    fn cancel(&self) -> Result<(), ReactiveError> {
+    fn cancel(&self) -> Result<(), CloseError> {
         match self {
             Self::Once(destination) => destination.cancel(),
             Self::Sender(destination) => destination.cancel(),
@@ -282,6 +231,10 @@ impl HostCallback {
                 self.report_error(SilexError::fatal(ReactiveError::Handler(error)));
                 self.gate.get()
             }
+            Err(CallbackInvokeError::Close(error)) => {
+                self.report_error(SilexError::fatal(SilexErrorKind::Close(error)));
+                self.gate.get()
+            }
         }
     }
 
@@ -291,6 +244,8 @@ impl HostCallback {
 
     pub(crate) fn cancel(&self) {
         self.gate.set(false);
-        let _ = self.destination.cancel();
+        if let Err(error) = self.destination.cancel() {
+            self.report_error(SilexError::fatal(SilexErrorKind::Close(error)));
+        }
     }
 }

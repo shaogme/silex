@@ -11,4 +11,4 @@ error[E0599]: no method named `build` found for struct `MissingRequiredBuildBuil
    | |_____________|
    |
    |
-   = note: the method was found for `MissingRequiredBuildBuilder<'scope, PropFixed, Ctx>`
+   = note: the method was found for `MissingRequiredBuildBuilder<'owner, PropFixed, Ctx>`

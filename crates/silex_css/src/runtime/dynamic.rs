@@ -689,6 +689,13 @@ impl<'scope> StyledVariantBinding<'scope> {
         owner: &MountOwnerToken<'scope>,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
+        owner.with_runtime(|| {
+            for getter in &self.property_getters {
+                getter.get()?;
+            }
+            Ok::<(), SilexError>(())
+        })?;
+
         for (style_id, css) in &self.static_styles {
             if !style_id.is_empty() && !css.is_empty() {
                 crate::inject_style(style_id, css);

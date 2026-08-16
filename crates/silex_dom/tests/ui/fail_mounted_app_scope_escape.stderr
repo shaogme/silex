@@ -4,5 +4,5 @@ error: lifetime may not live long enough
 4 | fn leak_scope<'scope>(
   |               ------ lifetime `'scope` defined here
 ...
-8 |     *slot = Some(ctx.scope());
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^^ assignment requires that `'scope` must outlive `'static`
+8 |     *slot = Some(ctx.access());
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^ assignment requires that `'scope` must outlive `'static`

@@ -1,34 +1,71 @@
 //! Global scheduler, execution contexts, and scope lifetime tracking.
 
-use super::model::ScopeState;
-use crate::{ReactiveError, internal::RawId, unsafe_boundary::WeakOwnerToken};
+use super::model::{ScopePhase, ScopeState};
+use crate::{
+    ReactiveError,
+    internal::NodeId,
+    unsafe_boundary::{OwnerToken, WeakOwnerToken},
+};
 
 use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
+/// Generational runtime identity for an owner slot.
+///
+/// The slot is reused only after the owner has reached its release invariant;
+/// releasing it increments the generation so stale handles cannot address the
+/// replacement owner.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct ScopeId(pub(crate) u32);
+pub(crate) struct OwnerId(pub(crate) u32, pub(crate) u32);
+
+impl OwnerId {
+    pub(crate) const fn initial(slot: u32) -> Self {
+        Self(slot, 0)
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct TargetNode {
-    pub(crate) scope_id: ScopeId,
-    pub(crate) node: RawId,
+    pub(crate) owner_id: OwnerId,
+    pub(crate) node: NodeId,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Observer {
-    pub(crate) scope_id: ScopeId,
-    pub(crate) node: RawId,
+    pub(crate) owner_id: OwnerId,
+    pub(crate) node: NodeId,
 }
 
 #[derive(Clone)]
 pub(crate) struct ExecutionContext {
     pub(crate) scheduler: Rc<RefCell<GlobalScheduler>>,
     pub(crate) observer: Option<Observer>,
-    pub(crate) blocked_scopes: Vec<ScopeId>,
+    pub(crate) blocked_scopes: Vec<OwnerId>,
 }
 
 thread_local! {
     static ACTIVE_CONTEXT: RefCell<Vec<ExecutionContext>> = const { RefCell::new(Vec::new()) };
+}
+
+pub(crate) fn validate_active_scheduler(
+    scheduler: &Rc<RefCell<GlobalScheduler>>,
+) -> Result<(), ReactiveError> {
+    ACTIVE_CONTEXT.with(|stack| {
+        let mut saw_context = false;
+        for context in stack.borrow().iter().rev() {
+            saw_context = true;
+            if Rc::ptr_eq(&context.scheduler, scheduler) {
+                return Ok(());
+            }
+            if context.observer.is_some() {
+                return Err(ReactiveError::RuntimeMismatch);
+            }
+        }
+        if saw_context {
+            Err(ReactiveError::RuntimeMismatch)
+        } else {
+            Ok(())
+        }
+    })
 }
 
 /// Return the context relevant to `scheduler` from the current execution stack.
@@ -89,13 +126,13 @@ impl ObserverFrame {
         Self { active: true }
     }
 
-    pub(crate) fn push_child(scheduler: Rc<RefCell<GlobalScheduler>>, scope_id: ScopeId) -> Self {
+    pub(crate) fn push_child(scheduler: Rc<RefCell<GlobalScheduler>>, owner_id: OwnerId) -> Self {
         let inherited = active_ctx(&scheduler).and_then(|mut ctx| {
             if !Rc::ptr_eq(&ctx.scheduler, &scheduler) {
                 return None;
             }
             let observer = ctx.observer.take()?;
-            ctx.blocked_scopes.push(scope_id);
+            ctx.blocked_scopes.push(owner_id);
             Some(ExecutionContext {
                 scheduler: scheduler.clone(),
                 observer: Some(observer),
@@ -156,8 +193,8 @@ impl Drop for InitialFlushGuard {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct ScheduledTask {
-    pub(crate) scope_id: ScopeId,
-    pub(crate) node: RawId,
+    pub(crate) owner_id: OwnerId,
+    pub(crate) node: NodeId,
 }
 
 pub(crate) struct BitSet {
@@ -196,13 +233,24 @@ impl BitSet {
 
 pub(crate) struct ScopeEntry {
     owner: WeakOwnerToken,
+    generation: u32,
+    parent: Option<OwnerId>,
+    mode: OwnerMode,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum OwnerMode {
+    Root,
+    Persistent,
+    Transient,
 }
 
 pub(crate) struct GlobalScheduler {
     active_mask: BitSet,
     scopes: Vec<Option<ScopeEntry>>,
-    next_scope_id: u32,
-    free_scope_ids: Vec<u32>,
+    generations: Vec<u32>,
+    next_owner_id: u32,
+    free_owner_ids: Vec<u32>,
     epoch: u64,
     pub(crate) global_queue: VecDeque<ScheduledTask>,
     pub(crate) running_queue: bool,
@@ -218,8 +266,9 @@ impl GlobalScheduler {
         Rc::new(RefCell::new(Self {
             active_mask: BitSet::new(),
             scopes: Vec::new(),
-            next_scope_id: 0,
-            free_scope_ids: Vec::new(),
+            generations: Vec::new(),
+            next_owner_id: 0,
+            free_owner_ids: Vec::new(),
             epoch: 1,
             global_queue: VecDeque::new(),
             running_queue: false,
@@ -240,13 +289,19 @@ impl GlobalScheduler {
         self.epoch
     }
 
-    pub(crate) fn alloc_scope<'scope>(&mut self, state: &ScopeState<'scope>) -> ScopeId {
-        let id = self.free_scope_ids.pop().unwrap_or_else(|| {
-            let id = self.next_scope_id;
-            self.next_scope_id = self.next_scope_id.wrapping_add(1);
+    pub(crate) fn alloc_owner<'scope>(
+        &mut self,
+        state: &ScopeState<'scope>,
+        parent: Option<OwnerId>,
+        mode: OwnerMode,
+    ) -> OwnerId {
+        let id = self.free_owner_ids.pop().unwrap_or_else(|| {
+            let id = self.next_owner_id;
+            self.next_owner_id = self.next_owner_id.wrapping_add(1);
             id
         });
-        let scope_id = ScopeId(id);
+        let generation = self.generations.get(id as usize).copied().unwrap_or(0);
+        let owner_id = OwnerId(id, generation);
 
         let owner = WeakOwnerToken::from_typed(state);
 
@@ -255,57 +310,105 @@ impl GlobalScheduler {
         if index >= self.scopes.len() {
             self.scopes.resize_with(index + 1, || None);
         }
-        self.scopes[index] = Some(ScopeEntry { owner });
-        scope_id
+        if index >= self.generations.len() {
+            self.generations.resize(index + 1, 0);
+        }
+        self.scopes[index] = Some(ScopeEntry {
+            owner,
+            generation,
+            parent,
+            mode,
+        });
+        owner_id
     }
 
-    pub(crate) fn deactivate_scope(&mut self, id: ScopeId) {
+    pub(crate) fn deactivate_scope(&mut self, id: OwnerId) {
         if !self.is_scope_active(id) {
             return;
         }
         self.active_mask.set(id.0, false);
-        self.global_queue.retain(|task| task.scope_id != id);
+        self.global_queue.retain(|task| task.owner_id != id);
     }
 
-    pub(crate) fn release_scope_id(&mut self, id: ScopeId) {
-        if self.is_scope_active(id) || self.free_scope_ids.contains(&id.0) {
+    pub(crate) fn release_owner_id(&mut self, id: OwnerId) {
+        if self.is_scope_active(id) || self.free_owner_ids.contains(&id.0) {
             return;
         }
         let index = id.0 as usize;
+        let Some(entry) = self.scopes.get(index).and_then(Option::as_ref) else {
+            return;
+        };
+        if entry.generation != id.1 {
+            return;
+        }
         if index < self.scopes.len() {
             self.scopes[index] = None;
         }
-        self.free_scope_ids.push(id.0);
+        if index >= self.generations.len() {
+            self.generations.resize(index + 1, 0);
+        }
+        self.generations[index] = id.1.wrapping_add(1);
+        self.free_owner_ids.push(id.0);
     }
 
-    pub(crate) fn is_scope_active(&self, id: ScopeId) -> bool {
+    pub(crate) fn is_scope_active(&self, id: OwnerId) -> bool {
         self.active_mask.is_set(id.0)
+            && self
+                .scopes
+                .get(id.0 as usize)
+                .and_then(Option::as_ref)
+                .is_some_and(|entry| entry.generation == id.1)
     }
 
-    pub(crate) fn is_scope_current(&self, id: ScopeId, expected: &WeakOwnerToken) -> bool {
+    pub(crate) fn is_scope_current(&self, id: OwnerId, expected: &WeakOwnerToken) -> bool {
         if !self.is_scope_active(id) {
             return false;
         }
         self.scopes
             .get(id.0 as usize)
             .and_then(Option::as_ref)
-            .is_some_and(|entry| entry.owner.ptr_eq(expected))
+            .is_some_and(|entry| entry.generation == id.1 && entry.owner.ptr_eq(expected))
     }
 
-    pub(crate) fn active_scope_ids(&self) -> Vec<ScopeId> {
+    /// Resolve a typed owner only after validating both the generational slot
+    /// and the exact weak-state identity registered in that slot.
+    pub(crate) fn resolve_owner<'scope>(
+        &self,
+        id: OwnerId,
+        expected: &WeakOwnerToken,
+    ) -> Option<OwnerToken<'scope>> {
+        if !self.is_scope_current(id, expected) {
+            return None;
+        }
+        let state = expected.upgrade_erased()?;
+        if state
+            .try_borrow()
+            .ok()
+            .is_none_or(|state| state.phase != ScopePhase::Active)
+        {
+            return None;
+        }
+        // SAFETY: `is_scope_current` checked the scheduler family through the
+        // exact weak identity, the owner slot, and its generation. The state
+        // remains registered until the close transaction has detached all
+        // edges and cleared all typed payload slots.
+        Some(unsafe { OwnerToken::from_validated(state) })
+    }
+
+    pub(crate) fn active_owner_ids(&self) -> Vec<OwnerId> {
         self.scopes
             .iter()
             .enumerate()
             .filter_map(|(index, entry)| {
                 entry
                     .as_ref()
-                    .map(|_| ScopeId(index as u32))
+                    .map(|entry| OwnerId(index as u32, entry.generation))
                     .filter(|id| self.is_scope_active(*id))
             })
             .collect()
     }
 
-    pub(crate) fn get_scope<'scope>(&self, id: ScopeId) -> Option<ScopeState<'scope>> {
+    pub(crate) fn get_scope<'scope>(&self, id: OwnerId) -> Option<ScopeState<'scope>> {
         if !self.is_scope_active(id) {
             return None;
         }
@@ -314,25 +417,39 @@ impl GlobalScheduler {
 
     pub(crate) fn get_scope_for_edge_cleanup<'scope>(
         &self,
-        id: ScopeId,
+        id: OwnerId,
     ) -> Option<ScopeState<'scope>> {
         self.get_registered_scope(id)
     }
 
-    fn get_registered_scope<'scope>(&self, id: ScopeId) -> Option<ScopeState<'scope>> {
+    fn get_registered_scope<'scope>(&self, id: OwnerId) -> Option<ScopeState<'scope>> {
         let entry = self.scopes.get(id.0 as usize)?.as_ref()?;
-        entry.owner.upgrade().map(|owner| owner.state())
+        if entry.generation != id.1 {
+            return None;
+        }
+        entry
+            .owner
+            .upgrade_erased()
+            .map(|state| unsafe { OwnerToken::from_validated(state).state() })
+    }
+
+    pub(crate) fn owner_metadata(&self, id: OwnerId) -> Option<(OwnerMode, Option<OwnerId>)> {
+        self.scopes
+            .get(id.0 as usize)
+            .and_then(Option::as_ref)
+            .filter(|entry| entry.generation == id.1)
+            .map(|entry| (entry.mode, entry.parent))
     }
 
     pub(crate) fn enqueue_effect(&mut self, task: ScheduledTask) {
-        if self.is_scope_active(task.scope_id) {
+        if self.is_scope_active(task.owner_id) {
             self.global_queue.push_back(task);
         }
     }
 
     pub(crate) fn cancel_effect(&mut self, target: TargetNode) {
         self.global_queue
-            .retain(|task| task.scope_id != target.scope_id || task.node != target.node);
+            .retain(|task| task.owner_id != target.owner_id || task.node != target.node);
     }
 
     pub(crate) fn is_idle(&self) -> bool {
@@ -359,8 +476,8 @@ mod tests {
         let observer = ObserverFrame::push(
             tracked_scheduler.clone(),
             Some(Observer {
-                scope_id: ScopeId(0),
-                node: RawId::DANGLING,
+                owner_id: OwnerId::initial(0),
+                node: NodeId::DANGLING,
             }),
         );
         let untracked = ObserverFrame::push_untracked(untracked_scheduler.clone());
@@ -379,13 +496,16 @@ mod tests {
         let observer_frame = ObserverFrame::push(
             observer_scheduler.clone(),
             Some(Observer {
-                scope_id: ScopeId(0),
-                node: RawId::DANGLING,
+                owner_id: OwnerId::initial(0),
+                node: NodeId::DANGLING,
             }),
         );
 
         let context = active_ctx(&source_scheduler).expect("foreign observer context");
-        assert_eq!(context.observer.expect("observer").scope_id, ScopeId(0));
+        assert_eq!(
+            context.observer.expect("observer").owner_id,
+            OwnerId::initial(0)
+        );
         assert!(Rc::ptr_eq(&context.scheduler, &observer_scheduler));
 
         drop(observer_frame);
@@ -394,9 +514,11 @@ mod tests {
     #[test]
     fn scope_slots_are_reused_only_after_release() {
         let scheduler = GlobalScheduler::new();
-        let first = ScopeState::new(ScopeId(0), scheduler.clone());
-        let first_id = scheduler.borrow_mut().alloc_scope(&first);
-        first.borrow_mut().scope_id = first_id;
+        let first = ScopeState::new(OwnerId::initial(0), scheduler.clone());
+        let first_id = scheduler
+            .borrow_mut()
+            .alloc_owner(&first, None, OwnerMode::Transient);
+        first.borrow_mut().owner_id = first_id;
         scheduler.borrow_mut().deactivate_scope(first_id);
         assert!(
             scheduler
@@ -405,11 +527,13 @@ mod tests {
                 .is_some()
         );
 
-        let second = ScopeState::new(ScopeId(0), scheduler.clone());
-        let second_id = scheduler.borrow_mut().alloc_scope(&second);
+        let second = ScopeState::new(OwnerId::initial(0), scheduler.clone());
+        let second_id = scheduler
+            .borrow_mut()
+            .alloc_owner(&second, None, OwnerMode::Transient);
         assert_ne!(first_id, second_id);
 
-        scheduler.borrow_mut().release_scope_id(first_id);
+        scheduler.borrow_mut().release_owner_id(first_id);
         assert!(
             scheduler
                 .borrow()
@@ -417,14 +541,17 @@ mod tests {
                 .is_none()
         );
 
-        let third = ScopeState::new(ScopeId(0), scheduler.clone());
-        let third_id = scheduler.borrow_mut().alloc_scope(&third);
+        let third = ScopeState::new(OwnerId::initial(0), scheduler.clone());
+        let third_id = scheduler
+            .borrow_mut()
+            .alloc_owner(&third, None, OwnerMode::Transient);
 
-        assert_eq!(first_id, third_id);
+        assert_eq!(first_id.0, third_id.0);
+        assert_ne!(first_id.1, third_id.1);
 
         scheduler.borrow_mut().deactivate_scope(second_id);
-        scheduler.borrow_mut().release_scope_id(second_id);
+        scheduler.borrow_mut().release_owner_id(second_id);
         scheduler.borrow_mut().deactivate_scope(third_id);
-        scheduler.borrow_mut().release_scope_id(third_id);
+        scheduler.borrow_mut().release_owner_id(third_id);
     }
 }

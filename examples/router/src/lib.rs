@@ -75,8 +75,8 @@ fn Home<'scope>(#[ctx] _ctx: RouterContext<'scope>) -> impl View<'scope> {
 
 #[component]
 fn SearchPage<'scope>(#[ctx] ctx: RouterContext<'scope>) -> impl View<'scope> {
-    let scope = ctx.scope();
-    let search_term = Persistent::builder(scope, "q", error_handler)
+    let owner = ctx.owner();
+    let search_term = Persistent::builder(owner, "q", error_handler)
         .query(ctx)
         .string()
         .default(String::new())
@@ -207,6 +207,21 @@ fn UserList<'scope>(#[ctx] ctx: RouterContext<'scope>) -> impl View<'scope> {
 fn UserDetail<'scope>(#[ctx] ctx: RouterContext<'scope>, id: u32) -> impl View<'scope> {
     let navigator = ctx.navigator;
     let path = ctx.path;
+    let owner = ctx.owner();
+    let error_handler = ctx.error_reporter();
+    let (page_signal, _set_page_signal) = owner.signal(id)?;
+    let page_computed = owner.computed(
+        move || page_signal.get().map(|value| value.saturating_mul(2)),
+        error_handler,
+    )?;
+    let _page_effect = owner.effect(
+        move || {
+            let _ = page_computed.get()?;
+            Ok(())
+        },
+        error_handler,
+    )?;
+    owner.on_cleanup(|| Ok(()), error_handler)?;
 
     Ok(Card(
         ctx,
@@ -405,10 +420,10 @@ fn inject_router_styles() {
 }
 
 fn mount_router_view<'scope>(ctx: &MountContext<'scope>) -> SilexResult<()> {
-    let scope = ctx.scope();
-    let error_handler = scope.error_handler(|error: SilexError| {
+    let owner = ctx.access();
+    let error_handler = owner.error_handler(|error: SilexError| {
         web_sys::console::error_1(&error.to_string().into());
     })?;
-    let silex_ctx = SilexContext::new(scope, error_handler.view());
+    let silex_ctx = SilexContext::new(owner, error_handler.view());
     ctx.mount(App(silex_ctx).build(), error_handler)
 }

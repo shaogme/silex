@@ -1,9 +1,10 @@
 //! Reactive-source promotion.
 
 use crate::{
-    ErrorReporter, Rx, RxValueKind, Scope,
+    ErrorReporter, OwnerAccess, Rx, RxValueKind,
     reactivity::{
-        Constant, Memo, Mutation, ReadSignal, Resource, RwSignal, Signal, SignalSlice, StoredValue,
+        Computed, Constant, Mutation, ReadSignal, Resource, RwSignal, Signal, SignalSlice,
+        StoredValue,
     },
     traits::{RxCloneData, RxData, RxError, RxRead, RxValue},
 };
@@ -14,20 +15,21 @@ pub struct PromotionPlan<'scope, T: 'scope> {
     materializer: Materializer<'scope, T>,
 }
 
-type DerivedMaterializer<'scope, T> = Box<
-    dyn FnOnce(Scope<'scope>, ErrorReporter<'scope>) -> crate::SilexResult<Rx<'scope, T>> + 'scope,
+type ComputedMaterializer<'owner, T> = Box<
+    dyn FnOnce(OwnerAccess<'owner>, ErrorReporter<'owner>) -> crate::SilexResult<Rx<'owner, T>>
+        + 'owner,
 >;
 
 enum Materializer<'scope, T: 'scope> {
     Existing(Rx<'scope, T>),
     Constant(T),
-    Derived(DerivedMaterializer<'scope, T>),
+    Computed(ComputedMaterializer<'scope, T>),
 }
 
 /// Source boundary for values that can be promoted into a target scope.
 ///
 /// Implementations outside `silex_core` must return a `constant` or `derived`
-/// plan. The materializer must create nodes through the supplied [`Scope`] and
+/// plan. The materializer must create nodes through the supplied [`OwnerAccess`] and
 /// must not register nodes while building the plan. Ordinary reads inside the
 /// materialized computation establish dependencies automatically.
 pub trait ReactiveSource<'scope>: RxValue {
@@ -52,27 +54,26 @@ impl<'scope, T: 'scope> PromotionPlan<'scope, T> {
     }
 
     /// Create a derived source plan.
-    ///
     pub fn derived<F>(materializer: F) -> Self
     where
-        F: FnOnce(Scope<'scope>, ErrorReporter<'scope>) -> crate::SilexResult<Rx<'scope, T>>
+        F: FnOnce(OwnerAccess<'scope>, ErrorReporter<'scope>) -> crate::SilexResult<Rx<'scope, T>>
             + 'scope,
     {
         Self {
-            materializer: Materializer::Derived(Box::new(materializer)),
+            materializer: Materializer::Computed(Box::new(materializer)),
         }
     }
 
     pub(crate) fn materialize(
         self,
-        scope: Scope<'scope>,
+        owner: OwnerAccess<'scope>,
         error_handler: ErrorReporter<'scope>,
     ) -> crate::SilexResult<Rx<'scope, T>> {
         let Self { materializer } = self;
         match materializer {
             Materializer::Existing(value) => Ok(value),
-            Materializer::Constant(value) => scope.constant(value),
-            Materializer::Derived(materializer) => materializer(scope, error_handler),
+            Materializer::Constant(value) => owner.constant(value),
+            Materializer::Computed(materializer) => materializer(owner, error_handler),
         }
     }
 }
@@ -186,7 +187,7 @@ where
     }
 }
 
-impl<'scope, T: 'scope> ReactiveSource<'scope> for Memo<'scope, T>
+impl<'scope, T: 'scope> ReactiveSource<'scope> for Computed<'scope, T>
 where
     T: Sized + RxData,
 {
@@ -226,12 +227,13 @@ macro_rules! impl_tuple_sources {
                 Self::Value: Sized + RxData + 'scope,
             {
                 $(let $name = self.$index.into_promotion_plan();)+
-                PromotionPlan::derived(move |scope, error_handler| {
-                    $(let $name = $name.materialize(scope, error_handler)?;)+
-                    scope.derived(
+                PromotionPlan::derived(move |owner, error_handler| {
+                    $(let $name = $name.materialize(owner, error_handler)?;)+
+                    owner.computed_always(
                         move || Ok(($($name.get()?,)+)),
                         error_handler,
                     )
+                    .map(crate::Computed::into_rx)
                 })
             }
         }
@@ -259,12 +261,14 @@ where
     {
         let source = self.source.into_promotion_plan();
         let getter = self.getter;
-        PromotionPlan::derived(move |scope, error_handler| {
-            let source = source.materialize(scope, error_handler)?;
-            scope.derived(
-                move || source.with(|value| getter(value).clone()),
-                error_handler,
-            )
+        PromotionPlan::derived(move |owner, error_handler| {
+            let source = source.materialize(owner, error_handler)?;
+            owner
+                .computed_always(
+                    move || source.with(|value| getter(value).clone()),
+                    error_handler,
+                )
+                .map(crate::Computed::into_rx)
         })
     }
 }
@@ -279,8 +283,10 @@ where
         Self: Sized,
         Option<T>: Sized + RxData + 'scope,
     {
-        PromotionPlan::derived(move |scope, error_handler| {
-            scope.derived(move || self.value(), error_handler)
+        PromotionPlan::derived(move |owner, error_handler| {
+            owner
+                .computed_always(move || self.value(), error_handler)
+                .map(crate::Computed::into_rx)
         })
     }
 }
@@ -296,8 +302,10 @@ where
         Self: Sized,
         Option<T>: Sized + RxData + 'scope,
     {
-        PromotionPlan::derived(move |scope, error_handler| {
-            scope.derived(move || self.value(), error_handler)
+        PromotionPlan::derived(move |owner, error_handler| {
+            owner
+                .computed_always(move || self.value(), error_handler)
+                .map(crate::Computed::into_rx)
         })
     }
 }

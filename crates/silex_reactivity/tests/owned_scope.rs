@@ -1,26 +1,27 @@
-use silex_reactivity::{ErrorHandlerToken, ReactiveError, Runtime, Scope, unwind_safe};
+use silex_reactivity::{ErrorHandlerToken, OwnerAccess, ReactiveError, Runtime, unwind_safe};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
 };
 
-fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope, ()> {
+fn handler<'scope>(scope: OwnerAccess<'scope>) -> ErrorHandlerToken<'scope, ()> {
     scope.error_handler(|_| {}).expect("handler registration")
 }
 
 #[test]
 fn owned_scope_keeps_effects_until_explicit_dispose() {
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime root creation");
+    let root = runtime.owner().expect("runtime root creation");
     {
-        let scope = root.scope();
+        let scope = root.access();
         let (read, write) = scope.signal(1i32).expect("fallible reactive creation");
         let runs = Rc::new(Cell::new(0));
         let cleanups = Rc::new(Cell::new(0));
-        let owner = scope.owned_scope().expect("fallible reactive creation");
+        let owner = scope.create_child().expect("fallible reactive creation");
 
         let runs_for_effect = runs.clone();
         let _effect = owner
+            .access()
             .effect(
                 move || {
                     read.with(|value| {
@@ -35,6 +36,7 @@ fn owned_scope_keeps_effects_until_explicit_dispose() {
             .expect("effect should initialize");
         let cleanups_for_owner = cleanups.clone();
         owner
+            .access()
             .on_cleanup(
                 move || {
                     cleanups_for_owner.set(cleanups_for_owner.get() + 1);
@@ -48,16 +50,54 @@ fn owned_scope_keeps_effects_until_explicit_dispose() {
         write.set(2).expect("signal update");
         assert_eq!(runs.get(), 2);
 
-        owner.dispose().expect("owner disposal");
+        owner.close().expect("owner disposal");
         assert!(!owner.is_active());
         assert_eq!(cleanups.get(), 1);
         write.set(3).expect("signal update");
         assert_eq!(runs.get(), 2);
-        owner.dispose().expect("owner disposal");
+        owner.close().expect("owner disposal");
         assert_eq!(cleanups.get(), 1);
     }
 
-    root.dispose().expect("root disposal should succeed");
+    root.close().expect("root disposal should succeed");
+}
+
+#[test]
+fn closing_an_owner_closes_nested_children_before_releasing_the_parent() {
+    let mut runtime = Runtime::new();
+    let root = runtime.owner().expect("runtime root creation");
+    let child = root.access().create_child().expect("child creation");
+    let grandchild = child.create_child().expect("grandchild creation");
+    let cleanups = Rc::new(RefCell::new(Vec::new()));
+
+    let grandchild_cleanups = cleanups.clone();
+    grandchild
+        .access()
+        .on_cleanup(
+            move || {
+                grandchild_cleanups.borrow_mut().push("grandchild");
+                Ok(())
+            },
+            handler(root.access()),
+        )
+        .expect("grandchild cleanup registration");
+    let child_cleanups = cleanups.clone();
+    child
+        .access()
+        .on_cleanup(
+            move || {
+                child_cleanups.borrow_mut().push("child");
+                Ok(())
+            },
+            handler(root.access()),
+        )
+        .expect("child cleanup registration");
+
+    root.close().expect("root close should be child-first");
+    assert!(!root.is_active());
+    assert!(!child.is_active());
+    assert!(!grandchild.is_active());
+    assert_eq!(cleanups.borrow().as_slice(), &["grandchild", "child"]);
 }
 
 #[test]
@@ -66,11 +106,12 @@ fn owned_scope_cleanup_can_release_captured_stored_value() {
     let observed = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let stored = scope.stored(1_i32).expect("fallible reactive creation");
-            let owner = scope.owned_scope().expect("fallible reactive creation");
+            let owner = scope.create_child().expect("fallible reactive creation");
             let observed_in_cleanup = observed.clone();
             owner
+                .access()
                 .on_cleanup(
                     move || {
                         observed_in_cleanup.set(
@@ -87,7 +128,7 @@ fn owned_scope_cleanup_can_release_captured_stored_value() {
                 )
                 .expect("owner cleanup should register");
 
-            owner.dispose().expect("owner disposal");
+            owner.close().expect("owner disposal");
             assert!(!owner.is_active());
         })
         .expect("test operation should succeed");
@@ -99,15 +140,16 @@ fn owned_scope_cleanup_can_release_captured_stored_value() {
 fn lexical_owned_scope_supports_borrowed_callbacks_and_nested_dispose() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let text = String::from("borrowed");
             let (read, write) = scope.signal(1i32).expect("fallible reactive creation");
-            let owner = scope.owned_scope().expect("fallible reactive creation");
+            let owner = scope.create_child().expect("fallible reactive creation");
             let runs = Rc::new(Cell::new(0));
             let cleanups = Rc::new(Cell::new(0));
 
             let runs_for_effect = runs.clone();
             owner
+                .access()
                 .effect(
                     move || {
                         read.with(|value| {
@@ -121,9 +163,10 @@ fn lexical_owned_scope_supports_borrowed_callbacks_and_nested_dispose() {
                     handler(scope),
                 )
                 .expect("effect should initialize");
-            let child = owner.child().expect("child scope creation");
+            let child = owner.create_child().expect("child scope creation");
             let child_cleanups = cleanups.clone();
             child
+                .access()
                 .on_cleanup(
                     move || {
                         child_cleanups.set(child_cleanups.get() + 1);
@@ -135,8 +178,8 @@ fn lexical_owned_scope_supports_borrowed_callbacks_and_nested_dispose() {
 
             write.set(2).expect("signal update");
             assert_eq!(runs.get(), 2);
-            child.dispose().expect("child disposal");
-            owner.dispose().expect("owner disposal");
+            child.close().expect("child disposal");
+            owner.close().expect("owner disposal");
             assert_eq!(cleanups.get(), 1);
         })
         .expect("test operation should succeed");
@@ -148,11 +191,12 @@ fn owned_scope_completion_can_capture_scope_local_data() {
     let seen = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
-            let owner = scope.owned_scope().expect("fallible reactive creation");
+        .with_transient(|scope| {
+            let owner = scope.create_child().expect("fallible reactive creation");
             let local = String::from("owned");
             let seen_in_callback = seen.clone();
             let token = owner
+                .access()
                 .completion_once(unwind_safe(move |value: i32| {
                     assert_eq!(local, "owned");
                     seen_in_callback.set(value);
@@ -160,7 +204,7 @@ fn owned_scope_completion_can_capture_scope_local_data() {
                 }))
                 .expect("completion registration");
             assert!(token.submit(9).expect("completion submit"));
-            owner.dispose().expect("owner disposal");
+            owner.close().expect("owner disposal");
             assert!(!token.submit(10).expect("stale completion submit"));
         })
         .expect("test operation should succeed");
@@ -172,7 +216,7 @@ fn owned_scope_completion_can_capture_scope_local_data() {
 fn fallible_owner_registration_rejects_inactive_scope() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let scope_for_cleanup = scope;
             let cleanup_error_handler = handler(scope);
             scope
@@ -183,7 +227,7 @@ fn fallible_owner_registration_rejects_inactive_scope() {
                             Err(ReactiveError::NoSuchNode)
                         );
                         assert!(matches!(
-                            scope_for_cleanup.owned_scope(),
+                            scope_for_cleanup.create_child(),
                             Err(ReactiveError::NoSuchNode)
                         ));
                         Ok(())
@@ -195,18 +239,26 @@ fn fallible_owner_registration_rejects_inactive_scope() {
         .expect("test operation should succeed");
 
     let mut root_runtime = Runtime::new();
-    let root = root_runtime.run().expect("runtime root creation");
-    let root_scope = root.scope();
-    let owner = root_scope.owned_scope().expect("owner is active");
-    assert!(owner.on_cleanup(|| Ok(()), handler(root_scope)).is_ok());
-    owner.dispose().expect("owner disposal");
+    let root = root_runtime.owner().expect("runtime root creation");
+    let root_scope = root.access();
+    let owner = root_scope.create_child().expect("owner is active");
+    assert!(
+        owner
+            .access()
+            .on_cleanup(|| Ok(()), handler(root_scope))
+            .is_ok()
+    );
+    owner.close().expect("owner disposal");
     assert_eq!(
-        owner.on_cleanup(|| Ok(()), handler(root_scope)),
+        owner.access().on_cleanup(|| Ok(()), handler(root_scope)),
         Err(ReactiveError::NoSuchNode)
     );
-    assert!(matches!(owner.child(), Err(ReactiveError::NoSuchNode)));
+    assert!(matches!(
+        owner.create_child(),
+        Err(ReactiveError::NoSuchNode)
+    ));
     drop(owner);
-    root.dispose().expect("root cleanup should succeed");
+    root.close().expect("root cleanup should succeed");
 }
 
 #[test]
@@ -216,7 +268,7 @@ fn fallible_cleanup_preserves_registration_order_during_dispose() {
     let events_for_cleanup = events.clone();
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let scope_for_cleanup = scope;
             let cleanup_error_handler = handler(scope);
             scope
@@ -236,4 +288,147 @@ fn fallible_cleanup_preserves_registration_order_during_dispose() {
         .expect("test operation should succeed");
 
     assert_eq!(events.borrow().as_slice(), ["first"]);
+}
+
+#[test]
+fn persistent_child_adapter_preserves_topology_and_parent_close_is_idempotent() {
+    let mut runtime = Runtime::new();
+    let root = runtime.owner().expect("runtime root creation");
+    let root_access = root.access();
+    let branch = root_access
+        .create_persistent_child()
+        .expect("persistent branch creation");
+    let nested = branch
+        .access()
+        .create_persistent_child()
+        .expect("nested branch creation");
+    let cleanup_order = Rc::new(RefCell::new(Vec::new()));
+
+    assert!(root_access != branch.access());
+    assert!(branch.access() != nested.access());
+    assert!(branch.access().same_runtime(&nested.access()));
+    assert_eq!(root.runtime_snapshot().active_owners, 3);
+
+    let nested_cleanup_order = cleanup_order.clone();
+    nested
+        .access()
+        .on_cleanup(
+            move || {
+                nested_cleanup_order.borrow_mut().push("nested");
+                Ok(())
+            },
+            handler(root_access),
+        )
+        .expect("nested cleanup registration");
+    let branch_cleanup_order = cleanup_order.clone();
+    branch
+        .access()
+        .on_cleanup(
+            move || {
+                branch_cleanup_order.borrow_mut().push("branch");
+                Ok(())
+            },
+            handler(root_access),
+        )
+        .expect("branch cleanup registration");
+
+    root.close()
+        .expect("parent close should close descendants first");
+    assert_eq!(cleanup_order.borrow().as_slice(), ["nested", "branch"]);
+    assert_eq!(root.runtime_snapshot().active_owners, 0);
+    assert!(!branch.is_active());
+    assert!(!nested.is_active());
+
+    nested
+        .close_once()
+        .expect("parent-closed child should be inactive");
+    nested
+        .close_once()
+        .expect("repeated child close should be a no-op");
+    branch
+        .close_once()
+        .expect("parent-closed branch should be inactive");
+    branch
+        .close_once()
+        .expect("repeated branch close should be a no-op");
+    assert_eq!(cleanup_order.borrow().as_slice(), ["nested", "branch"]);
+}
+
+#[test]
+fn persistent_child_adapter_supports_child_first_and_repeated_close() {
+    let mut runtime = Runtime::new();
+    let root = runtime.owner().expect("runtime root creation");
+    let branch = root
+        .access()
+        .create_persistent_child()
+        .expect("persistent branch creation");
+    let nested = branch
+        .access()
+        .create_persistent_child()
+        .expect("nested branch creation");
+    let branch_cleanups = Rc::new(Cell::new(0));
+    let nested_cleanups = Rc::new(Cell::new(0));
+
+    let nested_cleanups_for_cleanup = nested_cleanups.clone();
+    nested
+        .access()
+        .on_cleanup(
+            move || {
+                nested_cleanups_for_cleanup.set(nested_cleanups_for_cleanup.get() + 1);
+                Ok(())
+            },
+            handler(root.access()),
+        )
+        .expect("nested cleanup registration");
+    let branch_cleanups_for_cleanup = branch_cleanups.clone();
+    branch
+        .access()
+        .on_cleanup(
+            move || {
+                branch_cleanups_for_cleanup.set(branch_cleanups_for_cleanup.get() + 1);
+                Ok(())
+            },
+            handler(root.access()),
+        )
+        .expect("branch cleanup registration");
+
+    nested.close_once().expect("child close should succeed");
+    nested
+        .close_once()
+        .expect("repeated child close should be a no-op");
+    assert_eq!(nested_cleanups.get(), 1);
+    assert_eq!(branch_cleanups.get(), 0);
+
+    branch.close_once().expect("branch close should succeed");
+    branch
+        .close_once()
+        .expect("repeated branch close should be a no-op");
+    assert_eq!(nested_cleanups.get(), 1);
+    assert_eq!(branch_cleanups.get(), 1);
+
+    root.close()
+        .expect("root close should succeed after child close");
+    assert_eq!(nested_cleanups.get(), 1);
+    assert_eq!(branch_cleanups.get(), 1);
+}
+
+#[test]
+fn persistent_child_access_rejects_operations_after_adapter_drop() {
+    let mut runtime = Runtime::new();
+    let root = runtime.owner().expect("runtime root creation");
+    let branch = root
+        .access()
+        .create_persistent_child()
+        .expect("persistent branch creation");
+    let branch_access = branch.access();
+
+    drop(branch);
+
+    assert!(!branch_access.is_active());
+    assert!(matches!(
+        branch_access.create_child(),
+        Err(ReactiveError::NoSuchNode)
+    ));
+    root.close()
+        .expect("root close should retain idempotent cleanup");
 }

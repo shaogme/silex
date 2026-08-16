@@ -5,8 +5,8 @@ pub mod log;
 pub mod logic;
 pub mod macros_helper;
 pub mod node_ref;
+mod owner;
 pub mod reactivity;
-pub mod scope;
 pub mod store;
 mod task;
 pub mod traits;
@@ -14,14 +14,14 @@ pub mod traits;
 use std::marker::PhantomData;
 
 use silex_reactivity::{
-    Derived, Memo as RxMemo, ReadSignal as RxReadSignal, StoredValue as RxStoredValue,
+    Computed as RxComputed, ReadSignal as RxReadSignal, StoredValue as RxStoredValue,
 };
 
 pub use callback::Callback;
 pub use context::{SilexContext, SilexContextProvider};
 pub use error::{
-    ErrorHandler, ErrorHandlerInput, ErrorHandlerToken, ErrorReporter, ErrorSeverity, HandlerLease,
-    SilexError, SilexErrorKind, SilexResult,
+    ErrorHandler, ErrorHandlerAnchor, ErrorHandlerInput, ErrorHandlerToken, ErrorReporter,
+    ErrorSeverity, HandlerLease, SilexError, SilexErrorKind, SilexResult,
 };
 
 #[cfg(feature = "error-persistence")]
@@ -45,17 +45,17 @@ pub use error::{IntlError, IntlErrorKind};
 #[cfg(feature = "error-dom")]
 pub use error::{
     CleanupFailure, CleanupFailureDiagnostic, CleanupOrigin, CleanupReport, CleanupSink,
-    DisposeError, DropFailureReport, MountAvailability, MountError,
+    DisposeError, DropFailureReport, MountAvailability, MountError, RollbackError,
 };
 
 #[cfg(feature = "error-bootstrap")]
 pub use error::{AppHostError, BootstrapError, HostState, UnmountOutcome};
 pub use node_ref::NodeRef;
+pub use owner::{OwnerAccess, OwnerHandle, PersistentOwnerAccess, Runtime};
 pub use reactivity::{
-    Constant, Effect, Memo, Mutation, PromotionPlan, ReactiveSource, ReadSignal, Resource,
-    RwSignal, Signal, StoredValue, SuspenseContext, WatchOptions, WriteSignal,
+    Computed, Constant, EffectHandle, Mutation, PromotionPlan, ReactiveSource, ReadSignal,
+    Resource, RwSignal, Signal, StoredValue, SuspenseContext, WatchOptions, WriteSignal,
 };
-pub use scope::{OwnedScope, RootHandle, Runtime, Scope};
 pub use silex_reactivity::CallbackInvokeError;
 #[cfg(feature = "test-support")]
 pub use silex_reactivity::RuntimeSnapshot;
@@ -69,7 +69,10 @@ pub use traits::{
 };
 
 pub use silex_reactivity::ReactiveError;
-pub use silex_reactivity::{CleanupDiagnostic, CleanupError, CleanupPayloadKind};
+pub use silex_reactivity::{
+    CleanupDiagnostic, CleanupPayloadKind, CloseError, CloseFailure, ClosePhase, CloseSource,
+    CloseTransaction,
+};
 
 /// Marker for value-producing reactive nodes.
 pub struct RxValueKind;
@@ -79,8 +82,7 @@ pub struct RxEffectKind;
 
 pub(crate) enum RxInner<'scope, T> {
     Signal(RxReadSignal<'scope, T>),
-    Memo(RxMemo<'scope, T, SilexError>),
-    Derived(Derived<'scope, T, SilexError>),
+    Computed(RxComputed<'scope, T, SilexError>),
     Stored(RxStoredValue<'scope, T>),
 }
 
@@ -96,8 +98,7 @@ impl<'scope, T> PartialEq for RxInner<'scope, T> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Signal(a), Self::Signal(b)) => a == b,
-            (Self::Memo(a), Self::Memo(b)) => a == b,
-            (Self::Derived(a), Self::Derived(b)) => a == b,
+            (Self::Computed(a), Self::Computed(b)) => a == b,
             (Self::Stored(a), Self::Stored(b)) => a == b,
             _ => false,
         }
@@ -109,7 +110,7 @@ impl<'scope, T> Eq for RxInner<'scope, T> {}
 /// A typed reactive value that retains the scope used to create derived nodes.
 pub struct Rx<'scope, T, M = RxValueKind> {
     pub(crate) inner: RxInner<'scope, T>,
-    pub(crate) scope: Scope<'scope>,
+    pub(crate) owner: OwnerAccess<'scope>,
     pub(crate) marker: PhantomData<M>,
 }
 
@@ -123,7 +124,7 @@ impl<'scope, T, M> Clone for Rx<'scope, T, M> {
 
 impl<'scope, T, M> PartialEq for Rx<'scope, T, M> {
     fn eq(&self, other: &Self) -> bool {
-        self.inner == other.inner && self.scope == other.scope
+        self.inner == other.inner && self.owner == other.owner
     }
 }
 
@@ -133,26 +134,15 @@ impl<'scope, T: 'scope> Rx<'scope, T, RxValueKind> {
     pub(crate) fn from_signal(signal: ReadSignal<'scope, T>) -> Self {
         Self {
             inner: RxInner::Signal(signal.inner),
-            scope: signal.scope,
+            owner: signal.owner,
             marker: PhantomData,
         }
     }
 
-    pub(crate) fn from_memo(memo: Memo<'scope, T>) -> Self {
+    pub(crate) fn from_computed(computed: Computed<'scope, T>) -> Self {
         Self {
-            inner: RxInner::Memo(memo.inner),
-            scope: memo.scope,
-            marker: PhantomData,
-        }
-    }
-
-    pub(crate) fn from_derived(
-        derived: Derived<'scope, T, SilexError>,
-        scope: Scope<'scope>,
-    ) -> Self {
-        Self {
-            inner: RxInner::Derived(derived),
-            scope,
+            inner: RxInner::Computed(computed.inner),
+            owner: computed.owner,
             marker: PhantomData,
         }
     }
@@ -160,13 +150,13 @@ impl<'scope, T: 'scope> Rx<'scope, T, RxValueKind> {
     pub(crate) fn from_stored(stored: StoredValue<'scope, T>) -> Self {
         Self {
             inner: RxInner::Stored(stored.inner),
-            scope: stored.scope,
+            owner: stored.owner,
             marker: PhantomData,
         }
     }
 
-    pub fn scope(&self) -> Scope<'scope> {
-        self.scope
+    pub fn owner(&self) -> OwnerAccess<'scope> {
+        self.owner
     }
 
     pub fn map<U, F, H>(self, f: F, error_handler: H) -> SilexResult<Rx<'scope, U>>
@@ -175,8 +165,10 @@ impl<'scope, T: 'scope> Rx<'scope, T, RxValueKind> {
         F: Fn(&T) -> U + 'scope,
         H: ErrorHandlerInput<'scope>,
     {
-        let scope = self.scope;
-        scope.derived(move || self.with(|value| f(value)), error_handler)
+        let owner = self.owner;
+        owner
+            .computed_always(move || self.with(|value| f(value)), error_handler)
+            .map(Computed::into_rx)
     }
 
     pub fn get(&self) -> SilexResult<T>
@@ -283,8 +275,9 @@ macro_rules! batch_read_untracked_recurse {
 pub mod prelude {
     pub use crate::{
         Callback, CompletionOnce, CompletionSender, ErrorHandler, ErrorHandlerInput,
-        ErrorHandlerToken, ErrorReporter, NodeRef, ReactiveError, Runtime, Rx, Scope, SilexContext,
-        SilexContextProvider, SilexError, SilexErrorKind, SilexResult, StoreField, batch_read,
-        batch_read_untracked, logic::*, reactivity::*, rx, traits::*, unwind_safe,
+        ErrorHandlerToken, ErrorReporter, NodeRef, OwnerAccess, OwnerHandle, ReactiveError,
+        Runtime, Rx, SilexContext, SilexContextProvider, SilexError, SilexErrorKind, SilexResult,
+        StoreField, batch_read, batch_read_untracked, logic::*, reactivity::*, rx, traits::*,
+        unwind_safe,
     };
 }

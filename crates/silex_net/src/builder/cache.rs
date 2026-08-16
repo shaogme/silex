@@ -1,7 +1,7 @@
 use std::{collections::HashMap, rc::Rc};
 
 use silex_core::{
-    CompletionOnce, Scope, SilexError, SilexErrorKind, SilexResult, StoredValue, unwind_safe,
+    CompletionOnce, OwnerAccess, SilexError, SilexErrorKind, SilexResult, StoredValue, unwind_safe,
 };
 use silex_persist::{LocalStorageBackend, PersistCodec, PersistenceBackend};
 
@@ -37,7 +37,7 @@ struct CacheState<T> {
     decode: CacheDecode<T>,
 }
 
-/// A cache whose state and completion tickets belong to one reactive scope.
+/// A cache whose state and completion tickets belong to one reactive owner.
 ///
 /// The handle is separate from `HttpClientBuilder`: several builders can
 /// share it, while a builder cannot create a second cache with a different
@@ -45,14 +45,14 @@ struct CacheState<T> {
 #[derive(Clone, Copy)]
 pub struct HttpCache<'scope, T> {
     state: StoredValue<'scope, CacheState<T>>,
-    scope: Scope<'scope>,
+    scope: OwnerAccess<'scope>,
 }
 
 impl<'scope, T> HttpCache<'scope, T>
 where
     T: Clone + 'static,
 {
-    pub fn new<C>(scope: Scope<'scope>, config: CacheConfig, codec: C) -> SilexResult<Self>
+    pub fn new<C>(scope: OwnerAccess<'scope>, config: CacheConfig, codec: C) -> SilexResult<Self>
     where
         C: CacheCodec<T>,
     {
@@ -73,7 +73,7 @@ where
         })
     }
 
-    pub(crate) fn belongs_to(&self, scope: Scope<'scope>) -> bool {
+    pub(crate) fn belongs_to(&self, scope: OwnerAccess<'scope>) -> bool {
         self.scope == scope
     }
 
@@ -224,7 +224,7 @@ where
 
     pub(crate) fn completion_once_for_binding(
         &self,
-        scope: Scope<'scope>,
+        scope: OwnerAccess<'scope>,
         binding: CacheBinding<T>,
     ) -> SilexResult<CompletionOnce<T>> {
         let state = self.state;

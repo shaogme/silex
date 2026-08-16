@@ -7,10 +7,10 @@ use silex_core::prelude::*;
 fn main() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| -> SilexResult<()> {
-            let source = scope.rw_signal(String::from("Light"))?;
-            let error_handler = scope.error_handler(|_| {})?;
-            let _ = rx!(scope; error_handler; $(source.clone()));
+        .with_transient(|owner| -> SilexResult<()> {
+            let source = owner.rw_signal(String::from("Light"))?;
+            let error_handler = owner.error_handler(|_| {})?;
+            let _ = rx!(owner; error_handler; $(source.clone()));
             Ok(())
         })
         .unwrap()

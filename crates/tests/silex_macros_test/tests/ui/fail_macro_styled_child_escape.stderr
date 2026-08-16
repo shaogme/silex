@@ -15,15 +15,15 @@ help: the trait `silex_dom::view::View<'_>` is implemented for `ReadSignal<'_, T
    | |                 Rx<'scope, T>: View<'scope>,
    | |____________________________________________^
 ...
-   |   impl_view_forward_to_rx!(ReadSignal, RwSignal, Signal, Memo, StoredValue);
-   |   ------------------------------------------------------------------------- in this macro invocation
+   |   impl_view_forward_to_rx!(ReadSignal, RwSignal, Signal, Computed, StoredValue);
+   |   ----------------------------------------------------------------------------- in this macro invocation
 note: required by a bound in `ScopedPanel`
   --> tests/ui/fail_macro_styled_child_escape.rs:11:1
    |
 11 | / styled! {
-12 | |     pub ScopedPanel<'scope><div>(
-13 | |         #[ctx] ctx: silex_core::SilexContext<'scope>,
-14 | |         children: AnyView<'scope>,
+12 | |     pub ScopedPanel<'owner><div>(
+13 | |         #[ctx] ctx: silex_core::SilexContext<'owner>,
+14 | |         children: AnyView<'owner>,
 ...  |
 19 | | }
    | |_^ required by this bound in `ScopedPanel`

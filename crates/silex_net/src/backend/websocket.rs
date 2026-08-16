@@ -11,9 +11,9 @@ use wasm_bindgen::{JsCast, closure::Closure};
 use web_sys::{Event, MessageEvent, WebSocket as JsWebSocket};
 
 use silex_core::{
-    CallbackInvokeError, CompletionSender, ErrorHandlerInput, ErrorReporter, ReactiveError,
-    ReadSignal, Rx, Scope, SilexError, SilexResult, StoredValue, TaskHandle, WriteSignal,
-    unwind_safe,
+    CallbackInvokeError, CompletionSender, ErrorHandlerInput, ErrorReporter, OwnerAccess,
+    ReactiveError, ReadSignal, Rx, SilexError, SilexErrorKind, SilexResult, StoredValue,
+    TaskHandle, WriteSignal, unwind_safe,
 };
 
 use crate::{
@@ -26,7 +26,7 @@ pub struct WebSocket;
 
 impl WebSocket {
     pub fn connect<'scope, H>(
-        scope: Scope<'scope>,
+        scope: OwnerAccess<'scope>,
         url: impl IntoNetValue<'scope>,
         error_handler: H,
     ) -> WebSocketBuilder<'scope, H>
@@ -37,7 +37,7 @@ impl WebSocket {
     }
 
     pub fn open<'scope, H>(
-        scope: Scope<'scope>,
+        scope: OwnerAccess<'scope>,
         url: impl IntoNetValue<'scope>,
         error_handler: H,
     ) -> Result<WebSocketConnection<'scope>, NetError>
@@ -48,7 +48,7 @@ impl WebSocket {
     }
 
     pub fn lazy<'scope, H>(
-        scope: Scope<'scope>,
+        scope: OwnerAccess<'scope>,
         url: impl IntoNetValue<'scope>,
         error_handler: H,
     ) -> WebSocketBuilder<'scope, H>
@@ -61,7 +61,7 @@ impl WebSocket {
 
 #[derive(Copy, Clone)]
 pub struct WebSocketConnection<'scope> {
-    scope: Scope<'scope>,
+    scope: OwnerAccess<'scope>,
     inner: StoredValue<'scope, WebSocketInner<'scope>>,
     state: ReadSignal<'scope, ConnectionState>,
     message: ReadSignal<'scope, Option<String>>,
@@ -127,6 +127,7 @@ fn submit_completion<T: 'static>(
         CallbackInvokeError::Runtime(error) => SilexError::fatal(error),
         CallbackInvokeError::User(error) => error,
         CallbackInvokeError::Handler(error) => SilexError::fatal(ReactiveError::Handler(error)),
+        CallbackInvokeError::Close(error) => SilexError::fatal(SilexErrorKind::Close(error)),
     };
     let error_result = catch_unwind(AssertUnwindSafe(|| error_token.submit(error)));
     if let Ok(Err(_)) | Err(_) = error_result {
@@ -153,7 +154,7 @@ impl HostRegistration {
         let open_gate = gate.clone();
         let open_token = token.clone();
         let open_error_token = error_token.clone();
-        let on_open = Closure::wrap(Box::new(move |_event: Event| {
+        let on_open = Closure::wrap_assert_unwind_safe(Box::new(move |_event: Event| {
             if open_gate.get() {
                 submit_completion(
                     &open_token,
@@ -167,7 +168,7 @@ impl HostRegistration {
         let message_gate = gate.clone();
         let message_token = token.clone();
         let message_error_token = error_token.clone();
-        let on_message = Closure::wrap(Box::new(move |event: MessageEvent| {
+        let on_message = Closure::wrap_assert_unwind_safe(Box::new(move |event: MessageEvent| {
             if message_gate.get() {
                 let Some(data) = event.data().as_string() else {
                     submit_completion(
@@ -190,42 +191,45 @@ impl HostRegistration {
                     Some(&message_gate),
                 );
             }
-        }) as Box<dyn FnMut(MessageEvent)>);
+        })
+            as Box<dyn FnMut(MessageEvent)>);
 
         let error_gate = gate.clone();
         let event_error_token = token.clone();
         let event_error_completion_token = error_token.clone();
-        let on_error = Closure::wrap(Box::new(move |event: web_sys::ErrorEvent| {
-            if error_gate.get() {
-                submit_completion(
-                    &event_error_token,
-                    &event_error_completion_token,
-                    WebSocketEvent::Error {
-                        generation,
-                        error: NetError::recoverable(NetErrorKind::JsError(event.message())),
-                    },
-                    Some(&error_gate),
-                );
-            }
-        }) as Box<dyn FnMut(web_sys::ErrorEvent)>);
+        let on_error =
+            Closure::wrap_assert_unwind_safe(Box::new(move |event: web_sys::ErrorEvent| {
+                if error_gate.get() {
+                    submit_completion(
+                        &event_error_token,
+                        &event_error_completion_token,
+                        WebSocketEvent::Error {
+                            generation,
+                            error: NetError::recoverable(NetErrorKind::JsError(event.message())),
+                        },
+                        Some(&error_gate),
+                    );
+                }
+            }) as Box<dyn FnMut(web_sys::ErrorEvent)>);
 
         let close_gate = gate.clone();
         let close_event_token = token.clone();
         let close_error_token = error_token.clone();
-        let on_close = Closure::wrap(Box::new(move |event: web_sys::CloseEvent| {
-            if close_gate.get() {
-                submit_completion(
-                    &close_event_token,
-                    &close_error_token,
-                    WebSocketEvent::Close {
-                        generation,
-                        code: event.code(),
-                        reason: event.reason(),
-                    },
-                    Some(&close_gate),
-                );
-            }
-        }) as Box<dyn FnMut(web_sys::CloseEvent)>);
+        let on_close =
+            Closure::wrap_assert_unwind_safe(Box::new(move |event: web_sys::CloseEvent| {
+                if close_gate.get() {
+                    submit_completion(
+                        &close_event_token,
+                        &close_error_token,
+                        WebSocketEvent::Close {
+                            generation,
+                            code: event.code(),
+                            reason: event.reason(),
+                        },
+                        Some(&close_gate),
+                    );
+                }
+            }) as Box<dyn FnMut(web_sys::CloseEvent)>);
 
         socket.set_onopen(Some(on_open.as_ref().unchecked_ref::<Function>()));
         socket.set_onmessage(Some(on_message.as_ref().unchecked_ref::<Function>()));
@@ -270,7 +274,7 @@ struct WebSocketInner<'scope> {
     error_handler: ErrorReporter<'scope>,
     completion: CompletionSender<WebSocketEvent>,
     error_completion: CompletionSender<SilexError>,
-    scope: Scope<'scope>,
+    scope: OwnerAccess<'scope>,
     registration: Option<HostRegistration>,
     generation: u64,
     retry_generation: Option<u64>,
@@ -300,7 +304,9 @@ impl<'scope> WebSocketInner<'scope> {
         self.retry_generation = None;
         self.generation = self.generation.wrapping_add(1);
         self.registration.take();
-        let _ = self.completion.cancel();
+        self.completion
+            .cancel()
+            .map_err(|error| SilexError::fatal(SilexErrorKind::Close(error)))?;
         Ok(())
     }
 
@@ -517,7 +523,7 @@ impl<'scope> WebSocketConnection<'scope> {
         let state = self.state;
         let handler = self.error_handler;
         self.scope
-            .memo(move |_| state.get().map(&f), handler)
+            .computed(move || state.get().map(&f), handler)
             .map(|memo| memo.into_rx())
     }
 
@@ -550,8 +556,8 @@ impl<'scope> WebSocketConnection<'scope> {
         let message = self.message;
         let handler = self.error_handler;
         self.scope
-            .memo(
-                move |_| {
+            .computed(
+                move || {
                     message
                         .get()?
                         .map(|raw| {
@@ -676,7 +682,7 @@ impl<'scope> WebSocketConnection<'scope> {
 
 #[derive(Clone)]
 pub struct WebSocketBuilder<'scope, H = ErrorReporter<'scope>> {
-    scope: Scope<'scope>,
+    scope: OwnerAccess<'scope>,
     error_handler: H,
     url: ValueResolver<'scope>,
     protocols: Vec<String>,
@@ -688,7 +694,7 @@ pub struct WebSocketBuilder<'scope, H = ErrorReporter<'scope>> {
 }
 
 impl<'scope, H> WebSocketBuilder<'scope, H> {
-    fn new(scope: Scope<'scope>, url: ValueResolver<'scope>, error_handler: H) -> Self {
+    fn new(scope: OwnerAccess<'scope>, url: ValueResolver<'scope>, error_handler: H) -> Self {
         Self {
             scope,
             error_handler,

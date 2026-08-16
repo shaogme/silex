@@ -5,17 +5,17 @@ fn require_static<T: 'static>(_: T) {}
 
 fn main() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let (path, set_path) = scope
+    runtime.with_transient(|owner| {
+        let (path, set_path) = owner
             .signal(String::from("/"))
             .expect("path signal should be created");
-        let (search, set_search) = scope
+        let (search, set_search) = owner
             .signal(String::new())
             .expect("search signal should be created");
-        let error_handler = scope
+        let error_handler = owner
             .error_handler(|_| {})
             .expect("error handler should be registered");
-        let silex = SilexContext::new(scope, error_handler.view());
+        let silex = SilexContext::new(owner, error_handler.view());
         let ctx = RouterContext::new(
             silex,
             RouterContextProps {

@@ -1,5 +1,5 @@
-error: global! requires an explicit parameter bound to 'scope; use `scope: Scope<'scope>` or a scoped source parameter.
+error: global! requires an explicit parameter bound to the owner lifetime; use `owner: OwnerAccess<'owner>` or an owner-bound source parameter.
  --> tests/ui/fail_macro_global_dynamic_without_args.rs:8:9
   |
-8 |     pub DynamicGlobal<'scope>() {
+8 |     pub DynamicGlobal<'owner>() {
   |         ^^^^^^^^^^^^^

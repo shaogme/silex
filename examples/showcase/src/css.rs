@@ -55,7 +55,7 @@ pub fn get_theme(name: &str) -> AppTheme {
 // Using the new global! macro to define app-wide styles
 global! {
     pub(super) GlobalStyles<'scope>(
-        scope: Scope<'scope>,
+        owner: OwnerAccess<'scope>,
         error_handler: ErrorReporter<'scope>,
     ) {
         html, body {
@@ -299,16 +299,16 @@ styled! {
 
 #[component]
 pub fn StylingBasics<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
-    let (color, set_color) = scope.signal(AppTheme::TEXT)?;
-    let (size, set_size) = scope.signal("medium".to_string())?;
-    let (hover_color, set_hover_color) = scope.signal(AppTheme::PRIMARY)?;
-    let (pseudo_state, set_pseudo_state) = scope.signal("hover".to_string())?;
-    let (border_state, set_border_state) = scope.signal(border(
+    let (color, set_color) = owner.signal(AppTheme::TEXT)?;
+    let (size, set_size) = owner.signal("medium".to_string())?;
+    let (hover_color, set_hover_color) = owner.signal(AppTheme::PRIMARY)?;
+    let (pseudo_state, set_pseudo_state) = owner.signal("hover".to_string())?;
+    let (border_state, set_border_state) = owner.signal(border(
         px(2),
         BorderStyleKeyword::Solid,
         ColorKeyword::Transparent,
     ))?;
-    let (padding_state, set_padding_state) = scope.signal(padding::block_inline(px(12), px(24)))?;
+    let (padding_state, set_padding_state) = owner.signal(padding::block_inline(px(12), px(24)))?;
 
     Ok(div![
         div![
@@ -386,8 +386,8 @@ pub fn StylingBasics<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                 "The `styled!` macro now supports dynamic interpolation directly inside variants, and fully preserves the chainable typed attributes of native HTML tags."
             ).style(sty(ctx).margin_bottom(px(24))?.color(hex("#9ca3af"))?),
             {
-                let (btn_kind, set_btn_kind) = scope.signal("primary".to_string())?;
-                let (btn_width, _set_btn_width) = scope.signal(px(160))?;
+                let (btn_kind, set_btn_kind) = owner.signal("primary".to_string())?;
+                let (btn_width, _set_btn_width) = owner.signal(px(160))?;
 
                 Stack(ctx, chain!(
                     DynamicVariantBtn(ctx, chain!("Toggle Variant"))
@@ -436,9 +436,9 @@ pub fn StylingBasics<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
             ],
             p("Signals are natively supported:").style(sty(ctx).margin("20px 0 10px")?.font_size(em_unit(0.9))?.opacity(0.6)?),
             {
-                let (count, set_count) = scope.signal(0)?;
-                let (show_shadow, set_show_shadow) = scope.signal(true)?;
-                let (active_border, set_active_border) = scope.signal(true)?;
+                let (count, set_count) = owner.signal(0)?;
+                let (show_shadow, set_show_shadow) = owner.signal(true)?;
+                let (active_border, set_active_border) = owner.signal(true)?;
 
                 Stack(ctx, chain!(
                     div![
@@ -508,10 +508,10 @@ pub fn Theming<'scope, Ctx>(
 ) -> impl View<'scope> {
     let theme = global_settings
         .theme
-        .map(scope, |t| get_theme(t), error_handler)?;
+        .map(owner, |t| get_theme(t), error_handler)?;
     let is_dark = global_settings
         .theme
-        .map(scope, |t| t == "Dark", error_handler)?;
+        .map(owner, |t| t == "Dark", error_handler)?;
 
     Ok(div![
         h2("🎨 Theme Engine"),

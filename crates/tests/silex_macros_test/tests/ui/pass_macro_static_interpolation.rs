@@ -13,15 +13,15 @@ theme! {
 }
 
 global! {
-    pub StaticGlobal<'scope>(scope: silex_core::Scope<'scope>) {
+    pub StaticGlobal<'owner>(owner: silex_core::OwnerAccess<'owner>) {
         body { color: $(static StaticTheme::PRIMARY); }
     }
 }
 
 global! {
-    pub MixedGlobal<'scope>(
-        error_handler: silex_core::ErrorReporter<'scope>,
-        color: silex_core::reactivity::Signal<'scope, Hex>,
+    pub MixedGlobal<'owner>(
+        error_handler: silex_core::ErrorReporter<'owner>,
+        color: silex_core::reactivity::Signal<'owner, Hex>,
     ) {
         body {
             color: $(static StaticTheme::PRIMARY);
@@ -31,19 +31,19 @@ global! {
 }
 
 styled! {
-    pub StaticStyled<'scope><div>(
-        #[ctx] ctx: silex_core::SilexContext<'scope>,
-        children: silex_dom::view::AnyView<'scope>,
+    pub StaticStyled<'owner><div>(
+        #[ctx] ctx: silex_core::SilexContext<'owner>,
+        children: silex_dom::view::AnyView<'owner>,
     ) {
         color: $(static StaticTheme::PRIMARY);
     }
 }
 
 styled! {
-    pub MixedStyled<'scope><div>(
-        #[ctx] ctx: silex_core::SilexContext<'scope>,
-        children: silex_dom::view::AnyView<'scope>,
-        color: silex_core::reactivity::Signal<'scope, Hex>,
+    pub MixedStyled<'owner><div>(
+        #[ctx] ctx: silex_core::SilexContext<'owner>,
+        children: silex_dom::view::AnyView<'owner>,
+        color: silex_core::reactivity::Signal<'owner, Hex>,
     ) {
         color: $(static StaticTheme::PRIMARY);
         border-color: $(color);
@@ -53,7 +53,7 @@ styled! {
 fn main() {
     let _ = css! { color: $(static StaticTheme::PRIMARY); };
     let mut runtime = silex_core::Runtime::new();
-    let _ = runtime.child(|scope| {
-        let _ = StaticGlobal(scope);
+    let _ = runtime.with_transient(|owner| {
+        let _ = StaticGlobal(owner);
     });
 }

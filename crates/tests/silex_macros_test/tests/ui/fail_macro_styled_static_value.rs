@@ -9,10 +9,10 @@ use silex_dom::prelude::AnyView;
 use silex_macros::styled;
 
 styled! {
-    pub StaticValuePanel<'scope><div>(
-        #[ctx] ctx: silex_core::SilexContext<'scope>,
-        children: AnyView<'scope>,
-        source: Signal<'scope, Hex>,
+    pub StaticValuePanel<'owner><div>(
+        #[ctx] ctx: silex_core::SilexContext<'owner>,
+        children: AnyView<'owner>,
+        source: Signal<'owner, Hex>,
     ) {
         color: $("red");
     }

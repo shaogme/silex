@@ -35,13 +35,13 @@ pub struct TooltipContext<'scope> {
 }
 
 impl<'scope> TooltipContext<'scope> {
-    pub fn new(scope: Scope<'scope>) -> SilexResult<Self> {
+    pub fn new(owner: OwnerAccess<'scope>) -> SilexResult<Self> {
         Ok(Self {
-            open: scope.rw_signal(false)?,
-            anchor: scope.rw_signal((0.0, 0.0, 0.0, 0.0))?,
-            timer: scope.stored(None)?,
-            owner: scope.stored(None)?,
-            error_handler: scope.stored(None)?,
+            open: owner.rw_signal(false)?,
+            anchor: owner.rw_signal((0.0, 0.0, 0.0, 0.0))?,
+            timer: owner.stored(None)?,
+            owner: owner.stored(None)?,
+            error_handler: owner.stored(None)?,
         })
     }
 
@@ -173,7 +173,7 @@ where
     C: Fn(TooltipContext<'scope>) -> V + Clone + 'scope,
     V: View<'scope> + 'scope,
 {
-    let context = TooltipContext::new(scope)?;
+    let context = TooltipContext::new(owner)?;
     let root_cls = rx!(ctx; {
         let base = tw!("relative inline-block");
         let extra = $class;
@@ -279,7 +279,7 @@ pub fn TooltipContent<'scope, Ctx>(
     #[chain(default)]
     class: Signal<'scope, String>,
 ) -> impl View<'scope> {
-    let stored_children = scope.stored(children)?;
+    let stored_children = owner.stored(children)?;
 
     let side_val = rx!(ctx; {
         let s = (*$side).clone();

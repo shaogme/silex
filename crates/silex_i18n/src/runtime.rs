@@ -3,9 +3,9 @@ use crate::{
     Segment, plural_category,
 };
 #[cfg(feature = "browser")]
-use silex_core::Effect;
+use silex_core::EffectHandle;
 use silex_core::{
-    ErrorReporter, Memo, ReactiveError, Rx, Scope, SilexError, SilexResult,
+    ErrorReporter, OwnerAccess, ReactiveError, Rx, SilexError, SilexResult,
     reactivity::{ReadSignal, Resource, ResourceState, RwSignal, StoredValue, SuspenseContext},
 };
 use std::{
@@ -90,7 +90,7 @@ impl CatalogRegistry {
 
 #[derive(Clone, Copy)]
 pub struct I18nStore<'scope> {
-    scope: Scope<'scope>,
+    owner: OwnerAccess<'scope>,
     error_handler: ErrorReporter<'scope>,
     locale: RwSignal<'scope, Locale>,
     fallback_locale: RwSignal<'scope, Locale>,
@@ -111,7 +111,7 @@ impl Debug for I18nStore<'_> {
 }
 
 pub struct I18nBuilder<'scope> {
-    scope: Scope<'scope>,
+    owner: OwnerAccess<'scope>,
     error_handler: ErrorReporter<'scope>,
     locale: Option<Locale>,
     fallback_locale: Option<Locale>,
@@ -123,9 +123,9 @@ pub struct I18nBuilder<'scope> {
 }
 
 impl<'scope> I18nBuilder<'scope> {
-    pub fn new(scope: Scope<'scope>, error_handler: ErrorReporter<'scope>) -> Self {
+    pub fn new(owner: OwnerAccess<'scope>, error_handler: ErrorReporter<'scope>) -> Self {
         Self {
-            scope,
+            owner,
             error_handler,
             locale: None,
             fallback_locale: None,
@@ -178,7 +178,7 @@ impl<'scope> I18nBuilder<'scope> {
 
     pub fn build(self) -> Result<I18nStore<'scope>, I18nError> {
         let Self {
-            scope,
+            owner,
             error_handler,
             locale,
             fallback_locale,
@@ -197,7 +197,7 @@ impl<'scope> I18nBuilder<'scope> {
         #[cfg(feature = "persist")]
         if let Some(binding) = locale_binding.as_ref() {
             let binding_source = binding.signal().into_rx();
-            scope.validate_runtime(&binding_source)?;
+            owner.validate_runtime(&binding_source)?;
         }
 
         let mut registry = CatalogRegistry::default();
@@ -218,15 +218,15 @@ impl<'scope> I18nBuilder<'scope> {
             .or(catalog_locale)
             .unwrap_or(Locale::new("en")?);
         let fallback_locale = fallback_locale.unwrap_or_else(|| locale.clone());
-        let catalog_cache = scope.stored(registry)?;
+        let catalog_cache = owner.stored(registry)?;
 
         let store = I18nStore {
-            scope,
+            owner,
             error_handler,
-            locale: scope.rw_signal(locale)?,
-            fallback_locale: scope.rw_signal(fallback_locale)?,
+            locale: owner.rw_signal(locale)?,
+            fallback_locale: owner.rw_signal(fallback_locale)?,
             catalog_cache,
-            catalog_revision: scope.rw_signal(0)?,
+            catalog_revision: owner.rw_signal(0)?,
             missing_key,
             missing_argument,
         };
@@ -234,7 +234,7 @@ impl<'scope> I18nBuilder<'scope> {
         #[cfg(feature = "persist")]
         if let Some(binding) = locale_binding {
             let store_for_binding = store;
-            scope
+            owner
                 .effect(
                     move || -> SilexResult<()> {
                         let locale = binding.signal().get()?;
@@ -248,7 +248,7 @@ impl<'scope> I18nBuilder<'scope> {
                 .map_err(map_silex_error)?;
 
             let store_for_locale = store;
-            scope
+            owner
                 .effect(
                     move || -> SilexResult<()> {
                         let locale = store_for_locale.locale.get()?;
@@ -276,8 +276,8 @@ impl<'scope> I18nStore<'scope> {
     }
 
     #[cfg(feature = "browser")]
-    pub(crate) fn scope(&self) -> Scope<'scope> {
-        self.scope
+    pub(crate) fn owner(&self) -> OwnerAccess<'scope> {
+        self.owner
     }
 
     pub fn locale(&self) -> ReadSignal<'scope, Locale> {
@@ -340,7 +340,7 @@ impl<'scope> I18nStore<'scope> {
         let cache = self.catalog_cache;
         let loader = Rc::new(loader);
         let resource = Resource::new(
-            self.scope,
+            self.owner,
             self.locale(),
             move |locale: Locale| {
                 let cached = cache
@@ -371,7 +371,7 @@ impl<'scope> I18nStore<'scope> {
         let state = resource.state;
         let store = *self;
         let store_for_effect = store;
-        self.scope
+        self.owner
             .effect(
                 move || -> SilexResult<()> {
                     if let ResourceState::Ready(catalog) = state.get()? {
@@ -387,18 +387,18 @@ impl<'scope> I18nStore<'scope> {
     }
 
     #[cfg(feature = "browser")]
-    pub fn sync_document_metadata(&self) -> SilexResult<Effect<'scope>> {
+    pub fn sync_document_metadata(&self) -> SilexResult<EffectHandle<'scope>> {
         crate::browser::sync_document_metadata(*self)
     }
 
     #[doc(hidden)]
-    pub fn __memo<F>(self, mut f: F) -> SilexResult<Rx<'scope, String>>
+    pub fn __computed<F>(self, mut f: F) -> SilexResult<Rx<'scope, String>>
     where
         F: FnMut() -> SilexResult<String> + 'scope,
     {
-        self.scope
-            .memo(move |_| f(), self.error_handler())
-            .map(Memo::into_rx)
+        self.owner
+            .computed_always(move || f(), self.error_handler())
+            .map(|computed| computed.into_rx())
     }
 
     pub fn translate_now(&self, key: &str, arguments: &[Argument]) -> SilexResult<String> {

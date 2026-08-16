@@ -1,4 +1,4 @@
-use silex_core::{ReactiveError, SilexError, SilexResult, StoredValue};
+use silex_core::{ReactiveError, SilexError, SilexResult};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -81,24 +81,22 @@ impl<T> SharedCell<T> {
 /// The state rejects access after its owner becomes inactive. The framework
 /// uses the cleanup-only methods while an owner is being disposed so cleanup
 /// can still take the final value after the runtime has rejected new work.
-/// States created for a lexical `Scope` are backed by that scope's
-/// `StoredValue`, while states created for an `OwnedScope` use the local
-/// fallback because an owned view owner intentionally cannot create nodes.
+/// State storage is local to the DOM owner token and is invalidated with that
+/// token. Reactive runtime nodes remain owned by the `OwnerAccess` that
+/// created the token.
 pub struct MountState<'scope, T> {
-    value: MountStateValue<'scope, T>,
+    value: MountStateValue<T>,
     active: ActiveRegistrar<'scope>,
 }
 
-enum MountStateValue<'scope, T> {
+enum MountStateValue<T> {
     Shared(SharedCell<Option<T>>),
-    Stored(StoredValue<'scope, Option<T>>),
 }
 
-impl<'scope, T> Clone for MountStateValue<'scope, T> {
+impl<T> Clone for MountStateValue<T> {
     fn clone(&self) -> Self {
         match self {
             Self::Shared(value) => Self::Shared(value.clone()),
-            Self::Stored(value) => Self::Stored(*value),
         }
     }
 }
@@ -120,16 +118,6 @@ impl<'scope, T: 'scope> MountState<'scope, T> {
         }
     }
 
-    pub(super) fn new_stored(
-        value: StoredValue<'scope, Option<T>>,
-        active: ActiveRegistrar<'scope>,
-    ) -> Self {
-        Self {
-            value: MountStateValue::Stored(value),
-            active,
-        }
-    }
-
     fn ensure_access(&self) -> SilexResult<()> {
         if self.active.get() {
             Ok(())
@@ -147,9 +135,6 @@ impl<'scope, T: 'scope> MountState<'scope, T> {
                     .map(callback)
                     .ok_or(SilexError::fatal(ReactiveError::NoSuchNode))
             }),
-            MountStateValue::Stored(value) => value
-                .with(|value| value.as_ref().map(callback))?
-                .ok_or(SilexError::fatal(ReactiveError::NoSuchNode)),
         }
     }
 
@@ -162,9 +147,6 @@ impl<'scope, T: 'scope> MountState<'scope, T> {
                     .map(callback)
                     .ok_or(SilexError::fatal(ReactiveError::NoSuchNode))
             }),
-            MountStateValue::Stored(value) => value
-                .update(|value| value.as_mut().map(callback))?
-                .ok_or(SilexError::fatal(ReactiveError::NoSuchNode)),
         }
     }
 
@@ -173,9 +155,6 @@ impl<'scope, T: 'scope> MountState<'scope, T> {
         match &self.value {
             MountStateValue::Shared(value) => value
                 .with_mut(Option::take)
-                .ok_or(SilexError::fatal(ReactiveError::NoSuchNode)),
-            MountStateValue::Stored(value) => value
-                .update(Option::take)?
                 .ok_or(SilexError::fatal(ReactiveError::NoSuchNode)),
         }
     }
@@ -186,7 +165,6 @@ impl<'scope, T: 'scope> MountState<'scope, T> {
             MountStateValue::Shared(current) => {
                 Ok(current.with_mut(|current| current.replace(value)))
             }
-            MountStateValue::Stored(current) => current.update(|current| current.replace(value)),
         }
     }
 
@@ -198,7 +176,6 @@ impl<'scope, T: 'scope> MountState<'scope, T> {
     pub fn take_for_cleanup(&self) -> Option<T> {
         match &self.value {
             MountStateValue::Shared(value) => value.with_mut(Option::take),
-            MountStateValue::Stored(value) => value.update(Option::take).ok().flatten(),
         }
     }
 }

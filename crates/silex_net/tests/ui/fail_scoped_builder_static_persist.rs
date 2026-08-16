@@ -5,7 +5,7 @@ fn require_static<T: 'static>(_: T) {}
 
 fn main() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    runtime.with_transient(|scope| {
         let (id, _) = scope.signal(1_i32).unwrap();
         let builder = HttpClient::get(
             scope,

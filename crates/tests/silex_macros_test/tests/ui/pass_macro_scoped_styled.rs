@@ -8,10 +8,10 @@ use silex_dom::prelude::AnyView;
 use silex_macros::styled;
 
 styled! {
-    pub ScopedPanel<'scope><div>(
-        #[ctx] ctx: silex_core::SilexContext<'scope>,
-        children: AnyView<'scope>,
-        color: silex_core::reactivity::Signal<'scope, Hex>,
+    pub ScopedPanel<'owner><div>(
+        #[ctx] ctx: silex_core::SilexContext<'owner>,
+        children: AnyView<'owner>,
+        color: silex_core::reactivity::Signal<'owner, Hex>,
     ) {
         color: $(color);
     }

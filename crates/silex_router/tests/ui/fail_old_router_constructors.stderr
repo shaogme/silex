@@ -1,20 +1,20 @@
-error[E0599]: no associated function or constant named `pair` found for struct `Signal<'scope, T>` in the current scope
+error[E0432]: unresolved import `silex_core::reactivity::Memo`
+ --> tests/ui/fail_old_router_constructors.rs:1:30
+  |
+1 | use silex_core::reactivity::{Memo, Signal, StoredValue};
+  |                              ^^^^ no `Memo` in `reactivity`
+  |
+help: a similar name exists in the module
+  |
+1 - use silex_core::reactivity::{Memo, Signal, StoredValue};
+1 + use silex_core::reactivity::{memo, Signal, StoredValue};
+  |
+
+error[E0599]: no associated function or constant named `pair` found for struct `Signal<'owner, T>` in the current scope
  --> tests/ui/fail_old_router_constructors.rs:4:21
   |
 4 |     let _ = Signal::pair(1_i32);
   |                     ^^^^ associated function or constant not found in `Signal<'_, _>`
-
-error[E0599]: no associated function or constant named `new` found for struct `Memo<'scope, T>` in the current scope
- --> tests/ui/fail_old_router_constructors.rs:5:19
-  |
-5 |     let _ = Memo::new(|_| 1_i32);
-  |                   ^^^ associated function or constant not found in `Memo<'_, _>`
-  |
-help: there is a method `ne` with a similar name
-  |
-5 -     let _ = Memo::new(|_| 1_i32);
-5 +     let _ = Memo::ne(|_| 1_i32);
-  |
 
 error[E0599]: no associated function or constant named `new` found for struct `StoredValue<'scope, T>` in the current scope
  --> tests/ui/fail_old_router_constructors.rs:6:26

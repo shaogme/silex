@@ -1,4 +1,4 @@
-use crate::{Rx, RxValueKind, Scope, SilexError, SilexResult};
+use crate::{OwnerAccess, Rx, RxValueKind, SilexError, SilexResult};
 use std::fmt;
 
 /// A non-reactive value owned by a scope.
@@ -14,7 +14,7 @@ use std::fmt;
 /// callback returns.
 pub struct StoredValue<'scope, T> {
     pub(crate) inner: silex_reactivity::StoredValue<'scope, T>,
-    pub(crate) scope: Scope<'scope>,
+    pub(crate) owner: OwnerAccess<'scope>,
 }
 
 impl<'scope, T> Copy for StoredValue<'scope, T> {}
@@ -33,7 +33,7 @@ impl<T> fmt::Debug for StoredValue<'_, T> {
 
 impl<'scope, T> PartialEq for StoredValue<'scope, T> {
     fn eq(&self, other: &Self) -> bool {
-        self.inner == other.inner && self.scope == other.scope
+        self.inner == other.inner && self.owner == other.owner
     }
 }
 
@@ -42,9 +42,9 @@ impl<'scope, T> Eq for StoredValue<'scope, T> {}
 impl<'scope, T: 'scope> StoredValue<'scope, T> {
     pub(crate) fn from_inner(
         inner: silex_reactivity::StoredValue<'scope, T>,
-        scope: Scope<'scope>,
+        owner: OwnerAccess<'scope>,
     ) -> Self {
-        Self { inner, scope }
+        Self { inner, owner }
     }
 
     pub fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {

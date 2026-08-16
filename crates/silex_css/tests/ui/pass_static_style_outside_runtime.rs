@@ -4,12 +4,12 @@ use silex_css::prelude::*;
 fn main() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
-            let error_handler = scope
+        .with_transient(|owner| {
+            let error_handler = owner
                 .error_handler(|_| {})
                 .expect("handler should register");
-            let _style = Style::new(SilexContext::new(scope, error_handler.view()))
+            let _style = Style::new(SilexContext::new(owner, error_handler.view()))
                 .raw("--color", "red");
         })
-        .expect("runtime child should initialize");
+        .expect("transient owner should initialize");
 }

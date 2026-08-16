@@ -1,13 +1,13 @@
 error: lifetime may not live long enough
  --> tests/ui/fail_handler_escape.rs:7:5
   |
-3 |   fn make_handler<'scope>(
-  |                   ------ lifetime `'scope` defined here
+3 |   fn make_handler<'owner>(
+  |                   ------ lifetime `'owner` defined here
 ...
-7 | /     scope.error_handler(move |_| {
+7 | /     owner.error_handler(move |_| {
 8 | |         assert_eq!(value, "scoped");
 9 | |     }).expect("handler should register")
-  | |________________________________________^ returning this value requires that `'scope` must outlive `'static`
+  | |________________________________________^ returning this value requires that `'owner` must outlive `'static`
   |
   = note: requirement occurs because of the type `silex_reactivity::error::ErrorHandlerToken<'_, SilexError>`, which makes the generic argument `'_` invariant
   = note: the struct `silex_reactivity::error::ErrorHandlerToken<'scope, E>` is invariant over the parameter `'scope`

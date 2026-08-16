@@ -496,8 +496,10 @@ pub(crate) fn generate_css_output(
             {
                 #common_inits
                 #static_value_inits
-                let __slx_css_error_handler =
-                    #__silex::core::ErrorHandlerInput::handler_ref(&#error_handler);
+                let __slx_css_error_handler_input = #error_handler;
+                let __slx_css_error_handler = #__silex::core::ErrorHandlerInput::handler_ref(
+                    &__slx_css_error_handler_input,
+                );
                 #dynamic_result
             }
         })

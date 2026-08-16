@@ -1,11 +1,11 @@
 error[E0521]: borrowed data escapes outside of closure
   --> tests/ui/fail_scoped_builder_static.rs:16:9
    |
- 8 |     runtime.child(|scope| {
-   |                    -----
-   |                    |
-   |                    `scope` is a reference that is only valid in the closure body
-   |                    has type `silex_core::Scope<'1>`
+ 8 |     runtime.with_transient(|scope| {
+   |                             -----
+   |                             |
+   |                             `scope` is a reference that is only valid in the closure body
+   |                             has type `OwnerAccess<'1>`
 ...
 16 |         require_static(builder);
    |         ^^^^^^^^^^^^^^^^^^^^^^^

@@ -3,7 +3,7 @@ use silex_reactivity::{Callback, ReactiveError, Runtime};
 fn main() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
         let callback: Callback<'_, String> = scope
             .callback(|_: String| Ok::<(), ReactiveError>(()))
             .expect("typed callback should initialize");

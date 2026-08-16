@@ -1,4 +1,4 @@
-error[E0599]: no method named `mandatory` found for struct `ProductRequiredSetterComponent<'scope, Ctx>` in the current scope
+error[E0599]: no method named `mandatory` found for struct `ProductRequiredSetterComponent<'owner, Ctx>` in the current scope
   --> tests/ui/fail_component_product_required_setter.rs:27:25
    |
  9 | #[component]

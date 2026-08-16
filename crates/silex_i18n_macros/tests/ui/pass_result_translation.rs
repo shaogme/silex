@@ -11,21 +11,21 @@ enum Text {
 fn main() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|owner| {
             let catalog = Catalog::from_entries(
                 Locale::new("en-US").expect("valid locale"),
                 [("home.title", "Home")],
             )
             .expect("valid catalog");
-            let handler = scope.error_handler(|_| {}).expect("error handler");
-            let store = I18nBuilder::new(scope, handler.view())
-            .locale(Locale::new("en-US").expect("valid locale"))
-            .catalog(catalog)
-            .build()
-            .expect("valid store");
+            let handler = owner.error_handler(|_| {}).expect("error handler");
+            let store = I18nBuilder::new(owner, handler.view())
+                .locale(Locale::new("en-US").expect("valid locale"))
+                .catalog(catalog)
+                .build()
+                .expect("valid store");
             let translation = t!(store, Text::HomeTitle).expect("translation");
 
             assert_eq!(translation.get().expect("translation value"), "Home");
         })
-        .expect("child scope");
+        .expect("transient owner");
 }

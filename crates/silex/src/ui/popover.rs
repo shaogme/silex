@@ -13,11 +13,11 @@ pub struct PopoverContext<'scope> {
 }
 
 impl<'scope> PopoverContext<'scope> {
-    pub fn new(scope: Scope<'scope>) -> SilexResult<Self> {
+    pub fn new(owner: OwnerAccess<'scope>) -> SilexResult<Self> {
         Ok(Self {
-            open: scope.rw_signal(false)?,
-            anchor_rect: scope.rw_signal((0.0, 0.0, 0.0, 0.0))?,
-            content_height: scope.rw_signal(0.0)?,
+            open: owner.rw_signal(false)?,
+            anchor_rect: owner.rw_signal((0.0, 0.0, 0.0, 0.0))?,
+            content_height: owner.rw_signal(0.0)?,
         })
     }
 
@@ -330,7 +330,7 @@ pub fn PopoverContent<'scope, Ctx>(
         }
     });
 
-    let stored = scope.stored(children)?;
+    let stored = owner.stored(children)?;
     let ctx_open = context.open;
     let is_open = rx!(ctx; *$open || *$ctx_open);
 
@@ -417,7 +417,7 @@ where
     C: Fn(PopoverContext<'scope>) -> V + Clone + 'scope,
     V: View<'scope> + 'scope,
 {
-    let context = PopoverContext::new(scope)?;
+    let context = PopoverContext::new(owner)?;
     let root_cls = rx!(ctx; {
         let base = tw!("relative inline-block");
         let extra = $class;

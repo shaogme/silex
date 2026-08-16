@@ -1,17 +1,17 @@
 error[E0107]: struct takes 2 generic arguments but 1 generic argument was supplied
  --> tests/ui/fail_memo_missing_error_type.rs:4:19
   |
-4 |     let _: Option<Memo<'_, i32>> = None;
-  |                   ^^^^     --- supplied 1 generic argument
+4 |     let _: Option<Computed<'_, i32>> = None;
+  |                   ^^^^^^^^     --- supplied 1 generic argument
   |                   |
   |                   expected 2 generic arguments
   |
 note: struct defined here, with 2 generic parameters: `T`, `E`
- --> src/child/node.rs
+ --> src/owner/node.rs
   |
-  | pub struct Memo<'scope, T, E> {
-  |            ^^^^         -  -
+  | pub struct Computed<'scope, T, E> {
+  |            ^^^^^^^^         -  -
 help: add missing generic argument
   |
-4 |     let _: Option<Memo<'_, i32, E>> = None;
-  |                               +++
+4 |     let _: Option<Computed<'_, i32, E>> = None;
+  |                                   +++

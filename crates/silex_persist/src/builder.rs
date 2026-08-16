@@ -9,20 +9,20 @@ use crate::{
         OptionCodec, ParseCodec, PersistCodec, StringCodec, map_decode_error, map_encode_error,
     },
     state::{
-        PersistenceController, PersistenceState, Persistent, ScopedDebounceState,
+        OwnerDebounceState, PersistenceController, PersistenceState, Persistent,
         apply_backend_event, flush_persistent_value, invalidate_debounce,
         take_controller_resources, take_skip_next_auto_flush, take_suppress_manual_state,
     },
 };
 use ref_str::LocalStaticRefStr;
 use silex_core::{
-    CallbackInvokeError, CompletionSender, ErrorHandlerInput, ErrorHandlerToken, ReactiveError,
-    RxRead, Scope, SilexError, SilexErrorKind, SilexResult,
+    CallbackInvokeError, CompletionSender, ErrorHandlerInput, ErrorHandlerToken, OwnerAccess,
+    ReactiveError, RxRead, SilexError, SilexErrorKind, SilexResult,
     traits::{RxGet, RxWrite},
     unwind_safe,
 };
 use silex_dom::helpers::set_timeout;
-use silex_dom::view::{MountOwner, ScopedMountOwner};
+use silex_dom::view::MountOwnerToken;
 use silex_router::RouterContext;
 use std::{
     borrow::Cow,
@@ -46,6 +46,7 @@ fn submit_completion<T: 'static>(
         CallbackInvokeError::Handler(error) => {
             SilexError::fatal(SilexErrorKind::Reactivity(ReactiveError::Handler(error)))
         }
+        CallbackInvokeError::Close(error) => SilexError::fatal(SilexErrorKind::Close(error)),
     };
     let error_result = catch_unwind(AssertUnwindSafe(|| error_token.submit(error)));
     if let Ok(Err(_)) | Err(_) = error_result {
@@ -93,7 +94,7 @@ pub struct PersistentBuilder<'scope, B, C, T = (), D = NoDefault, H = ErrorHandl
 where
     T: 'scope,
 {
-    scope: Scope<'scope>,
+    owner: OwnerAccess<'scope>,
     error_handler: H,
     key: LocalStaticRefStr,
     backend: B,
@@ -106,9 +107,13 @@ impl<'scope, H> PersistentBuilder<'scope, NoBackend, NoCodec, (), NoDefault, H>
 where
     H: ErrorHandlerInput<'scope>,
 {
-    pub fn new(scope: Scope<'scope>, key: impl Into<LocalStaticRefStr>, error_handler: H) -> Self {
+    pub fn new(
+        owner: OwnerAccess<'scope>,
+        key: impl Into<LocalStaticRefStr>,
+        error_handler: H,
+    ) -> Self {
         Self {
-            scope,
+            owner,
             error_handler,
             key: key.into(),
             backend: NoBackend,
@@ -130,7 +135,7 @@ where
         B: PersistenceBackend<'scope>,
     {
         PersistentBuilder {
-            scope: self.scope,
+            owner: self.owner,
             error_handler: self.error_handler,
             key: self.key,
             backend,
@@ -142,7 +147,7 @@ where
 
     pub fn local(self) -> PersistentBuilder<'scope, LocalStorageBackend, C, T, D, H> {
         PersistentBuilder {
-            scope: self.scope,
+            owner: self.owner,
             error_handler: self.error_handler,
             key: self.key,
             backend: LocalStorageBackend::default(),
@@ -154,7 +159,7 @@ where
 
     pub fn session(self) -> PersistentBuilder<'scope, SessionStorageBackend, C, T, D, H> {
         PersistentBuilder {
-            scope: self.scope,
+            owner: self.owner,
             error_handler: self.error_handler,
             key: self.key,
             backend: SessionStorageBackend::default(),
@@ -169,7 +174,7 @@ where
         ctx: RouterContext<'scope>,
     ) -> PersistentBuilder<'scope, QueryBackend<'scope>, C, T, D, H> {
         PersistentBuilder {
-            scope: self.scope,
+            owner: self.owner,
             error_handler: self.error_handler,
             key: self.key,
             backend: QueryBackend::new(ctx),
@@ -192,7 +197,7 @@ where
         U: 'scope,
     {
         PersistentBuilder {
-            scope: self.scope,
+            owner: self.owner,
             error_handler: self.error_handler,
             key: self.key,
             backend: self.backend,
@@ -211,7 +216,7 @@ where
 
     pub fn string(self) -> PersistentBuilder<'scope, B, StringCodec, String, D, H> {
         PersistentBuilder {
-            scope: self.scope,
+            owner: self.owner,
             error_handler: self.error_handler,
             key: self.key,
             backend: self.backend,
@@ -230,7 +235,7 @@ where
 
     pub fn cow(self) -> PersistentBuilder<'scope, B, StringCodec, Cow<'scope, str>, D, H> {
         PersistentBuilder {
-            scope: self.scope,
+            owner: self.owner,
             error_handler: self.error_handler,
             key: self.key,
             backend: self.backend,
@@ -253,7 +258,7 @@ where
         <U as std::str::FromStr>::Err: std::fmt::Display,
     {
         PersistentBuilder {
-            scope: self.scope,
+            owner: self.owner,
             error_handler: self.error_handler,
             key: self.key,
             backend: self.backend,
@@ -276,7 +281,7 @@ where
         U: serde::Serialize + serde::de::DeserializeOwned + Clone + 'scope,
     {
         PersistentBuilder {
-            scope: self.scope,
+            owner: self.owner,
             error_handler: self.error_handler,
             key: self.key,
             backend: self.backend,
@@ -333,7 +338,7 @@ where
     pub fn default(self, value: T) -> PersistentBuilder<'scope, B, C, T, HasDefault, H> {
         let value = Rc::new(value);
         PersistentBuilder {
-            scope: self.scope,
+            owner: self.owner,
             error_handler: self.error_handler,
             key: self.key,
             backend: self.backend,
@@ -358,7 +363,7 @@ where
         f: impl Fn() -> T + 'scope,
     ) -> PersistentBuilder<'scope, B, C, T, HasDefault, H> {
         PersistentBuilder {
-            scope: self.scope,
+            owner: self.owner,
             error_handler: self.error_handler,
             key: self.key,
             backend: self.backend,
@@ -386,7 +391,7 @@ where
         self,
     ) -> PersistentBuilder<'scope, B, OptionCodec<C, T>, Option<T>, HasDefault, H> {
         PersistentBuilder {
-            scope: self.scope,
+            owner: self.owner,
             error_handler: self.error_handler,
             key: self.key,
             backend: self.backend,
@@ -421,11 +426,11 @@ where
         })?;
         let initial_default = default();
         let value = self
-            .scope
+            .owner
             .rw_signal(initial_default.clone())
             .map_err(PersistenceError::from)?;
         let state = self
-            .scope
+            .owner
             .rw_signal(PersistenceState::Ready(String::new()))
             .map_err(PersistenceError::from)?;
         let backend = self.backend.clone();
@@ -433,12 +438,12 @@ where
         let debounce = if matches!(self.config.mode, PersistMode::Immediate)
             && matches!(self.config.sync, SyncStrategy::Debounce(_))
         {
-            Some(ScopedDebounceState::new())
+            Some(OwnerDebounceState::new())
         } else {
             None
         };
         let controller = self
-            .scope
+            .owner
             .stored(PersistenceController {
                 key: key.clone(),
                 default: default.clone(),
@@ -482,7 +487,7 @@ where
             .map_err(PersistenceError::from)?;
 
         let cleanup_controller = controller;
-        self.scope
+        self.owner
             .on_cleanup(
                 move || -> SilexResult<()> {
                     let (subscription, timer) = take_controller_resources(cleanup_controller)?;
@@ -613,7 +618,7 @@ where
         })?;
         let completion_error_lease = error_lease.clone();
         let error_completion =
-            self.scope
+            self.owner
                 .completion_sender(unwind_safe(move |error: SilexError| {
                     completion_error_lease
                         .handle(error)
@@ -621,7 +626,7 @@ where
                 }))?;
         let mut subscription_error = None;
         if matches!(self.config.sync, SyncStrategy::CrossContext) {
-            let token = self.scope.completion_sender(unwind_safe({
+            let token = self.owner.completion_sender(unwind_safe({
                 move |event| {
                     apply_backend_event(controller, value, state, event);
                     Ok(())
@@ -633,7 +638,7 @@ where
             });
             match self
                 .backend
-                .subscribe(self.scope, key.clone(), sink, error_handler)
+                .subscribe(self.owner, key.clone(), sink, error_handler)
             {
                 Ok(binding) => {
                     controller
@@ -665,7 +670,7 @@ where
         match self.config.mode {
             PersistMode::Immediate => {
                 if let SyncStrategy::Debounce(duration) = self.config.sync {
-                    let completion = self.scope.completion_sender(unwind_safe({
+                    let completion = self.owner.completion_sender(unwind_safe({
                         move |generation| {
                             let ready = controller.update_untracked(|controller| {
                                 controller
@@ -681,10 +686,10 @@ where
                     }))?;
                     let error_completion_for_timer = error_completion.clone();
                     let _effect = self
-                        .scope
+                        .owner
                         .effect(
                             {
-                                let owner_scope = self.scope;
+                                let owner_access = self.owner;
                                 let owner_error_handler = error_handler;
                                 move || -> SilexResult<()> {
                                     let current = value.get()?;
@@ -717,7 +722,7 @@ where
                                                         "debounce state is missing".to_string(),
                                                     ))
                                                 })
-                                                .map(ScopedDebounceState::begin_with_previous_timer)
+                                                .map(OwnerDebounceState::begin_with_previous_timer)
                                         })??;
                                     if let Some(timer) = &timer {
                                         timer.cancel();
@@ -725,8 +730,7 @@ where
                                     drop(timer);
                                     let completion = completion.clone();
                                     let error_completion = error_completion_for_timer.clone();
-                                    let owner = ScopedMountOwner::new(owner_scope);
-                                    let owner_token = owner.token();
+                                    let owner_token = MountOwnerToken::new(owner_access);
                                     match set_timeout(
                                         &owner_token,
                                         move || {
@@ -780,7 +784,7 @@ where
                         })?;
                 } else {
                     let _effect = self
-                        .scope
+                        .owner
                         .effect(
                             move || -> SilexResult<()> {
                                 value.get()?;
@@ -805,7 +809,7 @@ where
             }
             PersistMode::Manual => {
                 let _effect = self
-                    .scope
+                    .owner
                     .effect(
                         move || -> SilexResult<()> {
                             let current = value.get()?;
@@ -861,7 +865,7 @@ where
         }
 
         Ok(Persistent {
-            scope: self.scope,
+            owner: self.owner,
             value,
             state,
             controller,

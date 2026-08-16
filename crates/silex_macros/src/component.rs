@@ -103,10 +103,10 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
                     "component functions must declare exactly one `#[ctx]` parameter",
                 ));
             }
-            if param_name == "scope" || param_name == "error_handler" {
+            if param_name == "owner" || param_name == "error_handler" {
                 return Err(syn::Error::new_spanned(
                     fn_arg,
-                    "`scope` and `error_handler` are reserved aliases; use another ctx parameter name",
+                    "`owner` and `error_handler` are reserved aliases; use another ctx parameter name",
                 ));
             }
             if attrs.iter().any(|attr| attr.path().is_ident("chain")) {
@@ -116,15 +116,15 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
                 ));
             }
             ctx_field = Some(param_name.clone());
-        } else if param_name == "scope" || param_name == "error_handler" {
+        } else if param_name == "owner" || param_name == "error_handler" {
             return Err(syn::Error::new_spanned(
                 fn_arg,
-                "explicit `Scope`, `ErrorReporter`, and `ErrorHandlerToken` component parameters were removed; declare one `#[ctx]` parameter",
+                "explicit owner and error-handler parameters are not component props; declare one `#[ctx]` parameter",
             ));
         } else if is_special_ctx_type(ty) {
             return Err(syn::Error::new_spanned(
                 ty,
-                "explicit `Scope`, `ErrorReporter`, and `ErrorHandlerToken` component parameters were removed; declare one `#[ctx]` parameter",
+                "explicit owner and error-handler parameters are not component props; declare one `#[ctx]` parameter",
             ));
         }
 
@@ -176,10 +176,9 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
         .iter()
         .filter_map(|param| match param {
             GenericParam::Lifetime(def) => {
-                if def.lifetime.ident == "scope"
-                    || generic_usage
-                        .used_lifetime_names
-                        .contains(&def.lifetime.ident.to_string())
+                if generic_usage
+                    .used_lifetime_names
+                    .contains(&def.lifetime.ident.to_string())
                 {
                     return None;
                 }
@@ -213,30 +212,7 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
         })
         .collect();
 
-    if let Some(scope) = input_fn
-        .sig
-        .generics
-        .params
-        .iter()
-        .find_map(|param| match param {
-            GenericParam::Lifetime(def) if def.lifetime.ident == "scope" => {
-                Some(def.lifetime.clone())
-            }
-            _ => None,
-        })
-    {
-        let marker_type = if generic_marker_types.is_empty() {
-            quote! { &#scope () }
-        } else {
-            quote! { (&#scope (), #(#generic_marker_types),*) }
-        };
-        field_defs.push(quote! {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            #[chain(default)]
-            pub __silex_scope_marker: ::core::marker::PhantomData<#marker_type>
-        });
-    } else if !generic_marker_types.is_empty() {
+    if !generic_marker_types.is_empty() {
         field_defs.push(quote! {
             #[doc(hidden)]
             #[allow(dead_code)]
@@ -257,17 +233,14 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
     hidden_fn
         .attrs
         .push(syn::parse_quote!(#[allow(non_snake_case, unused_variables, unused_mut)]));
-    if let Some(scope) = generics.params.iter().find_map(|param| match param {
-        GenericParam::Lifetime(def) if def.lifetime.ident == "scope" => Some(def.lifetime.clone()),
-        _ => None,
-    }) {
+    if let Some(owner_lifetime) = context_lifetime(&generics, &ctx_ty) {
         hidden_fn
             .sig
             .generics
             .make_where_clause()
             .predicates
             .push(syn::parse_quote!(
-                #ctx_ty: #__silex::core::SilexContextProvider<#scope>
+                #ctx_ty: #__silex::core::SilexContextProvider<#owner_lifetime>
             ));
     }
 
@@ -287,7 +260,7 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
     })?;
     hidden_stmts.push(destructure);
     hidden_stmts.push(syn::parse_quote! {
-        let scope = #__silex::core::SilexContextProvider::scope(&#ctx_field);
+        let owner = #__silex::core::SilexContextProvider::owner(&#ctx_field);
     });
     hidden_stmts.push(syn::parse_quote! {
         let error_handler = #__silex::core::SilexContextProvider::error_reporter(&#ctx_field);
@@ -372,6 +345,41 @@ fn is_special_ctx_type(ty: &Type) -> bool {
     };
     matches!(
         segment.ident.to_string().as_str(),
-        "Scope" | "ErrorReporter" | "ErrorHandler" | "ErrorHandlerToken"
+        "OwnerAccess" | "OwnerHandle" | "ErrorReporter" | "ErrorHandler" | "ErrorHandlerToken"
     )
+}
+
+fn context_lifetime(generics: &syn::Generics, ctx_ty: &Type) -> Option<syn::Lifetime> {
+    struct LifetimeVisitor {
+        names: std::collections::HashSet<String>,
+    }
+
+    impl<'ast> Visit<'ast> for LifetimeVisitor {
+        fn visit_lifetime(&mut self, lifetime: &'ast syn::Lifetime) {
+            self.names.insert(lifetime.ident.to_string());
+        }
+    }
+
+    let mut visitor = LifetimeVisitor {
+        names: std::collections::HashSet::new(),
+    };
+    visitor.visit_type(ctx_ty);
+
+    generics
+        .params
+        .iter()
+        .find_map(|param| match param {
+            GenericParam::Lifetime(def)
+                if visitor.names.contains(&def.lifetime.ident.to_string()) =>
+            {
+                Some(def.lifetime.clone())
+            }
+            _ => None,
+        })
+        .or_else(|| {
+            generics.params.iter().find_map(|param| match param {
+                GenericParam::Lifetime(def) => Some(def.lifetime.clone()),
+                _ => None,
+            })
+        })
 }

@@ -1,15 +1,15 @@
 error[E0061]: this method takes 2 arguments but 1 argument was supplied
  --> tests/ui/fail_scoped_task_without_handler.rs:6:15
   |
-6 |         scope.spawn_scoped(async {});
+6 |         owner.spawn_scoped(async {});
   |               ^^^^^^^^^^^^---------- argument #2 is missing
   |
 note: method defined here
- --> src/scope.rs
+ --> src/owner.rs
   |
-  |     pub fn spawn_scoped<F, H>(self, future: F, error_handler: H) -> SilexResult<TaskHandle<'scope>>
+  |     pub fn spawn_scoped<F, H>(&self, future: F, error_handler: H) -> SilexResult<TaskHandle<'owner>>
   |            ^^^^^^^^^^^^
 help: provide the argument
   |
-6 |         scope.spawn_scoped(async {}, /* error_handler */);
+6 |         owner.spawn_scoped(async {}, /* error_handler */);
   |                                    +++++++++++++++++++++

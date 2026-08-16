@@ -1,10 +1,10 @@
-use silex_reactivity::{ErrorHandlerToken, Runtime, Scope};
+use silex_reactivity::{ErrorHandlerToken, OwnerAccess, Runtime};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
 };
 
-fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope, ()> {
+fn handler<'scope>(scope: OwnerAccess<'scope>) -> ErrorHandlerToken<'scope, ()> {
     scope.error_handler(|_| {}).expect("handler registration")
 }
 
@@ -12,7 +12,7 @@ fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope, ()> {
 fn test_any_value_soo_boundary_and_downcast() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             // 小于等于 24 字节类型 (SOO 内联路径)
             let (s_i32, set_s_i32) = scope.signal(42i32).expect("fallible reactive creation");
             assert_eq!(s_i32.get(), Ok(42));
@@ -61,7 +61,7 @@ fn test_any_value_drop_semantics_on_stack_and_heap() {
 
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let _s_stack = scope
                 .signal(DropTracker(drop_counter_stack.clone()))
                 .expect("fallible reactive creation");
@@ -81,7 +81,7 @@ fn test_any_value_drop_semantics_on_stack_and_heap() {
 fn test_any_value_interior_mutability_inline() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (s_refcell, _) = scope
                 .signal(RefCell::new(Vec::new()))
                 .expect("fallible reactive creation");
@@ -107,11 +107,11 @@ fn test_any_value_memo_skip_equal_update() {
 
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (sig, set_sig) = scope.signal(10i32).expect("fallible reactive creation");
             let memo = scope
-                .memo(
-                    move |_| {
+                .computed(
+                    move || {
                         memo_eval_count_cloned.set(memo_eval_count_cloned.get() + 1);
                         Ok(sig.get().expect("reactive read") * 2)
                     },
@@ -141,7 +141,7 @@ fn test_any_value_memo_skip_equal_update() {
             // memo 计算虽重新求值比对，但由于 try_eq 相等，其更新版本不变，下游 effect 绝对不触发！
             assert_eq!(memo.get(), Ok(20));
             assert_eq!(memo_eval_count.get(), 2);
-            assert_eq!(effect_eval_count.get(), 1); // 成功拦截下游 Effect 触发！
+            assert_eq!(effect_eval_count.get(), 1); // 成功拦截下游 EffectHandle 触发！
 
             // 设置新值 15
             set_sig.set(15).expect("test operation should succeed");

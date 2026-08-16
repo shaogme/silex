@@ -1,12 +1,10 @@
-//! Long-lived root owner and cleanup error handling.
+//! Long-lived root owner and close error handling.
 
-use crate::{HandlerError, ReactiveError, Scope, runtime::GlobalScheduler, scope::ScopeStorage};
+use crate::{HandlerError, ReactiveError};
 use std::{
     any::Any,
-    cell::Cell,
     fmt,
     panic::{AssertUnwindSafe, catch_unwind},
-    rc::Rc,
 };
 
 /// Identifies the panic payload shape preserved by a cleanup diagnostic.
@@ -23,7 +21,7 @@ pub enum CleanupPayloadKind {
 /// Stable, owned information about a cleanup panic.
 ///
 /// The diagnostic deliberately does not expose the original panic payload. The
-/// payload remains owned by [`CleanupError`] until the explicit error path
+/// payload remains owned by [`CloseError`] until the explicit error path
 /// consumes it, while Drop-only paths can safely retain this value.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CleanupDiagnostic {
@@ -70,24 +68,77 @@ pub enum CleanupFailure {
     Panic(CleanupDiagnostic),
 }
 
-/// Cleanup failures returned by an explicit root or owner disposal.
-pub struct CleanupError {
-    failures: Vec<CleanupFailure>,
-    diagnostic: CleanupDiagnostic,
+/// The lifecycle phase that produced one close failure.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClosePhase {
+    Child,
+    Effect,
+    Cleanup,
+    Runtime,
+    Boundary,
+    Unknown,
 }
 
-impl fmt::Debug for CleanupError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("CleanupError").finish_non_exhaustive()
+/// The lifecycle source associated with one close failure.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CloseSource {
+    Owner,
+    Child,
+    Effect,
+    Cleanup,
+    Handler,
+    Boundary,
+    Unknown,
+}
+
+/// A close failure with stable phase and source metadata.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CloseFailure {
+    phase: ClosePhase,
+    source: CloseSource,
+    failure: CleanupFailure,
+}
+
+impl CloseFailure {
+    pub fn phase(&self) -> ClosePhase {
+        self.phase
+    }
+
+    pub fn source(&self) -> CloseSource {
+        self.source
+    }
+
+    pub fn failure(&self) -> &CleanupFailure {
+        &self.failure
     }
 }
 
-impl CleanupError {
+/// Cleanup failures returned by an explicit root or owner disposal.
+#[derive(Clone, PartialEq, Eq)]
+pub struct CloseError {
+    failures: Vec<CleanupFailure>,
+    entries: Vec<CloseFailure>,
+    diagnostic: CleanupDiagnostic,
+}
+
+/// Aggregated error returned by every explicit owner close operation.
+impl fmt::Debug for CloseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CloseError").finish_non_exhaustive()
+    }
+}
+
+impl CloseError {
     fn new(panic: Box<dyn std::any::Any + Send>) -> Self {
         let diagnostic = diagnostic_for(panic.as_ref());
         let _ = catch_unwind(AssertUnwindSafe(|| drop(panic)));
         Self {
             failures: vec![CleanupFailure::Panic(diagnostic.clone())],
+            entries: vec![CloseFailure {
+                phase: ClosePhase::Unknown,
+                source: CloseSource::Unknown,
+                failure: CleanupFailure::Panic(diagnostic.clone()),
+            }],
             diagnostic,
         }
     }
@@ -96,6 +147,26 @@ impl CleanupError {
         if failures.is_empty() {
             return None;
         }
+        let entries = failures
+            .iter()
+            .cloned()
+            .map(|failure| CloseFailure {
+                phase: ClosePhase::Unknown,
+                source: CloseSource::Unknown,
+                failure,
+            })
+            .collect();
+        Self::from_entries(entries)
+    }
+
+    fn from_entries(entries: Vec<CloseFailure>) -> Option<Self> {
+        if entries.is_empty() {
+            return None;
+        }
+        let failures = entries
+            .iter()
+            .map(|entry| entry.failure.clone())
+            .collect::<Vec<_>>();
         let diagnostic = failures
             .iter()
             .find_map(|failure| match failure {
@@ -108,8 +179,37 @@ impl CleanupError {
             });
         Some(Self {
             failures,
+            entries,
             diagnostic,
         })
+    }
+
+    /// Combine failures collected by independent cleanup phases.
+    ///
+    /// Close paths must be able to finish child, effect, and cleanup work even
+    /// when one phase fails. Keeping this operation on `CloseError` preserves
+    /// every failure in one structured value instead of forcing callers to
+    /// resume a panic or report only the first error.
+    #[doc(hidden)]
+    pub fn combine(errors: impl IntoIterator<Item = Self>) -> Option<Self> {
+        let entries = errors.into_iter().flat_map(|error| error.entries).collect();
+        Self::from_entries(entries)
+    }
+
+    /// Apply the phase and source of an outer close transaction to all
+    /// failures in this error.
+    #[doc(hidden)]
+    pub fn with_context(self, phase: ClosePhase, source: CloseSource) -> Self {
+        let entries = self
+            .entries
+            .into_iter()
+            .map(|entry| CloseFailure {
+                phase,
+                source,
+                failure: entry.failure,
+            })
+            .collect();
+        Self::from_entries(entries).expect("a close error must contain a failure")
     }
 
     pub(crate) fn panic_failure(panic: Box<dyn std::any::Any + Send>) -> CleanupFailure {
@@ -122,7 +222,11 @@ impl CleanupError {
         &self.failures
     }
 
-    /// Adapt a caught framework panic into a cleanup error.
+    pub fn entries(&self) -> &[CloseFailure] {
+        &self.entries
+    }
+
+    /// Adapt a caught framework panic into a close error.
     ///
     /// This is hidden from generated documentation because it is intended for
     /// framework cleanup adapters, not as a replacement for ordinary errors.
@@ -142,77 +246,37 @@ impl CleanupError {
     }
 }
 
-/// Owns one long-lived root storage.
-pub struct RootHandle {
-    storage: Rc<ScopeStorage>,
-    runtime_slot: Rc<Cell<bool>>,
-    disposed: bool,
+/// Collects close failures while allowing every lifecycle phase to finish.
+#[derive(Default)]
+pub struct CloseTransaction {
+    entries: Vec<CloseFailure>,
 }
 
-impl RootHandle {
-    pub(crate) fn new(runtime_slot: Rc<Cell<bool>>) -> Self {
-        Self {
-            storage: Rc::new(ScopeStorage::new(GlobalScheduler::new())),
-            runtime_slot,
-            disposed: false,
-        }
+impl CloseTransaction {
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    /// Borrow the ordinary scope capability used to create root nodes.
-    pub fn scope(&self) -> Scope<'_> {
-        Scope {
-            storage: self.storage.as_ref(),
-            _marker: std::marker::PhantomData,
-        }
+    #[doc(hidden)]
+    pub fn push(&mut self, phase: ClosePhase, source: CloseSource, failure: CleanupFailure) {
+        self.entries.push(CloseFailure {
+            phase,
+            source,
+            failure,
+        });
     }
 
-    /// Execute a callback with a root scope borrowed for exactly this owner.
-    pub fn with_scope<'scope, R>(&'scope self, f: impl FnOnce(Scope<'scope>) -> R) -> R {
-        let scope = Scope {
-            storage: self.storage.as_ref(),
-            _marker: std::marker::PhantomData,
-        };
-        f(scope)
+    #[doc(hidden)]
+    pub fn push_error(&mut self, phase: ClosePhase, source: CloseSource, error: CloseError) {
+        self.entries
+            .extend(error.entries.into_iter().map(|entry| CloseFailure {
+                phase,
+                source,
+                failure: entry.failure,
+            }));
     }
 
-    /// Dispose the root exactly once.
-    pub fn dispose(mut self) -> Result<(), CleanupError> {
-        self.dispose_inner()
-    }
-
-    pub fn is_active(&self) -> bool {
-        !self.disposed
-            && self
-                .storage
-                .state
-                .borrow()
-                .scheduler
-                .borrow()
-                .is_scope_active(self.storage.scope_id)
-    }
-
-    fn dispose_inner(&mut self) -> Result<(), CleanupError> {
-        if self.disposed {
-            self.runtime_slot.set(false);
-            return Ok(());
-        }
-
-        let result = catch_unwind(AssertUnwindSafe(|| self.storage.dispose_untracked()));
-
-        match result {
-            Ok(Ok(())) => {
-                self.disposed = true;
-                self.runtime_slot.set(false);
-                Ok(())
-            }
-            Ok(Err(error)) => Err(error),
-            Err(panic) => Err(CleanupError::new(panic)),
-        }
-    }
-}
-
-impl Drop for RootHandle {
-    fn drop(&mut self) {
-        let _ = self.dispose_inner();
+    pub fn finish(self) -> Option<CloseError> {
+        CloseError::from_entries(self.entries)
     }
 }

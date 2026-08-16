@@ -1,10 +1,10 @@
 error: lifetime may not live long enough
   --> tests/ui/fail_theme_child_escape.rs:32:9
    |
-28 |     let theme = runtime.child(|scope| {
-   |                                ------ return type of closure is ThemeVariables<'2, Theme>
-   |                                |
-   |                                has type `silex_core::Scope<'1>`
+28 |     let theme = runtime.with_transient(|owner| {
+   |                                         ------ return type of closure is ThemeVariables<'2, Theme>
+   |                                         |
+   |                                         has type `OwnerAccess<'1>`
 ...
 32 |         theme_variables(value)
    |         ^^^^^^^^^^^^^^^^^^^^^^ returning this value requires that `'1` must outlive `'2`

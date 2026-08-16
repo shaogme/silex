@@ -1,5 +1,5 @@
 use silex_reactivity::{
-    CallbackInvokeError, ComputationInitError, ErrorHandlerToken, Runtime, Scope,
+    CallbackInvokeError, ComputationInitError, ErrorHandlerToken, OwnerAccess, Runtime,
 };
 use std::{cell::RefCell, rc::Rc};
 
@@ -9,7 +9,7 @@ enum TestError {
 }
 
 fn handler<'scope>(
-    scope: Scope<'scope>,
+    scope: OwnerAccess<'scope>,
     errors: Rc<RefCell<Vec<TestError>>>,
 ) -> ErrorHandlerToken<'scope, TestError> {
     scope
@@ -21,9 +21,9 @@ fn handler<'scope>(
 fn initial_error_is_returned_and_provisional_node_is_disposed() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let errors = Rc::new(RefCell::new(Vec::new()));
-            let result = scope.derived(
+            let result = scope.computed_always(
                 || Err::<i32, _>(TestError::Rejected),
                 handler(scope, errors),
             );
@@ -40,13 +40,13 @@ fn initial_error_is_returned_and_provisional_node_is_disposed() {
 fn read_returns_user_error_without_using_the_previous_value() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let errors = Rc::new(RefCell::new(Vec::new()));
             let (source, set_source) = scope.signal(0_i32).expect("signal creation");
             let should_fail = Rc::new(RefCell::new(false));
             let should_fail_in_callback = should_fail.clone();
             let derived = scope
-                .derived(
+                .computed_always(
                     move || {
                         let _ = source.get().expect("source read");
                         if *should_fail_in_callback.borrow() {
@@ -80,11 +80,11 @@ fn read_returns_user_error_without_using_the_previous_value() {
 fn deferred_error_is_dispatched_and_next_read_can_retry() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let errors = Rc::new(RefCell::new(Vec::new()));
             let (source, set_source) = scope.signal(1_i32).expect("signal creation");
             let derived = scope
-                .derived(
+                .computed_always(
                     move || {
                         if source.get().map_err(|_| TestError::Rejected)? == 2 {
                             Err(TestError::Rejected)
@@ -106,6 +106,7 @@ fn deferred_error_is_dispatched_and_next_read_can_retry() {
                                 CallbackInvokeError::User(error) => error,
                                 CallbackInvokeError::Runtime(_) => TestError::Rejected,
                                 CallbackInvokeError::Handler(_) => TestError::Rejected,
+                                CallbackInvokeError::Close(_) => TestError::Rejected,
                             })
                     },
                     handler(scope, errors.clone()),

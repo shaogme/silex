@@ -5,7 +5,7 @@ use silex::components::Portal;
 use silex::flow::Show;
 use silex::prelude::*;
 use silex_dom::document;
-use silex_dom::view::{ScopedMountOwner, View};
+use silex_dom::view::{MountOwnerToken, View};
 use std::cell::Cell;
 use std::rc::Rc;
 use wasm_bindgen::JsValue;
@@ -49,17 +49,19 @@ fn text_occurrence_count(selector: &str, expected: &str) -> u32 {
 async fn portal_modal_does_not_duplicate_content_after_repeated_toggles() {
     let host = host();
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root runtime should start");
+    let root = runtime.owner().expect("root runtime should start");
 
-    let (set_show_modal, errors) = root.with_scope(|scope| {
+    let (errors, completed, valid) = root.with_access(|owner| {
         let (show_modal, set_show_modal) =
-            scope.signal(false).expect("modal signal should be created");
+            owner.signal(false).expect("modal signal should be created");
         let errors = Rc::new(Cell::new(0));
+        let completed = Rc::new(Cell::new(false));
+        let valid = Rc::new(Cell::new(true));
         let errors_for_handler = errors.clone();
-        let error_handler = scope
+        let error_handler = owner
             .error_handler(move |_| errors_for_handler.set(errors_for_handler.get() + 1))
             .expect("test error handler should be registered");
-        let ctx = SilexContext::new(scope, error_handler.view());
+        let ctx = SilexContext::new(owner, error_handler.view());
         let view = div![
             button("Toggle Modal"),
             Show(ctx, show_modal)
@@ -76,47 +78,72 @@ async fn portal_modal_does_not_duplicate_content_after_repeated_toggles() {
                 )
                 .build(),
         ];
-        let owner = ScopedMountOwner::new(scope);
+        let mount_owner = MountOwnerToken::new(owner);
         let _ = view
-            .mount(&owner, host.as_ref(), Vec::new(), error_handler.view())
+            .mount(
+                &mount_owner,
+                host.as_ref(),
+                Vec::new(),
+                error_handler.view(),
+            )
             .expect("portal demo should mount");
-        (set_show_modal, errors)
+        let completed_for_task = completed.clone();
+        let valid_for_task = valid.clone();
+        owner
+            .spawn_scoped(
+                async move {
+                    for _ in 0..3 {
+                        set_show_modal.set(true).expect("modal should open");
+                        flush_browser_tasks().await;
+                        valid_for_task.set(
+                            valid_for_task.get()
+                                && text_occurrence_count("body h4", "I am a Modal!") == 1
+                                && text_occurrence_count(
+                                    "body p",
+                                    "I am rendered via Portal directly into the body, but I share ctx!",
+                                ) == 1,
+                        );
+                        set_show_modal.set(false).expect("modal should close");
+                        flush_browser_tasks().await;
+                        valid_for_task.set(
+                            valid_for_task.get()
+                                && text_occurrence_count("body h4", "I am a Modal!") == 0
+                                && text_occurrence_count(
+                                    "body p",
+                                    "I am rendered via Portal directly into the body, but I share ctx!",
+                                ) == 0,
+                        );
+                    }
+                    completed_for_task.set(true);
+                },
+                error_handler.view(),
+            )
+            .expect("toggle task should register");
+        (errors, completed, valid)
     });
 
-    for _ in 0..3 {
-        set_show_modal.set(true).expect("modal should open");
+    for _ in 0..12 {
         flush_browser_tasks().await;
-        assert_eq!(
-            text_occurrence_count("body h4", "I am a Modal!"),
-            1,
-            "body={}, errors={}",
-            document()
-                .body()
-                .expect("document body should exist")
-                .inner_html(),
-            errors.get()
-        );
-        assert_eq!(
-            text_occurrence_count(
-                "body p",
-                "I am rendered via Portal directly into the body, but I share ctx!"
-            ),
-            1
-        );
-
-        set_show_modal.set(false).expect("modal should close");
-        flush_browser_tasks().await;
-        assert_eq!(text_occurrence_count("body h4", "I am a Modal!"), 0);
-        assert_eq!(
-            text_occurrence_count(
-                "body p",
-                "I am rendered via Portal directly into the body, but I share ctx!"
-            ),
-            0
-        );
+        if completed.get() {
+            break;
+        }
     }
+    assert!(completed.get(), "toggle task should complete");
+    assert!(
+        valid.get(),
+        "portal content should not duplicate across toggles"
+    );
+    assert_eq!(text_occurrence_count("body h4", "I am a Modal!"), 0);
+    assert_eq!(
+        text_occurrence_count(
+            "body p",
+            "I am rendered via Portal directly into the body, but I share ctx!"
+        ),
+        0
+    );
+    assert_eq!(errors.get(), 0);
 
-    root.dispose().expect("root cleanup should succeed");
+    root.close().expect("root cleanup should succeed");
     assert!(
         host.first_child().is_none(),
         "host should be empty after root cleanup: {}",

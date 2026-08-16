@@ -1,10 +1,10 @@
 error: lifetime may not live long enough
   --> tests/ui/fail_handler_escape.rs:9:13
    |
- 6 |           .child(|scope| {
-   |                   ------ return type of closure is ErrorHandlerToken<'2, ()>
-   |                   |
-   |                   has type `silex_reactivity::Scope<'1>`
+ 6 |           .with_transient(|scope| {
+   |                            ------ return type of closure is ErrorHandlerToken<'2, ()>
+   |                            |
+   |                            has type `OwnerAccess<'1>`
 ...
  9 | /             scope
 10 | |                 .error_handler(move |_: ()| {

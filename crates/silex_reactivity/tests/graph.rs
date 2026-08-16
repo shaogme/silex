@@ -1,25 +1,70 @@
-use silex_reactivity::{ErrorHandlerToken, Memo, ReactiveError, Runtime, Scope, notify};
+use silex_reactivity::{Computed, ErrorHandlerToken, OwnerAccess, ReactiveError, Runtime};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
 };
 
-fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope, ()> {
+fn handler<'scope>(scope: OwnerAccess<'scope>) -> ErrorHandlerToken<'scope, ()> {
     scope.error_handler(|_| {}).expect("handler registration")
+}
+
+#[derive(Clone, Copy)]
+struct NonComparable(i32);
+
+#[test]
+fn computed_always_accepts_non_partial_eq_outputs_and_notifies_each_time() {
+    let mut runtime = Runtime::new();
+    runtime
+        .with_transient(|scope| {
+            let (source, set_source) = scope.signal(0_i32).expect("source creation");
+            let evaluations = Rc::new(Cell::new(0));
+            let evaluations_in_computed = evaluations.clone();
+            let computed = scope
+                .computed_always(
+                    move || {
+                        evaluations_in_computed.set(evaluations_in_computed.get() + 1);
+                        source.get().map(|_| NonComparable(7)).map_err(|_| ())
+                    },
+                    handler(scope),
+                )
+                .expect("computed creation");
+            let effect_runs = Rc::new(Cell::new(0));
+            let effect_runs_in_effect = effect_runs.clone();
+            scope
+                .effect(
+                    move || {
+                        computed
+                            .with(|value| {
+                                assert_eq!(value.0, 7);
+                                effect_runs_in_effect.set(effect_runs_in_effect.get() + 1);
+                            })
+                            .map_err(|_| ())
+                    },
+                    handler(scope),
+                )
+                .expect("effect creation");
+
+            assert_eq!(evaluations.get(), 1);
+            assert_eq!(effect_runs.get(), 1);
+            set_source.set(1).expect("source update");
+            assert_eq!(evaluations.get(), 2);
+            assert_eq!(effect_runs.get(), 2);
+        })
+        .expect("test operation should succeed");
 }
 
 #[test]
 fn memo_and_derived_keep_their_notification_rules() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(1i32).expect("fallible reactive creation");
             let memo_runs = Rc::new(Cell::new(0));
             let memo_runs_in_callback = memo_runs.clone();
             let memo_source = source;
             let memo = scope
-                .memo(
-                    move |_| {
+                .computed(
+                    move || {
                         memo_runs_in_callback.set(memo_runs_in_callback.get() + 1);
                         Ok(memo_source.get().expect("reactive read") / 10)
                     },
@@ -30,7 +75,7 @@ fn memo_and_derived_keep_their_notification_rules() {
             let derived_runs_in_callback = derived_runs.clone();
             let derived_source = source;
             let derived = scope
-                .derived(
+                .computed_always(
                     move || {
                         derived_runs_in_callback.set(derived_runs_in_callback.get() + 1);
                         Ok(derived_source.get().expect("reactive read") / 10)
@@ -54,19 +99,19 @@ fn memo_and_derived_keep_their_notification_rules() {
 fn dependency_chain_evaluates_upstream_before_effect() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(1i32).expect("fallible reactive creation");
             let middle_source = source;
             let middle = scope
-                .memo(
-                    move |_| Ok(middle_source.get().expect("reactive read") + 1),
+                .computed(
+                    move || Ok(middle_source.get().expect("reactive read") + 1),
                     handler(scope),
                 )
                 .expect("memo creation");
             let tail_source = middle;
             let tail = scope
-                .memo(
-                    move |_| Ok(tail_source.get().expect("reactive read") + 1),
+                .computed(
+                    move || Ok(tail_source.get().expect("reactive read") + 1),
                     handler(scope),
                 )
                 .expect("memo creation");
@@ -96,17 +141,17 @@ fn diamond_dependencies_do_not_observe_intermediate_state() {
     let seen = Rc::new(RefCell::new(Vec::new()));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(1i32).expect("fallible reactive creation");
             let left = scope
-                .memo(
-                    move |_| Ok(source.get().expect("reactive read") + 1),
+                .computed(
+                    move || Ok(source.get().expect("reactive read") + 1),
                     handler(scope),
                 )
                 .expect("memo creation");
             let right = scope
-                .memo(
-                    move |_| Ok(source.get().expect("reactive read") + 10),
+                .computed(
+                    move || Ok(source.get().expect("reactive read") + 10),
                     handler(scope),
                 )
                 .expect("memo creation");
@@ -138,7 +183,7 @@ fn diamond_dependencies_do_not_observe_intermediate_state() {
 fn dynamic_dependencies_are_replaced_on_each_effect_run() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (switch, set_switch) = scope.signal(true).expect("fallible reactive creation");
             let (left, set_left) = scope.signal(0i32).expect("fallible reactive creation");
             let (right, set_right) = scope.signal(0i32).expect("fallible reactive creation");
@@ -186,14 +231,14 @@ fn cross_scope_explicit_dependencies_are_replaced_on_each_effect_run() {
     let runs = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (switch, set_switch) = scope.signal(true).expect("switch creation");
             let (left, set_left) = scope.signal(0_i32).expect("left creation");
             let (right, set_right) = scope.signal(0_i32).expect("right creation");
             let runs_in_effect = runs.clone();
 
             scope
-                .child(|child| {
+                .with_transient(|child| {
                     child
                         .effect(
                             move || {
@@ -226,7 +271,7 @@ fn cross_scope_explicit_dependencies_are_replaced_on_each_effect_run() {
 fn nested_memo_cleanup_does_not_track_the_outer_observer() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (outer_source, set_outer_source) =
                 scope.signal(0i32).expect("fallible reactive creation");
             let (inner_source, set_inner_source) =
@@ -240,8 +285,8 @@ fn nested_memo_cleanup_does_not_track_the_outer_observer() {
             let cleanup_token = handler(scope);
             let cleanup_handler = cleanup_token.view();
             let inner = scope
-                .memo(
-                    move |_| {
+                .computed(
+                    move || {
                         let value = inner_source.get().expect("reactive read");
                         if first_inner_run.replace(false) {
                             let cleanup_runs_for_cleanup = cleanup_runs_in_cleanup.clone();
@@ -314,7 +359,7 @@ fn nested_memo_cleanup_does_not_track_the_outer_observer() {
 fn batch_delays_effects_and_untrack_preserves_ownership_ctx() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(0i32).expect("fallible reactive creation");
             let (hidden, set_hidden) = scope.signal(0i32).expect("fallible reactive creation");
             let seen = Rc::new(Cell::new(0));
@@ -370,14 +415,14 @@ fn batch_delays_effects_and_untrack_preserves_ownership_ctx() {
 fn epoch_memo_fast_path_skips_evaluation_when_upstream_unchanged() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(10i32).expect("fallible reactive creation");
 
             let m1_runs = Rc::new(Cell::new(0));
             let m1_runs_cb = m1_runs.clone();
             let m1 = scope
-                .memo(
-                    move |_| {
+                .computed(
+                    move || {
                         m1_runs_cb.set(m1_runs_cb.get() + 1);
                         Ok(source.get().expect("reactive read") / 10)
                     },
@@ -388,8 +433,8 @@ fn epoch_memo_fast_path_skips_evaluation_when_upstream_unchanged() {
             let m2_runs = Rc::new(Cell::new(0));
             let m2_runs_cb = m2_runs.clone();
             let m2 = scope
-                .memo(
-                    move |_| {
+                .computed(
+                    move || {
                         m2_runs_cb.set(m2_runs_cb.get() + 1);
                         Ok(m1.get().expect("reactive read") + 100)
                     },
@@ -400,8 +445,8 @@ fn epoch_memo_fast_path_skips_evaluation_when_upstream_unchanged() {
             let m3_runs = Rc::new(Cell::new(0));
             let m3_runs_cb = m3_runs.clone();
             let m3 = scope
-                .memo(
-                    move |_| {
+                .computed(
+                    move || {
                         m3_runs_cb.set(m3_runs_cb.get() + 1);
                         Ok(m2.get().expect("reactive read") * 2)
                     },
@@ -435,7 +480,7 @@ fn ordinary_reads_track_all_signals_in_one_scope() {
     let runs = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (sig1, set_sig1) = scope.signal(10i32).expect("fallible reactive creation");
             let (sig2, set_sig2) = scope.signal(20i32).expect("fallible reactive creation");
             let runs_in_effect = runs.clone();
@@ -467,7 +512,7 @@ fn notify_recomputes_after_silent_interior_mutation() {
     let seen = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope
                 .signal(RefCell::new(0i32))
                 .expect("fallible reactive creation");
@@ -486,7 +531,7 @@ fn notify_recomputes_after_silent_interior_mutation() {
             source
                 .with(|value| {
                     *value.borrow_mut() = 1;
-                    notify(&set_source).expect("test operation should succeed");
+                    set_source.notify().expect("test operation should succeed");
                     assert_eq!(seen.get(), 0);
                 })
                 .expect("test operation should succeed");
@@ -502,12 +547,12 @@ fn cross_scope_silent_notify_from_callback_waits_for_value_borrow() {
     let runs = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope
                 .signal(RefCell::new(0i32))
                 .expect("fallible reactive creation");
             scope
-                .child(|child| {
+                .with_transient(|child| {
                     let runs_in_effect = runs.clone();
                     child
                         .effect(
@@ -531,7 +576,7 @@ fn cross_scope_silent_notify_from_callback_waits_for_value_borrow() {
                             source
                                 .with(|value| {
                                     *value.borrow_mut() += 1;
-                                    notify(&set_source).expect("test operation should succeed");
+                                    set_source.notify().expect("test operation should succeed");
                                     assert_eq!(runs_in_callback.get(), runs_before);
                                 })
                                 .expect("test operation should succeed");
@@ -559,21 +604,21 @@ fn cross_scope_silent_notify_from_callback_waits_for_value_borrow() {
 fn cross_scope_computation_stack_includes_scope_identity() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(1i32).expect("fallible reactive creation");
             let parent_memo = scope
-                .memo(
-                    move |_| Ok(source.get().expect("reactive read") + 1),
+                .computed(
+                    move || Ok(source.get().expect("reactive read") + 1),
                     handler(scope),
                 )
                 .expect("memo creation");
 
             scope
-                .child(|child| {
+                .with_transient(|child| {
                     let parent_memo_in_child = parent_memo;
                     let child_memo = child
-                        .memo(
-                            move |_| Ok(parent_memo_in_child.get().expect("reactive read") + 1),
+                        .computed_always(
+                            move || Ok(parent_memo_in_child.get().expect("reactive read") + 1),
                             handler(child),
                         )
                         .expect("memo creation");
@@ -604,13 +649,13 @@ fn cross_scope_derived_reacts_and_detaches_on_exit() {
     let seen = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(1i32).expect("fallible reactive creation");
             scope
-                .child(|child| {
+                .with_transient(|child| {
                     let child_source = source;
                     let derived = child
-                        .derived(
+                        .computed(
                             move || Ok(child_source.get().expect("reactive read") * 2),
                             handler(child),
                         )
@@ -644,10 +689,10 @@ fn disposing_the_cross_scope_observer_detaches_it_from_the_source() {
     let runs = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(0_i32).expect("source creation");
             scope
-                .child(|child| {
+                .with_transient(|child| {
                     let runs_in_effect = runs.clone();
                     let effect = child
                         .effect(
@@ -674,15 +719,17 @@ fn disposing_the_cross_scope_observer_detaches_it_from_the_source() {
 fn cyclic_memo_dependency_panics_without_poisoning_the_scheduler() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
-            let first_slot: Rc<RefCell<Option<Memo<'_, i32, ()>>>> = Rc::new(RefCell::new(None));
-            let second_slot: Rc<RefCell<Option<Memo<'_, i32, ()>>>> = Rc::new(RefCell::new(None));
+        .with_transient(|scope| {
+            let first_slot: Rc<RefCell<Option<Computed<'_, i32, ()>>>> =
+                Rc::new(RefCell::new(None));
+            let second_slot: Rc<RefCell<Option<Computed<'_, i32, ()>>>> =
+                Rc::new(RefCell::new(None));
             let (source, set_source) = scope.signal(0i32).expect("fallible reactive creation");
 
             let second_slot_in_first = second_slot.clone();
             let first = scope
-                .memo(
-                    move |_| {
+                .computed(
+                    move || {
                         let dependency = second_slot_in_first.borrow().as_ref().copied();
                         Ok(source.get().expect("reactive read")
                             + dependency
@@ -696,8 +743,8 @@ fn cyclic_memo_dependency_panics_without_poisoning_the_scheduler() {
 
             let first_slot_in_second = first_slot.clone();
             let second = scope
-                .memo(
-                    move |_| {
+                .computed(
+                    move || {
                         let dependency = first_slot_in_second.borrow().as_ref().copied();
                         Ok(source.get().expect("reactive read")
                             + dependency
@@ -727,16 +774,18 @@ fn cyclic_effect_queue_failure_does_not_poison_unrelated_effects() {
     let runs = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
-            let first_slot: Rc<RefCell<Option<Memo<'_, i32, ()>>>> = Rc::new(RefCell::new(None));
-            let second_slot: Rc<RefCell<Option<Memo<'_, i32, ()>>>> = Rc::new(RefCell::new(None));
+        .with_transient(|scope| {
+            let first_slot: Rc<RefCell<Option<Computed<'_, i32, ()>>>> =
+                Rc::new(RefCell::new(None));
+            let second_slot: Rc<RefCell<Option<Computed<'_, i32, ()>>>> =
+                Rc::new(RefCell::new(None));
             let (source, set_source) = scope.signal(0i32).expect("fallible reactive creation");
             let (refresh, set_refresh) = scope.signal(0i32).expect("fallible reactive creation");
 
             let second_slot_in_first = second_slot.clone();
             let first = scope
-                .memo(
-                    move |_| {
+                .computed(
+                    move || {
                         refresh.get().expect("test operation should succeed");
                         let dependency = second_slot_in_first.borrow().as_ref().copied();
                         Ok(source.get().expect("reactive read")
@@ -751,8 +800,8 @@ fn cyclic_effect_queue_failure_does_not_poison_unrelated_effects() {
 
             let first_slot_in_second = first_slot.clone();
             let second = scope
-                .memo(
-                    move |_| {
+                .computed(
+                    move || {
                         let dependency = first_slot_in_second.borrow().as_ref().copied();
                         Ok(source.get().expect("reactive read")
                             + dependency

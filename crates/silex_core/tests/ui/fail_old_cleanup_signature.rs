@@ -2,10 +2,10 @@ use silex_core::{Runtime, SilexError};
 
 fn main() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let _ = scope.on_cleanup(
+    runtime.with_transient(|owner| {
+        let _ = owner.on_cleanup(
             || {},
-            scope
+            owner
                 .error_handler(|_: SilexError| {})
                 .expect("handler should register"),
         );

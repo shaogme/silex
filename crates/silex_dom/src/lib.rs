@@ -8,6 +8,7 @@ pub mod view;
 pub use mounted::{
     CleanupFailure, CleanupFailureDiagnostic, CleanupOrigin, CleanupReport, CleanupSink,
     DisposeError, DropFailureReport, MountAvailability, MountContext, MountError, MountedApp,
+    RollbackError,
 };
 
 pub mod prelude {
@@ -19,11 +20,13 @@ pub mod prelude {
     pub use crate::mounted::{
         CleanupFailure, CleanupFailureDiagnostic, CleanupOrigin, CleanupReport, CleanupSink,
         DisposeError, DropFailureReport, MountAvailability, MountContext, MountError, MountedApp,
+        RollbackError,
     };
     pub use crate::setup_global_error_handlers;
     pub use crate::view::{
-        ApplyAttributes, AutoReactiveView, BranchEvaluation, HostResourceHandle, MountInstance,
-        MountOwnerToken, MountState, Prop, PropFixed, PropMissing, View, ViewCons, ViewNil, any::*,
+        ApplyAttributes, AutoReactiveView, BranchEvaluation, BranchRenderContext,
+        HostResourceHandle, MountInstance, MountOwnerContext, MountOwnerToken, MountState, Prop,
+        PropFixed, PropMissing, View, ViewCons, ViewNil, any::*,
     };
     pub use crate::{chain, view_match};
 }

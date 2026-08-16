@@ -1,4 +1,4 @@
-use silex_router::core::{Scope, SilexContext};
+use silex_router::core::{OwnerAccess, SilexContext};
 use silex_router::dom::attribute::GlobalEventAttributes;
 use silex_router::dom::view::AnyView;
 use silex_router::macros::router;
@@ -10,20 +10,20 @@ router! {
     }
 }
 
-fn compile_scoped_api<'scope>(scope: Scope<'scope>) {
-    let (text, _) = scope
+fn compile_owner_api<'owner>(owner: OwnerAccess<'owner>) {
+    let (text, _) = owner
         .signal(String::from("scoped"))
         .expect("text signal should be created");
-    let (path, set_path) = scope
+    let (path, set_path) = owner
         .signal(String::from("/"))
         .expect("path signal should be created");
-    let (search, set_search) = scope
+    let (search, set_search) = owner
         .signal(String::new())
         .expect("search signal should be created");
-    let error_handler = scope
+    let error_handler = owner
         .error_handler(|_| {})
         .expect("error handler should be registered");
-    let silex = SilexContext::new(scope, error_handler.view());
+    let silex = SilexContext::new(owner, error_handler.view());
     let ctx = RouterContext::new(
         silex,
         RouterContextProps {
@@ -47,12 +47,9 @@ fn compile_scoped_api<'scope>(scope: Scope<'scope>) {
         AppRoute::Home => AnyView::from("home"),
     })
     .expect("route table should compile");
-    let _router = Router(silex)
-        .base("/app")
-        .routes(table)
-        .build();
+    let _router = Router(silex).base("/app").routes(table).build();
 }
 
 fn main() {
-    let _ = compile_scoped_api;
+    let _ = compile_owner_api;
 }

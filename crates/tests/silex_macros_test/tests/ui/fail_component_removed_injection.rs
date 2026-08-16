@@ -2,16 +2,16 @@
 
 include!("../../src/lib.rs");
 
-use silex_core::{ErrorReporter, Scope};
+use silex_core::{ErrorReporter, OwnerAccess};
 use silex_macros::component;
 
 #[component]
-fn RemovedInjection<'scope, Ctx>(
+fn RemovedInjection<'owner, Ctx>(
 #[ctx] ctx: Ctx,
     #[inject(owner)] owner: (),
     
-) -> impl View<'scope> {
-    let _ = (scope, owner, error_handler);
+) -> impl View<'owner> {
+    let _ = (owner, owner, error_handler);
     ()
 }
 

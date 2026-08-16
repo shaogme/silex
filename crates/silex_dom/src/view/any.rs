@@ -8,7 +8,7 @@ use silex_core::SilexResult;
 use std::rc::Rc;
 use web_sys::Node;
 
-/// Scope-bound type-erased view.
+/// Owner-bound type-erased view.
 #[derive(Default)]
 pub enum AnyView<'scope> {
     #[default]

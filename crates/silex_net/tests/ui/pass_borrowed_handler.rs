@@ -5,7 +5,7 @@ fn main() {
     let mut runtime = Runtime::new();
     if false {
         runtime
-            .child(|scope| {
+            .with_transient(|scope| {
                 let token = scope.error_handler(|_| {}).unwrap();
                 let _resource = HttpClient::get(scope, "https://example.test", &token)
                     .into_resource(None)

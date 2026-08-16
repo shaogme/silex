@@ -1,8 +1,10 @@
-use silex_core::{ErrorHandlerToken, ReactiveError, Runtime, Scope, SilexError, SilexErrorKind};
+use silex_core::{
+    ErrorHandlerToken, OwnerAccess, ReactiveError, Runtime, SilexError, SilexErrorKind,
+};
 use std::{cell::Cell, rc::Rc};
 
-fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope> {
-    scope
+fn handler<'owner>(owner: OwnerAccess<'owner>) -> ErrorHandlerToken<'owner> {
+    owner
         .error_handler(|_| {})
         .expect("error handler should register")
 }
@@ -11,8 +13,8 @@ fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope> {
 fn core_try_operations_preserve_borrow_conflicts() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
-            let (read, write) = scope.signal(1_i32).expect("signal should initialize");
+        .with_transient(|owner| {
+            let (read, write) = owner.signal(1_i32).expect("signal should initialize");
 
             let read_then_write = read.with(|_| write.set(2));
             assert!(matches!(
@@ -40,15 +42,15 @@ fn core_try_operations_preserve_borrow_conflicts() {
 
             assert!(matches!(read.get(), Ok(1)));
         })
-        .expect("child scope should initialize");
+        .expect("child owner should initialize");
 }
 
 #[test]
 fn core_try_operations_preserve_stored_and_rx_errors() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
-            let stored = scope.stored(1_i32).expect("stored value should initialize");
+        .with_transient(|owner| {
+            let stored = owner.stored(1_i32).expect("stored value should initialize");
             let stored_conflict = stored.with(|_| stored.update(|_| ()));
             assert!(matches!(
                 stored_conflict,
@@ -57,7 +59,7 @@ fn core_try_operations_preserve_stored_and_rx_errors() {
                 ))))
             ));
 
-            let (read, write) = scope.signal(1_i32).expect("signal should initialize");
+            let (read, write) = owner.signal(1_i32).expect("signal should initialize");
             let rx = read.into_rx();
             let rx_conflict = rx.with(|_| write.set(2));
             assert!(matches!(
@@ -67,7 +69,7 @@ fn core_try_operations_preserve_stored_and_rx_errors() {
                 ))))
             ));
         })
-        .expect("child scope should initialize");
+        .expect("child owner should initialize");
 }
 
 #[test]
@@ -77,8 +79,8 @@ fn node_ref_keeps_empty_value_separate_from_runtime_errors() {
     let stale_error_for_cleanup = stale_error.clone();
 
     runtime
-        .child(|scope| {
-            let node_ref = scope
+        .with_transient(|owner| {
+            let node_ref = owner
                 .node_ref::<String>()
                 .expect("node ref should initialize");
             assert!(matches!(node_ref.get(), Ok(None)));
@@ -90,17 +92,17 @@ fn node_ref_keeps_empty_value_separate_from_runtime_errors() {
             assert!(matches!(node_ref.get(), Ok(None)));
 
             let node_ref_for_cleanup = node_ref;
-            scope
+            owner
                 .on_cleanup(
                     move || {
                         stale_error_for_cleanup.set(node_ref_for_cleanup.get().err());
                         Ok(())
                     },
-                    handler(scope),
+                    handler(owner),
                 )
                 .expect("cleanup should register");
         })
-        .expect("child scope should initialize");
+        .expect("child owner should initialize");
 
     assert!(matches!(
         stale_error.take(),
@@ -117,9 +119,9 @@ fn stale_core_read_returns_no_such_node_and_track_is_inactive() {
     let stale_error_for_cleanup = stale_error.clone();
 
     runtime
-        .child(|scope| {
-            let (read, write) = scope.signal(1_i32).expect("signal should initialize");
-            scope
+        .with_transient(|owner| {
+            let (read, write) = owner.signal(1_i32).expect("signal should initialize");
+            owner
                 .on_cleanup(
                     move || {
                         assert!(matches!(
@@ -143,11 +145,11 @@ fn stale_core_read_returns_no_such_node_and_track_is_inactive() {
                         stale_error_for_cleanup.set(read.get().err());
                         Ok(())
                     },
-                    handler(scope),
+                    handler(owner),
                 )
                 .expect("cleanup should register");
         })
-        .expect("child scope should initialize");
+        .expect("child owner should initialize");
 
     assert!(matches!(
         stale_error.take(),
@@ -170,24 +172,26 @@ fn runtime_errors_are_matchable_through_silex_error() {
 fn core_owner_registration_exposes_inactive_errors() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
-            assert!(scope.on_cleanup(|| Ok(()), handler(scope)).is_ok());
-            let owner = scope.owned_scope().expect("owner is active");
-            assert!(owner.on_cleanup(|| Ok(()), handler(scope)).is_ok());
-            owner.dispose().expect("owned scope should dispose");
+        .with_transient(|owner| {
+            assert!(owner.on_cleanup(|| Ok(()), handler(owner)).is_ok());
+            let child = owner.create_child().expect("owner is active");
+            let child_owner = child.access();
+            let child_handler = handler(child_owner);
+            assert!(child_owner.on_cleanup(|| Ok(()), &child_handler).is_ok());
+            child.close().expect("child owner should close");
 
             assert!(matches!(
-                owner.on_cleanup(|| Ok(()), handler(scope)),
+                child_owner.on_cleanup(|| Ok(()), &child_handler),
                 Err(SilexError::Fatal(SilexErrorKind::Reactivity(
                     ReactiveError::NoSuchNode
                 )))
             ));
             assert!(matches!(
-                owner.child(),
+                child_owner.with_transient(|_| ()),
                 Err(SilexError::Fatal(SilexErrorKind::Reactivity(
                     ReactiveError::NoSuchNode
                 )))
             ));
         })
-        .expect("child scope should initialize");
+        .expect("child owner should initialize");
 }

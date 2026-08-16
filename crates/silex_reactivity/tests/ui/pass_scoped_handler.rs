@@ -3,7 +3,7 @@ use silex_reactivity::Runtime;
 fn main() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
         let local = String::from("scoped");
         let handler = scope
             .error_handler(move |error: &'_ str| {

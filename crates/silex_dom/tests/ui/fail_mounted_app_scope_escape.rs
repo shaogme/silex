@@ -1,11 +1,11 @@
-use silex_core::{Scope, SilexResult};
+use silex_core::{OwnerAccess, SilexResult};
 use silex_dom::mounted::MountContext;
 
 fn leak_scope<'scope>(
     ctx: &MountContext<'scope>,
-    slot: &mut Option<Scope<'static>>,
+    slot: &mut Option<OwnerAccess<'static>>,
 ) -> SilexResult<()> {
-    *slot = Some(ctx.scope());
+    *slot = Some(ctx.access());
     Ok(())
 }
 

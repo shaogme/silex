@@ -6,9 +6,9 @@ use silex_core::{ErrorHandlerToken, Runtime, SilexError, SilexResult};
 use silex_macros::{css, global, tw};
 
 global! {
-    pub TokenGlobal<'scope>(
-        error_handler: ErrorHandlerToken<'scope>,
-        color: silex_core::reactivity::Signal<'scope, silex_css::types::Hex>,
+    pub TokenGlobal<'owner>(
+        error_handler: ErrorHandlerToken<'owner>,
+        color: silex_core::reactivity::Signal<'owner, silex_css::types::Hex>,
     ) {
         body {
             color: $(color);
@@ -19,10 +19,10 @@ global! {
 
 fn main() {
     let mut runtime = Runtime::new();
-    let _ = runtime.child(|scope| -> SilexResult<()> {
-        let (width, _) = scope.signal(silex_css::types::px(4))?;
-        let (color, _) = scope.signal(silex_css::types::hex("#123456"))?;
-        let token = scope.error_handler(|_: SilexError| {})?;
+    let _ = runtime.with_transient(|owner| -> SilexResult<()> {
+        let (width, _) = owner.signal(silex_css::types::px(4))?;
+        let (color, _) = owner.signal(silex_css::types::hex("#123456"))?;
+        let token = owner.error_handler(|_: SilexError| {})?;
 
         let _css: silex_core::SilexResult<silex_css::DynamicCss<'_>> =
             css!(token.clone(); width: $(width); height: $(width););

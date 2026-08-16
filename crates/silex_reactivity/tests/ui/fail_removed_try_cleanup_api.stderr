@@ -1,15 +1,15 @@
-error[E0599]: no method named `try_on_cleanup` found for struct `silex_reactivity::Scope<'scope>` in the current scope
+error[E0599]: no method named `try_on_cleanup` found for struct `OwnerAccess<'owner>` in the current scope
  --> tests/ui/fail_removed_try_cleanup_api.rs:6:23
   |
 6 |         let _ = scope.try_on_cleanup(|| Ok::<(), ()>(()));
   |                       ^^^^^^^^^^^^^^
   |
 help: there is a method `on_cleanup` with a similar name, but with different arguments
- --> src/child/scope.rs
+ --> src/owner.rs
   |
   | /     pub fn on_cleanup<E, F, H>(&self, f: F, error_handler: H) -> ReactiveResult<()>
   | |     where
-  | |         E: 'scope,
-  | |         F: FnOnce() -> Result<(), E> + 'scope,
-  | |         H: ErrorHandlerInput<'scope, E>,
+  | |         E: 'owner,
+  | |         F: FnOnce() -> Result<(), E> + 'owner,
+  | |         H: ErrorHandlerInput<'owner, E>,
   | |________________________________________^

@@ -13,22 +13,52 @@
 //! operation; it does not extend the lifetime of payloads beyond the owner.
 
 use crate::{
-    runtime::storage::{CallbackThunk, TypedNodeRef, TypedSlot},
+    ReactiveError,
+    owner::ScopeStorage,
     runtime::{ScopeState, ScopeStateInner},
 };
 use std::{
     cell::RefCell,
     marker::PhantomData,
-    ptr::NonNull,
     rc::{Rc, Weak},
 };
 
 pub(crate) type ErasedScopeState = RefCell<ScopeStateInner<'static>>;
 
 /// A typed capability to access one owner while its lexical lifetime is live.
+///
+/// The token is never created from an owner id.  Lexical callers create it
+/// from a borrowed [`ScopeStorage`], while the scheduler creates it only after
+/// its owner-generation and weak-identity checks have succeeded.
 pub(crate) struct OwnerToken<'scope> {
-    state: Rc<ErasedScopeState>,
+    state: ScopeState<'scope>,
     marker: PhantomData<fn(&'scope ()) -> &'scope ()>,
+}
+
+/// Return a stable typed reference to a persistent child storage.
+///
+/// The parent storage owns every child allocation in its `children` vector.
+/// Checking that relationship before restoring the parent lifetime means the
+/// returned reference remains valid for the complete parent borrow, even when
+/// the separate child close authority is dropped. Runtime operations still
+/// validate the child's owner phase and generation before touching nodes.
+pub(crate) fn persistent_child_storage<'scope>(
+    parent: &'scope ScopeStorage,
+    child: &Rc<ScopeStorage>,
+) -> Result<&'scope ScopeStorage, ReactiveError> {
+    let is_owned_child = parent
+        .children
+        .borrow()
+        .iter()
+        .any(|candidate| Rc::ptr_eq(candidate, child));
+    if !is_owned_child {
+        return Err(ReactiveError::InvariantViolation);
+    }
+
+    // SAFETY: the checked parent owns `child` through an `Rc` in `children`.
+    // That vector remains alive for the complete borrow of `parent`, so the
+    // child allocation cannot be freed during the returned reference's life.
+    Ok(unsafe { &*Rc::as_ptr(child) })
 }
 
 impl<'scope> Clone for OwnerToken<'scope> {
@@ -41,19 +71,38 @@ impl<'scope> Clone for OwnerToken<'scope> {
 }
 
 impl<'scope> OwnerToken<'scope> {
-    pub(crate) fn from_storage(
-        state: Rc<ErasedScopeState>,
-        _owner: PhantomData<fn(&'scope ()) -> &'scope ()>,
-    ) -> Self {
+    pub(crate) fn from_storage(storage: &'scope ScopeStorage) -> Self {
         Self {
-            state,
+            // SAFETY: `storage` is borrowed for `'scope` and owns the erased
+            // state as well as the bump arena that contains every payload.
+            // The owner close path clears all typed slots before the storage
+            // can be dropped, so this token cannot outlive its payload arena.
+            state: ScopeState::from_inner(unsafe { restore_state(storage.state.clone()) }),
+            marker: PhantomData,
+        }
+    }
+
+    /// Restore a typed owner after the scheduler has validated its runtime,
+    /// owner generation, weak identity, and active phase.
+    ///
+    /// # Safety
+    ///
+    /// The caller must have performed those checks immediately before calling
+    /// this function and must not expose the returned token after the owner
+    /// enters its closing phase.  The owner close order is: deactivate the
+    /// registry slot, clear node payloads, detach graph edges, then release
+    /// the slot generation.
+    pub(crate) unsafe fn from_validated(state: Rc<ErasedScopeState>) -> Self {
+        Self {
+            // SAFETY: upheld by the function contract above.
+            state: ScopeState::from_inner(unsafe { restore_state(state) }),
             marker: PhantomData,
         }
     }
 
     /// Return the state with the lifetime carried by this owner token.
     pub(crate) fn state(&self) -> ScopeState<'scope> {
-        ScopeState::from_inner(restore_state(self.state.clone()))
+        self.state.clone()
     }
 }
 
@@ -77,10 +126,10 @@ impl WeakOwnerToken {
         }
     }
 
-    pub(crate) fn upgrade<'scope>(&self) -> Option<OwnerToken<'scope>> {
-        self.state
-            .upgrade()
-            .map(|state| OwnerToken::from_storage(state, PhantomData))
+    /// Upgrade only to the erased allocation.  A typed owner is restored by
+    /// the runtime validator after it has checked identity and phase.
+    pub(crate) fn upgrade_erased(&self) -> Option<Rc<ErasedScopeState>> {
+        self.state.upgrade()
     }
 
     pub(crate) fn ptr_eq(&self, other: &Self) -> bool {
@@ -97,64 +146,25 @@ fn erase_state<'scope>(state: Rc<RefCell<ScopeStateInner<'scope>>>) -> Rc<Erased
 }
 
 /// Restore a state lifetime under the proof carried by `OwnerToken`.
-fn restore_state<'scope>(state: Rc<ErasedScopeState>) -> Rc<RefCell<ScopeStateInner<'scope>>> {
-    // SAFETY: callers can obtain a typed state only through `OwnerToken`; its
-    // lifetime is supplied by the lexical owner or by a validated registry
-    // lookup. Disposal removes registry access before owner payloads are dropped.
+unsafe fn restore_state<'scope>(
+    state: Rc<ErasedScopeState>,
+) -> Rc<RefCell<ScopeStateInner<'scope>>> {
+    // SAFETY: callers are limited to `OwnerToken::from_storage` and
+    // `OwnerToken::from_validated`; both paths document the lexical or
+    // scheduler proof that keeps the owner arena alive during the operation.
     unsafe { std::mem::transmute(state) }
-}
-
-/// Erase the callback payload lifetime for an asynchronous destination.
-///
-/// The destination stores only a weak owner token and must first validate that
-/// token through the scheduler before dereferencing this capability. Disposal
-/// clears the callback slot before the arena is released, so the erased
-/// lifetime cannot be observed after the owner ends.
-#[derive(Clone, Copy)]
-pub(crate) struct ErasedCallbackRef<T, E> {
-    pointer: NonNull<()>,
-    marker: PhantomData<fn(T) -> E>,
-}
-
-pub(crate) unsafe fn erase_callback_ref<'scope, T, E>(
-    callback: TypedNodeRef<'scope, CallbackThunk<'scope, T, E>>,
-) -> ErasedCallbackRef<T, E> {
-    // SAFETY: See the function-level safety contract. This changes only the
-    // lifetime carried by a typed arena reference; the owner gate controls all
-    // subsequent dereferences and drops the slot before arena teardown.
-    ErasedCallbackRef {
-        pointer: NonNull::from(callback.slot()).cast(),
-        marker: PhantomData,
-    }
-}
-
-impl<T, E> ErasedCallbackRef<T, E> {
-    pub(crate) fn restore<'scope>(
-        &self,
-        _owner: &OwnerToken<'scope>,
-    ) -> TypedNodeRef<'scope, CallbackThunk<'scope, T, E>> {
-        // SAFETY: The owner token proves that the scope arena is still live.
-        // This reference was created from that arena's callback slot and is
-        // restored only by a completion state carrying the matching token.
-        let slot = unsafe {
-            self.pointer
-                .cast::<TypedSlot<CallbackThunk<'scope, T, E>>>()
-                .as_ref()
-        };
-        TypedNodeRef::from_slot(slot)
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{runtime::GlobalScheduler, scope::ScopeStorage};
+    use crate::{owner::ScopeStorage, runtime::GlobalScheduler};
 
     fn store_borrowed<'scope>(
         storage: &'scope ScopeStorage,
         value: &'scope str,
     ) -> ScopeState<'scope> {
-        let state = storage.owner_token(PhantomData).state();
+        let state = storage.owner_token().state();
         let slot = storage.alloc_slot(value);
         state
             .borrow_mut()

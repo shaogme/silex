@@ -2,11 +2,11 @@ use silex_reactivity::Runtime;
 
 fn main() {
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root creation should succeed");
+    let root = runtime.owner().expect("root creation should succeed");
     let (read, _) = root
-        .scope()
+        .access()
         .signal(1i32)
         .expect("signal creation should succeed");
-    root.dispose().expect("root disposal should succeed");
+    drop(root);
     let _ = read.get();
 }

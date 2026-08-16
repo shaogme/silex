@@ -3,11 +3,13 @@
 extern crate silex_macros_test as silex;
 
 use js_sys::{Array, Reflect};
-use silex::core::{ErrorHandlerToken, ErrorReporter, Runtime, Scope, SilexContext, SilexResult};
+use silex::core::{
+    ErrorHandlerToken, ErrorReporter, OwnerAccess, Runtime, SilexContext, SilexResult,
+};
 use silex::css::types::{Hex, hex, px};
 use silex::dom::attribute::{AttributeBuilder, GlobalAttributes};
 use silex::dom::prelude::AnyView;
-use silex::dom::view::{MountOwner, ScopedMountOwner, View};
+use silex::dom::view::{MountOwner, MountOwnerToken, View};
 use silex::macros::{classes, css, global, styled, tw};
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
@@ -15,22 +17,22 @@ use wasm_bindgen_test::*;
 
 wasm_bindgen_test_configure!(run_in_browser);
 
-fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope> {
-    scope.error_handler(|_| {}).unwrap()
+fn test_handler<'owner>(owner: OwnerAccess<'owner>) -> ErrorHandlerToken<'owner> {
+    owner.error_handler(|_| {}).unwrap()
 }
 
-fn test_owner<'scope>(
-    scope: Scope<'scope>,
-) -> (ScopedMountOwner<'scope>, ErrorHandlerToken<'scope>) {
-    let error_handler = test_handler(scope);
-    (ScopedMountOwner::new(scope), error_handler)
+fn test_owner<'owner>(
+    owner: OwnerAccess<'owner>,
+) -> (MountOwnerToken<'owner>, ErrorHandlerToken<'owner>) {
+    let error_handler = test_handler(owner);
+    (MountOwnerToken::new(owner), error_handler)
 }
 
 global! {
-    pub MacroGlobal<'scope>(
-        error_handler: ErrorReporter<'scope>,
-        color: silex::core::reactivity::Signal<'scope, Hex>,
-        selector: silex::core::reactivity::Signal<'scope, String>,
+    pub MacroGlobal<'owner>(
+        error_handler: ErrorReporter<'owner>,
+        color: silex::core::reactivity::Signal<'owner, Hex>,
+        selector: silex::core::reactivity::Signal<'owner, String>,
     ) {
         :root { color: $(color); }
         $selector { border-color: $(color); }
@@ -38,19 +40,19 @@ global! {
 }
 
 global! {
-    pub MacroForeignGlobal<'scope>(
-        error_handler: ErrorReporter<'scope>,
-        color: silex::core::reactivity::Signal<'scope, Hex>,
+    pub MacroForeignGlobal<'owner>(
+        error_handler: ErrorReporter<'owner>,
+        color: silex::core::reactivity::Signal<'owner, Hex>,
     ) {
         :root { --macro-foreign-global: $(color); }
     }
 }
 
 global! {
-    pub MacroMixedForeignGlobal<'scope>(
-        error_handler: ErrorReporter<'scope>,
-        color: silex::core::reactivity::Signal<'scope, Hex>,
-        selector: silex::core::reactivity::Signal<'scope, String>,
+    pub MacroMixedForeignGlobal<'owner>(
+        error_handler: ErrorReporter<'owner>,
+        color: silex::core::reactivity::Signal<'owner, Hex>,
+        selector: silex::core::reactivity::Signal<'owner, String>,
     ) {
         :root { --macro-mixed-foreign-global: $(color); }
         $selector { color: red; }
@@ -58,30 +60,30 @@ global! {
 }
 
 styled! {
-    pub MacroStyledValue<'scope><div>(
-        #[ctx] ctx: SilexContext<'scope>,
-        children: AnyView<'scope>,
-        color: silex::core::reactivity::Signal<'scope, Hex>,
+    pub MacroStyledValue<'owner><div>(
+        #[ctx] ctx: SilexContext<'owner>,
+        children: AnyView<'owner>,
+        color: silex::core::reactivity::Signal<'owner, Hex>,
     ) {
         color: $(color);
     }
 }
 
 styled! {
-    pub MacroStyledSelector<'scope><div>(
-        #[ctx] ctx: SilexContext<'scope>,
-        children: AnyView<'scope>,
-        selector: silex::core::reactivity::Signal<'scope, String>,
+    pub MacroStyledSelector<'owner><div>(
+        #[ctx] ctx: SilexContext<'owner>,
+        children: AnyView<'owner>,
+        selector: silex::core::reactivity::Signal<'owner, String>,
     ) {
         & $selector { color: red; }
     }
 }
 
 styled! {
-    pub MacroStyledVariant<'scope><div>(
-        #[ctx] ctx: SilexContext<'scope>,
-        children: AnyView<'scope>,
-        selector: silex::core::reactivity::Signal<'scope, String>,
+    pub MacroStyledVariant<'owner><div>(
+        #[ctx] ctx: SilexContext<'owner>,
+        children: AnyView<'owner>,
+        selector: silex::core::reactivity::Signal<'owner, String>,
     ) {
         variants: {
             mode: {
@@ -163,33 +165,33 @@ fn remove_host(host: &web_sys::Element) {
         .expect("test host can be removed");
 }
 
-fn mount_foreign_css<'scope>(
-    local_root: &'scope silex::core::RootHandle,
-    foreign_root: &'scope silex::core::RootHandle,
+fn mount_foreign_css<'owner>(
+    local_root: &'owner silex::core::OwnerHandle,
+    foreign_root: &'owner silex::core::OwnerHandle,
     host: &web_sys::Element,
 ) -> SilexResult<()> {
-    let local_scope = local_root.scope();
-    let foreign_scope = foreign_root.scope();
+    let local_scope = local_root.access();
+    let foreign_scope = foreign_root.access();
     let (color, _) = foreign_scope.signal(hex("#123456")).unwrap();
     let css: SilexResult<silex::css::DynamicCss<'_>> = css!(test_handler(local_scope); {
         --macro-foreign-css: $(color);
     });
     let view = silex::html::div(()).apply(css?);
-    let (owner, error_handler) = test_owner(local_scope);
+    let (mount_owner, error_handler) = test_owner(local_scope);
     assert!(
-        view.mount(&owner, host, Vec::new(), error_handler.view())
+        view.mount(&mount_owner, host, Vec::new(), error_handler.view())
             .is_err()
     );
     Ok(())
 }
 
-fn mount_foreign_global<'scope>(
-    local_root: &'scope silex::core::RootHandle,
-    foreign_root: &'scope silex::core::RootHandle,
+fn mount_foreign_global<'owner>(
+    local_root: &'owner silex::core::OwnerHandle,
+    foreign_root: &'owner silex::core::OwnerHandle,
     host: &web_sys::Element,
 ) {
-    let local_scope = local_root.scope();
-    let foreign_scope = foreign_root.scope();
+    let local_scope = local_root.access();
+    let foreign_scope = foreign_root.access();
     let (color, _) = foreign_scope.signal(hex("#654321")).unwrap();
     let (owner, error_handler) = test_owner(local_scope);
     assert!(
@@ -200,13 +202,13 @@ fn mount_foreign_global<'scope>(
     );
 }
 
-fn mount_mixed_foreign_global<'scope>(
-    local_root: &'scope silex::core::RootHandle,
-    foreign_root: &'scope silex::core::RootHandle,
+fn mount_mixed_foreign_global<'owner>(
+    local_root: &'owner silex::core::OwnerHandle,
+    foreign_root: &'owner silex::core::OwnerHandle,
     host: &web_sys::Element,
 ) {
-    let local_scope = local_root.scope();
-    let foreign_scope = foreign_root.scope();
+    let local_scope = local_root.access();
+    let foreign_scope = foreign_root.access();
     let (color, _) = local_scope.signal(hex("#112233")).unwrap();
     let (selector, _) = foreign_scope
         .signal(String::from("macro-mixed-foreign-selector"))
@@ -233,11 +235,11 @@ fn foreign_macro_inputs_fail_before_dom_or_stylesheet_side_effects() {
 
     let mut local_runtime = Runtime::new();
     let local_root = local_runtime
-        .run()
+        .owner()
         .expect("local runtime root can be created");
     let mut foreign_runtime = Runtime::new();
     let foreign_root = foreign_runtime
-        .run()
+        .owner()
         .expect("foreign runtime root can be created");
 
     mount_foreign_css(&local_root, &foreign_root, &host)
@@ -255,10 +257,10 @@ fn foreign_macro_inputs_fail_before_dom_or_stylesheet_side_effects() {
     assert!(!document_style_contains("macro-mixed-foreign-selector"));
 
     local_root
-        .dispose()
+        .close()
         .expect("local foreign-input owner can be disposed");
     foreign_root
-        .dispose()
+        .close()
         .expect("foreign source owner can be disposed");
     remove_host(&host);
 }
@@ -275,18 +277,18 @@ fn css_dynamic_value_mounts_updates_and_cleans_with_owner() {
         .expect("test host can be mounted");
 
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime root can be created");
+    let root = runtime.owner().expect("runtime root can be created");
     let element;
     {
-        let scope = root.scope();
-        let (width, set_width) = scope.signal(px(4)).unwrap();
+        let owner = root.access();
+        let (width, set_width) = owner.signal(px(4)).unwrap();
         let view = (|| -> SilexResult<_> {
             let css: SilexResult<silex::css::DynamicCss<'_>> =
-                css!(test_handler(scope); width: $(width););
+                css!(test_handler(owner); width: $(width););
             Ok(silex::html::div(()).apply(css?))
         })()
         .expect("dynamic CSS macro should expand");
-        let (owner, error_handler) = test_owner(scope);
+        let (owner, error_handler) = test_owner(owner);
         let _ = view
             .mount(&owner, &host, Vec::new(), error_handler.view())
             .expect("macro view should mount");
@@ -299,7 +301,7 @@ fn css_dynamic_value_mounts_updates_and_cleans_with_owner() {
         assert!(style_text(&element).contains("8px"));
     }
 
-    root.dispose().expect("css owner can be disposed");
+    root.close().expect("css owner can be disposed");
     assert!(element.class_name().is_empty());
     assert!(style_text(&element).is_empty());
     remove_host(&host);
@@ -317,20 +319,20 @@ async fn css_dynamic_selector_updates_and_detaches_on_owner_dispose() {
         .expect("test host can be mounted");
 
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime root can be created");
+    let root = runtime.owner().expect("runtime root can be created");
     let element;
     let first_dynamic_class;
     {
-        let scope = root.scope();
-        let (selector, set_selector) = scope.signal(String::from("macro-css-selector-a")).unwrap();
+        let owner = root.access();
+        let (selector, set_selector) = owner.signal(String::from("macro-css-selector-a")).unwrap();
         let view = (|| -> SilexResult<_> {
-            let css: SilexResult<silex::css::DynamicCss<'_>> = css!(test_handler(scope); {
+            let css: SilexResult<silex::css::DynamicCss<'_>> = css!(test_handler(owner); {
                 & $selector { color: red; }
             });
             Ok(silex::html::div(()).apply(css?))
         })()
         .expect("dynamic CSS selector macro should expand");
-        let (owner, error_handler) = test_owner(scope);
+        let (owner, error_handler) = test_owner(owner);
         let _ = view
             .mount(&owner, &host, Vec::new(), error_handler.view())
             .expect("macro view should mount");
@@ -363,7 +365,7 @@ async fn css_dynamic_selector_updates_and_detaches_on_owner_dispose() {
         ]));
     }
 
-    root.dispose().expect("css selector owner can be disposed");
+    root.close().expect("css selector owner can be disposed");
     flush_style_microtasks().await;
     assert!(element.class_name().is_empty());
     assert!(!document_style_contains("macro-css-selector-b"));
@@ -382,21 +384,21 @@ async fn css_dynamic_selector_dispose_before_pending_style_flush_does_not_readd_
         .expect("test host can be mounted");
 
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime root can be created");
+    let root = runtime.owner().expect("runtime root can be created");
     let element;
     {
-        let scope = root.scope();
-        let (selector, _) = scope
+        let owner = root.access();
+        let (selector, _) = owner
             .signal(String::from("macro-pending-dispose-selector"))
             .unwrap();
         let view = (|| -> SilexResult<_> {
-            let css: SilexResult<silex::css::DynamicCss<'_>> = css!(test_handler(scope); {
+            let css: SilexResult<silex::css::DynamicCss<'_>> = css!(test_handler(owner); {
                 $selector { color: red; }
             });
             Ok(silex::html::div(()).apply(css?))
         })()
         .expect("dynamic CSS selector macro should expand");
-        let (owner, error_handler) = test_owner(scope);
+        let (owner, error_handler) = test_owner(owner);
         let _ = view
             .mount(&owner, &host, Vec::new(), error_handler.view())
             .expect("macro view should mount");
@@ -406,7 +408,7 @@ async fn css_dynamic_selector_dispose_before_pending_style_flush_does_not_readd_
         assert!(!element.class_name().is_empty());
     }
 
-    root.dispose()
+    root.close()
         .expect("pending stylesheet owner can be disposed");
     flush_style_microtasks().await;
     assert!(element.class_name().is_empty());
@@ -427,25 +429,25 @@ async fn css_dynamic_selector_stylesheet_is_leased_across_owners() {
 
     let mut first_runtime = Runtime::new();
     let first_root = first_runtime
-        .run()
+        .owner()
         .expect("first runtime root can be created");
     let mut second_runtime = Runtime::new();
     let second_root = second_runtime
-        .run()
+        .owner()
         .expect("second runtime root can be created");
     let first_element;
     let second_element;
     {
-        let scope = first_root.scope();
-        let (selector, _) = scope.signal(String::from("macro-shared-selector")).unwrap();
+        let owner = first_root.access();
+        let (selector, _) = owner.signal(String::from("macro-shared-selector")).unwrap();
         let view = (|| -> SilexResult<_> {
-            let css: SilexResult<silex::css::DynamicCss<'_>> = css!(test_handler(scope); {
+            let css: SilexResult<silex::css::DynamicCss<'_>> = css!(test_handler(owner); {
                 $selector { color: red; }
             });
             Ok(silex::html::div(()).apply(css?))
         })()
         .expect("dynamic CSS selector macro should expand");
-        let (owner, error_handler) = test_owner(scope);
+        let (owner, error_handler) = test_owner(owner);
         let _ = view
             .mount(&owner, &host, Vec::new(), error_handler.view())
             .expect("macro view should mount");
@@ -454,16 +456,16 @@ async fn css_dynamic_selector_stylesheet_is_leased_across_owners() {
             .expect("first shared selector view mounts an element");
     }
     {
-        let scope = second_root.scope();
-        let (selector, _) = scope.signal(String::from("macro-shared-selector")).unwrap();
+        let owner = second_root.access();
+        let (selector, _) = owner.signal(String::from("macro-shared-selector")).unwrap();
         let view = (|| -> SilexResult<_> {
-            let css: SilexResult<silex::css::DynamicCss<'_>> = css!(test_handler(scope); {
+            let css: SilexResult<silex::css::DynamicCss<'_>> = css!(test_handler(owner); {
                 $selector { color: red; }
             });
             Ok(silex::html::div(()).apply(css?))
         })()
         .expect("dynamic CSS selector macro should expand");
-        let (owner, error_handler) = test_owner(scope);
+        let (owner, error_handler) = test_owner(owner);
         let _ = view
             .mount(&owner, &host, Vec::new(), error_handler.view())
             .expect("macro view should mount");
@@ -478,14 +480,14 @@ async fn css_dynamic_selector_stylesheet_is_leased_across_owners() {
     assert!(!second_element.class_name().is_empty());
 
     first_root
-        .dispose()
+        .close()
         .expect("first shared stylesheet owner can be disposed");
     flush_style_microtasks().await;
     assert!(!second_element.class_name().is_empty());
     assert!(document_style_contains("macro-shared-selector"));
 
     second_root
-        .dispose()
+        .close()
         .expect("second shared stylesheet owner can be disposed");
     flush_style_microtasks().await;
     assert!(!document_style_contains("macro-shared-selector"));
@@ -504,12 +506,12 @@ fn conditional_tw_switches_one_owner_bound_class_and_cleans_on_dispose() {
         .expect("test host can be mounted");
 
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime root can be created");
+    let root = runtime.owner().expect("runtime root can be created");
     let element;
     let first_class;
     {
-        let scope = root.scope();
-        let (condition, set_condition) = scope.signal(true).unwrap();
+        let owner = root.access();
+        let (condition, set_condition) = owner.signal(true).unwrap();
         let view = silex::html::div(()).apply(tw!(
             "inline-flex",
             (
@@ -518,7 +520,7 @@ fn conditional_tw_switches_one_owner_bound_class_and_cleans_on_dispose() {
                 "bg-slate-500 text-black"
             )
         ));
-        let (owner, error_handler) = test_owner(scope);
+        let (owner, error_handler) = test_owner(owner);
         let _ = view
             .mount(&owner, &host, Vec::new(), error_handler.view())
             .expect("macro view should mount");
@@ -539,8 +541,7 @@ fn conditional_tw_switches_one_owner_bound_class_and_cleans_on_dispose() {
         );
     }
 
-    root.dispose()
-        .expect("conditional tw owner can be disposed");
+    root.close().expect("conditional tw owner can be disposed");
     assert!(element.class_name().is_empty());
     remove_host(&host);
 }
@@ -557,12 +558,12 @@ fn classes_reactive_toggle_updates_and_cleans_without_removing_static_classes() 
         .expect("test host can be mounted");
 
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime root can be created");
+    let root = runtime.owner().expect("runtime root can be created");
     let element;
     {
-        let scope = root.scope();
-        let (active, set_active) = scope.signal(true).unwrap();
-        let (dynamic_classes, set_dynamic_classes) = scope
+        let owner = root.access();
+        let (active, set_active) = owner.signal(true).unwrap();
+        let (dynamic_classes, set_dynamic_classes) = owner
             .signal(String::from("macro-owned macro-reactive"))
             .unwrap();
         let view = silex::html::div(()).apply(classes![
@@ -572,7 +573,7 @@ fn classes_reactive_toggle_updates_and_cleans_without_removing_static_classes() 
             "macro-owned" => active,
             dynamic_classes,
         ]);
-        let (owner, error_handler) = test_owner(scope);
+        let (owner, error_handler) = test_owner(owner);
         let _ = view
             .mount(&owner, &host, Vec::new(), error_handler.view())
             .expect("macro view should mount");
@@ -620,7 +621,7 @@ fn classes_reactive_toggle_updates_and_cleans_without_removing_static_classes() 
         assert!(!element.class_list().contains("macro-reactive"));
     }
 
-    root.dispose().expect("classes owner can be disposed");
+    root.close().expect("classes owner can be disposed");
     assert!(element.class_list().contains("macro-static"));
     assert!(!element.class_list().contains("macro-active"));
     assert!(!element.class_list().contains("macro-owned"));
@@ -639,11 +640,11 @@ fn static_class_strings_are_applied_as_separate_dom_tokens() {
         .expect("test host can be mounted");
 
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime root can be created");
+    let root = runtime.owner().expect("runtime root can be created");
     {
-        let scope = root.scope();
+        let owner = root.access();
         let view = silex::html::div(()).class("static-first static-second");
-        let (owner, error_handler) = test_owner(scope);
+        let (owner, error_handler) = test_owner(owner);
         let _ = view
             .mount(&owner, &host, Vec::new(), error_handler.view())
             .expect("macro view should mount");
@@ -655,7 +656,7 @@ fn static_class_strings_are_applied_as_separate_dom_tokens() {
         assert!(element.class_list().contains("static-second"));
     }
 
-    root.dispose().expect("static class owner can be disposed");
+    root.close().expect("static class owner can be disposed");
     remove_host(&host);
 }
 
@@ -671,16 +672,16 @@ fn styled_dynamic_value_cleans_inline_property_on_owner_dispose() {
         .expect("test host can be mounted");
 
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime root can be created");
+    let root = runtime.owner().expect("runtime root can be created");
     let element;
     {
-        let scope = root.scope();
-        let (color, set_color) = scope.signal(hex("#123456")).unwrap();
-        let (owner, error_handler) = test_owner(scope);
-        let ctx = SilexContext::new(scope, error_handler.view());
+        let owner = root.access();
+        let (color, set_color) = owner.signal(hex("#123456")).unwrap();
+        let (mount_owner, error_handler) = test_owner(owner);
+        let ctx = SilexContext::new(owner, error_handler.view());
         let view = MacroStyledValue(ctx, AnyView::new(()), color).build();
         let _ = view
-            .mount(&owner, &host, Vec::new(), error_handler.view())
+            .mount(&mount_owner, &host, Vec::new(), error_handler.view())
             .expect("styled value view should mount");
         element = host
             .last_element_child()
@@ -691,7 +692,7 @@ fn styled_dynamic_value_cleans_inline_property_on_owner_dispose() {
         assert!(style_text(&element).contains("#654321"));
     }
 
-    root.dispose().expect("styled value owner can be disposed");
+    root.close().expect("styled value owner can be disposed");
     assert!(style_text(&element).is_empty());
     remove_host(&host);
 }
@@ -709,15 +710,15 @@ fn styled_static_descriptor_rejects_foreign_inputs_without_outer_mount_aggregati
 
     let mut local_runtime = Runtime::new();
     let local_root = local_runtime
-        .run()
+        .owner()
         .expect("local runtime root can be created");
     let mut foreign_runtime = Runtime::new();
     let foreign_root = foreign_runtime
-        .run()
+        .owner()
         .expect("foreign runtime root can be created");
 
-    let local_scope = local_root.scope();
-    let foreign_scope = foreign_root.scope();
+    let local_scope = local_root.access();
+    let foreign_scope = foreign_root.access();
     let (color, _) = foreign_scope.signal(hex("#123456")).unwrap();
     let getter = color
         .into_rx()
@@ -747,10 +748,10 @@ fn styled_static_descriptor_rejects_foreign_inputs_without_outer_mount_aggregati
 
     drop(error_handler);
     local_root
-        .dispose()
+        .close()
         .expect("local styled owner can be disposed");
     foreign_root
-        .dispose()
+        .close()
         .expect("foreign styled source can be disposed");
     remove_host(&host);
 }
@@ -767,17 +768,17 @@ async fn styled_dynamic_selector_updates_and_detaches_on_owner_dispose() {
         .expect("test host can be mounted");
 
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime root can be created");
+    let root = runtime.owner().expect("runtime root can be created");
     let element;
     let first_class;
     {
-        let scope = root.scope();
-        let (selector, set_selector) = scope.signal(String::from("macro-selector-a")).unwrap();
-        let (owner, error_handler) = test_owner(scope);
-        let ctx = SilexContext::new(scope, error_handler.view());
+        let owner = root.access();
+        let (selector, set_selector) = owner.signal(String::from("macro-selector-a")).unwrap();
+        let (mount_owner, error_handler) = test_owner(owner);
+        let ctx = SilexContext::new(owner, error_handler.view());
         let view = MacroStyledSelector(ctx, AnyView::new(()), selector).build();
         let _ = view
-            .mount(&owner, &host, Vec::new(), error_handler.view())
+            .mount(&mount_owner, &host, Vec::new(), error_handler.view())
             .expect("styled selector view should mount");
         element = host
             .last_element_child()
@@ -808,8 +809,7 @@ async fn styled_dynamic_selector_updates_and_detaches_on_owner_dispose() {
         ]));
     }
 
-    root.dispose()
-        .expect("styled selector owner can be disposed");
+    root.close().expect("styled selector owner can be disposed");
     flush_style_microtasks().await;
     assert!(!document_style_contains("macro-selector-b"));
     remove_host(&host);
@@ -827,22 +827,22 @@ async fn styled_dynamic_variant_switches_rules_and_cleans_on_dispose() {
         .expect("test host can be mounted");
 
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime root can be created");
+    let root = runtime.owner().expect("runtime root can be created");
     let element;
     {
-        let scope = root.scope();
-        let (mode, set_mode) = scope.signal(String::from("light")).unwrap();
-        let (selector, _) = scope
+        let owner = root.access();
+        let (mode, set_mode) = owner.signal(String::from("light")).unwrap();
+        let (selector, _) = owner
             .signal(String::from("macro-variant-selector"))
             .unwrap();
-        let (owner, error_handler) = test_owner(scope);
-        let ctx = SilexContext::new(scope, error_handler.view());
+        let (mount_owner, error_handler) = test_owner(owner);
+        let ctx = SilexContext::new(owner, error_handler.view());
         let view = MacroStyledVariant(ctx, AnyView::new(()), selector)
             .mode(mode)
             .expect("styled variant mode should be valid")
             .build();
         let _ = view
-            .mount(&owner, &host, Vec::new(), error_handler.view())
+            .mount(&mount_owner, &host, Vec::new(), error_handler.view())
             .expect("styled variant view should mount");
         element = host
             .last_element_child()
@@ -862,8 +862,7 @@ async fn styled_dynamic_variant_switches_rules_and_cleans_on_dispose() {
         assert!(!document_style_contains("rgb(17, 34, 51)"));
     }
 
-    root.dispose()
-        .expect("styled variant owner can be disposed");
+    root.close().expect("styled variant owner can be disposed");
     flush_style_microtasks().await;
     assert!(!document_style_contains("rgb(68, 85, 102)"));
     remove_host(&host);
@@ -882,23 +881,21 @@ async fn dynamic_global_mounts_without_a_dom_node_and_cleans_on_dispose() {
         .expect("test host can be mounted");
 
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime root can be created");
+    let root = runtime.owner().expect("runtime root can be created");
     let mut second_runtime = Runtime::new();
     let second_root = second_runtime
-        .run()
+        .owner()
         .expect("second runtime root can be created");
     {
-        let set_color = root.with_scope(|scope| {
-            let (color, set_color) = scope.signal(hex("#123456")).unwrap();
-            let (selector, _) = scope.signal(String::from(".macro-target")).unwrap();
-            let (owner, error_handler) = test_owner(scope);
-            let _ = MacroGlobal(error_handler.view(), color.into(), selector.into())
-                .unwrap()
-                .mount(&owner, &host, Vec::new(), error_handler.view())
-                .expect("global macro view should mount");
-            assert_eq!(host.child_element_count(), 0);
-            set_color
-        });
+        let owner = root.access();
+        let (color, set_color) = owner.signal(hex("#123456")).unwrap();
+        let (selector, _) = owner.signal(String::from(".macro-target")).unwrap();
+        let (mount_owner, error_handler) = test_owner(owner);
+        let _ = MacroGlobal(error_handler.view(), color.into(), selector.into())
+            .unwrap()
+            .mount(&mount_owner, &host, Vec::new(), error_handler.view())
+            .expect("global macro view should mount");
+        assert_eq!(host.child_element_count(), 0);
         flush_style_microtasks().await;
         // Firefox CSSOM serializes the original hex value as an rgb() color.
         assert!(document_style_contains_all(&[
@@ -917,12 +914,12 @@ async fn dynamic_global_mounts_without_a_dom_node_and_cleans_on_dispose() {
             "rgb(101, 67, 33)"
         ]));
     }
-    second_root.with_scope(|scope| {
-        let (color, _) = scope.signal(hex("#abcdef")).unwrap();
-        let (selector, _) = scope
+    second_root.with_access(|owner| {
+        let (color, _) = owner.signal(hex("#abcdef")).unwrap();
+        let (selector, _) = owner
             .signal(String::from(".macro-target-secondary"))
             .unwrap();
-        let (owner, error_handler) = test_owner(scope);
+        let (owner, error_handler) = test_owner(owner);
         let _ = MacroGlobal(error_handler.view(), color.into(), selector.into())
             .unwrap()
             .mount(&owner, &host, Vec::new(), error_handler.view())
@@ -938,14 +935,14 @@ async fn dynamic_global_mounts_without_a_dom_node_and_cleans_on_dispose() {
         "macro-target-secondary"
     ]));
 
-    root.dispose().expect("global owner can be disposed");
+    root.close().expect("global owner can be disposed");
     flush_style_microtasks().await;
     assert!(!document_style_contains("rgb(18, 52, 86)"));
     assert!(!document_style_contains("rgb(101, 67, 33)"));
     assert!(document_style_contains("rgb(171, 205, 239)"));
 
     second_root
-        .dispose()
+        .close()
         .expect("second global owner can be disposed");
     flush_style_microtasks().await;
     assert!(!document_style_contains("rgb(171, 205, 239)"));

@@ -2,7 +2,7 @@ use silex_core::Runtime;
 use silex_net::{WebSocket, WebSocketConnection};
 
 fn escape(runtime: &mut Runtime) -> WebSocketConnection<'static> {
-    runtime.child(|scope| {
+    runtime.with_transient(|scope| {
         WebSocket::lazy(
             scope,
             "wss://example.test",

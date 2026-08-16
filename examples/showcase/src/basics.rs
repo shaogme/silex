@@ -1,5 +1,5 @@
 use crate::css::AppTheme;
-use silex::dom::view::{MountOwner, ScopedMountOwner};
+use silex::dom::view::MountOwnerToken;
 use silex::{core::log::console_log, prelude::*};
 use std::time::Duration;
 
@@ -33,14 +33,14 @@ pub fn Greeting<'scope, Ctx>(
 
 #[component]
 pub fn Counter<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
-    let (count, set_count) = scope.signal(0)?;
+    let (count, set_count) = owner.signal(0)?;
     let double_count = rx!(ctx; $count * 2);
-    let owner_for_timer = ScopedMountOwner::new(scope).token();
+    let owner_for_timer = MountOwnerToken::new(owner);
 
     // Timer Handle for Auto Increment (StoredValue: doesn't trigger UI updates itself)
-    let timer = scope.stored(None::<HostResourceHandle<'scope>>)?;
+    let timer = owner.stored(None::<HostResourceHandle<'scope>>)?;
     // UI State for the timer
-    let (is_running, set_is_running) = scope.signal(false)?;
+    let (is_running, set_is_running) = owner.signal(false)?;
 
     Ok(div![
         h3("Interactive Counter"),
@@ -48,13 +48,13 @@ pub fn Counter<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
             button("-")
                 .attr(
                     "disabled",
-                    count.less_than_or_equals(scope, 0, error_handler)?
+                    count.less_than_or_equals(owner, 0, error_handler)?
                 )
                 .on(event::click, set_count.updater(|n| *n -= 1)),
             strong(count).classes(classes![
                 "counter-val",
-                "positive" => count.greater_than(scope, 0, error_handler)?,
-                "negative" => count.less_than(scope, 0, error_handler)?
+                "positive" => count.greater_than(owner, 0, error_handler)?,
+                "negative" => count.less_than(owner, 0, error_handler)?
             ]),
             button("+").on(event::click, set_count.updater(|n| *n += 1)),
         ]
@@ -124,7 +124,7 @@ pub fn Counter<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
 #[component]
 pub fn NodeRefDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     use silex::reexports::web_sys::HtmlInputElement;
-    let input_ref = scope.node_ref::<HtmlInputElement>()?;
+    let input_ref = owner.node_ref::<HtmlInputElement>()?;
 
     Ok(div![
         h3("NodeRef Demo"),
@@ -207,10 +207,10 @@ pub fn SvgIconDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
 
 #[component]
 pub fn EventDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
-    let (name, set_name) = scope.signal("Silex".to_string())?;
-    let (count, set_count) = scope.signal(0)?;
+    let (name, set_name) = owner.signal("Silex".to_string())?;
+    let (count, set_count) = owner.signal(0)?;
 
-    let (logs, set_logs) = scope.signal(Vec::<String>::new())?;
+    let (logs, set_logs) = owner.signal(Vec::<String>::new())?;
     let log_item_style = sty(ctx).font_size(em_unit(0.8))?;
     let payload = "DataPayload".to_string();
 
@@ -244,8 +244,8 @@ pub fn EventDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
         h3("Event & Closure Demo"),
         p("1. Signals are Copy: You can directly move them into closures without cloning."),
         div![
-            p(name.map_fn(scope, |n| format!("Current Name: {}", n), error_handler)?),
-            p(count.map(scope, |c| format!("Current Count: {}", c), error_handler)?),
+            p(name.map_fn(owner, |n| format!("Current Name: {}", n), error_handler)?),
+            p(count.map(owner, |c| format!("Current Count: {}", c), error_handler)?),
         ]
         .style(sty(ctx).margin_bottom(px(10))?.font_family("monospace")?),
         button("Log & Update (Standard)")
@@ -281,7 +281,7 @@ pub fn EventDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
 
 #[component]
 pub fn BasicsPage<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
-    let name_signal = scope.rw_signal("Developer".to_string())?;
+    let name_signal = owner.rw_signal("Developer".to_string())?;
 
     Ok(div![
         h2("Basics"),
@@ -292,7 +292,7 @@ pub fn BasicsPage<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
             button("Submit")
                 .attr(
                     "disabled",
-                    name_signal.read_signal().equals(scope, "", error_handler)?,
+                    name_signal.read_signal().equals(owner, "", error_handler)?,
                 )
                 .style(sty(ctx).margin_left(px(10))?)
         ]

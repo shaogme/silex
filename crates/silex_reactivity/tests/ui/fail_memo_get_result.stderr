@@ -1,14 +1,9 @@
-error[E0308]: mismatched types
-  --> tests/ui/fail_memo_get_result.rs:13:22
+error[E0599]: no method named `memo` found for struct `OwnerAccess<'owner>` in the current scope
+  --> tests/ui/fail_memo_get_result.rs:11:14
    |
-13 |         let _: i32 = memo.get();
-   |                ---   ^^^^^^^^^^ expected `i32`, found `Result<i32, CallbackInvokeError<()>>`
-   |                |
-   |                expected due to this
+10 |           let memo = scope
+   |  ____________________-
+11 | |             .memo(|_| Ok::<i32, ()>(1), handler(scope))
+   | |             -^^^^ method not found in `OwnerAccess<'_>`
+   | |_____________|
    |
-   = note: expected type `i32`
-              found enum `Result<i32, CallbackInvokeError<()>>`
-help: consider using `Result::expect` to unwrap the `Result<i32, CallbackInvokeError<()>>` value, panicking if the value is a `Result::Err`
-   |
-13 |         let _: i32 = memo.get().expect("REASON");
-   |                                +++++++++++++++++

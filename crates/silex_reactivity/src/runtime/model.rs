@@ -1,7 +1,7 @@
 //! Runtime node and scope-state data structures.
 
 use super::{
-    scheduler::{GlobalScheduler, ScopeId, TargetNode},
+    scheduler::{GlobalScheduler, OwnerId, TargetNode},
     storage::{
         CallbackThunk, CleanupThunk, ComputationBehavior, ComputationStorage, NodeStorage,
         TypedNodeRef,
@@ -11,7 +11,7 @@ use crate::{
     ReactiveError, ReactiveResult,
     error::{ErrorHandlerEntry, ErrorHandlerKey},
     handle::NodeKindTag,
-    internal::RawId,
+    internal::NodeId,
 };
 use slotmap::{SecondaryMap, SlotMap};
 use std::{
@@ -51,6 +51,17 @@ pub(crate) enum ScopePhase {
     Released,
 }
 
+/// Selects the computation tree parent used during node registration.
+///
+/// Detached computations remain roots of this reactive owner. Their initial
+/// execution still installs the computation as `current_owner`, so nodes and
+/// cleanups created by the callback retain the usual nested ownership.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ComputationParent {
+    Current,
+    Detached,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum StoredAccessMode {
     Active,
@@ -67,16 +78,16 @@ pub(crate) struct NodeCore {
     pub(crate) version: u32,
     pub(crate) updated_epoch: u64,
     pub(crate) last_computed_epoch: u64,
-    pub(crate) parent: RawId,
-    pub(crate) first_child: RawId,
-    pub(crate) next_sibling: RawId,
-    pub(crate) prev_sibling: RawId,
+    pub(crate) parent: NodeId,
+    pub(crate) first_child: NodeId,
+    pub(crate) next_sibling: NodeId,
+    pub(crate) prev_sibling: NodeId,
 }
 
 const _: () = assert!(size_of::<NodeCore>() == 56);
 
 impl NodeCore {
-    pub(crate) fn new(kind: NodeKindTag, parent: Option<RawId>, state: NodeState) -> Self {
+    pub(crate) fn new(kind: NodeKindTag, parent: Option<NodeId>, state: NodeState) -> Self {
         Self {
             kind,
             state,
@@ -85,18 +96,15 @@ impl NodeCore {
             version: 0,
             updated_epoch: 0,
             last_computed_epoch: 0,
-            parent: RawId::from_option(parent),
-            first_child: RawId::DANGLING,
-            next_sibling: RawId::DANGLING,
-            prev_sibling: RawId::DANGLING,
+            parent: NodeId::from_option(parent),
+            first_child: NodeId::DANGLING,
+            next_sibling: NodeId::DANGLING,
+            prev_sibling: NodeId::DANGLING,
         }
     }
 
     pub(crate) fn is_computation(&self) -> bool {
-        matches!(
-            self.kind,
-            NodeKindTag::Effect | NodeKindTag::Memo | NodeKindTag::Derived
-        )
+        matches!(self.kind, NodeKindTag::Effect | NodeKindTag::Computed)
     }
 }
 
@@ -116,7 +124,7 @@ impl<'scope> NodeData<'scope> {
 
 #[derive(Clone)]
 pub(crate) struct DependencyTransaction {
-    pub(crate) observer: RawId,
+    pub(crate) observer: NodeId,
     pub(crate) previous: HashSet<TargetNode>,
     pub(crate) current: HashSet<TargetNode>,
     pub(crate) removed: HashSet<TargetNode>,
@@ -143,8 +151,8 @@ impl NodeAdjacency {
 
 #[derive(Clone, Copy)]
 struct RootLink {
-    previous: RawId,
-    next: RawId,
+    previous: NodeId,
+    next: NodeId,
 }
 
 /// Ordered root index with constant-time removal.
@@ -153,21 +161,22 @@ struct RootLink {
 /// avoids shifting or retaining the complete root collection during disposal.
 #[derive(Clone)]
 pub(crate) struct RootSet {
-    links: HashMap<RawId, RootLink>,
-    first: RawId,
-    last: RawId,
+    links: HashMap<NodeId, RootLink>,
+    first: NodeId,
+    last: NodeId,
 }
 
 impl RootSet {
     pub(crate) fn new() -> Self {
         Self {
             links: HashMap::new(),
-            first: RawId::DANGLING,
-            last: RawId::DANGLING,
+            first: NodeId::DANGLING,
+            last: NodeId::DANGLING,
         }
     }
 
     #[cfg(any(test, feature = "test-support"))]
+    #[cfg(feature = "test-support")]
     pub(crate) fn len(&self) -> usize {
         self.links.len()
     }
@@ -176,13 +185,13 @@ impl RootSet {
         self.links.is_empty()
     }
 
-    pub(crate) fn push(&mut self, root: RawId) {
+    pub(crate) fn push(&mut self, root: NodeId) {
         let previous = self.last;
         self.links.insert(
             root,
             RootLink {
                 previous,
-                next: RawId::DANGLING,
+                next: NodeId::DANGLING,
             },
         );
         if previous.is_dangling() {
@@ -193,7 +202,7 @@ impl RootSet {
         self.last = root;
     }
 
-    pub(crate) fn remove(&mut self, root: RawId) {
+    pub(crate) fn remove(&mut self, root: NodeId) {
         let Some(link) = self.links.remove(&root) else {
             return;
         };
@@ -209,7 +218,7 @@ impl RootSet {
         }
     }
 
-    pub(crate) fn to_vec(&self) -> Vec<RawId> {
+    pub(crate) fn to_vec(&self) -> Vec<NodeId> {
         let mut roots = Vec::with_capacity(self.links.len());
         let mut current = self.first;
         while current.is_valid() {
@@ -218,15 +227,15 @@ impl RootSet {
                 .links
                 .get(&current)
                 .map(|link| link.next)
-                .unwrap_or(RawId::DANGLING);
+                .unwrap_or(NodeId::DANGLING);
         }
         roots
     }
 }
 
 impl IntoIterator for RootSet {
-    type Item = RawId;
-    type IntoIter = std::vec::IntoIter<RawId>;
+    type Item = NodeId;
+    type IntoIter = std::vec::IntoIter<NodeId>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.to_vec().into_iter()
@@ -236,11 +245,11 @@ impl IntoIterator for RootSet {
 /// Iterator over child nodes in an intra-arena sibling chain.
 pub(crate) struct ChildrenIter<'a, 'scope> {
     state: &'a ScopeStateInner<'scope>,
-    curr: RawId,
+    curr: NodeId,
 }
 
 impl Iterator for ChildrenIter<'_, '_> {
-    type Item = RawId;
+    type Item = NodeId;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.curr.is_dangling() {
@@ -252,7 +261,7 @@ impl Iterator for ChildrenIter<'_, '_> {
             .nodes
             .get(item)
             .map(|n| n.next_sibling)
-            .unwrap_or(RawId::DANGLING);
+            .unwrap_or(NodeId::DANGLING);
         Some(item)
     }
 }
@@ -273,15 +282,15 @@ impl Iterator for EdgeIter<'_> {
 
 /// Reactive graph nodes, scheduling state, and stable storage owned by one lexical scope.
 pub(crate) struct ScopeStateInner<'scope> {
-    pub(crate) scope_id: ScopeId,
+    pub(crate) owner_id: OwnerId,
     pub(crate) scheduler: Rc<RefCell<GlobalScheduler>>,
     pub(crate) phase: ScopePhase,
-    pub(crate) nodes: SlotMap<RawId, NodeCore>,
-    pub(crate) data: SecondaryMap<RawId, NodeData<'scope>>,
+    pub(crate) nodes: SlotMap<NodeId, NodeCore>,
+    pub(crate) data: SecondaryMap<NodeId, NodeData<'scope>>,
     pub(crate) edges: SlotMap<EdgeId, ReactiveEdge>,
-    pub(crate) adjacency: SecondaryMap<RawId, NodeAdjacency>,
+    pub(crate) adjacency: SecondaryMap<NodeId, NodeAdjacency>,
     pub(crate) roots: RootSet,
-    pub(crate) current_owner: Option<RawId>,
+    pub(crate) current_owner: Option<NodeId>,
     pub(crate) root_cleanups: Vec<CleanupThunk<'scope>>,
     pub(crate) dependency_transactions: Vec<DependencyTransaction>,
     pub(crate) error_handlers: SlotMap<ErrorHandlerKey, ErrorHandlerEntry<'scope>>,
@@ -295,9 +304,9 @@ pub(crate) struct ScopeState<'scope> {
 }
 
 impl<'scope> ScopeState<'scope> {
-    pub(crate) fn new(scope_id: ScopeId, scheduler: Rc<RefCell<GlobalScheduler>>) -> Self {
+    pub(crate) fn new(owner_id: OwnerId, scheduler: Rc<RefCell<GlobalScheduler>>) -> Self {
         Self {
-            inner: Rc::new(RefCell::new(ScopeStateInner::new(scope_id, scheduler))),
+            inner: Rc::new(RefCell::new(ScopeStateInner::new(owner_id, scheduler))),
         }
     }
 
@@ -340,6 +349,10 @@ impl<'scope> ScopeState<'scope> {
     ) -> Vec<Box<dyn std::any::Any + Send>> {
         ScopeStateInner::drop_error_handlers(handlers)
     }
+
+    pub(crate) fn validate_callback_endpoint(&self, id: NodeId) -> ReactiveResult<()> {
+        self.try_borrow()?.validate_callback_endpoint(id)
+    }
 }
 
 #[cfg(feature = "test-support")]
@@ -355,12 +368,17 @@ pub struct RuntimeSnapshot {
     pub epoch: u64,
     pub observer: bool,
     pub running_queue: bool,
+    pub active_owners: usize,
+    pub closing_owners: usize,
+    pub owner_generation: u32,
+    pub active_leases: usize,
+    pub queue_recovery: bool,
 }
 
 impl<'scope> ScopeStateInner<'scope> {
-    pub(crate) fn new(scope_id: ScopeId, scheduler: Rc<RefCell<GlobalScheduler>>) -> Self {
+    pub(crate) fn new(owner_id: OwnerId, scheduler: Rc<RefCell<GlobalScheduler>>) -> Self {
         Self {
-            scope_id,
+            owner_id,
             scheduler,
             phase: ScopePhase::Active,
             nodes: SlotMap::with_key(),
@@ -385,6 +403,17 @@ impl<'scope> ScopeStateInner<'scope> {
                 .map(|data| data.cleanups.len())
                 .sum::<usize>();
         let scheduler = self.scheduler.borrow();
+        let active_owners = scheduler.active_owner_ids().len();
+        let closing_owners = scheduler
+            .active_owner_ids()
+            .into_iter()
+            .filter_map(|id| scheduler.get_scope_for_edge_cleanup(id))
+            .filter(|state| {
+                state
+                    .try_borrow()
+                    .is_ok_and(|state| state.phase != ScopePhase::Active)
+            })
+            .count();
         RuntimeSnapshot {
             nodes: self.nodes.len(),
             data: self.data.len(),
@@ -400,15 +429,20 @@ impl<'scope> ScopeStateInner<'scope> {
             epoch: scheduler.current_epoch(),
             observer: active_observer_for(&self.scheduler).is_some(),
             running_queue: scheduler.running_queue,
+            active_owners,
+            closing_owners,
+            owner_generation: self.owner_id.1,
+            active_leases: scheduler.active_leases,
+            queue_recovery: !scheduler.running_queue && scheduler.global_queue.is_empty(),
         }
     }
 
-    pub(crate) fn parent_for_new_node(&self) -> Option<RawId> {
+    pub(crate) fn parent_for_new_node(&self) -> Option<NodeId> {
         self.current_owner
     }
 
     #[inline]
-    pub(crate) fn children_of_head(&self, head: RawId) -> ChildrenIter<'_, 'scope> {
+    pub(crate) fn children_of_head(&self, head: NodeId) -> ChildrenIter<'_, 'scope> {
         ChildrenIter {
             state: self,
             curr: head,
@@ -416,7 +450,7 @@ impl<'scope> ScopeStateInner<'scope> {
     }
 
     #[inline]
-    pub(crate) fn subscriber_edges_of(&self, node_id: RawId) -> EdgeIter<'_> {
+    pub(crate) fn subscriber_edges_of(&self, node_id: NodeId) -> EdgeIter<'_> {
         EdgeIter {
             inner: self
                 .adjacency
@@ -426,7 +460,7 @@ impl<'scope> ScopeStateInner<'scope> {
     }
 
     #[inline]
-    pub(crate) fn dependency_edges_of(&self, node_id: RawId) -> EdgeIter<'_> {
+    pub(crate) fn dependency_edges_of(&self, node_id: NodeId) -> EdgeIter<'_> {
         EdgeIter {
             inner: self
                 .adjacency
@@ -435,7 +469,7 @@ impl<'scope> ScopeStateInner<'scope> {
         }
     }
 
-    pub(crate) fn link_child(&mut self, parent: RawId, child: RawId) {
+    pub(crate) fn link_child(&mut self, parent: NodeId, child: NodeId) {
         if parent.is_dangling() {
             self.roots.push(child);
             return;
@@ -444,10 +478,10 @@ impl<'scope> ScopeStateInner<'scope> {
             .nodes
             .get(parent)
             .map(|p| p.first_child)
-            .unwrap_or(RawId::DANGLING);
+            .unwrap_or(NodeId::DANGLING);
         if let Some(child_node) = self.nodes.get_mut(child) {
             child_node.next_sibling = old_first;
-            child_node.prev_sibling = RawId::DANGLING;
+            child_node.prev_sibling = NodeId::DANGLING;
         }
         if old_first.is_valid()
             && let Some(old_first_node) = self.nodes.get_mut(old_first)
@@ -459,7 +493,7 @@ impl<'scope> ScopeStateInner<'scope> {
         }
     }
 
-    pub(crate) fn unlink_child(&mut self, parent: RawId, child: RawId) {
+    pub(crate) fn unlink_child(&mut self, parent: NodeId, child: NodeId) {
         if parent.is_dangling() {
             self.roots.remove(child);
             return;
@@ -484,11 +518,12 @@ impl<'scope> ScopeStateInner<'scope> {
         }
     }
 
-    pub(crate) fn register(
+    /// Unified node registration kernel for every owner-local node kind.
+    pub(crate) fn register_node(
         &mut self,
         node: NodeCore,
         make_data: impl FnOnce() -> NodeData<'scope>,
-    ) -> ReactiveResult<RawId> {
+    ) -> ReactiveResult<NodeId> {
         self.ensure_active()?;
         let parent = node.parent;
         let id = self.nodes.insert(node);
@@ -503,7 +538,7 @@ impl<'scope> ScopeStateInner<'scope> {
             && self
                 .scheduler
                 .try_borrow()
-                .is_ok_and(|scheduler| scheduler.is_scope_active(self.scope_id))
+                .is_ok_and(|scheduler| scheduler.is_scope_active(self.owner_id))
     }
 
     pub(crate) fn try_is_active(&self) -> ReactiveResult<bool> {
@@ -514,7 +549,7 @@ impl<'scope> ScopeStateInner<'scope> {
             .scheduler
             .try_borrow()
             .map_err(|_| ReactiveError::BorrowConflict)?
-            .is_scope_active(self.scope_id))
+            .is_scope_active(self.owner_id))
     }
 
     pub(crate) fn begin_quiescing(&mut self) -> ReactiveResult<bool> {
@@ -576,11 +611,11 @@ impl<'scope> ScopeStateInner<'scope> {
         self.phase == ScopePhase::RunningCleanup
     }
 
-    pub(crate) fn node_exists(&self, id: RawId) -> bool {
+    pub(crate) fn node_exists(&self, id: NodeId) -> bool {
         self.nodes.get(id).is_some()
     }
 
-    pub(crate) fn mark_notified(&mut self, id: RawId) -> bool {
+    pub(crate) fn mark_notified(&mut self, id: NodeId) -> bool {
         if !self.is_active() {
             return false;
         }
@@ -593,20 +628,37 @@ impl<'scope> ScopeStateInner<'scope> {
         true
     }
 
-    pub(crate) fn set_ctx(&mut self, owner: Option<RawId>) {
+    pub(crate) fn validate_node_kind(
+        &self,
+        id: NodeId,
+        expected: NodeKindTag,
+    ) -> ReactiveResult<NodeCore> {
+        self.ensure_active()?;
+        let node = self
+            .nodes
+            .get(id)
+            .copied()
+            .ok_or(ReactiveError::NoSuchNode)?;
+        if node.kind != expected {
+            return Err(ReactiveError::WrongKind);
+        }
+        Ok(node)
+    }
+
+    pub(crate) fn set_ctx(&mut self, owner: Option<NodeId>) {
         self.current_owner = owner;
     }
 
     pub(crate) fn create_signal<T: 'scope>(
         &mut self,
         value: TypedNodeRef<'scope, T>,
-    ) -> ReactiveResult<RawId> {
+    ) -> ReactiveResult<NodeId> {
         let parent = self.parent_for_new_node();
         let epoch = self.scheduler.borrow().current_epoch();
         let mut node = NodeCore::new(NodeKindTag::Signal, parent, NodeState::Clean);
         node.updated_epoch = epoch;
         node.last_computed_epoch = epoch;
-        self.register(node, move || {
+        self.register_node(node, move || {
             NodeData::new(Rc::new(NodeStorage::value(value.slot())))
         })
     }
@@ -615,9 +667,13 @@ impl<'scope> ScopeStateInner<'scope> {
         &mut self,
         kind: NodeKindTag,
         callback: Box<dyn ComputationBehavior<'scope> + 'scope>,
-    ) -> ReactiveResult<RawId> {
-        let parent = self.parent_for_new_node();
-        self.register(NodeCore::new(kind, parent, NodeState::Dirty), move || {
+        parent_strategy: ComputationParent,
+    ) -> ReactiveResult<NodeId> {
+        let parent = match parent_strategy {
+            ComputationParent::Current => self.parent_for_new_node(),
+            ComputationParent::Detached => None,
+        };
+        self.register_node(NodeCore::new(kind, parent, NodeState::Dirty), move || {
             NodeData::new(Rc::new(NodeStorage::Computation(ComputationStorage::new(
                 callback,
             ))))
@@ -627,9 +683,9 @@ impl<'scope> ScopeStateInner<'scope> {
     pub(crate) fn create_stored<T: 'scope>(
         &mut self,
         value: TypedNodeRef<'scope, T>,
-    ) -> ReactiveResult<RawId> {
+    ) -> ReactiveResult<NodeId> {
         let parent = self.parent_for_new_node();
-        self.register(
+        self.register_node(
             NodeCore::new(NodeKindTag::Stored, parent, NodeState::Clean),
             move || NodeData::new(Rc::new(NodeStorage::value(value.slot()))),
         )
@@ -638,9 +694,9 @@ impl<'scope> ScopeStateInner<'scope> {
     pub(crate) fn create_callback<T: 'scope, E: 'scope>(
         &mut self,
         callback: TypedNodeRef<'scope, CallbackThunk<'scope, T, E>>,
-    ) -> ReactiveResult<RawId> {
+    ) -> ReactiveResult<NodeId> {
         let parent = self.parent_for_new_node();
-        self.register(
+        self.register_node(
             NodeCore::new(NodeKindTag::Callback, parent, NodeState::Clean),
             move || NodeData::new(Rc::new(NodeStorage::callback(callback.slot()))),
         )
@@ -649,9 +705,9 @@ impl<'scope> ScopeStateInner<'scope> {
     pub(crate) fn create_node_ref<T: 'scope>(
         &mut self,
         value: TypedNodeRef<'scope, Option<T>>,
-    ) -> ReactiveResult<RawId> {
+    ) -> ReactiveResult<NodeId> {
         let parent = self.parent_for_new_node();
-        self.register(
+        self.register_node(
             NodeCore::new(NodeKindTag::NodeRef, parent, NodeState::Clean),
             move || NodeData::new(Rc::new(NodeStorage::value(value.slot()))),
         )
@@ -727,13 +783,13 @@ impl<'scope> ScopeStateInner<'scope> {
         panics
     }
 
-    pub(crate) fn has_value(&self, id: RawId) -> bool {
+    pub(crate) fn has_value(&self, id: NodeId) -> bool {
         let Some(node) = self.nodes.get(id) else {
             return false;
         };
         match node.kind {
             NodeKindTag::Signal => true,
-            NodeKindTag::Memo | NodeKindTag::Derived => self
+            NodeKindTag::Computed => self
                 .data
                 .get(id)
                 .and_then(|data| match data.storage.as_ref() {
@@ -759,16 +815,13 @@ impl<'scope> ScopeStateInner<'scope> {
 
     pub(crate) fn value_storage(
         &self,
-        id: RawId,
+        id: NodeId,
         reactive: bool,
     ) -> ReactiveResult<Rc<NodeStorage<'scope>>> {
         self.ensure_active()?;
         let node = self.nodes.get(id).ok_or(ReactiveError::NoSuchNode)?;
         let valid_kind = if reactive {
-            matches!(
-                node.kind,
-                NodeKindTag::Signal | NodeKindTag::Memo | NodeKindTag::Derived
-            )
+            matches!(node.kind, NodeKindTag::Signal | NodeKindTag::Computed)
         } else {
             node.kind == NodeKindTag::Signal
         };
@@ -778,7 +831,7 @@ impl<'scope> ScopeStateInner<'scope> {
         let data = self.data.get(id).ok_or(ReactiveError::NoSuchNode)?;
         let valid_storage = match node.kind {
             NodeKindTag::Signal => matches!(data.storage.as_ref(), NodeStorage::Value(_)),
-            NodeKindTag::Memo | NodeKindTag::Derived => {
+            NodeKindTag::Computed => {
                 matches!(data.storage.as_ref(), NodeStorage::Computation(_))
             }
             _ => false,
@@ -791,7 +844,7 @@ impl<'scope> ScopeStateInner<'scope> {
 
     pub(crate) fn stored_value_storage(
         &self,
-        id: RawId,
+        id: NodeId,
     ) -> ReactiveResult<(Rc<NodeStorage<'scope>>, StoredAccessMode)> {
         let mode = if self.is_active() {
             StoredAccessMode::Active
@@ -811,7 +864,7 @@ impl<'scope> ScopeStateInner<'scope> {
         Ok((data.storage.clone(), mode))
     }
 
-    pub(crate) fn node_ref_storage(&self, id: RawId) -> ReactiveResult<Rc<NodeStorage<'scope>>> {
+    pub(crate) fn node_ref_storage(&self, id: NodeId) -> ReactiveResult<Rc<NodeStorage<'scope>>> {
         self.ensure_active()?;
         let node = self.nodes.get(id).ok_or(ReactiveError::NoSuchNode)?;
         if node.kind != NodeKindTag::NodeRef {
@@ -824,16 +877,22 @@ impl<'scope> ScopeStateInner<'scope> {
         Ok(data.storage.clone())
     }
 
-    pub(crate) fn callback_storage(&self, id: RawId) -> ReactiveResult<Rc<NodeStorage<'scope>>> {
-        self.ensure_active()?;
-        let node = self.nodes.get(id).ok_or(ReactiveError::NoSuchNode)?;
-        if node.kind != NodeKindTag::Callback {
-            return Err(ReactiveError::WrongKind);
-        }
+    pub(crate) fn callback_storage(&self, id: NodeId) -> ReactiveResult<Rc<NodeStorage<'scope>>> {
+        self.validate_node_kind(id, NodeKindTag::Callback)?;
         let data = self.data.get(id).ok_or(ReactiveError::NoSuchNode)?;
         if !matches!(data.storage.as_ref(), NodeStorage::Callback(_)) {
             return Err(ReactiveError::WrongKind);
         }
         Ok(data.storage.clone())
+    }
+
+    /// Validate a callback endpoint before an asynchronous typed restore.
+    ///
+    /// This is deliberately kept beside the normal callback storage lookup so
+    /// completion endpoints cannot bypass the node generation and kind checks
+    /// used by ordinary callback handles.
+    pub(crate) fn validate_callback_endpoint(&self, id: NodeId) -> ReactiveResult<()> {
+        let _ = self.callback_storage(id)?;
+        Ok(())
     }
 }

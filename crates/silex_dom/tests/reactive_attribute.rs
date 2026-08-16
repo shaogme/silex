@@ -3,13 +3,11 @@
 use std::borrow::Cow;
 
 use silex_core::{
-    ErrorHandlerToken, ErrorReporter, Runtime, Scope, SilexError, SilexErrorKind, SilexResult,
+    ErrorHandlerToken, ErrorReporter, OwnerAccess, Runtime, SilexError, SilexErrorKind, SilexResult,
 };
 use silex_dom::attribute::AttributeBuilder;
 use silex_dom::element::Element;
-use silex_dom::view::{
-    AnyView, ApplyAttributes, MountInstance, MountOwner, ScopedMountOwner, View,
-};
+use silex_dom::view::{AnyView, ApplyAttributes, MountInstance, MountOwner, MountOwnerToken, View};
 use std::cell::RefCell;
 use std::rc::Rc;
 use wasm_bindgen_test::*;
@@ -17,8 +15,8 @@ use web_sys::{Element as DomElement, Node};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
-fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope> {
-    scope
+fn test_handler<'owner>(owner: OwnerAccess<'owner>) -> ErrorHandlerToken<'owner> {
+    owner
         .error_handler(|_| {})
         .expect("error handler should register")
 }
@@ -45,16 +43,16 @@ struct RejectingView {
     element: Rc<RefCell<Option<DomElement>>>,
 }
 
-impl<'scope> ApplyAttributes<'scope> for RejectingView {}
+impl<'owner> ApplyAttributes<'owner> for RejectingView {}
 
-impl<'scope> View<'scope> for RejectingView {
+impl<'owner> View<'owner> for RejectingView {
     fn mount(
         &self,
-        owner: &dyn MountOwner<'scope>,
+        owner: &dyn MountOwner<'owner>,
         parent: &Node,
-        attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
-        error_handler: ErrorReporter<'scope>,
-    ) -> SilexResult<MountInstance<'scope>> {
+        attrs: Vec<silex_dom::attribute::PendingAttribute<'owner>>,
+        error_handler: ErrorReporter<'owner>,
+    ) -> SilexResult<MountInstance<'owner>> {
         let document = web_sys::window()
             .ok_or_else(|| SilexError::fatal(SilexErrorKind::Dom("window is unavailable".into())))?
             .document()
@@ -79,10 +77,10 @@ fn reactive_static_str_attribute_updates() {
     let host = host();
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
-            let (read, write) = scope.signal("initial").expect("signal should initialize");
-            let error_handler = test_handler(scope);
-            let owner = ScopedMountOwner::new(scope);
+        .with_transient(|owner| {
+            let (read, write) = owner.signal("initial").expect("signal should initialize");
+            let error_handler = test_handler(owner);
+            let owner = MountOwnerToken::new(owner);
             let view = Element::new("button").attr("data-state", read.into_rx());
             let _ = view
                 .mount(&owner, &host, Vec::new(), error_handler.view())
@@ -100,7 +98,7 @@ fn reactive_static_str_attribute_updates() {
                 Some("updated")
             );
         })
-        .expect("child scope should initialize");
+        .expect("child owner should initialize");
 }
 
 #[wasm_bindgen_test]
@@ -110,12 +108,12 @@ fn reactive_borrowed_str_attribute_updates() {
     let updated = String::from("updated");
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
-            let (read, write) = scope
+        .with_transient(|owner| {
+            let (read, write) = owner
                 .signal(initial.as_str())
                 .expect("signal should initialize");
-            let error_handler = test_handler(scope);
-            let owner = ScopedMountOwner::new(scope);
+            let error_handler = test_handler(owner);
+            let owner = MountOwnerToken::new(owner);
             let view = Element::new("div").attr("data-value", read.into_rx());
             let _ = view
                 .mount(&owner, &host, Vec::new(), error_handler.view())
@@ -135,7 +133,7 @@ fn reactive_borrowed_str_attribute_updates() {
                 Some("updated")
             );
         })
-        .expect("child scope should initialize");
+        .expect("child owner should initialize");
 }
 
 #[wasm_bindgen_test]
@@ -143,12 +141,12 @@ fn reactive_cow_attribute_updates() {
     let host = host();
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
-            let (read, write) = scope
+        .with_transient(|owner| {
+            let (read, write) = owner
                 .signal(Cow::Borrowed("initial"))
                 .expect("signal should initialize");
-            let error_handler = test_handler(scope);
-            let owner = ScopedMountOwner::new(scope);
+            let error_handler = test_handler(owner);
+            let owner = MountOwnerToken::new(owner);
             let view = Element::new("span").attr("data-state", read.into_rx());
             let _ = view
                 .mount(&owner, &host, Vec::new(), error_handler.view())
@@ -168,7 +166,7 @@ fn reactive_cow_attribute_updates() {
                 Some("updated")
             );
         })
-        .expect("child scope should initialize");
+        .expect("child owner should initialize");
 }
 
 #[wasm_bindgen_test]
@@ -178,10 +176,10 @@ fn reactive_string_reference_attribute_updates() {
     let updated = String::from("updated");
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
-            let (read, write) = scope.signal(&initial).expect("signal should initialize");
-            let error_handler = test_handler(scope);
-            let owner = ScopedMountOwner::new(scope);
+        .with_transient(|owner| {
+            let (read, write) = owner.signal(&initial).expect("signal should initialize");
+            let error_handler = test_handler(owner);
+            let owner = MountOwnerToken::new(owner);
             let view = Element::new("p").attr("data-text", read.into_rx());
             let _ = view
                 .mount(&owner, &host, Vec::new(), error_handler.view())
@@ -199,22 +197,22 @@ fn reactive_string_reference_attribute_updates() {
                 Some("updated")
             );
         })
-        .expect("child scope should initialize");
+        .expect("child owner should initialize");
 }
 
 #[wasm_bindgen_test]
 fn reactive_str_classes_merge_update_and_cleanup() {
     let host = host();
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root should start");
+    let root = runtime.owner().expect("root should start");
     let element;
     {
-        let scope = root.scope();
-        let (read, write) = scope
+        let owner = root.access();
+        let (read, write) = owner
             .signal("dynamic-one")
             .expect("signal should initialize");
-        let error_handler = test_handler(scope);
-        let owner = ScopedMountOwner::new(scope);
+        let error_handler = test_handler(owner);
+        let owner = MountOwnerToken::new(owner);
         let view = Element::new("div")
             .attr("class", "static")
             .attr("class", read.into_rx());
@@ -232,7 +230,7 @@ fn reactive_str_classes_merge_update_and_cleanup() {
         assert!(element.class_list().contains("dynamic-two"));
     }
 
-    root.dispose().expect("root cleanup should succeed");
+    root.close().expect("root cleanup should succeed");
     assert!(element.class_list().contains("static"));
     assert!(!element.class_list().contains("dynamic-two"));
 }
@@ -241,15 +239,15 @@ fn reactive_str_classes_merge_update_and_cleanup() {
 fn reactive_str_stylesheet_merges_update_and_cleanup() {
     let host = host();
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root should start");
+    let root = runtime.owner().expect("root should start");
     let element;
     {
-        let scope = root.scope();
-        let (read, write) = scope
+        let owner = root.access();
+        let (read, write) = owner
             .signal("color: red;")
             .expect("signal should initialize");
-        let error_handler = test_handler(scope);
-        let owner = ScopedMountOwner::new(scope);
+        let error_handler = test_handler(owner);
+        let owner = MountOwnerToken::new(owner);
         let view = Element::new("div")
             .attr("style", "display: block;")
             .attr("style", read.into_rx());
@@ -271,7 +269,7 @@ fn reactive_str_stylesheet_merges_update_and_cleanup() {
         assert!(!updated.contains("color: red"), "{updated}");
     }
 
-    root.dispose().expect("root cleanup should succeed");
+    root.close().expect("root cleanup should succeed");
     let cleaned = style_text(&element);
     assert!(cleaned.contains("display: block"), "{cleaned}");
     assert!(!cleaned.contains("color"), "{cleaned}");
@@ -281,15 +279,15 @@ fn reactive_str_stylesheet_merges_update_and_cleanup() {
 fn reactive_cow_style_property_updates_and_cleans_up() {
     let host = host();
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root should start");
+    let root = runtime.owner().expect("root should start");
     let element;
     {
-        let scope = root.scope();
-        let (read, write) = scope
+        let owner = root.access();
+        let (read, write) = owner
             .signal(Cow::Borrowed("red"))
             .expect("signal should initialize");
-        let error_handler = test_handler(scope);
-        let owner = ScopedMountOwner::new(scope);
+        let error_handler = test_handler(owner);
+        let owner = MountOwnerToken::new(owner);
         let view = Element::new("div")
             .attr("style", ("color", read.into_rx()))
             .attr("style", ("display", "block"));
@@ -311,7 +309,7 @@ fn reactive_cow_style_property_updates_and_cleans_up() {
         assert!(!updated.contains("color: red"), "{updated}");
     }
 
-    root.dispose().expect("root cleanup should succeed");
+    root.close().expect("root cleanup should succeed");
     let cleaned = style_text(&element);
     assert!(cleaned.contains("display: block"), "{cleaned}");
     assert!(!cleaned.contains("color"), "{cleaned}");
@@ -321,13 +319,13 @@ fn reactive_cow_style_property_updates_and_cleans_up() {
 fn reactive_borrowed_str_style_property_updates_and_cleans_up() {
     let host = host();
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root should start");
+    let root = runtime.owner().expect("root should start");
     let element;
     {
-        let scope = root.scope();
-        let (read, write) = scope.signal("red").expect("signal should initialize");
-        let error_handler = test_handler(scope);
-        let owner = ScopedMountOwner::new(scope);
+        let owner = root.access();
+        let (read, write) = owner.signal("red").expect("signal should initialize");
+        let error_handler = test_handler(owner);
+        let owner = MountOwnerToken::new(owner);
         let view = Element::new("div")
             .attr("style", ("color", read.into_rx()))
             .attr("style", ("display", "block"));
@@ -341,7 +339,7 @@ fn reactive_borrowed_str_style_property_updates_and_cleans_up() {
         assert!(style_text(&element).contains("color: blue"));
     }
 
-    root.dispose().expect("root cleanup should succeed");
+    root.close().expect("root cleanup should succeed");
     let cleaned = style_text(&element);
     assert!(cleaned.contains("display: block"), "{cleaned}");
     assert!(!cleaned.contains("color"), "{cleaned}");
@@ -353,13 +351,13 @@ fn reactive_string_reference_style_property_updates_and_cleans_up() {
     let initial = String::from("red");
     let updated = String::from("blue");
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root should start");
+    let root = runtime.owner().expect("root should start");
     let element;
     {
-        let scope = root.scope();
-        let (read, write) = scope.signal(&initial).expect("signal should initialize");
-        let error_handler = test_handler(scope);
-        let owner = ScopedMountOwner::new(scope);
+        let owner = root.access();
+        let (read, write) = owner.signal(&initial).expect("signal should initialize");
+        let error_handler = test_handler(owner);
+        let owner = MountOwnerToken::new(owner);
         let view = Element::new("div")
             .attr("style", ("color", read.into_rx()))
             .attr("style", ("display", "block"));
@@ -373,7 +371,7 @@ fn reactive_string_reference_style_property_updates_and_cleans_up() {
         assert!(style_text(&element).contains("color: blue"));
     }
 
-    root.dispose().expect("root cleanup should succeed");
+    root.close().expect("root cleanup should succeed");
     let cleaned = style_text(&element);
     assert!(cleaned.contains("display: block"), "{cleaned}");
     assert!(!cleaned.contains("color"), "{cleaned}");
@@ -383,15 +381,15 @@ fn reactive_string_reference_style_property_updates_and_cleans_up() {
 fn reactive_style_property_restores_static_value_after_dispose() {
     let host = host();
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root should start");
+    let root = runtime.owner().expect("root should start");
     let element;
     {
-        let scope = root.scope();
-        let (read, write) = scope
+        let owner = root.access();
+        let (read, write) = owner
             .signal(String::from("red"))
             .expect("signal should initialize");
-        let error_handler = test_handler(scope);
-        let owner = ScopedMountOwner::new(scope);
+        let error_handler = test_handler(owner);
+        let owner = MountOwnerToken::new(owner);
         let view = Element::new("div")
             .attr("style", ("color", read.into_rx()))
             .attr("style", ("color", "green"));
@@ -407,7 +405,7 @@ fn reactive_style_property_restores_static_value_after_dispose() {
         assert!(style_text(&element).contains("color: blue"));
     }
 
-    root.dispose().expect("root cleanup should succeed");
+    root.close().expect("root cleanup should succeed");
     let cleaned = style_text(&element);
     assert!(cleaned.contains("color: green"), "{cleaned}");
 }
@@ -418,12 +416,12 @@ fn reactive_style_plan_cleans_up_after_failed_mount() {
     let captured = Rc::new(RefCell::new(None));
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
-            let (read, _) = scope
+        .with_transient(|owner| {
+            let (read, _) = owner
                 .signal(String::from("red"))
                 .expect("signal should initialize");
-            let error_handler = test_handler(scope);
-            let owner = ScopedMountOwner::new(scope);
+            let error_handler = test_handler(owner);
+            let owner = MountOwnerToken::new(owner);
             let view = AnyView::new(RejectingView {
                 element: captured.clone(),
             })
@@ -433,7 +431,7 @@ fn reactive_style_plan_cleans_up_after_failed_mount() {
                     .is_err()
             );
         })
-        .expect("child scope should initialize");
+        .expect("child owner should initialize");
 
     let element = captured
         .borrow()

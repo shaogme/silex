@@ -4,7 +4,7 @@ fn main() {}
 #[cfg(not(target_arch = "wasm32"))]
 mod native {
     use criterion::{BenchmarkId, Criterion, Throughput, criterion_group};
-    use silex_reactivity::{ErrorHandlerToken, Runtime, Scope, unwind_safe};
+    use silex_reactivity::{ErrorHandlerToken, OwnerAccess, Runtime, unwind_safe};
     use std::{
         cell::Cell,
         hint::black_box,
@@ -17,7 +17,7 @@ mod native {
     const DEPENDENCY_SIZES: &[usize] = &[10, 100, 1_000, 10_000];
     const OWNER_SIZES: &[usize] = &[1, 16, 128, 512];
 
-    fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope, ()> {
+    fn handler<'scope>(scope: OwnerAccess<'scope>) -> ErrorHandlerToken<'scope, ()> {
         scope.error_handler(|_| {}).expect("handler registration")
     }
 
@@ -25,9 +25,9 @@ mod native {
         c.bench_function("scoped signal round trip", |bench| {
             bench.iter(|| {
                 let mut runtime = Runtime::new();
-                let root = runtime.run().expect("runtime root creation");
+                let root = runtime.owner().expect("runtime root creation");
                 {
-                    let scope = root.scope();
+                    let scope = root.access();
                     let (read, write) = scope.signal(0i32).expect("fallible reactive creation");
                     let _effect = scope
                         .effect(
@@ -55,10 +55,10 @@ mod native {
 
                     for iteration in 0..iterations {
                         let mut runtime = Runtime::new();
-                        let root = runtime.run().expect("runtime root creation");
+                        let root = runtime.owner().expect("runtime root creation");
                         let start = Instant::now();
 
-                        root.with_scope(|scope| {
+                        root.with_access(|scope| {
                             for index in 0..size {
                                 let signal = scope
                                     .signal((iteration as i32) ^ (index as i32))
@@ -68,7 +68,7 @@ mod native {
                         });
 
                         total += start.elapsed();
-                        root.dispose().expect("benchmark root disposal");
+                        root.close().expect("benchmark root disposal");
                     }
 
                     total
@@ -90,10 +90,10 @@ mod native {
 
                     for iteration in 0..iterations {
                         let mut runtime = Runtime::new();
-                        let root = runtime.run().expect("runtime root creation");
+                        let root = runtime.owner().expect("runtime root creation");
                         let start = Instant::now();
 
-                        root.with_scope(|scope| {
+                        root.with_access(|scope| {
                             for index in 0..size {
                                 let value = [(iteration as u8) ^ (index as u8); 32];
                                 black_box(scope.signal(value).expect("benchmark signal creation"));
@@ -101,7 +101,7 @@ mod native {
                         });
 
                         total += start.elapsed();
-                        root.dispose().expect("benchmark root disposal");
+                        root.close().expect("benchmark root disposal");
                     }
 
                     total
@@ -120,7 +120,7 @@ mod native {
             group.bench_with_input(BenchmarkId::from_parameter(size), &size, |bench, &size| {
                 let mut runtime = Runtime::new();
                 runtime
-                    .child(|scope| {
+                    .with_transient(|scope| {
                         let mut signals = Vec::with_capacity(size);
                         for index in 0..size {
                             signals.push(
@@ -156,7 +156,7 @@ mod native {
             group.bench_with_input(BenchmarkId::from_parameter(size), &size, |bench, &size| {
                 let mut runtime = Runtime::new();
                 runtime
-                    .child(|scope| {
+                    .with_transient(|scope| {
                         let mut signals = Vec::with_capacity(size);
                         for index in 0..size {
                             signals.push(
@@ -212,7 +212,7 @@ mod native {
             group.bench_with_input(BenchmarkId::from_parameter(size), &size, |bench, &size| {
                 let mut runtime = Runtime::new();
                 runtime
-                    .child(|scope| {
+                    .with_transient(|scope| {
                         let mut signals = Vec::with_capacity(size);
                         for index in 0..size {
                             signals.push(
@@ -250,10 +250,10 @@ mod native {
 
                     for iteration in 0..iterations {
                         let mut runtime = Runtime::new();
-                        let root = runtime.run().expect("runtime root creation");
+                        let root = runtime.owner().expect("runtime root creation");
                         let start = Instant::now();
 
-                        root.with_scope(|scope| {
+                        root.with_access(|scope| {
                             for index in 0..size {
                                 let stored = scope
                                     .stored((iteration as u32) ^ (index as u32))
@@ -263,7 +263,7 @@ mod native {
                         });
 
                         total += start.elapsed();
-                        root.dispose().expect("benchmark root disposal");
+                        root.close().expect("benchmark root disposal");
                     }
 
                     total
@@ -285,23 +285,21 @@ mod native {
 
                     for iteration in 0..iterations {
                         let mut runtime = Runtime::new();
-                        let root = runtime.run().expect("runtime root creation");
-                        let stored = root.with_scope(|scope| {
-                            let mut stored = Vec::with_capacity(size);
-                            for index in 0..size {
-                                stored.push(
-                                    scope
-                                        .stored((iteration as u32) ^ (index as u32))
-                                        .expect("benchmark stored creation"),
-                                );
-                            }
-                            stored
-                        });
+                        let root = runtime.owner().expect("runtime root creation");
+                        let scope = root.access();
+                        let mut stored = Vec::with_capacity(size);
+                        for index in 0..size {
+                            stored.push(
+                                scope
+                                    .stored((iteration as u32) ^ (index as u32))
+                                    .expect("benchmark stored creation"),
+                            );
+                        }
                         black_box(stored.len());
                         drop(stored);
 
                         let start = Instant::now();
-                        root.dispose().expect("benchmark root disposal");
+                        root.close().expect("benchmark root disposal");
                         total += start.elapsed();
                     }
 
@@ -321,7 +319,7 @@ mod native {
             group.bench_with_input(BenchmarkId::from_parameter(size), &size, |bench, &size| {
                 let mut runtime = Runtime::new();
                 runtime
-                    .child(|scope| {
+                    .with_transient(|scope| {
                         let mut stored_values = Vec::with_capacity(size);
                         for index in 0..size {
                             stored_values.push(
@@ -358,10 +356,10 @@ mod native {
 
                     for _ in 0..iterations {
                         let mut runtime = Runtime::new();
-                        let root = runtime.run().expect("runtime root creation");
+                        let root = runtime.owner().expect("runtime root creation");
                         let start = Instant::now();
 
-                        root.with_scope(|scope| {
+                        root.with_access(|scope| {
                             for _ in 0..size {
                                 black_box(
                                     scope
@@ -372,7 +370,7 @@ mod native {
                         });
 
                         total += start.elapsed();
-                        root.dispose().expect("benchmark root disposal");
+                        root.close().expect("benchmark root disposal");
                     }
 
                     total
@@ -394,23 +392,21 @@ mod native {
 
                     for _ in 0..iterations {
                         let mut runtime = Runtime::new();
-                        let root = runtime.run().expect("runtime root creation");
-                        let node_refs = root.with_scope(|scope| {
-                            let mut node_refs = Vec::with_capacity(size);
-                            for _ in 0..size {
-                                node_refs.push(
-                                    scope
-                                        .node_ref::<u32>()
-                                        .expect("benchmark node ref creation"),
-                                );
-                            }
-                            node_refs
-                        });
+                        let root = runtime.owner().expect("runtime root creation");
+                        let scope = root.access();
+                        let mut node_refs = Vec::with_capacity(size);
+                        for _ in 0..size {
+                            node_refs.push(
+                                scope
+                                    .node_ref::<u32>()
+                                    .expect("benchmark node ref creation"),
+                            );
+                        }
                         black_box(node_refs.len());
                         drop(node_refs);
 
                         let start = Instant::now();
-                        root.dispose().expect("benchmark root disposal");
+                        root.close().expect("benchmark root disposal");
                         total += start.elapsed();
                     }
 
@@ -430,7 +426,7 @@ mod native {
             group.bench_with_input(BenchmarkId::from_parameter(size), &size, |bench, &size| {
                 let mut runtime = Runtime::new();
                 runtime
-                    .child(|scope| {
+                    .with_transient(|scope| {
                         let mut node_refs = Vec::with_capacity(size);
                         for _ in 0..size {
                             node_refs.push(
@@ -465,7 +461,7 @@ mod native {
                 |bench, &fanout| {
                     let mut runtime = Runtime::new();
                     runtime
-                        .child(|scope| {
+                        .with_transient(|scope| {
                             let (source, set_source) =
                                 scope.signal(0i32).expect("fallible reactive creation");
                             let notifications = Rc::new(Cell::new(0usize));
@@ -512,13 +508,13 @@ mod native {
                 |bench, &depth| {
                     let mut runtime = Runtime::new();
                     runtime
-                        .child(|scope| {
+                        .with_transient(|scope| {
                             let (source, set_source) =
                                 scope.signal(0i32).expect("fallible reactive creation");
                             let first_source = source;
                             let mut tail = scope
-                                .memo(
-                                    move |_| {
+                                .computed(
+                                    move || {
                                         Ok(first_source
                                             .get()
                                             .expect("benchmark read")
@@ -531,8 +527,8 @@ mod native {
                             for _ in 1..depth {
                                 let upstream = tail;
                                 tail = scope
-                                    .memo(
-                                        move |_| {
+                                    .computed(
+                                        move || {
                                             Ok(upstream
                                                 .get()
                                                 .expect("benchmark read")
@@ -585,15 +581,15 @@ mod native {
                 |bench, &width| {
                     let mut runtime = Runtime::new();
                     runtime
-                        .child(|scope| {
+                        .with_transient(|scope| {
                             let (source, set_source) =
                                 scope.signal(0i32).expect("fallible reactive creation");
                             let mut memos = Vec::with_capacity(width);
                             for index in 0..width {
                                 memos.push(
                                     scope
-                                        .memo(
-                                            move |_| {
+                                        .computed(
+                                            move || {
                                                 Ok(source
                                                     .get()
                                                     .expect("benchmark read")
@@ -651,11 +647,11 @@ mod native {
                 |bench, &fanout| {
                     let mut runtime = Runtime::new();
                     runtime
-                        .child(|scope| {
+                        .with_transient(|scope| {
                             let (source, set_source) =
                                 scope.signal(0i32).expect("fallible reactive creation");
                             scope
-                                .child(|child| {
+                                .with_transient(|child| {
                                     let notifications = Rc::new(Cell::new(0usize));
                                     for _ in 0..fanout {
                                         let notifications = notifications.clone();
@@ -704,14 +700,14 @@ mod native {
                 |bench, &depth| {
                     let mut runtime = Runtime::new();
                     runtime
-                        .child(|scope| {
+                        .with_transient(|scope| {
                             let (source, set_source) =
                                 scope.signal(0i32).expect("fallible reactive creation");
                             scope
-                                .child(|child| {
+                                .with_transient(|child| {
                                     let mut tail = child
-                                        .memo(
-                                            move |_| {
+                                        .computed(
+                                            move || {
                                                 Ok(source
                                                     .get()
                                                     .expect("benchmark read")
@@ -723,8 +719,8 @@ mod native {
                                     for _ in 1..depth {
                                         let upstream = tail;
                                         tail = child
-                                            .memo(
-                                                move |_| {
+                                            .computed(
+                                                move || {
                                                     Ok(upstream
                                                         .get()
                                                         .expect("benchmark read")
@@ -780,17 +776,17 @@ mod native {
                 |bench, &width| {
                     let mut runtime = Runtime::new();
                     runtime
-                        .child(|scope| {
+                        .with_transient(|scope| {
                             let (source, set_source) =
                                 scope.signal(0i32).expect("fallible reactive creation");
                             scope
-                                .child(|child| {
+                                .with_transient(|child| {
                                     let mut memos = Vec::with_capacity(width);
                                     for index in 0..width {
                                         memos.push(
                                             child
-                                                .memo(
-                                                    move |_| {
+                                                .computed(
+                                                    move || {
                                                         Ok(source
                                                             .get()
                                                             .expect("benchmark read")
@@ -851,7 +847,7 @@ mod native {
                 |bench, &width| {
                     let mut runtime = Runtime::new();
                     runtime
-                        .child(|scope| {
+                        .with_transient(|scope| {
                             let (source, set_source) =
                                 scope.signal(0i32).expect("fallible reactive creation");
                             let memo_runs = Rc::new(Cell::new(0usize));
@@ -860,8 +856,8 @@ mod native {
                                 let memo_runs = memo_runs.clone();
                                 memos.push(
                                     scope
-                                        .memo(
-                                            move |_| {
+                                        .computed(
+                                            move || {
                                                 memo_runs.set(memo_runs.get().wrapping_add(1));
                                                 Ok(source.get().expect("benchmark read"))
                                             },
@@ -926,9 +922,9 @@ mod native {
                     let mut total = Duration::ZERO;
                     for iteration in 0..iterations {
                         let mut runtime = Runtime::new();
-                        let root = runtime.run().expect("benchmark root creation");
+                        let root = runtime.owner().expect("benchmark root creation");
                         let start = Instant::now();
-                        root.with_scope(|scope| {
+                        root.with_access(|scope| {
                             let reads: Vec<_> = (0..size)
                                 .map(|index| {
                                     scope
@@ -952,7 +948,7 @@ mod native {
                             black_box(reads.len());
                         });
                         total += start.elapsed();
-                        root.dispose().expect("benchmark root disposal");
+                        root.close().expect("benchmark root disposal");
                     }
                     total
                 });
@@ -970,7 +966,7 @@ mod native {
             group.bench_with_input(BenchmarkId::from_parameter(size), &size, |bench, &size| {
                 let mut runtime = Runtime::new();
                 runtime
-                    .child(|scope| {
+                    .with_transient(|scope| {
                         let mut signals = Vec::with_capacity(size);
                         for index in 0..size {
                             signals.push(
@@ -1016,7 +1012,7 @@ mod native {
             group.bench_with_input(BenchmarkId::from_parameter(size), &size, |bench, &size| {
                 let mut runtime = Runtime::new();
                 runtime
-                    .child(|scope| {
+                    .with_transient(|scope| {
                         let (switch, set_switch) =
                             scope.signal(false).expect("benchmark switch creation");
                         let mut left = Vec::with_capacity(size);
@@ -1077,8 +1073,8 @@ mod native {
                     let mut total = Duration::ZERO;
                     for _ in 0..iterations {
                         let mut runtime = Runtime::new();
-                        let root = runtime.run().expect("benchmark root creation");
-                        root.with_scope(|scope| {
+                        let root = runtime.owner().expect("benchmark root creation");
+                        root.with_access(|scope| {
                             let reads: Vec<_> = (0..size)
                                 .map(|index| {
                                     scope
@@ -1103,7 +1099,7 @@ mod native {
                         });
 
                         let start = Instant::now();
-                        root.dispose().expect("benchmark root disposal");
+                        root.close().expect("benchmark root disposal");
                         total += start.elapsed();
                     }
                     total
@@ -1121,8 +1117,8 @@ mod native {
             group.throughput(Throughput::Elements(size as u64));
             group.bench_with_input(BenchmarkId::from_parameter(size), &size, |bench, &size| {
                 let mut runtime = Runtime::new();
-                let root = runtime.run().expect("benchmark root creation");
-                root.with_scope(|scope| {
+                let root = runtime.owner().expect("benchmark root creation");
+                root.with_access(|scope| {
                     let mut signals = Vec::with_capacity(size);
                     for index in 0..size {
                         signals.push(
@@ -1135,10 +1131,11 @@ mod native {
                     bench.iter_custom(|iterations| {
                         let mut total = Duration::ZERO;
                         for _ in 0..iterations {
-                            let owner = scope.owned_scope().expect("benchmark owner creation");
-                            let child = owner.child().expect("benchmark child creation");
+                            let owner = scope.create_child().expect("benchmark owner creation");
+                            let child = owner.create_child().expect("benchmark child creation");
                             let reads_in_effect = signals.clone();
                             child
+                                .access()
                                 .effect(
                                     move || {
                                         for read in &reads_in_effect {
@@ -1151,14 +1148,14 @@ mod native {
                                 .expect("benchmark effect creation");
 
                             let start = Instant::now();
-                            child.dispose().expect("benchmark child disposal");
-                            owner.dispose().expect("benchmark owner disposal");
+                            child.close().expect("benchmark child disposal");
+                            owner.close().expect("benchmark owner disposal");
                             total += start.elapsed();
                         }
                         total
                     });
                 });
-                root.dispose().expect("benchmark root disposal");
+                root.close().expect("benchmark root disposal");
             });
         }
 
@@ -1172,8 +1169,8 @@ mod native {
             group.throughput(Throughput::Elements(rows as u64));
             group.bench_with_input(BenchmarkId::from_parameter(rows), &rows, |bench, &rows| {
                 let mut runtime = Runtime::new();
-                let root = runtime.run().expect("runtime root creation");
-                root.with_scope(|scope| {
+                let root = runtime.owner().expect("runtime root creation");
+                root.with_access(|scope| {
                     let (source, _) = scope.signal(0i32).expect("fallible reactive creation");
                     let cleanup_count = Rc::new(Cell::new(0usize));
                     let effect_token = handler(scope);
@@ -1183,10 +1180,11 @@ mod native {
                     let mut owners = Vec::with_capacity(rows);
 
                     for _ in 0..rows {
-                        let row_scope = scope.owned_scope().expect("fallible reactive creation");
-                        let render_scope = row_scope.child().expect("benchmark child scope");
+                        let row_scope = scope.create_child().expect("fallible reactive creation");
+                        let render_scope = row_scope.create_child().expect("benchmark child scope");
                         let source_in_effect = source;
                         render_scope
+                            .access()
                             .effect(
                                 move || {
                                     black_box(source_in_effect.get().expect("benchmark read"));
@@ -1197,6 +1195,7 @@ mod native {
                             .expect("benchmark effect should initialize");
                         let cleanup_count_in_row = cleanup_count.clone();
                         render_scope
+                            .access()
                             .on_cleanup(
                                 move || {
                                     cleanup_count_in_row
@@ -1211,16 +1210,18 @@ mod native {
 
                     bench.iter(|| {
                         for (row_scope, render_scope) in owners.drain(..) {
-                            render_scope.dispose().expect("benchmark render disposal");
-                            row_scope.dispose().expect("benchmark row disposal");
+                            render_scope.close().expect("benchmark render disposal");
+                            row_scope.close().expect("benchmark row disposal");
                         }
 
                         for _ in 0..rows {
                             let row_scope =
-                                scope.owned_scope().expect("fallible reactive creation");
-                            let render_scope = row_scope.child().expect("benchmark child scope");
+                                scope.create_child().expect("fallible reactive creation");
+                            let render_scope =
+                                row_scope.create_child().expect("benchmark child scope");
                             let source_in_effect = source;
                             render_scope
+                                .access()
                                 .effect(
                                     move || {
                                         black_box(source_in_effect.get().expect("benchmark read"));
@@ -1231,6 +1232,7 @@ mod native {
                                 .expect("benchmark effect should initialize");
                             let cleanup_count_in_row = cleanup_count.clone();
                             render_scope
+                                .access()
                                 .on_cleanup(
                                     move || {
                                         cleanup_count_in_row
@@ -1247,12 +1249,12 @@ mod native {
                     });
 
                     for (row_scope, render_scope) in owners.drain(..) {
-                        render_scope.dispose().expect("benchmark render disposal");
-                        row_scope.dispose().expect("benchmark row disposal");
+                        render_scope.close().expect("benchmark render disposal");
+                        row_scope.close().expect("benchmark row disposal");
                     }
                     black_box(cleanup_count.get());
                 });
-                root.dispose().expect("benchmark root disposal");
+                root.close().expect("benchmark root disposal");
             });
         }
 
@@ -1266,7 +1268,7 @@ mod native {
         group.bench_function("u32", |bench| {
             let mut runtime = Runtime::new();
             runtime
-                .child(|scope| {
+                .with_transient(|scope| {
                     let value = scope.rw_signal(0u32).expect("fallible reactive creation");
                     let setter = value.write();
                     let token = scope
@@ -1288,7 +1290,7 @@ mod native {
         group.bench_function("String", |bench| {
             let mut runtime = Runtime::new();
             runtime
-                .child(|scope| {
+                .with_transient(|scope| {
                     let messages = scope
                         .rw_signal(Vec::<String>::with_capacity(64))
                         .expect("fallible reactive creation");

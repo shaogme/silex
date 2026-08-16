@@ -1,10 +1,10 @@
 error: lifetime may not live long enough
   --> tests/ui/fail_dynamic_css_child_escape.rs:10:9
    |
- 6 |       let css = runtime.child(|scope| {
-   |                                ------ return type of closure is DynamicCss<'2>
-   |                                |
-   |                                has type `silex_core::Scope<'1>`
+ 6 |       let css = runtime.with_transient(|owner| {
+   |                                         ------ return type of closure is DynamicCss<'2>
+   |                                         |
+   |                                         has type `OwnerAccess<'1>`
 ...
 10 | /         DynamicCss::new("child").with_rule(
 11 | |             &[CssPart::Lit(".child{"), CssPart::Val(0), CssPart::Lit("}")],

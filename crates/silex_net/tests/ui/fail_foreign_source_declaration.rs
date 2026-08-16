@@ -3,7 +3,7 @@ use silex_net::HttpClient;
 
 fn main() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    runtime.with_transient(|scope| {
         let (value, _) = scope.signal(1_i32).unwrap();
         let _builder = HttpClient::get(
             scope,

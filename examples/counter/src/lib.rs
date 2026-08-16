@@ -53,7 +53,7 @@ fn CounterDisplay<'scope, Ctx>(
     count: ReadSignal<'scope, i32>,
 ) -> impl View<'scope> {
     // Demo: Style Map (Vec) and Dynamic Class (Signal)
-    let is_even = scope.memo(move |_| Ok(count.get()? % 2 == 0), error_handler)?;
+    let is_even = owner.computed(move || Ok(count.get()? % 2 == 0), error_handler)?;
 
     // Demo: CSS-in-Rust (Scoped CSS)
     let container_class = css! {
@@ -168,15 +168,15 @@ fn NavBar<'scope>(#[ctx] ctx: RouterContext<'scope>) -> impl View<'scope> {
 
 #[component]
 fn HomeView<'scope>(#[ctx] ctx: RouterContext<'scope>) -> impl View<'scope> {
-    let scope = ctx.scope();
+    let owner = ctx.owner();
 
     // 页面级状态
-    let (name, set_name) = scope.signal("Rustacean".to_string())?;
+    let (name, set_name) = owner.signal("Rustacean".to_string())?;
 
     // 显式本地信号传递演示
-    let (count, set_count) = scope.signal(0)?;
+    let (count, set_count) = owner.signal(0)?;
     let is_high = rx!(ctx; *$count > 5);
-    let suspense_source = scope.constant(())?;
+    let suspense_source = owner.constant(())?;
     let suspense_data_style = sty(ctx)
         .color(hex("#2e7d32"))?
         .font_weight(FontWeightKeyword::Bold)?
@@ -199,7 +199,7 @@ fn HomeView<'scope>(#[ctx] ctx: RouterContext<'scope>) -> impl View<'scope> {
         // Card 1: Explicit Parameter Counter
         Card(ctx, "Explicit Counter")
             .elevation(3)
-            .on_hover(scope.callback(|_| {
+            .on_hover(owner.callback(|_| {
                 web_sys::console::log_1(&"Card Hovered!".into());
                 Ok(())
             })?)
@@ -269,7 +269,7 @@ fn HomeView<'scope>(#[ctx] ctx: RouterContext<'scope>) -> impl View<'scope> {
             .child(
                 Suspense(ctx, move |cx| {
                     match Resource::new(
-                        scope,
+                        owner,
                         suspense_source,
                         |_| async {
                             gloo_timers::future::TimeoutFuture::new(2_000).await;
@@ -418,12 +418,12 @@ pub fn mount_counter_into(target: web_sys::Node) -> Result<JsAppHost, BootstrapE
 }
 
 fn mount_counter_view<'scope>(ctx: &MountContext<'scope>) -> SilexResult<()> {
-    let scope = ctx.scope();
-    let (root_error, set_root_error) = scope.signal(None::<SilexError>)?;
-    let error_handler = scope.error_handler(move |error: SilexError| {
+    let owner = ctx.access();
+    let (root_error, set_root_error) = owner.signal(None::<SilexError>)?;
+    let error_handler = owner.error_handler(move |error: SilexError| {
         let _ = set_root_error.set(Some(error));
     })?;
-    let silex_ctx = SilexContext::new(scope, error_handler.view());
+    let silex_ctx = SilexContext::new(owner, error_handler.view());
     let app = App(silex_ctx, root_error).build();
     ctx.mount(app, error_handler)
 }

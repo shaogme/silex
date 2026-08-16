@@ -25,7 +25,7 @@ pub fn Show<'scope, Ctx, C>(
 where
     C: ReactiveSource<'scope, Value = bool> + Clone + 'scope,
 {
-    let condition = scope.promote(when, error_handler)?;
+    let condition = owner.promote(when, error_handler)?;
     Ok(silex_core::rx!(ctx; if *$condition {
         children.clone()
     } else {

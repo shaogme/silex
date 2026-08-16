@@ -52,17 +52,17 @@ pub fn store_impl(mut model: ItemStruct) -> Result<TokenStream> {
     let model_type = model_type(&model_name, &model_generics);
 
     let mut alias_generics = alias_generics(&model_generics, &field_infos, &core);
-    add_scope_bounds_to_parameters(&mut alias_generics);
+    add_owner_bounds_to_parameters(&mut alias_generics);
     let impl_generics = impl_generics(&model_generics);
     let mut fields_generics = fields_generics(&model_generics, &field_infos);
-    add_scope_bounds_to_where(&mut fields_generics, &model_generics);
+    add_owner_bounds_to_where(&mut fields_generics, &model_generics);
     add_store_field_bounds(&mut fields_generics, &field_infos, &core);
 
     let (fields_impl_generics, fields_ty_generics, fields_where) = fields_generics.split_for_impl();
 
     let default_fields_args = type_arguments(&model_generics, &field_infos, |field| {
         let ty = &field.ty;
-        quote!(#core::RwSignal<'scope, #ty>)
+        quote!(#core::RwSignal<'owner, #ty>)
     });
     let alias_fields_args = type_arguments(&model_generics, &field_infos, |field| {
         let handle = &field.handle_ident;
@@ -77,7 +77,7 @@ pub fn store_impl(mut model: ItemStruct) -> Result<TokenStream> {
 
     let new_fields = field_infos.iter().map(|field| {
         let ident = &field.ident;
-        quote!(#ident: scope.rw_signal(source.#ident)?)
+        quote!(#ident: owner.rw_signal(source.#ident)?)
     });
 
     let handle_arguments = field_infos
@@ -116,8 +116,8 @@ pub fn store_impl(mut model: ItemStruct) -> Result<TokenStream> {
             let input = &field.input_ident;
             let ty = &field.ty;
             quote!(
-                #input: #core::StoreField<'scope, #ty>
-                    + Into<#core::RwSignal<'scope, #ty>>
+                #input: #core::StoreField<'owner, #ty>
+                    + Into<#core::RwSignal<'owner, #ty>>
             )
         })
         .collect::<Vec<_>>();
@@ -149,7 +149,7 @@ pub fn store_impl(mut model: ItemStruct) -> Result<TokenStream> {
     let model_expression = model_expression(&model_name, &model_generics);
 
     let mut default_impl_generics = impl_generics.clone();
-    add_scope_bounds_to_where(&mut default_impl_generics, &model_generics);
+    add_owner_bounds_to_where(&mut default_impl_generics, &model_generics);
     let (default_impl_generics_tokens, _, default_impl_where) =
         default_impl_generics.split_for_impl();
 
@@ -159,7 +159,7 @@ pub fn store_impl(mut model: ItemStruct) -> Result<TokenStream> {
         #[doc(hidden)]
         #[derive(Clone, Copy)]
         #model_visibility struct #fields_name #fields_generics #fields_where {
-            scope: #core::Scope<'scope>,
+            owner: #core::OwnerAccess<'owner>,
             _marker: ::std::marker::PhantomData<fn() -> #model_type>,
             #(#model_fields),*
         }
@@ -169,11 +169,11 @@ pub fn store_impl(mut model: ItemStruct) -> Result<TokenStream> {
         impl #default_impl_generics_tokens #fields_name #default_fields_args #default_impl_where
         {
             pub fn new(
-                scope: #core::Scope<'scope>,
+                owner: #core::OwnerAccess<'owner>,
                 source: #model_type,
             ) -> #core::SilexResult<Self> {
                 Ok(Self {
-                    scope,
+                    owner,
                     _marker: ::std::marker::PhantomData,
                     #(#new_fields),*
                 })
@@ -182,13 +182,13 @@ pub fn store_impl(mut model: ItemStruct) -> Result<TokenStream> {
             /// Builds the default Store type from compatible scoped handles.
             ///
             pub fn from_handles #input_method_generics (
-                scope: #core::Scope<'scope>,
+                owner: #core::OwnerAccess<'owner>,
                 #(#input_handle_arguments),*
             ) -> #core::SilexResult<Self>
             #input_method_where
             {
                 Ok(Self {
-                    scope,
+                    owner,
                     _marker: ::std::marker::PhantomData,
                     #(#input_conversion_fields),*
                 })
@@ -197,16 +197,16 @@ pub fn store_impl(mut model: ItemStruct) -> Result<TokenStream> {
         }
 
         impl #fields_impl_generics #fields_name #fields_ty_generics #fields_where {
-            pub fn scope(&self) -> #core::Scope<'scope> {
-                self.scope
+            pub fn owner(&self) -> #core::OwnerAccess<'owner> {
+                self.owner
             }
 
             pub fn from_typed_handles(
-                scope: #core::Scope<'scope>,
+                owner: #core::OwnerAccess<'owner>,
                 #(#handle_arguments),*
             ) -> #core::SilexResult<Self> {
                 Ok(Self {
-                    scope,
+                    owner,
                     _marker: ::std::marker::PhantomData,
                     #(#handle_names),*
                 })
@@ -254,11 +254,11 @@ fn reject_persistence_attributes(model: &ItemStruct, fields: &[&Field]) -> Resul
 fn reject_reserved_lifetime(generics: &Generics) -> Result<()> {
     for parameter in &generics.params {
         if let GenericParam::Lifetime(parameter) = parameter
-            && parameter.lifetime.ident == "scope"
+            && parameter.lifetime.ident == "owner"
         {
             return Err(syn::Error::new_spanned(
                 parameter,
-                "the model lifetime 'scope is reserved by #[store]",
+                "the model lifetime 'owner is reserved by #[store]",
             ));
         }
     }
@@ -287,7 +287,7 @@ fn alias_generics(
     core: &TokenStream,
 ) -> Generics {
     let mut params = syn::punctuated::Punctuated::new();
-    params.push(parse_quote!('scope));
+    params.push(parse_quote!('owner));
     params.extend(model_generics.params.iter().cloned());
 
     for field in fields {
@@ -298,7 +298,7 @@ fn alias_generics(
             colon_token: None,
             bounds: syn::punctuated::Punctuated::new(),
             eq_token: Some(Default::default()),
-            default: Some(parse_quote!(#core::RwSignal<'scope, #ty>)),
+            default: Some(parse_quote!(#core::RwSignal<'owner, #ty>)),
         }));
     }
 
@@ -312,14 +312,14 @@ fn alias_generics(
 
 fn impl_generics(model_generics: &Generics) -> Generics {
     let mut generics = model_generics.clone();
-    generics.params.insert(0, parse_quote!('scope));
+    generics.params.insert(0, parse_quote!('owner));
     clear_generic_defaults(&mut generics);
     generics
 }
 
 fn fields_generics(model_generics: &Generics, fields: &[StoreFieldInfo]) -> Generics {
     let mut params = syn::punctuated::Punctuated::new();
-    params.push(parse_quote!('scope));
+    params.push(parse_quote!('owner));
 
     for parameter in &model_generics.params {
         match parameter {
@@ -376,23 +376,23 @@ fn clear_generic_defaults(generics: &mut Generics) {
     }
 }
 
-fn add_scope_bounds_to_parameters(generics: &mut Generics) {
+fn add_owner_bounds_to_parameters(generics: &mut Generics) {
     for parameter in &mut generics.params {
         match parameter {
             GenericParam::Lifetime(parameter) => {
-                if parameter.lifetime.ident != "scope" {
-                    parameter.bounds.push(parse_quote!('scope));
+                if parameter.lifetime.ident != "owner" {
+                    parameter.bounds.push(parse_quote!('owner));
                 }
             }
             GenericParam::Type(parameter) => {
-                parameter.bounds.push(parse_quote!('scope));
+                parameter.bounds.push(parse_quote!('owner));
             }
             GenericParam::Const(_) => {}
         }
     }
 }
 
-fn add_scope_bounds_to_where(generics: &mut Generics, model_generics: &Generics) {
+fn add_owner_bounds_to_where(generics: &mut Generics, model_generics: &Generics) {
     let where_clause = generics.make_where_clause();
 
     for parameter in &model_generics.params {
@@ -401,11 +401,11 @@ fn add_scope_bounds_to_where(generics: &mut Generics, model_generics: &Generics)
                 let lifetime = &parameter.lifetime;
                 where_clause
                     .predicates
-                    .push(parse_quote!(#lifetime: 'scope));
+                    .push(parse_quote!(#lifetime: 'owner));
             }
             GenericParam::Type(parameter) => {
                 let ident = &parameter.ident;
-                where_clause.predicates.push(parse_quote!(#ident: 'scope));
+                where_clause.predicates.push(parse_quote!(#ident: 'owner));
             }
             GenericParam::Const(_) => {}
         }
@@ -419,7 +419,7 @@ fn add_store_field_bounds(generics: &mut Generics, fields: &[StoreFieldInfo], co
         let ty = &field.ty;
         let handle = &field.handle_ident;
         where_clause.predicates.push(parse_quote!(
-            #handle: #core::StoreField<'scope, #ty>
+            #handle: #core::StoreField<'owner, #ty>
         ));
     }
 }
@@ -432,7 +432,7 @@ fn type_arguments<F>(
 where
     F: Fn(&StoreFieldInfo) -> TokenStream,
 {
-    let mut arguments = vec![quote!('scope)];
+    let mut arguments = vec![quote!('owner)];
     for parameter in &model_generics.params {
         match parameter {
             GenericParam::Lifetime(parameter) => {

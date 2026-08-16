@@ -4,8 +4,8 @@ error[E0433]: cannot find `RuntimeInputs` in `silex_core`
 7 |             silex_core::RuntimeInputs::new(),
   |                         ^^^^^^^^^^^^^ could not find `RuntimeInputs` in `silex_core`
 
-error[E0599]: no method named `try_effect_from` found for struct `silex_core::Scope<'scope>` in the current scope
+error[E0599]: no method named `try_effect_from` found for struct `OwnerAccess<'owner>` in the current scope
  --> tests/ui/fail_removed_try_api.rs:6:23
   |
-6 |         let _ = scope.try_effect_from(
-  |                 ------^^^^^^^^^^^^^^^ method not found in `silex_core::Scope<'_>`
+6 |         let _ = owner.try_effect_from(
+  |                 ------^^^^^^^^^^^^^^^ method not found in `OwnerAccess<'_>`

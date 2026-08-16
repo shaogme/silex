@@ -1,13 +1,12 @@
 use super::any::AnyView;
 use super::contract::{ApplyAttributes, MountInstance, View};
-use super::owner::{MountErrorHandler, MountOwner, MountOwnerToken, OwnedMountOwner};
+use super::owner::{MountErrorHandler, MountOwner, MountOwnerToken};
 use super::row::{NodeRange, RowInstance, RowInstanceConfig, RowRenderContext, RowRenderer};
 use crate::attribute::PendingAttribute;
-use silex_core::{ErrorHandlerInput, SilexError, SilexErrorKind, SilexResult};
-use std::{
-    panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
-    rc::Rc,
+use silex_core::{
+    CloseError, ErrorHandlerInput, OwnerAccess, SilexError, SilexErrorKind, SilexResult,
 };
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use web_sys::Node;
 
 pub struct DynamicRenderArgs<'scope> {
@@ -138,6 +137,7 @@ pub fn mount_dynamic_view_universal<'scope>(
             item: (),
             index: 0,
             stateful: false,
+            branch_runtime: false,
             error_handler,
         },
     ) {
@@ -152,14 +152,17 @@ pub fn mount_dynamic_view_universal<'scope>(
     if let Err(error) = owner.on_cleanup(
         Box::new(move || {
             if let Some(mut row) = cleanup_state.take_for_cleanup().flatten() {
-                row.dispose();
+                row.dispose()
+                    .map_err(|error| SilexError::fatal(SilexErrorKind::Close(error)))?;
             }
             Ok(())
         }),
         error_handler,
     ) {
         if let Some(mut row) = row_state.take_for_cleanup().flatten() {
-            row.dispose();
+            if let Err(close_error) = row.dispose() {
+                token.report_close_error(close_error);
+            }
         }
         range_instance.remove();
         return Err(error);
@@ -202,6 +205,47 @@ impl<K: PartialEq, S> PartialEq for BranchEvaluation<K, S> {
 
 impl<K: Eq, S> Eq for BranchEvaluation<K, S> {}
 
+/// Capabilities supplied to a stable branch renderer.
+///
+/// The content token owns the branch DOM state, while [`Self::owner`] points
+/// at the persistent runtime child created for this branch. Structural route
+/// effects and page runtime nodes therefore have distinct owner identities.
+#[derive(Clone)]
+pub struct BranchRenderContext<'scope> {
+    content_owner: MountOwnerToken<'scope>,
+    owner: OwnerAccess<'scope>,
+    error_handler: MountErrorHandler<'scope>,
+}
+
+impl<'scope> BranchRenderContext<'scope> {
+    pub(crate) fn new(
+        content_owner: MountOwnerToken<'scope>,
+        owner: OwnerAccess<'scope>,
+        error_handler: MountErrorHandler<'scope>,
+    ) -> Self {
+        Self {
+            content_owner,
+            owner,
+            error_handler,
+        }
+    }
+
+    /// Return the persistent runtime owner for this branch.
+    pub fn owner(&self) -> OwnerAccess<'scope> {
+        self.owner
+    }
+
+    /// Return the DOM content owner for this render.
+    pub fn content_owner(&self) -> MountOwnerToken<'scope> {
+        self.content_owner.clone()
+    }
+
+    /// Return the branch-safe error handler view.
+    pub fn error_handler(&self) -> MountErrorHandler<'scope> {
+        self.error_handler
+    }
+}
+
 /// Mount a stable branch whose evaluation can report a runtime error.
 pub fn mount_branch_stable_cached<'scope, K, S, KeyFn, BranchFn, H>(
     owner: &dyn MountOwner<'scope>,
@@ -215,7 +259,7 @@ where
     K: PartialEq + Clone + 'scope,
     S: Clone + 'scope,
     KeyFn: Fn() -> SilexResult<BranchEvaluation<K, S>> + Clone + 'scope,
-    BranchFn: Fn(BranchEvaluation<K, S>) -> AnyView<'scope> + 'scope,
+    BranchFn: Fn(BranchEvaluation<K, S>, BranchRenderContext<'scope>) -> AnyView<'scope> + 'scope,
     H: ErrorHandlerInput<'scope>,
 {
     let error_handler = error_handler.handler_ref();
@@ -226,11 +270,17 @@ where
                 parent,
                 attrs,
                 owner: token,
-                error_handler,
+                error_handler: _,
+                branch_context,
                 ..
             } = args;
-            branch_fn(key)
-                .mount(&token, &parent, attrs, error_handler)
+            let branch_context = branch_context.ok_or_else(|| {
+                SilexError::fatal(SilexErrorKind::Framework(
+                    "stable branch render context is missing".to_string(),
+                ))
+            })?;
+            branch_fn(key, branch_context.clone())
+                .mount(&token, &parent, attrs, branch_context.error_handler())
                 .map(|_| ())
         },
     );
@@ -242,6 +292,7 @@ where
         key_fn,
         render,
         update_same_key: false,
+        branch_runtime: true,
     })
 }
 
@@ -261,6 +312,7 @@ struct KeyedDynamicMountArgs<'owner, 'scope, K, KeyFn> {
     key_fn: KeyFn,
     render: RowRenderer<'scope, K>,
     update_same_key: bool,
+    branch_runtime: bool,
 }
 
 fn mount_keyed_dynamic_view<'scope, K, KeyFn>(
@@ -278,9 +330,9 @@ where
         key_fn,
         render,
         update_same_key,
+        branch_runtime,
     } = args;
-    let scope = Rc::new(owner.owned_scope()?);
-    let local_owner = OwnedMountOwner::new(scope.clone());
+    let local_owner = owner.child();
     let range = NodeRange::append(parent, "branch")?;
     let state = local_owner.token().owner_state(BranchState {
         range,
@@ -299,18 +351,23 @@ where
             state.key = None;
             let row = state.row.take();
             let range = state.range.clone();
-            let panic = row
-                .map(|mut row| catch_unwind(AssertUnwindSafe(move || row.dispose())))
-                .and_then(Result::err);
+            let close_error = row.and_then(|mut row| {
+                match catch_unwind(AssertUnwindSafe(move || row.dispose())) {
+                    Ok(Ok(())) => None,
+                    Ok(Err(error)) => Some(error),
+                    Err(panic) => Some(CloseError::from_panic(panic)),
+                }
+            });
             range.remove();
-            if let Some(panic) = panic {
-                resume_unwind(panic);
-            }
-            Ok(())
+            close_error.map_or(Ok(()), |error| {
+                Err(SilexError::fatal(SilexErrorKind::Close(error)))
+            })
         }),
         error_handler,
     ) {
-        let _ = scope.dispose();
+        if let Err(close_error) = local_owner.close() {
+            local_owner.report_close_error(close_error);
+        }
         cleanup_range.remove();
         return Err(error);
     }
@@ -368,6 +425,7 @@ where
                         item: key.clone(),
                         index: 0,
                         stateful: false,
+                        branch_runtime,
                         error_handler,
                     },
                 ) {
@@ -379,15 +437,18 @@ where
                     }
                 };
 
-                let old_panic = old_row
-                    .map(|mut row| catch_unwind(AssertUnwindSafe(move || row.dispose())))
-                    .and_then(Result::err);
+                let old_close_error = old_row.and_then(|mut row| {
+                    match catch_unwind(AssertUnwindSafe(move || row.dispose())) {
+                        Ok(Ok(())) => None,
+                        Ok(Err(error)) => Some(error),
+                        Err(panic) => Some(CloseError::from_panic(panic)),
+                    }
+                });
                 state.key = Some(key);
                 state.row = Some(row);
-                if let Some(panic) = old_panic {
-                    resume_unwind(panic);
-                }
-                Ok(())
+                old_close_error.map_or(Ok(()), |error| {
+                    Err(SilexError::fatal(SilexErrorKind::Close(error)))
+                })
             }));
             effect_state.replace(state)?;
             match result {
@@ -406,18 +467,23 @@ where
         }),
         error_handler,
     ) {
-        let _ = scope.dispose();
+        if let Err(close_error) = local_owner.close() {
+            local_owner.report_close_error(close_error);
+        }
         return Err(error);
     }
-    let scope_for_cleanup = scope.clone();
+    let owner_for_cleanup = local_owner.clone();
     if let Err(error) = owner.on_cleanup(
         Box::new(move || {
-            let _ = scope_for_cleanup.dispose();
-            Ok(())
+            owner_for_cleanup
+                .close()
+                .map_err(|error| SilexError::fatal(SilexErrorKind::Close(error)))
         }),
         error_handler,
     ) {
-        let _ = scope.dispose();
+        if let Err(close_error) = local_owner.close() {
+            local_owner.report_close_error(close_error);
+        }
         return Err(error);
     }
     Ok(MountInstance::from_nodes(vec![

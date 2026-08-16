@@ -1,10 +1,10 @@
 error: lifetime may not live long enough
   --> tests/ui/fail_child_handle_escape.rs:7:13
    |
- 6 |           scope.child(|child| {
-   |                        ------ return type of closure is ReadSignal<'2, i32>
-   |                        |
-   |                        has type `silex_reactivity::Scope<'1>`
+ 6 |           scope.with_transient(|child| {
+   |                                 ------ return type of closure is ReadSignal<'2, i32>
+   |                                 |
+   |                                 has type `OwnerAccess<'1>`
  7 | /             child
  8 | |                 .signal(0i32)
  9 | |                 .expect("signal creation should succeed")

@@ -20,7 +20,7 @@ styled! {
         flex-direction: $(direction);
         align-items: $(align);
         justify-content: $(justify);
-        gap: $(gap.map_fn(scope, |g| px(*g), error_handler)?);
+        gap: $(gap.map_fn(owner, |g| px(*g), error_handler)?);
     }
 }
 
@@ -52,6 +52,6 @@ styled! {
     ) {
         display: grid;
         grid-template-columns: repeat($(columns), minmax(0, 1fr));
-        gap: $(gap.map_fn(scope, |g| px(*g), error_handler)?);
+        gap: $(gap.map_fn(owner, |g| px(*g), error_handler)?);
     }
 }

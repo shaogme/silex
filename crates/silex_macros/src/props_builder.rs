@@ -2,7 +2,7 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use syn::{
     Attribute, Data, DeriveInput, Fields, GenericArgument, Ident, PathArguments, Type, Visibility,
-    parse::Parse,
+    parse::Parse, visit::Visit,
 };
 
 #[derive(Clone, Default)]
@@ -60,7 +60,7 @@ struct BuilderContext {
     fields: Vec<FieldSpec>,
     prop_generic_idents: Vec<Ident>,
     required_fields: Vec<FieldSpec>,
-    scope: syn::Lifetime,
+    owner_lifetime: syn::Lifetime,
     ctx_field: Option<Ident>,
 }
 
@@ -96,17 +96,6 @@ impl BuilderContext {
                     inferred_component_name,
                 )
             };
-        let scope = generics
-            .params
-            .iter()
-            .find_map(|param| match param {
-                syn::GenericParam::Lifetime(lifetime) if lifetime.lifetime.ident == "scope" => {
-                    Some(lifetime.lifetime.clone())
-                }
-                _ => None,
-            })
-            .unwrap_or_else(|| syn::Lifetime::new("'static", proc_macro2::Span::call_site()));
-
         let fields = match data {
             Data::Struct(ref data) => match &data.fields {
                 Fields::Named(named) => named
@@ -128,6 +117,8 @@ impl BuilderContext {
                 ));
             }
         };
+
+        let owner_lifetime = owner_lifetime(&generics, &fields);
 
         let ctx_fields: Vec<_> = fields.iter().filter(|field| field.attrs.ctx).collect();
         if ctx_fields.len() > 1 {
@@ -167,7 +158,7 @@ impl BuilderContext {
             fields,
             prop_generic_idents,
             required_fields,
-            scope,
+            owner_lifetime,
             ctx_field,
         })
     }
@@ -254,13 +245,13 @@ impl BuilderContext {
         (decl, ty)
     }
 
-    fn scope_lifetime(&self) -> syn::Lifetime {
-        self.scope.clone()
+    fn owner_lifetime(&self) -> syn::Lifetime {
+        self.owner_lifetime.clone()
     }
 
     fn ctx_where_clause(&self) -> syn::WhereClause {
         let __silex = crate::crate_path::silex();
-        let scope = self.scope_lifetime();
+        let scope = self.owner_lifetime();
         let mut where_clause = self
             .generics
             .where_clause
@@ -330,7 +321,7 @@ impl BuilderContext {
 
     fn pending_attribute_ty(&self) -> TokenStream2 {
         let __silex = crate::crate_path::silex();
-        let scope = self.scope_lifetime();
+        let scope = self.owner_lifetime();
         quote! { #__silex::dom::attribute::PendingAttribute<#scope> }
     }
 
@@ -475,7 +466,7 @@ impl BuilderContext {
         let builder_name = &self.builder_name;
         let ident = &field.ident;
         let ty = &field.ty;
-        let scope = self.scope_lifetime();
+        let scope = self.owner_lifetime();
         let reactive_input = self.ctx_field.is_some() && is_reactive_input_type(ty, &scope);
         let ctx_field = self.ctx_field.as_ref();
         let setter_generic = self.reactive_input_generic_ident();
@@ -483,11 +474,11 @@ impl BuilderContext {
             let ctx_field = ctx_field.expect("reactive input setters require a ctx field");
             if field.required {
                 quote! {
-                    #__silex::core::SilexContextProvider::scope(&#ctx_field)
+                    #__silex::core::SilexContextProvider::owner(&#ctx_field)
                 }
             } else {
                 quote! {
-                    #__silex::core::SilexContextProvider::scope(&self.#ctx_field)
+                    #__silex::core::SilexContextProvider::owner(&self.#ctx_field)
                 }
             }
         } else {
@@ -670,7 +661,7 @@ impl BuilderContext {
                     .expect("reactive defaults require a ctx field");
                 let init_expr = reactive_default_transform(
                     field,
-                    &self.scope,
+                    &self.owner_lifetime,
                     ctx_field,
                     field.attrs.default_value.as_ref(),
                 );
@@ -740,7 +731,7 @@ impl BuilderContext {
         let (_, product_ty_generics, _) = self.generics.split_for_impl();
         let product_ty = quote! { #product_name #product_ty_generics };
         let render_fn_name = &self.render_fn_name;
-        let scope = self.scope_lifetime();
+        let scope = self.owner_lifetime();
         let pending_attribute_ty = self.pending_attribute_ty();
         let where_clause = self.ctx_where_clause();
         let ctx_field = self
@@ -788,7 +779,7 @@ impl BuilderContext {
 
     fn generate_attribute_builder_methods(&self) -> TokenStream2 {
         let __silex = crate::crate_path::silex();
-        let scope = self.scope_lifetime();
+        let scope = self.owner_lifetime();
 
         quote! {
             fn build_attribute<__SilexValue>(mut self, target: #__silex::dom::attribute::ApplyTarget, value: __SilexValue) -> Self
@@ -827,7 +818,7 @@ impl BuilderContext {
         let product_where_clause = self.ctx_where_clause();
         let builder_where_clause = self.ctx_where_clause();
         let product_name = &self.product_name;
-        let scope = self.scope_lifetime();
+        let scope = self.owner_lifetime();
 
         let current_states: Vec<_> = self
             .prop_generic_idents
@@ -861,7 +852,7 @@ impl BuilderContext {
         let component_name = &self.component_name;
         let (impl_generics, _, _) = self.generics.split_for_impl();
         let where_clause = self.ctx_where_clause();
-        let scope = self.scope_lifetime();
+        let scope = self.owner_lifetime();
 
         let initial_states: Vec<_> = self
             .prop_generic_idents
@@ -954,7 +945,7 @@ fn reactive_default_transform(
                 {
                     use #__silex::core::ReactiveInput as _;
                     (#value).into_reactive_input(
-                        #__silex::core::SilexContextProvider::scope(&#ctx_field),
+                        #__silex::core::SilexContextProvider::owner(&#ctx_field),
                     )
                 }
             },
@@ -963,7 +954,7 @@ fn reactive_default_transform(
                     use #__silex::core::ReactiveInput as _;
                     <#value_ty as ::core::default::Default>::default()
                         .into_reactive_input(
-                            #__silex::core::SilexContextProvider::scope(&#ctx_field),
+                            #__silex::core::SilexContextProvider::owner(&#ctx_field),
                         )
                 }
             },
@@ -973,13 +964,13 @@ fn reactive_default_transform(
     match default_value {
         Some(value) => quote! {
             <#ty as #__silex::core::RxFrom<#scope>>::rx_from(
-                #__silex::core::SilexContextProvider::scope(&#ctx_field),
+                #__silex::core::SilexContextProvider::owner(&#ctx_field),
                 #value,
             )
         },
         None => quote! {
             <#ty as #__silex::core::RxDefault<#scope>>::rx_default(
-                #__silex::core::SilexContextProvider::scope(&#ctx_field),
+                #__silex::core::SilexContextProvider::owner(&#ctx_field),
             )
         },
     }
@@ -1184,7 +1175,7 @@ fn is_reactive_wrapper_type(ty: &Type) -> bool {
         Some("Signal")
             | Some("ReadSignal")
             | Some("RwSignal")
-            | Some("Memo")
+            | Some("Computed")
             | Some("StoredValue")
             | Some("Rx")
             | Some("Callback")
@@ -1207,7 +1198,7 @@ fn reactive_input_value_type(ty: &Type, scope: &syn::Lifetime) -> Option<Type> {
     let segment = type_path.path.segments.last()?;
     if !matches!(
         segment.ident.to_string().as_str(),
-        "Signal" | "ReadSignal" | "RwSignal" | "Memo" | "StoredValue" | "Rx"
+        "Signal" | "ReadSignal" | "RwSignal" | "Computed" | "StoredValue" | "Rx"
     ) {
         return None;
     }
@@ -1243,12 +1234,69 @@ fn is_fallible_reactive_default_field(field: &FieldSpec) -> bool {
     is_reactive_default_field(field)
 }
 
-fn is_scope_marker_field(field: &FieldSpec) -> bool {
-    field.ident == "__silex_scope_marker"
+fn owner_lifetime(generics: &syn::Generics, fields: &[FieldSpec]) -> syn::Lifetime {
+    struct LifetimeVisitor {
+        names: std::collections::HashSet<String>,
+    }
+
+    impl<'ast> Visit<'ast> for LifetimeVisitor {
+        fn visit_lifetime(&mut self, lifetime: &'ast syn::Lifetime) {
+            self.names.insert(lifetime.ident.to_string());
+        }
+    }
+
+    let mut ctx_names = std::collections::HashSet::new();
+    for field in fields.iter().filter(|field| field.attrs.ctx) {
+        let mut visitor = LifetimeVisitor {
+            names: std::collections::HashSet::new(),
+        };
+        visitor.visit_type(&field.ty);
+        ctx_names.extend(visitor.names);
+    }
+
+    let mut field_names = std::collections::HashSet::new();
+    for field in fields {
+        let mut visitor = LifetimeVisitor {
+            names: std::collections::HashSet::new(),
+        };
+        visitor.visit_type(&field.ty);
+        field_names.extend(visitor.names);
+    }
+
+    let lifetime = |names: &std::collections::HashSet<String>| {
+        generics.params.iter().find_map(|param| match param {
+            syn::GenericParam::Lifetime(def) if names.contains(&def.lifetime.ident.to_string()) => {
+                Some(def.lifetime.clone())
+            }
+            _ => None,
+        })
+    };
+
+    lifetime(&ctx_names)
+        .or_else(|| lifetime(&field_names))
+        .or_else(|| {
+            generics.params.iter().find_map(|param| match param {
+                syn::GenericParam::Lifetime(def) if def.lifetime.ident == "owner" => {
+                    Some(def.lifetime.clone())
+                }
+                _ => None,
+            })
+        })
+        .or_else(|| {
+            generics.params.iter().find_map(|param| match param {
+                syn::GenericParam::Lifetime(def) => Some(def.lifetime.clone()),
+                _ => None,
+            })
+        })
+        .unwrap_or_else(|| syn::Lifetime::new("'static", proc_macro2::Span::call_site()))
+}
+
+fn is_owner_marker_field(field: &FieldSpec) -> bool {
+    field.ident == "__silex_owner_marker"
 }
 
 fn is_internal_marker_field(field: &FieldSpec) -> bool {
-    is_scope_marker_field(field) || field.ident == "__silex_generic_marker"
+    is_owner_marker_field(field) || field.ident == "__silex_generic_marker"
 }
 
 fn is_auto_into_type(ty: &Type) -> bool {
@@ -1261,6 +1309,6 @@ fn is_auto_into_type(ty: &Type) -> bool {
             | Some("Signal")
             | Some("ReadSignal")
             | Some("RwSignal")
-            | Some("Memo")
+            | Some("Computed")
     )
 }

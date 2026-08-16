@@ -8,11 +8,11 @@ struct Entry {
 
 fn main() {
     let mut runtime = Runtime::new();
-    let _ = runtime.child(|scope| {
-        let error_handler = scope.error_handler(|_| {}).expect("handler");
-        let row_handler = scope.error_handler(|_| {}).expect("row handler");
-        let ctx = SilexContext::new(scope, error_handler.view());
-        let (keyed_entries, _) = scope
+    let _ = runtime.with_transient(|owner| {
+        let error_handler = owner.error_handler(|_| {}).expect("handler");
+        let row_handler = owner.error_handler(|_| {}).expect("row handler");
+        let ctx = SilexContext::new(owner, error_handler.view());
+        let (keyed_entries, _) = owner
             .signal(vec![Entry {
                 id: 1,
                 title: "Keyed entry".to_string(),
@@ -25,7 +25,7 @@ fn main() {
             .row_error_handler(row_handler)
             .build();
 
-        let (indexed_entries, _) = scope
+        let (indexed_entries, _) = owner
             .signal(vec![Entry {
                 id: 2,
                 title: "Indexed entry".to_string(),
@@ -35,7 +35,7 @@ fn main() {
             .children(|entry, index| div(format!("{index}: {}", entry.title)))
             .build();
 
-        let (stateful_entries, _) = scope
+        let (stateful_entries, _) = owner
             .signal(vec![Entry {
                 id: 3,
                 title: "Stateful entry".to_string(),

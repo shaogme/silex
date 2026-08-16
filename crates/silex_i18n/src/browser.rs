@@ -1,5 +1,5 @@
 use crate::{I18nStore, Locale};
-use silex_core::{Effect, SilexError, SilexResult};
+use silex_core::{EffectHandle, SilexError, SilexResult};
 use std::{cell::Cell, rc::Rc};
 use wasm_bindgen::JsValue;
 
@@ -103,10 +103,10 @@ pub fn locale_direction(locale: &Locale) -> TextDirection {
 }
 
 /// Keeps the document's `lang` and `dir` attributes in sync with the store.
-pub(crate) fn sync_document_metadata<'scope>(
-    store: I18nStore<'scope>,
-) -> SilexResult<Effect<'scope>> {
-    let scope = store.scope();
+pub(crate) fn sync_document_metadata<'owner>(
+    store: I18nStore<'owner>,
+) -> SilexResult<EffectHandle<'owner>> {
+    let owner = store.owner();
     #[cfg(target_arch = "wasm32")]
     let root = web_sys::window()
         .and_then(|window| window.document())
@@ -114,7 +114,7 @@ pub(crate) fn sync_document_metadata<'scope>(
     #[cfg(not(target_arch = "wasm32"))]
     let root: Option<web_sys::Element> = None;
     let Some(root) = root else {
-        let effect = scope.effect(|| Ok(()), store.error_handler())?;
+        let effect = owner.effect(|| Ok(()), store.error_handler())?;
         effect.stop()?;
         return Ok(effect);
     };
@@ -169,7 +169,7 @@ pub(crate) fn sync_document_metadata<'scope>(
     let owner_id_for_effect = owner_id.clone();
     let record_for_effect = record.clone();
     let error_handler = store.error_handler();
-    let effect = scope.effect(
+    let effect = owner.effect(
         move || -> SilexResult<()> {
             if !active_for_effect.get() {
                 return Ok(());
@@ -206,7 +206,7 @@ pub(crate) fn sync_document_metadata<'scope>(
     let root_for_cleanup = root;
     let stack_property_for_cleanup = stack_property;
     let owner_id_for_cleanup = owner_id;
-    scope.on_cleanup(
+    owner.on_cleanup(
         move || -> SilexResult<()> {
             if !active.replace(false) {
                 return Ok(());
@@ -403,17 +403,17 @@ mod tests {
     fn missing_document_returns_an_inactive_effect_without_leaking_nodes() {
         let mut runtime = silex_core::Runtime::new();
         runtime
-            .child(|scope| {
-                let handler = scope.error_handler(|_| {}).expect("error handler");
-                let store = crate::I18nBuilder::new(scope, handler.view())
+            .with_transient(|owner| {
+                let handler = owner.error_handler(|_| {}).expect("error handler");
+                let store = crate::I18nBuilder::new(owner, handler.view())
                     .locale(Locale::new("en-US").expect("valid locale"))
                     .build()
                     .expect("valid i18n store");
-                let before = scope.runtime_snapshot();
+                let before = owner.runtime_snapshot();
                 let effect = sync_document_metadata(store).expect("metadata effect can be created");
-                assert_eq!(scope.runtime_snapshot(), before);
+                assert_eq!(owner.runtime_snapshot(), before);
                 assert!(!effect.stop().expect("inactive effect can stop"));
             })
-            .expect("child scope");
+            .expect("transient owner");
     }
 }

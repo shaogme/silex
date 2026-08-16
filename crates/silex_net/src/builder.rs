@@ -8,7 +8,7 @@ use crate::{
 };
 #[cfg(feature = "persist")]
 use silex_core::CompletionOnce;
-use silex_core::{ErrorHandlerInput, ErrorReporter, Scope, SilexResult};
+use silex_core::{ErrorHandlerInput, ErrorReporter, OwnerAccess, SilexResult};
 use std::{marker::PhantomData, rc::Rc, time::Duration};
 
 #[cfg(any(feature = "json", feature = "persist"))]
@@ -54,7 +54,7 @@ enum BodyResolver<'scope> {
 }
 
 impl<'scope> BodyResolver<'scope> {
-    fn validate_runtime(&self, scope: Scope<'scope>) -> SilexResult<()> {
+    fn validate_runtime(&self, scope: OwnerAccess<'scope>) -> SilexResult<()> {
         match self {
             Self::Static(_) => Ok(()),
             Self::Text(value) => value.validate_runtime(scope),
@@ -88,7 +88,7 @@ impl<'scope> BodyResolver<'scope> {
 
 #[derive(Clone)]
 pub struct HttpClientBuilder<'scope, T, C, H = ErrorReporter<'scope>> {
-    pub(crate) scope: Scope<'scope>,
+    pub(crate) scope: OwnerAccess<'scope>,
     pub(crate) error_handler: H,
     pub(crate) method: HttpMethod,
     pub(crate) url: ValueResolver<'scope>,
@@ -114,7 +114,7 @@ pub struct HttpClient;
 
 impl HttpClient {
     pub fn builder_with_codec<'scope, T, C, H>(
-        scope: Scope<'scope>,
+        scope: OwnerAccess<'scope>,
         method: HttpMethod,
         url: impl IntoNetValue<'scope>,
         response_codec: C,
@@ -134,7 +134,7 @@ impl HttpClient {
     }
 
     pub fn builder<'scope, H>(
-        scope: Scope<'scope>,
+        scope: OwnerAccess<'scope>,
         method: HttpMethod,
         url: impl IntoNetValue<'scope>,
         error_handler: H,
@@ -152,7 +152,7 @@ impl HttpClient {
     }
 
     pub fn get<'scope, H>(
-        scope: Scope<'scope>,
+        scope: OwnerAccess<'scope>,
         url: impl IntoNetValue<'scope>,
         error_handler: H,
     ) -> HttpClientBuilder<'scope, String, TextCodec, H>
@@ -163,7 +163,7 @@ impl HttpClient {
     }
 
     pub fn post<'scope, H>(
-        scope: Scope<'scope>,
+        scope: OwnerAccess<'scope>,
         url: impl IntoNetValue<'scope>,
         error_handler: H,
     ) -> HttpClientBuilder<'scope, String, TextCodec, H>
@@ -174,7 +174,7 @@ impl HttpClient {
     }
 
     pub fn put<'scope, H>(
-        scope: Scope<'scope>,
+        scope: OwnerAccess<'scope>,
         url: impl IntoNetValue<'scope>,
         error_handler: H,
     ) -> HttpClientBuilder<'scope, String, TextCodec, H>
@@ -185,7 +185,7 @@ impl HttpClient {
     }
 
     pub fn patch<'scope, H>(
-        scope: Scope<'scope>,
+        scope: OwnerAccess<'scope>,
         url: impl IntoNetValue<'scope>,
         error_handler: H,
     ) -> HttpClientBuilder<'scope, String, TextCodec, H>
@@ -196,7 +196,7 @@ impl HttpClient {
     }
 
     pub fn delete<'scope, H>(
-        scope: Scope<'scope>,
+        scope: OwnerAccess<'scope>,
         url: impl IntoNetValue<'scope>,
         error_handler: H,
     ) -> HttpClientBuilder<'scope, String, TextCodec, H>
@@ -209,7 +209,7 @@ impl HttpClient {
 
 impl<'scope, T, C, H> HttpClientBuilder<'scope, T, C, H> {
     fn new(
-        scope: Scope<'scope>,
+        scope: OwnerAccess<'scope>,
         method: HttpMethod,
         url: ValueResolver<'scope>,
         response_codec: C,
@@ -529,16 +529,6 @@ impl<'scope, T, C, H> HttpClientBuilder<'scope, T, C, H> {
     }
 
     #[cfg(feature = "persist")]
-    fn clear_legacy_cache_key(&self, spec: &RequestSpec) {
-        let Some(storage) =
-            web_sys::window().and_then(|window| window.local_storage().ok().flatten())
-        else {
-            return;
-        };
-        let _ = storage.remove_item(&format!("__net_cache_{}__", spec.legacy_cache_key()));
-    }
-
-    #[cfg(feature = "persist")]
     pub(crate) fn cached_value(&self, spec: &RequestSpec) -> Result<Option<T>, NetError>
     where
         T: Clone + 'static,
@@ -549,7 +539,6 @@ impl<'scope, T, C, H> HttpClientBuilder<'scope, T, C, H> {
         if matches!(cache.policy, CachePolicy::None) {
             return Ok(None);
         }
-        self.clear_legacy_cache_key(spec);
         if !self.persistent_cache_allowed(spec) {
             return Ok(None);
         }
@@ -570,7 +559,6 @@ impl<'scope, T, C, H> HttpClientBuilder<'scope, T, C, H> {
         if matches!(cache.policy, CachePolicy::None) {
             return Ok(None);
         }
-        self.clear_legacy_cache_key(spec);
         if !self.persistent_cache_allowed(spec) {
             return Ok(None);
         }
@@ -741,7 +729,7 @@ impl<'scope, T, C, H> HttpClientBuilder<'scope, T, C, H> {
 mod tests {
     use super::{HttpClient, IntoNetValue, ValueResolver};
     use crate::state::RequestBody;
-    use silex_core::{ErrorHandlerToken, Runtime, Scope};
+    use silex_core::{ErrorHandlerToken, OwnerAccess, Runtime};
 
     #[cfg(feature = "json")]
     use crate::NetError;
@@ -765,7 +753,7 @@ mod tests {
         }
     }
 
-    fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope> {
+    fn test_handler<'scope>(scope: OwnerAccess<'scope>) -> ErrorHandlerToken<'scope> {
         scope.error_handler(|_| {}).unwrap()
     }
 
@@ -773,7 +761,7 @@ mod tests {
     fn builder_keeps_token_owner_until_drop() {
         let mut runtime = Runtime::new();
         runtime
-            .child(|scope| {
+            .with_transient(|scope| {
                 let token = test_handler(scope);
                 let builder = HttpClient::get(scope, "https://example.test", token);
                 assert_eq!(scope.runtime_snapshot().handlers, 1);
@@ -787,7 +775,7 @@ mod tests {
     fn request_spec_resolves_dynamic_body_and_all_request_parts() {
         let mut runtime = Runtime::new();
         runtime
-            .child(|scope| {
+            .with_transient(|scope| {
                 let (url, _) = scope
                     .signal("https://example.test/{id}".to_string())
                     .unwrap();
@@ -817,7 +805,7 @@ mod tests {
     fn query_is_inserted_before_url_fragment() {
         let mut runtime = Runtime::new();
         runtime
-            .child(|scope| {
+            .with_transient(|scope| {
                 let builder = HttpClient::get(
                     scope,
                     "https://example.test/path#fragment?not-a-query",
@@ -847,7 +835,7 @@ mod tests {
     fn form_body_resolves_dynamic_values_without_leaking_resolvers() {
         let mut runtime = Runtime::new();
         runtime
-            .child(|scope| {
+            .with_transient(|scope| {
                 let (name, _) = scope.signal("first".to_string()).unwrap();
                 let (value, set_value) = scope.signal("one".to_string()).unwrap();
                 let builder = HttpClient::post(scope, "https://example.test", test_handler(scope))
@@ -883,7 +871,7 @@ mod tests {
     fn json_body_serialization_failure_returns_net_error() {
         let mut runtime = Runtime::new();
         runtime
-            .child(|scope| {
+            .with_transient(|scope| {
                 let result = HttpClient::post(scope, "https://example.test", test_handler(scope))
                     .json_body(FailingSerialize);
                 assert!(matches!(
@@ -900,7 +888,7 @@ mod tests {
     fn mutation_reports_json_serialization_failure_before_pending() {
         let mut runtime = Runtime::new();
         runtime
-            .child(|scope| {
+            .with_transient(|scope| {
                 let mutation = HttpClient::post(scope, "https://example.test", test_handler(scope))
                     .as_mutation_with(move |_| {
                         let builder =
@@ -924,7 +912,7 @@ mod tests {
     fn json_body_value_contributes_dynamic_input() {
         let mut runtime = Runtime::new();
         runtime
-            .child(|scope| {
+            .with_transient(|scope| {
                 let (body, _) = scope.signal("{\"value\":1}".to_string()).unwrap();
                 let builder = HttpClient::post(scope, "https://example.test", test_handler(scope))
                     .json_body_value(body);

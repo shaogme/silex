@@ -4,9 +4,101 @@ use gloo_timers::future::TimeoutFuture;
 use silex::reexports::wasm_bindgen::{JsCast, JsValue};
 use silex::reexports::web_sys::{self, Document, Element as DomElement, HtmlElement, Node};
 use silex_router_example::{mount_router, mount_router_into};
+use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen_test::*;
 
 wasm_bindgen_test_configure!(run_in_browser);
+
+#[wasm_bindgen(inline_js = r#"
+export function installConsoleFatalGuard() {
+    const failures = [];
+    const originalError = console.error;
+    const originalWarn = console.warn;
+    const originalOnError = window.onerror;
+    const originalOnUnhandledRejection = window.onunhandledrejection;
+    const format = (values) => values.map((value) => {
+        try {
+            if (typeof value === "string") return value;
+            return JSON.stringify(value);
+        } catch (_) {
+            return String(value);
+        }
+    }).join(" ");
+    const record = (kind, values) => failures.push(`${kind}: ${format(values)}`);
+    const onError = (event) => record("error event", [event.message || event.error]);
+    const onUnhandledRejection = (event) => record("unhandledrejection", [event.reason]);
+
+    console.error = function(...values) {
+        record("console.error", values);
+        return originalError.apply(this, values);
+    };
+    console.warn = function(...values) {
+        record("console.warn", values);
+        return originalWarn.apply(this, values);
+    };
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onUnhandledRejection);
+
+    return {
+        failures,
+        originalError,
+        originalWarn,
+        originalOnError,
+        originalOnUnhandledRejection,
+        onError,
+        onUnhandledRejection,
+    };
+}
+
+export function restoreConsoleFatalGuard(guard) {
+    console.error = guard.originalError;
+    console.warn = guard.originalWarn;
+    window.removeEventListener("error", guard.onError);
+    window.removeEventListener("unhandledrejection", guard.onUnhandledRejection);
+    window.onerror = guard.originalOnError;
+    window.onunhandledrejection = guard.originalOnUnhandledRejection;
+}
+
+export function consoleFatalGuardMessage(guard) {
+    return guard.failures.join("\n");
+}
+"#)]
+unsafe extern "C" {
+    #[wasm_bindgen(js_name = installConsoleFatalGuard)]
+    fn install_console_fatal_guard() -> JsValue;
+
+    #[wasm_bindgen(js_name = restoreConsoleFatalGuard)]
+    fn restore_console_fatal_guard(guard: &JsValue);
+
+    #[wasm_bindgen(js_name = consoleFatalGuardMessage)]
+    fn console_fatal_guard_message(guard: &JsValue) -> String;
+}
+
+struct ConsoleFatalGuard {
+    value: JsValue,
+}
+
+impl ConsoleFatalGuard {
+    fn new() -> Self {
+        Self {
+            value: install_console_fatal_guard(),
+        }
+    }
+
+    fn assert_clean(&self) {
+        let message = console_fatal_guard_message(&self.value);
+        assert!(
+            message.is_empty(),
+            "browser fatal guard captured:\n{message}"
+        );
+    }
+}
+
+impl Drop for ConsoleFatalGuard {
+    fn drop(&mut self) {
+        restore_console_fatal_guard(&self.value);
+    }
+}
 
 fn document() -> Document {
     web_sys::window()
@@ -99,6 +191,28 @@ async fn router_resolves_typed_params_and_unmounts_cleanly() {
     assert_eq!(app.child_nodes().length(), 0);
     host.unmount()
         .expect("repeated JS-facing unmount should be idempotent");
+    detach(&app.into());
+}
+
+#[wasm_bindgen_test(async)]
+async fn router_branch_replacement_has_no_console_fatal() {
+    reset_path();
+    let app = target("router-branch-regression");
+    let mut host = mount_router_into(app.clone().into()).expect("router should mount");
+
+    let guard = ConsoleFatalGuard::new();
+    find_link(&app, "Users").click();
+    flush_browser_tasks().await;
+    find_link(&app, "👤 Silex Expert (ID: 42)").click();
+    flush_browser_tasks().await;
+    find_link(&app, "Home").click();
+    flush_browser_tasks().await;
+    find_link(&app, "Search").click();
+    flush_browser_tasks().await;
+
+    host.unmount().expect("router should unmount");
+    guard.assert_clean();
+    assert_eq!(app.child_nodes().length(), 0);
     detach(&app.into());
 }
 

@@ -35,6 +35,7 @@ fn submit_boundary_error<'scope>(
         CallbackInvokeError::Handler(error) => {
             SilexError::fatal(SilexErrorKind::Reactivity(ReactiveError::Handler(error)))
         }
+        CallbackInvokeError::Close(error) => SilexError::fatal(SilexErrorKind::Close(error)),
     };
     let handler_result = catch_unwind(AssertUnwindSafe(|| error_handler.handle(error)));
     if let Err(handler_panic) = handler_result {
@@ -210,20 +211,20 @@ where
     V1: View<'scope> + 'scope,
     V2: View<'scope> + 'scope,
 {
-    let (error, set_error) = scope.signal(None::<SilexError>)?;
-    let completion = scope.completion_sender(unwind_safe(move |value| {
+    let (error, set_error) = owner.signal(None::<SilexError>)?;
+    let completion = owner.completion_sender(unwind_safe(move |value| {
         let _ = set_error.set(Some(value));
         Ok(())
     }))?;
-    let completion_error_handler = scope.error_handler(move |error| {
+    let completion_error_handler = owner.error_handler(move |error| {
         let _ = set_error.set(Some(error));
     })?;
     let completion_error_handler_for_boundary = completion_error_handler.clone();
     let reporter_completion = completion.clone();
-    let boundary_handler = scope.error_handler(move |error| {
+    let boundary_handler = owner.error_handler(move |error| {
         let completion = reporter_completion.clone();
         let error_handler = completion_error_handler_for_boundary.view();
-        let _ = scope.spawn_scoped(
+        let _ = owner.spawn_scoped(
             async move {
                 submit_boundary_error(&completion, error, error_handler);
             },
@@ -240,7 +241,7 @@ where
     let boundary_handler_for_phase = boundary_handler.clone();
     let phase_handler = {
         let parent_handler = parent_handler.clone();
-        scope.error_handler(move |error_value| {
+        owner.error_handler(move |error_value| {
             if error.get_untracked().ok().flatten().is_some() {
                 let parent = parent_handler.with(|state| {
                     state
@@ -301,7 +302,7 @@ where
                     let completion = completion.clone();
                     let error = SilexError::fatal(SilexErrorKind::Javascript(message));
                     let error_handler = completion_error_handler_view;
-                    let _ = scope.spawn_scoped(
+                    let _ = owner.spawn_scoped(
                         async move {
                             submit_boundary_error(&completion, error, error_handler);
                         },

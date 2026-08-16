@@ -2,7 +2,7 @@ use silex_core::{Runtime, SilexError};
 
 fn main() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let _ = scope.effect(|| Ok::<(), SilexError>(()));
+    runtime.with_transient(|owner| {
+        let _ = owner.effect(|| Ok::<(), SilexError>(()));
     });
 }

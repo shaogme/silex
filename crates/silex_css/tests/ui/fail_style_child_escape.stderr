@@ -1,12 +1,12 @@
 error: lifetime may not live long enough
   --> tests/ui/fail_style_child_escape.rs:13:9
    |
- 6 |       let style = runtime.child(|scope| {
-   |                                  ------ return type of closure is silex_css::builder::Style<'2>
-   |                                  |
-   |                                  has type `silex_core::Scope<'1>`
+ 6 |       let style = runtime.with_transient(|owner| {
+   |                                           ------ return type of closure is silex_css::builder::Style<'2>
+   |                                           |
+   |                                           has type `OwnerAccess<'1>`
 ...
-13 | /         Style::new(SilexContext::new(scope, error_handler.view()))
+13 | /         Style::new(SilexContext::new(owner, error_handler.view()))
 14 | |             .raw("--color", value)
 15 | |             .expect("style should build")
    | |_________________________________________^ returning this value requires that `'1` must outlive `'2`

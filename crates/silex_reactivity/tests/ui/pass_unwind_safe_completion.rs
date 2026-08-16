@@ -5,7 +5,7 @@ use silex_reactivity::{Runtime, unwind_safe};
 fn main() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
         let values = Rc::new(RefCell::new(Vec::<i32>::new()));
         let values_for_callback = values.clone();
         let sender = scope

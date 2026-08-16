@@ -1,6 +1,12 @@
-use silex_core::{CleanupSink, Runtime, SilexResult};
-use silex_dom::{MountContext, MountedApp};
-use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
+use silex_core::{
+    CleanupFailure, CleanupOrigin, CleanupReport, CleanupSink, CloseError, MountError, Runtime,
+    SilexError, SilexErrorKind, SilexResult,
+};
+use silex_dom::{DisposeError, MountContext, MountedApp};
+use std::{
+    any::Any,
+    panic::{AssertUnwindSafe, catch_unwind},
+};
 use web_sys::Node;
 
 pub use silex_core::{AppHostError, HostState, UnmountOutcome};
@@ -59,7 +65,10 @@ impl AppHost {
             Err(panic) => {
                 self.active = Some(app);
                 self.state = HostState::Poisoned;
-                resume_unwind(panic)
+                Err(AppHostError::Mount(MountError::poisoned(panic_error(
+                    "application mount",
+                    panic,
+                ))))
             }
         }
     }
@@ -95,7 +104,9 @@ impl AppHost {
             Err(panic) => {
                 self.active = None;
                 self.state = HostState::Poisoned;
-                resume_unwind(panic)
+                Err(AppHostError::Dispose(DisposeError::new(panic_report(
+                    panic,
+                ))))
             }
         }
     }
@@ -128,7 +139,9 @@ impl AppHost {
             Err(panic) => {
                 self.active = None;
                 self.state = HostState::Poisoned;
-                resume_unwind(panic)
+                Err(AppHostError::Dispose(DisposeError::new(panic_report(
+                    panic,
+                ))))
             }
         }
     }
@@ -147,4 +160,22 @@ impl AppHost {
     pub fn target(&self) -> Node {
         self.target.clone()
     }
+}
+
+fn panic_error(operation: &str, panic: Box<dyn Any + Send>) -> SilexError {
+    let close_error = CloseError::from_panic(panic);
+    SilexError::fatal(SilexErrorKind::Framework(format!(
+        "{operation} panicked: {}",
+        close_error.diagnostic().message()
+    )))
+}
+
+fn panic_report(panic: Box<dyn Any + Send>) -> CleanupReport {
+    CleanupReport::from_parts(
+        vec![CleanupFailure::new(
+            CleanupOrigin::Root,
+            CloseError::from_panic(panic),
+        )],
+        Vec::new(),
+    )
 }

@@ -2,9 +2,9 @@ use silex_core::{SilexError, SilexResult};
 use silex_dom::mounted::MountContext;
 
 fn builder<'scope>(ctx: &MountContext<'scope>) -> SilexResult<()> {
-    let _scope = ctx.scope();
+    let _access = ctx.access();
     let _parent = ctx.parent();
-    let _handler = ctx.scope().error_handler(|_: SilexError| {})?;
+    let _handler = ctx.access().error_handler(|_: SilexError| {})?;
     Ok(())
 }
 

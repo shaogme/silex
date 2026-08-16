@@ -1,7 +1,7 @@
 #![cfg(target_arch = "wasm32")]
 
 use silex_core::{
-    ErrorHandlerToken, ErrorReporter, RootHandle, Runtime, Scope, SilexError, SilexErrorKind,
+    ErrorHandlerToken, ErrorReporter, OwnerAccess, OwnerHandle, Runtime, SilexError, SilexErrorKind,
 };
 use silex_dom::{
     attribute::{AttrOp, AttributeBuilder, PendingAttribute},
@@ -12,7 +12,7 @@ use silex_dom::{
         debounce, queue_microtask, request_animation_frame, request_idle_callback, set_interval,
         set_timeout, window_event_listener_untyped,
     },
-    view::{AnyView, MountOwner, ScopedMountOwner, StatefulKeyedListView, View, mount_text_node},
+    view::{AnyView, MountOwner, MountOwnerToken, StatefulKeyedListView, View, mount_text_node},
 };
 use std::{
     cell::{Cell, RefCell},
@@ -27,17 +27,17 @@ use web_sys::{Element as WebElement, Event, MouseEvent, Node};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
-fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope> {
-    scope
+fn test_handler<'owner>(owner: OwnerAccess<'owner>) -> ErrorHandlerToken<'owner> {
+    owner
         .error_handler(|_| {})
         .expect("error handler should register")
 }
 
-fn test_owner<'scope>(
-    scope: Scope<'scope>,
-) -> (ScopedMountOwner<'scope>, ErrorHandlerToken<'scope>) {
-    let error_handler = test_handler(scope);
-    (ScopedMountOwner::new(scope), error_handler)
+fn test_owner<'owner>(
+    owner: OwnerAccess<'owner>,
+) -> (MountOwnerToken<'owner>, ErrorHandlerToken<'owner>) {
+    let error_handler = test_handler(owner);
+    (MountOwnerToken::new(owner), error_handler)
 }
 
 #[wasm_bindgen(inline_js = r#"
@@ -249,16 +249,16 @@ struct WindowResourceView {
     calls: Rc<RefCell<Vec<i32>>>,
 }
 
-impl<'scope> silex_dom::view::ApplyAttributes<'scope> for WindowResourceView {}
+impl<'owner> silex_dom::view::ApplyAttributes<'owner> for WindowResourceView {}
 
-impl<'scope> View<'scope> for WindowResourceView {
+impl<'owner> View<'owner> for WindowResourceView {
     fn mount(
         &self,
-        owner: &dyn MountOwner<'scope>,
+        owner: &dyn MountOwner<'owner>,
         parent: &Node,
-        _attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
-        error_handler: ErrorReporter<'scope>,
-    ) -> silex_core::SilexResult<silex_dom::view::MountInstance<'scope>> {
+        _attrs: Vec<silex_dom::attribute::PendingAttribute<'owner>>,
+        error_handler: ErrorReporter<'owner>,
+    ) -> silex_core::SilexResult<silex_dom::view::MountInstance<'owner>> {
         let calls = self.calls.clone();
         let id = self.id;
         window_event_listener_untyped(
@@ -321,8 +321,8 @@ fn fallible_dom_primitives_and_attribute_mount_failures_are_observable() {
 
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
-            let (owner, error_handler) = test_owner(scope);
+        .with_transient(|owner| {
+            let (owner, error_handler) = test_owner(owner);
             let token = owner.token();
             let element = document()
                 .create_element("div")
@@ -334,19 +334,19 @@ fn fallible_dom_primitives_and_attribute_mount_failures_are_observable() {
                     .is_err()
             );
         })
-        .expect("child scope should initialize");
+        .expect("child owner should initialize");
 
     let reported = Rc::new(Cell::new(false));
     let reported_for_owner = reported.clone();
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
-            let error_handler = scope
+        .with_transient(|owner| {
+            let error_handler = owner
                 .error_handler(move |error| {
                     reported_for_owner.set(matches!(error, SilexError::Recoverable(SilexErrorKind::Framework(_))));
                 })
                 .expect("error handler should register");
-            let owner = ScopedMountOwner::new(scope);
+            let owner = MountOwnerToken::new(owner);
             let view = Element::new("div").apply(PendingAttribute::new_scoped(|_, _, _| {
                 Err(SilexError::recoverable(SilexErrorKind::Framework("attribute rejected".to_string())))
             }));
@@ -355,7 +355,7 @@ fn fallible_dom_primitives_and_attribute_mount_failures_are_observable() {
                 Err(SilexError::Recoverable(SilexErrorKind::Framework(message))) if message == "attribute rejected"
             ));
         })
-        .expect("child scope should initialize");
+        .expect("child owner should initialize");
     assert!(!reported.get());
     assert!(host.first_child().is_none());
     remove_mount_point(&host);
@@ -370,10 +370,13 @@ fn element_listener_removes_physically_and_drops_on_root_dispose() {
     let drops = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
 
-    let root = runtime.run().expect("root should start");
+    let root = runtime.owner().expect("root should start");
     {
-        let scope = root.scope();
-        let (owner, error_handler) = test_owner(scope);
+        let access = root.access();
+        let node_ref = access
+            .node_ref::<WebElement>()
+            .expect("node ref should initialize");
+        let (owner, error_handler) = test_owner(access);
         let token = owner.token();
         let element = Element::new("button");
         let instance = element
@@ -393,9 +396,6 @@ fn element_listener_removes_physically_and_drops_on_root_dispose() {
         spy.spy_target(&mounted_element);
         *element_slot.borrow_mut() = Some(mounted_element.clone());
 
-        let node_ref = scope
-            .node_ref::<WebElement>()
-            .expect("node ref should initialize");
         let calls_for_handler = calls.clone();
         let probe = DropProbe::new(drops.clone());
         bind_event(
@@ -424,7 +424,7 @@ fn element_listener_removes_physically_and_drops_on_root_dispose() {
         assert_eq!(calls.get(), 1);
     }
 
-    root.dispose().expect("root disposal should succeed");
+    root.close().expect("root disposal should succeed");
     assert_eq!(spy.count("event_add:click"), 1);
     assert_eq!(spy.count("event_remove:click"), 1);
     assert_eq!(drops.get(), 1);
@@ -447,12 +447,12 @@ fn element_listener_panic_closes_destination_before_owner_cleanup() {
     let calls = Rc::new(Cell::new(0));
     let drops = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root should start");
+    let root = runtime.owner().expect("root should start");
     let element_node: Node;
 
     {
-        let scope = root.scope();
-        let (owner, error_handler) = test_owner(scope);
+        let owner = root.access();
+        let (owner, error_handler) = test_owner(owner);
         let token = owner.token();
         let element = document()
             .create_element("button")
@@ -487,7 +487,7 @@ fn element_listener_panic_closes_destination_before_owner_cleanup() {
     dispatch(&element_node, MouseEvent::new("click").unwrap().into());
     assert_eq!(calls.get(), 1);
 
-    root.dispose().expect("root disposal should succeed");
+    root.close().expect("root disposal should succeed");
     assert_eq!(spy.count("event_remove:click"), 1);
     assert_eq!(drops.get(), 1);
     remove_mount_point(&host);
@@ -501,11 +501,11 @@ fn render_rerun_replaces_old_window_listener() {
     let calls = Rc::new(RefCell::new(Vec::<i32>::new()));
     let mut runtime = Runtime::new();
 
-    let root = runtime.run().expect("root should start");
+    let root = runtime.owner().expect("root should start");
     {
-        let scope = root.scope();
-        let (value, set_value) = scope.signal(0i32).expect("signal should initialize");
-        let (owner, error_handler) = test_owner(scope);
+        let owner = root.access();
+        let (value, set_value) = owner.signal(0i32).expect("signal should initialize");
+        let (owner, error_handler) = test_owner(owner);
         let calls_for_view = calls.clone();
         let view = move || WindowResourceView {
             id: value.get().expect("signal should be readable"),
@@ -528,7 +528,7 @@ fn render_rerun_replaces_old_window_listener() {
     }
 
     assert_eq!(&*calls.borrow(), &[0, 1]);
-    root.dispose().expect("root disposal should succeed");
+    root.close().expect("root disposal should succeed");
     assert_eq!(spy.count("event_remove:silex-window-resource"), 2);
     remove_mount_point(&host);
 }
@@ -540,8 +540,8 @@ fn lexical_owner_disposes_window_listener_on_scope_exit() {
     let mut runtime = Runtime::new();
 
     runtime
-        .child(|scope| {
-            let (owner, error_handler) = test_owner(scope);
+        .with_transient(|owner| {
+            let (owner, error_handler) = test_owner(owner);
             let calls_for_handler = calls.clone();
             window_event_listener_untyped(
                 &owner.token(),
@@ -558,7 +558,7 @@ fn lexical_owner_disposes_window_listener_on_scope_exit() {
                 .dispatch_event(&Event::new("silex-lexical-resource").unwrap())
                 .expect("window event dispatch should succeed");
         })
-        .expect("child scope should initialize");
+        .expect("child owner should initialize");
 
     let window = web_sys::window().expect("window is available");
     window
@@ -577,11 +577,11 @@ fn keyed_reorder_keeps_window_resources_until_row_delete() {
     let calls = Rc::new(RefCell::new(Vec::<i32>::new()));
     let mut runtime = Runtime::new();
 
-    let root = runtime.run().expect("root should start");
+    let root = runtime.owner().expect("root should start");
     {
-        let scope = root.scope();
-        scope
-            .child(|child| {
+        let owner = root.access();
+        owner
+            .with_transient(|child| {
                 let (items, set_items) = child
                     .signal(vec![1i32, 2])
                     .expect("signal should initialize");
@@ -612,11 +612,11 @@ fn keyed_reorder_keeps_window_resources_until_row_delete() {
                 set_items.set(vec![2]).expect("signal should be writable");
                 assert_eq!(spy.count("event_remove:silex-window-resource"), 1);
             })
-            .expect("child scope should initialize");
+            .expect("child owner should initialize");
     }
 
     assert_eq!(spy.count("event_remove:silex-window-resource"), 2);
-    root.dispose().expect("root disposal should succeed");
+    root.close().expect("root disposal should succeed");
     assert_eq!(spy.count("event_remove:silex-window-resource"), 2);
     remove_mount_point(&host);
 }
@@ -627,11 +627,11 @@ fn window_listener_cancel_is_idempotent_and_owner_keeps_final_control() {
     let calls = Rc::new(Cell::new(0));
     let drops = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root should start");
+    let root = runtime.owner().expect("root should start");
     let handle_slot = Rc::new(RefCell::new(None));
     {
-        let scope = root.scope();
-        let (owner, error_handler) = test_owner(scope);
+        let owner = root.access();
+        let (owner, error_handler) = test_owner(owner);
         let calls_for_handler = calls.clone();
         let probe = DropProbe::new(drops.clone());
         let handle = window_event_listener_untyped(
@@ -672,7 +672,7 @@ fn window_listener_cancel_is_idempotent_and_owner_keeps_final_control() {
     assert_eq!(spy.count("event_remove:silex-resize"), 1);
 
     drop(handle_slot);
-    root.dispose().expect("root disposal should succeed");
+    root.close().expect("root disposal should succeed");
     assert_eq!(spy.count("event_remove:silex-resize"), 1);
     assert_eq!(drops.get(), 1);
 }
@@ -687,10 +687,10 @@ async fn cancelable_host_tasks_are_cleared_before_dispatch() {
     let drops = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
 
-    let root = runtime.run().expect("root should start");
+    let root = runtime.owner().expect("root should start");
     {
-        let scope = root.scope();
-        let (owner, error_handler) = test_owner(scope);
+        let owner = root.access();
+        let (owner, error_handler) = test_owner(owner);
 
         let timeout_calls_for_callback = timeout_calls.clone();
         let timeout_probe = DropProbe::new(drops.clone());
@@ -747,7 +747,7 @@ async fn cancelable_host_tasks_are_cleared_before_dispatch() {
         .expect("idle callback should register");
     }
 
-    root.dispose().expect("root disposal should succeed");
+    root.close().expect("root disposal should succeed");
     assert_eq!(spy.count("timeout_set"), 1);
     assert_eq!(spy.count("timeout_clear"), 1);
     assert_eq!(spy.count("interval_set"), 1);
@@ -777,11 +777,11 @@ async fn active_host_tasks_execute_and_interval_cancel_is_idempotent() {
     let frame_calls = Rc::new(Cell::new(0));
     let idle_calls = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root should start");
+    let root = runtime.owner().expect("root should start");
     let interval_slot = Rc::new(RefCell::new(None));
     {
-        let scope = root.scope();
-        let (owner, error_handler) = test_owner(scope);
+        let owner = root.access();
+        let (owner, error_handler) = test_owner(owner);
         let timeout_calls_for_callback = timeout_calls.clone();
         set_timeout(
             &owner.token(),
@@ -852,7 +852,7 @@ async fn active_host_tasks_execute_and_interval_cancel_is_idempotent() {
     assert_eq!(spy.count("interval_clear"), 1);
 
     drop(interval_slot);
-    root.dispose().expect("root disposal should succeed");
+    root.close().expect("root disposal should succeed");
     assert_eq!(spy.count("interval_clear"), 1);
 }
 
@@ -864,11 +864,11 @@ async fn microtask_cancel_and_owner_dispose_only_gate_user_callbacks() {
     let queued_before = spy.count("microtask_queue");
     let invoked_before = spy.count("microtask_invoke");
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root should start");
+    let root = runtime.owner().expect("root should start");
     let canceled_slot = Rc::new(RefCell::new(None));
     {
-        let scope = root.scope();
-        let (owner, error_handler) = test_owner(scope);
+        let owner = root.access();
+        let (owner, error_handler) = test_owner(owner);
         let canceled_calls_for_task = canceled_calls.clone();
         let canceled = queue_microtask(
             &owner.token(),
@@ -899,7 +899,7 @@ async fn microtask_cancel_and_owner_dispose_only_gate_user_callbacks() {
         .expect("microtask handle is retained")
         .cancel();
     drop(canceled_slot);
-    root.dispose().expect("root disposal should succeed");
+    root.close().expect("root disposal should succeed");
     spy.wait(0).await;
 
     assert!(spy.count("microtask_queue") - queued_before >= 2);
@@ -913,11 +913,11 @@ async fn debounce_clears_replaced_timer_and_blocks_dispose_completion() {
     let spy = Spy::new();
     let values = Rc::new(RefCell::new(Vec::<i32>::new()));
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root should start");
+    let root = runtime.owner().expect("root should start");
     let debounce_slot = Rc::new(RefCell::new(None));
     {
-        let scope = root.scope();
-        let (owner, error_handler) = test_owner(scope);
+        let owner = root.access();
+        let (owner, error_handler) = test_owner(owner);
         let token = owner.token();
         let values_for_callback = values.clone();
         let debounce = debounce(
@@ -950,7 +950,7 @@ async fn debounce_clears_replaced_timer_and_blocks_dispose_completion() {
         debounce.as_mut().expect("debounce is retained")(4);
     }
     drop(debounce_slot);
-    root.dispose().expect("root disposal should succeed");
+    root.close().expect("root disposal should succeed");
     spy.wait(30).await;
     assert_eq!(&*values.borrow(), &[3]);
     assert_eq!(spy.count("timeout_clear"), 3);
@@ -964,11 +964,11 @@ fn debounce_timeout_creation_failure_reaches_owner_handler() {
     let mut runtime = Runtime::new();
 
     runtime
-        .child(|scope| {
-            let error_handler = scope
+        .with_transient(|owner| {
+            let error_handler = owner
                 .error_handler(move |error| errors_for_reporter.borrow_mut().push(error))
                 .expect("error handler should register");
-            let owner = silex_dom::view::ScopedMountOwner::new(scope);
+            let owner = silex_dom::view::MountOwnerToken::new(owner);
             let token = owner.token();
             let mut debounce = debounce(
                 &token,
@@ -980,7 +980,7 @@ fn debounce_timeout_creation_failure_reaches_owner_handler() {
             spy.fail_next_timeout();
             debounce(1_i32);
         })
-        .expect("child scope should initialize");
+        .expect("child owner should initialize");
 
     assert!(matches!(
         errors.borrow().as_slice(),
@@ -992,13 +992,13 @@ fn debounce_timeout_creation_failure_reaches_owner_handler() {
 async fn timer_callback_can_reenter_root_dispose_without_late_registration() {
     let spy = Spy::new();
     let calls = Rc::new(Cell::new(0));
-    let dispose_slot = Rc::new(RefCell::new(None::<RootHandle>));
+    let dispose_slot = Rc::new(RefCell::new(None::<OwnerHandle>));
     let mut runtime = Runtime::new();
 
-    let root = runtime.run().expect("root should start");
+    let root = runtime.owner().expect("root should start");
     {
-        let scope = root.scope();
-        let (owner, error_handler) = test_owner(scope);
+        let owner = root.access();
+        let (owner, error_handler) = test_owner(owner);
         let token = owner.token();
 
         let calls_for_callback = calls.clone();
@@ -1008,7 +1008,7 @@ async fn timer_callback_can_reenter_root_dispose_without_late_registration() {
             move || {
                 calls_for_callback.set(calls_for_callback.get() + 1);
                 if let Some(root) = dispose_for_callback.borrow_mut().take() {
-                    root.dispose()
+                    root.close()
                         .expect("reentrant root disposal should succeed");
                 }
                 Ok(())
@@ -1033,14 +1033,14 @@ fn timeout_lifecycle_handles_creation_failure_repeated_cancel_reentry_and_stale_
     let canceled_calls = Rc::new(Cell::new(0));
     let reentrant_calls = Rc::new(Cell::new(0));
     let drops = Rc::new(Cell::new(0));
-    let dispose_slot = Rc::new(RefCell::new(None::<RootHandle>));
+    let dispose_slot = Rc::new(RefCell::new(None::<OwnerHandle>));
     let values = Rc::new(RefCell::new(Vec::<i32>::new()));
     let mut runtime = Runtime::new();
 
-    let root = runtime.run().expect("root should start");
+    let root = runtime.owner().expect("root should start");
     {
-        let scope = root.scope();
-        let (owner, error_handler) = test_owner(scope);
+        let owner = root.access();
+        let (owner, error_handler) = test_owner(owner);
 
         spy.fail_next_timeout();
         let failed_calls_for_callback = failed_calls.clone();
@@ -1100,7 +1100,7 @@ fn timeout_lifecycle_handles_creation_failure_repeated_cancel_reentry_and_stale_
             move || {
                 reentrant_calls_for_callback.set(reentrant_calls_for_callback.get() + 1);
                 if let Some(root) = dispose_for_callback.borrow_mut().take() {
-                    root.dispose()
+                    root.close()
                         .expect("reentrant root disposal should succeed");
                 }
                 Ok(())

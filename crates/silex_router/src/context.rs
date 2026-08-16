@@ -1,6 +1,6 @@
 use crate::ToRoute;
 use silex_core::{
-    ErrorReporter, Rx, Scope, SilexContext, SilexContextProvider, SilexError, SilexErrorKind,
+    ErrorReporter, OwnerAccess, Rx, SilexContext, SilexContextProvider, SilexError, SilexErrorKind,
     SilexResult,
     reactivity::{ReadSignal, StoredValue, WriteSignal},
     traits::RxGet,
@@ -15,7 +15,7 @@ use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use web_sys::Node;
 
-/// Router View 工厂包装器，必须实现 PartialEq 以便在 Signal/Memo 中使用
+/// Router View 工厂包装器，必须实现 PartialEq 以便在响应式节点中使用
 #[derive(Clone)]
 pub struct RouterView<'scope>(pub Rc<dyn Fn() -> AnyView<'scope> + 'scope>);
 
@@ -71,7 +71,7 @@ impl<'scope> RouterContext<'scope> {
         silex: SilexContext<'scope>,
         props: RouterContextProps<'scope>,
     ) -> SilexResult<Self> {
-        let scope = silex.scope();
+        let owner = silex.owner();
         let RouterContextProps {
             base_path: raw_base_path,
             path,
@@ -80,11 +80,11 @@ impl<'scope> RouterContext<'scope> {
             set_search,
         } = props;
 
-        scope.validate_runtime(&path.into_rx())?;
-        scope.validate_runtime(&search.into_rx())?;
-        scope.validate_runtime(&set_path)?;
-        scope.validate_runtime(&set_search)?;
-        let base_path = scope.stored(normalize_base_path(&raw_base_path))?;
+        owner.validate_runtime(&path.into_rx())?;
+        owner.validate_runtime(&search.into_rx())?;
+        owner.validate_runtime(&set_path)?;
+        owner.validate_runtime(&set_search)?;
+        let base_path = owner.stored(normalize_base_path(&raw_base_path))?;
         let navigator = Navigator {
             base_path,
             path,
@@ -92,9 +92,9 @@ impl<'scope> RouterContext<'scope> {
             set_path,
             set_search,
         };
-        let query = scope
-            .memo(
-                move |_| {
+        let query = owner
+            .computed(
+                move || {
                     let search = search.get()?;
                     parse_query(&search)
                 },
@@ -111,23 +111,31 @@ impl<'scope> RouterContext<'scope> {
         })
     }
 
-    pub fn scope(self) -> Scope<'scope> {
-        self.silex.scope()
+    pub fn owner(self) -> OwnerAccess<'scope> {
+        self.silex.owner()
+    }
+
+    /// Project the page context onto a stable route branch owner.
+    pub(crate) fn for_branch(self, branch_owner: OwnerAccess<'scope>) -> Self {
+        Self {
+            silex: SilexContext::new(branch_owner, self.silex.error_reporter()),
+            ..self
+        }
     }
 
     pub fn error_reporter(self) -> ErrorReporter<'scope> {
         self.silex.error_reporter()
     }
 
-    /// 获取解析后的查询参数 Memo
+    /// 获取解析后的查询参数 computed value
     pub fn query_map(self) -> Rx<'scope, HashMap<String, String>> {
         self.query
     }
 }
 
 impl<'scope> SilexContextProvider<'scope> for RouterContext<'scope> {
-    fn scope(&self) -> Scope<'scope> {
-        self.silex.scope()
+    fn owner(&self) -> OwnerAccess<'scope> {
+        self.silex.owner()
     }
 
     fn error_reporter(&self) -> ErrorReporter<'scope> {

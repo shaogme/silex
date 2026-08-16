@@ -1,18 +1,18 @@
-use silex_core::{ErrorHandlerToken, Runtime, Scope};
+use silex_core::{ErrorHandlerToken, Runtime, OwnerAccess};
 
-fn make_handler<'scope>(
-    scope: Scope<'scope>,
-    value: &'scope str,
+fn make_handler<'owner>(
+    owner: OwnerAccess<'owner>,
+    value: &'owner str,
 ) -> ErrorHandlerToken<'static> {
-    scope.error_handler(move |_| {
+    owner.error_handler(move |_| {
         assert_eq!(value, "scoped");
     }).expect("handler should register")
 }
 
 fn main() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    runtime.with_transient(|owner| {
         let value = String::from("scoped");
-        let _ = make_handler(scope, value.as_str());
+        let _ = make_handler(owner, value.as_str());
     });
 }

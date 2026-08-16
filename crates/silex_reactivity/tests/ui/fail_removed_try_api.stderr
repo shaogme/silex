@@ -4,8 +4,8 @@ error[E0432]: unresolved import `silex_reactivity::RuntimeInputs`
 1 | use silex_reactivity::{Runtime, RuntimeInputs};
   |                                 ^^^^^^^^^^^^^ no `RuntimeInputs` in the root
 
-error[E0599]: no method named `try_effect_from` found for struct `silex_reactivity::Scope<'scope>` in the current scope
+error[E0599]: no method named `try_effect_from` found for struct `OwnerAccess<'owner>` in the current scope
  --> tests/ui/fail_removed_try_api.rs:6:23
   |
 6 |         let _ = scope.try_effect_from(
-  |                 ------^^^^^^^^^^^^^^^ method not found in `silex_reactivity::Scope<'_>`
+  |                 ------^^^^^^^^^^^^^^^ method not found in `OwnerAccess<'_>`

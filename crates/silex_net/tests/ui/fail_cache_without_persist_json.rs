@@ -3,7 +3,7 @@ use silex_net::{CachePolicy, HttpClient};
 
 fn main() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    runtime.with_transient(|scope| {
         let _builder = HttpClient::get(
             scope,
             "https://example.test",

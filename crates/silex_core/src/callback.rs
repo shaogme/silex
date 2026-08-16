@@ -1,6 +1,6 @@
 use std::{fmt, marker::PhantomData};
 
-use crate::{SilexError, SilexResult};
+use crate::{SilexError, SilexErrorKind, SilexResult};
 use silex_reactivity::{CallbackInvokeError, ReactiveError};
 
 pub(crate) fn map_callback_error(error: CallbackInvokeError<SilexError>) -> SilexError {
@@ -8,6 +8,7 @@ pub(crate) fn map_callback_error(error: CallbackInvokeError<SilexError>) -> Sile
         CallbackInvokeError::Runtime(error) => SilexError::fatal(error),
         CallbackInvokeError::User(error) => error,
         CallbackInvokeError::Handler(error) => SilexError::fatal(ReactiveError::Handler(error)),
+        CallbackInvokeError::Close(error) => SilexError::fatal(SilexErrorKind::Close(error)),
     }
 }
 
@@ -45,6 +46,7 @@ impl<'scope, T: 'scope> Callback<'scope, T> {
             CallbackInvokeError::Runtime(error) => SilexError::fatal(error),
             CallbackInvokeError::User(error) => error,
             CallbackInvokeError::Handler(error) => SilexError::fatal(ReactiveError::Handler(error)),
+            CallbackInvokeError::Close(error) => SilexError::fatal(SilexErrorKind::Close(error)),
         })
     }
 

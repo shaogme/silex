@@ -9,9 +9,9 @@ use wasm_bindgen::{JsCast, closure::Closure};
 use web_sys::{Event, EventSource as JsEventSource, MessageEvent};
 
 use silex_core::{
-    CallbackInvokeError, CompletionSender, ErrorHandlerInput, ErrorReporter, ReactiveError,
-    ReadSignal, RwSignal, Rx, Scope, SilexError, SilexResult, StoredValue, WriteSignal,
-    unwind_safe,
+    CallbackInvokeError, CompletionSender, ErrorHandlerInput, ErrorReporter, OwnerAccess,
+    ReactiveError, ReadSignal, RwSignal, Rx, SilexError, SilexErrorKind, SilexResult, StoredValue,
+    WriteSignal, unwind_safe,
 };
 
 use crate::{
@@ -20,7 +20,7 @@ use crate::{
     state::{ConnectionState, EventMessage},
 };
 
-/// Scope-owned EventSource connections.
+/// Owner-owned EventSource connections.
 ///
 /// EventSource keeps its browser-native reconnect behavior after a transport
 /// error. This type does not add a second retry queue; [`EventStreamConnection::reconnect`]
@@ -29,7 +29,7 @@ pub struct EventStream;
 
 impl EventStream {
     pub fn builder<'scope, H>(
-        scope: Scope<'scope>,
+        scope: OwnerAccess<'scope>,
         url: impl IntoNetValue<'scope>,
         error_handler: H,
     ) -> EventStreamBuilder<'scope, H>
@@ -40,7 +40,7 @@ impl EventStream {
     }
 
     pub fn open<'scope, H>(
-        scope: Scope<'scope>,
+        scope: OwnerAccess<'scope>,
         url: impl IntoNetValue<'scope>,
         error_handler: H,
     ) -> Result<EventStreamConnection<'scope>, NetError>
@@ -51,7 +51,7 @@ impl EventStream {
     }
 
     pub fn lazy<'scope, H>(
-        scope: Scope<'scope>,
+        scope: OwnerAccess<'scope>,
         url: impl IntoNetValue<'scope>,
         error_handler: H,
     ) -> EventStreamBuilder<'scope, H>
@@ -64,7 +64,7 @@ impl EventStream {
 
 #[derive(Copy, Clone)]
 pub struct EventStreamConnection<'scope> {
-    scope: Scope<'scope>,
+    scope: OwnerAccess<'scope>,
     inner: StoredValue<'scope, EventStreamInner<'scope>>,
     state: ReadSignal<'scope, ConnectionState>,
     messages: RwSignal<'scope, Vec<EventMessage>>,
@@ -115,6 +115,7 @@ fn submit_completion<T: 'static>(
         CallbackInvokeError::Runtime(error) => SilexError::fatal(error),
         CallbackInvokeError::User(error) => error,
         CallbackInvokeError::Handler(error) => SilexError::fatal(ReactiveError::Handler(error)),
+        CallbackInvokeError::Close(error) => SilexError::fatal(SilexErrorKind::Close(error)),
     };
     let error_result = catch_unwind(AssertUnwindSafe(|| error_token.submit(error)));
     if let Ok(Err(_)) | Err(_) = error_result {
@@ -142,7 +143,7 @@ impl HostRegistration {
         let open_gate = gate.clone();
         let open_token = token.clone();
         let open_error_token = error_token.clone();
-        let on_open = Closure::wrap(Box::new(move |_event: Event| {
+        let on_open = Closure::wrap_assert_unwind_safe(Box::new(move |_event: Event| {
             if open_gate.get() {
                 submit_completion(
                     &open_token,
@@ -156,7 +157,7 @@ impl HostRegistration {
         let message_gate = gate.clone();
         let message_token = token.clone();
         let message_error_token = error_token.clone();
-        let on_message = Closure::wrap(Box::new(move |event: MessageEvent| {
+        let on_message = Closure::wrap_assert_unwind_safe(Box::new(move |event: MessageEvent| {
             if message_gate.get() {
                 let Some(data) = event.data().as_string() else {
                     submit_completion(
@@ -183,12 +184,13 @@ impl HostRegistration {
                     Some(&message_gate),
                 );
             }
-        }) as Box<dyn FnMut(MessageEvent)>);
+        })
+            as Box<dyn FnMut(MessageEvent)>);
 
         let error_gate = gate.clone();
         let event_error_token = token.clone();
         let event_error_completion_token = error_token.clone();
-        let on_error = Closure::wrap(Box::new(move |_event: Event| {
+        let on_error = Closure::wrap_assert_unwind_safe(Box::new(move |_event: Event| {
             if error_gate.get() {
                 submit_completion(
                     &event_error_token,
@@ -280,7 +282,9 @@ impl<'scope> EventStreamInner<'scope> {
     fn cleanup(&mut self) -> SilexResult<()> {
         self.registration.take();
         self.generation = self.generation.wrapping_add(1);
-        let _ = self.completion.cancel();
+        self.completion
+            .cancel()
+            .map_err(|error| SilexError::fatal(SilexErrorKind::Close(error)))?;
         Ok(())
     }
 
@@ -405,7 +409,7 @@ impl<'scope> EventStreamConnection<'scope> {
         let state = self.state;
         let handler = self.error_handler;
         self.scope
-            .memo(move |_| state.get().map(&f), handler)
+            .computed(move || state.get().map(&f), handler)
             .map(|memo| memo.into_rx())
     }
 
@@ -438,8 +442,8 @@ impl<'scope> EventStreamConnection<'scope> {
         let messages = self.messages;
         let handler = self.error_handler;
         self.scope
-            .memo(
-                move |_| {
+            .computed(
+                move || {
                     messages
                         .get()?
                         .into_iter()
@@ -466,8 +470,8 @@ impl<'scope> EventStreamConnection<'scope> {
         let messages = self.messages;
         let handler = self.error_handler;
         self.scope
-            .memo(
-                move |_| {
+            .computed(
+                move || {
                     messages
                         .get()?
                         .last()
@@ -494,8 +498,8 @@ impl<'scope> EventStreamConnection<'scope> {
         let messages = self.messages;
         let handler = self.error_handler;
         self.scope
-            .memo(
-                move |_| {
+            .computed(
+                move || {
                     messages
                         .get()?
                         .iter()
@@ -563,7 +567,7 @@ impl<'scope> EventStreamConnection<'scope> {
 
 #[derive(Clone)]
 pub struct EventStreamBuilder<'scope, H = ErrorReporter<'scope>> {
-    scope: Scope<'scope>,
+    scope: OwnerAccess<'scope>,
     error_handler: H,
     url: ValueResolver<'scope>,
     event_name: Option<String>,
@@ -574,7 +578,7 @@ pub struct EventStreamBuilder<'scope, H = ErrorReporter<'scope>> {
 }
 
 impl<'scope, H> EventStreamBuilder<'scope, H> {
-    fn new(scope: Scope<'scope>, url: ValueResolver<'scope>, error_handler: H) -> Self {
+    fn new(scope: OwnerAccess<'scope>, url: ValueResolver<'scope>, error_handler: H) -> Self {
         Self {
             scope,
             error_handler,

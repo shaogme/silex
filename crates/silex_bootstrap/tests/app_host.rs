@@ -3,11 +3,7 @@
 use silex_bootstrap::{AppHost, AppHostError, HostState, UnmountOutcome};
 use silex_core::{Runtime, SilexError, SilexErrorKind, SilexResult};
 use silex_dom::{CleanupSink, MountContext, element::Element};
-use std::{
-    cell::Cell,
-    panic::{AssertUnwindSafe, catch_unwind},
-    rc::Rc,
-};
+use std::{cell::Cell, rc::Rc};
 use wasm_bindgen_test::*;
 use web_sys::Node;
 
@@ -41,7 +37,7 @@ fn detach(target: &Node) {
 }
 
 fn mount_text<'scope>(ctx: &MountContext<'scope>, text: &'static str) -> SilexResult<()> {
-    let handler = ctx.scope().error_handler(|_: SilexError| {})?;
+    let handler = ctx.access().error_handler(|_: SilexError| {})?;
     ctx.mount(Element::with_child("section", text), handler)
 }
 
@@ -123,9 +119,9 @@ fn non_clean_mount_rollback_poisoned_host() {
 
     let error = host
         .mount(Runtime::new(), |ctx| {
-            let scope = ctx.scope();
-            let handler = scope.error_handler(|_: SilexError| {})?;
-            scope.on_cleanup(
+            let owner = ctx.access();
+            let handler = owner.error_handler(|_: SilexError| {})?;
+            owner.on_cleanup(
                 || -> SilexResult<()> { panic!("rollback cleanup failure") },
                 handler,
             )?;
@@ -212,9 +208,9 @@ fn failed_old_dispose_does_not_restore_or_replace_the_old_app() {
     let mut host = AppHost::new(target.clone(), clean_sink());
 
     host.mount(Runtime::new(), |ctx| {
-        let scope = ctx.scope();
-        let handler = scope.error_handler(|_: SilexError| {})?;
-        scope.on_cleanup(
+        let owner = ctx.access();
+        let handler = owner.error_handler(|_: SilexError| {})?;
+        owner.on_cleanup(
             || -> SilexResult<()> { panic!("old app cleanup failure") },
             &handler,
         )?;
@@ -265,18 +261,18 @@ fn failed_new_mount_leaves_replace_host_empty_and_ready() {
 
 #[wasm_bindgen_test]
 #[ignore = "wasm32-unknown-unknown uses panic=abort; run in an unwind test target"]
-fn builder_panic_poisoned_host_before_rethrowing() {
+fn builder_panic_returns_structured_mount_error_and_poisoned_host() {
     let target = target();
     let mut host = AppHost::new(target.clone(), clean_sink());
 
-    let panic = catch_unwind(AssertUnwindSafe(|| {
-        host.mount(Runtime::new(), |_ctx| -> SilexResult<()> {
+    let error = host
+        .mount(Runtime::new(), |_ctx| -> SilexResult<()> {
             panic!("builder panic")
         })
-        .expect("builder panic should not return")
-    }));
+        .expect_err("builder panic should become a structured mount error");
 
-    assert!(panic.is_err());
+    assert!(matches!(error, AppHostError::Mount(_)));
+    assert!(error.to_string().contains("builder panic"));
     assert_eq!(host.state(), HostState::Poisoned);
     assert!(!host.is_active());
     detach(&target);
@@ -291,10 +287,10 @@ fn app_host_drop_delegates_cleanup_once_to_mounted_app() {
         let cleanups_by_builder = cleanups.clone();
         let mut host = AppHost::new(target.clone(), clean_sink());
         host.mount(Runtime::new(), move |ctx| {
-            let scope = ctx.scope();
-            let handler = scope.error_handler(|_: SilexError| {})?;
+            let owner = ctx.access();
+            let handler = owner.error_handler(|_: SilexError| {})?;
             let cleanups = cleanups_by_builder.clone();
-            scope.on_cleanup(
+            owner.on_cleanup(
                 move || {
                     cleanups.set(cleanups.get() + 1);
                     Ok(())

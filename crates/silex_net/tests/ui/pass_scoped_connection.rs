@@ -3,7 +3,7 @@ use silex_net::{EventStream, WebSocket};
 
 fn main() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    runtime.with_transient(|scope| {
         let url = scope
             .rw_signal("wss://example.test/socket".to_string())
             .unwrap();

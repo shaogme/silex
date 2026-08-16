@@ -1,9 +1,9 @@
-use silex_core::{ErrorHandlerToken, Runtime, RxGet, RxRead, Scope, SilexResult};
+use silex_core::{ErrorHandlerToken, OwnerAccess, Runtime, RxGet, RxRead, SilexResult};
 use std::cell::Cell;
 use std::rc::Rc;
 
-fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope> {
-    scope
+fn handler<'owner>(owner: OwnerAccess<'owner>) -> ErrorHandlerToken<'owner> {
+    owner
         .error_handler(|_| {})
         .expect("error handler should register")
 }
@@ -14,13 +14,13 @@ fn tuple_get_tracks_each_member() {
     let runs = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
-            let (first, set_first) = scope.signal(1_i32).expect("first signal");
-            let (second, set_second) = scope.signal(2_i32).expect("second signal");
+        .with_transient(|owner| {
+            let (first, set_first) = owner.signal(1_i32).expect("first signal");
+            let (second, set_second) = owner.signal(2_i32).expect("second signal");
             let sources = (first, second);
             let runs_in_effect = runs.clone();
 
-            scope
+            owner
                 .effect(
                     move || -> SilexResult<()> {
                         let (first_value, second_value) = sources.get()?;
@@ -28,7 +28,7 @@ fn tuple_get_tracks_each_member() {
                         runs_in_effect.set(runs_in_effect.get() + 1);
                         Ok(())
                     },
-                    handler(scope),
+                    handler(owner),
                 )
                 .expect("tuple effect should initialize");
 
@@ -46,9 +46,9 @@ fn tuple_with_reads_a_cloneable_snapshot() {
     let mut runtime = Runtime::new();
 
     runtime
-        .child(|scope| {
-            let (first, _) = scope.signal(4_i32).expect("first signal");
-            let (second, _) = scope.signal(5_i32).expect("second signal");
+        .with_transient(|owner| {
+            let (first, _) = owner.signal(4_i32).expect("first signal");
+            let (second, _) = owner.signal(5_i32).expect("second signal");
             let sources = (first, second);
             let snapshot = sources
                 .with(|(first_value, second_value)| (*first_value, *second_value))
@@ -65,20 +65,20 @@ fn tuple_untracked_get_does_not_subscribe() {
     let runs = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
-            let (first, set_first) = scope.signal(1_i32).expect("first signal");
-            let (second, _) = scope.signal(2_i32).expect("second signal");
+        .with_transient(|owner| {
+            let (first, set_first) = owner.signal(1_i32).expect("first signal");
+            let (second, _) = owner.signal(2_i32).expect("second signal");
             let sources = (first, second);
             let runs_in_effect = runs.clone();
 
-            scope
+            owner
                 .effect(
                     move || -> SilexResult<()> {
                         assert_eq!(sources.get_untracked()?, (1, 2));
                         runs_in_effect.set(runs_in_effect.get() + 1);
                         Ok(())
                     },
-                    handler(scope),
+                    handler(owner),
                 )
                 .expect("tuple effect should initialize");
 

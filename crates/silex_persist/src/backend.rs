@@ -1,7 +1,7 @@
 use crate::{PersistenceError, PersistenceErrorKind};
 use js_sys::Object;
 use ref_str::LocalStaticRefStr;
-use silex_core::{ErrorReporter, Rx, Scope, SilexResult};
+use silex_core::{ErrorReporter, OwnerAccess, Rx, SilexResult};
 use silex_router::{Navigator, RouterContext};
 use std::{
     cell::{Cell, RefCell},
@@ -107,7 +107,7 @@ pub trait PersistenceBackend<'scope>: Clone + 'scope {
 
     fn subscribe(
         &self,
-        scope: Scope<'scope>,
+        owner: OwnerAccess<'scope>,
         key: impl Into<LocalStaticRefStr>,
         sink: BackendEventSink,
         error_handler: ErrorReporter<'scope>,
@@ -210,7 +210,7 @@ impl<'scope, const IS_LOCAL: bool> PersistenceBackend<'scope> for WebStorageBack
 
     fn subscribe(
         &self,
-        _scope: Scope<'scope>,
+        _owner: OwnerAccess<'scope>,
         key: impl Into<LocalStaticRefStr>,
         sink: BackendEventSink,
         _error_handler: ErrorReporter<'scope>,
@@ -245,17 +245,22 @@ impl<'scope> PersistenceBackend<'scope> for QueryBackend<'scope> {
 
     fn subscribe(
         &self,
-        scope: Scope<'scope>,
+        owner: OwnerAccess<'scope>,
         key: impl Into<LocalStaticRefStr>,
         sink: BackendEventSink,
         error_handler: ErrorReporter<'scope>,
     ) -> Result<BackendSubscription<'scope>, BackendSubscribeError<'scope>> {
         let key = key.into();
         let query_map = self.query_map().map_err(BackendSubscribeError::new)?;
+        owner.validate_runtime(&query_map).map_err(|error| {
+            BackendSubscribeError::new(PersistenceError::fatal(
+                PersistenceErrorKind::InvalidConfiguration(error.to_string()),
+            ))
+        })?;
         let active = Rc::new(Cell::new(true));
         let active_for_effect = active.clone();
         let key_for_effect = key.clone();
-        let _effect = scope
+        owner
             .effect_with_previous(
                 move |previous: Option<&Option<String>>| -> SilexResult<Option<String>> {
                     let current = query_map.get()?.get(key_for_effect.as_ref()).cloned();
@@ -513,21 +518,21 @@ fn storage_handle(kind: StorageAreaKind) -> Result<Storage, PersistenceError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use silex_core::{ReadSignal, Runtime};
+    use silex_core::{OwnerAccess, ReadSignal, Runtime};
     use silex_router::Navigator;
     use std::{cell::RefCell, collections::HashMap};
 
     fn test_query_backend<'scope>(
-        scope: Scope<'scope>,
+        owner: OwnerAccess<'scope>,
         map: ReadSignal<'scope, HashMap<String, String>>,
     ) -> QueryBackend<'scope> {
-        let base_path = scope
+        let base_path = owner
             .stored("/".to_string())
             .expect("base path should be stored");
-        let (path, set_path) = scope
+        let (path, set_path) = owner
             .signal("/".to_string())
             .expect("path signal should be created");
-        let (search, set_search) = scope
+        let (search, set_search) = owner
             .signal(String::new())
             .expect("search signal should be created");
         let query_map = map.into_rx();
@@ -554,11 +559,11 @@ mod tests {
     fn query_backend_get_and_subscribe_follow_query_map_changes() {
         let mut runtime = Runtime::new();
         runtime
-            .child(|scope| {
-                let map = scope
+            .with_transient(|owner| {
+                let map = owner
                     .rw_signal(HashMap::<String, String>::new())
                     .expect("query map signal should be created");
-                let backend = test_query_backend(scope, map.read_signal());
+                let backend = test_query_backend(owner, map.read_signal());
                 let events = Rc::new(RefCell::new(Vec::<BackendEvent>::new()));
                 let callback = {
                     let events = events.clone();
@@ -567,10 +572,10 @@ mod tests {
 
                 let _subscription = backend
                     .subscribe(
-                        scope,
+                        owner,
                         "q",
                         callback,
-                        scope
+                        owner
                             .error_handler(|_| {})
                             .expect("error handler should be registered")
                             .view(),
@@ -594,7 +599,7 @@ mod tests {
                     Some(BackendEvent::Removed { key }) if key == "q"
                 ));
             })
-            .expect("query backend test scope should run");
+            .expect("query backend test owner should run");
     }
 
     #[test]
@@ -608,14 +613,14 @@ mod tests {
 
         let mut runtime = Runtime::new();
         runtime
-            .child(|scope| {
+            .with_transient(|owner| {
                 let backend = QueryBackend::unavailable();
                 let result = backend
                     .subscribe(
-                        scope,
+                        owner,
                         "q",
                         Rc::new(|_| {}),
-                        scope
+                        owner
                             .error_handler(|_| {})
                             .expect("error handler should be registered")
                             .view(),
@@ -628,42 +633,44 @@ mod tests {
                     ))
                 ));
             })
-            .expect("unavailable backend test scope should run");
+            .expect("unavailable backend test owner should run");
     }
 
     #[test]
     fn query_backend_rejects_a_foreign_tracked_subscription() {
         let mut first_runtime = Runtime::new();
-        let first_root = first_runtime.run().expect("first root should be created");
+        let first_root = first_runtime
+            .owner()
+            .expect("first owner should be created");
         let mut second_runtime = Runtime::new();
-        let second_root = second_runtime.run().expect("second root should be created");
-        first_root.with_scope(|scope| {
-            let map = scope
-                .rw_signal(HashMap::<String, String>::new())
-                .expect("query map signal should be created");
-            let backend = test_query_backend(scope, map.read_signal());
-            second_root.with_scope(|target_scope| {
-                let result = backend
-                    .subscribe(
-                        target_scope,
-                        "q",
-                        Rc::new(|_| {}),
-                        target_scope
-                            .error_handler(|_| {})
-                            .expect("error handler should be registered")
-                            .view(),
-                    )
-                    .map_err(|error| error.into_error());
-                assert!(matches!(
-                    result,
-                    Err(PersistenceError::Fatal(
-                        PersistenceErrorKind::InvalidConfiguration(_)
-                    ))
-                ));
-            });
-        });
+        let second_root = second_runtime
+            .owner()
+            .expect("second owner should be created");
+        let owner = first_root.access();
+        let target_owner = second_root.access();
+        let map = owner
+            .rw_signal(HashMap::<String, String>::new())
+            .expect("query map signal should be created");
+        let backend = test_query_backend(owner, map.read_signal());
+        let result = backend
+            .subscribe(
+                target_owner,
+                "q",
+                Rc::new(|_| {}),
+                target_owner
+                    .error_handler(|_| {})
+                    .expect("error handler should be registered")
+                    .view(),
+            )
+            .map_err(|error| error.into_error());
+        assert!(matches!(
+            result,
+            Err(PersistenceError::Fatal(
+                PersistenceErrorKind::InvalidConfiguration(_)
+            ))
+        ));
 
-        second_root.dispose().expect("dispose second root");
-        first_root.dispose().expect("dispose first root");
+        second_root.close().expect("close second owner");
+        first_root.close().expect("close first owner");
     }
 }

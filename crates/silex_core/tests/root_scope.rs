@@ -1,23 +1,23 @@
-use silex_core::{ReactiveError, Runtime, Scope, SilexError, SilexErrorKind};
+use silex_core::{OwnerAccess, ReactiveError, Runtime, SilexError, SilexErrorKind};
 use std::{cell::Cell, rc::Rc};
 
 #[test]
 fn high_level_root_uses_the_borrowed_scope_api() {
     let mut runtime = Runtime::new();
     let seen = Rc::new(Cell::new(0));
-    let root = runtime.run().expect("root should start");
+    let root = runtime.owner().expect("root should start");
 
     {
-        let scope = root.scope();
-        let (value, set_value) = scope.signal(0i32).expect("signal should initialize");
+        let owner = root.access();
+        let (value, set_value) = owner.signal(0i32).expect("signal should initialize");
         let seen_for_effect = seen.clone();
-        let _effect = scope
+        let _effect = owner
             .effect(
                 move || {
                     seen_for_effect.set(value.get()?);
                     Ok(())
                 },
-                scope
+                owner
                     .error_handler(|_: SilexError| {})
                     .expect("error handler should register")
                     .view(),
@@ -28,38 +28,38 @@ fn high_level_root_uses_the_borrowed_scope_api() {
         assert_eq!(seen.get(), 4);
     }
 
-    root.dispose().expect("root disposal should succeed");
+    root.close().expect("root disposal should succeed");
 }
 
 #[test]
 fn high_level_scope_callbacks_receive_scope_values() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope: Scope<'_>| {
-            let copied = scope;
-            assert!(scope == copied);
+        .with_transient(|owner: OwnerAccess<'_>| {
+            let copied = owner;
+            assert!(owner == copied);
         })
-        .expect("child scope should initialize");
+        .expect("child owner should initialize");
 
-    let root = runtime.run().expect("root should start");
-    root.with_scope(|scope: Scope<'_>| {
-        let copied = scope;
-        assert!(scope == copied);
+    let root = runtime.owner().expect("root should start");
+    root.with_access(|owner: OwnerAccess<'_>| {
+        let copied = owner;
+        assert!(owner == copied);
     });
-    root.dispose().expect("root disposal should succeed");
+    root.close().expect("root disposal should succeed");
 }
 
 #[test]
 fn high_level_try_run_reports_an_active_root() {
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("first root should be created");
+    let root = runtime.owner().expect("first root should be created");
 
     assert!(matches!(
-        runtime.run(),
+        runtime.owner(),
         Err(SilexError::Fatal(SilexErrorKind::Reactivity(
             ReactiveError::RuntimeAlreadyRunning
         )))
     ));
 
-    root.dispose().expect("root disposal should succeed");
+    root.close().expect("root disposal should succeed");
 }

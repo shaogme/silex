@@ -17,26 +17,24 @@ pub(crate) mod storage;
 
 pub(crate) use dispose::{dispose_all, dispose_nodes};
 pub(crate) use eval::run_global_queue;
-pub(crate) use input::{create_derived, create_effect, create_memo, create_previous, create_watch};
+pub(crate) use input::{
+    create_computed, create_computed_always, create_effect, create_effect_detached,
+    create_previous, create_watch,
+};
 #[cfg(feature = "test-support")]
 pub use model::RuntimeSnapshot;
-pub(crate) use model::{ScopeState, ScopeStateInner};
+pub(crate) use model::{ScopePhase, ScopeState, ScopeStateInner};
 pub(crate) use ops::{
     acquire_error_handler_lease, invoke_callback, invoke_error_handler, node_ref_clear,
     node_ref_get, node_ref_set, notify, stop_effect, update_signal, update_stored, with_batch,
     with_fallible_signal, with_signal, with_stored, with_untracked,
 };
-pub(crate) use scheduler::{GlobalScheduler, ObserverFrame, ScopeId};
+pub(crate) use scheduler::{GlobalScheduler, ObserverFrame, OwnerId, OwnerMode};
 
-use crate::scope::ScopeStorage;
-use crate::{Scope, error::ReactiveError, root::RootHandle};
+use crate::error::{ReactiveError, ReactiveResult};
+use crate::owner::{self, OwnerHandle};
 
-use std::{
-    cell::Cell,
-    marker::PhantomData,
-    panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
-    rc::Rc,
-};
+use std::{cell::Cell, marker::PhantomData, rc::Rc};
 
 /// User-owned single-threaded runtime.
 pub struct Runtime {
@@ -52,39 +50,24 @@ impl Runtime {
         }
     }
 
-    /// Create one long-lived root owned by the returned handle.
-    pub fn run(&mut self) -> Result<RootHandle, ReactiveError> {
+    /// Create the unified persistent root owner.
+    pub fn owner(&mut self) -> ReactiveResult<OwnerHandle> {
         if self.root_active.get() {
             return Err(ReactiveError::RuntimeAlreadyRunning);
         }
-
         self.root_active.set(true);
-        Ok(RootHandle::new(self.root_active.clone()))
+        Ok(owner::new_root(self.root_active.clone()))
     }
 
-    pub fn child<R>(
+    /// Execute a transient owner whose handles cannot escape the callback.
+    pub fn with_transient<R>(
         &mut self,
-        f: impl for<'scope> FnOnce(Scope<'scope>) -> R,
-    ) -> Result<R, ReactiveError> {
+        f: impl for<'scope> FnOnce(owner::OwnerAccess<'scope>) -> R,
+    ) -> ReactiveResult<R> {
         if self.root_active.get() {
             return Err(ReactiveError::RuntimeAlreadyRunning);
         }
-        let scheduler = GlobalScheduler::new();
-        let storage = ScopeStorage::new(scheduler.clone());
-        let scope = Scope {
-            storage: &storage,
-            _marker: PhantomData,
-        };
-        let observer_frame = ObserverFrame::push_untracked(scheduler);
-        let result = catch_unwind(AssertUnwindSafe(|| f(scope)));
-        let dispose_result = catch_unwind(AssertUnwindSafe(|| storage.dispose_untracked()));
-        drop(observer_frame);
-        match (result, dispose_result) {
-            (Ok(value), Ok(Ok(()))) => Ok(value),
-            (Ok(_), Ok(Err(_))) => Err(ReactiveError::BorrowConflict),
-            (Err(panic), _) => resume_unwind(panic),
-            (Ok(_), Err(panic)) => resume_unwind(panic),
-        }
+        owner::new_transient(f)
     }
 }
 

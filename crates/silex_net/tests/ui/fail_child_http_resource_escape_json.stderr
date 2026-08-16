@@ -1,10 +1,10 @@
 error: lifetime may not live long enough
   --> tests/ui/fail_child_http_resource_escape_json.rs:6:9
    |
- 5 |       runtime.child(|scope| {
-   |                      ------ return type of closure is Resource<'2, std::string::String, NetError>
-   |                      |
-   |                      has type `silex_core::Scope<'1>`
+ 5 |       runtime.with_transient(|scope| {
+   |                               ------ return type of closure is Resource<'2, std::string::String, NetError>
+   |                               |
+   |                               has type `OwnerAccess<'1>`
  6 | /         HttpClient::get(
  7 | |             scope,
  8 | |             "https://example.test",
@@ -15,5 +15,5 @@ error: lifetime may not live long enough
    | |_____________________^ returning this value requires that `'1` must outlive `'2`
    |
    = note: requirement occurs because of the type `Resource<'_, std::string::String, NetError>`, which makes the generic argument `'_` invariant
-   = note: the struct `Resource<'scope, T, E>` is invariant over the parameter `'scope`
+   = note: the struct `Resource<'owner, T, E>` is invariant over the parameter `'owner`
    = help: see <https://doc.rust-lang.org/nomicon/subtyping.html> for more information about variance

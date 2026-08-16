@@ -1,13 +1,13 @@
 error: lifetime may not live long enough
-  --> tests/ui/fail_translation_memo_escape.rs:13:9
+  --> tests/ui/fail_translation_memo_escape.rs:11:13
    |
- 5 |     runtime.child(|scope| {
-   |                    ------ return type of closure is Rx<'2, String>
-   |                    |
-   |                    has type `silex_i18n::Scope<'1>`
+ 6 |         .with_transient(|owner| {
+   |                          ------ return type of closure is Rx<'2, String>
+   |                          |
+   |                          has type `OwnerAccess<'1>`
 ...
-13 |         t!(store, "missing.key").expect("translation")
-   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ returning this value requires that `'1` must outlive `'2`
+11 |             t!(store, "missing.key").expect("translation")
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ returning this value requires that `'1` must outlive `'2`
    |
    = note: requirement occurs because of the type `Rx<'_, String>`, which makes the generic argument `'_` invariant
    = note: the struct `Rx<'scope, T, M>` is invariant over the parameter `'scope`

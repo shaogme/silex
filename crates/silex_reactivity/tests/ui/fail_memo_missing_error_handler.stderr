@@ -1,15 +1,5 @@
-error[E0061]: this method takes 2 arguments but 1 argument was supplied
- --> tests/ui/fail_memo_missing_error_handler.rs:5:41
+error[E0599]: no method named `memo` found for struct `OwnerAccess<'owner>` in the current scope
+ --> tests/ui/fail_memo_missing_error_handler.rs:5:50
   |
-5 |     let _ = runtime.child(|scope| scope.memo(|_| Ok::<i32, ()>(1)));
-  |                                         ^^^^---------------------- argument #2 is missing
-  |
-note: method defined here
- --> src/child/scope.rs
-  |
-  |     pub fn memo<T, E, F, H>(
-  |            ^^^^
-help: provide the argument
-  |
-5 |     let _ = runtime.child(|scope| scope.memo(|_| Ok::<i32, ()>(1), /* error_handler */));
-  |                                                                  +++++++++++++++++++++
+5 |     let _ = runtime.with_transient(|scope| scope.memo(|_| Ok::<i32, ()>(1)));
+  |                                                  ^^^^ method not found in `OwnerAccess<'_>`

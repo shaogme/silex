@@ -1,7 +1,7 @@
 #![cfg(target_arch = "wasm32")]
 
 use js_sys::{Array, Reflect};
-use silex_core::{ErrorHandlerToken, Runtime, Scope, SilexContext};
+use silex_core::{ErrorHandlerToken, OwnerAccess, Runtime, SilexContext};
 use silex_css::{
     CssPart, DynamicCss, IntoCssReactive,
     prelude::{
@@ -11,7 +11,7 @@ use silex_css::{
 };
 use silex_dom::{
     attribute::{ApplyTarget, ApplyToDom, AttrOp},
-    view::{MountOwner, ScopedMountOwner},
+    view::{MountOwner, MountOwnerToken},
 };
 use std::{
     cell::Cell,
@@ -25,17 +25,17 @@ use web_sys::{Element, Node};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
-fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope> {
-    scope
+fn test_handler<'scope>(owner: OwnerAccess<'scope>) -> ErrorHandlerToken<'scope> {
+    owner
         .error_handler(|_| {})
         .expect("test error handler should register")
 }
 
 fn test_owner<'scope>(
-    scope: Scope<'scope>,
-) -> (ScopedMountOwner<'scope>, ErrorHandlerToken<'scope>) {
-    let error_handler = test_handler(scope);
-    (ScopedMountOwner::new(scope), error_handler)
+    owner: OwnerAccess<'scope>,
+) -> (MountOwnerToken<'scope>, ErrorHandlerToken<'scope>) {
+    let error_handler = test_handler(owner);
+    (MountOwnerToken::new(owner), error_handler)
 }
 
 fn document() -> web_sys::Document {
@@ -151,13 +151,13 @@ fn style_updates_inline_values_and_cleans_on_scope_dispose() {
 
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
-            let (value, set_value) = scope
+        .with_transient(|owner| {
+            let (value, set_value) = owner
                 .signal(String::from("red"))
                 .expect("signal should initialize");
-            let (owner, error_handler) = test_owner(scope);
-            let token = owner.token();
-            let class_name = Style::new(SilexContext::new(scope, error_handler.view()))
+            let (owner_token, error_handler) = test_owner(owner);
+            let token = owner_token.token();
+            let class_name = Style::new(SilexContext::new(owner, error_handler.view()))
                 .raw("--test-color", value)
                 .expect("style should build")
                 .apply_to_element(&element, &token, error_handler.view())
@@ -203,14 +203,14 @@ fn theme_updates_variables_and_cleans_on_scope_dispose() {
 
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
-            let (theme, set_theme) = scope
+        .with_transient(|owner| {
+            let (theme, set_theme) = owner
                 .signal(TestTheme {
                     color: String::from("red"),
                 })
                 .expect("theme signal should initialize");
-            let (owner, error_handler) = test_owner(scope);
-            let token = owner.token();
+            let (owner_token, error_handler) = test_owner(owner);
+            let token = owner_token.token();
             theme_variables(theme)
                 .apply(&element, ApplyTarget::Apply, &token, error_handler.view())
                 .expect("theme variables can be applied");
@@ -255,13 +255,13 @@ fn svg_style_updates_inline_values_and_cleans_on_scope_dispose() {
 
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
-            let (value, set_value) = scope
+        .with_transient(|owner| {
+            let (value, set_value) = owner
                 .signal(String::from("red"))
                 .expect("signal should initialize");
-            let (owner, error_handler) = test_owner(scope);
-            let token = owner.token();
-            Style::new(SilexContext::new(scope, error_handler.view()))
+            let (owner_token, error_handler) = test_owner(owner);
+            let token = owner_token.token();
+            Style::new(SilexContext::new(owner, error_handler.view()))
                 .raw("--svg-color", value)
                 .expect("style should build")
                 .apply_to_element(&element, &token, error_handler.view())
@@ -304,12 +304,12 @@ fn dynamic_css_replaces_rule_class_and_cleans_on_scope_dispose() {
 
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
-            let (value, set_value) = scope
+        .with_transient(|owner| {
+            let (value, set_value) = owner
                 .signal(String::from("red"))
                 .expect("signal should initialize");
-            let (owner, error_handler) = test_owner(scope);
-            let token = owner.token();
+            let (owner_token, error_handler) = test_owner(owner);
+            let token = owner_token.token();
             let dynamic = DynamicCss::new("slx-owner-test").with_rule(
                 &[
                     CssPart::Lit("."),
@@ -351,12 +351,12 @@ async fn pending_dynamic_sheet_operations_do_not_survive_owner_dispose() {
 
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
-            let (value, _) = scope
+        .with_transient(|owner| {
+            let (value, _) = owner
                 .signal(String::from("red"))
                 .expect("signal should initialize");
-            let (owner, error_handler) = test_owner(scope);
-            let token = owner.token();
+            let (owner_token, error_handler) = test_owner(owner);
+            let token = owner_token.token();
             let dynamic = DynamicCss::new("slx-pending-owner").with_rule(
                 &[
                     CssPart::Lit("."),
@@ -382,17 +382,21 @@ async fn pending_dynamic_sheet_operations_do_not_survive_owner_dispose() {
 #[wasm_bindgen_test(async)]
 async fn global_theme_stylesheets_are_isolated_per_owner() {
     let mut first_runtime = Runtime::new();
-    let first_root = first_runtime.run().expect("first root should initialize");
+    let first_root = first_runtime
+        .owner()
+        .expect("first owner should initialize");
     let mut second_runtime = Runtime::new();
-    let second_root = second_runtime.run().expect("second root should initialize");
+    let second_root = second_runtime
+        .owner()
+        .expect("second owner should initialize");
 
-    first_root.with_scope(|first_scope| {
-        second_root.with_scope(|second_scope| {
-            let (first_owner, first_error_handler) = test_owner(first_scope);
-            let (second_owner, second_error_handler) = test_owner(second_scope);
+    first_root.with_access(|first_access| {
+        second_root.with_access(|second_access| {
+            let (first_owner, first_error_handler) = test_owner(first_access);
+            let (second_owner, second_error_handler) = test_owner(second_access);
             set_global_theme(
                 &first_owner,
-                first_scope
+                first_access
                     .stored(TestTheme {
                         color: String::from("owner-red"),
                     })
@@ -402,7 +406,7 @@ async fn global_theme_stylesheets_are_isolated_per_owner() {
             .expect("first global theme can be registered");
             set_global_theme(
                 &second_owner,
-                second_scope
+                second_access
                     .stored(TestTheme {
                         color: String::from("owner-blue"),
                     })
@@ -417,12 +421,12 @@ async fn global_theme_stylesheets_are_isolated_per_owner() {
     assert!(adopted_sheet_contains("owner-red"));
     assert!(adopted_sheet_contains("owner-blue"));
 
-    first_root.dispose().expect("first owner can be disposed");
+    first_root.close().expect("first owner can be closed");
     flush_style_microtasks().await;
     assert!(!adopted_sheet_contains("owner-red"));
     assert!(adopted_sheet_contains("owner-blue"));
 
-    second_root.dispose().expect("second owner can be disposed");
+    second_root.close().expect("second owner can be closed");
     flush_style_microtasks().await;
     assert!(!adopted_sheet_contains("owner-blue"));
 }
@@ -437,12 +441,12 @@ fn theme_patch_removes_variables_that_disappear_from_the_next_round() {
 
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
-            let (patch, set_patch) = scope
+        .with_transient(|owner| {
+            let (patch, set_patch) = owner
                 .signal(TestPatch { alternate: false })
                 .expect("patch signal should initialize");
-            let (owner, error_handler) = test_owner(scope);
-            let token = owner.token();
+            let (owner_token, error_handler) = test_owner(owner);
+            let token = owner_token.token();
             theme_patch(patch)
                 .apply(&element, ApplyTarget::Apply, &token, error_handler.view())
                 .expect("theme patch can be applied");
@@ -477,19 +481,19 @@ fn foreign_runtime_css_read_is_rejected_during_custom_callback() {
 
     let mut foreign_runtime = Runtime::new();
     let foreign_root = foreign_runtime
-        .run()
-        .expect("foreign root should initialize");
+        .owner()
+        .expect("foreign owner should initialize");
     let mut local_runtime = Runtime::new();
     let callback_runs = Rc::new(Cell::new(0));
 
-    foreign_root.with_scope(|foreign_scope| {
-        let (foreign, _) = foreign_scope
+    foreign_root.with_access(|foreign_owner| {
+        let (foreign, _) = foreign_owner
             .signal(1_i32)
             .expect("foreign signal should initialize");
         local_runtime
-            .child(|scope| {
-                let (owner, error_handler) = test_owner(scope);
-                let token = owner.token();
+            .with_transient(|owner| {
+                let (owner_token, error_handler) = test_owner(owner);
+                let token = owner_token.token();
                 let callback_runs_in_operation = callback_runs.clone();
                 let operation = AttrOp::custom(move |element, _, _| {
                     callback_runs_in_operation.set(callback_runs_in_operation.get() + 1);
@@ -501,11 +505,11 @@ fn foreign_runtime_css_read_is_rejected_during_custom_callback() {
                     .apply(&element, &token, error_handler.view())
                     .expect_err("foreign runtime read should be rejected");
             })
-            .expect("local child scope should initialize");
+            .expect("local transient owner should initialize");
     });
 
     assert_eq!(callback_runs.get(), 1);
     assert!(!element.has_attribute("data-foreign"));
     remove(&host.into());
-    foreign_root.dispose().expect("foreign root cleanup");
+    foreign_root.close().expect("foreign owner cleanup");
 }

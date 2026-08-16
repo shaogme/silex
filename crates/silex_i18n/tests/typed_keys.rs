@@ -16,7 +16,7 @@ enum Text {
 fn typed_key_macro_keeps_reactive_arguments_inside_the_memo() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|owner| {
             let catalog = Catalog::from_entries(
                 Locale::new("en").expect("valid locale"),
                 [
@@ -31,13 +31,13 @@ fn typed_key_macro_keeps_reactive_arguments_inside_the_memo() {
                 ],
             )
             .expect("valid catalog");
-            let handler = scope.error_handler(|_| {}).expect("error handler");
-            let store = I18nBuilder::new(scope, handler.view())
+            let handler = owner.error_handler(|_| {}).expect("error handler");
+            let store = I18nBuilder::new(owner, handler.view())
                 .locale(Locale::new("en").expect("valid locale"))
                 .catalog(catalog)
                 .build()
                 .expect("valid store");
-            let name = scope.rw_signal("Alice".to_string()).expect("name signal");
+            let name = owner.rw_signal("Alice".to_string()).expect("name signal");
             let greeting = t!(
                 store,
                 Text::WelcomeUser {
@@ -57,14 +57,14 @@ fn typed_key_macro_keeps_reactive_arguments_inside_the_memo() {
                 "You have 2 items."
             );
         })
-        .expect("child scope");
+        .expect("child owner");
 }
 
 #[test]
 fn typed_key_memo_tracks_fallback_and_catalog_revision() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|owner| {
             let french = Catalog::from_entries(
                 Locale::new("fr").expect("valid locale"),
                 [("welcome.user", CatalogValue::from("Bonjour, {name}!"))],
@@ -75,15 +75,15 @@ fn typed_key_memo_tracks_fallback_and_catalog_revision() {
                 [("welcome.user", CatalogValue::from("Hallo, {name}!"))],
             )
             .expect("valid german catalog");
-            let handler = scope.error_handler(|_| {}).expect("error handler");
-            let store = I18nBuilder::new(scope, handler.view())
+            let handler = owner.error_handler(|_| {}).expect("error handler");
+            let store = I18nBuilder::new(owner, handler.view())
                 .locale(Locale::new("es-MX").expect("valid locale"))
                 .fallback_locale(Locale::new("fr").expect("valid locale"))
                 .catalog(french)
                 .catalog(german)
                 .build()
                 .expect("valid store");
-            let name = scope.rw_signal("Alice".to_string()).expect("name signal");
+            let name = owner.rw_signal("Alice".to_string()).expect("name signal");
             let greeting = t!(
                 store,
                 Text::WelcomeUser {
@@ -121,5 +121,5 @@ fn typed_key_memo_tracks_fallback_and_catalog_revision() {
                 .expect("fallback update");
             assert_eq!(greeting.get().expect("greeting value"), "Bonjour, Bob!");
         })
-        .expect("child scope");
+        .expect("child owner");
 }

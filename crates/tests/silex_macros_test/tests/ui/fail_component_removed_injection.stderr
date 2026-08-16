@@ -1,13 +1,13 @@
-error: component parameters no longer support #[inject(...)]; declare a `#[ctx]` parameter
+error: explicit owner and error-handler parameters are not component props; declare one `#[ctx]` parameter
   --> tests/ui/fail_component_removed_injection.rs:11:5
    |
 11 |     #[inject(owner)] owner: (),
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-warning: unused imports: `ErrorReporter` and `Scope`
+warning: unused imports: `ErrorReporter` and `OwnerAccess`
  --> tests/ui/fail_component_removed_injection.rs:5:18
   |
-5 | use silex_core::{ErrorReporter, Scope};
-  |                  ^^^^^^^^^^^^^  ^^^^^
+5 | use silex_core::{ErrorReporter, OwnerAccess};
+  |                  ^^^^^^^^^^^^^  ^^^^^^^^^^^
   |
   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default

@@ -128,12 +128,12 @@ pub fn mount_store_into(target: web_sys::Node) -> Result<JsAppHost, BootstrapErr
 }
 
 fn mount_store_view<'scope>(ctx: &MountContext<'scope>) -> SilexResult<()> {
-    let scope = ctx.scope();
-    let error_handler = scope.error_handler(|error: SilexError| {
+    let owner = ctx.access();
+    let error_handler = owner.error_handler(|error: SilexError| {
         web_sys::console::error_1(&error.to_string().into());
     })?;
     let user = UserStore::new(
-        scope,
+        owner,
         User {
             name: "Alice".to_string(),
             age: 25,
@@ -141,6 +141,6 @@ fn mount_store_view<'scope>(ctx: &MountContext<'scope>) -> SilexResult<()> {
         },
     )?;
 
-    let silex_ctx = SilexContext::new(scope, error_handler.view());
+    let silex_ctx = SilexContext::new(owner, error_handler.view());
     ctx.mount(App(silex_ctx, user).build(), error_handler)
 }

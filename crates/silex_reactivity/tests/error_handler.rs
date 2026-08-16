@@ -7,7 +7,7 @@ struct NonCopyError(String);
 fn error_handler_clone_keeps_scoped_callback_contract() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let label = String::from("scoped");
             let handler = scope
                 .error_handler(move |error: &'static str| {
@@ -31,7 +31,7 @@ fn error_handler_ref_is_copy_without_copying_error_or_callback() {
     let mut runtime = Runtime::new();
     let seen = Rc::new(Cell::new(0));
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let seen_in_handler = seen.clone();
             let token = scope
                 .error_handler(move |error: NonCopyError| {
@@ -59,7 +59,7 @@ fn handlers_are_independent_and_can_dispatch_recursively() {
     let mut runtime = Runtime::new();
     let seen = Rc::new(Cell::new(0));
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let seen_in_nested = seen.clone();
             let nested = scope
                 .error_handler(move |error: &'static str| {
@@ -90,7 +90,7 @@ fn parent_handler_can_be_passed_to_a_child_scope() {
     let seen = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let seen_in_handler = seen.clone();
             let token = scope
                 .error_handler(move |_: &'static str| {
@@ -100,7 +100,7 @@ fn parent_handler_can_be_passed_to_a_child_scope() {
             let handler = token.view();
 
             scope
-                .child(|child| {
+                .with_transient(|child| {
                     child
                         .effect(|| Err::<(), &'static str>("child"), handler)
                         .expect_err("the child effect should return its initial error");
@@ -119,7 +119,7 @@ fn handler_callback_can_read_and_update_signals() {
     let observed = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(0_i32).expect("fallible reactive creation");
             let (value, set_value) = scope.signal(0_i32).expect("fallible reactive creation");
             let should_fail = Rc::new(Cell::new(false));
@@ -169,7 +169,7 @@ fn dropping_the_last_token_retires_the_callback_immediately() {
     let drops = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let capture = DropCapture(drops.clone());
             let token = scope
                 .error_handler(move |_: ()| {
@@ -193,7 +193,7 @@ fn computation_lease_survives_token_drop_but_view_becomes_stale() {
     let should_fail = Rc::new(Cell::new(false));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(0_i32).expect("signal registration");
             let capture = DropCapture(drops.clone());
             let handled_in_callback = handled.clone();
@@ -234,7 +234,7 @@ fn computation_lease_survives_token_drop_but_view_becomes_stale() {
 fn cloned_tokens_share_the_registration_owner() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let token = scope
                 .error_handler(|_: ()| {})
                 .expect("handler registration");
@@ -255,7 +255,7 @@ fn stale_view_cannot_dispatch_a_reused_registration_slot() {
     let seen = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let old = scope
                 .error_handler(|_: ()| {})
                 .expect("old handler registration");
@@ -277,12 +277,35 @@ fn stale_view_cannot_dispatch_a_reused_registration_slot() {
 }
 
 #[test]
+fn handler_anchor_survives_caller_token_release() {
+    let mut runtime = Runtime::new();
+    let seen = Rc::new(Cell::new(0));
+
+    runtime
+        .with_transient(|scope| {
+            let seen_in_handler = seen.clone();
+            let token = scope
+                .error_handler(move |_: ()| {
+                    seen_in_handler.set(seen_in_handler.get() + 1);
+                })
+                .expect("handler registration");
+            let anchor = token.view().anchor().expect("handler anchor");
+
+            drop(token);
+            anchor.view().handle(()).expect("anchor dispatch");
+        })
+        .expect("test operation should succeed");
+
+    assert_eq!(seen.get(), 1);
+}
+
+#[test]
 #[cfg(feature = "test-support")]
 fn retired_handlers_are_excluded_from_active_snapshots() {
     let mut runtime = Runtime::new();
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let token = scope
                 .error_handler(|_: ()| {})
                 .expect("handler registration");

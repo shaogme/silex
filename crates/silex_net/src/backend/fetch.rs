@@ -135,10 +135,11 @@ impl BrowserTransport {
         if let Some(timeout) = spec.timeout {
             let timed_out_flag = timed_out.clone();
             let abort_controller = controller.clone();
-            let timeout_closure = Closure::wrap(Box::new(move || {
+            let timeout_closure = Closure::wrap_assert_unwind_safe(Box::new(move || {
                 timed_out_flag.set(true);
                 abort_controller.abort();
-            }) as Box<dyn FnMut()>);
+            })
+                as Box<dyn FnMut()>);
 
             let millis = timeout.as_millis().min(i32::MAX as u128) as i32;
             let handle = window

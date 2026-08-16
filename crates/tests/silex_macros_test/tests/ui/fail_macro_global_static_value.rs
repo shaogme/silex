@@ -7,9 +7,9 @@ use silex_css::types::Hex;
 use silex_macros::global;
 
 global! {
-    pub StaticValueGlobal<'scope>(
-        error_handler: ErrorReporter<'scope>,
-        source: Signal<'scope, Hex>,
+    pub StaticValueGlobal<'owner>(
+        error_handler: ErrorReporter<'owner>,
+        source: Signal<'owner, Hex>,
     ) {
         body {
             color: $("red");

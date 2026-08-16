@@ -1,0 +1,468 @@
+//! High-level runtime and owner wrappers.
+
+use crate::{
+    Callback, CompletionOnce, CompletionSender, ErrorHandlerInput, ErrorHandlerToken, NodeRef, Rx,
+    SilexError, SilexResult, TaskHandle,
+    reactivity::{
+        Computed, EffectHandle, ReactiveSource, ReadSignal, RwSignal, StoredValue, WatchOptions,
+        WriteSignal,
+    },
+    task,
+    traits::{RuntimeScoped, RxData},
+};
+#[cfg(feature = "test-support")]
+use silex_reactivity::RuntimeSnapshot;
+use silex_reactivity::{CloseError, ComputationInitError, ReactiveError};
+use std::{future::Future, panic::UnwindSafe, pin::Pin};
+
+/// User-owned high-level runtime.
+pub struct Runtime {
+    inner: silex_reactivity::Runtime,
+}
+
+impl Runtime {
+    pub fn new() -> Self {
+        Self {
+            inner: silex_reactivity::Runtime::new(),
+        }
+    }
+
+    pub fn owner(&mut self) -> SilexResult<OwnerHandle> {
+        self.inner
+            .owner()
+            .map(|inner| OwnerHandle { inner })
+            .map_err(SilexError::fatal)
+    }
+
+    pub fn with_transient<R>(
+        &mut self,
+        f: impl for<'owner> FnOnce(OwnerAccess<'owner>) -> R,
+    ) -> SilexResult<R> {
+        self.inner
+            .with_transient(|owner| f(OwnerAccess { inner: owner }))
+            .map_err(SilexError::fatal)
+    }
+}
+
+impl Default for Runtime {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Persistent owner with explicit close authority.
+pub struct OwnerHandle {
+    inner: silex_reactivity::OwnerHandle,
+}
+
+impl OwnerHandle {
+    pub fn access(&self) -> OwnerAccess<'_> {
+        OwnerAccess {
+            inner: self.inner.access(),
+        }
+    }
+
+    pub fn with_access<R>(&self, f: impl FnOnce(OwnerAccess<'_>) -> R) -> R {
+        self.inner
+            .with_access(|owner| f(OwnerAccess { inner: owner }))
+    }
+
+    /// Run a future while retaining the borrowed owner capability.
+    pub async fn with_access_async<R>(
+        &self,
+        f: impl for<'owner> FnOnce(OwnerAccess<'owner>) -> Pin<Box<dyn Future<Output = R> + 'owner>>,
+    ) -> R {
+        f(self.access()).await
+    }
+
+    pub fn create_child(&self) -> SilexResult<Self> {
+        self.inner
+            .create_child()
+            .map(|inner| Self { inner })
+            .map_err(SilexError::fatal)
+    }
+
+    pub fn close(&self) -> Result<(), CloseError> {
+        self.inner.close()
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.inner.is_active()
+    }
+
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    pub fn runtime_snapshot(&self) -> RuntimeSnapshot {
+        self.inner.runtime_snapshot()
+    }
+}
+
+/// Hidden adapter that keeps a persistent child access and close authority
+/// together for framework-owned lifecycles.
+#[doc(hidden)]
+pub struct PersistentOwnerAccess<'owner> {
+    inner: silex_reactivity::PersistentOwnerAccess<'owner>,
+}
+
+impl<'owner> PersistentOwnerAccess<'owner> {
+    /// Borrow the typed access for this persistent child.
+    #[doc(hidden)]
+    pub fn access(&self) -> OwnerAccess<'owner> {
+        OwnerAccess {
+            inner: self.inner.access(),
+        }
+    }
+
+    /// Close the child exactly once from the caller's perspective.
+    #[doc(hidden)]
+    pub fn close_once(&self) -> Result<(), CloseError> {
+        self.inner.close_once()
+    }
+
+    /// Report whether the child can still accept runtime operations.
+    #[doc(hidden)]
+    pub fn is_active(&self) -> bool {
+        self.inner.is_active()
+    }
+}
+
+/// Borrowed owner capability used to create and operate typed nodes.
+#[derive(Clone, Copy)]
+pub struct OwnerAccess<'owner> {
+    pub(crate) inner: silex_reactivity::OwnerAccess<'owner>,
+}
+
+impl PartialEq for OwnerAccess<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+}
+
+impl Eq for OwnerAccess<'_> {}
+
+impl<'owner> OwnerAccess<'owner> {
+    pub fn error_handler<F>(&self, handler: F) -> SilexResult<ErrorHandlerToken<'owner>>
+    where
+        F: Fn(SilexError) + 'owner,
+    {
+        self.inner.error_handler(handler).map_err(SilexError::fatal)
+    }
+
+    pub fn create_child(&self) -> SilexResult<OwnerHandle> {
+        self.inner
+            .create_child()
+            .map(|inner| OwnerHandle { inner })
+            .map_err(SilexError::fatal)
+    }
+
+    /// Create a hidden persistent child adapter for framework-owned branches.
+    #[doc(hidden)]
+    pub fn create_persistent_child(&self) -> SilexResult<PersistentOwnerAccess<'owner>> {
+        self.inner
+            .create_persistent_child()
+            .map(|inner| PersistentOwnerAccess { inner })
+            .map_err(SilexError::fatal)
+    }
+
+    pub fn with_transient<R>(
+        &self,
+        f: impl for<'child> FnOnce(OwnerAccess<'child>) -> R,
+    ) -> SilexResult<R> {
+        self.inner
+            .with_transient(|owner| f(OwnerAccess { inner: owner }))
+            .map_err(SilexError::fatal)
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.inner.is_active()
+    }
+
+    /// Validate a reactive source before creating target-side nodes.
+    pub fn validate_runtime<S>(&self, source: &S) -> SilexResult<()>
+    where
+        S: RuntimeScoped + ?Sized,
+    {
+        if !self.is_active() {
+            return Err(SilexError::fatal(ReactiveError::NoSuchNode));
+        }
+        if self.inner.same_runtime(&source.owner_access().inner) {
+            Ok(())
+        } else {
+            Err(SilexError::fatal(ReactiveError::RuntimeMismatch))
+        }
+    }
+
+    pub fn signal<T: 'owner>(
+        &self,
+        value: T,
+    ) -> SilexResult<(ReadSignal<'owner, T>, WriteSignal<'owner, T>)> {
+        let (read, write) = self.inner.signal(value).map_err(SilexError::fatal)?;
+        Ok((
+            ReadSignal::from_inner(read, *self),
+            WriteSignal::from_inner(write, *self),
+        ))
+    }
+
+    pub fn rw_signal<T: 'owner>(&self, value: T) -> SilexResult<RwSignal<'owner, T>> {
+        let (read, write) = self.signal(value)?;
+        Ok(RwSignal::from_parts(read, write))
+    }
+
+    pub fn computed<T, F, H>(&self, f: F, error_handler: H) -> SilexResult<Computed<'owner, T>>
+    where
+        T: PartialEq + 'owner,
+        F: FnMut() -> SilexResult<T> + 'owner,
+        H: ErrorHandlerInput<'owner>,
+    {
+        let error_handler = error_handler.handler_ref();
+        self.inner
+            .computed(f, error_handler)
+            .map(|computed| Computed::from_inner(computed, *self))
+            .map_err(map_computation_error)
+    }
+
+    pub fn computed_always<T, F, H>(
+        &self,
+        f: F,
+        error_handler: H,
+    ) -> SilexResult<Computed<'owner, T>>
+    where
+        T: 'owner,
+        F: FnMut() -> SilexResult<T> + 'owner,
+        H: ErrorHandlerInput<'owner>,
+    {
+        let error_handler = error_handler.handler_ref();
+        self.inner
+            .computed_always(f, error_handler)
+            .map(|computed| Computed::from_inner(computed, *self))
+            .map_err(map_computation_error)
+    }
+
+    pub fn effect<F, H>(&self, f: F, error_handler: H) -> SilexResult<EffectHandle<'owner>>
+    where
+        F: FnMut() -> SilexResult<()> + 'owner,
+        H: ErrorHandlerInput<'owner>,
+    {
+        self.inner
+            .effect(f, error_handler.handler_ref())
+            .map(|effect| EffectHandle::from_inner(effect))
+            .map_err(map_computation_error)
+    }
+
+    /// Register a framework-owned effect detached from the current
+    /// computation tree. The callback's own children and cleanups remain
+    /// owned by the detached effect and are stopped with its handle.
+    #[doc(hidden)]
+    pub fn effect_detached<F, H>(&self, f: F, error_handler: H) -> SilexResult<EffectHandle<'owner>>
+    where
+        F: FnMut() -> SilexResult<()> + 'owner,
+        H: ErrorHandlerInput<'owner>,
+    {
+        self.inner
+            .effect_detached(f, error_handler.handler_ref())
+            .map(|effect| EffectHandle::from_inner(effect))
+            .map_err(map_computation_error)
+    }
+
+    pub fn effect_with_previous<T, F, H>(
+        &self,
+        f: F,
+        error_handler: H,
+    ) -> SilexResult<EffectHandle<'owner>>
+    where
+        T: 'owner,
+        F: FnMut(Option<&T>) -> SilexResult<T> + 'owner,
+        H: ErrorHandlerInput<'owner>,
+    {
+        self.inner
+            .effect_with_previous(f, error_handler.handler_ref())
+            .map(|effect| EffectHandle::from_inner(effect))
+            .map_err(map_computation_error)
+    }
+
+    pub fn watch<S, C, H>(
+        &self,
+        source: S,
+        callback: C,
+        error_handler: H,
+    ) -> SilexResult<EffectHandle<'owner>>
+    where
+        S: ReactiveSource<'owner>,
+        S::Value: Sized + Clone + PartialEq + RxData + 'owner,
+        C: FnMut(&S::Value, Option<&S::Value>) -> SilexResult<()> + 'owner,
+        H: ErrorHandlerInput<'owner>,
+    {
+        self.watch_with_options(source, callback, error_handler, WatchOptions::default())
+    }
+
+    pub fn watch_with_options<S, C, H>(
+        &self,
+        source: S,
+        callback: C,
+        error_handler: H,
+        options: WatchOptions,
+    ) -> SilexResult<EffectHandle<'owner>>
+    where
+        S: ReactiveSource<'owner>,
+        S::Value: Sized + Clone + PartialEq + RxData + 'owner,
+        C: FnMut(&S::Value, Option<&S::Value>) -> SilexResult<()> + 'owner,
+        H: ErrorHandlerInput<'owner>,
+    {
+        let error_handler = error_handler.handler_ref();
+        let source = source
+            .into_promotion_plan()
+            .materialize(*self, error_handler)?;
+        self.watch_getter_with_options(move || source.get(), callback, error_handler, options)
+    }
+
+    pub fn watch_getter<T, G, C, H>(
+        &self,
+        getter: G,
+        callback: C,
+        error_handler: H,
+    ) -> SilexResult<EffectHandle<'owner>>
+    where
+        T: PartialEq + 'owner,
+        G: FnMut() -> SilexResult<T> + 'owner,
+        C: FnMut(&T, Option<&T>) -> SilexResult<()> + 'owner,
+        H: ErrorHandlerInput<'owner>,
+    {
+        self.watch_getter_with_options(getter, callback, error_handler, WatchOptions::default())
+    }
+
+    pub fn watch_getter_with_options<T, G, C, H>(
+        &self,
+        getter: G,
+        callback: C,
+        error_handler: H,
+        options: WatchOptions,
+    ) -> SilexResult<EffectHandle<'owner>>
+    where
+        T: PartialEq + 'owner,
+        G: FnMut() -> SilexResult<T> + 'owner,
+        C: FnMut(&T, Option<&T>) -> SilexResult<()> + 'owner,
+        H: ErrorHandlerInput<'owner>,
+    {
+        self.inner
+            .watch_getter_with_options(getter, callback, error_handler.handler_ref(), options)
+            .map(EffectHandle::from_inner)
+            .map_err(map_computation_error)
+    }
+
+    pub fn stored<T: 'owner>(&self, value: T) -> SilexResult<StoredValue<'owner, T>> {
+        self.inner
+            .stored(value)
+            .map(|stored| StoredValue::from_inner(stored, *self))
+            .map_err(SilexError::fatal)
+    }
+
+    pub fn callback<T, F>(&self, callback: F) -> SilexResult<Callback<'owner, T>>
+    where
+        T: 'owner,
+        F: FnMut(T) -> SilexResult<()> + 'owner,
+    {
+        self.inner
+            .callback(callback)
+            .map(Callback::from_inner)
+            .map_err(SilexError::fatal)
+    }
+
+    pub fn node_ref<T: 'owner>(&self) -> SilexResult<NodeRef<'owner, T>> {
+        self.inner
+            .node_ref()
+            .map(NodeRef::from_inner)
+            .map_err(SilexError::fatal)
+    }
+
+    pub fn completion_once<T, F>(&self, callback: F) -> SilexResult<CompletionOnce<T>>
+    where
+        T: 'static,
+        F: FnMut(T) -> SilexResult<()> + UnwindSafe + 'owner,
+    {
+        self.inner
+            .completion_once(callback)
+            .map_err(SilexError::fatal)
+    }
+
+    pub fn completion_sender<T, F>(&self, callback: F) -> SilexResult<CompletionSender<T>>
+    where
+        T: 'static,
+        F: FnMut(T) -> SilexResult<()> + UnwindSafe + 'owner,
+    {
+        self.inner
+            .completion_sender(callback)
+            .map_err(SilexError::fatal)
+    }
+
+    pub fn spawn_scoped<F, H>(&self, future: F, error_handler: H) -> SilexResult<TaskHandle<'owner>>
+    where
+        F: Future<Output = ()> + 'owner,
+        H: ErrorHandlerInput<'owner>,
+    {
+        if !self.is_active() {
+            return Ok(TaskHandle::inactive());
+        }
+        let (task, cancel) = task::start(future);
+        let cleanup = self.on_cleanup(
+            move || {
+                cancel();
+                Ok::<(), SilexError>(())
+            },
+            error_handler,
+        );
+        match cleanup {
+            Ok(()) => Ok(task),
+            Err(error) => {
+                task.cancel();
+                Err(error)
+            }
+        }
+    }
+
+    pub fn promote<T, H>(&self, value: T, error_handler: H) -> SilexResult<Rx<'owner, T::Value>>
+    where
+        T: ReactiveSource<'owner>,
+        T::Value: Sized + RxData + 'owner,
+        H: ErrorHandlerInput<'owner>,
+    {
+        value
+            .into_promotion_plan()
+            .materialize(*self, error_handler.handler_ref())
+    }
+
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    pub fn runtime_snapshot(&self) -> RuntimeSnapshot {
+        self.inner.runtime_snapshot()
+    }
+
+    pub fn constant<T: 'owner>(&self, value: T) -> SilexResult<Rx<'owner, T>> {
+        let stored = self.stored(value)?;
+        Ok(Rx::from_stored(stored))
+    }
+
+    pub fn untrack<R>(&self, f: impl FnOnce() -> R) -> R {
+        self.inner.untrack(f)
+    }
+
+    pub fn batch<R>(&self, f: impl FnOnce() -> R) -> SilexResult<R> {
+        self.inner.batch(f).map_err(SilexError::fatal)
+    }
+
+    pub fn on_cleanup<F, H>(&self, f: F, error_handler: H) -> SilexResult<()>
+    where
+        F: FnOnce() -> SilexResult<()> + 'owner,
+        H: ErrorHandlerInput<'owner>,
+    {
+        self.inner
+            .on_cleanup(f, error_handler.handler_ref())
+            .map_err(SilexError::fatal)
+    }
+}
+
+fn map_computation_error(error: ComputationInitError<SilexError>) -> SilexError {
+    match error {
+        ComputationInitError::Registration(error) => SilexError::fatal(error),
+        ComputationInitError::Initial(error) => error,
+    }
+}

@@ -1,43 +1,43 @@
 use crate::{
-    ErrorHandlerInput, Rx, RxValueKind, Scope, SilexError, SilexResult,
+    ErrorHandlerInput, OwnerAccess, Rx, RxValueKind, SilexError, SilexResult,
     callback::map_callback_error,
 };
 use std::fmt;
 
-/// Equality-gated computed value.
-pub struct Memo<'scope, T> {
-    pub(crate) inner: silex_reactivity::Memo<'scope, T, SilexError>,
-    pub(crate) scope: Scope<'scope>,
+/// Unified computed value for equality-gated and always-notifying computations.
+pub struct Computed<'owner, T> {
+    pub(crate) inner: silex_reactivity::Computed<'owner, T, SilexError>,
+    pub(crate) owner: OwnerAccess<'owner>,
 }
 
-impl<'scope, T> Copy for Memo<'scope, T> {}
+impl<'owner, T> Copy for Computed<'owner, T> {}
 
-impl<'scope, T> Clone for Memo<'scope, T> {
+impl<'owner, T> Clone for Computed<'owner, T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<T> fmt::Debug for Memo<'_, T> {
+impl<T> fmt::Debug for Computed<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Memo").finish_non_exhaustive()
+        f.debug_struct("Computed").finish_non_exhaustive()
     }
 }
 
-impl<'scope, T> PartialEq for Memo<'scope, T> {
+impl<'owner, T> PartialEq for Computed<'owner, T> {
     fn eq(&self, other: &Self) -> bool {
-        self.inner == other.inner && self.scope == other.scope
+        self.inner == other.inner && self.owner == other.owner
     }
 }
 
-impl<'scope, T> Eq for Memo<'scope, T> {}
+impl<'owner, T> Eq for Computed<'owner, T> {}
 
-impl<'scope, T: 'scope> Memo<'scope, T> {
+impl<'owner, T: 'owner> Computed<'owner, T> {
     pub(crate) fn from_inner(
-        inner: silex_reactivity::Memo<'scope, T, SilexError>,
-        scope: Scope<'scope>,
+        inner: silex_reactivity::Computed<'owner, T, SilexError>,
+        owner: OwnerAccess<'owner>,
     ) -> Self {
-        Self { inner, scope }
+        Self { inner, owner }
     }
 
     pub fn get(&self) -> SilexResult<T>
@@ -62,17 +62,19 @@ impl<'scope, T: 'scope> Memo<'scope, T> {
         self.inner.with_untracked(f).map_err(map_callback_error)
     }
 
-    pub fn map<U, F, H>(self, f: F, error_handler: H) -> SilexResult<Rx<'scope, U>>
+    pub fn map<U, F, H>(self, f: F, error_handler: H) -> SilexResult<Rx<'owner, U>>
     where
-        U: 'scope,
-        F: Fn(&T) -> U + 'scope,
-        H: ErrorHandlerInput<'scope>,
+        U: 'owner,
+        F: Fn(&T) -> U + 'owner,
+        H: ErrorHandlerInput<'owner>,
     {
-        let scope = self.scope;
-        scope.derived(move || self.with(|value| f(value)), error_handler)
+        let owner = self.owner;
+        owner
+            .computed_always(move || self.with(|value| f(value)), error_handler)
+            .map(Computed::into_rx)
     }
 
-    pub fn into_rx(self) -> Rx<'scope, T, RxValueKind> {
-        Rx::from_memo(self)
+    pub fn into_rx(self) -> Rx<'owner, T, RxValueKind> {
+        Rx::from_computed(self)
     }
 }

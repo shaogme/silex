@@ -246,7 +246,7 @@ fn source_setup(bindings: &[&SourceBinding], error_handler: &Ident) -> TokenStre
         let promoted = &binding.promoted;
         let source = &binding.source;
         quote! {
-            let #promoted = __silex_scope
+            let #promoted = __silex_owner
                 .promote(#source, #error_handler)?;
         }
     });
@@ -269,31 +269,31 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
             "rx! prefix cannot be empty",
         ));
     }
-    let scope_tokens = split_at_semicolon(&mut tokens).ok_or_else(|| {
+    let owner_tokens = split_at_semicolon(&mut tokens).ok_or_else(|| {
         Error::new(
             proc_macro2::Span::call_site(),
             "rx! requires `@ctx <ctx>; body`",
         )
     })?;
-    if scope_tokens.is_empty() {
+    if owner_tokens.is_empty() {
         return Err(Error::new(
             proc_macro2::Span::call_site(),
-            "rx! scope cannot be empty",
+            "rx! owner context cannot be empty",
         ));
     }
-    let mut scope_tokens_iter = scope_tokens.into_iter();
+    let mut owner_tokens_iter = owner_tokens.into_iter();
     let is_ctx = matches!(
-        (scope_tokens_iter.next(), scope_tokens_iter.next()),
+        (owner_tokens_iter.next(), owner_tokens_iter.next()),
         (Some(TokenTree::Punct(punct)), Some(TokenTree::Ident(identifier)))
             if punct.as_char() == '@' && identifier == "ctx"
     );
     if !is_ctx {
         return Err(Error::new(
             proc_macro2::Span::call_site(),
-            "rx! requires `rx!(ctx; body)` and no longer accepts explicit scope or error handler arguments",
+            "rx! requires `rx!(ctx; body)` and no longer accepts an explicit owner or error handler",
         ));
     }
-    let ctx_tokens: TokenStream2 = scope_tokens_iter.collect();
+    let ctx_tokens: TokenStream2 = owner_tokens_iter.collect();
     if ctx_tokens.is_empty() {
         return Err(Error::new(
             proc_macro2::Span::call_site(),
@@ -301,8 +301,8 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
         ));
     }
     let ctx: Expr = parse2(ctx_tokens)?;
-    let scope: Expr = parse2(quote! {
-        #prefix::SilexContextProvider::scope(&(#ctx))
+    let owner: Expr = parse2(quote! {
+        #prefix::SilexContextProvider::owner(&(#ctx))
     })?;
     let error_handler: Expr = parse2(quote! {
         #prefix::SilexContextProvider::error_reporter(&(#ctx))
@@ -311,17 +311,17 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
     if body.is_empty() {
         let error_handler_ident = format_ident!("__silex_error_handler");
         return Ok(quote! {{
-            let __silex_scope = #scope;
+            let __silex_owner = #owner;
             let #error_handler_ident: #prefix::ErrorReporter<'_> = #error_handler;
             let _ = #error_handler_ident;
-            __silex_scope.constant(())?
+            __silex_owner.constant(())?
         }});
     }
 
     let mut registry = SourceRegistry::default();
     let processed = preprocess_tokens(body.clone(), &mut registry)?;
 
-    let mut force_derived = false;
+    let mut force_computed = false;
     let mut expression_tokens = processed.clone();
     let mut expression_iter = processed.into_iter().peekable();
     if matches!(expression_iter.peek(), Some(TokenTree::Punct(punct)) if punct.as_char() == '@') {
@@ -329,7 +329,7 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
         if matches!(expression_iter.peek(), Some(TokenTree::Ident(identifier)) if identifier == "fn")
         {
             expression_iter.next();
-            force_derived = true;
+            force_computed = true;
             expression_tokens = expression_iter.collect();
         }
     }
@@ -349,7 +349,7 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
     };
     visitor.visit_expr_mut(&mut expression);
     let bindings = registry.active_bindings(&visitor.used);
-    let scope_binding = quote! { let __silex_scope = #scope; };
+    let owner_binding = quote! { let __silex_owner = #owner; };
 
     if let Expr::Closure(mut closure) = expression {
         let closure_body = *closure.body;
@@ -360,17 +360,21 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
         let constructor = if closure.inputs.is_empty() {
             let error_handler_ident = format_ident!("__silex_error_handler");
             let setup = source_setup(&bindings, &error_handler_ident);
-            if force_derived {
+            if force_computed {
                 quote! {
                     let #error_handler_ident: #prefix::ErrorReporter<'_> = #error_handler;
                     #setup
-                    __silex_scope.derived(#closure, #error_handler_ident)?
+                    __silex_owner
+                        .computed_always(#closure, #error_handler_ident)?
+                        .into_rx()
                 }
             } else {
                 quote! {
                     let #error_handler_ident: #prefix::ErrorReporter<'_> = #error_handler;
                     #setup
-                    __silex_scope.memo(move |_| #reads, #error_handler_ident)?.into_rx()
+                    __silex_owner
+                        .computed_always(move || #reads, #error_handler_ident)?
+                        .into_rx()
                 }
             }
         } else {
@@ -378,16 +382,16 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
             quote! {
                 let #error_handler_ident: #prefix::ErrorReporter<'_> = #error_handler;
                 let _ = #error_handler_ident;
-                __silex_scope.callback(#closure)?
+                __silex_owner.callback(#closure)?
             }
         };
-        return Ok(quote! {{ #scope_binding #constructor }});
+        return Ok(quote! {{ #owner_binding #constructor }});
     }
 
     let expression = quote! { #expression };
     let reads = nested_reads(&bindings, &expression, true);
 
-    if !force_derived
+    if !force_computed
         && bindings.is_empty()
         && matches!(
             expression_tokens.clone().into_iter().next(),
@@ -396,24 +400,28 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
         && parse2::<syn::ExprLit>(expression_tokens.clone()).is_ok()
     {
         return Ok(quote! {{
-            #scope_binding
-            __silex_scope.constant(#expression)?
+            #owner_binding
+            __silex_owner.constant(#expression)?
         }});
     }
 
     let error_handler_ident = format_ident!("__silex_error_handler");
     let setup = source_setup(&bindings, &error_handler_ident);
-    let constructor = if force_derived {
+    let constructor = if force_computed {
         quote! {
-            __silex_scope.derived(move || #reads, #error_handler_ident)?
+            __silex_owner
+                .computed_always(move || #reads, #error_handler_ident)?
+                .into_rx()
         }
     } else {
         quote! {
-            __silex_scope.memo(move |_| #reads, #error_handler_ident)?.into_rx()
+            __silex_owner
+                .computed_always(move || #reads, #error_handler_ident)?
+                .into_rx()
         }
     };
     Ok(quote! {{
-        #scope_binding
+        #owner_binding
         let #error_handler_ident: #prefix::ErrorReporter<'_> = #error_handler;
         #setup
         #constructor
@@ -516,22 +524,22 @@ mod tests {
     }
 
     #[test]
-    fn emits_only_scoped_constructors() {
+    fn emits_only_owner_constructors() {
         let output = expand(quote! { ::silex_core; @ctx ctx; $count + 1 })
             .unwrap()
             .to_string();
-        assert!(output.contains("memo"));
+        assert!(output.contains("computed_always"));
         assert!(!output.contains("new_op"));
         let old_ref_count = ["R", "c"].concat();
         assert!(!output.contains(&old_ref_count));
     }
 
     #[test]
-    fn routes_parameterless_closures_to_memo() {
+    fn routes_parameterless_closures_to_computed() {
         let output = expand(quote! { ::silex_core; @ctx ctx; || $count + 1 })
             .unwrap()
             .to_string();
-        assert!(output.contains("memo"));
+        assert!(output.contains("computed_always"));
         assert!(!output.contains("callback"));
     }
 
@@ -545,7 +553,7 @@ mod tests {
     }
 
     #[test]
-    fn keeps_at_fn_on_the_typed_derived_path() {
+    fn keeps_at_fn_on_the_typed_computed_path() {
         let output = expand(quote! {
             ::silex_core;
             @ctx ctx;
@@ -553,7 +561,7 @@ mod tests {
         })
         .unwrap()
         .to_string();
-        assert!(output.contains("derived"));
+        assert!(output.contains("computed_always"));
         assert!(!output.contains("map1_static"));
         assert!(!output.contains("map2_static"));
         assert!(!output.contains("map3_static"));

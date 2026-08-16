@@ -27,7 +27,7 @@ pub fn StoreDemo<'scope, Ctx>(
             p![
                 strong("Notifications: "),
                 text(settings.notifications.map_fn(
-                    scope,
+                    owner,
                     |n| if *n { "On" } else { "Off" },
                     error_handler
                 )?),
@@ -81,7 +81,7 @@ impl Default for ComplexState {
 
 #[component]
 pub fn JsonStorageDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
-    let state = Persistent::builder(scope, "showcase-json-state", error_handler)
+    let state = Persistent::builder(owner, "showcase-json-state", error_handler)
         .local()
         .json::<ComplexState>()
         .default(ComplexState::default())
@@ -128,7 +128,7 @@ pub fn JsonStorageDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
 
 #[component]
 pub fn StorageDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
-    let count = Persistent::builder(scope, "showcase-counter", error_handler)
+    let count = Persistent::builder(owner, "showcase-counter", error_handler)
         .local()
         .parse::<i32>()
         .default(0)
@@ -166,8 +166,8 @@ pub fn QueryDemo<'scope>(
     #[ctx] ctx: RouterContext<'scope>,
     settings: UserSettingsStore<'scope, 'scope>,
 ) -> impl View<'scope> {
-    let scope = ctx.scope();
-    let val = Persistent::builder(scope, "demo_val", error_handler)
+    let owner = ctx.owner();
+    let val = Persistent::builder(owner, "demo_val", error_handler)
         .query(ctx)
         .cow()
         .default("".into())
@@ -262,10 +262,10 @@ async fn mock_fetch_user(id: i32) -> Result<UserProfile, String> {
 
 #[component]
 pub fn ResourceDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
-    let (user_id, set_user_id) = scope.signal(1)?;
+    let (user_id, set_user_id) = owner.signal(1)?;
 
     // Create Resource: triggers when user_id changes
-    let user_resource = Resource::new(scope, user_id, mock_fetch_user, None, error_handler)?;
+    let user_resource = Resource::new(owner, user_id, mock_fetch_user, None, error_handler)?;
 
     Ok(div![
         h3("Resource & Optimistic UI"),
@@ -341,7 +341,7 @@ pub fn MutationDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     // Simulate a login mutation
     // Takes (username, password) and returns a Result<String, String> token
     let login_mutation = Mutation::new(
-        scope,
+        owner,
         |(user, pass): (String, String)| async move {
             console_log(format!("Logging in as {}...", user));
             gloo_timers::future::TimeoutFuture::new(1500).await;
@@ -355,8 +355,8 @@ pub fn MutationDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
         error_handler,
     )?;
 
-    let username = scope.rw_signal("".to_string())?;
-    let password = scope.rw_signal("".to_string())?;
+    let username = owner.rw_signal("".to_string())?;
+    let password = owner.rw_signal("".to_string())?;
     let login_error_style = sty(ctx).color(ColorName::Red)?;
     let login_success_style = sty(ctx)
         .color(ColorName::Green)?
@@ -436,11 +436,11 @@ pub fn MutationDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
 pub fn SuspenseDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     use silex::components::SuspenseMode;
 
-    let (show_content, set_show_content) = scope.signal(false)?;
-    let (mode, set_mode) = scope.signal(SuspenseMode::KeepAlive)?;
+    let (show_content, set_show_content) = owner.signal(false)?;
+    let (mode, set_mode) = owner.signal(SuspenseMode::KeepAlive)?;
 
     // Trigger for reloading the resource
-    let (trigger, set_trigger) = scope.signal(0)?;
+    let (trigger, set_trigger) = owner.signal(0)?;
 
     // Mock heavy resource
     async fn heavy_work(id: i32) -> Result<String, String> {
@@ -473,7 +473,7 @@ pub fn SuspenseDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
         ]
         .style(sty(ctx).margin_bottom(px(15))?),
         div![
-            button(show_content.map_fn(scope, |s| if *s {
+            button(show_content.map_fn(owner, |s| if *s {
                 "Destroy Component"
             } else {
                 "Create Component"
@@ -487,7 +487,7 @@ pub fn SuspenseDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
             if *$show_content {
                 Suspense(ctx, move |cx| {
                     let resource = Resource::new(
-                        scope,
+                        owner,
                         trigger,
                         heavy_work,
                         Some(cx),
@@ -588,14 +588,14 @@ impl std::fmt::Display for QuantumIdentity {
 
 #[component]
 pub fn AdaptiveReadDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
-    let system_name = scope.rw_signal(Cow::Borrowed("Nebula-1"))?;
-    let (stability, set_stability) = scope.signal(0.85)?; // 0.0 to 1.0
+    let system_name = owner.rw_signal(Cow::Borrowed("Nebula-1"))?;
+    let (stability, set_stability) = owner.signal(0.85)?; // 0.0 to 1.0
 
     // Create a non-cloneable resource
-    let (identity, _) = scope.signal(QuantumIdentity::new(0xDEADBEEF))?;
+    let (identity, _) = owner.signal(QuantumIdentity::new(0xDEADBEEF))?;
     let adaptive_state = (system_name, stability);
 
-    scope.effect(
+    owner.effect(
         move || -> SilexResult<()> {
             let (name, current_stability) = adaptive_state.get()?;
             identity.with(|_| ())?;
@@ -608,7 +608,7 @@ pub fn AdaptiveReadDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     )?;
 
     // Cloneable reactive values can be read as one tracked tuple snapshot.
-    let status_bar = scope.derived(
+    let status_bar = owner.computed_always(
         move || {
             let (name, current_stability) = adaptive_state.get()?;
             let identity_label = identity.with(ToString::to_string)?;

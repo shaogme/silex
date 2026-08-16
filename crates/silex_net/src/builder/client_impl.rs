@@ -49,6 +49,7 @@ fn submit_once<'scope, T: 'static>(
         CallbackInvokeError::Runtime(error) => SilexError::fatal(error),
         CallbackInvokeError::User(error) => error,
         CallbackInvokeError::Handler(error) => SilexError::fatal(ReactiveError::Handler(error)),
+        CallbackInvokeError::Close(error) => SilexError::fatal(SilexErrorKind::Close(error)),
     };
     let handler_result = catch_unwind(AssertUnwindSafe(|| error_handler.handle(error)));
     if let Err(handler_panic) = handler_result {
@@ -267,8 +268,8 @@ macro_rules! impl_net_methods {
             let error_handler = self.error_handler.handler_ref();
             let request_builder = self.cloned_with_handler(error_handler);
             let request_source = scope
-                .memo(
-                    move |_| Ok(request_builder.resolve_spec_tracked()?),
+                .computed(
+                    move || Ok(request_builder.resolve_spec_tracked()?),
                     error_handler,
                 )
                 .map(|memo| memo.into_rx())
@@ -288,8 +289,8 @@ macro_rules! impl_net_methods {
             let resource_generation_for_fetcher = resource_generation.clone();
             let resource_slot_for_fetcher = resource_slot.clone();
             let combined_source = scope
-                .memo(
-                    move |_| Ok((source.get()?, request_source.get()?)),
+                .computed(
+                    move || Ok((source.get()?, request_source.get()?)),
                     error_handler,
                 )
                 .map(|memo| memo.into_rx())

@@ -53,7 +53,7 @@ pub fn Dialog<'scope, Ctx>(
         }
     });
 
-    let stored_children = scope.stored(children)?;
+    let stored_children = owner.stored(children)?;
 
     Ok(rx!(ctx; {
         if *$open {

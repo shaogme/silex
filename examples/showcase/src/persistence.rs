@@ -20,7 +20,7 @@ impl Default for Settings {
 
 #[component]
 pub fn PersistencePage<'scope>(#[ctx] ctx: RouterContext<'scope>) -> impl View<'scope> {
-    let scope = ctx.scope();
+    let owner = ctx.owner();
     Ok(div![
         h2("Comprehensive Persistence Demo")
             .style(sty(ctx).color(AppTheme::PRIMARY)?.margin_bottom(px(10))?),
@@ -72,20 +72,20 @@ fn Card<'scope, Ctx>(
 
 #[component]
 fn BackendGrid<'scope>(#[ctx] ctx: RouterContext<'scope>) -> impl View<'scope> {
-    let scope = ctx.scope();
-    let local = Persistent::builder(scope, "demo-local", error_handler)
+    let owner = ctx.owner();
+    let local = Persistent::builder(owner, "demo-local", error_handler)
         .local()
         .string()
         .default("Stored in LocalStorage".to_string())
         .build()?;
 
-    let session = Persistent::builder(scope, "demo-session", error_handler)
+    let session = Persistent::builder(owner, "demo-session", error_handler)
         .session()
         .string()
         .default("Stored in SessionStorage".to_string())
         .build()?;
 
-    let query = Persistent::builder(scope, "demo-query", error_handler)
+    let query = Persistent::builder(owner, "demo-query", error_handler)
         .query(ctx)
         .string()
         .default("Stored in URL Query".to_string())
@@ -168,7 +168,7 @@ fn BackendGrid<'scope>(#[ctx] ctx: RouterContext<'scope>) -> impl View<'scope> {
 
 #[component]
 fn ManualFlushDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
-    let draft = Persistent::builder(scope, "demo-draft", error_handler)
+    let draft = Persistent::builder(owner, "demo-draft", error_handler)
         .local()
         .string()
         .mode(PersistMode::Manual)
@@ -217,7 +217,7 @@ fn ManualFlushDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
 
 #[component]
 fn DebounceDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
-    let debounced = Persistent::builder(scope, "demo-debounced", error_handler)
+    let debounced = Persistent::builder(owner, "demo-debounced", error_handler)
         .local()
         .string()
         .sync(SyncStrategy::Debounce(std::time::Duration::from_millis(
@@ -267,7 +267,7 @@ fn DebounceDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
 
 #[component]
 fn ErrorHandlingDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
-    let settings = Persistent::builder(scope, "demo-complex-settings", error_handler)
+    let settings = Persistent::builder(owner, "demo-complex-settings", error_handler)
         .local()
         .json::<Settings>()
         .on_decode_error(DecodePolicy::UseDefault)
@@ -284,7 +284,7 @@ fn ErrorHandlingDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                     input()
                         .prop(
                             "value",
-                            settings.map(scope, |s| s.username.clone(), error_handler)?
+                            settings.map(owner, |s| s.username.clone(), error_handler)?
                         )
                         .on(event::input, move |e| {
                             settings.update(|s| s.username = event_target_value(&e))?;
@@ -311,7 +311,7 @@ fn ErrorHandlingDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                         .attr("type", "range")
                         .attr("min", "0")
                         .attr("max", "100")
-                        .prop("value", settings.map(scope, |s| s.volume, error_handler)?)
+                        .prop("value", settings.map(owner, |s| s.volume, error_handler)?)
                         .on(event::input, move |e| {
                             if let Ok(v) = event_target_value(&e).parse::<u32>() {
                                 settings.update(|s| s.volume = v)?;

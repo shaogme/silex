@@ -1,6 +1,6 @@
 use crate::reactivity::ReactiveSource;
 use crate::{
-    ErrorHandlerInput, Rx, Scope, SilexError, SilexErrorKind, SilexResult,
+    ErrorHandlerInput, OwnerAccess, Rx, SilexError, SilexErrorKind, SilexResult,
     reactivity::{ReadSignal, RwSignal, WriteSignal},
     traits::{RxCloneData, RxData, RxError, RxGet, RxRead, RxValue},
     unwind_safe,
@@ -56,22 +56,22 @@ struct ResourceCompletion<T, E> {
     settled: Rc<Cell<bool>>,
 }
 
-pub struct Resource<'scope, T, E = SilexError> {
-    pub state: ReadSignal<'scope, ResourceState<T, E>>,
-    set_state: WriteSignal<'scope, ResourceState<T, E>>,
-    trigger: RwSignal<'scope, usize>,
-    marker: PhantomData<fn() -> &'scope ()>,
+pub struct Resource<'owner, T, E = SilexError> {
+    pub state: ReadSignal<'owner, ResourceState<T, E>>,
+    set_state: WriteSignal<'owner, ResourceState<T, E>>,
+    trigger: RwSignal<'owner, usize>,
+    marker: PhantomData<fn() -> &'owner ()>,
 }
 
-impl<'scope, T, E> Copy for Resource<'scope, T, E> {}
+impl<'owner, T, E> Copy for Resource<'owner, T, E> {}
 
-impl<'scope, T, E> Clone for Resource<'scope, T, E> {
+impl<'owner, T, E> Clone for Resource<'owner, T, E> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<'scope, T, E> PartialEq for Resource<'scope, T, E> {
+impl<'owner, T, E> PartialEq for Resource<'owner, T, E> {
     fn eq(&self, other: &Self) -> bool {
         self.state == other.state
             && self.set_state == other.set_state
@@ -79,20 +79,20 @@ impl<'scope, T, E> PartialEq for Resource<'scope, T, E> {
     }
 }
 
-impl<'scope, T, E> Eq for Resource<'scope, T, E> {}
+impl<'owner, T, E> Eq for Resource<'owner, T, E> {}
 
-pub trait ResourceFetcher<'scope, S> {
+pub trait ResourceFetcher<'owner, S> {
     type Data;
     type Error;
-    type Future: Future<Output = Result<Self::Data, Self::Error>> + 'scope;
+    type Future: Future<Output = Result<Self::Data, Self::Error>> + 'owner;
 
     fn fetch(&self, source: S) -> Self::Future;
 }
 
-impl<'scope, S, T, E, F, Fut> ResourceFetcher<'scope, S> for F
+impl<'owner, S, T, E, F, Fut> ResourceFetcher<'owner, S> for F
 where
-    F: Fn(S) -> Fut + 'scope,
-    Fut: Future<Output = Result<T, E>> + 'scope,
+    F: Fn(S) -> Fut + 'owner,
+    Fut: Future<Output = Result<T, E>> + 'owner,
 {
     type Data = T;
     type Error = E;
@@ -103,41 +103,41 @@ where
     }
 }
 
-impl<'scope, T, E> Resource<'scope, T, E>
+impl<'owner, T, E> Resource<'owner, T, E>
 where
     T: RxCloneData + 'static,
     E: RxError + 'static,
 {
     pub fn new<S, R, Fetcher, H>(
-        scope: Scope<'scope>,
+        owner: OwnerAccess<'owner>,
         source: R,
         fetcher: Fetcher,
-        suspense: Option<SuspenseContext<'scope>>,
+        suspense: Option<SuspenseContext<'owner>>,
         error_handler: H,
     ) -> crate::SilexResult<Self>
     where
         S: Clone + PartialEq + 'static,
-        R: RxRead<Value = S> + ReactiveSource<'scope> + Clone + 'scope,
-        Fetcher: ResourceFetcher<'scope, S, Data = T, Error = E> + 'scope,
-        H: Clone + ErrorHandlerInput<'scope>,
+        R: RxRead<Value = S> + ReactiveSource<'owner> + Clone + 'owner,
+        Fetcher: ResourceFetcher<'owner, S, Data = T, Error = E> + 'owner,
+        H: Clone + ErrorHandlerInput<'owner>,
     {
         let handler_owner = error_handler.clone();
         let error_handler = error_handler.handler_ref();
-        scope.on_cleanup(
+        owner.on_cleanup(
             move || {
                 drop(handler_owner);
                 Ok::<(), SilexError>(())
             },
             error_handler,
         )?;
-        let (state, set_state) = scope.signal(ResourceState::Idle)?;
-        let trigger = scope.rw_signal(0usize)?;
+        let (state, set_state) = owner.signal(ResourceState::Idle)?;
+        let trigger = owner.rw_signal(0usize)?;
         let request_id = Rc::new(Cell::new(0usize));
         let request_id_for_callback = request_id.clone();
         let set_state_for_callback = set_state;
         let suspense_for_callback = suspense;
         let completion =
-            scope.completion_sender(unwind_safe(move |message: ResourceCompletion<T, E>| {
+            owner.completion_sender(unwind_safe(move |message: ResourceCompletion<T, E>| {
                 if message.settled.replace(true) {
                     return Ok(());
                 }
@@ -161,7 +161,7 @@ where
         let set_state_for_effect = set_state;
         let suspense_for_effect = suspense;
         let error_handler_for_effect = error_handler;
-        let _effect = scope.effect(
+        let _effect = owner.effect(
             move || -> SilexResult<()> {
                 let input = source_for_effect.get()?;
                 let _ = trigger_for_effect.get()?;
@@ -179,7 +179,7 @@ where
                 let settled = Rc::new(Cell::new(false));
                 let settled_for_cleanup = settled.clone();
                 let suspense_for_cleanup = suspense_for_effect;
-                scope.on_cleanup(
+                owner.on_cleanup(
                     move || {
                         if !settled_for_cleanup.replace(true)
                             && let Some(ctx) = suspense_for_cleanup
@@ -199,7 +199,7 @@ where
                 let future = fetcher.fetch(input);
                 let completion = completion.clone();
                 let completion_error_handler = error_handler;
-                scope.spawn_scoped(
+                owner.spawn_scoped(
                     async move {
                         let result = completion.submit(ResourceCompletion {
                             id,
@@ -217,6 +217,10 @@ where
                             Err(CallbackInvokeError::Handler(error)) => {
                                 let _ = completion_error_handler
                                     .handle(SilexError::fatal(ReactiveError::Handler(error)));
+                            }
+                            Err(CallbackInvokeError::Close(error)) => {
+                                let _ = completion_error_handler
+                                    .handle(SilexError::fatal(SilexErrorKind::Close(error)));
                             }
                         }
                     },
@@ -264,28 +268,30 @@ where
 
     pub fn map<U, F, H>(
         &self,
-        scope: Scope<'scope>,
+        owner: OwnerAccess<'owner>,
         f: F,
         error_handler: H,
-    ) -> crate::SilexResult<Rx<'scope, U>>
+    ) -> crate::SilexResult<Rx<'owner, U>>
     where
-        U: 'scope,
-        F: Fn(Option<&T>) -> U + 'scope,
-        H: ErrorHandlerInput<'scope>,
+        U: 'owner,
+        F: Fn(Option<&T>) -> U + 'owner,
+        H: ErrorHandlerInput<'owner>,
     {
         let resource = *self;
-        scope.derived(
-            move || resource.state.with(|state| f(state.as_option())),
-            error_handler,
-        )
+        owner
+            .computed_always(
+                move || resource.state.with(|state| f(state.as_option())),
+                error_handler,
+            )
+            .map(crate::Computed::into_rx)
     }
 }
 
-impl<'scope, T: RxData + 'scope, E: RxError + 'scope> RxValue for Resource<'scope, T, E> {
+impl<'owner, T: RxData + 'owner, E: RxError + 'owner> RxValue for Resource<'owner, T, E> {
     type Value = Option<T>;
 }
 
-impl<'scope, T: RxCloneData + 'scope, E: RxError + 'scope> RxRead for Resource<'scope, T, E> {
+impl<'owner, T: RxCloneData + 'owner, E: RxError + 'owner> RxRead for Resource<'owner, T, E> {
     fn with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> crate::SilexResult<U> {
         self.state.with(|state| f(&state.as_option().cloned()))
     }
@@ -297,22 +303,22 @@ impl<'scope, T: RxCloneData + 'scope, E: RxError + 'scope> RxRead for Resource<'
 }
 
 #[derive(Clone, Copy)]
-pub struct SuspenseContext<'scope> {
-    pub count: ReadSignal<'scope, usize>,
-    set_count: WriteSignal<'scope, usize>,
+pub struct SuspenseContext<'owner> {
+    pub count: ReadSignal<'owner, usize>,
+    set_count: WriteSignal<'owner, usize>,
 }
 
-impl<'scope> PartialEq for SuspenseContext<'scope> {
+impl<'owner> PartialEq for SuspenseContext<'owner> {
     fn eq(&self, other: &Self) -> bool {
         self.count == other.count && self.set_count == other.set_count
     }
 }
 
-impl<'scope> Eq for SuspenseContext<'scope> {}
+impl<'owner> Eq for SuspenseContext<'owner> {}
 
-impl<'scope> SuspenseContext<'scope> {
-    pub fn new(scope: Scope<'scope>) -> crate::SilexResult<Self> {
-        let (count, set_count) = scope.signal(0usize)?;
+impl<'owner> SuspenseContext<'owner> {
+    pub fn new(owner: OwnerAccess<'owner>) -> crate::SilexResult<Self> {
+        let (count, set_count) = owner.signal(0usize)?;
         Ok(Self { count, set_count })
     }
 

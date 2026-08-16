@@ -7,19 +7,19 @@ use silex_dom::prelude::*;
 use silex_macros::component;
 
 #[component]
-fn NoReactiveInputScope<'scope, Ctx>(
+fn NoReactiveInputScope<'owner, Ctx>(
     #[ctx] ctx: Ctx,
-    #[chain] source: Signal<'scope, bool>,
-) -> impl View<'scope> {
+    #[chain] source: Signal<'owner, bool>,
+) -> impl View<'owner> {
     source
 }
 
 fn main() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let source: Signal<'_, bool> = true.into_reactive_input(scope);
-        let error_handler = scope.error_handler(|_| {}).expect("handler");
-        let ctx = SilexContext::new(scope, error_handler.view());
+    runtime.with_transient(|owner| {
+        let source: Signal<'_, bool> = true.into_reactive_input(owner);
+        let error_handler = owner.error_handler(|_| {}).expect("handler");
+        let ctx = SilexContext::new(owner, error_handler.view());
         let _ = NoReactiveInputScope(ctx)
             .source(source)
             .source(true);

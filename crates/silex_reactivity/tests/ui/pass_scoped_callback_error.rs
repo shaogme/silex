@@ -11,7 +11,7 @@ struct UserError<'a> {
 fn main() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
         let text = String::from("scoped callback");
         let calls = Rc::new(Cell::new(0));
         let calls_in_callback = calls.clone();
@@ -35,6 +35,7 @@ fn main() {
             }
             CallbackInvokeError::Runtime(_) => panic!("expected a user error"),
             CallbackInvokeError::Handler(_) => panic!("expected a user error"),
+            CallbackInvokeError::Close(_) => panic!("expected a user error"),
         }
         })
         .expect("child scope should complete");

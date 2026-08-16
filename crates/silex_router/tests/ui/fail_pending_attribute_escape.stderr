@@ -1,11 +1,11 @@
 error: lifetime may not live long enough
   --> tests/ui/fail_pending_attribute_escape.rs:10:9
    |
- 8 |       let attribute = runtime.child(|scope| {
-   |                                      ------ return type of closure is AttrOp<'2>
-   |                                      |
-   |                                      has type `silex_core::Scope<'1>`
- 9 |           let (value, _) = scope.signal(1_i32).expect("value signal should be created");
+ 8 |       let attribute = runtime.with_transient(|owner| {
+   |                                               ------ return type of closure is AttrOp<'2>
+   |                                               |
+   |                                               has type `OwnerAccess<'1>`
+ 9 |           let (value, _) = owner.signal(1_i32).expect("value signal should be created");
 10 | /         PendingAttribute::new_scoped(move |_, _, _| {
 11 | |             let _ = value.get();
 12 | |             Ok(())

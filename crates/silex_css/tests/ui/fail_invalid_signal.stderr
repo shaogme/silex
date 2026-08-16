@@ -1,7 +1,7 @@
 error[E0277]: 类型 `Hex` 无法作为有效的 CSS `BorderTopWidth` 属性值使用
   --> tests/ui/fail_invalid_signal.rs:15:93
    |
-15 |         let _ = Style::new(SilexContext::new(scope, error_handler.view())).border_top_width(color_sig);
+15 |         let _ = Style::new(SilexContext::new(owner, error_handler.view())).border_top_width(color_sig);
    |                                                                            ---------------- ^^^^^^^^^ 无效的 CSS 属性类型
    |                                                                            |
    |                                                                            required by a bound introduced by this call

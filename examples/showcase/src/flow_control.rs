@@ -5,13 +5,13 @@ use silex::prelude::*;
 
 #[component]
 pub fn ListDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
-    let (list, set_list) = scope.signal(Ok(vec![
+    let (list, set_list) = owner.signal(Ok(vec![
         Cow::Borrowed("Apple"),
         Cow::Borrowed("Banana"),
         Cow::Borrowed("Cherry"),
     ]))?;
-    let (error_msg, set_error_msg) = scope.signal(None::<String>)?;
-    let list_error_handler = scope.error_handler(move |err: SilexError| {
+    let (error_msg, set_error_msg) = owner.signal(None::<String>)?;
+    let list_error_handler = owner.error_handler(move |err: SilexError| {
         let _ = set_error_msg.set(Some(format!("捕获到错误: {}", err)));
     })?;
 
@@ -19,7 +19,7 @@ pub fn ListDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
         h3("List Rendering with Error Handling"),
         p("Demonstrates explicit error handling in For component to avoid crashes."),
         // Error display
-        Show(ctx, error_msg.map(scope, |e| e.is_some(), error_handler)?,)
+        Show(ctx, error_msg.map(owner, |e| e.is_some(), error_handler)?,)
             .children(
                 div(rx!(ctx; $error_msg.clone().unwrap_or_default())).style(
                     sty(ctx)
@@ -71,7 +71,7 @@ pub fn ListDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
 
 #[component]
 pub fn ShowDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
-    let (visible, set_visible) = scope.signal(true)?;
+    let (visible, set_visible) = owner.signal(true)?;
 
     Ok(div![
         h3("Conditional Rendering with Show"),
@@ -100,7 +100,7 @@ pub fn ShowDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
 
 #[component]
 pub fn DynamicDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
-    let (mode, set_mode) = scope.signal("A")?;
+    let (mode, set_mode) = owner.signal("A")?;
 
     Ok(div![
         h3("Dynamic Component Switching"),
@@ -120,7 +120,7 @@ pub fn DynamicDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
         Dynamic(
             ctx,
             mode.map(
-                scope,
+                owner,
                 move |m| {
                     Ok(view_match!(*m, {
                         "A" => div("🅰️ Component A")
@@ -140,7 +140,7 @@ pub fn DynamicDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
 
 #[component]
 pub fn SwitchDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
-    let (tab, set_tab) = scope.signal(0)?;
+    let (tab, set_tab) = owner.signal(0)?;
 
     let switch = Switch(ctx, tab)
         .fallback(div("Fallback (Should not happen)"))
@@ -186,7 +186,7 @@ pub fn SwitchDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
 
 #[component]
 pub fn IndexDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
-    let (items, set_items) = scope.signal(vec!["Item A", "Item B", "Item C"])?;
+    let (items, set_items) = owner.signal(vec!["Item A", "Item B", "Item C"])?;
 
     Ok(div![
         h3("Index For Loop Demo"),
@@ -205,7 +205,7 @@ pub fn IndexDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
 
 #[component]
 pub fn PortalDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
-    let (show_modal, set_show_modal) = scope.signal(false)?;
+    let (show_modal, set_show_modal) = owner.signal(false)?;
 
     Ok(div![
         h3("Portal Demo"),

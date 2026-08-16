@@ -2,7 +2,7 @@ use silex_core::{Mutation, Runtime};
 
 fn main() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let _ = Mutation::new(scope, |_: u32| async { Ok::<u32, ()>(1) });
+    runtime.with_transient(|owner| {
+        let _ = Mutation::new(owner, |_: u32| async { Ok::<u32, ()>(1) });
     });
 }

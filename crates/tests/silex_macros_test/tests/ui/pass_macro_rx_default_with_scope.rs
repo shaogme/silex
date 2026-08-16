@@ -7,43 +7,43 @@ use silex_dom::prelude::*;
 use silex_macros::component;
 
 #[component]
-fn RxDefaultWithScope<'scope, Ctx>(
+fn RxDefaultWithScope<'owner, Ctx>(
     #[ctx] ctx: Ctx,
-    children: AnyView<'scope>,
-    #[chain(default)] signal: Signal<'scope, i32>,
-    #[chain(default)] read: ReadSignal<'scope, i32>,
-    #[chain(default)] rw: RwSignal<'scope, i32>,
-    #[chain(default)] memo: Memo<'scope, i32>,
-    #[chain(default)] stored: StoredValue<'scope, i32>,
-    #[chain(default)] rx: Rx<'scope, i32>,
-    #[chain(default)] callback: Callback<'scope, ()>,
-    #[chain(default)] node_ref: NodeRef<'scope, String>,
-) -> impl View<'scope> {
+    children: AnyView<'owner>,
+    #[chain(default)] signal: Signal<'owner, i32>,
+    #[chain(default)] read: ReadSignal<'owner, i32>,
+    #[chain(default)] rw: RwSignal<'owner, i32>,
+    #[chain(default)] computed: Computed<'owner, i32>,
+    #[chain(default)] stored: StoredValue<'owner, i32>,
+    #[chain(default)] rx: Rx<'owner, i32>,
+    #[chain(default)] callback: Callback<'owner, ()>,
+    #[chain(default)] node_ref: NodeRef<'owner, String>,
+) -> impl View<'owner> {
     let _ = (
-        scope, signal, read, rw, memo, stored, rx, callback, node_ref,
+        owner, signal, read, rw, computed, stored, rx, callback, node_ref,
     );
     children
 }
 
 #[component]
-fn RxDefaultExplicit<'scope, Ctx>(
+fn RxDefaultExplicit<'owner, Ctx>(
     #[ctx] ctx: Ctx,
-    children: AnyView<'scope>,
+    children: AnyView<'owner>,
     #[prop(into)]
     #[chain(default = "column")]
-    direction: Signal<'scope, String>,
-) -> impl View<'scope> {
+    direction: Signal<'owner, String>,
+) -> impl View<'owner> {
     let _ = direction;
-    let _ = scope;
+    let _ = owner;
     children
 }
 
 #[component]
-fn OptionalRxDefault<'scope, Ctx>(
-    children: AnyView<'scope>,
+fn OptionalRxDefault<'owner, Ctx>(
+    children: AnyView<'owner>,
     #[ctx] ctx: Ctx,
-    #[chain(default)] value: Option<Signal<'scope, i32>>,
-) -> impl View<'scope> {
+    #[chain(default)] value: Option<Signal<'owner, i32>>,
+) -> impl View<'owner> {
     let _ = value;
     children
 }

@@ -1,5 +1,5 @@
 use super::SilexError;
-use silex_reactivity::{CleanupDiagnostic, CleanupError};
+use silex_reactivity::{CleanupDiagnostic, CloseError};
 use std::{fmt, rc::Rc};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -9,26 +9,61 @@ pub enum CleanupOrigin {
     MountBoundary,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct CleanupFailure {
     pub origin: CleanupOrigin,
-    pub error: CleanupError,
+    pub error: CloseError,
 }
 
 impl CleanupFailure {
-    pub fn new(origin: CleanupOrigin, error: CleanupError) -> Self {
+    pub fn new(origin: CleanupOrigin, error: CloseError) -> Self {
         Self { origin, error }
     }
 
-    pub fn into_parts(self) -> (CleanupOrigin, CleanupError) {
+    pub fn into_parts(self) -> (CleanupOrigin, CloseError) {
         (self.origin, self.error)
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct CleanupReport {
     cleanup_failures: Vec<CleanupFailure>,
     boundary_errors: Vec<SilexError>,
+}
+
+/// Structured result of a failed mount rollback.
+#[derive(Clone, Debug)]
+pub struct RollbackError {
+    primary: SilexError,
+    cleanup_failures: Vec<CleanupFailure>,
+    boundary_failures: Vec<SilexError>,
+}
+
+impl RollbackError {
+    pub fn new(primary: SilexError, report: CleanupReport) -> Self {
+        let (cleanup_failures, boundary_failures) = report.into_parts();
+        Self {
+            primary,
+            cleanup_failures,
+            boundary_failures,
+        }
+    }
+
+    pub fn primary(&self) -> &SilexError {
+        &self.primary
+    }
+
+    pub fn cleanup_failures(&self) -> &[CleanupFailure] {
+        &self.cleanup_failures
+    }
+
+    pub fn boundary_failures(&self) -> &[SilexError] {
+        &self.boundary_failures
+    }
+
+    pub fn into_parts(self) -> (SilexError, Vec<CleanupFailure>, Vec<SilexError>) {
+        (self.primary, self.cleanup_failures, self.boundary_failures)
+    }
 }
 
 impl CleanupReport {
@@ -96,11 +131,26 @@ impl MountError {
         }
     }
 
+    /// Create a terminal mount error while retaining the rollback report.
+    pub fn poisoned_with_report(primary: SilexError, rollback: CleanupReport) -> Self {
+        Self {
+            inner: Box::new(MountErrorInner {
+                primary,
+                rollback,
+                availability: MountAvailability::Poisoned,
+            }),
+        }
+    }
+
     pub fn primary(&self) -> &SilexError {
         &self.inner.primary
     }
     pub fn rollback(&self) -> &CleanupReport {
         &self.inner.rollback
+    }
+
+    pub fn rollback_error(&self) -> RollbackError {
+        RollbackError::new(self.primary().clone(), self.rollback().clone())
     }
     pub fn availability(&self) -> MountAvailability {
         self.inner.availability

@@ -1,7 +1,7 @@
 use crate::{builder::Style, types::*};
 use silex_core::{
-    Memo, ReactiveInput, ReadSignal, RwSignal, Rx, RxFrom, RxValueKind, Scope, Signal, SilexResult,
-    StoredValue,
+    Computed, OwnerAccess, ReactiveInput, ReadSignal, RwSignal, Rx, RxFrom, RxValueKind, Signal,
+    SilexResult, StoredValue,
 };
 use std::{borrow::Cow, fmt::Display};
 
@@ -297,7 +297,7 @@ macro_rules! impl_css_source_for_node {
     };
 }
 
-impl_css_source_for_node!(ReadSignal, RwSignal, Signal, Memo, StoredValue);
+impl_css_source_for_node!(ReadSignal, RwSignal, Signal, Computed, StoredValue);
 
 macro_rules! impl_reactive_input_for_keyword {
     ($($ty:ident),* $(,)?) => {
@@ -305,9 +305,9 @@ macro_rules! impl_reactive_input_for_keyword {
             impl<'scope> ReactiveInput<'scope, Signal<'scope, $ty>> for $ty {
                 fn into_reactive_input(
                     self,
-                    scope: Scope<'scope>,
+                    owner: OwnerAccess<'scope>,
                 ) -> SilexResult<Signal<'scope, $ty>> {
-                    <Signal<'scope, $ty> as RxFrom<'scope>>::rx_from(scope, self)
+                    <Signal<'scope, $ty> as RxFrom<'scope>>::rx_from(owner, self)
                 }
             }
         )*
@@ -319,8 +319,8 @@ crate::register_generated_keywords!(impl_reactive_input_for_keyword);
 impl<'scope> ReactiveInput<'scope, Signal<'scope, Style<'scope>>> for Style<'scope> {
     fn into_reactive_input(
         self,
-        scope: Scope<'scope>,
+        owner: OwnerAccess<'scope>,
     ) -> SilexResult<Signal<'scope, Style<'scope>>> {
-        <Signal<'scope, Style<'scope>> as RxFrom<'scope>>::rx_from(scope, self)
+        <Signal<'scope, Style<'scope>> as RxFrom<'scope>>::rx_from(owner, self)
     }
 }

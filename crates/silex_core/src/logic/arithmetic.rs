@@ -1,4 +1,4 @@
-use crate::{ErrorHandlerInput, Memo, Rx, RxValueKind, SilexResult, reactivity::ReactiveSource};
+use crate::{ErrorHandlerInput, Rx, RxValueKind, SilexResult, reactivity::ReactiveSource};
 use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Not, Rem, Shl, Shr, Sub};
 
 macro_rules! binary_method {
@@ -85,15 +85,15 @@ where
     H: ErrorHandlerInput<'scope>,
 {
     let error_handler = error_handler.handler_ref();
-    let scope = left.scope();
+    let owner = left.owner();
     let right = right.into_promotion_plan();
-    let right = right.materialize(scope, error_handler)?;
-    scope
-        .memo(
-            move |_| left.with(|left| right.with(|right| op(left, right)))?,
+    let right = right.materialize(owner, error_handler)?;
+    owner
+        .computed(
+            move || left.with(|left| right.with(|right| op(left, right)))?,
             error_handler,
         )
-        .map(Memo::into_rx)
+        .map(crate::Computed::into_rx)
 }
 
 fn unary_op<'scope, T, H>(
@@ -106,10 +106,10 @@ where
     H: ErrorHandlerInput<'scope>,
 {
     let error_handler = error_handler.handler_ref();
-    let scope = value.scope();
-    scope
-        .memo(move |_| value.with(op), error_handler)
-        .map(Memo::into_rx)
+    let owner = value.owner();
+    owner
+        .computed(move || value.with(op), error_handler)
+        .map(crate::Computed::into_rx)
 }
 
 impl<'scope, T> Rx<'scope, T, RxValueKind> {

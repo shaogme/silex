@@ -1,12 +1,12 @@
 use silex_core::{
-    ErrorHandlerToken, ReadSignal, Runtime, Scope, SilexError, SilexResult, batch_read,
+    ErrorHandlerToken, OwnerAccess, ReadSignal, Runtime, SilexError, SilexResult, batch_read,
     batch_read_untracked,
 };
 use std::cell::Cell;
 use std::rc::Rc;
 
-fn handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope> {
-    scope
+fn handler<'owner>(owner: OwnerAccess<'owner>) -> ErrorHandlerToken<'owner> {
+    owner
         .error_handler(|_| {})
         .expect("error handler registration")
 }
@@ -21,12 +21,12 @@ fn batch_read_tracks_every_source_and_reads_values_in_order() {
     let runs = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
-            let (first, set_first) = scope.signal(1_i32).expect("first signal");
-            let (second, set_second) = scope.signal(2_i32).expect("second signal");
+        .with_transient(|owner| {
+            let (first, set_first) = owner.signal(1_i32).expect("first signal");
+            let (second, set_second) = owner.signal(2_i32).expect("second signal");
             let runs_in_effect = runs.clone();
 
-            scope
+            owner
                 .effect(
                     move || {
                         let expected = 3 * (runs_in_effect.get() + 1);
@@ -34,7 +34,7 @@ fn batch_read_tracks_every_source_and_reads_values_in_order() {
                         runs_in_effect.set(runs_in_effect.get() + 1);
                         Ok(())
                     },
-                    handler(scope),
+                    handler(owner),
                 )
                 .expect("effect should initialize");
 
@@ -53,16 +53,16 @@ fn batch_read_tracks_parent_sources_inside_a_child_callback() {
     let runs = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
-            let (first, set_first) = scope.signal(1_i32).expect("first signal");
-            let (second, set_second) = scope.signal(2_i32).expect("second signal");
+        .with_transient(|owner| {
+            let (first, set_first) = owner.signal(1_i32).expect("first signal");
+            let (second, set_second) = owner.signal(2_i32).expect("second signal");
             let runs_in_effect = runs.clone();
 
-            scope
+            owner
                 .effect(
                     move || {
-                        scope
-                            .child(|_| {
+                        owner
+                            .with_transient(|_| {
                                 let expected = 3 * (runs_in_effect.get() + 1);
                                 assert_eq!(read_pair(&first, &second)?, expected);
                                 Ok::<(), SilexError>(())
@@ -71,7 +71,7 @@ fn batch_read_tracks_parent_sources_inside_a_child_callback() {
                         runs_in_effect.set(runs_in_effect.get() + 1);
                         Ok(())
                     },
-                    handler(scope),
+                    handler(owner),
                 )
                 .expect("effect should initialize");
 
@@ -90,12 +90,12 @@ fn batch_read_untracked_does_not_subscribe_its_sources() {
     let runs = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
-            let (first, set_first) = scope.signal(1_i32).expect("first signal");
-            let (second, set_second) = scope.signal(2_i32).expect("second signal");
+        .with_transient(|owner| {
+            let (first, set_first) = owner.signal(1_i32).expect("first signal");
+            let (second, set_second) = owner.signal(2_i32).expect("second signal");
             let runs_in_effect = runs.clone();
 
-            scope
+            owner
                 .effect(
                     move || {
                         let sum = batch_read_untracked!(first, second =>
@@ -105,7 +105,7 @@ fn batch_read_untracked_does_not_subscribe_its_sources() {
                         runs_in_effect.set(runs_in_effect.get() + 1);
                         Ok(())
                     },
-                    handler(scope),
+                    handler(owner),
                 )
                 .expect("effect should initialize");
 
@@ -123,15 +123,15 @@ fn batch_read_untracked_keeps_nested_reads_tracked() {
     let runs = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|owner| {
             let (untracked_source, set_untracked_source) =
-                scope.signal(1_i32).expect("untracked source");
-            let (tracked_source, set_tracked_source) = scope.signal(2_i32).expect("tracked source");
+                owner.signal(1_i32).expect("untracked source");
+            let (tracked_source, set_tracked_source) = owner.signal(2_i32).expect("tracked source");
             let runs_in_effect = runs.clone();
             let seen = Rc::new(Cell::new(0));
             let seen_in_effect = seen.clone();
 
-            scope
+            owner
                 .effect(
                     move || {
                         batch_read_untracked!(untracked_source => |value: i32| {
@@ -143,7 +143,7 @@ fn batch_read_untracked_keeps_nested_reads_tracked() {
                         runs_in_effect.set(runs_in_effect.get() + 1);
                         Ok(())
                     },
-                    handler(scope),
+                    handler(owner),
                 )
                 .expect("effect should initialize");
 

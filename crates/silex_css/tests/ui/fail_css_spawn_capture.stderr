@@ -1,16 +1,16 @@
 error[E0521]: borrowed data escapes outside of closure
   --> tests/ui/fail_css_spawn_capture.rs:18:9
    |
- 8 |     runtime.child(|scope| {
-   |                    -----
-   |                    |
-   |                    `scope` is a reference that is only valid in the closure body
-   |                    has type `silex_core::Scope<'1>`
+ 8 |     runtime.with_transient(|owner| {
+   |                             -----
+   |                             |
+   |                             `owner` is a reference that is only valid in the closure body
+   |                             has type `OwnerAccess<'1>`
 ...
 18 |         require_static(style);
    |         ^^^^^^^^^^^^^^^^^^^^^
    |         |
-   |         `scope` escapes the closure body here
+   |         `owner` escapes the closure body here
    |         argument requires that `'1` must outlive `'static`
    |
    = note: requirement occurs because of the type `silex_css::builder::Style<'_>`, which makes the generic argument `'_` invariant

@@ -11,7 +11,7 @@ help: the trait `IntoCssReactive<'_>` is not implemented for `Legacy`
    | ^^^^^^^^^^^^^
    = note: 动态 `$(...)` 不会为静态值创建隐式 Runtime
    = help: the following other types implement trait `IntoCssReactive<'scope>`:
-             Memo<'scope, T>
+             Computed<'scope, T>
              ReadSignal<'scope, T>
              RwSignal<'scope, T>
              Signal<'scope, T>

@@ -15,8 +15,8 @@ impl IntoRx for Legacy {}
 
 fn main() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| -> SilexResult<()> {
-        let error_handler = scope.error_handler(|_| {})?;
+    runtime.with_transient(|owner| -> SilexResult<()> {
+        let error_handler = owner.error_handler(|_| {})?;
         let _ = css!(error_handler; color: $(Legacy::default());)?;
         Ok(())
     });

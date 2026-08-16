@@ -197,7 +197,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
     {
         return Err(syn::Error::new(
             name.span(),
-            "styled! 的动态 CSS 或 variants 必须声明 `<'scope>`；宏不会创建隐式 Runtime。",
+            "styled! 的动态 CSS 或 variants 必须声明显式 owner lifetime；宏不会创建隐式 Runtime。",
         ));
     }
 
@@ -700,12 +700,21 @@ fn has_scope_lifetime(generics: &Generics) -> bool {
 }
 
 fn scope_lifetime(generics: &Generics) -> Option<syn::Lifetime> {
-    generics.params.iter().find_map(|param| match param {
-        syn::GenericParam::Lifetime(lifetime) if lifetime.lifetime.ident == "scope" => {
-            Some(lifetime.lifetime.clone())
-        }
-        _ => None,
-    })
+    generics
+        .params
+        .iter()
+        .find_map(|param| match param {
+            syn::GenericParam::Lifetime(lifetime) if lifetime.lifetime.ident == "owner" => {
+                Some(lifetime.lifetime.clone())
+            }
+            _ => None,
+        })
+        .or_else(|| {
+            generics.params.iter().find_map(|param| match param {
+                syn::GenericParam::Lifetime(lifetime) => Some(lifetime.lifetime.clone()),
+                _ => None,
+            })
+        })
 }
 
 struct ScopeLifetimeVisitor {
@@ -714,9 +723,8 @@ struct ScopeLifetimeVisitor {
 
 impl<'ast> Visit<'ast> for ScopeLifetimeVisitor {
     fn visit_lifetime(&mut self, lifetime: &'ast syn::Lifetime) {
-        if lifetime.ident == "scope" {
-            self.found = true;
-        }
+        let _ = lifetime;
+        self.found = true;
     }
 }
 
@@ -736,10 +744,16 @@ fn styled_scope_lifetime(generics: &Generics) -> syn::Lifetime {
         .params
         .iter()
         .find_map(|param| match param {
-            syn::GenericParam::Lifetime(lifetime) if lifetime.lifetime.ident == "scope" => {
+            syn::GenericParam::Lifetime(lifetime) if lifetime.lifetime.ident == "owner" => {
                 Some(lifetime.lifetime.clone())
             }
             _ => None,
+        })
+        .or_else(|| {
+            generics.params.iter().find_map(|param| match param {
+                syn::GenericParam::Lifetime(lifetime) => Some(lifetime.lifetime.clone()),
+                _ => None,
+            })
         })
         .unwrap_or_else(|| syn::Lifetime::new("'static", Span::call_site()))
 }
@@ -763,7 +777,7 @@ fn normalize_scoped_type(ty: &mut Type, scope: &syn::Lifetime) {
     let name = segment.ident.to_string();
     let needs_lifetime = matches!(
         name.as_str(),
-        "AnyView" | "Rx" | "Signal" | "ReadSignal" | "RwSignal" | "Memo" | "StoredValue"
+        "AnyView" | "Rx" | "Signal" | "ReadSignal" | "RwSignal" | "Computed" | "StoredValue"
     );
     if !needs_lifetime {
         return;
@@ -890,13 +904,13 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
     let scope = scope_lifetime(&generics).ok_or_else(|| {
         syn::Error::new(
             c_name.span(),
-            "global! requires an explicit `<'scope>` lifetime parameter.",
+            "global! requires an explicit owner lifetime parameter.",
         )
     })?;
     if !has_scope_parameter(&params) {
         return Err(syn::Error::new(
             c_name.span(),
-            "global! requires an explicit parameter bound to 'scope; use `scope: Scope<'scope>` or a scoped source parameter.",
+            "global! requires an explicit parameter bound to the owner lifetime; use `owner: OwnerAccess<'owner>` or an owner-bound source parameter.",
         ));
     }
     let res = CssCompiler::compile_global(css_block, c_name.span(), is_unsafe)?;
@@ -1321,7 +1335,7 @@ mod tests {
     #[test]
     fn explicit_visibility_and_name_are_preserved() {
         let input = quote::quote! {
-            pub(crate) GlobalStyles<'scope>(scope: Scope<'scope>) {
+            pub(crate) GlobalStyles<'owner>(owner: OwnerAccess<'owner>) {
                 body { color: red; }
             }
         };
@@ -1333,14 +1347,14 @@ mod tests {
         let code = global_impl(input).unwrap().to_string();
         assert!(code.contains("GlobalStyles"), "{code}");
         assert!(code.contains("pub (crate) fn"), "{code}");
-        assert!(code.contains("'scope"), "{code}");
+        assert!(code.contains("'owner"), "{code}");
         assert!(!code.contains("'static"), "{code}");
     }
 
     #[test]
-    fn global_requires_scope_lifetime_and_parameter_binding() {
+    fn global_requires_owner_lifetime_and_parameter_binding() {
         let missing_lifetime = quote::quote! {
-            pub Global(scope: Scope<'scope>) {
+            pub Global(owner: OwnerAccess<'owner>) {
                 body { color: red; }
             }
         };
@@ -1348,10 +1362,10 @@ mod tests {
             Ok(_) => panic!("a global without an explicit scope lifetime must be rejected"),
             Err(error) => error,
         };
-        assert!(error.to_string().contains("explicit `<'scope>` lifetime"));
+        assert!(error.to_string().contains("explicit owner lifetime"));
 
         let missing_parameter = quote::quote! {
-            pub Global<'scope> {
+            pub Global<'owner> {
                 body { color: red; }
             }
         };
@@ -1359,6 +1373,10 @@ mod tests {
             Ok(_) => panic!("a global without a scoped parameter must be rejected"),
             Err(error) => error,
         };
-        assert!(error.to_string().contains("parameter bound to 'scope"));
+        assert!(
+            error
+                .to_string()
+                .contains("parameter bound to the owner lifetime")
+        );
     }
 }

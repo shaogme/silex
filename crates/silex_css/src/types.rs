@@ -442,11 +442,11 @@ mod tests {
     {
         let mut runtime = Runtime::new();
         runtime
-            .child(|scope| {
-                let error_handler = scope
+            .with_transient(|owner| {
+                let error_handler = owner
                     .error_handler(|_| {})
                     .expect("test error handler should register");
-                f(SilexContext::new(scope, error_handler.view()))
+                f(SilexContext::new(owner, error_handler.view()))
             })
             .expect("test ctx should initialize")
     }

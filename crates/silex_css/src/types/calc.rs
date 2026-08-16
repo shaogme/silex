@@ -489,11 +489,11 @@ mod tests {
         use crate::types::units::{pct, rem, vw};
         let mut runtime = Runtime::new();
         runtime
-            .child(|scope| {
-                let error_handler = scope
+            .with_transient(|owner| {
+                let error_handler = owner
                     .error_handler(|_| {})
                     .expect("test error handler should register");
-                let css = Style::new(SilexContext::new(scope, error_handler.view()))
+                let css = Style::new(SilexContext::new(owner, error_handler.view()))
                     .width(css_min!(px(600), pct(100)))
                     .expect("width should build")
                     .font_size(css_max!(rem(1), vw(4)))

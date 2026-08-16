@@ -6,16 +6,16 @@ fn copy_value<T: Copy>(value: T) -> T {
 
 fn main() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
+    runtime.with_transient(|owner| {
         let mutation = Mutation::new(
-            scope,
+            owner,
             |_: String| async { Ok::<String, String>(String::new()) },
-            scope
+            owner
                 .error_handler(|_: SilexError| {})
                 .expect("handler should register"),
         )
         .expect("mutation should initialize");
         let copied = copy_value(mutation);
         let _ = (mutation, copied);
-    }).expect("child scope should initialize");
+    }).expect("child owner should initialize");
 }

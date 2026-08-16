@@ -1,11 +1,11 @@
-use silex_reactivity::{ComputationInitError, ErrorHandlerToken, Runtime, Scope};
+use silex_reactivity::{ComputationInitError, ErrorHandlerToken, OwnerAccess, Runtime};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
 };
 
 fn collecting_handler<'scope>(
-    scope: Scope<'scope>,
+    scope: OwnerAccess<'scope>,
     errors: Rc<RefCell<Vec<&'static str>>>,
 ) -> ErrorHandlerToken<'scope, &'static str> {
     scope
@@ -21,7 +21,7 @@ fn initial_callback_error_returns_without_calling_the_handler() {
     let callback_runs = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(0_i32).expect("fallible reactive creation");
             let cleanup_runs_in_callback = cleanup_runs.clone();
             let callback_runs_in_callback = callback_runs.clone();
@@ -67,7 +67,7 @@ fn initial_failure_does_not_reenter_from_rollback_cleanup() {
     let register_cleanup = Rc::new(Cell::new(true));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(0_i32).expect("fallible reactive creation");
             let callback_runs_in_callback = callback_runs.clone();
             let register_cleanup_in_callback = register_cleanup.clone();
@@ -113,7 +113,7 @@ fn nested_node_cleanup_errors_wait_for_outer_run_recovery() {
     let first_run = Rc::new(Cell::new(true));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(0_i32).expect("fallible reactive creation");
             let registered_cleanup_runs_in_handler = registered_cleanup_runs.clone();
             let scope_in_handler = scope;
@@ -190,7 +190,7 @@ fn deferred_callback_error_reaches_its_handler_and_can_retry() {
     let should_fail = Rc::new(Cell::new(false));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(0_i32).expect("fallible reactive creation");
             let callback_runs_in_callback = callback_runs.clone();
             let should_fail_in_callback = should_fail.clone();
@@ -231,7 +231,7 @@ fn failed_dynamic_run_rolls_back_new_dependency_edges() {
     let fail_next = Rc::new(Cell::new(false));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (switch, set_switch) = scope.signal(false).expect("fallible reactive creation");
             let (left, set_left) = scope.signal(0_i32).expect("fallible reactive creation");
             let (right, set_right) = scope.signal(0_i32).expect("fallible reactive creation");
@@ -278,7 +278,7 @@ fn previous_value_is_kept_when_a_run_returns_an_error() {
     let fail_next = Rc::new(Cell::new(false));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(0_i32).expect("fallible reactive creation");
             let previous_values_in_callback = previous_values.clone();
             let fail_next_in_callback = fail_next.clone();
@@ -319,7 +319,7 @@ fn watch_error_keeps_the_previous_snapshot_for_retry() {
     let fail_next = Rc::new(Cell::new(false));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (source, set_source) = scope.signal(0_i32).expect("fallible reactive creation");
             let calls_in_callback = calls.clone();
             let fail_next_in_callback = fail_next.clone();
@@ -356,7 +356,7 @@ fn cleanup_errors_do_not_skip_the_remaining_cleanup_batch() {
     let second_cleanup_ran = Rc::new(Cell::new(false));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             scope
                 .on_cleanup(|| Err("cleanup"), collecting_handler(scope, errors.clone()))
                 .expect("cleanup should register");
@@ -383,7 +383,7 @@ fn final_cleanup_error_dispatch_can_access_a_stored_value() {
     let observed = Rc::new(Cell::new(0));
 
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let stored = scope.stored(1_i32).expect("fallible reactive creation");
             let observed_in_handler = observed.clone();
             let handler = scope

@@ -138,10 +138,14 @@ pub fn Link<'scope, T: ToRoute + Clone + 'scope>(
             let href_for_rx = href.clone();
             let class_name = active_class.clone();
 
-            let is_active = silex_core::rx!(router_ctx; {
-                let current_path = $path_signal;
-                is_active_path(current_path, &href_for_rx)
-            });
+            let is_active = router_ctx.owner().computed(
+                move || {
+                    let current_path = path_signal.get()?;
+                    Ok(is_active_path(&current_path, &href_for_rx))
+                },
+                router_ctx.error_reporter(),
+            )?;
+            let is_active = is_active.into_rx();
             Some((class_name, is_active))
         } else {
             None

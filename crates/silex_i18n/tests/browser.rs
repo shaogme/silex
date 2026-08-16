@@ -1,8 +1,8 @@
 #![cfg(all(target_arch = "wasm32", feature = "browser-tests"))]
 
 use gloo_timers::future::TimeoutFuture;
-use silex_core::{ErrorHandlerToken, Runtime, Scope, SilexContext};
-use silex_dom::view::{ScopedMountOwner, View};
+use silex_core::{ErrorHandlerToken, OwnerAccess, Runtime, SilexContext};
+use silex_dom::view::{MountOwnerToken, View};
 use silex_i18n::{Catalog, I18nBuilder, Locale, detect_browser_locale, t};
 #[cfg(feature = "intl")]
 use silex_i18n::{DateTimeFormat, format_number};
@@ -15,15 +15,15 @@ use web_sys::window;
 
 wasm_bindgen_test_configure!(run_in_browser);
 
-fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope> {
-    scope.error_handler(|_| {}).expect("error handler")
+fn test_handler<'owner>(owner: OwnerAccess<'owner>) -> ErrorHandlerToken<'owner> {
+    owner.error_handler(|_| {}).expect("error handler")
 }
 
-fn test_owner<'scope>(
-    scope: Scope<'scope>,
-) -> (ScopedMountOwner<'scope>, ErrorHandlerToken<'scope>) {
-    let error_handler = test_handler(scope);
-    (ScopedMountOwner::new(scope), error_handler)
+fn test_owner<'owner>(
+    owner: OwnerAccess<'owner>,
+) -> (MountOwnerToken<'owner>, ErrorHandlerToken<'owner>) {
+    let error_handler = test_handler(owner);
+    (MountOwnerToken::new(owner), error_handler)
 }
 
 #[cfg(feature = "persist")]
@@ -31,12 +31,12 @@ const BINDING_KEY: &str = "silex-i18n-wasm-binding";
 #[cfg(feature = "persist")]
 const EVENT_KEY: &str = "silex-i18n-wasm-storage-event";
 
-fn store<'scope>(
-    scope: silex_core::Scope<'scope>,
+fn store<'owner>(
+    owner: silex_core::OwnerAccess<'owner>,
     locale: &str,
-) -> (silex_i18n::I18nStore<'scope>, ErrorHandlerToken<'scope>) {
-    let handler = test_handler(scope);
-    let store = I18nBuilder::new(scope, handler.view())
+) -> (silex_i18n::I18nStore<'owner>, ErrorHandlerToken<'owner>) {
+    let handler = test_handler(owner);
+    let store = I18nBuilder::new(owner, handler.view())
         .locale(Locale::new(locale).expect("valid locale"))
         .build()
         .expect("valid i18n store");
@@ -58,8 +58,8 @@ fn restore_attribute(root: &web_sys::Element, name: &str, value: Option<&str>) {
 #[wasm_bindgen_test]
 fn local_storage_binding_round_trips_locale() {
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root scope");
-    root.with_scope(|scope| {
+    let root = runtime.owner().expect("root owner");
+    root.with_access(|owner| {
         let storage = window()
             .expect("window")
             .local_storage()
@@ -67,7 +67,7 @@ fn local_storage_binding_round_trips_locale() {
             .expect("localStorage available");
         storage.remove_item(BINDING_KEY).expect("clear test key");
 
-        let binding = silex_i18n::Persistent::builder(scope, BINDING_KEY, test_handler(scope))
+        let binding = silex_i18n::Persistent::builder(owner, BINDING_KEY, test_handler(owner))
             .local()
             .parse::<Locale>()
             .default(Locale::new("en-US").expect("valid locale"))
@@ -78,8 +78,8 @@ fn local_storage_binding_round_trips_locale() {
             .expect("binding update");
         binding.flush().expect("persist initial locale");
 
-        let handler = test_handler(scope);
-        let i18n = I18nBuilder::new(scope, handler.view())
+        let handler = test_handler(owner);
+        let i18n = I18nBuilder::new(owner, handler.view())
             .locale(Locale::new("en-US").expect("valid locale"))
             .locale_binding(binding)
             .build()
@@ -104,15 +104,15 @@ fn local_storage_binding_round_trips_locale() {
 
         storage.remove_item(BINDING_KEY).expect("cleanup test key");
     });
-    root.dispose().expect("root cleanup");
+    root.close().expect("root cleanup");
 }
 
 #[cfg(feature = "persist")]
 #[wasm_bindgen_test]
 fn storage_event_updates_all_locale_bindings() {
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root scope");
-    root.with_scope(|scope| {
+    let root = runtime.owner().expect("root owner");
+    root.with_access(|owner| {
         let window = window().expect("window");
         let storage = window
             .local_storage()
@@ -120,13 +120,13 @@ fn storage_event_updates_all_locale_bindings() {
             .expect("localStorage available");
         storage.remove_item(EVENT_KEY).expect("clear test key");
 
-        let first = silex_i18n::Persistent::builder(scope, EVENT_KEY, test_handler(scope))
+        let first = silex_i18n::Persistent::builder(owner, EVENT_KEY, test_handler(owner))
             .local()
             .parse::<Locale>()
             .default(Locale::new("en-US").expect("valid locale"))
             .build()
             .expect("first locale binding");
-        let second = silex_i18n::Persistent::builder(scope, EVENT_KEY, test_handler(scope))
+        let second = silex_i18n::Persistent::builder(owner, EVENT_KEY, test_handler(owner))
             .local()
             .parse::<Locale>()
             .default(Locale::new("en-US").expect("valid locale"))
@@ -159,22 +159,22 @@ fn storage_event_updates_all_locale_bindings() {
         assert_eq!(second.get_untracked().expect("reactive value"), Locale::new("zh-CN").expect("valid locale"));
         storage.remove_item(EVENT_KEY).expect("cleanup test key");
     });
-    root.dispose().expect("root cleanup");
+    root.close().expect("root cleanup");
 }
 
 #[cfg(feature = "persist")]
 #[wasm_bindgen_test]
 fn query_binding_follows_router_search_signal() {
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root scope");
-    root.with_scope(|scope| {
-        let (path, set_path) = scope.signal("/settings".to_string()).expect("path signals");
-        let (search, set_search) = scope
+    let root = runtime.owner().expect("root owner");
+    root.with_access(|owner| {
+        let (path, set_path) = owner.signal("/settings".to_string()).expect("path signals");
+        let (search, set_search) = owner
             .signal("?lang=en-US".to_string())
             .expect("search signals");
-        let context_handler = test_handler(scope);
+        let context_handler = test_handler(owner);
         let ctx = RouterContext::new(
-            SilexContext::new(scope, context_handler.view()),
+            SilexContext::new(owner, context_handler.view()),
             RouterContextProps {
                 base_path: "/".to_string(),
                 path,
@@ -184,7 +184,7 @@ fn query_binding_follows_router_search_signal() {
             },
         )
         .expect("valid router ctx");
-        let binding = silex_i18n::Persistent::builder(scope, "lang", test_handler(scope))
+        let binding = silex_i18n::Persistent::builder(owner, "lang", test_handler(owner))
             .query(ctx)
             .parse::<Locale>()
             .default(Locale::new("en-US").expect("valid locale"))
@@ -203,7 +203,7 @@ fn query_binding_follows_router_search_signal() {
             Locale::new("zh-CN").expect("valid locale")
         );
     });
-    root.dispose().expect("root cleanup");
+    root.close().expect("root cleanup");
 }
 
 #[wasm_bindgen_test]
@@ -217,9 +217,9 @@ fn browser_locale_and_document_metadata_use_real_window() {
     assert!(available.contains(&resolved) || resolved == fallback);
 
     let mut runtime = Runtime::new();
-    let root_handle = runtime.run().expect("root scope");
-    let (old_lang, old_dir) = root_handle.with_scope(|scope| {
-        let (i18n, _handler) = store(scope, "en-US");
+    let root_handle = runtime.owner().expect("root owner");
+    let (old_lang, old_dir) = root_handle.with_access(|owner| {
+        let (i18n, _handler) = store(owner, "en-US");
         let root = window()
             .expect("window")
             .document()
@@ -239,7 +239,7 @@ fn browser_locale_and_document_metadata_use_real_window() {
         assert_eq!(root.get_attribute("dir"), Some("rtl".to_string()));
         (old_lang, old_dir)
     });
-    root_handle.dispose().expect("root cleanup");
+    root_handle.close().expect("root cleanup");
     let document_root = window()
         .expect("window")
         .document()
@@ -253,8 +253,9 @@ fn browser_locale_and_document_metadata_use_real_window() {
 #[wasm_bindgen_test(async)]
 async fn translated_memo_updates_the_existing_text_node() {
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root scope");
-    root.with_scope(|scope| async move {
+    let root = runtime.owner().expect("root owner");
+    let owner = root.access();
+    async move {
         let en = Catalog::from_entries(
             Locale::new("en-US").expect("valid locale"),
             [("title", "English")],
@@ -265,8 +266,8 @@ async fn translated_memo_updates_the_existing_text_node() {
             [("title", "中文")],
         )
         .expect("valid Chinese catalog");
-        let handler = test_handler(scope);
-        let i18n = I18nBuilder::new(scope, handler.view())
+        let handler = test_handler(owner);
+        let i18n = I18nBuilder::new(owner, handler.view())
             .locale(Locale::new("en-US").expect("valid locale"))
             .catalogs([en, zh])
             .build()
@@ -277,7 +278,7 @@ async fn translated_memo_updates_the_existing_text_node() {
             .expect("document")
             .create_element("div")
             .expect("parent element");
-        let (owner, error_handler) = test_owner(scope);
+        let (owner, error_handler) = test_owner(owner);
         let _mount = t!(i18n, "title")
             .expect("translation")
             .mount(&owner, parent.as_ref(), Vec::new(), error_handler.view())
@@ -290,9 +291,9 @@ async fn translated_memo_updates_the_existing_text_node() {
         wait_for_reactivity(0).await;
         assert_eq!(parent.text_content(), Some("中文".to_string()));
         assert_eq!(parent.child_nodes().length(), 1);
-    })
+    }
     .await;
-    root.dispose().expect("root cleanup");
+    root.close().expect("root cleanup");
 }
 
 #[wasm_bindgen_test]
@@ -304,20 +305,20 @@ fn translated_memo_is_removed_when_its_root_is_disposed() {
         .create_element("div")
         .expect("parent element");
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root scope");
-    root.with_scope(|scope| {
+    let root = runtime.owner().expect("root owner");
+    root.with_access(|owner| {
         let catalog = Catalog::from_entries(
             Locale::new("en-US").expect("valid locale"),
             [("title", "English")],
         )
         .expect("valid catalog");
-        let handler = test_handler(scope);
-        let i18n = I18nBuilder::new(scope, handler.view())
+        let handler = test_handler(owner);
+        let i18n = I18nBuilder::new(owner, handler.view())
             .locale(Locale::new("en-US").expect("valid locale"))
             .catalog(catalog)
             .build()
             .expect("valid i18n store");
-        let (owner, error_handler) = test_owner(scope);
+        let (owner, error_handler) = test_owner(owner);
         let _mount = t!(i18n, "title")
             .expect("translation")
             .mount(&owner, parent.as_ref(), Vec::new(), error_handler.view())
@@ -326,7 +327,7 @@ fn translated_memo_is_removed_when_its_root_is_disposed() {
         assert_eq!(parent.child_nodes().length(), 1);
     });
 
-    root.dispose().expect("root cleanup");
+    root.close().expect("root cleanup");
     assert!(parent.first_child().is_none());
 }
 
@@ -339,10 +340,10 @@ fn foreign_translation_source_does_not_mount_or_allocate_foreign_owner_nodes() {
         .create_element("div")
         .expect("parent element");
     let mut target_runtime = Runtime::new();
-    let target_root = target_runtime.run().expect("root scope");
+    let target_root = target_runtime.owner().expect("root owner");
     let mut foreign_runtime = Runtime::new();
-    let foreign_root = foreign_runtime.run().expect("root scope");
-    let target_scope = target_root.scope();
+    let foreign_root = foreign_runtime.owner().expect("root owner");
+    let target_scope = target_root.access();
     let catalog = Catalog::from_entries(
         Locale::new("en-US").expect("valid locale"),
         [("title", "English")],
@@ -355,7 +356,7 @@ fn foreign_translation_source_does_not_mount_or_allocate_foreign_owner_nodes() {
         .build()
         .expect("valid i18n store");
     {
-        let foreign_scope = foreign_root.scope();
+        let foreign_scope = foreign_root.access();
         let translation = t!(i18n, "title").expect("translation");
         let (owner, error_handler) = test_owner(foreign_scope);
         assert!(
@@ -367,8 +368,8 @@ fn foreign_translation_source_does_not_mount_or_allocate_foreign_owner_nodes() {
 
     assert!(parent.first_child().is_none());
     drop(handler);
-    target_root.dispose().expect("target root cleanup");
-    foreign_root.dispose().expect("foreign root cleanup");
+    target_root.close().expect("target root cleanup");
+    foreign_root.close().expect("foreign root cleanup");
 }
 
 #[wasm_bindgen_test]
@@ -383,18 +384,18 @@ fn metadata_owner_cleanup_does_not_overwrite_newer_owner() {
     let old_dir = document_root.get_attribute("dir");
 
     let mut first_runtime = Runtime::new();
-    let first_root = first_runtime.run().expect("root scope");
-    first_root.with_scope(|scope| {
-        let (i18n, _handler) = store(scope, "en-US");
+    let first_root = first_runtime.owner().expect("root owner");
+    first_root.with_access(|owner| {
+        let (i18n, _handler) = store(owner, "en-US");
         let _metadata = i18n
             .sync_document_metadata()
             .expect("metadata effect can be registered");
     });
 
     let mut second_runtime = Runtime::new();
-    let second_root = second_runtime.run().expect("root scope");
-    second_root.with_scope(|scope| {
-        let (i18n, _handler) = store(scope, "zh-CN");
+    let second_root = second_runtime.owner().expect("root owner");
+    second_root.with_access(|owner| {
+        let (i18n, _handler) = store(owner, "zh-CN");
         let _metadata = i18n
             .sync_document_metadata()
             .expect("metadata effect can be registered");
@@ -405,13 +406,13 @@ fn metadata_owner_cleanup_does_not_overwrite_newer_owner() {
         Some("zh-CN".to_string())
     );
     assert_eq!(document_root.get_attribute("dir"), Some("ltr".to_string()));
-    first_root.dispose().expect("first root cleanup");
+    first_root.close().expect("first root cleanup");
     assert_eq!(
         document_root.get_attribute("lang"),
         Some("zh-CN".to_string())
     );
     assert_eq!(document_root.get_attribute("dir"), Some("ltr".to_string()));
-    second_root.dispose().expect("second root cleanup");
+    second_root.close().expect("second root cleanup");
     assert_eq!(document_root.get_attribute("lang"), old_lang);
     assert_eq!(document_root.get_attribute("dir"), old_dir);
 }
@@ -427,9 +428,9 @@ fn metadata_cleanup_preserves_external_attribute_changes() {
     let old_lang = document_root.get_attribute("lang");
     let old_dir = document_root.get_attribute("dir");
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root scope");
-    root.with_scope(|scope| {
-        let (i18n, _handler) = store(scope, "en-US");
+    let root = runtime.owner().expect("root owner");
+    root.with_access(|owner| {
+        let (i18n, _handler) = store(owner, "en-US");
         let _metadata = i18n
             .sync_document_metadata()
             .expect("metadata effect can be registered");
@@ -441,7 +442,7 @@ fn metadata_cleanup_preserves_external_attribute_changes() {
             .expect("set external dir");
     });
 
-    root.dispose().expect("root cleanup");
+    root.close().expect("root cleanup");
     assert_eq!(
         document_root.get_attribute("lang"),
         Some("external".to_string())
@@ -463,9 +464,9 @@ fn metadata_effect_stop_prevents_later_locale_updates() {
         .document_element()
         .expect("document root");
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root scope");
-    root.with_scope(|scope| {
-        let (i18n, _handler) = store(scope, "en-US");
+    let root = runtime.owner().expect("root owner");
+    root.with_access(|owner| {
+        let (i18n, _handler) = store(owner, "en-US");
         let metadata = i18n
             .sync_document_metadata()
             .expect("metadata effect can be registered");
@@ -479,7 +480,7 @@ fn metadata_effect_stop_prevents_later_locale_updates() {
         assert_eq!(document_root.get_attribute("dir"), Some("ltr".to_string()));
     });
 
-    root.dispose().expect("root cleanup");
+    root.close().expect("root cleanup");
 }
 
 #[wasm_bindgen_test]
@@ -494,16 +495,16 @@ fn metadata_owner_reclaims_latest_locale_after_newer_owner_disposes() {
     let old_dir = document_root.get_attribute("dir");
 
     let mut first_runtime = Runtime::new();
-    let first_root = first_runtime.run().expect("root scope");
+    let first_root = first_runtime.owner().expect("root owner");
     let mut second_runtime = Runtime::new();
-    let second_root = second_runtime.run().expect("root scope");
+    let second_root = second_runtime.owner().expect("root owner");
 
-    first_root.with_scope(|first_scope| {
+    first_root.with_access(|first_scope| {
         let (first_i18n, _first_handler) = store(first_scope, "en-US");
         let _first_metadata = first_i18n
             .sync_document_metadata()
             .expect("metadata effect can be registered");
-        second_root.with_scope(|second_scope| {
+        second_root.with_access(|second_scope| {
             let (second_i18n, _second_handler) = store(second_scope, "zh-CN");
             let _second_metadata = second_i18n
                 .sync_document_metadata()
@@ -519,7 +520,7 @@ fn metadata_owner_reclaims_latest_locale_after_newer_owner_disposes() {
             assert_eq!(document_root.get_attribute("dir"), Some("ltr".to_string()));
         });
 
-        second_root.dispose().expect("second root cleanup");
+        second_root.close().expect("second root cleanup");
         assert_eq!(
             document_root.get_attribute("lang"),
             Some("fr-FR".to_string())
@@ -527,7 +528,7 @@ fn metadata_owner_reclaims_latest_locale_after_newer_owner_disposes() {
         assert_eq!(document_root.get_attribute("dir"), Some("ltr".to_string()));
     });
 
-    first_root.dispose().expect("first root cleanup");
+    first_root.close().expect("first root cleanup");
     assert_eq!(document_root.get_attribute("lang"), old_lang);
     assert_eq!(document_root.get_attribute("dir"), old_dir);
 }
@@ -543,9 +544,9 @@ fn metadata_stop_and_scope_cleanup_are_idempotent() {
     let old_lang = document_root.get_attribute("lang");
     let old_dir = document_root.get_attribute("dir");
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root scope");
-    root.with_scope(|scope| {
-        let (i18n, _handler) = store(scope, "en-US");
+    let root = runtime.owner().expect("root owner");
+    root.with_access(|owner| {
+        let (i18n, _handler) = store(owner, "en-US");
         let metadata = i18n
             .sync_document_metadata()
             .expect("metadata effect can be registered");
@@ -558,7 +559,7 @@ fn metadata_stop_and_scope_cleanup_are_idempotent() {
         assert_eq!(document_root.get_attribute("dir"), Some("ltr".to_string()));
     });
 
-    root.dispose().expect("root cleanup");
+    root.close().expect("root cleanup");
     assert_eq!(document_root.get_attribute("lang"), old_lang);
     assert_eq!(document_root.get_attribute("dir"), old_dir);
 }

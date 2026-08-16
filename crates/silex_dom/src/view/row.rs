@@ -1,6 +1,10 @@
-use super::owner::{MountErrorHandler, MountOwner, MountOwnerToken, MountState, OwnedMountOwner};
+use super::dynamic::BranchRenderContext;
+use super::owner::{MountErrorHandler, MountOwner, MountOwnerToken, MountState};
 use crate::attribute::PendingAttribute;
-use silex_core::{OwnedScope, ReactiveError, SilexError, SilexErrorKind, SilexResult};
+use silex_core::{
+    CloseError, ClosePhase, CloseSource, CloseTransaction, PersistentOwnerAccess, ReactiveError,
+    SilexError, SilexErrorKind, SilexResult,
+};
 use std::{
     cell::{Cell, RefCell},
     marker::PhantomData,
@@ -103,6 +107,7 @@ pub(crate) struct RowRenderContext<'scope, T> {
     pub(crate) parent: Node,
     pub(crate) attrs: Vec<PendingAttribute<'scope>>,
     pub(crate) owner: MountOwnerToken<'scope>,
+    pub(crate) branch_context: Option<BranchRenderContext<'scope>>,
     pub(crate) error_handler: MountErrorHandler<'scope>,
     pub(crate) updater: RowUpdater<'scope, T>,
 }
@@ -161,6 +166,11 @@ impl Drop for RangeGuard {
 }
 
 impl NodeRange {
+    pub(crate) fn detached(label: &str) -> Result<Self, SilexError> {
+        let fragment: Node = crate::document().create_document_fragment().into();
+        Self::append(&fragment, label)
+    }
+
     pub(crate) fn append(parent: &Node, label: &str) -> Result<Self, SilexError> {
         let document = crate::document();
         let start: Node = document.create_comment(&format!("{label}-start")).into();
@@ -217,19 +227,18 @@ impl NodeRange {
         }
     }
 
-    pub(crate) fn move_before(&self, reference: &Node) -> SilexResult<()> {
-        let Some(parent) = reference.parent_node() else {
-            return Err(SilexError::fatal(SilexErrorKind::Dom(
-                "cannot move a range before a reference without a parent".to_string(),
-            )));
-        };
-        if self.start.parent_node().as_ref() != Some(&parent)
-            || self.end.parent_node().as_ref() != Some(&parent)
-        {
+    pub(crate) fn append_to(&self, target: &Node) -> SilexResult<()> {
+        let Some(source_parent) = self.start.parent_node() else {
             return Err(SilexError::fatal(SilexErrorKind::Dom(
                 "cannot move a detached row range".to_string(),
             )));
+        };
+        if self.end.parent_node().as_ref() != Some(&source_parent) {
+            return Err(SilexError::fatal(SilexErrorKind::Dom(
+                "cannot move an incomplete row range".to_string(),
+            )));
         }
+
         let mut nodes = Vec::new();
         let mut current = Some(self.start.clone());
         while let Some(node) = current {
@@ -247,9 +256,7 @@ impl NodeRange {
             )));
         }
         for node in nodes {
-            parent
-                .insert_before(&node, Some(reference))
-                .map_err(SilexError::fatal)?;
+            target.append_child(&node).map_err(SilexError::fatal)?;
         }
         Ok(())
     }
@@ -257,9 +264,11 @@ impl NodeRange {
 
 pub(crate) struct RowInstance<'scope, T> {
     range: NodeRange,
-    row_scope: Rc<OwnedScope<'scope>>,
-    render_scope: Option<Rc<OwnedScope<'scope>>>,
-    render_content_scope: Option<MountState<'scope, Option<Rc<OwnedScope<'scope>>>>>,
+    row_scope: MountOwnerToken<'scope>,
+    content_owner: Option<MountOwnerToken<'scope>>,
+    runtime_lease: Option<PersistentOwnerAccess<'scope>>,
+    render_scope: Option<MountOwnerToken<'scope>>,
+    render_content_scope: Option<MountState<'scope, Option<MountOwnerToken<'scope>>>>,
     render_nodes: Option<MountState<'scope, Vec<Node>>>,
     render: RowRenderer<'scope, T>,
     attrs: Vec<PendingAttribute<'scope>>,
@@ -280,6 +289,7 @@ pub(crate) struct RowInstanceConfig<'scope, T> {
     pub(crate) item: T,
     pub(crate) index: usize,
     pub(crate) stateful: bool,
+    pub(crate) branch_runtime: bool,
     pub(crate) error_handler: MountErrorHandler<'scope>,
 }
 
@@ -295,14 +305,23 @@ impl<'scope, T: Clone + 'scope> RowInstance<'scope, T> {
             item,
             index,
             stateful,
+            branch_runtime,
             error_handler,
         } = config;
         let mut range_guard = RangeGuard::new(range.clone());
         let updater = RowUpdater::new();
-        let row_scope = owner.owned_scope()?;
+        let row_scope = owner.child();
+        let (runtime_lease, content_owner) = if branch_runtime {
+            let (lease, content_owner) = row_scope.branch_child()?;
+            (Some(lease), Some(content_owner))
+        } else {
+            (None, None)
+        };
         let mut controller = Self {
             range,
-            row_scope: Rc::new(row_scope),
+            row_scope,
+            content_owner,
+            runtime_lease,
             render_scope: None,
             render_content_scope: None,
             render_nodes: None,
@@ -318,11 +337,15 @@ impl<'scope, T: Clone + 'scope> RowInstance<'scope, T> {
             marker: PhantomData,
         };
         if let Err(error) = controller.mount_render(item, index) {
-            controller.dispose();
+            if let Err(close_error) = controller.dispose() {
+                controller.row_scope.report_close_error(close_error);
+            }
             return Err(error);
         }
         if stateful && !controller.updater.is_active() {
-            controller.dispose();
+            if let Err(close_error) = controller.dispose() {
+                controller.row_scope.report_close_error(close_error);
+            }
             return Err(SilexError::fatal(SilexErrorKind::Framework(
                 "stateful row updater was not bound during initial render".to_string(),
             )));
@@ -366,18 +389,11 @@ impl<'scope, T: Clone + 'scope> RowInstance<'scope, T> {
             .as_ref()
             .and_then(|nodes| nodes.with(Clone::clone).ok())
             .unwrap_or_default();
-        let render_scope = match self.row_scope.child() {
-            Ok(scope) => Rc::new(scope),
-            Err(error) => {
-                self.render_scope = previous_scope;
-                self.render_content_scope = previous_content_scope;
-                return Err(error);
-            }
-        };
-        let render_owner = OwnedMountOwner::new(render_scope.clone());
-        let rendered_nodes = render_owner.owner_state(previous_nodes)?;
-        let rendered_scope = render_owner.owner_state(None::<Rc<OwnedScope<'scope>>>)?;
+        let render_scope = self.row_scope.child();
+        let rendered_nodes = render_scope.owner_state(previous_nodes)?;
+        let rendered_scope = render_scope.owner_state(None::<MountOwnerToken<'scope>>)?;
         let row_scope = self.row_scope.clone();
+        let content_owner = self.content_owner.clone();
         let range = self.range.clone();
         let render = self.render.clone();
         let attrs = self.attrs.clone();
@@ -389,14 +405,13 @@ impl<'scope, T: Clone + 'scope> RowInstance<'scope, T> {
         let render_handler = self.error_handler;
         let registration = catch_unwind(AssertUnwindSafe(|| {
             render_scope.effect(
-                move || -> SilexResult<()> {
+                Box::new(move || -> SilexResult<()> {
                     let old_nodes = rendered_nodes_for_effect.with(Clone::clone)?;
-                    let candidate_scope = match row_scope.child() {
-                        Ok(scope) => Rc::new(scope),
-                        Err(error) => return Err(error),
-                    };
-                    let candidate_owner = OwnedMountOwner::new(candidate_scope.clone());
-                    let candidate_token = candidate_owner.token();
+                    let candidate_scope = content_owner
+                        .as_ref()
+                        .map(MountOwnerToken::child)
+                        .unwrap_or_else(|| row_scope.child());
+                    let candidate_token = candidate_scope.clone();
                     let result = catch_unwind(AssertUnwindSafe(|| -> SilexResult<()> {
                         let fragment = document.create_document_fragment();
                         let fragment_node: Node = fragment.into();
@@ -406,6 +421,13 @@ impl<'scope, T: Clone + 'scope> RowInstance<'scope, T> {
                             parent: fragment_node.clone(),
                             attrs: attrs.clone(),
                             owner: candidate_token,
+                            branch_context: content_owner.as_ref().map(|_| {
+                                BranchRenderContext::new(
+                                    candidate_scope.clone(),
+                                    candidate_scope.runtime_access(),
+                                    error_handler,
+                                )
+                            }),
                             error_handler,
                             updater: updater.clone(),
                         })?;
@@ -432,23 +454,29 @@ impl<'scope, T: Clone + 'scope> RowInstance<'scope, T> {
                                 .replace(Some(candidate_scope))?
                                 .flatten();
                             if let Some(scope) = previous {
-                                dispose_scope_or_resume(scope);
+                                if let Err(error) = close_scope(scope) {
+                                    row_scope.report_close_error(error);
+                                }
                             }
                             Ok(())
                         }
                         Ok(Err(error)) => {
-                            dispose_scope_or_resume(candidate_scope);
+                            if let Err(close_error) = close_scope(candidate_scope) {
+                                row_scope.report_close_error(close_error);
+                            }
                             Err(error)
                         }
                         Err(panic) => {
                             let error = SilexError::fatal(SilexErrorKind::Javascript(
                                 panic_message(&panic, "Row render"),
                             ));
-                            dispose_scope_or_resume(candidate_scope);
+                            if let Err(close_error) = close_scope(candidate_scope) {
+                                row_scope.report_close_error(close_error);
+                            }
                             Err(error)
                         }
                     }
-                },
+                }),
                 render_handler,
             )
         }));
@@ -456,8 +484,12 @@ impl<'scope, T: Clone + 'scope> RowInstance<'scope, T> {
         let registration = match registration {
             Ok(result) => result,
             Err(panic) => {
-                dispose_render_candidate(&rendered_scope);
-                dispose_scope_or_resume(render_scope);
+                if let Err(close_error) = dispose_render_candidate(&rendered_scope) {
+                    self.row_scope.report_close_error(close_error);
+                }
+                if let Err(close_error) = close_scope(render_scope) {
+                    self.row_scope.report_close_error(close_error);
+                }
                 self.render_scope = previous_scope;
                 self.render_content_scope = previous_content_scope;
                 return Err(SilexError::fatal(SilexErrorKind::Javascript(
@@ -466,18 +498,26 @@ impl<'scope, T: Clone + 'scope> RowInstance<'scope, T> {
             }
         };
         if let Err(error) = registration {
-            dispose_render_candidate(&rendered_scope);
-            dispose_scope_or_resume(render_scope);
+            if let Err(close_error) = dispose_render_candidate(&rendered_scope) {
+                self.row_scope.report_close_error(close_error);
+            }
+            if let Err(close_error) = close_scope(render_scope) {
+                self.row_scope.report_close_error(close_error);
+            }
             self.render_scope = previous_scope;
             self.render_content_scope = previous_content_scope;
             return Err(error);
         }
 
         if let Some(scope) = previous_scope {
-            dispose_scope_or_resume(scope);
+            if let Err(close_error) = close_scope(scope) {
+                self.row_scope.report_close_error(close_error);
+            }
         }
         if let Some(scope) = previous_content_scope {
-            dispose_render_candidate(&scope);
+            if let Err(close_error) = dispose_render_candidate(&scope) {
+                self.row_scope.report_close_error(close_error);
+            }
         }
         self.render_scope = Some(render_scope);
         self.render_content_scope = Some(rendered_scope);
@@ -487,59 +527,66 @@ impl<'scope, T: Clone + 'scope> RowInstance<'scope, T> {
 }
 
 impl<'scope, T> RowInstance<'scope, T> {
-    pub(crate) fn move_before(&self, reference: &Node) -> SilexResult<()> {
+    pub(crate) fn append_to(&self, target: &Node) -> SilexResult<()> {
         if !self.active.get() {
             return Err(SilexError::fatal(ReactiveError::NoSuchNode));
         }
-        self.range.move_before(reference)
+        self.range.append_to(target)
     }
 
-    pub(crate) fn dispose(&mut self) {
+    pub(crate) fn dispose(&mut self) -> Result<(), CloseError> {
         if !self.active.replace(false) {
-            return;
+            return Ok(());
         }
         self.generation = self.generation.wrapping_add(1);
         self.updater.invalidate();
-        let panic = self.dispose_owners();
+        let result = self.dispose_owners();
         self.range.remove();
-        if let Some(panic) = panic {
-            resume_unwind(panic);
-        }
+        result
     }
 
-    fn dispose_owners(&mut self) -> Option<Box<dyn std::any::Any + Send>> {
-        let mut first_panic = None;
-        if let Some(scope) = self.render_scope.take()
-            && let Err(panic) = catch_unwind(AssertUnwindSafe(|| scope.dispose()))
-        {
-            first_panic = Some(panic);
+    fn dispose_owners(&mut self) -> Result<(), CloseError> {
+        let mut transaction = CloseTransaction::new();
+        if let Some(scope) = self.render_scope.take() {
+            if let Err(error) = close_scope(scope) {
+                transaction.push_error(ClosePhase::Effect, CloseSource::Effect, error);
+            }
         }
         if let Some(scope) = self.render_content_scope.take()
-            && let Err(panic) = catch_unwind(AssertUnwindSafe(|| {
-                dispose_render_candidate(&scope);
-            }))
-            && first_panic.is_none()
+            && let Err(error) = dispose_render_candidate(&scope)
         {
-            first_panic = Some(panic);
+            transaction.push_error(ClosePhase::Effect, CloseSource::Child, error);
         }
-        if let Err(panic) = catch_unwind(AssertUnwindSafe(|| self.row_scope.dispose()))
-            && first_panic.is_none()
-        {
-            first_panic = Some(panic);
+        if let Err(error) = close_scope(self.row_scope.clone()) {
+            transaction.push_error(ClosePhase::Child, CloseSource::Owner, error);
         }
-        first_panic
+        if let Err(error) = self.close_owned_runtime() {
+            transaction.push_error(ClosePhase::Runtime, CloseSource::Owner, error);
+        }
+        transaction.finish().map_or(Ok(()), Err)
+    }
+
+    fn close_owned_runtime(&self) -> Result<(), CloseError> {
+        self.runtime_lease
+            .as_ref()
+            .map_or(Ok(()), |lease| lease.close_once())
     }
 }
 
-fn dispose_scope_or_resume<'scope>(scope: Rc<OwnedScope<'scope>>) {
-    if let Err(panic) = catch_unwind(AssertUnwindSafe(|| scope.dispose())) {
-        resume_unwind(panic);
+fn close_scope<'scope>(scope: MountOwnerToken<'scope>) -> Result<(), CloseError> {
+    match catch_unwind(AssertUnwindSafe(|| scope.close())) {
+        Ok(result) => result,
+        Err(panic) => Err(CloseError::from_panic(panic)),
     }
 }
 
-fn dispose_render_candidate<'scope>(scope: &MountState<'scope, Option<Rc<OwnedScope<'scope>>>>) {
+fn dispose_render_candidate<'scope>(
+    scope: &MountState<'scope, Option<MountOwnerToken<'scope>>>,
+) -> Result<(), CloseError> {
     if let Some(scope) = scope.take_for_cleanup().flatten() {
-        dispose_scope_or_resume(scope);
+        close_scope(scope)
+    } else {
+        Ok(())
     }
 }
 
@@ -552,7 +599,9 @@ fn child_nodes(parent: &Node) -> Vec<Node> {
 
 impl<T> Drop for RowInstance<'_, T> {
     fn drop(&mut self) {
-        self.dispose();
+        if let Err(error) = self.dispose() {
+            self.row_scope.report_close_error(error);
+        }
     }
 }
 

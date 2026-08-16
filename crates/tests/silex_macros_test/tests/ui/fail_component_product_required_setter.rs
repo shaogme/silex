@@ -7,20 +7,20 @@ use silex_dom::prelude::*;
 use silex_macros::component;
 
 #[component]
-fn ProductRequiredSetter<'scope, Ctx>(
+fn ProductRequiredSetter<'owner, Ctx>(
     #[ctx] ctx: Ctx,
-    children: AnyView<'scope>,
+    children: AnyView<'owner>,
     #[chain] mandatory: String,
-) -> impl View<'scope> {
-    let _ = (scope, mandatory);
+) -> impl View<'owner> {
+    let _ = (owner, mandatory);
     children
 }
 
 fn main() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let error_handler = scope.error_handler(|_| {}).expect("handler");
-        let ctx = SilexContext::new(scope, error_handler.view());
+    runtime.with_transient(|owner| {
+        let error_handler = owner.error_handler(|_| {}).expect("handler");
+        let ctx = SilexContext::new(owner, error_handler.view());
         let product = ProductRequiredSetter(ctx, AnyView::Empty)
             .mandatory(String::from("value"))
             .build();

@@ -12,9 +12,7 @@ router! {
 }
 
 /// `tw!` 条件分支消费调用方已经创建的 scoped source，`css!` 保持静态路径。
-pub fn badge_class<'scope>(
-    wide: my_silex::core::reactivity::Signal<'scope, bool>,
-) -> my_silex::dom::attribute::AttrOp<'scope> {
+pub fn badge_class<'scope>(wide: Signal<'scope, bool>) -> AttrOp<'scope> {
     tw!(
         "inline-flex items-center px-2 py-1 rounded-sm",
         (wide, "w-full", "w-auto")
@@ -25,7 +23,7 @@ pub fn badge_style() -> &'static str {
     css! { line-height: 1.25; }
 }
 
-pub fn static_classes() -> my_silex::dom::attribute::AttributeGroup<'static> {
+pub fn static_classes() -> AttributeGroup<'static> {
     classes!["inline-flex", "items-center"]
 }
 
@@ -105,7 +103,7 @@ pub fn card_class_from_str(size: &str) -> Result<String, String> {
         .map_err(|e| e.to_string())
 }
 
-pub fn renamed_route_path() -> Result<my_silex::router::RoutePath, String> {
+pub fn renamed_route_path() -> Result<RoutePath, String> {
     RenamedRoute::User { id: 42 }
         .path()
         .map_err(|error| error.to_string())
@@ -114,7 +112,7 @@ pub fn renamed_route_path() -> Result<my_silex::router::RoutePath, String> {
 // `styled!`：展开出 `#[component]`、`inject_style`、`TypedElement` 等一大片绝对路径
 styled! {
     pub Panel<'scope> <div> (
-        #[ctx] ctx: my_silex::core::SilexContext<'scope>,
+        #[ctx] ctx: SilexContext<'scope>,
         children: AnyView<'scope>,
     ) {
         display: flex;
@@ -125,9 +123,9 @@ styled! {
 
 styled! {
     pub ScopedPanel<'scope><div> (
-        #[ctx] ctx: my_silex::core::SilexContext<'scope>,
+        #[ctx] ctx: SilexContext<'scope>,
         children: AnyView<'scope>,
-        color: my_silex::core::reactivity::Signal<'scope, my_silex::css::types::Hex>,
+        color: Signal<'scope, Hex>,
     ) {
         color: $(color);
     }
@@ -137,17 +135,17 @@ styled! {
 fn RenamedReactiveInput<'scope, Ctx>(
     #[ctx] ctx: Ctx,
     children: AnyView<'scope>,
-    #[chain(default)] value: my_silex::core::reactivity::Signal<'scope, String>,
+    #[chain(default)] value: Signal<'scope, String>,
 ) -> impl View<'scope> {
-    let _ = (scope, value);
+    let _ = (owner, value);
     children
 }
 
-pub fn renamed_reactive_input<'scope>(scope: my_silex::Scope<'scope>) -> impl View<'scope> {
-    let error_handler = scope
+pub fn renamed_reactive_input<'scope>(owner: OwnerAccess<'scope>) -> impl View<'scope> {
+    let error_handler = owner
         .error_handler(|_| {})
         .expect("handler should register");
-    let ctx = my_silex::core::SilexContext::new(scope, error_handler.view());
+    let ctx = SilexContext::new(owner, error_handler.view());
     match RenamedReactiveInput(ctx, AnyView::Empty).value("renamed") {
         Ok(builder) => builder.build().into_any(),
         Err(error) => AnyView::from(error.to_string()),

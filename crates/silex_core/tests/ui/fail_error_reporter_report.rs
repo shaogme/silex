@@ -2,8 +2,8 @@ use silex_core::{ErrorHandlerToken, ErrorReporter, Runtime, SilexError, SilexErr
 
 fn main() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let token: ErrorHandlerToken<'_> = scope
+    runtime.with_transient(|owner| {
+        let token: ErrorHandlerToken<'_> = owner
             .error_handler(|_: SilexError| {})
             .expect("handler should register");
         let reporter: ErrorReporter<'_> = token.view();

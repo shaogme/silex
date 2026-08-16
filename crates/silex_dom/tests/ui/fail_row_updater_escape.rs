@@ -8,8 +8,8 @@ fn escape<'scope>(updater: RowUpdater<'scope, i32>) -> RowUpdater<'static, i32> 
 
 fn main() {
     let mut runtime = Runtime::new();
-    let saved = runtime.child(|scope| {
-        let (items, _) = scope.signal(vec![1i32]).expect("signal");
+    let saved = runtime.with_transient(|owner| {
+        let (items, _) = owner.signal(vec![1i32]).expect("signal");
         let saved = Rc::new(RefCell::new(None));
         let saved_for_factory = saved.clone();
         let view = StatefulKeyedListView {

@@ -1,6 +1,6 @@
 use silex_core::Runtime;
 use silex_dom::view::{
-    AnyView, DynamicRenderer, MountInstance, MountOwner, ScopedMountOwner, View,
+    AnyView, DynamicRenderer, MountInstance, MountOwnerToken, View,
 };
 
 fn accept_root_view<'scope, V>(_: V)
@@ -11,11 +11,10 @@ where
 
 fn main() {
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root should start");
+    let root = runtime.owner().expect("root should start");
     {
-        let scope = root.scope();
-        let owner = ScopedMountOwner::new(scope);
-        let _token = owner.token();
+        let owner = root.access();
+        let _token = MountOwnerToken::new(owner);
 
         let borrowed_view = String::from("borrowed-view");
         let view: AnyView<'_> = AnyView::new(borrowed_view.as_str());
@@ -25,5 +24,5 @@ fn main() {
             DynamicRenderer::new(|_| Ok(MountInstance::from_nodes(Vec::new())));
     }
 
-    root.dispose().expect("root disposal should succeed");
+    root.close().expect("root close should succeed");
 }

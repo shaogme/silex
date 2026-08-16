@@ -3,14 +3,14 @@
 use super::{
     dispose::{dispatch_cleanup_errors, dispose_nodes, dispose_nodes_collect, run_cleanups},
     model::{NodeState, ScopeState},
-    scheduler::{GlobalScheduler, Observer, ObserverFrame, ScopeId, TargetNode},
+    scheduler::{GlobalScheduler, Observer, ObserverFrame, OwnerId, TargetNode},
     storage::{CleanupThunk, NodeStorage},
 };
 use crate::{
     ReactiveError, ReactiveResult,
     error::{ErrorContext, ErrorEvent, ErrorPhase, HandlerError},
     handle::NodeKindTag,
-    internal::RawId,
+    internal::NodeId,
 };
 use slotmap::Key;
 use std::{
@@ -25,7 +25,7 @@ const MAX_QUEUE_ITERATIONS: usize = 100_000;
 
 type PanicData = Box<dyn Any + Send>;
 
-fn node_error_context(state: &ScopeState<'_>, id: RawId, phase: &'static str) -> ErrorContext {
+fn node_error_context(state: &ScopeState<'_>, id: NodeId, phase: &'static str) -> ErrorContext {
     let Ok(state_ref) = state.try_borrow() else {
         return ErrorContext::new(phase);
     };
@@ -34,15 +34,14 @@ fn node_error_context(state: &ScopeState<'_>, id: RawId, phase: &'static str) ->
     };
     let node_kind = match node.kind {
         NodeKindTag::Signal => "signal",
-        NodeKindTag::Memo => "memo",
-        NodeKindTag::Derived => "derived",
+        NodeKindTag::Computed => "computed",
         NodeKindTag::Effect => "effect",
         NodeKindTag::Stored => "stored",
         NodeKindTag::Callback => "callback",
         NodeKindTag::NodeRef => "node ref",
     };
     ErrorContext {
-        owner: Some(state_ref.scope_id.0),
+        owner: Some(state_ref.owner_id.0),
         node_kind: Some(node_kind),
         node_id: Some(id.data().as_ffi()),
         phase,
@@ -90,7 +89,7 @@ enum EvaluationMode {
 
 pub(crate) fn prepare_read<'scope>(
     state: &ScopeState<'scope>,
-    id: RawId,
+    id: NodeId,
     track: bool,
 ) -> ReactiveResult<()> {
     let tracking = if track {
@@ -140,7 +139,7 @@ pub(crate) fn prepare_read<'scope>(
 
 pub(crate) fn prepare_fallible_read<'scope>(
     state: &ScopeState<'scope>,
-    id: RawId,
+    id: NodeId,
     track: bool,
 ) -> EvaluationResult<'scope, ()> {
     let tracking = if track {
@@ -186,7 +185,7 @@ pub(crate) fn prepare_fallible_read<'scope>(
 
 fn evaluate_root<'scope>(
     state: &ScopeState<'scope>,
-    id: RawId,
+    id: NodeId,
     mode: EvaluationMode,
 ) -> EvaluationResult<'scope, ()> {
     let scheduler = {
@@ -215,7 +214,7 @@ fn evaluate_root<'scope>(
 
 fn evaluate<'scope>(
     state: &ScopeState<'scope>,
-    id: RawId,
+    id: NodeId,
     stack: &mut Vec<TargetNode>,
     mode: EvaluationMode,
 ) -> EvaluationResult<'scope, ()> {
@@ -224,7 +223,7 @@ fn evaluate<'scope>(
             .try_borrow()
             .map_err(|_| ReactiveError::BorrowConflict)?;
         TargetNode {
-            scope_id: state_ref.scope_id,
+            owner_id: state_ref.owner_id,
             node: id,
         }
     };
@@ -247,7 +246,7 @@ fn evaluate<'scope>(
     }
     stack.push(target);
     for dep in &dependencies {
-        if dep.scope_id == state.borrow().scope_id {
+        if dep.owner_id == state.borrow().owner_id {
             let dependency_state = state
                 .try_borrow()
                 .map_err(|_| ReactiveError::BorrowConflict)?
@@ -259,7 +258,7 @@ fn evaluate<'scope>(
             }
         } else {
             let scheduler = state.borrow().scheduler.clone();
-            let dep_scope = scheduler.borrow().get_scope(dep.scope_id);
+            let dep_scope = scheduler.borrow().get_scope(dep.owner_id);
             if let Some(dep_scope) = dep_scope {
                 let dependency_state = dep_scope
                     .try_borrow()
@@ -288,7 +287,7 @@ fn evaluate<'scope>(
                 .dependency_edges_of(id)
                 .map(|(_, edge)| {
                     let dep = edge.target;
-                    if dep.scope_id == state_ref.scope_id {
+                    if dep.owner_id == state_ref.owner_id {
                         state_ref
                             .nodes
                             .get(dep.node)
@@ -297,7 +296,7 @@ fn evaluate<'scope>(
                     } else {
                         scheduler
                             .borrow()
-                            .get_scope(dep.scope_id)
+                            .get_scope(dep.owner_id)
                             .map(|dep_scope| {
                                 dep_scope
                                     .try_borrow()
@@ -337,7 +336,7 @@ fn evaluate<'scope>(
 
 fn execute_computation<'scope>(
     state: &ScopeState<'scope>,
-    id: RawId,
+    id: NodeId,
     storage: &NodeStorage<'scope>,
     scheduler: Rc<RefCell<GlobalScheduler>>,
 ) -> EvaluationResult<'scope, ComputationResult> {
@@ -454,16 +453,16 @@ fn drop_storage<'scope>(
 
 fn run_node<'scope>(
     state: &ScopeState<'scope>,
-    id: RawId,
+    id: NodeId,
     mode: EvaluationMode,
 ) -> EvaluationResult<'scope, bool> {
     struct RunningNodeContext<'scope> {
         storage: Rc<NodeStorage<'scope>>,
-        first_child: RawId,
+        first_child: NodeId,
         cleanups: Vec<CleanupThunk<'scope>>,
-        previous_owner: Option<RawId>,
+        previous_owner: Option<NodeId>,
         scheduler: Rc<RefCell<GlobalScheduler>>,
-        scope_id: ScopeId,
+        owner_id: OwnerId,
     }
 
     let node_ctx = {
@@ -487,11 +486,11 @@ fn run_node<'scope>(
         let cleanups = mem::take(&mut data.cleanups);
         let previous_owner = state_ref.current_owner;
         let scheduler = state_ref.scheduler.clone();
-        let scope_id = state_ref.scope_id;
+        let owner_id = state_ref.owner_id;
         state_ref.begin_dependency_transaction(id);
         if let Some(node) = state_ref.nodes.get_mut(id) {
             node.running = true;
-            node.first_child = RawId::DANGLING;
+            node.first_child = NodeId::DANGLING;
         }
         state_ref.current_owner = Some(id);
         RunningNodeContext {
@@ -500,7 +499,7 @@ fn run_node<'scope>(
             cleanups,
             previous_owner,
             scheduler,
-            scope_id,
+            owner_id,
         }
     };
 
@@ -510,10 +509,10 @@ fn run_node<'scope>(
         cleanups,
         previous_owner,
         scheduler,
-        scope_id,
+        owner_id,
     } = node_ctx;
 
-    let children_to_dispose: Vec<RawId> = state
+    let children_to_dispose: Vec<NodeId> = state
         .try_borrow()
         .map_err(|_| EvaluationError::Runtime(ReactiveError::BorrowConflict))?
         .children_of_head(first_child)
@@ -561,7 +560,7 @@ fn run_node<'scope>(
                 observer_frame = Some(ObserverFrame::push(
                     scheduler,
                     Some(Observer {
-                        scope_id: state_ref.scope_id,
+                        owner_id: state_ref.owner_id,
                         node: id,
                     }),
                 ));
@@ -592,7 +591,7 @@ fn run_node<'scope>(
     let can_commit = if operation_error.is_none() && panic_data.is_none() {
         match state.try_borrow() {
             Ok(state_ref) => {
-                state_ref.node_exists(id) && state_ref.is_active() && state_ref.scope_id == scope_id
+                state_ref.node_exists(id) && state_ref.is_active() && state_ref.owner_id == owner_id
             }
             Err(_) => {
                 operation_error = Some(EvaluationError::Runtime(ReactiveError::BorrowConflict));
@@ -705,7 +704,7 @@ fn run_node<'scope>(
         if failed {
             if let Some(node) = state_ref.nodes.get_mut(id) {
                 let first_child = node.first_child;
-                node.first_child = RawId::DANGLING;
+                node.first_child = NodeId::DANGLING;
                 failed_children = state_ref.children_of_head(first_child).collect();
             }
             if let Some(data) = state_ref.data.get_mut(id) {
@@ -801,7 +800,7 @@ fn run_node<'scope>(
 
 pub(crate) fn run_initial<'scope>(
     state: &ScopeState<'scope>,
-    id: RawId,
+    id: NodeId,
 ) -> EvaluationResult<'scope, ()> {
     match run_node(state, id, EvaluationMode::Initial)? {
         true => Ok(()),
@@ -853,7 +852,7 @@ pub(crate) fn run_global_queue(scheduler: &Rc<RefCell<GlobalScheduler>>) -> Reac
             if !scheduler
                 .try_borrow()
                 .map_err(|_| ReactiveError::BorrowConflict)?
-                .is_scope_active(task.scope_id)
+                .is_scope_active(task.owner_id)
             {
                 continue;
             }
@@ -861,14 +860,14 @@ pub(crate) fn run_global_queue(scheduler: &Rc<RefCell<GlobalScheduler>>) -> Reac
             if iterations > MAX_QUEUE_ITERATIONS {
                 return Err(ReactiveError::NonConvergent {
                     iterations,
-                    last_scope: Some(task.scope_id.0),
+                    last_scope: Some(task.owner_id.0),
                     last_node: Some(task.node.data().as_ffi()),
                 });
             }
             let scope_state = scheduler
                 .try_borrow()
                 .map_err(|_| ReactiveError::BorrowConflict)?
-                .get_scope(task.scope_id);
+                .get_scope(task.owner_id);
             if let Some(scope_state) = scope_state {
                 {
                     let mut state_ref = scope_state
@@ -883,7 +882,7 @@ pub(crate) fn run_global_queue(scheduler: &Rc<RefCell<GlobalScheduler>>) -> Reac
                         EvaluationError::Runtime(error) => error,
                         EvaluationError::Handler(error) => ReactiveError::Handler(error),
                         EvaluationError::Callback(_) | EvaluationError::User => {
-                            ReactiveError::TypeMismatch
+                            ReactiveError::InvariantViolation
                         }
                     },
                 )?;
@@ -915,9 +914,9 @@ pub(crate) fn run_global_queue(scheduler: &Rc<RefCell<GlobalScheduler>>) -> Reac
 }
 
 fn recover_after_queue_error(scheduler: &Rc<RefCell<GlobalScheduler>>) {
-    let Ok(scope_ids) = scheduler
+    let Ok(owner_ids) = scheduler
         .try_borrow()
-        .map(|scheduler| scheduler.active_scope_ids())
+        .map(|scheduler| scheduler.active_owner_ids())
     else {
         return;
     };
@@ -925,11 +924,11 @@ fn recover_after_queue_error(scheduler: &Rc<RefCell<GlobalScheduler>>) {
         scheduler_ref.global_queue.clear();
     }
 
-    for scope_id in scope_ids {
+    for owner_id in owner_ids {
         let Some(scope_state) = scheduler
             .try_borrow()
             .ok()
-            .and_then(|scheduler| scheduler.get_scope(scope_id))
+            .and_then(|scheduler| scheduler.get_scope(owner_id))
         else {
             continue;
         };

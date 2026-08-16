@@ -2,11 +2,11 @@
 
 use gloo_timers::future::TimeoutFuture;
 use silex_core::{
-    ErrorHandlerToken, ErrorReporter, RootHandle, Runtime, Scope, SilexContext, SilexResult,
+    ErrorHandlerToken, ErrorReporter, OwnerAccess, OwnerHandle, Runtime, SilexContext, SilexResult,
 };
 use silex_dom::attribute::PendingAttribute;
 use silex_dom::view::{
-    AnyView, ApplyAttributes, IndexedListView, MountInstance, MountOwner, ScopedMountOwner, View,
+    AnyView, ApplyAttributes, IndexedListView, MountInstance, MountOwner, MountOwnerToken, View,
 };
 use silex_persist::{PersistMode, PersistenceState, Persistent, SyncStrategy, WriteDefault};
 use silex_router::{RouterContext, RouterContextProps};
@@ -22,17 +22,17 @@ use web_sys::{Node, StorageEvent, window};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
-fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope> {
-    scope
+fn test_handler<'scope>(owner: OwnerAccess<'scope>) -> ErrorHandlerToken<'scope> {
+    owner
         .error_handler(|_| {})
         .expect("test error handler should be registered")
 }
 
 fn test_owner<'scope>(
-    scope: Scope<'scope>,
-) -> (ScopedMountOwner<'scope>, ErrorHandlerToken<'scope>) {
-    let error_handler = test_handler(scope);
-    (ScopedMountOwner::new(scope), error_handler)
+    owner: OwnerAccess<'scope>,
+) -> (MountOwnerToken<'scope>, ErrorHandlerToken<'scope>) {
+    let error_handler = test_handler(owner);
+    (MountOwnerToken::new(owner), error_handler)
 }
 
 const STORAGE_KEY: &str = "silex-persist-runtime-refactor";
@@ -340,8 +340,8 @@ fn storage_listener_is_physically_removed_after_last_binding_cleanup() {
         .expect("clear key");
 
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root should be created");
-    root.with_scope(|scope| {
+    let root = runtime.owner().expect("owner should be created");
+    root.with_access(|scope| {
         let _binding = Persistent::builder(scope, LISTENER_CLEANUP_KEY, test_handler(scope))
             .local()
             .string()
@@ -352,7 +352,7 @@ fn storage_listener_is_physically_removed_after_last_binding_cleanup() {
         assert_eq!(spy.count("remove"), 0);
     });
 
-    root.dispose().expect("root cleanup should succeed");
+    root.close().expect("root cleanup should succeed");
     assert_eq!(spy.count("remove"), 1);
     storage
         .remove_item(LISTENER_CLEANUP_KEY)
@@ -368,7 +368,7 @@ fn storage_listener_reentrant_cleanup_does_not_leave_a_listener() {
         .expect("clear key");
 
     let mut reentrant_runtime = Runtime::new();
-    let reentrant_root = reentrant_runtime.run().expect("root should be created");
+    let reentrant_root = reentrant_runtime.owner().expect("owner should be created");
     let reentrant_root = Rc::new(RefCell::new(Some(reentrant_root)));
     let root_for_reentry = reentrant_root.clone();
     let root_for_reentry = AssertUnwindSafe(root_for_reentry);
@@ -377,7 +377,7 @@ fn storage_listener_reentrant_cleanup_does_not_leave_a_listener() {
         let Some(root) = root_for_reentry.0.borrow_mut().take() else {
             return;
         };
-        root.with_scope(|scope| {
+        root.with_access(|scope| {
             let _binding = Persistent::builder(scope, LISTENER_REENTRY_KEY, test_handler(scope))
                 .local()
                 .string()
@@ -385,14 +385,13 @@ fn storage_listener_reentrant_cleanup_does_not_leave_a_listener() {
                 .build()
                 .expect("persistent binding should build");
         });
-        root.dispose()
-            .expect("reentrant root cleanup should succeed");
+        root.close().expect("reentrant root cleanup should succeed");
     }));
     set_storage_listener_spy_reentry(&spy.value, reentry.as_ref());
 
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root should be created");
-    root.with_scope(|scope| {
+    let root = runtime.owner().expect("owner should be created");
+    root.with_access(|scope| {
         let _binding = Persistent::builder(scope, LISTENER_REENTRY_KEY, test_handler(scope))
             .local()
             .string()
@@ -402,7 +401,7 @@ fn storage_listener_reentrant_cleanup_does_not_leave_a_listener() {
         assert_eq!(spy.count("add"), 1);
     });
 
-    root.dispose().expect("root cleanup should succeed");
+    root.close().expect("root cleanup should succeed");
     assert_eq!(spy.count("add"), 2);
     assert_eq!(spy.count("remove"), 2);
     assert!(reentrant_root.borrow().is_none());
@@ -419,8 +418,8 @@ fn local_storage_event_updates_bindings_and_scope_cleanup() {
     storage.remove_item(STORAGE_KEY).expect("clear key");
 
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root should be created");
-    root.with_scope(|scope| {
+    let root = runtime.owner().expect("owner should be created");
+    root.with_access(|scope| {
         let first = Persistent::builder(scope, STORAGE_KEY, test_handler(scope))
             .local()
             .string()
@@ -449,7 +448,7 @@ fn local_storage_event_updates_bindings_and_scope_cleanup() {
         assert_eq!(first.get_untracked().expect("reactive value should be readable"), "external");
         assert_eq!(second.get_untracked().expect("reactive value should be readable"), "external");
     });
-    root.dispose().expect("dispose root");
+    root.close().expect("dispose root");
 
     storage.remove_item(STORAGE_KEY).expect("cleanup key");
 }
@@ -462,8 +461,8 @@ fn local_storage_binding_round_trip_uses_explicit_scope() {
         .expect("seed localStorage key");
 
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root should be created");
-    root.with_scope(|scope| {
+    let root = runtime.owner().expect("owner should be created");
+    root.with_access(|scope| {
         let binding = Persistent::builder(scope, LOCAL_ROUNDTRIP_KEY, test_handler(scope))
             .local()
             .string()
@@ -509,7 +508,7 @@ fn local_storage_binding_round_trip_uses_explicit_scope() {
             PersistenceState::Ready(String::new())
         );
     });
-    root.dispose().expect("dispose root");
+    root.close().expect("dispose root");
 
     storage
         .remove_item(LOCAL_ROUNDTRIP_KEY)
@@ -525,8 +524,8 @@ fn session_storage_binding_reads_writes_and_reacts_to_storage_events() {
         .expect("seed sessionStorage key");
 
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root should be created");
-    root.with_scope(|scope| {
+    let root = runtime.owner().expect("owner should be created");
+    root.with_access(|scope| {
         let first = Persistent::builder(scope, SESSION_EVENT_KEY, test_handler(scope))
             .session()
             .string()
@@ -593,7 +592,7 @@ fn session_storage_binding_reads_writes_and_reacts_to_storage_events() {
         assert_eq!(first.get_untracked().expect("reactive value should be readable"), "fallback");
         assert_eq!(second.get_untracked().expect("reactive value should be readable"), "fallback");
     });
-    root.dispose().expect("dispose root");
+    root.close().expect("dispose root");
 
     storage
         .remove_item(SESSION_EVENT_KEY)
@@ -603,8 +602,8 @@ fn session_storage_binding_reads_writes_and_reacts_to_storage_events() {
 #[wasm_bindgen_test]
 fn query_binding_uses_target_scope_and_updates_only_its_key() {
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root should be created");
-    root.with_scope(|scope| {
+    let root = runtime.owner().expect("owner should be created");
+    root.with_access(|scope| {
         let (path, set_path) = scope
             .signal("/settings".to_string())
             .expect("path signal should be created");
@@ -644,7 +643,7 @@ fn query_binding_uses_target_scope_and_updates_only_its_key() {
             "?page=3&other=keep"
         );
     });
-    root.dispose().expect("dispose root");
+    root.close().expect("dispose root");
 }
 
 #[wasm_bindgen_test]
@@ -652,8 +651,8 @@ fn query_backend_writes_one_push_and_one_url_update_per_change() {
     set_url("/persist-query?keep=yes");
     let spy = QueryHistorySpy::new();
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root should be created");
-    root.with_scope(|scope| {
+    let root = runtime.owner().expect("owner should be created");
+    root.with_access(|scope| {
         let (path, set_path) = scope
             .signal("/persist-query".to_string())
             .expect("path signal should be created");
@@ -720,7 +719,7 @@ fn query_backend_writes_one_push_and_one_url_update_per_change() {
         assert_eq!(search_updates.get(), initial_search_updates + 2);
     });
 
-    root.dispose().expect("root cleanup should succeed");
+    root.close().expect("root cleanup should succeed");
     drop(spy);
     set_url("/");
 }
@@ -728,7 +727,7 @@ fn query_backend_writes_one_push_and_one_url_update_per_change() {
 #[wasm_bindgen_test]
 fn persistent_view_updates_and_stops_with_root() {
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root should be created");
+    let root = runtime.owner().expect("owner should be created");
     let parent = window()
         .expect("window")
         .document()
@@ -736,7 +735,7 @@ fn persistent_view_updates_and_stops_with_root() {
         .create_element("div")
         .expect("parent element");
 
-    root.with_scope(|scope| {
+    root.with_access(|scope| {
         let binding = Persistent::builder(scope, "view", test_handler(scope))
             .local()
             .string()
@@ -754,7 +753,7 @@ fn persistent_view_updates_and_stops_with_root() {
         assert_eq!(parent.text_content(), Some("two".to_string()));
     });
 
-    root.dispose().expect("dispose root");
+    root.close().expect("dispose root");
     assert_eq!(parent.text_content(), Some(String::new()));
 }
 
@@ -764,7 +763,7 @@ fn persistent_view_stops_after_lexical_owner_dispose() {
     let storage = local_storage();
     storage.remove_item(KEY).expect("clear key");
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root should be created");
+    let root = runtime.owner().expect("owner should be created");
     let parent = window()
         .expect("window")
         .document()
@@ -772,7 +771,7 @@ fn persistent_view_stops_after_lexical_owner_dispose() {
         .create_element("div")
         .expect("parent element");
 
-    root.with_scope(|scope| {
+    root.with_access(|scope| {
         let _root_binding = Persistent::builder(scope, KEY, test_handler(scope))
             .local()
             .string()
@@ -780,7 +779,7 @@ fn persistent_view_stops_after_lexical_owner_dispose() {
             .build().expect("persistent binding should build");
         let captured_node = Rc::new(RefCell::new(None::<Node>));
         let captured_node_for_child = captured_node.clone();
-        let _ = scope.child(|child| {
+        let _ = scope.with_transient(|child| {
             let binding = Persistent::builder(child, KEY, test_handler(child))
                 .local()
                 .string()
@@ -823,14 +822,14 @@ fn persistent_view_stops_after_lexical_owner_dispose() {
         );
     });
 
-    root.dispose().expect("root cleanup should succeed");
+    root.close().expect("root cleanup should succeed");
     storage.remove_item(KEY).expect("cleanup key");
 }
 
 #[wasm_bindgen_test]
 fn persistent_view_stops_after_row_owner_dispose() {
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root should be created");
+    let root = runtime.owner().expect("owner should be created");
     let parent = window()
         .expect("window")
         .document()
@@ -838,7 +837,7 @@ fn persistent_view_stops_after_row_owner_dispose() {
         .create_element("div")
         .expect("parent element");
 
-    root.with_scope(|scope| {
+    root.with_access(|scope| {
         let binding = Persistent::builder(scope, "silex-persist-row-owner", test_handler(scope))
             .local()
             .string()
@@ -880,7 +879,7 @@ fn persistent_view_stops_after_row_owner_dispose() {
         );
     });
 
-    root.dispose().expect("root cleanup should succeed");
+    root.close().expect("root cleanup should succeed");
 }
 
 #[wasm_bindgen_test(async)]
@@ -888,8 +887,8 @@ async fn debounce_writes_only_latest_value() {
     let storage = local_storage();
     storage.remove_item(DEBOUNCE_KEY).expect("clear key");
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root should be created");
-    root.with_scope(|scope| {
+    let root = runtime.owner().expect("owner should be created");
+    root.with_access(|scope| {
         let binding = Persistent::builder(scope, DEBOUNCE_KEY, test_handler(scope))
             .local()
             .string()
@@ -909,7 +908,7 @@ async fn debounce_writes_only_latest_value() {
         storage.get_item(DEBOUNCE_KEY).expect("read key"),
         Some("latest".to_string())
     );
-    root.dispose().expect("dispose root");
+    root.close().expect("dispose root");
     storage.remove_item(DEBOUNCE_KEY).expect("cleanup key");
 }
 
@@ -918,8 +917,8 @@ async fn debounce_late_callback_is_gated_after_root_dispose() {
     let storage = local_storage();
     storage.remove_item(DEBOUNCE_KEY).expect("clear key");
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root should be created");
-    root.with_scope(|scope| {
+    let root = runtime.owner().expect("owner should be created");
+    root.with_access(|scope| {
         let binding = Persistent::builder(scope, DEBOUNCE_KEY, test_handler(scope))
             .local()
             .string()
@@ -932,7 +931,7 @@ async fn debounce_late_callback_is_gated_after_root_dispose() {
             .set("late".to_string())
             .expect("reactive update should succeed");
     });
-    root.dispose().expect("dispose root");
+    root.close().expect("dispose root");
     TimeoutFuture::new(35).await;
     assert_eq!(
         storage.get_item(DEBOUNCE_KEY).expect("read key"),
@@ -949,8 +948,8 @@ async fn debounce_external_remove_does_not_skip_next_write() {
         .set_item(DEBOUNCE_REMOVE_KEY, "5")
         .expect("seed key");
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root should be created");
-    root.with_scope(|scope| {
+    let root = runtime.owner().expect("owner should be created");
+    root.with_access(|scope| {
         let binding = Persistent::builder(scope, DEBOUNCE_REMOVE_KEY, test_handler(scope))
             .local()
             .string()
@@ -979,7 +978,7 @@ async fn debounce_external_remove_does_not_skip_next_write() {
         storage.get_item(DEBOUNCE_REMOVE_KEY).expect("read key"),
         Some("6".to_string())
     );
-    root.dispose().expect("dispose root");
+    root.close().expect("dispose root");
     storage
         .remove_item(DEBOUNCE_REMOVE_KEY)
         .expect("cleanup key");
@@ -991,11 +990,11 @@ fn debounce_timer_failure_reentry_and_late_callbacks_are_gated() {
     let storage = local_storage();
     storage.remove_item(KEY).expect("clear key");
     let controller = TimeoutController::new();
-    let dispose_slot = Rc::new(RefCell::new(None::<RootHandle>));
+    let dispose_slot = Rc::new(RefCell::new(None::<OwnerHandle>));
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root should be created");
+    let root = runtime.owner().expect("owner should be created");
 
-    root.with_scope(|scope| {
+    root.with_access(|scope| {
         let binding = Persistent::builder(scope, KEY, test_handler(scope))
             .local()
             .string()
@@ -1013,7 +1012,7 @@ fn debounce_timer_failure_reentry_and_late_callbacks_are_gated() {
                         == PersistenceState::Ready("second".to_string())
                         && let Some(root) = dispose_for_effect.borrow_mut().take()
                     {
-                        root.dispose()
+                        root.close()
                             .expect("state effect can dispose its root reentrantly");
                     }
                     Ok(())

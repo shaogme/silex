@@ -14,7 +14,7 @@ impl ResponseCodec<Value> for Codec {
     }
 }
 
-fn build(scope: silex_core::Scope<'_>) {
+fn build(scope: silex_core::OwnerAccess<'_>) {
     let handler = scope.error_handler(|_| {}).unwrap();
     let send_builder = HttpClient::builder_with_codec(
         scope,
@@ -45,7 +45,7 @@ fn build(scope: silex_core::Scope<'_>) {
 }
 
 fn main() {
-    let _ = build as fn(silex_core::Scope<'_>);
+    let _ = build as fn(silex_core::OwnerAccess<'_>);
     #[cfg(feature = "persist")]
     require_cache_codec::<String, TextCodec>();
 }

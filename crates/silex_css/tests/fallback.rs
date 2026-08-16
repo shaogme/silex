@@ -1,11 +1,11 @@
 #![cfg(all(target_arch = "wasm32", feature = "test-style-fallback"))]
 
 use js_sys::Promise;
-use silex_core::{ErrorHandlerToken, Runtime, Scope};
+use silex_core::{ErrorHandlerToken, OwnerAccess, Runtime};
 use silex_css::{CssPart, DynamicCss, DynamicStyleManager, IntoCssReactive, prelude::inject_style};
 use silex_dom::{
     attribute::{ApplyTarget, ApplyToDom},
-    view::{MountOwner, ScopedMountOwner},
+    view::{MountOwner, MountOwnerToken},
 };
 use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
@@ -15,17 +15,17 @@ use web_sys::{Document, Element, HtmlStyleElement, Node};
 
 wasm_bindgen_test_configure!(run_in_browser);
 
-fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope> {
-    scope
+fn test_handler<'scope>(owner: OwnerAccess<'scope>) -> ErrorHandlerToken<'scope> {
+    owner
         .error_handler(|_| {})
         .expect("test error handler should register")
 }
 
 fn test_owner<'scope>(
-    scope: Scope<'scope>,
-) -> (ScopedMountOwner<'scope>, ErrorHandlerToken<'scope>) {
-    let error_handler = test_handler(scope);
-    (ScopedMountOwner::new(scope), error_handler)
+    owner: OwnerAccess<'scope>,
+) -> (MountOwnerToken<'scope>, ErrorHandlerToken<'scope>) {
+    let error_handler = test_handler(owner);
+    (MountOwnerToken::new(owner), error_handler)
 }
 
 fn document() -> Document {
@@ -132,12 +132,12 @@ async fn style_tag_fallback_injects_updates_and_detaches_on_owner_dispose() {
 
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
-            let (value, set_value) = scope
+        .with_transient(|owner| {
+            let (value, set_value) = owner
                 .signal(String::from("red"))
                 .expect("signal should initialize");
-            let (owner, error_handler) = test_owner(scope);
-            let token = owner.token();
+            let (owner_token, error_handler) = test_owner(owner);
+            let token = owner_token.token();
             let dynamic = DynamicCss::new("slx-fallback-dynamic").with_rule(
                 &[
                     CssPart::Lit("."),
@@ -163,7 +163,7 @@ async fn style_tag_fallback_injects_updates_and_detaches_on_owner_dispose() {
                 style_text_containing("slx-fallback-dynamic").expect("fallback style exists");
             assert!(updated.contains("blue"), "{updated}");
         })
-        .expect("child scope should initialize");
+        .expect("transient owner should initialize");
 
     flush_style_microtasks().await;
     assert!(style_text_containing("slx-fallback-dynamic").is_none());

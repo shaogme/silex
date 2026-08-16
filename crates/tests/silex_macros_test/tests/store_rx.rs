@@ -15,22 +15,22 @@ fn explicit_store_field_source_tracks_only_selected_field() {
     let mut runtime = Runtime::new();
 
     runtime
-        .child(|scope| -> SilexResult<()> {
+        .with_transient(|owner| -> SilexResult<()> {
             let settings = SettingsStore::new(
-                scope,
+                owner,
                 Settings {
                     theme: "Light".to_string(),
                     notifications: false,
                 },
             )
             .unwrap();
-            let error_handler = scope.error_handler(|_: SilexError| {}).unwrap();
-            let ctx = SilexContext::new(scope, error_handler.view());
+            let error_handler = owner.error_handler(|_: SilexError| {}).unwrap();
+            let ctx = SilexContext::new(owner, error_handler.view());
             let theme = rx!(ctx; $(settings.theme).clone());
             let runs = Rc::new(Cell::new(0));
             let runs_for_effect = runs.clone();
 
-            let _effect = scope
+            let _effect = owner
                 .effect(
                     move || {
                         let _ = theme.get()?;

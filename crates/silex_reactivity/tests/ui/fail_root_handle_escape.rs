@@ -2,9 +2,9 @@ use silex_reactivity::Runtime;
 
 fn main() {
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root creation should succeed");
+    let root = runtime.owner().expect("root creation should succeed");
     let signal = root
-        .scope()
+        .access()
         .signal(0i32)
         .expect("signal creation should succeed")
         .0;

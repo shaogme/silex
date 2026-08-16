@@ -4,7 +4,7 @@ error[E0061]: this function takes 3 arguments but 1 argument was supplied
 4 |     let _ = Persistent::builder("counter");
   |             ^^^^^^^^^^^^^^^^^^^-----------
   |                                ||
-  |                                |argument #1 of type `silex_core::scope::Scope<'_>` is missing
+  |                                |argument #1 of type `silex_core::owner::OwnerAccess<'_>` is missing
   |                                argument #3 is missing
   |
 note: associated function defined here
@@ -15,5 +15,5 @@ note: associated function defined here
 help: provide the arguments
   |
 4 -     let _ = Persistent::builder("counter");
-4 +     let _ = Persistent::builder(/* silex_core::scope::Scope<'_> */, "counter", /* error_handler */);
+4 +     let _ = Persistent::builder(/* silex_core::owner::OwnerAccess<'_> */, "counter", /* error_handler */);
   |

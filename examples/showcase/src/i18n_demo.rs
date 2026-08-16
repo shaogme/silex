@@ -87,7 +87,7 @@ pub fn I18nPage<'scope>(
     #[ctx] ctx: RouterContext<'scope>,
     i18n: I18nStore<'scope>,
 ) -> impl View<'scope> {
-    let scope = ctx.scope();
+    let owner = ctx.owner();
     let error_handler = ctx.error_reporter();
     let available_locales = [
         parse_locale("en-US")?,
@@ -97,7 +97,7 @@ pub fn I18nPage<'scope>(
     ];
     let fallback_locale = parse_locale("en-US")?;
 
-    let query_locale = Persistent::builder(scope, "silex-showcase-query-locale", error_handler)
+    let query_locale = Persistent::builder(owner, "silex-showcase-query-locale", error_handler)
         .query(ctx)
         .parse::<Locale>()
         .default(i18n.locale().get_untracked()?)
@@ -120,7 +120,7 @@ pub fn I18nPage<'scope>(
     );
     let browser_match_label = browser_match.to_string();
 
-    let loader_store = I18nBuilder::new(scope, error_handler)
+    let loader_store = I18nBuilder::new(owner, error_handler)
         .locale(i18n.locale().get_untracked()?)
         .fallback_locale(fallback_locale.clone())
         .build()
@@ -141,8 +141,8 @@ pub fn I18nPage<'scope>(
         )
         .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
 
-    let name = scope.rw_signal("Ada".to_string())?;
-    let count = scope.rw_signal(1u32)?;
+    let name = owner.rw_signal("Ada".to_string())?;
+    let count = owner.rw_signal(1u32)?;
 
     let resource_for_view = catalog_resource.clone();
     let resource_for_reload = catalog_resource.clone();
@@ -302,7 +302,7 @@ pub fn I18nPage<'scope>(
                                 count.update(|value| *value = value.saturating_sub(1))?;
                                 Ok(())
                             }),
-                            span(count.map_fn(scope, |value| value.to_string(), error_handler)?)
+                            span(count.map_fn(owner, |value| value.to_string(), error_handler)?)
                                 .style(
                                     sty(ctx)
                                         .min_width(px(30))?

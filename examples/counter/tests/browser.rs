@@ -91,7 +91,7 @@ fn find_link(target: &DomElement, label: &str) -> HtmlElement {
 }
 
 fn mount_text<'scope>(ctx: &MountContext<'scope>) -> SilexResult<()> {
-    let handler = ctx.scope().error_handler(|_: SilexError| {})?;
+    let handler = ctx.access().error_handler(|_: SilexError| {})?;
     ctx.mount(Element::with_child("section", "counter-test"), handler)
 }
 

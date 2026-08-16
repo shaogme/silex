@@ -19,14 +19,14 @@ help: to force the closure to take ownership of `value` (and any other reference
 error[E0521]: borrowed data escapes outside of closure
   --> tests/ui/fail_reporter_scope_escape.rs:15:9
    |
- 7 |     runtime.child(|scope| {
-   |                    -----
-   |                    |
-   |                    `scope` is a reference that is only valid in the closure body
-   |                    has type `silex_core::Scope<'1>`
+ 7 |     runtime.with_transient(|owner| {
+   |                             -----
+   |                             |
+   |                             `owner` is a reference that is only valid in the closure body
+   |                             has type `OwnerAccess<'1>`
 ...
 15 |         require_static(reporter);
    |         ^^^^^^^^^^^^^^^^^^^^^^^^
    |         |
-   |         `scope` escapes the closure body here
+   |         `owner` escapes the closure body here
    |         argument requires that `'1` must outlive `'static`

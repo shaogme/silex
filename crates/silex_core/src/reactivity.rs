@@ -7,8 +7,8 @@ mod signal;
 mod slice;
 mod stored_value;
 
-pub use effect::Effect;
-pub use memo::Memo;
+pub use effect::EffectHandle;
+pub use memo::Computed;
 pub use mutation::{Mutation, MutationState};
 pub use promotion::{PromotionPlan, ReactiveSource};
 pub use resource::{Resource, ResourceFetcher, ResourceState, SuspenseContext};

@@ -69,7 +69,7 @@ fn App<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
 
 #[component]
 fn RecoverableComponent<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> + 'scope {
-    let (should_error, set_should_error) = scope.signal(false)?;
+    let (should_error, set_should_error) = owner.signal(false)?;
 
     Ok(move || {
         if should_error.get()? {
@@ -90,7 +90,7 @@ fn RecoverableComponent<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'
 
 #[component]
 fn PanicToggleComponent<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> + 'scope {
-    let (show_panic, set_show_panic) = scope.signal(false)?;
+    let (show_panic, set_show_panic) = owner.signal(false)?;
     let immediate_panic = ImmediatePanic(ctx).build();
 
     Ok(move || {
@@ -113,7 +113,7 @@ fn PanicToggleComponent<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'
 
 #[component]
 fn ImmediatePanic<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> + 'scope {
-    let (active, set_active) = scope.signal(false)?;
+    let (active, set_active) = owner.signal(false)?;
 
     Ok(div!(
         p("Ready to panic?"),
@@ -145,12 +145,12 @@ pub fn mount_error_boundary_demo_into(target: web_sys::Node) -> Result<JsAppHost
 }
 
 fn mount_error_boundary_demo_view<'scope>(ctx: &MountContext<'scope>) -> SilexResult<()> {
-    let scope = ctx.scope();
-    let error_handler = scope.error_handler(|error: SilexError| {
+    let owner = ctx.access();
+    let error_handler = owner.error_handler(|error: SilexError| {
         web_sys::console::error_1(&error.to_string().into());
     })?;
     ctx.mount(
-        App(SilexContext::new(scope, error_handler.view())).build(),
+        App(SilexContext::new(owner, error_handler.view())).build(),
         error_handler,
     )
 }

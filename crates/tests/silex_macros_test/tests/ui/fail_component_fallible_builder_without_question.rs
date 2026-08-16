@@ -7,20 +7,20 @@ use silex_dom::prelude::*;
 use silex_macros::component;
 
 #[component]
-fn FallibleWithoutQuestion<'scope, Ctx>(
+fn FallibleWithoutQuestion<'owner, Ctx>(
     #[ctx] ctx: Ctx,
-    children: AnyView<'scope>,
-    #[chain(default)] callback: Callback<'scope, String>,
-) -> impl View<'scope> {
-    let _ = (scope, callback);
+    children: AnyView<'owner>,
+    #[chain(default)] callback: Callback<'owner, String>,
+) -> impl View<'owner> {
+    let _ = (owner, callback);
     children
 }
 
 fn main() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let error_handler = scope.error_handler(|_| {}).expect("handler");
-        let ctx = SilexContext::new(scope, error_handler.view());
+    runtime.with_transient(|owner| {
+        let error_handler = owner.error_handler(|_| {}).expect("handler");
+        let ctx = SilexContext::new(owner, error_handler.view());
         let _view: FallibleWithoutQuestionComponent<SilexContext<'_>> = FallibleWithoutQuestion(
             ctx,
             AnyView::Empty,

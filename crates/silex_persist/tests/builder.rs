@@ -1,5 +1,7 @@
 use ref_str::LocalStaticRefStr;
-use silex_core::{ErrorHandlerToken, ErrorReporter, ReactiveError, Runtime, Scope, SilexResult};
+use silex_core::{
+    ErrorHandlerToken, ErrorReporter, OwnerAccess, ReactiveError, Runtime, SilexResult,
+};
 use silex_persist::{
     BackendEvent, BackendEventSink, BackendSubscribeError, BackendSubscription, DecodePolicy,
     NoDefault, ParseCodec, PersistCodec, PersistMode, PersistenceBackend, PersistenceError,
@@ -15,8 +17,8 @@ use std::{
 
 type SubscriptionMap = Rc<RefCell<HashMap<LocalStaticRefStr, Vec<(usize, BackendEventSink)>>>>;
 
-fn test_handler<'scope>(scope: Scope<'scope>) -> ErrorHandlerToken<'scope> {
-    scope
+fn test_handler<'scope>(owner: OwnerAccess<'scope>) -> ErrorHandlerToken<'scope> {
+    owner
         .error_handler(|_| {})
         .expect("test error handler should be registered")
 }
@@ -127,7 +129,7 @@ impl<'scope> PersistenceBackend<'scope> for MockBackend {
 
     fn subscribe(
         &self,
-        _scope: Scope<'scope>,
+        _owner: OwnerAccess<'scope>,
         key: impl Into<LocalStaticRefStr>,
         sink: BackendEventSink,
         _error_handler: ErrorReporter<'scope>,
@@ -238,12 +240,12 @@ impl<'scope> PersistenceBackend<'scope> for CallbackBackend<'scope> {
 
     fn subscribe(
         &self,
-        scope: Scope<'scope>,
+        owner: OwnerAccess<'scope>,
         key: impl Into<LocalStaticRefStr>,
         sink: BackendEventSink,
         error_handler: ErrorReporter<'scope>,
     ) -> Result<BackendSubscription<'scope>, BackendSubscribeError<'scope>> {
-        self.inner.subscribe(scope, key, sink, error_handler)
+        self.inner.subscribe(owner, key, sink, error_handler)
     }
 }
 
@@ -269,7 +271,7 @@ impl<'scope> PersistenceBackend<'scope> for FailingSubscriptionResourceBackend {
 
     fn subscribe(
         &self,
-        _scope: Scope<'scope>,
+        _owner: OwnerAccess<'scope>,
         _key: impl Into<LocalStaticRefStr>,
         _sink: BackendEventSink,
         _error_handler: ErrorReporter<'scope>,
@@ -291,14 +293,14 @@ impl<'scope> PersistenceBackend<'scope> for FailingSubscriptionResourceBackend {
 }
 
 fn parse_builder<'scope, B>(
-    scope: Scope<'scope>,
+    owner: OwnerAccess<'scope>,
     backend: B,
     key: &str,
 ) -> PersistentBuilder<'scope, B, ParseCodec<i32>, i32, NoDefault>
 where
     B: PersistenceBackend<'scope>,
 {
-    Persistent::builder(scope, key.to_string(), test_handler(scope))
+    Persistent::builder(owner, key.to_string(), test_handler(owner))
         .backend(backend)
         .parse::<i32>()
 }
@@ -306,7 +308,7 @@ where
 #[test]
 fn write_default_if_missing_persists_default() {
     let mut runtime = Runtime::new();
-    let _ = runtime.child(|scope| {
+    let _ = runtime.with_transient(|scope| {
         let backend = MockBackend::default();
         let value = parse_builder(scope, backend.clone(), "counter")
             .default(7)
@@ -332,7 +334,7 @@ fn write_default_if_missing_persists_default() {
 #[test]
 fn decode_error_remove_and_use_default_keeps_decode_error_state() {
     let mut runtime = Runtime::new();
-    let _ = runtime.child(|scope| {
+    let _ = runtime.with_transient(|scope| {
         let backend = MockBackend::with_value("counter", "bad");
         let value = parse_builder(scope, backend.clone(), "counter")
             .on_decode_error(DecodePolicy::RemoveAndUseDefault)
@@ -363,7 +365,7 @@ fn decode_error_remove_and_use_default_keeps_decode_error_state() {
 #[test]
 fn decode_error_use_default_preserves_invalid_raw() {
     let mut runtime = Runtime::new();
-    let _ = runtime.child(|scope| {
+    let _ = runtime.with_transient(|scope| {
         let backend = MockBackend::with_value("counter", "bad");
         let value = parse_builder(scope, backend.clone(), "counter")
             .on_decode_error(DecodePolicy::UseDefault)
@@ -390,7 +392,7 @@ fn decode_error_use_default_preserves_invalid_raw() {
 #[test]
 fn write_default_always_normalizes_existing_raw() {
     let mut runtime = Runtime::new();
-    let _ = runtime.child(|scope| {
+    let _ = runtime.with_transient(|scope| {
         let backend = MockBackend::with_value("counter", "007");
         let _value = parse_builder(scope, backend.clone(), "counter")
             .write_default(WriteDefault::Always)
@@ -408,7 +410,7 @@ fn write_default_always_normalizes_existing_raw() {
 #[test]
 fn initial_default_write_failure_is_visible() {
     let mut runtime = Runtime::new();
-    let _ = runtime.child(|scope| {
+    let _ = runtime.with_transient(|scope| {
         let backend = MockBackend::failing_writes();
         let value = parse_builder(scope, backend, "counter")
             .default(3)
@@ -433,7 +435,7 @@ fn initial_default_write_failure_is_visible() {
 #[test]
 fn manual_encode_failure_sets_write_error_for_effect_and_flush() {
     let mut runtime = Runtime::new();
-    let _ = runtime.child(|scope| {
+    let _ = runtime.with_transient(|scope| {
         let backend = MockBackend::default();
         let codec = FailingEncodeCodec {
             fail: Rc::new(Cell::new(false)),
@@ -485,7 +487,7 @@ fn manual_encode_failure_sets_write_error_for_effect_and_flush() {
 #[test]
 fn optional_none_flush_removes_backend_key() {
     let mut runtime = Runtime::new();
-    let _ = runtime.child(|scope| {
+    let _ = runtime.with_transient(|scope| {
         let backend = MockBackend::with_value("name", "alice");
         let value = Persistent::builder(scope, "name", test_handler(scope))
             .backend(backend.clone())
@@ -509,7 +511,7 @@ fn optional_none_flush_removes_backend_key() {
 #[test]
 fn external_remove_uses_default_without_rewriting_backend() {
     let mut runtime = Runtime::new();
-    let _ = runtime.child(|scope| {
+    let _ = runtime.with_transient(|scope| {
         let backend = MockBackend::with_value("counter", "7");
         let value = parse_builder(scope, backend.clone(), "counter")
             .default(5)
@@ -543,7 +545,7 @@ fn external_remove_uses_default_without_rewriting_backend() {
 #[test]
 fn explicit_remove_does_not_skip_the_next_immediate_or_manual_write() {
     let mut runtime = Runtime::new();
-    let _ = runtime.child(|scope| {
+    let _ = runtime.with_transient(|scope| {
         let immediate_backend = MockBackend::default();
         let immediate = parse_builder(scope, immediate_backend.clone(), "immediate-remove")
             .default(5)
@@ -583,7 +585,7 @@ fn explicit_remove_does_not_skip_the_next_immediate_or_manual_write() {
 #[test]
 fn missing_reload_with_default_value_does_not_skip_the_next_write() {
     let mut runtime = Runtime::new();
-    let _ = runtime.child(|scope| {
+    let _ = runtime.with_transient(|scope| {
         let backend = MockBackend::default();
         let value = parse_builder(scope, backend.clone(), "reload-missing")
             .write_default(WriteDefault::Never)
@@ -602,7 +604,7 @@ fn missing_reload_with_default_value_does_not_skip_the_next_write() {
 #[test]
 fn external_remove_with_default_value_does_not_skip_the_next_write() {
     let mut runtime = Runtime::new();
-    let _ = runtime.child(|scope| {
+    let _ = runtime.with_transient(|scope| {
         let backend = MockBackend::with_value("same-default", "5");
         let value = parse_builder(scope, backend.clone(), "same-default")
             .default(5)
@@ -623,7 +625,7 @@ fn external_remove_with_default_value_does_not_skip_the_next_write() {
 #[test]
 fn ignored_external_remove_does_not_skip_the_next_write() {
     let mut runtime = Runtime::new();
-    let _ = runtime.child(|scope| {
+    let _ = runtime.with_transient(|scope| {
         let backend = MockBackend::with_value("ignored-remove", "7");
         let value = parse_builder(scope, backend.clone(), "ignored-remove")
             .on_remove(RemovePolicy::Ignore)
@@ -654,7 +656,7 @@ fn ignored_external_remove_does_not_skip_the_next_write() {
 #[test]
 fn local_write_after_external_fallback_before_effect_flush_is_persisted() {
     let mut runtime = Runtime::new();
-    let _ = runtime.child(|scope| {
+    let _ = runtime.with_transient(|scope| {
         let backend = MockBackend::with_value("same-transaction", "7");
         let value = parse_builder(scope, backend.clone(), "same-transaction")
             .default(5)
@@ -702,7 +704,7 @@ fn local_write_after_external_fallback_before_effect_flush_is_persisted() {
 #[test]
 fn codec_callbacks_can_reenter_the_same_binding() {
     let mut runtime = Runtime::new();
-    let _ = runtime.child(|scope| {
+    let _ = runtime.with_transient(|scope| {
         let backend = MockBackend::with_value("codec-reentry", "1");
         let binding_slot: Rc<RefCell<Option<Persistent<'_, i32>>>> = Rc::new(RefCell::new(None));
         let encode_called = Rc::new(Cell::new(false));
@@ -764,7 +766,7 @@ fn codec_callbacks_can_reenter_the_same_binding() {
 #[test]
 fn default_callback_can_reenter_the_same_binding() {
     let mut runtime = Runtime::new();
-    let _ = runtime.child(|scope| {
+    let _ = runtime.with_transient(|scope| {
         let backend = MockBackend::with_value("default-reentry", "7");
         let binding_slot: Rc<RefCell<Option<Persistent<'_, i32>>>> = Rc::new(RefCell::new(None));
         let called = Rc::new(Cell::new(false));
@@ -811,7 +813,7 @@ fn default_callback_can_reenter_the_same_binding() {
 #[test]
 fn backend_callbacks_can_reenter_the_same_binding() {
     let mut runtime = Runtime::new();
-    let _ = runtime.child(|scope| {
+    let _ = runtime.with_transient(|scope| {
         let inner = MockBackend::with_value("backend-reentry", "1");
         let binding_slot: Rc<RefCell<Option<Persistent<'_, i32>>>> = Rc::new(RefCell::new(None));
         let get_called = Rc::new(Cell::new(false));
@@ -875,7 +877,7 @@ fn backend_callbacks_can_reenter_the_same_binding() {
 #[test]
 fn panicking_codec_callback_restores_the_controller_payload() {
     let mut runtime = Runtime::new();
-    let _ = runtime.child(|scope| {
+    let _ = runtime.with_transient(|scope| {
         let backend = MockBackend::with_value("codec-panic", "1");
         let should_panic = Rc::new(Cell::new(false));
         let panic_for_callback = should_panic.clone();
@@ -907,7 +909,7 @@ fn panicking_codec_callback_restores_the_controller_payload() {
 fn subscription_is_removed_when_scope_is_disposed() {
     let backend = MockBackend::with_value("counter", "7");
     let mut runtime = Runtime::new();
-    let _ = runtime.child(|scope| {
+    let _ = runtime.with_transient(|scope| {
         let _value = parse_builder(scope, backend.clone(), "counter")
             .default(5)
             .build()
@@ -921,16 +923,16 @@ fn subscription_is_removed_when_scope_is_disposed() {
 fn stale_persistent_operations_return_no_such_node_during_root_cleanup() {
     let backend = MockBackend::default();
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("root should be created");
+    let root = runtime.owner().expect("owner should be created");
     let errors = Rc::new(RefCell::new(Vec::new()));
 
-    root.with_scope(|scope| {
-        let value = parse_builder(scope, backend.clone(), "stale-cleanup")
+    root.with_access(|owner| {
+        let value = parse_builder(owner, backend.clone(), "stale-cleanup")
             .default(1)
             .build()
             .expect("persistent binding should build");
         let errors_for_cleanup = errors.clone();
-        scope
+        owner
             .on_cleanup(
                 move || -> SilexResult<()> {
                     errors_for_cleanup
@@ -951,14 +953,14 @@ fn stale_persistent_operations_return_no_such_node_during_root_cleanup() {
                     value.reset()?;
                     Ok(())
                 },
-                test_handler(scope),
+                test_handler(owner),
             )
             .expect("stale cleanup can be registered");
     });
 
     let writes_before_dispose = backend.writes.borrow().len();
     let removes_before_dispose = backend.removed.borrow().len();
-    root.dispose().expect("root cleanup should succeed");
+    root.close().expect("owner cleanup should succeed");
 
     assert_eq!(
         errors.borrow().as_slice(),
@@ -975,7 +977,7 @@ fn stale_persistent_operations_return_no_such_node_during_root_cleanup() {
 #[test]
 fn subscription_configuration_failure_does_not_create_binding_nodes() {
     let mut runtime = Runtime::new();
-    let _ = runtime.child(|scope| {
+    let _ = runtime.with_transient(|scope| {
         let backend = MockBackend::failing_subscription();
         let marker = Rc::new(());
         let marker_count_before = Rc::strong_count(&marker);
@@ -1002,7 +1004,7 @@ fn subscription_configuration_failure_does_not_create_binding_nodes() {
 #[test]
 fn subscription_error_rolls_back_resources_created_before_failure() {
     let mut runtime = Runtime::new();
-    let _ = runtime.child(|scope| {
+    let _ = runtime.with_transient(|scope| {
         let backend = FailingSubscriptionResourceBackend::default();
         let marker = Rc::new(());
         let marker_count_before = Rc::strong_count(&marker);
@@ -1030,7 +1032,7 @@ fn subscription_error_rolls_back_resources_created_before_failure() {
 #[test]
 fn synchronous_subscription_event_is_replayed_after_initialization() {
     let mut runtime = Runtime::new();
-    let _ = runtime.child(|scope| {
+    let _ = runtime.with_transient(|scope| {
         let backend = MockBackend::with_subscription_event(BackendEvent::Set {
             key: "synchronous-event".into(),
             value: "9".to_string(),
@@ -1059,7 +1061,7 @@ fn synchronous_subscription_event_is_replayed_after_initialization() {
 #[test]
 fn manual_mode_marks_value_dirty_until_flush() {
     let mut runtime = Runtime::new();
-    let _ = runtime.child(|scope| {
+    let _ = runtime.with_transient(|scope| {
         let backend = MockBackend::default();
         let value = parse_builder(scope, backend.clone(), "counter")
             .mode(PersistMode::Manual)
@@ -1089,7 +1091,7 @@ fn manual_mode_marks_value_dirty_until_flush() {
 #[test]
 fn initial_decode_removal_failure_sets_write_error() {
     let mut runtime = Runtime::new();
-    let _ = runtime.child(|scope| {
+    let _ = runtime.with_transient(|scope| {
         let backend = MockBackend::failing_removes();
         backend
             .state
@@ -1115,7 +1117,7 @@ fn initial_decode_removal_failure_sets_write_error() {
 #[test]
 fn external_decode_removal_failure_sets_write_error() {
     let mut runtime = Runtime::new();
-    let _ = runtime.child(|scope| {
+    let _ = runtime.with_transient(|scope| {
         let backend = MockBackend::with_value("counter", "1");
         let value = parse_builder(scope, backend.clone(), "counter")
             .on_decode_error(DecodePolicy::RemoveAndUseDefault)
@@ -1143,7 +1145,7 @@ fn external_decode_removal_failure_sets_write_error() {
 #[test]
 fn write_default_never_and_immediate_none_cover_missing_and_existing_values() {
     let mut runtime = Runtime::new();
-    let _ = runtime.child(|scope| {
+    let _ = runtime.with_transient(|scope| {
         let missing_backend = MockBackend::default();
         let missing = parse_builder(scope, missing_backend.clone(), "matrix-missing")
             .write_default(WriteDefault::Never)
@@ -1262,7 +1264,7 @@ fn write_default_never_and_immediate_none_cover_missing_and_existing_values() {
 #[test]
 fn remove_ignore_matrix_clears_external_state_without_skipping_local_writes() {
     let mut runtime = Runtime::new();
-    let _ = runtime.child(|scope| {
+    let _ = runtime.with_transient(|scope| {
         let non_default_backend = MockBackend::with_value("ignore-non-default", "7");
         let non_default = parse_builder(scope, non_default_backend.clone(), "ignore-non-default")
             .on_remove(RemovePolicy::Ignore)
@@ -1380,7 +1382,7 @@ fn remove_ignore_matrix_clears_external_state_without_skipping_local_writes() {
 #[test]
 fn write_default_never_manual_none_stays_ready_until_a_local_change() {
     let mut runtime = Runtime::new();
-    let _ = runtime.child(|scope| {
+    let _ = runtime.with_transient(|scope| {
         let backend = MockBackend::default();
         let value = parse_builder(scope, backend.clone(), "never-manual")
             .write_default(WriteDefault::Never)

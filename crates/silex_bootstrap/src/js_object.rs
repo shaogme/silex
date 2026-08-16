@@ -1,7 +1,13 @@
 use crate::{AppHost, AppHostError, BootstrapError, HostState, UnmountOutcome};
 use js_sys::{Array, Object, Reflect};
-use silex_core::{CleanupDiagnostic, CleanupPayloadKind, SilexError};
+use silex_core::{
+    CleanupDiagnostic, CleanupPayloadKind, CloseError, SilexError, log::console_error,
+};
 use silex_dom::{CleanupFailure, CleanupOrigin, CleanupReport};
+use std::{
+    any::Any,
+    panic::{AssertUnwindSafe, catch_unwind},
+};
 use wasm_bindgen::{JsValue, prelude::wasm_bindgen};
 
 /// An opaque JavaScript owner for an application-specific Rust mount.
@@ -10,13 +16,47 @@ use wasm_bindgen::{JsValue, prelude::wasm_bindgen};
 /// construct and mount an [`AppHost`] before transferring it to JavaScript.
 #[wasm_bindgen]
 pub struct JsAppHost {
-    host: AppHost,
+    /// A private heap handle keeps the wasm-bindgen receiver free of the host's interior state.
+    host: usize,
 }
 
 impl JsAppHost {
     /// Transfer an already configured host to the JavaScript-facing owner.
     pub fn from_app_host(host: AppHost) -> Self {
-        Self { host }
+        Self {
+            host: Box::into_raw(Box::new(host)) as usize,
+        }
+    }
+
+    fn host(&self) -> &AppHost {
+        debug_assert_ne!(self.host, 0);
+        // SAFETY: `from_app_host` creates exactly one boxed host, and `Drop` releases it only
+        // after the JavaScript wrapper is no longer reachable.
+        unsafe { &*(self.host as *const AppHost) }
+    }
+
+    fn host_mut(&mut self) -> &mut AppHost {
+        debug_assert_ne!(self.host, 0);
+        // SAFETY: the wrapper owns the unique boxed host, so an exclusive Rust borrow is valid.
+        unsafe { &mut *(self.host as *mut AppHost) }
+    }
+}
+
+impl Drop for JsAppHost {
+    fn drop(&mut self) {
+        if self.host == 0 {
+            return;
+        }
+
+        let host = self.host as *mut AppHost;
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            // SAFETY: the pointer was produced by `Box::into_raw` in `from_app_host` and is
+            // consumed exactly once here.
+            unsafe { drop(Box::from_raw(host)) };
+        }));
+        if result.is_err() {
+            console_error("Silex JS host drop panicked");
+        }
     }
 }
 
@@ -24,12 +64,12 @@ impl JsAppHost {
 impl JsAppHost {
     /// Return whether the wrapped host currently owns an active application.
     pub fn is_active(&self) -> bool {
-        self.host.is_active()
+        self.host().is_active()
     }
 
     /// Return the stable lowercase host state used by the JavaScript API.
     pub fn state(&self) -> String {
-        host_state_name(self.host.state()).to_string()
+        host_state_name(self.host().state()).to_string()
     }
 
     /// Dispose the application and convert failures into a structured JavaScript object.
@@ -37,11 +77,35 @@ impl JsAppHost {
     /// Rust keeps `UnmountOutcome` intact. The JavaScript-facing operation is intentionally
     /// idempotent, so both `Disposed` and `AlreadyUnmounted` resolve successfully.
     pub fn unmount(&mut self) -> Result<(), JsValue> {
-        match self.host.unmount() {
-            Ok(UnmountOutcome::Disposed | UnmountOutcome::AlreadyUnmounted) => Ok(()),
-            Err(error) => Err(app_host_error_to_js(&error)?),
+        let result = catch_unwind(AssertUnwindSafe(|| self.host_mut().unmount()));
+        match result {
+            Ok(Ok(UnmountOutcome::Disposed | UnmountOutcome::AlreadyUnmounted)) => Ok(()),
+            Ok(Err(error)) => Err(app_host_error_to_js(&error)?),
+            Err(panic) => Err(panic_to_js("unmount", panic)?),
         }
     }
+}
+
+fn panic_to_js(operation: &str, panic: Box<dyn Any + Send>) -> Result<JsValue, JsValue> {
+    let close_error = CloseError::from_panic(panic);
+    let object = Object::new();
+    set_property(&object, "code", JsValue::from_str("panic"))?;
+    set_property(
+        &object,
+        "message",
+        JsValue::from_str(&format!(
+            "{operation} panicked: {}",
+            close_error.diagnostic().message()
+        )),
+    )?;
+    set_property(&object, "state", JsValue::from_str("poisoned"))?;
+    set_property(&object, "operation", JsValue::from_str(operation))?;
+    set_property(
+        &object,
+        "diagnostic",
+        cleanup_diagnostic_to_js(close_error.diagnostic())?,
+    )?;
+    Ok(object.into())
 }
 
 fn host_state_name(state: HostState) -> &'static str {
@@ -215,6 +279,19 @@ fn cleanup_payload_kind_name(kind: CleanupPayloadKind) -> &'static str {
         CleanupPayloadKind::String => "string",
         CleanupPayloadKind::StaticStr => "static-str",
         CleanupPayloadKind::Unknown => "unknown",
+    }
+}
+
+#[cfg(test)]
+mod unwind_safety_tests {
+    use super::JsAppHost;
+    use std::panic::RefUnwindSafe;
+
+    #[test]
+    fn js_host_receiver_is_ref_unwind_safe() {
+        fn assert_ref_unwind_safe<T: RefUnwindSafe>() {}
+
+        assert_ref_unwind_safe::<JsAppHost>();
     }
 }
 

@@ -19,7 +19,7 @@ impl Drop for DropProbe {
 fn completion_sender_submits_while_scope_is_active() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let received = Rc::new(Cell::new(0));
             let received_by_callback = received.clone();
             let sender = scope
@@ -37,11 +37,33 @@ fn completion_sender_submits_while_scope_is_active() {
 }
 
 #[test]
+fn explicit_completion_cancel_is_idempotent_and_invalidates_the_endpoint() {
+    let mut runtime = Runtime::new();
+    runtime
+        .with_transient(|scope| {
+            let called = Rc::new(Cell::new(false));
+            let called_in_callback = called.clone();
+            let sender = scope
+                .completion_sender(unwind_safe(move |_: i32| {
+                    called_in_callback.set(true);
+                    Ok::<(), ()>(())
+                }))
+                .expect("completion registration");
+
+            sender.cancel().expect("explicit completion cancel");
+            sender.cancel().expect("repeated completion cancel");
+            assert!(!sender.submit(1).expect("stale completion submit"));
+            assert!(!called.get());
+        })
+        .expect("runtime child should succeed");
+}
+
+#[test]
 fn unwind_safe_adapts_interior_mutable_repeating_callback() {
     let seen = Rc::new(RefCell::new(Vec::new()));
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let seen_in_callback = seen.clone();
             let sender = scope
                 .completion_sender(unwind_safe(move |value: i32| {
@@ -63,7 +85,7 @@ fn completion_once_submits_once_and_reclaims_callback() {
     let dropped = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let probe = DropProbe(dropped.clone());
             let destination = scope
                 .completion_once(unwind_safe(move |_: i32| {
@@ -79,7 +101,7 @@ fn completion_once_submits_once_and_reclaims_callback() {
 
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let dropped_in_callback = dropped.clone();
             let destination = scope
                 .completion_once(unwind_safe(move |_: i32| {
@@ -98,7 +120,7 @@ fn completion_once_drop_cancels_callback_without_invoking_it() {
     let called = Rc::new(Cell::new(false));
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let called_in_callback = called.clone();
             let destination = scope
                 .completion_once(unwind_safe(move |_: i32| {
@@ -117,7 +139,7 @@ fn completion_sender_last_clone_drop_reclaims_callback() {
     let dropped = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let probe = DropProbe(dropped.clone());
             let sender = scope
                 .completion_sender(unwind_safe(move |_: i32| {
@@ -139,7 +161,7 @@ fn completion_once_panic_still_reclaims_callback() {
     let dropped = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let probe = DropProbe(dropped.clone());
             let destination = scope
                 .completion_once(unwind_safe(move |_: i32| {
@@ -162,7 +184,7 @@ fn completion_sender_panic_still_reclaims_callback_and_closes() {
     let dropped = Rc::new(Cell::new(0));
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let probe = DropProbe(dropped.clone());
             let destination = scope
                 .completion_sender(unwind_safe(move |_: i32| {
@@ -185,9 +207,9 @@ fn completion_sender_panic_still_reclaims_callback_and_closes() {
 fn completion_once_is_invalid_after_child_scope_dispose() {
     let mut runtime = Runtime::new();
     let token = runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             scope
-                .child(|child| {
+                .with_transient(|child| {
                     child
                         .completion_once(unwind_safe(|_: i32| Ok::<(), ()>(())))
                         .expect("completion registration")
@@ -203,7 +225,7 @@ fn completion_once_is_invalid_after_child_scope_dispose() {
 fn completion_once_is_invalid_after_run_returns() {
     let mut runtime = Runtime::new();
     let token: CompletionOnce<i32, ()> = runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             scope
                 .completion_once(unwind_safe(|_: i32| Ok::<(), ()>(())))
                 .expect("completion registration")
@@ -216,23 +238,25 @@ fn completion_once_is_invalid_after_run_returns() {
 #[test]
 fn stale_completion_cannot_dispose_a_reused_scope_id() {
     let mut runtime = Runtime::new();
-    let root = runtime.run().expect("runtime root creation");
+    let root = runtime.owner().expect("runtime root creation");
     let first_owner = root
-        .scope()
-        .owned_scope()
+        .access()
+        .create_child()
         .expect("fallible reactive creation");
     let stale = first_owner
+        .access()
         .completion_once(unwind_safe(|_: i32| Ok::<(), ()>(())))
         .expect("completion registration");
-    first_owner.dispose().expect("owner disposal");
+    first_owner.close().expect("owner disposal");
 
     let called = Rc::new(Cell::new(false));
     let called_in_callback = called.clone();
     let second_owner = root
-        .scope()
-        .owned_scope()
+        .access()
+        .create_child()
         .expect("fallible reactive creation");
     let current = second_owner
+        .access()
         .completion_once(unwind_safe(move |_: i32| {
             called_in_callback.set(true);
             Ok::<(), ()>(())
@@ -243,18 +267,18 @@ fn stale_completion_cannot_dispose_a_reused_scope_id() {
     assert!(current.submit(1).expect("completion submit"));
     assert!(called.get());
 
-    second_owner.dispose().expect("owner disposal");
+    second_owner.close().expect("owner disposal");
     drop(current);
     drop(second_owner);
     drop(first_owner);
-    root.dispose().expect("root cleanup");
+    root.close().expect("root cleanup");
 }
 
 #[test]
 fn repeating_completion_returns_user_error_and_remains_active() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let seen = Rc::new(Cell::new(0));
             let seen_for_callback = seen.clone();
             let sender = scope
@@ -283,7 +307,7 @@ fn repeating_completion_returns_user_error_and_remains_active() {
 fn repeating_completion_does_not_roll_back_callback_side_effects_on_error() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let (signal, set_signal) = scope.signal(0).expect("fallible reactive creation");
             let sender = scope
                 .completion_sender(unwind_safe(move |value: i32| {
@@ -305,7 +329,7 @@ fn repeating_completion_does_not_roll_back_callback_side_effects_on_error() {
 fn repeating_completion_reports_borrow_conflict_and_remains_active() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let nested = Rc::new(RefCell::new(None::<CompletionSender<i32, ()>>));
             let nested_for_callback = nested.clone();
             let sender = scope
@@ -331,7 +355,7 @@ fn repeating_completion_reports_borrow_conflict_and_remains_active() {
 fn completion_callback_can_cancel_itself_without_borrow_panic() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let destination = Rc::new(RefCell::new(None::<CompletionSender<i32, ()>>));
             let destination_in_callback = destination.clone();
             let sender = scope
@@ -358,7 +382,7 @@ fn completion_callback_can_cancel_itself_without_borrow_panic() {
 fn once_completion_returns_user_error_and_closes() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let destination = scope
                 .completion_once(unwind_safe(|_: i32| {
                     Err::<(), &'static str>("one shot failure")
@@ -382,7 +406,7 @@ fn once_completion_returns_user_error_and_closes() {
 fn completion_error_can_borrow_scope_local_data() {
     let mut runtime = Runtime::new();
     runtime
-        .child(|scope| {
+        .with_transient(|scope| {
             let message = String::from("scope-local error");
             let expected = message.as_str();
             let sender = scope

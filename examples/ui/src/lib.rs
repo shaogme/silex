@@ -75,9 +75,9 @@ fn ButtonShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope>
 
 #[component]
 fn FormControlsShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
-    let (text_val, set_text_val) = scope.signal("Hello Silex UI!".to_string())?;
-    let (checked_val, set_checked_val) = scope.signal(true)?;
-    let (switch_val, set_switch_val) = scope.signal(true)?;
+    let (text_val, set_text_val) = owner.signal("Hello Silex UI!".to_string())?;
+    let (checked_val, set_checked_val) = owner.signal(true)?;
+    let (switch_val, set_switch_val) = owner.signal(true)?;
 
     Ok(Card(ctx, chain!(
         CardHeader(ctx, chain!(
@@ -91,7 +91,7 @@ fn FormControlsShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'
                 Input(ctx)
                     .value(text_val)?
                     .placeholder("Type something...")?
-                    .on_input(scope.callback(move |v| {
+                    .on_input(owner.callback(move |v| {
                         set_text_val.set(v)
                     })?).build(),
                 p(rx!(ctx; format!("Live Bound Value: '{}'", $text_val)))
@@ -112,7 +112,7 @@ fn FormControlsShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'
                 div(chain!(
                 Checkbox(ctx)
                     .checked(checked_val)?
-                    .on_change(scope.callback(move |v| {
+                    .on_change(owner.callback(move |v| {
                         set_checked_val.set(v)
                     })?).build(),
                     span("Enable Notifications").class(tw!("text-sm font-medium text-slate-900 dark:text-slate-100"))
@@ -121,7 +121,7 @@ fn FormControlsShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'
                 div(chain!(
                 Switch(ctx)
                     .checked(switch_val)?
-                    .on_change(scope.callback(move |v| {
+                    .on_change(owner.callback(move |v| {
                         set_switch_val.set(v)
                     })?).build(),
                     span("Airplane Mode").class(tw!("text-sm font-medium text-slate-900 dark:text-slate-100"))
@@ -133,8 +133,8 @@ fn FormControlsShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'
 
 #[component]
 fn TabsAndDialogShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
-    let (active_tab, set_active_tab) = scope.signal("account".to_string())?;
-    let (dialog_open, set_dialog_open) = scope.signal(false)?;
+    let (active_tab, set_active_tab) = owner.signal("account".to_string())?;
+    let (dialog_open, set_dialog_open) = owner.signal(false)?;
 
     Ok(Card(ctx, chain!(
         CardHeader(ctx, chain!(
@@ -148,21 +148,21 @@ fn TabsAndDialogShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<
                     TabsList(ctx, chain!(
                         TabsTrigger(ctx, "Account", "account")
                             .active_tab(active_tab)?
-                            .on_select(scope.callback(move |tab: &'static str| {
+                            .on_select(owner.callback(move |tab: &'static str| {
                                 set_active_tab.set(tab.to_string())?;
                                 Ok(())
                             })?)
                             .build(),
                         TabsTrigger(ctx, "Password", "password")
                             .active_tab(active_tab)?
-                            .on_select(scope.callback(move |tab: &'static str| {
+                            .on_select(owner.callback(move |tab: &'static str| {
                                 set_active_tab.set(tab.to_string())?;
                                 Ok(())
                             })?)
                             .build(),
                         TabsTrigger(ctx, "Settings", "settings")
                             .active_tab(active_tab)?
-                            .on_select(scope.callback(move |tab: &'static str| {
+                            .on_select(owner.callback(move |tab: &'static str| {
                                 set_active_tab.set(tab.to_string())?;
                                 Ok(())
                             })?)
@@ -256,7 +256,7 @@ fn TabsAndDialogShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<
                     .build()
                 ))
                 .open(dialog_open)?
-                .on_close(scope.callback(move |_| {
+                .on_close(owner.callback(move |_| {
                     set_dialog_open.set(false)?;
                     Ok(())
                 })?)
@@ -271,7 +271,7 @@ fn TabsAndDialogShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<
 
 #[component]
 fn FeedbackAndDataShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
-    let (progress_val, set_progress_val) = scope.signal(45u32)?;
+    let (progress_val, set_progress_val) = owner.signal(45u32)?;
 
     Ok(Card(ctx, chain!(
         CardHeader(ctx, chain!(
@@ -336,11 +336,11 @@ fn FeedbackAndDataShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl Vie
 }
 
 fn build_tooltip_content<'scope>(
-    scope: Scope<'scope>,
+    owner: OwnerAccess<'scope>,
     error_handler: ErrorReporter<'scope>,
     context: TooltipContext<'scope>,
 ) -> SilexResult<AnyView<'scope>> {
-    let ctx = SilexContext::new(scope, error_handler);
+    let ctx = SilexContext::new(owner, error_handler);
     Ok(chain!(
         TooltipTrigger(
             ctx,
@@ -364,11 +364,11 @@ fn build_tooltip_content<'scope>(
 }
 
 fn build_popover_content<'scope>(
-    scope: Scope<'scope>,
+    owner: OwnerAccess<'scope>,
     error_handler: ErrorReporter<'scope>,
     context: PopoverContext<'scope>,
 ) -> SilexResult<AnyView<'scope>> {
-    let ctx = SilexContext::new(scope, error_handler);
+    let ctx = SilexContext::new(owner, error_handler);
     Ok(chain!(
         PopoverTrigger(
             ctx,
@@ -420,11 +420,11 @@ fn build_popover_content<'scope>(
 
 #[component]
 fn NewComponentsShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
-    let (slider_val, set_slider_val) = scope.signal(65.0f64)?;
-    let (toggle_pressed, set_toggle_pressed) = scope.signal(true)?;
-    let (radio_val, set_radio_val) = scope.signal("option-1".to_string())?;
-    let (popover_open, set_popover_open) = scope.signal(false)?;
-    let (accordion_open, set_accordion_open) = scope.signal(true)?;
+    let (slider_val, set_slider_val) = owner.signal(65.0f64)?;
+    let (toggle_pressed, set_toggle_pressed) = owner.signal(true)?;
+    let (radio_val, set_radio_val) = owner.signal("option-1".to_string())?;
+    let (popover_open, set_popover_open) = owner.signal(false)?;
+    let (accordion_open, set_accordion_open) = owner.signal(true)?;
 
     Ok(Card(ctx, chain!(
         CardHeader(ctx, chain!(
@@ -443,7 +443,7 @@ fn NewComponentsShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<
                         .value(slider_val)?
                         .min(0.0)?
                         .max(100.0)?
-                        .on_change(scope.callback(move |v| {
+                        .on_change(owner.callback(move |v| {
                             set_slider_val.set(v)?;
                             Ok(())
                         })?)
@@ -455,7 +455,7 @@ fn NewComponentsShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<
                     Toggle(ctx, span("B").class(tw!("font-bold")))
                         .variant("outline")?
                         .pressed(toggle_pressed)?
-                        .on_change(scope.callback(move |p| {
+                        .on_change(owner.callback(move |p| {
                             set_toggle_pressed.set(p)?;
                             Ok(())
                         })?)
@@ -465,8 +465,8 @@ fn NewComponentsShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<
 
             // Tooltip & Popover
             div(chain!(
-                Tooltip(ctx, move |ctx| build_tooltip_content(scope, error_handler, ctx)).build()?,
-                Popover(ctx, move |ctx| build_popover_content(scope, error_handler, ctx)).build()?
+                Tooltip(ctx, move |ctx| build_tooltip_content(owner, error_handler, ctx)).build()?,
+                Popover(ctx, move |ctx| build_popover_content(owner, error_handler, ctx)).build()?
             )).class(tw!("flex items-center gap-4 mb-6")),
 
             // RadioGroup & Accordion
@@ -477,7 +477,7 @@ fn NewComponentsShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<
                         div(chain!(
                             RadioGroupItem(ctx, "option-1")
                                 .selected_value(radio_val)?
-                                .on_select(scope.callback(move |v: &'static str| {
+                                .on_select(owner.callback(move |v: &'static str| {
                                     set_radio_val.set(v.to_string())?;
                                     Ok(())
                                 })?)
@@ -487,7 +487,7 @@ fn NewComponentsShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<
                         div(chain!(
                             RadioGroupItem(ctx, "option-2")
                                 .selected_value(radio_val)?
-                                .on_select(scope.callback(move |v: &'static str| {
+                                .on_select(owner.callback(move |v: &'static str| {
                                     set_radio_val.set(v.to_string())?;
                                     Ok(())
                                 })?)
@@ -503,7 +503,7 @@ fn NewComponentsShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<
                         AccordionItem(ctx, chain!(
                             AccordionTrigger(ctx, "Is Silex 1:1 compatible?")
                                 .open(accordion_open)?
-                                .on_click(scope.callback(move |_| {
+                                .on_click(owner.callback(move |_| {
                                     set_accordion_open.update(|v| *v = !*v)?;
                                     Ok(())
                                 })?)
@@ -523,13 +523,13 @@ fn NewComponentsShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<
 
 #[component]
 fn App<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
-    let is_dark = Persistent::builder(scope, "silex-ui-dark", error_handler)
+    let is_dark = Persistent::builder(owner, "silex-ui-dark", error_handler)
         .local()
         .parse::<bool>()
         .default(true)
         .build()?;
 
-    let _effect = scope.effect(
+    let _effect = owner.effect(
         move || -> SilexResult<()> {
             let dark = is_dark.get()?;
             if let Some(doc) = window().document()
@@ -613,10 +613,10 @@ pub fn mount_ui_into(target: web_sys::Node) -> Result<JsAppHost, BootstrapError>
 }
 
 fn mount_ui_view<'scope>(ctx: &MountContext<'scope>) -> SilexResult<()> {
-    let scope = ctx.scope();
-    let error_handler = scope.error_handler(|error: SilexError| {
+    let owner = ctx.access();
+    let error_handler = owner.error_handler(|error: SilexError| {
         web_sys::console::error_1(&error.to_string().into());
     })?;
-    let silex_ctx = SilexContext::new(scope, error_handler.view());
+    let silex_ctx = SilexContext::new(owner, error_handler.view());
     ctx.mount(App(silex_ctx).build(), error_handler)
 }

@@ -2,16 +2,18 @@
 
 use crate::{
     error::{CallbackInvokeError, CompletionSubmitResult, ReactiveError, map_callback_error},
-    internal::RawId,
-    runtime::storage::{CallbackThunk, CallbackThunkError},
-    runtime::{self, GlobalScheduler, ScopeId, ScopeState},
-    scope::ScopeStorage,
-    unsafe_boundary::{ErasedCallbackRef, OwnerToken, WeakOwnerToken, erase_callback_ref},
+    internal::NodeId,
+    owner::ScopeStorage,
+    root::{CleanupFailure, CloseError},
+    runtime::storage::{CallbackThunk, CallbackThunkError, TypedNodeRef, TypedSlot},
+    runtime::{self, GlobalScheduler, OwnerId, ScopeState},
+    unsafe_boundary::{OwnerToken, WeakOwnerToken},
 };
 use std::{
     cell::{Cell, RefCell},
     marker::PhantomData,
     panic::{AssertUnwindSafe, UnwindSafe, catch_unwind, resume_unwind},
+    ptr::NonNull,
     rc::Rc,
 };
 
@@ -40,27 +42,72 @@ enum CompletionPhase {
     Closed,
 }
 
-struct CompletionState<T, E> {
+/// The only typed lifetime adapter retained by the completion endpoint.
+///
+/// A normal callback handle keeps a typed reference directly. A completion
+/// sender must be `'static` with respect to the submitted value while its
+/// callback may remain owner-local, so the endpoint stores only a pointer and
+/// restores it after the runtime validator has checked owner/node identity and
+/// phase. No other module can construct or restore this representation.
+#[derive(Clone, Copy)]
+struct TypedCompletionEndpoint<T, E> {
+    pointer: NonNull<()>,
+    marker: PhantomData<fn(T) -> E>,
+}
+
+impl<T, E> TypedCompletionEndpoint<T, E> {
+    /// # Safety
+    ///
+    /// `callback` must point into the owner arena and the callback node must
+    /// be registered before the endpoint is published. The owner close path
+    /// clears the typed slot before releasing that arena.
+    unsafe fn from_callback<'scope>(
+        callback: TypedNodeRef<'scope, CallbackThunk<'scope, T, E>>,
+    ) -> Self {
+        Self {
+            pointer: NonNull::from(callback.slot()).cast(),
+            marker: PhantomData,
+        }
+    }
+
+    /// # Safety
+    ///
+    /// The caller must have just completed the runtime owner/node/phase
+    /// validation for the endpoint that owns this pointer.
+    unsafe fn restore<'scope>(
+        &self,
+        _owner: &OwnerToken<'scope>,
+    ) -> TypedNodeRef<'scope, CallbackThunk<'scope, T, E>> {
+        let slot = unsafe {
+            self.pointer
+                .cast::<TypedSlot<CallbackThunk<'scope, T, E>>>()
+                .as_ref()
+        };
+        TypedNodeRef::from_slot(slot)
+    }
+}
+
+struct CompletionEndpoint<T, E> {
     state: WeakOwnerToken,
     scheduler: Rc<RefCell<GlobalScheduler>>,
-    scope_id: ScopeId,
-    callback: RawId,
-    typed_callback: ErasedCallbackRef<T, E>,
+    owner_id: OwnerId,
+    callback: NodeId,
+    typed_callback: TypedCompletionEndpoint<T, E>,
     phase: Cell<CompletionPhase>,
 }
 
-impl<T, E> CompletionState<T, E> {
+impl<T, E> CompletionEndpoint<T, E> {
     fn new(
         state: WeakOwnerToken,
         scheduler: Rc<RefCell<GlobalScheduler>>,
-        scope_id: ScopeId,
-        callback: RawId,
-        typed_callback: ErasedCallbackRef<T, E>,
+        owner_id: OwnerId,
+        callback: NodeId,
+        typed_callback: TypedCompletionEndpoint<T, E>,
     ) -> Self {
         Self {
             state,
             scheduler,
-            scope_id,
+            owner_id,
             callback,
             typed_callback,
             phase: Cell::new(CompletionPhase::Active),
@@ -68,16 +115,12 @@ impl<T, E> CompletionState<T, E> {
     }
 
     fn current_owner<'scope>(&self) -> Result<Option<ActiveOwner<'scope>>, ReactiveError> {
-        if !self
+        let owner = self
             .scheduler
             .try_borrow()
             .map_err(|_| ReactiveError::BorrowConflict)?
-            .is_scope_current(self.scope_id, &self.state)
-        {
-            return Ok(None);
-        }
-
-        let Some(owner) = self.state.upgrade() else {
+            .resolve_owner(self.owner_id, &self.state);
+        let Some(owner) = owner else {
             return Ok(None);
         };
         let state = owner.state();
@@ -88,11 +131,19 @@ impl<T, E> CompletionState<T, E> {
         Ok(self.current_owner()?.map(|active| active.state))
     }
 
+    fn validated_callback<'scope>(&self) -> Result<Option<ActiveOwner<'scope>>, ReactiveError> {
+        let Some(active) = self.current_owner()? else {
+            return Ok(None);
+        };
+        active.state.validate_callback_endpoint(self.callback)?;
+        Ok(Some(active))
+    }
+
     fn begin_once<'scope>(&self) -> Result<Option<ActiveOwner<'scope>>, ReactiveError> {
         if self.phase.replace(CompletionPhase::Completing) != CompletionPhase::Active {
             return Ok(None);
         }
-        match self.current_owner()? {
+        match self.validated_callback()? {
             Some(owner) => Ok(Some(owner)),
             None => {
                 self.phase.set(CompletionPhase::Closed);
@@ -101,18 +152,31 @@ impl<T, E> CompletionState<T, E> {
         }
     }
 
-    fn close_and_dispose(&self) -> Result<(), ReactiveError> {
+    fn close_and_dispose(&self) -> Result<(), CloseError> {
         if self.phase.get() == CompletionPhase::Closed {
             return Ok(());
         }
         self.phase.set(CompletionPhase::Closing);
-        let Some(state) = self.current_state()? else {
+        let Some(state) = self.current_state().map_err(close_runtime_error)? else {
             self.phase.set(CompletionPhase::Closed);
             return Ok(());
         };
-        let outcome = runtime::dispose_nodes(&state, vec![self.callback])?;
-        if let Some(error) = outcome.handler_errors.into_iter().next() {
-            return Err(ReactiveError::Handler(error));
+        let outcome =
+            runtime::dispose_nodes(&state, vec![self.callback]).map_err(close_runtime_error)?;
+        let mut failures = outcome
+            .runtime_errors
+            .into_iter()
+            .map(CleanupFailure::Runtime)
+            .collect::<Vec<_>>();
+        failures.extend(
+            outcome
+                .handler_errors
+                .into_iter()
+                .map(CleanupFailure::Handler),
+        );
+        failures.extend(outcome.panics.into_iter().map(CloseError::panic_failure));
+        if let Some(error) = CloseError::from_failures(failures) {
+            return Err(error);
         }
         self.phase.set(CompletionPhase::Closed);
         Ok(())
@@ -122,17 +186,25 @@ impl<T, E> CompletionState<T, E> {
         if self.phase.get() != CompletionPhase::Active {
             return Ok(false);
         }
-        let active = match self.current_owner() {
+        let active = match self.validated_callback() {
             Ok(Some(active)) => active,
             Ok(None) => return Ok(false),
             Err(error) => return Err(CallbackThunkError::Runtime(error)),
         };
-        let typed_callback = self.typed_callback.restore(&active.owner);
+        // SAFETY: `validated_callback` checked the scheduler identity, owner
+        // generation, active phase, callback node generation, and callback
+        // node kind immediately before this restore.
+        let typed_callback = unsafe { self.typed_callback.restore(&active.owner) };
         runtime::invoke_callback(&active.state, self.callback, typed_callback, value).map(|()| true)
     }
 }
 
-fn drop_completion_state<T, E>(state: &CompletionState<T, E>) {
+fn close_runtime_error(error: ReactiveError) -> CloseError {
+    CloseError::from_failures(vec![CleanupFailure::Runtime(error)])
+        .expect("a runtime close failure must produce a close error")
+}
+
+fn drop_completion_state<T, E>(state: &CompletionEndpoint<T, E>) {
     let _ = catch_unwind(AssertUnwindSafe(|| state.close_and_dispose()));
 }
 
@@ -141,7 +213,7 @@ fn drop_completion_state<T, E>(state: &CompletionState<T, E>) {
 /// Clones share the same terminal state. Dropping the final active clone cancels
 /// the destination without invoking the user callback.
 pub struct CompletionOnce<T, E> {
-    state: Rc<CompletionState<T, E>>,
+    state: Rc<CompletionEndpoint<T, E>>,
     marker: PhantomData<fn(T) -> E>,
 }
 
@@ -173,7 +245,9 @@ impl<T: 'static, E> CompletionOnce<T, E> {
             }
         };
         let callback_result = catch_unwind(AssertUnwindSafe(|| {
-            let typed_callback = self.state.typed_callback.restore(&owner);
+            // SAFETY: `begin_once` validates the owner and this endpoint's
+            // node is validated before restoring its typed callback.
+            let typed_callback = unsafe { self.state.typed_callback.restore(&owner) };
             runtime::invoke_callback(&state, self.state.callback, typed_callback, value)
         }));
         let dispose_result = catch_unwind(AssertUnwindSafe(|| self.state.close_and_dispose()));
@@ -182,13 +256,13 @@ impl<T: 'static, E> CompletionOnce<T, E> {
             (Err(panic), _) => resume_unwind(panic),
             (Ok(_), Err(panic)) => resume_unwind(panic),
             (Ok(Ok(())), Ok(Ok(()))) => Ok(true),
-            (Ok(Ok(())), Ok(Err(error))) => Err(CallbackInvokeError::Runtime(error)),
+            (Ok(Ok(())), Ok(Err(error))) => Err(CallbackInvokeError::Close(error)),
             (Ok(Err(error)), Ok(Ok(()))) => Err(map_callback_error(error)),
             (Ok(Err(error)), Ok(Err(_))) => Err(map_callback_error(error)),
         }
     }
 
-    pub fn cancel(&self) -> Result<(), ReactiveError> {
+    pub fn cancel(&self) -> Result<(), CloseError> {
         self.state.close_and_dispose()
     }
 }
@@ -200,7 +274,7 @@ impl<T: 'static, E> CompletionOnce<T, E> {
 /// A callback panic is terminal: the callback node is disposed before the panic
 /// is resumed, and later submissions return `Ok(false)`.
 pub struct CompletionSender<T, E> {
-    state: Rc<CompletionState<T, E>>,
+    state: Rc<CompletionEndpoint<T, E>>,
     marker: PhantomData<fn(T) -> E>,
 }
 
@@ -233,7 +307,7 @@ impl<T: 'static, E> CompletionSender<T, E> {
         }
     }
 
-    pub fn cancel(&self) -> Result<(), ReactiveError> {
+    pub fn cancel(&self) -> Result<(), CloseError> {
         self.state.close_and_dispose()
     }
 }
@@ -242,7 +316,7 @@ fn create_completion_state<'scope, T: 'static, E, F>(
     storage: &'scope ScopeStorage,
     state: ScopeState<'scope>,
     callback: F,
-) -> Result<Rc<CompletionState<T, E>>, ReactiveError>
+) -> Result<Rc<CompletionEndpoint<T, E>>, ReactiveError>
 where
     E: 'scope,
     F: FnMut(T) -> Result<(), E> + 'scope,
@@ -270,13 +344,13 @@ where
         }
     };
     let weak = WeakOwnerToken::from_typed(&state);
-    // SAFETY: The typed callback is dereferenced only after `current_state`
-    // validates the weak owner token. Disposal clears the node slot first.
-    let typed_callback = unsafe { erase_callback_ref(thunk) };
-    Ok(Rc::new(CompletionState::new(
+    // SAFETY: The callback slot is registered before this endpoint is
+    // published and is cleared by the unified node disposal path.
+    let typed_callback = unsafe { TypedCompletionEndpoint::from_callback(thunk) };
+    Ok(Rc::new(CompletionEndpoint::new(
         weak,
         scheduler,
-        storage.scope_id,
+        storage.owner_id,
         callback,
         typed_callback,
     )))

@@ -2,15 +2,14 @@ use crate::attribute::{ApplyTarget, AttributeBuilder, IntoStorable, PendingAttri
 use crate::event::{EventDescriptor, EventHandler};
 use crate::view::{
     AnyView, ApplyAttributes, HostResourceHandle, MountInstance, MountOwner, MountOwnerToken,
-    OwnedMountOwner, View,
+    OwnerMount, View,
 };
 use std::marker::PhantomData;
-use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
-use std::rc::Rc;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use wasm_bindgen::{JsCast, JsValue, convert::FromWasmAbi, prelude::*};
 use web_sys::Element as WebElem;
 
-use silex_core::{ErrorHandlerInput, ReactiveError, SilexError, SilexResult};
+use silex_core::{CloseError, ErrorHandlerInput, ReactiveError, SilexError, SilexResult};
 
 pub mod tags;
 pub use tags::*;
@@ -96,8 +95,7 @@ impl<'scope> Element<'scope> {
                 .create_element(&self.tag_name)
                 .map_err(SilexError::fatal)?,
         };
-        let provisional_scope = Rc::new(owner.owned_scope()?);
-        let provisional_owner = OwnedMountOwner::new(provisional_scope.clone());
+        let provisional_owner = OwnerMount::new(owner.child());
         let token = provisional_owner.token();
         let mut appended = false;
         let result = (|| -> SilexResult<MountInstance<'scope>> {
@@ -117,11 +115,13 @@ impl<'scope> Element<'scope> {
                     error_handler,
                 )?;
             }
-            let scope_for_cleanup = provisional_scope.clone();
+            let owner_for_cleanup = provisional_owner.token();
             let element_for_cleanup = dom_element.clone();
             owner.on_cleanup(
                 Box::new(move || {
-                    let _ = scope_for_cleanup.dispose();
+                    owner_for_cleanup.close().map_err(|error| {
+                        SilexError::fatal(silex_core::SilexErrorKind::Close(error))
+                    })?;
                     if let Some(parent) = element_for_cleanup.parent_node() {
                         let _ = parent.remove_child(&element_for_cleanup);
                     }
@@ -133,24 +133,24 @@ impl<'scope> Element<'scope> {
         })();
 
         if let Err(error) = &result {
-            rollback_mount(&provisional_scope, &dom_element, appended);
+            rollback_mount(&provisional_owner, &dom_element, appended);
             return Err(error.clone());
         }
         result
     }
 }
 
-fn rollback_mount<'scope>(
-    scope: &Rc<silex_core::OwnedScope<'scope>>,
-    element: &WebElem,
-    appended: bool,
-) {
-    let dispose_panic = catch_unwind(AssertUnwindSafe(|| scope.dispose())).err();
+fn rollback_mount<'scope>(owner: &OwnerMount<'scope>, element: &WebElem, appended: bool) {
+    let close_panic = match catch_unwind(AssertUnwindSafe(|| owner.token().close())) {
+        Ok(Ok(())) => None,
+        Ok(Err(error)) => Some(error),
+        Err(panic) => Some(CloseError::from_panic(panic)),
+    };
     if appended && let Some(parent) = element.parent_node() {
         let _ = parent.remove_child(element);
     }
-    if let Some(panic) = dispose_panic {
-        resume_unwind(panic);
+    if let Some(error) = close_panic {
+        owner.token().report_close_error(error);
     }
 }
 

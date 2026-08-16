@@ -4,8 +4,8 @@ use silex_core::{
 
 fn main() {
     let mut runtime = Runtime::new();
-    runtime.child(|scope| {
-        let token: ErrorHandlerToken<'_> = scope
+    runtime.with_transient(|owner| {
+        let token: ErrorHandlerToken<'_> = owner
             .error_handler(|error| {
                 let _ = error;
             })
@@ -13,5 +13,5 @@ fn main() {
         let handler: ErrorHandler<'_> = token.view();
         let reporter: ErrorReporter<'_> = handler;
         let _ = reporter.handle(SilexError::recoverable(SilexErrorKind::Framework("compile-pass".to_string())));
-    }).expect("child scope should initialize");
+    }).expect("child owner should initialize");
 }
