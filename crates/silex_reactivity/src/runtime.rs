@@ -29,17 +29,18 @@ pub(crate) use ops::{
     node_ref_get, node_ref_set, notify, stop_effect, update_signal, update_stored, with_batch,
     with_fallible_signal, with_signal, with_stored, with_untracked,
 };
-pub(crate) use scheduler::{GlobalScheduler, ObserverFrame, OwnerId, OwnerMode};
+pub(crate) use scheduler::{CloseReportQueue, GlobalScheduler, ObserverFrame, OwnerId, OwnerMode};
 
 use crate::error::{ReactiveError, ReactiveResult};
 use crate::owner::{self, OwnerHandle};
-use crate::root::{TransientScopeError, TransientScopeResult};
+use crate::root::{CloseError, TransientScopeError, TransientScopeResult};
 
 use std::{cell::Cell, marker::PhantomData, rc::Rc};
 
 /// User-owned single-threaded runtime.
 pub struct Runtime {
     root_active: Rc<Cell<bool>>,
+    close_reports: Rc<CloseReportQueue>,
     marker: PhantomData<Rc<()>>,
 }
 
@@ -47,6 +48,7 @@ impl Runtime {
     pub fn new() -> Self {
         Self {
             root_active: Rc::new(Cell::new(false)),
+            close_reports: CloseReportQueue::new(),
             marker: PhantomData,
         }
     }
@@ -57,7 +59,10 @@ impl Runtime {
             return Err(ReactiveError::RuntimeAlreadyRunning);
         }
         self.root_active.set(true);
-        Ok(owner::new_root(self.root_active.clone()))
+        Ok(owner::new_root(
+            self.root_active.clone(),
+            self.close_reports.clone(),
+        ))
     }
 
     /// Execute a transient owner whose handles cannot escape the callback.
@@ -70,7 +75,12 @@ impl Runtime {
                 ReactiveError::RuntimeAlreadyRunning,
             ));
         }
-        owner::new_transient(f)
+        owner::new_transient(f, self.close_reports.clone())
+    }
+
+    /// Take close diagnostics that originated in Drop or panic recovery paths.
+    pub fn take_unhandled_close_errors(&self) -> Vec<CloseError> {
+        self.close_reports.take()
     }
 }
 

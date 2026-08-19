@@ -4,10 +4,59 @@ use super::model::{ScopePhase, ScopeState};
 use crate::{
     ReactiveError,
     internal::NodeId,
+    root::CloseError,
     unsafe_boundary::{OwnerToken, WeakOwnerToken},
 };
 
-use std::{cell::RefCell, collections::VecDeque, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    collections::VecDeque,
+    rc::Rc,
+};
+
+/// Close diagnostics that cannot be returned through the current call stack.
+///
+/// The queue is intentionally runtime-owned and does not invoke user code.
+/// `dropped` is retained as an invariant diagnostic for the narrow case where
+/// an internal borrow conflict prevents recording the error itself.
+pub(crate) struct CloseReportQueue {
+    errors: RefCell<VecDeque<CloseError>>,
+    dropped: Cell<usize>,
+}
+
+impl CloseReportQueue {
+    pub(crate) fn new() -> Rc<Self> {
+        Rc::new(Self {
+            errors: RefCell::new(VecDeque::new()),
+            dropped: Cell::new(0),
+        })
+    }
+
+    pub(crate) fn push(&self, error: CloseError) {
+        match self.errors.try_borrow_mut() {
+            Ok(mut errors) => errors.push_back(error),
+            Err(_) => {
+                self.dropped.set(self.dropped.get().saturating_add(1));
+                #[cfg(feature = "test-support")]
+                panic!("close reporter borrow conflict");
+            }
+        }
+    }
+
+    pub(crate) fn take(&self) -> Vec<CloseError> {
+        self.errors.borrow_mut().drain(..).collect()
+    }
+
+    #[cfg(feature = "test-support")]
+    pub(crate) fn len(&self) -> usize {
+        self.errors.borrow().len()
+    }
+
+    #[cfg(feature = "test-support")]
+    pub(crate) fn dropped(&self) -> usize {
+        self.dropped.get()
+    }
+}
 
 /// Generational runtime identity for an owner slot.
 ///
@@ -259,10 +308,16 @@ pub(crate) struct GlobalScheduler {
     pub(crate) executing: usize,
     pub(crate) active_leases: usize,
     initial_flush_depth: usize,
+    pub(crate) close_reports: Rc<CloseReportQueue>,
 }
 
 impl GlobalScheduler {
+    #[cfg(test)]
     pub(crate) fn new() -> Rc<RefCell<Self>> {
+        Self::new_with_reporter(CloseReportQueue::new())
+    }
+
+    pub(crate) fn new_with_reporter(reporter: Rc<CloseReportQueue>) -> Rc<RefCell<Self>> {
         Rc::new(RefCell::new(Self {
             active_mask: BitSet::new(),
             scopes: Vec::new(),
@@ -277,7 +332,13 @@ impl GlobalScheduler {
             executing: 0,
             active_leases: 0,
             initial_flush_depth: 0,
+            close_reports: reporter,
         }))
+    }
+
+    #[cfg(feature = "test-support")]
+    pub(crate) fn dropped_close_reports(&self) -> usize {
+        self.close_reports.dropped()
     }
 
     pub(crate) fn current_epoch(&self) -> u64 {

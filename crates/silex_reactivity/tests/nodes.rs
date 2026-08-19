@@ -1,6 +1,6 @@
 use silex_reactivity::{
-    Callback, CallbackInvokeError, Computed, EffectHandle, ErrorHandlerToken, NodeRef, OwnerAccess,
-    ReactiveError, ReadSignal, Runtime, StoredValue, WriteSignal,
+    Callback, CallbackInvokeError, Computed, EffectHandle, ErrorHandlerRef, ErrorHandlerToken,
+    NodeRef, OwnerAccess, ReactiveError, ReadSignal, Runtime, StoredValue, WriteSignal,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -89,7 +89,11 @@ fn all_public_node_capabilities_are_copy() {
                 .callback(|_: ()| Ok::<(), ReactiveError>(()))
                 .expect("callback should initialize");
             let node_ref = scope.node_ref::<i32>().expect("fallible reactive creation");
+            let handler_ref = handler(scope).view();
 
+            assert_copy(scope);
+            assert_copy(handler_ref);
+            let _: ErrorHandlerRef<'_, ()> = handler_ref;
             assert_copy(read);
             assert_copy(write);
             assert_copy(signal);

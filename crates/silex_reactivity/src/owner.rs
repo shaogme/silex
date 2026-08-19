@@ -9,7 +9,7 @@
 mod node;
 mod storage;
 
-pub(crate) use storage::ScopeStorage;
+pub(crate) use storage::{CloseOutcome, ScopeStorage};
 
 use crate::{
     ComputationInitResult, ErrorHandlerInput, ErrorHandlerToken, ReactiveError, ReactiveResult,
@@ -24,7 +24,7 @@ use crate::{
     },
     runtime::storage::{CallbackThunk, CleanupThunk},
     runtime::{self, OwnerMode},
-    unsafe_boundary::{WeakOwnerToken, persistent_child_storage},
+    unsafe_boundary::WeakOwnerToken,
 };
 pub use node::{
     Callback, Computed, EffectHandle, NodeRef, ReadSignal, RwSignal, StoredValue, WatchOptions,
@@ -61,7 +61,8 @@ impl OwnerHandle {
         let child =
             ScopeStorage::new_with_owner(scheduler, Some(storage.owner_id), OwnerMode::Persistent);
         let child = Rc::new(child);
-        storage.children.borrow_mut().push(child.clone());
+        child.link_parent(&storage.children);
+        storage.children.insert(child.clone());
         Ok(Self {
             storage: child,
             runtime_slot: None,
@@ -98,20 +99,19 @@ impl OwnerHandle {
         Self::new_child(self.storage.as_ref())
     }
 
-    /// Close this owner. A failed close leaves the owner in its runtime
-    /// closing phase so the caller can retry.
+    /// Close this owner. Only a retryable close failure leaves the owner open.
     pub fn close(&self) -> Result<(), CloseError> {
         if self.closed.get() {
             return Ok(());
         }
-        let result = close_owner_tree(&self.storage).map_or(Ok(()), Err);
-        if result.is_ok() {
+        let outcome = close_owner_tree(&self.storage);
+        if outcome.released {
             self.closed.set(true);
             if let Some(runtime_slot) = &self.runtime_slot {
                 runtime_slot.set(false);
             }
         }
-        result
+        outcome.error.map_or(Ok(()), Err)
     }
 
     pub fn is_active(&self) -> bool {
@@ -127,7 +127,9 @@ impl OwnerHandle {
 
 impl Drop for OwnerHandle {
     fn drop(&mut self) {
-        let _ = self.close();
+        if let Err(error) = self.close() {
+            self.storage.report_close_error(error);
+        }
     }
 }
 
@@ -148,7 +150,17 @@ pub struct PersistentOwnerAccess<'parent> {
 
 impl<'parent> PersistentOwnerAccess<'parent> {
     fn from_handle(parent: &'parent ScopeStorage, handle: OwnerHandle) -> ReactiveResult<Self> {
-        let storage = persistent_child_storage(parent, &handle.storage)?;
+        if !parent
+            .children
+            .contains(handle.storage.owner_id, &handle.storage)
+        {
+            return Err(ReactiveError::InvariantViolation);
+        }
+        // SAFETY: the adapter stores `handle` before `access` and therefore
+        // keeps the child allocation alive for the complete access lifetime.
+        // Registry membership was checked immediately above; runtime phase
+        // and generation checks still gate every operation on this access.
+        let storage = unsafe { &*Rc::as_ptr(&handle.storage) };
         Ok(Self {
             handle,
             access: OwnerAccess {
@@ -168,8 +180,8 @@ impl<'parent> PersistentOwnerAccess<'parent> {
     /// Close the child exactly once from the caller's perspective.
     ///
     /// If a parent owner already closed the child, the runtime's released
-    /// phase makes this a successful no-op. Other close failures retain their
-    /// original [`CloseError`] classification for a caller to retry.
+    /// phase makes this a successful no-op. Only retryable close failures can
+    /// be retried; a released child is never disposed twice.
     #[doc(hidden)]
     pub fn close_once(&self) -> Result<(), CloseError> {
         self.handle.close()
@@ -227,9 +239,8 @@ impl<'owner> OwnerAccess<'owner> {
         };
         let frame = runtime::ObserverFrame::push_child(scheduler, storage.owner_id);
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(access)));
-        let close = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            close_owner_tree(&storage).map_or(Ok(()), Err)
-        }));
+        let close =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| close_owner_tree(&storage)));
         drop(frame);
         finish_transient(result, close)
     }
@@ -259,7 +270,9 @@ impl<'owner> OwnerAccess<'owner> {
     #[cfg(feature = "test-support")]
     #[doc(hidden)]
     pub fn runtime_snapshot(&self) -> runtime::RuntimeSnapshot {
-        self.state().borrow().runtime_snapshot()
+        let mut snapshot = self.state().borrow().runtime_snapshot();
+        snapshot.retained_children = self.storage.retained_children();
+        snapshot
     }
 
     pub fn completion_once<T: 'static, E, F>(
@@ -631,9 +644,12 @@ impl<'owner> OwnerAccess<'owner> {
     }
 }
 
-pub(crate) fn new_root(runtime_slot: Rc<Cell<bool>>) -> OwnerHandle {
+pub(crate) fn new_root(
+    runtime_slot: Rc<Cell<bool>>,
+    close_reports: Rc<runtime::CloseReportQueue>,
+) -> OwnerHandle {
     let storage = Rc::new(ScopeStorage::new_with_owner(
-        runtime::GlobalScheduler::new(),
+        runtime::GlobalScheduler::new_with_reporter(close_reports),
         None,
         OwnerMode::Root,
     ));
@@ -642,8 +658,9 @@ pub(crate) fn new_root(runtime_slot: Rc<Cell<bool>>) -> OwnerHandle {
 
 pub(crate) fn new_transient<R>(
     f: impl for<'owner> FnOnce(OwnerAccess<'owner>) -> R,
+    close_reports: Rc<runtime::CloseReportQueue>,
 ) -> TransientScopeResult<R> {
-    let scheduler = runtime::GlobalScheduler::new();
+    let scheduler = runtime::GlobalScheduler::new_with_reporter(close_reports);
     let storage = ScopeStorage::new_with_owner(scheduler.clone(), None, OwnerMode::Transient);
     let access = OwnerAccess {
         storage: &storage,
@@ -651,20 +668,21 @@ pub(crate) fn new_transient<R>(
     };
     let frame = runtime::ObserverFrame::push_untracked(scheduler);
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(access)));
-    let close = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        close_owner_tree(&storage).map_or(Ok(()), Err)
-    }));
+    let close =
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| close_owner_tree(&storage)));
     drop(frame);
     finish_transient(result, close)
 }
 
 fn finish_transient<R>(
     result: Result<R, Box<dyn std::any::Any + Send>>,
-    close: Result<Result<(), CloseError>, Box<dyn std::any::Any + Send>>,
+    close: Result<CloseOutcome, Box<dyn std::any::Any + Send>>,
 ) -> TransientScopeResult<R> {
     match (result, close) {
-        (Ok(value), Ok(Ok(()))) => Ok(value),
-        (Ok(_), Ok(Err(error))) => Err(TransientScopeError::Close(error)),
+        (Ok(value), Ok(outcome)) if outcome.released && outcome.error.is_none() => Ok(value),
+        (Ok(_), Ok(outcome)) => Err(TransientScopeError::Close(outcome.error.unwrap_or_else(
+            || CloseError::from_panic(Box::new("transient close did not produce a diagnostic")),
+        ))),
         (Err(panic), _) => std::panic::resume_unwind(panic),
         (Ok(_), Err(panic)) => std::panic::resume_unwind(panic),
     }
@@ -672,16 +690,67 @@ fn finish_transient<R>(
 
 /// Close an owner and its descendants through the same child-first
 /// transaction used by root, persistent, and transient owners.
-fn close_owner_tree(storage: &ScopeStorage) -> Option<CloseError> {
-    let owned = storage.children.borrow().clone();
+fn close_owner_tree(storage: &ScopeStorage) -> CloseOutcome {
+    let owned = storage.children.snapshot();
     let mut transaction = CloseTransaction::new();
+    let mut retryable_child = false;
     for child in owned.into_iter().rev() {
-        if let Some(error) = close_owner_tree(&child) {
+        let outcome = close_owner_tree(&child);
+        if !outcome.released {
+            retryable_child = true;
+        }
+        if let Some(error) = outcome.error {
             transaction.push_error(ClosePhase::Child, CloseSource::Child, error);
         }
     }
-    if let Err(error) = storage.dispose_untracked() {
+    if retryable_child {
+        return CloseOutcome {
+            released: false,
+            error: Some(transaction.finish().unwrap_or_else(|| {
+                CloseError::from_panic(Box::new(
+                    "owner close retained a retryable child without a diagnostic",
+                ))
+            })),
+        };
+    }
+    let own = storage.dispose_untracked();
+    if let Some(error) = own.error {
         transaction.push_error(ClosePhase::Runtime, CloseSource::Owner, error);
     }
-    transaction.finish()
+    CloseOutcome {
+        released: own.released,
+        error: transaction.finish(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn retryable_child_keeps_parent_until_a_later_close() {
+        let scheduler = runtime::GlobalScheduler::new();
+        let parent = Rc::new(ScopeStorage::new_with_owner(
+            scheduler.clone(),
+            None,
+            OwnerMode::Root,
+        ));
+        let child = Rc::new(ScopeStorage::new_with_owner(
+            scheduler,
+            Some(parent.owner_id),
+            OwnerMode::Transient,
+        ));
+        child.link_parent(&parent.children);
+        parent.children.insert(child.clone());
+
+        let child_state = child.state.borrow_mut();
+        let first = close_owner_tree(&parent);
+        assert!(!first.released);
+        assert!(parent.is_active());
+        drop(child_state);
+
+        let second = close_owner_tree(&parent);
+        assert!(second.released);
+        assert!(!parent.is_active());
+    }
 }

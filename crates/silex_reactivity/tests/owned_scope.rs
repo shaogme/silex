@@ -434,3 +434,37 @@ fn persistent_child_access_rejects_operations_after_adapter_drop() {
     root.close()
         .expect("root close should retain idempotent cleanup");
 }
+
+#[test]
+fn owner_churn_removes_released_children_from_parent_registry() {
+    let mut runtime = Runtime::new();
+    let root = runtime.owner().expect("runtime root creation");
+
+    for _ in 0..32 {
+        let child = root.create_child().expect("child creation");
+        child.close().expect("child close");
+        assert_eq!(root.runtime_snapshot().retained_children, 0);
+    }
+
+    root.close().expect("root close");
+}
+
+#[test]
+fn persistent_adapter_keeps_storage_after_registry_unlink() {
+    let mut runtime = Runtime::new();
+    let root = runtime.owner().expect("runtime root creation");
+    let branch = root
+        .access()
+        .create_persistent_child()
+        .expect("persistent child creation");
+    let branch_access = branch.access();
+
+    assert_eq!(root.runtime_snapshot().retained_children, 1);
+    branch.close_once().expect("child close");
+    assert_eq!(root.runtime_snapshot().retained_children, 0);
+    assert!(!branch.is_active());
+    assert!(!branch_access.is_active());
+
+    drop(branch);
+    root.close().expect("root close");
+}

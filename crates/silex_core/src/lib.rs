@@ -56,9 +56,9 @@ pub use reactivity::{
     Computed, Constant, EffectHandle, Mutation, PromotionPlan, ReactiveSource, ReadSignal,
     Resource, RwSignal, Signal, StoredValue, SuspenseContext, WatchOptions, WriteSignal,
 };
-pub use silex_reactivity::CallbackInvokeError;
 #[cfg(feature = "test-support")]
 pub use silex_reactivity::RuntimeSnapshot;
+pub use silex_reactivity::{CallbackInvokeError, CompletionSubmitError};
 pub type CompletionOnce<T> = silex_reactivity::CompletionOnce<T, SilexError>;
 pub type CompletionSender<T> = silex_reactivity::CompletionSender<T, SilexError>;
 pub use silex_reactivity::unwind_safe;

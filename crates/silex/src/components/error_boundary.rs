@@ -29,18 +29,28 @@ fn submit_boundary_error<'scope>(
     let Err(error) = result else {
         return;
     };
-    let error = match error {
-        CallbackInvokeError::Runtime(error) => SilexError::fatal(SilexErrorKind::Reactivity(error)),
-        CallbackInvokeError::User(error) => error,
-        CallbackInvokeError::Handler(error) => {
-            SilexError::fatal(SilexErrorKind::Reactivity(ReactiveError::Handler(error)))
+    let (callback, close) = error.into_parts();
+    let mut errors = Vec::new();
+    if let Some(callback) = callback {
+        errors.push(match callback {
+            CallbackInvokeError::Runtime(error) => {
+                SilexError::fatal(SilexErrorKind::Reactivity(error))
+            }
+            CallbackInvokeError::User(error) => error,
+            CallbackInvokeError::Handler(error) => {
+                SilexError::fatal(SilexErrorKind::Reactivity(ReactiveError::Handler(error)))
+            }
+        });
+    }
+    if let Some(close) = close {
+        errors.push(SilexError::fatal(SilexErrorKind::Close(close)));
+    }
+    for error in errors {
+        let handler_result = catch_unwind(AssertUnwindSafe(|| error_handler.handle(error)));
+        if let Err(handler_panic) = handler_result {
+            let _ = catch_unwind(AssertUnwindSafe(|| completion.cancel()));
+            resume_unwind(handler_panic);
         }
-        CallbackInvokeError::Close(error) => SilexError::fatal(SilexErrorKind::Close(error)),
-    };
-    let handler_result = catch_unwind(AssertUnwindSafe(|| error_handler.handle(error)));
-    if let Err(handler_panic) = handler_result {
-        let _ = catch_unwind(AssertUnwindSafe(|| completion.cancel()));
-        resume_unwind(handler_panic);
     }
 }
 

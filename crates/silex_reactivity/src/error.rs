@@ -75,11 +75,46 @@ pub enum CallbackInvokeError<E> {
     Runtime(ReactiveError),
     User(E),
     Handler(HandlerError),
-    Close(CloseError),
 }
 
 pub type CallbackInvokeResult<T, E> = Result<T, CallbackInvokeError<E>>;
-pub type CompletionSubmitResult<E> = CallbackInvokeResult<bool, E>;
+
+/// Errors returned by a completion submission's callback and close phases.
+#[derive(Debug, PartialEq, Eq)]
+pub enum CompletionSubmitError<E> {
+    Callback(CallbackInvokeError<E>),
+    Close(Box<CloseError>),
+    CallbackAndClose {
+        callback: CallbackInvokeError<E>,
+        close: Box<CloseError>,
+    },
+}
+
+impl<E> CompletionSubmitError<E> {
+    pub fn callback(&self) -> Option<&CallbackInvokeError<E>> {
+        match self {
+            Self::Callback(callback) | Self::CallbackAndClose { callback, .. } => Some(callback),
+            Self::Close(_) => None,
+        }
+    }
+
+    pub fn close(&self) -> Option<&CloseError> {
+        match self {
+            Self::Close(close) | Self::CallbackAndClose { close, .. } => Some(close),
+            Self::Callback(_) => None,
+        }
+    }
+
+    pub fn into_parts(self) -> (Option<CallbackInvokeError<E>>, Option<CloseError>) {
+        match self {
+            Self::Callback(callback) => (Some(callback), None),
+            Self::Close(close) => (None, Some(*close)),
+            Self::CallbackAndClose { callback, close } => (Some(callback), Some(*close)),
+        }
+    }
+}
+
+pub type CompletionSubmitResult<E> = Result<bool, CompletionSubmitError<E>>;
 
 /// Additional information attached to an error handler dispatch failure.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

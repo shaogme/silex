@@ -1,6 +1,6 @@
 use std::{
     cell::Cell,
-    panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
+    panic::{AssertUnwindSafe, catch_unwind},
     rc::Rc,
 };
 
@@ -111,22 +111,29 @@ fn submit_completion<T: 'static>(
     let Err(error) = result else {
         return;
     };
-    let error = match error {
-        CallbackInvokeError::Runtime(error) => SilexError::fatal(error),
-        CallbackInvokeError::User(error) => error,
-        CallbackInvokeError::Handler(error) => SilexError::fatal(ReactiveError::Handler(error)),
-        CallbackInvokeError::Close(error) => SilexError::fatal(SilexErrorKind::Close(error)),
-    };
-    let error_result = catch_unwind(AssertUnwindSafe(|| error_token.submit(error)));
-    if let Ok(Err(_)) | Err(_) = error_result {
+    let (callback, close) = error.into_parts();
+    let mut failures = false;
+    let mut submit_error =
+        |error| match catch_unwind(AssertUnwindSafe(|| error_token.submit(error))) {
+            Ok(Ok(_)) => {}
+            Ok(Err(_)) | Err(_) => failures = true,
+        };
+    if let Some(callback) = callback {
+        submit_error(match callback {
+            CallbackInvokeError::Runtime(error) => SilexError::fatal(error),
+            CallbackInvokeError::User(error) => error,
+            CallbackInvokeError::Handler(error) => SilexError::fatal(ReactiveError::Handler(error)),
+        });
+    }
+    if let Some(close) = close {
+        submit_error(SilexError::fatal(SilexErrorKind::Close(close)));
+    }
+    if failures {
         if let Some(gate) = gate {
             gate.set(false);
         }
         let _ = catch_unwind(AssertUnwindSafe(|| token.cancel()));
         let _ = catch_unwind(AssertUnwindSafe(|| error_token.cancel()));
-        if let Err(panic) = error_result {
-            resume_unwind(panic);
-        }
     }
 }
 

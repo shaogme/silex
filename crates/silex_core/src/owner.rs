@@ -42,6 +42,11 @@ impl Runtime {
             .with_transient(|owner| f(OwnerAccess { inner: owner }))
             .map_err(SilexError::fatal)
     }
+
+    /// Take close diagnostics produced by drop and panic-recovery paths.
+    pub fn take_unhandled_close_errors(&self) -> Vec<CloseError> {
+        self.inner.take_unhandled_close_errors()
+    }
 }
 
 impl Default for Runtime {

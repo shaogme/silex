@@ -1,5 +1,6 @@
 use silex_reactivity::{
-    CallbackInvokeError, CompletionOnce, CompletionSender, ReactiveError, Runtime, unwind_safe,
+    CallbackInvokeError, CompletionOnce, CompletionSender, CompletionSubmitError, ReactiveError,
+    Runtime, unwind_safe,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -13,6 +14,86 @@ impl Drop for DropProbe {
     fn drop(&mut self) {
         self.0.set(self.0.get() + 1);
     }
+}
+
+struct PanicOnDrop(&'static str);
+
+impl Drop for PanicOnDrop {
+    fn drop(&mut self) {
+        panic!("{}", self.0);
+    }
+}
+
+#[test]
+fn completion_error_composition_preserves_callback_and_close() {
+    let mut runtime = Runtime::new();
+    runtime
+        .with_transient(|scope| {
+            let probe = PanicOnDrop("completion close failure");
+            let destination = scope
+                .completion_once(unwind_safe(move |_: i32| {
+                    std::hint::black_box(&probe);
+                    Err::<(), &'static str>("callback failure")
+                }))
+                .expect("completion registration");
+
+            match destination.submit(1) {
+                Err(CompletionSubmitError::CallbackAndClose { callback, close }) => {
+                    assert_eq!(callback, CallbackInvokeError::User("callback failure"));
+                    assert!(close.failures().iter().any(|failure| matches!(
+                        failure,
+                        silex_reactivity::CleanupFailure::Panic(_)
+                    )));
+                }
+                other => panic!("unexpected completion result: {other:?}"),
+            }
+            assert!(!destination.submit(2).expect("closed completion"));
+        })
+        .expect("runtime child should succeed");
+}
+
+#[test]
+fn completion_drop_reports_close_errors() {
+    let mut runtime = Runtime::new();
+    runtime
+        .with_transient(|scope| {
+            let probe = PanicOnDrop("completion drop failure");
+            let destination = scope
+                .completion_once(unwind_safe(move |_: i32| {
+                    std::hint::black_box(&probe);
+                    Ok::<(), ()>(())
+                }))
+                .expect("completion registration");
+            drop(destination);
+        })
+        .expect("runtime child should succeed");
+
+    let errors = runtime.take_unhandled_close_errors();
+    assert_eq!(errors.len(), 1);
+    assert!(runtime.take_unhandled_close_errors().is_empty());
+}
+
+#[test]
+fn completion_callback_panic_reports_parallel_close_error() {
+    let mut runtime = Runtime::new();
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        runtime
+            .with_transient(|scope| {
+                let probe = PanicOnDrop("callback panic close failure");
+                let destination = scope
+                    .completion_once(unwind_safe(move |_: i32| {
+                        std::hint::black_box(&probe);
+                        panic!("user callback panic");
+                        #[allow(unreachable_code)]
+                        Ok::<(), ()>(())
+                    }))
+                    .expect("completion registration");
+                let _ = destination.submit(1);
+            })
+            .expect("callback panic should resume");
+    }));
+    assert!(result.is_err());
+    assert_eq!(runtime.take_unhandled_close_errors().len(), 1);
 }
 
 #[test]
@@ -294,7 +375,9 @@ fn repeating_completion_returns_user_error_and_remains_active() {
 
             assert!(matches!(
                 sender.submit(1),
-                Err(CallbackInvokeError::User("invalid value"))
+                Err(CompletionSubmitError::Callback(CallbackInvokeError::User(
+                    "invalid value",
+                )))
             ));
             assert_eq!(seen.get(), 1);
             assert!(sender.submit(2).expect("completion retry"));
@@ -318,7 +401,9 @@ fn repeating_completion_does_not_roll_back_callback_side_effects_on_error() {
 
             assert!(matches!(
                 sender.submit(7),
-                Err(CallbackInvokeError::User("rejected"))
+                Err(CompletionSubmitError::Callback(CallbackInvokeError::User(
+                    "rejected",
+                )))
             ));
             assert_eq!(signal.get(), Ok(7));
         })
@@ -337,7 +422,9 @@ fn repeating_completion_reports_borrow_conflict_and_remains_active() {
                     if let Some(sender) = nested_for_callback.borrow().as_ref().cloned() {
                         assert!(matches!(
                             sender.submit(value),
-                            Err(CallbackInvokeError::Runtime(ReactiveError::BorrowConflict))
+                            Err(CompletionSubmitError::Callback(
+                                CallbackInvokeError::Runtime(ReactiveError::BorrowConflict),
+                            ))
                         ));
                     }
                     Ok::<(), ()>(())
@@ -391,7 +478,9 @@ fn once_completion_returns_user_error_and_closes() {
 
             assert!(matches!(
                 destination.submit(1),
-                Err(CallbackInvokeError::User("one shot failure"))
+                Err(CompletionSubmitError::Callback(CallbackInvokeError::User(
+                    "one shot failure",
+                )))
             ));
             assert!(
                 !destination
@@ -414,7 +503,9 @@ fn completion_error_can_borrow_scope_local_data() {
                 .expect("completion registration");
 
             match sender.submit(1) {
-                Err(CallbackInvokeError::User(error)) => assert_eq!(error, expected),
+                Err(CompletionSubmitError::Callback(CallbackInvokeError::User(error))) => {
+                    assert_eq!(error, expected)
+                }
                 other => panic!("unexpected completion result: {other:?}"),
             }
         })

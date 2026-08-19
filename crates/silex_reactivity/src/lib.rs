@@ -29,10 +29,10 @@ mod unsafe_boundary;
 pub use crate::{
     completion::{CompletionOnce, CompletionSender, unwind_safe},
     error::{
-        CallbackInvokeError, CallbackInvokeResult, CompletionSubmitResult, ComputationInitError,
-        ComputationInitResult, ErrorContext, ErrorHandlerAnchor, ErrorHandlerInput,
-        ErrorHandlerRef, ErrorHandlerToken, HandlerError, HandlerLease, HandlerReason,
-        ReactiveError, ReactiveResult,
+        CallbackInvokeError, CallbackInvokeResult, CompletionSubmitError, CompletionSubmitResult,
+        ComputationInitError, ComputationInitResult, ErrorContext, ErrorHandlerAnchor,
+        ErrorHandlerInput, ErrorHandlerRef, ErrorHandlerToken, HandlerError, HandlerLease,
+        HandlerReason, ReactiveError, ReactiveResult,
     },
     owner::{
         Callback, Computed, EffectHandle, NodeRef, ReadSignal, RwSignal, StoredValue, WatchOptions,

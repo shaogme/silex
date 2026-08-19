@@ -1,7 +1,7 @@
 use super::state::{ResourceGate, SharedCell};
 use silex_core::{
-    CallbackInvokeError, CloseError, CompletionOnce, CompletionSender, ReactiveError, SilexError,
-    SilexErrorKind,
+    CallbackInvokeError, CloseError, CompletionOnce, CompletionSender, CompletionSubmitError,
+    ReactiveError, SilexError, SilexErrorKind,
 };
 use std::{
     cell::Cell,
@@ -175,7 +175,7 @@ pub(super) enum HostDestination {
 }
 
 impl HostDestination {
-    fn dispatch(&self, payload: JsValue) -> Result<bool, CallbackInvokeError<SilexError>> {
+    fn dispatch(&self, payload: JsValue) -> Result<bool, CompletionSubmitError<SilexError>> {
         match self {
             Self::Once(destination) => destination.submit(payload),
             Self::Sender(destination) => destination.submit(payload),
@@ -219,20 +219,32 @@ impl HostCallback {
         }
         match self.destination.dispatch(payload) {
             Ok(active) => active,
-            Err(CallbackInvokeError::User(error)) => {
+            Err(CompletionSubmitError::Callback(CallbackInvokeError::User(error))) => {
                 self.report_error(error);
                 self.gate.get()
             }
-            Err(CallbackInvokeError::Runtime(error)) => {
+            Err(CompletionSubmitError::Callback(CallbackInvokeError::Runtime(error))) => {
                 self.report_error(SilexError::fatal(error));
                 self.gate.get()
             }
-            Err(CallbackInvokeError::Handler(error)) => {
+            Err(CompletionSubmitError::Callback(CallbackInvokeError::Handler(error))) => {
                 self.report_error(SilexError::fatal(ReactiveError::Handler(error)));
                 self.gate.get()
             }
-            Err(CallbackInvokeError::Close(error)) => {
-                self.report_error(SilexError::fatal(SilexErrorKind::Close(error)));
+            Err(CompletionSubmitError::Close(error)) => {
+                self.report_error(SilexError::fatal(SilexErrorKind::Close(*error)));
+                self.gate.get()
+            }
+            Err(CompletionSubmitError::CallbackAndClose { callback, close }) => {
+                let callback = match callback {
+                    CallbackInvokeError::Runtime(error) => SilexError::fatal(error),
+                    CallbackInvokeError::User(error) => error,
+                    CallbackInvokeError::Handler(error) => {
+                        SilexError::fatal(ReactiveError::Handler(error))
+                    }
+                };
+                self.report_error(callback);
+                self.report_error(SilexError::fatal(SilexErrorKind::Close(*close)));
                 self.gate.get()
             }
         }

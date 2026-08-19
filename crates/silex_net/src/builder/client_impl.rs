@@ -10,9 +10,9 @@ use std::{
 
 use gloo_timers::future::sleep;
 use silex_core::{
-    CallbackInvokeError, CompletionOnce, ErrorHandlerInput, ErrorReporter, Mutation, ReactiveError,
-    ReactiveSource, Resource, RxGet, RxRead, SilexError, SilexErrorKind, SuspenseContext,
-    unwind_safe,
+    CallbackInvokeError, CompletionOnce, CompletionSubmitError, ErrorHandlerInput, ErrorReporter,
+    Mutation, ReactiveError, ReactiveSource, Resource, RxGet, RxRead, SilexError, SilexErrorKind,
+    SuspenseContext, unwind_safe,
 };
 
 use crate::{
@@ -36,6 +36,22 @@ struct PreparedClient<T, C> {
 
 type NetFuture<'scope, T> = Pin<Box<dyn Future<Output = Result<T, NetError>> + 'scope>>;
 
+fn map_completion_error(error: CompletionSubmitError<SilexError>) -> Vec<SilexError> {
+    let (callback, close) = error.into_parts();
+    let mut errors = Vec::new();
+    if let Some(callback) = callback {
+        errors.push(match callback {
+            CallbackInvokeError::Runtime(error) => SilexError::fatal(error),
+            CallbackInvokeError::User(error) => error,
+            CallbackInvokeError::Handler(error) => SilexError::fatal(ReactiveError::Handler(error)),
+        });
+    }
+    if let Some(close) = close {
+        errors.push(SilexError::fatal(SilexErrorKind::Close(close)));
+    }
+    errors
+}
+
 fn submit_once<'scope, T: 'static>(
     token: &CompletionOnce<T>,
     value: T,
@@ -45,16 +61,12 @@ fn submit_once<'scope, T: 'static>(
     let Err(error) = result else {
         return;
     };
-    let error = match error {
-        CallbackInvokeError::Runtime(error) => SilexError::fatal(error),
-        CallbackInvokeError::User(error) => error,
-        CallbackInvokeError::Handler(error) => SilexError::fatal(ReactiveError::Handler(error)),
-        CallbackInvokeError::Close(error) => SilexError::fatal(SilexErrorKind::Close(error)),
-    };
-    let handler_result = catch_unwind(AssertUnwindSafe(|| error_handler.handle(error)));
-    if let Err(handler_panic) = handler_result {
-        let _ = catch_unwind(AssertUnwindSafe(|| token.cancel()));
-        resume_unwind(handler_panic);
+    for error in map_completion_error(error) {
+        let handler_result = catch_unwind(AssertUnwindSafe(|| error_handler.handle(error)));
+        if let Err(handler_panic) = handler_result {
+            let _ = catch_unwind(AssertUnwindSafe(|| token.cancel()));
+            resume_unwind(handler_panic);
+        }
     }
 }
 

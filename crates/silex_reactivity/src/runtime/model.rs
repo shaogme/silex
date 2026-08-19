@@ -373,6 +373,9 @@ pub struct RuntimeSnapshot {
     pub owner_generation: u32,
     pub active_leases: usize,
     pub queue_recovery: bool,
+    pub retained_children: usize,
+    pub unhandled_close_errors: usize,
+    pub dropped_close_reports: usize,
 }
 
 impl<'scope> ScopeStateInner<'scope> {
@@ -434,6 +437,9 @@ impl<'scope> ScopeStateInner<'scope> {
             owner_generation: self.owner_id.1,
             active_leases: scheduler.active_leases,
             queue_recovery: !scheduler.running_queue && scheduler.global_queue.is_empty(),
+            retained_children: 0,
+            unhandled_close_errors: scheduler.close_reports.len(),
+            dropped_close_reports: scheduler.dropped_close_reports(),
         }
     }
 

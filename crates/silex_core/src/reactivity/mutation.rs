@@ -1,10 +1,10 @@
+use crate::callback::report_completion_error;
 use crate::{
     CompletionSender, ErrorHandlerInput, ErrorReporter, OwnerAccess, SilexError, SilexErrorKind,
     reactivity::{ReadSignal, StoredValue, WriteSignal},
     traits::{RxCloneData, RxData, RxError, RxRead, RxValue},
     unwind_safe,
 };
-use silex_reactivity::{CallbackInvokeError, ReactiveError};
 use std::{cell::Cell, future::Future, pin::Pin, rc::Rc};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -237,20 +237,9 @@ where
             async move {
                 match completion.submit((id, future.await)) {
                     Ok(_) => {}
-                    Err(CallbackInvokeError::Runtime(error)) => {
-                        let _ = error_handler.handle(SilexError::fatal(error));
-                    }
-                    Err(CallbackInvokeError::User(error)) => {
+                    Err(error) => report_completion_error(error, |error| {
                         let _ = error_handler.handle(error);
-                    }
-                    Err(CallbackInvokeError::Handler(error)) => {
-                        let _ =
-                            error_handler.handle(SilexError::fatal(ReactiveError::Handler(error)));
-                    }
-                    Err(CallbackInvokeError::Close(error)) => {
-                        let _ =
-                            error_handler.handle(SilexError::fatal(SilexErrorKind::Close(error)));
-                    }
+                    }),
                 }
             },
             self.error_handler,

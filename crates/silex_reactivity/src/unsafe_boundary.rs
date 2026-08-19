@@ -13,7 +13,6 @@
 //! operation; it does not extend the lifetime of payloads beyond the owner.
 
 use crate::{
-    ReactiveError,
     owner::ScopeStorage,
     runtime::{ScopeState, ScopeStateInner},
 };
@@ -33,32 +32,6 @@ pub(crate) type ErasedScopeState = RefCell<ScopeStateInner<'static>>;
 pub(crate) struct OwnerToken<'scope> {
     state: ScopeState<'scope>,
     marker: PhantomData<fn(&'scope ()) -> &'scope ()>,
-}
-
-/// Return a stable typed reference to a persistent child storage.
-///
-/// The parent storage owns every child allocation in its `children` vector.
-/// Checking that relationship before restoring the parent lifetime means the
-/// returned reference remains valid for the complete parent borrow, even when
-/// the separate child close authority is dropped. Runtime operations still
-/// validate the child's owner phase and generation before touching nodes.
-pub(crate) fn persistent_child_storage<'scope>(
-    parent: &'scope ScopeStorage,
-    child: &Rc<ScopeStorage>,
-) -> Result<&'scope ScopeStorage, ReactiveError> {
-    let is_owned_child = parent
-        .children
-        .borrow()
-        .iter()
-        .any(|candidate| Rc::ptr_eq(candidate, child));
-    if !is_owned_child {
-        return Err(ReactiveError::InvariantViolation);
-    }
-
-    // SAFETY: the checked parent owns `child` through an `Rc` in `children`.
-    // That vector remains alive for the complete borrow of `parent`, so the
-    // child allocation cannot be freed during the returned reference's life.
-    Ok(unsafe { &*Rc::as_ptr(child) })
 }
 
 impl<'scope> Clone for OwnerToken<'scope> {
@@ -181,7 +154,9 @@ mod tests {
         let state = store_borrowed(&storage, value.as_str());
 
         assert_eq!(state.borrow().nodes.len(), 1);
-        let _ = storage.dispose_untracked();
+        let outcome = storage.dispose_untracked();
+        assert!(outcome.released);
+        assert!(outcome.error.is_none());
         assert!(state.borrow().nodes.is_empty());
     }
 }

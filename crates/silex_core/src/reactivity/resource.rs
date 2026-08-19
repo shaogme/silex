@@ -1,3 +1,4 @@
+use crate::callback::report_completion_error;
 use crate::reactivity::ReactiveSource;
 use crate::{
     ErrorHandlerInput, OwnerAccess, Rx, SilexError, SilexErrorKind, SilexResult,
@@ -5,7 +6,6 @@ use crate::{
     traits::{RxCloneData, RxData, RxError, RxGet, RxRead, RxValue},
     unwind_safe,
 };
-use silex_reactivity::{CallbackInvokeError, ReactiveError};
 use std::{cell::Cell, future::Future, marker::PhantomData, rc::Rc};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -208,20 +208,9 @@ where
                         });
                         match result {
                             Ok(_) => {}
-                            Err(CallbackInvokeError::Runtime(error)) => {
-                                let _ = completion_error_handler.handle(SilexError::fatal(error));
-                            }
-                            Err(CallbackInvokeError::User(error)) => {
+                            Err(error) => report_completion_error(error, |error| {
                                 let _ = completion_error_handler.handle(error);
-                            }
-                            Err(CallbackInvokeError::Handler(error)) => {
-                                let _ = completion_error_handler
-                                    .handle(SilexError::fatal(ReactiveError::Handler(error)));
-                            }
-                            Err(CallbackInvokeError::Close(error)) => {
-                                let _ = completion_error_handler
-                                    .handle(SilexError::fatal(SilexErrorKind::Close(error)));
-                            }
+                            }),
                         }
                     },
                     error_handler,

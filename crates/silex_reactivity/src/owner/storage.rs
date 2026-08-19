@@ -4,21 +4,100 @@ use crate::{
     root::{CleanupFailure, CloseError, ClosePhase, CloseSource, CloseTransaction},
     runtime::OwnerMode,
     runtime::storage::{TypedNodeRef, TypedSlot},
-    runtime::{self, GlobalScheduler, OwnerId, ScopeState, run_global_queue},
+    runtime::{self, CloseReportQueue, GlobalScheduler, OwnerId, ScopeState, run_global_queue},
     unsafe_boundary::{ErasedScopeState, OwnerToken},
 };
 use std::{
     cell::RefCell,
     panic::{AssertUnwindSafe, catch_unwind},
-    rc::Rc,
+    rc::{Rc, Weak},
 };
+
+pub(crate) struct ChildRegistry {
+    entries: RefCell<Vec<ChildEntry>>,
+}
+
+struct ChildEntry {
+    owner_id: OwnerId,
+    storage: Rc<ScopeStorage>,
+}
+
+struct ParentLink {
+    registry: Weak<ChildRegistry>,
+}
+
+impl ChildRegistry {
+    pub(crate) fn new() -> Rc<Self> {
+        Rc::new(Self {
+            entries: RefCell::new(Vec::new()),
+        })
+    }
+
+    pub(crate) fn insert(&self, storage: Rc<ScopeStorage>) {
+        self.entries.borrow_mut().push(ChildEntry {
+            owner_id: storage.owner_id,
+            storage,
+        });
+    }
+
+    pub(crate) fn snapshot(&self) -> Vec<Rc<ScopeStorage>> {
+        self.entries
+            .borrow()
+            .iter()
+            .map(|entry| entry.storage.clone())
+            .collect()
+    }
+
+    pub(crate) fn contains(&self, owner_id: OwnerId, storage: &Rc<ScopeStorage>) -> bool {
+        self.entries
+            .borrow()
+            .iter()
+            .any(|entry| entry.owner_id == owner_id && Rc::ptr_eq(&entry.storage, storage))
+    }
+
+    fn remove(&self, owner_id: OwnerId) {
+        self.entries
+            .borrow_mut()
+            .retain(|entry| entry.owner_id != owner_id);
+    }
+
+    #[cfg(feature = "test-support")]
+    pub(crate) fn len(&self) -> usize {
+        self.entries.borrow().len()
+    }
+}
+
+/// Internal result that distinguishes a terminal release from a retryable
+/// close error. A terminal release may still carry cleanup diagnostics.
+pub(crate) struct CloseOutcome {
+    pub(crate) released: bool,
+    pub(crate) error: Option<CloseError>,
+}
+
+impl CloseOutcome {
+    fn released(error: Option<CloseError>) -> Self {
+        Self {
+            released: true,
+            error,
+        }
+    }
+
+    fn retryable(error: CloseError) -> Self {
+        Self {
+            released: false,
+            error: Some(error),
+        }
+    }
+}
 
 /// Stable storage for one lexical scope and its lifetime-bound payloads.
 pub(crate) struct ScopeStorage {
     pub(crate) owner_id: OwnerId,
     pub(crate) state: Rc<ErasedScopeState>,
     pub(crate) arena: bumpalo::Bump,
-    pub(crate) children: RefCell<Vec<Rc<ScopeStorage>>>,
+    pub(crate) children: Rc<ChildRegistry>,
+    parent_link: RefCell<Option<ParentLink>>,
+    close_reports: Rc<CloseReportQueue>,
 }
 
 impl ScopeStorage {
@@ -32,6 +111,7 @@ impl ScopeStorage {
         parent: Option<OwnerId>,
         mode: OwnerMode,
     ) -> Self {
+        let close_reports = scheduler.borrow().close_reports.clone();
         let state = ScopeState::new(OwnerId::initial(0), scheduler.clone());
         let owner_id = scheduler.borrow_mut().alloc_owner(&state, parent, mode);
         state.borrow_mut().owner_id = owner_id;
@@ -39,8 +119,27 @@ impl ScopeStorage {
             owner_id,
             state: state.into_inner(),
             arena: bumpalo::Bump::new(),
-            children: RefCell::new(Vec::new()),
+            children: ChildRegistry::new(),
+            parent_link: RefCell::new(None),
+            close_reports,
         }
+    }
+
+    pub(crate) fn link_parent(&self, registry: &Rc<ChildRegistry>) {
+        *self.parent_link.borrow_mut() = Some(ParentLink {
+            registry: Rc::downgrade(registry),
+        });
+    }
+
+    pub(crate) fn unlink_parent(&self) {
+        let link = self.parent_link.borrow_mut().take();
+        if let Some(link) = link.and_then(|link| link.registry.upgrade()) {
+            link.remove(self.owner_id);
+        }
+    }
+
+    pub(crate) fn report_close_error(&self, error: CloseError) {
+        self.close_reports.push(error);
     }
 
     pub(crate) fn alloc_slot<'scope, T: 'scope>(&'scope self, value: T) -> TypedNodeRef<'scope, T> {
@@ -59,7 +158,7 @@ impl ScopeStorage {
         OwnerToken::from_storage(self)
     }
 
-    pub(crate) fn dispose(&self) -> Result<(), CloseError> {
+    pub(crate) fn dispose(&self) -> CloseOutcome {
         let mut transaction = CloseTransaction::new();
         let scheduler = match self.state.try_borrow() {
             Ok(state) => state.scheduler.clone(),
@@ -69,9 +168,33 @@ impl ScopeStorage {
                     CloseSource::Owner,
                     CleanupFailure::Runtime(ReactiveError::BorrowConflict),
                 );
-                return transaction.finish().map_or(Ok(()), Err);
+                return CloseOutcome::retryable(transaction.finish().expect("close error"));
             }
         };
+
+        let already_released = self
+            .state
+            .try_borrow()
+            .is_ok_and(|state| state.phase == runtime::ScopePhase::Released);
+        if already_released {
+            let released = scheduler
+                .try_borrow_mut()
+                .map(|mut scheduler| {
+                    scheduler.release_owner_id(self.owner_id);
+                    scheduler.owner_metadata(self.owner_id).is_none()
+                })
+                .unwrap_or(false);
+            if released {
+                self.unlink_parent();
+                return CloseOutcome::released(None);
+            }
+            transaction.push(
+                ClosePhase::Runtime,
+                CloseSource::Owner,
+                CleanupFailure::Runtime(ReactiveError::BorrowConflict),
+            );
+            return CloseOutcome::retryable(transaction.finish().expect("close error"));
+        }
 
         let should_dispose = match self.state.try_borrow_mut() {
             Ok(mut state) => match state.begin_quiescing() {
@@ -95,7 +218,14 @@ impl ScopeStorage {
             }
         };
         if !should_dispose {
-            return transaction.finish().map_or(Ok(()), Err);
+            return transaction.finish().map_or_else(
+                || {
+                    CloseOutcome::retryable(CloseError::from_panic(Box::new(
+                        "owner close did not produce a diagnostic",
+                    )))
+                },
+                CloseOutcome::retryable,
+            );
         }
 
         if scheduler
@@ -216,18 +346,39 @@ impl ScopeStorage {
             }
         }
 
-        transaction.finish().map_or(Ok(()), Err)
+        let error = transaction.finish();
+        let released = ready_for_release
+            && scheduler
+                .try_borrow()
+                .is_ok_and(|scheduler| scheduler.owner_metadata(self.owner_id).is_none());
+        if released {
+            self.unlink_parent();
+            CloseOutcome::released(error)
+        } else {
+            CloseOutcome::retryable(error.unwrap_or_else(|| {
+                CloseError::from_panic(Box::new(
+                    "owner close did not satisfy the release invariant",
+                ))
+            }))
+        }
     }
 
-    pub(crate) fn dispose_untracked(&self) -> Result<(), CloseError> {
-        let frame = runtime::ObserverFrame::push(self.scheduler(), None);
+    pub(crate) fn dispose_untracked(&self) -> CloseOutcome {
+        let scheduler = match self.state.try_borrow() {
+            Ok(state) => state.scheduler.clone(),
+            Err(_) => {
+                return CloseOutcome::retryable(
+                    CloseError::from_failures(vec![CleanupFailure::Runtime(
+                        ReactiveError::BorrowConflict,
+                    )])
+                    .expect("a borrow conflict must produce a close error"),
+                );
+            }
+        };
+        let frame = runtime::ObserverFrame::push(scheduler, None);
         let result = self.dispose();
         drop(frame);
         result
-    }
-
-    pub(crate) fn scheduler(&self) -> Rc<RefCell<GlobalScheduler>> {
-        self.state.borrow().scheduler.clone()
     }
 
     pub(crate) fn is_active(&self) -> bool {
@@ -249,5 +400,10 @@ impl ScopeStorage {
                 .owner_metadata(state.owner_id)
                 .map(|(mode, _parent)| mode)
         })
+    }
+
+    #[cfg(feature = "test-support")]
+    pub(crate) fn retained_children(&self) -> usize {
+        self.children.len()
     }
 }

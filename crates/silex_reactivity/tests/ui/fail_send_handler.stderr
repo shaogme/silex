@@ -68,14 +68,72 @@ note: required by a bound in `require_send`
 3 | fn require_send<T: Send>() {}
   |                    ^^^^ required by this bound in `require_send`
 
-error[E0277]: `RefCell<Vec<Rc<silex_reactivity::owner::storage::ScopeStorage>>>` cannot be shared between threads safely
+error[E0277]: `Rc<silex_reactivity::owner::storage::ChildRegistry>` cannot be shared between threads safely
  --> tests/ui/fail_send_handler.rs:6:20
   |
 6 |     require_send::<ErrorHandlerToken<'static, ()>>();
-  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `RefCell<Vec<Rc<silex_reactivity::owner::storage::ScopeStorage>>>` cannot be shared between threads safely
+  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Rc<silex_reactivity::owner::storage::ChildRegistry>` cannot be shared between threads safely
   |
-  = help: within `silex_reactivity::owner::storage::ScopeStorage`, the trait `Sync` is not implemented for `RefCell<Vec<Rc<silex_reactivity::owner::storage::ScopeStorage>>>`
+  = help: within `silex_reactivity::owner::storage::ScopeStorage`, the trait `Sync` is not implemented for `Rc<silex_reactivity::owner::storage::ChildRegistry>`
+note: required because it appears within the type `silex_reactivity::owner::storage::ScopeStorage`
+ --> src/owner/storage.rs
+  |
+  | pub(crate) struct ScopeStorage {
+  |                   ^^^^^^^^^^^^
+  = note: required for `&'static silex_reactivity::owner::storage::ScopeStorage` to implement `Send`
+note: required because it appears within the type `ErrorHandlerRef<'static, ()>`
+ --> src/error.rs
+  |
+  | pub struct ErrorHandlerRef<'scope, E> {
+  |            ^^^^^^^^^^^^^^^
+note: required because it appears within the type `ErrorHandlerToken<'static, ()>`
+ --> src/error.rs
+  |
+  | pub struct ErrorHandlerToken<'scope, E> {
+  |            ^^^^^^^^^^^^^^^^^
+note: required by a bound in `require_send`
+ --> tests/ui/fail_send_handler.rs:3:20
+  |
+3 | fn require_send<T: Send>() {}
+  |                    ^^^^ required by this bound in `require_send`
+
+error[E0277]: `RefCell<Option<silex_reactivity::owner::storage::ParentLink>>` cannot be shared between threads safely
+ --> tests/ui/fail_send_handler.rs:6:20
+  |
+6 |     require_send::<ErrorHandlerToken<'static, ()>>();
+  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `RefCell<Option<silex_reactivity::owner::storage::ParentLink>>` cannot be shared between threads safely
+  |
+  = help: within `silex_reactivity::owner::storage::ScopeStorage`, the trait `Sync` is not implemented for `RefCell<Option<silex_reactivity::owner::storage::ParentLink>>`
   = note: if you want to do aliasing and mutation between multiple threads, use `std::sync::RwLock` instead
+note: required because it appears within the type `silex_reactivity::owner::storage::ScopeStorage`
+ --> src/owner/storage.rs
+  |
+  | pub(crate) struct ScopeStorage {
+  |                   ^^^^^^^^^^^^
+  = note: required for `&'static silex_reactivity::owner::storage::ScopeStorage` to implement `Send`
+note: required because it appears within the type `ErrorHandlerRef<'static, ()>`
+ --> src/error.rs
+  |
+  | pub struct ErrorHandlerRef<'scope, E> {
+  |            ^^^^^^^^^^^^^^^
+note: required because it appears within the type `ErrorHandlerToken<'static, ()>`
+ --> src/error.rs
+  |
+  | pub struct ErrorHandlerToken<'scope, E> {
+  |            ^^^^^^^^^^^^^^^^^
+note: required by a bound in `require_send`
+ --> tests/ui/fail_send_handler.rs:3:20
+  |
+3 | fn require_send<T: Send>() {}
+  |                    ^^^^ required by this bound in `require_send`
+
+error[E0277]: `Rc<silex_reactivity::runtime::scheduler::CloseReportQueue>` cannot be shared between threads safely
+ --> tests/ui/fail_send_handler.rs:6:20
+  |
+6 |     require_send::<ErrorHandlerToken<'static, ()>>();
+  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Rc<silex_reactivity::runtime::scheduler::CloseReportQueue>` cannot be shared between threads safely
+  |
+  = help: within `silex_reactivity::owner::storage::ScopeStorage`, the trait `Sync` is not implemented for `Rc<silex_reactivity::runtime::scheduler::CloseReportQueue>`
 note: required because it appears within the type `silex_reactivity::owner::storage::ScopeStorage`
  --> src/owner/storage.rs
   |

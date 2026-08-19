@@ -1,7 +1,10 @@
 //! Scope-owned completion destinations for asynchronous tasks.
 
 use crate::{
-    error::{CallbackInvokeError, CompletionSubmitResult, ReactiveError, map_callback_error},
+    error::{
+        CallbackInvokeError, CompletionSubmitError, CompletionSubmitResult, ReactiveError,
+        map_callback_error,
+    },
     internal::NodeId,
     owner::ScopeStorage,
     root::{CleanupFailure, CloseError},
@@ -40,6 +43,11 @@ enum CompletionPhase {
     Completing,
     Closing,
     Closed,
+}
+
+struct CloseDisposition {
+    released: bool,
+    error: Option<CloseError>,
 }
 
 /// The only typed lifetime adapter retained by the completion endpoint.
@@ -90,6 +98,7 @@ impl<T, E> TypedCompletionEndpoint<T, E> {
 struct CompletionEndpoint<T, E> {
     state: WeakOwnerToken,
     scheduler: Rc<RefCell<GlobalScheduler>>,
+    close_reports: Rc<runtime::CloseReportQueue>,
     owner_id: OwnerId,
     callback: NodeId,
     typed_callback: TypedCompletionEndpoint<T, E>,
@@ -100,6 +109,7 @@ impl<T, E> CompletionEndpoint<T, E> {
     fn new(
         state: WeakOwnerToken,
         scheduler: Rc<RefCell<GlobalScheduler>>,
+        close_reports: Rc<runtime::CloseReportQueue>,
         owner_id: OwnerId,
         callback: NodeId,
         typed_callback: TypedCompletionEndpoint<T, E>,
@@ -107,6 +117,7 @@ impl<T, E> CompletionEndpoint<T, E> {
         Self {
             state,
             scheduler,
+            close_reports,
             owner_id,
             callback,
             typed_callback,
@@ -152,17 +163,39 @@ impl<T, E> CompletionEndpoint<T, E> {
         }
     }
 
-    fn close_and_dispose(&self) -> Result<(), CloseError> {
+    fn close_and_dispose(&self) -> CloseDisposition {
         if self.phase.get() == CompletionPhase::Closed {
-            return Ok(());
+            return CloseDisposition {
+                released: true,
+                error: None,
+            };
         }
         self.phase.set(CompletionPhase::Closing);
-        let Some(state) = self.current_state().map_err(close_runtime_error)? else {
-            self.phase.set(CompletionPhase::Closed);
-            return Ok(());
+        let state = match self.current_state() {
+            Ok(Some(state)) => state,
+            Ok(None) => {
+                self.phase.set(CompletionPhase::Closed);
+                return CloseDisposition {
+                    released: true,
+                    error: None,
+                };
+            }
+            Err(error) => {
+                return CloseDisposition {
+                    released: false,
+                    error: Some(close_runtime_error(error)),
+                };
+            }
         };
-        let outcome =
-            runtime::dispose_nodes(&state, vec![self.callback]).map_err(close_runtime_error)?;
+        let outcome = match runtime::dispose_nodes(&state, vec![self.callback]) {
+            Ok(outcome) => outcome,
+            Err(error) => {
+                return CloseDisposition {
+                    released: false,
+                    error: Some(close_runtime_error(error)),
+                };
+            }
+        };
         let mut failures = outcome
             .runtime_errors
             .into_iter()
@@ -175,11 +208,29 @@ impl<T, E> CompletionEndpoint<T, E> {
                 .map(CleanupFailure::Handler),
         );
         failures.extend(outcome.panics.into_iter().map(CloseError::panic_failure));
-        if let Some(error) = CloseError::from_failures(failures) {
-            return Err(error);
-        }
         self.phase.set(CompletionPhase::Closed);
-        Ok(())
+        CloseDisposition {
+            released: true,
+            error: CloseError::from_failures(failures),
+        }
+    }
+
+    fn report_close(&self, error: CloseError) {
+        self.close_reports.push(error);
+    }
+
+    fn close_result(&self) -> Result<CloseDisposition, Box<dyn std::any::Any + Send>> {
+        catch_unwind(AssertUnwindSafe(|| self.close_and_dispose()))
+    }
+
+    fn finish_cancel(&self) -> Result<(), CloseError> {
+        match self.close_result() {
+            Ok(disposition) if disposition.released => disposition.error.map_or(Ok(()), Err),
+            Ok(disposition) => Err(disposition
+                .error
+                .unwrap_or_else(|| close_runtime_error(ReactiveError::InvariantViolation))),
+            Err(panic) => Err(CloseError::from_panic(panic)),
+        }
     }
 
     fn submit_repeating(&self, value: T) -> Result<bool, CallbackThunkError<E>> {
@@ -205,7 +256,14 @@ fn close_runtime_error(error: ReactiveError) -> CloseError {
 }
 
 fn drop_completion_state<T, E>(state: &CompletionEndpoint<T, E>) {
-    let _ = catch_unwind(AssertUnwindSafe(|| state.close_and_dispose()));
+    match state.close_result() {
+        Ok(disposition) => {
+            if let Some(error) = disposition.error {
+                state.report_close(error);
+            }
+        }
+        Err(panic) => state.report_close(CloseError::from_panic(panic)),
+    }
 }
 
 /// A destination that accepts one completion and then disposes its callback node.
@@ -240,8 +298,21 @@ impl<T: 'static, E> CompletionOnce<T, E> {
             Ok(Some(owner)) => owner,
             Ok(None) => return Ok(false),
             Err(error) => {
-                let _ = self.state.close_and_dispose();
-                return Err(CallbackInvokeError::Runtime(error));
+                let callback = CallbackInvokeError::Runtime(error);
+                let close = self.state.close_result();
+                return match close {
+                    Ok(disposition) => match disposition.error {
+                        Some(close) => Err(CompletionSubmitError::CallbackAndClose {
+                            callback,
+                            close: Box::new(close),
+                        }),
+                        None => Err(CompletionSubmitError::Callback(callback)),
+                    },
+                    Err(panic) => Err(CompletionSubmitError::CallbackAndClose {
+                        callback,
+                        close: Box::new(CloseError::from_panic(panic)),
+                    }),
+                };
             }
         };
         let callback_result = catch_unwind(AssertUnwindSafe(|| {
@@ -250,20 +321,47 @@ impl<T: 'static, E> CompletionOnce<T, E> {
             let typed_callback = unsafe { self.state.typed_callback.restore(&owner) };
             runtime::invoke_callback(&state, self.state.callback, typed_callback, value)
         }));
-        let dispose_result = catch_unwind(AssertUnwindSafe(|| self.state.close_and_dispose()));
+        let dispose_result = self.state.close_result();
 
         match (callback_result, dispose_result) {
-            (Err(panic), _) => resume_unwind(panic),
-            (Ok(_), Err(panic)) => resume_unwind(panic),
-            (Ok(Ok(())), Ok(Ok(()))) => Ok(true),
-            (Ok(Ok(())), Ok(Err(error))) => Err(CallbackInvokeError::Close(error)),
-            (Ok(Err(error)), Ok(Ok(()))) => Err(map_callback_error(error)),
-            (Ok(Err(error)), Ok(Err(_))) => Err(map_callback_error(error)),
+            (Err(panic), close) => {
+                match close {
+                    Ok(disposition) => {
+                        if let Some(error) = disposition.error {
+                            self.state.report_close(error);
+                        }
+                    }
+                    Err(close_panic) => {
+                        self.state.report_close(CloseError::from_panic(close_panic));
+                    }
+                }
+                resume_unwind(panic)
+            }
+            (Ok(callback), Ok(disposition)) => match (callback, disposition.error) {
+                (Ok(()), None) => Ok(true),
+                (Ok(()), Some(close)) => Err(CompletionSubmitError::Close(Box::new(close))),
+                (Err(callback), None) => Err(CompletionSubmitError::Callback(map_callback_error(
+                    callback,
+                ))),
+                (Err(callback), Some(close)) => Err(CompletionSubmitError::CallbackAndClose {
+                    callback: map_callback_error(callback),
+                    close: Box::new(close),
+                }),
+            },
+            (Ok(callback), Err(close_panic)) => match callback {
+                Ok(()) => Err(CompletionSubmitError::Close(Box::new(
+                    CloseError::from_panic(close_panic),
+                ))),
+                Err(callback) => Err(CompletionSubmitError::CallbackAndClose {
+                    callback: map_callback_error(callback),
+                    close: Box::new(CloseError::from_panic(close_panic)),
+                }),
+            },
         }
     }
 
     pub fn cancel(&self) -> Result<(), CloseError> {
-        self.state.close_and_dispose()
+        self.state.finish_cancel()
     }
 }
 
@@ -299,16 +397,27 @@ impl<T: 'static, E> CompletionSender<T, E> {
     pub fn submit(&self, value: T) -> CompletionSubmitResult<E> {
         let callback_result = catch_unwind(AssertUnwindSafe(|| self.state.submit_repeating(value)));
         match callback_result {
-            Ok(result) => result.map_err(map_callback_error),
+            Ok(result) => result
+                .map_err(map_callback_error)
+                .map_err(CompletionSubmitError::Callback),
             Err(callback_panic) => {
-                let _ = catch_unwind(AssertUnwindSafe(|| self.state.close_and_dispose()));
+                match self.state.close_result() {
+                    Ok(disposition) => {
+                        if let Some(error) = disposition.error {
+                            self.state.report_close(error);
+                        }
+                    }
+                    Err(close_panic) => {
+                        self.state.report_close(CloseError::from_panic(close_panic));
+                    }
+                }
                 resume_unwind(callback_panic)
             }
         }
     }
 
     pub fn cancel(&self) -> Result<(), CloseError> {
-        self.state.close_and_dispose()
+        self.state.finish_cancel()
     }
 }
 
@@ -330,6 +439,11 @@ where
         }
         state_ref.scheduler.clone()
     };
+    let close_reports = scheduler
+        .try_borrow()
+        .map_err(|_| ReactiveError::BorrowConflict)?
+        .close_reports
+        .clone();
 
     let thunk = storage.alloc_slot(CallbackThunk::new(callback));
     let callback = match state
@@ -350,6 +464,7 @@ where
     Ok(Rc::new(CompletionEndpoint::new(
         weak,
         scheduler,
+        close_reports,
         storage.owner_id,
         callback,
         typed_callback,

@@ -829,7 +829,11 @@ mod tests {
             .borrow_mut()
             .rollback_dependency_transaction(effect_raw)
             .expect("rollback should discard the pending transaction");
-        let _ = observer_storage.dispose_untracked();
-        let _ = source_storage.dispose_untracked();
+        let observer_outcome = observer_storage.dispose_untracked();
+        let source_outcome = source_storage.dispose_untracked();
+        assert!(observer_outcome.released);
+        assert!(observer_outcome.error.is_none());
+        assert!(source_outcome.released);
+        assert!(source_outcome.error.is_none());
     }
 }

@@ -2,7 +2,7 @@ error: lifetime may not live long enough
  --> tests/ui/fail_callback_escape.rs:7:13
   |
 6 |           scope.with_transient(|child| {
-  |                                 ------ return type of closure is Callback<'2, (), ()>
+  |                                 ------ return type of closure is silex_reactivity::Callback<'2, (), ()>
   |                                 |
   |                                 has type `OwnerAccess<'1>`
 7 | /             child
@@ -10,6 +10,6 @@ error: lifetime may not live long enough
 9 | |                 .expect("callback should initialize")
   | |_____________________________________________________^ returning this value requires that `'1` must outlive `'2`
   |
-  = note: requirement occurs because of the type `Callback<'_, (), ()>`, which makes the generic argument `'_` invariant
-  = note: the struct `Callback<'scope, T, E>` is invariant over the parameter `'scope`
+  = note: requirement occurs because of the type `silex_reactivity::Callback<'_, (), ()>`, which makes the generic argument `'_` invariant
+  = note: the struct `silex_reactivity::Callback<'scope, T, E>` is invariant over the parameter `'scope`
   = help: see <https://doc.rust-lang.org/nomicon/subtyping.html> for more information about variance

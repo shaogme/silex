@@ -35,7 +35,6 @@ fn main() {
             }
             CallbackInvokeError::Runtime(_) => panic!("expected a user error"),
             CallbackInvokeError::Handler(_) => panic!("expected a user error"),
-            CallbackInvokeError::Close(_) => panic!("expected a user error"),
         }
         })
         .expect("child scope should complete");

@@ -1,14 +1,26 @@
 use std::{fmt, marker::PhantomData};
 
 use crate::{SilexError, SilexErrorKind, SilexResult};
-use silex_reactivity::{CallbackInvokeError, ReactiveError};
+use silex_reactivity::{CallbackInvokeError, CompletionSubmitError, ReactiveError};
 
 pub(crate) fn map_callback_error(error: CallbackInvokeError<SilexError>) -> SilexError {
     match error {
         CallbackInvokeError::Runtime(error) => SilexError::fatal(error),
         CallbackInvokeError::User(error) => error,
         CallbackInvokeError::Handler(error) => SilexError::fatal(ReactiveError::Handler(error)),
-        CallbackInvokeError::Close(error) => SilexError::fatal(SilexErrorKind::Close(error)),
+    }
+}
+
+pub(crate) fn report_completion_error(
+    error: CompletionSubmitError<SilexError>,
+    mut report: impl FnMut(SilexError),
+) {
+    let (callback, close) = error.into_parts();
+    if let Some(callback) = callback {
+        report(map_callback_error(callback));
+    }
+    if let Some(close) = close {
+        report(SilexError::fatal(SilexErrorKind::Close(close)));
     }
 }
 
@@ -46,7 +58,6 @@ impl<'scope, T: 'scope> Callback<'scope, T> {
             CallbackInvokeError::Runtime(error) => SilexError::fatal(error),
             CallbackInvokeError::User(error) => error,
             CallbackInvokeError::Handler(error) => SilexError::fatal(ReactiveError::Handler(error)),
-            CallbackInvokeError::Close(error) => SilexError::fatal(SilexErrorKind::Close(error)),
         })
     }
 
