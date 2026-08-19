@@ -53,8 +53,13 @@ impl<T, E> Clone for Callback<'_, T, E> {
 
 impl<'scope, T: 'scope, E: 'scope> Callback<'scope, T, E> {
     pub fn invoke(&self, arg: T) -> CallbackInvokeResult<(), E> {
-        runtime::invoke_callback(&self.handle.state(), self.handle.raw(), self.callback, arg)
-            .map_err(map_callback_error)
+        runtime::invoke_callback(
+            &self.handle.state(),
+            self.handle.raw(),
+            self.callback.pointer(),
+            arg,
+        )
+        .map_err(map_callback_error)
     }
 
     pub fn dispatch(
@@ -62,8 +67,12 @@ impl<'scope, T: 'scope, E: 'scope> Callback<'scope, T, E> {
         arg: T,
         error_handler: impl ErrorHandlerInput<'scope, E>,
     ) -> Result<(), HandlerError> {
-        match runtime::invoke_callback(&self.handle.state(), self.handle.raw(), self.callback, arg)
-        {
+        match runtime::invoke_callback(
+            &self.handle.state(),
+            self.handle.raw(),
+            self.callback.pointer(),
+            arg,
+        ) {
             Ok(()) => Ok(()),
             Err(CallbackThunkError::Runtime(error)) => Err(HandlerError::new(
                 error,

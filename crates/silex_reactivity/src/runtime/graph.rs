@@ -52,7 +52,7 @@ impl<'scope> ScopeStateInner<'scope> {
                 continue;
             }
             if let Some(dependency_scope) =
-                scheduler.get_scope_for_edge_cleanup(dependency.owner_id)
+                scheduler.get_scope_for_edge_cleanup(dependency.owner_id)?
             {
                 dependency_scope
                     .try_borrow_mut()
@@ -81,7 +81,7 @@ impl<'scope> ScopeStateInner<'scope> {
             .scheduler
             .try_borrow()
             .map_err(|_| ReactiveError::BorrowConflict)?
-            .get_scope_for_edge_cleanup(dependency.owner_id);
+            .get_scope_for_edge_cleanup(dependency.owner_id)?;
         let Some(dependency_scope) = dependency_scope else {
             self.remove_dependency(observer, dependency);
             return Ok(());
@@ -119,7 +119,7 @@ impl<'scope> ScopeStateInner<'scope> {
             .scheduler
             .try_borrow()
             .map_err(|_| ReactiveError::BorrowConflict)?
-            .get_scope_for_edge_cleanup(dependency.owner_id);
+            .get_scope_for_edge_cleanup(dependency.owner_id)?;
         let Some(dependency_scope) = dependency_scope else {
             return Ok(());
         };
@@ -286,7 +286,7 @@ impl<'scope> ScopeStateInner<'scope> {
                 .scheduler
                 .try_borrow()
                 .map_err(|_| ReactiveError::BorrowConflict)?
-                .get_scope_for_edge_cleanup(dependency.owner_id)
+                .get_scope_for_edge_cleanup(dependency.owner_id)?
             {
                 dep_scope
                     .try_borrow_mut()
@@ -323,7 +323,7 @@ impl<'scope> ScopeStateInner<'scope> {
             .scheduler
             .try_borrow()
             .map_err(|_| ReactiveError::BorrowConflict)?
-            .get_scope_for_edge_cleanup(observer.owner_id)
+            .get_scope_for_edge_cleanup(observer.owner_id)?
             .ok_or(ReactiveError::NoSuchNode)
     }
 
@@ -341,8 +341,8 @@ impl<'scope> ScopeStateInner<'scope> {
         if !Rc::ptr_eq(&ctx.scheduler, &self.scheduler) {
             return Err(ReactiveError::RuntimeMismatch);
         }
-        let observer_scope = self.observer_state(&ctx)?;
-        let same_scope = Rc::ptr_eq(observer_scope.inner(), self.scheduler_state()?.inner());
+        let same_scope = observer.owner_id == self.owner_id;
+        let observer_scope = (!same_scope).then(|| self.observer_state(&ctx));
         if same_scope && self.observer_is_computation(observer) && observer.node == target {
             return Err(ReactiveError::Reentrant);
         }
@@ -354,6 +354,7 @@ impl<'scope> ScopeStateInner<'scope> {
                 return Err(ReactiveError::Reentrant);
             }
         } else {
+            let observer_scope = observer_scope.ok_or(ReactiveError::NoSuchNode)??;
             let observer_state = observer_scope
                 .try_borrow_mut()
                 .map_err(|_| ReactiveError::BorrowConflict)?;
@@ -365,14 +366,6 @@ impl<'scope> ScopeStateInner<'scope> {
             }
         }
         Ok(Some(ctx))
-    }
-
-    fn scheduler_state(&self) -> ReactiveResult<ScopeState<'scope>> {
-        self.scheduler
-            .try_borrow()
-            .map_err(|_| ReactiveError::BorrowConflict)?
-            .get_scope_for_edge_cleanup(self.owner_id)
-            .ok_or(ReactiveError::NoSuchNode)
     }
 
     /// Record one tracked read after the source has been evaluated.
@@ -393,12 +386,11 @@ impl<'scope> ScopeStateInner<'scope> {
         if !self.is_active() || !self.has_value(target) {
             return Err(ReactiveError::NoSuchNode);
         }
-        let observer_scope = self.observer_state(ctx)?;
         let observer_target = TargetNode {
             owner_id: observer.owner_id,
             node: observer.node,
         };
-        if Rc::ptr_eq(observer_scope.inner(), self.scheduler_state()?.inner()) {
+        if observer.owner_id == self.owner_id {
             if observer.node == target || !self.observer_is_computation(observer) {
                 return Err(ReactiveError::Reentrant);
             }
@@ -406,6 +398,7 @@ impl<'scope> ScopeStateInner<'scope> {
             return Ok(());
         }
 
+        let observer_scope = self.observer_state(ctx)?;
         let mut observer_state = observer_scope
             .try_borrow_mut()
             .map_err(|_| ReactiveError::BorrowConflict)?;
@@ -459,7 +452,7 @@ impl<'scope> ScopeStateInner<'scope> {
             let target_scope = scheduler
                 .try_borrow()
                 .map_err(|_| ReactiveError::BorrowConflict)?
-                .get_scope(target.owner_id);
+                .get_scope(target.owner_id)?;
             let Some(target_scope) = target_scope else {
                 continue;
             };
@@ -532,7 +525,7 @@ impl<'scope> ScopeStateInner<'scope> {
                 let target_scope = scheduler
                     .try_borrow()
                     .map_err(|_| ReactiveError::BorrowConflict)?
-                    .get_scope(target.owner_id);
+                    .get_scope(target.owner_id)?;
                 let Some(target_scope) = target_scope else {
                     continue;
                 };
@@ -575,6 +568,7 @@ impl<'scope> ScopeStateInner<'scope> {
             .get(id)
             .is_some_and(|node| node.state == NodeState::Clean)
             && self.scheduler.borrow().global_queue.is_empty()
+            && self.scheduler.borrow().worklist.is_empty()
     }
 }
 

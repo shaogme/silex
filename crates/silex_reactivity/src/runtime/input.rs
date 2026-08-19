@@ -224,6 +224,7 @@ where
             parent,
             computation: Box::new(ComputedNode::<_, E>::new(
                 None,
+                errors.reference(),
                 evaluator,
                 Box::new(|_, _| true),
                 false,
@@ -276,6 +277,7 @@ where
             parent: ComputationParent::Current,
             computation: Box::new(ComputedNode::<T, E>::new(
                 Some(value),
+                errors.reference(),
                 evaluator,
                 Box::new(|_, _| true),
                 false,
@@ -350,6 +352,7 @@ where
             parent: ComputationParent::Current,
             computation: Box::new(ComputedNode::<T, E>::new(
                 Some(value),
+                errors.reference(),
                 evaluator,
                 Box::new(|old, new| old.is_none_or(|old| *old != *new)),
                 false,
@@ -414,7 +417,6 @@ where
         }
     };
     let value = storage.alloc_empty_slot::<T>();
-    let value_ref = value.node_ref();
     let errors = storage.alloc_error_slot();
     let errors_ref = errors.reference();
     let evaluator_errors = errors.clone();
@@ -439,15 +441,23 @@ where
             parent: ComputationParent::Current,
             computation: Box::new(ComputedNode::<T, E>::new(
                 Some(value),
+                errors.reference(),
                 evaluator,
                 changed,
                 true,
             )),
         },
     );
-    finish_creation(state, result, errors).map(|raw| TypedComputation {
-        raw,
-        value: value_ref,
-        errors: errors_ref,
+    finish_creation(state, result, errors).and_then(|raw| {
+        let value = state
+            .try_borrow()
+            .map_err(ComputationInitError::Registration)?
+            .typed_node_ref(raw)
+            .map_err(ComputationInitError::Registration)?;
+        Ok(TypedComputation {
+            raw,
+            value,
+            errors: errors_ref,
+        })
     })
 }

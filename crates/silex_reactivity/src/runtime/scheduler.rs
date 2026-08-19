@@ -1,11 +1,11 @@
 //! Global scheduler, execution contexts, and scope lifetime tracking.
 
-use super::model::{ScopePhase, ScopeState};
+use super::model::ScopeState;
 use crate::{
-    ReactiveError,
+    ReactiveError, ReactiveResult,
     internal::NodeId,
     root::CloseError,
-    unsafe_boundary::{OwnerToken, WeakOwnerToken},
+    unsafe_boundary::{ActiveOwnerProof, CleanupOwnerProof, WeakOwnerToken},
 };
 
 use std::{
@@ -302,6 +302,7 @@ pub(crate) struct GlobalScheduler {
     free_owner_ids: Vec<u32>,
     epoch: u64,
     pub(crate) global_queue: VecDeque<ScheduledTask>,
+    pub(crate) worklist: VecDeque<ScheduledTask>,
     pub(crate) running_queue: bool,
     pub(crate) batch_depth: usize,
     pub(crate) evaluating: usize,
@@ -326,6 +327,7 @@ impl GlobalScheduler {
             free_owner_ids: Vec::new(),
             epoch: 1,
             global_queue: VecDeque::new(),
+            worklist: VecDeque::new(),
             running_queue: false,
             batch_depth: 0,
             evaluating: 0,
@@ -389,6 +391,7 @@ impl GlobalScheduler {
         }
         self.active_mask.set(id.0, false);
         self.global_queue.retain(|task| task.owner_id != id);
+        self.worklist.retain(|task| task.owner_id != id);
     }
 
     pub(crate) fn release_owner_id(&mut self, id: OwnerId) {
@@ -431,31 +434,26 @@ impl GlobalScheduler {
             .is_some_and(|entry| entry.generation == id.1 && entry.owner.ptr_eq(expected))
     }
 
-    /// Resolve a typed owner only after validating both the generational slot
-    /// and the exact weak-state identity registered in that slot.
-    pub(crate) fn resolve_owner<'scope>(
+    /// Resolve an active owner proof after validating the complete registry
+    /// identity and active phase.
+    pub(crate) fn resolve_active_owner<'scope>(
         &self,
         id: OwnerId,
         expected: &WeakOwnerToken,
-    ) -> Option<OwnerToken<'scope>> {
-        if !self.is_scope_current(id, expected) {
-            return None;
+    ) -> ReactiveResult<Option<ActiveOwnerProof<'scope>>> {
+        let Some(entry) = self.scopes.get(id.0 as usize).and_then(Option::as_ref) else {
+            return Ok(None);
+        };
+        if !self.is_scope_active(id) || !entry.owner.ptr_eq(expected) {
+            return Ok(None);
         }
-        let state = expected.upgrade_erased()?;
-        if state
-            .try_borrow()
-            .ok()
-            .is_none_or(|state| state.phase != ScopePhase::Active)
-        {
-            return None;
-        }
-        // SAFETY: `is_scope_current` checked the scheduler family through the
-        // exact weak identity, the owner slot, and its generation. The state
-        // remains registered until the close transaction has detached all
-        // edges and cleared all typed payload slots.
-        Some(unsafe { OwnerToken::from_validated(state) })
+        let Some(state) = entry.owner.upgrade_erased() else {
+            return Ok(None);
+        };
+        ActiveOwnerProof::from_registry(id, entry.generation, expected, state)
     }
 
+    #[cfg(feature = "test-support")]
     pub(crate) fn active_owner_ids(&self) -> Vec<OwnerId> {
         self.scopes
             .iter()
@@ -469,29 +467,45 @@ impl GlobalScheduler {
             .collect()
     }
 
-    pub(crate) fn get_scope<'scope>(&self, id: OwnerId) -> Option<ScopeState<'scope>> {
+    pub(crate) fn get_scope<'scope>(
+        &self,
+        id: OwnerId,
+    ) -> ReactiveResult<Option<ScopeState<'scope>>> {
+        let Some(entry) = self.scopes.get(id.0 as usize).and_then(Option::as_ref) else {
+            return Ok(None);
+        };
         if !self.is_scope_active(id) {
-            return None;
+            return Ok(None);
         }
-        self.get_registered_scope(id)
+        let Some(state) = entry.owner.upgrade_erased() else {
+            return Ok(None);
+        };
+        ActiveOwnerProof::from_registry(id, entry.generation, &entry.owner, state)
+            .map(|proof| proof.map(|proof| proof.state()))
     }
 
     pub(crate) fn get_scope_for_edge_cleanup<'scope>(
         &self,
         id: OwnerId,
-    ) -> Option<ScopeState<'scope>> {
-        self.get_registered_scope(id)
+    ) -> ReactiveResult<Option<ScopeState<'scope>>> {
+        self.resolve_cleanup_owner(id)
+            .map(|proof| proof.map(|proof| proof.state()))
     }
 
-    fn get_registered_scope<'scope>(&self, id: OwnerId) -> Option<ScopeState<'scope>> {
-        let entry = self.scopes.get(id.0 as usize)?.as_ref()?;
+    pub(crate) fn resolve_cleanup_owner<'scope>(
+        &self,
+        id: OwnerId,
+    ) -> ReactiveResult<Option<CleanupOwnerProof<'scope>>> {
+        let Some(entry) = self.scopes.get(id.0 as usize).and_then(Option::as_ref) else {
+            return Ok(None);
+        };
         if entry.generation != id.1 {
-            return None;
+            return Ok(None);
         }
-        entry
-            .owner
-            .upgrade_erased()
-            .map(|state| unsafe { OwnerToken::from_validated(state).state() })
+        let Some(state) = entry.owner.upgrade_erased() else {
+            return Ok(None);
+        };
+        CleanupOwnerProof::from_registry(id, entry.generation, &entry.owner, state)
     }
 
     pub(crate) fn owner_metadata(&self, id: OwnerId) -> Option<(OwnerMode, Option<OwnerId>)> {
@@ -511,6 +525,8 @@ impl GlobalScheduler {
     pub(crate) fn cancel_effect(&mut self, target: TargetNode) {
         self.global_queue
             .retain(|task| task.owner_id != target.owner_id || task.node != target.node);
+        self.worklist
+            .retain(|task| task.owner_id != target.owner_id || task.node != target.node);
     }
 
     pub(crate) fn is_idle(&self) -> bool {
@@ -521,7 +537,7 @@ impl GlobalScheduler {
         self.initial_flush_depth == 0
             && self.is_idle()
             && self.active_leases == 0
-            && !self.global_queue.is_empty()
+            && (!self.global_queue.is_empty() || !self.worklist.is_empty())
     }
 }
 
@@ -585,6 +601,7 @@ mod tests {
             scheduler
                 .borrow()
                 .get_scope_for_edge_cleanup(first_id)
+                .expect("cleanup proof lookup")
                 .is_some()
         );
 
@@ -599,6 +616,7 @@ mod tests {
             scheduler
                 .borrow()
                 .get_scope_for_edge_cleanup(first_id)
+                .expect("released owner lookup")
                 .is_none()
         );
 

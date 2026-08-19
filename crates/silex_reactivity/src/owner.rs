@@ -365,12 +365,15 @@ impl<'owner> OwnerAccess<'owner> {
         F: FnMut(T) -> Result<(), E> + 'owner,
     {
         let thunk = self.storage.alloc_slot(CallbackThunk::new(f));
-        let callback = thunk.node_ref();
         let state = self.state();
         let raw = state
             .try_borrow_mut()
             .map_err(|_| ReactiveError::BorrowConflict)
             .and_then(|mut state| state.create_callback(thunk))?;
+        let callback = state
+            .try_borrow()
+            .map_err(|_| ReactiveError::BorrowConflict)?
+            .typed_node_ref(raw)?;
         Ok(Callback {
             handle: Handle::new(self.storage, raw),
             callback,
@@ -553,12 +556,15 @@ impl<'owner> OwnerAccess<'owner> {
 
     pub fn node_ref<T: 'owner>(&self) -> ReactiveResult<NodeRef<'owner, T>> {
         let slot = self.storage.alloc_slot(None::<T>);
-        let value = slot.node_ref();
         let state = self.state();
         let raw = state
             .try_borrow_mut()
             .map_err(|_| ReactiveError::BorrowConflict)
             .and_then(|mut state| state.create_node_ref(slot))?;
+        let value = state
+            .try_borrow()
+            .map_err(|_| ReactiveError::BorrowConflict)?
+            .typed_node_ref(raw)?;
         Ok(NodeRef {
             handle: Handle::new(self.storage, raw),
             value,
@@ -571,12 +577,15 @@ impl<'owner> OwnerAccess<'owner> {
         value: T,
     ) -> ReactiveResult<(ReadSignal<'owner, T>, WriteSignal<'owner, T>)> {
         let slot = self.storage.alloc_slot(value);
-        let value_ref = slot.node_ref();
         let state = self.state();
         let raw = state
             .try_borrow_mut()
             .map_err(|_| ReactiveError::BorrowConflict)
             .and_then(|mut state| state.create_signal(slot))?;
+        let value_ref = state
+            .try_borrow()
+            .map_err(|_| ReactiveError::BorrowConflict)?
+            .typed_node_ref(raw)?;
         let handle = Handle::new(self.storage, raw);
         Ok((
             ReadSignal {
@@ -599,12 +608,15 @@ impl<'owner> OwnerAccess<'owner> {
 
     pub fn stored<T: 'owner>(&self, value: T) -> ReactiveResult<StoredValue<'owner, T>> {
         let slot = self.storage.alloc_slot(value);
-        let value_ref = slot.node_ref();
         let state = self.state();
         let raw = state
             .try_borrow_mut()
             .map_err(|_| ReactiveError::BorrowConflict)
             .and_then(|mut state| state.create_stored(slot))?;
+        let value_ref = state
+            .try_borrow()
+            .map_err(|_| ReactiveError::BorrowConflict)?
+            .typed_node_ref(raw)?;
         Ok(StoredValue {
             handle: Handle::new(self.storage, raw),
             value: value_ref,

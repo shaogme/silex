@@ -858,3 +858,89 @@ fn cyclic_effect_queue_failure_does_not_poison_unrelated_effects() {
         })
         .expect("test operation should succeed");
 }
+
+#[test]
+fn queue_failure_keeps_other_owner_work_and_clears_failed_owner_state() {
+    let mut runtime = Runtime::new();
+    runtime
+        .with_transient(|root| {
+            let owner_a = root.create_child().expect("owner A creation");
+            let owner_b = root.create_child().expect("owner B creation");
+            let scope_a = owner_a.access();
+            let scope_b = owner_b.access();
+            let (signal_a, set_a) = scope_a.signal(0_i32).expect("signal A creation");
+            let (relay_a, set_relay_a) = scope_a.signal(0_i32).expect("relay A creation");
+            let (signal_b, set_b) = scope_b.signal(0_i32).expect("signal B creation");
+            let loop_enabled = Rc::new(Cell::new(false));
+            let ticker = Rc::new(Cell::new(0_i32));
+            let a_runs = Rc::new(Cell::new(0_usize));
+            let b_runs = Rc::new(Cell::new(0_usize));
+
+            let loop_enabled_in_a = loop_enabled.clone();
+            let ticker_in_a = ticker.clone();
+            let a_runs_in_effect = a_runs.clone();
+            scope_a
+                .effect(
+                    move || {
+                        signal_a.get().map_err(|_| ())?;
+                        a_runs_in_effect.set(a_runs_in_effect.get() + 1);
+                        if loop_enabled_in_a.get() {
+                            ticker_in_a.set(ticker_in_a.get() + 1);
+                            set_relay_a.set(ticker_in_a.get()).map_err(|_| ())?;
+                        }
+                        Ok(())
+                    },
+                    handler(scope_a),
+                )
+                .expect("loop effect creation");
+
+            let loop_enabled_in_relay = loop_enabled.clone();
+            let ticker_in_relay = ticker.clone();
+            scope_a
+                .effect(
+                    move || {
+                        relay_a.get().map_err(|_| ())?;
+                        if loop_enabled_in_relay.get() {
+                            ticker_in_relay.set(ticker_in_relay.get() + 1);
+                            set_a.set(ticker_in_relay.get()).map_err(|_| ())?;
+                        }
+                        Ok(())
+                    },
+                    handler(scope_a),
+                )
+                .expect("relay effect creation");
+
+            let b_runs_in_effect = b_runs.clone();
+            scope_b
+                .effect(
+                    move || {
+                        signal_b.get().map_err(|_| ())?;
+                        b_runs_in_effect.set(b_runs_in_effect.get() + 1);
+                        Ok(())
+                    },
+                    handler(scope_b),
+                )
+                .expect("independent effect creation");
+
+            assert_eq!(a_runs.get(), 1);
+            assert_eq!(b_runs.get(), 1);
+            loop_enabled.set(true);
+            let failure = root.batch(|| {
+                set_a.set(1).expect("signal A update");
+                set_b.set(1).expect("signal B update");
+            });
+            assert!(matches!(failure, Err(ReactiveError::NonConvergent { .. })));
+            assert_eq!(b_runs.get(), 2);
+
+            loop_enabled.set(false);
+            root.batch(|| {}).expect("retained work should flush");
+            assert_eq!(b_runs.get(), 2);
+
+            let runs_before_retry = a_runs.get();
+            set_a
+                .set(1_000_000)
+                .expect("failed owner should be retryable");
+            assert_eq!(a_runs.get(), runs_before_retry + 1);
+        })
+        .expect("queue recovery should close cleanly");
+}

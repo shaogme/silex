@@ -15,12 +15,18 @@ use crate::{
 use slotmap::Key;
 use std::{
     any::Any,
-    cell::RefCell,
+    cell::{Cell, RefCell},
     fmt, mem,
     panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
     rc::Rc,
 };
 
+#[cfg(miri)]
+// Keep the non-convergence regression bounded under the interpreter; the
+// production budget below remains unchanged.
+const MAX_QUEUE_ITERATIONS: usize = 10;
+
+#[cfg(not(miri))]
 const MAX_QUEUE_ITERATIONS: usize = 100_000;
 
 type PanicData = Box<dyn Any + Send>;
@@ -258,7 +264,10 @@ fn evaluate<'scope>(
             }
         } else {
             let scheduler = state.borrow().scheduler.clone();
-            let dep_scope = scheduler.borrow().get_scope(dep.owner_id);
+            let dep_scope = scheduler
+                .borrow()
+                .get_scope(dep.owner_id)
+                .map_err(EvaluationError::Runtime)?;
             if let Some(dep_scope) = dep_scope {
                 let dependency_state = dep_scope
                     .try_borrow()
@@ -283,34 +292,36 @@ fn evaluate<'scope>(
         };
         if node.state == NodeState::Check {
             let scheduler = state_ref.scheduler.clone();
-            let max_dep_updated_epoch = state_ref
+            let dependency_epochs = state_ref
                 .dependency_edges_of(id)
-                .map(|(_, edge)| {
+                .map(|(_, edge)| -> EvaluationResult<'scope, u64> {
                     let dep = edge.target;
                     if dep.owner_id == state_ref.owner_id {
-                        state_ref
+                        Ok(state_ref
                             .nodes
                             .get(dep.node)
                             .map(|target| target.updated_epoch)
-                            .unwrap_or(0)
+                            .unwrap_or(0))
                     } else {
-                        scheduler
-                            .borrow()
-                            .get_scope(dep.owner_id)
-                            .map(|dep_scope| {
-                                dep_scope
-                                    .try_borrow()
-                                    .ok()
-                                    .map(|st| {
-                                        st.nodes.get(dep.node).map(|n| n.updated_epoch).unwrap_or(0)
-                                    })
-                                    .unwrap_or(u64::MAX)
-                            })
-                            .unwrap_or(0)
+                        let dep_scope = scheduler
+                            .try_borrow()
+                            .map_err(|_| ReactiveError::BorrowConflict)?
+                            .get_scope(dep.owner_id)?;
+                        let Some(dep_scope) = dep_scope else {
+                            return Ok(0);
+                        };
+                        let dep_state = dep_scope
+                            .try_borrow()
+                            .map_err(|_| ReactiveError::BorrowConflict)?;
+                        Ok(dep_state
+                            .nodes
+                            .get(dep.node)
+                            .map(|node| node.updated_epoch)
+                            .unwrap_or(0))
                     }
                 })
-                .max()
-                .unwrap_or(0);
+                .collect::<Result<Vec<_>, _>>()?;
+            let max_dep_updated_epoch = dependency_epochs.into_iter().max().unwrap_or(0);
             node.last_computed_epoch >= max_dep_updated_epoch
         } else {
             false
@@ -832,28 +843,48 @@ pub(crate) fn run_global_queue(scheduler: &Rc<RefCell<GlobalScheduler>>) -> Reac
             false
         } else {
             sched.running_queue = true;
+            let incoming = mem::take(&mut sched.global_queue);
+            sched.worklist.extend(incoming);
             true
         }
     };
     if !acquired {
         return Ok(());
     }
+    let mut guard = QueueRunGuard::new(scheduler.clone());
     let outcome = catch_unwind(AssertUnwindSafe(|| -> ReactiveResult<()> {
         let mut iterations = 0;
         loop {
             let next_task = scheduler
                 .try_borrow_mut()
                 .map_err(|_| ReactiveError::BorrowConflict)?
-                .global_queue
+                .worklist
                 .pop_front();
+            let next_task = match next_task {
+                Some(task) => Some(task),
+                None => {
+                    let mut scheduler_ref = scheduler
+                        .try_borrow_mut()
+                        .map_err(|_| ReactiveError::BorrowConflict)?;
+                    if scheduler_ref.global_queue.is_empty() {
+                        None
+                    } else {
+                        let incoming = mem::take(&mut scheduler_ref.global_queue);
+                        scheduler_ref.worklist.extend(incoming);
+                        scheduler_ref.worklist.pop_front()
+                    }
+                }
+            };
             let Some(task) = next_task else {
                 break;
             };
+            guard.failed_owner.set(Some(task.owner_id));
             if !scheduler
                 .try_borrow()
                 .map_err(|_| ReactiveError::BorrowConflict)?
                 .is_scope_active(task.owner_id)
             {
+                guard.failed_owner.set(None);
                 continue;
             }
             iterations += 1;
@@ -867,7 +898,7 @@ pub(crate) fn run_global_queue(scheduler: &Rc<RefCell<GlobalScheduler>>) -> Reac
             let scope_state = scheduler
                 .try_borrow()
                 .map_err(|_| ReactiveError::BorrowConflict)?
-                .get_scope(task.owner_id);
+                .get_scope(task.owner_id)?;
             if let Some(scope_state) = scope_state {
                 {
                     let mut state_ref = scope_state
@@ -887,59 +918,208 @@ pub(crate) fn run_global_queue(scheduler: &Rc<RefCell<GlobalScheduler>>) -> Reac
                     },
                 )?;
             }
+            guard.failed_owner.set(None);
         }
         Ok(())
     }));
 
-    let result = match outcome {
-        Ok(Ok(())) => Ok(()),
+    match outcome {
+        Ok(Ok(())) => guard.finish(),
         Ok(Err(error)) => {
-            recover_after_queue_error(scheduler);
+            drop(guard);
             Err(error)
         }
         Err(panic) => {
-            recover_after_queue_error(scheduler);
-            let _ = scheduler.try_borrow_mut().map(|mut scheduler| {
-                scheduler.running_queue = false;
-            });
+            drop(guard);
             resume_unwind(panic)
         }
-    };
-    scheduler
-        .try_borrow_mut()
-        .map_err(|_| ReactiveError::BorrowConflict)?
-        .running_queue = false;
-
-    result
+    }
 }
 
-fn recover_after_queue_error(scheduler: &Rc<RefCell<GlobalScheduler>>) {
-    let Ok(owner_ids) = scheduler
+struct QueueRunGuard {
+    scheduler: Rc<RefCell<GlobalScheduler>>,
+    failed_owner: Cell<Option<OwnerId>>,
+    finished: bool,
+}
+
+impl QueueRunGuard {
+    fn new(scheduler: Rc<RefCell<GlobalScheduler>>) -> Self {
+        Self {
+            scheduler,
+            failed_owner: Cell::new(None),
+            finished: false,
+        }
+    }
+
+    fn finish(&mut self) -> ReactiveResult<()> {
+        let mut scheduler = self
+            .scheduler
+            .try_borrow_mut()
+            .map_err(|_| ReactiveError::BorrowConflict)?;
+        scheduler.worklist.clear();
+        scheduler.running_queue = false;
+        self.finished = true;
+        Ok(())
+    }
+}
+
+impl Drop for QueueRunGuard {
+    fn drop(&mut self) {
+        if self.finished {
+            return;
+        }
+        recover_after_queue_error(&self.scheduler, self.failed_owner.get());
+        if let Ok(mut scheduler) = self.scheduler.try_borrow_mut() {
+            scheduler.running_queue = false;
+        }
+    }
+}
+
+fn recover_after_queue_error(
+    scheduler: &Rc<RefCell<GlobalScheduler>>,
+    failed_owner: Option<OwnerId>,
+) {
+    if let Ok(mut scheduler_ref) = scheduler.try_borrow_mut()
+        && let Some(owner_id) = failed_owner
+    {
+        scheduler_ref
+            .worklist
+            .retain(|task| task.owner_id != owner_id);
+        scheduler_ref
+            .global_queue
+            .retain(|task| task.owner_id != owner_id);
+    }
+
+    let Some(owner_id) = failed_owner else {
+        return;
+    };
+    let Some(scope_state) = scheduler
         .try_borrow()
-        .map(|scheduler| scheduler.active_owner_ids())
+        .ok()
+        .and_then(|scheduler| scheduler.resolve_cleanup_owner(owner_id).ok())
+        .flatten()
+        .map(|proof| proof.state())
     else {
         return;
     };
-    if let Ok(mut scheduler_ref) = scheduler.try_borrow_mut() {
-        scheduler_ref.global_queue.clear();
+    let Ok(mut state) = scope_state.try_borrow_mut() else {
+        return;
+    };
+    for node in state.nodes.values_mut() {
+        if node.state == NodeState::Check {
+            node.state = NodeState::Dirty;
+        }
+        node.queued = false;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        ErrorHandlerToken,
+        owner::{OwnerAccess, ScopeStorage},
+        runtime::model::NodeState,
+        runtime::scheduler::ScheduledTask,
+    };
+    use std::{cell::Cell, marker::PhantomData};
+
+    fn handler<'scope>(owner: OwnerAccess<'scope>) -> ErrorHandlerToken<'scope, ()> {
+        owner.error_handler(|_| {}).expect("handler registration")
     }
 
-    for owner_id in owner_ids {
-        let Some(scope_state) = scheduler
-            .try_borrow()
-            .ok()
-            .and_then(|scheduler| scheduler.get_scope(owner_id))
-        else {
-            continue;
+    #[test]
+    fn queue_error_retains_other_owner_worklist_and_incoming_tasks() {
+        let scheduler = GlobalScheduler::new();
+        let failed_storage = ScopeStorage::new(scheduler.clone());
+        let retained_storage = ScopeStorage::new(scheduler.clone());
+        let retained_scope = OwnerAccess {
+            storage: &retained_storage,
+            marker: PhantomData,
         };
-        let Ok(mut state) = scope_state.try_borrow_mut() else {
-            continue;
-        };
-        for node in state.nodes.values_mut() {
-            if node.state == NodeState::Check {
-                node.state = NodeState::Dirty;
-            }
-            node.queued = false;
+        let first_runs = std::rc::Rc::new(Cell::new(0));
+        let followup_runs = std::rc::Rc::new(Cell::new(0));
+        let enqueue_followup = std::rc::Rc::new(Cell::new(false));
+        let followup_id = std::rc::Rc::new(Cell::new(None));
+        let retained_owner_id = retained_storage.owner_id;
+
+        let followup_runs_in_effect = followup_runs.clone();
+        let followup = retained_scope
+            .effect(
+                move || {
+                    followup_runs_in_effect.set(followup_runs_in_effect.get() + 1);
+                    Ok(())
+                },
+                handler(retained_scope),
+            )
+            .expect("follow-up effect creation");
+        let followup_node = followup.handle.raw();
+        followup_id.set(Some(followup_node));
+        retained_scope
+            .state()
+            .borrow_mut()
+            .nodes
+            .get_mut(followup_node)
+            .expect("follow-up effect node")
+            .state = NodeState::Dirty;
+
+        let first_runs_in_effect = first_runs.clone();
+        let enqueue_followup_in_effect = enqueue_followup.clone();
+        let followup_id_in_effect = followup_id.clone();
+        let scheduler_in_effect = scheduler.clone();
+        let first = retained_scope
+            .effect(
+                move || {
+                    first_runs_in_effect.set(first_runs_in_effect.get() + 1);
+                    if enqueue_followup_in_effect.get() {
+                        scheduler_in_effect
+                            .borrow_mut()
+                            .global_queue
+                            .push_back(ScheduledTask {
+                                owner_id: retained_owner_id,
+                                node: followup_id_in_effect.get().expect("follow-up node id"),
+                            });
+                    }
+                    Ok(())
+                },
+                handler(retained_scope),
+            )
+            .expect("first effect creation");
+        let first_node = first.handle.raw();
+        retained_scope
+            .state()
+            .borrow_mut()
+            .nodes
+            .get_mut(first_node)
+            .expect("first effect node")
+            .state = NodeState::Dirty;
+        enqueue_followup.set(true);
+
+        {
+            let mut scheduler_ref = scheduler.borrow_mut();
+            scheduler_ref.global_queue.push_back(ScheduledTask {
+                owner_id: retained_owner_id,
+                node: first_node,
+            });
+            scheduler_ref.global_queue.push_back(ScheduledTask {
+                owner_id: failed_storage.owner_id,
+                node: NodeId::DANGLING,
+            });
         }
+
+        assert_eq!(run_global_queue(&scheduler), Err(ReactiveError::NoSuchNode));
+        assert_eq!(first_runs.get(), 2);
+        assert_eq!(followup_runs.get(), 1);
+        assert_eq!(scheduler.borrow().global_queue.len(), 1);
+        assert!(!scheduler.borrow().running_queue);
+
+        enqueue_followup.set(false);
+        assert_eq!(run_global_queue(&scheduler), Ok(()));
+        assert_eq!(followup_runs.get(), 2);
+        assert!(scheduler.borrow().global_queue.is_empty());
+        assert!(scheduler.borrow().worklist.is_empty());
+
+        let _ = failed_storage.dispose_untracked();
+        let _ = retained_storage.dispose_untracked();
     }
 }

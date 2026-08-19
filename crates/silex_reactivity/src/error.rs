@@ -4,16 +4,15 @@ use crate::{
     owner::ScopeStorage,
     root::CloseError,
     runtime::{
-        ScopePhase, ScopeState, acquire_error_handler_lease, invoke_error_handler,
+        ScopePhase, acquire_error_handler_lease, invoke_error_handler,
         storage::{AllocationCounters, AllocationKind, AllocationLease, CallbackThunkError},
     },
-    unsafe_boundary::{OwnerToken, WeakOwnerToken},
+    unsafe_boundary::{ActiveOwnerProof, ScopedPtr, WeakOwnerToken},
 };
 use std::{
     cell::{Cell, RefCell},
     fmt,
     marker::PhantomData,
-    ptr::NonNull,
     rc::Rc,
 };
 
@@ -275,7 +274,7 @@ impl<'scope, E> ErrorSlotOwner<'scope, E> {
 
     pub(crate) fn reference(&self) -> ErrorSlotRef<'scope, E> {
         ErrorSlotRef {
-            slot: NonNull::from(&self.inner.slot),
+            slot: ScopedPtr::from_ref(&self.inner.slot),
             marker: PhantomData,
         }
     }
@@ -291,7 +290,7 @@ impl<'scope, E> ErrorSlotOwner<'scope, E> {
 
 /// A copyable, non-owning reference to a computation error slot.
 pub(crate) struct ErrorSlotRef<'scope, E> {
-    slot: NonNull<ErrorSlot<E>>,
+    slot: ScopedPtr<ErrorSlot<E>>,
     marker: PhantomData<fn(&'scope ()) -> &'scope E>,
 }
 
@@ -304,15 +303,12 @@ impl<E> Clone for ErrorSlotRef<'_, E> {
 }
 
 impl<'scope, E> ErrorSlotRef<'scope, E> {
-    /// Restore the slot after the owning computation has been validated.
-    ///
-    /// # Safety
-    ///
-    /// The caller must have just validated that the computation owning this
-    /// slot is live and has the expected generation and kind.
-    pub(crate) unsafe fn restore(self) -> &'scope ErrorSlot<E> {
-        // SAFETY: upheld by the function contract above.
-        unsafe { self.slot.as_ref() }
+    pub(crate) fn identity(self) -> ScopedPtr<()> {
+        self.slot.cast()
+    }
+
+    pub(crate) fn pointer(self) -> ScopedPtr<ErrorSlot<E>> {
+        self.slot
     }
 }
 
@@ -374,8 +370,8 @@ impl<'scope, E> HandlerRecord<'scope, E> {
         self.key.set(Some(key));
     }
 
-    pub(crate) fn identity(&self) -> NonNull<()> {
-        NonNull::from(self).cast()
+    pub(crate) fn identity(&self) -> ScopedPtr<()> {
+        ScopedPtr::from_ref(self).cast()
     }
 
     fn is_active(&self) -> bool {
@@ -512,10 +508,19 @@ impl<'scope, E> HandlerRecord<'scope, E> {
         let Some(state) = self.owner.upgrade_erased() else {
             return true;
         };
-        // SAFETY: this weak identity was captured from the same registered
-        // handler owner. The registry entry is removed only after the owner
-        // state has finished its close transaction.
-        let state: ScopeState<'scope> = unsafe { OwnerToken::from_validated(state).state() };
+        let (owner_id, scheduler) = match state.try_borrow() {
+            Ok(state) => (state.owner_id, state.scheduler.clone()),
+            Err(_) => return false,
+        };
+        let Some(state) = scheduler
+            .try_borrow()
+            .ok()
+            .and_then(|scheduler| scheduler.resolve_cleanup_owner(owner_id).ok())
+            .flatten()
+            .map(|proof| proof.state())
+        else {
+            return false;
+        };
         if let Ok(mut state) = state.try_borrow_mut() {
             state.remove_error_handler(key, self.identity());
             true
@@ -527,13 +532,10 @@ impl<'scope, E> HandlerRecord<'scope, E> {
     pub(crate) fn lease(
         &self,
         owner: Rc<dyn HandlerOwner + 'scope>,
-        pointer: NonNull<()>,
+        record: Rc<HandlerRecord<'scope, E>>,
     ) -> HandlerLease<'scope, E> {
         HandlerLease {
-            inner: Rc::new(HandlerLeaseInner {
-                owner,
-                record: pointer.cast(),
-            }),
+            inner: Rc::new(HandlerLeaseInner { owner, record }),
             marker: PhantomData,
         }
     }
@@ -578,14 +580,14 @@ impl<E> HandlerOwner for HandlerRecord<'_, E> {
 
 pub(crate) struct ErrorHandlerEntry<'scope> {
     pub(crate) owner: Rc<dyn HandlerOwner + 'scope>,
-    pub(crate) identity: NonNull<()>,
+    pub(crate) identity: ScopedPtr<()>,
 }
 
 /// A copyable, non-owning dispatch capability for callback errors.
 pub struct ErrorHandlerRef<'scope, E> {
     storage: &'scope ScopeStorage,
     key: ErrorHandlerKey,
-    record: NonNull<()>,
+    record: ScopedPtr<()>,
     marker: PhantomData<fn(E) -> &'scope ()>,
 }
 
@@ -606,9 +608,7 @@ impl<'scope, E: 'scope> ErrorHandlerRef<'scope, E> {
         Self {
             storage,
             key,
-            record: NonNull::new(Rc::as_ptr(record).cast_mut())
-                .expect("handler record pointer cannot be null")
-                .cast(),
+            record: ScopedPtr::from_rc(record).cast(),
             marker: PhantomData,
         }
     }
@@ -644,12 +644,11 @@ impl<'scope, E: 'scope> ErrorHandlerRef<'scope, E> {
             }
         }
 
-        let pointer = self.record.cast::<HandlerRecord<'scope, E>>().as_ptr();
-        // SAFETY: the registry validation above proves that this pointer is
-        // the live Rc allocation for the current handler generation.
-        unsafe { Rc::increment_strong_count(pointer) };
-        // SAFETY: increment_strong_count created exactly one Rc strong ref.
-        let record = unsafe { Rc::from_raw(pointer) };
+        let proof = ActiveOwnerProof::from_state(&state)
+            .map_err(|error| HandlerError::new(error, ErrorContext::new("handler proof")))?;
+        let record = proof
+            .clone_handler_record(&state, self.key, self.record.cast())
+            .map_err(|error| HandlerError::new(error, ErrorContext::new("handler record")))?;
         record.add_strong();
         Ok(ErrorHandlerAnchor::from_record(
             self.storage,
@@ -673,15 +672,8 @@ impl<'scope, E: 'scope> ErrorHandlerRef<'scope, E> {
         self.key
     }
 
-    pub(crate) const fn record(&self) -> NonNull<()> {
+    pub(crate) const fn record(&self) -> ScopedPtr<()> {
         self.record
-    }
-
-    pub(crate) unsafe fn restore_record(&self) -> &'scope HandlerRecord<'scope, E> {
-        // SAFETY: Runtime lookup validates both the generation key and the
-        // record identity before this pointer is restored. The record is
-        // kept alive by the registry or by the HandlerLease owner.
-        unsafe { self.record.cast::<HandlerRecord<'scope, E>>().as_ref() }
     }
 }
 
@@ -819,19 +811,19 @@ where
     }
 }
 
-struct HandlerLeaseInner<'scope> {
+struct HandlerLeaseInner<'scope, E> {
     owner: Rc<dyn HandlerOwner + 'scope>,
-    record: NonNull<()>,
+    record: Rc<HandlerRecord<'scope, E>>,
 }
 
-impl Drop for HandlerLeaseInner<'_> {
+impl<E> Drop for HandlerLeaseInner<'_, E> {
     fn drop(&mut self) {
         self.owner.release_lease();
     }
 }
 
 pub struct HandlerLease<'scope, E> {
-    inner: Rc<HandlerLeaseInner<'scope>>,
+    inner: Rc<HandlerLeaseInner<'scope, E>>,
     marker: PhantomData<fn(E) -> &'scope ()>,
 }
 
@@ -846,16 +838,9 @@ impl<'scope, E> Clone for HandlerLease<'scope, E> {
 
 impl<'scope, E> HandlerLease<'scope, E> {
     pub fn handle(&self, error: E) -> Result<(), HandlerError> {
-        // SAFETY: The lease owns the type-erased record owner and the pointer
-        // was validated against the same registry entry before the lease was
-        // created.
-        let record = unsafe {
-            self.inner
-                .record
-                .cast::<HandlerRecord<'scope, E>>()
-                .as_ref()
-        };
-        record.call(error, ErrorContext::new("handler callback"), true)
+        self.inner
+            .record
+            .call(error, ErrorContext::new("handler callback"), true)
     }
 }
 

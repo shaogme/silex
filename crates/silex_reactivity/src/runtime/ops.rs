@@ -5,13 +5,14 @@ use super::{
     eval::{EvaluationError, flush_if_idle, prepare_fallible_read, prepare_read},
     model::{ScopePhase, ScopeState, StoredAccessMode},
     scheduler::{GlobalScheduler, ObserverFrame, TargetNode, validate_active_scheduler},
-    storage::{CallbackThunk, CallbackThunkError, NodeStorage, TypedNodeRef},
+    storage::{CallbackThunk, CallbackThunkError, NodeStorage, TypedNodeRef, TypedSlot},
 };
 use crate::{
     CallbackInvokeError, CallbackInvokeResult, ReactiveError, ReactiveResult,
     error::{ErrorContext, ErrorHandlerRef, ErrorSlotRef, HandlerError, HandlerLease},
     handle::NodeKindTag,
     internal::NodeId,
+    unsafe_boundary::{ActiveOwnerProof, ScopedPtr, restore_cleanup_stored_slot},
 };
 use std::{
     cell::RefCell,
@@ -92,7 +93,11 @@ where
         }
         state_ref.owner_id.0
     };
-    let record = unsafe { handler.restore_record() };
+    let proof = ActiveOwnerProof::from_state(&state)
+        .map_err(|error| HandlerError::new(error, ErrorContext::new("handler proof")))?;
+    let record = proof
+        .restore_handler_record(&state, handler.key(), handler.record().cast())
+        .map_err(|error| HandlerError::new(error, ErrorContext::new("handler record")))?;
     record.call(
         error,
         ErrorContext::new("handler callback").with_owner(owner),
@@ -125,17 +130,33 @@ where
         entry.owner.add_lease(context)?;
         entry.owner.clone()
     };
-    let record = unsafe { handler.restore_record() };
-    Ok(record.lease(owner, handler.record()))
+    let proof = ActiveOwnerProof::from_state(&state)
+        .map_err(|error| HandlerError::new(error, ErrorContext::new("handler proof")))?;
+    let record = proof
+        .clone_handler_record(&state, handler.key(), handler.record().cast())
+        .map_err(|error| HandlerError::new(error, ErrorContext::new("handler record")))?;
+    Ok(record.lease(owner, record.clone()))
 }
 
 fn read_typed<'scope, T, R>(
+    state: &ScopeState<'scope>,
+    id: NodeId,
     slot: TypedNodeRef<'scope, T>,
     scheduler: Rc<RefCell<GlobalScheduler>>,
+    kind: Option<NodeKindTag>,
+    cleanup: bool,
     f: impl FnOnce(&T) -> R,
 ) -> ReactiveResult<R> {
-    // SAFETY: callers validate the owning node before restoring this pointer.
-    let lease = unsafe { slot.restore() }.try_read(scheduler)?;
+    let slot = if cleanup {
+        restore_cleanup_stored_slot(state, id, slot.pointer())?
+    } else {
+        let proof = ActiveOwnerProof::from_state(state)?;
+        match kind {
+            Some(kind) => proof.restore_typed_slot(state, id, kind, slot.pointer())?,
+            None => proof.restore_value_slot(state, id, slot.pointer())?,
+        }
+    };
+    let lease = slot.try_read(scheduler)?;
     let value = lease.as_ref().ok_or(ReactiveError::NoSuchNode)?;
     let result = f(value);
     drop(lease);
@@ -151,7 +172,7 @@ pub(crate) fn with_signal<'scope, T, R>(
 ) -> ReactiveResult<R> {
     prepare_read(state, id, track)?;
     let (_storage, scheduler) = value_scheduler(state, id, true, track)?;
-    let result = read_typed(value, scheduler, f)?;
+    let result = read_typed(state, id, value, scheduler, None, false, f)?;
     flush_if_idle(state)?;
     Ok(result)
 }
@@ -171,8 +192,12 @@ where
         return Err(match error {
             EvaluationError::Runtime(error) => CallbackInvokeError::Runtime(error),
             EvaluationError::User => {
-                // SAFETY: the failed read validated the live computed node.
-                CallbackInvokeError::User(unsafe { errors.restore() }.take())
+                let proof =
+                    ActiveOwnerProof::from_state(state).map_err(CallbackInvokeError::Runtime)?;
+                let slot = proof
+                    .restore_error_slot(state, id, errors.pointer())
+                    .map_err(CallbackInvokeError::Runtime)?;
+                CallbackInvokeError::User(slot.take())
             }
             EvaluationError::Callback(_) => {
                 CallbackInvokeError::Runtime(ReactiveError::InvariantViolation)
@@ -184,7 +209,15 @@ where
         Ok(scheduler) => scheduler,
         Err(error) => return Err(CallbackInvokeError::Runtime(error)),
     };
-    let result = match read_typed(value, scheduler, f) {
+    let result = match read_typed(
+        state,
+        id,
+        value,
+        scheduler,
+        Some(NodeKindTag::Computed),
+        false,
+        f,
+    ) {
         Ok(result) => result,
         Err(error) => return Err(CallbackInvokeError::Runtime(error)),
     };
@@ -217,8 +250,9 @@ pub(crate) fn update_signal<'scope, T, R>(
     f: impl FnOnce(&mut T) -> (R, bool),
 ) -> ReactiveResult<R> {
     let (_storage, scheduler) = value_scheduler(state, id, false, true)?;
-    // SAFETY: `value_scheduler` validated the live signal node.
-    let mut lease = unsafe { value.restore() }.try_write(scheduler)?;
+    let proof = ActiveOwnerProof::from_state(state)?;
+    let slot = proof.restore_typed_slot(state, id, NodeKindTag::Signal, value.pointer())?;
+    let mut lease = slot.try_write(scheduler)?;
     let stored = lease.as_mut().ok_or(ReactiveError::NoSuchNode)?;
     let (result, changed) = f(stored);
     drop(lease);
@@ -264,7 +298,15 @@ pub(crate) fn with_stored<'scope, T, R>(
     f: impl FnOnce(&T) -> R,
 ) -> ReactiveResult<R> {
     let (_storage, scheduler, mode) = stored_scheduler(state, id)?;
-    let result = read_typed(value, scheduler, f)?;
+    let result = read_typed(
+        state,
+        id,
+        value,
+        scheduler,
+        Some(NodeKindTag::Stored),
+        mode == StoredAccessMode::RunningCleanup,
+        f,
+    )?;
     if mode == StoredAccessMode::Active {
         flush_if_idle(state)?;
     }
@@ -278,8 +320,14 @@ pub(crate) fn update_stored<'scope, T, R>(
     f: impl FnOnce(&mut T) -> R,
 ) -> ReactiveResult<R> {
     let (_storage, scheduler, mode) = stored_scheduler(state, id)?;
-    // SAFETY: `stored_scheduler` validated the live stored node.
-    let mut lease = unsafe { value.restore() }.try_write(scheduler)?;
+    let mut lease = if mode == StoredAccessMode::RunningCleanup {
+        restore_cleanup_stored_slot(state, id, value.pointer())?.try_write(scheduler)?
+    } else {
+        let proof = ActiveOwnerProof::from_state(state)?;
+        proof
+            .restore_typed_slot(state, id, NodeKindTag::Stored, value.pointer())?
+            .try_write(scheduler)?
+    };
     let stored = lease.as_mut().ok_or(ReactiveError::NoSuchNode)?;
     let result = f(stored);
     drop(lease);
@@ -295,7 +343,15 @@ pub(crate) fn node_ref_get<'scope, T: Clone>(
     value: TypedNodeRef<'scope, Option<T>>,
 ) -> ReactiveResult<Option<T>> {
     let (_storage, scheduler) = node_ref_scheduler(state, id)?;
-    read_typed(value, scheduler, Clone::clone)
+    read_typed(
+        state,
+        id,
+        value,
+        scheduler,
+        Some(NodeKindTag::NodeRef),
+        false,
+        Clone::clone,
+    )
 }
 
 pub(crate) fn node_ref_set<'scope, T>(
@@ -305,8 +361,9 @@ pub(crate) fn node_ref_set<'scope, T>(
     value: T,
 ) -> ReactiveResult<()> {
     let (_storage, scheduler) = node_ref_scheduler(state, id)?;
-    // SAFETY: `node_ref_scheduler` validated the live node-ref node.
-    let mut lease = unsafe { slot.restore() }.try_write(scheduler)?;
+    let proof = ActiveOwnerProof::from_state(state)?;
+    let slot = proof.restore_typed_slot(state, id, NodeKindTag::NodeRef, slot.pointer())?;
+    let mut lease = slot.try_write(scheduler)?;
     let stored = lease.as_mut().ok_or(ReactiveError::NoSuchNode)?;
     *stored = Some(value);
     drop(lease);
@@ -320,8 +377,9 @@ pub(crate) fn node_ref_clear<'scope, T>(
     slot: TypedNodeRef<'scope, Option<T>>,
 ) -> ReactiveResult<()> {
     let (_storage, scheduler) = node_ref_scheduler(state, id)?;
-    // SAFETY: `node_ref_scheduler` validated the live node-ref node.
-    let mut lease = unsafe { slot.restore() }.try_write(scheduler)?;
+    let proof = ActiveOwnerProof::from_state(state)?;
+    let slot = proof.restore_typed_slot(state, id, NodeKindTag::NodeRef, slot.pointer())?;
+    let mut lease = slot.try_write(scheduler)?;
     let stored = lease.as_mut().ok_or(ReactiveError::NoSuchNode)?;
     *stored = None;
     drop(lease);
@@ -332,7 +390,7 @@ pub(crate) fn node_ref_clear<'scope, T>(
 pub(crate) fn invoke_callback<'scope, T, E>(
     state: &ScopeState<'scope>,
     id: NodeId,
-    callback_ref: TypedNodeRef<'scope, CallbackThunk<'scope, T, E>>,
+    callback_pointer: ScopedPtr<TypedSlot<CallbackThunk<'scope, T, E>>>,
     arg: T,
 ) -> Result<(), CallbackThunkError<E>>
 where
@@ -350,8 +408,10 @@ where
         validate_active_scheduler(&scheduler).map_err(CallbackThunkError::Runtime)?;
         (scheduler, storage)
     };
-    // SAFETY: `callback_storage` validated the live callback node.
-    let callback_slot = unsafe { callback_ref.restore() };
+    let proof = ActiveOwnerProof::from_state(state).map_err(CallbackThunkError::Runtime)?;
+    let callback_slot = proof
+        .restore_typed_slot(state, id, NodeKindTag::Callback, callback_pointer)
+        .map_err(CallbackThunkError::Runtime)?;
     let mut lease = callback_slot
         .try_write(scheduler.clone())
         .map_err(CallbackThunkError::Runtime)?;

@@ -23,6 +23,11 @@ error[E0277]: `NonNull<()>` cannot be sent between threads safely
   |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `NonNull<()>` cannot be sent between threads safely
   |
   = help: within `ErrorHandlerToken<'static, ()>`, the trait `Send` is not implemented for `NonNull<()>`
+note: required because it appears within the type `silex_reactivity::unsafe_boundary::ScopedPtr<()>`
+ --> src/unsafe_boundary.rs
+  |
+  | pub(crate) struct ScopedPtr<T> {
+  |                   ^^^^^^^^^
 note: required because it appears within the type `ErrorHandlerRef<'static, ()>`
  --> src/error.rs
   |

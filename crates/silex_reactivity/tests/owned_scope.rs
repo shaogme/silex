@@ -432,7 +432,8 @@ fn persistent_child_access_rejects_operations_after_adapter_close() {
         Err(ReactiveError::NoSuchNode)
     ));
     drop(branch);
-    root.close().expect("root close should retain idempotent cleanup");
+    root.close()
+        .expect("root close should retain idempotent cleanup");
 }
 
 #[cfg(feature = "test-support")]

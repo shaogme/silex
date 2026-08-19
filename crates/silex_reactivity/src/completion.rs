@@ -8,20 +8,18 @@ use crate::{
     internal::NodeId,
     owner::ScopeStorage,
     root::{CleanupFailure, CloseError},
-    runtime::storage::{CallbackThunk, CallbackThunkError, TypedNodeRef},
+    runtime::storage::{CallbackThunk, CallbackThunkError, TypedNodeRef, TypedSlot},
     runtime::{self, GlobalScheduler, OwnerId, ScopeState},
-    unsafe_boundary::{OwnerToken, WeakOwnerToken},
+    unsafe_boundary::{ScopedPtr, WeakOwnerToken},
 };
 use std::{
     cell::{Cell, RefCell},
     marker::PhantomData,
     panic::{AssertUnwindSafe, UnwindSafe, catch_unwind, resume_unwind},
-    ptr::NonNull,
     rc::Rc,
 };
 
 struct ActiveOwner<'scope> {
-    owner: OwnerToken<'scope>,
     state: ScopeState<'scope>,
 }
 
@@ -59,35 +57,20 @@ struct CloseDisposition {
 /// phase. No other module can construct or restore this representation.
 #[derive(Clone, Copy)]
 struct TypedCompletionEndpoint<T, E> {
-    pointer: NonNull<()>,
+    pointer: ScopedPtr<()>,
     marker: PhantomData<fn(T) -> E>,
 }
 
 impl<T, E> TypedCompletionEndpoint<T, E> {
-    /// # Safety
-    ///
-    /// `callback` must point into the owner allocation and the callback node
-    /// must be registered before the endpoint is published. The owner close
-    /// path clears the typed slot before releasing that allocation.
-    unsafe fn from_callback<'scope>(
-        callback: TypedNodeRef<'scope, CallbackThunk<'scope, T, E>>,
-    ) -> Self {
+    fn from_callback<'scope>(callback: TypedNodeRef<'scope, CallbackThunk<'scope, T, E>>) -> Self {
         Self {
             pointer: callback.pointer().cast(),
             marker: PhantomData,
         }
     }
 
-    /// # Safety
-    ///
-    /// The caller must have just completed the runtime owner/node/phase
-    /// validation for the endpoint that owns this pointer.
-    unsafe fn restore<'scope>(
-        &self,
-        _owner: &OwnerToken<'scope>,
-    ) -> TypedNodeRef<'scope, CallbackThunk<'scope, T, E>> {
-        // SAFETY: the endpoint validator established the callback lifetime.
-        unsafe { TypedNodeRef::from_pointer(self.pointer.cast()) }
+    fn typed_pointer<'scope>(&self) -> ScopedPtr<TypedSlot<CallbackThunk<'scope, T, E>>> {
+        self.pointer.cast()
     }
 }
 
@@ -126,12 +109,13 @@ impl<T, E> CompletionEndpoint<T, E> {
             .scheduler
             .try_borrow()
             .map_err(|_| ReactiveError::BorrowConflict)?
-            .resolve_owner(self.owner_id, &self.state);
+            .resolve_active_owner(self.owner_id, &self.state)?;
         let Some(owner) = owner else {
             return Ok(None);
         };
         let state = owner.state();
-        Ok(Some(ActiveOwner { owner, state }))
+        let _ = owner;
+        Ok(Some(ActiveOwner { state }))
     }
 
     fn current_state<'scope>(&self) -> Result<Option<ScopeState<'scope>>, ReactiveError> {
@@ -238,11 +222,13 @@ impl<T, E> CompletionEndpoint<T, E> {
             Ok(None) => return Ok(false),
             Err(error) => return Err(CallbackThunkError::Runtime(error)),
         };
-        // SAFETY: `validated_callback` checked the scheduler identity, owner
-        // generation, active phase, callback node generation, and callback
-        // node kind immediately before this restore.
-        let typed_callback = unsafe { self.typed_callback.restore(&active.owner) };
-        runtime::invoke_callback(&active.state, self.callback, typed_callback, value).map(|()| true)
+        runtime::invoke_callback(
+            &active.state,
+            self.callback,
+            self.typed_callback.typed_pointer(),
+            value,
+        )
+        .map(|()| true)
     }
 }
 
@@ -290,7 +276,7 @@ impl<T, E> Drop for CompletionOnce<T, E> {
 
 impl<T: 'static, E> CompletionOnce<T, E> {
     pub fn submit(&self, value: T) -> CompletionSubmitResult<E> {
-        let ActiveOwner { owner, state } = match self.state.begin_once() {
+        let ActiveOwner { state } = match self.state.begin_once() {
             Ok(Some(owner)) => owner,
             Ok(None) => return Ok(false),
             Err(error) => {
@@ -312,10 +298,12 @@ impl<T: 'static, E> CompletionOnce<T, E> {
             }
         };
         let callback_result = catch_unwind(AssertUnwindSafe(|| {
-            // SAFETY: `begin_once` validates the owner and this endpoint's
-            // node is validated before restoring its typed callback.
-            let typed_callback = unsafe { self.state.typed_callback.restore(&owner) };
-            runtime::invoke_callback(&state, self.state.callback, typed_callback, value)
+            runtime::invoke_callback(
+                &state,
+                self.state.callback,
+                self.state.typed_callback.typed_pointer(),
+                value,
+            )
         }));
         let dispose_result = self.state.close_result();
 
@@ -442,7 +430,6 @@ where
         .clone();
 
     let thunk = storage.alloc_slot(CallbackThunk::new(callback));
-    let thunk_ref = thunk.node_ref();
     let callback = match state
         .try_borrow_mut()
         .map_err(|_| ReactiveError::BorrowConflict)
@@ -453,10 +440,12 @@ where
             return Err(error);
         }
     };
+    let thunk_ref = state
+        .try_borrow()
+        .map_err(|_| ReactiveError::BorrowConflict)?
+        .typed_node_ref(callback)?;
     let weak = WeakOwnerToken::from_typed(&state);
-    // SAFETY: The callback slot is registered before this endpoint is
-    // published and is cleared by the unified node disposal path.
-    let typed_callback = unsafe { TypedCompletionEndpoint::from_callback(thunk_ref) };
+    let typed_callback = TypedCompletionEndpoint::from_callback(thunk_ref);
     Ok(Rc::new(CompletionEndpoint::new(
         weak,
         scheduler,

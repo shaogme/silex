@@ -5,6 +5,11 @@ error[E0277]: `NonNull<silex_reactivity::runtime::storage::TypedSlot<silex_react
   |                    ^^^^^^^^^^^^^^^^^^^^^ `NonNull<silex_reactivity::runtime::storage::TypedSlot<silex_reactivity::runtime::storage::CallbackThunk<'static, (), ReactiveError>>>` cannot be sent between threads safely
   |
   = help: within `silex_reactivity::Callback<'static, ()>`, the trait `Send` is not implemented for `NonNull<silex_reactivity::runtime::storage::TypedSlot<silex_reactivity::runtime::storage::CallbackThunk<'static, (), ReactiveError>>>`
+note: required because it appears within the type `silex_reactivity::unsafe_boundary::ScopedPtr<silex_reactivity::runtime::storage::TypedSlot<silex_reactivity::runtime::storage::CallbackThunk<'static, (), ReactiveError>>>`
+ --> src/unsafe_boundary.rs
+  |
+  | pub(crate) struct ScopedPtr<T> {
+  |                   ^^^^^^^^^
 note: required because it appears within the type `silex_reactivity::runtime::storage::TypedNodeRef<'static, silex_reactivity::runtime::storage::CallbackThunk<'static, (), ReactiveError>>`
  --> src/runtime/storage.rs
   |

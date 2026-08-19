@@ -4,7 +4,7 @@ use super::{
     scheduler::{GlobalScheduler, OwnerId, TargetNode},
     storage::{
         CallbackThunk, CleanupThunk, ComputationBehavior, ComputationStorage, NodeStorage,
-        TypedSlotAllocation,
+        TypedNodeRef, TypedSlotAllocation,
     },
 };
 use crate::{
@@ -12,6 +12,7 @@ use crate::{
     error::{ErrorHandlerEntry, ErrorHandlerKey},
     handle::NodeKindTag,
     internal::NodeId,
+    unsafe_boundary::ScopedPtr,
 };
 use slotmap::{SecondaryMap, SlotMap};
 use std::{
@@ -294,7 +295,7 @@ pub(crate) struct ScopeStateInner<'scope> {
     pub(crate) root_cleanups: Vec<CleanupThunk<'scope>>,
     pub(crate) dependency_transactions: Vec<DependencyTransaction>,
     pub(crate) error_handlers: SlotMap<ErrorHandlerKey, ErrorHandlerEntry<'scope>>,
-    pub(crate) pending_error_handlers: Vec<(ErrorHandlerKey, std::ptr::NonNull<()>)>,
+    pub(crate) pending_error_handlers: Vec<(ErrorHandlerKey, ScopedPtr<()>)>,
 }
 
 /// A reference-counted wrapper around the inner scope state.
@@ -412,7 +413,7 @@ impl<'scope> ScopeStateInner<'scope> {
         let closing_owners = scheduler
             .active_owner_ids()
             .into_iter()
-            .filter_map(|id| scheduler.get_scope_for_edge_cleanup(id))
+            .filter_map(|id| scheduler.get_scope_for_edge_cleanup(id).ok().flatten())
             .filter(|state| {
                 state
                     .try_borrow()
@@ -430,7 +431,7 @@ impl<'scope> ScopeStateInner<'scope> {
                 .values()
                 .filter(|entry| entry.owner.is_active())
                 .count(),
-            queue: scheduler.global_queue.len(),
+            queue: scheduler.global_queue.len() + scheduler.worklist.len(),
             epoch: scheduler.current_epoch(),
             observer: active_observer_for(&self.scheduler).is_some(),
             running_queue: scheduler.running_queue,
@@ -438,7 +439,9 @@ impl<'scope> ScopeStateInner<'scope> {
             closing_owners,
             owner_generation: self.owner_id.1,
             active_leases: scheduler.active_leases,
-            queue_recovery: !scheduler.running_queue && scheduler.global_queue.is_empty(),
+            queue_recovery: !scheduler.running_queue
+                && scheduler.global_queue.is_empty()
+                && scheduler.worklist.is_empty(),
             retained_children: 0,
             live_typed_slots: 0,
             live_error_slots: 0,
@@ -625,6 +628,16 @@ impl<'scope> ScopeStateInner<'scope> {
         self.nodes.get(id).is_some()
     }
 
+    pub(crate) fn typed_node_ref<T>(&self, id: NodeId) -> ReactiveResult<TypedNodeRef<'scope, T>> {
+        self.ensure_active()?;
+        let data = self.data.get(id).ok_or(ReactiveError::NoSuchNode)?;
+        let identity = data
+            .storage
+            .payload_identity()
+            .ok_or(ReactiveError::NoSuchNode)?;
+        Ok(TypedNodeRef::from_pointer(identity))
+    }
+
     pub(crate) fn mark_notified(&mut self, id: NodeId) -> bool {
         if !self.is_active() {
             return false;
@@ -744,11 +757,7 @@ impl<'scope> ScopeStateInner<'scope> {
         Ok(self.error_handlers.insert(entry))
     }
 
-    pub(crate) fn remove_error_handler(
-        &mut self,
-        key: ErrorHandlerKey,
-        identity: std::ptr::NonNull<()>,
-    ) {
+    pub(crate) fn remove_error_handler(&mut self, key: ErrorHandlerKey, identity: ScopedPtr<()>) {
         if self
             .error_handlers
             .get(key)

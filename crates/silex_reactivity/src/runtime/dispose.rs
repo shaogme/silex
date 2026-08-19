@@ -302,7 +302,7 @@ fn preflight_node_disposal<'scope>(
         if let Some(scope) = scheduler
             .try_borrow()
             .map_err(|_| ReactiveError::BorrowConflict)?
-            .get_scope_for_edge_cleanup(external_owner_id)
+            .get_scope_for_edge_cleanup(external_owner_id)?
         {
             scope
                 .try_borrow_mut()
@@ -351,7 +351,7 @@ pub(crate) fn dispose_nodes_collect<'scope>(
                         } else if let Some(observer_state) = scheduler
                             .try_borrow()
                             .map_err(|_| ReactiveError::BorrowConflict)?
-                            .get_scope_for_edge_cleanup(subscriber.owner_id)
+                            .get_scope_for_edge_cleanup(subscriber.owner_id)?
                         {
                             observer_state
                                 .try_borrow_mut()

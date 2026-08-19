@@ -3,13 +3,13 @@
 use super::scheduler::GlobalScheduler;
 use crate::{
     ReactiveError, ReactiveResult,
-    error::{ErrorEvent, HandlerLease},
+    error::{ErrorEvent, ErrorSlotRef, HandlerLease},
+    unsafe_boundary::ScopedPtr,
 };
 use std::{
     cell::{Cell, Ref, RefCell, RefMut},
     marker::PhantomData,
     ops::{Deref, DerefMut},
-    ptr::NonNull,
     rc::Rc,
 };
 
@@ -200,7 +200,7 @@ impl<T> TypedSlot<T> {
 }
 
 pub(crate) struct TypedNodeRef<'scope, T> {
-    slot: NonNull<TypedSlot<T>>,
+    slot: ScopedPtr<TypedSlot<T>>,
     marker: PhantomData<fn(&'scope ()) -> &'scope T>,
 }
 
@@ -213,99 +213,62 @@ impl<T> Clone for TypedNodeRef<'_, T> {
 }
 
 impl<'scope, T> TypedNodeRef<'scope, T> {
-    pub(crate) fn from_allocation(allocation: &TypedSlotAllocation<'scope, T>) -> Self {
+    pub(crate) fn from_pointer(pointer: ScopedPtr<()>) -> Self {
         Self {
-            slot: allocation.slot.expect("slot allocation consumed"),
+            slot: pointer.cast(),
             marker: PhantomData,
         }
     }
 
-    pub(crate) fn pointer(self) -> NonNull<TypedSlot<T>> {
+    pub(crate) fn pointer(self) -> ScopedPtr<TypedSlot<T>> {
         self.slot
-    }
-
-    pub(crate) unsafe fn from_pointer(pointer: NonNull<TypedSlot<T>>) -> Self {
-        Self {
-            slot: pointer,
-            marker: PhantomData,
-        }
-    }
-
-    /// Restore the slot after the owning node has been validated.
-    ///
-    /// # Safety
-    ///
-    /// The caller must have just validated that the node owning this slot is
-    /// live and has the expected generation and kind.
-    pub(crate) unsafe fn restore(self) -> &'scope TypedSlot<T> {
-        // SAFETY: upheld by the function contract above.
-        unsafe { self.slot.as_ref() }
     }
 }
 
 pub(crate) struct TypedSlotAllocation<'scope, T> {
-    slot: Option<NonNull<TypedSlot<T>>>,
+    slot: Option<Box<TypedSlot<T>>>,
     lease: Option<AllocationLease>,
     marker: PhantomData<fn(&'scope ()) -> &'scope T>,
 }
 
 impl<'scope, T> TypedSlotAllocation<'scope, T> {
     pub(crate) fn new(value: Option<T>, counters: Rc<AllocationCounters>) -> Self {
-        let slot = Box::into_raw(Box::new(TypedSlot {
+        let slot = Box::new(TypedSlot {
             value: LeaseCell::new(value),
-        }));
+        });
         Self {
-            slot: Some(NonNull::new(slot).expect("boxed slot pointer cannot be null")),
+            slot: Some(slot),
             lease: Some(AllocationLease::new(counters, AllocationKind::Typed)),
             marker: PhantomData,
         }
     }
 
-    pub(crate) fn node_ref(&self) -> TypedNodeRef<'scope, T> {
-        TypedNodeRef::from_allocation(self)
-    }
-
     pub(crate) fn into_owned(mut self) -> OwnedTypedSlot<T> {
         OwnedTypedSlot {
-            pointer: self.slot.take().expect("slot allocation consumed"),
+            slot: self.slot.take().expect("slot allocation consumed"),
             _lease: self.lease.take().expect("slot allocation lease consumed"),
         }
     }
 }
 
-impl<T> Drop for TypedSlotAllocation<'_, T> {
-    fn drop(&mut self) {
-        if let Some(slot) = self.slot.take() {
-            // SAFETY: the allocation is created by `Box::into_raw` and is not
-            // transferred when the allocation owner is dropped locally.
-            unsafe { drop(Box::from_raw(slot.as_ptr())) };
-        }
-    }
-}
-
 pub(crate) struct OwnedTypedSlot<T> {
-    pointer: NonNull<TypedSlot<T>>,
+    slot: Box<TypedSlot<T>>,
     _lease: AllocationLease,
 }
 
 impl<T> OwnedTypedSlot<T> {
     pub(crate) fn slot(&self) -> &TypedSlot<T> {
-        // SAFETY: the owner contains the only live allocation and releases it
-        // only from its Drop implementation.
-        unsafe { self.pointer.as_ref() }
+        self.slot.as_ref()
     }
-}
 
-impl<T> Drop for OwnedTypedSlot<T> {
-    fn drop(&mut self) {
-        // SAFETY: ownership was transferred from `TypedSlotAllocation`, which
-        // created this pointer from a `Box` allocation.
-        unsafe { drop(Box::from_raw(self.pointer.as_ptr())) };
+    pub(crate) fn identity(&self) -> ScopedPtr<()> {
+        ScopedPtr::from_ref(self.slot.as_ref()).cast()
     }
 }
 
 pub(crate) trait PayloadOwner {
     fn clear(&self);
+    fn identity(&self) -> ScopedPtr<()>;
 }
 
 struct SlotOwner<'scope, T> {
@@ -316,6 +279,10 @@ struct SlotOwner<'scope, T> {
 impl<T> PayloadOwner for SlotOwner<'_, T> {
     fn clear(&self) {
         self.slot.slot().clear();
+    }
+
+    fn identity(&self) -> ScopedPtr<()> {
+        self.slot.identity()
     }
 }
 
@@ -343,16 +310,36 @@ pub(crate) trait ComputationBehavior<'scope> {
     fn has_value(&self) -> bool;
 
     fn clear(&mut self);
+
+    fn value_slot_identity(&self) -> Option<ScopedPtr<()>>;
+
+    fn error_slot_identity(&self) -> ScopedPtr<()>;
 }
 
 pub(crate) struct ComputationStorage<'scope> {
     pub(crate) computation: LeaseCell<Option<Box<dyn ComputationBehavior<'scope> + 'scope>>>,
+    value_identity: Option<ScopedPtr<()>>,
+    error_identity: ScopedPtr<()>,
 }
 
 impl<'scope> ComputationStorage<'scope> {
     pub(crate) fn new(computation: Box<dyn ComputationBehavior<'scope> + 'scope>) -> Self {
+        let computation = LeaseCell::new(Some(computation));
+        let (value_identity, error_identity) = computation
+            .try_peek(|computation| {
+                let computation = computation
+                    .as_ref()
+                    .expect("computation storage is initialized during registration");
+                (
+                    computation.value_slot_identity(),
+                    computation.error_slot_identity(),
+                )
+            })
+            .expect("computation storage is readable during registration");
         Self {
-            computation: LeaseCell::new(Some(computation)),
+            computation,
+            value_identity,
+            error_identity,
         }
     }
 }
@@ -384,6 +371,20 @@ impl<'scope> NodeStorage<'scope> {
             slot: slot.into_owned(),
             marker: PhantomData,
         }))
+    }
+
+    pub(crate) fn payload_identity(&self) -> Option<ScopedPtr<()>> {
+        match self {
+            Self::Value(owner) | Self::Callback(owner) => Some(owner.identity()),
+            Self::Computation(storage) => storage.value_identity,
+        }
+    }
+
+    pub(crate) fn error_slot_identity(&self) -> Option<ScopedPtr<()>> {
+        match self {
+            Self::Computation(storage) => Some(storage.error_identity),
+            Self::Value(_) | Self::Callback(_) => None,
+        }
     }
 }
 
@@ -467,7 +468,8 @@ pub(crate) type ChangePredicate<'scope, T> =
 /// Shared evaluator/output-policy kernel for effects, previous effects,
 /// computed values, and watchers.
 pub(crate) struct ComputedNode<'scope, T, E> {
-    slot: Option<OwnedTypedSlot<T>>,
+    slot: Option<Rc<OwnedTypedSlot<T>>>,
+    error_slot: ErrorSlotRef<'scope, E>,
     evaluator: ComputedEvaluator<'scope, T>,
     changed: ChangePredicate<'scope, T>,
     notify: bool,
@@ -478,12 +480,14 @@ pub(crate) struct ComputedNode<'scope, T, E> {
 impl<'scope, T, E> ComputedNode<'scope, T, E> {
     pub(crate) fn new(
         slot: Option<TypedSlotAllocation<'scope, T>>,
+        error_slot: ErrorSlotRef<'scope, E>,
         evaluator: ComputedEvaluator<'scope, T>,
         changed: ChangePredicate<'scope, T>,
         notify: bool,
     ) -> Self {
         Self {
-            slot: slot.map(TypedSlotAllocation::into_owned),
+            slot: slot.map(TypedSlotAllocation::into_owned).map(Rc::new),
+            error_slot,
             evaluator,
             changed,
             notify,
@@ -546,6 +550,14 @@ where
         if let Some(slot) = self.slot.as_ref() {
             slot.slot().clear();
         }
+    }
+
+    fn error_slot_identity(&self) -> ScopedPtr<()> {
+        self.error_slot.identity()
+    }
+
+    fn value_slot_identity(&self) -> Option<ScopedPtr<()>> {
+        self.slot.as_ref().map(|slot| slot.identity())
     }
 }
 
