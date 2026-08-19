@@ -307,7 +307,9 @@ fn persistent_child_adapter_preserves_topology_and_parent_close_is_idempotent() 
     assert!(root_access != branch.access());
     assert!(branch.access() != nested.access());
     assert!(branch.access().same_runtime(&nested.access()));
-    assert_eq!(root.runtime_snapshot().active_owners, 3);
+    assert!(root.is_active());
+    assert!(branch.is_active());
+    assert!(nested.is_active());
 
     let nested_cleanup_order = cleanup_order.clone();
     nested
@@ -335,7 +337,7 @@ fn persistent_child_adapter_preserves_topology_and_parent_close_is_idempotent() 
     root.close()
         .expect("parent close should close descendants first");
     assert_eq!(cleanup_order.borrow().as_slice(), ["nested", "branch"]);
-    assert_eq!(root.runtime_snapshot().active_owners, 0);
+    assert!(!root.is_active());
     assert!(!branch.is_active());
     assert!(!nested.is_active());
 

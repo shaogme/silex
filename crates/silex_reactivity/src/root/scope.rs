@@ -121,6 +121,33 @@ pub struct CloseError {
     diagnostic: CleanupDiagnostic,
 }
 
+/// Failure returned after a transient scope callback or its close operation.
+///
+/// Runtime setup failures and owner close failures have different recovery
+/// semantics. Keeping them as separate variants prevents a close diagnostic
+/// from being misreported as a dynamic borrow conflict.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TransientScopeError {
+    Runtime(ReactiveError),
+    Close(CloseError),
+}
+
+impl fmt::Display for TransientScopeError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Runtime(error) => write!(formatter, "transient scope runtime error: {error}"),
+            Self::Close(error) => {
+                write!(formatter, "transient scope close error: {error:?}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for TransientScopeError {}
+
+/// Result returned by transient scope execution.
+pub type TransientScopeResult<T> = Result<T, TransientScopeError>;
+
 /// Aggregated error returned by every explicit owner close operation.
 impl fmt::Debug for CloseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

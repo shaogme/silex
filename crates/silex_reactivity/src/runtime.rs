@@ -33,6 +33,7 @@ pub(crate) use scheduler::{GlobalScheduler, ObserverFrame, OwnerId, OwnerMode};
 
 use crate::error::{ReactiveError, ReactiveResult};
 use crate::owner::{self, OwnerHandle};
+use crate::root::{TransientScopeError, TransientScopeResult};
 
 use std::{cell::Cell, marker::PhantomData, rc::Rc};
 
@@ -63,9 +64,11 @@ impl Runtime {
     pub fn with_transient<R>(
         &mut self,
         f: impl for<'scope> FnOnce(owner::OwnerAccess<'scope>) -> R,
-    ) -> ReactiveResult<R> {
+    ) -> TransientScopeResult<R> {
         if self.root_active.get() {
-            return Err(ReactiveError::RuntimeAlreadyRunning);
+            return Err(TransientScopeError::Runtime(
+                ReactiveError::RuntimeAlreadyRunning,
+            ));
         }
         owner::new_transient(f)
     }

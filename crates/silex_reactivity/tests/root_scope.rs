@@ -1,6 +1,7 @@
 use silex_reactivity::{
     CleanupFailure, CleanupPayloadKind, CloseError, ClosePhase, CloseSource, CloseTransaction,
-    CompletionOnce, ErrorHandlerToken, OwnerAccess, ReactiveError, Runtime, unwind_safe,
+    CompletionOnce, ErrorHandlerToken, OwnerAccess, ReactiveError, Runtime, TransientScopeError,
+    unwind_safe,
 };
 use std::{
     cell::Cell,
@@ -170,6 +171,26 @@ fn cleanup_error_exposes_stable_string_diagnostic_without_resuming_panic() {
 
     let diagnostic = error.into_diagnostic();
     assert_eq!(diagnostic.message(), "cleanup panic");
+}
+
+#[test]
+fn transient_scope_preserves_close_error_classification() {
+    let mut runtime = Runtime::new();
+    let result = runtime.with_transient(|scope| {
+        scope
+            .on_cleanup(|| panic!("transient cleanup panic"), handler(scope))
+            .expect("cleanup should register");
+    });
+
+    let TransientScopeError::Close(error) = result.expect_err("close failure should be returned")
+    else {
+        panic!("transient close failure was reclassified");
+    };
+    assert_eq!(error.diagnostic().message(), "transient cleanup panic");
+    assert_eq!(
+        error.diagnostic().payload_kind(),
+        CleanupPayloadKind::StaticStr
+    );
 }
 
 #[test]

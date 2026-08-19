@@ -18,7 +18,10 @@ use crate::{
     },
     error::{ErrorHandlerEntry, HandlerOwner, HandlerRecord},
     handle::Handle,
-    root::{CloseError, ClosePhase, CloseSource, CloseTransaction},
+    root::{
+        CloseError, ClosePhase, CloseSource, CloseTransaction, TransientScopeError,
+        TransientScopeResult,
+    },
     runtime::storage::{CallbackThunk, CleanupThunk},
     runtime::{self, OwnerMode},
     unsafe_boundary::{WeakOwnerToken, persistent_child_storage},
@@ -203,14 +206,14 @@ impl<'owner> OwnerAccess<'owner> {
     pub fn with_transient<R>(
         &self,
         f: impl for<'child> FnOnce(OwnerAccess<'child>) -> R,
-    ) -> ReactiveResult<R> {
+    ) -> TransientScopeResult<R> {
         if !self.storage.is_active() {
-            return Err(ReactiveError::NoSuchNode);
+            return Err(TransientScopeError::Runtime(ReactiveError::NoSuchNode));
         }
         let state = self.storage.owner_token().state();
         let scheduler = state
             .try_borrow()
-            .map_err(|_| ReactiveError::BorrowConflict)?
+            .map_err(|_| TransientScopeError::Runtime(ReactiveError::BorrowConflict))?
             .scheduler
             .clone();
         let storage = ScopeStorage::new_with_owner(
@@ -228,12 +231,7 @@ impl<'owner> OwnerAccess<'owner> {
             close_owner_tree(&storage).map_or(Ok(()), Err)
         }));
         drop(frame);
-        match (result, close) {
-            (Ok(value), Ok(Ok(()))) => Ok(value),
-            (Ok(_), Ok(Err(_))) => Err(ReactiveError::BorrowConflict),
-            (Err(panic), _) => std::panic::resume_unwind(panic),
-            (Ok(_), Err(panic)) => std::panic::resume_unwind(panic),
-        }
+        finish_transient(result, close)
     }
 
     pub fn create_child(&self) -> ReactiveResult<OwnerHandle> {
@@ -644,7 +642,7 @@ pub(crate) fn new_root(runtime_slot: Rc<Cell<bool>>) -> OwnerHandle {
 
 pub(crate) fn new_transient<R>(
     f: impl for<'owner> FnOnce(OwnerAccess<'owner>) -> R,
-) -> ReactiveResult<R> {
+) -> TransientScopeResult<R> {
     let scheduler = runtime::GlobalScheduler::new();
     let storage = ScopeStorage::new_with_owner(scheduler.clone(), None, OwnerMode::Transient);
     let access = OwnerAccess {
@@ -657,9 +655,16 @@ pub(crate) fn new_transient<R>(
         close_owner_tree(&storage).map_or(Ok(()), Err)
     }));
     drop(frame);
+    finish_transient(result, close)
+}
+
+fn finish_transient<R>(
+    result: Result<R, Box<dyn std::any::Any + Send>>,
+    close: Result<Result<(), CloseError>, Box<dyn std::any::Any + Send>>,
+) -> TransientScopeResult<R> {
     match (result, close) {
         (Ok(value), Ok(Ok(()))) => Ok(value),
-        (Ok(_), Ok(Err(_))) => Err(ReactiveError::BorrowConflict),
+        (Ok(_), Ok(Err(error))) => Err(TransientScopeError::Close(error)),
         (Err(panic), _) => std::panic::resume_unwind(panic),
         (Ok(_), Err(panic)) => std::panic::resume_unwind(panic),
     }

@@ -52,13 +52,14 @@ fn child_transient_reads_do_not_escape_the_child_callback() {
             scope
                 .effect(
                     move || {
-                        scope
+                        let child_result = scope
                             .with_transient(|child| {
                                 let (local, _) = child.signal(1_i32)?;
                                 local.get()?;
                                 Ok::<(), ReactiveError>(())
                             })
-                            .and_then(|result| result)?;
+                            .expect("child transient scope disposal");
+                        child_result?;
                         runs_in_effect.set(runs_in_effect.get() + 1);
                         Ok(())
                     },

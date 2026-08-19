@@ -3,7 +3,7 @@ use std::fmt;
 #[cfg(any(feature = "error-dom", feature = "error-bootstrap"))]
 use std::rc::Rc;
 
-use silex_reactivity::{CloseError, ErrorHandlerRef, ReactiveError};
+use silex_reactivity::{CloseError, ErrorHandlerRef, ReactiveError, TransientScopeError};
 use wasm_bindgen::JsValue;
 
 #[cfg(feature = "error-bootstrap")]
@@ -233,6 +233,15 @@ impl Eq for SilexErrorKind {}
 impl From<ReactiveError> for SilexErrorKind {
     fn from(error: ReactiveError) -> Self {
         Self::Reactivity(error)
+    }
+}
+
+impl From<TransientScopeError> for SilexErrorKind {
+    fn from(error: TransientScopeError) -> Self {
+        match error {
+            TransientScopeError::Runtime(error) => Self::Reactivity(error),
+            TransientScopeError::Close(error) => Self::Close(error),
+        }
     }
 }
 
