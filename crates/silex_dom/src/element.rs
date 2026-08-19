@@ -259,6 +259,16 @@ impl<'scope, T: Tag> TypedElement<'scope, T> {
         element
     }
 
+    #[doc(hidden)]
+    pub fn with_child_using<V>(tag: &str, child: V, constructor: fn(&str) -> Self) -> Self
+    where
+        V: View<'scope> + 'scope,
+    {
+        let mut element = constructor(tag);
+        element.children.push(child.into_any());
+        element
+    }
+
     pub fn into_untyped(self) -> Element<'scope> {
         Element {
             tag_name: self.tag_name,

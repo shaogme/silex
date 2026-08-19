@@ -72,7 +72,11 @@ macro_rules! define_tag {
         where
             V: $crate::view::View<'scope> + 'scope,
         {
-            $crate::element::TypedElement::with_child($tag_name, child)
+            $crate::element::TypedElement::with_child_using(
+                $tag_name,
+                child,
+                $crate::element::TypedElement::$constructor,
+            )
         }
     };
 

@@ -10,8 +10,19 @@ use silex_dom::element::Element;
 use silex_dom::view::{AnyView, ApplyAttributes, MountInstance, MountOwner, MountOwnerToken, View};
 use std::cell::RefCell;
 use std::rc::Rc;
+use wasm_bindgen::JsCast;
 use wasm_bindgen_test::*;
 use web_sys::{Element as DomElement, Node};
+
+silex_dom::define_tag!(
+    TestSvg,
+    web_sys::SvgElement,
+    "svg",
+    test_svg,
+    new_svg,
+    non_void,
+    [SvgTag, TextTag]
+);
 
 wasm_bindgen_test_configure!(run_in_browser);
 
@@ -33,6 +44,34 @@ fn host() -> DomElement {
 fn mounted(host: &DomElement) -> DomElement {
     host.first_element_child()
         .expect("reactive element should be mounted")
+}
+
+#[wasm_bindgen_test]
+fn svg_with_children_preserves_svg_namespace_and_case_sensitive_attributes() {
+    let host = host();
+    let mut runtime = Runtime::new();
+    runtime
+        .with_transient(|owner| {
+            let error_handler = test_handler(owner);
+            let owner = MountOwnerToken::new(owner);
+            let view = test_svg("icon").attr("viewBox", "0 0 24 24");
+            let _ = view
+                .mount(&owner, &host, Vec::new(), error_handler.view())
+                .expect("svg view should mount");
+
+            let element = mounted(&host);
+            assert_eq!(
+                element.namespace_uri().as_deref(),
+                Some("http://www.w3.org/2000/svg")
+            );
+            assert!(element.dyn_ref::<web_sys::SvgElement>().is_some());
+            assert_eq!(
+                element.get_attribute("viewBox").as_deref(),
+                Some("0 0 24 24")
+            );
+            assert!(element.get_attribute("viewbox").is_none());
+        })
+        .expect("child owner should initialize");
 }
 
 fn style_text(element: &DomElement) -> String {
