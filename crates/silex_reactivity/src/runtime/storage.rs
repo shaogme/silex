@@ -6,11 +6,58 @@ use crate::{
     error::{ErrorEvent, HandlerLease},
 };
 use std::{
-    cell::{Ref, RefCell, RefMut},
+    cell::{Cell, Ref, RefCell, RefMut},
     marker::PhantomData,
     ops::{Deref, DerefMut},
+    ptr::NonNull,
     rc::Rc,
 };
+
+pub(crate) struct AllocationCounters {
+    pub(crate) typed_slots: Cell<usize>,
+    pub(crate) error_slots: Cell<usize>,
+}
+
+impl AllocationCounters {
+    pub(crate) fn new() -> Self {
+        Self {
+            typed_slots: Cell::new(0),
+            error_slots: Cell::new(0),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum AllocationKind {
+    Typed,
+    Error,
+}
+
+pub(crate) struct AllocationLease {
+    counters: Rc<AllocationCounters>,
+    kind: AllocationKind,
+}
+
+impl AllocationLease {
+    pub(crate) fn new(counters: Rc<AllocationCounters>, kind: AllocationKind) -> Self {
+        let count = match kind {
+            AllocationKind::Typed => &counters.typed_slots,
+            AllocationKind::Error => &counters.error_slots,
+        };
+        count.set(count.get() + 1);
+        Self { counters, kind }
+    }
+}
+
+impl Drop for AllocationLease {
+    fn drop(&mut self) {
+        let count = match self.kind {
+            AllocationKind::Typed => &self.counters.typed_slots,
+            AllocationKind::Error => &self.counters.error_slots,
+        };
+        count.set(count.get().saturating_sub(1));
+    }
+}
 
 /// A value cell that never moves its contents out while user code runs.
 pub(crate) struct LeaseCell<T> {
@@ -123,25 +170,12 @@ impl<T> DerefMut for WriteLease<'_, T> {
     }
 }
 
-/// A scope-local typed payload. The slot itself lives for the scope lifetime;
-/// disposal clears the `Option<T>` and therefore drops the payload immediately.
+/// A typed payload slot whose allocation is owned by exactly one node.
 pub(crate) struct TypedSlot<T> {
     value: LeaseCell<Option<T>>,
 }
 
 impl<T> TypedSlot<T> {
-    pub(crate) fn new(value: T) -> Self {
-        Self {
-            value: LeaseCell::new(Some(value)),
-        }
-    }
-
-    pub(crate) fn empty() -> Self {
-        Self {
-            value: LeaseCell::new(None),
-        }
-    }
-
     pub(crate) fn clear(&self) {
         self.value.clear();
     }
@@ -166,8 +200,8 @@ impl<T> TypedSlot<T> {
 }
 
 pub(crate) struct TypedNodeRef<'scope, T> {
-    slot: &'scope TypedSlot<T>,
-    marker: PhantomData<fn() -> T>,
+    slot: NonNull<TypedSlot<T>>,
+    marker: PhantomData<fn(&'scope ()) -> &'scope T>,
 }
 
 impl<T> Copy for TypedNodeRef<'_, T> {}
@@ -179,15 +213,94 @@ impl<T> Clone for TypedNodeRef<'_, T> {
 }
 
 impl<'scope, T> TypedNodeRef<'scope, T> {
-    pub(crate) fn from_slot(slot: &'scope TypedSlot<T>) -> Self {
+    pub(crate) fn from_allocation(allocation: &TypedSlotAllocation<'scope, T>) -> Self {
         Self {
-            slot,
+            slot: allocation.slot.expect("slot allocation consumed"),
             marker: PhantomData,
         }
     }
 
-    pub(crate) fn slot(&self) -> &'scope TypedSlot<T> {
+    pub(crate) fn pointer(self) -> NonNull<TypedSlot<T>> {
         self.slot
+    }
+
+    pub(crate) unsafe fn from_pointer(pointer: NonNull<TypedSlot<T>>) -> Self {
+        Self {
+            slot: pointer,
+            marker: PhantomData,
+        }
+    }
+
+    /// Restore the slot after the owning node has been validated.
+    ///
+    /// # Safety
+    ///
+    /// The caller must have just validated that the node owning this slot is
+    /// live and has the expected generation and kind.
+    pub(crate) unsafe fn restore(self) -> &'scope TypedSlot<T> {
+        // SAFETY: upheld by the function contract above.
+        unsafe { self.slot.as_ref() }
+    }
+}
+
+pub(crate) struct TypedSlotAllocation<'scope, T> {
+    slot: Option<NonNull<TypedSlot<T>>>,
+    lease: Option<AllocationLease>,
+    marker: PhantomData<fn(&'scope ()) -> &'scope T>,
+}
+
+impl<'scope, T> TypedSlotAllocation<'scope, T> {
+    pub(crate) fn new(value: Option<T>, counters: Rc<AllocationCounters>) -> Self {
+        let slot = Box::into_raw(Box::new(TypedSlot {
+            value: LeaseCell::new(value),
+        }));
+        Self {
+            slot: Some(NonNull::new(slot).expect("boxed slot pointer cannot be null")),
+            lease: Some(AllocationLease::new(counters, AllocationKind::Typed)),
+            marker: PhantomData,
+        }
+    }
+
+    pub(crate) fn node_ref(&self) -> TypedNodeRef<'scope, T> {
+        TypedNodeRef::from_allocation(self)
+    }
+
+    pub(crate) fn into_owned(mut self) -> OwnedTypedSlot<T> {
+        OwnedTypedSlot {
+            pointer: self.slot.take().expect("slot allocation consumed"),
+            _lease: self.lease.take().expect("slot allocation lease consumed"),
+        }
+    }
+}
+
+impl<T> Drop for TypedSlotAllocation<'_, T> {
+    fn drop(&mut self) {
+        if let Some(slot) = self.slot.take() {
+            // SAFETY: the allocation is created by `Box::into_raw` and is not
+            // transferred when the allocation owner is dropped locally.
+            unsafe { drop(Box::from_raw(slot.as_ptr())) };
+        }
+    }
+}
+
+pub(crate) struct OwnedTypedSlot<T> {
+    pointer: NonNull<TypedSlot<T>>,
+    _lease: AllocationLease,
+}
+
+impl<T> OwnedTypedSlot<T> {
+    pub(crate) fn slot(&self) -> &TypedSlot<T> {
+        // SAFETY: the owner contains the only live allocation and releases it
+        // only from its Drop implementation.
+        unsafe { self.pointer.as_ref() }
+    }
+}
+
+impl<T> Drop for OwnedTypedSlot<T> {
+    fn drop(&mut self) {
+        // SAFETY: ownership was transferred from `TypedSlotAllocation`, which
+        // created this pointer from a `Box` allocation.
+        unsafe { drop(Box::from_raw(self.pointer.as_ptr())) };
     }
 }
 
@@ -196,12 +309,13 @@ pub(crate) trait PayloadOwner {
 }
 
 struct SlotOwner<'scope, T> {
-    slot: &'scope TypedSlot<T>,
+    slot: OwnedTypedSlot<T>,
+    marker: PhantomData<fn() -> &'scope T>,
 }
 
 impl<T> PayloadOwner for SlotOwner<'_, T> {
     fn clear(&self) {
-        self.slot.clear();
+        self.slot.slot().clear();
     }
 }
 
@@ -258,12 +372,18 @@ pub(crate) enum NodeStorage<'scope> {
 }
 
 impl<'scope> NodeStorage<'scope> {
-    pub(crate) fn value<T>(slot: &'scope TypedSlot<T>) -> Self {
-        Self::Value(Box::new(SlotOwner { slot }))
+    pub(crate) fn value<T: 'scope>(slot: TypedSlotAllocation<'scope, T>) -> Self {
+        Self::Value(Box::new(SlotOwner {
+            slot: slot.into_owned(),
+            marker: PhantomData,
+        }))
     }
 
-    pub(crate) fn callback<T>(slot: &'scope TypedSlot<T>) -> Self {
-        Self::Callback(Box::new(SlotOwner { slot }))
+    pub(crate) fn callback<T: 'scope>(slot: TypedSlotAllocation<'scope, T>) -> Self {
+        Self::Callback(Box::new(SlotOwner {
+            slot: slot.into_owned(),
+            marker: PhantomData,
+        }))
     }
 }
 
@@ -347,7 +467,7 @@ pub(crate) type ChangePredicate<'scope, T> =
 /// Shared evaluator/output-policy kernel for effects, previous effects,
 /// computed values, and watchers.
 pub(crate) struct ComputedNode<'scope, T, E> {
-    slot: Option<&'scope TypedSlot<T>>,
+    slot: Option<OwnedTypedSlot<T>>,
     evaluator: ComputedEvaluator<'scope, T>,
     changed: ChangePredicate<'scope, T>,
     notify: bool,
@@ -357,13 +477,13 @@ pub(crate) struct ComputedNode<'scope, T, E> {
 
 impl<'scope, T, E> ComputedNode<'scope, T, E> {
     pub(crate) fn new(
-        slot: Option<&'scope TypedSlot<T>>,
+        slot: Option<TypedSlotAllocation<'scope, T>>,
         evaluator: ComputedEvaluator<'scope, T>,
         changed: ChangePredicate<'scope, T>,
         notify: bool,
     ) -> Self {
         Self {
-            slot,
+            slot: slot.map(TypedSlotAllocation::into_owned),
             evaluator,
             changed,
             notify,
@@ -384,7 +504,8 @@ where
     ) -> Result<ComputationOutcome, ComputationExecutionError<'scope>> {
         let old = self
             .slot
-            .map(|slot| slot.try_read(scheduler.clone()))
+            .as_ref()
+            .map(|slot| slot.slot().try_read(scheduler.clone()))
             .transpose()
             .map_err(ComputationExecutionError::Runtime)?;
         let old_value = old.as_ref().and_then(|lease| lease.deref().as_ref());
@@ -402,10 +523,10 @@ where
     }
 
     fn commit(&mut self, scheduler: Rc<RefCell<GlobalScheduler>>) -> ReactiveResult<()> {
-        let Some(slot) = self.slot else {
+        let Some(slot) = self.slot.as_ref() else {
             return Ok(());
         };
-        let mut value = slot.try_write(scheduler)?;
+        let mut value = slot.slot().try_write(scheduler)?;
         *value = self.pending.take();
         Ok(())
     }
@@ -415,13 +536,15 @@ where
     }
 
     fn has_value(&self) -> bool {
-        self.slot.is_some_and(TypedSlot::is_initialized)
+        self.slot
+            .as_ref()
+            .is_some_and(|slot| slot.slot().is_initialized())
     }
 
     fn clear(&mut self) {
         self.pending = None;
-        if let Some(slot) = self.slot {
-            slot.clear();
+        if let Some(slot) = self.slot.as_ref() {
+            slot.slot().clear();
         }
     }
 }

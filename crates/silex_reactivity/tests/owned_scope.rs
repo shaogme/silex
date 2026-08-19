@@ -450,6 +450,54 @@ fn owner_churn_removes_released_children_from_parent_registry() {
 }
 
 #[test]
+fn owner_churn_reclaims_all_node_slot_allocations() {
+    let mut runtime = Runtime::new();
+    let root = runtime.owner().expect("runtime root creation");
+    let handler = root
+        .access()
+        .error_handler(|_: ()| {})
+        .expect("handler registration");
+
+    for _ in 0..32 {
+        let child = root.create_child().expect("child creation");
+        let access = child.access();
+        let effect = access
+            .effect(|| Ok::<(), ()>(()), handler.view())
+            .expect("effect creation");
+        effect.stop().expect("effect stop");
+        let previous = access
+            .effect_with_previous(
+                |previous: Option<&i32>| Ok::<i32, ()>(previous.copied().unwrap_or(0)),
+                handler.view(),
+            )
+            .expect("previous effect creation");
+        previous.stop().expect("previous effect stop");
+        let watch = access
+            .watch_getter_with_options(
+                || Ok::<i32, ()>(0),
+                |_: &i32, _: Option<&i32>| Ok::<(), ()>(()),
+                handler.view(),
+                Default::default(),
+            )
+            .expect("watch creation");
+        watch.stop().expect("watch stop");
+        let _computed = access
+            .computed(|| Ok::<i32, ()>(1), handler.view())
+            .expect("computed creation");
+
+        child.close().expect("child close");
+        let snapshot = child.runtime_snapshot();
+        assert_eq!(snapshot.live_typed_slots, 0);
+        assert_eq!(snapshot.live_error_slots, 0);
+    }
+
+    let snapshot = root.runtime_snapshot();
+    assert_eq!(snapshot.live_typed_slots, 0);
+    assert_eq!(snapshot.live_error_slots, 0);
+    root.close().expect("root close");
+}
+
+#[test]
 fn persistent_adapter_keeps_storage_after_registry_unlink() {
     let mut runtime = Runtime::new();
     let root = runtime.owner().expect("runtime root creation");

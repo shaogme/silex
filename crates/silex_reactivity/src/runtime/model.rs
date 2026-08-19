@@ -4,7 +4,7 @@ use super::{
     scheduler::{GlobalScheduler, OwnerId, TargetNode},
     storage::{
         CallbackThunk, CleanupThunk, ComputationBehavior, ComputationStorage, NodeStorage,
-        TypedNodeRef,
+        TypedSlotAllocation,
     },
 };
 use crate::{
@@ -374,6 +374,8 @@ pub struct RuntimeSnapshot {
     pub active_leases: usize,
     pub queue_recovery: bool,
     pub retained_children: usize,
+    pub live_typed_slots: usize,
+    pub live_error_slots: usize,
     pub unhandled_close_errors: usize,
     pub dropped_close_reports: usize,
 }
@@ -438,6 +440,8 @@ impl<'scope> ScopeStateInner<'scope> {
             active_leases: scheduler.active_leases,
             queue_recovery: !scheduler.running_queue && scheduler.global_queue.is_empty(),
             retained_children: 0,
+            live_typed_slots: 0,
+            live_error_slots: 0,
             unhandled_close_errors: scheduler.close_reports.len(),
             dropped_close_reports: scheduler.dropped_close_reports(),
         }
@@ -657,7 +661,7 @@ impl<'scope> ScopeStateInner<'scope> {
 
     pub(crate) fn create_signal<T: 'scope>(
         &mut self,
-        value: TypedNodeRef<'scope, T>,
+        value: TypedSlotAllocation<'scope, T>,
     ) -> ReactiveResult<NodeId> {
         let parent = self.parent_for_new_node();
         let epoch = self.scheduler.borrow().current_epoch();
@@ -665,7 +669,7 @@ impl<'scope> ScopeStateInner<'scope> {
         node.updated_epoch = epoch;
         node.last_computed_epoch = epoch;
         self.register_node(node, move || {
-            NodeData::new(Rc::new(NodeStorage::value(value.slot())))
+            NodeData::new(Rc::new(NodeStorage::value(value)))
         })
     }
 
@@ -688,34 +692,34 @@ impl<'scope> ScopeStateInner<'scope> {
 
     pub(crate) fn create_stored<T: 'scope>(
         &mut self,
-        value: TypedNodeRef<'scope, T>,
+        value: TypedSlotAllocation<'scope, T>,
     ) -> ReactiveResult<NodeId> {
         let parent = self.parent_for_new_node();
         self.register_node(
             NodeCore::new(NodeKindTag::Stored, parent, NodeState::Clean),
-            move || NodeData::new(Rc::new(NodeStorage::value(value.slot()))),
+            move || NodeData::new(Rc::new(NodeStorage::value(value))),
         )
     }
 
     pub(crate) fn create_callback<T: 'scope, E: 'scope>(
         &mut self,
-        callback: TypedNodeRef<'scope, CallbackThunk<'scope, T, E>>,
+        callback: TypedSlotAllocation<'scope, CallbackThunk<'scope, T, E>>,
     ) -> ReactiveResult<NodeId> {
         let parent = self.parent_for_new_node();
         self.register_node(
             NodeCore::new(NodeKindTag::Callback, parent, NodeState::Clean),
-            move || NodeData::new(Rc::new(NodeStorage::callback(callback.slot()))),
+            move || NodeData::new(Rc::new(NodeStorage::callback(callback))),
         )
     }
 
     pub(crate) fn create_node_ref<T: 'scope>(
         &mut self,
-        value: TypedNodeRef<'scope, Option<T>>,
+        value: TypedSlotAllocation<'scope, Option<T>>,
     ) -> ReactiveResult<NodeId> {
         let parent = self.parent_for_new_node();
         self.register_node(
             NodeCore::new(NodeKindTag::NodeRef, parent, NodeState::Clean),
-            move || NodeData::new(Rc::new(NodeStorage::value(value.slot()))),
+            move || NodeData::new(Rc::new(NodeStorage::value(value))),
         )
     }
 

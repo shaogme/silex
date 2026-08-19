@@ -47,9 +47,9 @@ impl<'scope> OwnerToken<'scope> {
     pub(crate) fn from_storage(storage: &'scope ScopeStorage) -> Self {
         Self {
             // SAFETY: `storage` is borrowed for `'scope` and owns the erased
-            // state as well as the bump arena that contains every payload.
-            // The owner close path clears all typed slots before the storage
-            // can be dropped, so this token cannot outlive its payload arena.
+            // state and all node-owned payload allocations. The owner close
+            // path clears all typed slots before the storage can be dropped,
+            // so this token cannot outlive its payload allocations.
             state: ScopeState::from_inner(unsafe { restore_state(storage.state.clone()) }),
             marker: PhantomData,
         }
@@ -124,7 +124,8 @@ unsafe fn restore_state<'scope>(
 ) -> Rc<RefCell<ScopeStateInner<'scope>>> {
     // SAFETY: callers are limited to `OwnerToken::from_storage` and
     // `OwnerToken::from_validated`; both paths document the lexical or
-    // scheduler proof that keeps the owner arena alive during the operation.
+    // scheduler proof that keeps the owner payload allocations alive during
+    // the operation.
     unsafe { std::mem::transmute(state) }
 }
 

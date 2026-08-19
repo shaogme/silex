@@ -8,7 +8,7 @@ use crate::{
     internal::NodeId,
     owner::ScopeStorage,
     root::{CleanupFailure, CloseError},
-    runtime::storage::{CallbackThunk, CallbackThunkError, TypedNodeRef, TypedSlot},
+    runtime::storage::{CallbackThunk, CallbackThunkError, TypedNodeRef},
     runtime::{self, GlobalScheduler, OwnerId, ScopeState},
     unsafe_boundary::{OwnerToken, WeakOwnerToken},
 };
@@ -66,14 +66,14 @@ struct TypedCompletionEndpoint<T, E> {
 impl<T, E> TypedCompletionEndpoint<T, E> {
     /// # Safety
     ///
-    /// `callback` must point into the owner arena and the callback node must
-    /// be registered before the endpoint is published. The owner close path
-    /// clears the typed slot before releasing that arena.
+    /// `callback` must point into the owner allocation and the callback node
+    /// must be registered before the endpoint is published. The owner close
+    /// path clears the typed slot before releasing that allocation.
     unsafe fn from_callback<'scope>(
         callback: TypedNodeRef<'scope, CallbackThunk<'scope, T, E>>,
     ) -> Self {
         Self {
-            pointer: NonNull::from(callback.slot()).cast(),
+            pointer: callback.pointer().cast(),
             marker: PhantomData,
         }
     }
@@ -86,12 +86,8 @@ impl<T, E> TypedCompletionEndpoint<T, E> {
         &self,
         _owner: &OwnerToken<'scope>,
     ) -> TypedNodeRef<'scope, CallbackThunk<'scope, T, E>> {
-        let slot = unsafe {
-            self.pointer
-                .cast::<TypedSlot<CallbackThunk<'scope, T, E>>>()
-                .as_ref()
-        };
-        TypedNodeRef::from_slot(slot)
+        // SAFETY: the endpoint validator established the callback lifetime.
+        unsafe { TypedNodeRef::from_pointer(self.pointer.cast()) }
     }
 }
 
@@ -446,6 +442,7 @@ where
         .clone();
 
     let thunk = storage.alloc_slot(CallbackThunk::new(callback));
+    let thunk_ref = thunk.node_ref();
     let callback = match state
         .try_borrow_mut()
         .map_err(|_| ReactiveError::BorrowConflict)
@@ -453,14 +450,13 @@ where
     {
         Ok(callback) => callback,
         Err(error) => {
-            thunk.slot().clear();
             return Err(error);
         }
     };
     let weak = WeakOwnerToken::from_typed(&state);
     // SAFETY: The callback slot is registered before this endpoint is
     // published and is cleared by the unified node disposal path.
-    let typed_callback = unsafe { TypedCompletionEndpoint::from_callback(thunk) };
+    let typed_callback = unsafe { TypedCompletionEndpoint::from_callback(thunk_ref) };
     Ok(Rc::new(CompletionEndpoint::new(
         weak,
         scheduler,

@@ -12,7 +12,7 @@ use super::{
 };
 use crate::{
     ComputationInitError, ComputationInitResult, ErrorHandlerRef, ReactiveError,
-    error::{ErrorEvent, ErrorPhase, ErrorSlot},
+    error::{ErrorEvent, ErrorPhase, ErrorSlotOwner, ErrorSlotRef},
     handle::NodeKindTag,
     internal::NodeId,
     owner::{ScopeStorage, WatchOptions},
@@ -45,7 +45,7 @@ pub(crate) struct ComputationSpec<'scope> {
 pub(crate) struct TypedComputation<'scope, T, E> {
     pub(crate) raw: NodeId,
     pub(crate) value: TypedNodeRef<'scope, T>,
-    pub(crate) errors: &'scope ErrorSlot<E>,
+    pub(crate) errors: ErrorSlotRef<'scope, E>,
 }
 
 pub(crate) fn create_computation<'scope>(
@@ -122,7 +122,7 @@ pub(crate) fn create_computation<'scope>(
 fn finish_creation<'scope, E>(
     state: &ScopeState<'scope>,
     result: Result<NodeId, EvaluationError<'scope>>,
-    errors: &'scope ErrorSlot<E>,
+    errors: ErrorSlotOwner<'scope, E>,
 ) -> ComputationInitResult<NodeId, E> {
     match result {
         Ok(raw) => Ok(raw),
@@ -202,6 +202,7 @@ where
         }
     };
     let errors = storage.alloc_error_slot();
+    let evaluator_errors = errors.clone();
     let evaluator: ComputedEvaluator<'scope, ()> = Box::new(move |_previous, _scheduler| {
         callback()
             .map(|()| ComputedEvaluation {
@@ -209,7 +210,11 @@ where
                 stop_after_run: false,
             })
             .map_err(|error| {
-                ComputationExecutionError::Callback(ErrorEvent::new(error, &handler, errors))
+                ComputationExecutionError::Callback(ErrorEvent::new(
+                    error,
+                    &handler,
+                    evaluator_errors.clone(),
+                ))
             })
     });
     let result = create_computation(
@@ -249,6 +254,7 @@ where
     };
     let value = storage.alloc_empty_slot::<T>();
     let errors = storage.alloc_error_slot();
+    let evaluator_errors = errors.clone();
     let evaluator: ComputedEvaluator<'scope, T> = Box::new(move |previous, _scheduler| {
         callback(previous)
             .map(|value| ComputedEvaluation {
@@ -256,7 +262,11 @@ where
                 stop_after_run: false,
             })
             .map_err(|error| {
-                ComputationExecutionError::Callback(ErrorEvent::new(error, &handler, errors))
+                ComputationExecutionError::Callback(ErrorEvent::new(
+                    error,
+                    &handler,
+                    evaluator_errors.clone(),
+                ))
             })
     });
     let result = create_computation(
@@ -265,7 +275,7 @@ where
             kind: ComputationKind::Previous,
             parent: ComputationParent::Current,
             computation: Box::new(ComputedNode::<T, E>::new(
-                Some(value.slot()),
+                Some(value),
                 evaluator,
                 Box::new(|_, _| true),
                 false,
@@ -299,9 +309,14 @@ where
     };
     let value = storage.alloc_empty_slot::<T>();
     let errors = storage.alloc_error_slot();
+    let evaluator_errors = errors.clone();
     let evaluator: ComputedEvaluator<'scope, T> = Box::new(move |previous, scheduler| {
         let new = getter().map_err(|error| {
-            ComputationExecutionError::Callback(ErrorEvent::new(error, &handler, errors))
+            ComputationExecutionError::Callback(ErrorEvent::new(
+                error,
+                &handler,
+                evaluator_errors.clone(),
+            ))
         })?;
         let first_run = previous.is_none();
         let changed = first_run || previous.is_none_or(|old| *old != new);
@@ -316,7 +331,11 @@ where
                 callback(&new, previous)
             };
             callback_result.map_err(|error| {
-                ComputationExecutionError::Callback(ErrorEvent::new(error, &handler, errors))
+                ComputationExecutionError::Callback(ErrorEvent::new(
+                    error,
+                    &handler,
+                    evaluator_errors.clone(),
+                ))
             })?;
         }
         Ok(ComputedEvaluation {
@@ -330,7 +349,7 @@ where
             kind: ComputationKind::Watch,
             parent: ComputationParent::Current,
             computation: Box::new(ComputedNode::<T, E>::new(
-                Some(value.slot()),
+                Some(value),
                 evaluator,
                 Box::new(|old, new| old.is_none_or(|old| *old != *new)),
                 false,
@@ -395,7 +414,10 @@ where
         }
     };
     let value = storage.alloc_empty_slot::<T>();
+    let value_ref = value.node_ref();
     let errors = storage.alloc_error_slot();
+    let errors_ref = errors.reference();
+    let evaluator_errors = errors.clone();
     let evaluator: ComputedEvaluator<'scope, T> = Box::new(move |_previous, _scheduler| {
         callback()
             .map(|value| ComputedEvaluation {
@@ -403,7 +425,11 @@ where
                 stop_after_run: false,
             })
             .map_err(|error| {
-                ComputationExecutionError::Callback(ErrorEvent::new(error, &handler, errors))
+                ComputationExecutionError::Callback(ErrorEvent::new(
+                    error,
+                    &handler,
+                    evaluator_errors.clone(),
+                ))
             })
     });
     let result = create_computation(
@@ -412,12 +438,16 @@ where
             kind: ComputationKind::Computed,
             parent: ComputationParent::Current,
             computation: Box::new(ComputedNode::<T, E>::new(
-                Some(value.slot()),
+                Some(value),
                 evaluator,
                 changed,
                 true,
             )),
         },
     );
-    finish_creation(state, result, errors).map(|raw| TypedComputation { raw, value, errors })
+    finish_creation(state, result, errors).map(|raw| TypedComputation {
+        raw,
+        value: value_ref,
+        errors: errors_ref,
+    })
 }

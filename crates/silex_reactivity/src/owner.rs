@@ -272,6 +272,9 @@ impl<'owner> OwnerAccess<'owner> {
     pub fn runtime_snapshot(&self) -> runtime::RuntimeSnapshot {
         let mut snapshot = self.state().borrow().runtime_snapshot();
         snapshot.retained_children = self.storage.retained_children();
+        let (typed_slots, error_slots) = self.storage.live_allocations();
+        snapshot.live_typed_slots = typed_slots;
+        snapshot.live_error_slots = error_slots;
         snapshot
     }
 
@@ -372,21 +375,15 @@ impl<'owner> OwnerAccess<'owner> {
         F: FnMut(T) -> Result<(), E> + 'owner,
     {
         let thunk = self.storage.alloc_slot(CallbackThunk::new(f));
+        let callback = thunk.node_ref();
         let state = self.state();
-        let raw = match state
+        let raw = state
             .try_borrow_mut()
             .map_err(|_| ReactiveError::BorrowConflict)
-            .and_then(|mut state| state.create_callback(thunk))
-        {
-            Ok(raw) => raw,
-            Err(error) => {
-                thunk.slot().clear();
-                return Err(error);
-            }
-        };
+            .and_then(|mut state| state.create_callback(thunk))?;
         Ok(Callback {
             handle: Handle::new(self.storage, raw),
-            callback: thunk,
+            callback,
             marker: PhantomData,
         })
     }
@@ -566,21 +563,15 @@ impl<'owner> OwnerAccess<'owner> {
 
     pub fn node_ref<T: 'owner>(&self) -> ReactiveResult<NodeRef<'owner, T>> {
         let slot = self.storage.alloc_slot(None::<T>);
+        let value = slot.node_ref();
         let state = self.state();
-        let raw = match state
+        let raw = state
             .try_borrow_mut()
             .map_err(|_| ReactiveError::BorrowConflict)
-            .and_then(|mut state| state.create_node_ref(slot))
-        {
-            Ok(raw) => raw,
-            Err(error) => {
-                slot.slot().clear();
-                return Err(error);
-            }
-        };
+            .and_then(|mut state| state.create_node_ref(slot))?;
         Ok(NodeRef {
             handle: Handle::new(self.storage, raw),
-            value: slot,
+            value,
             marker: PhantomData,
         })
     }
@@ -590,28 +581,22 @@ impl<'owner> OwnerAccess<'owner> {
         value: T,
     ) -> ReactiveResult<(ReadSignal<'owner, T>, WriteSignal<'owner, T>)> {
         let slot = self.storage.alloc_slot(value);
+        let value_ref = slot.node_ref();
         let state = self.state();
-        let raw = match state
+        let raw = state
             .try_borrow_mut()
             .map_err(|_| ReactiveError::BorrowConflict)
-            .and_then(|mut state| state.create_signal(slot))
-        {
-            Ok(raw) => raw,
-            Err(error) => {
-                slot.slot().clear();
-                return Err(error);
-            }
-        };
+            .and_then(|mut state| state.create_signal(slot))?;
         let handle = Handle::new(self.storage, raw);
         Ok((
             ReadSignal {
                 handle,
-                value: slot,
+                value: value_ref,
                 marker: PhantomData,
             },
             WriteSignal {
                 handle,
-                value: slot,
+                value: value_ref,
                 marker: PhantomData,
             },
         ))
@@ -624,21 +609,15 @@ impl<'owner> OwnerAccess<'owner> {
 
     pub fn stored<T: 'owner>(&self, value: T) -> ReactiveResult<StoredValue<'owner, T>> {
         let slot = self.storage.alloc_slot(value);
+        let value_ref = slot.node_ref();
         let state = self.state();
-        let raw = match state
+        let raw = state
             .try_borrow_mut()
             .map_err(|_| ReactiveError::BorrowConflict)
-            .and_then(|mut state| state.create_stored(slot))
-        {
-            Ok(raw) => raw,
-            Err(error) => {
-                slot.slot().clear();
-                return Err(error);
-            }
-        };
+            .and_then(|mut state| state.create_stored(slot))?;
         Ok(StoredValue {
             handle: Handle::new(self.storage, raw),
-            value: slot,
+            value: value_ref,
             marker: PhantomData,
         })
     }

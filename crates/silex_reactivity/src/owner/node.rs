@@ -5,7 +5,7 @@ use std::{fmt, marker::PhantomData};
 use crate::{
     CallbackInvokeResult, ErrorContext, ErrorHandlerInput, HandlerError, ReactiveError,
     ReactiveResult,
-    error::ErrorSlot,
+    error::ErrorSlotRef,
     error::map_callback_error,
     handle::{CallbackId, ComputedId, EffectId, NodeRefId, SignalId, StoredId},
     runtime,
@@ -118,7 +118,7 @@ impl<'scope> EffectHandle<'scope> {
 pub struct Computed<'scope, T, E> {
     pub(crate) handle: ComputedId<'scope>,
     pub(crate) value: TypedNodeRef<'scope, T>,
-    pub(crate) errors: &'scope ErrorSlot<E>,
+    pub(crate) errors: ErrorSlotRef<'scope, E>,
     pub(crate) marker: PhantomData<fn() -> (T, E)>,
 }
 

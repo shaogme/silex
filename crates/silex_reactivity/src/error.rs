@@ -5,7 +5,7 @@ use crate::{
     root::CloseError,
     runtime::{
         ScopePhase, ScopeState, acquire_error_handler_lease, invoke_error_handler,
-        storage::CallbackThunkError,
+        storage::{AllocationCounters, AllocationKind, AllocationLease, CallbackThunkError},
     },
     unsafe_boundary::{OwnerToken, WeakOwnerToken},
 };
@@ -219,7 +219,7 @@ pub(crate) fn map_callback_error<E>(error: CallbackThunkError<E>) -> CallbackInv
     }
 }
 
-/// A typed error slot owned by the scope arena.
+/// A typed error slot owned by the computation and any in-flight error event.
 pub(crate) struct ErrorSlot<E> {
     value: RefCell<Option<E>>,
 }
@@ -240,6 +240,79 @@ impl<E> ErrorSlot<E> {
             .borrow_mut()
             .take()
             .expect("typed error slot was not populated")
+    }
+}
+
+pub(crate) struct ErrorSlotOwner<'scope, E> {
+    inner: Rc<ErrorSlotInner<E>>,
+    marker: PhantomData<fn(&'scope ()) -> &'scope E>,
+}
+
+struct ErrorSlotInner<E> {
+    slot: ErrorSlot<E>,
+    _lease: AllocationLease,
+}
+
+impl<'scope, E> Clone for ErrorSlotOwner<'scope, E> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<'scope, E> ErrorSlotOwner<'scope, E> {
+    pub(crate) fn new(counters: Rc<AllocationCounters>) -> Self {
+        Self {
+            inner: Rc::new(ErrorSlotInner {
+                slot: ErrorSlot::new(),
+                _lease: AllocationLease::new(counters, AllocationKind::Error),
+            }),
+            marker: PhantomData,
+        }
+    }
+
+    pub(crate) fn reference(&self) -> ErrorSlotRef<'scope, E> {
+        ErrorSlotRef {
+            slot: NonNull::from(&self.inner.slot),
+            marker: PhantomData,
+        }
+    }
+
+    pub(crate) fn store(&self, error: E) {
+        self.inner.slot.store(error);
+    }
+
+    pub(crate) fn take(&self) -> E {
+        self.inner.slot.take()
+    }
+}
+
+/// A copyable, non-owning reference to a computation error slot.
+pub(crate) struct ErrorSlotRef<'scope, E> {
+    slot: NonNull<ErrorSlot<E>>,
+    marker: PhantomData<fn(&'scope ()) -> &'scope E>,
+}
+
+impl<E> Copy for ErrorSlotRef<'_, E> {}
+
+impl<E> Clone for ErrorSlotRef<'_, E> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<'scope, E> ErrorSlotRef<'scope, E> {
+    /// Restore the slot after the owning computation has been validated.
+    ///
+    /// # Safety
+    ///
+    /// The caller must have just validated that the computation owning this
+    /// slot is live and has the expected generation and kind.
+    pub(crate) unsafe fn restore(self) -> &'scope ErrorSlot<E> {
+        // SAFETY: upheld by the function contract above.
+        unsafe { self.slot.as_ref() }
     }
 }
 
@@ -528,12 +601,14 @@ impl<'scope, E: 'scope> ErrorHandlerRef<'scope, E> {
     pub(crate) fn from_record(
         storage: &'scope ScopeStorage,
         key: ErrorHandlerKey,
-        record: &HandlerRecord<'scope, E>,
+        record: &Rc<HandlerRecord<'scope, E>>,
     ) -> Self {
         Self {
             storage,
             key,
-            record: record.identity(),
+            record: NonNull::new(Rc::as_ptr(record).cast_mut())
+                .expect("handler record pointer cannot be null")
+                .cast(),
             marker: PhantomData,
         }
     }
@@ -809,7 +884,7 @@ impl<'scope> ErrorEvent<'scope> {
     pub(crate) fn new<E: 'scope>(
         error: E,
         handler: &HandlerLease<'scope, E>,
-        slot: &'scope ErrorSlot<E>,
+        slot: ErrorSlotOwner<'scope, E>,
     ) -> Self {
         let handler = handler.clone();
         let mut error = Some(error);

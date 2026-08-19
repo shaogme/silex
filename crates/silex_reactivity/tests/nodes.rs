@@ -1,6 +1,7 @@
 use silex_reactivity::{
-    Callback, CallbackInvokeError, Computed, EffectHandle, ErrorHandlerRef, ErrorHandlerToken,
-    NodeRef, OwnerAccess, ReactiveError, ReadSignal, Runtime, StoredValue, WriteSignal,
+    Callback, CallbackInvokeError, ComputationInitError, Computed, EffectHandle, ErrorHandlerRef,
+    ErrorHandlerToken, NodeRef, OwnerAccess, ReactiveError, ReadSignal, Runtime, StoredValue,
+    WriteSignal,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -42,6 +43,14 @@ impl Drop for ReadOnDrop<'_> {
 struct DropEvent {
     label: &'static str,
     events: Rc<RefCell<Vec<&'static str>>>,
+}
+
+struct ErrorDropCounter(Rc<Cell<usize>>);
+
+impl Drop for ErrorDropCounter {
+    fn drop(&mut self) {
+        self.0.set(self.0.get() + 1);
+    }
 }
 
 #[derive(Debug)]
@@ -152,6 +161,70 @@ fn stored_callback_and_node_ref_are_scope_owned() {
             assert_eq!(reference.get(), Ok(None));
         })
         .expect("test operation should succeed");
+}
+
+#[test]
+fn copy_capabilities_return_no_such_node_after_child_release() {
+    let mut runtime = Runtime::new();
+    let root = runtime.owner().expect("runtime root creation");
+    let child = root.create_child().expect("child creation");
+    let access = child.access();
+    let handler = access
+        .error_handler(|_: ()| {})
+        .expect("handler registration");
+    let (read, write) = access.signal(1_i32).expect("signal creation");
+    let rw = access.rw_signal(2_i32).expect("rw signal creation");
+    let computed = access
+        .computed(|| Ok::<i32, ()>(3), handler.view())
+        .expect("computed creation");
+    let node_ref = access.node_ref::<i32>().expect("node ref creation");
+    let stored = access.stored(4_i32).expect("stored creation");
+    let callback = access
+        .callback(|_: ()| Ok::<(), ReactiveError>(()))
+        .expect("callback creation");
+
+    child.close().expect("child close");
+
+    assert_eq!(read.get(), Err(ReactiveError::NoSuchNode));
+    assert_eq!(write.set(5), Err(ReactiveError::NoSuchNode));
+    assert_eq!(rw.read().get(), Err(ReactiveError::NoSuchNode));
+    assert_eq!(rw.write().set(5), Err(ReactiveError::NoSuchNode));
+    assert!(matches!(
+        computed.get(),
+        Err(CallbackInvokeError::Runtime(ReactiveError::NoSuchNode))
+    ));
+    assert_eq!(node_ref.get(), Err(ReactiveError::NoSuchNode));
+    assert_eq!(stored.with(|value| *value), Err(ReactiveError::NoSuchNode));
+    assert!(matches!(
+        callback.invoke(()),
+        Err(CallbackInvokeError::Runtime(ReactiveError::NoSuchNode))
+    ));
+    root.close().expect("root close");
+}
+
+#[test]
+fn initial_error_slot_releases_the_user_error_once() {
+    let mut runtime = Runtime::new();
+    let drops = Rc::new(Cell::new(0));
+
+    runtime
+        .with_transient(|scope| {
+            let handler = scope
+                .error_handler(|_: ErrorDropCounter| {})
+                .expect("handler");
+            let result = scope.computed(
+                {
+                    let drops = drops.clone();
+                    move || Err::<i32, ErrorDropCounter>(ErrorDropCounter(drops.clone()))
+                },
+                handler.view(),
+            );
+            assert!(matches!(&result, Err(ComputationInitError::Initial(_))));
+            assert_eq!(drops.get(), 0);
+            drop(result);
+            assert_eq!(drops.get(), 1);
+        })
+        .expect("transient scope should close");
 }
 
 #[test]

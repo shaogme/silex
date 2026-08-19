@@ -1,9 +1,9 @@
 use crate::{
     ReactiveError,
-    error::ErrorSlot,
+    error::ErrorSlotOwner,
     root::{CleanupFailure, CloseError, ClosePhase, CloseSource, CloseTransaction},
     runtime::OwnerMode,
-    runtime::storage::{TypedNodeRef, TypedSlot},
+    runtime::storage::{AllocationCounters, TypedSlotAllocation},
     runtime::{self, CloseReportQueue, GlobalScheduler, OwnerId, ScopeState, run_global_queue},
     unsafe_boundary::{ErasedScopeState, OwnerToken},
 };
@@ -94,7 +94,7 @@ impl CloseOutcome {
 pub(crate) struct ScopeStorage {
     pub(crate) owner_id: OwnerId,
     pub(crate) state: Rc<ErasedScopeState>,
-    pub(crate) arena: bumpalo::Bump,
+    pub(crate) allocations: Rc<AllocationCounters>,
     pub(crate) children: Rc<ChildRegistry>,
     parent_link: RefCell<Option<ParentLink>>,
     close_reports: Rc<CloseReportQueue>,
@@ -118,7 +118,7 @@ impl ScopeStorage {
         Self {
             owner_id,
             state: state.into_inner(),
-            arena: bumpalo::Bump::new(),
+            allocations: Rc::new(AllocationCounters::new()),
             children: ChildRegistry::new(),
             parent_link: RefCell::new(None),
             close_reports,
@@ -142,16 +142,29 @@ impl ScopeStorage {
         self.close_reports.push(error);
     }
 
-    pub(crate) fn alloc_slot<'scope, T: 'scope>(&'scope self, value: T) -> TypedNodeRef<'scope, T> {
-        TypedNodeRef::from_slot(self.arena.alloc(TypedSlot::new(value)))
+    pub(crate) fn alloc_slot<'scope, T: 'scope>(
+        &'scope self,
+        value: T,
+    ) -> TypedSlotAllocation<'scope, T> {
+        TypedSlotAllocation::new(Some(value), self.allocations.clone())
     }
 
-    pub(crate) fn alloc_empty_slot<'scope, T: 'scope>(&'scope self) -> TypedNodeRef<'scope, T> {
-        TypedNodeRef::from_slot(self.arena.alloc(TypedSlot::empty()))
+    pub(crate) fn alloc_empty_slot<'scope, T: 'scope>(
+        &'scope self,
+    ) -> TypedSlotAllocation<'scope, T> {
+        TypedSlotAllocation::new(None, self.allocations.clone())
     }
 
-    pub(crate) fn alloc_error_slot<'scope, E: 'scope>(&'scope self) -> &'scope ErrorSlot<E> {
-        self.arena.alloc(ErrorSlot::new())
+    pub(crate) fn alloc_error_slot<'scope, E: 'scope>(&'scope self) -> ErrorSlotOwner<'scope, E> {
+        ErrorSlotOwner::new(self.allocations.clone())
+    }
+
+    #[cfg(feature = "test-support")]
+    pub(crate) fn live_allocations(&self) -> (usize, usize) {
+        (
+            self.allocations.typed_slots.get(),
+            self.allocations.error_slots.get(),
+        )
     }
 
     pub(crate) fn owner_token<'scope>(&'scope self) -> OwnerToken<'scope> {
