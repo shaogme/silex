@@ -133,18 +133,17 @@ impl Drop for OwnerHandle {
     }
 }
 
-/// Hidden adapter that keeps a persistent child access and its close authority
-/// together.
+/// Hidden adapter that keeps a persistent child close authority together with
+/// the lifetime brand supplied by its parent.
 ///
-/// The adapter is branded by the lifetime of the parent [`OwnerAccess`]. Its
-/// child access is retained by the parent's child-storage allocation, while
-/// runtime operations still reject the access after close. Closing the adapter
-/// is idempotent even when an ancestor has already recursively closed the
-/// child.
+/// The adapter is branded by the lifetime of the parent [`OwnerAccess`]. An
+/// access borrowed from the adapter is tied to the adapter itself, so dropping
+/// the adapter cannot invalidate a live Rust reference. Runtime operations
+/// still reject the access after close. Closing the adapter is idempotent even
+/// when an ancestor has already recursively closed the child.
 #[doc(hidden)]
 pub struct PersistentOwnerAccess<'parent> {
     handle: OwnerHandle,
-    access: OwnerAccess<'parent>,
     marker: PhantomData<&'parent ()>,
 }
 
@@ -156,25 +155,16 @@ impl<'parent> PersistentOwnerAccess<'parent> {
         {
             return Err(ReactiveError::InvariantViolation);
         }
-        // SAFETY: the adapter stores `handle` before `access` and therefore
-        // keeps the child allocation alive for the complete access lifetime.
-        // Registry membership was checked immediately above; runtime phase
-        // and generation checks still gate every operation on this access.
-        let storage = unsafe { &*Rc::as_ptr(&handle.storage) };
         Ok(Self {
             handle,
-            access: OwnerAccess {
-                storage,
-                marker: PhantomData,
-            },
             marker: PhantomData,
         })
     }
 
     /// Borrow the typed access for this persistent child.
     #[doc(hidden)]
-    pub fn access(&self) -> OwnerAccess<'parent> {
-        self.access
+    pub fn access(&self) -> OwnerAccess<'_> {
+        self.handle.access()
     }
 
     /// Close the child exactly once from the caller's perspective.

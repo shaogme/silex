@@ -37,6 +37,9 @@ jobs:
       - name: Run Tests
         run: cargo test --workspace
 
+      - name: Run Reactivity Test-Support Tests
+        run: cargo test -p silex_reactivity --features test-support --all-targets
+
       - name: Check Reactivity Benchmarks
         run: cargo bench -p silex_reactivity --bench reactivity --no-run
 
@@ -94,6 +97,9 @@ jobs:
       # 只跑可在 Miri 下执行的底层 crate；依赖 wasm-bindgen 的 core/DOM 路径由普通测试覆盖。
       - name: Run Miri
         run: cargo miri test -p silex_reactivity -p silex_vtable
+
+      - name: Run Reactivity Miri Test-Support Tests
+        run: cargo miri test -p silex_reactivity --features test-support
 
   ci-success:
     name: CI Success

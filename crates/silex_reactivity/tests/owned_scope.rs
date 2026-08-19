@@ -415,7 +415,7 @@ fn persistent_child_adapter_supports_child_first_and_repeated_close() {
 }
 
 #[test]
-fn persistent_child_access_rejects_operations_after_adapter_drop() {
+fn persistent_child_access_rejects_operations_after_adapter_close() {
     let mut runtime = Runtime::new();
     let root = runtime.owner().expect("runtime root creation");
     let branch = root
@@ -424,17 +424,18 @@ fn persistent_child_access_rejects_operations_after_adapter_drop() {
         .expect("persistent branch creation");
     let branch_access = branch.access();
 
-    drop(branch);
+    branch.close_once().expect("child close");
 
     assert!(!branch_access.is_active());
     assert!(matches!(
         branch_access.create_child(),
         Err(ReactiveError::NoSuchNode)
     ));
-    root.close()
-        .expect("root close should retain idempotent cleanup");
+    drop(branch);
+    root.close().expect("root close should retain idempotent cleanup");
 }
 
+#[cfg(feature = "test-support")]
 #[test]
 fn owner_churn_removes_released_children_from_parent_registry() {
     let mut runtime = Runtime::new();
@@ -449,6 +450,7 @@ fn owner_churn_removes_released_children_from_parent_registry() {
     root.close().expect("root close");
 }
 
+#[cfg(feature = "test-support")]
 #[test]
 fn owner_churn_reclaims_all_node_slot_allocations() {
     let mut runtime = Runtime::new();
@@ -497,6 +499,7 @@ fn owner_churn_reclaims_all_node_slot_allocations() {
     root.close().expect("root close");
 }
 
+#[cfg(feature = "test-support")]
 #[test]
 fn persistent_adapter_keeps_storage_after_registry_unlink() {
     let mut runtime = Runtime::new();
