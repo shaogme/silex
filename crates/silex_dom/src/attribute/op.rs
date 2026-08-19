@@ -367,7 +367,7 @@ impl<'scope> AttrOp<'scope> {
                 }
             }
             AttrOp::Custom(f) => {
-                owner.with_runtime(|| f(el, owner, error_handler))?;
+                owner.with_runtime(|| f(el, owner, error_handler))??;
             }
             AttrOp::Noop => {}
         }

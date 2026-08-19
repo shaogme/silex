@@ -1,6 +1,7 @@
 //! Scope-owned completion destinations for asynchronous tasks.
 
 use crate::{
+    borrow::SharedCell,
     error::{
         CallbackInvokeError, CompletionSubmitError, CompletionSubmitResult, ReactiveError,
         map_callback_error,
@@ -13,7 +14,7 @@ use crate::{
     unsafe_boundary::{ScopedPtr, WeakOwnerToken},
 };
 use std::{
-    cell::{Cell, RefCell},
+    cell::Cell,
     marker::PhantomData,
     panic::{AssertUnwindSafe, UnwindSafe, catch_unwind, resume_unwind},
     rc::Rc,
@@ -76,7 +77,7 @@ impl<T, E> TypedCompletionEndpoint<T, E> {
 
 struct CompletionEndpoint<T, E> {
     state: WeakOwnerToken,
-    scheduler: Rc<RefCell<GlobalScheduler>>,
+    scheduler: SharedCell<GlobalScheduler>,
     close_reports: Rc<runtime::CloseReportQueue>,
     owner_id: OwnerId,
     callback: NodeId,
@@ -87,7 +88,7 @@ struct CompletionEndpoint<T, E> {
 impl<T, E> CompletionEndpoint<T, E> {
     fn new(
         state: WeakOwnerToken,
-        scheduler: Rc<RefCell<GlobalScheduler>>,
+        scheduler: SharedCell<GlobalScheduler>,
         close_reports: Rc<runtime::CloseReportQueue>,
         owner_id: OwnerId,
         callback: NodeId,
@@ -233,8 +234,10 @@ impl<T, E> CompletionEndpoint<T, E> {
 }
 
 fn close_runtime_error(error: ReactiveError) -> CloseError {
-    CloseError::from_failures(vec![CleanupFailure::Runtime(error)])
-        .expect("a runtime close failure must produce a close error")
+    match CloseError::from_failures(vec![CleanupFailure::Runtime(error)]) {
+        Some(error) => error,
+        None => CloseError::from_panic(Box::new("runtime close failure was not recorded")),
+    }
 }
 
 fn drop_completion_state<T, E>(state: &CompletionEndpoint<T, E>) {
@@ -418,7 +421,7 @@ where
         let state_ref = state
             .try_borrow()
             .map_err(|_| ReactiveError::BorrowConflict)?;
-        if !state_ref.is_active() {
+        if !state_ref.try_is_active()? {
             return Err(ReactiveError::NoSuchNode);
         }
         state_ref.scheduler.clone()

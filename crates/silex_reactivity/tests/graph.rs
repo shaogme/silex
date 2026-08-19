@@ -1,3 +1,10 @@
+#![allow(
+    clippy::arithmetic_side_effects,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic
+)]
+
 use silex_reactivity::{Computed, ErrorHandlerToken, OwnerAccess, ReactiveError, Runtime};
 use std::{
     cell::{Cell, RefCell},
@@ -404,7 +411,7 @@ fn batch_delays_effects_and_untrack_preserves_ownership_ctx() {
                 .expect("effect should initialize");
             set_hidden.set(4).expect("test operation should succeed");
             assert_eq!(tracked.get(), 4);
-            assert_eq!(scope.untrack(|| hidden.get()), Ok(4));
+            assert_eq!(scope.untrack(|| hidden.get()), Ok(Ok(4)));
             set_source.set(2).expect("test operation should succeed");
             assert_eq!(tracked.get(), 4);
         })

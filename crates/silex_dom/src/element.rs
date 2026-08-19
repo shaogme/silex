@@ -364,7 +364,7 @@ where
     H: ErrorHandlerInput<'scope>,
 {
     let error_handler = error_handler.handler_ref();
-    if !owner.is_active() {
+    if !owner.is_active()? {
         return Err(SilexError::fatal(ReactiveError::NoSuchNode));
     }
     let destination = owner.host_callback(

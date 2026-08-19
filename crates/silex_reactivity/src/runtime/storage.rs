@@ -3,11 +3,13 @@
 use super::scheduler::GlobalScheduler;
 use crate::{
     ReactiveError, ReactiveResult,
+    borrow::{BorrowCell, BorrowRef, BorrowRefMut, BorrowSite, SharedCell},
     error::{ErrorEvent, ErrorSlotRef, HandlerLease},
+    root::{CleanupFailure, CloseError},
     unsafe_boundary::ScopedPtr,
 };
 use std::{
-    cell::{Cell, Ref, RefCell, RefMut},
+    cell::Cell,
     marker::PhantomData,
     ops::{Deref, DerefMut},
     rc::Rc,
@@ -44,7 +46,7 @@ impl AllocationLease {
             AllocationKind::Typed => &counters.typed_slots,
             AllocationKind::Error => &counters.error_slots,
         };
-        count.set(count.get() + 1);
+        count.set(count.get().saturating_add(1));
         Self { counters, kind }
     }
 }
@@ -61,23 +63,23 @@ impl Drop for AllocationLease {
 
 /// A value cell that never moves its contents out while user code runs.
 pub(crate) struct LeaseCell<T> {
-    value: RefCell<T>,
+    value: BorrowCell<T>,
 }
 
 impl<T> LeaseCell<T> {
     pub(crate) fn new(value: T) -> Self {
         Self {
-            value: RefCell::new(value),
+            value: BorrowCell::new(value, BorrowSite::Payload),
         }
     }
 
     pub(crate) fn try_read<'cell>(
         &'cell self,
-        scheduler: std::rc::Rc<RefCell<GlobalScheduler>>,
+        scheduler: SharedCell<GlobalScheduler>,
     ) -> ReactiveResult<ReadLease<'cell, T>> {
         let value = self
             .value
-            .try_borrow()
+            .try_read()
             .map_err(|_| ReactiveError::BorrowConflict)?;
         let ticket = LeaseTicket::new(scheduler)?;
         Ok(ReadLease {
@@ -88,11 +90,11 @@ impl<T> LeaseCell<T> {
 
     pub(crate) fn try_write<'cell>(
         &'cell self,
-        scheduler: std::rc::Rc<RefCell<GlobalScheduler>>,
+        scheduler: SharedCell<GlobalScheduler>,
     ) -> ReactiveResult<WriteLease<'cell, T>> {
         let value = self
             .value
-            .try_borrow_mut()
+            .try_write()
             .map_err(|_| ReactiveError::BorrowConflict)?;
         let ticket = LeaseTicket::new(scheduler)?;
         Ok(WriteLease {
@@ -101,32 +103,49 @@ impl<T> LeaseCell<T> {
         })
     }
 
-    pub(crate) fn try_peek<R>(&self, f: impl FnOnce(&T) -> R) -> Option<R> {
-        self.value.try_borrow().ok().map(|value| f(&value))
+    pub(crate) fn try_peek<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<Option<R>> {
+        self.value
+            .try_read()
+            .map_err(|_| ReactiveError::BorrowConflict)
+            .map(|value| Some(f(&value)))
     }
 }
 
 impl<T> LeaseCell<Option<T>> {
-    pub(crate) fn is_initialized(&self) -> bool {
-        self.value.try_borrow().is_ok_and(|value| value.is_some())
+    pub(crate) fn is_initialized(&self) -> ReactiveResult<bool> {
+        Ok(self
+            .value
+            .try_read()
+            .map_err(|_| ReactiveError::BorrowConflict)?
+            .is_some())
     }
 
-    pub(crate) fn clear(&self) {
-        let _ = self.value.borrow_mut().take();
+    pub(crate) fn clear(&self) -> ReactiveResult<()> {
+        self.value
+            .try_write()
+            .map_err(|_| ReactiveError::BorrowConflict)?
+            .take();
+        Ok(())
     }
 }
 
 struct LeaseTicket {
-    scheduler: std::rc::Rc<RefCell<GlobalScheduler>>,
+    scheduler: SharedCell<GlobalScheduler>,
+    close_reports: Rc<super::scheduler::CloseReportQueue>,
 }
 
 impl LeaseTicket {
-    fn new(scheduler: std::rc::Rc<RefCell<GlobalScheduler>>) -> ReactiveResult<Self> {
-        scheduler
+    fn new(scheduler: SharedCell<GlobalScheduler>) -> ReactiveResult<Self> {
+        let mut scheduler_ref = scheduler
             .try_borrow_mut()
-            .map_err(|_| ReactiveError::BorrowConflict)?
-            .active_leases += 1;
-        Ok(Self { scheduler })
+            .map_err(|_| ReactiveError::BorrowConflict)?;
+        let close_reports = scheduler_ref.close_reports.clone();
+        scheduler_ref.active_leases = scheduler_ref.active_leases.saturating_add(1);
+        drop(scheduler_ref);
+        Ok(Self {
+            scheduler,
+            close_reports,
+        })
     }
 }
 
@@ -134,12 +153,16 @@ impl Drop for LeaseTicket {
     fn drop(&mut self) {
         if let Ok(mut scheduler) = self.scheduler.try_borrow_mut() {
             scheduler.active_leases = scheduler.active_leases.saturating_sub(1);
+        } else if let Some(error) =
+            CloseError::from_failures(vec![CleanupFailure::Runtime(ReactiveError::BorrowConflict)])
+        {
+            self.close_reports.push(error);
         }
     }
 }
 
 pub(crate) struct ReadLease<'cell, T> {
-    value: Ref<'cell, T>,
+    value: BorrowRef<'cell, T>,
     _ticket: LeaseTicket,
 }
 
@@ -152,7 +175,7 @@ impl<T> Deref for ReadLease<'_, T> {
 }
 
 pub(crate) struct WriteLease<'cell, T> {
-    value: RefMut<'cell, T>,
+    value: BorrowRefMut<'cell, T>,
     _ticket: LeaseTicket,
 }
 
@@ -176,24 +199,24 @@ pub(crate) struct TypedSlot<T> {
 }
 
 impl<T> TypedSlot<T> {
-    pub(crate) fn clear(&self) {
-        self.value.clear();
+    pub(crate) fn clear(&self) -> ReactiveResult<()> {
+        self.value.clear()
     }
 
-    pub(crate) fn is_initialized(&self) -> bool {
+    pub(crate) fn is_initialized(&self) -> ReactiveResult<bool> {
         self.value.is_initialized()
     }
 
     pub(crate) fn try_read<'scope>(
         &'scope self,
-        scheduler: std::rc::Rc<RefCell<GlobalScheduler>>,
+        scheduler: SharedCell<GlobalScheduler>,
     ) -> ReactiveResult<ReadLease<'scope, Option<T>>> {
         self.value.try_read(scheduler)
     }
 
     pub(crate) fn try_write<'scope>(
         &'scope self,
-        scheduler: std::rc::Rc<RefCell<GlobalScheduler>>,
+        scheduler: SharedCell<GlobalScheduler>,
     ) -> ReactiveResult<WriteLease<'scope, Option<T>>> {
         self.value.try_write(scheduler)
     }
@@ -243,11 +266,13 @@ impl<'scope, T> TypedSlotAllocation<'scope, T> {
         }
     }
 
-    pub(crate) fn into_owned(mut self) -> OwnedTypedSlot<T> {
-        OwnedTypedSlot {
-            slot: self.slot.take().expect("slot allocation consumed"),
-            _lease: self.lease.take().expect("slot allocation lease consumed"),
-        }
+    pub(crate) fn into_owned(mut self) -> ReactiveResult<OwnedTypedSlot<T>> {
+        let slot = self.slot.take().ok_or(ReactiveError::InvariantViolation)?;
+        let lease = self.lease.take().ok_or(ReactiveError::InvariantViolation)?;
+        Ok(OwnedTypedSlot {
+            slot,
+            _lease: lease,
+        })
     }
 }
 
@@ -267,7 +292,7 @@ impl<T> OwnedTypedSlot<T> {
 }
 
 pub(crate) trait PayloadOwner {
-    fn clear(&self);
+    fn clear(&self) -> ReactiveResult<()>;
     fn identity(&self) -> ScopedPtr<()>;
 }
 
@@ -277,8 +302,8 @@ struct SlotOwner<'scope, T> {
 }
 
 impl<T> PayloadOwner for SlotOwner<'_, T> {
-    fn clear(&self) {
-        self.slot.slot().clear();
+    fn clear(&self) -> ReactiveResult<()> {
+        self.slot.slot().clear()
     }
 
     fn identity(&self) -> ScopedPtr<()> {
@@ -300,16 +325,16 @@ pub(crate) enum ComputationExecutionError<'scope> {
 pub(crate) trait ComputationBehavior<'scope> {
     fn execute(
         &mut self,
-        scheduler: std::rc::Rc<RefCell<GlobalScheduler>>,
+        scheduler: SharedCell<GlobalScheduler>,
     ) -> Result<ComputationOutcome, ComputationExecutionError<'scope>>;
 
-    fn commit(&mut self, scheduler: std::rc::Rc<RefCell<GlobalScheduler>>) -> ReactiveResult<()>;
+    fn commit(&mut self, scheduler: SharedCell<GlobalScheduler>) -> ReactiveResult<()>;
 
     fn discard_pending(&mut self);
 
-    fn has_value(&self) -> bool;
+    fn has_value(&self) -> ReactiveResult<bool>;
 
-    fn clear(&mut self);
+    fn clear(&mut self) -> ReactiveResult<()>;
 
     fn value_slot_identity(&self) -> Option<ScopedPtr<()>>;
 
@@ -323,31 +348,37 @@ pub(crate) struct ComputationStorage<'scope> {
 }
 
 impl<'scope> ComputationStorage<'scope> {
-    pub(crate) fn new(computation: Box<dyn ComputationBehavior<'scope> + 'scope>) -> Self {
+    pub(crate) fn new(
+        computation: Box<dyn ComputationBehavior<'scope> + 'scope>,
+    ) -> ReactiveResult<Self> {
         let computation = LeaseCell::new(Some(computation));
-        let (value_identity, error_identity) = computation
-            .try_peek(|computation| {
-                let computation = computation
-                    .as_ref()
-                    .expect("computation storage is initialized during registration");
-                (
-                    computation.value_slot_identity(),
-                    computation.error_slot_identity(),
-                )
-            })
-            .expect("computation storage is readable during registration");
-        Self {
+        let identities = computation.try_peek(|computation| {
+            computation
+                .as_ref()
+                .map(|computation| {
+                    (
+                        computation.value_slot_identity(),
+                        computation.error_slot_identity(),
+                    )
+                })
+                .ok_or(ReactiveError::InvariantViolation)
+        })?;
+        let (value_identity, error_identity) =
+            identities.ok_or(ReactiveError::InvariantViolation)??;
+        Ok(Self {
             computation,
             value_identity,
             error_identity,
-        }
+        })
     }
 }
 
 impl Drop for ComputationStorage<'_> {
     fn drop(&mut self) {
-        if let Some(computation) = self.computation.value.get_mut().as_mut() {
-            computation.clear();
+        if let Ok(mut computation) = self.computation.value.try_write()
+            && let Some(computation) = computation.as_mut()
+        {
+            let _ = computation.clear();
         }
     }
 }
@@ -359,18 +390,20 @@ pub(crate) enum NodeStorage<'scope> {
 }
 
 impl<'scope> NodeStorage<'scope> {
-    pub(crate) fn value<T: 'scope>(slot: TypedSlotAllocation<'scope, T>) -> Self {
-        Self::Value(Box::new(SlotOwner {
-            slot: slot.into_owned(),
+    pub(crate) fn value<T: 'scope>(slot: TypedSlotAllocation<'scope, T>) -> ReactiveResult<Self> {
+        Ok(Self::Value(Box::new(SlotOwner {
+            slot: slot.into_owned()?,
             marker: PhantomData,
-        }))
+        })))
     }
 
-    pub(crate) fn callback<T: 'scope>(slot: TypedSlotAllocation<'scope, T>) -> Self {
-        Self::Callback(Box::new(SlotOwner {
-            slot: slot.into_owned(),
+    pub(crate) fn callback<T: 'scope>(
+        slot: TypedSlotAllocation<'scope, T>,
+    ) -> ReactiveResult<Self> {
+        Ok(Self::Callback(Box::new(SlotOwner {
+            slot: slot.into_owned()?,
             marker: PhantomData,
-        }))
+        })))
     }
 
     pub(crate) fn payload_identity(&self) -> Option<ScopedPtr<()>> {
@@ -391,7 +424,9 @@ impl<'scope> NodeStorage<'scope> {
 impl Drop for NodeStorage<'_> {
     fn drop(&mut self) {
         match self {
-            Self::Value(owner) | Self::Callback(owner) => owner.clear(),
+            Self::Value(owner) | Self::Callback(owner) => {
+                let _ = owner.clear();
+            }
             Self::Computation(_) => {}
         }
     }
@@ -444,7 +479,10 @@ impl<'scope> CleanupThunk<'scope> {
     }
 
     pub(crate) fn call(mut self) -> Result<(), ErrorEvent<'scope>> {
-        self.callback.take().expect("cleanup thunk called twice")()
+        let Some(callback) = self.callback.take() else {
+            return Err(ErrorEvent::invariant("cleanup thunk"));
+        };
+        callback()
     }
 }
 
@@ -457,7 +495,7 @@ pub(crate) struct ComputedEvaluation<T> {
 pub(crate) type ComputedEvaluator<'scope, T> = Box<
     dyn for<'value> FnMut(
             Option<&T>,
-            Rc<RefCell<GlobalScheduler>>,
+            SharedCell<GlobalScheduler>,
         )
             -> Result<ComputedEvaluation<T>, ComputationExecutionError<'scope>>
         + 'scope,
@@ -484,16 +522,20 @@ impl<'scope, T, E> ComputedNode<'scope, T, E> {
         evaluator: ComputedEvaluator<'scope, T>,
         changed: ChangePredicate<'scope, T>,
         notify: bool,
-    ) -> Self {
-        Self {
-            slot: slot.map(TypedSlotAllocation::into_owned).map(Rc::new),
+    ) -> ReactiveResult<Self> {
+        let slot = slot
+            .map(TypedSlotAllocation::into_owned)
+            .transpose()?
+            .map(Rc::new);
+        Ok(Self {
+            slot,
             error_slot,
             evaluator,
             changed,
             notify,
             pending: None,
             marker: PhantomData,
-        }
+        })
     }
 }
 
@@ -504,7 +546,7 @@ where
 {
     fn execute(
         &mut self,
-        scheduler: Rc<RefCell<GlobalScheduler>>,
+        scheduler: SharedCell<GlobalScheduler>,
     ) -> Result<ComputationOutcome, ComputationExecutionError<'scope>> {
         let old = self
             .slot
@@ -526,7 +568,7 @@ where
         })
     }
 
-    fn commit(&mut self, scheduler: Rc<RefCell<GlobalScheduler>>) -> ReactiveResult<()> {
+    fn commit(&mut self, scheduler: SharedCell<GlobalScheduler>) -> ReactiveResult<()> {
         let Some(slot) = self.slot.as_ref() else {
             return Ok(());
         };
@@ -539,17 +581,19 @@ where
         self.pending = None;
     }
 
-    fn has_value(&self) -> bool {
-        self.slot
-            .as_ref()
-            .is_some_and(|slot| slot.slot().is_initialized())
+    fn has_value(&self) -> ReactiveResult<bool> {
+        match self.slot.as_ref() {
+            Some(slot) => slot.slot().is_initialized(),
+            None => Ok(false),
+        }
     }
 
-    fn clear(&mut self) {
+    fn clear(&mut self) -> ReactiveResult<()> {
         self.pending = None;
         if let Some(slot) = self.slot.as_ref() {
-            slot.slot().clear();
+            slot.slot().clear()?;
         }
+        Ok(())
     }
 
     fn error_slot_identity(&self) -> ScopedPtr<()> {
@@ -563,6 +607,13 @@ where
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::arithmetic_side_effects,
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        clippy::panic
+    )]
+
     use super::*;
     use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -578,14 +629,26 @@ mod tests {
             .expect("shared read lease should succeed");
         assert_eq!(*first, 1);
         assert_eq!(*second, 1);
-        assert_eq!(scheduler.borrow().active_leases, 2);
+        assert_eq!(
+            scheduler
+                .try_borrow()
+                .expect("scheduler read")
+                .active_leases,
+            2
+        );
         assert!(matches!(
             cell.try_write(scheduler.clone()),
             Err(ReactiveError::BorrowConflict)
         ));
         drop(second);
         drop(first);
-        assert_eq!(scheduler.borrow().active_leases, 0);
+        assert_eq!(
+            scheduler
+                .try_borrow()
+                .expect("scheduler read")
+                .active_leases,
+            0
+        );
     }
 
     #[test]
@@ -605,7 +668,13 @@ mod tests {
             Err(ReactiveError::BorrowConflict)
         ));
         drop(write);
-        assert_eq!(scheduler.borrow().active_leases, 0);
+        assert_eq!(
+            scheduler
+                .try_borrow()
+                .expect("scheduler read")
+                .active_leases,
+            0
+        );
         assert_eq!(*cell.try_read(scheduler).expect("read should succeed"), 2);
     }
 
@@ -620,7 +689,13 @@ mod tests {
             panic!("lease body panic");
         }));
         assert!(panic.is_err());
-        assert_eq!(scheduler.borrow().active_leases, 0);
+        assert_eq!(
+            scheduler
+                .try_borrow()
+                .expect("scheduler read")
+                .active_leases,
+            0
+        );
         assert_eq!(
             *cell.try_read(scheduler).expect("lease should be reusable"),
             1

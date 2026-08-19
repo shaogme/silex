@@ -1,3 +1,10 @@
+#![allow(
+    clippy::arithmetic_side_effects,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic
+)]
+
 use silex_reactivity::{
     CallbackInvokeError, CompletionOnce, CompletionSender, CompletionSubmitError, ReactiveError,
     Runtime, unwind_safe,
@@ -68,9 +75,16 @@ fn completion_drop_reports_close_errors() {
         })
         .expect("runtime child should succeed");
 
-    let errors = runtime.take_unhandled_close_errors();
+    let errors = runtime
+        .take_unhandled_close_errors()
+        .expect("close report collection");
     assert_eq!(errors.len(), 1);
-    assert!(runtime.take_unhandled_close_errors().is_empty());
+    assert!(
+        runtime
+            .take_unhandled_close_errors()
+            .expect("close report collection")
+            .is_empty()
+    );
 }
 
 #[test]
@@ -93,7 +107,13 @@ fn completion_callback_panic_reports_parallel_close_error() {
             .expect("callback panic should resume");
     }));
     assert!(result.is_err());
-    assert_eq!(runtime.take_unhandled_close_errors().len(), 1);
+    assert_eq!(
+        runtime
+            .take_unhandled_close_errors()
+            .expect("close report collection")
+            .len(),
+        1
+    );
 }
 
 #[test]

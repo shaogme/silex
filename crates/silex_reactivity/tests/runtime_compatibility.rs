@@ -1,3 +1,10 @@
+#![allow(
+    clippy::arithmetic_side_effects,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic
+)]
+
 use silex_reactivity::{
     CallbackInvokeError, ComputationInitError, ErrorHandlerToken, OwnerAccess, ReactiveError,
     Runtime,
@@ -133,7 +140,7 @@ fn untrack_only_masks_the_runtime_that_owns_the_scope() {
             target_scope
                 .effect(
                     move || {
-                        foreign_scope.untrack(|| source.get())?;
+                        foreign_scope.untrack(|| source.get())??;
                         runs_in_effect.set(runs_in_effect.get() + 1);
                         Ok(())
                     },

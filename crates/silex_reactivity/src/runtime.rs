@@ -59,10 +59,7 @@ impl Runtime {
             return Err(ReactiveError::RuntimeAlreadyRunning);
         }
         self.root_active.set(true);
-        Ok(owner::new_root(
-            self.root_active.clone(),
-            self.close_reports.clone(),
-        ))
+        owner::new_root(self.root_active.clone(), self.close_reports.clone())
     }
 
     /// Execute a transient owner whose handles cannot escape the callback.
@@ -79,7 +76,12 @@ impl Runtime {
     }
 
     /// Take close diagnostics that originated in Drop or panic recovery paths.
-    pub fn take_unhandled_close_errors(&self) -> Vec<CloseError> {
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ReactiveError::BorrowConflict`] when another close-report
+    /// operation currently holds the queue's dynamic borrow.
+    pub fn take_unhandled_close_errors(&self) -> ReactiveResult<Vec<CloseError>> {
         self.close_reports.take()
     }
 }

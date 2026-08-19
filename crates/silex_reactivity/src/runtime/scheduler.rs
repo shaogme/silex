@@ -3,16 +3,13 @@
 use super::model::ScopeState;
 use crate::{
     ReactiveError, ReactiveResult,
+    borrow::{BorrowCell, BorrowSite, SharedCell},
     internal::NodeId,
     root::CloseError,
     unsafe_boundary::{ActiveOwnerProof, CleanupOwnerProof, WeakOwnerToken},
 };
 
-use std::{
-    cell::{Cell, RefCell},
-    collections::VecDeque,
-    rc::Rc,
-};
+use std::{cell::Cell, collections::VecDeque, rc::Rc};
 
 /// Close diagnostics that cannot be returned through the current call stack.
 ///
@@ -20,36 +17,43 @@ use std::{
 /// `dropped` is retained as an invariant diagnostic for the narrow case where
 /// an internal borrow conflict prevents recording the error itself.
 pub(crate) struct CloseReportQueue {
-    errors: RefCell<VecDeque<CloseError>>,
+    errors: BorrowCell<VecDeque<CloseError>>,
     dropped: Cell<usize>,
 }
 
 impl CloseReportQueue {
     pub(crate) fn new() -> Rc<Self> {
         Rc::new(Self {
-            errors: RefCell::new(VecDeque::new()),
+            errors: BorrowCell::new(VecDeque::new(), BorrowSite::CloseReport),
             dropped: Cell::new(0),
         })
     }
 
     pub(crate) fn push(&self, error: CloseError) {
-        match self.errors.try_borrow_mut() {
+        match self.errors.try_write() {
             Ok(mut errors) => errors.push_back(error),
             Err(_) => {
                 self.dropped.set(self.dropped.get().saturating_add(1));
-                #[cfg(feature = "test-support")]
-                panic!("close reporter borrow conflict");
             }
         }
     }
 
-    pub(crate) fn take(&self) -> Vec<CloseError> {
-        self.errors.borrow_mut().drain(..).collect()
+    pub(crate) fn take(&self) -> ReactiveResult<Vec<CloseError>> {
+        Ok(self
+            .errors
+            .try_write()
+            .map_err(|_| ReactiveError::BorrowConflict)?
+            .drain(..)
+            .collect())
     }
 
     #[cfg(feature = "test-support")]
-    pub(crate) fn len(&self) -> usize {
-        self.errors.borrow().len()
+    pub(crate) fn len(&self) -> ReactiveResult<usize> {
+        Ok(self
+            .errors
+            .try_read()
+            .map_err(|_| ReactiveError::BorrowConflict)?
+            .len())
     }
 
     #[cfg(feature = "test-support")]
@@ -86,21 +90,28 @@ pub(crate) struct Observer {
 
 #[derive(Clone)]
 pub(crate) struct ExecutionContext {
-    pub(crate) scheduler: Rc<RefCell<GlobalScheduler>>,
+    pub(crate) scheduler: SharedCell<GlobalScheduler>,
     pub(crate) observer: Option<Observer>,
     pub(crate) blocked_scopes: Vec<OwnerId>,
 }
 
 thread_local! {
-    static ACTIVE_CONTEXT: RefCell<Vec<ExecutionContext>> = const { RefCell::new(Vec::new()) };
+    static ACTIVE_CONTEXT: BorrowCell<Vec<ExecutionContext>> =
+        const { BorrowCell::new(Vec::new(), BorrowSite::ObserverStack) };
+    static OBSERVER_RECOVERY_FAILURES: Cell<usize> = const { Cell::new(0) };
 }
 
 pub(crate) fn validate_active_scheduler(
-    scheduler: &Rc<RefCell<GlobalScheduler>>,
+    scheduler: &SharedCell<GlobalScheduler>,
 ) -> Result<(), ReactiveError> {
     ACTIVE_CONTEXT.with(|stack| {
         let mut saw_context = false;
-        for context in stack.borrow().iter().rev() {
+        for context in stack
+            .try_read()
+            .map_err(|_| ReactiveError::BorrowConflict)?
+            .iter()
+            .rev()
+        {
             saw_context = true;
             if Rc::ptr_eq(&context.scheduler, scheduler) {
                 return Ok(());
@@ -122,24 +133,40 @@ pub(crate) fn validate_active_scheduler(
 /// A frame for another scheduler only contributes a foreign observer. An
 /// untracked frame is intentionally skipped, so untracking one runtime does
 /// not disable tracking for every runtime on this thread.
-pub(crate) fn active_ctx(scheduler: &Rc<RefCell<GlobalScheduler>>) -> Option<ExecutionContext> {
+pub(crate) fn active_ctx(
+    scheduler: &SharedCell<GlobalScheduler>,
+) -> ReactiveResult<Option<ExecutionContext>> {
     ACTIVE_CONTEXT.with(|stack| {
-        stack.borrow().iter().rev().find_map(|context| {
-            if Rc::ptr_eq(&context.scheduler, scheduler) || context.observer.is_some() {
-                Some(context.clone())
-            } else {
-                None
-            }
+        Ok(stack
+            .try_read()
+            .map_err(|_| ReactiveError::BorrowConflict)?
+            .iter()
+            .rev()
+            .find_map(|context| {
+                if Rc::ptr_eq(&context.scheduler, scheduler) || context.observer.is_some() {
+                    Some(context.clone())
+                } else {
+                    None
+                }
+            }))
+    })
+}
+
+#[cfg(feature = "test-support")]
+pub(crate) fn active_observer_for(
+    scheduler: &SharedCell<GlobalScheduler>,
+) -> ReactiveResult<Option<Observer>> {
+    active_ctx(scheduler).map(|ctx| {
+        ctx.and_then(|ctx| {
+            ctx.observer
+                .filter(|_| Rc::ptr_eq(&ctx.scheduler, scheduler))
         })
     })
 }
 
 #[cfg(feature = "test-support")]
-pub(crate) fn active_observer_for(scheduler: &Rc<RefCell<GlobalScheduler>>) -> Option<Observer> {
-    active_ctx(scheduler).and_then(|ctx| {
-        ctx.observer
-            .filter(|_| Rc::ptr_eq(&ctx.scheduler, scheduler))
-    })
+pub(crate) fn observer_recovery_failures() -> usize {
+    OBSERVER_RECOVERY_FAILURES.with(Cell::get)
 }
 
 /// Restores the previous execution context when the surrounding operation
@@ -151,32 +178,41 @@ pub(crate) struct ObserverFrame {
 
 impl ObserverFrame {
     pub(crate) fn push(
-        scheduler: Rc<RefCell<GlobalScheduler>>,
+        scheduler: SharedCell<GlobalScheduler>,
         observer: Option<Observer>,
-    ) -> Self {
+    ) -> ReactiveResult<Self> {
         ACTIVE_CONTEXT.with(|stack| {
-            stack.borrow_mut().push(ExecutionContext {
-                scheduler,
-                observer,
-                blocked_scopes: Vec::new(),
-            });
-        });
-        Self { active: true }
+            stack
+                .try_write()
+                .map_err(|_| ReactiveError::BorrowConflict)?
+                .push(ExecutionContext {
+                    scheduler,
+                    observer,
+                    blocked_scopes: Vec::new(),
+                });
+            Ok(Self { active: true })
+        })
     }
 
-    pub(crate) fn push_untracked(scheduler: Rc<RefCell<GlobalScheduler>>) -> Self {
+    pub(crate) fn push_untracked(scheduler: SharedCell<GlobalScheduler>) -> ReactiveResult<Self> {
         ACTIVE_CONTEXT.with(|stack| {
-            stack.borrow_mut().push(ExecutionContext {
-                scheduler,
-                observer: None,
-                blocked_scopes: Vec::new(),
-            });
-        });
-        Self { active: true }
+            stack
+                .try_write()
+                .map_err(|_| ReactiveError::BorrowConflict)?
+                .push(ExecutionContext {
+                    scheduler,
+                    observer: None,
+                    blocked_scopes: Vec::new(),
+                });
+            Ok(Self { active: true })
+        })
     }
 
-    pub(crate) fn push_child(scheduler: Rc<RefCell<GlobalScheduler>>, owner_id: OwnerId) -> Self {
-        let inherited = active_ctx(&scheduler).and_then(|mut ctx| {
+    pub(crate) fn push_child(
+        scheduler: SharedCell<GlobalScheduler>,
+        owner_id: OwnerId,
+    ) -> ReactiveResult<Self> {
+        let inherited = active_ctx(&scheduler)?.and_then(|mut ctx| {
             if !Rc::ptr_eq(&ctx.scheduler, &scheduler) {
                 return None;
             }
@@ -190,14 +226,15 @@ impl ObserverFrame {
         });
         ACTIVE_CONTEXT.with(|stack| {
             stack
-                .borrow_mut()
+                .try_write()
+                .map_err(|_| ReactiveError::BorrowConflict)?
                 .push(inherited.unwrap_or(ExecutionContext {
                     scheduler,
                     observer: None,
                     blocked_scopes: Vec::new(),
                 }));
-        });
-        Self { active: true }
+            Ok(Self { active: true })
+        })
     }
 }
 
@@ -207,8 +244,17 @@ impl Drop for ObserverFrame {
             return;
         }
         ACTIVE_CONTEXT.with(|stack| {
-            let popped = stack.borrow_mut().pop();
-            debug_assert!(popped.is_some(), "tracking ctx stack underflow");
+            let Ok(mut stack) = stack.try_write() else {
+                OBSERVER_RECOVERY_FAILURES.with(|count| {
+                    count.set(count.get().saturating_add(1));
+                });
+                return;
+            };
+            if stack.pop().is_none() {
+                OBSERVER_RECOVERY_FAILURES.with(|count| {
+                    count.set(count.get().saturating_add(1));
+                });
+            }
         });
     }
 }
@@ -219,15 +265,16 @@ impl Drop for ObserverFrame {
 /// other signals while the provisional node is being rolled back. A nested
 /// guard keeps that invariant intact for computations created by the callback.
 pub(crate) struct InitialFlushGuard {
-    scheduler: Rc<RefCell<GlobalScheduler>>,
+    scheduler: SharedCell<GlobalScheduler>,
 }
 
 impl InitialFlushGuard {
-    pub(crate) fn try_new(scheduler: Rc<RefCell<GlobalScheduler>>) -> Result<Self, ReactiveError> {
-        scheduler
+    pub(crate) fn try_new(scheduler: SharedCell<GlobalScheduler>) -> Result<Self, ReactiveError> {
+        let mut scheduler_ref = scheduler
             .try_borrow_mut()
-            .map_err(|_| ReactiveError::BorrowConflict)?
-            .initial_flush_depth += 1;
+            .map_err(|_| ReactiveError::BorrowConflict)?;
+        scheduler_ref.initial_flush_depth = scheduler_ref.initial_flush_depth.saturating_add(1);
+        drop(scheduler_ref);
         Ok(Self { scheduler })
     }
 }
@@ -260,7 +307,9 @@ impl BitSet {
         if index >= self.bits.len() {
             return false;
         }
-        (self.bits[index] & (1u64 << (id % 64))) != 0
+        self.bits
+            .get(index)
+            .is_some_and(|bits| (bits & (1u64 << (id % 64))) != 0)
     }
 
     pub(crate) fn set(&mut self, id: u32, value: bool) {
@@ -269,13 +318,15 @@ impl BitSet {
             if !value {
                 return;
             }
-            self.bits.resize(index + 1, 0);
+            self.bits.resize(index.saturating_add(1), 0);
         }
         let bit = 1u64 << (id % 64);
-        if value {
-            self.bits[index] |= bit;
-        } else {
-            self.bits[index] &= !bit;
+        if let Some(bits) = self.bits.get_mut(index) {
+            if value {
+                *bits |= bit;
+            } else {
+                *bits &= !bit;
+            }
         }
     }
 }
@@ -314,28 +365,31 @@ pub(crate) struct GlobalScheduler {
 
 impl GlobalScheduler {
     #[cfg(test)]
-    pub(crate) fn new() -> Rc<RefCell<Self>> {
+    pub(crate) fn new() -> SharedCell<Self> {
         Self::new_with_reporter(CloseReportQueue::new())
     }
 
-    pub(crate) fn new_with_reporter(reporter: Rc<CloseReportQueue>) -> Rc<RefCell<Self>> {
-        Rc::new(RefCell::new(Self {
-            active_mask: BitSet::new(),
-            scopes: Vec::new(),
-            generations: Vec::new(),
-            next_owner_id: 0,
-            free_owner_ids: Vec::new(),
-            epoch: 1,
-            global_queue: VecDeque::new(),
-            worklist: VecDeque::new(),
-            running_queue: false,
-            batch_depth: 0,
-            evaluating: 0,
-            executing: 0,
-            active_leases: 0,
-            initial_flush_depth: 0,
-            close_reports: reporter,
-        }))
+    pub(crate) fn new_with_reporter(reporter: Rc<CloseReportQueue>) -> SharedCell<Self> {
+        Rc::new(BorrowCell::new(
+            Self {
+                active_mask: BitSet::new(),
+                scopes: Vec::new(),
+                generations: Vec::new(),
+                next_owner_id: 0,
+                free_owner_ids: Vec::new(),
+                epoch: 1,
+                global_queue: VecDeque::new(),
+                worklist: VecDeque::new(),
+                running_queue: false,
+                batch_depth: 0,
+                evaluating: 0,
+                executing: 0,
+                active_leases: 0,
+                initial_flush_depth: 0,
+                close_reports: reporter,
+            },
+            BorrowSite::Scheduler,
+        ))
     }
 
     #[cfg(feature = "test-support")]
@@ -371,17 +425,19 @@ impl GlobalScheduler {
         self.active_mask.set(id, true);
         let index = id as usize;
         if index >= self.scopes.len() {
-            self.scopes.resize_with(index + 1, || None);
+            self.scopes.resize_with(index.saturating_add(1), || None);
         }
         if index >= self.generations.len() {
-            self.generations.resize(index + 1, 0);
+            self.generations.resize(index.saturating_add(1), 0);
         }
-        self.scopes[index] = Some(ScopeEntry {
-            owner,
-            generation,
-            parent,
-            mode,
-        });
+        if let Some(scope) = self.scopes.get_mut(index) {
+            *scope = Some(ScopeEntry {
+                owner,
+                generation,
+                parent,
+                mode,
+            });
+        }
         owner_id
     }
 
@@ -405,13 +461,15 @@ impl GlobalScheduler {
         if entry.generation != id.1 {
             return;
         }
-        if index < self.scopes.len() {
-            self.scopes[index] = None;
+        if let Some(scope) = self.scopes.get_mut(index) {
+            *scope = None;
         }
         if index >= self.generations.len() {
-            self.generations.resize(index + 1, 0);
+            self.generations.resize(index.saturating_add(1), 0);
         }
-        self.generations[index] = id.1.wrapping_add(1);
+        if let Some(generation) = self.generations.get_mut(index) {
+            *generation = id.1.wrapping_add(1);
+        }
         self.free_owner_ids.push(id.0);
     }
 
@@ -543,6 +601,13 @@ impl GlobalScheduler {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::arithmetic_side_effects,
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        clippy::panic
+    )]
+
     use super::*;
     use crate::runtime::ScopeState;
 
@@ -556,11 +621,21 @@ mod tests {
                 owner_id: OwnerId::initial(0),
                 node: NodeId::DANGLING,
             }),
-        );
-        let untracked = ObserverFrame::push_untracked(untracked_scheduler.clone());
+        )
+        .expect("observer frame setup");
+        let untracked = ObserverFrame::push_untracked(untracked_scheduler.clone())
+            .expect("untracked frame setup");
 
-        assert!(active_ctx(&tracked_scheduler).is_some_and(|context| context.observer.is_some()));
-        assert!(active_ctx(&untracked_scheduler).is_some_and(|context| context.observer.is_none()));
+        assert!(
+            active_ctx(&tracked_scheduler)
+                .expect("active context read")
+                .is_some_and(|context| context.observer.is_some())
+        );
+        assert!(
+            active_ctx(&untracked_scheduler)
+                .expect("active context read")
+                .is_some_and(|context| context.observer.is_none())
+        );
 
         drop(untracked);
         drop(observer);
@@ -576,9 +651,12 @@ mod tests {
                 owner_id: OwnerId::initial(0),
                 node: NodeId::DANGLING,
             }),
-        );
+        )
+        .expect("observer frame setup");
 
-        let context = active_ctx(&source_scheduler).expect("foreign observer context");
+        let context = active_ctx(&source_scheduler)
+            .expect("active context read")
+            .expect("foreign observer context");
         assert_eq!(
             context.observer.expect("observer").owner_id,
             OwnerId::initial(0)
@@ -593,13 +671,18 @@ mod tests {
         let scheduler = GlobalScheduler::new();
         let first = ScopeState::new(OwnerId::initial(0), scheduler.clone());
         let first_id = scheduler
-            .borrow_mut()
+            .try_borrow_mut()
+            .expect("scheduler write")
             .alloc_owner(&first, None, OwnerMode::Transient);
-        first.borrow_mut().owner_id = first_id;
-        scheduler.borrow_mut().deactivate_scope(first_id);
+        first.try_borrow_mut().expect("state write").owner_id = first_id;
+        scheduler
+            .try_borrow_mut()
+            .expect("scheduler write")
+            .deactivate_scope(first_id);
         assert!(
             scheduler
-                .borrow()
+                .try_borrow()
+                .expect("scheduler read")
                 .get_scope_for_edge_cleanup(first_id)
                 .expect("cleanup proof lookup")
                 .is_some()
@@ -607,14 +690,19 @@ mod tests {
 
         let second = ScopeState::new(OwnerId::initial(0), scheduler.clone());
         let second_id = scheduler
-            .borrow_mut()
+            .try_borrow_mut()
+            .expect("scheduler write")
             .alloc_owner(&second, None, OwnerMode::Transient);
         assert_ne!(first_id, second_id);
 
-        scheduler.borrow_mut().release_owner_id(first_id);
+        scheduler
+            .try_borrow_mut()
+            .expect("scheduler write")
+            .release_owner_id(first_id);
         assert!(
             scheduler
-                .borrow()
+                .try_borrow()
+                .expect("scheduler read")
                 .get_scope_for_edge_cleanup(first_id)
                 .expect("released owner lookup")
                 .is_none()
@@ -622,15 +710,28 @@ mod tests {
 
         let third = ScopeState::new(OwnerId::initial(0), scheduler.clone());
         let third_id = scheduler
-            .borrow_mut()
+            .try_borrow_mut()
+            .expect("scheduler write")
             .alloc_owner(&third, None, OwnerMode::Transient);
 
         assert_eq!(first_id.0, third_id.0);
         assert_ne!(first_id.1, third_id.1);
 
-        scheduler.borrow_mut().deactivate_scope(second_id);
-        scheduler.borrow_mut().release_owner_id(second_id);
-        scheduler.borrow_mut().deactivate_scope(third_id);
-        scheduler.borrow_mut().release_owner_id(third_id);
+        scheduler
+            .try_borrow_mut()
+            .expect("scheduler write")
+            .deactivate_scope(second_id);
+        scheduler
+            .try_borrow_mut()
+            .expect("scheduler write")
+            .release_owner_id(second_id);
+        scheduler
+            .try_borrow_mut()
+            .expect("scheduler write")
+            .deactivate_scope(third_id);
+        scheduler
+            .try_borrow_mut()
+            .expect("scheduler write")
+            .release_owner_id(third_id);
     }
 }

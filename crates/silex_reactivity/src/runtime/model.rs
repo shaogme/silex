@@ -9,6 +9,7 @@ use super::{
 };
 use crate::{
     ReactiveError, ReactiveResult,
+    borrow::{BorrowCell, BorrowRef, BorrowRefMut, BorrowSite, SharedCell},
     error::{ErrorHandlerEntry, ErrorHandlerKey},
     handle::NodeKindTag,
     internal::NodeId,
@@ -16,7 +17,6 @@ use crate::{
 };
 use slotmap::{SecondaryMap, SlotMap};
 use std::{
-    cell::{Ref, RefCell, RefMut},
     collections::{HashMap, HashSet, hash_map},
     mem::{size_of, take},
     panic::{AssertUnwindSafe, catch_unwind},
@@ -24,7 +24,7 @@ use std::{
 };
 
 #[cfg(feature = "test-support")]
-use super::scheduler::active_observer_for;
+use super::scheduler::{active_observer_for, observer_recovery_failures};
 
 slotmap::new_key_type! {
     pub(crate) struct EdgeId;
@@ -284,7 +284,7 @@ impl Iterator for EdgeIter<'_> {
 /// Reactive graph nodes, scheduling state, and stable storage owned by one lexical scope.
 pub(crate) struct ScopeStateInner<'scope> {
     pub(crate) owner_id: OwnerId,
-    pub(crate) scheduler: Rc<RefCell<GlobalScheduler>>,
+    pub(crate) scheduler: SharedCell<GlobalScheduler>,
     pub(crate) phase: ScopePhase,
     pub(crate) nodes: SlotMap<NodeId, NodeCore>,
     pub(crate) data: SecondaryMap<NodeId, NodeData<'scope>>,
@@ -301,48 +301,45 @@ pub(crate) struct ScopeStateInner<'scope> {
 /// A reference-counted wrapper around the inner scope state.
 #[derive(Clone)]
 pub(crate) struct ScopeState<'scope> {
-    pub(crate) inner: Rc<RefCell<ScopeStateInner<'scope>>>,
+    pub(crate) inner: SharedCell<ScopeStateInner<'scope>>,
 }
 
 impl<'scope> ScopeState<'scope> {
-    pub(crate) fn new(owner_id: OwnerId, scheduler: Rc<RefCell<GlobalScheduler>>) -> Self {
+    pub(crate) fn new(owner_id: OwnerId, scheduler: SharedCell<GlobalScheduler>) -> Self {
         Self {
-            inner: Rc::new(RefCell::new(ScopeStateInner::new(owner_id, scheduler))),
+            inner: Rc::new(BorrowCell::new(
+                ScopeStateInner::new(owner_id, scheduler),
+                BorrowSite::ScopeState,
+            )),
         }
     }
 
-    pub(crate) fn from_inner(inner: Rc<RefCell<ScopeStateInner<'scope>>>) -> Self {
+    pub(crate) fn from_inner(inner: SharedCell<ScopeStateInner<'scope>>) -> Self {
         Self { inner }
     }
 
-    pub(crate) fn into_inner(self) -> Rc<RefCell<ScopeStateInner<'scope>>> {
+    pub(crate) fn into_inner(self) -> SharedCell<ScopeStateInner<'scope>> {
         self.inner
     }
 
-    pub(crate) fn inner(&self) -> &Rc<RefCell<ScopeStateInner<'scope>>> {
+    pub(crate) fn inner(&self) -> &SharedCell<ScopeStateInner<'scope>> {
         &self.inner
     }
 
-    pub(crate) fn try_borrow(&self) -> Result<Ref<'_, ScopeStateInner<'scope>>, ReactiveError> {
+    pub(crate) fn try_borrow(
+        &self,
+    ) -> Result<BorrowRef<'_, ScopeStateInner<'scope>>, ReactiveError> {
         self.inner
-            .try_borrow()
+            .try_read()
             .map_err(|_| ReactiveError::BorrowConflict)
     }
 
     pub(crate) fn try_borrow_mut(
         &self,
-    ) -> Result<RefMut<'_, ScopeStateInner<'scope>>, ReactiveError> {
+    ) -> Result<BorrowRefMut<'_, ScopeStateInner<'scope>>, ReactiveError> {
         self.inner
-            .try_borrow_mut()
+            .try_write()
             .map_err(|_| ReactiveError::BorrowConflict)
-    }
-
-    pub(crate) fn borrow(&self) -> Ref<'_, ScopeStateInner<'scope>> {
-        self.inner.borrow()
-    }
-
-    pub(crate) fn borrow_mut(&self) -> RefMut<'_, ScopeStateInner<'scope>> {
-        self.inner.borrow_mut()
     }
 
     pub(crate) fn drop_error_handlers(
@@ -379,10 +376,11 @@ pub struct RuntimeSnapshot {
     pub live_error_slots: usize,
     pub unhandled_close_errors: usize,
     pub dropped_close_reports: usize,
+    pub observer_recovery_failures: usize,
 }
 
 impl<'scope> ScopeStateInner<'scope> {
-    pub(crate) fn new(owner_id: OwnerId, scheduler: Rc<RefCell<GlobalScheduler>>) -> Self {
+    pub(crate) fn new(owner_id: OwnerId, scheduler: SharedCell<GlobalScheduler>) -> Self {
         Self {
             owner_id,
             scheduler,
@@ -401,26 +399,27 @@ impl<'scope> ScopeStateInner<'scope> {
     }
 
     #[cfg(feature = "test-support")]
-    pub(crate) fn runtime_snapshot(&self) -> RuntimeSnapshot {
-        let cleanups = self.root_cleanups.len()
-            + self
-                .data
+    pub(crate) fn runtime_snapshot(&self) -> ReactiveResult<RuntimeSnapshot> {
+        let cleanups = self.root_cleanups.len().saturating_add(
+            self.data
                 .values()
                 .map(|data| data.cleanups.len())
-                .sum::<usize>();
-        let scheduler = self.scheduler.borrow();
+                .sum::<usize>(),
+        );
+        let scheduler = self
+            .scheduler
+            .try_borrow()
+            .map_err(|_| ReactiveError::BorrowConflict)?;
         let active_owners = scheduler.active_owner_ids().len();
-        let closing_owners = scheduler
-            .active_owner_ids()
-            .into_iter()
-            .filter_map(|id| scheduler.get_scope_for_edge_cleanup(id).ok().flatten())
-            .filter(|state| {
-                state
-                    .try_borrow()
-                    .is_ok_and(|state| state.phase != ScopePhase::Active)
-            })
-            .count();
-        RuntimeSnapshot {
+        let mut closing_owners: usize = 0;
+        for id in scheduler.active_owner_ids() {
+            if let Some(state) = scheduler.get_scope_for_edge_cleanup(id)?
+                && state.try_borrow()?.phase != ScopePhase::Active
+            {
+                closing_owners = closing_owners.saturating_add(1);
+            }
+        }
+        Ok(RuntimeSnapshot {
             nodes: self.nodes.len(),
             data: self.data.len(),
             edges: self.edges.len(),
@@ -431,9 +430,12 @@ impl<'scope> ScopeStateInner<'scope> {
                 .values()
                 .filter(|entry| entry.owner.is_active())
                 .count(),
-            queue: scheduler.global_queue.len() + scheduler.worklist.len(),
+            queue: scheduler
+                .global_queue
+                .len()
+                .saturating_add(scheduler.worklist.len()),
             epoch: scheduler.current_epoch(),
-            observer: active_observer_for(&self.scheduler).is_some(),
+            observer: active_observer_for(&self.scheduler)?.is_some(),
             running_queue: scheduler.running_queue,
             active_owners,
             closing_owners,
@@ -445,9 +447,10 @@ impl<'scope> ScopeStateInner<'scope> {
             retained_children: 0,
             live_typed_slots: 0,
             live_error_slots: 0,
-            unhandled_close_errors: scheduler.close_reports.len(),
+            unhandled_close_errors: scheduler.close_reports.len()?,
             dropped_close_reports: scheduler.dropped_close_reports(),
-        }
+            observer_recovery_failures: observer_recovery_failures(),
+        })
     }
 
     pub(crate) fn parent_for_new_node(&self) -> Option<NodeId> {
@@ -535,23 +538,27 @@ impl<'scope> ScopeStateInner<'scope> {
     pub(crate) fn register_node(
         &mut self,
         node: NodeCore,
-        make_data: impl FnOnce() -> NodeData<'scope>,
+        make_data: impl FnOnce() -> ReactiveResult<NodeData<'scope>>,
     ) -> ReactiveResult<NodeId> {
         self.ensure_active()?;
         let parent = node.parent;
+        let data = make_data()?;
         let id = self.nodes.insert(node);
-        self.data.insert(id, make_data());
+        self.data.insert(id, data);
         self.adjacency.insert(id, NodeAdjacency::new());
         self.link_child(parent, id);
         Ok(id)
     }
 
-    pub(crate) fn is_active(&self) -> bool {
-        self.phase == ScopePhase::Active
-            && self
-                .scheduler
-                .try_borrow()
-                .is_ok_and(|scheduler| scheduler.is_scope_active(self.owner_id))
+    pub(crate) fn is_active(&self) -> ReactiveResult<bool> {
+        if self.phase != ScopePhase::Active {
+            return Ok(false);
+        }
+        Ok(self
+            .scheduler
+            .try_borrow()
+            .map_err(|_| ReactiveError::BorrowConflict)?
+            .is_scope_active(self.owner_id))
     }
 
     pub(crate) fn try_is_active(&self) -> ReactiveResult<bool> {
@@ -638,17 +645,21 @@ impl<'scope> ScopeStateInner<'scope> {
         Ok(TypedNodeRef::from_pointer(identity))
     }
 
-    pub(crate) fn mark_notified(&mut self, id: NodeId) -> bool {
-        if !self.is_active() {
-            return false;
+    pub(crate) fn mark_notified(&mut self, id: NodeId) -> ReactiveResult<bool> {
+        if !self.try_is_active()? {
+            return Ok(false);
         }
-        let epoch = self.scheduler.borrow_mut().next_epoch();
+        let epoch = self
+            .scheduler
+            .try_borrow_mut()
+            .map_err(|_| ReactiveError::BorrowConflict)?
+            .next_epoch();
         let Some(node) = self.nodes.get_mut(id) else {
-            return false;
+            return Ok(false);
         };
         node.updated_epoch = epoch;
         node.version = node.version.wrapping_add(1);
-        true
+        Ok(true)
     }
 
     pub(crate) fn validate_node_kind(
@@ -677,12 +688,16 @@ impl<'scope> ScopeStateInner<'scope> {
         value: TypedSlotAllocation<'scope, T>,
     ) -> ReactiveResult<NodeId> {
         let parent = self.parent_for_new_node();
-        let epoch = self.scheduler.borrow().current_epoch();
+        let epoch = self
+            .scheduler
+            .try_borrow()
+            .map_err(|_| ReactiveError::BorrowConflict)?
+            .current_epoch();
         let mut node = NodeCore::new(NodeKindTag::Signal, parent, NodeState::Clean);
         node.updated_epoch = epoch;
         node.last_computed_epoch = epoch;
         self.register_node(node, move || {
-            NodeData::new(Rc::new(NodeStorage::value(value)))
+            Ok(NodeData::new(Rc::new(NodeStorage::value(value)?)))
         })
     }
 
@@ -697,8 +712,8 @@ impl<'scope> ScopeStateInner<'scope> {
             ComputationParent::Detached => None,
         };
         self.register_node(NodeCore::new(kind, parent, NodeState::Dirty), move || {
-            NodeData::new(Rc::new(NodeStorage::Computation(ComputationStorage::new(
-                callback,
+            Ok(NodeData::new(Rc::new(NodeStorage::Computation(
+                ComputationStorage::new(callback)?,
             ))))
         })
     }
@@ -710,7 +725,7 @@ impl<'scope> ScopeStateInner<'scope> {
         let parent = self.parent_for_new_node();
         self.register_node(
             NodeCore::new(NodeKindTag::Stored, parent, NodeState::Clean),
-            move || NodeData::new(Rc::new(NodeStorage::value(value))),
+            move || Ok(NodeData::new(Rc::new(NodeStorage::value(value)?))),
         )
     }
 
@@ -721,7 +736,7 @@ impl<'scope> ScopeStateInner<'scope> {
         let parent = self.parent_for_new_node();
         self.register_node(
             NodeCore::new(NodeKindTag::Callback, parent, NodeState::Clean),
-            move || NodeData::new(Rc::new(NodeStorage::callback(callback))),
+            move || Ok(NodeData::new(Rc::new(NodeStorage::callback(callback)?))),
         )
     }
 
@@ -732,7 +747,7 @@ impl<'scope> ScopeStateInner<'scope> {
         let parent = self.parent_for_new_node();
         self.register_node(
             NodeCore::new(NodeKindTag::NodeRef, parent, NodeState::Clean),
-            move || NodeData::new(Rc::new(NodeStorage::value(value))),
+            move || Ok(NodeData::new(Rc::new(NodeStorage::value(value)?))),
         )
     }
 
@@ -802,30 +817,33 @@ impl<'scope> ScopeStateInner<'scope> {
         panics
     }
 
-    pub(crate) fn has_value(&self, id: NodeId) -> bool {
+    pub(crate) fn has_value(&self, id: NodeId) -> ReactiveResult<bool> {
         let Some(node) = self.nodes.get(id) else {
-            return false;
+            return Ok(false);
         };
         match node.kind {
-            NodeKindTag::Signal => true,
-            NodeKindTag::Computed => self
-                .data
-                .get(id)
-                .and_then(|data| match data.storage.as_ref() {
-                    NodeStorage::Computation(storage) => storage.computation.try_peek(|behavior| {
-                        behavior
-                            .as_ref()
-                            .is_some_and(|behavior| behavior.has_value())
-                    }),
-                    _ => None,
-                })
-                .unwrap_or(false),
-            _ => false,
+            NodeKindTag::Signal => Ok(true),
+            NodeKindTag::Computed => {
+                let Some(data) = self.data.get(id) else {
+                    return Ok(false);
+                };
+                let NodeStorage::Computation(storage) = data.storage.as_ref() else {
+                    return Ok(false);
+                };
+                let value = storage
+                    .computation
+                    .try_peek(|behavior| match behavior.as_ref() {
+                        Some(behavior) => behavior.has_value(),
+                        None => Ok(false),
+                    })?;
+                Ok(value.ok_or(ReactiveError::InvariantViolation)??)
+            }
+            _ => Ok(false),
         }
     }
 
     fn ensure_active(&self) -> Result<(), ReactiveError> {
-        if self.is_active() {
+        if self.try_is_active()? {
             Ok(())
         } else {
             Err(ReactiveError::NoSuchNode)
@@ -865,7 +883,7 @@ impl<'scope> ScopeStateInner<'scope> {
         &self,
         id: NodeId,
     ) -> ReactiveResult<(Rc<NodeStorage<'scope>>, StoredAccessMode)> {
-        let mode = if self.is_active() {
+        let mode = if self.try_is_active()? {
             StoredAccessMode::Active
         } else if self.allows_final_cleanup_stored_access() {
             StoredAccessMode::RunningCleanup

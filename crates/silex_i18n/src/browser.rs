@@ -409,9 +409,9 @@ mod tests {
                     .locale(Locale::new("en-US").expect("valid locale"))
                     .build()
                     .expect("valid i18n store");
-                let before = owner.runtime_snapshot();
+                let before = owner.runtime_snapshot().expect("runtime snapshot");
                 let effect = sync_document_metadata(store).expect("metadata effect can be created");
-                assert_eq!(owner.runtime_snapshot(), before);
+                assert_eq!(owner.runtime_snapshot().expect("runtime snapshot"), before);
                 assert!(!effect.stop().expect("inactive effect can stop"));
             })
             .expect("transient owner");

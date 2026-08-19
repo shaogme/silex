@@ -1,6 +1,7 @@
 //! Explicit runtime operation errors and typed callback error channels.
 
 use crate::{
+    borrow::{BorrowCell, BorrowFailure, BorrowSite},
     owner::ScopeStorage,
     root::CloseError,
     runtime::{
@@ -9,12 +10,7 @@ use crate::{
     },
     unsafe_boundary::{ActiveOwnerProof, ScopedPtr, WeakOwnerToken},
 };
-use std::{
-    cell::{Cell, RefCell},
-    fmt,
-    marker::PhantomData,
-    rc::Rc,
-};
+use std::{cell::Cell, fmt, marker::PhantomData, rc::Rc};
 
 slotmap::new_key_type! {
     pub(crate) struct ErrorHandlerKey;
@@ -68,6 +64,13 @@ impl fmt::Display for ReactiveError {
 impl std::error::Error for ReactiveError {}
 
 pub type ReactiveResult<T> = Result<T, ReactiveError>;
+
+impl From<BorrowFailure> for ReactiveError {
+    fn from(failure: BorrowFailure) -> Self {
+        let _site = failure.site();
+        Self::BorrowConflict
+    }
+}
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum CallbackInvokeError<E> {
@@ -220,25 +223,30 @@ pub(crate) fn map_callback_error<E>(error: CallbackThunkError<E>) -> CallbackInv
 
 /// A typed error slot owned by the computation and any in-flight error event.
 pub(crate) struct ErrorSlot<E> {
-    value: RefCell<Option<E>>,
+    value: BorrowCell<Option<E>>,
 }
 
 impl<E> ErrorSlot<E> {
     pub(crate) fn new() -> Self {
         Self {
-            value: RefCell::new(None),
+            value: BorrowCell::new(None, BorrowSite::Payload),
         }
     }
 
-    pub(crate) fn store(&self, error: E) {
-        *self.value.borrow_mut() = Some(error);
+    pub(crate) fn store(&self, error: E) -> ReactiveResult<()> {
+        *self
+            .value
+            .try_write()
+            .map_err(|_| ReactiveError::BorrowConflict)? = Some(error);
+        Ok(())
     }
 
-    pub(crate) fn take(&self) -> E {
+    pub(crate) fn take(&self) -> ReactiveResult<E> {
         self.value
-            .borrow_mut()
+            .try_write()
+            .map_err(|_| ReactiveError::BorrowConflict)?
             .take()
-            .expect("typed error slot was not populated")
+            .ok_or(ReactiveError::InvariantViolation)
     }
 }
 
@@ -279,11 +287,11 @@ impl<'scope, E> ErrorSlotOwner<'scope, E> {
         }
     }
 
-    pub(crate) fn store(&self, error: E) {
-        self.inner.slot.store(error);
+    pub(crate) fn store(&self, error: E) -> ReactiveResult<()> {
+        self.inner.slot.store(error)
     }
 
-    pub(crate) fn take(&self) -> E {
+    pub(crate) fn take(&self) -> ReactiveResult<E> {
         self.inner.slot.take()
     }
 }
@@ -339,7 +347,7 @@ impl<E> Drop for InFlightGuard<'_, '_, E> {
 /// A heap-owned typed callback record. The registry keeps a type-erased owner
 /// for lifecycle bookkeeping, while all callback invocation remains typed.
 pub(crate) struct HandlerRecord<'scope, E> {
-    callback: RefCell<Option<ErrorHandlerCallback<'scope, E>>>,
+    callback: BorrowCell<Option<ErrorHandlerCallback<'scope, E>>>,
     state: Cell<HandlerState>,
     strong_count: Cell<usize>,
     lease_count: Cell<usize>,
@@ -355,7 +363,7 @@ impl<'scope, E> HandlerRecord<'scope, E> {
         F: Fn(E) + 'scope,
     {
         Self {
-            callback: RefCell::new(Some(Box::new(callback))),
+            callback: BorrowCell::new(Some(Box::new(callback)), BorrowSite::Handler),
             state: Cell::new(HandlerState::Active),
             strong_count: Cell::new(1),
             lease_count: Cell::new(0),
@@ -512,14 +520,13 @@ impl<'scope, E> HandlerRecord<'scope, E> {
             Ok(state) => (state.owner_id, state.scheduler.clone()),
             Err(_) => return false,
         };
-        let Some(state) = scheduler
-            .try_borrow()
-            .ok()
-            .and_then(|scheduler| scheduler.resolve_cleanup_owner(owner_id).ok())
-            .flatten()
-            .map(|proof| proof.state())
-        else {
-            return false;
+        let scheduler = match scheduler.try_borrow() {
+            Ok(scheduler) => scheduler,
+            Err(_) => return false,
+        };
+        let state = match scheduler.resolve_cleanup_owner(owner_id) {
+            Ok(Some(proof)) => proof.state(),
+            Ok(None) | Err(_) => return false,
         };
         if let Ok(mut state) = state.try_borrow_mut() {
             state.remove_error_handler(key, self.identity());
@@ -543,8 +550,10 @@ impl<'scope, E> HandlerRecord<'scope, E> {
 
 impl<E> Drop for HandlerRecord<'_, E> {
     fn drop(&mut self) {
-        let callback = self.callback.get_mut().take();
-        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(callback)));
+        if let Ok(mut callback) = self.callback.try_write() {
+            let callback = callback.take();
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(callback)));
+        }
     }
 }
 
@@ -866,6 +875,17 @@ pub(crate) struct ErrorEvent<'scope> {
 }
 
 impl<'scope> ErrorEvent<'scope> {
+    pub(crate) fn invariant(phase: &'static str) -> Self {
+        Self {
+            dispatch: Some(Box::new(move |_| {
+                Err(HandlerError::new(
+                    ReactiveError::InvariantViolation,
+                    ErrorContext::new(phase),
+                ))
+            })),
+        }
+    }
+
     pub(crate) fn new<E: 'scope>(
         error: E,
         handler: &HandlerLease<'scope, E>,
@@ -875,9 +895,18 @@ impl<'scope> ErrorEvent<'scope> {
         let mut error = Some(error);
         Self {
             dispatch: Some(Box::new(move |phase| {
-                let error = error.take().expect("callback error event dispatched twice");
+                let Some(error) = error.take() else {
+                    return Err(HandlerError::new(
+                        ReactiveError::InvariantViolation,
+                        ErrorContext::new("error event"),
+                    ));
+                };
                 match phase {
-                    ErrorPhase::Initial | ErrorPhase::Read => slot.store(error),
+                    ErrorPhase::Initial | ErrorPhase::Read => {
+                        slot.store(error).map_err(|error| {
+                            HandlerError::new(error, ErrorContext::new("error slot"))
+                        })?
+                    }
                     ErrorPhase::Deferred => handler.handle(error)?,
                 }
                 Ok(())
@@ -890,17 +919,24 @@ impl<'scope> ErrorEvent<'scope> {
         let mut error = Some(error);
         Self {
             dispatch: Some(Box::new(move |_| {
-                let error = error.take().expect("cleanup error event dispatched twice");
+                let Some(error) = error.take() else {
+                    return Err(HandlerError::new(
+                        ReactiveError::InvariantViolation,
+                        ErrorContext::new("deferred error event"),
+                    ));
+                };
                 handler.handle(error)
             })),
         }
     }
 
     pub(crate) fn dispatch(mut self, phase: ErrorPhase) -> Result<(), HandlerError> {
-        let dispatch = self
-            .dispatch
-            .take()
-            .expect("callback error event dispatched twice");
+        let Some(dispatch) = self.dispatch.take() else {
+            return Err(HandlerError::new(
+                ReactiveError::InvariantViolation,
+                ErrorContext::new("error event dispatch"),
+            ));
+        };
         dispatch(phase)
     }
 

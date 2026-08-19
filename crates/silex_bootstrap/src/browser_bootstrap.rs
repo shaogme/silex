@@ -85,7 +85,7 @@ impl BrowserBootstrap {
     }
 
     /// Return whether an application is currently active.
-    pub fn is_active(&self) -> bool {
+    pub fn is_active(&self) -> SilexResult<bool> {
         self.controller.is_active()
     }
 

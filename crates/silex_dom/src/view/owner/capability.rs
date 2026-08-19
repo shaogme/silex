@@ -453,12 +453,15 @@ impl<'scope> MountOwnerToken<'scope> {
             }))
     }
 
-    pub(crate) fn is_active(&self) -> bool {
-        self.state.active.get() && self.context.access().is_active()
+    pub(crate) fn is_active(&self) -> SilexResult<bool> {
+        if !self.state.active.get() {
+            return Ok(false);
+        }
+        self.context.access().is_active()
     }
 
     #[doc(hidden)]
-    pub fn with_runtime<R>(&self, f: impl FnOnce() -> R) -> R {
+    pub fn with_runtime<R>(&self, f: impl FnOnce() -> R) -> SilexResult<R> {
         self.context.access().untrack(f)
     }
 
@@ -535,7 +538,7 @@ impl<'scope> MountOwnerToken<'scope> {
     }
 
     fn ensure_active(&self) -> SilexResult<()> {
-        if self.is_active() {
+        if self.is_active()? {
             Ok(())
         } else {
             Err(SilexError::fatal(ReactiveError::NoSuchNode))

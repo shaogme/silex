@@ -105,7 +105,7 @@ mod tests {
                     .expect("valid i18n store");
                 let first = store;
                 let second = store;
-                let before_nodes = owner.runtime_snapshot();
+                let before_nodes = owner.runtime_snapshot().expect("runtime snapshot");
 
                 let first_translation = t!(first, "first").expect("first memo");
                 let second_translation = t!(second, "second").expect("second memo");
@@ -124,9 +124,15 @@ mod tests {
                 #[cfg(feature = "browser")]
                 let _metadata = second.sync_document_metadata().expect("metadata effect");
 
-                assert_eq!(owner.runtime_snapshot().handlers, before_nodes.handlers);
+                assert_eq!(
+                    owner.runtime_snapshot().expect("runtime snapshot").handlers,
+                    before_nodes.handlers
+                );
                 drop(handler);
-                assert_eq!(owner.runtime_snapshot().handlers, 0);
+                assert_eq!(
+                    owner.runtime_snapshot().expect("runtime snapshot").handlers,
+                    0
+                );
                 assert_eq!(first_translation.get().expect("first translation"), "first");
                 assert_eq!(
                     second_translation.get().expect("second translation"),
@@ -657,7 +663,7 @@ mod tests {
                 .signal(locale("en-US"))
                 .expect("foreign source");
             target_root.with_access(|target_owner| {
-                let before = target_owner.runtime_snapshot();
+                let before = target_owner.runtime_snapshot().expect("runtime snapshot");
                 let error = target_owner
                     .validate_runtime(&source)
                     .expect_err("foreign source should be rejected");
@@ -665,7 +671,10 @@ mod tests {
                     error,
                     SilexError::Fatal(SilexErrorKind::Reactivity(ReactiveError::RuntimeMismatch,))
                 ));
-                assert_eq!(target_owner.runtime_snapshot(), before);
+                assert_eq!(
+                    target_owner.runtime_snapshot().expect("runtime snapshot"),
+                    before
+                );
             });
         });
 

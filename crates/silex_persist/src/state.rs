@@ -180,7 +180,7 @@ where
     }
 
     fn validate_owner(&self) -> Result<(), PersistenceError> {
-        if self.owner.is_active() {
+        if self.owner.is_active().map_err(PersistenceError::from)? {
             Ok(())
         } else {
             Err(PersistenceError::Fatal(PersistenceErrorKind::Reactivity(

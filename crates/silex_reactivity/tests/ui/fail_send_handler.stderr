@@ -44,13 +44,13 @@ note: required by a bound in `require_send`
 3 | fn require_send<T: Send>() {}
   |                    ^^^^ required by this bound in `require_send`
 
-error[E0277]: `Rc<RefCell<silex_reactivity::runtime::model::ScopeStateInner<'static>>>` cannot be shared between threads safely
+error[E0277]: `Rc<silex_reactivity::borrow::BorrowCell<silex_reactivity::runtime::model::ScopeStateInner<'static>>>` cannot be shared between threads safely
  --> tests/ui/fail_send_handler.rs:6:20
   |
 6 |     require_send::<ErrorHandlerToken<'static, ()>>();
-  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Rc<RefCell<silex_reactivity::runtime::model::ScopeStateInner<'static>>>` cannot be shared between threads safely
+  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Rc<silex_reactivity::borrow::BorrowCell<silex_reactivity::runtime::model::ScopeStateInner<'static>>>` cannot be shared between threads safely
   |
-  = help: within `silex_reactivity::owner::storage::ScopeStorage`, the trait `Sync` is not implemented for `Rc<RefCell<silex_reactivity::runtime::model::ScopeStateInner<'static>>>`
+  = help: within `silex_reactivity::owner::storage::ScopeStorage`, the trait `Sync` is not implemented for `Rc<silex_reactivity::borrow::BorrowCell<silex_reactivity::runtime::model::ScopeStateInner<'static>>>`
 note: required because it appears within the type `silex_reactivity::owner::storage::ScopeStorage`
  --> src/owner/storage.rs
   |
@@ -131,14 +131,13 @@ note: required by a bound in `require_send`
 3 | fn require_send<T: Send>() {}
   |                    ^^^^ required by this bound in `require_send`
 
-error[E0277]: `RefCell<Option<silex_reactivity::owner::storage::ParentLink>>` cannot be shared between threads safely
+error[E0277]: `Rc<silex_reactivity::runtime::scheduler::CloseReportQueue>` cannot be shared between threads safely
  --> tests/ui/fail_send_handler.rs:6:20
   |
 6 |     require_send::<ErrorHandlerToken<'static, ()>>();
-  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `RefCell<Option<silex_reactivity::owner::storage::ParentLink>>` cannot be shared between threads safely
+  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Rc<silex_reactivity::runtime::scheduler::CloseReportQueue>` cannot be shared between threads safely
   |
-  = help: within `silex_reactivity::owner::storage::ScopeStorage`, the trait `Sync` is not implemented for `RefCell<Option<silex_reactivity::owner::storage::ParentLink>>`
-  = note: if you want to do aliasing and mutation between multiple threads, use `std::sync::RwLock` instead
+  = help: within `silex_reactivity::owner::storage::ScopeStorage`, the trait `Sync` is not implemented for `Rc<silex_reactivity::runtime::scheduler::CloseReportQueue>`
 note: required because it appears within the type `silex_reactivity::owner::storage::ScopeStorage`
  --> src/owner/storage.rs
   |
@@ -161,13 +160,19 @@ note: required by a bound in `require_send`
 3 | fn require_send<T: Send>() {}
   |                    ^^^^ required by this bound in `require_send`
 
-error[E0277]: `Rc<silex_reactivity::runtime::scheduler::CloseReportQueue>` cannot be shared between threads safely
+error[E0277]: `RefCell<Option<silex_reactivity::owner::storage::ParentLink>>` cannot be shared between threads safely
  --> tests/ui/fail_send_handler.rs:6:20
   |
 6 |     require_send::<ErrorHandlerToken<'static, ()>>();
-  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Rc<silex_reactivity::runtime::scheduler::CloseReportQueue>` cannot be shared between threads safely
+  |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `RefCell<Option<silex_reactivity::owner::storage::ParentLink>>` cannot be shared between threads safely
   |
-  = help: within `silex_reactivity::owner::storage::ScopeStorage`, the trait `Sync` is not implemented for `Rc<silex_reactivity::runtime::scheduler::CloseReportQueue>`
+  = help: within `silex_reactivity::owner::storage::ScopeStorage`, the trait `Sync` is not implemented for `RefCell<Option<silex_reactivity::owner::storage::ParentLink>>`
+  = note: if you want to do aliasing and mutation between multiple threads, use `std::sync::RwLock` instead
+note: required because it appears within the type `silex_reactivity::borrow::BorrowCell<Option<silex_reactivity::owner::storage::ParentLink>>`
+ --> src/borrow.rs
+  |
+  | pub(crate) struct BorrowCell<T> {
+  |                   ^^^^^^^^^^
 note: required because it appears within the type `silex_reactivity::owner::storage::ScopeStorage`
  --> src/owner/storage.rs
   |

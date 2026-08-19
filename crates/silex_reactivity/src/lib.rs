@@ -17,6 +17,7 @@
 
 #![deny(unreachable_pub)]
 
+mod borrow;
 mod completion;
 mod error;
 mod handle;

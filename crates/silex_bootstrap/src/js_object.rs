@@ -63,8 +63,10 @@ impl Drop for JsAppHost {
 #[wasm_bindgen]
 impl JsAppHost {
     /// Return whether the wrapped host currently owns an active application.
-    pub fn is_active(&self) -> bool {
-        self.host().is_active()
+    pub fn is_active(&self) -> Result<bool, JsValue> {
+        self.host()
+            .is_active()
+            .map_err(|error| JsValue::from_str(&error.to_string()))
     }
 
     /// Return the stable lowercase host state used by the JavaScript API.

@@ -1,3 +1,10 @@
+#![allow(
+    clippy::arithmetic_side_effects,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic
+)]
+
 use silex_reactivity::Runtime;
 use std::{cell::Cell, rc::Rc};
 
@@ -310,18 +317,30 @@ fn retired_handlers_are_excluded_from_active_snapshots() {
                 .error_handler(|_: ()| {})
                 .expect("handler registration");
             let view = token.view();
-            assert_eq!(scope.runtime_snapshot().handlers, 1);
+            assert_eq!(
+                scope.runtime_snapshot().expect("runtime snapshot").handlers,
+                1
+            );
 
             drop(token);
-            assert_eq!(scope.runtime_snapshot().handlers, 0);
+            assert_eq!(
+                scope.runtime_snapshot().expect("runtime snapshot").handlers,
+                0
+            );
             assert!(view.handle(()).is_err());
 
             let replacement = scope
                 .error_handler(|_: ()| {})
                 .expect("replacement handler registration");
-            assert_eq!(scope.runtime_snapshot().handlers, 1);
+            assert_eq!(
+                scope.runtime_snapshot().expect("runtime snapshot").handlers,
+                1
+            );
             drop(replacement);
-            assert_eq!(scope.runtime_snapshot().handlers, 0);
+            assert_eq!(
+                scope.runtime_snapshot().expect("runtime snapshot").handlers,
+                0
+            );
         })
         .expect("test operation should succeed");
 }

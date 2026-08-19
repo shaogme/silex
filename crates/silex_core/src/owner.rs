@@ -44,8 +44,10 @@ impl Runtime {
     }
 
     /// Take close diagnostics produced by drop and panic-recovery paths.
-    pub fn take_unhandled_close_errors(&self) -> Vec<CloseError> {
-        self.inner.take_unhandled_close_errors()
+    pub fn take_unhandled_close_errors(&self) -> SilexResult<Vec<CloseError>> {
+        self.inner
+            .take_unhandled_close_errors()
+            .map_err(SilexError::fatal)
     }
 }
 
@@ -91,14 +93,14 @@ impl OwnerHandle {
         self.inner.close()
     }
 
-    pub fn is_active(&self) -> bool {
-        self.inner.is_active()
+    pub fn is_active(&self) -> SilexResult<bool> {
+        self.inner.is_active().map_err(SilexError::fatal)
     }
 
     #[cfg(feature = "test-support")]
     #[doc(hidden)]
-    pub fn runtime_snapshot(&self) -> RuntimeSnapshot {
-        self.inner.runtime_snapshot()
+    pub fn runtime_snapshot(&self) -> SilexResult<RuntimeSnapshot> {
+        self.inner.runtime_snapshot().map_err(SilexError::fatal)
     }
 }
 
@@ -126,8 +128,8 @@ impl<'owner> PersistentOwnerAccess<'owner> {
 
     /// Report whether the child can still accept runtime operations.
     #[doc(hidden)]
-    pub fn is_active(&self) -> bool {
-        self.inner.is_active()
+    pub fn is_active(&self) -> SilexResult<bool> {
+        self.inner.is_active().map_err(SilexError::fatal)
     }
 }
 
@@ -178,8 +180,8 @@ impl<'owner> OwnerAccess<'owner> {
             .map_err(SilexError::fatal)
     }
 
-    pub fn is_active(&self) -> bool {
-        self.inner.is_active()
+    pub fn is_active(&self) -> SilexResult<bool> {
+        self.inner.is_active().map_err(SilexError::fatal)
     }
 
     /// Validate a reactive source before creating target-side nodes.
@@ -187,10 +189,14 @@ impl<'owner> OwnerAccess<'owner> {
     where
         S: RuntimeScoped + ?Sized,
     {
-        if !self.is_active() {
+        if !self.is_active()? {
             return Err(SilexError::fatal(ReactiveError::NoSuchNode));
         }
-        if self.inner.same_runtime(&source.owner_access().inner) {
+        if self
+            .inner
+            .same_runtime(&source.owner_access().inner)
+            .map_err(SilexError::fatal)?
+        {
             Ok(())
         } else {
             Err(SilexError::fatal(ReactiveError::RuntimeMismatch))
@@ -404,7 +410,7 @@ impl<'owner> OwnerAccess<'owner> {
         F: Future<Output = ()> + 'owner,
         H: ErrorHandlerInput<'owner>,
     {
-        if !self.is_active() {
+        if !self.is_active()? {
             return Ok(TaskHandle::inactive());
         }
         let (task, cancel) = task::start(future);
@@ -437,8 +443,8 @@ impl<'owner> OwnerAccess<'owner> {
 
     #[cfg(feature = "test-support")]
     #[doc(hidden)]
-    pub fn runtime_snapshot(&self) -> RuntimeSnapshot {
-        self.inner.runtime_snapshot()
+    pub fn runtime_snapshot(&self) -> SilexResult<RuntimeSnapshot> {
+        self.inner.runtime_snapshot().map_err(SilexError::fatal)
     }
 
     pub fn constant<T: 'owner>(&self, value: T) -> SilexResult<Rx<'owner, T>> {
@@ -446,8 +452,8 @@ impl<'owner> OwnerAccess<'owner> {
         Ok(Rx::from_stored(stored))
     }
 
-    pub fn untrack<R>(&self, f: impl FnOnce() -> R) -> R {
-        self.inner.untrack(f)
+    pub fn untrack<R>(&self, f: impl FnOnce() -> R) -> SilexResult<R> {
+        self.inner.untrack(f).map_err(SilexError::fatal)
     }
 
     pub fn batch<R>(&self, f: impl FnOnce() -> R) -> SilexResult<R> {

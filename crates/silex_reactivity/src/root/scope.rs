@@ -236,7 +236,8 @@ impl CloseError {
                 failure: entry.failure,
             })
             .collect();
-        Self::from_entries(entries).expect("a close error must contain a failure")
+        Self::from_entries(entries)
+            .unwrap_or_else(|| Self::from_panic(Box::new("close error context lost its failure")))
     }
 
     pub(crate) fn panic_failure(panic: Box<dyn std::any::Any + Send>) -> CleanupFailure {

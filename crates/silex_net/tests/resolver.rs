@@ -36,14 +36,17 @@ fn foreign_builder_into_resource_is_transactional_before_target_creation() {
     let target_scope = target_root.access();
     let (source, _) = source_scope.signal(1_i32).unwrap();
     let handler = test_handler(target_scope);
-    let before = target_scope.runtime_snapshot();
+    let before = target_scope.runtime_snapshot().expect("runtime snapshot");
     let result = HttpClient::get(target_scope, source, &handler).into_resource(None);
 
     assert!(matches!(
         result,
         Err(NetError::Fatal(NetErrorKind::Core(_)))
     ));
-    assert_eq!(target_scope.runtime_snapshot(), before);
+    assert_eq!(
+        target_scope.runtime_snapshot().expect("runtime snapshot"),
+        before
+    );
 
     source_root.close().expect("source root cleanup");
     target_root.close().expect("target root cleanup");

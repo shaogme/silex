@@ -1,3 +1,10 @@
+#![allow(
+    clippy::arithmetic_side_effects,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic
+)]
+
 use silex_reactivity::{
     CleanupFailure, CleanupPayloadKind, CloseError, ClosePhase, CloseSource, CloseTransaction,
     CompletionOnce, ErrorHandlerToken, OwnerAccess, ReactiveError, Runtime, TransientScopeError,
@@ -37,7 +44,7 @@ fn root_scope_uses_the_same_nodes_as_lexical_scope() {
         assert_eq!(seen.get(), 3);
     }
 
-    assert!(root.is_active());
+    assert!(root.is_active().expect("root active state"));
     root.close().expect("root disposal should succeed");
 }
 
@@ -118,7 +125,7 @@ fn root_final_cleanup_can_update_a_stored_value_before_drop() {
         scope
             .on_cleanup(
                 move || {
-                    assert!(!scope_in_cleanup.is_active());
+                    assert!(!scope_in_cleanup.is_active().expect("scope active state"));
                     observed_in_cleanup.set(
                         stored
                             .with(|value| *value)

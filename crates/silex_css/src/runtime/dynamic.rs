@@ -694,7 +694,7 @@ impl<'scope> StyledVariantBinding<'scope> {
                 getter.get()?;
             }
             Ok::<(), SilexError>(())
-        })?;
+        })??;
 
         for (style_id, css) in &self.static_styles {
             if !style_id.is_empty() && !css.is_empty() {

@@ -9,13 +9,13 @@ use super::{
 };
 use crate::{
     CallbackInvokeError, CallbackInvokeResult, ReactiveError, ReactiveResult,
+    borrow::SharedCell,
     error::{ErrorContext, ErrorHandlerRef, ErrorSlotRef, HandlerError, HandlerLease},
     handle::NodeKindTag,
     internal::NodeId,
     unsafe_boundary::{ActiveOwnerProof, ScopedPtr, restore_cleanup_stored_slot},
 };
 use std::{
-    cell::RefCell,
     mem,
     panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
     rc::Rc,
@@ -26,7 +26,7 @@ fn value_scheduler<'scope>(
     id: NodeId,
     reactive: bool,
     validate_runtime: bool,
-) -> ReactiveResult<(Rc<NodeStorage<'scope>>, Rc<RefCell<GlobalScheduler>>)> {
+) -> ReactiveResult<(Rc<NodeStorage<'scope>>, SharedCell<GlobalScheduler>)> {
     let state_ref = state
         .try_borrow()
         .map_err(|_| ReactiveError::BorrowConflict)?;
@@ -42,7 +42,7 @@ fn stored_scheduler<'scope>(
     id: NodeId,
 ) -> ReactiveResult<(
     Rc<NodeStorage<'scope>>,
-    Rc<RefCell<GlobalScheduler>>,
+    SharedCell<GlobalScheduler>,
     StoredAccessMode,
 )> {
     let state_ref = state
@@ -56,7 +56,7 @@ fn stored_scheduler<'scope>(
 fn node_ref_scheduler<'scope>(
     state: &ScopeState<'scope>,
     id: NodeId,
-) -> ReactiveResult<(Rc<NodeStorage<'scope>>, Rc<RefCell<GlobalScheduler>>)> {
+) -> ReactiveResult<(Rc<NodeStorage<'scope>>, SharedCell<GlobalScheduler>)> {
     let state_ref = state
         .try_borrow()
         .map_err(|_| ReactiveError::BorrowConflict)?;
@@ -142,7 +142,7 @@ fn read_typed<'scope, T, R>(
     state: &ScopeState<'scope>,
     id: NodeId,
     slot: TypedNodeRef<'scope, T>,
-    scheduler: Rc<RefCell<GlobalScheduler>>,
+    scheduler: SharedCell<GlobalScheduler>,
     kind: Option<NodeKindTag>,
     cleanup: bool,
     f: impl FnOnce(&T) -> R,
@@ -197,7 +197,7 @@ where
                 let slot = proof
                     .restore_error_slot(state, id, errors.pointer())
                     .map_err(CallbackInvokeError::Runtime)?;
-                CallbackInvokeError::User(slot.take())
+                CallbackInvokeError::User(slot.take().map_err(CallbackInvokeError::Runtime)?)
             }
             EvaluationError::Callback(_) => {
                 CallbackInvokeError::Runtime(ReactiveError::InvariantViolation)
@@ -229,10 +229,14 @@ fn commit_signal<'scope>(state: &ScopeState<'scope>, id: NodeId) -> ReactiveResu
     let mut state_ref = state
         .try_borrow_mut()
         .map_err(|_| ReactiveError::BorrowConflict)?;
-    if !state_ref.is_active() {
+    if !state_ref.try_is_active()? {
         return Ok(());
     }
-    let epoch = state_ref.scheduler.borrow_mut().next_epoch();
+    let epoch = state_ref
+        .scheduler
+        .try_borrow_mut()
+        .map_err(|_| ReactiveError::BorrowConflict)?
+        .next_epoch();
     let Some(node) = state_ref.nodes.get_mut(id) else {
         return Ok(());
     };
@@ -274,16 +278,20 @@ pub(crate) fn notify<'scope>(state: &ScopeState<'scope>, id: NodeId) -> Reactive
         let mut state_ref = state
             .try_borrow_mut()
             .map_err(|_| ReactiveError::BorrowConflict)?;
-        if !state_ref.is_active() {
+        if !state_ref.try_is_active()? {
             return Err(ReactiveError::NoSuchNode);
         }
         if !state_ref.node_exists(id) {
             return Err(ReactiveError::NoSuchNode);
         }
-        if state_ref.mark_notified(id) {
+        if state_ref.mark_notified(id)? {
             state_ref.queue_dependents(id)?;
         }
-        state_ref.scheduler.borrow().should_flush()
+        state_ref
+            .scheduler
+            .try_borrow()
+            .map_err(|_| ReactiveError::BorrowConflict)?
+            .should_flush()
     };
     if should_flush {
         flush_if_idle(state)?;
@@ -475,7 +483,7 @@ pub(crate) fn stop_effect<'scope>(state: &ScopeState<'scope>, id: NodeId) -> Rea
             .try_borrow()
             .map_err(|_| ReactiveError::BorrowConflict)?;
         let scheduler = state_ref.scheduler.clone();
-        if !state_ref.is_active() {
+        if !state_ref.try_is_active()? {
             return Ok(false);
         }
         let Some(node) = state_ref.nodes.get(id) else {
@@ -513,13 +521,16 @@ pub(crate) fn stop_effect<'scope>(state: &ScopeState<'scope>, id: NodeId) -> Rea
     Ok(true)
 }
 
-pub(crate) fn with_untracked<'scope, R>(state: &ScopeState<'scope>, f: impl FnOnce() -> R) -> R {
-    let scheduler = state.borrow().scheduler.clone();
-    let frame = ObserverFrame::push_untracked(scheduler);
+pub(crate) fn with_untracked<'scope, R>(
+    state: &ScopeState<'scope>,
+    f: impl FnOnce() -> R,
+) -> ReactiveResult<R> {
+    let scheduler = state.try_borrow()?.scheduler.clone();
+    let frame = ObserverFrame::push_untracked(scheduler)?;
     let result = catch_unwind(AssertUnwindSafe(f));
     drop(frame);
     match result {
-        Ok(value) => value,
+        Ok(value) => Ok(value),
         Err(panic) => resume_unwind(panic),
     }
 }
@@ -529,10 +540,11 @@ pub(crate) fn with_batch<'scope, R>(
     f: impl FnOnce() -> R,
 ) -> ReactiveResult<R> {
     let scheduler = state.try_borrow()?.scheduler.clone();
-    scheduler
+    let mut scheduler_ref = scheduler
         .try_borrow_mut()
-        .map_err(|_| ReactiveError::BorrowConflict)?
-        .batch_depth += 1;
+        .map_err(|_| ReactiveError::BorrowConflict)?;
+    scheduler_ref.batch_depth = scheduler_ref.batch_depth.saturating_add(1);
+    drop(scheduler_ref);
     let result = catch_unwind(AssertUnwindSafe(f));
     {
         let mut sched = scheduler

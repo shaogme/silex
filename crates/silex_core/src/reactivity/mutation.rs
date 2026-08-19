@@ -186,7 +186,7 @@ where
     }
 
     pub fn mutate(&self, arg: Arg) -> crate::SilexResult<()> {
-        if !self.owner.is_active() {
+        if !self.owner.is_active()? {
             return Ok(());
         }
 

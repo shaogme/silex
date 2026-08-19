@@ -132,7 +132,10 @@ where
     H: ErrorHandlerInput<'scope>,
 {
     let error_handler = error_handler.handler_ref();
-    if !owner.is_active() {
+    if !owner
+        .is_active()
+        .map_err(|_| JsValue::from_str("failed to query view owner state"))?
+    {
         return Err(JsValue::from_str("view owner is inactive"));
     }
     let destination = owner
@@ -251,7 +254,10 @@ where
     H: ErrorHandlerInput<'scope>,
 {
     let error_handler = error_handler.handler_ref();
-    if !owner.is_active() {
+    if !owner
+        .is_active()
+        .map_err(|_| JsValue::from_str("failed to query view owner state"))?
+    {
         return Err(JsValue::from_str("view owner is inactive"));
     }
     let (destination, callback) = owned_once_callback(owner, cb, error_handler)?;
@@ -287,7 +293,10 @@ where
     H: ErrorHandlerInput<'scope>,
 {
     let error_handler = error_handler.handler_ref();
-    if !owner.is_active() {
+    if !owner
+        .is_active()
+        .map_err(|_| JsValue::from_str("failed to query view owner state"))?
+    {
         return Err(JsValue::from_str("view owner is inactive"));
     }
     let (destination, callback) = owned_once_callback(owner, cb, error_handler)?;
@@ -323,7 +332,10 @@ where
     H: ErrorHandlerInput<'scope>,
 {
     let error_handler = error_handler.handler_ref();
-    if !owner.is_active() {
+    if !owner
+        .is_active()
+        .map_err(|_| JsValue::from_str("failed to query view owner state"))?
+    {
         return Ok(HostResourceHandle::inactive());
     }
     let (destination, callback) = owned_once_callback(owner, task, error_handler)?;
@@ -346,7 +358,10 @@ where
     H: ErrorHandlerInput<'scope>,
 {
     let error_handler = error_handler.handler_ref();
-    if !owner.is_active() {
+    if !owner
+        .is_active()
+        .map_err(|_| JsValue::from_str("failed to query view owner state"))?
+    {
         return Err(JsValue::from_str("view owner is inactive"));
     }
     let (destination, callback) = owned_once_callback(owner, cb, error_handler)?;
@@ -387,7 +402,10 @@ where
     H: ErrorHandlerInput<'scope>,
 {
     let error_handler = error_handler.handler_ref();
-    if !owner.is_active() {
+    if !owner
+        .is_active()
+        .map_err(|_| JsValue::from_str("failed to query view owner state"))?
+    {
         return Err(JsValue::from_str("view owner is inactive"));
     }
     let destination = owner
@@ -459,7 +477,10 @@ where
     H: ErrorHandlerInput<'scope>,
 {
     let error_handler = error_handler.handler_ref();
-    if !owner.is_active() {
+    if !owner
+        .is_active()
+        .map_err(|_| JsValue::from_str("failed to query view owner state"))?
+    {
         return Ok(Box::new(move |_| {}));
     }
     let state = Rc::new(RefCell::new(DebounceState {

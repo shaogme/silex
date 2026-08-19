@@ -60,7 +60,7 @@ fn reporter_can_capture_a_scoped_value() {
                     "scoped".to_string(),
                 )))
                 .expect("reporter should handle the error");
-            assert!(owner.is_active());
+            assert!(owner.is_active().expect("owner active state"));
         })
         .expect("child owner should initialize");
 

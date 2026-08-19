@@ -147,8 +147,16 @@ impl AppHost {
     }
 
     /// Whether this host currently owns an active mounted application.
-    pub fn is_active(&self) -> bool {
-        self.state == HostState::Active && self.active.as_ref().is_some_and(MountedApp::is_active)
+    pub fn is_active(&self) -> SilexResult<bool> {
+        if self.state != HostState::Active {
+            return Ok(false);
+        }
+        match self.active.as_ref() {
+            Some(app) => app.is_active(),
+            None => Err(SilexError::fatal(SilexErrorKind::Framework(
+                "active host has no mounted application".to_string(),
+            ))),
+        }
     }
 
     /// Return the controller state without inspecting the DOM.

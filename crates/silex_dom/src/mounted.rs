@@ -334,12 +334,16 @@ impl MountedApp {
     }
 
     /// Whether the current committed session is active.
-    pub fn is_active(&self) -> bool {
-        self.state == MountState::Mounted
-            && self
-                .session
-                .as_ref()
-                .is_some_and(|session| session.root.is_active())
+    pub fn is_active(&self) -> SilexResult<bool> {
+        if self.state != MountState::Mounted {
+            return Ok(false);
+        }
+        match self.session.as_ref() {
+            Some(session) => session.root.is_active(),
+            None => Err(SilexError::fatal(SilexErrorKind::Framework(
+                "mounted state has no active session".to_string(),
+            ))),
+        }
     }
 
     /// Whether this handle can no longer create a session.

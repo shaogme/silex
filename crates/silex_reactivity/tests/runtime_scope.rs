@@ -1,3 +1,10 @@
+#![allow(
+    clippy::arithmetic_side_effects,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic
+)]
+
 use silex_reactivity::{
     CallbackInvokeError, ErrorHandlerToken, OwnerAccess, ReactiveError, ReadSignal, Runtime,
     unwind_safe,
@@ -209,7 +216,7 @@ fn final_cleanup_updates_stored_value_before_payload_drop() {
             scope
                 .on_cleanup(
                     move || {
-                        assert!(!scope_in_cleanup.is_active());
+                        assert!(!scope_in_cleanup.is_active().expect("scope active state"));
                         observed_in_cleanup
                             .borrow_mut()
                             .push(stored.with(|probe| probe.value.get()).expect("stored read"));
@@ -348,7 +355,7 @@ fn final_cleanup_keeps_only_stored_value_access_available() {
             scope
                 .on_cleanup(
                     move || {
-                        assert!(!scope_in_cleanup.is_active());
+                        assert!(!scope_in_cleanup.is_active().expect("scope active state"));
                         assert_eq!(stored.update(|value| *value = 2), Ok(()));
                         assert_eq!(stored.with(|value| *value), Ok(2));
                         assert_eq!(signal.get(), Err(ReactiveError::NoSuchNode));
@@ -740,7 +747,7 @@ fn untrack_blocks_ordinary_reads() {
             scope
                 .effect(
                     move || {
-                        scope.untrack(|| {
+                        let _ = scope.untrack(|| {
                             other.get().expect("untracked read");
                         });
                         source.get().expect("source read");

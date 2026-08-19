@@ -55,7 +55,8 @@ pub(crate) fn create_computation<'scope>(
     let active = state
         .try_borrow()
         .map_err(|_| EvaluationError::Runtime(ReactiveError::BorrowConflict))?
-        .is_active();
+        .is_active()
+        .map_err(EvaluationError::Runtime)?;
     if !active {
         return Err(EvaluationError::Runtime(ReactiveError::NoSuchNode));
     }
@@ -131,7 +132,7 @@ fn finish_creation<'scope, E>(
             error.dispatch(ErrorPhase::Initial).map_err(|error| {
                 ComputationInitError::Registration(ReactiveError::Handler(error))
             })?;
-            let initial = errors.take();
+            let initial = errors.take().map_err(ComputationInitError::Registration)?;
             flush_if_idle(state).map_err(ComputationInitError::Registration)?;
             Err(ComputationInitError::Initial(initial))
         }
@@ -217,18 +218,20 @@ where
                 ))
             })
     });
+    let computation = ComputedNode::<_, E>::new(
+        None,
+        errors.reference(),
+        evaluator,
+        Box::new(|_, _| true),
+        false,
+    )
+    .map_err(ComputationInitError::Registration)?;
     let result = create_computation(
         state,
         ComputationSpec {
             kind: ComputationKind::Effect,
             parent,
-            computation: Box::new(ComputedNode::<_, E>::new(
-                None,
-                errors.reference(),
-                evaluator,
-                Box::new(|_, _| true),
-                false,
-            )),
+            computation: Box::new(computation),
         },
     );
     finish_creation(state, result, errors)
@@ -270,18 +273,20 @@ where
                 ))
             })
     });
+    let computation = ComputedNode::<T, E>::new(
+        Some(value),
+        errors.reference(),
+        evaluator,
+        Box::new(|_, _| true),
+        false,
+    )
+    .map_err(ComputationInitError::Registration)?;
     let result = create_computation(
         state,
         ComputationSpec {
             kind: ComputationKind::Previous,
             parent: ComputationParent::Current,
-            computation: Box::new(ComputedNode::<T, E>::new(
-                Some(value),
-                errors.reference(),
-                evaluator,
-                Box::new(|_, _| true),
-                false,
-            )),
+            computation: Box::new(computation),
         },
     );
     finish_creation(state, result, errors)
@@ -329,7 +334,8 @@ where
         };
         if should_callback {
             let callback_result = {
-                let _observer_frame = ObserverFrame::push_untracked(scheduler);
+                let _observer_frame = ObserverFrame::push_untracked(scheduler)
+                    .map_err(ComputationExecutionError::Runtime)?;
                 callback(&new, previous)
             };
             callback_result.map_err(|error| {
@@ -345,18 +351,20 @@ where
             stop_after_run: should_callback && options.once,
         })
     });
+    let computation = ComputedNode::<T, E>::new(
+        Some(value),
+        errors.reference(),
+        evaluator,
+        Box::new(|old, new| old.is_none_or(|old| *old != *new)),
+        false,
+    )
+    .map_err(ComputationInitError::Registration)?;
     let result = create_computation(
         state,
         ComputationSpec {
             kind: ComputationKind::Watch,
             parent: ComputationParent::Current,
-            computation: Box::new(ComputedNode::<T, E>::new(
-                Some(value),
-                errors.reference(),
-                evaluator,
-                Box::new(|old, new| old.is_none_or(|old| *old != *new)),
-                false,
-            )),
+            computation: Box::new(computation),
         },
     );
     finish_creation(state, result, errors)
@@ -434,18 +442,15 @@ where
                 ))
             })
     });
+    let computation =
+        ComputedNode::<T, E>::new(Some(value), errors.reference(), evaluator, changed, true)
+            .map_err(ComputationInitError::Registration)?;
     let result = create_computation(
         state,
         ComputationSpec {
             kind: ComputationKind::Computed,
             parent: ComputationParent::Current,
-            computation: Box::new(ComputedNode::<T, E>::new(
-                Some(value),
-                errors.reference(),
-                evaluator,
-                changed,
-                true,
-            )),
+            computation: Box::new(computation),
         },
     );
     finish_creation(state, result, errors).and_then(|raw| {

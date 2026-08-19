@@ -1,3 +1,10 @@
+#![allow(
+    clippy::arithmetic_side_effects,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic
+)]
+
 use silex_reactivity::{
     CallbackInvokeError, Computed, ErrorHandlerToken, OwnerAccess, ReactiveError, Runtime,
 };
@@ -348,7 +355,7 @@ fn untrack_panic_restores_the_active_dependency_observer() {
                         source.get().expect("test operation should succeed");
                         if first_run_in_effect.replace(false) {
                             let panic = catch_unwind(AssertUnwindSafe(|| {
-                                scope_copy.untrack(|| panic!("untrack panic"));
+                                let _ = scope_copy.untrack(|| panic!("untrack panic"));
                             }));
                             assert!(panic.is_err());
                         }

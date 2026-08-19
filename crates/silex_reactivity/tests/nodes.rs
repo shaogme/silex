@@ -1,3 +1,10 @@
+#![allow(
+    clippy::arithmetic_side_effects,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic
+)]
+
 use silex_reactivity::{
     Callback, CallbackInvokeError, ComputationInitError, Computed, EffectHandle, ErrorHandlerRef,
     ErrorHandlerToken, NodeRef, OwnerAccess, ReactiveError, ReadSignal, Runtime, StoredValue,

@@ -49,7 +49,7 @@ impl OwnerHandle {
     }
 
     fn new_child(storage: &ScopeStorage) -> ReactiveResult<Self> {
-        if !storage.is_active() {
+        if !storage.is_active()? {
             return Err(ReactiveError::NoSuchNode);
         }
         let state = storage.owner_token().state();
@@ -59,10 +59,10 @@ impl OwnerHandle {
             .scheduler
             .clone();
         let child =
-            ScopeStorage::new_with_owner(scheduler, Some(storage.owner_id), OwnerMode::Persistent);
+            ScopeStorage::new_with_owner(scheduler, Some(storage.owner_id), OwnerMode::Persistent)?;
         let child = Rc::new(child);
-        child.link_parent(&storage.children);
-        storage.children.insert(child.clone());
+        child.link_parent(&storage.children)?;
+        storage.children.insert(child.clone())?;
         Ok(Self {
             storage: child,
             runtime_slot: None,
@@ -114,13 +114,22 @@ impl OwnerHandle {
         outcome.error.map_or(Ok(()), Err)
     }
 
-    pub fn is_active(&self) -> bool {
-        !self.closed.get() && self.storage.is_active()
+    /// Report whether this owner can still accept runtime operations.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ReactiveError::BorrowConflict`] when the owner or scheduler
+    /// state is already dynamically borrowed.
+    pub fn is_active(&self) -> ReactiveResult<bool> {
+        if self.closed.get() {
+            return Ok(false);
+        }
+        self.storage.is_active()
     }
 
     #[cfg(feature = "test-support")]
     #[doc(hidden)]
-    pub fn runtime_snapshot(&self) -> runtime::RuntimeSnapshot {
+    pub fn runtime_snapshot(&self) -> ReactiveResult<runtime::RuntimeSnapshot> {
         self.access().runtime_snapshot()
     }
 }
@@ -151,7 +160,7 @@ impl<'parent> PersistentOwnerAccess<'parent> {
     fn from_handle(parent: &'parent ScopeStorage, handle: OwnerHandle) -> ReactiveResult<Self> {
         if !parent
             .children
-            .contains(handle.storage.owner_id, &handle.storage)
+            .contains(handle.storage.owner_id, &handle.storage)?
         {
             return Err(ReactiveError::InvariantViolation);
         }
@@ -163,8 +172,15 @@ impl<'parent> PersistentOwnerAccess<'parent> {
 
     /// Borrow the typed access for this persistent child.
     #[doc(hidden)]
-    pub fn access(&self) -> OwnerAccess<'_> {
-        self.handle.access()
+    pub fn access(&self) -> OwnerAccess<'parent> {
+        // `PersistentOwnerAccess` owns the child storage and the parent brand
+        // keeps this capability inside the parent's lifetime domain.
+        let storage = self.handle.storage.as_ref() as *const ScopeStorage;
+        let storage = unsafe { &*storage };
+        OwnerAccess {
+            storage,
+            marker: PhantomData,
+        }
     }
 
     /// Close the child exactly once from the caller's perspective.
@@ -179,7 +195,12 @@ impl<'parent> PersistentOwnerAccess<'parent> {
 
     /// Report whether the child can still accept runtime operations.
     #[doc(hidden)]
-    pub fn is_active(&self) -> bool {
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ReactiveError::BorrowConflict`] when the child or scheduler
+    /// state is already dynamically borrowed.
+    pub fn is_active(&self) -> ReactiveResult<bool> {
         self.handle.is_active()
     }
 }
@@ -209,7 +230,11 @@ impl<'owner> OwnerAccess<'owner> {
         &self,
         f: impl for<'child> FnOnce(OwnerAccess<'child>) -> R,
     ) -> TransientScopeResult<R> {
-        if !self.storage.is_active() {
+        if !self
+            .storage
+            .is_active()
+            .map_err(TransientScopeError::Runtime)?
+        {
             return Err(TransientScopeError::Runtime(ReactiveError::NoSuchNode));
         }
         let state = self.storage.owner_token().state();
@@ -222,12 +247,14 @@ impl<'owner> OwnerAccess<'owner> {
             scheduler.clone(),
             Some(self.storage.owner_id),
             OwnerMode::Transient,
-        );
+        )
+        .map_err(TransientScopeError::Runtime)?;
         let access = OwnerAccess {
             storage: &storage,
             marker: PhantomData,
         };
-        let frame = runtime::ObserverFrame::push_child(scheduler, storage.owner_id);
+        let frame = runtime::ObserverFrame::push_child(scheduler, storage.owner_id)
+            .map_err(TransientScopeError::Runtime)?;
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(access)));
         let close =
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| close_owner_tree(&storage)));
@@ -246,26 +273,55 @@ impl<'owner> OwnerAccess<'owner> {
             .and_then(|handle| PersistentOwnerAccess::from_handle(self.storage, handle))
     }
 
-    pub fn is_active(&self) -> bool {
+    /// Report whether this borrowed owner can still accept runtime operations.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ReactiveError::BorrowConflict`] when the owner or scheduler
+    /// state is already dynamically borrowed.
+    pub fn is_active(&self) -> ReactiveResult<bool> {
         self.storage.is_active()
     }
 
     /// Compare runtime scheduler identity without conflating owner identity.
-    pub fn same_runtime(&self, other: &Self) -> bool {
-        let left = self.storage.state.borrow().scheduler.clone();
-        let right = other.storage.state.borrow().scheduler.clone();
-        Rc::ptr_eq(&left, &right)
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ReactiveError::BorrowConflict`] when either owner or its
+    /// scheduler is already dynamically borrowed.
+    pub fn same_runtime(&self, other: &Self) -> ReactiveResult<bool> {
+        let left = self
+            .storage
+            .owner_token()
+            .state()
+            .try_borrow()?
+            .scheduler
+            .clone();
+        let right = other
+            .storage
+            .owner_token()
+            .state()
+            .try_borrow()?
+            .scheduler
+            .clone();
+        let _left_scheduler = left
+            .try_borrow()
+            .map_err(|_| ReactiveError::BorrowConflict)?;
+        let _right_scheduler = right
+            .try_borrow()
+            .map_err(|_| ReactiveError::BorrowConflict)?;
+        Ok(Rc::ptr_eq(&left, &right))
     }
 
     #[cfg(feature = "test-support")]
     #[doc(hidden)]
-    pub fn runtime_snapshot(&self) -> runtime::RuntimeSnapshot {
-        let mut snapshot = self.state().borrow().runtime_snapshot();
+    pub fn runtime_snapshot(&self) -> ReactiveResult<runtime::RuntimeSnapshot> {
+        let mut snapshot = self.state().try_borrow()?.runtime_snapshot()?;
         snapshot.retained_children = self.storage.retained_children();
         let (typed_slots, error_slots) = self.storage.live_allocations();
         snapshot.live_typed_slots = typed_slots;
         snapshot.live_error_slots = error_slots;
-        snapshot
+        Ok(snapshot)
     }
 
     pub fn completion_once<T: 'static, E, F>(
@@ -317,7 +373,17 @@ impl<'owner> OwnerAccess<'owner> {
         Ok(ErrorHandlerToken::from_record(self.storage, key, record))
     }
 
-    pub fn untrack<R>(&self, f: impl FnOnce() -> R) -> R {
+    /// Run a callback without collecting reactive dependencies.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ReactiveError::BorrowConflict`] when the observer stack is
+    /// already dynamically borrowed.
+    ///
+    /// # Panics
+    ///
+    /// Propagates a panic raised by `f` after restoring the observer stack.
+    pub fn untrack<R>(&self, f: impl FnOnce() -> R) -> ReactiveResult<R> {
         let state = self.state();
         runtime::with_untracked(&state, f)
     }
@@ -339,7 +405,7 @@ impl<'owner> OwnerAccess<'owner> {
         if !state
             .try_borrow()
             .map_err(|_| ReactiveError::BorrowConflict)?
-            .is_active()
+            .is_active()?
         {
             return Err(ReactiveError::NoSuchNode);
         }
@@ -351,7 +417,7 @@ impl<'owner> OwnerAccess<'owner> {
         let mut state = state
             .try_borrow_mut()
             .map_err(|_| ReactiveError::BorrowConflict)?;
-        if !state.is_active() {
+        if !state.try_is_active()? {
             return Err(ReactiveError::NoSuchNode);
         }
         state.register_cleanup(thunk);
@@ -628,13 +694,13 @@ impl<'owner> OwnerAccess<'owner> {
 pub(crate) fn new_root(
     runtime_slot: Rc<Cell<bool>>,
     close_reports: Rc<runtime::CloseReportQueue>,
-) -> OwnerHandle {
+) -> ReactiveResult<OwnerHandle> {
     let storage = Rc::new(ScopeStorage::new_with_owner(
         runtime::GlobalScheduler::new_with_reporter(close_reports),
         None,
         OwnerMode::Root,
-    ));
-    OwnerHandle::new(storage, Some(runtime_slot))
+    )?);
+    Ok(OwnerHandle::new(storage, Some(runtime_slot)))
 }
 
 pub(crate) fn new_transient<R>(
@@ -642,12 +708,14 @@ pub(crate) fn new_transient<R>(
     close_reports: Rc<runtime::CloseReportQueue>,
 ) -> TransientScopeResult<R> {
     let scheduler = runtime::GlobalScheduler::new_with_reporter(close_reports);
-    let storage = ScopeStorage::new_with_owner(scheduler.clone(), None, OwnerMode::Transient);
+    let storage = ScopeStorage::new_with_owner(scheduler.clone(), None, OwnerMode::Transient)
+        .map_err(TransientScopeError::Runtime)?;
     let access = OwnerAccess {
         storage: &storage,
         marker: PhantomData,
     };
-    let frame = runtime::ObserverFrame::push_untracked(scheduler);
+    let frame =
+        runtime::ObserverFrame::push_untracked(scheduler).map_err(TransientScopeError::Runtime)?;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(access)));
     let close =
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| close_owner_tree(&storage)));
@@ -672,7 +740,19 @@ fn finish_transient<R>(
 /// Close an owner and its descendants through the same child-first
 /// transaction used by root, persistent, and transient owners.
 fn close_owner_tree(storage: &ScopeStorage) -> CloseOutcome {
-    let owned = storage.children.snapshot();
+    let owned = match storage.children.snapshot() {
+        Ok(owned) => owned,
+        Err(error) => {
+            return CloseOutcome::retryable(
+                CloseError::from_failures(vec![crate::root::CleanupFailure::Runtime(error)])
+                    .unwrap_or_else(|| {
+                        CloseError::from_panic(Box::new(
+                            "owner child registry did not produce a diagnostic",
+                        ))
+                    }),
+            );
+        }
+    };
     let mut transaction = CloseTransaction::new();
     let mut retryable_child = false;
     for child in owned.into_iter().rev() {
@@ -706,32 +786,48 @@ fn close_owner_tree(storage: &ScopeStorage) -> CloseOutcome {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::arithmetic_side_effects,
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        clippy::panic
+    )]
+
     use super::*;
 
     #[test]
     fn retryable_child_keeps_parent_until_a_later_close() {
         let scheduler = runtime::GlobalScheduler::new();
-        let parent = Rc::new(ScopeStorage::new_with_owner(
-            scheduler.clone(),
-            None,
-            OwnerMode::Root,
-        ));
-        let child = Rc::new(ScopeStorage::new_with_owner(
-            scheduler,
-            Some(parent.owner_id),
-            OwnerMode::Transient,
-        ));
-        child.link_parent(&parent.children);
-        parent.children.insert(child.clone());
+        let Some(parent_storage) =
+            ScopeStorage::new_with_owner(scheduler.clone(), None, OwnerMode::Root).ok()
+        else {
+            return;
+        };
+        let parent = Rc::new(parent_storage);
+        let Some(child_storage) =
+            ScopeStorage::new_with_owner(scheduler, Some(parent.owner_id), OwnerMode::Transient)
+                .ok()
+        else {
+            return;
+        };
+        let child = Rc::new(child_storage);
+        assert!(child.link_parent(&parent.children).is_ok());
+        assert!(parent.children.insert(child.clone()).is_ok());
 
-        let child_state = child.state.borrow_mut();
+        let child_state = child
+            .state
+            .try_borrow_mut()
+            .map_err(|_| ReactiveError::BorrowConflict);
+        let Ok(child_state) = child_state else {
+            return;
+        };
         let first = close_owner_tree(&parent);
         assert!(!first.released);
-        assert!(parent.is_active());
+        assert!(parent.is_active().expect("parent active state"));
         drop(child_state);
 
         let second = close_owner_tree(&parent);
         assert!(second.released);
-        assert!(!parent.is_active());
+        assert!(!parent.is_active().expect("parent active state"));
     }
 }

@@ -8,6 +8,7 @@
 
 use crate::{
     ReactiveError, ReactiveResult,
+    borrow::SharedCell,
     error::{ErrorHandlerKey, ErrorSlot, HandlerRecord},
     handle::NodeKindTag,
     internal::NodeId,
@@ -16,13 +17,12 @@ use crate::{
     runtime::{OwnerId, ScopePhase, ScopeState, ScopeStateInner},
 };
 use std::{
-    cell::RefCell,
     marker::PhantomData,
     ptr::NonNull,
     rc::{Rc, Weak},
 };
 
-pub(crate) type ErasedScopeState = RefCell<ScopeStateInner<'static>>;
+pub(crate) type ErasedScopeState = crate::borrow::BorrowCell<ScopeStateInner<'static>>;
 
 /// A pointer whose provenance is captured from a live Rust reference.
 ///
@@ -52,7 +52,8 @@ impl<T> ScopedPtr<T> {
     pub(crate) fn from_rc(value: &Rc<T>) -> Self {
         let pointer = Rc::as_ptr(value).cast_mut();
         Self {
-            pointer: NonNull::new(pointer).expect("Rc::as_ptr never returns null"),
+            // SAFETY: `Rc::as_ptr` is non-null for every live allocation.
+            pointer: unsafe { NonNull::new_unchecked(pointer) },
         }
     }
 
@@ -377,7 +378,7 @@ impl<'scope> CleanupOwnerProof<'scope> {
 }
 
 /// Reconstruct a typed owner state from an erased allocation.
-fn restore_state<'scope>(state: Rc<ErasedScopeState>) -> Rc<RefCell<ScopeStateInner<'scope>>> {
+fn restore_state<'scope>(state: Rc<ErasedScopeState>) -> SharedCell<ScopeStateInner<'scope>> {
     // SAFETY: this function is private to the proof boundary. Every call is
     // either tied to a lexical `ScopeStorage` borrow or follows a complete
     // active/cleanup registry proof above.
@@ -413,13 +414,20 @@ impl WeakOwnerToken {
     }
 }
 
-fn erase_state<'scope>(state: Rc<RefCell<ScopeStateInner<'scope>>>) -> Rc<ErasedScopeState> {
+fn erase_state<'scope>(state: SharedCell<ScopeStateInner<'scope>>) -> Rc<ErasedScopeState> {
     // SAFETY: only this module can erase and later restore the owner lifetime.
     unsafe { std::mem::transmute(state) }
 }
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::arithmetic_side_effects,
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        clippy::panic
+    )]
+
     use super::*;
     use crate::{owner::ScopeStorage, runtime::GlobalScheduler};
 
@@ -430,7 +438,8 @@ mod tests {
         let state = storage.owner_token().state();
         let slot = storage.alloc_slot(value);
         state
-            .borrow_mut()
+            .try_borrow_mut()
+            .expect("state write")
             .create_stored(slot)
             .expect("owner token should preserve the lexical payload lifetime");
         state
@@ -439,27 +448,28 @@ mod tests {
     #[test]
     fn owner_token_supports_non_static_payloads_until_disposal() {
         let scheduler = GlobalScheduler::new();
-        let storage = ScopeStorage::new(scheduler);
+        let storage = ScopeStorage::new(scheduler).expect("test owner setup");
         let value = String::from("borrowed");
         let state = store_borrowed(&storage, value.as_str());
 
-        assert_eq!(state.borrow().nodes.len(), 1);
+        assert_eq!(state.try_borrow().expect("state read").nodes.len(), 1);
         let outcome = storage.dispose_untracked();
         assert!(outcome.released);
         assert!(outcome.error.is_none());
-        assert!(state.borrow().nodes.is_empty());
+        assert!(state.try_borrow().expect("state read").nodes.is_empty());
     }
 
     #[test]
     fn active_and_cleanup_proofs_respect_scope_phase() {
         let scheduler = GlobalScheduler::new();
-        let storage = ScopeStorage::new(scheduler);
+        let storage = ScopeStorage::new(scheduler).expect("test owner setup");
         let state = storage.owner_token().state();
         let active = ActiveOwnerProof::from_state(&state).expect("active proof");
         drop(active);
 
         state
-            .borrow_mut()
+            .try_borrow_mut()
+            .expect("state write")
             .begin_quiescing()
             .expect("owner should begin closing");
         assert!(matches!(
@@ -476,7 +486,10 @@ mod tests {
         )
         .expect("cleanup proof lookup")
         .expect("closing owner should retain cleanup proof");
-        assert_eq!(cleanup.state().borrow().phase, ScopePhase::Quiescing);
+        assert_eq!(
+            cleanup.state().try_borrow().expect("state read").phase,
+            ScopePhase::Quiescing
+        );
         drop(cleanup);
 
         let outcome = storage.dispose_untracked();
@@ -490,23 +503,27 @@ mod tests {
     #[test]
     fn payload_identity_mismatch_is_rejected_before_restore() {
         let scheduler = GlobalScheduler::new();
-        let storage = ScopeStorage::new(scheduler);
+        let storage = ScopeStorage::new(scheduler).expect("test owner setup");
         let state = storage.owner_token().state();
         let first = state
-            .borrow_mut()
+            .try_borrow_mut()
+            .expect("state write")
             .create_signal(storage.alloc_slot(1_i32))
             .expect("first signal");
         let second = state
-            .borrow_mut()
+            .try_borrow_mut()
+            .expect("state write")
             .create_signal(storage.alloc_slot(2_i32))
             .expect("second signal");
         let first_pointer = state
-            .borrow()
+            .try_borrow()
+            .expect("state read")
             .typed_node_ref::<i32>(first)
             .expect("first pointer")
             .pointer();
         let second_pointer = state
-            .borrow()
+            .try_borrow()
+            .expect("state read")
             .typed_node_ref::<i32>(second)
             .expect("second pointer")
             .pointer();

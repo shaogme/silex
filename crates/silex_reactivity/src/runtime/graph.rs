@@ -144,16 +144,19 @@ impl<'scope> ScopeStateInner<'scope> {
         };
 
         let (previous, current) = {
-            let transaction = &self.dependency_transactions[index];
+            let Some(transaction) = self.dependency_transactions.get(index) else {
+                return Err(ReactiveError::InvariantViolation);
+            };
             (transaction.previous.clone(), transaction.current.clone())
         };
         let removed: Vec<TargetNode> = previous.difference(&current).copied().collect();
         self.ensure_dependency_scopes_available(removed.iter())?;
         for dependency in removed {
             self.remove_dependency_pair(observer, dependency)?;
-            self.dependency_transactions[index]
-                .removed
-                .insert(dependency);
+            let Some(transaction) = self.dependency_transactions.get_mut(index) else {
+                return Err(ReactiveError::InvariantViolation);
+            };
+            transaction.removed.insert(dependency);
         }
         Ok(())
     }
@@ -179,7 +182,9 @@ impl<'scope> ScopeStateInner<'scope> {
         else {
             return Ok(());
         };
-        let transaction = self.dependency_transactions[index].clone();
+        let Some(transaction) = self.dependency_transactions.get(index).cloned() else {
+            return Err(ReactiveError::InvariantViolation);
+        };
         let to_remove: Vec<TargetNode> = transaction
             .current
             .difference(&transaction.previous)
@@ -332,7 +337,7 @@ impl<'scope> ScopeStateInner<'scope> {
         &self,
         target: NodeId,
     ) -> ReactiveResult<Option<ExecutionContext>> {
-        let Some(ctx) = active_ctx(&self.scheduler) else {
+        let Some(ctx) = active_ctx(&self.scheduler)? else {
             return Ok(None);
         };
         let Some(observer) = ctx.observer else {
@@ -346,7 +351,7 @@ impl<'scope> ScopeStateInner<'scope> {
         if same_scope && self.observer_is_computation(observer) && observer.node == target {
             return Err(ReactiveError::Reentrant);
         }
-        if !self.is_active() || !self.has_value(target) {
+        if !self.try_is_active()? || !self.has_value(target)? {
             return Err(ReactiveError::NoSuchNode);
         }
         if same_scope {
@@ -358,7 +363,7 @@ impl<'scope> ScopeStateInner<'scope> {
             let observer_state = observer_scope
                 .try_borrow_mut()
                 .map_err(|_| ReactiveError::BorrowConflict)?;
-            if !observer_state.is_active()
+            if !observer_state.try_is_active()?
                 || !observer_state.observer_is_computation(observer)
                 || observer_state.owner_id == self.owner_id && observer.node == target
             {
@@ -383,7 +388,7 @@ impl<'scope> ScopeStateInner<'scope> {
         if !Rc::ptr_eq(&ctx.scheduler, &self.scheduler) {
             return Err(ReactiveError::RuntimeMismatch);
         }
-        if !self.is_active() || !self.has_value(target) {
+        if !self.try_is_active()? || !self.has_value(target)? {
             return Err(ReactiveError::NoSuchNode);
         }
         let observer_target = TargetNode {
@@ -402,7 +407,7 @@ impl<'scope> ScopeStateInner<'scope> {
         let mut observer_state = observer_scope
             .try_borrow_mut()
             .map_err(|_| ReactiveError::BorrowConflict)?;
-        if !observer_state.is_active() || !observer_state.observer_is_computation(observer) {
+        if !observer_state.try_is_active()? || !observer_state.observer_is_computation(observer) {
             return Err(ReactiveError::NoSuchNode);
         }
         let observer_dep = TargetNode {
@@ -459,7 +464,7 @@ impl<'scope> ScopeStateInner<'scope> {
             let state_ref = target_scope
                 .try_borrow()
                 .map_err(|_| ReactiveError::BorrowConflict)?;
-            if !state_ref.is_active() {
+            if !state_ref.try_is_active()? {
                 continue;
             }
             let Some(node) = state_ref.nodes.get(target.node) else {
@@ -563,17 +568,35 @@ impl<'scope> ScopeStateInner<'scope> {
         Ok(())
     }
 
-    pub(crate) fn is_settled(&self, id: NodeId) -> bool {
-        self.nodes
+    pub(crate) fn is_settled(&self, id: NodeId) -> ReactiveResult<bool> {
+        Ok(self
+            .nodes
             .get(id)
             .is_some_and(|node| node.state == NodeState::Clean)
-            && self.scheduler.borrow().global_queue.is_empty()
-            && self.scheduler.borrow().worklist.is_empty()
+            && self
+                .scheduler
+                .try_borrow()
+                .map_err(|_| ReactiveError::BorrowConflict)?
+                .global_queue
+                .is_empty()
+            && self
+                .scheduler
+                .try_borrow()
+                .map_err(|_| ReactiveError::BorrowConflict)?
+                .worklist
+                .is_empty())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::arithmetic_side_effects,
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        clippy::panic
+    )]
+
     use super::*;
     use crate::{
         ErrorHandlerToken, OwnerAccess, Runtime,
@@ -606,7 +629,11 @@ mod tests {
 
                             assert_eq!(local.get(), Ok(0));
                             assert_eq!(
-                                local_state.borrow().subscriber_edges_of(local_raw).count(),
+                                local_state
+                                    .try_borrow()
+                                    .expect("state read")
+                                    .subscriber_edges_of(local_raw)
+                                    .count(),
                                 0
                             );
                         });
@@ -620,7 +647,8 @@ mod tests {
                 effect
                     .handle
                     .state()
-                    .borrow()
+                    .try_borrow()
+                    .expect("state read")
                     .dependency_edges_of(effect.handle.raw())
                     .count(),
                 0
@@ -652,14 +680,16 @@ mod tests {
 
                 assert_eq!(
                     source_state
-                        .borrow()
+                        .try_borrow()
+                        .expect("state read")
                         .subscriber_edges_of(source_raw)
                         .count(),
                     1
                 );
                 assert_eq!(
                     effect_state
-                        .borrow()
+                        .try_borrow()
+                        .expect("state read")
                         .dependency_edges_of(effect_raw)
                         .count(),
                     1
@@ -669,7 +699,8 @@ mod tests {
 
                 assert_eq!(
                     effect_state
-                        .borrow()
+                        .try_borrow()
+                        .expect("state read")
                         .dependency_edges_of(effect_raw)
                         .count(),
                     0
@@ -701,12 +732,12 @@ mod tests {
                 let child_state = local.handle.state();
                 let effect_raw = effect.handle.raw();
                 let (child_owner_id, source_owner_id) = {
-                    let child_state_ref = child_state.borrow();
-                    let source_state_ref = source_state.borrow();
+                    let child_state_ref = child_state.try_borrow().expect("state read");
+                    let source_state_ref = source_state.try_borrow().expect("state read");
                     (child_state_ref.owner_id, source_state_ref.owner_id)
                 };
-                let source_borrow = source_state.borrow_mut();
-                let mut child_borrow = child_state.borrow_mut();
+                let source_borrow = source_state.try_borrow_mut().expect("state write");
+                let mut child_borrow = child_state.try_borrow_mut().expect("state write");
                 let result = child_borrow.clear_dependencies(effect_raw);
 
                 assert_eq!(result, Err(ReactiveError::BorrowConflict));
@@ -739,16 +770,24 @@ mod tests {
                 drop(child_borrow);
                 drop(source_borrow);
 
-                let _ = child_state.borrow_mut().clear_dependencies(effect_raw);
+                let _ = child_state
+                    .try_borrow_mut()
+                    .expect("state write")
+                    .clear_dependencies(effect_raw);
                 assert_eq!(
                     source_state
-                        .borrow()
+                        .try_borrow()
+                        .expect("state read")
                         .subscriber_edges_of(source_raw)
                         .count(),
                     0
                 );
                 assert_eq!(
-                    child_state.borrow().dependency_edges_of(effect_raw).count(),
+                    child_state
+                        .try_borrow()
+                        .expect("state read")
+                        .dependency_edges_of(effect_raw)
+                        .count(),
                     0
                 );
             });
@@ -758,8 +797,8 @@ mod tests {
     #[test]
     fn transaction_commit_conflict_preserves_both_sides_of_the_edge() {
         let scheduler = GlobalScheduler::new();
-        let source_storage = ScopeStorage::new(scheduler.clone());
-        let observer_storage = ScopeStorage::new(scheduler);
+        let source_storage = ScopeStorage::new(scheduler.clone()).expect("source owner setup");
+        let observer_storage = ScopeStorage::new(scheduler).expect("observer owner setup");
         let source_scope = OwnerAccess {
             storage: &source_storage,
             marker: PhantomData,
@@ -785,19 +824,20 @@ mod tests {
         let source_raw = source.handle.raw();
         let effect_raw = effect.handle.raw();
         let observer_target = TargetNode {
-            owner_id: observer_state.borrow().owner_id,
+            owner_id: observer_state.try_borrow().expect("state read").owner_id,
             node: effect_raw,
         };
         let source_target = TargetNode {
-            owner_id: source_state.borrow().owner_id,
+            owner_id: source_state.try_borrow().expect("state read").owner_id,
             node: source_raw,
         };
 
         observer_state
-            .borrow_mut()
+            .try_borrow_mut()
+            .expect("state write")
             .begin_dependency_transaction(effect_raw);
-        let source_borrow = source_state.borrow_mut();
-        let mut observer_borrow = observer_state.borrow_mut();
+        let source_borrow = source_state.try_borrow_mut().expect("state write");
+        let mut observer_borrow = observer_state.try_borrow_mut().expect("state write");
         assert_eq!(
             observer_borrow.commit_dependency_transaction(effect_raw),
             Err(ReactiveError::BorrowConflict)
@@ -820,7 +860,8 @@ mod tests {
         drop(source_borrow);
 
         observer_state
-            .borrow_mut()
+            .try_borrow_mut()
+            .expect("state write")
             .rollback_dependency_transaction(effect_raw)
             .expect("rollback should discard the pending transaction");
         let observer_outcome = observer_storage.dispose_untracked();

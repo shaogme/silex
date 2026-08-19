@@ -142,11 +142,16 @@ impl PageController {
     }
 
     /// Return whether the underlying host currently owns an active application.
-    pub fn is_active(&self) -> bool {
+    pub fn is_active(&self) -> SilexResult<bool> {
         self.host
             .as_ref()
             .expect("page controller host is present")
-            .borrow()
+            .try_borrow()
+            .map_err(|_| {
+                SilexError::fatal(SilexErrorKind::Framework(
+                    "page controller host is already borrowed".to_string(),
+                ))
+            })?
             .is_active()
     }
 

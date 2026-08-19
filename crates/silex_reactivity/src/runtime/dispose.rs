@@ -7,16 +7,15 @@ use super::{
 };
 use crate::{
     ReactiveError,
+    borrow::SharedCell,
     error::{ErrorEvent, ErrorPhase, HandlerError},
     internal::NodeId,
 };
 use std::{
     any::Any,
-    cell::RefCell,
     collections::HashSet,
     mem,
     panic::{AssertUnwindSafe, catch_unwind},
-    rc::Rc,
 };
 
 pub(crate) type PanicData = Box<dyn Any + Send>;
@@ -49,11 +48,17 @@ impl<'scope> CleanupOutcome<'scope> {
 }
 
 pub(crate) fn run_cleanups<'scope>(
-    scheduler: Rc<RefCell<GlobalScheduler>>,
+    scheduler: SharedCell<GlobalScheduler>,
     cleanups: Vec<CleanupThunk<'scope>>,
 ) -> CleanupOutcome<'scope> {
-    let _observer_frame = ObserverFrame::push_untracked(scheduler);
     let mut outcome = CleanupOutcome::new();
+    let _observer_frame = match ObserverFrame::push_untracked(scheduler) {
+        Ok(frame) => frame,
+        Err(error) => {
+            outcome.runtime_errors.push(error);
+            return outcome;
+        }
+    };
     for cleanup in cleanups {
         match catch_unwind(AssertUnwindSafe(|| cleanup.call())) {
             Ok(Ok(())) => {}
@@ -65,14 +70,20 @@ pub(crate) fn run_cleanups<'scope>(
 }
 
 pub(crate) fn dispatch_cleanup_errors<'scope>(
-    scheduler: Rc<RefCell<GlobalScheduler>>,
+    scheduler: SharedCell<GlobalScheduler>,
     errors: Vec<ErrorEvent<'scope>>,
 ) -> CleanupOutcome<'scope> {
     let mut outcome = CleanupOutcome::new();
     if errors.is_empty() {
         return outcome;
     }
-    let _observer_frame = ObserverFrame::push_untracked(scheduler);
+    let _observer_frame = match ObserverFrame::push_untracked(scheduler) {
+        Ok(frame) => frame,
+        Err(error) => {
+            outcome.runtime_errors.push(error);
+            return outcome;
+        }
+    };
     for error in errors {
         match catch_unwind(AssertUnwindSafe(|| error.dispatch(ErrorPhase::Deferred))) {
             Ok(Ok(())) => {}
@@ -84,12 +95,18 @@ pub(crate) fn dispatch_cleanup_errors<'scope>(
 }
 
 fn drop_node_data<'scope>(
-    scheduler: Rc<RefCell<GlobalScheduler>>,
+    scheduler: SharedCell<GlobalScheduler>,
     data: NodeData<'scope>,
 ) -> CleanupOutcome<'scope> {
     let NodeData { storage, cleanups } = data;
     let mut outcome = run_cleanups(scheduler.clone(), cleanups);
-    let _observer_frame = ObserverFrame::push_untracked(scheduler);
+    let _observer_frame = match ObserverFrame::push_untracked(scheduler) {
+        Ok(frame) => frame,
+        Err(error) => {
+            outcome.runtime_errors.push(error);
+            return outcome;
+        }
+    };
     if let Err(panic) = catch_unwind(AssertUnwindSafe(|| drop(storage))) {
         outcome.panics.push(panic);
     }
@@ -151,7 +168,7 @@ fn collect_final_cleanup_plan<'scope>(
 }
 
 fn run_final_cleanup_plan<'scope>(
-    scheduler: Rc<RefCell<GlobalScheduler>>,
+    scheduler: SharedCell<GlobalScheduler>,
     plan: FinalCleanupPlan<'scope>,
 ) -> CleanupOutcome<'scope> {
     let mut outcome = CleanupOutcome::new();
@@ -320,7 +337,7 @@ pub(crate) fn dispose_nodes_collect<'scope>(
     let scheduler = state.try_borrow()?.scheduler.clone();
     let disposal_nodes = collect_disposal_nodes(state, &roots)?;
     preflight_node_disposal(state, &disposal_nodes)?;
-    let _observer_frame = ObserverFrame::push_untracked(scheduler.clone());
+    let _observer_frame = ObserverFrame::push_untracked(scheduler.clone())?;
     let mut outcome = CleanupOutcome::new();
     let mut stack = Vec::with_capacity(roots.len());
     stack.extend(roots.into_iter().rev().map(DisposeStep::Enter));

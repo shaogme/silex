@@ -764,9 +764,15 @@ mod tests {
             .with_transient(|scope| {
                 let token = test_handler(scope);
                 let builder = HttpClient::get(scope, "https://example.test", token);
-                assert_eq!(scope.runtime_snapshot().handlers, 1);
+                assert_eq!(
+                    scope.runtime_snapshot().expect("runtime snapshot").handlers,
+                    1
+                );
                 drop(builder);
-                assert_eq!(scope.runtime_snapshot().handlers, 0);
+                assert_eq!(
+                    scope.runtime_snapshot().expect("runtime snapshot").handlers,
+                    0
+                );
             })
             .unwrap();
     }

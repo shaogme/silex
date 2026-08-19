@@ -1,3 +1,10 @@
+#![allow(
+    clippy::arithmetic_side_effects,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    clippy::panic
+)]
+
 use silex_reactivity::{ErrorHandlerToken, OwnerAccess, ReactiveError, Runtime, unwind_safe};
 use std::{
     cell::{Cell, RefCell},
@@ -51,7 +58,7 @@ fn owned_scope_keeps_effects_until_explicit_dispose() {
         assert_eq!(runs.get(), 2);
 
         owner.close().expect("owner disposal");
-        assert!(!owner.is_active());
+        assert!(!owner.is_active().expect("owner active state"));
         assert_eq!(cleanups.get(), 1);
         write.set(3).expect("signal update");
         assert_eq!(runs.get(), 2);
@@ -94,9 +101,9 @@ fn closing_an_owner_closes_nested_children_before_releasing_the_parent() {
         .expect("child cleanup registration");
 
     root.close().expect("root close should be child-first");
-    assert!(!root.is_active());
-    assert!(!child.is_active());
-    assert!(!grandchild.is_active());
+    assert!(!root.is_active().expect("root active state"));
+    assert!(!child.is_active().expect("child active state"));
+    assert!(!grandchild.is_active().expect("grandchild active state"));
     assert_eq!(cleanups.borrow().as_slice(), &["grandchild", "child"]);
 }
 
@@ -129,7 +136,7 @@ fn owned_scope_cleanup_can_release_captured_stored_value() {
                 .expect("owner cleanup should register");
 
             owner.close().expect("owner disposal");
-            assert!(!owner.is_active());
+            assert!(!owner.is_active().expect("owner active state"));
         })
         .expect("test operation should succeed");
 
@@ -306,10 +313,15 @@ fn persistent_child_adapter_preserves_topology_and_parent_close_is_idempotent() 
 
     assert!(root_access != branch.access());
     assert!(branch.access() != nested.access());
-    assert!(branch.access().same_runtime(&nested.access()));
-    assert!(root.is_active());
-    assert!(branch.is_active());
-    assert!(nested.is_active());
+    assert!(
+        branch
+            .access()
+            .same_runtime(&nested.access())
+            .expect("runtime identity")
+    );
+    assert!(root.is_active().expect("root active state"));
+    assert!(branch.is_active().expect("branch active state"));
+    assert!(nested.is_active().expect("nested active state"));
 
     let nested_cleanup_order = cleanup_order.clone();
     nested
@@ -337,9 +349,9 @@ fn persistent_child_adapter_preserves_topology_and_parent_close_is_idempotent() 
     root.close()
         .expect("parent close should close descendants first");
     assert_eq!(cleanup_order.borrow().as_slice(), ["nested", "branch"]);
-    assert!(!root.is_active());
-    assert!(!branch.is_active());
-    assert!(!nested.is_active());
+    assert!(!root.is_active().expect("root active state"));
+    assert!(!branch.is_active().expect("branch active state"));
+    assert!(!nested.is_active().expect("nested active state"));
 
     nested
         .close_once()
@@ -426,7 +438,7 @@ fn persistent_child_access_rejects_operations_after_adapter_close() {
 
     branch.close_once().expect("child close");
 
-    assert!(!branch_access.is_active());
+    assert!(!branch_access.is_active().expect("branch active state"));
     assert!(matches!(
         branch_access.create_child(),
         Err(ReactiveError::NoSuchNode)
@@ -445,7 +457,12 @@ fn owner_churn_removes_released_children_from_parent_registry() {
     for _ in 0..32 {
         let child = root.create_child().expect("child creation");
         child.close().expect("child close");
-        assert_eq!(root.runtime_snapshot().retained_children, 0);
+        assert_eq!(
+            root.runtime_snapshot()
+                .expect("runtime snapshot")
+                .retained_children,
+            0
+        );
     }
 
     root.close().expect("root close");
@@ -489,12 +506,12 @@ fn owner_churn_reclaims_all_node_slot_allocations() {
             .expect("computed creation");
 
         child.close().expect("child close");
-        let snapshot = child.runtime_snapshot();
+        let snapshot = child.runtime_snapshot().expect("runtime snapshot");
         assert_eq!(snapshot.live_typed_slots, 0);
         assert_eq!(snapshot.live_error_slots, 0);
     }
 
-    let snapshot = root.runtime_snapshot();
+    let snapshot = root.runtime_snapshot().expect("runtime snapshot");
     assert_eq!(snapshot.live_typed_slots, 0);
     assert_eq!(snapshot.live_error_slots, 0);
     root.close().expect("root close");
@@ -511,11 +528,25 @@ fn persistent_adapter_keeps_storage_after_registry_unlink() {
         .expect("persistent child creation");
     let branch_access = branch.access();
 
-    assert_eq!(root.runtime_snapshot().retained_children, 1);
+    assert_eq!(
+        root.runtime_snapshot()
+            .expect("runtime snapshot")
+            .retained_children,
+        1
+    );
     branch.close_once().expect("child close");
-    assert_eq!(root.runtime_snapshot().retained_children, 0);
-    assert!(!branch.is_active());
-    assert!(!branch_access.is_active());
+    assert_eq!(
+        root.runtime_snapshot()
+            .expect("runtime snapshot")
+            .retained_children,
+        0
+    );
+    assert!(!branch.is_active().expect("branch active state"));
+    assert!(
+        !branch_access
+            .is_active()
+            .expect("branch access active state")
+    );
 
     drop(branch);
     root.close().expect("root close");

@@ -1,5 +1,6 @@
 use crate::{
-    ReactiveError,
+    ReactiveError, ReactiveResult,
+    borrow::{BorrowCell, BorrowSite, SharedCell},
     error::ErrorSlotOwner,
     root::{CleanupFailure, CloseError, ClosePhase, CloseSource, CloseTransaction},
     runtime::OwnerMode,
@@ -8,13 +9,12 @@ use crate::{
     unsafe_boundary::{ErasedScopeState, OwnerToken},
 };
 use std::{
-    cell::RefCell,
     panic::{AssertUnwindSafe, catch_unwind},
     rc::{Rc, Weak},
 };
 
 pub(crate) struct ChildRegistry {
-    entries: RefCell<Vec<ChildEntry>>,
+    entries: BorrowCell<Vec<ChildEntry>>,
 }
 
 struct ChildEntry {
@@ -29,41 +29,53 @@ struct ParentLink {
 impl ChildRegistry {
     pub(crate) fn new() -> Rc<Self> {
         Rc::new(Self {
-            entries: RefCell::new(Vec::new()),
+            entries: BorrowCell::new(Vec::new(), BorrowSite::OwnerRegistry),
         })
     }
 
-    pub(crate) fn insert(&self, storage: Rc<ScopeStorage>) {
-        self.entries.borrow_mut().push(ChildEntry {
-            owner_id: storage.owner_id,
-            storage,
-        });
+    pub(crate) fn insert(&self, storage: Rc<ScopeStorage>) -> ReactiveResult<()> {
+        self.entries
+            .try_write()
+            .map_err(|_| ReactiveError::BorrowConflict)?
+            .push(ChildEntry {
+                owner_id: storage.owner_id,
+                storage,
+            });
+        Ok(())
     }
 
-    pub(crate) fn snapshot(&self) -> Vec<Rc<ScopeStorage>> {
-        self.entries
-            .borrow()
+    pub(crate) fn snapshot(&self) -> ReactiveResult<Vec<Rc<ScopeStorage>>> {
+        Ok(self
+            .entries
+            .try_read()
+            .map_err(|_| ReactiveError::BorrowConflict)?
             .iter()
             .map(|entry| entry.storage.clone())
-            .collect()
+            .collect())
     }
 
-    pub(crate) fn contains(&self, owner_id: OwnerId, storage: &Rc<ScopeStorage>) -> bool {
-        self.entries
-            .borrow()
+    pub(crate) fn contains(
+        &self,
+        owner_id: OwnerId,
+        storage: &Rc<ScopeStorage>,
+    ) -> ReactiveResult<bool> {
+        Ok(self
+            .entries
+            .try_read()
+            .map_err(|_| ReactiveError::BorrowConflict)?
             .iter()
-            .any(|entry| entry.owner_id == owner_id && Rc::ptr_eq(&entry.storage, storage))
+            .any(|entry| entry.owner_id == owner_id && Rc::ptr_eq(&entry.storage, storage)))
     }
 
     fn remove(&self, owner_id: OwnerId) {
-        self.entries
-            .borrow_mut()
-            .retain(|entry| entry.owner_id != owner_id);
+        if let Ok(mut entries) = self.entries.try_write() {
+            entries.retain(|entry| entry.owner_id != owner_id);
+        }
     }
 
     #[cfg(feature = "test-support")]
     pub(crate) fn len(&self) -> usize {
-        self.entries.borrow().len()
+        self.entries.try_read().map_or(0, |entries| entries.len())
     }
 }
 
@@ -82,11 +94,20 @@ impl CloseOutcome {
         }
     }
 
-    fn retryable(error: CloseError) -> Self {
+    pub(crate) fn retryable(error: CloseError) -> Self {
         Self {
             released: false,
             error: Some(error),
         }
+    }
+}
+
+fn retryable_close(transaction: CloseTransaction) -> CloseOutcome {
+    match transaction.finish() {
+        Some(error) => CloseOutcome::retryable(error),
+        None => CloseOutcome::retryable(CloseError::from_panic(Box::new(
+            "owner close lost its diagnostic",
+        ))),
     }
 }
 
@@ -96,43 +117,60 @@ pub(crate) struct ScopeStorage {
     pub(crate) state: Rc<ErasedScopeState>,
     pub(crate) allocations: Rc<AllocationCounters>,
     pub(crate) children: Rc<ChildRegistry>,
-    parent_link: RefCell<Option<ParentLink>>,
+    parent_link: BorrowCell<Option<ParentLink>>,
     close_reports: Rc<CloseReportQueue>,
 }
 
 impl ScopeStorage {
     #[cfg(test)]
-    pub(crate) fn new(scheduler: Rc<RefCell<GlobalScheduler>>) -> Self {
+    pub(crate) fn new(scheduler: SharedCell<GlobalScheduler>) -> ReactiveResult<Self> {
         Self::new_with_owner(scheduler, None, OwnerMode::Transient)
     }
 
     pub(crate) fn new_with_owner(
-        scheduler: Rc<RefCell<GlobalScheduler>>,
+        scheduler: SharedCell<GlobalScheduler>,
         parent: Option<OwnerId>,
         mode: OwnerMode,
-    ) -> Self {
-        let close_reports = scheduler.borrow().close_reports.clone();
+    ) -> ReactiveResult<Self> {
+        let close_reports = scheduler
+            .try_borrow()
+            .map_err(|_| ReactiveError::BorrowConflict)?
+            .close_reports
+            .clone();
         let state = ScopeState::new(OwnerId::initial(0), scheduler.clone());
-        let owner_id = scheduler.borrow_mut().alloc_owner(&state, parent, mode);
-        state.borrow_mut().owner_id = owner_id;
-        Self {
+        let owner_id = scheduler
+            .try_borrow_mut()
+            .map_err(|_| ReactiveError::BorrowConflict)?
+            .alloc_owner(&state, parent, mode);
+        state
+            .try_borrow_mut()
+            .map_err(|_| ReactiveError::BorrowConflict)?
+            .owner_id = owner_id;
+        Ok(Self {
             owner_id,
             state: state.into_inner(),
             allocations: Rc::new(AllocationCounters::new()),
             children: ChildRegistry::new(),
-            parent_link: RefCell::new(None),
+            parent_link: BorrowCell::new(None, BorrowSite::OwnerRegistry),
             close_reports,
-        }
+        })
     }
 
-    pub(crate) fn link_parent(&self, registry: &Rc<ChildRegistry>) {
-        *self.parent_link.borrow_mut() = Some(ParentLink {
+    pub(crate) fn link_parent(&self, registry: &Rc<ChildRegistry>) -> ReactiveResult<()> {
+        *self
+            .parent_link
+            .try_write()
+            .map_err(|_| ReactiveError::BorrowConflict)? = Some(ParentLink {
             registry: Rc::downgrade(registry),
         });
+        Ok(())
     }
 
     pub(crate) fn unlink_parent(&self) {
-        let link = self.parent_link.borrow_mut().take();
+        let Ok(mut parent_link) = self.parent_link.try_write() else {
+            return;
+        };
+        let link = parent_link.take();
         if let Some(link) = link.and_then(|link| link.registry.upgrade()) {
             link.remove(self.owner_id);
         }
@@ -181,22 +219,36 @@ impl ScopeStorage {
                     CloseSource::Owner,
                     CleanupFailure::Runtime(ReactiveError::BorrowConflict),
                 );
-                return CloseOutcome::retryable(transaction.finish().expect("close error"));
+                return retryable_close(transaction);
             }
         };
 
-        let already_released = self
-            .state
-            .try_borrow()
-            .is_ok_and(|state| state.phase == runtime::ScopePhase::Released);
+        let already_released = match self.state.try_borrow() {
+            Ok(state) => state.phase == runtime::ScopePhase::Released,
+            Err(_) => {
+                transaction.push(
+                    ClosePhase::Runtime,
+                    CloseSource::Owner,
+                    CleanupFailure::Runtime(ReactiveError::BorrowConflict),
+                );
+                false
+            }
+        };
         if already_released {
-            let released = scheduler
-                .try_borrow_mut()
-                .map(|mut scheduler| {
+            let released = match scheduler.try_borrow_mut() {
+                Ok(mut scheduler) => {
                     scheduler.release_owner_id(self.owner_id);
                     scheduler.owner_metadata(self.owner_id).is_none()
-                })
-                .unwrap_or(false);
+                }
+                Err(_) => {
+                    transaction.push(
+                        ClosePhase::Runtime,
+                        CloseSource::Owner,
+                        CleanupFailure::Runtime(ReactiveError::BorrowConflict),
+                    );
+                    false
+                }
+            };
             if released {
                 self.unlink_parent();
                 return CloseOutcome::released(None);
@@ -206,7 +258,7 @@ impl ScopeStorage {
                 CloseSource::Owner,
                 CleanupFailure::Runtime(ReactiveError::BorrowConflict),
             );
-            return CloseOutcome::retryable(transaction.finish().expect("close error"));
+            return retryable_close(transaction);
         }
 
         let should_dispose = match self.state.try_borrow_mut() {
@@ -359,11 +411,19 @@ impl ScopeStorage {
             }
         }
 
+        let metadata_released = match scheduler.try_borrow() {
+            Ok(scheduler) => scheduler.owner_metadata(self.owner_id).is_none(),
+            Err(_) => {
+                transaction.push(
+                    ClosePhase::Runtime,
+                    CloseSource::Owner,
+                    CleanupFailure::Runtime(ReactiveError::BorrowConflict),
+                );
+                false
+            }
+        };
         let error = transaction.finish();
-        let released = ready_for_release
-            && scheduler
-                .try_borrow()
-                .is_ok_and(|scheduler| scheduler.owner_metadata(self.owner_id).is_none());
+        let released = ready_for_release && metadata_released;
         if released {
             self.unlink_parent();
             CloseOutcome::released(error)
@@ -384,35 +444,47 @@ impl ScopeStorage {
                     CloseError::from_failures(vec![CleanupFailure::Runtime(
                         ReactiveError::BorrowConflict,
                     )])
-                    .expect("a borrow conflict must produce a close error"),
+                    .unwrap_or_else(|| {
+                        CloseError::from_panic(Box::new(
+                            "owner disposal lost its borrow-conflict diagnostic",
+                        ))
+                    }),
                 );
             }
         };
-        let frame = runtime::ObserverFrame::push(scheduler, None);
+        let frame = match runtime::ObserverFrame::push(scheduler, None) {
+            Ok(frame) => frame,
+            Err(error) => {
+                return CloseOutcome::retryable(
+                    CloseError::from_failures(vec![CleanupFailure::Runtime(error)]).unwrap_or_else(
+                        || {
+                            CloseError::from_panic(Box::new(
+                                "observer stack push did not produce a close diagnostic",
+                            ))
+                        },
+                    ),
+                );
+            }
+        };
         let result = self.dispose();
         drop(frame);
         result
     }
 
-    pub(crate) fn is_active(&self) -> bool {
-        let state = match self.state.try_borrow() {
-            Ok(state) => state,
-            Err(_) => return false,
-        };
-        let active = state.is_active();
+    pub(crate) fn is_active(&self) -> ReactiveResult<bool> {
+        let state = self.state.try_borrow()?;
+        let active = state.try_is_active()?;
         drop(state);
-        active && self.owner_mode().is_some()
+        Ok(active && self.owner_mode()?.is_some())
     }
 
-    pub(crate) fn owner_mode(&self) -> Option<OwnerMode> {
-        self.state.try_borrow().ok().and_then(|state| {
-            state
-                .scheduler
-                .try_borrow()
-                .ok()?
-                .owner_metadata(state.owner_id)
-                .map(|(mode, _parent)| mode)
-        })
+    pub(crate) fn owner_mode(&self) -> ReactiveResult<Option<OwnerMode>> {
+        let state = self.state.try_borrow()?;
+        Ok(state
+            .scheduler
+            .try_borrow()?
+            .owner_metadata(state.owner_id)
+            .map(|(mode, _parent)| mode))
     }
 
     #[cfg(feature = "test-support")]

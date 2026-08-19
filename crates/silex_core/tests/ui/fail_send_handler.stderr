@@ -5,6 +5,11 @@ error[E0277]: `NonNull<()>` cannot be sent between threads safely
   |                    ^^^^^^^^^^^^^^^^^^^^^ `NonNull<()>` cannot be sent between threads safely
   |
   = help: within `silex_reactivity::error::ErrorHandlerRef<'static, SilexError>`, the trait `Send` is not implemented for `NonNull<()>`
+note: required because it appears within the type `silex_reactivity::unsafe_boundary::ScopedPtr<()>`
+ --> $WORKSPACE/crates/silex_reactivity/src/unsafe_boundary.rs
+  |
+  | pub(crate) struct ScopedPtr<T> {
+  |                   ^^^^^^^^^
 note: required because it appears within the type `silex_reactivity::error::ErrorHandlerRef<'static, SilexError>`
  --> $WORKSPACE/crates/silex_reactivity/src/error.rs
   |
@@ -16,13 +21,37 @@ note: required by a bound in `require_send`
 3 | fn require_send<T: Send>() {}
   |                    ^^^^ required by this bound in `require_send`
 
-error[E0277]: `Rc<RefCell<silex_reactivity::runtime::model::ScopeStateInner<'static>>>` cannot be shared between threads safely
+error[E0277]: `Rc<silex_reactivity::borrow::BorrowCell<silex_reactivity::runtime::model::ScopeStateInner<'static>>>` cannot be shared between threads safely
  --> tests/ui/fail_send_handler.rs:6:20
   |
 6 |     require_send::<ErrorHandler<'static>>();
-  |                    ^^^^^^^^^^^^^^^^^^^^^ `Rc<RefCell<silex_reactivity::runtime::model::ScopeStateInner<'static>>>` cannot be shared between threads safely
+  |                    ^^^^^^^^^^^^^^^^^^^^^ `Rc<silex_reactivity::borrow::BorrowCell<silex_reactivity::runtime::model::ScopeStateInner<'static>>>` cannot be shared between threads safely
   |
-  = help: within `silex_reactivity::owner::storage::ScopeStorage`, the trait `Sync` is not implemented for `Rc<RefCell<silex_reactivity::runtime::model::ScopeStateInner<'static>>>`
+  = help: within `silex_reactivity::owner::storage::ScopeStorage`, the trait `Sync` is not implemented for `Rc<silex_reactivity::borrow::BorrowCell<silex_reactivity::runtime::model::ScopeStateInner<'static>>>`
+note: required because it appears within the type `silex_reactivity::owner::storage::ScopeStorage`
+ --> $WORKSPACE/crates/silex_reactivity/src/owner/storage.rs
+  |
+  | pub(crate) struct ScopeStorage {
+  |                   ^^^^^^^^^^^^
+  = note: required for `&'static silex_reactivity::owner::storage::ScopeStorage` to implement `Send`
+note: required because it appears within the type `silex_reactivity::error::ErrorHandlerRef<'static, SilexError>`
+ --> $WORKSPACE/crates/silex_reactivity/src/error.rs
+  |
+  | pub struct ErrorHandlerRef<'scope, E> {
+  |            ^^^^^^^^^^^^^^^
+note: required by a bound in `require_send`
+ --> tests/ui/fail_send_handler.rs:3:20
+  |
+3 | fn require_send<T: Send>() {}
+  |                    ^^^^ required by this bound in `require_send`
+
+error[E0277]: `Rc<silex_reactivity::runtime::storage::AllocationCounters>` cannot be shared between threads safely
+ --> tests/ui/fail_send_handler.rs:6:20
+  |
+6 |     require_send::<ErrorHandler<'static>>();
+  |                    ^^^^^^^^^^^^^^^^^^^^^ `Rc<silex_reactivity::runtime::storage::AllocationCounters>` cannot be shared between threads safely
+  |
+  = help: within `silex_reactivity::owner::storage::ScopeStorage`, the trait `Sync` is not implemented for `Rc<silex_reactivity::runtime::storage::AllocationCounters>`
 note: required because it appears within the type `silex_reactivity::owner::storage::ScopeStorage`
  --> $WORKSPACE/crates/silex_reactivity/src/owner/storage.rs
   |
@@ -64,31 +93,6 @@ note: required by a bound in `require_send`
 3 | fn require_send<T: Send>() {}
   |                    ^^^^ required by this bound in `require_send`
 
-error[E0277]: `RefCell<Option<silex_reactivity::owner::storage::ParentLink>>` cannot be shared between threads safely
- --> tests/ui/fail_send_handler.rs:6:20
-  |
-6 |     require_send::<ErrorHandler<'static>>();
-  |                    ^^^^^^^^^^^^^^^^^^^^^ `RefCell<Option<silex_reactivity::owner::storage::ParentLink>>` cannot be shared between threads safely
-  |
-  = help: within `silex_reactivity::owner::storage::ScopeStorage`, the trait `Sync` is not implemented for `RefCell<Option<silex_reactivity::owner::storage::ParentLink>>`
-  = note: if you want to do aliasing and mutation between multiple threads, use `std::sync::RwLock` instead
-note: required because it appears within the type `silex_reactivity::owner::storage::ScopeStorage`
- --> $WORKSPACE/crates/silex_reactivity/src/owner/storage.rs
-  |
-  | pub(crate) struct ScopeStorage {
-  |                   ^^^^^^^^^^^^
-  = note: required for `&'static silex_reactivity::owner::storage::ScopeStorage` to implement `Send`
-note: required because it appears within the type `silex_reactivity::error::ErrorHandlerRef<'static, SilexError>`
- --> $WORKSPACE/crates/silex_reactivity/src/error.rs
-  |
-  | pub struct ErrorHandlerRef<'scope, E> {
-  |            ^^^^^^^^^^^^^^^
-note: required by a bound in `require_send`
- --> tests/ui/fail_send_handler.rs:3:20
-  |
-3 | fn require_send<T: Send>() {}
-  |                    ^^^^ required by this bound in `require_send`
-
 error[E0277]: `Rc<silex_reactivity::runtime::scheduler::CloseReportQueue>` cannot be shared between threads safely
  --> tests/ui/fail_send_handler.rs:6:20
   |
@@ -113,49 +117,19 @@ note: required by a bound in `require_send`
 3 | fn require_send<T: Send>() {}
   |                    ^^^^ required by this bound in `require_send`
 
-error[E0277]: `Cell<NonNull<bumpalo::ChunkFooter>>` cannot be shared between threads safely
+error[E0277]: `RefCell<Option<silex_reactivity::owner::storage::ParentLink>>` cannot be shared between threads safely
  --> tests/ui/fail_send_handler.rs:6:20
   |
 6 |     require_send::<ErrorHandler<'static>>();
-  |                    ^^^^^^^^^^^^^^^^^^^^^ `Cell<NonNull<bumpalo::ChunkFooter>>` cannot be shared between threads safely
+  |                    ^^^^^^^^^^^^^^^^^^^^^ `RefCell<Option<silex_reactivity::owner::storage::ParentLink>>` cannot be shared between threads safely
   |
-  = help: within `silex_reactivity::owner::storage::ScopeStorage`, the trait `Sync` is not implemented for `Cell<NonNull<bumpalo::ChunkFooter>>`
-  = note: if you want to do aliasing and mutation between multiple threads, use `std::sync::RwLock`
-note: required because it appears within the type `bumpalo::Bump`
- --> $CARGO/bumpalo-$VERSION/src/lib.rs
+  = help: within `silex_reactivity::owner::storage::ScopeStorage`, the trait `Sync` is not implemented for `RefCell<Option<silex_reactivity::owner::storage::ParentLink>>`
+  = note: if you want to do aliasing and mutation between multiple threads, use `std::sync::RwLock` instead
+note: required because it appears within the type `silex_reactivity::borrow::BorrowCell<Option<silex_reactivity::owner::storage::ParentLink>>`
+ --> $WORKSPACE/crates/silex_reactivity/src/borrow.rs
   |
-  | pub struct Bump<const MIN_ALIGN: usize = 1> {
-  |            ^^^^
-note: required because it appears within the type `silex_reactivity::owner::storage::ScopeStorage`
- --> $WORKSPACE/crates/silex_reactivity/src/owner/storage.rs
-  |
-  | pub(crate) struct ScopeStorage {
-  |                   ^^^^^^^^^^^^
-  = note: required for `&'static silex_reactivity::owner::storage::ScopeStorage` to implement `Send`
-note: required because it appears within the type `silex_reactivity::error::ErrorHandlerRef<'static, SilexError>`
- --> $WORKSPACE/crates/silex_reactivity/src/error.rs
-  |
-  | pub struct ErrorHandlerRef<'scope, E> {
-  |            ^^^^^^^^^^^^^^^
-note: required by a bound in `require_send`
- --> tests/ui/fail_send_handler.rs:3:20
-  |
-3 | fn require_send<T: Send>() {}
-  |                    ^^^^ required by this bound in `require_send`
-
-error[E0277]: `Cell<Option<usize>>` cannot be shared between threads safely
- --> tests/ui/fail_send_handler.rs:6:20
-  |
-6 |     require_send::<ErrorHandler<'static>>();
-  |                    ^^^^^^^^^^^^^^^^^^^^^ `Cell<Option<usize>>` cannot be shared between threads safely
-  |
-  = help: within `silex_reactivity::owner::storage::ScopeStorage`, the trait `Sync` is not implemented for `Cell<Option<usize>>`
-  = note: if you want to do aliasing and mutation between multiple threads, use `std::sync::RwLock`
-note: required because it appears within the type `bumpalo::Bump`
- --> $CARGO/bumpalo-$VERSION/src/lib.rs
-  |
-  | pub struct Bump<const MIN_ALIGN: usize = 1> {
-  |            ^^^^
+  | pub(crate) struct BorrowCell<T> {
+  |                   ^^^^^^^^^^
 note: required because it appears within the type `silex_reactivity::owner::storage::ScopeStorage`
  --> $WORKSPACE/crates/silex_reactivity/src/owner/storage.rs
   |
