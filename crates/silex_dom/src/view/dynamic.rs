@@ -159,10 +159,10 @@ pub fn mount_dynamic_view_universal<'scope>(
         }),
         error_handler,
     ) {
-        if let Some(mut row) = row_state.take_for_cleanup().flatten() {
-            if let Err(close_error) = row.dispose() {
-                token.report_close_error(close_error);
-            }
+        if let Some(mut row) = row_state.take_for_cleanup().flatten()
+            && let Err(close_error) = row.dispose()
+        {
+            token.report_close_error(close_error);
         }
         range_instance.remove();
         return Err(error);

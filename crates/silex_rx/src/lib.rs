@@ -407,18 +407,10 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
 
     let error_handler_ident = format_ident!("__silex_error_handler");
     let setup = source_setup(&bindings, &error_handler_ident);
-    let constructor = if force_computed {
-        quote! {
-            __silex_owner
-                .computed_always(move || #reads, #error_handler_ident)?
-                .into_rx()
-        }
-    } else {
-        quote! {
-            __silex_owner
-                .computed_always(move || #reads, #error_handler_ident)?
-                .into_rx()
-        }
+    let constructor = quote! {
+        __silex_owner
+            .computed_always(move || #reads, #error_handler_ident)?
+            .into_rx()
     };
     Ok(quote! {{
         #owner_binding

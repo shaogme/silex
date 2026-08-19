@@ -245,7 +245,7 @@ impl<'owner> OwnerAccess<'owner> {
     {
         self.inner
             .effect(f, error_handler.handler_ref())
-            .map(|effect| EffectHandle::from_inner(effect))
+            .map(EffectHandle::from_inner)
             .map_err(map_computation_error)
     }
 
@@ -260,7 +260,7 @@ impl<'owner> OwnerAccess<'owner> {
     {
         self.inner
             .effect_detached(f, error_handler.handler_ref())
-            .map(|effect| EffectHandle::from_inner(effect))
+            .map(EffectHandle::from_inner)
             .map_err(map_computation_error)
     }
 
@@ -276,7 +276,7 @@ impl<'owner> OwnerAccess<'owner> {
     {
         self.inner
             .effect_with_previous(f, error_handler.handler_ref())
-            .map(|effect| EffectHandle::from_inner(effect))
+            .map(EffectHandle::from_inner)
             .map_err(map_computation_error)
     }
 

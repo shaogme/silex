@@ -453,10 +453,10 @@ impl<'scope, T: Clone + 'scope> RowInstance<'scope, T> {
                             let previous = rendered_scope_for_effect
                                 .replace(Some(candidate_scope))?
                                 .flatten();
-                            if let Some(scope) = previous {
-                                if let Err(error) = close_scope(scope) {
-                                    row_scope.report_close_error(error);
-                                }
+                            if let Some(scope) = previous
+                                && let Err(error) = close_scope(scope)
+                            {
+                                row_scope.report_close_error(error);
                             }
                             Ok(())
                         }
@@ -509,15 +509,15 @@ impl<'scope, T: Clone + 'scope> RowInstance<'scope, T> {
             return Err(error);
         }
 
-        if let Some(scope) = previous_scope {
-            if let Err(close_error) = close_scope(scope) {
-                self.row_scope.report_close_error(close_error);
-            }
+        if let Some(scope) = previous_scope
+            && let Err(close_error) = close_scope(scope)
+        {
+            self.row_scope.report_close_error(close_error);
         }
-        if let Some(scope) = previous_content_scope {
-            if let Err(close_error) = dispose_render_candidate(&scope) {
-                self.row_scope.report_close_error(close_error);
-            }
+        if let Some(scope) = previous_content_scope
+            && let Err(close_error) = dispose_render_candidate(&scope)
+        {
+            self.row_scope.report_close_error(close_error);
         }
         self.render_scope = Some(render_scope);
         self.render_content_scope = Some(rendered_scope);
@@ -547,10 +547,10 @@ impl<'scope, T> RowInstance<'scope, T> {
 
     fn dispose_owners(&mut self) -> Result<(), CloseError> {
         let mut transaction = CloseTransaction::new();
-        if let Some(scope) = self.render_scope.take() {
-            if let Err(error) = close_scope(scope) {
-                transaction.push_error(ClosePhase::Effect, CloseSource::Effect, error);
-            }
+        if let Some(scope) = self.render_scope.take()
+            && let Err(error) = close_scope(scope)
+        {
+            transaction.push_error(ClosePhase::Effect, CloseSource::Effect, error);
         }
         if let Some(scope) = self.render_content_scope.take()
             && let Err(error) = dispose_render_candidate(&scope)

@@ -392,12 +392,12 @@ impl<'scope> I18nStore<'scope> {
     }
 
     #[doc(hidden)]
-    pub fn __computed<F>(self, mut f: F) -> SilexResult<Rx<'scope, String>>
+    pub fn __computed<F>(self, f: F) -> SilexResult<Rx<'scope, String>>
     where
         F: FnMut() -> SilexResult<String> + 'scope,
     {
         self.owner
-            .computed_always(move || f(), self.error_handler())
+            .computed_always(f, self.error_handler())
             .map(|computed| computed.into_rx())
     }
 
