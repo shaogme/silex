@@ -11,7 +11,7 @@ use silex_core::{
     reactivity::{PromotionPlan, ReactiveSource, ReadSignal, RwSignal, StoredValue},
     traits::{RxCloneData, RxData, RxRead, RxValue, RxWrite},
 };
-use silex_dom::attribute::PendingAttribute;
+use silex_dom::attribute::AttrOp;
 use silex_dom::view::{
     ApplyAttributes, HostResourceHandle, MountErrorHandler, MountInstance, MountOwner, View,
 };
@@ -337,7 +337,7 @@ where
         &self,
         owner: &dyn MountOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope>>,
+        attrs: Vec<AttrOp<'scope>>,
         error_handler: MountErrorHandler<'scope>,
     ) -> silex_core::SilexResult<MountInstance<'scope>> {
         self.value

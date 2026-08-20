@@ -8,7 +8,7 @@ use silex_core::{
     ErrorHandlerToken, ErrorReporter, OwnerAccess, ReadSignal, Runtime, SilexContext, SilexError,
     SilexErrorKind, SilexResult,
 };
-use silex_dom::attribute::PendingAttribute;
+use silex_dom::attribute::AttrOp;
 use silex_dom::document;
 use silex_dom::view::{ApplyAttributes, MountInstance, MountOwner, MountOwnerToken, View};
 use wasm_bindgen::JsValue;
@@ -28,7 +28,7 @@ impl<'scope> View<'scope> for InitialFailure {
         &self,
         _owner: &dyn MountOwner<'scope>,
         _parent: &Node,
-        _attrs: Vec<PendingAttribute<'scope>>,
+        _attrs: Vec<AttrOp<'scope>>,
         _error_handler: ErrorReporter<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         Err(SilexError::recoverable(SilexErrorKind::Framework(
@@ -49,7 +49,7 @@ impl<'scope> View<'scope> for DeferredFailure<'scope> {
         &self,
         owner: &dyn MountOwner<'scope>,
         parent: &Node,
-        _attrs: Vec<PendingAttribute<'scope>>,
+        _attrs: Vec<AttrOp<'scope>>,
         error_handler: ErrorReporter<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         let node = document().create_text_node("child");
@@ -96,7 +96,7 @@ impl<'scope> View<'scope> for ConstructedHandlerFailure<'scope> {
         &self,
         _owner: &dyn MountOwner<'scope>,
         _parent: &Node,
-        _attrs: Vec<PendingAttribute<'scope>>,
+        _attrs: Vec<AttrOp<'scope>>,
         _error_handler: ErrorReporter<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         let _ = self

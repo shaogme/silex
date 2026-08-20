@@ -3,7 +3,7 @@
 use silex_core::{
     ErrorHandlerToken, ErrorReporter, OwnerAccess, Runtime, SilexError, SilexErrorKind, SilexResult,
 };
-use silex_dom::attribute::{AttrOp, CombinedStyles, PendingAttribute, ReactiveBindingPlan};
+use silex_dom::attribute::{AttrOp, CombinedStyles, ReactiveBindingPlan};
 use silex_dom::element::Element;
 use silex_dom::view::{
     AnyView, ApplyAttributes, BranchEvaluation, IndexedListView, MountOwner, MountOwnerToken,
@@ -45,7 +45,7 @@ impl<'owner> View<'owner> for CleanupProbe {
         &self,
         owner: &dyn MountOwner<'owner>,
         parent: &Node,
-        _attrs: Vec<PendingAttribute<'owner>>,
+        _attrs: Vec<AttrOp<'owner>>,
         error_handler: ErrorReporter<'owner>,
     ) -> silex_core::SilexResult<silex_dom::view::MountInstance<'owner>> {
         let cleanups = self.cleanups.clone();
@@ -71,7 +71,7 @@ impl<'owner> View<'owner> for FailingChild {
         &self,
         owner: &dyn MountOwner<'owner>,
         _parent: &Node,
-        _attrs: Vec<PendingAttribute<'owner>>,
+        _attrs: Vec<AttrOp<'owner>>,
         error_handler: ErrorReporter<'owner>,
     ) -> silex_core::SilexResult<silex_dom::view::MountInstance<'owner>> {
         let cleanups = self.cleanups.clone();
@@ -100,7 +100,7 @@ impl<'owner> View<'owner> for ConditionalRow {
         &self,
         _owner: &dyn MountOwner<'owner>,
         parent: &Node,
-        _attrs: Vec<PendingAttribute<'owner>>,
+        _attrs: Vec<AttrOp<'owner>>,
         _error_handler: ErrorReporter<'owner>,
     ) -> SilexResult<silex_dom::view::MountInstance<'owner>> {
         if self.fail == Some(self.value) {
@@ -127,7 +127,7 @@ impl<'owner> View<'owner> for StatefulProbe {
         &self,
         owner: &dyn MountOwner<'owner>,
         parent: &Node,
-        _attrs: Vec<PendingAttribute<'owner>>,
+        _attrs: Vec<AttrOp<'owner>>,
         error_handler: ErrorReporter<'owner>,
     ) -> silex_core::SilexResult<silex_dom::view::MountInstance<'owner>> {
         self.mounts.set(self.mounts.get() + 1);

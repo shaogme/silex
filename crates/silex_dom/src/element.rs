@@ -1,4 +1,4 @@
-use crate::attribute::{ApplyTarget, AttributeBuilder, IntoStorable, PendingAttribute};
+use crate::attribute::{ApplyTarget, AttrOp, AttributeBuilder, IntoStorable};
 use crate::event::{EventDescriptor, EventHandler};
 use crate::view::{
     AnyView, ApplyAttributes, HostResourceHandle, MountInstance, MountOwner, MountOwnerToken,
@@ -21,7 +21,7 @@ pub fn text<'scope, V: View<'scope>>(content: V) -> V {
 pub struct Element<'scope> {
     tag_name: String,
     namespace: Option<String>,
-    pub(crate) pending_attrs: Vec<PendingAttribute<'scope>>,
+    pub(crate) pending_attrs: Vec<AttrOp<'scope>>,
     pub(crate) children: Vec<AnyView<'scope>>,
 }
 
@@ -73,7 +73,7 @@ impl<'scope> Element<'scope> {
         element
     }
 
-    fn all_attrs(&self, attrs: Vec<PendingAttribute<'scope>>) -> Vec<PendingAttribute<'scope>> {
+    fn all_attrs(&self, attrs: Vec<AttrOp<'scope>>) -> Vec<AttrOp<'scope>> {
         let mut all = self.pending_attrs.clone();
         all.extend(attrs);
         crate::attribute::consolidate_attributes(all)
@@ -83,7 +83,7 @@ impl<'scope> Element<'scope> {
         &self,
         owner: &dyn MountOwner<'scope>,
         parent: &web_sys::Node,
-        attrs: Vec<PendingAttribute<'scope>>,
+        attrs: Vec<AttrOp<'scope>>,
         error_handler: crate::view::MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         let document = crate::document();
@@ -160,7 +160,7 @@ impl<'scope> AttributeBuilder<'scope> for Element<'scope> {
         V: IntoStorable<'scope>,
     {
         self.pending_attrs
-            .push(PendingAttribute::build(value.into_storable(), target));
+            .push(AttrOp::build(value.into_storable(), target));
         self
     }
 
@@ -169,17 +169,16 @@ impl<'scope> AttributeBuilder<'scope> for Element<'scope> {
         E: EventDescriptor + 'static,
         F: EventHandler<'scope, E::EventType, M> + Clone + 'scope,
     {
-        self.pending_attrs.push(PendingAttribute::new_scoped(
-            move |element, owner, error_handler| {
+        self.pending_attrs
+            .push(AttrOp::new_scoped(move |element, owner, error_handler| {
                 bind_event(element, event, callback.clone(), owner, error_handler)
-            },
-        ));
+            }));
         self
     }
 }
 
 impl<'scope> ApplyAttributes<'scope> for Element<'scope> {
-    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute<'scope>>) {
+    fn apply_attributes(&mut self, attrs: Vec<AttrOp<'scope>>) {
         self.pending_attrs = crate::attribute::consolidate_attributes({
             let mut current = std::mem::take(&mut self.pending_attrs);
             current.extend(attrs);
@@ -193,7 +192,7 @@ impl<'scope> View<'scope> for Element<'scope> {
         &self,
         owner: &dyn MountOwner<'scope>,
         parent: &web_sys::Node,
-        attrs: Vec<PendingAttribute<'scope>>,
+        attrs: Vec<AttrOp<'scope>>,
         error_handler: crate::view::MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         self.mount_inner(owner, parent, attrs, error_handler)
@@ -203,7 +202,7 @@ impl<'scope> View<'scope> for Element<'scope> {
 pub struct TypedElement<'scope, T: Tag> {
     tag_name: String,
     namespace: Option<String>,
-    pub(crate) pending_attrs: Vec<PendingAttribute<'scope>>,
+    pub(crate) pending_attrs: Vec<AttrOp<'scope>>,
     pub(crate) children: Vec<AnyView<'scope>>,
     marker: PhantomData<T>,
 }
@@ -285,7 +284,7 @@ impl<'scope, T: Tag> AttributeBuilder<'scope> for TypedElement<'scope, T> {
         V: IntoStorable<'scope>,
     {
         self.pending_attrs
-            .push(PendingAttribute::build(value.into_storable(), target));
+            .push(AttrOp::build(value.into_storable(), target));
         self
     }
 
@@ -294,17 +293,16 @@ impl<'scope, T: Tag> AttributeBuilder<'scope> for TypedElement<'scope, T> {
         E: EventDescriptor + 'static,
         F: EventHandler<'scope, E::EventType, M> + Clone + 'scope,
     {
-        self.pending_attrs.push(PendingAttribute::new_scoped(
-            move |element, owner, error_handler| {
+        self.pending_attrs
+            .push(AttrOp::new_scoped(move |element, owner, error_handler| {
                 bind_event(element, event, callback.clone(), owner, error_handler)
-            },
-        ));
+            }));
         self
     }
 }
 
 impl<'scope, T: Tag> ApplyAttributes<'scope> for TypedElement<'scope, T> {
-    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute<'scope>>) {
+    fn apply_attributes(&mut self, attrs: Vec<AttrOp<'scope>>) {
         let mut current = std::mem::take(&mut self.pending_attrs);
         current.extend(attrs);
         self.pending_attrs = crate::attribute::consolidate_attributes(current);
@@ -316,7 +314,7 @@ impl<'scope, T: Tag> View<'scope> for TypedElement<'scope, T> {
         &self,
         owner: &dyn MountOwner<'scope>,
         parent: &web_sys::Node,
-        attrs: Vec<PendingAttribute<'scope>>,
+        attrs: Vec<AttrOp<'scope>>,
         error_handler: crate::view::MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         let element = self.clone().into_untyped();

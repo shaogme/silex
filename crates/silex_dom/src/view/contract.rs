@@ -1,6 +1,6 @@
 use super::any::AnyView;
 use super::owner::{MountErrorHandler, MountOwner};
-use crate::attribute::PendingAttribute;
+use crate::attribute::AttrOp;
 use silex_core::{
     ErrorHandlerInput, OwnerAccess, ReactiveSource, Rx, RxData, RxValue, SilexResult,
 };
@@ -25,7 +25,7 @@ pub struct ViewCons<H, T>(pub H, pub T);
 
 /// Apply attributes to a view while preserving their scope boundary.
 pub trait ApplyAttributes<'scope> {
-    fn apply_attributes(&mut self, _attrs: Vec<PendingAttribute<'scope>>) {}
+    fn apply_attributes(&mut self, _attrs: Vec<AttrOp<'scope>>) {}
 }
 
 /// Component prop wrapper used by generated builders.
@@ -89,7 +89,7 @@ where
     'a: 'scope,
     T: ApplyAttributes<'scope>,
 {
-    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute<'scope>>) {
+    fn apply_attributes(&mut self, attrs: Vec<AttrOp<'scope>>) {
         match self {
             Self::Owned(value) => value.apply_attributes(attrs),
             Self::Borrowed(value) => {
@@ -108,7 +108,7 @@ where
         &self,
         owner: &dyn MountOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope>>,
+        attrs: Vec<AttrOp<'scope>>,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         match self {
@@ -237,7 +237,7 @@ pub trait View<'scope> {
         &self,
         owner: &dyn MountOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope>>,
+        attrs: Vec<AttrOp<'scope>>,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>>;
 }

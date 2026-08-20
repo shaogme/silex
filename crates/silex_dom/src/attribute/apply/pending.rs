@@ -7,11 +7,6 @@ use super::foundation::{ApplyTarget, ApplyToDom, ReactiveBindingPlan, ReactiveBi
 use crate::attribute::op::{AttrOp, CombinedClasses, CombinedStyles};
 use crate::view::{MountErrorHandler, MountOwnerToken};
 
-// --- Attribute Forwarding Support ---
-
-/// `PendingAttribute` 是 `AttrOp` 的零成本别名，用于统一延迟属性指令。
-pub type PendingAttribute<'scope> = AttrOp<'scope>;
-
 #[derive(Default)]
 struct ClassAccumulator<'scope> {
     statics: Vec<Cow<'scope, str>>,

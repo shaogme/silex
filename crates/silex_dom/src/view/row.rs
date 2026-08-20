@@ -1,6 +1,6 @@
 use super::dynamic::BranchRenderContext;
 use super::owner::{MountErrorHandler, MountOwner, MountOwnerToken, MountState};
-use crate::attribute::PendingAttribute;
+use crate::attribute::AttrOp;
 use silex_core::{
     CloseError, ClosePhase, CloseSource, CloseTransaction, PersistentOwnerAccess, ReactiveError,
     SilexError, SilexErrorKind, SilexResult,
@@ -105,7 +105,7 @@ pub(crate) struct RowRenderContext<'scope, T> {
     pub(crate) item: T,
     pub(crate) index: usize,
     pub(crate) parent: Node,
-    pub(crate) attrs: Vec<PendingAttribute<'scope>>,
+    pub(crate) attrs: Vec<AttrOp<'scope>>,
     pub(crate) owner: MountOwnerToken<'scope>,
     pub(crate) branch_context: Option<BranchRenderContext<'scope>>,
     pub(crate) error_handler: MountErrorHandler<'scope>,
@@ -271,7 +271,7 @@ pub(crate) struct RowInstance<'scope, T> {
     render_content_scope: Option<MountState<'scope, Option<MountOwnerToken<'scope>>>>,
     render_nodes: Option<MountState<'scope, Vec<Node>>>,
     render: RowRenderer<'scope, T>,
-    attrs: Vec<PendingAttribute<'scope>>,
+    attrs: Vec<AttrOp<'scope>>,
     error_handler: MountErrorHandler<'scope>,
     updater: RowUpdater<'scope, T>,
     stateful: bool,
@@ -285,7 +285,7 @@ pub(crate) struct RowInstance<'scope, T> {
 pub(crate) struct RowInstanceConfig<'scope, T> {
     pub(crate) range: NodeRange,
     pub(crate) render: RowRenderer<'scope, T>,
-    pub(crate) attrs: Vec<PendingAttribute<'scope>>,
+    pub(crate) attrs: Vec<AttrOp<'scope>>,
     pub(crate) item: T,
     pub(crate) index: usize,
     pub(crate) stateful: bool,

@@ -89,7 +89,7 @@ impl<'owner> View<'owner> for RejectingView {
         &self,
         owner: &dyn MountOwner<'owner>,
         parent: &Node,
-        attrs: Vec<silex_dom::attribute::PendingAttribute<'owner>>,
+        attrs: Vec<silex_dom::attribute::AttrOp<'owner>>,
         error_handler: ErrorReporter<'owner>,
     ) -> SilexResult<MountInstance<'owner>> {
         let document = web_sys::window()

@@ -4,7 +4,7 @@ use gloo_timers::future::TimeoutFuture;
 use silex_core::{
     ErrorHandlerToken, ErrorReporter, OwnerAccess, OwnerHandle, Runtime, SilexContext, SilexResult,
 };
-use silex_dom::attribute::PendingAttribute;
+use silex_dom::attribute::AttrOp;
 use silex_dom::view::{
     AnyView, ApplyAttributes, IndexedListView, MountInstance, MountOwner, MountOwnerToken, View,
 };
@@ -322,7 +322,7 @@ impl<'scope> View<'scope> for CapturedPersistent<'scope> {
         &self,
         owner: &dyn MountOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope>>,
+        attrs: Vec<AttrOp<'scope>>,
         error_handler: ErrorReporter<'scope>,
     ) -> silex_core::SilexResult<MountInstance<'scope>> {
         let instance = self.binding.mount(owner, parent, attrs, error_handler)?;

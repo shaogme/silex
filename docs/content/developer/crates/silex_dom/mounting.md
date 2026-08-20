@@ -62,7 +62,7 @@ for<'scope> FnOnce(&MountContext<'scope>) -> SilexResult<()>
 - `mount(view, handler)`：挂载一个 view，并把它的返回节点纳入本次 boundary；
 - `mount_instance(...)`：挂载并保留 `MountInstance` 的节点快照；
 - `mount_with_attributes` / `mount_instance_with_attributes`：向一个顶层
-  view 转发 `PendingAttribute`。
+  view 转发 `AttrOp`。
 
 示例中的 error handler 必须来自同一个 `OwnerAccess`：
 

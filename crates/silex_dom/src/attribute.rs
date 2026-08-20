@@ -237,7 +237,7 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
     where
         N: JsCast + Clone + 'scope,
     {
-        self.apply(PendingAttribute::new_scoped(
+        self.apply(AttrOp::new_scoped(
             move |el: &Element, owner, error_handler| {
                 let typed = el.clone().dyn_into::<N>().map_err(|_| {
                     SilexError::fatal(SilexErrorKind::Dom(
@@ -304,7 +304,7 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
     where
         F: EventHandler<'scope, String, M> + Clone + 'scope,
     {
-        self.apply(PendingAttribute::new_scoped(
+        self.apply(AttrOp::new_scoped(
             move |el: &Element, owner, error_handler| {
                 bind_event_impl(
                     el,
@@ -327,7 +327,7 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
     where
         F: EventHandler<'scope, String, M> + Clone + 'scope,
     {
-        self.apply(PendingAttribute::new_scoped(
+        self.apply(AttrOp::new_scoped(
             move |el: &Element, owner, error_handler| {
                 bind_event_impl(
                     el,
@@ -357,7 +357,7 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
             Ok(())
         });
 
-        this.apply(PendingAttribute::new_scoped(
+        this.apply(AttrOp::new_scoped(
             move |el: &Element, owner, error_handler| {
                 let dom_element = el.clone();
                 let signal = signal.clone();
@@ -385,7 +385,7 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
     {
         let event_type_str = event_type.to_string();
         let cb_template = callback.clone();
-        self.apply(PendingAttribute::new_scoped(
+        self.apply(AttrOp::new_scoped(
             move |el: &Element, owner, error_handler| {
                 bind_event_impl(
                     el,
@@ -409,7 +409,7 @@ impl<'scope> AttributeBuilder<'scope> for AnyView<'scope> {
     where
         V: IntoStorable<'scope>,
     {
-        self.apply_attributes(vec![PendingAttribute::build(value.into_storable(), target)]);
+        self.apply_attributes(vec![AttrOp::build(value.into_storable(), target)]);
         self
     }
 
@@ -418,11 +418,9 @@ impl<'scope> AttributeBuilder<'scope> for AnyView<'scope> {
         E: EventDescriptor + 'static,
         F: EventHandler<'scope, E::EventType, M> + Clone + 'scope,
     {
-        self.apply_attributes(vec![PendingAttribute::new_scoped(
-            move |el, owner, error_handler| {
-                crate::element::bind_event(el, event, callback.clone(), owner, error_handler)
-            },
-        )]);
+        self.apply_attributes(vec![AttrOp::new_scoped(move |el, owner, error_handler| {
+            crate::element::bind_event(el, event, callback.clone(), owner, error_handler)
+        })]);
         self
     }
 }
@@ -439,7 +437,7 @@ mod tests {
             .with_transient(|owner| {
                 let signal = owner.rw_signal(true).expect("signal should initialize");
                 let target = ApplyTarget::Known(KnownProp::Disabled);
-                let pending = PendingAttribute::build(signal.into_storable(), target);
+                let pending = AttrOp::build(signal.into_storable(), target);
                 match pending {
                     AttrOp::Reactive(plan) => {
                         assert_eq!(
@@ -524,10 +522,10 @@ mod tests {
                 let signal = owner.rw_signal(true).expect("signal should initialize");
 
                 let attrs = vec![
-                    PendingAttribute::build("btn", ApplyTarget::Class),
-                    PendingAttribute::build("active", ApplyTarget::Class),
-                    PendingAttribute::build("btn", ApplyTarget::Class), // 重复项 (非相邻)
-                    PendingAttribute::build(("highlight", signal.into_rx()), ApplyTarget::Class),
+                    AttrOp::build("btn", ApplyTarget::Class),
+                    AttrOp::build("active", ApplyTarget::Class),
+                    AttrOp::build("btn", ApplyTarget::Class), // 重复项 (非相邻)
+                    AttrOp::build(("highlight", signal.into_rx()), ApplyTarget::Class),
                 ];
 
                 let consolidated = consolidate_attributes(attrs);

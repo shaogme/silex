@@ -520,7 +520,7 @@ impl<'owner> View<'owner> for RouterCleanupView {
         &self,
         owner: &dyn MountOwner<'owner>,
         parent: &web_sys::Node,
-        _attrs: Vec<silex_dom::attribute::PendingAttribute<'owner>>,
+        _attrs: Vec<silex_dom::attribute::AttrOp<'owner>>,
         error_handler: ErrorReporter<'owner>,
     ) -> SilexResult<MountInstance<'owner>> {
         let cleanups = self.cleanups.clone();
@@ -640,7 +640,7 @@ impl<'owner> View<'owner> for FactoryTextView<'owner> {
         &self,
         owner: &dyn MountOwner<'owner>,
         parent: &web_sys::Node,
-        _attrs: Vec<silex_dom::attribute::PendingAttribute<'owner>>,
+        _attrs: Vec<silex_dom::attribute::AttrOp<'owner>>,
         error_handler: ErrorReporter<'owner>,
     ) -> SilexResult<MountInstance<'owner>> {
         let cleanups = self.cleanups.clone();

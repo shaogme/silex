@@ -1,5 +1,5 @@
 use silex_core::Runtime;
-use silex_dom::attribute::PendingAttribute;
+use silex_dom::attribute::AttrOp;
 use silex_dom::view::{AnyView, DynamicRenderer, MountInstance, MountOwnerToken};
 
 fn main() {
@@ -14,7 +14,7 @@ fn main() {
             let _token = MountOwnerToken::new(owner);
 
             let borrowed_attr = String::from("borrowed-attribute");
-            let _attr: PendingAttribute<'_> = PendingAttribute::new_listener(move |_| {
+            let _attr: AttrOp<'_> = AttrOp::new_listener(move |_| {
                 let _ = borrowed_attr.as_str();
                 Ok(())
             });

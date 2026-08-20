@@ -1,7 +1,7 @@
 //! Application-level DOM mount transaction and ownership contracts.
 
 use crate::{
-    attribute::PendingAttribute,
+    attribute::AttrOp,
     view::{CleanupReporter, MountInstance, MountOwnerToken, View},
 };
 use silex_core::{
@@ -94,7 +94,7 @@ impl<'scope> MountContext<'scope> {
     pub fn mount_with_attributes<V, H>(
         &self,
         view: V,
-        attrs: Vec<PendingAttribute<'scope>>,
+        attrs: Vec<AttrOp<'scope>>,
         error_handler: H,
     ) -> SilexResult<()>
     where
@@ -109,7 +109,7 @@ impl<'scope> MountContext<'scope> {
     pub fn mount_instance_with_attributes<V, H>(
         &self,
         view: V,
-        attrs: Vec<PendingAttribute<'scope>>,
+        attrs: Vec<AttrOp<'scope>>,
         error_handler: H,
     ) -> SilexResult<MountInstance<'scope>>
     where

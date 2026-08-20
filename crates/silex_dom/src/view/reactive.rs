@@ -1,4 +1,4 @@
-use crate::attribute::PendingAttribute;
+use crate::attribute::AttrOp;
 use crate::element::{Element, TypedElement, tags::Tag};
 use crate::view::{
     AnyView, ApplyAttributes, DynamicRenderArgs, DynamicRenderer, MountErrorHandler, MountInstance,
@@ -78,7 +78,7 @@ pub(crate) fn mount_reactive_view<'scope, V>(
     owner: &dyn MountOwner<'scope>,
     parent: &Node,
     rx: Rx<'scope, V>,
-    attrs: Vec<PendingAttribute<'scope>>,
+    attrs: Vec<AttrOp<'scope>>,
     error_handler: MountErrorHandler<'scope>,
 ) -> SilexResult<MountInstance<'scope>>
 where
@@ -106,7 +106,7 @@ pub trait AutoReactiveView<'scope>: View<'scope> + Sized + 'scope {
         rx: Rx<'scope, Self>,
         owner: &dyn MountOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope>>,
+        attrs: Vec<AttrOp<'scope>>,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         mount_reactive_view(owner, parent, rx, attrs, error_handler)
@@ -126,7 +126,7 @@ where
         &self,
         owner: &dyn MountOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope>>,
+        attrs: Vec<AttrOp<'scope>>,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         V::mount_reactive(*self, owner, parent, attrs, error_handler)
@@ -141,7 +141,7 @@ macro_rules! impl_auto_reactive_text {
                     rx: Rx<'scope, Self>,
                     owner: &dyn MountOwner<'scope>,
                     parent: &Node,
-                    _attrs: Vec<PendingAttribute<'scope>>,
+                    _attrs: Vec<AttrOp<'scope>>,
                     error_handler: MountErrorHandler<'scope>,
                 ) -> SilexResult<MountInstance<'scope>> {
                     mount_reactive_text(owner, parent, rx, error_handler)
@@ -168,7 +168,7 @@ impl<'scope> AutoReactiveView<'scope> for &'scope str {
         rx: Rx<'scope, Self>,
         owner: &dyn MountOwner<'scope>,
         parent: &Node,
-        _attrs: Vec<PendingAttribute<'scope>>,
+        _attrs: Vec<AttrOp<'scope>>,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         mount_reactive_text(owner, parent, rx, error_handler)
@@ -180,7 +180,7 @@ impl<'scope> AutoReactiveView<'scope> for Cow<'scope, str> {
         rx: Rx<'scope, Self>,
         owner: &dyn MountOwner<'scope>,
         parent: &Node,
-        _attrs: Vec<PendingAttribute<'scope>>,
+        _attrs: Vec<AttrOp<'scope>>,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         mount_reactive_text(owner, parent, rx, error_handler)
@@ -219,7 +219,7 @@ macro_rules! impl_view_forward_to_rx {
                     &self,
                     owner: &dyn MountOwner<'scope>,
                     parent: &Node,
-                    attrs: Vec<PendingAttribute<'scope>>,
+                    attrs: Vec<AttrOp<'scope>>,
                     error_handler: MountErrorHandler<'scope>,
                 ) -> SilexResult<MountInstance<'scope>> {
                     self.clone()

@@ -2,7 +2,7 @@ use super::any::AnyView;
 use super::contract::{ApplyAttributes, MountInstance, View};
 use super::owner::{MountErrorHandler, MountOwner, MountOwnerToken};
 use super::row::{NodeRange, RowInstance, RowInstanceConfig, RowRenderContext, RowRenderer};
-use crate::attribute::PendingAttribute;
+use crate::attribute::AttrOp;
 use silex_core::{
     CloseError, ErrorHandlerInput, OwnerAccess, SilexError, SilexErrorKind, SilexResult,
 };
@@ -11,7 +11,7 @@ use web_sys::Node;
 
 pub struct DynamicRenderArgs<'scope> {
     pub(crate) parent: Node,
-    pub(crate) attrs: Vec<PendingAttribute<'scope>>,
+    pub(crate) attrs: Vec<AttrOp<'scope>>,
     pub(crate) owner: MountOwnerToken<'scope>,
     pub(crate) error_handler: MountErrorHandler<'scope>,
 }
@@ -19,7 +19,7 @@ pub struct DynamicRenderArgs<'scope> {
 impl<'scope> DynamicRenderArgs<'scope> {
     pub fn new(
         parent: Node,
-        attrs: Vec<PendingAttribute<'scope>>,
+        attrs: Vec<AttrOp<'scope>>,
         owner: MountOwnerToken<'scope>,
         error_handler: MountErrorHandler<'scope>,
     ) -> Self {
@@ -35,7 +35,7 @@ impl<'scope> DynamicRenderArgs<'scope> {
         self,
     ) -> (
         Node,
-        Vec<PendingAttribute<'scope>>,
+        Vec<AttrOp<'scope>>,
         MountOwnerToken<'scope>,
         MountErrorHandler<'scope>,
     ) {
@@ -82,7 +82,7 @@ where
         &self,
         owner: &dyn MountOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope>>,
+        attrs: Vec<AttrOp<'scope>>,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         let factory = self.clone();
@@ -109,7 +109,7 @@ where
 pub fn mount_dynamic_view_universal<'scope>(
     owner: &dyn MountOwner<'scope>,
     parent: &Node,
-    attrs: Vec<PendingAttribute<'scope>>,
+    attrs: Vec<AttrOp<'scope>>,
     error_handler: MountErrorHandler<'scope>,
     renderer: DynamicRenderer<'scope>,
 ) -> SilexResult<MountInstance<'scope>> {
@@ -250,7 +250,7 @@ impl<'scope> BranchRenderContext<'scope> {
 pub fn mount_branch_stable_cached<'scope, K, S, KeyFn, BranchFn, H>(
     owner: &dyn MountOwner<'scope>,
     parent: &Node,
-    attrs: Vec<PendingAttribute<'scope>>,
+    attrs: Vec<AttrOp<'scope>>,
     error_handler: H,
     key_fn: KeyFn,
     branch_fn: BranchFn,
@@ -301,13 +301,13 @@ struct BranchState<'scope, K> {
     row: Option<RowInstance<'scope, K>>,
     key: Option<K>,
     render: RowRenderer<'scope, K>,
-    attrs: Vec<PendingAttribute<'scope>>,
+    attrs: Vec<AttrOp<'scope>>,
 }
 
 struct KeyedDynamicMountArgs<'owner, 'scope, K, KeyFn> {
     owner: &'owner dyn MountOwner<'scope>,
     parent: &'owner Node,
-    attrs: Vec<PendingAttribute<'scope>>,
+    attrs: Vec<AttrOp<'scope>>,
     error_handler: MountErrorHandler<'scope>,
     key_fn: KeyFn,
     render: RowRenderer<'scope, K>,

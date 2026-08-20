@@ -322,7 +322,7 @@ impl BuilderContext {
     fn pending_attribute_ty(&self) -> TokenStream2 {
         let __silex = crate::crate_path::silex();
         let scope = self.owner_lifetime();
-        quote! { #__silex::dom::attribute::PendingAttribute<#scope> }
+        quote! { #__silex::dom::attribute::AttrOp<#scope> }
     }
 
     fn has_fallible_reactive_defaults(&self) -> bool {
@@ -839,7 +839,7 @@ impl BuilderContext {
             }
 
             impl #product_impl_generics #__silex::dom::view::ApplyAttributes<#scope> for #product_ty #product_where_clause {
-                fn apply_attributes(&mut self, attrs: ::std::vec::Vec<#__silex::dom::attribute::PendingAttribute<#scope>>) {
+                fn apply_attributes(&mut self, attrs: ::std::vec::Vec<#__silex::dom::attribute::AttrOp<#scope>>) {
                     self._pending_attrs.extend(attrs);
                 }
             }

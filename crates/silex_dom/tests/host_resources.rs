@@ -4,7 +4,7 @@ use silex_core::{
     ErrorHandlerToken, ErrorReporter, OwnerAccess, OwnerHandle, Runtime, SilexError, SilexErrorKind,
 };
 use silex_dom::{
-    attribute::{AttrOp, AttributeBuilder, PendingAttribute},
+    attribute::{AttrOp, AttributeBuilder},
     document,
     element::{Element, bind_event},
     event::click,
@@ -256,7 +256,7 @@ impl<'owner> View<'owner> for WindowResourceView {
         &self,
         owner: &dyn MountOwner<'owner>,
         parent: &Node,
-        _attrs: Vec<silex_dom::attribute::PendingAttribute<'owner>>,
+        _attrs: Vec<silex_dom::attribute::AttrOp<'owner>>,
         error_handler: ErrorReporter<'owner>,
     ) -> silex_core::SilexResult<silex_dom::view::MountInstance<'owner>> {
         let calls = self.calls.clone();
@@ -347,7 +347,7 @@ fn fallible_dom_primitives_and_attribute_mount_failures_are_observable() {
                 })
                 .expect("error handler should register");
             let owner = MountOwnerToken::new(owner);
-            let view = Element::new("div").apply(PendingAttribute::new_scoped(|_, _, _| {
+            let view = Element::new("div").apply(AttrOp::new_scoped(|_, _, _| {
                 Err(SilexError::recoverable(SilexErrorKind::Framework("attribute rejected".to_string())))
             }));
             assert!(matches!(

@@ -151,12 +151,12 @@ effect 将 signal 当前值写到 known `value` property。`T` 必须能从 Stri
 owner 已失效时 clear 的 `NoSuchNode` 会被视为正常清理完成。
 
 对于 mixin、theme variable 或非标准 DOM 操作，使用 `ApplyToDom`、
-`PendingAttribute::new_scoped`、`AttrOp::custom` 或 `AttributeGroup`：
+`AttrOp::new_scoped`、`AttrOp::custom` 或 `AttributeGroup`：
 
 ```rust
 let attrs = silex_dom::group![
     ("data-state", "ready"),
-    PendingAttribute::new_listener(|element| {
+    AttrOp::new_listener(|element| {
         element.set_attribute("data-source", "mixin")
             .map(|_| ())
             .map_err(silex_core::SilexError::fatal)
@@ -167,7 +167,7 @@ let view = Element::new("div").apply(attrs);
 ```
 
 该片段省略了必要的 `use` 和外层 scope，只展示 instruction 组合方式，不是
-独立 CI 编译示例；`PendingAttribute::new_listener` 的
+独立 CI 编译示例；`AttrOp::new_listener` 的
 闭包不能表达 owner-bound cleanup，需要事件、timer 或响应式状态时使用
 `new_scoped` 并在传入的 `MountOwnerToken` 上注册资源。
 

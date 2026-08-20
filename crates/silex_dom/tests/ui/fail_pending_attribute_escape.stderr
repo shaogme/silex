@@ -1,9 +1,9 @@
 error: lifetime may not live long enough
  --> tests/ui/fail_pending_attribute_escape.rs:4:5
   |
-3 |   fn make_attribute<'scope>(value: &'scope str) -> PendingAttribute<'static> {
+3 |   fn make_attribute<'scope>(value: &'scope str) -> AttrOp<'static> {
   |                     ------ lifetime `'scope` defined here
-4 | /     PendingAttribute::new_listener(move |_| {
+4 | /     AttrOp::new_listener(move |_| {
 5 | |         let _ = value.len();
 6 | |         Ok(())
 7 | |     })

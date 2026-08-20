@@ -3,7 +3,7 @@
 use silex_core::{
     ErrorHandlerToken, ErrorReporter, Runtime, SilexError, SilexErrorKind, SilexResult,
 };
-use silex_dom::attribute::PendingAttribute;
+use silex_dom::attribute::AttrOp;
 use silex_dom::element::Element;
 use silex_dom::mounted::{CleanupOrigin, CleanupSink, MountAvailability, MountedApp};
 use silex_dom::view::{AnyView, ApplyAttributes, MountInstance, MountOwner, View, mount_component};
@@ -49,7 +49,7 @@ impl<'owner> View<'owner> for FactoryText {
         &self,
         owner: &dyn MountOwner<'owner>,
         parent: &Node,
-        _attrs: Vec<PendingAttribute<'owner>>,
+        _attrs: Vec<AttrOp<'owner>>,
         error_handler: ErrorReporter<'owner>,
     ) -> SilexResult<MountInstance<'owner>> {
         let index = self.created.get() + 1;
@@ -131,7 +131,7 @@ impl<'owner> View<'owner> for PanicRollbackView {
         &self,
         owner: &dyn MountOwner<'owner>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'owner>>,
+        attrs: Vec<AttrOp<'owner>>,
         error_handler: ErrorReporter<'owner>,
     ) -> SilexResult<MountInstance<'owner>> {
         mount_component(
@@ -156,7 +156,7 @@ impl<'owner> View<'owner> for CleanupProbe {
         &self,
         owner: &dyn MountOwner<'owner>,
         parent: &Node,
-        _attrs: Vec<PendingAttribute<'owner>>,
+        _attrs: Vec<AttrOp<'owner>>,
         error_handler: ErrorReporter<'owner>,
     ) -> SilexResult<MountInstance<'owner>> {
         let cleanups = self.cleanups.clone();

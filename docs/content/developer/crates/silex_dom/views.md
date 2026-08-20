@@ -20,7 +20,7 @@ fn mount(
     &self,
     owner: &dyn MountOwner<'scope>,
     parent: &web_sys::Node,
-    attrs: Vec<PendingAttribute<'scope>>,
+    attrs: Vec<AttrOp<'scope>>,
     error_handler: MountErrorHandler<'scope>,
 ) -> SilexResult<MountInstance<'scope>>
 ```

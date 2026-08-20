@@ -122,7 +122,7 @@ impl<'scope> ErrorBoundaryBranch<'scope> {
         self,
         owner: &dyn MountOwner<'scope>,
         parent: &web_sys::Node,
-        attrs: Vec<PendingAttribute<'scope>>,
+        attrs: Vec<AttrOp<'scope>>,
         _error_handler: ErrorReporter<'scope>,
     ) -> silex_core::SilexResult<MountInstance<'scope>> {
         let phase = self.phase;
@@ -149,7 +149,7 @@ impl<'scope> ErrorBoundaryBranch<'scope> {
 }
 
 impl<'scope> ApplyAttributes<'scope> for ErrorBoundaryBranch<'scope> {
-    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute<'scope>>) {
+    fn apply_attributes(&mut self, attrs: Vec<AttrOp<'scope>>) {
         self.view.apply_attributes(attrs);
     }
 }
@@ -159,7 +159,7 @@ impl<'scope> View<'scope> for ErrorBoundaryBranch<'scope> {
         &self,
         owner: &dyn MountOwner<'scope>,
         parent: &web_sys::Node,
-        attrs: Vec<PendingAttribute<'scope>>,
+        attrs: Vec<AttrOp<'scope>>,
         error_handler: ErrorReporter<'scope>,
     ) -> silex_core::SilexResult<MountInstance<'scope>> {
         self.clone()
@@ -178,7 +178,7 @@ struct ErrorBoundaryView<'scope> {
 }
 
 impl<'scope> ApplyAttributes<'scope> for ErrorBoundaryView<'scope> {
-    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute<'scope>>) {
+    fn apply_attributes(&mut self, attrs: Vec<AttrOp<'scope>>) {
         self.view.apply_attributes(attrs);
     }
 }
@@ -188,7 +188,7 @@ impl<'scope> View<'scope> for ErrorBoundaryView<'scope> {
         &self,
         owner: &dyn MountOwner<'scope>,
         parent: &web_sys::Node,
-        attrs: Vec<PendingAttribute<'scope>>,
+        attrs: Vec<AttrOp<'scope>>,
         error_handler: ErrorReporter<'scope>,
     ) -> silex_core::SilexResult<MountInstance<'scope>> {
         let token = owner.token();

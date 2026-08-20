@@ -1,5 +1,5 @@
 use super::mount::mount_composite;
-use crate::attribute::PendingAttribute;
+use crate::attribute::AttrOp;
 use crate::element::Element;
 use crate::view::{
     ApplyAttributes, MountErrorHandler, MountInstance, MountOwner, View, ViewCons, ViewNil,
@@ -16,7 +16,7 @@ pub enum AnyView<'scope> {
     Text(String),
     Element(Element<'scope>),
     List(Vec<AnyView<'scope>>),
-    Boxed(Rc<dyn View<'scope> + 'scope>, Vec<PendingAttribute<'scope>>),
+    Boxed(Rc<dyn View<'scope> + 'scope>, Vec<AttrOp<'scope>>),
 }
 
 impl<'scope> AnyView<'scope> {
@@ -33,9 +33,9 @@ impl<'scope> AnyView<'scope> {
 }
 
 fn merge_attrs<'scope>(
-    mut inner_attrs: Vec<PendingAttribute<'scope>>,
-    attrs: Vec<PendingAttribute<'scope>>,
-) -> Vec<PendingAttribute<'scope>> {
+    mut inner_attrs: Vec<AttrOp<'scope>>,
+    attrs: Vec<AttrOp<'scope>>,
+) -> Vec<AttrOp<'scope>> {
     inner_attrs.extend(attrs);
     crate::attribute::consolidate_attributes(inner_attrs)
 }
@@ -44,7 +44,7 @@ fn mount_list<'scope>(
     list: &[AnyView<'scope>],
     owner: &dyn MountOwner<'scope>,
     parent: &Node,
-    attrs: Vec<PendingAttribute<'scope>>,
+    attrs: Vec<AttrOp<'scope>>,
     error_handler: MountErrorHandler<'scope>,
 ) -> SilexResult<MountInstance<'scope>> {
     mount_composite(
@@ -71,7 +71,7 @@ fn mount_list<'scope>(
 }
 
 impl<'scope> ApplyAttributes<'scope> for AnyView<'scope> {
-    fn apply_attributes(&mut self, attrs: Vec<PendingAttribute<'scope>>) {
+    fn apply_attributes(&mut self, attrs: Vec<AttrOp<'scope>>) {
         match self {
             Self::Empty | Self::Text(_) => {}
             Self::Element(element) => element.apply_attributes(attrs),
@@ -93,7 +93,7 @@ impl<'scope> View<'scope> for AnyView<'scope> {
         &self,
         owner: &dyn MountOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope>>,
+        attrs: Vec<AttrOp<'scope>>,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         match self {

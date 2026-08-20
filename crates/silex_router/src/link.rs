@@ -97,7 +97,7 @@ impl<'scope> View<'scope> for LinkView<'scope> {
         &self,
         owner: &dyn MountOwner<'scope>,
         parent: &web_sys::Node,
-        attrs: Vec<silex_dom::attribute::PendingAttribute<'scope>>,
+        attrs: Vec<silex_dom::attribute::AttrOp<'scope>>,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<silex_dom::view::MountInstance<'scope>> {
         match &self.view {

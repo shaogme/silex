@@ -28,7 +28,7 @@ pub use route_table::*;
 use crate::path::strip_route_prefix as strip_route_prefix_impl;
 use crate::route_table::RouteBranchKey;
 use silex_core::{SilexContext, SilexContextProvider, SilexError, SilexErrorKind, SilexResult};
-use silex_dom::attribute::PendingAttribute;
+use silex_dom::attribute::AttrOp;
 use silex_dom::helpers::window_event_listener_untyped;
 use silex_dom::view::{
     AnyView, ApplyAttributes, BranchEvaluation, BranchRenderContext, MountErrorHandler,
@@ -156,7 +156,7 @@ impl<'scope> RouterView<'scope> {
         self,
         owner: &dyn MountOwner<'scope>,
         parent: &web_sys::Node,
-        attrs: Vec<PendingAttribute<'scope>>,
+        attrs: Vec<AttrOp<'scope>>,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         let Self {
@@ -197,7 +197,7 @@ impl<'scope> View<'scope> for RouterView<'scope> {
         &self,
         owner: &dyn MountOwner<'scope>,
         parent: &web_sys::Node,
-        attrs: Vec<PendingAttribute<'scope>>,
+        attrs: Vec<AttrOp<'scope>>,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         self.clone()
@@ -242,7 +242,7 @@ impl<'scope> View<'scope> for RouteOutlet<'scope> {
         &self,
         owner: &dyn MountOwner<'scope>,
         parent: &web_sys::Node,
-        attrs: Vec<PendingAttribute<'scope>>,
+        attrs: Vec<AttrOp<'scope>>,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         let this = self.clone();

@@ -5,7 +5,7 @@ use silex_core::{
     reactivity::{ReadSignal, StoredValue, WriteSignal},
     traits::RxGet,
 };
-use silex_dom::attribute::PendingAttribute;
+use silex_dom::attribute::AttrOp;
 use silex_dom::view::{
     AnyView, ApplyAttributes, DynamicRenderer, MountErrorHandler, MountInstance, MountOwner, View,
     mount_dynamic_view_universal,
@@ -32,7 +32,7 @@ impl<'scope> View<'scope> for RouterView<'scope> {
         &self,
         owner: &dyn MountOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope>>,
+        attrs: Vec<AttrOp<'scope>>,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         let factory = self.0.clone();

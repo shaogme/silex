@@ -14,7 +14,7 @@ use crate::{
 };
 use silex_core::{ErrorReporter, Rx, SilexError, SilexErrorKind, SilexResult};
 use silex_dom::{
-    attribute::{ApplyTarget, ApplyToDom, AttrOp, IntoStorable, PendingAttribute},
+    attribute::{ApplyTarget, ApplyToDom, AttrOp, IntoStorable},
     view::{
         ApplyAttributes, MountErrorHandler, MountInstance, MountOwner, MountOwnerToken, MountState,
         View,
@@ -1019,7 +1019,7 @@ impl<'scope> View<'scope> for GlobalStyleView<'scope> {
         &self,
         owner: &dyn MountOwner<'scope>,
         _parent: &web_sys::Node,
-        _attrs: Vec<PendingAttribute<'scope>>,
+        _attrs: Vec<AttrOp<'scope>>,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         self.mount_inner(owner, error_handler)

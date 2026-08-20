@@ -1,7 +1,7 @@
-use silex_dom::attribute::PendingAttribute;
+use silex_dom::attribute::AttrOp;
 
-fn make_attribute<'scope>(value: &'scope str) -> PendingAttribute<'static> {
-    PendingAttribute::new_listener(move |_| {
+fn make_attribute<'scope>(value: &'scope str) -> AttrOp<'static> {
+    AttrOp::new_listener(move |_| {
         let _ = value.len();
         Ok(())
     })

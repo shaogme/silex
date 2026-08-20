@@ -20,7 +20,7 @@ impl<'scope> PortalView<'scope> {
         self,
         owner: &dyn MountOwner<'scope>,
         _parent: &Node,
-        attrs: Vec<PendingAttribute<'scope>>,
+        attrs: Vec<AttrOp<'scope>>,
         error_handler: MountErrorHandler<'scope>,
     ) -> silex_core::SilexResult<MountInstance<'scope>> {
         let document = silex_dom::document();
@@ -93,7 +93,7 @@ impl<'scope> View<'scope> for PortalView<'scope> {
         &self,
         owner: &dyn MountOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope>>,
+        attrs: Vec<AttrOp<'scope>>,
         error_handler: MountErrorHandler<'scope>,
     ) -> silex_core::SilexResult<MountInstance<'scope>> {
         self.clone()

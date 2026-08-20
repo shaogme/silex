@@ -2,7 +2,7 @@ use super::owner::MountOwner;
 use super::row::{
     NodeRange, RowInstance, RowInstanceConfig, RowRenderContext, RowRenderer, RowUpdater,
 };
-use crate::attribute::PendingAttribute;
+use crate::attribute::AttrOp;
 use crate::view::{AnyView, ApplyAttributes, MountErrorHandler, MountInstance, View};
 use silex_core::reactivity::ReactiveSource;
 use silex_core::traits::{ForLoopSource, RxRead};
@@ -76,7 +76,7 @@ where
         &self,
         owner: &dyn MountOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope>>,
+        attrs: Vec<AttrOp<'scope>>,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         mount_keyed_list(KeyedListMountArgs {
@@ -106,7 +106,7 @@ where
         &self,
         owner: &dyn MountOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope>>,
+        attrs: Vec<AttrOp<'scope>>,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         mount_keyed_list(KeyedListMountArgs {
@@ -141,7 +141,7 @@ where
         &self,
         owner: &dyn MountOwner<'scope>,
         parent: &Node,
-        attrs: Vec<PendingAttribute<'scope>>,
+        attrs: Vec<AttrOp<'scope>>,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         mount_indexed_list(
@@ -160,7 +160,7 @@ fn mount_indexed_list<'scope, IF, IS, T>(
     parent: &Node,
     source: IF,
     factory: RowFactory<'scope, T>,
-    attrs: Vec<PendingAttribute<'scope>>,
+    attrs: Vec<AttrOp<'scope>>,
     error_handler: MountErrorHandler<'scope>,
 ) -> SilexResult<MountInstance<'scope>>
 where
@@ -488,7 +488,7 @@ struct KeyedListMountArgs<'owner, 'scope, IF, IS, T, K> {
     key_fn: Rc<dyn Fn(&T) -> K + 'scope>,
     factory: RowFactory<'scope, T>,
     error_handler: Option<ErrorHandlerToken<'scope>>,
-    attrs: Vec<PendingAttribute<'scope>>,
+    attrs: Vec<AttrOp<'scope>>,
     parent_error_handler: MountErrorHandler<'scope>,
     _marker: std::marker::PhantomData<IS>,
 }
