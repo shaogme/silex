@@ -1,6 +1,6 @@
 use crate::{
-    DecodePolicy, PersistMode, PersistenceError, PersistenceErrorKind, RemovePolicy, SyncStrategy,
-    WriteDefault,
+    DecodePolicy, PersistExternalSync, PersistWriteMode, PersistenceError, PersistenceErrorKind,
+    RemovePolicy, WriteDefault,
     backend::{
         BackendEventSink, LocalStorageBackend, PersistenceBackend, QueryBackend,
         SessionStorageBackend,
@@ -8,10 +8,11 @@ use crate::{
     codec::{
         OptionCodec, ParseCodec, PersistCodec, StringCodec, map_decode_error, map_encode_error,
     },
+    runtime::{PersistRuntime, WriteOrigin},
     state::{
-        OwnerDebounceState, PersistenceController, PersistenceState, Persistent,
-        apply_backend_event, flush_persistent_value, invalidate_debounce,
-        take_controller_resources, take_skip_next_auto_flush, take_suppress_manual_state,
+        PersistenceController, PersistenceState, Persistent, apply_backend_event,
+        commit_persisted_request, invalidate_debounce, persist_current_value,
+        take_controller_resources, take_local_mutation,
     },
 };
 use ref_str::LocalStaticRefStr;
@@ -21,8 +22,7 @@ use silex_core::{
     traits::{RxGet, RxWrite},
     unwind_safe,
 };
-use silex_dom::helpers::set_timeout;
-use silex_dom::view::MountOwnerToken;
+use silex_dom::view::{MountOwnerToken, OwnedTimeout};
 use silex_router::RouterContext;
 use std::{
     borrow::Cow,
@@ -81,8 +81,8 @@ struct PersistConfig<'scope, T: 'scope> {
     write_default: WriteDefault,
     decode_policy: DecodePolicy,
     remove_policy: RemovePolicy,
-    mode: PersistMode,
-    sync: SyncStrategy,
+    write_mode: PersistWriteMode,
+    external_sync: PersistExternalSync,
 }
 
 impl<'scope, T: 'scope> PersistConfig<'scope, T> {
@@ -92,8 +92,8 @@ impl<'scope, T: 'scope> PersistConfig<'scope, T> {
             write_default: WriteDefault::IfMissing,
             decode_policy: DecodePolicy::RemoveAndUseDefault,
             remove_policy: RemovePolicy::UseDefault,
-            mode: PersistMode::Immediate,
-            sync: SyncStrategy::CrossContext,
+            write_mode: PersistWriteMode::Immediate,
+            external_sync: PersistExternalSync::StorageEvents,
         }
     }
 }
@@ -216,8 +216,8 @@ where
                 write_default: self.config.write_default,
                 decode_policy: self.config.decode_policy,
                 remove_policy: self.config.remove_policy,
-                mode: self.config.mode,
-                sync: self.config.sync,
+                write_mode: self.config.write_mode,
+                external_sync: self.config.external_sync,
             },
             _marker: PhantomData,
         }
@@ -235,8 +235,8 @@ where
                 write_default: self.config.write_default,
                 decode_policy: self.config.decode_policy,
                 remove_policy: self.config.remove_policy,
-                mode: self.config.mode,
-                sync: self.config.sync,
+                write_mode: self.config.write_mode,
+                external_sync: self.config.external_sync,
             },
             _marker: PhantomData,
         }
@@ -254,8 +254,8 @@ where
                 write_default: self.config.write_default,
                 decode_policy: self.config.decode_policy,
                 remove_policy: self.config.remove_policy,
-                mode: self.config.mode,
-                sync: self.config.sync,
+                write_mode: self.config.write_mode,
+                external_sync: self.config.external_sync,
             },
             _marker: PhantomData,
         }
@@ -277,8 +277,8 @@ where
                 write_default: self.config.write_default,
                 decode_policy: self.config.decode_policy,
                 remove_policy: self.config.remove_policy,
-                mode: self.config.mode,
-                sync: self.config.sync,
+                write_mode: self.config.write_mode,
+                external_sync: self.config.external_sync,
             },
             _marker: PhantomData,
         }
@@ -300,8 +300,8 @@ where
                 write_default: self.config.write_default,
                 decode_policy: self.config.decode_policy,
                 remove_policy: self.config.remove_policy,
-                mode: self.config.mode,
-                sync: self.config.sync,
+                write_mode: self.config.write_mode,
+                external_sync: self.config.external_sync,
             },
             _marker: PhantomData,
         }
@@ -328,13 +328,13 @@ where
         self
     }
 
-    pub fn mode(mut self, mode: PersistMode) -> Self {
-        self.config.mode = mode;
+    pub fn write_mode(mut self, mode: PersistWriteMode) -> Self {
+        self.config.write_mode = mode;
         self
     }
 
-    pub fn sync(mut self, sync: SyncStrategy) -> Self {
-        self.config.sync = sync;
+    pub fn external_sync(mut self, sync: PersistExternalSync) -> Self {
+        self.config.external_sync = sync;
         self
     }
 }
@@ -360,8 +360,8 @@ where
                 write_default: self.config.write_default,
                 decode_policy: self.config.decode_policy,
                 remove_policy: self.config.remove_policy,
-                mode: self.config.mode,
-                sync: self.config.sync,
+                write_mode: self.config.write_mode,
+                external_sync: self.config.external_sync,
             },
             _marker: PhantomData,
         }
@@ -382,8 +382,8 @@ where
                 write_default: self.config.write_default,
                 decode_policy: self.config.decode_policy,
                 remove_policy: self.config.remove_policy,
-                mode: self.config.mode,
-                sync: self.config.sync,
+                write_mode: self.config.write_mode,
+                external_sync: self.config.external_sync,
             },
             _marker: PhantomData,
         }
@@ -410,8 +410,8 @@ where
                 write_default: self.config.write_default,
                 decode_policy: self.config.decode_policy,
                 remove_policy: self.config.remove_policy,
-                mode: self.config.mode,
-                sync: self.config.sync,
+                write_mode: self.config.write_mode,
+                external_sync: self.config.external_sync,
             },
             _marker: PhantomData,
         }
@@ -423,11 +423,18 @@ where
     B: PersistenceBackend<'scope>,
     C: PersistCodec<T> + 'scope,
     T: Clone + PartialEq + 'scope,
-    H: ErrorHandlerInput<'scope>,
+    H: ErrorHandlerInput<'scope> + 'scope,
 {
     pub fn build(self) -> Result<Persistent<'scope, T>, PersistenceError> {
         let key = self.key.clone();
-        let error_handler = self.error_handler.handler_ref();
+        let error_handler_input: Rc<dyn ErrorHandlerInput<'scope> + 'scope> =
+            Rc::new(self.error_handler);
+        let error_handler = error_handler_input.handler_ref();
+        let error_lease = error_handler.lease().map_err(|error| {
+            PersistenceError::fatal(PersistenceErrorKind::InvalidConfiguration(
+                error.to_string(),
+            ))
+        })?;
         let default = self.config.default.ok_or_else(|| {
             PersistenceError::fatal(PersistenceErrorKind::InvalidConfiguration(
                 "persistent builder is missing a default value".to_string(),
@@ -444,13 +451,6 @@ where
             .map_err(PersistenceError::from)?;
         let backend = self.backend.clone();
         let codec = self.codec.clone();
-        let debounce = if matches!(self.config.mode, PersistMode::Immediate)
-            && matches!(self.config.sync, SyncStrategy::Debounce(_))
-        {
-            Some(OwnerDebounceState::new())
-        } else {
-            None
-        };
         let controller = self
             .owner
             .stored(PersistenceController {
@@ -458,10 +458,9 @@ where
                 default: default.clone(),
                 decode_policy: self.config.decode_policy,
                 remove_policy: self.config.remove_policy,
-                last_flushed_raw: None,
-                value_generation: 0,
-                skip_next_auto_flush_generation: None,
-                suppress_manual_state_generation: None,
+                runtime: PersistRuntime::new(),
+                local_mutation_pending: false,
+                error_handler: error_handler_input.clone(),
                 backend_get: Rc::new({
                     let backend = backend.clone();
                     move |key| backend.get(key)
@@ -490,7 +489,6 @@ where
                     let codec = self.codec.clone();
                     move |value| codec.should_remove(value)
                 }),
-                debounce,
                 subscription: None,
             })
             .map_err(PersistenceError::from)?;
@@ -516,14 +514,13 @@ where
             })?;
 
         let mut had_missing_value = false;
-        let mut initial_error = false;
         match backend.get(&key) {
             Ok(Some(raw)) => match self.codec.decode(&raw) {
                 Ok(decoded) => {
                     value.set_untracked(decoded)?;
                     controller
                         .update_untracked(|controller| {
-                            controller.last_flushed_raw = Some(raw.clone());
+                            controller.runtime.initialize_snapshot(Some(raw.clone()));
                         })
                         .map_err(PersistenceError::from)?;
                     state.set_untracked(PersistenceState::Ready(raw))?;
@@ -536,12 +533,9 @@ where
                     value.set_untracked(default())?;
                     controller
                         .update_untracked(|controller| {
-                            controller.last_flushed_raw = None;
-                            controller.skip_next_auto_flush_generation = Some(0);
-                            controller.suppress_manual_state_generation = Some(0);
+                            controller.runtime.initialize_snapshot(None);
                         })
                         .map_err(PersistenceError::from)?;
-                    initial_error = true;
                     if matches!(self.config.decode_policy, DecodePolicy::RemoveAndUseDefault)
                         && let Err(error) = backend.remove(&key)
                     {
@@ -552,79 +546,40 @@ where
             Ok(None) => {
                 had_missing_value = true;
                 value.set_untracked(default())?;
+                controller.update_untracked(|controller| {
+                    controller.runtime.initialize_snapshot(None);
+                })?;
                 state.set_untracked(PersistenceState::Ready(String::new()))?;
             }
             Err(PersistenceError::Recoverable(PersistenceErrorKind::BackendUnavailable)) => {
                 value.set_untracked(default())?;
+                controller.update_untracked(|controller| {
+                    controller.runtime.initialize_snapshot(None);
+                })?;
                 state.set_untracked(PersistenceState::Unavailable)?;
-                controller
-                    .update_untracked(|controller| {
-                        controller.skip_next_auto_flush_generation = Some(0);
-                        controller.suppress_manual_state_generation = Some(0);
-                    })
-                    .map_err(PersistenceError::from)?;
-                initial_error = true;
             }
             Err(error) => {
                 value.set_untracked(default())?;
+                controller.update_untracked(|controller| {
+                    controller.runtime.initialize_snapshot(None);
+                })?;
                 state.set_untracked(PersistenceState::ReadError(error.message()))?;
-                controller
-                    .update_untracked(|controller| {
-                        controller.skip_next_auto_flush_generation = Some(0);
-                        controller.suppress_manual_state_generation = Some(0);
-                    })
-                    .map_err(PersistenceError::from)?;
-                initial_error = true;
             }
         }
 
         if had_missing_value {
             match self.config.write_default {
-                WriteDefault::Never => {
-                    controller
-                        .update_untracked(|controller| {
-                            controller.skip_next_auto_flush_generation = Some(0);
-                        })
-                        .map_err(PersistenceError::from)?;
-                }
+                WriteDefault::Never => {}
                 WriteDefault::IfMissing | WriteDefault::Always => {
-                    if flush_persistent_value(controller, value, state).is_err() {
-                        initial_error = true;
-                        controller
-                            .update_untracked(|controller| {
-                                controller.skip_next_auto_flush_generation = Some(0);
-                                controller.suppress_manual_state_generation = Some(0);
-                            })
-                            .map_err(PersistenceError::from)?;
-                    }
+                    let _ = persist_current_value(controller, value, state, WriteOrigin::Bootstrap);
                 }
             }
         } else if matches!(self.config.write_default, WriteDefault::Always)
             && matches!(state.get_untracked()?, PersistenceState::Ready(_))
-            && flush_persistent_value(controller, value, state).is_err()
+            && persist_current_value(controller, value, state, WriteOrigin::Bootstrap).is_err()
         {
-            initial_error = true;
-            controller
-                .update_untracked(|controller| {
-                    controller.skip_next_auto_flush_generation = Some(0);
-                    controller.suppress_manual_state_generation = Some(0);
-                })
-                .map_err(PersistenceError::from)?;
         }
 
-        if initial_error {
-            controller
-                .update_untracked(|controller| {
-                    controller.suppress_manual_state_generation = Some(0);
-                })
-                .map_err(PersistenceError::from)?;
-        }
-
-        let error_lease = error_handler.lease().map_err(|error| {
-            PersistenceError::fatal(PersistenceErrorKind::InvalidConfiguration(
-                error.to_string(),
-            ))
-        })?;
         let completion_error_lease = error_lease.clone();
         let error_completion =
             self.owner
@@ -634,7 +589,7 @@ where
                         .map_err(|error| SilexError::fatal(ReactiveError::Handler(error)))
                 }))?;
         let mut subscription_error = None;
-        if matches!(self.config.sync, SyncStrategy::CrossContext) {
+        if !matches!(self.config.external_sync, PersistExternalSync::Disabled) {
             let token = self.owner.completion_sender(unwind_safe({
                 move |event| {
                     apply_backend_event(controller, value, state, event);
@@ -649,7 +604,15 @@ where
                 .backend
                 .subscribe(self.owner, key.clone(), sink, error_handler)
             {
-                Ok(binding) => {
+                Ok(mut binding) => {
+                    let close_error_completion = error_completion.clone();
+                    binding.set_error_sink(Rc::new(move |error| {
+                        submit_completion(
+                            &close_error_completion,
+                            &close_error_completion,
+                            error.into(),
+                        );
+                    }));
                     controller
                         .update_untracked(|controller| {
                             controller.subscription = Some(binding);
@@ -676,154 +639,158 @@ where
             }
         }
 
-        match self.config.mode {
-            PersistMode::Immediate => {
-                if let SyncStrategy::Debounce(duration) = self.config.sync {
-                    let completion = self.owner.completion_sender(unwind_safe({
-                        move |generation| {
-                            let ready = controller.update_untracked(|controller| {
-                                controller
-                                    .debounce
-                                    .as_mut()
-                                    .is_some_and(|debounce| debounce.take_ready(generation))
-                            })?;
-                            if ready {
-                                let _ = flush_persistent_value(controller, value, state);
-                            }
-                            Ok(())
-                        }
-                    }))?;
-                    let error_completion_for_timer = error_completion.clone();
-                    let _effect = self
-                        .owner
-                        .effect(
-                            {
-                                let owner_access = self.owner;
-                                let owner_error_handler = error_handler;
-                                move || -> SilexResult<()> {
-                                    let current = value.get()?;
-                                    let should_skip = take_skip_next_auto_flush(controller)?;
-                                    if should_skip {
-                                        return Ok(());
-                                    }
-
-                                    let encode = controller
-                                        .with_untracked(|controller| controller.encode.clone())?;
-                                    let raw = encode(&current);
-                                    let raw = match raw {
-                                        Ok(raw) => raw,
-                                        Err(error) => {
-                                            invalidate_debounce(controller)?;
-                                            state.set(PersistenceState::WriteError(
-                                                error.message(),
-                                            ))?;
-                                            return Ok(());
-                                        }
-                                    };
-                                    state.set(PersistenceState::Syncing(raw))?;
-                                    let (generation, timer) =
-                                        controller.update(|controller| {
-                                            controller
-                                                .debounce
-                                                .as_mut()
-                                                .ok_or_else(|| {
-                                                    SilexError::fatal(SilexErrorKind::Framework(
-                                                        "debounce state is missing".to_string(),
-                                                    ))
-                                                })
-                                                .map(OwnerDebounceState::begin_with_previous_timer)
-                                        })??;
-                                    if let Some(timer) = &timer {
-                                        timer.cancel()?;
-                                    }
-                                    drop(timer);
-                                    let completion = completion.clone();
-                                    let error_completion = error_completion_for_timer.clone();
-                                    let owner_token = MountOwnerToken::new(owner_access);
-                                    match set_timeout(
-                                        &owner_token,
-                                        move || {
-                                            submit_completion(
-                                                &completion,
-                                                &error_completion,
-                                                generation,
-                                            );
-                                            Ok(())
-                                        },
-                                        duration,
-                                        owner_error_handler,
-                                    ) {
-                                        Ok(timer) => {
-                                            let stale_timer =
-                                                controller.update(|controller| {
-                                                    controller
-                                                        .debounce
-                                                        .as_mut()
-                                                        .ok_or_else(|| {
-                                                            SilexError::fatal(
-                                                                SilexErrorKind::Framework(
-                                                                    "debounce state is missing"
-                                                                        .to_string(),
-                                                                ),
-                                                            )
-                                                        })
-                                                        .map(|debounce| {
-                                                            debounce.set_timer(generation, timer)
-                                                        })
-                                                })??;
-                                            drop(stale_timer);
-                                        }
-                                        Err(error) => {
-                                            invalidate_debounce(controller)?;
-                                            state.set(PersistenceState::WriteError(format!(
-                                                "schedule persistence timeout failed: {:?}",
-                                                error
-                                            )))?;
-                                        }
-                                    }
-                                    Ok(())
-                                }
-                            },
-                            error_handler,
-                        )
-                        .map_err(|error| {
-                            PersistenceError::fatal(PersistenceErrorKind::InvalidConfiguration(
-                                error.to_string(),
-                            ))
-                        })?;
-                } else {
-                    let _effect = self
-                        .owner
-                        .effect(
+        match self.config.write_mode {
+            PersistWriteMode::Debounced(duration) => {
+                let _effect = self
+                    .owner
+                    .effect(
+                        {
+                            let owner_access = self.owner;
                             move || -> SilexResult<()> {
-                                value.get()?;
-                                let should_skip = take_skip_next_auto_flush(controller)?;
-                                if should_skip {
+                                let current = value.get()?;
+                                if !take_local_mutation(controller)? {
                                     return Ok(());
                                 }
-                                if let Err(error) = flush_persistent_value(controller, value, state)
-                                {
-                                    state.set(PersistenceState::WriteError(error.message()))?;
+
+                                let encode = controller
+                                    .with_untracked(|controller| controller.encode.clone())?;
+                                let raw = encode(&current);
+                                let raw = match raw {
+                                    Ok(raw) => raw,
+                                    Err(error) => {
+                                        invalidate_debounce(controller)?;
+                                        state.set(PersistenceState::WriteError(error.message()))?;
+                                        return Ok(());
+                                    }
+                                };
+                                state.set(PersistenceState::Syncing(raw.clone()))?;
+                                let (ticket, previous_timer) =
+                                    controller.update_untracked(|controller| {
+                                        controller
+                                            .runtime
+                                            .begin_request(
+                                                Some(raw.clone()),
+                                                WriteOrigin::LocalMutation,
+                                            )
+                                            .ok_or_else(|| {
+                                                SilexError::fatal(SilexErrorKind::Framework(
+                                                    "persistence runtime is closed".to_string(),
+                                                ))
+                                            })
+                                    })??;
+                                if let Some(timer) = previous_timer {
+                                    if let Err(error) = timer.cancel() {
+                                        let (current, timer) =
+                                            controller.update_untracked(|controller| {
+                                                controller
+                                                    .runtime
+                                                    .mark_schedule_failed(ticket, error.to_string())
+                                            })?;
+                                        if let Some(timer) = timer {
+                                            timer.cancel()?;
+                                        }
+                                        if current {
+                                            state.set(PersistenceState::WriteError(
+                                                error.to_string(),
+                                            ))?;
+                                        }
+                                        return Ok(());
+                                    }
+                                }
+                                let owner_token = MountOwnerToken::new(owner_access);
+                                let owner_error_handler =
+                                    controller.with_untracked(|controller| {
+                                        controller.error_handler.handler_ref()
+                                    })?;
+                                match OwnedTimeout::schedule(
+                                    &owner_token,
+                                    move || {
+                                        let request =
+                                            controller.update_untracked(|controller| {
+                                                controller.runtime.claim_timer(ticket)
+                                            })?;
+                                        if let Some(request) = request {
+                                            commit_persisted_request(controller, state, request)
+                                                .map_err(SilexError::from)?;
+                                        }
+                                        Ok(())
+                                    },
+                                    duration,
+                                    owner_error_handler,
+                                ) {
+                                    Ok(timer) => {
+                                        let stale_timer =
+                                            controller.update_untracked(|controller| {
+                                                controller.runtime.attach_timer(ticket, timer)
+                                            })?;
+                                        if let Some(timer) = stale_timer {
+                                            timer.cancel()?;
+                                        }
+                                    }
+                                    Err(error) => {
+                                        let message = format!(
+                                            "schedule persistence timeout failed: {:?}",
+                                            error
+                                        );
+                                        let (current, timer) =
+                                            controller.update_untracked(|controller| {
+                                                controller
+                                                    .runtime
+                                                    .mark_schedule_failed(ticket, message.clone())
+                                            })?;
+                                        if let Some(timer) = timer {
+                                            timer.cancel()?;
+                                        }
+                                        if current {
+                                            state.set(PersistenceState::WriteError(message))?;
+                                        }
+                                    }
                                 }
                                 Ok(())
-                            },
-                            error_handler,
-                        )
-                        .map_err(|error| {
-                            PersistenceError::fatal(PersistenceErrorKind::InvalidConfiguration(
-                                error.to_string(),
-                            ))
-                        })?;
-                }
+                            }
+                        },
+                        error_handler,
+                    )
+                    .map_err(|error| {
+                        PersistenceError::fatal(PersistenceErrorKind::InvalidConfiguration(
+                            error.to_string(),
+                        ))
+                    })?;
             }
-            PersistMode::Manual => {
+            PersistWriteMode::Immediate => {
+                let _effect = self
+                    .owner
+                    .effect(
+                        move || -> SilexResult<()> {
+                            value.get()?;
+                            if !take_local_mutation(controller)? {
+                                return Ok(());
+                            }
+                            if let Err(error) = persist_current_value(
+                                controller,
+                                value,
+                                state,
+                                WriteOrigin::LocalMutation,
+                            ) {
+                                state.set(PersistenceState::WriteError(error.message()))?;
+                            }
+                            Ok(())
+                        },
+                        error_handler,
+                    )
+                    .map_err(|error| {
+                        PersistenceError::fatal(PersistenceErrorKind::InvalidConfiguration(
+                            error.to_string(),
+                        ))
+                    })?;
+            }
+            PersistWriteMode::Manual => {
                 let _effect = self
                     .owner
                     .effect(
                         move || -> SilexResult<()> {
                             let current = value.get()?;
-                            let suppress = take_suppress_manual_state(controller)?;
-                            if suppress {
+                            if !take_local_mutation(controller)? {
                                 return Ok(());
                             }
 
@@ -832,7 +799,7 @@ where
                                     (
                                         controller.encode.clone(),
                                         controller.default.clone(),
-                                        controller.last_flushed_raw.clone(),
+                                        controller.runtime.last_backend_raw(),
                                     )
                                 })?;
                             let raw = encode(&current);

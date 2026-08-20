@@ -12,6 +12,7 @@ use std::{
 use wasm_bindgen::{JsCast, closure::Closure};
 use web_sys::{Storage, StorageEvent};
 
+/// A backend-originated change delivered to persistent bindings.
 #[derive(Clone, Debug, PartialEq)]
 pub enum BackendEvent {
     Set {
@@ -26,15 +27,35 @@ pub enum BackendEvent {
 
 /// Static host bridge used by storage and query event sources.
 pub type BackendEventSink = Rc<dyn Fn(BackendEvent) + 'static>;
+type BackendErrorSink = Rc<dyn Fn(PersistenceError) + 'static>;
+type BackendErrorSinkSlot = Rc<RefCell<Option<BackendErrorSink>>>;
 
 pub struct BackendSubscription<'scope> {
     cleanup: Option<Box<dyn FnOnce() + 'scope>>,
+    error_sink: Option<BackendErrorSinkSlot>,
 }
 
 impl<'scope> BackendSubscription<'scope> {
     pub fn new(cleanup: impl FnOnce() + 'scope) -> Self {
         Self {
             cleanup: Some(Box::new(cleanup)),
+            error_sink: None,
+        }
+    }
+
+    fn with_error_sink_slot(
+        cleanup: impl FnOnce() + 'scope,
+        error_sink: BackendErrorSinkSlot,
+    ) -> Self {
+        Self {
+            cleanup: Some(Box::new(cleanup)),
+            error_sink: Some(error_sink),
+        }
+    }
+
+    pub(crate) fn set_error_sink(&mut self, sink: BackendErrorSink) {
+        if let Some(error_sink) = &self.error_sink {
+            *error_sink.borrow_mut() = Some(sink);
         }
     }
 
@@ -114,6 +135,10 @@ pub trait PersistenceBackend<'scope>: Clone + 'scope {
     ) -> Result<BackendSubscription<'scope>, BackendSubscribeError<'scope>>;
 }
 
+/// Synchronous Web Storage backend for `localStorage` or `sessionStorage`.
+///
+/// Values are stored as readable plaintext in the browser profile. Do not use
+/// this backend for passwords, tokens, or other long-lived credentials.
 #[derive(Clone, Debug)]
 pub struct WebStorageBackend<const IS_LOCAL: bool> {
     storage: Option<Storage>,
@@ -300,22 +325,108 @@ enum StorageAreaKind {
     Session,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ListenerState {
+    Detached,
+    Attached,
+    DetachQueued(u64),
+    Removing(u64),
+}
+
+#[derive(Debug)]
+struct StorageHubState {
+    subscriber_count: usize,
+    generation: u64,
+    listener: ListenerState,
+}
+
+impl Default for StorageHubState {
+    fn default() -> Self {
+        Self {
+            subscriber_count: 0,
+            generation: 0,
+            listener: ListenerState::Detached,
+        }
+    }
+}
+
+impl StorageHubState {
+    fn subscribe(&mut self) {
+        self.subscriber_count += 1;
+        self.generation = self.generation.wrapping_add(1);
+        if matches!(self.listener, ListenerState::DetachQueued(_)) {
+            self.listener = ListenerState::Attached;
+        } else if matches!(self.listener, ListenerState::Detached) {
+            self.listener = ListenerState::Attached;
+        }
+    }
+
+    fn unsubscribe(&mut self) -> Option<u64> {
+        debug_assert!(self.subscriber_count > 0);
+        self.subscriber_count = self.subscriber_count.saturating_sub(1);
+        self.generation = self.generation.wrapping_add(1);
+        if self.subscriber_count == 0 && matches!(self.listener, ListenerState::Attached) {
+            let generation = self.generation;
+            self.listener = ListenerState::DetachQueued(generation);
+            Some(generation)
+        } else {
+            None
+        }
+    }
+
+    fn begin_remove(&mut self, generation: u64) -> bool {
+        if self.subscriber_count == 0
+            && matches!(self.listener, ListenerState::DetachQueued(current) if current == generation)
+        {
+            self.listener = ListenerState::Removing(generation);
+            true
+        } else {
+            false
+        }
+    }
+
+    fn finish_remove(&mut self, generation: u64, removed: bool) -> bool {
+        if !matches!(self.listener, ListenerState::Removing(current) if current == generation) {
+            return false;
+        }
+        if removed {
+            self.listener = ListenerState::Detached;
+            self.subscriber_count > 0
+        } else {
+            self.listener = ListenerState::Attached;
+            false
+        }
+    }
+
+    fn mark_attached(&mut self) {
+        self.listener = ListenerState::Attached;
+    }
+
+    fn listener(&self) -> ListenerState {
+        self.listener
+    }
+}
+
 struct StorageSubscriber {
     id: usize,
     sink: BackendEventSink,
+    error_sink: BackendErrorSinkSlot,
 }
 
-struct StorageDispatcher {
+struct StorageHub {
+    state: StorageHubState,
     subscribers: HashMap<(StorageAreaKind, LocalStaticRefStr), Vec<StorageSubscriber>>,
     next_id: usize,
     closure: Option<Closure<dyn FnMut(StorageEvent)>>,
     local_storage: Option<Storage>,
     session_storage: Option<Storage>,
+    detach_error_sinks: Vec<BackendErrorSinkSlot>,
 }
 
-impl Default for StorageDispatcher {
+impl Default for StorageHub {
     fn default() -> Self {
         Self {
+            state: StorageHubState::default(),
             subscribers: HashMap::new(),
             next_id: 0,
             closure: None,
@@ -323,29 +434,38 @@ impl Default for StorageDispatcher {
                 .and_then(|window| window.local_storage().ok().flatten()),
             session_storage: web_sys::window()
                 .and_then(|window| window.session_storage().ok().flatten()),
+            detach_error_sinks: Vec::new(),
         }
     }
 }
 
 thread_local! {
-    static DISPATCHER: RefCell<StorageDispatcher> = RefCell::new(StorageDispatcher::default());
+    static STORAGE_HUB: RefCell<StorageHub> = RefCell::new(StorageHub::default());
 }
 
-impl StorageDispatcher {
+impl StorageHub {
     fn subscribe(
         &mut self,
         kind: StorageAreaKind,
         key: LocalStaticRefStr,
         sink: BackendEventSink,
+        error_sink: BackendErrorSinkSlot,
     ) -> Result<usize, PersistenceError> {
-        self.ensure_listener()?;
+        if !matches!(self.state.listener(), ListenerState::Removing(_)) {
+            self.ensure_listener()?;
+        }
 
         let id = self.next_id;
         self.next_id += 1;
+        self.state.subscribe();
         self.subscribers
             .entry((kind, key))
             .or_default()
-            .push(StorageSubscriber { id, sink });
+            .push(StorageSubscriber {
+                id,
+                sink,
+                error_sink,
+            });
         Ok(id)
     }
 
@@ -354,20 +474,62 @@ impl StorageDispatcher {
         kind: StorageAreaKind,
         key: impl Into<LocalStaticRefStr>,
         id: usize,
-    ) -> Option<Closure<dyn FnMut(StorageEvent)>> {
+        error_sink: BackendErrorSinkSlot,
+    ) -> Option<u64> {
         let key = key.into();
+        let mut removed = false;
         if let Some(subscribers) = self.subscribers.get_mut(&(kind, key.clone())) {
+            let before = subscribers.len();
             subscribers.retain(|subscriber| subscriber.id != id);
+            removed = before != subscribers.len();
             if subscribers.is_empty() {
                 self.subscribers.remove(&(kind, key));
             }
         }
 
-        if self.subscribers.is_empty() {
-            self.closure.take()
+        if removed {
+            self.detach_error_sinks.push(error_sink);
+            self.state.unsubscribe()
         } else {
             None
         }
+    }
+
+    fn begin_remove(
+        &mut self,
+        generation: u64,
+    ) -> Option<(Closure<dyn FnMut(StorageEvent)>, Vec<BackendErrorSinkSlot>)> {
+        if !self.state.begin_remove(generation) {
+            return None;
+        }
+        let closure = self.closure.take()?;
+        let error_sinks = std::mem::take(&mut self.detach_error_sinks);
+        Some((closure, error_sinks))
+    }
+
+    fn finish_remove(
+        &mut self,
+        generation: u64,
+        closure: Closure<dyn FnMut(StorageEvent)>,
+        removed: bool,
+        error_sinks: Vec<BackendErrorSinkSlot>,
+    ) -> (bool, Vec<BackendErrorSinkSlot>) {
+        let attach_listener = self.state.finish_remove(generation, removed);
+        if !removed {
+            self.closure = Some(closure);
+        }
+        (attach_listener, error_sinks)
+    }
+
+    fn error_sinks_for_subscribers(&self) -> Vec<BackendErrorSinkSlot> {
+        self.subscribers
+            .values()
+            .flat_map(|subscribers| {
+                subscribers
+                    .iter()
+                    .map(|subscriber| subscriber.error_sink.clone())
+            })
+            .collect()
     }
 
     fn ensure_listener(&mut self) -> Result<(), PersistenceError> {
@@ -411,10 +573,9 @@ impl StorageDispatcher {
                     },
                     None => BackendEvent::Removed { key: key.clone() },
                 };
-                let sinks = DISPATCHER.with(|dispatcher| {
-                    let dispatcher = dispatcher.borrow();
-                    dispatcher
-                        .subscribers
+                let sinks = STORAGE_HUB.with(|hub| {
+                    let hub = hub.borrow();
+                    hub.subscribers
                         .get(&(kind, key))
                         .map(|subscribers| {
                             subscribers
@@ -439,8 +600,58 @@ impl StorageDispatcher {
                 )))
             })?;
         self.closure = Some(closure);
+        self.state.mark_attached();
         Ok(())
     }
+}
+
+fn report_backend_error(error_sinks: Vec<BackendErrorSinkSlot>, error: PersistenceError) {
+    let error_sinks = error_sinks
+        .iter()
+        .filter_map(|slot| slot.borrow().clone())
+        .collect::<Vec<_>>();
+    for sink in error_sinks {
+        sink(error.clone());
+    }
+}
+
+fn schedule_storage_detach(generation: u64) {
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let window_for_callback = window.clone();
+    let callback = Closure::once_into_js(move || {
+        let Some((closure, error_sinks)) =
+            STORAGE_HUB.with(|hub| hub.borrow_mut().begin_remove(generation))
+        else {
+            return;
+        };
+        let remove_result = window_for_callback
+            .remove_event_listener_with_callback("storage", closure.as_ref().unchecked_ref());
+        let removed = remove_result.is_ok();
+        let (attach_listener, error_sinks) = STORAGE_HUB.with(|hub| {
+            hub.borrow_mut()
+                .finish_remove(generation, closure, removed, error_sinks)
+        });
+        if let Err(error) = remove_result {
+            report_backend_error(
+                error_sinks,
+                PersistenceError::recoverable(PersistenceErrorKind::RemoveFailed(format!(
+                    "remove storage listener failed: {:?}",
+                    error
+                ))),
+            );
+        }
+        if attach_listener {
+            let attach_error = STORAGE_HUB.with(|hub| hub.borrow_mut().ensure_listener());
+            if let Err(error) = attach_error {
+                let error_sinks =
+                    STORAGE_HUB.with(|hub| hub.borrow().error_sinks_for_subscribers());
+                report_backend_error(error_sinks, error);
+            }
+        }
+    });
+    window.queue_microtask(callback.unchecked_ref());
 }
 
 fn storage_get(storage: &Storage, key: &str) -> Result<Option<String>, PersistenceError> {
@@ -475,24 +686,33 @@ fn subscribe_storage(
     key: LocalStaticRefStr,
     sink: BackendEventSink,
 ) -> Result<BackendSubscription<'static>, BackendSubscribeError<'static>> {
+    let error_sink = Rc::new(RefCell::new(None));
     let key_for_cleanup = key.clone();
-    let id = DISPATCHER
-        .with(|dispatcher| dispatcher.borrow_mut().subscribe(kind, key, sink))
+    let error_sink_for_hub = error_sink.clone();
+    let id = STORAGE_HUB
+        .with(|hub| {
+            hub.borrow_mut()
+                .subscribe(kind, key, sink, error_sink_for_hub)
+        })
         .map_err(BackendSubscribeError::new)?;
 
-    Ok(BackendSubscription::new(move || {
-        let closure = DISPATCHER.with(|dispatcher| {
-            dispatcher
-                .borrow_mut()
-                .unsubscribe(kind, key_for_cleanup, id)
-        });
-        if let Some(closure) = closure
-            && let Some(window) = web_sys::window()
-        {
-            let _ = window
-                .remove_event_listener_with_callback("storage", closure.as_ref().unchecked_ref());
-        }
-    }))
+    let error_sink_for_cleanup = error_sink.clone();
+    Ok(BackendSubscription::with_error_sink_slot(
+        move || {
+            let generation = STORAGE_HUB.with(|hub| {
+                hub.borrow_mut().unsubscribe(
+                    kind,
+                    key_for_cleanup,
+                    id,
+                    error_sink_for_cleanup.clone(),
+                )
+            });
+            if let Some(generation) = generation {
+                schedule_storage_detach(generation);
+            }
+        },
+        error_sink,
+    ))
 }
 
 fn storage_handle(kind: StorageAreaKind) -> Result<Storage, PersistenceError> {
@@ -521,6 +741,41 @@ mod tests {
     use silex_core::{OwnerAccess, ReadSignal, Runtime};
     use silex_router::Navigator;
     use std::{cell::RefCell, collections::HashMap};
+
+    #[test]
+    fn storage_hub_queues_and_cancels_physical_detach() {
+        let mut state = StorageHubState::default();
+        state.subscribe();
+        assert_eq!(state.listener(), ListenerState::Attached);
+
+        let generation = state
+            .unsubscribe()
+            .expect("last subscriber should queue detach");
+        assert_eq!(state.listener(), ListenerState::DetachQueued(generation));
+        state.subscribe();
+        assert_eq!(state.listener(), ListenerState::Attached);
+        assert!(!state.begin_remove(generation));
+    }
+
+    #[test]
+    fn storage_hub_reentrant_subscriber_requires_a_new_listener_after_remove() {
+        let mut state = StorageHubState::default();
+        state.subscribe();
+        let generation = state.unsubscribe().expect("detach should be queued");
+        assert!(state.begin_remove(generation));
+        assert_eq!(state.listener(), ListenerState::Removing(generation));
+
+        state.subscribe();
+        assert_eq!(state.listener(), ListenerState::Removing(generation));
+        assert!(state.finish_remove(generation, true));
+        assert_eq!(state.listener(), ListenerState::Detached);
+
+        state.mark_attached();
+        let next_generation = state.unsubscribe().expect("new listener should detach");
+        assert!(state.begin_remove(next_generation));
+        assert!(!state.finish_remove(next_generation, true));
+        assert_eq!(state.listener(), ListenerState::Detached);
+    }
 
     fn test_query_backend<'scope>(
         owner: OwnerAccess<'scope>,

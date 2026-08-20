@@ -110,14 +110,12 @@ pub(crate) fn validate_active_scheduler(
     scheduler: &SharedCell<GlobalScheduler>,
 ) -> Result<(), ReactiveError> {
     ACTIVE_CONTEXT.with(|stack| {
-        let mut saw_context = false;
         for context in stack
             .try_read()
             .map_err(|_| ReactiveError::BorrowConflict)?
             .iter()
             .rev()
         {
-            saw_context = true;
             if Rc::ptr_eq(&context.scheduler, scheduler) {
                 return Ok(());
             }
@@ -125,11 +123,7 @@ pub(crate) fn validate_active_scheduler(
                 return Err(ReactiveError::RuntimeMismatch);
             }
         }
-        if saw_context {
-            Err(ReactiveError::RuntimeMismatch)
-        } else {
-            Ok(())
-        }
+        Ok(())
     })
 }
 

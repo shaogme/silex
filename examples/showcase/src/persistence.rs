@@ -171,7 +171,7 @@ fn ManualFlushDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     let draft = Persistent::builder(owner, "demo-draft", error_handler)
         .local()
         .string()
-        .mode(PersistMode::Manual)
+        .write_mode(PersistWriteMode::Manual)
         .default(String::new())
         .build()?;
 
@@ -220,9 +220,9 @@ fn DebounceDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     let debounced = Persistent::builder(owner, "demo-debounced", error_handler)
         .local()
         .string()
-        .sync(SyncStrategy::Debounce(std::time::Duration::from_millis(
-            1500,
-        )))
+        .write_mode(PersistWriteMode::Debounced(
+            std::time::Duration::from_millis(1500),
+        ))
         .default(String::new())
         .build()?;
 

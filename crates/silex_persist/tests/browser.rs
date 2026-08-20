@@ -8,7 +8,9 @@ use silex_dom::attribute::AttrOp;
 use silex_dom::view::{
     AnyView, ApplyAttributes, IndexedListView, MountInstance, MountOwner, MountOwnerToken, View,
 };
-use silex_persist::{PersistMode, PersistenceState, Persistent, SyncStrategy, WriteDefault};
+use silex_persist::{
+    PersistExternalSync, PersistWriteMode, PersistenceState, Persistent, WriteDefault,
+};
 use silex_router::{RouterContext, RouterContextProps};
 use std::{
     cell::{Cell, RefCell},
@@ -125,22 +127,39 @@ export function installTimeoutController() {
     const controller = {
         callbacks: [],
         clears: [],
-        nextId: 1,
+        invokes: 0,
         failNext: false,
         originalSet: window.setTimeout,
         originalClear: window.clearTimeout,
     };
-    window.setTimeout = function(callback, _delay) {
+    window.setTimeout = function(callback, ...args) {
         if (controller.failNext) {
             controller.failNext = false;
             throw new Error("forced timeout creation failure");
         }
-        const id = controller.nextId++;
-        controller.callbacks.push({ id, callback });
+        let id;
+        const entry = { id: undefined, callback: undefined, cancelled: false, fired: false };
+        const wrapped = (...callbackArgs) => {
+            if (entry.cancelled || entry.fired) {
+                return undefined;
+            }
+            entry.fired = true;
+            controller.invokes += 1;
+            return callback(...callbackArgs);
+        };
+        id = controller.originalSet.call(this, wrapped, ...args);
+        entry.id = id;
+        entry.callback = wrapped;
+        controller.callbacks.push(entry);
         return id;
     };
     window.clearTimeout = function(id) {
         controller.clears.push(id);
+        const entry = controller.callbacks.find((entry) => entry.id === id);
+        if (entry !== undefined) {
+            entry.cancelled = true;
+        }
+        return controller.originalClear.call(this, id);
     };
     return controller;
 }
@@ -149,16 +168,27 @@ export function failNextTimeout(controller) {
     controller.failNext = true;
 }
 
-export function fireTimeout(controller, index) {
-    const entry = controller.callbacks[index];
-    if (entry === undefined) {
-        throw new Error(`timeout callback ${index} does not exist`);
+export function fireTimeout(controller, id) {
+    const entry = controller.callbacks.find((entry) => entry.id === id);
+    if (entry === undefined || entry.cancelled || entry.fired) {
+        return false;
     }
-    return entry.callback();
+    entry.callback();
+    return true;
+}
+
+export function timeoutPendingIds(controller) {
+    return controller.callbacks
+        .filter((entry) => !entry.cancelled && !entry.fired)
+        .map((entry) => entry.id);
 }
 
 export function timeoutClearCount(controller) {
     return controller.clears.length;
+}
+
+export function timeoutInvokeCount(controller) {
+    return controller.invokes;
 }
 
 export function restoreTimeoutController(controller) {
@@ -198,10 +228,16 @@ unsafe extern "C" {
     fn fail_next_timeout(controller: &JsValue);
 
     #[wasm_bindgen(js_name = fireTimeout)]
-    fn fire_timeout(controller: &JsValue, index: u32);
+    fn fire_timeout(controller: &JsValue, id: i32) -> bool;
+
+    #[wasm_bindgen(js_name = timeoutPendingIds)]
+    fn timeout_pending_ids(controller: &JsValue) -> Vec<i32>;
 
     #[wasm_bindgen(js_name = timeoutClearCount)]
     fn timeout_clear_count(controller: &JsValue) -> u32;
+
+    #[wasm_bindgen(js_name = timeoutInvokeCount)]
+    fn timeout_invoke_count(controller: &JsValue) -> u32;
 
     #[wasm_bindgen(js_name = restoreTimeoutController)]
     fn restore_timeout_controller(controller: &JsValue);
@@ -270,12 +306,20 @@ impl TimeoutController {
         fail_next_timeout(&self.value);
     }
 
-    fn fire(&self, index: u32) {
-        fire_timeout(&self.value, index);
+    fn fire(&self, id: i32) -> bool {
+        fire_timeout(&self.value, id)
+    }
+
+    fn pending_ids(&self) -> Vec<i32> {
+        timeout_pending_ids(&self.value)
     }
 
     fn clear_count(&self) -> u32 {
         timeout_clear_count(&self.value)
+    }
+
+    fn invoke_count(&self) -> u32 {
+        timeout_invoke_count(&self.value)
     }
 }
 
@@ -332,7 +376,7 @@ impl<'scope> View<'scope> for CapturedPersistent<'scope> {
 }
 
 #[wasm_bindgen_test]
-fn storage_listener_is_physically_removed_after_last_binding_cleanup() {
+async fn storage_listener_is_physically_removed_after_last_binding_cleanup() {
     let spy = StorageListenerSpy::new();
     let storage = local_storage();
     storage
@@ -353,6 +397,7 @@ fn storage_listener_is_physically_removed_after_last_binding_cleanup() {
     });
 
     root.close().expect("root cleanup should succeed");
+    TimeoutFuture::new(0).await;
     assert_eq!(spy.count("remove"), 1);
     storage
         .remove_item(LISTENER_CLEANUP_KEY)
@@ -360,7 +405,7 @@ fn storage_listener_is_physically_removed_after_last_binding_cleanup() {
 }
 
 #[wasm_bindgen_test]
-fn storage_listener_reentrant_cleanup_does_not_leave_a_listener() {
+async fn storage_listener_reentrant_cleanup_does_not_leave_a_listener() {
     let spy = StorageListenerSpy::new();
     let storage = local_storage();
     storage
@@ -402,8 +447,9 @@ fn storage_listener_reentrant_cleanup_does_not_leave_a_listener() {
     });
 
     root.close().expect("root cleanup should succeed");
-    assert_eq!(spy.count("add"), 2);
-    assert_eq!(spy.count("remove"), 2);
+    TimeoutFuture::new(0).await;
+    assert_eq!(spy.count("add"), 1);
+    assert_eq!(spy.count("remove"), 1);
     assert!(reentrant_root.borrow().is_none());
     drop(reentry);
     storage
@@ -841,7 +887,7 @@ fn persistent_view_stops_after_row_owner_dispose() {
         let binding = Persistent::builder(scope, "silex-persist-row-owner", test_handler(scope))
             .local()
             .string()
-            .sync(SyncStrategy::None)
+            .external_sync(PersistExternalSync::Disabled)
             .default("one".to_string())
             .build()
             .expect("persistent binding should build");
@@ -892,7 +938,7 @@ async fn debounce_writes_only_latest_value() {
         let binding = Persistent::builder(scope, DEBOUNCE_KEY, test_handler(scope))
             .local()
             .string()
-            .sync(SyncStrategy::Debounce(Duration::from_millis(5)))
+            .write_mode(PersistWriteMode::Debounced(Duration::from_millis(5)))
             .default(String::new())
             .build()
             .expect("persistent binding should build");
@@ -922,8 +968,7 @@ async fn debounce_late_callback_is_gated_after_root_dispose() {
         let binding = Persistent::builder(scope, DEBOUNCE_KEY, test_handler(scope))
             .local()
             .string()
-            .mode(PersistMode::Immediate)
-            .sync(SyncStrategy::Debounce(Duration::from_millis(20)))
+            .write_mode(PersistWriteMode::Debounced(Duration::from_millis(20)))
             .default(String::new())
             .build()
             .expect("persistent binding should build");
@@ -953,7 +998,7 @@ async fn debounce_external_remove_does_not_skip_next_write() {
         let binding = Persistent::builder(scope, DEBOUNCE_REMOVE_KEY, test_handler(scope))
             .local()
             .string()
-            .sync(SyncStrategy::Debounce(Duration::from_millis(5)))
+            .write_mode(PersistWriteMode::Debounced(Duration::from_millis(5)))
             .default("5".to_string())
             .build().expect("persistent binding should build");
         storage.remove_item(DEBOUNCE_REMOVE_KEY).expect("remove key");
@@ -991,15 +1036,23 @@ fn debounce_timer_failure_reentry_and_late_callbacks_are_gated() {
     storage.remove_item(KEY).expect("clear key");
     let controller = TimeoutController::new();
     let dispose_slot = Rc::new(RefCell::new(None::<OwnerHandle>));
+    let stale_timer_id = Cell::new(None::<i32>);
+    let errors = Rc::new(RefCell::new(Vec::new()));
     let mut runtime = Runtime::new();
     let root = runtime.owner().expect("owner should be created");
 
     root.with_access(|scope| {
-        let binding = Persistent::builder(scope, KEY, test_handler(scope))
+        let errors_for_handler = errors.clone();
+        let error_handler = scope
+            .error_handler(move |error| errors_for_handler.borrow_mut().push(error))
+            .expect("error handler should be registered");
+        let binding = Persistent::builder(scope, KEY, error_handler)
             .local()
             .string()
             .write_default(WriteDefault::Never)
-            .sync(SyncStrategy::Debounce(std::time::Duration::from_millis(1)))
+            .write_mode(PersistWriteMode::Debounced(
+                std::time::Duration::from_millis(1),
+            ))
             .default(String::new())
             .build()
             .expect("persistent binding should build");
@@ -1025,34 +1078,66 @@ fn debounce_timer_failure_reentry_and_late_callbacks_are_gated() {
         binding
             .set("failed".to_string())
             .expect("reactive update should succeed");
-        assert!(matches!(
-            binding
-                .state()
-                .get_untracked()
-                .expect("reactive value should be readable"),
-            PersistenceState::WriteError(_)
-        ));
+        assert!(
+            matches!(
+                binding
+                    .state()
+                    .get_untracked()
+                    .expect("reactive value should be readable"),
+                PersistenceState::WriteError(_)
+            ),
+            "errors after timer failure: {:?}",
+            errors.borrow()
+        );
 
         binding
             .set("first".to_string())
             .expect("reactive update should succeed");
+        let first_timer_id = controller
+            .pending_ids()
+            .into_iter()
+            .next()
+            .expect("first timer should be pending");
+        stale_timer_id.set(Some(first_timer_id));
         binding
             .set("second".to_string())
             .expect("reactive update should succeed");
+        assert!(
+            !controller.pending_ids().is_empty(),
+            "latest timer was not scheduled; state: {:?}; errors: {:?}",
+            binding
+                .state()
+                .get_untracked()
+                .expect("reactive value should be readable"),
+            errors.borrow()
+        );
     });
 
     *dispose_slot.borrow_mut() = Some(root);
-    controller.fire(1);
+    let active_timer_id = controller
+        .pending_ids()
+        .into_iter()
+        .next()
+        .expect("latest timer should be pending");
+    assert!(controller.fire(active_timer_id));
     assert_eq!(
         storage.get_item(KEY).expect("read persisted value"),
         Some("second".to_string())
     );
-    controller.fire(0);
+    if let Some(stale_timer_id) = stale_timer_id.get() {
+        assert!(!controller.fire(stale_timer_id));
+    }
+    assert_eq!(controller.invoke_count(), 1);
     assert_eq!(
         storage.get_item(KEY).expect("read persisted value"),
         Some("second".to_string())
     );
     assert_eq!(controller.clear_count(), 1);
     assert!(dispose_slot.borrow().is_none());
+    assert!(
+        errors.borrow().is_empty(),
+        "unexpected errors: {:?}",
+        errors.borrow()
+    );
     storage.remove_item(KEY).expect("cleanup key");
 }

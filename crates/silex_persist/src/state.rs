@@ -1,19 +1,20 @@
 use crate::backend::{BackendEvent, BackendSubscription};
 use crate::builder::PersistentBuilder;
+use crate::runtime::{PersistRuntime, WriteOrigin, WriteRequest, WriteToken};
 use crate::{
     DecodePolicy, NoBackend, NoCodec, NoDefault, PersistenceError, PersistenceErrorKind,
     RemovePolicy,
 };
 use ref_str::LocalStaticRefStr;
 use silex_core::{
-    ErrorHandlerInput, OwnerAccess, ReactiveError, Rx, RxGet, SilexErrorKind, SilexResult,
-    StoreField,
+    ErrorHandlerInput, OwnerAccess, ReactiveError, Rx, RxGet, SilexError, SilexErrorKind,
+    SilexResult, StoreField,
     reactivity::{PromotionPlan, ReactiveSource, ReadSignal, RwSignal, StoredValue},
     traits::{RxCloneData, RxData, RxRead, RxValue, RxWrite},
 };
 use silex_dom::attribute::AttrOp;
 use silex_dom::view::{
-    ApplyAttributes, HostResource, MountErrorHandler, MountInstance, MountOwner, View,
+    ApplyAttributes, MountErrorHandler, MountInstance, MountOwner, OwnedTimeout, View,
 };
 use std::rc::Rc;
 use web_sys::Node;
@@ -32,69 +33,25 @@ pub struct DecodeErrorInfo {
     pub message: String,
 }
 
+/// Observable state of a persistent binding.
 #[derive(Clone, Debug, PartialEq)]
 pub enum PersistenceState {
+    /// The value is synchronized with the backend. The string is the encoded
+    /// backend representation, or empty when the backend has no value.
     Ready(String),
+    /// A local value has changed and has not completed persistence yet.
     Dirty(String),
+    /// A local write is waiting for a debounce timer or is being committed.
     Syncing(String),
+    /// The backend is unavailable in the current environment.
     Unavailable,
+    /// Reading the initial backend value failed.
     ReadError(String),
+    /// The backend value could not be decoded under the configured policy.
     DecodeError(DecodeErrorInfo),
+    /// A write failed. The latest request remains available to retry with
+    /// [`Persistent::flush`].
     WriteError(String),
-}
-
-pub(crate) struct OwnerDebounceState<'scope> {
-    pending: bool,
-    generation: u64,
-    timer: Option<HostResource<'scope>>,
-}
-
-impl<'scope> OwnerDebounceState<'scope> {
-    pub(crate) fn new() -> Self {
-        Self {
-            pending: false,
-            generation: 0,
-            timer: None,
-        }
-    }
-
-    pub(crate) fn begin_with_previous_timer(&mut self) -> (u64, Option<HostResource<'scope>>) {
-        let timer = self.timer.take();
-        self.pending = true;
-        self.generation = self.generation.wrapping_add(1);
-        (self.generation, timer)
-    }
-
-    pub(crate) fn set_timer(
-        &mut self,
-        generation: u64,
-        timer: HostResource<'scope>,
-    ) -> Option<HostResource<'scope>> {
-        if self.pending && self.generation == generation {
-            self.timer = Some(timer);
-            None
-        } else {
-            Some(timer)
-        }
-    }
-
-    pub(crate) fn take_ready(&mut self, generation: u64) -> bool {
-        if !self.pending || self.generation != generation {
-            return false;
-        }
-        self.pending = false;
-        if let Some(timer) = self.timer.take() {
-            timer.finish();
-        }
-        true
-    }
-
-    pub(crate) fn invalidate(&mut self) -> Option<HostResource<'scope>> {
-        let timer = self.timer.take();
-        self.pending = false;
-        self.generation = self.generation.wrapping_add(1);
-        timer
-    }
 }
 
 pub(crate) struct PersistenceController<'scope, T: 'scope> {
@@ -102,17 +59,15 @@ pub(crate) struct PersistenceController<'scope, T: 'scope> {
     pub default: Rc<dyn Fn() -> T + 'scope>,
     pub decode_policy: DecodePolicy,
     pub remove_policy: RemovePolicy,
-    pub last_flushed_raw: Option<String>,
-    pub value_generation: u64,
-    pub skip_next_auto_flush_generation: Option<u64>,
-    pub suppress_manual_state_generation: Option<u64>,
+    pub runtime: PersistRuntime<'scope>,
+    pub local_mutation_pending: bool,
+    pub error_handler: Rc<dyn ErrorHandlerInput<'scope> + 'scope>,
     pub backend_get: PersistenceGetFn<'scope>,
     pub backend_set: PersistenceSetFn<'scope>,
     pub backend_remove: PersistenceRemoveFn<'scope>,
     pub encode: PersistenceEncodeFn<'scope, T>,
     pub decode: PersistenceDecodeFn<'scope, T>,
     pub should_remove: Rc<dyn Fn(&T) -> bool + 'scope>,
-    pub debounce: Option<OwnerDebounceState<'scope>>,
     pub subscription: Option<BackendSubscription<'scope>>,
 }
 
@@ -203,7 +158,7 @@ where
     /// intentionally returns the configured default when storage is empty.
     pub fn has_persisted_value(&self) -> Result<bool, PersistenceError> {
         self.controller
-            .with_untracked(|controller| controller.last_flushed_raw.is_some())
+            .with_untracked(|controller| controller.runtime.last_backend_raw().is_some())
             .map_err(PersistenceError::from)
     }
 
@@ -231,6 +186,8 @@ where
         }
     }
 
+    /// Remove the backend value and reset the binding to its configured
+    /// default.
     pub fn remove(&self) -> Result<(), PersistenceError> {
         self.validate_owner()?;
         invalidate_debounce(self.controller).map_err(PersistenceError::from)?;
@@ -242,10 +199,11 @@ where
         let result = remove_backend(&key);
         match result {
             Ok(()) => {
-                self.controller.update_untracked(|controller| {
-                    controller.last_flushed_raw = None;
-                    clear_external_value_markers(controller);
+                let timer = self.controller.update_untracked(|controller| {
+                    controller.local_mutation_pending = false;
+                    controller.runtime.apply_external_snapshot(None)
                 })?;
+                cancel_timer(timer).map_err(PersistenceError::from)?;
                 self.state
                     .set(PersistenceState::Ready(String::new()))
                     .map_err(PersistenceError::from)?;
@@ -260,6 +218,7 @@ where
         }
     }
 
+    /// Reload the backend snapshot and invalidate any pending local request.
     pub fn reload(&self) -> Result<(), PersistenceError> {
         self.validate_owner()?;
         let result = reload_persistent(self.controller, self.value, self.state);
@@ -269,6 +228,12 @@ where
         result
     }
 
+    /// Persist the current local value immediately.
+    ///
+    /// This cancels a pending debounce timer and is also the explicit retry
+    /// path after [`PersistenceState::WriteError`]. If an external snapshot
+    /// arrives first, it invalidates the older local request and becomes the
+    /// new baseline.
     pub fn flush(&self) -> Result<(), PersistenceError> {
         self.validate_owner()?;
         flush_persistent_value(self.controller, self.value, self.state)
@@ -352,93 +317,127 @@ pub(crate) fn flush_persistent_value<'scope, T>(
 where
     T: Clone + PartialEq + 'scope,
 {
+    persist_current_value(controller, value, state, WriteOrigin::ExplicitFlush)
+}
+
+pub(crate) fn persist_current_value<'scope, T>(
+    controller: StoredValue<'scope, PersistenceController<'scope, T>>,
+    value: RwSignal<'scope, T>,
+    state: RwSignal<'scope, PersistenceState>,
+    origin: WriteOrigin,
+) -> Result<(), PersistenceError>
+where
+    T: Clone + PartialEq + 'scope,
+{
     invalidate_debounce(controller).map_err(PersistenceError::from)?;
-    clear_external_value_markers_on_controller(controller).map_err(PersistenceError::from)?;
     let current = value
         .read_signal()
         .get_untracked()
         .map_err(PersistenceError::from)?;
-    let (key, last_raw, set_backend, remove_backend, should_remove, encode) = controller
+    let (should_remove, encode) = controller
+        .with_untracked(|controller| (controller.should_remove.clone(), controller.encode.clone()))
+        .map_err(PersistenceError::from)?;
+    let raw = if should_remove(&current) {
+        None
+    } else {
+        match encode(&current) {
+            Ok(raw) => Some(raw),
+            Err(error) => {
+                state
+                    .set(PersistenceState::WriteError(error.message()))
+                    .map_err(PersistenceError::from)?;
+                return Err(error);
+            }
+        }
+    };
+    let (token, previous_timer) = controller.update_untracked(|controller| {
+        controller
+            .runtime
+            .begin_request(raw.clone(), origin)
+            .ok_or_else(|| {
+                SilexError::fatal(SilexErrorKind::Framework(
+                    "persistence runtime is closed".to_string(),
+                ))
+            })
+    })??;
+    cancel_timer(previous_timer)?;
+    let request = controller
+        .update_untracked(|controller| controller.runtime.claim_request(token))?
+        .ok_or_else(|| {
+            PersistenceError::fatal(PersistenceErrorKind::InvalidConfiguration(
+                "persistence request was superseded before commit".to_string(),
+            ))
+        })?;
+    commit_persisted_request(controller, state, request)
+}
+
+fn commit_request<'scope, T>(
+    controller: StoredValue<'scope, PersistenceController<'scope, T>>,
+    state: RwSignal<'scope, PersistenceState>,
+    token: WriteToken,
+    raw: Option<String>,
+) -> Result<(), PersistenceError>
+where
+    T: 'scope,
+{
+    let (key, last_raw, set_backend, remove_backend) = controller
         .with_untracked(|controller| {
             (
                 controller.key.clone(),
-                controller.last_flushed_raw.clone(),
+                controller.runtime.last_backend_raw(),
                 controller.backend_set.clone(),
                 controller.backend_remove.clone(),
-                controller.should_remove.clone(),
-                controller.encode.clone(),
             )
         })
         .map_err(PersistenceError::from)?;
-    let should_remove = should_remove(&current);
-
-    if should_remove {
-        if last_raw.is_none() {
-            controller
-                .update_untracked(|controller| {
-                    controller.suppress_manual_state_generation = None;
-                })
-                .map_err(PersistenceError::from)?;
-            state
-                .set(PersistenceState::Ready(String::new()))
-                .map_err(PersistenceError::from)?;
-            return Ok(());
-        }
-        if let Err(error) = remove_backend(&key) {
-            state
-                .set(PersistenceState::WriteError(error.message()))
-                .map_err(PersistenceError::from)?;
-            return Err(error);
-        }
-        controller
-            .update_untracked(|controller| {
-                controller.last_flushed_raw = None;
-                clear_external_value_markers(controller);
-            })
-            .map_err(PersistenceError::from)?;
-        state
-            .set(PersistenceState::Ready(String::new()))
-            .map_err(PersistenceError::from)?;
-        return Ok(());
-    }
-
-    let raw = match encode(&current) {
-        Ok(raw) => raw,
-        Err(error) => {
-            state
-                .set(PersistenceState::WriteError(error.message()))
-                .map_err(PersistenceError::from)?;
-            return Err(error);
+    let needs_write = raw != last_raw;
+    let result = if !needs_write {
+        Ok(())
+    } else {
+        match raw.as_deref() {
+            Some(raw) => set_backend(&key, raw),
+            None => remove_backend(&key),
         }
     };
-
-    if last_raw.as_deref() == Some(raw.as_str()) {
-        controller
+    if let Err(error) = result {
+        let current = controller
             .update_untracked(|controller| {
-                clear_external_value_markers(controller);
+                controller.runtime.mark_write_failed(token, error.message())
             })
             .map_err(PersistenceError::from)?;
-        state
-            .set(PersistenceState::Ready(raw))
-            .map_err(PersistenceError::from)?;
-        return Ok(());
-    }
-
-    if let Err(error) = set_backend(&key, &raw) {
-        state
-            .set(PersistenceState::WriteError(error.message()))
-            .map_err(PersistenceError::from)?;
+        if current {
+            state
+                .set(PersistenceState::WriteError(error.message()))
+                .map_err(PersistenceError::from)?;
+        }
         return Err(error);
     }
-    controller
-        .update_untracked(|controller| {
-            controller.last_flushed_raw = Some(raw.clone());
-            clear_external_value_markers(controller);
-        })
+    let current = controller
+        .update_untracked(|controller| controller.runtime.mark_write_succeeded(token))
         .map_err(PersistenceError::from)?;
-    state
-        .set(PersistenceState::Ready(raw))
-        .map_err(PersistenceError::from)?;
+    if current {
+        state
+            .set(PersistenceState::Ready(raw.unwrap_or_default()))
+            .map_err(PersistenceError::from)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn commit_persisted_request<'scope, T>(
+    controller: StoredValue<'scope, PersistenceController<'scope, T>>,
+    state: RwSignal<'scope, PersistenceState>,
+    request: WriteRequest,
+) -> Result<(), PersistenceError>
+where
+    T: 'scope,
+{
+    commit_request(controller, state, request.token, request.raw)
+}
+
+fn cancel_timer<'scope>(timer: Option<OwnedTimeout<'scope>>) -> Result<(), PersistenceError> {
+    if let Some(timer) = timer {
+        timer.cancel().map_err(PersistenceError::from)?;
+    }
     Ok(())
 }
 
@@ -524,14 +523,7 @@ where
     match decode_result {
         Ok(decoded) => {
             let value_changed = value.get_untracked().map_err(PersistenceError::from)? != decoded;
-            controller
-                .update_untracked(|controller| {
-                    controller.last_flushed_raw = Some(raw.clone());
-                    clear_external_value_markers(controller);
-                    if value_changed {
-                        controller.value_generation = controller.value_generation.wrapping_add(1);
-                    }
-                })
+            apply_external_runtime_snapshot(controller, Some(raw.clone()))
                 .map_err(PersistenceError::from)?;
             if value_changed {
                 value.set(decoded).map_err(PersistenceError::from)?;
@@ -550,17 +542,7 @@ where
                 .map_err(PersistenceError::from)?;
             let default = default();
             let value_changed = value.get_untracked().map_err(PersistenceError::from)? != default;
-            if value_changed {
-                arm_external_value_change(controller).map_err(PersistenceError::from)?;
-            } else {
-                clear_external_value_markers_on_controller(controller)
-                    .map_err(PersistenceError::from)?;
-            }
-            controller
-                .update_untracked(|controller| {
-                    controller.last_flushed_raw = None;
-                })
-                .map_err(PersistenceError::from)?;
+            apply_external_runtime_snapshot(controller, None).map_err(PersistenceError::from)?;
             state
                 .set(PersistenceState::DecodeError(DecodeErrorInfo {
                     raw: raw.clone(),
@@ -603,12 +585,7 @@ where
         .with_untracked(|controller| controller.remove_policy)
         .map_err(PersistenceError::from)?;
     if !matches!(policy, RemovePolicy::UseDefault) {
-        controller
-            .update_untracked(|controller| {
-                controller.last_flushed_raw = None;
-                clear_external_value_markers(controller);
-            })
-            .map_err(PersistenceError::from)?;
+        apply_external_runtime_snapshot(controller, None).map_err(PersistenceError::from)?;
         state
             .set(PersistenceState::Ready(String::new()))
             .map_err(PersistenceError::from)?;
@@ -620,19 +597,7 @@ where
         .map_err(PersistenceError::from)?;
     let default = default();
     let value_changed = value.get_untracked().map_err(PersistenceError::from)? != default;
-    controller
-        .update_untracked(|controller| {
-            controller.last_flushed_raw = None;
-            if value_changed {
-                let generation = controller.value_generation.wrapping_add(1);
-                controller.value_generation = generation;
-                controller.skip_next_auto_flush_generation = Some(generation);
-                controller.suppress_manual_state_generation = Some(generation);
-            } else {
-                clear_external_value_markers(controller);
-            }
-        })
-        .map_err(PersistenceError::from)?;
+    apply_external_runtime_snapshot(controller, None).map_err(PersistenceError::from)?;
     if value_changed {
         value.set(default).map_err(PersistenceError::from)?;
     }
@@ -645,16 +610,20 @@ where
 pub(crate) fn invalidate_debounce<'scope, T>(
     controller: StoredValue<'scope, PersistenceController<'scope, T>>,
 ) -> SilexResult<()> {
+    let timer = controller.update_untracked(|controller| controller.runtime.invalidate())?;
+    cancel_timer(timer).map_err(PersistenceError::from)?;
+    Ok(())
+}
+
+fn apply_external_runtime_snapshot<'scope, T>(
+    controller: StoredValue<'scope, PersistenceController<'scope, T>>,
+    raw: Option<String>,
+) -> SilexResult<()> {
     let timer = controller.update_untracked(|controller| {
-        controller
-            .debounce
-            .as_mut()
-            .and_then(OwnerDebounceState::invalidate)
+        controller.local_mutation_pending = false;
+        controller.runtime.apply_external_snapshot(raw)
     })?;
-    if let Some(timer) = &timer {
-        timer.cancel().map_err(PersistenceError::from)?;
-    }
-    drop(timer);
+    cancel_timer(timer).map_err(PersistenceError::from)?;
     Ok(())
 }
 
@@ -662,13 +631,11 @@ pub(crate) fn take_controller_resources<'scope, T>(
     controller: StoredValue<'scope, PersistenceController<'scope, T>>,
 ) -> SilexResult<(
     Option<BackendSubscription<'scope>>,
-    Option<HostResource<'scope>>,
+    Option<OwnedTimeout<'scope>>,
 )> {
     controller.update_untracked(|controller| {
-        let timer = controller
-            .debounce
-            .as_mut()
-            .and_then(OwnerDebounceState::invalidate);
+        let timer = controller.runtime.close();
+        controller.local_mutation_pending = false;
         (controller.subscription.take(), timer)
     })
 }
@@ -676,53 +643,19 @@ pub(crate) fn take_controller_resources<'scope, T>(
 pub(crate) fn mark_local_value_write<'scope, T>(
     controller: StoredValue<'scope, PersistenceController<'scope, T>>,
 ) -> SilexResult<()> {
-    controller.update(|controller| {
-        controller.value_generation = controller.value_generation.wrapping_add(1);
+    controller.update_untracked(|controller| {
+        controller.local_mutation_pending = true;
     })
 }
 
-pub(crate) fn take_skip_next_auto_flush<'scope, T>(
+pub(crate) fn take_local_mutation<'scope, T>(
     controller: StoredValue<'scope, PersistenceController<'scope, T>>,
 ) -> SilexResult<bool> {
     controller.update_untracked(|controller| {
-        let should_skip =
-            controller.skip_next_auto_flush_generation == Some(controller.value_generation);
-        controller.skip_next_auto_flush_generation = None;
-        should_skip
+        let pending = controller.local_mutation_pending;
+        controller.local_mutation_pending = false;
+        pending
     })
-}
-
-pub(crate) fn take_suppress_manual_state<'scope, T>(
-    controller: StoredValue<'scope, PersistenceController<'scope, T>>,
-) -> SilexResult<bool> {
-    controller.update_untracked(|controller| {
-        let should_suppress =
-            controller.suppress_manual_state_generation == Some(controller.value_generation);
-        controller.suppress_manual_state_generation = None;
-        should_suppress
-    })
-}
-
-fn arm_external_value_change<'scope, T>(
-    controller: StoredValue<'scope, PersistenceController<'scope, T>>,
-) -> SilexResult<()> {
-    controller.update_untracked(|controller| {
-        let generation = controller.value_generation.wrapping_add(1);
-        controller.value_generation = generation;
-        controller.skip_next_auto_flush_generation = Some(generation);
-        controller.suppress_manual_state_generation = Some(generation);
-    })
-}
-
-fn clear_external_value_markers_on_controller<'scope, T>(
-    controller: StoredValue<'scope, PersistenceController<'scope, T>>,
-) -> SilexResult<()> {
-    controller.update_untracked(clear_external_value_markers)
-}
-
-fn clear_external_value_markers<T>(controller: &mut PersistenceController<'_, T>) {
-    controller.skip_next_auto_flush_generation = None;
-    controller.suppress_manual_state_generation = None;
 }
 
 fn set_error_state(state: RwSignal<'_, PersistenceState>, error: &PersistenceError) {

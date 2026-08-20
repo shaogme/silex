@@ -126,6 +126,35 @@ fn foreign_untracked_reads_are_allowed_without_subscription() {
 }
 
 #[test]
+fn cleanup_untracked_reentry_can_build_another_runtime_binding() {
+    let mut cleanup_runtime = Runtime::new();
+    let cleanup_root = cleanup_runtime.owner().expect("cleanup root");
+    let mut reentrant_runtime = Runtime::new();
+    let reentrant_root = reentrant_runtime.owner().expect("reentrant root");
+    let reentered = Rc::new(Cell::new(false));
+    let reentered_in_cleanup = reentered.clone();
+
+    cleanup_root.with_access(|scope| {
+        scope
+            .on_cleanup(
+                move || {
+                    reentrant_root.with_access(|reentrant_scope| {
+                        let (source, _) = reentrant_scope.signal(1_i32)?;
+                        source.get_untracked()?;
+                        reentered_in_cleanup.set(true);
+                        Ok(())
+                    })
+                },
+                handler::<ReactiveError>(scope),
+            )
+            .expect("cleanup registration");
+    });
+
+    cleanup_root.close().expect("cleanup root disposal");
+    assert!(reentered.get());
+}
+
+#[test]
 fn untrack_only_masks_the_runtime_that_owns_the_scope() {
     let mut foreign_runtime = Runtime::new();
     let foreign_root = foreign_runtime.owner().expect("foreign root");

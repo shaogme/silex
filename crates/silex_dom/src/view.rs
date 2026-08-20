@@ -19,7 +19,7 @@ pub use list::{IndexedListView, RenderOnlyKeyedListView, StatefulKeyedListView};
 pub use mount::{mount_component, mount_text_node};
 pub use owner::{
     HostResource, MountCleanup, MountEffect, MountErrorHandler, MountOwner, MountOwnerContext,
-    MountOwnerToken, MountState, SharedCell,
+    MountOwnerToken, MountState, OwnedTimeout, OwnedTimeoutTicket, SharedCell,
 };
 pub use reactive::AutoReactiveView;
 pub use row::RowUpdater;

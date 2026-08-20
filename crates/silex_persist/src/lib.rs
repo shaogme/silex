@@ -1,6 +1,7 @@
 mod backend;
 mod builder;
 mod codec;
+mod runtime;
 mod state;
 
 pub use backend::{
@@ -35,17 +36,30 @@ pub enum RemovePolicy {
     Ignore,
 }
 
+/// Controls when local mutations are written to the backend.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PersistMode {
+pub enum PersistWriteMode {
+    /// Write each local mutation synchronously during the reactive update.
     Immediate,
+    /// Keep local mutations in memory until [`Persistent::flush`] is called.
     Manual,
+    /// Write only the latest local mutation after the debounce duration.
+    ///
+    /// The initial bootstrap write is never debounced. A failed scheduled
+    /// write remains retryable through [`Persistent::flush`].
+    Debounced(std::time::Duration),
 }
 
+/// Controls which backend-originated changes update this binding.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SyncStrategy {
-    None,
-    CrossContext,
-    Debounce(std::time::Duration),
+pub enum PersistExternalSync {
+    /// Do not subscribe to backend change notifications.
+    Disabled,
+    /// Subscribe to Web Storage events and apply the latest external snapshot.
+    StorageEvents,
+    /// Subscribe to router query changes and apply the latest external
+    /// snapshot.
+    QueryChanges,
 }
 
 #[cfg(test)]

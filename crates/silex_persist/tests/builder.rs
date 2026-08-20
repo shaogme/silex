@@ -4,9 +4,9 @@ use silex_core::{
 };
 use silex_persist::{
     BackendEvent, BackendEventSink, BackendSubscribeError, BackendSubscription, DecodePolicy,
-    NoDefault, ParseCodec, PersistCodec, PersistMode, PersistenceBackend, PersistenceError,
-    PersistenceErrorKind, PersistenceState, Persistent, PersistentBuilder, RemovePolicy,
-    SyncStrategy, WriteDefault,
+    NoDefault, ParseCodec, PersistCodec, PersistExternalSync, PersistWriteMode, PersistenceBackend,
+    PersistenceError, PersistenceErrorKind, PersistenceState, Persistent, PersistentBuilder,
+    RemovePolicy, WriteDefault,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -433,6 +433,43 @@ fn initial_default_write_failure_is_visible() {
 }
 
 #[test]
+fn failed_write_can_retry_with_explicit_flush() {
+    let mut runtime = Runtime::new();
+    let _ = runtime.with_transient(|scope| {
+        let backend = MockBackend::default();
+        let value = parse_builder(scope, backend.clone(), "retry-write")
+            .write_default(WriteDefault::Never)
+            .external_sync(PersistExternalSync::Disabled)
+            .default(1)
+            .build()
+            .expect("persistent binding should build");
+
+        *backend.fail_writes.borrow_mut() = true;
+        value.set(2).expect("reactive update should succeed");
+        assert!(matches!(
+            value
+                .state()
+                .get_untracked()
+                .expect("state should be readable"),
+            PersistenceState::WriteError(_)
+        ));
+
+        *backend.fail_writes.borrow_mut() = false;
+        value
+            .flush()
+            .expect("explicit flush should retry the request");
+        assert_eq!(backend.get("retry-write").unwrap(), Some("2".to_string()));
+        assert_eq!(
+            value
+                .state()
+                .get_untracked()
+                .expect("state should be readable"),
+            PersistenceState::Ready("2".to_string())
+        );
+    });
+}
+
+#[test]
 fn manual_encode_failure_sets_write_error_for_effect_and_flush() {
     let mut runtime = Runtime::new();
     let _ = runtime.with_transient(|scope| {
@@ -444,8 +481,8 @@ fn manual_encode_failure_sets_write_error_for_effect_and_flush() {
         let value = Persistent::builder(scope, "manual-encode-failure", test_handler(scope))
             .backend(backend.clone())
             .custom_codec::<i32, _>(codec)
-            .mode(PersistMode::Manual)
-            .sync(SyncStrategy::None)
+            .write_mode(PersistWriteMode::Manual)
+            .external_sync(PersistExternalSync::Disabled)
             .default(1)
             .build()
             .expect("persistent binding should build");
@@ -560,8 +597,8 @@ fn explicit_remove_does_not_skip_the_next_immediate_or_manual_write() {
 
         let manual_backend = MockBackend::default();
         let manual = parse_builder(scope, manual_backend.clone(), "manual-remove")
-            .mode(PersistMode::Manual)
-            .sync(SyncStrategy::None)
+            .write_mode(PersistWriteMode::Manual)
+            .external_sync(PersistExternalSync::Disabled)
             .default(5)
             .build()
             .expect("persistent binding should build");
@@ -1064,8 +1101,8 @@ fn manual_mode_marks_value_dirty_until_flush() {
     let _ = runtime.with_transient(|scope| {
         let backend = MockBackend::default();
         let value = parse_builder(scope, backend.clone(), "counter")
-            .mode(PersistMode::Manual)
-            .sync(SyncStrategy::None)
+            .write_mode(PersistWriteMode::Manual)
+            .external_sync(PersistExternalSync::Disabled)
             .default(1)
             .build()
             .expect("persistent binding should build");
@@ -1150,7 +1187,7 @@ fn write_default_never_and_immediate_none_cover_missing_and_existing_values() {
         let missing = parse_builder(scope, missing_backend.clone(), "matrix-missing")
             .write_default(WriteDefault::Never)
             .on_remove(RemovePolicy::Ignore)
-            .sync(SyncStrategy::None)
+            .external_sync(PersistExternalSync::Disabled)
             .default(5)
             .build()
             .expect("persistent binding should build");
@@ -1207,7 +1244,7 @@ fn write_default_never_and_immediate_none_cover_missing_and_existing_values() {
         let existing = parse_builder(scope, existing_backend.clone(), "matrix-existing")
             .write_default(WriteDefault::Never)
             .on_remove(RemovePolicy::Ignore)
-            .sync(SyncStrategy::None)
+            .external_sync(PersistExternalSync::Disabled)
             .default(5)
             .build()
             .expect("persistent binding should build");
@@ -1336,8 +1373,8 @@ fn remove_ignore_matrix_clears_external_state_without_skipping_local_writes() {
         let manual_backend = MockBackend::with_value("ignore-manual", "7");
         let manual = parse_builder(scope, manual_backend.clone(), "ignore-manual")
             .write_default(WriteDefault::Never)
-            .mode(PersistMode::Manual)
-            .sync(SyncStrategy::CrossContext)
+            .write_mode(PersistWriteMode::Manual)
+            .external_sync(PersistExternalSync::StorageEvents)
             .on_remove(RemovePolicy::Ignore)
             .default(5)
             .build()
@@ -1386,8 +1423,8 @@ fn write_default_never_manual_none_stays_ready_until_a_local_change() {
         let backend = MockBackend::default();
         let value = parse_builder(scope, backend.clone(), "never-manual")
             .write_default(WriteDefault::Never)
-            .mode(PersistMode::Manual)
-            .sync(SyncStrategy::None)
+            .write_mode(PersistWriteMode::Manual)
+            .external_sync(PersistExternalSync::Disabled)
             .on_remove(RemovePolicy::Ignore)
             .default(1)
             .build()
