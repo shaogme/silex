@@ -36,7 +36,7 @@ pub fn Avatar<'scope, Ctx>(
         } else {
             format!("{} {}", base_cls, extra)
         }
-    });
+    })?;
 
     let data_sz = rx!(ctx; {
         let sz = $size;
@@ -45,7 +45,7 @@ pub fn Avatar<'scope, Ctx>(
         } else {
             sz.clone()
         }
-    });
+    })?;
 
     Ok(div(children)
         .class(cls)
@@ -74,7 +74,7 @@ pub fn AvatarImage<'scope, Ctx>(
         } else {
             format!("{} {}", base_cls, extra)
         }
-    });
+    })?;
 
     Ok(img()
         .src(src)
@@ -116,7 +116,7 @@ pub fn AvatarFallback<'scope, Ctx>(
         } else {
             format!("{} {}", base_cls, extra)
         }
-    });
+    })?;
 
     Ok(span(children)
         .class(cls)
@@ -141,7 +141,7 @@ pub fn AvatarBadge<'scope, Ctx>(
         } else {
             format!("{} {}", base_cls, extra)
         }
-    });
+    })?;
 
     Ok(span(children).class(cls).attr("data-slot", "avatar-badge"))
 }
@@ -164,7 +164,7 @@ pub fn AvatarGroup<'scope, Ctx>(
         } else {
             format!("{} {}", base_cls, extra)
         }
-    });
+    })?;
 
     Ok(div(children).class(cls).attr("data-slot", "avatar-group"))
 }
@@ -187,7 +187,7 @@ pub fn AvatarGroupCount<'scope, Ctx>(
         } else {
             format!("{} {}", base_cls, extra)
         }
-    });
+    })?;
 
     Ok(div(children)
         .class(cls)

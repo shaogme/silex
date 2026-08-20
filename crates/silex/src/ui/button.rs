@@ -53,7 +53,7 @@ pub fn Button<'scope, Ctx>(
         } else {
             format!("{} {}", base_cls, extra)
         }
-    });
+    })?;
 
     Ok(button(children).attr("data-slot", "button").class(cls))
 }

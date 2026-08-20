@@ -87,10 +87,10 @@ fn CounterDisplay<'scope, Ctx>(
                     "opacity: {}; transition: opacity 0.3s",
                     if *$is_even { 1.0 } else { 0.0 }
                 )
-            )),
+            )?),
     )
     .class(container_class)
-    .class(("even-number", rx!(ctx; *$is_even)))) // Adds class "even-number" when count is even
+    .class(("even-number", rx!(ctx; *$is_even)?))) // Adds class "even-number" when count is even
 }
 
 #[component]
@@ -175,7 +175,7 @@ fn HomeView<'scope>(#[ctx] ctx: RouterContext<'scope>) -> impl View<'scope> {
 
     // 显式本地信号传递演示
     let (count, set_count) = owner.signal(0)?;
-    let is_high = rx!(ctx; *$count > 5);
+    let is_high = rx!(ctx; *$count > 5)?;
     let suspense_source = owner.constant(())?;
     let suspense_data_style = sty(ctx)
         .color(hex("#2e7d32"))?
@@ -400,7 +400,7 @@ fn App<'scope>(
         } else {
             boundary.clone()
         }
-    }))
+    })?)
 }
 
 /// Mount the counter application into the conventional `#app` target.

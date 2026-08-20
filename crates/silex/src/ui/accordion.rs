@@ -19,7 +19,7 @@ pub fn Accordion<'scope, Ctx>(
         } else {
             format!("{} {}", base, extra)
         }
-    });
+    })?;
 
     Ok(div(children).attr("data-slot", "accordion").class(root_cls))
 }
@@ -41,7 +41,7 @@ pub fn AccordionItem<'scope, Ctx>(
         } else {
             format!("{} {}", base, extra)
         }
-    });
+    })?;
 
     Ok(div(children)
         .attr("data-slot", "accordion-item")
@@ -73,9 +73,9 @@ pub fn AccordionTrigger<'scope, Ctx>(
         } else {
             format!("{} {}", base, extra)
         }
-    });
+    })?;
 
-    let state_attr = rx!(ctx; if *$open { "open" } else { "closed" });
+    let state_attr = rx!(ctx; if *$open { "open" } else { "closed" })?;
     let icon_cls = rx!(ctx; {
         let is_open = *$open;
         if is_open {
@@ -83,7 +83,7 @@ pub fn AccordionTrigger<'scope, Ctx>(
         } else {
             tw!("pointer-events-none size-4 shrink-0 translate-y-0.5 text-slate-500 dark:text-slate-400 transition-transform duration-200").to_string()
         }
-    });
+    })?;
 
     let icon = svg(path().attr("d", "m6 9 6 6 6-6"))
         .attr("xmlns", "http://www.w3.org/2000/svg")
@@ -125,7 +125,7 @@ pub fn AccordionContent<'scope, Ctx>(
         } else {
             format!("{} {}", base, extra)
         }
-    });
+    })?;
 
     let stored = owner.stored(children)?;
 
@@ -139,5 +139,5 @@ pub fn AccordionContent<'scope, Ctx>(
         } else {
             ().into_any()
         }
-    }))
+    })?)
 }

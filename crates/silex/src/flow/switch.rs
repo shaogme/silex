@@ -41,7 +41,7 @@ where
         } else {
             fallback.clone()
         }
-    }))
+    })?)
 }
 
 impl<'scope, Ctx, Source, T> SwitchComponent<'scope, Ctx, Source, T>

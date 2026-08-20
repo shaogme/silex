@@ -22,7 +22,7 @@ pub fn Tabs<'scope, Ctx>(
         } else {
             format!("{} {}", base, extra)
         }
-    });
+    })?;
 
     let orient = rx!(ctx; {
         let o = $orientation;
@@ -31,7 +31,7 @@ pub fn Tabs<'scope, Ctx>(
         } else {
             o.clone()
         }
-    });
+    })?;
 
     Ok(div(children)
         .attr("data-slot", "tabs")
@@ -72,7 +72,7 @@ pub fn TabsList<'scope, Ctx>(
         } else {
             format!("{} {}", base_cls, extra)
         }
-    });
+    })?;
 
     let var_attr = rx!(ctx; {
         let v = $variant;
@@ -81,7 +81,7 @@ pub fn TabsList<'scope, Ctx>(
         } else {
             v.clone()
         }
-    });
+    })?;
 
     Ok(div(children)
         .attr("data-slot", "tabs-list")
@@ -114,7 +114,7 @@ pub fn TabsTrigger<'scope, Ctx>(
         } else {
             format!("{} {}", base, extra)
         }
-    });
+    })?;
 
     let state_attr = rx!(ctx; {
         if $active_tab.as_str() == value {
@@ -122,7 +122,7 @@ pub fn TabsTrigger<'scope, Ctx>(
         } else {
             "inactive"
         }
-    });
+    })?;
 
     Ok(button(children)
         .attr("data-slot", "tabs-trigger")
@@ -154,7 +154,7 @@ pub fn TabsContent<'scope, Ctx>(
         } else {
             format!("{} {}", base, extra)
         }
-    });
+    })?;
 
     let state_attr = rx!(ctx; {
         let val = value;
@@ -165,7 +165,7 @@ pub fn TabsContent<'scope, Ctx>(
         } else {
             "active"
         }
-    });
+    })?;
 
     Ok(div(children)
         .attr("data-slot", "tabs-content")

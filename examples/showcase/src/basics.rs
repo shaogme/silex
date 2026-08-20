@@ -34,7 +34,7 @@ pub fn Greeting<'scope, Ctx>(
 #[component]
 pub fn Counter<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     let (count, set_count) = owner.signal(0)?;
-    let double_count = rx!(ctx; $count * 2);
+    let double_count = rx!(ctx; $count * 2)?;
     let owner_for_timer = MountOwnerToken::new(owner);
 
     // Timer Handle for Auto Increment (StoredValue: doesn't trigger UI updates itself)
@@ -70,7 +70,7 @@ pub fn Counter<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                 "Stop Auto Inc"
             } else {
                 "Start Auto Inc"
-            }))
+            })?)
             .on(event::click, move |_| {
                 if is_running.get()? {
                     if let Some(handle) = timer.get_untracked()? {
@@ -111,7 +111,7 @@ pub fn Counter<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
         ]
         .style(sty(ctx).margin_bottom(px(10))?),
         div!["Double: ", double_count]
-            .classes(rx!(ctx; if *$count % 2 == 0 { "even" } else { "odd" }))
+            .classes(rx!(ctx; if *$count % 2 == 0 { "even" } else { "odd" })?)
             .style(
                 sty(ctx)
                     .margin_top(px(5))?

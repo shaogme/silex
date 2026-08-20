@@ -50,13 +50,13 @@ pub fn Toggle<'scope, Ctx>(
         } else {
             format!("{} {}", base_cls, extra)
         }
-    });
+    })?;
 
-    let state_attr = rx!(ctx; if *$pressed { "on" } else { "off" });
+    let state_attr = rx!(ctx; if *$pressed { "on" } else { "off" })?;
 
     Ok(button(children)
         .attr("data-slot", "toggle")
-        .attr("aria-pressed", rx!(ctx; $pressed.to_string()))
+        .attr("aria-pressed", rx!(ctx; $pressed.to_string())?)
         .attr("data-state", state_attr)
         .class(cls)
         .on_click(move |_| -> SilexResult<()> { on_change.invoke(!pressed.get()?) }))

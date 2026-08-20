@@ -29,5 +29,5 @@ where
     FView: ReactiveSource<'scope, Value = V> + Clone + 'scope,
 {
     let view_fn = owner.promote(view_fn, error_handler)?;
-    Ok(silex_core::rx!(ctx; (*$view_fn).clone().into_any()))
+    Ok(silex_core::rx!(ctx; (*$view_fn).clone().into_any())?)
 }

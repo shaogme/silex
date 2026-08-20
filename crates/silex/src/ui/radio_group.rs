@@ -23,7 +23,7 @@ pub fn RadioGroup<'scope, Ctx>(
         } else {
             "vertical"
         }
-    });
+    })?;
 
     let group_cls = rx!(ctx; {
         let base = tw!(
@@ -35,12 +35,12 @@ pub fn RadioGroup<'scope, Ctx>(
         } else {
             format!("{} {}", base, extra)
         }
-    });
+    })?;
 
     Ok(div(children)
         .data_slot("radio-group")
         .data_orientation(orient)
-        .data_disabled(rx!(ctx; *$disabled))
+        .data_disabled(rx!(ctx; *$disabled)?)
         .class(group_cls))
 }
 
@@ -70,7 +70,7 @@ pub fn RadioGroupItem<'scope, Ctx>(
     #[chain(default)]
     on_change: Callback<'scope, String>,
 ) -> impl View<'scope> {
-    let is_checked = rx!(ctx; $selected_value.as_str() == value);
+    let is_checked = rx!(ctx; $selected_value.as_str() == value)?;
 
     let item_cls = rx!(ctx; {
         let base = tw!(
@@ -82,7 +82,7 @@ pub fn RadioGroupItem<'scope, Ctx>(
         } else {
             format!("{} {}", base, extra)
         }
-    });
+    })?;
 
     let indicator_cls = rx!(ctx; {
         if *$is_checked {
@@ -92,7 +92,7 @@ pub fn RadioGroupItem<'scope, Ctx>(
                 "size-2 rounded-full bg-primary transition-transform duration-150 scale-0 opacity-0"
             )
         }
-    });
+    })?;
 
     let handle_click = move |_| -> SilexResult<()> {
         if !disabled.get()? {
@@ -123,9 +123,9 @@ pub fn RadioGroupItem<'scope, Ctx>(
         "checked"
     } else {
         "unchecked"
-    }))
-    .data_disabled(rx!(ctx; *$disabled))
-    .aria_checked(rx!(ctx; if *$is_checked { "true" } else { "false" }))
+    })?)
+    .data_disabled(rx!(ctx; *$disabled)?)
+    .aria_checked(rx!(ctx; if *$is_checked { "true" } else { "false" })?)
     .disabled(disabled)
     .class(item_cls)
     .on_click(handle_click))

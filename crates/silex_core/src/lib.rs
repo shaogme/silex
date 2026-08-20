@@ -205,10 +205,9 @@ pub use silex_rx::rx as __internal_rx;
 
 /// Create a reactive value from an explicit component ctx.
 ///
-/// The expansion uses `?` internally to propagate scope, promotion, and
-/// initial computation errors, so it must be used in a `Result` ctx. The
-/// The ctx supplies both the scope and the [`ErrorHandler`] used for
-/// deferred errors.
+/// The expansion returns a `SilexResult` and uses `?` internally to propagate
+/// scope, promotion, and initial computation errors. The ctx supplies both
+/// the scope and the [`ErrorHandler`] used for deferred errors.
 ///
 /// `$source` is read through its existing tracked value access semantics. Use
 /// `$(source.field)` when the field itself is the reactive source, such as a

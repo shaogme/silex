@@ -21,7 +21,7 @@ fn main() {
             let patch = rx!(
                 ctx;
                 @fn PatchThemePatch::default().primary(hex("#ff69b4"))
-            );
+            )?;
             let _ = theme_patch(patch);
             Ok(())
         })

@@ -26,7 +26,7 @@ pub fn Separator<'scope, Ctx>(
         } else {
             format!("{} {}", base_cls, extra)
         }
-    });
+    })?;
 
     Ok(div(()).class(cls))
 }

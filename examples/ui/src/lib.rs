@@ -94,7 +94,7 @@ fn FormControlsShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'
                     .on_input(owner.callback(move |v| {
                         set_text_val.set(v)
                     })?).build(),
-                p(rx!(ctx; format!("Live Bound Value: '{}'", $text_val)))
+                p(rx!(ctx; format!("Live Bound Value: '{}'", $text_val))?)
                     .class(tw!("text-xs text-slate-500 mt-1.5 font-mono"))
             )).class(tw!("flex flex-col mb-6")),
 
@@ -192,7 +192,7 @@ fn TabsAndDialogShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<
                                 .build()
                                 .into_any(),
                         }
-                    })
+                    })?
                 )).build()
             ))
             .class(tw!("mb-6")),
@@ -289,7 +289,7 @@ fn FeedbackAndDataShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl Vie
             div(chain!(
                 div(chain!(
                     span("Progress").class(tw!("text-xs font-semibold text-slate-500 dark:text-slate-400")),
-                    span(rx!(ctx; format!("{}%", $progress_val))).class(tw!("text-xs font-bold text-indigo-600 dark:text-indigo-400"))
+                    span(rx!(ctx; format!("{}%", $progress_val))?).class(tw!("text-xs font-bold text-indigo-600 dark:text-indigo-400"))
                 )).class(tw!("flex justify-between items-center mb-1.5")),
                 Progress(ctx).value(progress_val)?.class(tw!("mb-3"))?.build(),
                 div(chain!(
@@ -437,7 +437,7 @@ fn NewComponentsShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<
                 div(chain!(
                     div(chain!(
                         span("Volume Slider").class(tw!("text-xs font-semibold text-slate-500 dark:text-slate-400")),
-                        span(rx!(ctx; format!("{:.0}%", $slider_val))).class(tw!("text-xs font-bold text-indigo-600 dark:text-indigo-400"))
+                        span(rx!(ctx; format!("{:.0}%", $slider_val))?).class(tw!("text-xs font-bold text-indigo-600 dark:text-indigo-400"))
                     )).class(tw!("flex justify-between items-center mb-2")),
                     Slider(ctx)
                         .value(slider_val)?
@@ -558,7 +558,7 @@ fn App<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
                 ))
             )).class(tw!("flex items-center gap-3")),
 
-            button(rx!(ctx; if *$is_dark { "🌙 Dark Mode" } else { "☀️ Light Mode" }))
+            button(rx!(ctx; if *$is_dark { "🌙 Dark Mode" } else { "☀️ Light Mode" })?)
                 .class(tw!(
                     "flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-amber-300 font-bold text-xs rounded-full cursor-pointer border border-solid border-slate-300 dark:border-slate-700 transition-all duration-300 hover:scale-105 shadow-sm"
                 ))
@@ -591,7 +591,7 @@ fn App<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
         )).class(tw!("grid grid-cols-1 md:grid-cols-2 gap-6 items-start w-full max-w-6xl mx-auto"))
     ))
     .class(tw!("min-h-screen p-4 sm:p-8 transition-colors duration-300 bg-slate-100 text-slate-900 dark:bg-slate-900 dark:text-slate-50"))
-    .class(rx!(ctx; if *$is_dark { "dark" } else { "" }))
+    .class(rx!(ctx; if *$is_dark { "dark" } else { "" })?)
     .into_any()
     )
 }

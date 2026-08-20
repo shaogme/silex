@@ -34,18 +34,18 @@ pub fn Input<'scope, Ctx>(
         } else {
             format!("{} {}", base, extra)
         }
-    });
+    })?;
 
     let type_val = rx!(ctx; {
         let t = $type_source;
         if t.is_empty() { "text".to_string() } else { t.clone() }
-    });
+    })?;
 
     Ok(input()
         .attr("data-slot", "input")
         .attr("type", type_val)
-        .attr("placeholder", rx!(ctx; $placeholder.clone()))
-        .prop("value", rx!(ctx; $value.clone()))
+        .attr("placeholder", rx!(ctx; $placeholder.clone())?)
+        .prop("value", rx!(ctx; $value.clone())?)
         .class(input_cls)
         .on(
             event::input,

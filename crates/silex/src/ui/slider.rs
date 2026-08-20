@@ -71,7 +71,7 @@ pub fn Slider<'scope, Ctx>(
     #[chain(default)]
     on_change: Callback<'scope, f64>,
 ) -> impl View<'scope> {
-    let min_val = rx!(ctx; *$min);
+    let min_val = rx!(ctx; *$min)?;
 
     let max_val = rx!(ctx; {
         let mn = *$min;
@@ -85,19 +85,19 @@ pub fn Slider<'scope, Ctx>(
         } else {
             mx
         }
-    });
+    })?;
 
     let step_val = rx!(ctx; {
         let s = *$step;
         if s <= 0.0 { 1.0 } else { s }
-    });
+    })?;
 
-    let is_vertical = rx!(ctx; $orientation.as_str() == "vertical");
+    let is_vertical = rx!(ctx; $orientation.as_str() == "vertical")?;
     let orient = rx!(ctx; if *$is_vertical {
         "vertical"
     } else {
         "horizontal"
-    });
+    })?;
 
     let root_cls = rx!(ctx; {
         let base = tw!(
@@ -109,7 +109,7 @@ pub fn Slider<'scope, Ctx>(
         } else {
             format!("{} {}", base, extra)
         }
-    });
+    })?;
 
     let pct = rx!(ctx; {
         let v = *$value;
@@ -120,7 +120,7 @@ pub fn Slider<'scope, Ctx>(
         } else {
             ((v - mn) / (mx - mn) * 100.0).clamp(0.0, 100.0)
         }
-    });
+    })?;
 
     let range_style = rx!(ctx; {
         let p = *$pct;
@@ -129,7 +129,7 @@ pub fn Slider<'scope, Ctx>(
         } else {
             format!("width: {}%;", p)
         }
-    });
+    })?;
 
     let thumb_style = rx!(ctx; {
         let p = *$pct;
@@ -138,9 +138,9 @@ pub fn Slider<'scope, Ctx>(
         } else {
             format!("left: {}%;", p)
         }
-    });
+    })?;
 
-    let input_val_str = rx!(ctx; $value.to_string());
+    let input_val_str = rx!(ctx; $value.to_string())?;
     let is_dragging = Rc::new(Cell::new(false));
 
     let handle_down = {
@@ -246,7 +246,7 @@ pub fn Slider<'scope, Ctx>(
     ))
     .attr("data-slot", "slider")
     .attr("data-orientation", orient)
-    .attr("data-disabled", rx!(ctx; *$disabled))
+    .attr("data-disabled", rx!(ctx; *$disabled)?)
     .class(root_cls)
     .on_pointer_down(handle_down)
     .on_pointer_move(handle_move)

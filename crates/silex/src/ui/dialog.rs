@@ -51,7 +51,7 @@ pub fn Dialog<'scope, Ctx>(
         } else {
             format!("{} {}", base, extra)
         }
-    });
+    })?;
 
     let stored_children = owner.stored(children)?;
 
@@ -73,5 +73,5 @@ pub fn Dialog<'scope, Ctx>(
         } else {
             ().into_any()
         }
-    }))
+    })?)
 }

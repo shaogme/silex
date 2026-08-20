@@ -95,8 +95,8 @@ fn main() {
         )
         .unwrap();
         let ctx = SilexContext::new(owner, error_handler.view());
-        let theme = rx!(ctx; $(settings.theme).clone());
-        let label = rx!(ctx; format!("Theme: {}", $(settings.theme)));
+        let theme = rx!(ctx; $(settings.theme).clone())?;
+        let label = rx!(ctx; format!("Theme: {}", $(settings.theme)))?;
         assert_eq!(theme.get()?, "Light");
         assert_eq!(label.get()?, "Theme: Light");
 

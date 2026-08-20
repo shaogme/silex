@@ -29,7 +29,7 @@ pub fn Checkbox<'scope, Ctx>(
         } else {
             format!("{} {}", base, extra)
         }
-    });
+    })?;
 
     let check_icon = rx!(ctx; {
         let is_checked = *$checked;
@@ -50,7 +50,7 @@ pub fn Checkbox<'scope, Ctx>(
             .attr("stroke-linecap", "round")
             .attr("stroke-linejoin", "round")
             .class(icon_cls)
-    });
+    })?;
 
     Ok(button(check_icon)
         .class(cls)

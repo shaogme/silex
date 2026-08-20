@@ -51,7 +51,7 @@ pub fn NavBar<'scope>(
             .children("Advanced")
             .active_class("active")
             .build(),
-        button(rx!(ctx; if $(settings.theme) == "Light" { "Dark" } else { "Light" }))
+        button(rx!(ctx; if $(settings.theme) == "Light" { "Dark" } else { "Light" })?)
             .on_click(move |_| {
                 settings.theme.update(|theme| {
                     *theme = if theme == "Light" {

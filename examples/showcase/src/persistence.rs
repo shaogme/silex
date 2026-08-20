@@ -301,7 +301,7 @@ fn ErrorHandlingDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                         )
                 ],
                 div![
-                    label(rx!(ctx; format!("Volume Level: {}%", $settings.volume))).style(
+                    label(rx!(ctx; format!("Volume Level: {}%", $settings.volume))?).style(
                         sty(ctx)
                             .display("block")?
                             .margin_top(px(15))?

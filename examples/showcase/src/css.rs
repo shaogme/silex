@@ -132,7 +132,7 @@ styled! {
         border-radius: 16px;
         padding: 32px;
         margin: 24px 0;
-        box-shadow: 0 10px 40px $(rx!{ ctx; AppTheme::TEXT.alpha(0.15) });
+        box-shadow: 0 10px 40px $(rx!{ ctx; AppTheme::TEXT.alpha(0.15) }?);
         backdrop-filter: blur(12px);
         transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         animation: fade_in 0.8s ease-out;
@@ -242,7 +242,7 @@ styled! {
         children: AnyView<'scope>,
         #[chain] #[prop(into)] active: Signal<'scope, bool>
     ) {
-        background-color: $(rx!{ ctx; AppTheme::SECONDARY.alpha(0.9) });
+        background-color: $(rx!{ ctx; AppTheme::SECONDARY.alpha(0.9) }?);
         color: white;
         border: none;
         padding: 12px 24px;
@@ -250,7 +250,7 @@ styled! {
         cursor: pointer;
         font-weight: 600;
         transition: all 0.2s;
-        opacity: $(rx!(ctx; if *$active { 1.0 } else { 0.8 }));
+        opacity: $(rx!(ctx; if *$active { 1.0 } else { 0.8 })?);
 
         &:hover {
             filter: brightness(1.1);
@@ -288,7 +288,7 @@ styled! {
                 }
                 secondary: {
                     background: linear-gradient(135deg, #10b981 0%, #3b82f6 100%);
-                    width: $(rx!(ctx; *$dynamic_width + px(60)));
+                    width: $(rx!(ctx; *$dynamic_width + px(60))?);
                 }
             }
         }
@@ -402,7 +402,7 @@ pub fn StylingBasics<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                             Ok(())
                         })
                         .build(),
-                    div(rx!(ctx; format!("Current Variant: {}, Base Width Signal: {}", $btn_kind, $btn_width)))
+                    div(rx!(ctx; format!("Current Variant: {}, Base Width Signal: {}", $btn_kind, $btn_width))?)
                         .style(sty(ctx).font_size(em_unit(0.9))?.opacity(0.8)?)
                 )).gap(16)?.build()
             }
@@ -459,9 +459,9 @@ pub fn StylingBasics<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                             .style(sty(ctx).padding("8px 16px")?.border_radius(px(6))?.border("1px solid #374151")?.background("#111827")?.color(ColorName::White)?.cursor("pointer")?),
                     ].style(sty(ctx).display("flex")?.align_items("center")?.margin_bottom(px(12))?),
 
-                    div(rx!(ctx; format!("Reactive Width: {}px", 180 + *$count * 30))).style(
+                    div(rx!(ctx; format!("Reactive Width: {}px", 180 + *$count * 30))?).style(
                         sty(ctx)
-                            .width(rx!(ctx; px(180 + *$count * 30)))?
+                            .width(rx!(ctx; px(180 + *$count * 30))?)?
                             .height(px(48))?
                             .background("linear-gradient(90deg, #4f46e5, #9333ea)")?
                             .color(hex("#fff"))?
@@ -471,9 +471,9 @@ pub fn StylingBasics<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                             .border_radius(px(12))?
                             .transition("all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)")?
                             // 动态开启/删除 box-shadow 属性 (css_none() 即删除属性)
-                            .box_shadow(rx!(ctx; if *$show_shadow { css_some("0 8px 20px rgba(79, 70, 229, 0.5)") } else { css_none() }))?
+                            .box_shadow(rx!(ctx; if *$show_shadow { css_some("0 8px 20px rgba(79, 70, 229, 0.5)") } else { css_none() })?)?
                             // 动态开启/删除 border 属性 (使用 CssOption::some/none 独立方法)
-                            .border(rx!(ctx; if *$active_border { CssOption::some(border(px(2), BorderStyleKeyword::Solid, hex("#f472b6"))) } else { CssOption::none() }))?
+                            .border(rx!(ctx; if *$active_border { CssOption::some(border(px(2), BorderStyleKeyword::Solid, hex("#f472b6"))) } else { CssOption::none() })?)?
                     )
                 )).build()
             }
@@ -532,9 +532,9 @@ pub fn Theming<'scope, Ctx>(
                         .cursor(CursorKeyword::Pointer)?
                         .transition("all 0.2s")?
                         .margin_right(px(12))?
-                        .background_color(rx!(ctx; if !*$is_dark { AppTheme::PRIMARY } else { hex("#f3f4f6").into() }))?
-                        .color(rx!(ctx; if !*$is_dark { hex("#ffffff") } else { hex("#374151") }))?
-                        .border(rx!(ctx; if !*$is_dark { border(px(1), BorderStyleKeyword::Solid, AppTheme::PRIMARY) } else { border(px(1), BorderStyleKeyword::Solid, hex("#d1d5db")) }))?
+                        .background_color(rx!(ctx; if !*$is_dark { AppTheme::PRIMARY } else { hex("#f3f4f6").into() })?)?
+                        .color(rx!(ctx; if !*$is_dark { hex("#ffffff") } else { hex("#374151") })?)?
+                        .border(rx!(ctx; if !*$is_dark { border(px(1), BorderStyleKeyword::Solid, AppTheme::PRIMARY) } else { border(px(1), BorderStyleKeyword::Solid, hex("#d1d5db")) })?)?
                 ),
             button("🌙 Dark Mode")
                 .on(event::click, move |_| {
@@ -548,9 +548,9 @@ pub fn Theming<'scope, Ctx>(
                         .border_radius(px(6))?
                         .cursor(CursorKeyword::Pointer)?
                         .transition("all 0.2s")?
-                        .background_color(rx!(ctx; if *$is_dark { AppTheme::PRIMARY } else { hex("#f3f4f6").into() }))?
-                        .color(rx!(ctx; if *$is_dark { hex("#ffffff") } else { hex("#374151") }))?
-                        .border(rx!(ctx; if *$is_dark { border(px(1), BorderStyleKeyword::Solid, AppTheme::PRIMARY) } else { border(px(1), BorderStyleKeyword::Solid, hex("#d1d5db")) }))?
+                        .background_color(rx!(ctx; if *$is_dark { AppTheme::PRIMARY } else { hex("#f3f4f6").into() })?)?
+                        .color(rx!(ctx; if *$is_dark { hex("#ffffff") } else { hex("#374151") })?)?
+                        .border(rx!(ctx; if *$is_dark { border(px(1), BorderStyleKeyword::Solid, AppTheme::PRIMARY) } else { border(px(1), BorderStyleKeyword::Solid, hex("#d1d5db")) })?)?
                 ),
         ].style(sty(ctx).margin_bottom(px(24))?),
 
@@ -577,7 +577,7 @@ pub fn Theming<'scope, Ctx>(
                     span(" (Variable inheritance in action!) ").style(sty(ctx).font_size(em_unit(0.8))?.opacity(0.6)?)
                 ]
             )).build()
-            .apply(theme_patch(rx!(ctx; @fn AppThemePatch::default().primary(hex("#ff69b4"))))),
+            .apply(theme_patch(rx!(ctx; @fn AppThemePatch::default().primary(hex("#ff69b4")))?)),
         ].apply(theme_variables(theme)),
 
         h3("Layout Continuity").style(sty(ctx).margin("40px 0 16px")?),
@@ -818,7 +818,7 @@ styled! {
         // No type checking here - passing a raw string for color
         color: rgb(244, 63, 94);
 
-        font-family: $(rx!(ctx; "'Courier New', monospace".to_string()));
+        font-family: $(rx!(ctx; "'Courier New', monospace".to_string())?);
         cursor: help;
 
         &:hover {

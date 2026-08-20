@@ -65,7 +65,7 @@ pub fn PopoverHeader<'scope, Ctx>(
         } else {
             format!("{} {}", base, extra)
         }
-    });
+    })?;
 
     Ok(div(children)
         .attr("data-slot", "popover-header")
@@ -88,7 +88,7 @@ pub fn PopoverTitle<'scope, Ctx>(
         } else {
             format!("{} {}", base, extra)
         }
-    });
+    })?;
 
     Ok(div(children)
         .attr("data-slot", "popover-title")
@@ -111,7 +111,7 @@ pub fn PopoverDescription<'scope, Ctx>(
         } else {
             format!("{} {}", base, extra)
         }
-    });
+    })?;
 
     Ok(p(children)
         .attr("data-slot", "popover-description")
@@ -140,7 +140,7 @@ pub fn PopoverAnchor<'scope, Ctx>(
         } else {
             format!("{} {}", base, extra)
         }
-    });
+    })?;
 
     Ok(div(children)
         .attr("data-slot", "popover-anchor")
@@ -179,7 +179,7 @@ pub fn PopoverClose<'scope, Ctx>(
         } else {
             format!("{} {}", base, extra)
         }
-    });
+    })?;
 
     Ok(div(children)
         .attr("data-slot", "popover-close")
@@ -221,7 +221,7 @@ pub fn PopoverContent<'scope, Ctx>(
         } else {
             s
         }
-    });
+    })?;
 
     let align_val = rx!(ctx; {
         let a = (*$align).clone();
@@ -230,12 +230,12 @@ pub fn PopoverContent<'scope, Ctx>(
         } else {
             a
         }
-    });
+    })?;
 
     let offset_val = rx!(ctx; {
         let o = *$side_offset;
         if o == 0.0 { 4.0 } else { o }
-    });
+    })?;
 
     let wrapper_cls =
         tw!("fixed left-0 top-0 z-50 min-w-max will-change-transform pointer-events-none");
@@ -290,7 +290,7 @@ pub fn PopoverContent<'scope, Ctx>(
             "position: fixed; left: 0px; top: 0px; transform: translate({:.2}px, {:.2}px); --radix-popover-content-transform-origin: center; --radix-popover-trigger-width: {:.2}px; --radix-popover-trigger-height: {:.2}px;",
             x, y, w, h
         )
-    });
+    })?;
 
     let content_cls = rx!(ctx; {
         let s = (*$side_val).clone();
@@ -328,11 +328,11 @@ pub fn PopoverContent<'scope, Ctx>(
         } else {
             format!("{} {} {}", pos_cls, base, extra)
         }
-    });
+    })?;
 
     let stored = owner.stored(children)?;
     let ctx_open = context.open;
-    let is_open = rx!(ctx; *$open || *$ctx_open);
+    let is_open = rx!(ctx; *$open || *$ctx_open)?;
 
     Ok(rx!(ctx; {
         if *$is_open {
@@ -362,7 +362,7 @@ pub fn PopoverContent<'scope, Ctx>(
         } else {
             ().into_any()
         }
-    }))
+    })?)
 }
 
 #[component]
@@ -385,7 +385,7 @@ pub fn PopoverTrigger<'scope, Ctx>(
         } else {
             format!("{} {}", base, extra)
         }
-    });
+    })?;
 
     Ok(div(children)
         .attr("data-slot", "popover-trigger")
@@ -426,7 +426,7 @@ where
         } else {
             format!("{} {}", base, extra)
         }
-    });
+    })?;
 
     Ok(div(children(context))
         .attr("data-slot", "popover")

@@ -130,7 +130,7 @@ fn SearchPage<'scope>(#[ctx] ctx: RouterContext<'scope>) -> impl View<'scope> {
                     } else {
                         value
                     }
-                }))
+                })?)
                 .style(sty(ctx).color(hex("#e91e63"))?.font_family("monospace")?),
             ),
         ),

@@ -1888,6 +1888,7 @@ dependencies = [
  "silex_html",
  "silex_macros",
  "silex_persist",
+ "silex_rx",
  "trybuild",
  "wasm-bindgen",
  "wasm-bindgen-futures",

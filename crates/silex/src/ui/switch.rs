@@ -43,7 +43,7 @@ pub fn Switch<'scope, Ctx>(
         } else {
             format!("{} {}", base_cls, extra)
         }
-    });
+    })?;
 
     let thumb_cls = rx!(ctx; {
         let is_checked = *$checked;
@@ -62,7 +62,7 @@ pub fn Switch<'scope, Ctx>(
                 tw!("pointer-events-none block size-4 rounded-full bg-background ring-0 transition-transform duration-200 ease-in-out translate-x-0 dark:bg-foreground").to_string()
             }
         }
-    });
+    })?;
 
     Ok(button(span(()).class(thumb_cls))
         .class(track_cls)

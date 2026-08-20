@@ -89,7 +89,7 @@ let ctx = SilexContext::new(owner, reporter.view());
 let child_ctx = ctx.with_error_reporter(other_reporter.view());
 ```
 
-`SilexContextProvider` 只要求实现者提供这两个能力和替换 reporter 的方法。`rx!` 宏通过这个契约取得 owner 与错误目的地；因此宏调用必须处在能传播 `SilexResult` 的上下文中。
+`SilexContextProvider` 只要求实现者提供这两个能力和替换 reporter 的方法。`rx!` 宏通过这个契约取得 owner 与错误目的地，并返回 `SilexResult`；调用方可以用 `?`、`match` 或其它方式处理宏创建阶段的错误。
 
 ## `spawn_scoped` 与取消
 

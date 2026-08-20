@@ -39,7 +39,7 @@ pub fn Badge<'scope, Ctx>(
         } else {
             format!("{} {}", base_cls, extra)
         }
-    });
+    })?;
 
     Ok(span(children).class(cls))
 }

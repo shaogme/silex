@@ -322,7 +322,7 @@ where
                 }
             }
         }
-    });
+    })?;
 
     Ok(ErrorBoundaryView {
         view: view.into_any(),

@@ -211,7 +211,7 @@ pub fn HttpClientDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                         })?;
                         Ok(())
                     })
-                    .attr("disabled", rx!(ctx; create_post_mutation.loading()?))
+                    .attr("disabled", rx!(ctx; create_post_mutation.loading()?)?)
                     .style(
                         sty(ctx)
                             .padding("10px 20px")?
@@ -315,7 +315,7 @@ pub fn WebSocketDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> + 'scope
                     .background(AppTheme::SURFACE)?
                     .color(AppTheme::TEXT)?
             ),
-            button(rx!(ctx; if *$is_connected { "Disconnect" } else { "Connect" }))
+            button(rx!(ctx; if *$is_connected { "Disconnect" } else { "Connect" })?)
                 .on(event::click, move |_| {
                     socket.toggle().map_err(|error| {
                         SilexError::recoverable(SilexErrorKind::Framework(error.to_string()))
@@ -337,7 +337,7 @@ pub fn WebSocketDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> + 'scope
                 sty(ctx).color(ColorName::Green)?
             } else {
                 sty(ctx).color(ColorName::Red)?
-            })),
+            })?),
         ]
         .style(sty(ctx).margin_bottom(px(15))?),
         Show(ctx, is_connected)
@@ -440,7 +440,7 @@ pub fn EventStreamDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                     .background(AppTheme::SURFACE)?
                     .color(AppTheme::TEXT)?
             ),
-            button(rx!(ctx; if *$is_connected { "Stop Stream" } else { "Start Stream" }))
+            button(rx!(ctx; if *$is_connected { "Stop Stream" } else { "Start Stream" })?)
                 .on(event::click, move |_| {
                     stream.toggle().map_err(|error| {
                         SilexError::recoverable(SilexErrorKind::Framework(error.to_string()))
@@ -518,13 +518,13 @@ pub fn NetDemoPage<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
         div![
             button("HTTP Client")
                 .on(event::click, set_active_tab.setter("http"))
-                .classes(rx!(ctx; if *$active_tab == "http" { "active" } else { "" })),
+                .classes(rx!(ctx; if *$active_tab == "http" { "active" } else { "" })?),
             button("WebSocket")
                 .on(event::click, set_active_tab.setter("ws"))
-                .classes(rx!(ctx; if *$active_tab == "ws" { "active" } else { "" })),
+                .classes(rx!(ctx; if *$active_tab == "ws" { "active" } else { "" })?),
             button("EventStream")
                 .on(event::click, set_active_tab.setter("sse"))
-                .classes(rx!(ctx; if *$active_tab == "sse" { "active" } else { "" })),
+                .classes(rx!(ctx; if *$active_tab == "sse" { "active" } else { "" })?),
         ].class("tab-nav"),
 
         // Content

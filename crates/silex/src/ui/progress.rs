@@ -22,12 +22,12 @@ pub fn Progress<'scope, Ctx>(
         } else {
             format!("{} {}", base, extra)
         }
-    });
+    })?;
 
     let indicator_style = rx!(ctx; {
         let pct = (*$value).min(100);
         format!("width: {}%;", pct)
-    });
+    })?;
 
     Ok(div(div(())
         .class(tw!(

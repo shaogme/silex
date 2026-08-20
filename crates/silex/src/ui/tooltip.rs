@@ -144,7 +144,7 @@ pub fn TooltipProvider<'scope, Ctx>(
         } else {
             format!("{} {}", base, extra)
         }
-    });
+    })?;
 
     let delay_attr = rx!(ctx; {
         let d = *$delay_duration;
@@ -153,7 +153,7 @@ pub fn TooltipProvider<'scope, Ctx>(
         } else {
             "0ms".to_string()
         }
-    });
+    })?;
 
     Ok(div(children)
         .attr("data-slot", "tooltip-provider")
@@ -182,7 +182,7 @@ where
         } else {
             format!("{} {}", base, extra)
         }
-    });
+    })?;
 
     Ok(div(children(context))
         .attr("data-slot", "tooltip")
@@ -218,7 +218,7 @@ pub fn TooltipTrigger<'scope, Ctx>(
         } else {
             format!("{} {}", base, extra)
         }
-    });
+    })?;
 
     Ok(div(children)
         .apply(owner_binding(context))
@@ -284,12 +284,12 @@ pub fn TooltipContent<'scope, Ctx>(
     let side_val = rx!(ctx; {
         let s = (*$side).clone();
         if s.is_empty() { "top".to_string() } else { s }
-    });
+    })?;
 
     let offset_val = rx!(ctx; {
         let o = *$side_offset;
         if o == 0.0 { 4.0 } else { o }
-    });
+    })?;
 
     let wrapper_cls =
         tw!("fixed left-0 top-0 z-50 min-w-max will-change-transform pointer-events-none");
@@ -310,7 +310,7 @@ pub fn TooltipContent<'scope, Ctx>(
             "position: fixed; left: 0px; top: 0px; transform: translate({:.2}px, {:.2}px);",
             x, y
         )
-    });
+    })?;
 
     let content_cls = rx!(ctx; {
         let s = (*$side_val).clone();
@@ -330,7 +330,7 @@ pub fn TooltipContent<'scope, Ctx>(
         } else {
             format!("{} {} {}", base, pos_cls, extra)
         }
-    });
+    })?;
 
     let arrow_cls = rx!(ctx; {
         let s = (*$side_val).clone();
@@ -340,7 +340,7 @@ pub fn TooltipContent<'scope, Ctx>(
             "right" => tw!("absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 size-2 rotate-45 bg-slate-900 dark:bg-slate-50 pointer-events-none"),
             _ => tw!("absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 size-2 rotate-45 bg-slate-900 dark:bg-slate-50 pointer-events-none"),
         }
-    });
+    })?;
 
     let ctx_open = context.open;
     Ok(rx!(ctx; {
@@ -377,5 +377,5 @@ pub fn TooltipContent<'scope, Ctx>(
         } else {
             ().into_any()
         }
-    }))
+    })?)
 }

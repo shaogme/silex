@@ -30,7 +30,7 @@ where
         children.clone()
     } else {
         fallback.clone()
-    }))
+    })?)
 }
 
 // --- Signal 扩展 ---

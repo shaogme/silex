@@ -53,7 +53,7 @@ pub fn Alert<'scope, Ctx>(
         } else {
             format!("{} {}", base_cls, extra)
         }
-    });
+    })?;
 
     Ok(div(children).class(cls))
 }

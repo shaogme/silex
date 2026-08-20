@@ -311,10 +311,12 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
     if body.is_empty() {
         let error_handler_ident = format_ident!("__silex_error_handler");
         return Ok(quote! {{
-            let __silex_owner = #owner;
-            let #error_handler_ident: #prefix::ErrorReporter<'_> = #error_handler;
-            let _ = #error_handler_ident;
-            __silex_owner.constant(())?
+            (|| -> #prefix::SilexResult<_> {
+                let __silex_owner = #owner;
+                let #error_handler_ident: #prefix::ErrorReporter<'_> = #error_handler;
+                let _ = #error_handler_ident;
+                Ok(__silex_owner.constant(())?)
+            })()
         }});
     }
 
@@ -364,17 +366,17 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
                 quote! {
                     let #error_handler_ident: #prefix::ErrorReporter<'_> = #error_handler;
                     #setup
-                    __silex_owner
+                    Ok(__silex_owner
                         .computed_always(#closure, #error_handler_ident)?
-                        .into_rx()
+                        .into_rx())
                 }
             } else {
                 quote! {
                     let #error_handler_ident: #prefix::ErrorReporter<'_> = #error_handler;
                     #setup
-                    __silex_owner
+                    Ok(__silex_owner
                         .computed_always(move || #reads, #error_handler_ident)?
-                        .into_rx()
+                        .into_rx())
                 }
             }
         } else {
@@ -382,10 +384,15 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
             quote! {
                 let #error_handler_ident: #prefix::ErrorReporter<'_> = #error_handler;
                 let _ = #error_handler_ident;
-                __silex_owner.callback(#closure)?
+                Ok(__silex_owner.callback(#closure)?)
             }
         };
-        return Ok(quote! {{ #owner_binding #constructor }});
+        return Ok(quote! {{
+            (|| -> #prefix::SilexResult<_> {
+                #owner_binding
+                #constructor
+            })()
+        }});
     }
 
     let expression = quote! { #expression };
@@ -400,28 +407,33 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
         && parse2::<syn::ExprLit>(expression_tokens.clone()).is_ok()
     {
         return Ok(quote! {{
-            #owner_binding
-            __silex_owner.constant(#expression)?
+            (|| -> #prefix::SilexResult<_> {
+                #owner_binding
+                Ok(__silex_owner.constant(#expression)?)
+            })()
         }});
     }
 
     let error_handler_ident = format_ident!("__silex_error_handler");
     let setup = source_setup(&bindings, &error_handler_ident);
     let constructor = quote! {
-        __silex_owner
+        Ok(__silex_owner
             .computed_always(move || #reads, #error_handler_ident)?
-            .into_rx()
+            .into_rx())
     };
     Ok(quote! {{
-        #owner_binding
-        let #error_handler_ident: #prefix::ErrorReporter<'_> = #error_handler;
-        #setup
-        #constructor
+        (|| -> #prefix::SilexResult<_> {
+            #owner_binding
+            let #error_handler_ident: #prefix::ErrorReporter<'_> = #error_handler;
+            #setup
+            #constructor
+        })()
     }})
 }
 
 /// `rx!` process macro. The first section is a dependency prefix, followed by
-/// `@ctx`, a component ctx, and the body expression.
+/// `@ctx`, a component ctx, and the body expression. The expansion returns a
+/// `SilexResult` and keeps its error propagation inside the generated code.
 #[proc_macro]
 pub fn rx(input: TokenStream) -> TokenStream {
     match expand(TokenStream2::from(input)) {

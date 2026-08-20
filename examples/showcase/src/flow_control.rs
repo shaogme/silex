@@ -21,7 +21,7 @@ pub fn ListDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
         // Error display
         Show(ctx, error_msg.map(owner, |e| e.is_some(), error_handler)?,)
             .children(
-                div(rx!(ctx; $error_msg.clone().unwrap_or_default())).style(
+                div(rx!(ctx; $error_msg.clone().unwrap_or_default())?).style(
                     sty(ctx)
                         .color(hex("#d32f2f"))?
                         .background(hex("#ffebee"))?

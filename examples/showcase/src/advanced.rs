@@ -93,9 +93,12 @@ pub fn JsonStorageDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
             "This demo uses the JSON codec to persist a complex struct via browser-native `JSON.stringify/parse`."
         ),
         div![
-            p![strong("Hero: "), rx!(ctx; $state.name.clone())],
-            p![strong("Level: "), rx!(ctx; $state.level.to_string())],
-            p![strong("Inventory: "), rx!(ctx; $state.inventory.join(", "))],
+            p![strong("Hero: "), rx!(ctx; $state.name.clone())?],
+            p![strong("Level: "), rx!(ctx; $state.level.to_string())?],
+            p![
+                strong("Inventory: "),
+                rx!(ctx; $state.inventory.join(", "))?
+            ],
         ]
         .style(
             sty(ctx)
@@ -231,7 +234,7 @@ pub fn AuthGuard<'scope, Ctx>(
             ].style(sty(ctx).padding("20px")?.background("#fff0f0")?.border("1px solid #ffcccc")?.color(hex("#cc0000"))?)
             .into_any()
         }
-    ))
+    )?)
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -388,7 +391,7 @@ pub fn MutationDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                     login_mutation.mutate((username.get()?, password.get()?))?;
                     Ok(())
                 })
-                .attr("disabled", rx!(ctx; login_mutation.loading()?))
+                .attr("disabled", rx!(ctx; login_mutation.loading()?)?)
                 .style(sty(ctx).padding("5px 10px")?),
         ]
         .style(sty(ctx).margin_bottom(px(10))?),
@@ -457,7 +460,7 @@ pub fn SuspenseDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                 input()
                     .attr("type", "radio")
                     .attr("name", "suspense_mode")
-                    .attr("checked", rx!(ctx; *$mode == SuspenseMode::KeepAlive))
+                    .attr("checked", rx!(ctx; *$mode == SuspenseMode::KeepAlive)?)
                     .on(event::change, set_mode.setter(SuspenseMode::KeepAlive)),
                 " KeepAlive (CSS Hide)"
             ]
@@ -466,7 +469,7 @@ pub fn SuspenseDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                 input()
                     .attr("type", "radio")
                     .attr("name", "suspense_mode")
-                    .attr("checked", rx!(ctx; *$mode == SuspenseMode::Unmount))
+                    .attr("checked", rx!(ctx; *$mode == SuspenseMode::Unmount)?)
                     .on(event::change, set_mode.setter(SuspenseMode::Unmount)),
                 " Unmount (DOM Remove)"
             ]
@@ -516,7 +519,7 @@ pub fn SuspenseDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
             } else {
                 ().into_any()
             }
-        )]
+        )?]
         .style(sty(ctx).min_height(px(150))?.border("1px dashed #ccc")?.padding("10px")?)
     ]
     .style(sty(ctx).padding("20px")?.border("1px solid #ccc")?.border_radius(px(8))?.margin_top(px(20))?))
@@ -632,7 +635,7 @@ pub fn AdaptiveReadDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                 i($identity.signature.clone())
             ].style(sty(ctx).margin_top(px(5))?.color(hex("#7f8c8d"))?),
         ]
-    });
+    })?;
 
     Ok(div![
         h3("Adaptive Read & Segmented Access")
@@ -665,7 +668,7 @@ pub fn AdaptiveReadDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                             Ok(())
                         })
                         .style(sty(ctx).flex_grow(1)?.accent_color(hex("#e74c3c"))?),
-                    span(rx!(ctx; format!("{:.0}%", *$stability * 100.0)))
+                    span(rx!(ctx; format!("{:.0}%", *$stability * 100.0))?)
                         .style(sty(ctx).width(px(50))?.text_align(TextAlignKeyword::Right)?.font_weight(FontWeightKeyword::Bold)?.color(hex("#e74c3c"))?),
                 ].style(sty(ctx).margin_top(px(20))?.display("flex")?.align_items("center")?.gap(px(15))?),
 

@@ -55,12 +55,12 @@ where
                 "display: none".to_string()
             } else {
                 "display: block".to_string()
-            });
+            })?;
             let fallback_display = silex_core::rx!(ctx; if *$count > 0 {
                 "display: block".to_string()
             } else {
                 "display: none".to_string()
-            });
+            })?;
             Ok(chain!(
                 div(initial_view.clone())
                     .class("suspense-content")
@@ -88,14 +88,14 @@ where
                 } else {
                     AnyView::Empty
                 }
-            });
+            })?;
             let fallback_view = silex_core::rx!(ctx; {
                 if *$count > 0 {
                     fallback.clone()
                 } else {
                     AnyView::Empty
                 }
-            });
+            })?;
             Ok(chain!(content, fallback_view).into_any())
         }
     }

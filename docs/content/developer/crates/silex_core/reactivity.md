@@ -145,7 +145,7 @@ tuple 的 `RxRead` 会逐个短暂借用成员并创建 owned tuple，因此聚�
 let value = rx!(ctx; source.field)?;
 ```
 
-宏展开会通过 `?` 传播 scope、promotion 和初始计算错误，因此调用它的函数必须返回兼容的 `Result`。`$(source.field)` 形式用于把字段本身作为 reactive source（例如 store 宏生成的字段）；普通 `$source` 则按照已有 tracked value access 读取。宏的内部展开入口 `__internal_rx` 和递归 batch 宏不是应用层稳定 API。
+宏表达式返回 `SilexResult<Rx>` 或 `SilexResult<Callback>`；生成代码内部通过 `?` 传播 scope、promotion 和初始计算错误，不再要求调用函数本身必须能够接收宏内部的提前返回。调用方可以使用 `?`，也可以用 `match` 显式处理结果。`$(source.field)` 形式用于把字段本身作为 reactive source（例如 store 宏生成的字段）；普通 `$source` 则按照已有 tracked value access 读取。宏的内部展开入口 `__internal_rx` 和递归 batch 宏不是应用层稳定 API。
 
 ## 依赖与批处理语义
 

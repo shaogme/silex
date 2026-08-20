@@ -26,7 +26,7 @@ fn explicit_store_field_source_tracks_only_selected_field() {
             .unwrap();
             let error_handler = owner.error_handler(|_: SilexError| {}).unwrap();
             let ctx = SilexContext::new(owner, error_handler.view());
-            let theme = rx!(ctx; $(settings.theme).clone());
+            let theme = rx!(ctx; $(settings.theme).clone())?;
             let runs = Rc::new(Cell::new(0));
             let runs_for_effect = runs.clone();
 
