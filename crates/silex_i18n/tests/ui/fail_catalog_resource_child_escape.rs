@@ -15,7 +15,7 @@ fn escaped() -> CatalogResource<'static, I18nError> {
                             silex_i18n::I18nErrorKind::Loader("not loaded".to_string()),
                         ))
                     },
-                    None,
+                    silex_i18n::CatalogResourceOptions::new(),
                 )
                 .expect("resource")
         })

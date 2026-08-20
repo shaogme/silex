@@ -15,11 +15,14 @@ pub use loader::{CatalogLoadError, CatalogResource};
 pub use locale::Locale;
 pub use plural::{PluralCategory, plural_category};
 pub use runtime::I18nVariant;
-pub use runtime::{Argument, I18nBuilder, I18nStore, MissingArgumentPolicy, MissingKeyPolicy};
+pub use runtime::{
+    Argument, CatalogResourceOptions, I18nBuilder, I18nStore, MissingArgumentPolicy,
+    MissingKeyPolicy,
+};
 pub use silex_core::Rx;
 pub use silex_core::reactivity::{
-    Computed, EffectHandle, ReadSignal, Resource, ResourceState, RwSignal, StoredValue,
-    SuspenseContext,
+    Computed, EffectHandle, ReadSignal, Resource, ResourceBuilder, ResourceFetchBuilder,
+    ResourceSource, ResourceSourceBuilder, ResourceState, RwSignal, StoredValue, SuspenseContext,
 };
 pub use silex_core::traits::{RxGet, RxRead, RxWrite};
 pub use silex_core::{I18nError, I18nErrorKind, OwnerAccess, OwnerHandle, Runtime};
@@ -118,7 +121,7 @@ mod tests {
                                     .expect("valid catalog"),
                             )
                         },
-                        None,
+                        CatalogResourceOptions::new(),
                     )
                     .expect("catalog resource");
                 #[cfg(feature = "browser")]

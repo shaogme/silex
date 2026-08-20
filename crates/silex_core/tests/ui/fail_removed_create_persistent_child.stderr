@@ -1,0 +1,11 @@
+error[E0599]: no method named `create_persistent_child` found for struct `OwnerAccess<'owner>` in the current scope
+ --> tests/ui/fail_removed_create_persistent_child.rs:6:27
+  |
+6 |     let _ = root.access().create_persistent_child();
+  |                           ^^^^^^^^^^^^^^^^^^^^^^^
+  |
+help: there is a method `create_child` with a similar name
+  |
+6 -     let _ = root.access().create_persistent_child();
+6 +     let _ = root.access().create_child();
+  |

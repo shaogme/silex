@@ -130,7 +130,7 @@ pub fn HttpClientDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
         ),
         // Resource Display
         div![move || {
-            Ok(match post_resource.state.get()? {
+            Ok(match post_resource.state().get()? {
                 ResourceState::Ready(post) | ResourceState::Reloading(post) => div![
                     h4(post.title).style(sty(ctx).color(AppTheme::PRIMARY)?.margin_top(px(0))?),
                     p(post.body).style(sty(ctx).opacity(0.8)?),

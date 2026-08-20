@@ -12,8 +12,11 @@ use crate::{
 };
 #[cfg(feature = "test-support")]
 use silex_reactivity::RuntimeSnapshot;
-use silex_reactivity::{CloseError, ComputationInitError, ReactiveError};
-use std::{future::Future, panic::UnwindSafe, pin::Pin};
+use silex_reactivity::{
+    CloseError, ComputationInitError, OwnerCleanupRegistrationError as ReactiveOwnerCleanupError,
+    ReactiveError,
+};
+use std::{future::Future, marker::PhantomData, panic::UnwindSafe, pin::Pin};
 
 /// User-owned high-level runtime.
 pub struct Runtime {
@@ -104,30 +107,37 @@ impl OwnerHandle {
     }
 }
 
-/// Hidden adapter that keeps a persistent child access and close authority
-/// together for framework-owned lifecycles.
-#[doc(hidden)]
-pub struct PersistentOwnerAccess<'owner> {
-    inner: silex_reactivity::PersistentOwnerAccess<'owner>,
+/// Owner-bound child capability with explicit close authority.
+pub struct OwnerChild<'owner> {
+    inner: silex_reactivity::OwnerChild<'owner>,
 }
 
-impl<'owner> PersistentOwnerAccess<'owner> {
-    /// Borrow the typed access for this persistent child.
-    #[doc(hidden)]
+/// Error returned when an owner-root cleanup registration cannot accept its
+/// payload. The payload is returned unchanged for explicit rollback.
+pub struct OwnerCleanupRegistrationError<'owner, T> {
+    error: SilexError,
+    payload: T,
+    marker: PhantomData<&'owner ()>,
+}
+
+impl<'owner, T> OwnerCleanupRegistrationError<'owner, T> {
+    pub fn into_parts(self) -> (SilexError, T) {
+        (self.error, self.payload)
+    }
+}
+
+impl<'owner> OwnerChild<'owner> {
+    /// Borrow the typed access for this owner-bound child.
     pub fn access(&self) -> OwnerAccess<'owner> {
         OwnerAccess {
             inner: self.inner.access(),
         }
     }
 
-    /// Close the child exactly once from the caller's perspective.
-    #[doc(hidden)]
-    pub fn close_once(&self) -> Result<(), CloseError> {
-        self.inner.close_once()
+    pub fn close(&self) -> Result<(), CloseError> {
+        self.inner.close()
     }
 
-    /// Report whether the child can still accept runtime operations.
-    #[doc(hidden)]
     pub fn is_active(&self) -> SilexResult<bool> {
         self.inner.is_active().map_err(SilexError::fatal)
     }
@@ -162,12 +172,11 @@ impl<'owner> OwnerAccess<'owner> {
             .map_err(SilexError::fatal)
     }
 
-    /// Create a hidden persistent child adapter for framework-owned branches.
-    #[doc(hidden)]
-    pub fn create_persistent_child(&self) -> SilexResult<PersistentOwnerAccess<'owner>> {
+    /// Create an owner-bound child capability.
+    pub fn create_owned_child(&self) -> SilexResult<OwnerChild<'owner>> {
         self.inner
-            .create_persistent_child()
-            .map(|inner| PersistentOwnerAccess { inner })
+            .create_owned_child()
+            .map(|inner| OwnerChild { inner })
             .map_err(SilexError::fatal)
     }
 
@@ -490,6 +499,29 @@ impl<'owner> OwnerAccess<'owner> {
         self.inner
             .on_cleanup(f, error_handler.handler_ref())
             .map_err(SilexError::fatal)
+    }
+
+    pub fn on_owner_cleanup<T, F, H>(
+        &self,
+        payload: T,
+        cleanup: F,
+        error_handler: H,
+    ) -> Result<(), OwnerCleanupRegistrationError<'owner, T>>
+    where
+        T: 'owner,
+        F: FnOnce(T) -> SilexResult<()> + 'owner,
+        H: ErrorHandlerInput<'owner>,
+    {
+        self.inner
+            .on_owner_cleanup(payload, cleanup, error_handler.handler_ref())
+            .map_err(|error: ReactiveOwnerCleanupError<'owner, T>| {
+                let (error, payload) = error.into_parts();
+                OwnerCleanupRegistrationError {
+                    error: SilexError::fatal(error),
+                    payload,
+                    marker: PhantomData,
+                }
+            })
     }
 }
 

@@ -1,0 +1,5 @@
+error[E0599]: no method named `adopt_persistent_child` found for struct `OwnerAccess<'owner>` in the current scope
+  --> tests/ui/fail_removed_adopt_persistent_child.rs:10:19
+   |
+10 |     let _ = owner.adopt_persistent_child((), |_| Ok::<(), ()>(()), handler.view());
+   |                   ^^^^^^^^^^^^^^^^^^^^^^ method not found in `OwnerAccess<'_>`

@@ -3,10 +3,13 @@
 use gloo_timers::future::TimeoutFuture;
 use silex_core::{ErrorHandlerToken, OwnerAccess, ReactiveError, Runtime, SilexResult};
 use silex_i18n::{
-    Catalog, CatalogLoadError, I18nBuilder, I18nStore, Locale, ResourceState, SuspenseContext, t,
+    Catalog, CatalogLoadError, CatalogResourceOptions, I18nBuilder, I18nStore, Locale, Message,
+    ResourceState, SuspenseContext, t,
 };
 use std::{cell::Cell, rc::Rc};
 use wasm_bindgen_test::*;
+
+wasm_bindgen_test_configure!(run_in_browser);
 
 fn test_handler<'owner>(owner: OwnerAccess<'owner>) -> ErrorHandlerToken<'owner> {
     owner.error_handler(|_| {}).expect("error handler")
@@ -32,6 +35,14 @@ async fn wait_for_reactivity(milliseconds: u32) {
     TimeoutFuture::new(milliseconds).await;
 }
 
+struct DropProbe(Rc<Cell<usize>>);
+
+impl Drop for DropProbe {
+    fn drop(&mut self) {
+        self.0.set(self.0.get() + 1);
+    }
+}
+
 #[wasm_bindgen_test(async)]
 async fn catalog_resource_loads_and_updates_suspense() {
     let calls = Rc::new(Cell::new(0));
@@ -51,7 +62,7 @@ async fn catalog_resource_loads_and_updates_suspense() {
                         catalog(locale, "Loaded")
                     }
                 },
-                suspense,
+                CatalogResourceOptions::new().suspense(suspense),
             )
             .expect("catalog resource");
 
@@ -87,7 +98,7 @@ fn catalog_resource_rejects_foreign_suspense_before_allocating_nodes() {
         .expect("target runtime snapshot");
     let result = i18n.catalog_resource(
         |_| async { Err::<Catalog, _>("foreign suspense must fail".to_string()) },
-        suspense,
+        CatalogResourceOptions::new().suspense(suspense),
     );
 
     assert!(matches!(
@@ -131,7 +142,7 @@ async fn catalog_resource_uses_store_catalog_without_calling_loader() {
                     calls_for_loader.set(calls_for_loader.get() + 1);
                     async { Err::<Catalog, _>("loader must not run".to_string()) }
                 },
-                None,
+                CatalogResourceOptions::new(),
             )
             .expect("catalog resource");
 
@@ -170,7 +181,7 @@ async fn catalog_resource_refetch_uses_cache_without_incrementing_loader_calls()
                     calls_for_loader.set(calls_for_loader.get() + 1);
                     async move { catalog(locale, "Cached after refetch") }
                 },
-                suspense,
+                CatalogResourceOptions::new().suspense(suspense),
             )
             .expect("catalog resource");
 
@@ -203,6 +214,64 @@ async fn catalog_resource_refetch_uses_cache_without_incrementing_loader_calls()
 }
 
 #[wasm_bindgen_test(async)]
+async fn catalog_resource_reload_bypasses_cache_and_calls_loader() {
+    let calls = Rc::new(Cell::new(0));
+    let mut runtime = Runtime::new();
+    let root = runtime.owner().expect("root owner");
+    let owner = root.access();
+    async move {
+        let (i18n, _handler) = store(owner, "en-US");
+        let suspense = SuspenseContext::new(owner).expect("suspense ctx");
+        let calls_for_loader = calls.clone();
+        let resource = i18n
+            .catalog_resource(
+                move |locale| {
+                    let call = calls_for_loader.get() + 1;
+                    calls_for_loader.set(call);
+                    async move {
+                        let title = if call == 1 { "Initial" } else { "Reloaded" };
+                        catalog(locale, title)
+                    }
+                },
+                CatalogResourceOptions::new().suspense(suspense),
+            )
+            .expect("catalog resource");
+
+        wait_for_reactivity(0).await;
+        assert_eq!(calls.get(), 1);
+        assert_eq!(
+            resource
+                .value()
+                .expect("resource value")
+                .expect("initial catalog")
+                .get("title"),
+            Some(&Message::text("Initial").expect("initial message"))
+        );
+
+        resource.reload().expect("catalog resource reload");
+        assert!(resource.loading().expect("resource loading"));
+        wait_for_reactivity(0).await;
+
+        assert_eq!(calls.get(), 2);
+        assert_eq!(suspense.count.get_untracked().expect("reactive value"), 0);
+        assert!(matches!(
+            resource.state().get_untracked().expect("reactive value"),
+            ResourceState::Ready(ref catalog) if catalog.get("title").is_some()
+        ));
+        assert_eq!(
+            resource
+                .value()
+                .expect("resource value")
+                .expect("reloaded catalog")
+                .get("title"),
+            Some(&Message::text("Reloaded").expect("reloaded message"))
+        );
+    }
+    .await;
+    root.close().expect("root cleanup");
+}
+
+#[wasm_bindgen_test(async)]
 async fn catalog_resource_reports_loader_errors() {
     let mut runtime = Runtime::new();
     let root = runtime.owner().expect("root owner");
@@ -212,7 +281,7 @@ async fn catalog_resource_reports_loader_errors() {
         let suspense = SuspenseContext::new(owner).expect("suspense ctx");
         let resource = i18n.catalog_resource(
             |_| async { Err::<Catalog, _>("invalid catalog payload".to_string()) },
-            suspense,
+            CatalogResourceOptions::new().suspense(suspense),
         )
         .expect("catalog resource");
 
@@ -255,7 +324,7 @@ async fn catalog_resource_error_refetch_balances_suspense_and_recovers() {
                         }
                     }
                 },
-                suspense,
+                CatalogResourceOptions::new().suspense(suspense),
             )
             .expect("catalog resource");
 
@@ -308,7 +377,7 @@ async fn catalog_resource_rejects_a_catalog_for_the_wrong_locale() {
                     let loaded = loaded_for_loader.clone();
                     async move { catalog(loaded, "Wrong locale") }
                 },
-                suspense,
+                CatalogResourceOptions::new().suspense(suspense),
             )
             .expect("catalog resource");
 
@@ -348,7 +417,7 @@ async fn catalog_resource_discards_old_locale_response() {
                         catalog(locale, "Current")
                     }
                 },
-                suspense,
+                CatalogResourceOptions::new().suspense(suspense),
             )
             .expect("catalog resource");
 
@@ -401,7 +470,7 @@ async fn catalog_resource_completion_is_cancelled_after_root_dispose() {
                         catalog(locale, "Late")
                     }
                 },
-                suspense,
+                CatalogResourceOptions::new().suspense(suspense),
             )
             .expect("catalog resource");
         let resource_state = resource.state();
@@ -451,4 +520,38 @@ async fn catalog_resource_completion_is_cancelled_after_root_dispose() {
         resource_state_runs_at_dispose.get()
     );
     assert_eq!(translation_runs.get(), translation_runs_at_dispose.get());
+}
+
+#[wasm_bindgen_test(async)]
+async fn catalog_resource_pending_future_drops_once_after_owner_close() {
+    let dropped = Rc::new(Cell::new(0));
+    let dropped_for_loader = dropped.clone();
+    let mut runtime = Runtime::new();
+    let root = runtime.owner().expect("root owner");
+    let owner = root.access();
+
+    async move {
+        let (i18n, _handler) = store(owner, "en-US");
+        let resource = i18n
+            .catalog_resource(
+                move |locale| {
+                    let dropped = dropped_for_loader.clone();
+                    async move {
+                        let _probe = DropProbe(dropped);
+                        wait_for_reactivity(100).await;
+                        catalog(locale, "late")
+                    }
+                },
+                CatalogResourceOptions::new(),
+            )
+            .expect("catalog resource");
+
+        wait_for_reactivity(0).await;
+        assert!(resource.loading().expect("resource loading"));
+    }
+    .await;
+
+    root.close().expect("root cleanup");
+    wait_for_reactivity(120).await;
+    assert_eq!(dropped.get(), 1);
 }

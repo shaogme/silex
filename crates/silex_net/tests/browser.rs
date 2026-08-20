@@ -458,7 +458,7 @@ async fn http_resource_resolves_owned_request() {
                 .expect("resource setup");
         TimeoutFuture::new(10).await;
         assert!(matches!(
-            resource.state.get().unwrap(),
+            resource.state().get().unwrap(),
             ResourceState::Ready(value) if value == "hello"
         ));
     }
@@ -519,7 +519,7 @@ async fn resource_runs_interceptor_once_and_rejects_custom_status() {
                 .expect("resource setup");
         TimeoutFuture::new(0).await;
         assert!(matches!(
-            resource.state.get().unwrap(),
+            resource.state().get().unwrap(),
             ResourceState::Ready(value) if value == "ok"
         ));
         assert_eq!(interceptor_calls.get(), 1);
@@ -565,7 +565,7 @@ async fn resource_runs_interceptor_once_and_rejects_custom_status() {
                 .expect("resource setup");
         TimeoutFuture::new(1).await;
         assert!(matches!(
-            resource.state.get().unwrap(),
+            resource.state().get().unwrap(),
             ResourceState::Error(NetError::Recoverable(NetErrorKind::HttpStatus {
                 status: 503,
                 ..
@@ -604,7 +604,7 @@ async fn resource_replacement_keeps_new_request_result() {
         set_query.set("second".to_string()).unwrap();
         TimeoutFuture::new(30).await;
         assert!(matches!(
-            resource.state.get().unwrap(),
+            resource.state().get().unwrap(),
             ResourceState::Ready(value) if value == "second"
         ));
         assert_eq!(calls.get(), 2);
@@ -711,7 +711,7 @@ async fn cache_first_does_not_treat_default_as_history() {
                 .expect("resource setup");
         TimeoutFuture::new(10).await;
         assert!(matches!(
-            resource.state.get().unwrap(),
+            resource.state().get().unwrap(),
             ResourceState::Ready(value) if value == "cache"
         ));
     }
@@ -1001,7 +1001,7 @@ async fn cache_completion_cannot_recreate_an_evicted_key() {
             .expect("resource setup");
         TimeoutFuture::new(10).await;
         assert!(matches!(
-            resource.state.get().unwrap(),
+            resource.state().get().unwrap(),
             ResourceState::Ready(value) if value == "history"
         ));
         assert_eq!(calls.get(), 1);
@@ -1009,7 +1009,7 @@ async fn cache_completion_cannot_recreate_an_evicted_key() {
         set_query.set("second".to_string()).unwrap();
         TimeoutFuture::new(30).await;
         assert_eq!(
-            resource.state.get().unwrap(),
+            resource.state().get().unwrap(),
             ResourceState::Ready("fresh".to_string())
         );
         assert_eq!(calls.get(), 2);
@@ -1259,7 +1259,7 @@ async fn cache_first_reloads_history_when_request_key_changes() {
             .expect("resource setup");
         TimeoutFuture::new(0).await;
         assert!(matches!(
-            resource.state.get().unwrap(),
+            resource.state().get().unwrap(),
             ResourceState::Ready(value) if value == "history"
         ));
         assert_eq!(calls.get(), 0);
@@ -1267,7 +1267,7 @@ async fn cache_first_reloads_history_when_request_key_changes() {
         set_query.set("second".to_string()).unwrap();
         TimeoutFuture::new(0).await;
         assert!(matches!(
-            resource.state.get().unwrap(),
+            resource.state().get().unwrap(),
             ResourceState::Ready(value) if value == "network"
         ));
         assert_eq!(calls.get(), 1);
@@ -1275,7 +1275,7 @@ async fn cache_first_reloads_history_when_request_key_changes() {
         set_query.set("first".to_string()).unwrap();
         TimeoutFuture::new(0).await;
         assert!(matches!(
-            resource.state.get().unwrap(),
+            resource.state().get().unwrap(),
             ResourceState::Ready(value) if value == "history"
         ));
         assert_eq!(calls.get(), 1);
@@ -1334,14 +1334,14 @@ async fn swr_rejects_stale_same_key_cache_write() {
             .expect("resource setup");
         TimeoutFuture::new(10).await;
         assert!(matches!(
-            resource.state.get().unwrap(),
+            resource.state().get().unwrap(),
             ResourceState::Ready(value) if value == "history"
         ));
         assert_eq!(calls.get(), 1);
 
         set_source.set(2).unwrap();
         TimeoutFuture::new(30).await;
-        let state = resource.state.get().unwrap();
+        let state = resource.state().get().unwrap();
         assert_eq!(
             state,
             ResourceState::Ready("fresh".to_string()),
@@ -1414,7 +1414,7 @@ async fn network_first_uses_history_after_retryable_failure() {
             .expect("resource setup");
         TimeoutFuture::new(0).await;
         assert!(matches!(
-            resource.state.get().unwrap(),
+            resource.state().get().unwrap(),
             ResourceState::Ready(value) if value == "history"
         ));
         assert_eq!(calls.get(), 2);

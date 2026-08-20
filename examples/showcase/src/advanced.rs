@@ -268,7 +268,10 @@ pub fn ResourceDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     let (user_id, set_user_id) = owner.signal(1)?;
 
     // Create Resource: triggers when user_id changes
-    let user_resource = Resource::new(owner, user_id, mock_fetch_user, None, error_handler)?;
+    let user_resource = Resource::builder(owner)
+        .source(user_id)
+        .fetch(mock_fetch_user)
+        .build(error_handler)?;
 
     Ok(div![
         h3("Resource & Optimistic UI"),
@@ -279,8 +282,7 @@ pub fn ResourceDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
             button("User 2").on(event::click, set_user_id.setter(2)),
             button("Invalid User").on(event::click, set_user_id.setter(-1)),
             button("Refetch").on(event::click, move |_| {
-                user_resource
-                    .refetch()?;
+                user_resource.refetch()?;
                 Ok(())
             }),
         ].style(sty(ctx).display("flex")?.gap(px(10))?.margin_bottom(px(15))?),
@@ -289,7 +291,7 @@ pub fn ResourceDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
             "Status: ",
             // Show loading state using the new state enum helper
             move || {
-                let state = user_resource.state.get()?;
+                let state = user_resource.state().get()?;
                 let view = if state.is_loading() {
                     span(if let ResourceState::Reloading(_) = state { "Reloading..." } else { "Loading..." }).style(sty(ctx).color(ColorName::Orange)?)
                 } else {
@@ -327,7 +329,7 @@ pub fn ResourceDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
 
         // Error Handling via state matching
         move || {
-            if let ResourceState::Error(err) = user_resource.state.get()? {
+            if let ResourceState::Error(err) = user_resource.state().get()? {
                 Ok(div(format!("Error: {}", err))
                     .style(sty(ctx).color(ColorName::Red)?.margin_top(px(10))?)
                     .into_any())
@@ -489,13 +491,11 @@ pub fn SuspenseDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
         div![rx!(ctx;
             if *$show_content {
                 Suspense(ctx, move |cx| {
-                    let resource = Resource::new(
-                        owner,
-                        trigger,
-                        heavy_work,
-                        Some(cx),
-                        error_handler,
-                    )?;
+                    let resource = Resource::builder(owner)
+                        .source(trigger)
+                        .fetch(heavy_work)
+                        .suspense(cx)
+                        .build(error_handler)?;
                     Ok(div![
                         div![
                             "Resource Data: ",

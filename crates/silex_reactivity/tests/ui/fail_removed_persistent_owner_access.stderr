@@ -1,0 +1,5 @@
+error[E0432]: unresolved import `silex_reactivity::PersistentOwnerAccess`
+ --> tests/ui/fail_removed_persistent_owner_access.rs:1:5
+  |
+1 | use silex_reactivity::PersistentOwnerAccess;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `PersistentOwnerAccess` in the root

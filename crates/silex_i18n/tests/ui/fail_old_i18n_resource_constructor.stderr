@@ -1,15 +1,8 @@
-error[E0061]: this function takes 5 arguments but 0 arguments were supplied
- --> tests/ui/fail_old_i18n_resource_constructor.rs:4:21
+error[E0599]: no associated function or constant named `new` found for struct `Resource<'owner, T, E>` in the current scope
+ --> tests/ui/fail_old_i18n_resource_constructor.rs:4:46
   |
 4 |     let _resource = Resource::<i32, String>::new();
-  |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^-- multiple arguments are missing
+  |                                              ^^^ associated function or constant not found in `Resource<'_, i32, String>`
   |
-note: associated function defined here
- --> $WORKSPACE/crates/silex_core/src/reactivity/resource.rs
-  |
-  |     pub fn new<S, R, Fetcher, H>(
-  |            ^^^
-help: provide the arguments
-  |
-4 |     let _resource = Resource::<i32, String>::new(/* OwnerAccess<'_> */, /* source */, /* fetcher */, /* Option<SuspenseContext<'_>> */, /* error_handler */);
-  |                                                  ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+help: there is a method `ne` with a similar name, but with different arguments
+ --> $RUST/core/src/cmp.rs

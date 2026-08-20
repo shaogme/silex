@@ -137,18 +137,16 @@ pub fn I18nPage<'scope>(
                 };
                 Catalog::from_json(locale, source).map_err(|error| error.to_string())
             },
-            None,
+            CatalogResourceOptions::new(),
         )
         .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
 
     let name = owner.rw_signal("Ada".to_string())?;
     let count = owner.rw_signal(1u32)?;
 
-    let resource_for_view = catalog_resource.clone();
-    let resource_for_reload = catalog_resource.clone();
     let reload_store = loader_store;
     let resource_state = move || -> SilexResult<AnyView<'scope>> {
-        Ok(match resource_for_view.state().get()? {
+        Ok(match catalog_resource.state().get()? {
             ResourceState::Idle => div(i18n.translate_now("demo.loader.idle", &[])?).into_any(),
             ResourceState::Loading => {
                 div(i18n.translate_now("demo.loader.loading", &[])?).into_any()
@@ -361,7 +359,7 @@ pub fn I18nPage<'scope>(
                     button(t!(i18n, "demo.loader.reload")?).on_click(move |_| {
                         let locale = reload_store.locale().get_untracked()?;
                         reload_store.remove_catalog(&locale)?;
-                        resource_for_reload.refetch()?;
+                        catalog_resource.refetch()?;
                         Ok(())
                     })
                 )

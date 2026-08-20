@@ -9,6 +9,7 @@ use silex_core::{
     reactivity::{ReadSignal, Resource, ResourceState, RwSignal, StoredValue, SuspenseContext},
 };
 use std::{
+    cell::Cell,
     collections::{HashMap, HashSet},
     fmt::Debug,
     future::Future,
@@ -33,6 +34,22 @@ pub enum MissingArgumentPolicy {
     #[default]
     KeepPlaceholder,
     Empty,
+}
+
+#[derive(Clone, Copy, Default)]
+pub struct CatalogResourceOptions<'scope> {
+    suspense: Option<SuspenseContext<'scope>>,
+}
+
+impl<'scope> CatalogResourceOptions<'scope> {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn suspense(mut self, suspense: SuspenseContext<'scope>) -> Self {
+        self.suspense = Some(suspense);
+        self
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -329,46 +346,59 @@ impl<'scope> I18nStore<'scope> {
     pub fn catalog_resource<F, Fut, E>(
         &self,
         loader: F,
-        suspense_ctx: impl Into<Option<SuspenseContext<'scope>>>,
+        options: CatalogResourceOptions<'scope>,
     ) -> Result<CatalogResource<'scope, E>, I18nError>
     where
         F: Fn(Locale) -> Fut + 'static,
         Fut: Future<Output = Result<Catalog, E>> + 'static,
         E: Clone + Debug + 'static,
     {
-        let suspense = suspense_ctx.into();
+        let suspense = options.suspense;
+        if let Some(suspense) = suspense.as_ref() {
+            self.owner.validate_runtime(suspense)?;
+        }
         let cache = self.catalog_cache;
+        let force_reload = self.owner.stored(Cell::new(false))?;
+        let force_reload_for_loader = force_reload;
         let loader = Rc::new(loader);
-        let resource = Resource::new(
-            self.owner,
-            self.locale(),
-            move |locale: Locale| {
-                let cached = cache
-                    .with(|registry| registry.catalog(&locale))
-                    .map_err(|error| CatalogLoadError::Runtime(error.to_string()));
-                let loader = loader.clone();
-                async move {
-                    if let Some(catalog) = cached? {
-                        return Ok(catalog);
-                    }
+        let builder =
+            Resource::builder(self.owner)
+                .source(self.locale())
+                .fetch(move |locale: Locale| {
+                    let loader = loader.clone();
+                    async move {
+                        let bypass_cache = force_reload_for_loader
+                            .with(|flag| flag.replace(false))
+                            .map_err(|error| CatalogLoadError::Runtime(error.to_string()))?;
+                        let cached = if bypass_cache {
+                            Ok(None)
+                        } else {
+                            cache
+                                .with(|registry| registry.catalog(&locale))
+                                .map_err(|error| CatalogLoadError::Runtime(error.to_string()))
+                        };
+                        if let Some(catalog) = cached? {
+                            return Ok(catalog);
+                        }
 
-                    let catalog = loader(locale.clone())
-                        .await
-                        .map_err(CatalogLoadError::Loader)?;
-                    if catalog.locale() != &locale {
-                        return Err(CatalogLoadError::LocaleMismatch {
-                            requested: locale,
-                            loaded: catalog.locale().clone(),
-                        });
+                        let catalog = loader(locale.clone())
+                            .await
+                            .map_err(CatalogLoadError::Loader)?;
+                        if catalog.locale() != &locale {
+                            return Err(CatalogLoadError::LocaleMismatch {
+                                requested: locale,
+                                loaded: catalog.locale().clone(),
+                            });
+                        }
+                        Ok(catalog)
                     }
-                    Ok(catalog)
-                }
-            },
-            suspense,
-            self.error_handler(),
-        )?;
+                });
+        let resource = match suspense {
+            Some(suspense) => builder.suspense(suspense).build(self.error_handler())?,
+            None => builder.build(self.error_handler())?,
+        };
 
-        let state = resource.state;
+        let state = resource.state();
         let store = *self;
         let store_for_effect = store;
         self.owner
@@ -383,7 +413,7 @@ impl<'scope> I18nStore<'scope> {
             )
             .map_err(map_silex_error)?;
 
-        Ok(CatalogResource::new(resource))
+        Ok(CatalogResource::new(resource, force_reload))
     }
 
     #[cfg(feature = "browser")]

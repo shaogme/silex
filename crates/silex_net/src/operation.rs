@@ -85,8 +85,7 @@ impl OperationController {
 
     fn is_current_running(&self, id: OperationId) -> bool {
         let state = self.state.borrow();
-        let valid = state.phase == Phase::Running && state.current == Some(id);
-        valid
+        state.phase == Phase::Running && state.current == Some(id)
     }
 }
 

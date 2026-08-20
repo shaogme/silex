@@ -14,7 +14,7 @@ fn build<'scope>(scope: silex_core::OwnerAccess<'scope>) {
             .header("Authorization", token)
             .as_resource(post_id, None)
             .unwrap();
-        let _ = resource.state.get().unwrap();
+        let _ = resource.state().get().unwrap();
 }
 
 fn main() {

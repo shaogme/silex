@@ -1,5 +1,5 @@
 use std::{
-    cell::Cell,
+    cell::RefCell,
     future::Future,
     marker::PhantomData,
     panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
@@ -301,7 +301,7 @@ macro_rules! impl_net_methods {
             #[cfg(feature = "persist")]
             let fetch_builder = self.cloned_with_handler(handler_anchor.clone());
             let operation_controller = OperationController::new();
-            let resource_slot = Rc::new(Cell::new(None::<Resource<'scope, T, NetError>>));
+            let resource_slot = Rc::new(RefCell::new(None::<Resource<'scope, T, NetError>>));
             let operation_controller_for_fetcher = operation_controller.clone();
             let resource_slot_for_fetcher = resource_slot.clone();
             let combined_source = scope
@@ -311,9 +311,7 @@ macro_rules! impl_net_methods {
                 )
                 .map(|memo| memo.into_rx())
                 .map_err(NetError::from)?;
-            let resource = Resource::new(
-                scope,
-                combined_source,
+            let resource_builder = Resource::builder(scope).source(combined_source).fetch(
                 move |(_, spec): (S::Value, RequestSpec)| {
                     let mut spec = spec;
                     fetch_client.apply_interceptors(&mut spec);
@@ -386,7 +384,8 @@ macro_rules! impl_net_methods {
                             move |result: Result<T, NetError>| {
                                 if refresh_operation.is_current()
                                     && let Ok(value) = result
-                                    && let Some(resource) = resource_slot_for_completion.get()
+                                    && let Some(resource) =
+                                        resource_slot_for_completion.borrow().as_ref()
                                 {
                                     resource.set(value)?;
                                 }
@@ -468,9 +467,11 @@ macro_rules! impl_net_methods {
                         }
                     }) as NetFuture<'scope, T>
                 },
-                suspense,
-                handler_anchor,
-            )
+            );
+            let resource = match suspense {
+                Some(suspense) => resource_builder.suspense(suspense).build(handler_anchor),
+                None => resource_builder.build(handler_anchor),
+            }
             .map_err(NetError::from)?;
 
             let cleanup_controller = operation_controller.clone();
@@ -484,7 +485,7 @@ macro_rules! impl_net_methods {
                 )
                 .map_err(NetError::from)?;
 
-            resource_slot.set(Some(resource));
+            resource_slot.replace(Some(resource));
 
             Ok(resource)
         }

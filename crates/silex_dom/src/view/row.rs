@@ -2,8 +2,8 @@ use super::dynamic::BranchRenderContext;
 use super::owner::{MountErrorHandler, MountOwner, MountOwnerToken, MountState};
 use crate::attribute::AttrOp;
 use silex_core::{
-    CloseError, ClosePhase, CloseSource, CloseTransaction, PersistentOwnerAccess, ReactiveError,
-    SilexError, SilexErrorKind, SilexResult,
+    CloseError, ClosePhase, CloseSource, CloseTransaction, OwnerChild, ReactiveError, SilexError,
+    SilexErrorKind, SilexResult,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -266,7 +266,7 @@ pub(crate) struct RowInstance<'scope, T> {
     range: NodeRange,
     row_scope: MountOwnerToken<'scope>,
     content_owner: Option<MountOwnerToken<'scope>>,
-    runtime_lease: Option<PersistentOwnerAccess<'scope>>,
+    runtime_child: Option<OwnerChild<'scope>>,
     render_scope: Option<MountOwnerToken<'scope>>,
     render_content_scope: Option<MountState<'scope, Option<MountOwnerToken<'scope>>>>,
     render_nodes: Option<MountState<'scope, Vec<Node>>>,
@@ -311,9 +311,9 @@ impl<'scope, T: Clone + 'scope> RowInstance<'scope, T> {
         let mut range_guard = RangeGuard::new(range.clone());
         let updater = RowUpdater::new();
         let row_scope = owner.child();
-        let (runtime_lease, content_owner) = if branch_runtime {
-            let (lease, content_owner) = row_scope.branch_child()?;
-            (Some(lease), Some(content_owner))
+        let (runtime_child, content_owner) = if branch_runtime {
+            let (child, content_owner) = row_scope.branch_child()?;
+            (Some(child), Some(content_owner))
         } else {
             (None, None)
         };
@@ -321,7 +321,7 @@ impl<'scope, T: Clone + 'scope> RowInstance<'scope, T> {
             range,
             row_scope,
             content_owner,
-            runtime_lease,
+            runtime_child,
             render_scope: None,
             render_content_scope: None,
             render_nodes: None,
@@ -567,9 +567,9 @@ impl<'scope, T> RowInstance<'scope, T> {
     }
 
     fn close_owned_runtime(&self) -> Result<(), CloseError> {
-        self.runtime_lease
+        self.runtime_child
             .as_ref()
-            .map_or(Ok(()), |lease| lease.close_once())
+            .map_or(Ok(()), OwnerChild::close)
     }
 }
 

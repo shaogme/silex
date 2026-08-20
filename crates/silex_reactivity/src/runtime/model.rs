@@ -56,6 +56,12 @@ pub(crate) enum ComputationParent {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CleanupTarget {
+    CurrentOwner,
+    OwnerRoot,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum StoredAccessMode {
     Active,
     RunningCleanup,
@@ -1301,8 +1307,13 @@ impl<'scope> ScopeStateInner<'scope> {
         )
     }
 
-    pub(crate) fn register_cleanup(&mut self, cleanup: CleanupThunk<'scope>) {
-        if let Some(owner) = self.current_owner
+    pub(crate) fn register_cleanup(
+        &mut self,
+        target: CleanupTarget,
+        cleanup: CleanupThunk<'scope>,
+    ) {
+        if target == CleanupTarget::CurrentOwner
+            && let Some(owner) = self.current_owner
             && let Some(data) = self.data.get_mut(owner)
         {
             data.cleanups.push(cleanup);

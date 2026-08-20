@@ -1,9 +1,9 @@
 use crate::{Catalog, I18nError, Locale};
 use silex_core::{
     SilexResult,
-    reactivity::{ReadSignal, Resource, ResourceState},
+    reactivity::{ReadSignal, Resource, ResourceState, StoredValue},
 };
-use std::fmt::Debug;
+use std::{cell::Cell, fmt::Debug};
 
 /// Errors produced by a catalog loader, including a response for the wrong locale.
 #[derive(Clone, Debug, PartialEq)]
@@ -33,18 +33,32 @@ impl<E: std::fmt::Display> std::fmt::Display for CatalogLoadError<E> {
 }
 
 /// A `Resource` that loads catalogs for the store's current locale.
-#[derive(Clone)]
 pub struct CatalogResource<'owner, E = I18nError> {
     resource: Resource<'owner, Catalog, CatalogLoadError<E>>,
+    force_reload: StoredValue<'owner, Cell<bool>>,
+}
+
+impl<'owner, E> Copy for CatalogResource<'owner, E> {}
+
+impl<'owner, E> Clone for CatalogResource<'owner, E> {
+    fn clone(&self) -> Self {
+        *self
+    }
 }
 
 impl<'owner, E: Clone + Debug + 'static> CatalogResource<'owner, E> {
-    pub(crate) fn new(resource: Resource<'owner, Catalog, CatalogLoadError<E>>) -> Self {
-        Self { resource }
+    pub(crate) fn new(
+        resource: Resource<'owner, Catalog, CatalogLoadError<E>>,
+        force_reload: StoredValue<'owner, Cell<bool>>,
+    ) -> Self {
+        Self {
+            resource,
+            force_reload,
+        }
     }
 
     pub fn state(&self) -> ReadSignal<'owner, ResourceState<Catalog, CatalogLoadError<E>>> {
-        self.resource.state
+        self.resource.state()
     }
 
     pub fn resource(&self) -> Resource<'owner, Catalog, CatalogLoadError<E>> {
@@ -53,6 +67,15 @@ impl<'owner, E: Clone + Debug + 'static> CatalogResource<'owner, E> {
 
     pub fn refetch(&self) -> SilexResult<()> {
         self.resource.refetch()
+    }
+
+    pub fn reload(&self) -> SilexResult<()> {
+        self.force_reload.with(|flag| flag.set(true))?;
+        if let Err(error) = self.resource.refetch() {
+            self.force_reload.with(|flag| flag.set(false))?;
+            return Err(error);
+        }
+        Ok(())
     }
 
     pub fn loading(&self) -> SilexResult<bool> {

@@ -268,16 +268,15 @@ fn HomeView<'scope>(#[ctx] ctx: RouterContext<'scope>) -> impl View<'scope> {
         Card(ctx, "Suspense (Async Loading)")
             .child(
                 Suspense(ctx, move |cx| {
-                    match Resource::new(
-                        owner,
-                        suspense_source,
-                        |_| async {
+                    match Resource::builder(owner)
+                        .source(suspense_source)
+                        .fetch(|_| async {
                             gloo_timers::future::TimeoutFuture::new(2_000).await;
                             Ok::<_, SilexError>("Loaded Data from Server!".to_string())
-                        },
-                        Some(cx),
-                        error_handler,
-                    ) {
+                        })
+                        .suspense(cx)
+                        .build(error_handler)
+                    {
                         Ok(async_data_local) => {
                             Ok(div(move || match async_data_local.get_data() {
                                 Ok(Some(data)) => data,

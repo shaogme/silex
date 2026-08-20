@@ -678,24 +678,23 @@ where
                                                 ))
                                             })
                                     })??;
-                                if let Some(timer) = previous_timer {
-                                    if let Err(error) = timer.cancel() {
-                                        let (current, timer) =
-                                            controller.update_untracked(|controller| {
-                                                controller
-                                                    .runtime
-                                                    .mark_schedule_failed(ticket, error.to_string())
-                                            })?;
-                                        if let Some(timer) = timer {
-                                            timer.cancel()?;
-                                        }
-                                        if current {
-                                            state.set(PersistenceState::WriteError(
-                                                error.to_string(),
-                                            ))?;
-                                        }
-                                        return Ok(());
+                                if let Some(timer) = previous_timer
+                                    && let Err(error) = timer.cancel()
+                                {
+                                    let (current, timer) =
+                                        controller.update_untracked(|controller| {
+                                            controller
+                                                .runtime
+                                                .mark_schedule_failed(ticket, error.to_string())
+                                        })?;
+                                    if let Some(timer) = timer {
+                                        timer.cancel()?;
                                     }
+                                    if current {
+                                        state
+                                            .set(PersistenceState::WriteError(error.to_string()))?;
+                                    }
+                                    return Ok(());
                                 }
                                 let owner_token = MountOwnerToken::new(owner_access);
                                 let owner_error_handler =

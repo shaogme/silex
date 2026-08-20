@@ -39,7 +39,7 @@ pub use crate::{
         Callback, Computed, EffectHandle, NodeRef, ReadSignal, RwSignal, StoredValue, WatchOptions,
         WriteSignal,
     },
-    owner::{OwnerAccess, OwnerHandle, PersistentOwnerAccess},
+    owner::{OwnerAccess, OwnerChild, OwnerCleanupRegistrationError, OwnerHandle},
     root::*,
     runtime::Runtime,
 };

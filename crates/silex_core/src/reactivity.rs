@@ -11,7 +11,10 @@ pub use effect::EffectHandle;
 pub use memo::Computed;
 pub use mutation::{Mutation, MutationState};
 pub use promotion::{PromotionPlan, ReactiveSource};
-pub use resource::{Resource, ResourceFetcher, ResourceState, SuspenseContext};
+pub use resource::{
+    Resource, ResourceBuilder, ResourceFetchBuilder, ResourceFetcher, ResourceSource,
+    ResourceSourceBuilder, ResourceState, SuspenseContext,
+};
 pub use signal::{Constant, ReadSignal, RwSignal, Signal, WriteSignal};
 pub use silex_reactivity::WatchOptions;
 pub use slice::SignalSlice;

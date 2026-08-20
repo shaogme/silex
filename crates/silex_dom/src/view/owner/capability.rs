@@ -2,8 +2,8 @@ use super::host::{HostCallback, HostDestination, HostResource, HostResourceLease
 use super::state::{ActiveRegistrar, MountState};
 use silex_core::{
     CloseError, ClosePhase, CloseSource, CloseTransaction, EffectHandle, ErrorHandler,
-    ErrorHandlerAnchor, ErrorHandlerInput, HandlerLease, OwnerAccess, PersistentOwnerAccess,
-    ReactiveError, SilexError, SilexErrorKind, SilexResult, unwind_safe,
+    ErrorHandlerAnchor, ErrorHandlerInput, HandlerLease, OwnerAccess, OwnerChild, ReactiveError,
+    SilexError, SilexErrorKind, SilexResult, unwind_safe,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -295,17 +295,17 @@ impl<'scope> MountOwnerToken<'scope> {
         }
     }
 
-    pub(crate) fn branch_child(&self) -> SilexResult<(PersistentOwnerAccess<'scope>, Self)> {
+    pub(crate) fn branch_child(&self) -> SilexResult<(OwnerChild<'scope>, Self)> {
         self.ensure_active()?;
-        let lease = self.context.access().create_persistent_child()?;
+        let child = self.context.access().create_owned_child()?;
         let context = Rc::new(MountOwnerContext::new(
-            lease.access(),
+            child.access(),
             self.context.cleanup_reporter(),
             RuntimeOwnershipMode::BranchContent,
         ));
         let state = Rc::new(LocalOwnerState::new(context.clone()));
         self.state.children.borrow_mut().push(state.clone());
-        Ok((lease, Self { context, state }))
+        Ok((child, Self { context, state }))
     }
 
     pub(crate) fn close(&self) -> Result<(), CloseError> {
@@ -580,8 +580,7 @@ pub trait MountOwner<'scope> {
     ) -> SilexResult<()>;
     fn token(&self) -> MountOwnerToken<'scope>;
     fn child(&self) -> MountOwnerToken<'scope>;
-    fn branch_child(&self)
-    -> SilexResult<(PersistentOwnerAccess<'scope>, MountOwnerToken<'scope>)>;
+    fn branch_child(&self) -> SilexResult<(OwnerChild<'scope>, MountOwnerToken<'scope>)>;
 }
 
 impl<'scope> MountOwner<'scope> for MountOwnerToken<'scope> {
@@ -609,9 +608,7 @@ impl<'scope> MountOwner<'scope> for MountOwnerToken<'scope> {
         MountOwnerToken::child(self)
     }
 
-    fn branch_child(
-        &self,
-    ) -> SilexResult<(PersistentOwnerAccess<'scope>, MountOwnerToken<'scope>)> {
+    fn branch_child(&self) -> SilexResult<(OwnerChild<'scope>, MountOwnerToken<'scope>)> {
         MountOwnerToken::branch_child(self)
     }
 }
@@ -651,9 +648,7 @@ impl<'scope> MountOwner<'scope> for OwnerMount<'scope> {
         self.token.child()
     }
 
-    fn branch_child(
-        &self,
-    ) -> SilexResult<(PersistentOwnerAccess<'scope>, MountOwnerToken<'scope>)> {
+    fn branch_child(&self) -> SilexResult<(OwnerChild<'scope>, MountOwnerToken<'scope>)> {
         self.token.branch_child()
     }
 }

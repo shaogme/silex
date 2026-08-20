@@ -73,6 +73,38 @@ root.with_access_async(|owner| {
 
 `StoredValue` 有一个窄的清理例外：最终 owner cleanup 正在释放其 payload 的窗口内，`StoredValue::with`/`update` 仍可访问它；普通 signal、callback、node ref、effect 和节点创建 API 在 owner 标记 inactive 后仍不可用。这个例外只用于同步释放资源，不能把 handle 交给异步代码。
 
+需要把一棵带 parent lifetime 的子树交给 owner root 管理时，使用
+`OwnerChild<'owner>` 和 `on_owner_cleanup`：
+
+```rust
+let child = owner.create_owned_child()?;
+let child_owner = child.access();
+// 在 child_owner 中初始化 owner-bound 能力。
+
+if let Err(error) = owner.on_owner_cleanup(
+    child,
+    |child| child
+        .close()
+        .map_err(|error| SilexError::fatal(SilexErrorKind::Close(error))),
+    error_handler,
+) {
+    let (registration_error, child) = error.into_parts();
+    let _ = child.close();
+    return Err(registration_error);
+}
+```
+
+`on_owner_cleanup` 不会把 cleanup 挂到当前 effect；它永远使用 parent owner root。
+注册前的任何失败都会返回 `OwnerCleanupRegistrationError<'owner, T>` 及原始
+payload，调用方必须关闭或释放该 payload。`on_cleanup` 仍然表示当前 computation
+cleanup。`OwnerChild::close()` 是显式、幂等、可重试的关闭操作，父 owner close
+是 Resource、DOM branch 等 owner-bound 资源的最终取消边界。
+
+`Resource` 的复制只复制已经创建的 reactive node capability，不创建 child、不增加
+引用计数，也不承担关闭权。丢弃一个或全部 `Resource` 变量不会取消请求；资源创建
+成功后，父 owner cleanup 持有 child scope 的最终关闭权。需要比父 owner 更早取消时，
+应创建独立 child owner，将资源绑定到该 child，再显式关闭 child。
+
 ## Error handler 与 context
 
 需要处理延迟错误的 API 都接受 `ErrorHandlerInput<'owner>`，常见输入是：

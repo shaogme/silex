@@ -13,7 +13,7 @@ error[E0521]: borrowed data escapes outside of closure
 13 | |                 let _ = source.get();
 14 | |                 Err::<Catalog, I18nError>(I18nError::recoverable(
 ...  |
-18 | |             None,
+18 | |             silex_i18n::CatalogResourceOptions::new(),
 19 | |         );
    | |         ^
    | |         |

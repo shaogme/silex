@@ -203,7 +203,7 @@ where
                     controller.local_mutation_pending = false;
                     controller.runtime.apply_external_snapshot(None)
                 })?;
-                cancel_timer(timer).map_err(PersistenceError::from)?;
+                cancel_timer(timer)?;
                 self.state
                     .set(PersistenceState::Ready(String::new()))
                     .map_err(PersistenceError::from)?;
@@ -611,7 +611,7 @@ pub(crate) fn invalidate_debounce<'scope, T>(
     controller: StoredValue<'scope, PersistenceController<'scope, T>>,
 ) -> SilexResult<()> {
     let timer = controller.update_untracked(|controller| controller.runtime.invalidate())?;
-    cancel_timer(timer).map_err(PersistenceError::from)?;
+    cancel_timer(timer)?;
     Ok(())
 }
 
@@ -623,7 +623,7 @@ fn apply_external_runtime_snapshot<'scope, T>(
         controller.local_mutation_pending = false;
         controller.runtime.apply_external_snapshot(raw)
     })?;
-    cancel_timer(timer).map_err(PersistenceError::from)?;
+    cancel_timer(timer)?;
     Ok(())
 }
 

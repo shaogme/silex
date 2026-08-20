@@ -1,12 +1,13 @@
 use crate::callback::report_completion_error;
 use crate::reactivity::ReactiveSource;
 use crate::{
-    ErrorHandlerInput, OwnerAccess, Rx, SilexError, SilexErrorKind, SilexResult,
+    ErrorHandlerInput, OwnerAccess, OwnerChild, ReactiveError, Rx, SilexError, SilexErrorKind,
+    SilexResult,
     reactivity::{ReadSignal, RwSignal, WriteSignal},
-    traits::{RxCloneData, RxData, RxError, RxGet, RxRead, RxValue},
+    traits::{RuntimeScoped, RxCloneData, RxData, RxError, RxGet, RxRead, RxValue},
     unwind_safe,
 };
-use std::{cell::Cell, future::Future, marker::PhantomData, rc::Rc};
+use std::{cell::Cell, future::Future, rc::Rc};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ResourceState<T, E> {
@@ -57,10 +58,9 @@ struct ResourceCompletion<T, E> {
 }
 
 pub struct Resource<'owner, T, E = SilexError> {
-    pub state: ReadSignal<'owner, ResourceState<T, E>>,
+    state: ReadSignal<'owner, ResourceState<T, E>>,
     set_state: WriteSignal<'owner, ResourceState<T, E>>,
     trigger: RwSignal<'owner, usize>,
-    marker: PhantomData<fn() -> &'owner ()>,
 }
 
 impl<'owner, T, E> Copy for Resource<'owner, T, E> {}
@@ -89,6 +89,149 @@ pub trait ResourceFetcher<'owner, S> {
     fn fetch(&self, source: S) -> Self::Future;
 }
 
+/// A reactive source whose runtime provenance can be checked before resource
+/// initialization allocates any target-side nodes.
+pub trait ResourceSource<'owner>:
+    RxGet + ReactiveSource<'owner> + RuntimeScoped + Clone + 'owner
+where
+    Self::Value: Sized + Clone,
+{
+}
+
+impl<'owner, S> ResourceSource<'owner> for S
+where
+    S: RxGet + ReactiveSource<'owner> + RuntimeScoped + Clone + 'owner,
+    S::Value: Sized + Clone,
+{
+}
+
+pub struct ResourceBuilder<'owner> {
+    owner: OwnerAccess<'owner>,
+}
+
+pub struct ResourceSourceBuilder<'owner, S> {
+    owner: OwnerAccess<'owner>,
+    source: S,
+}
+
+pub struct ResourceFetchBuilder<'owner, S, Fetcher> {
+    owner: OwnerAccess<'owner>,
+    source: S,
+    fetcher: Fetcher,
+    suspense: Option<SuspenseContext<'owner>>,
+}
+
+type ResourceHandles<'owner, T, E> = (
+    ReadSignal<'owner, ResourceState<T, E>>,
+    WriteSignal<'owner, ResourceState<T, E>>,
+    RwSignal<'owner, usize>,
+);
+
+impl<'owner> ResourceBuilder<'owner> {
+    pub fn source<S>(self, source: S) -> ResourceSourceBuilder<'owner, S>
+    where
+        S: ResourceSource<'owner>,
+        S::Value: Sized + Clone,
+    {
+        ResourceSourceBuilder {
+            owner: self.owner,
+            source,
+        }
+    }
+}
+
+impl<'owner, S> ResourceSourceBuilder<'owner, S>
+where
+    S: ResourceSource<'owner>,
+    S::Value: Sized + Clone,
+{
+    pub fn fetch<Fetcher>(self, fetcher: Fetcher) -> ResourceFetchBuilder<'owner, S, Fetcher> {
+        ResourceFetchBuilder {
+            owner: self.owner,
+            source: self.source,
+            fetcher,
+            suspense: None,
+        }
+    }
+}
+
+impl<'owner, S, Fetcher> ResourceFetchBuilder<'owner, S, Fetcher>
+where
+    S: ResourceSource<'owner>,
+    S::Value: Sized + Clone,
+{
+    pub fn suspense(mut self, suspense: SuspenseContext<'owner>) -> Self {
+        self.suspense = Some(suspense);
+        self
+    }
+
+    pub fn build<T, E, H>(self, error_handler: H) -> SilexResult<Resource<'owner, T, E>>
+    where
+        T: RxCloneData + 'static,
+        E: RxError + 'static,
+        Fetcher: ResourceFetcher<'owner, S::Value, Data = T, Error = E> + 'owner,
+        H: Clone + ErrorHandlerInput<'owner>,
+    {
+        let Self {
+            owner,
+            source,
+            fetcher,
+            suspense,
+        } = self;
+        owner.validate_runtime(&source)?;
+        if let Some(suspense) = suspense.as_ref() {
+            owner.validate_runtime(suspense)?;
+        }
+        let handler_owner = error_handler.clone();
+        let error_handler = error_handler.handler_ref();
+        let _handler_lease = error_handler
+            .lease()
+            .map_err(|error| SilexError::fatal(ReactiveError::Handler(error)))?;
+        let child = owner.create_owned_child()?;
+        let child_owner = child.access();
+        let result = Resource::initialize(child_owner, source, fetcher, suspense, handler_owner);
+        match result {
+            Ok((state, set_state, trigger)) => {
+                match owner.on_owner_cleanup(
+                    child,
+                    |child| {
+                        child
+                            .close()
+                            .map_err(|error| SilexError::fatal(SilexErrorKind::Close(error)))
+                    },
+                    error_handler,
+                ) {
+                    Ok(()) => Ok(Resource {
+                        state,
+                        set_state,
+                        trigger,
+                    }),
+                    Err(error) => {
+                        let (error, child) = error.into_parts();
+                        close_child_for_rollback(child);
+                        Err(error)
+                    }
+                }
+            }
+            Err(error) => {
+                let close_result = child.close();
+                if close_result.is_err() {
+                    // Drop retries the close and sends persistent failures to
+                    // the existing owner diagnostic sink.
+                }
+                Err(error)
+            }
+        }
+    }
+}
+
+fn close_child_for_rollback<'owner>(child: OwnerChild<'owner>) {
+    if child.close().is_err() {
+        // Dropping the adapter retries the close and sends persistent failures
+        // to the existing owner diagnostic sink.
+    }
+}
+
 impl<'owner, S, T, E, F, Fut> ResourceFetcher<'owner, S> for F
 where
     F: Fn(S) -> Fut + 'owner,
@@ -108,17 +251,17 @@ where
     T: RxCloneData + 'static,
     E: RxError + 'static,
 {
-    pub fn new<S, R, Fetcher, H>(
+    fn initialize<S, Fetcher, H>(
         owner: OwnerAccess<'owner>,
-        source: R,
+        source: S,
         fetcher: Fetcher,
         suspense: Option<SuspenseContext<'owner>>,
         error_handler: H,
-    ) -> crate::SilexResult<Self>
+    ) -> crate::SilexResult<ResourceHandles<'owner, T, E>>
     where
-        S: Clone + PartialEq + 'static,
-        R: RxRead<Value = S> + ReactiveSource<'owner> + Clone + 'owner,
-        Fetcher: ResourceFetcher<'owner, S, Data = T, Error = E> + 'owner,
+        S: ResourceSource<'owner>,
+        S::Value: Sized + Clone,
+        Fetcher: ResourceFetcher<'owner, S::Value, Data = T, Error = E> + 'owner,
         H: Clone + ErrorHandlerInput<'owner>,
     {
         let handler_owner = error_handler.clone();
@@ -220,12 +363,11 @@ where
             error_handler_for_effect,
         )?;
 
-        Ok(Self {
-            state,
-            set_state,
-            trigger,
-            marker: PhantomData,
-        })
+        Ok((state, set_state, trigger))
+    }
+
+    pub fn state(&self) -> ReadSignal<'owner, ResourceState<T, E>> {
+        self.state
     }
 
     pub fn refetch(&self) -> SilexResult<()> {
@@ -276,6 +418,12 @@ where
     }
 }
 
+impl<'owner> Resource<'owner, (), SilexError> {
+    pub fn builder(owner: OwnerAccess<'owner>) -> ResourceBuilder<'owner> {
+        ResourceBuilder { owner }
+    }
+}
+
 impl<'owner, T: RxData + 'owner, E: RxError + 'owner> RxValue for Resource<'owner, T, E> {
     type Value = Option<T>;
 }
@@ -318,6 +466,12 @@ impl<'owner> SuspenseContext<'owner> {
     pub fn decrement(&self) -> SilexResult<()> {
         self.set_count
             .update(|count| *count = count.saturating_sub(1))
+    }
+}
+
+impl<'owner> RuntimeScoped for SuspenseContext<'owner> {
+    fn owner_access(&self) -> OwnerAccess<'_> {
+        self.count.owner_access()
     }
 }
 

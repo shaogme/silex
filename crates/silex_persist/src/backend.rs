@@ -29,6 +29,7 @@ pub enum BackendEvent {
 pub type BackendEventSink = Rc<dyn Fn(BackendEvent) + 'static>;
 type BackendErrorSink = Rc<dyn Fn(PersistenceError) + 'static>;
 type BackendErrorSinkSlot = Rc<RefCell<Option<BackendErrorSink>>>;
+type ListenerRemoval = (Closure<dyn FnMut(StorageEvent)>, Vec<BackendErrorSinkSlot>);
 
 pub struct BackendSubscription<'scope> {
     cleanup: Option<Box<dyn FnOnce() + 'scope>>,
@@ -354,9 +355,10 @@ impl StorageHubState {
     fn subscribe(&mut self) {
         self.subscriber_count += 1;
         self.generation = self.generation.wrapping_add(1);
-        if matches!(self.listener, ListenerState::DetachQueued(_)) {
-            self.listener = ListenerState::Attached;
-        } else if matches!(self.listener, ListenerState::Detached) {
+        if matches!(
+            self.listener,
+            ListenerState::DetachQueued(_) | ListenerState::Detached
+        ) {
             self.listener = ListenerState::Attached;
         }
     }
@@ -495,10 +497,7 @@ impl StorageHub {
         }
     }
 
-    fn begin_remove(
-        &mut self,
-        generation: u64,
-    ) -> Option<(Closure<dyn FnMut(StorageEvent)>, Vec<BackendErrorSinkSlot>)> {
+    fn begin_remove(&mut self, generation: u64) -> Option<ListenerRemoval> {
         if !self.state.begin_remove(generation) {
             return None;
         }

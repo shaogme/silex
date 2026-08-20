@@ -104,6 +104,45 @@ scope.on_cleanup(
 
 最终 owner cleanup 开始时，scope 已经被标记为 inactive，普通 signal、computed、callback 和 node ref 操作都会失败。唯一的访问例外是 `StoredValue::with` 和 `StoredValue::update`：它们可以在 pending cleanup 释放 stored payload 前同步访问一次。该例外不适用于 effect rerun、异步回调或 cleanup 返回之后的代码。
 
+## OwnerChild 与 owner-root cleanup
+
+需要在父 owner 生命周期内创建一棵独立、可显式关闭的子树时，使用通用的
+`OwnerChild<'owner>` 能力：
+
+```rust
+let child = owner.create_owned_child()?;
+let child_owner = child.access();
+// 在 child_owner 中创建 signal、effect 或 task。
+
+owner.on_owner_cleanup(
+    child,
+    |child| child.close(),
+    error_handler,
+)?;
+```
+
+`OwnerChild::access()` 只携带 parent owner lifetime，不授予父 owner 的关闭权；
+`OwnerChild::close()` 是显式、幂等且可重试的 child 关闭边界。父 owner recursive
+close 先关闭 child 时，之后再次调用 child close 仍是成功 no-op。
+
+`OwnerAccess::on_owner_cleanup(payload, cleanup, handler)` 永远把任意 owner-bound
+payload 登记到 owner root，不读取当前 computation，也不需要用 `untrack` 猜测
+cleanup 归属。它会先完成 active、handler lease、动态借用和二次 active 检查；任一
+可恢复失败都会返回 `OwnerCleanupRegistrationError<'owner, T>`，通过
+`into_parts()` 恢复原始 payload，调用方必须显式回滚：
+
+```rust
+if let Err(error) = owner.on_owner_cleanup(payload, cleanup, handler) {
+    let (registration_error, payload) = error.into_parts();
+    rollback(payload)?;
+    return Err(registration_error);
+}
+```
+
+因此，`on_cleanup` 表示“当前 computation（没有 computation 时才是 owner）”，
+`on_owner_cleanup` 表示“明确的 owner root”。Resource、DOM branch 和其他框架
+设施都使用同一能力；owner close 是 child-bound 资源的最终取消边界。
+
 ## 显式关闭、Drop 与 panic
 
 `OwnerHandle::close`、completion 的 `cancel` 以及 owner close 产生的 `CloseError` 都使用结构化失败，而不是只返回第一条字符串：

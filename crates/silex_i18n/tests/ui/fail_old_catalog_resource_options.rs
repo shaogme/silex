@@ -3,19 +3,21 @@ use silex_i18n::{Catalog, I18nBuilder, I18nError, Runtime};
 fn main() {
     let mut runtime = Runtime::new();
     runtime.with_transient(|owner| {
-        let (source, _) = owner.signal(1_u32).expect("source signal");
         let handler = owner.error_handler(|_| {}).expect("error handler");
         let store = I18nBuilder::new(owner, handler.view())
             .build()
             .expect("valid store");
         let _resource = store.catalog_resource(
-            move |_locale| async move {
-                let _ = source.get();
-                Err::<Catalog, I18nError>(I18nError::recoverable(
-                    silex_i18n::I18nErrorKind::Loader("not loaded".to_string()),
-                ))
+            |_| async {
+                Ok::<Catalog, I18nError>(
+                    Catalog::from_entries(
+                        silex_i18n::Locale::new("en").expect("valid locale"),
+                        [("title", "Title")],
+                    )
+                    .expect("valid catalog"),
+                )
             },
-            silex_i18n::CatalogResourceOptions::new(),
+            None,
         );
     });
 }

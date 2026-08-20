@@ -81,18 +81,16 @@ async fn resource_enters_loading_and_reloading_states() {
         .with_transient(|owner| {
             let (source, set_source) = owner.signal(1u32).expect("signal should initialize");
             let suspense = SuspenseContext::new(owner).expect("suspense should initialize");
-            let resource = Resource::new(
-                owner,
-                source,
-                |_| async { Ok::<_, ()>(1u32) },
-                Some(suspense),
-                handler(owner),
-            )
-            .expect("resource should initialize");
+            let resource = Resource::builder(owner)
+                .source(source)
+                .fetch(|_| async { Ok::<_, ()>(1u32) })
+                .suspense(suspense)
+                .build(handler(owner))
+                .expect("resource should initialize");
 
             assert!(matches!(
                 resource
-                    .state
+                    .state()
                     .get()
                     .expect("resource state should be readable"),
                 ResourceState::Loading
@@ -108,7 +106,7 @@ async fn resource_enters_loading_and_reloading_states() {
             set_source.set(2).expect("source should be writable");
             assert!(matches!(
                 resource
-                    .state
+                    .state()
                     .get()
                     .expect("resource state should be readable"),
                 ResourceState::Reloading(1)
@@ -137,17 +135,14 @@ async fn resource_future_is_cancelled_after_scope_dispose() {
             let (source, set_source) = owner.signal(1u32).expect("signal should initialize");
             let dropped_for_fetcher = dropped.clone();
             let calls_for_fetcher = calls.clone();
-            let resource = Resource::new(
-                owner,
-                source,
-                move |_| {
+            let resource = Resource::builder(owner)
+                .source(source)
+                .fetch(move |_| {
                     calls_for_fetcher.set(calls_for_fetcher.get() + 1);
                     PendingFuture::<Result<u32, ()>>::new(dropped_for_fetcher.clone())
-                },
-                None,
-                handler(owner),
-            )
-            .expect("resource should initialize");
+                })
+                .build(handler(owner))
+                .expect("resource should initialize");
 
             assert!(
                 resource
@@ -180,10 +175,9 @@ async fn resource_replacement_keeps_only_the_new_suspense_request() {
             let suspense = SuspenseContext::new(owner).expect("suspense should initialize");
             let first_dropped_for_fetcher = first_dropped.clone();
             let second_dropped_for_fetcher = second_dropped.clone();
-            let resource = Resource::new(
-                owner,
-                source,
-                move |value| {
+            let resource = Resource::builder(owner)
+                .source(source)
+                .fetch(move |value| {
                     if value == 1 {
                         Box::pin(PendingFuture::<Result<u32, ()>>::new(
                             first_dropped_for_fetcher.clone(),
@@ -193,11 +187,10 @@ async fn resource_replacement_keeps_only_the_new_suspense_request() {
                             second_dropped_for_fetcher.clone(),
                         )) as Pin<Box<dyn Future<Output = Result<u32, ()>>>>
                     }
-                },
-                Some(suspense),
-                handler(owner),
-            )
-            .expect("resource should initialize");
+                })
+                .suspense(suspense)
+                .build(handler(owner))
+                .expect("resource should initialize");
 
             assert_eq!(
                 suspense
@@ -209,7 +202,7 @@ async fn resource_replacement_keeps_only_the_new_suspense_request() {
             set_source.set(2).expect("source should be writable");
             assert!(matches!(
                 resource
-                    .state
+                    .state()
                     .get()
                     .expect("resource state should be readable"),
                 ResourceState::Loading
@@ -236,24 +229,27 @@ async fn resource_scope_capability_survives_async_replacement() {
     root.with_access_async(|owner| {
         Box::pin(async move {
             let (source, set_source) = owner.signal(1_u32).expect("signal should initialize");
-            let resource = Resource::new(
-                owner,
-                source,
-                |value| async move { Ok::<_, ()>(value) },
-                None,
-                handler(owner),
-            )
-            .expect("resource should initialize");
+            let resource = Resource::builder(owner)
+                .source(source)
+                .fetch(|value| async move { Ok::<_, ()>(value) })
+                .build(handler(owner))
+                .expect("resource should initialize");
 
             wait_for_tasks(0).await;
             assert!(matches!(
-                resource.state.get().expect("resource state should be readable"),
+                resource
+                    .state()
+                    .get()
+                    .expect("resource state should be readable"),
                 ResourceState::Ready(value) if value == 1
             ));
             set_source.set(2).expect("source should be writable");
             wait_for_tasks(0).await;
             assert!(matches!(
-                resource.state.get().expect("resource state should be readable"),
+                resource
+                    .state()
+                    .get()
+                    .expect("resource state should be readable"),
                 ResourceState::Ready(value) if value == 2
             ));
         })
@@ -434,14 +430,13 @@ async fn child_scope_cancels_resource_without_reactivating_parent() {
                 .with_transient(|child| {
                     let (source, _) = child.signal(1u32).expect("signal should initialize");
                     let dropped_for_fetcher = dropped.clone();
-                    let resource = Resource::new(
-                        child,
-                        source,
-                        move |_| PendingFuture::<Result<u32, ()>>::new(dropped_for_fetcher.clone()),
-                        None,
-                        handler(child),
-                    )
-                    .expect("resource should initialize");
+                    let resource = Resource::builder(child)
+                        .source(source)
+                        .fetch(move |_| {
+                            PendingFuture::<Result<u32, ()>>::new(dropped_for_fetcher.clone())
+                        })
+                        .build(handler(child))
+                        .expect("resource should initialize");
                     assert!(
                         resource
                             .loading()
@@ -454,4 +449,41 @@ async fn child_scope_cancels_resource_without_reactivating_parent() {
 
     wait_for_tasks(10).await;
     assert_eq!(dropped.get(), 1);
+}
+
+#[wasm_bindgen_test(async)]
+async fn resource_copy_handles_do_not_own_the_child_scope() {
+    let dropped = Rc::new(Cell::new(0));
+    let mut runtime = Runtime::new();
+    let root = runtime.owner().expect("root should start");
+    let owner = root.access();
+    let (source, _) = owner.signal(1_u32).expect("source should initialize");
+    let dropped_for_fetcher = dropped.clone();
+    let resource = Resource::builder(owner)
+        .source(source)
+        .fetch(move |_| PendingFuture::<Result<u32, ()>>::new(dropped_for_fetcher.clone()))
+        .build(handler(owner))
+        .expect("resource should initialize");
+    {
+        let first = resource;
+        let second = resource;
+        let third = first.clone();
+        assert!(first.loading().expect("first handle should be readable"));
+        assert!(second.loading().expect("second handle should be readable"));
+        assert!(third.loading().expect("third handle should be readable"));
+        let _ = (first, second, third);
+    }
+    assert!(
+        resource
+            .loading()
+            .expect("resource should outlive all copied handles")
+    );
+    assert_eq!(dropped.get(), 0);
+
+    root.close().expect("owner close should reclaim resource");
+    wait_for_tasks(0).await;
+    assert_eq!(dropped.get(), 1);
+    assert!(resource.state().get().is_err());
+    assert!(resource.refetch().is_err());
+    assert!(resource.loading().is_err());
 }

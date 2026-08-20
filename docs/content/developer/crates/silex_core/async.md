@@ -25,13 +25,11 @@ weight = 25
 ## 创建与触发 fetch
 
 ```rust
-let resource = Resource::new(
-    owner,
-    source,
-    |key| async move { fetch_data(key).await },
-    Some(suspense),
-    error_handler,
-)?;
+let resource = Resource::builder(owner)
+    .source(source)
+    .fetch(|key| async move { fetch_data(key).await })
+    .suspense(suspense)
+    .build(error_handler)?;
 
 resource.refetch()?;
 let loading = resource.loading()?;
@@ -48,7 +46,17 @@ resource.set(local_value)?;
 
 每个请求分配递增 request id。结果回到 owner 后，只有 id 仍等于当前 id 才能提交 `Ready(T)` 或 `Error(E)`；过期结果被丢弃，不会覆盖新请求状态。
 
-请求 future 还挂在创建它的 effect run/owner cleanup 下：source 变化时，旧 run 的 cleanup 会结束旧请求；owner 关闭时，所有未完成 future 都会被同步释放。`id` 校验是状态一致性保护，cleanup 是资源释放机制，两者不能互相替代。
+请求 future 还挂在资源 child 的 effect run/owner cleanup 下：source 变化时，旧 run
+的 cleanup 会结束旧请求；owner 关闭时，所有未完成 future 都会被同步释放。
+`Resource` 本身是 `Copy + Clone` 能力句柄，复制或丢弃句柄不会改变 future 生命周期；
+创建资源的 owner close 才是资源的最终取消边界。需要提前取消时，应把资源绑定到
+独立 child owner 并关闭该 owner。`id` 校验是状态一致性保护，cleanup 是资源释放
+机制，两者不能互相替代。
+
+Resource builder 使用通用的 `OwnerChild` 事务：child 初始化成功后，父 owner 通过
+`on_owner_cleanup` 持有 child close payload；初始化或 registration 失败时，错误的
+`into_parts()` 会恢复 child，调用方立即执行 rollback。该 registration 不依赖当前
+Resource effect 的 cleanup，也不通过 `untrack` 改变 cleanup 归属。
 
 如果传入 `SuspenseContext`，每个未结算请求会 `increment`，成功、失败、替换 cleanup 或 owner close 都会保证对应的 `decrement`。计数是饱和递减，不会因为重复 settle 变成负数；`ResourceCompletion` 的 `settled` 标记防止 callback 与 cleanup 重复减少计数。
 

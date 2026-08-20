@@ -143,21 +143,36 @@ impl Drop for OwnerHandle {
     }
 }
 
-/// Hidden adapter that keeps a persistent child close authority together with
-/// the lifetime brand supplied by its parent.
+/// Owner-bound child capability with explicit close authority.
 ///
-/// The adapter is branded by the lifetime of the parent [`OwnerAccess`]. An
-/// access borrowed from the adapter is tied to the adapter itself, so dropping
-/// the adapter cannot invalidate a live Rust reference. Runtime operations
-/// still reject the access after close. Closing the adapter is idempotent even
-/// when an ancestor has already recursively closed the child.
-#[doc(hidden)]
-pub struct PersistentOwnerAccess<'parent> {
+/// The capability is branded by the lifetime of the parent [`OwnerAccess`]. An
+/// access borrowed from the child is tied to the parent owner lifetime, so the
+/// child close authority can be moved into an owner-root cleanup without
+/// weakening the scope boundary. Runtime operations still reject the access
+/// after close. Closing the child is idempotent even when an ancestor has
+/// already recursively closed it.
+pub struct OwnerChild<'parent> {
     handle: OwnerHandle,
     marker: PhantomData<&'parent ()>,
 }
 
-impl<'parent> PersistentOwnerAccess<'parent> {
+/// Error returned when an owner-root cleanup registration cannot accept its
+/// payload. The payload is returned unchanged so the caller can explicitly
+/// roll it back.
+pub struct OwnerCleanupRegistrationError<'owner, T> {
+    error: ReactiveError,
+    payload: T,
+    marker: PhantomData<&'owner ()>,
+}
+
+impl<'owner, T> OwnerCleanupRegistrationError<'owner, T> {
+    /// Recover both the registration error and the original payload.
+    pub fn into_parts(self) -> (ReactiveError, T) {
+        (self.error, self.payload)
+    }
+}
+
+impl<'parent> OwnerChild<'parent> {
     fn from_handle(parent: &'parent ScopeStorage, handle: OwnerHandle) -> ReactiveResult<Self> {
         if !parent
             .children
@@ -171,11 +186,10 @@ impl<'parent> PersistentOwnerAccess<'parent> {
         })
     }
 
-    /// Borrow the typed access for this persistent child.
-    #[doc(hidden)]
+    /// Borrow the typed access for this owner-bound child.
     pub fn access(&self) -> OwnerAccess<'parent> {
-        // `PersistentOwnerAccess` owns the child storage and the parent brand
-        // keeps this capability inside the parent's lifetime domain.
+        // `OwnerChild` owns the child storage and the parent brand keeps this
+        // capability inside the parent's lifetime domain.
         let storage = self.handle.storage.as_ref() as *const ScopeStorage;
         let storage = unsafe { &*storage };
         OwnerAccess {
@@ -184,13 +198,12 @@ impl<'parent> PersistentOwnerAccess<'parent> {
         }
     }
 
-    /// Close the child exactly once from the caller's perspective.
+    /// Close the child from the caller's perspective.
     ///
     /// If a parent owner already closed the child, the runtime's released
     /// phase makes this a successful no-op. Only retryable close failures can
     /// be retried; a released child is never disposed twice.
-    #[doc(hidden)]
-    pub fn close_once(&self) -> Result<(), CloseError> {
+    pub fn close(&self) -> Result<(), CloseError> {
         self.handle.close()
     }
 
@@ -267,11 +280,10 @@ impl<'owner> OwnerAccess<'owner> {
         OwnerHandle::new_child(self.storage)
     }
 
-    /// Create a hidden persistent child adapter for framework-owned branches.
-    #[doc(hidden)]
-    pub fn create_persistent_child(&self) -> ReactiveResult<PersistentOwnerAccess<'owner>> {
+    /// Create an owner-bound child capability.
+    pub fn create_owned_child(&self) -> ReactiveResult<OwnerChild<'owner>> {
         OwnerHandle::new_child(self.storage)
-            .and_then(|handle| PersistentOwnerAccess::from_handle(self.storage, handle))
+            .and_then(|handle| OwnerChild::from_handle(self.storage, handle))
     }
 
     /// Report whether this borrowed owner can still accept runtime operations.
@@ -449,7 +461,93 @@ impl<'owner> OwnerAccess<'owner> {
         if !state.is_active()? {
             return Err(ReactiveError::NoSuchNode);
         }
-        state.register_cleanup(thunk);
+        state.register_cleanup(runtime::CleanupTarget::CurrentOwner, thunk);
+        Ok(())
+    }
+
+    /// Register a payload on this owner's root cleanup boundary.
+    ///
+    /// Unlike [`Self::on_cleanup`], this method never consults the currently
+    /// running computation. The payload remains with the caller until all
+    /// registration checks have succeeded; recoverable failures return it in
+    /// [`OwnerCleanupRegistrationError`].
+    pub fn on_owner_cleanup<T, E, F, H>(
+        &self,
+        payload: T,
+        cleanup: F,
+        error_handler: H,
+    ) -> Result<(), OwnerCleanupRegistrationError<'owner, T>>
+    where
+        T: 'owner,
+        E: 'owner,
+        F: FnOnce(T) -> Result<(), E> + 'owner,
+        H: ErrorHandlerInput<'owner, E>,
+    {
+        let state = self.state();
+        let active = match state.try_borrow() {
+            Ok(state) => match state.is_active() {
+                Ok(active) => active,
+                Err(error) => {
+                    return Err(OwnerCleanupRegistrationError {
+                        error,
+                        payload,
+                        marker: PhantomData,
+                    });
+                }
+            },
+            Err(error) => {
+                return Err(OwnerCleanupRegistrationError {
+                    error,
+                    payload,
+                    marker: PhantomData,
+                });
+            }
+        };
+        if !active {
+            return Err(OwnerCleanupRegistrationError {
+                error: ReactiveError::NoSuchNode,
+                payload,
+                marker: PhantomData,
+            });
+        }
+        let handler = match error_handler.handler_ref().lease() {
+            Ok(handler) => handler,
+            Err(error) => {
+                return Err(OwnerCleanupRegistrationError {
+                    error: ReactiveError::Handler(error),
+                    payload,
+                    marker: PhantomData,
+                });
+            }
+        };
+        let mut state = match state.try_borrow_mut() {
+            Ok(state) => state,
+            Err(error) => {
+                return Err(OwnerCleanupRegistrationError {
+                    error,
+                    payload,
+                    marker: PhantomData,
+                });
+            }
+        };
+        if !match state.is_active() {
+            Ok(active) => active,
+            Err(error) => {
+                return Err(OwnerCleanupRegistrationError {
+                    error,
+                    payload,
+                    marker: PhantomData,
+                });
+            }
+        } {
+            return Err(OwnerCleanupRegistrationError {
+                error: ReactiveError::NoSuchNode,
+                payload,
+                marker: PhantomData,
+            });
+        }
+        let thunk = CleanupThunk::new(move || cleanup(payload), handler);
+        state.register_cleanup(runtime::CleanupTarget::OwnerRoot, thunk);
         Ok(())
     }
 
@@ -858,5 +956,369 @@ mod tests {
         let second = close_owner_tree(&parent);
         assert!(second.released);
         assert!(!parent.is_active().expect("parent active state"));
+    }
+
+    #[test]
+    fn adopted_child_is_closed_by_parent_root_cleanup() {
+        let mut runtime = crate::runtime::Runtime::new();
+        let root = runtime.owner().expect("root owner");
+        let owner = root.access();
+        let child = owner
+            .create_owned_child()
+            .expect("persistent child should initialize");
+        let child_owner = child.access();
+        let handler = owner
+            .error_handler(|_: ()| {})
+            .expect("cleanup handler should initialize");
+
+        assert!(
+            owner
+                .on_owner_cleanup(child, |child| child.close().map_err(|_| ()), handler.view(),)
+                .is_ok()
+        );
+        assert!(child_owner.is_active().expect("child should be active"));
+
+        root.close().expect("parent close should succeed");
+        assert!(!child_owner.is_active().expect("child should be inactive"));
+        assert!(
+            runtime
+                .take_unhandled_close_errors()
+                .expect("close diagnostics")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn generic_payload_can_be_registered_at_owner_root() {
+        let mut runtime = crate::runtime::Runtime::new();
+        let root = runtime.owner().expect("root owner");
+        let owner = root.access();
+        let cleaned = Rc::new(Cell::new(false));
+        let cleaned_for_cleanup = cleaned.clone();
+        let payload = String::from("generic owner payload");
+        let handler = owner
+            .error_handler(|_: ()| {})
+            .expect("cleanup handler should initialize");
+
+        owner
+            .on_cleanup(
+                move || {
+                    assert_eq!(payload, "generic owner payload");
+                    cleaned_for_cleanup.set(true);
+                    Ok::<(), ()>(())
+                },
+                handler.view(),
+            )
+            .expect("generic payload cleanup should register");
+
+        root.close().expect("parent close should succeed");
+        assert!(cleaned.get());
+    }
+
+    #[test]
+    fn owner_cleanup_accepts_generic_payload_inside_effect() {
+        let mut runtime = crate::runtime::Runtime::new();
+        let root = runtime.owner().expect("root owner");
+        let owner = root.access();
+        let (source, set_source) = owner.signal(false).expect("source signal");
+        let registered = Rc::new(Cell::new(false));
+        let cleaned = Rc::new(Cell::new(0));
+        let effect_handler = owner
+            .error_handler(|_: ReactiveError| {})
+            .expect("effect handler should initialize");
+        let cleanup_handler = owner
+            .error_handler(|_: ()| {})
+            .expect("cleanup handler should initialize");
+        let registered_for_effect = registered.clone();
+        let cleaned_for_effect = cleaned.clone();
+
+        owner
+            .effect(
+                move || {
+                    let _ = source.get()?;
+                    if !registered_for_effect.replace(true) {
+                        let cleaned_for_cleanup = cleaned_for_effect.clone();
+                        owner
+                            .on_owner_cleanup(
+                                String::from("generic payload"),
+                                move |payload| {
+                                    assert_eq!(payload, "generic payload");
+                                    cleaned_for_cleanup.set(cleaned_for_cleanup.get() + 1);
+                                    Ok::<(), ()>(())
+                                },
+                                cleanup_handler.view(),
+                            )
+                            .map_err(|error| {
+                                let (error, payload) = error.into_parts();
+                                drop(payload);
+                                error
+                            })?;
+                    }
+                    Ok(())
+                },
+                effect_handler.view(),
+            )
+            .expect("effect should initialize");
+
+        set_source.set(true).expect("source should rerun effect");
+        assert_eq!(cleaned.get(), 0);
+        root.close().expect("parent close should succeed");
+        assert_eq!(cleaned.get(), 1);
+    }
+
+    #[test]
+    fn owner_cleanup_stays_at_owner_root_during_effect_rerun() {
+        let mut runtime = crate::runtime::Runtime::new();
+        let root = runtime.owner().expect("root owner");
+        let owner = root.access();
+        let (source, set_source) = owner.signal(false).expect("source signal");
+        let child_access = Rc::new(Cell::new(None));
+        let child_access_for_effect = child_access.clone();
+        let effect_handler = owner
+            .error_handler(|_: ReactiveError| {})
+            .expect("effect handler should initialize");
+        let cleanup_handler = owner
+            .error_handler(|_: ()| {})
+            .expect("cleanup handler should initialize");
+
+        owner
+            .effect(
+                move || {
+                    let _ = source.get()?;
+                    if child_access_for_effect.get().is_none() {
+                        let child = owner.create_owned_child()?;
+                        child_access_for_effect.set(Some(child.access()));
+                        owner
+                            .on_owner_cleanup(
+                                child,
+                                |child| child.close().map_err(|_| ()),
+                                cleanup_handler.view(),
+                            )
+                            .map_err(|error| {
+                                let (error, child) = error.into_parts();
+                                let _ = child.close();
+                                error
+                            })?;
+                    }
+                    Ok(())
+                },
+                effect_handler.view(),
+            )
+            .expect("effect should initialize");
+
+        assert!(
+            child_access
+                .get()
+                .expect("child access should be stored")
+                .is_active()
+                .expect("child should be active")
+        );
+        set_source.set(true).expect("source should rerun effect");
+        assert!(
+            child_access
+                .get()
+                .expect("child access should remain stored")
+                .is_active()
+                .expect("child should remain active after effect rerun")
+        );
+
+        root.close().expect("parent close should succeed");
+        assert!(
+            !child_access
+                .get()
+                .expect("child access should remain stored")
+                .is_active()
+                .expect("child should be inactive after parent close")
+        );
+    }
+
+    #[test]
+    fn owner_cleanup_returns_payload_when_handler_lease_fails() {
+        let mut runtime = crate::runtime::Runtime::new();
+        let root = runtime.owner().expect("root owner");
+        let owner = root.access();
+        let handler = owner
+            .error_handler(|_: ()| {})
+            .expect("cleanup handler should initialize");
+        let stale_handler = handler.view();
+        drop(handler);
+
+        let result = owner.on_owner_cleanup(
+            String::from("rollback payload"),
+            |_| Ok::<(), ()>(()),
+            stale_handler,
+        );
+        let error = result.expect_err("stale handler must reject registration");
+        let (error, payload) = error.into_parts();
+        assert!(matches!(error, ReactiveError::Handler(_)));
+        assert_eq!(payload, "rollback payload");
+        root.close().expect("parent close should succeed");
+    }
+
+    #[test]
+    fn owner_cleanup_returns_payload_when_borrow_conflicts() {
+        let mut runtime = crate::runtime::Runtime::new();
+        let root = runtime.owner().expect("root owner");
+        let owner = root.access();
+        let handler = owner
+            .error_handler(|_: ()| {})
+            .expect("cleanup handler should initialize");
+        let state = owner.state();
+        let borrow = state
+            .try_borrow_mut()
+            .expect("test should hold the state borrow");
+
+        let result = owner.on_owner_cleanup(
+            String::from("borrow rollback payload"),
+            |_| Ok::<(), ()>(()),
+            handler.view(),
+        );
+        let error = result.expect_err("state borrow must reject registration");
+        let (error, payload) = error.into_parts();
+        assert_eq!(error, ReactiveError::BorrowConflict);
+        assert_eq!(payload, "borrow rollback payload");
+        drop(borrow);
+        root.close().expect("parent close should succeed");
+    }
+
+    #[test]
+    fn owner_cleanup_returns_payload_when_owner_is_inactive() {
+        let mut runtime = crate::runtime::Runtime::new();
+        let root = runtime.owner().expect("root owner");
+        let owner = root.access();
+        let handler = owner
+            .error_handler(|_: ()| {})
+            .expect("cleanup handler should initialize");
+        root.close().expect("parent close should succeed");
+
+        let result = owner.on_owner_cleanup(
+            String::from("inactive rollback payload"),
+            |_| Ok::<(), ()>(()),
+            handler.view(),
+        );
+        let error = result.expect_err("inactive owner must reject registration");
+        let (error, payload) = error.into_parts();
+        assert_eq!(error, ReactiveError::NoSuchNode);
+        assert_eq!(payload, "inactive rollback payload");
+    }
+
+    #[test]
+    fn owned_child_supports_explicit_idempotent_close() {
+        let mut runtime = crate::runtime::Runtime::new();
+        let root = runtime.owner().expect("root owner");
+        let child = root
+            .access()
+            .create_owned_child()
+            .expect("owned child should initialize");
+        let child_access = child.access();
+
+        child.close().expect("child close should succeed");
+        child
+            .close()
+            .expect("repeated child close should be a no-op");
+        assert!(!child_access.is_active().expect("child active state"));
+        root.close().expect("parent close should succeed");
+    }
+
+    #[test]
+    fn adopted_child_cleanup_stays_at_owner_root_during_effect_rerun() {
+        let mut runtime = crate::runtime::Runtime::new();
+        let root = runtime.owner().expect("root owner");
+        let owner = root.access();
+        let (source, set_source) = owner.signal(false).expect("source signal");
+        let adopted_owner = Rc::new(Cell::new(None));
+        let adopted_owner_for_effect = adopted_owner.clone();
+        let effect_handler = owner
+            .error_handler(|_: ReactiveError| {})
+            .expect("effect handler should initialize");
+        let cleanup_handler = owner
+            .error_handler(|_: ()| {})
+            .expect("cleanup handler should initialize");
+
+        owner
+            .effect(
+                move || {
+                    let _ = source.get()?;
+                    if adopted_owner_for_effect.get().is_none() {
+                        let child = owner.create_owned_child()?;
+                        adopted_owner_for_effect.set(Some(child.access()));
+                        owner
+                            .on_owner_cleanup(
+                                child,
+                                |child| child.close().map_err(|_| ()),
+                                cleanup_handler.view(),
+                            )
+                            .map_err(|error| {
+                                let (error, child) = error.into_parts();
+                                let _ = child.close();
+                                error
+                            })?;
+                    }
+                    Ok(())
+                },
+                effect_handler.view(),
+            )
+            .expect("effect should initialize");
+        assert!(
+            adopted_owner
+                .get()
+                .expect("child access should be stored")
+                .is_active()
+                .expect("child should be active")
+        );
+
+        set_source.set(true).expect("source should rerun effect");
+        assert!(
+            adopted_owner
+                .get()
+                .expect("child access should remain stored")
+                .is_active()
+                .expect("effect rerun must not close child")
+        );
+
+        root.close().expect("parent close should succeed");
+        assert!(
+            !adopted_owner
+                .get()
+                .expect("child access should remain stored")
+                .is_active()
+                .expect("parent close should close child")
+        );
+    }
+
+    #[test]
+    fn failed_child_adoption_returns_authority_for_rollback() {
+        let mut runtime = crate::runtime::Runtime::new();
+        let root = runtime.owner().expect("root owner");
+        let owner = root.access();
+        let child = owner
+            .create_owned_child()
+            .expect("persistent child should initialize");
+        let child_owner = child.access();
+        let handler = owner
+            .error_handler(|_: ()| {})
+            .expect("cleanup handler should initialize");
+        let stale_handler = handler.view();
+        drop(handler);
+
+        let result =
+            owner.on_owner_cleanup(child, |child| child.close().map_err(|_| ()), stale_handler);
+        let error = match result {
+            Ok(()) => panic!("stale handler must reject adoption"),
+            Err(error) => error,
+        };
+        let (error, child) = error.into_parts();
+        assert!(matches!(error, ReactiveError::Handler(_)));
+        assert!(child_owner.is_active().expect("child should remain active"));
+        child.close().expect("rollback should close the child");
+        assert!(!child_owner.is_active().expect("child should be inactive"));
+
+        root.close().expect("parent close should succeed");
+        assert!(
+            runtime
+                .take_unhandled_close_errors()
+                .expect("close diagnostics")
+                .is_empty()
+        );
     }
 }

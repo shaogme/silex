@@ -130,9 +130,9 @@ crate 默认不启用任何 feature。`test-support` 只转发到底层 runtime 
 ## 已知限制与维护注意
 
 - `silex_core` 不提供全局 runtime、线程安全句柄或跨 runtime 的 tracked 依赖；上层框架必须把 `OwnerAccess` 显式传入创建 API。
-- `Resource` 和 `Mutation` 使用请求 id 丢弃旧结果。旧请求不会因为结果过期而写入当前状态，但请求的生命周期仍由其 effect/owner cleanup 管理。
+- `Resource` 和 `Mutation` 使用请求 id 丢弃旧结果。旧请求不会因为结果过期而写入当前状态；`Resource` 是 `Copy + Clone` 能力句柄，句柄数量不管理生命周期，资源请求仍由其 child effect 和创建资源的 owner cleanup 管理。
 - `spawn_scoped` 内部将局部 future 暂时擦除为 `'static` 后交给 `spawn_local`。其安全性依赖 owner cleanup 在作用域释放前同步取消并释放 future；修改这条清理顺序时必须同时检查 `src/task.rs` 的不变量和异步测试。
 - `ReadSignal::with_name` 与 `WriteSignal::with_name` 当前只返回自身，没有保存或暴露名称；它不能提供调试标签或性能诊断。
-- `effect_detached`、`PersistentOwnerAccess`、`RxEffectKind` 以及部分内部宏是框架适配入口，不应被普通应用代码作为稳定生命周期 API 依赖。
+- `effect_detached`、`RxEffectKind` 以及部分内部宏是框架适配入口，不应被普通应用代码作为稳定生命周期 API 依赖；owner-bound 子树应使用公开的 `OwnerChild` 能力。
 
 验证本页或公开 API 变更时，至少运行 `cargo check -p silex_core`、`cargo test -p silex_core`、`cargo test -p silex_core --test docs_examples` 和 `zola check`；涉及 feature 或编译期契约时，追加 `--all-features` 与 `--test compile_fail`。

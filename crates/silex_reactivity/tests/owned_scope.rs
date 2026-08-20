@@ -344,11 +344,11 @@ fn persistent_child_adapter_preserves_topology_and_parent_close_is_idempotent() 
     let root = runtime.owner().expect("runtime root creation");
     let root_access = root.access();
     let branch = root_access
-        .create_persistent_child()
+        .create_owned_child()
         .expect("persistent branch creation");
     let nested = branch
         .access()
-        .create_persistent_child()
+        .create_owned_child()
         .expect("nested branch creation");
     let cleanup_order = Rc::new(RefCell::new(Vec::new()));
 
@@ -395,16 +395,16 @@ fn persistent_child_adapter_preserves_topology_and_parent_close_is_idempotent() 
     assert!(!nested.is_active().expect("nested active state"));
 
     nested
-        .close_once()
+        .close()
         .expect("parent-closed child should be inactive");
     nested
-        .close_once()
+        .close()
         .expect("repeated child close should be a no-op");
     branch
-        .close_once()
+        .close()
         .expect("parent-closed branch should be inactive");
     branch
-        .close_once()
+        .close()
         .expect("repeated branch close should be a no-op");
     assert_eq!(cleanup_order.borrow().as_slice(), ["nested", "branch"]);
 }
@@ -415,11 +415,11 @@ fn persistent_child_adapter_supports_child_first_and_repeated_close() {
     let root = runtime.owner().expect("runtime root creation");
     let branch = root
         .access()
-        .create_persistent_child()
+        .create_owned_child()
         .expect("persistent branch creation");
     let nested = branch
         .access()
-        .create_persistent_child()
+        .create_owned_child()
         .expect("nested branch creation");
     let branch_cleanups = Rc::new(Cell::new(0));
     let nested_cleanups = Rc::new(Cell::new(0));
@@ -447,16 +447,16 @@ fn persistent_child_adapter_supports_child_first_and_repeated_close() {
         )
         .expect("branch cleanup registration");
 
-    nested.close_once().expect("child close should succeed");
+    nested.close().expect("child close should succeed");
     nested
-        .close_once()
+        .close()
         .expect("repeated child close should be a no-op");
     assert_eq!(nested_cleanups.get(), 1);
     assert_eq!(branch_cleanups.get(), 0);
 
-    branch.close_once().expect("branch close should succeed");
+    branch.close().expect("branch close should succeed");
     branch
-        .close_once()
+        .close()
         .expect("repeated branch close should be a no-op");
     assert_eq!(nested_cleanups.get(), 1);
     assert_eq!(branch_cleanups.get(), 1);
@@ -473,11 +473,11 @@ fn persistent_child_access_rejects_operations_after_adapter_close() {
     let root = runtime.owner().expect("runtime root creation");
     let branch = root
         .access()
-        .create_persistent_child()
+        .create_owned_child()
         .expect("persistent branch creation");
     let branch_access = branch.access();
 
-    branch.close_once().expect("child close");
+    branch.close().expect("child close");
 
     assert!(!branch_access.is_active().expect("branch active state"));
     assert!(matches!(
@@ -565,7 +565,7 @@ fn persistent_adapter_keeps_storage_after_registry_unlink() {
     let root = runtime.owner().expect("runtime root creation");
     let branch = root
         .access()
-        .create_persistent_child()
+        .create_owned_child()
         .expect("persistent child creation");
     let branch_access = branch.access();
 
@@ -575,7 +575,7 @@ fn persistent_adapter_keeps_storage_after_registry_unlink() {
             .retained_children,
         1
     );
-    branch.close_once().expect("child close");
+    branch.close().expect("child close");
     assert_eq!(
         root.runtime_snapshot()
             .expect("runtime snapshot")

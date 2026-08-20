@@ -19,7 +19,11 @@ pub enum SuspenseMode {
 /// # 示例
 /// ```rust,ignore
 /// Suspense(scope, move |ctx| {
-///     let res = Resource::new(scope, id, fetch_user, Some(ctx));
+///     let res = Resource::builder(scope)
+///         .source(id)
+///         .fetch(fetch_user)
+///         .suspense(ctx)
+///         .build(error_handler)?;
 ///     div![
 ///         "User: ",
 ///         rx!(scope; res.get_data().unwrap_or_default())

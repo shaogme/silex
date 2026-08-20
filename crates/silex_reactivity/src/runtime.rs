@@ -23,7 +23,7 @@ pub(crate) use input::{
 };
 #[cfg(feature = "test-support")]
 pub use model::RuntimeSnapshot;
-pub(crate) use model::{ScopePhase, ScopeState, ScopeStateInner};
+pub(crate) use model::{CleanupTarget, ScopePhase, ScopeState, ScopeStateInner};
 pub(crate) use ops::{
     acquire_error_handler_lease, invoke_callback, invoke_error_handler, node_ref_clear,
     node_ref_get, node_ref_set, notify, stop_effect, update_signal, update_stored, with_batch,

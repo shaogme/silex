@@ -1,30 +1,32 @@
-error[E0308]: mismatched types
- --> tests/ui/fail_resource_without_handler.rs:6:13
-  |
-6 |         let (source, _) = owner.signal(1_u32);
-  |             ^^^^^^^^^^^   ------------------- this expression has type `Result<(ReadSignal<'_, u32>, WriteSignal<'_, u32>), SilexError>`
-  |             |
-  |             expected `Result<(ReadSignal<'_, u32>, ...), ...>`, found `(_, _)`
-  |
-  = note: expected enum `Result<(ReadSignal<'_, u32>, WriteSignal<'_, u32>), SilexError>`
-            found tuple `(_, _)`
-help: try wrapping the pattern in `Ok`
-  |
-6 |         let Ok((source, _)) = owner.signal(1_u32);
-  |             +++           +
-
-error[E0061]: this function takes 5 arguments but 4 arguments were supplied
- --> tests/ui/fail_resource_without_handler.rs:7:17
-  |
-7 |         let _ = Resource::new(owner, source, |_| async { Ok::<u32, ()>(1) }, None);
-  |                 ^^^^^^^^^^^^^----------------------------------------------------- argument #5 is missing
-  |
-note: associated function defined here
- --> src/reactivity/resource.rs
-  |
-  |     pub fn new<S, R, Fetcher, H>(
-  |            ^^^
-help: provide the argument
-  |
-7 |         let _ = Resource::new(owner, source, |_| async { Ok::<u32, ()>(1) }, None, /* error_handler */);
-  |                                                                                  +++++++++++++++++++++
+error[E0277]: the trait bound `(): silex_core::ErrorHandlerInput<'_>` is not satisfied
+  --> tests/ui/fail_resource_without_handler.rs:10:20
+   |
+10 |             .build(());
+   |              ----- ^^ the trait `silex_core::ErrorHandlerInput<'_>` is not implemented for `()`
+   |              |
+   |              required by a bound introduced by this call
+   |
+help: the following other types implement trait `silex_core::ErrorHandlerInput<'scope>`
+  --> src/error.rs
+   |
+   |   impl<'scope> ErrorHandlerInput<'scope> for ErrorHandlerToken<'scope> {
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `silex_reactivity::error::ErrorHandlerToken<'scope, SilexError>`
+...
+   |   impl<'scope> ErrorHandlerInput<'scope> for ErrorHandlerAnchor<'scope> {
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `silex_reactivity::error::ErrorHandlerAnchor<'scope, SilexError>`
+...
+   |   impl<'scope> ErrorHandlerInput<'scope> for ErrorHandler<'scope> {
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `silex_reactivity::error::ErrorHandlerRef<'scope, SilexError>`
+...
+   | / impl<'scope, T> ErrorHandlerInput<'scope> for &T
+   | | where
+   | |     T: ErrorHandlerInput<'scope> + ?Sized,
+   | |__________________________________________^ `&T`
+note: required by a bound in `ResourceFetchBuilder::<'owner, S, Fetcher>::build`
+  --> src/reactivity/resource.rs
+   |
+   |     pub fn build<T, E, H>(self, error_handler: H) -> SilexResult<Resource<'owner, T, E>>
+   |            ----- required by a bound in this associated function
+...
+   |         H: Clone + ErrorHandlerInput<'owner>,
+   |                    ^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `ResourceFetchBuilder::<'owner, S, Fetcher>::build`
