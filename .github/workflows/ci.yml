@@ -43,6 +43,9 @@ jobs:
       - name: Run Documentation Examples
         run: cargo test -p silex_reactivity --test docs_examples
 
+      - name: Run Core Documentation Examples
+        run: cargo test -p silex_core --test docs_examples
+
       - name: Check Reactivity Benchmarks
         run: cargo bench -p silex_reactivity --bench reactivity --no-run
 

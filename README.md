@@ -199,6 +199,7 @@ Silex 处于快速迭代阶段，欢迎任何形式的贡献！无论是提交 I
 
 详情请参考 [Silex 文档站点](https://shaogme.github.io/silex/)：
 - [文档规范](https://shaogme.github.io/silex/doc-standards/)
+- [`silex_core` 开发者文档](https://shaogme.github.io/silex/developer/crates/silex_core/)
 - [`silex_reactivity` 开发者文档](https://shaogme.github.io/silex/developer/crates/silex_reactivity/)
 
 ---

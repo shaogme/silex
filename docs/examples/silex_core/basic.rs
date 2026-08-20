@@ -1,0 +1,36 @@
+use silex_core::{ErrorHandlerToken, OwnerAccess, Runtime, SilexError, SilexResult};
+use std::{cell::Cell, error::Error, rc::Rc};
+
+fn handler<'owner>(owner: OwnerAccess<'owner>) -> SilexResult<ErrorHandlerToken<'owner>> {
+    owner.error_handler(|_error| {})
+}
+
+pub fn run() -> Result<(), Box<dyn Error>> {
+    let mut runtime = Runtime::new();
+    let seen = Rc::new(Cell::new(0_i32));
+
+    runtime
+        .with_transient(|owner| {
+            let (source, set_source) = owner.signal(1_i32)?;
+            let doubled = owner.computed(
+                move || Ok::<_, SilexError>(source.get()? * 2),
+                handler(owner)?,
+            )?;
+            let seen_for_effect = seen.clone();
+
+            owner.effect(
+                move || {
+                    seen_for_effect.set(doubled.get()?);
+                    Ok::<(), SilexError>(())
+                },
+                handler(owner)?,
+            )?;
+
+            set_source.set(2)?;
+            assert_eq!(seen.get(), 4);
+            Ok::<(), SilexError>(())
+        })
+        .map_err(|error| Box::new(error) as Box<dyn Error>)??;
+
+    Ok(())
+}
