@@ -114,7 +114,7 @@ pub(crate) fn prepare_read<'scope>(
         let state_ref = state
             .try_borrow()
             .map_err(|_| ReactiveError::BorrowConflict)?;
-        if !state_ref.try_is_active()? {
+        if !state_ref.is_active()? {
             return Err(ReactiveError::NoSuchNode);
         }
         let node = state_ref.nodes.get(id).ok_or(ReactiveError::NoSuchNode)?;
@@ -161,7 +161,7 @@ pub(crate) fn prepare_fallible_read<'scope>(
         let state_ref = state
             .try_borrow()
             .map_err(|_| EvaluationError::Runtime(ReactiveError::BorrowConflict))?;
-        if !state_ref.try_is_active()? {
+        if !state_ref.is_active()? {
             return Err(EvaluationError::Runtime(ReactiveError::NoSuchNode));
         }
         let node = state_ref
@@ -383,10 +383,7 @@ fn execute_computation<'scope>(
         let state_ref = state
             .try_borrow()
             .map_err(|_| EvaluationError::Runtime(ReactiveError::BorrowConflict))?;
-        state_ref
-            .try_is_active()
-            .map_err(EvaluationError::Runtime)?
-            && state_ref.node_exists(id)
+        state_ref.is_active().map_err(EvaluationError::Runtime)? && state_ref.node_exists(id)
     };
     let restore_result = if should_restore {
         match computation.computation.try_write(scheduler.clone()) {
@@ -621,7 +618,7 @@ fn run_node<'scope>(
         match state.try_borrow() {
             Ok(state_ref) => {
                 state_ref.node_exists(id)
-                    && state_ref.try_is_active()?
+                    && state_ref.is_active()?
                     && state_ref.owner_id == owner_id
             }
             Err(_) => {

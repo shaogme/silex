@@ -229,7 +229,7 @@ fn commit_signal<'scope>(state: &ScopeState<'scope>, id: NodeId) -> ReactiveResu
     let mut state_ref = state
         .try_borrow_mut()
         .map_err(|_| ReactiveError::BorrowConflict)?;
-    if !state_ref.try_is_active()? {
+    if !state_ref.is_active()? {
         return Ok(());
     }
     let epoch = state_ref
@@ -278,7 +278,7 @@ pub(crate) fn notify<'scope>(state: &ScopeState<'scope>, id: NodeId) -> Reactive
         let mut state_ref = state
             .try_borrow_mut()
             .map_err(|_| ReactiveError::BorrowConflict)?;
-        if !state_ref.try_is_active()? {
+        if !state_ref.is_active()? {
             return Err(ReactiveError::NoSuchNode);
         }
         if !state_ref.node_exists(id) {
@@ -429,7 +429,7 @@ where
             let active = state
                 .try_borrow()
                 .map_err(|_| CallbackThunkError::Runtime(ReactiveError::BorrowConflict))?
-                .try_is_active()
+                .is_active()
                 .map_err(CallbackThunkError::Runtime)?;
             return Err(CallbackThunkError::Runtime(if active {
                 ReactiveError::BorrowConflict
@@ -445,10 +445,7 @@ where
         let state_ref = state
             .try_borrow()
             .map_err(|_| CallbackThunkError::Runtime(ReactiveError::BorrowConflict))?;
-        state_ref
-            .try_is_active()
-            .map_err(CallbackThunkError::Runtime)?
-            && state_ref.node_exists(id)
+        state_ref.is_active().map_err(CallbackThunkError::Runtime)? && state_ref.node_exists(id)
     };
     let restore_result = if should_restore {
         match callback_slot.try_write(scheduler) {
@@ -483,7 +480,7 @@ pub(crate) fn stop_effect<'scope>(state: &ScopeState<'scope>, id: NodeId) -> Rea
             .try_borrow()
             .map_err(|_| ReactiveError::BorrowConflict)?;
         let scheduler = state_ref.scheduler.clone();
-        if !state_ref.try_is_active()? {
+        if !state_ref.is_active()? {
             return Ok(false);
         }
         let Some(node) = state_ref.nodes.get(id) else {

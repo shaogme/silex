@@ -417,7 +417,7 @@ impl<'owner> OwnerAccess<'owner> {
         let mut state = state
             .try_borrow_mut()
             .map_err(|_| ReactiveError::BorrowConflict)?;
-        if !state.try_is_active()? {
+        if !state.is_active()? {
             return Err(ReactiveError::NoSuchNode);
         }
         state.register_cleanup(thunk);

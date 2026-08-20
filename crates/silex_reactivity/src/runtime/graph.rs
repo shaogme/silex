@@ -338,7 +338,7 @@ impl<'scope> ScopeStateInner<'scope> {
         if same_scope && self.observer_is_computation(observer) && observer.node == target {
             return Err(ReactiveError::Reentrant);
         }
-        if !self.try_is_active()? || !self.has_value(target)? {
+        if !self.is_active()? || !self.has_value(target)? {
             return Err(ReactiveError::NoSuchNode);
         }
         if same_scope {
@@ -350,7 +350,7 @@ impl<'scope> ScopeStateInner<'scope> {
             let observer_state = observer_scope
                 .try_borrow_mut()
                 .map_err(|_| ReactiveError::BorrowConflict)?;
-            if !observer_state.try_is_active()?
+            if !observer_state.is_active()?
                 || !observer_state.observer_is_computation(observer)
                 || observer_state.owner_id == self.owner_id && observer.node == target
             {
@@ -375,7 +375,7 @@ impl<'scope> ScopeStateInner<'scope> {
         if !Rc::ptr_eq(&ctx.scheduler, &self.scheduler) {
             return Err(ReactiveError::RuntimeMismatch);
         }
-        if !self.try_is_active()? || !self.has_value(target)? {
+        if !self.is_active()? || !self.has_value(target)? {
             return Err(ReactiveError::NoSuchNode);
         }
         if observer.owner_id == self.owner_id {
@@ -390,7 +390,7 @@ impl<'scope> ScopeStateInner<'scope> {
         let mut observer_state = observer_scope
             .try_borrow_mut()
             .map_err(|_| ReactiveError::BorrowConflict)?;
-        if !observer_state.try_is_active()? || !observer_state.observer_is_computation(observer) {
+        if !observer_state.is_active()? || !observer_state.observer_is_computation(observer) {
             return Err(ReactiveError::NoSuchNode);
         }
         let observer_dep = TargetNode {
@@ -520,7 +520,7 @@ impl<'scope> ScopeStateInner<'scope> {
             let state_ref = target_scope
                 .try_borrow()
                 .map_err(|_| ReactiveError::BorrowConflict)?;
-            if !state_ref.try_is_active()? {
+            if !state_ref.is_active()? {
                 continue;
             }
             let Some(node) = state_ref.nodes.get(target.node) else {

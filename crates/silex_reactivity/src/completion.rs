@@ -421,7 +421,7 @@ where
         let state_ref = state
             .try_borrow()
             .map_err(|_| ReactiveError::BorrowConflict)?;
-        if !state_ref.try_is_active()? {
+        if !state_ref.is_active()? {
             return Err(ReactiveError::NoSuchNode);
         }
         state_ref.scheduler.clone()

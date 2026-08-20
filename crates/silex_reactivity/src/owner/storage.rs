@@ -473,7 +473,7 @@ impl ScopeStorage {
 
     pub(crate) fn is_active(&self) -> ReactiveResult<bool> {
         let state = self.state.try_borrow()?;
-        let active = state.try_is_active()?;
+        let active = state.is_active()?;
         drop(state);
         Ok(active && self.owner_mode()?.is_some())
     }

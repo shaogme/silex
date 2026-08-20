@@ -1102,17 +1102,6 @@ impl<'scope> ScopeStateInner<'scope> {
             .is_scope_active(self.owner_id))
     }
 
-    pub(crate) fn try_is_active(&self) -> ReactiveResult<bool> {
-        if self.phase != ScopePhase::Active {
-            return Ok(false);
-        }
-        Ok(self
-            .scheduler
-            .try_borrow()
-            .map_err(|_| ReactiveError::BorrowConflict)?
-            .is_scope_active(self.owner_id))
-    }
-
     pub(crate) fn begin_quiescing(&mut self) -> ReactiveResult<bool> {
         match self.phase {
             ScopePhase::Active => {
@@ -1197,7 +1186,7 @@ impl<'scope> ScopeStateInner<'scope> {
     }
 
     pub(crate) fn mark_notified(&mut self, id: NodeId) -> ReactiveResult<bool> {
-        if !self.try_is_active()? {
+        if !self.is_active()? {
             return Ok(false);
         }
         let epoch = self
@@ -1317,7 +1306,7 @@ impl<'scope> ScopeStateInner<'scope> {
         entry: ErrorHandlerEntry<'scope>,
     ) -> ReactiveResult<ErrorHandlerKey> {
         self.sweep_error_handlers();
-        if !self.try_is_active()? {
+        if !self.is_active()? {
             return Err(ReactiveError::NoSuchNode);
         }
         Ok(self.error_handlers.insert(entry))
@@ -1394,7 +1383,7 @@ impl<'scope> ScopeStateInner<'scope> {
     }
 
     fn ensure_active(&self) -> Result<(), ReactiveError> {
-        if self.try_is_active()? {
+        if self.is_active()? {
             Ok(())
         } else {
             Err(ReactiveError::NoSuchNode)
@@ -1434,7 +1423,7 @@ impl<'scope> ScopeStateInner<'scope> {
         &self,
         id: NodeId,
     ) -> ReactiveResult<(Rc<NodeStorage<'scope>>, StoredAccessMode)> {
-        let mode = if self.try_is_active()? {
+        let mode = if self.is_active()? {
             StoredAccessMode::Active
         } else if self.allows_final_cleanup_stored_access() {
             StoredAccessMode::RunningCleanup
