@@ -1,6 +1,7 @@
 mod backend;
 mod builder;
 mod codec;
+mod operation;
 mod state;
 
 pub use backend::{

@@ -571,9 +571,9 @@ async fn resource_runs_interceptor_once_and_rejects_custom_status() {
                 ..
             }))
         ));
-        assert_eq!(transport_calls.get(), 3);
-        assert_eq!(error_calls.get(), 3);
-        assert_eq!(retry_calls.get(), 2);
+        assert_eq!(transport_calls.get(), 4);
+        assert_eq!(error_calls.get(), 4);
+        assert_eq!(retry_calls.get(), 3);
     }
     .await;
     root.close().expect("root cleanup");
@@ -1417,7 +1417,7 @@ async fn network_first_uses_history_after_retryable_failure() {
             resource.state.get().unwrap(),
             ResourceState::Ready(value) if value == "history"
         ));
-        assert_eq!(calls.get(), 1);
+        assert_eq!(calls.get(), 2);
     }
     .await;
     root.close().expect("root cleanup");
@@ -1626,14 +1626,18 @@ async fn websocket_retry_window_counts_continuous_pre_open_failures() {
         TimeoutFuture::new(0).await;
         assert_eq!(
             mock_instance_count("__silex_test_socket_instances"),
-            3,
-            "continuous pre-open failures must exhaust one retry window"
+            4,
+            "three retries are allowed after the initial connection"
         );
+
+        mock_call0("__silex_test_socket", "emitClose");
+        TimeoutFuture::new(0).await;
+        assert_eq!(mock_instance_count("__silex_test_socket_instances"), 4);
 
         socket.reconnect().expect("websocket reconnect");
         assert_eq!(
             mock_instance_count("__silex_test_socket_instances"),
-            4,
+            5,
             "manual reconnect must start a fresh retry window"
         );
     }

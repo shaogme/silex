@@ -19,6 +19,7 @@ use crate::{
     NetError, NetErrorKind, Transport,
     builder::HttpClientBuilder,
     codec::ResponseCodec,
+    operation::OperationController,
     state::{CachePolicy, RequestSpec, RetryPolicy},
 };
 
@@ -92,7 +93,7 @@ where
     let retry = client
         .retry
         .unwrap_or(RetryPolicy::new(1, Duration::from_millis(0)));
-    let attempts = retry.max_attempts.max(1);
+    let attempts = retry.max_retries.saturating_add(1).max(1);
     let started_at = js_sys::Date::now();
     let mut last_error = None;
 
@@ -277,8 +278,11 @@ macro_rules! impl_net_methods {
         {
             self.validate_runtime().map_err(NetError::from)?;
             let scope = self.scope;
-            let error_handler = self.error_handler.handler_ref();
-            let request_builder = self.cloned_with_handler(error_handler);
+            let handler_anchor = self.error_handler.handler_ref().anchor().map_err(|error| {
+                NetError::from(SilexError::fatal(ReactiveError::Handler(error)))
+            })?;
+            let error_handler = handler_anchor.view();
+            let request_builder = self.cloned_with_handler(handler_anchor.clone());
             let request_source = scope
                 .computed(
                     move || Ok(request_builder.resolve_spec_tracked()?),
@@ -295,10 +299,10 @@ macro_rules! impl_net_methods {
             let fetch_error_handler = error_handler;
             let completion_error_handler = fetch_error_handler;
             #[cfg(feature = "persist")]
-            let fetch_builder = self.cloned_with_handler(error_handler);
-            let resource_generation = Rc::new(Cell::new(0usize));
+            let fetch_builder = self.cloned_with_handler(handler_anchor.clone());
+            let operation_controller = OperationController::new();
             let resource_slot = Rc::new(Cell::new(None::<Resource<'scope, T, NetError>>));
-            let resource_generation_for_fetcher = resource_generation.clone();
+            let operation_controller_for_fetcher = operation_controller.clone();
             let resource_slot_for_fetcher = resource_slot.clone();
             let combined_source = scope
                 .computed(
@@ -313,22 +317,13 @@ macro_rules! impl_net_methods {
                 move |(_, spec): (S::Value, RequestSpec)| {
                     let mut spec = spec;
                     fetch_client.apply_interceptors(&mut spec);
-                    let generation = resource_generation_for_fetcher
-                        .get()
-                        .checked_add(1)
-                        .ok_or_else(|| {
-                            SilexError::fatal(SilexErrorKind::Framework(
-                                "HTTP Resource generation exhausted".to_string(),
-                            ))
-                        });
-                    let generation = match generation {
-                        Ok(generation) => generation,
+                    let operation = match operation_controller_for_fetcher.begin() {
+                        Ok(operation) => operation,
                         Err(error) => {
                             return Box::pin(std::future::ready(Err(NetError::from(error))))
                                 as NetFuture<'scope, T>;
                         }
                     };
-                    resource_generation_for_fetcher.set(generation);
 
                     #[cfg(feature = "persist")]
                     let cache_binding = match fetch_builder.cache_binding(&spec) {
@@ -367,7 +362,12 @@ macro_rules! impl_net_methods {
                         };
                         #[cfg(feature = "persist")]
                         let refresh_cache_token = match refresh_binding
-                            .map(|binding| fetch_builder.cache_completion_once_for_binding(binding))
+                            .map(|binding| {
+                                fetch_builder.cache_completion_once_for_binding_with_guard(
+                                    binding,
+                                    operation.clone(),
+                                )
+                            })
                             .transpose()
                         {
                             Ok(token) => token,
@@ -380,12 +380,11 @@ macro_rules! impl_net_methods {
                         let refresh_cache_token = None;
                         let refresh_client = fetch_client.clone();
                         let refresh_spec = spec.clone();
-                        let resource_generation_for_completion =
-                            resource_generation_for_fetcher.clone();
+                        let refresh_operation = operation.clone();
                         let resource_slot_for_completion = resource_slot_for_fetcher.clone();
                         let completion = match scope.completion_once(unwind_safe(
                             move |result: Result<T, NetError>| {
-                                if resource_generation_for_completion.get() == generation
+                                if refresh_operation.is_current()
                                     && let Ok(value) = result
                                     && let Some(resource) = resource_slot_for_completion.get()
                                 {
@@ -428,7 +427,10 @@ macro_rules! impl_net_methods {
                         {
                             match cache_binding
                                 .map(|binding| {
-                                    fetch_builder.cache_completion_once_for_binding(binding)
+                                    fetch_builder.cache_completion_once_for_binding_with_guard(
+                                        binding,
+                                        operation.clone(),
+                                    )
                                 })
                                 .transpose()
                             {
@@ -445,25 +447,42 @@ macro_rules! impl_net_methods {
                         }
                     };
                     let client = fetch_client.clone();
+                    let operation_for_completion = operation.clone();
                     Box::pin(async move {
                         if let Some(value) = cached {
                             Ok(value)
                         } else {
-                            execute_prepared(
+                            let result = execute_prepared(
                                 client,
                                 spec,
                                 fallback,
                                 cache_token,
                                 completion_error_handler,
                             )
-                            .await
+                            .await;
+                            if operation_for_completion.is_current() {
+                                result
+                            } else {
+                                Err(NetError::recoverable(NetErrorKind::Aborted))
+                            }
                         }
                     }) as NetFuture<'scope, T>
                 },
                 suspense,
-                error_handler,
+                handler_anchor,
             )
             .map_err(NetError::from)?;
+
+            let cleanup_controller = operation_controller.clone();
+            scope
+                .on_cleanup(
+                    move || {
+                        cleanup_controller.close();
+                        Ok::<(), SilexError>(())
+                    },
+                    error_handler,
+                )
+                .map_err(NetError::from)?;
 
             resource_slot.set(Some(resource));
 
@@ -472,11 +491,19 @@ macro_rules! impl_net_methods {
 
         pub fn as_mutation(&self) -> Result<Mutation<'scope, (), T, NetError>, NetError> {
             self.validate_runtime().map_err(NetError::from)?;
-            let builder = self.cloned_with_handler(self.error_handler.handler_ref());
-            let completion_error_handler = self.error_handler.handler_ref();
-            Mutation::new_with_prepare(
+            let handler_anchor = self.error_handler.handler_ref().anchor().map_err(|error| {
+                NetError::from(SilexError::fatal(ReactiveError::Handler(error)))
+            })?;
+            let builder = self.cloned_with_handler(handler_anchor.clone());
+            let completion_error_handler = handler_anchor.view();
+            let operation_controller = OperationController::new();
+            let operation_controller_for_prepare = operation_controller.clone();
+            let mutation = Mutation::new_with_prepare(
                 self.scope,
                 move |_| {
+                    let operation = operation_controller_for_prepare
+                        .begin()
+                        .map_err(NetError::from)?;
                     let mut spec = builder.resolve_spec()?;
                     let client = builder.prepared();
                     client.apply_interceptors(&mut spec);
@@ -494,7 +521,12 @@ macro_rules! impl_net_methods {
                         {
                             builder
                                 .cache_binding(&spec)?
-                                .map(|binding| builder.cache_completion_once_for_binding(binding))
+                                .map(|binding| {
+                                    builder.cache_completion_once_for_binding_with_guard(
+                                        binding,
+                                        operation.clone(),
+                                    )
+                                })
                                 .transpose()
                                 .map_err(NetError::from)?
                         }
@@ -504,19 +536,35 @@ macro_rules! impl_net_methods {
                         }
                     };
                     Ok(async move {
-                        execute_prepared(
+                        let result = execute_prepared(
                             client,
                             spec,
                             fallback,
                             cache_token,
                             completion_error_handler,
                         )
-                        .await
+                        .await;
+                        if operation.is_current() {
+                            result
+                        } else {
+                            Err(NetError::recoverable(NetErrorKind::Aborted))
+                        }
                     })
                 },
-                self.error_handler.handler_ref(),
+                handler_anchor.clone(),
             )
-            .map_err(NetError::from)
+            .map_err(NetError::from)?;
+            let cleanup_controller = operation_controller.clone();
+            self.scope
+                .on_cleanup(
+                    move || {
+                        cleanup_controller.close();
+                        Ok::<(), SilexError>(())
+                    },
+                    handler_anchor,
+                )
+                .map_err(NetError::from)?;
+            Ok(mutation)
         }
 
         pub fn as_mutation_with<Input, F>(
@@ -529,11 +577,26 @@ macro_rules! impl_net_methods {
         {
             self.validate_runtime().map_err(NetError::from)?;
             let scope = self.scope;
-            let completion_error_handler = self.error_handler.handler_ref();
-            Mutation::new_with_prepare(
+            let handler_anchor = self.error_handler.handler_ref().anchor().map_err(|error| {
+                NetError::from(SilexError::fatal(ReactiveError::Handler(error)))
+            })?;
+            let completion_error_handler = handler_anchor.view();
+            let operation_controller = OperationController::new();
+            let operation_controller_for_prepare = operation_controller.clone();
+            let factory_handler_anchor = handler_anchor.clone();
+            let mutation = Mutation::new_with_prepare(
                 scope,
                 move |input: Input| {
-                    let builder = factory(input)?;
+                    let builder =
+                        factory(input)?.cloned_with_handler(factory_handler_anchor.clone());
+                    builder.validate_runtime().map_err(|_| {
+                        NetError::fatal(NetErrorKind::InvalidConfiguration(
+                            "request contains a reactive source from another runtime".to_string(),
+                        ))
+                    })?;
+                    let operation = operation_controller_for_prepare
+                        .begin()
+                        .map_err(NetError::from)?;
                     let mut spec = builder.resolve_spec()?;
                     let client = builder.prepared();
                     client.apply_interceptors(&mut spec);
@@ -551,7 +614,12 @@ macro_rules! impl_net_methods {
                         {
                             builder
                                 .cache_binding(&spec)?
-                                .map(|binding| builder.cache_completion_once_for_binding(binding))
+                                .map(|binding| {
+                                    builder.cache_completion_once_for_binding_with_guard(
+                                        binding,
+                                        operation.clone(),
+                                    )
+                                })
                                 .transpose()
                                 .map_err(NetError::from)?
                         }
@@ -561,19 +629,35 @@ macro_rules! impl_net_methods {
                         }
                     };
                     Ok(async move {
-                        execute_prepared(
+                        let result = execute_prepared(
                             client,
                             spec,
                             fallback,
                             cache_token,
                             completion_error_handler,
                         )
-                        .await
+                        .await;
+                        if operation.is_current() {
+                            result
+                        } else {
+                            Err(NetError::recoverable(NetErrorKind::Aborted))
+                        }
                     })
                 },
-                self.error_handler.handler_ref(),
+                handler_anchor.clone(),
             )
-            .map_err(NetError::from)
+            .map_err(NetError::from)?;
+            let cleanup_controller = operation_controller.clone();
+            scope
+                .on_cleanup(
+                    move || {
+                        cleanup_controller.close();
+                        Ok::<(), SilexError>(())
+                    },
+                    handler_anchor,
+                )
+                .map_err(NetError::from)?;
+            Ok(mutation)
         }
     };
 }

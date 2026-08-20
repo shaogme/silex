@@ -7,6 +7,7 @@ use silex_persist::{LocalStorageBackend, PersistCodec, PersistenceBackend};
 
 use crate::{
     codec::CacheCodec,
+    operation::CommitGuard,
     state::{CacheConfig, CacheEviction, RequestSpec},
 };
 
@@ -226,6 +227,7 @@ where
         &self,
         scope: OwnerAccess<'scope>,
         binding: CacheBinding<T>,
+        guard: Option<CommitGuard>,
     ) -> SilexResult<CompletionOnce<T>> {
         let state = self.state;
         let key = binding.key;
@@ -233,6 +235,9 @@ where
         let encode = state.with(|state| state.encode.clone())?;
         let backend = state.with(|state| state.backend.clone())?;
         scope.completion_once(unwind_safe(move |value: T| {
+            if guard.as_ref().is_some_and(|guard| !guard.is_current()) {
+                return Ok(());
+            }
             let active = state.with(|state| {
                 state
                     .entries
@@ -251,12 +256,16 @@ where
             backend.set(&key, &raw)?;
 
             state.update(|state| {
+                if guard.as_ref().is_some_and(|guard| !guard.is_current()) {
+                    return Ok::<(), SilexError>(());
+                }
                 if let Some(entry) = state.entries.get_mut(&key)
                     && entry.generation == generation
                 {
                     entry.snapshot = Some(value);
                 }
-            })?;
+                Ok(())
+            })??;
             Ok(())
         }))
     }

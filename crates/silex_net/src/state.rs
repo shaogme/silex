@@ -358,7 +358,8 @@ impl CacheConfig {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RetryPolicy {
-    pub max_attempts: u32,
+    /// Number of attempts after the initial connection/request attempt.
+    pub max_retries: u32,
     pub delay: Duration,
     pub max_delay: Option<Duration>,
     pub max_elapsed: Option<Duration>,
@@ -366,9 +367,9 @@ pub struct RetryPolicy {
 }
 
 impl RetryPolicy {
-    pub fn new(max_attempts: u32, delay: Duration) -> Self {
+    pub fn new(max_retries: u32, delay: Duration) -> Self {
         Self {
-            max_attempts,
+            max_retries,
             delay,
             max_delay: None,
             max_elapsed: None,

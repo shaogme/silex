@@ -17,6 +17,7 @@ use silex_core::{
 use crate::{
     NetError, NetErrorKind,
     builder::{IntoNetValue, ValueResolver},
+    operation::{ConnectionDriver, OperationId},
     state::{ConnectionState, EventMessage},
 };
 
@@ -69,21 +70,20 @@ pub struct EventStreamConnection<'scope> {
     state: ReadSignal<'scope, ConnectionState>,
     messages: RwSignal<'scope, Vec<EventMessage>>,
     error: ReadSignal<'scope, Option<NetError>>,
-    error_handler: ErrorReporter<'scope>,
 }
 
 #[derive(Clone)]
 enum EventStreamEvent {
     Open {
-        generation: u64,
+        operation: OperationId,
     },
     Message {
-        generation: u64,
+        operation: OperationId,
         event: Option<String>,
         data: String,
     },
     Error {
-        generation: u64,
+        operation: OperationId,
         error: NetError,
     },
 }
@@ -141,7 +141,7 @@ impl HostRegistration {
     fn new(
         source: JsEventSource,
         event_name: Option<String>,
-        generation: u64,
+        operation: OperationId,
         token: &CompletionSender<EventStreamEvent>,
         error_token: &CompletionSender<SilexError>,
     ) -> Result<Self, NetError> {
@@ -155,7 +155,7 @@ impl HostRegistration {
                 submit_completion(
                     &open_token,
                     &open_error_token,
-                    EventStreamEvent::Open { generation },
+                    EventStreamEvent::Open { operation },
                     Some(&open_gate),
                 );
             }
@@ -171,7 +171,7 @@ impl HostRegistration {
                         &message_token,
                         &message_error_token,
                         EventStreamEvent::Error {
-                            generation,
+                            operation,
                             error: NetError::recoverable(NetErrorKind::JsError(
                                 "EventSource message data is not a string".to_string(),
                             )),
@@ -184,7 +184,7 @@ impl HostRegistration {
                     &message_token,
                     &message_error_token,
                     EventStreamEvent::Message {
-                        generation,
+                        operation,
                         event: Some(event.type_()),
                         data,
                     },
@@ -203,7 +203,7 @@ impl HostRegistration {
                     &event_error_token,
                     &event_error_completion_token,
                     EventStreamEvent::Error {
-                        generation,
+                        operation,
                         error: NetError::recoverable(NetErrorKind::TransportUnavailable),
                     },
                     Some(&error_gate),
@@ -269,8 +269,9 @@ struct EventStreamInner<'scope> {
     set_error: WriteSignal<'scope, Option<NetError>>,
     completion: CompletionSender<EventStreamEvent>,
     error_completion: CompletionSender<SilexError>,
+    error_handler_owner: silex_core::ErrorHandlerAnchor<'scope>,
     registration: Option<HostRegistration>,
-    generation: u64,
+    driver: ConnectionDriver,
 }
 
 fn cleanup_stored_inner<'scope>(
@@ -288,7 +289,7 @@ impl Drop for EventStreamInner<'_> {
 impl<'scope> EventStreamInner<'scope> {
     fn cleanup(&mut self) -> SilexResult<()> {
         self.registration.take();
-        self.generation = self.generation.wrapping_add(1);
+        self.driver.close();
         self.completion
             .cancel()
             .map_err(|error| SilexError::fatal(SilexErrorKind::Close(error)))?;
@@ -324,8 +325,7 @@ impl<'scope> EventStreamInner<'scope> {
         source: Option<JsEventSource>,
     ) -> SilexResult<(Result<(), NetError>, Option<DeferredCallback<'scope>>)> {
         self.registration.take();
-        self.generation = self.generation.wrapping_add(1);
-        let generation = self.generation;
+        let operation = self.driver.begin()?;
         self.set_state.set(ConnectionState::Connecting)?;
 
         let source = match source {
@@ -347,7 +347,7 @@ impl<'scope> EventStreamInner<'scope> {
         match HostRegistration::new(
             source,
             self.event_name.clone(),
-            generation,
+            operation,
             &self.completion,
             &self.error_completion,
         ) {
@@ -369,16 +369,17 @@ impl<'scope> EventStreamInner<'scope> {
     ) -> SilexResult<Option<DeferredCallback<'scope>>> {
         let mut callback = None;
         match event {
-            EventStreamEvent::Open { generation } if generation == self.generation => {
+            EventStreamEvent::Open { operation } if self.driver.is_current(operation) => {
+                self.driver.recovered();
                 self.set_state.set(ConnectionState::Connected)?;
                 self.set_error.set(None)?;
                 callback = Some(self.defer_open());
             }
             EventStreamEvent::Message {
-                generation,
+                operation,
                 event,
                 data,
-            } if generation == self.generation => {
+            } if self.driver.is_current(operation) => {
                 self.messages.update(|messages| {
                     messages.push(EventMessage { event, data });
                     if let Some(max_messages) = self.max_messages {
@@ -390,7 +391,9 @@ impl<'scope> EventStreamInner<'scope> {
                 })?;
                 self.set_state.set(ConnectionState::Connected)?;
             }
-            EventStreamEvent::Error { generation, error } if generation == self.generation => {
+            EventStreamEvent::Error { operation, error }
+                if self.driver.consume_failure(operation) =>
+            {
                 self.set_state.set(ConnectionState::Error)?;
                 self.set_error.set(Some(error.clone()))?;
                 callback = Some(self.defer_error(error));
@@ -402,7 +405,7 @@ impl<'scope> EventStreamInner<'scope> {
 
     fn close(&mut self) -> SilexResult<()> {
         self.registration.take();
-        self.generation = self.generation.wrapping_add(1);
+        self.driver.invalidate();
         self.set_state.set(ConnectionState::Closed)?;
         Ok(())
     }
@@ -414,7 +417,7 @@ impl<'scope> EventStreamConnection<'scope> {
         f: impl Fn(ConnectionState) -> T + 'scope,
     ) -> SilexResult<Rx<'scope, T>> {
         let state = self.state;
-        let handler = self.error_handler;
+        let handler = self.inner.with(|inner| inner.error_handler_owner.view())?;
         self.scope
             .computed(move || state.get().map(&f), handler)
             .map(|memo| memo.into_rx())
@@ -447,7 +450,7 @@ impl<'scope> EventStreamConnection<'scope> {
         T: serde::de::DeserializeOwned + PartialEq + 'scope,
     {
         let messages = self.messages;
-        let handler = self.error_handler;
+        let handler = self.inner.with(|inner| inner.error_handler_owner.view())?;
         self.scope
             .computed(
                 move || {
@@ -475,7 +478,7 @@ impl<'scope> EventStreamConnection<'scope> {
         T: serde::de::DeserializeOwned + PartialEq + 'scope,
     {
         let messages = self.messages;
-        let handler = self.error_handler;
+        let handler = self.inner.with(|inner| inner.error_handler_owner.view())?;
         self.scope
             .computed(
                 move || {
@@ -503,7 +506,7 @@ impl<'scope> EventStreamConnection<'scope> {
         T: serde::de::DeserializeOwned + PartialEq + 'scope,
     {
         let messages = self.messages;
-        let handler = self.error_handler;
+        let handler = self.inner.with(|inner| inner.error_handler_owner.view())?;
         self.scope
             .computed(
                 move || {
@@ -638,6 +641,9 @@ impl<'scope, H> EventStreamBuilder<'scope, H> {
             on_error,
         } = self;
         let error_handler = error_handler.handler_ref();
+        let handler_anchor = error_handler
+            .anchor()
+            .map_err(|error| NetError::from(SilexError::fatal(ReactiveError::Handler(error))))?;
         url.validate_runtime(scope).map_err(NetError::from)?;
         let initial_source = if auto_connect {
             match url
@@ -697,14 +703,15 @@ impl<'scope, H> EventStreamBuilder<'scope, H> {
             set_error,
             completion,
             error_completion,
+            error_handler_owner: handler_anchor.clone(),
             registration: None,
-            generation: 0,
+            driver: ConnectionDriver::new(),
         })?;
         inner_slot.set(Some(inner));
         scope
             .on_cleanup(
                 move || -> SilexResult<()> { cleanup_stored_inner(inner) },
-                error_handler,
+                handler_anchor,
             )
             .map_err(NetError::from)?;
 
@@ -714,7 +721,6 @@ impl<'scope, H> EventStreamBuilder<'scope, H> {
             state: state.read_signal(),
             messages,
             error,
-            error_handler,
         };
         if auto_connect {
             let (result, callbacks) = inner

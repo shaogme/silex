@@ -582,7 +582,28 @@ impl<'scope, T, C, H> HttpClientBuilder<'scope, T, C, H> {
                 ))
             })?
             .cache
-            .completion_once_for_binding(self.scope, binding)?)
+            .completion_once_for_binding(self.scope, binding, None)?)
+    }
+
+    #[cfg(feature = "persist")]
+    pub(crate) fn cache_completion_once_for_binding_with_guard(
+        &self,
+        binding: CacheBinding<T>,
+        guard: crate::operation::CommitGuard,
+    ) -> Result<CompletionOnce<T>, NetError>
+    where
+        T: Clone + 'static,
+    {
+        Ok(self
+            .cache
+            .as_ref()
+            .ok_or_else(|| {
+                NetError::fatal(NetErrorKind::InvalidConfiguration(
+                    "cache binding requires cache configuration".to_string(),
+                ))
+            })?
+            .cache
+            .completion_once_for_binding(self.scope, binding, Some(guard))?)
     }
 
     #[cfg(feature = "persist")]
