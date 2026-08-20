@@ -82,11 +82,14 @@ pub enum ClosePhase {
 /// The lifecycle source associated with one close failure.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CloseSource {
+    UserCallback,
     Owner,
     Child,
     Effect,
     Cleanup,
     Handler,
+    Destination,
+    Dispose,
     Boundary,
     Unknown,
 }

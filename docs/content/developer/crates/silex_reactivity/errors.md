@@ -152,6 +152,12 @@ match completion.submit(value) {
 sender 不会自动结束，调用方应根据业务决定重试或显式 `cancel`。callback panic 会
 先尝试关闭 endpoint，再继续传播 panic；之后的提交会被拒绝。
 
+框架使用的 detached completion 与普通 completion 共享上述提交和错误模型，只是
+callback 节点不挂在创建它的当前计算子树中。runtime 正在 disposal transaction
+内时，endpoint close 会进入 pending 队列，由外层统一 drain；重复登记会按
+`(owner_id, node_id)` 去重，drain 的 runtime/handler/panic 失败仍会并入关闭聚合，
+不会通过递归 disposal 丢失。
+
 ## `CloseError`：关闭阶段的聚合诊断
 
 显式 `OwnerHandle::close` 不会只返回第一条失败。使用 `entries()` 读取每个条目的

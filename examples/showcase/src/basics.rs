@@ -38,7 +38,7 @@ pub fn Counter<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     let owner_for_timer = MountOwnerToken::new(owner);
 
     // Timer Handle for Auto Increment (StoredValue: doesn't trigger UI updates itself)
-    let timer = owner.stored(None::<HostResourceHandle<'scope>>)?;
+    let timer = owner.stored(None::<HostResource<'scope>>)?;
     // UI State for the timer
     let (is_running, set_is_running) = owner.signal(false)?;
 
@@ -73,10 +73,9 @@ pub fn Counter<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
             })?)
             .on(event::click, move |_| {
                 if is_running.get()? {
-                    if let Some(handle) = timer.get_untracked()? {
-                        handle.cancel();
+                    if let Some(handle) = timer.update(Option::take)? {
+                        handle.cancel()?;
                     }
-                    timer.set_untracked(None)?;
                     set_is_running.set(false)?;
                 } else {
                     let handle = set_interval(

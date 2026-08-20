@@ -183,7 +183,7 @@ impl<'scope> RouterView<'scope> {
         match view.mount(owner, parent, attrs, error_handler) {
             Ok(instance) => Ok(instance),
             Err(error) => {
-                listener.cancel();
+                let _ = listener.cancel();
                 Err(error)
             }
         }

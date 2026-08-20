@@ -25,7 +25,7 @@ sort_by = "weight"
  View · Element · AttrOp · EventHandler
                 │
                 ▼
- MountOwnerToken · MountState · HostResourceHandle
+ MountOwnerToken · MountState · HostResource
                 │
                 ▼
    silex_core Runtime / owner / scheduler
@@ -52,7 +52,7 @@ sort_by = "weight"
 | `AttributeBuilder` / `ApplyTarget` / `AttrOp` | 构造 attribute、property、class、style、事件和自定义 DOM 操作。 |
 | `MountOwner` / `MountOwnerToken` | 为子树注册 effect、cleanup、动态状态和宿主 callback。 |
 | `AutoReactiveView` | 让 `Rx`、signal、computed 或 stored value 作为文本或动态视图挂载。 |
-| `HostResourceHandle` | 由 owner 取消的 window listener、timer、animation frame 等宿主资源。 |
+| `HostResource` | 由 owner 注册表管理的 window listener、timer、animation frame 等宿主资源；通过 `cancel`/`finish` 显式结束。 |
 | `helpers` | window/document 访问、事件 target 读取、owner-bound timer 和 debounce 辅助函数。 |
 
 应用代码通常从 `silex_dom::prelude` 导入上述 DOM 类型；需要保持依赖
@@ -70,7 +70,7 @@ MountedApp
         └── MountOwnerToken<'scope>
             ├── element / component child owners
             ├── reactive effects and MountState
-            └── HostResourceHandle / DOM cleanup
+            └── HostResource / DOM cleanup
 ```
 
 - `MountedApp` 的 builder 通过高阶生命周期接收 `MountContext<'scope>`。
@@ -79,6 +79,9 @@ MountedApp
 - `View::mount` 不取得 DOM 的全局所有权。元素、子视图、响应式 effect、
   事件监听器和 timer 都挂在传入的 `MountOwner` 子树上；owner 关闭时，
   子 owner、effect 和 cleanup 按生命周期顺序释放。
+- owner-bound `HostResource` 的公开值不是 `Clone`/`Drop` 取消句柄。创建时
+  会立即登记 owner 私有 lease；调用方可提前调用 `cancel()` 或一次性资源的
+  `finish()`，owner cleanup 仍会最多执行一次物理取消。
 - `Runtime` 和 DOM owner 都是单线程模型，内部使用 `Rc`、`Cell`、
   `RefCell` 与 `web_sys`。这些句柄不能当作 `Send + Sync` 的跨线程状态。
 - 视图可以重复挂载；同一个 `View` 工厂的不同调用返回彼此独立的物理

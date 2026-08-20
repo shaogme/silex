@@ -22,6 +22,7 @@ fn invoke_error(error: CallbackInvokeError<ReactiveError>) -> ReactiveError {
     }
 }
 
+#[allow(clippy::arithmetic_side_effects)]
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut runtime = Runtime::new();
 

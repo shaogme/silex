@@ -29,7 +29,7 @@ fn get_element_anchor(el: &web_sys::Element) -> (f64, f64, f64, f64) {
 pub struct TooltipContext<'scope> {
     pub open: RwSignal<'scope, bool>,
     pub anchor: RwSignal<'scope, (f64, f64, f64, f64)>,
-    timer: StoredValue<'scope, Option<HostResourceHandle<'scope>>>,
+    timer: StoredValue<'scope, Option<HostResource<'scope>>>,
     owner: StoredValue<'scope, Option<MountOwnerToken<'scope>>>,
     error_handler: StoredValue<'scope, Option<ErrorReporter<'scope>>>,
 }
@@ -58,7 +58,7 @@ impl<'scope> TooltipContext<'scope> {
     pub fn cancel_close_timer(&self) -> SilexResult<()> {
         self.timer.update(|timer| {
             if let Some(handle) = timer.take() {
-                handle.cancel();
+                let _ = handle.cancel();
             }
         })
     }

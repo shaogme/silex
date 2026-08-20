@@ -122,6 +122,12 @@ assert!(task.is_cancelled());
 - callback 错误与 close 错误可以同时出现，`CompletionSubmitError` 保留两部分，不能只取一个字符串；
 - callback panic 后，运行时仍需恢复 endpoint 的终态，业务代码不应依赖 panic 传递错误。
 
+框架内部还可使用 detached completion，把 callback 节点从当前 effect 的 ownership
+子树移出，使 effect rerun/stop 不会提前关闭宿主 callback。它仍绑定创建它的 owner，
+因此 owner close 或显式 cancel 仍会关闭 endpoint。runtime 已进入 disposal 时，
+endpoint close 会登记到 pending 队列，由外层事务统一 drain 和去重；这保证嵌套
+cleanup 不会递归执行同一 endpoint 的 disposal，相关失败仍保留在 close report 中。
+
 `Resource` 和 `Mutation` 使用该机制，并额外用 request id 抑制过期结果；详细状态机见[异步状态专题](async.md)。
 
 ## 并发与 runtime provenance

@@ -19,7 +19,7 @@ effect、JavaScript callback 和 mount rollback 决定。只验证“div 能创�
 | `tests/mounted_contract.rs` | `MountError`、`DisposeError`、`CleanupReport`、`CleanupSink` | native |
 | `tests/mounted_app.rs` | staging boundary、commit、rollback、remount、dispose、host 节点保护 | wasm browser |
 | `tests/owner.rs` | owner effect/cleanup、动态 branch、indexed/keyed list、row state | wasm browser |
-| `tests/host_resources.rs` | DOM/window listener、timer-like resource、callback drop 和取消 | wasm browser |
+| `tests/host_resources.rs` | DOM/window listener、timer-like resource、owner lease、callback gate 和幂等取消 | wasm browser |
 | `tests/reactive_attribute.rs` | reactive attr/class/style、property restore、SVG namespace | wasm browser |
 | `tests/compile_fail.rs` + `tests/ui/` | view、attribute、row updater、host callback 和 mount builder 的 scope escape | native trybuild |
 | `tests/docs_examples.rs` | `docs/examples/silex_dom/basic.rs` 的编译与执行 | native + wasm |
@@ -89,6 +89,8 @@ zola --root docs check
 - `Attr::Removed`/`Empty`/`String` 的 attribute 语义和 known property 语义；
 - static 与 reactive class/style 的合并、更新和 cleanup，不互相删除；
 - listener add/remove、typed/untyped event cast、callback error handler；
+- rerender 后旧 listener 只移除一次，root close 再移除新 listener；重复
+  `HostResource::cancel` 不增加物理 remove/clear 次数；
 - owner close 后 timer/listener/closure 不能再调用用户 callback；
 - `NodeRef` 类型不匹配和清理时 stale node 的错误策略。
 

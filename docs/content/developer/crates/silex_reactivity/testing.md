@@ -75,12 +75,17 @@ code 中，并明确说明“不是 CI 编译示例”。尤其不要在页面�
 - owner child-first 关闭、cleanup 注册顺序、cleanup 错误聚合、stored value 的
   最终 cleanup 访问和 payload drop。
 - completion 的重复 submit、cancel、最后一个 sender drop、callback 错误、close
-  错误以及 callback panic 后的终态。
+  错误以及 callback panic 后的终态；同时覆盖 detached endpoint 在 effect
+  disposal 后仍可提交，以及 disposal cleanup 中 endpoint drop 的 pending drain
+  和重复登记去重。
 
 这些契约当前分布在 `tests/automatic_tracking.rs`、`tests/graph.rs`、
 `tests/runtime_compatibility.rs`、`tests/runtime_scope.rs`、
-`tests/owned_scope.rs`、`tests/root_scope.rs`、`tests/watch.rs`、
-`tests/panic_reentry.rs` 和 `tests/completion.rs`。
+`tests/root_scope.rs`、`tests/watch.rs`、
+`tests/panic_reentry.rs`、`tests/completion.rs` 和
+`tests/owned_scope.rs`；对应回归用例包括
+`completion_drop_during_scope_cleanup_uses_the_pending_endpoint_drain` 与
+`detached_completion_survives_effect_disposal`。
 
 ## `test-support` 与 `RuntimeSnapshot`
 

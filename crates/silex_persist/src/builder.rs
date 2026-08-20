@@ -501,7 +501,7 @@ where
                 move || -> SilexResult<()> {
                     let (subscription, timer) = take_controller_resources(cleanup_controller)?;
                     if let Some(timer) = &timer {
-                        timer.cancel();
+                        timer.cancel()?;
                     }
                     drop(timer);
                     drop(subscription);
@@ -734,7 +734,7 @@ where
                                                 .map(OwnerDebounceState::begin_with_previous_timer)
                                         })??;
                                     if let Some(timer) = &timer {
-                                        timer.cancel();
+                                        timer.cancel()?;
                                     }
                                     drop(timer);
                                     let completion = completion.clone();

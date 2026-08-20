@@ -14,7 +14,8 @@ pub(crate) use storage::{CloseOutcome, ScopeStorage};
 use crate::{
     ComputationInitResult, ErrorHandlerInput, ErrorHandlerToken, ReactiveError, ReactiveResult,
     completion::{
-        CompletionOnce, CompletionSender, create_completion_once, create_completion_sender,
+        CompletionOnce, CompletionSender, create_completion_once, create_completion_once_detached,
+        create_completion_sender, create_completion_sender_detached,
     },
     error::{ErrorHandlerEntry, HandlerOwner, HandlerRecord},
     handle::Handle,
@@ -344,6 +345,34 @@ impl<'owner> OwnerAccess<'owner> {
         F: FnMut(T) -> Result<(), E> + UnwindSafe + 'owner,
     {
         create_completion_sender(self.storage, self.storage.owner_token().state(), callback)
+    }
+
+    #[doc(hidden)]
+    pub fn completion_once_detached<T: 'static, E, F>(
+        &self,
+        callback: F,
+    ) -> ReactiveResult<CompletionOnce<T, E>>
+    where
+        E: 'owner,
+        F: FnMut(T) -> Result<(), E> + UnwindSafe + 'owner,
+    {
+        create_completion_once_detached(self.storage, self.storage.owner_token().state(), callback)
+    }
+
+    #[doc(hidden)]
+    pub fn completion_sender_detached<T: 'static, E, F>(
+        &self,
+        callback: F,
+    ) -> ReactiveResult<CompletionSender<T, E>>
+    where
+        E: 'owner,
+        F: FnMut(T) -> Result<(), E> + UnwindSafe + 'owner,
+    {
+        create_completion_sender_detached(
+            self.storage,
+            self.storage.owner_token().state(),
+            callback,
+        )
     }
 }
 

@@ -201,7 +201,7 @@ fn run_final_cleanup_plan<'scope>(
     outcome
 }
 
-pub(crate) fn dispose_all<'scope>(state: &ScopeState<'scope>) -> CleanupOutcome<'scope> {
+fn dispose_all_inner<'scope>(state: &ScopeState<'scope>) -> CleanupOutcome<'scope> {
     let mut outcome = CleanupOutcome::new();
     let scheduler = match state.try_borrow() {
         Ok(state_ref) => state_ref.scheduler.clone(),
@@ -273,6 +273,72 @@ pub(crate) fn dispose_all<'scope>(state: &ScopeState<'scope>) -> CleanupOutcome<
         .and_then(|mut state| state.finish_dispose())
     {
         outcome.runtime_errors.push(error);
+    }
+    outcome
+}
+
+fn drain_pending_endpoints<'scope>(
+    scheduler: SharedCell<GlobalScheduler>,
+    outcome: &mut CleanupOutcome<'scope>,
+) -> Result<(), ReactiveError> {
+    loop {
+        let pending = scheduler
+            .try_borrow_mut()
+            .map_err(|_| ReactiveError::BorrowConflict)?
+            .take_pending_endpoints();
+        if pending.is_empty() {
+            return Ok(());
+        }
+
+        for target in pending {
+            let state = scheduler
+                .try_borrow()
+                .map_err(|_| ReactiveError::BorrowConflict)?
+                .get_scope_for_edge_cleanup(target.owner_id)?;
+            let Some(state) = state else {
+                continue;
+            };
+            if !state
+                .try_borrow()
+                .map_err(|_| ReactiveError::BorrowConflict)?
+                .nodes
+                .contains_key(target.node)
+            {
+                continue;
+            }
+
+            let mut endpoint_outcome = dispose_nodes_collect(&state, vec![target.node])?;
+            let errors = mem::take(&mut endpoint_outcome.errors);
+            outcome.append(endpoint_outcome);
+            outcome.append(dispatch_cleanup_errors(scheduler.clone(), errors));
+        }
+    }
+}
+
+pub(crate) fn dispose_all<'scope>(state: &ScopeState<'scope>) -> CleanupOutcome<'scope> {
+    let scheduler = match state.try_borrow() {
+        Ok(state) => state.scheduler.clone(),
+        Err(error) => {
+            let mut outcome = CleanupOutcome::new();
+            outcome.runtime_errors.push(error);
+            return outcome;
+        }
+    };
+    let outermost = match scheduler.try_borrow_mut() {
+        Ok(mut scheduler) => scheduler.begin_disposal(),
+        Err(_) => {
+            let mut outcome = CleanupOutcome::new();
+            outcome.runtime_errors.push(ReactiveError::BorrowConflict);
+            return outcome;
+        }
+    };
+    let mut outcome = dispose_all_inner(state);
+    if outermost && let Err(error) = drain_pending_endpoints(scheduler.clone(), &mut outcome) {
+        outcome.runtime_errors.push(error);
+    }
+    match scheduler.try_borrow_mut() {
+        Ok(mut scheduler) => scheduler.end_disposal(),
+        Err(_) => outcome.runtime_errors.push(ReactiveError::BorrowConflict),
     }
     outcome
 }
@@ -473,7 +539,7 @@ fn dispose_nodes_collect_with_scratch<'scope>(
     Ok(outcome)
 }
 
-pub(crate) fn dispose_nodes<'scope>(
+fn dispose_nodes_inner<'scope>(
     state: &ScopeState<'scope>,
     roots: Vec<NodeId>,
 ) -> Result<CleanupOutcome<'scope>, ReactiveError> {
@@ -482,4 +548,31 @@ pub(crate) fn dispose_nodes<'scope>(
     let errors = mem::take(&mut outcome.errors);
     outcome.append(dispatch_cleanup_errors(scheduler, errors));
     Ok(outcome)
+}
+
+pub(crate) fn dispose_nodes<'scope>(
+    state: &ScopeState<'scope>,
+    roots: Vec<NodeId>,
+) -> Result<CleanupOutcome<'scope>, ReactiveError> {
+    let scheduler = state.try_borrow()?.scheduler.clone();
+    let outermost = scheduler
+        .try_borrow_mut()
+        .map_err(|_| ReactiveError::BorrowConflict)?
+        .begin_disposal();
+    let mut result = dispose_nodes_inner(state, roots);
+    if outermost
+        && let Ok(outcome) = &mut result
+        && let Err(error) = drain_pending_endpoints(scheduler.clone(), outcome)
+    {
+        outcome.runtime_errors.push(error);
+    }
+    if let Err(error) = scheduler
+        .try_borrow_mut()
+        .map_err(|_| ReactiveError::BorrowConflict)
+        .map(|mut scheduler| scheduler.end_disposal())
+        && result.is_ok()
+    {
+        result = Err(error);
+    }
+    result
 }

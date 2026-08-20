@@ -1,9 +1,9 @@
-use super::host::{HostCallback, HostDestination, HostResourceHandle};
+use super::host::{HostCallback, HostDestination, HostResource, HostResourceLease};
 use super::state::{ActiveRegistrar, MountState};
 use silex_core::{
     CloseError, ClosePhase, CloseSource, CloseTransaction, EffectHandle, ErrorHandler,
-    ErrorHandlerAnchor, ErrorHandlerInput, OwnerAccess, PersistentOwnerAccess, ReactiveError,
-    SilexError, SilexErrorKind, SilexResult, unwind_safe,
+    ErrorHandlerAnchor, ErrorHandlerInput, HandlerLease, OwnerAccess, PersistentOwnerAccess,
+    ReactiveError, SilexError, SilexErrorKind, SilexResult, unwind_safe,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -18,6 +18,7 @@ pub type MountEffect<'scope> = Box<dyn FnMut() -> SilexResult<()> + 'scope>;
 pub type MountCleanup<'scope> = Box<dyn FnOnce() -> SilexResult<()> + 'scope>;
 
 pub type MountErrorHandler<'scope> = ErrorHandler<'scope>;
+type MountErrorLease<'scope> = HandlerLease<'scope>;
 pub(crate) type CleanupReporter = Rc<dyn Fn(CloseError)>;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -88,12 +89,12 @@ impl<'scope> MountOwnerContext<'scope> {
 
 struct EffectEntry<'scope> {
     handle: EffectHandle<'scope>,
-    error_handler: MountErrorHandler<'scope>,
+    close_handler: MountErrorLease<'scope>,
 }
 
 struct CleanupEntry<'scope> {
     cleanup: MountCleanup<'scope>,
-    error_handler: MountErrorHandler<'scope>,
+    close_handler: MountErrorLease<'scope>,
 }
 
 /// Local lifecycle state for one DOM subtree.
@@ -168,7 +169,7 @@ impl<'scope> LocalOwnerState<'scope> {
                         let dispatch =
                             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                                 entry
-                                    .error_handler
+                                    .close_handler
                                     .handle(SilexError::fatal(SilexErrorKind::Close(close_error)))
                             }));
                         match dispatch {
@@ -207,7 +208,7 @@ impl<'scope> LocalOwnerState<'scope> {
                 Ok(Ok(())) => {}
                 Ok(Err(error)) => {
                     let dispatch = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        entry.error_handler.handle(error)
+                        entry.close_handler.handle(error)
                     }));
                     match dispatch {
                         Ok(Ok(())) => {}
@@ -322,10 +323,11 @@ impl<'scope> MountOwnerToken<'scope> {
         self.ensure_active()?;
         let error_handler = error_handler.handler_ref();
         let handler = self.context.handler(error_handler)?;
+        let close_handler = self.close_handler(handler)?;
         let handle = self.context.access().effect_detached(callback, handler)?;
         self.state.effects.borrow_mut().push(EffectEntry {
             handle,
-            error_handler: handler,
+            close_handler,
         });
         Ok(())
     }
@@ -339,13 +341,14 @@ impl<'scope> MountOwnerToken<'scope> {
         self.ensure_active()?;
         let error_handler = error_handler.handler_ref();
         let handler = self.context.handler(error_handler)?;
+        let close_handler = self.close_handler(handler)?;
         let handle = self
             .context
             .access()
             .effect_with_previous(callback, handler)?;
         self.state.effects.borrow_mut().push(EffectEntry {
             handle,
-            error_handler: handler,
+            close_handler,
         });
         Ok(())
     }
@@ -368,9 +371,10 @@ impl<'scope> MountOwnerToken<'scope> {
         self.ensure_active()?;
         let error_handler = error_handler.handler_ref();
         let handler = self.context.handler(error_handler)?;
+        let close_handler = self.close_handler(handler)?;
         self.state.cleanups.borrow_mut().push(CleanupEntry {
             cleanup,
-            error_handler: handler,
+            close_handler,
         });
 
         if !self.state.cleanup_registered.replace(true) {
@@ -407,10 +411,12 @@ impl<'scope> MountOwnerToken<'scope> {
             destination: HostDestination::Sender(
                 self.context
                     .access()
-                    .completion_sender(unwind_safe(callback))?,
+                    .completion_sender_detached(unwind_safe(callback))?,
             ),
             gate: Rc::new(Cell::new(true)),
             error_completion: self.error_completion(error_handler)?,
+            state: Rc::new(Cell::new(super::host::CallbackState::Active)),
+            close_failures: super::state::SharedCell::new(Vec::new()),
         })
     }
 
@@ -429,10 +435,12 @@ impl<'scope> MountOwnerToken<'scope> {
             destination: HostDestination::Once(
                 self.context
                     .access()
-                    .completion_once(unwind_safe(callback))?,
+                    .completion_once_detached(unwind_safe(callback))?,
             ),
             gate: Rc::new(Cell::new(true)),
             error_completion: self.error_completion(error_handler)?,
+            state: Rc::new(Cell::new(super::host::CallbackState::Active)),
+            close_failures: super::state::SharedCell::new(Vec::new()),
         })
     }
 
@@ -446,11 +454,20 @@ impl<'scope> MountOwnerToken<'scope> {
             .map_err(|error| SilexError::fatal(ReactiveError::Handler(error)))?;
         self.context
             .access()
-            .completion_sender(unwind_safe(move |error| {
+            .completion_sender_detached(unwind_safe(move |error| {
                 lease
                     .handle(error)
                     .map_err(|error| SilexError::fatal(ReactiveError::Handler(error)))
             }))
+    }
+
+    fn close_handler(
+        &self,
+        handler: MountErrorHandler<'scope>,
+    ) -> SilexResult<MountErrorLease<'scope>> {
+        handler
+            .lease()
+            .map_err(|error| SilexError::fatal(ReactiveError::Handler(error)))
     }
 
     pub(crate) fn is_active(&self) -> SilexResult<bool> {
@@ -482,15 +499,16 @@ impl<'scope> MountOwnerToken<'scope> {
         callback: &HostCallback,
         cancel: F,
         error_handler: H,
-    ) -> SilexResult<HostResourceHandle<'scope>>
+    ) -> SilexResult<HostResource<'scope>>
     where
         F: FnOnce() + 'scope,
         H: ErrorHandlerInput<'scope>,
     {
         let callback_for_cancel = callback.clone();
-        let resource = HostResourceHandle::with_gate(callback.gate.clone(), move || {
-            callback_for_cancel.cancel();
+        let resource = HostResource::with_gate(callback.gate.clone(), move || {
+            let callback_error = callback_for_cancel.cancel().err();
             cancel();
+            callback_error.map_or(Ok(()), Err)
         });
         self.register_host_resource(resource, error_handler)
     }
@@ -498,40 +516,42 @@ impl<'scope> MountOwnerToken<'scope> {
     pub(crate) fn host_resource_for_js_callback<F, H>(
         &self,
         callback: &HostCallback,
-        resource: HostResourceHandle<'scope>,
+        resource: HostResource<'scope>,
         cancel: F,
         error_handler: H,
-    ) -> SilexResult<HostResourceHandle<'scope>>
+    ) -> SilexResult<HostResource<'scope>>
     where
         F: FnOnce() + 'scope,
         H: ErrorHandlerInput<'scope>,
     {
         let callback_for_cancel = callback.clone();
         resource.install_cancel(move || {
-            callback_for_cancel.cancel();
+            let callback_error = callback_for_cancel.cancel().err();
             cancel();
+            callback_error.map_or(Ok(()), Err)
         });
         self.register_host_resource(resource, error_handler)
     }
 
     fn register_host_resource<H>(
         &self,
-        resource: HostResourceHandle<'scope>,
+        resource: HostResource<'scope>,
         error_handler: H,
-    ) -> SilexResult<HostResourceHandle<'scope>>
+    ) -> SilexResult<HostResource<'scope>>
     where
         H: ErrorHandlerInput<'scope>,
     {
         self.ensure_active()?;
-        let owner_resource = resource.clone();
+        let owner_resource: HostResourceLease<'scope> = resource.owner_lease();
         if let Err(error) = self.on_cleanup(
             Box::new(move || {
-                owner_resource.cancel_once();
-                Ok(())
+                owner_resource
+                    .cancel_once()
+                    .map_err(|error| SilexError::fatal(SilexErrorKind::Close(error)))
             }),
             error_handler,
         ) {
-            resource.cancel_once();
+            let _ = resource.cancel_once();
             return Err(error);
         }
         Ok(resource)
@@ -635,5 +655,126 @@ impl<'scope> MountOwner<'scope> for OwnerMount<'scope> {
         &self,
     ) -> SilexResult<(PersistentOwnerAccess<'scope>, MountOwnerToken<'scope>)> {
         self.token.branch_child()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::expect_used, clippy::panic)]
+
+    use super::MountOwnerToken;
+    use silex_core::{CloseSource, Runtime, SilexError, SilexErrorKind};
+    use std::{cell::Cell, rc::Rc};
+
+    #[test]
+    fn cleanup_error_is_dispatched_through_close_safe_lease() {
+        let reported = Rc::new(Cell::new(0));
+        let reported_by_handler = reported.clone();
+        let mut runtime = Runtime::new();
+
+        let result = runtime
+            .with_transient(|access| {
+                let handler = access
+                    .error_handler(move |_| {
+                        reported_by_handler.set(reported_by_handler.get() + 1);
+                    })
+                    .expect("error handler should register");
+                let owner = MountOwnerToken::new(access);
+                owner.on_cleanup(
+                    Box::new(|| {
+                        Err(SilexError::recoverable(SilexErrorKind::Framework(
+                            "cleanup failure".to_string(),
+                        )))
+                    }),
+                    handler.view(),
+                )
+            })
+            .expect("transient owner should close");
+
+        result.expect("cleanup registration should succeed");
+        assert_eq!(reported.get(), 1);
+    }
+
+    #[test]
+    fn cleanup_lease_preserves_recoverable_and_fatal_errors() {
+        let recoverable = Rc::new(Cell::new(0));
+        let fatal = Rc::new(Cell::new(0));
+        let recoverable_by_handler = recoverable.clone();
+        let fatal_by_handler = fatal.clone();
+        let mut runtime = Runtime::new();
+
+        runtime
+            .with_transient(|access| {
+                let handler = access
+                    .error_handler(move |error| match error {
+                        SilexError::Recoverable(_) => {
+                            recoverable_by_handler.set(recoverable_by_handler.get() + 1)
+                        }
+                        SilexError::Fatal(_) => fatal_by_handler.set(fatal_by_handler.get() + 1),
+                    })
+                    .expect("error handler should register");
+                let owner = MountOwnerToken::new(access);
+                owner
+                    .on_cleanup(
+                        Box::new(|| {
+                            Err(SilexError::recoverable(SilexErrorKind::Framework(
+                                "recoverable cleanup failure".to_string(),
+                            )))
+                        }),
+                        handler.view(),
+                    )
+                    .expect("recoverable cleanup should register");
+                owner
+                    .on_cleanup(
+                        Box::new(|| {
+                            Err(SilexError::fatal(SilexErrorKind::Framework(
+                                "fatal cleanup failure".to_string(),
+                            )))
+                        }),
+                        handler.view(),
+                    )
+                    .expect("fatal cleanup should register");
+                owner.close().expect("cleanup dispatch should succeed");
+                Ok::<(), SilexError>(())
+            })
+            .expect("transient owner should close")
+            .expect("test callback should succeed");
+
+        assert_eq!(recoverable.get(), 1);
+        assert_eq!(fatal.get(), 1);
+    }
+
+    #[test]
+    fn cleanup_handler_panic_is_captured_as_a_close_failure() {
+        let mut runtime = Runtime::new();
+        let result = runtime.with_transient(|access| {
+            let handler = access
+                .error_handler(|_| panic!("cleanup handler panic"))
+                .expect("error handler should register");
+            let owner = MountOwnerToken::new(access);
+            owner
+                .on_cleanup(
+                    Box::new(|| {
+                        Err(SilexError::recoverable(SilexErrorKind::Framework(
+                            "cleanup failure".to_string(),
+                        )))
+                    }),
+                    handler.view(),
+                )
+                .expect("cleanup should register");
+
+            let close = owner
+                .close()
+                .expect_err("handler panic should become a close error");
+            assert!(
+                close
+                    .entries()
+                    .iter()
+                    .any(|entry| { entry.source() == CloseSource::Handler })
+            );
+            Ok::<(), SilexError>(())
+        });
+
+        assert!(result.is_err());
     }
 }

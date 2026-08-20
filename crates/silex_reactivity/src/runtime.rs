@@ -29,7 +29,9 @@ pub(crate) use ops::{
     node_ref_get, node_ref_set, notify, stop_effect, update_signal, update_stored, with_batch,
     with_fallible_signal, with_signal, with_stored, with_untracked,
 };
-pub(crate) use scheduler::{CloseReportQueue, GlobalScheduler, ObserverFrame, OwnerId, OwnerMode};
+pub(crate) use scheduler::{
+    CloseReportQueue, GlobalScheduler, ObserverFrame, OwnerId, OwnerMode, TargetNode,
+};
 
 use crate::error::{ReactiveError, ReactiveResult};
 use crate::owner::{self, OwnerHandle};

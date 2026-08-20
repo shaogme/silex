@@ -18,8 +18,8 @@ pub use dynamic::{
 pub use list::{IndexedListView, RenderOnlyKeyedListView, StatefulKeyedListView};
 pub use mount::{mount_component, mount_text_node};
 pub use owner::{
-    HostResourceHandle, MountCleanup, MountEffect, MountErrorHandler, MountOwner,
-    MountOwnerContext, MountOwnerToken, MountState, SharedCell,
+    HostResource, MountCleanup, MountEffect, MountErrorHandler, MountOwner, MountOwnerContext,
+    MountOwnerToken, MountState, SharedCell,
 };
 pub use reactive::AutoReactiveView;
 pub use row::RowUpdater;

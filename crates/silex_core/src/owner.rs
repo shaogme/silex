@@ -405,6 +405,28 @@ impl<'owner> OwnerAccess<'owner> {
             .map_err(SilexError::fatal)
     }
 
+    #[doc(hidden)]
+    pub fn completion_once_detached<T, F>(&self, callback: F) -> SilexResult<CompletionOnce<T>>
+    where
+        T: 'static,
+        F: FnMut(T) -> SilexResult<()> + UnwindSafe + 'owner,
+    {
+        self.inner
+            .completion_once_detached(callback)
+            .map_err(SilexError::fatal)
+    }
+
+    #[doc(hidden)]
+    pub fn completion_sender_detached<T, F>(&self, callback: F) -> SilexResult<CompletionSender<T>>
+    where
+        T: 'static,
+        F: FnMut(T) -> SilexResult<()> + UnwindSafe + 'owner,
+    {
+        self.inner
+            .completion_sender_detached(callback)
+            .map_err(SilexError::fatal)
+    }
+
     pub fn spawn_scoped<F, H>(&self, future: F, error_handler: H) -> SilexResult<TaskHandle<'owner>>
     where
         F: Future<Output = ()> + 'owner,

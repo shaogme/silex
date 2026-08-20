@@ -35,7 +35,9 @@ host callback/resource 安装能力。公开 `MountState<T>` 是局部 owner-bou
 2. 逆序关闭 child owner；
 3. 停止由该 runtime owner 持有的 effects；
 4. 逆序运行 local cleanups；
-5. 聚合 `CloseError`，并通过 `CleanupReporter` 或 error handler 报告。
+5. runtime disposal 在安全边界 drain pending completion endpoint，并按
+   owner/node ID 去重；
+6. 聚合 `CloseError`，并通过 `CleanupReporter` 或 error handler 报告。
 
 branch content 的 runtime handles 由 branch persistent child 管理，因此
 content owner 关闭时不会重复 stop 已由 runtime 递归清理的 handles。这个
@@ -80,6 +82,11 @@ resource；异步 dispatch 在 close 之后不会调用用户 closure。callback
 的 `SilexError` 由对应 handler 接收；destination submit 同时出现 callback
 error 与 close error 时，维护代码必须保留两类诊断。
 
+completion endpoint 在 runtime disposal 已经进行时不会递归调用
+`dispose_nodes`。它只把自身的 `(owner_id, node_id)` 登记到 pending 队列，
+由外层 disposal transaction 在 ownership tree 稳定后统一关闭；重复登记只
+保留一项。若节点已由当前 disposal 批次移除，drain 会安全跳过该项。
+
 ## owner-bound helpers
 
 `helpers` 中以下 API 都要求 `&MountOwnerToken` 和
@@ -89,9 +96,12 @@ error 与 close error 时，维护代码必须保留两类诊断。
 - `request_animation_frame`、`request_idle_callback`、`queue_microtask`；
 - `set_timeout`、`set_interval` 和 `debounce`。
 
-它们返回 `HostResourceHandle<'scope>` 或 owner-bound `FnMut`。返回值可以
-被调用方提前取消，但 owner 仍保留一个 clone，并在 cleanup 时执行
-`cancel_once`。因此“把 handle drop 掉”不会把生命周期所有权转移给调用方。
+它们返回 `HostResource<'scope>` 或 owner-bound `FnMut`。返回值可以
+被调用方提前调用 `cancel()`；一次性资源完成时应调用 `finish()`，避免再执行
+物理取消。创建成功后资源立即登记到 owner registry，registry 保存私有 lease
+并在 cleanup 时调用一次内部 `cancel_once`。`HostResource` 没有 `Clone` 或
+`Drop` 隐式取消语义，因此资源何时结束不会由公开值的复制或丢弃决定；重复
+`cancel()` 是幂等的，物理取消最多执行一次。
 
 有一个平台差异：`queue_microtask` 在浏览器中不能物理取消已经排队的
 microtask；owner gate 只保证任务执行到 destination 后不再调用用户代码。
@@ -135,7 +145,10 @@ detached callback 必须是 `'static`，因为它不借用 mount scope。不要�
 ## 对应测试
 
 - `tests/host_resources.rs`：元素/window listener 的物理移除、callback
-  drop、owner dispose、重渲染替换和 panic 后 gate 状态。
+  drop、owner dispose、重渲染替换、重复取消和 panic 后 gate 状态；其中
+  `render_rerun_replaces_old_window_listener` 验证 rerun 的 add/remove 数量，
+  `window_listener_cancel_is_idempotent_and_owner_keeps_final_control` 验证
+  显式取消与 owner 最终控制不会重复移除资源。
 - `tests/owner.rs`：初始/deferred/cleanup error 的分发、动态 row/branch
   关闭和 runtime owner 清理。
 - `tests/ui/fail_detached_host_callback.rs`、

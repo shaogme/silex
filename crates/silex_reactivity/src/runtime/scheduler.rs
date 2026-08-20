@@ -9,7 +9,12 @@ use crate::{
     unsafe_boundary::{ActiveOwnerProof, CleanupOwnerProof, WeakOwnerToken},
 };
 
-use std::{cell::Cell, collections::VecDeque, mem, rc::Rc};
+use std::{
+    cell::Cell,
+    collections::{HashSet, VecDeque},
+    mem,
+    rc::Rc,
+};
 
 /// Close diagnostics that cannot be returned through the current call stack.
 ///
@@ -481,6 +486,9 @@ pub(crate) struct GlobalScheduler {
     pub(crate) evaluating: usize,
     pub(crate) executing: usize,
     pub(crate) active_leases: usize,
+    disposal_depth: usize,
+    pending_endpoints: VecDeque<TargetNode>,
+    pending_endpoint_ids: HashSet<TargetNode>,
     initial_flush_depth: usize,
     pub(crate) close_reports: Rc<CloseReportQueue>,
 }
@@ -503,6 +511,9 @@ impl GlobalScheduler {
                 evaluating: 0,
                 executing: 0,
                 active_leases: 0,
+                disposal_depth: 0,
+                pending_endpoints: VecDeque::new(),
+                pending_endpoint_ids: HashSet::new(),
                 initial_flush_depth: 0,
                 close_reports: reporter,
             },
@@ -639,6 +650,33 @@ impl GlobalScheduler {
             .retain(|task| task.owner_id != target.owner_id || task.node != target.node);
     }
 
+    pub(crate) fn begin_disposal(&mut self) -> bool {
+        let outermost = self.disposal_depth == 0;
+        self.disposal_depth = self.disposal_depth.saturating_add(1);
+        outermost
+    }
+
+    pub(crate) fn end_disposal(&mut self) {
+        debug_assert!(self.disposal_depth > 0);
+        self.disposal_depth = self.disposal_depth.saturating_sub(1);
+    }
+
+    pub(crate) fn is_disposing(&self) -> bool {
+        self.disposal_depth > 0
+    }
+
+    pub(crate) fn enqueue_pending_endpoint(&mut self, target: TargetNode) {
+        if self.pending_endpoint_ids.insert(target) {
+            self.pending_endpoints.push_back(target);
+        }
+    }
+
+    pub(crate) fn take_pending_endpoints(&mut self) -> Vec<TargetNode> {
+        let pending = self.pending_endpoints.drain(..).collect();
+        self.pending_endpoint_ids.clear();
+        pending
+    }
+
     pub(crate) fn is_idle(&self) -> bool {
         self.batch_depth == 0 && self.evaluating == 0 && self.executing == 0 && !self.running_queue
     }
@@ -691,6 +729,47 @@ mod tests {
 
         drop(untracked);
         drop(observer);
+    }
+
+    #[test]
+    fn pending_endpoint_queue_deduplicates_until_the_outer_disposal_drains_it() {
+        let scheduler = GlobalScheduler::new();
+        let target = TargetNode {
+            owner_id: OwnerId::initial(3),
+            node: NodeId::DANGLING,
+        };
+        let other = TargetNode {
+            owner_id: OwnerId::initial(4),
+            node: NodeId::DANGLING,
+        };
+
+        let outermost = scheduler
+            .try_borrow_mut()
+            .expect("scheduler borrow")
+            .begin_disposal();
+        assert!(outermost);
+        {
+            let mut scheduler = scheduler.try_borrow_mut().expect("scheduler borrow");
+            assert!(scheduler.is_disposing());
+            scheduler.enqueue_pending_endpoint(target);
+            scheduler.enqueue_pending_endpoint(target);
+            scheduler.enqueue_pending_endpoint(other);
+        }
+        let pending = scheduler
+            .try_borrow_mut()
+            .expect("scheduler borrow")
+            .take_pending_endpoints();
+        assert_eq!(pending, vec![target, other]);
+        scheduler
+            .try_borrow_mut()
+            .expect("scheduler borrow")
+            .end_disposal();
+        assert!(
+            !scheduler
+                .try_borrow()
+                .expect("scheduler borrow")
+                .is_disposing()
+        );
     }
 
     #[test]

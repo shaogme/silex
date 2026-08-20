@@ -10,7 +10,7 @@ use crate::{
     owner::ScopeStorage,
     root::{CleanupFailure, CloseError},
     runtime::storage::{CallbackThunk, CallbackThunkError, TypedNodeRef, TypedSlot},
-    runtime::{self, GlobalScheduler, OwnerId, ScopeState},
+    runtime::{self, GlobalScheduler, OwnerId, ScopeState, TargetNode},
     unsafe_boundary::{ScopedPtr, WeakOwnerToken},
 };
 use std::{
@@ -36,7 +36,7 @@ where
     move |value| (*callback)(value)
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum CompletionPhase {
     Active,
     Completing,
@@ -132,9 +132,11 @@ impl<T, E> CompletionEndpoint<T, E> {
     }
 
     fn begin_once<'scope>(&self) -> Result<Option<ActiveOwner<'scope>>, ReactiveError> {
-        if self.phase.replace(CompletionPhase::Completing) != CompletionPhase::Active {
+        if self.phase.get() != CompletionPhase::Active {
             return Ok(None);
         }
+        debug_assert_eq!(self.phase.get(), CompletionPhase::Active);
+        self.phase.set(CompletionPhase::Completing);
         match self.validated_callback()? {
             Some(owner) => Ok(Some(owner)),
             None => {
@@ -145,13 +147,48 @@ impl<T, E> CompletionEndpoint<T, E> {
     }
 
     fn close_and_dispose(&self) -> CloseDisposition {
-        if self.phase.get() == CompletionPhase::Closed {
-            return CloseDisposition {
-                released: true,
-                error: None,
-            };
+        match self.phase.get() {
+            CompletionPhase::Closed => {
+                return CloseDisposition {
+                    released: true,
+                    error: None,
+                };
+            }
+            CompletionPhase::Closing => {
+                debug_assert_eq!(self.phase.get(), CompletionPhase::Closing);
+                return CloseDisposition {
+                    released: true,
+                    error: None,
+                };
+            }
+            CompletionPhase::Active | CompletionPhase::Completing => {
+                self.phase.set(CompletionPhase::Closing);
+            }
         }
-        self.phase.set(CompletionPhase::Closing);
+        match self
+            .scheduler
+            .try_borrow_mut()
+            .map_err(|_| ReactiveError::BorrowConflict)
+        {
+            Ok(mut scheduler) if scheduler.is_disposing() => {
+                scheduler.enqueue_pending_endpoint(TargetNode {
+                    owner_id: self.owner_id,
+                    node: self.callback,
+                });
+                self.phase.set(CompletionPhase::Closed);
+                return CloseDisposition {
+                    released: true,
+                    error: None,
+                };
+            }
+            Ok(_) => {}
+            Err(error) => {
+                return CloseDisposition {
+                    released: false,
+                    error: Some(close_runtime_error(error)),
+                };
+            }
+        }
         let state = match self.current_state() {
             Ok(Some(state)) => state,
             Ok(None) => {
@@ -412,6 +449,7 @@ fn create_completion_state<'scope, T: 'static, E, F>(
     storage: &'scope ScopeStorage,
     state: ScopeState<'scope>,
     callback: F,
+    detached: bool,
 ) -> Result<Rc<CompletionEndpoint<T, E>>, ReactiveError>
 where
     E: 'scope,
@@ -436,8 +474,13 @@ where
     let callback = match state
         .try_borrow_mut()
         .map_err(|_| ReactiveError::BorrowConflict)
-        .and_then(|mut state_ref| state_ref.create_callback(thunk))
-    {
+        .and_then(|mut state_ref| {
+            if detached {
+                state_ref.create_callback_detached(thunk)
+            } else {
+                state_ref.create_callback(thunk)
+            }
+        }) {
         Ok(callback) => callback,
         Err(error) => {
             return Err(error);
@@ -469,7 +512,7 @@ where
     F: FnMut(T) -> Result<(), E> + 'scope,
 {
     Ok(CompletionOnce {
-        state: create_completion_state(storage, state, callback)?,
+        state: create_completion_state(storage, state, callback, false)?,
         marker: PhantomData,
     })
 }
@@ -484,7 +527,37 @@ where
     F: FnMut(T) -> Result<(), E> + 'scope,
 {
     Ok(CompletionSender {
-        state: create_completion_state(storage, state, callback)?,
+        state: create_completion_state(storage, state, callback, false)?,
+        marker: PhantomData,
+    })
+}
+
+pub(crate) fn create_completion_once_detached<'scope, T: 'static, E, F>(
+    storage: &'scope ScopeStorage,
+    state: ScopeState<'scope>,
+    callback: F,
+) -> Result<CompletionOnce<T, E>, ReactiveError>
+where
+    E: 'scope,
+    F: FnMut(T) -> Result<(), E> + 'scope,
+{
+    Ok(CompletionOnce {
+        state: create_completion_state(storage, state, callback, true)?,
+        marker: PhantomData,
+    })
+}
+
+pub(crate) fn create_completion_sender_detached<'scope, T: 'static, E, F>(
+    storage: &'scope ScopeStorage,
+    state: ScopeState<'scope>,
+    callback: F,
+) -> Result<CompletionSender<T, E>, ReactiveError>
+where
+    E: 'scope,
+    F: FnMut(T) -> Result<(), E> + 'scope,
+{
+    Ok(CompletionSender {
+        state: create_completion_state(storage, state, callback, true)?,
         marker: PhantomData,
     })
 }

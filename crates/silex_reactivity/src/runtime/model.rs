@@ -1280,6 +1280,16 @@ impl<'scope> ScopeStateInner<'scope> {
         )
     }
 
+    pub(crate) fn create_callback_detached<T: 'scope, E: 'scope>(
+        &mut self,
+        callback: TypedSlotAllocation<'scope, CallbackThunk<'scope, T, E>>,
+    ) -> ReactiveResult<NodeId> {
+        self.register_node(
+            NodeCore::new(NodeKindTag::Callback, None, NodeState::Clean),
+            move || Ok(NodeData::new(Rc::new(NodeStorage::callback(callback)?))),
+        )
+    }
+
     pub(crate) fn create_node_ref<T: 'scope>(
         &mut self,
         value: TypedSlotAllocation<'scope, Option<T>>,

@@ -11,7 +11,7 @@ use web_sys::Window;
 use silex_core::{ErrorHandlerInput, SilexError, SilexErrorKind, SilexResult};
 
 use crate::view::{
-    HostCallback, HostResourceHandle, JsCallbackResource, MountErrorHandler, MountOwnerToken,
+    HostCallback, HostResource, JsCallbackResource, MountErrorHandler, MountOwnerToken,
 };
 
 pub mod detached;
@@ -127,7 +127,7 @@ pub fn window_event_listener_untyped<'scope, H>(
     event_name: &str,
     mut cb: impl FnMut(web_sys::Event) -> SilexResult<()> + 'scope,
     error_handler: H,
-) -> Result<HostResourceHandle<'scope>, JsValue>
+) -> Result<HostResource<'scope>, JsValue>
 where
     H: ErrorHandlerInput<'scope>,
 {
@@ -149,12 +149,12 @@ where
         Closure::wrap(Box::new(move |event: web_sys::Event| {
             let _ = destination_for_closure.dispatch(event.into());
         }));
-    let resource = HostResourceHandle::from_js_callback(&destination, closure.into_js_value());
+    let resource = HostResource::from_js_callback(&destination, closure.into_js_value());
     let js_fn = resource.js_callback_function();
     let window = window();
     if let Err(error) = window.add_event_listener_with_callback(event_name, &js_fn) {
-        destination.cancel();
-        resource.cancel_once();
+        let _ = destination.cancel();
+        let _ = resource.cancel_once();
         return Err(error);
     }
 
@@ -181,7 +181,7 @@ pub fn window_event_listener<'scope, E, F, H>(
     event: E,
     mut cb: F,
     error_handler: H,
-) -> Result<HostResourceHandle<'scope>, JsValue>
+) -> Result<HostResource<'scope>, JsValue>
 where
     E: crate::event::EventDescriptor,
     F: FnMut(E::EventType) -> SilexResult<()> + 'scope,
@@ -217,7 +217,7 @@ fn owned_once_callback<'scope>(
     owner: &MountOwnerToken<'scope>,
     cb: impl FnOnce() -> SilexResult<()> + 'scope,
     error_handler: MountErrorHandler<'scope>,
-) -> Result<(HostCallback, HostResourceHandle<'scope>), JsValue> {
+) -> Result<(HostCallback, HostResource<'scope>), JsValue> {
     let mut cb = Some(cb);
     let destination = owner
         .host_callback_once(
@@ -231,7 +231,7 @@ fn owned_once_callback<'scope>(
             error_handler,
         )
         .map_err(host_resource_error)?;
-    let resource = HostResourceHandle::empty_js_callback(&destination);
+    let resource = HostResource::empty_js_callback(&destination);
     let destination_for_closure = destination.clone();
     let resource_for_callback = resource.callback_resource();
     let callback = Closure::once_into_js(AssertUnwindSafe(move || {
@@ -249,7 +249,7 @@ pub fn request_animation_frame<'scope, H>(
     owner: &MountOwnerToken<'scope>,
     cb: impl FnOnce() -> SilexResult<()> + 'scope,
     error_handler: H,
-) -> Result<HostResourceHandle<'scope>, JsValue>
+) -> Result<HostResource<'scope>, JsValue>
 where
     H: ErrorHandlerInput<'scope>,
 {
@@ -266,8 +266,8 @@ where
     let frame = match frame {
         Ok(frame) => frame,
         Err(error) => {
-            destination.cancel();
-            callback.cancel_once();
+            let _ = destination.cancel();
+            let _ = callback.cancel_once();
             return Err(error);
         }
     };
@@ -288,7 +288,7 @@ pub fn request_idle_callback<'scope, H>(
     owner: &MountOwnerToken<'scope>,
     cb: impl FnOnce() -> SilexResult<()> + 'scope,
     error_handler: H,
-) -> Result<HostResourceHandle<'scope>, JsValue>
+) -> Result<HostResource<'scope>, JsValue>
 where
     H: ErrorHandlerInput<'scope>,
 {
@@ -305,8 +305,8 @@ where
     let idle = match idle {
         Ok(idle) => idle,
         Err(error) => {
-            destination.cancel();
-            callback.cancel_once();
+            let _ = destination.cancel();
+            let _ = callback.cancel_once();
             return Err(error);
         }
     };
@@ -327,7 +327,7 @@ pub fn queue_microtask<'scope, H>(
     owner: &MountOwnerToken<'scope>,
     task: impl FnOnce() -> SilexResult<()> + 'scope,
     error_handler: H,
-) -> Result<HostResourceHandle<'scope>, JsValue>
+) -> Result<HostResource<'scope>, JsValue>
 where
     H: ErrorHandlerInput<'scope>,
 {
@@ -336,7 +336,7 @@ where
         .is_active()
         .map_err(|_| JsValue::from_str("failed to query view owner state"))?
     {
-        return Ok(HostResourceHandle::inactive());
+        return Ok(HostResource::inactive());
     }
     let (destination, callback) = owned_once_callback(owner, task, error_handler)?;
     let task = callback.js_callback_function();
@@ -353,7 +353,7 @@ pub fn set_timeout<'scope, H>(
     cb: impl FnOnce() -> SilexResult<()> + 'scope,
     duration: Duration,
     error_handler: H,
-) -> Result<HostResourceHandle<'scope>, JsValue>
+) -> Result<HostResource<'scope>, JsValue>
 where
     H: ErrorHandlerInput<'scope>,
 {
@@ -373,8 +373,8 @@ where
     let timeout = match timeout {
         Ok(timeout) => timeout,
         Err(error) => {
-            destination.cancel();
-            callback.cancel_once();
+            let _ = destination.cancel();
+            let _ = callback.cancel_once();
             return Err(error);
         }
     };
@@ -397,7 +397,7 @@ pub fn set_interval<'scope, H>(
     mut cb: impl FnMut() -> SilexResult<()> + 'scope,
     duration: Duration,
     error_handler: H,
-) -> Result<HostResourceHandle<'scope>, JsValue>
+) -> Result<HostResource<'scope>, JsValue>
 where
     H: ErrorHandlerInput<'scope>,
 {
@@ -415,7 +415,7 @@ where
     let closure: Closure<dyn FnMut()> = Closure::wrap(Box::new(move || {
         let _ = destination_for_closure.dispatch(JsValue::UNDEFINED);
     }));
-    let resource = HostResourceHandle::from_js_callback(&destination, closure.into_js_value());
+    let resource = HostResource::from_js_callback(&destination, closure.into_js_value());
     let js_fn = resource.js_callback_function();
     let window = window();
     let interval = match window
@@ -423,8 +423,8 @@ where
     {
         Ok(interval) => interval,
         Err(error) => {
-            destination.cancel();
-            resource.cancel_once();
+            let _ = destination.cancel();
+            let _ = resource.cancel_once();
             return Err(error);
         }
     };

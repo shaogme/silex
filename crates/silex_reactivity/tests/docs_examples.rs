@@ -1,4 +1,5 @@
 #![deny(warnings)]
+#![allow(clippy::expect_used)]
 
 #[path = "../../../docs/examples/silex_reactivity/basic.rs"]
 mod basic;

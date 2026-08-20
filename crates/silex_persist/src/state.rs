@@ -13,7 +13,7 @@ use silex_core::{
 };
 use silex_dom::attribute::AttrOp;
 use silex_dom::view::{
-    ApplyAttributes, HostResourceHandle, MountErrorHandler, MountInstance, MountOwner, View,
+    ApplyAttributes, HostResource, MountErrorHandler, MountInstance, MountOwner, View,
 };
 use std::rc::Rc;
 use web_sys::Node;
@@ -46,7 +46,7 @@ pub enum PersistenceState {
 pub(crate) struct OwnerDebounceState<'scope> {
     pending: bool,
     generation: u64,
-    timer: Option<HostResourceHandle<'scope>>,
+    timer: Option<HostResource<'scope>>,
 }
 
 impl<'scope> OwnerDebounceState<'scope> {
@@ -58,9 +58,7 @@ impl<'scope> OwnerDebounceState<'scope> {
         }
     }
 
-    pub(crate) fn begin_with_previous_timer(
-        &mut self,
-    ) -> (u64, Option<HostResourceHandle<'scope>>) {
+    pub(crate) fn begin_with_previous_timer(&mut self) -> (u64, Option<HostResource<'scope>>) {
         let timer = self.timer.take();
         self.pending = true;
         self.generation = self.generation.wrapping_add(1);
@@ -70,8 +68,8 @@ impl<'scope> OwnerDebounceState<'scope> {
     pub(crate) fn set_timer(
         &mut self,
         generation: u64,
-        timer: HostResourceHandle<'scope>,
-    ) -> Option<HostResourceHandle<'scope>> {
+        timer: HostResource<'scope>,
+    ) -> Option<HostResource<'scope>> {
         if self.pending && self.generation == generation {
             self.timer = Some(timer);
             None
@@ -91,7 +89,7 @@ impl<'scope> OwnerDebounceState<'scope> {
         true
     }
 
-    pub(crate) fn invalidate(&mut self) -> Option<HostResourceHandle<'scope>> {
+    pub(crate) fn invalidate(&mut self) -> Option<HostResource<'scope>> {
         let timer = self.timer.take();
         self.pending = false;
         self.generation = self.generation.wrapping_add(1);
@@ -654,7 +652,7 @@ pub(crate) fn invalidate_debounce<'scope, T>(
             .and_then(OwnerDebounceState::invalidate)
     })?;
     if let Some(timer) = &timer {
-        timer.cancel();
+        timer.cancel().map_err(PersistenceError::from)?;
     }
     drop(timer);
     Ok(())
@@ -664,7 +662,7 @@ pub(crate) fn take_controller_resources<'scope, T>(
     controller: StoredValue<'scope, PersistenceController<'scope, T>>,
 ) -> SilexResult<(
     Option<BackendSubscription<'scope>>,
-    Option<HostResourceHandle<'scope>>,
+    Option<HostResource<'scope>>,
 )> {
     controller.update_untracked(|controller| {
         let timer = controller

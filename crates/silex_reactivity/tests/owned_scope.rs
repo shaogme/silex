@@ -5,7 +5,9 @@
     clippy::panic
 )]
 
-use silex_reactivity::{ErrorHandlerToken, OwnerAccess, ReactiveError, Runtime, unwind_safe};
+use silex_reactivity::{
+    CompletionSender, ErrorHandlerToken, OwnerAccess, ReactiveError, Runtime, unwind_safe,
+};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -67,6 +69,45 @@ fn owned_scope_keeps_effects_until_explicit_dispose() {
     }
 
     root.close().expect("root disposal should succeed");
+}
+
+#[test]
+fn detached_completion_survives_effect_disposal() {
+    let mut runtime = Runtime::new();
+    let root = runtime.owner().expect("runtime root creation");
+    let endpoint = Rc::new(RefCell::new(None::<CompletionSender<(), ReactiveError>>));
+    let hits = Rc::new(Cell::new(0));
+    let access = root.access();
+    let endpoint_for_effect = endpoint.clone();
+    let hits_for_effect = hits.clone();
+    let effect_access = access;
+    let error_handler = access
+        .error_handler(|_: ReactiveError| {})
+        .expect("handler registration");
+    let effect = access
+        .effect(
+            move || {
+                let hits = hits_for_effect.clone();
+                let sender = effect_access.completion_sender_detached(unwind_safe(move |()| {
+                    hits.set(hits.get() + 1);
+                    Ok(())
+                }))?;
+                endpoint_for_effect.borrow_mut().replace(sender);
+                Ok(())
+            },
+            error_handler,
+        )
+        .expect("effect creation");
+
+    effect.stop().expect("effect disposal");
+    let sender = endpoint
+        .borrow_mut()
+        .take()
+        .expect("detached endpoint should be retained");
+    assert_eq!(sender.submit(()), Ok(true));
+    assert_eq!(hits.get(), 1);
+    sender.cancel().expect("detached endpoint cancellation");
+    root.close().expect("runtime root disposal");
 }
 
 #[test]

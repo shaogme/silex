@@ -182,6 +182,20 @@ completion callback 可能捕获 `Rc<RefCell<_>>` 等不满足 unwind-safety 的
 - 最后一个 active clone drop 时会取消 endpoint；如果长期 owner 被替换但 sender clone 仍被异步任务持有，必须在替换流程中显式 cancel。
 - callback panic 会先关闭 callback 节点，再恢复 panic；后续提交返回 `Ok(false)`。
 
+普通 `completion_once`/`completion_sender` 的 callback 节点默认挂在创建时的
+当前计算或 owner 子树中。框架适配器可使用隐藏的
+`completion_once_detached`/`completion_sender_detached` 入口，把 endpoint
+从当前计算节点分离：effect rerun 或 effect stop 不会提前关闭它，但它仍属于
+创建它的 owner，owner close 或显式 `cancel()` 仍是最终边界。detached 只改变
+ownership subtree，不会把 endpoint 变成全局资源，也不改变单线程和 scope
+lifetime 约束。
+
+endpoint 在 runtime disposal 已经进行时不会递归调用 `dispose_nodes`。关闭
+请求会登记 `(owner_id, node_id)` 到 pending 队列；外层 disposal transaction
+在节点拓扑稳定后统一 drain，并通过 ID 去重。已由当前批次移除的 endpoint
+会被安全跳过，drain 产生的 runtime、handler 或 panic 失败仍进入同一个
+`CloseError` 聚合。
+
 completion 的 `T` 必须满足 `'static`，因为提交者可能独立于创建 callback 的栈帧；错误 `E` 仍受 owner 生命周期约束。两者都不改变 runtime 单线程限制，sender 不能被当作跨线程 channel。
 
 ## 异步任务的推荐关闭流程

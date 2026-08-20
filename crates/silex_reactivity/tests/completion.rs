@@ -88,6 +88,36 @@ fn completion_drop_reports_close_errors() {
 }
 
 #[test]
+fn completion_drop_during_scope_cleanup_uses_the_pending_endpoint_drain() {
+    let mut runtime = Runtime::new();
+    let root = runtime.owner().expect("runtime root creation");
+    let scope = root.access();
+    let sender = scope
+        .completion_sender(unwind_safe(|_: i32| Ok::<(), ()>(())))
+        .expect("completion registration");
+    let handler = scope
+        .error_handler(|_: ()| {})
+        .expect("handler registration");
+    scope
+        .on_cleanup(
+            move || {
+                drop(sender);
+                Ok::<(), ()>(())
+            },
+            handler,
+        )
+        .expect("cleanup registration");
+
+    root.close().expect("root disposal");
+    assert!(
+        runtime
+            .take_unhandled_close_errors()
+            .expect("close report collection")
+            .is_empty()
+    );
+}
+
+#[test]
 fn completion_callback_panic_reports_parallel_close_error() {
     let mut runtime = Runtime::new();
     let result = catch_unwind(AssertUnwindSafe(|| {

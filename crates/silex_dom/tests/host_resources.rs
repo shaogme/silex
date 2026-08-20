@@ -658,12 +658,14 @@ fn window_listener_cancel_is_idempotent_and_owner_keeps_final_control() {
         .borrow()
         .as_ref()
         .expect("listener handle is retained")
-        .cancel();
+        .cancel()
+        .expect("listener cancellation should succeed");
     handle_slot
         .borrow()
         .as_ref()
         .expect("listener handle is retained")
-        .cancel();
+        .cancel()
+        .expect("repeated listener cancellation should succeed");
     window
         .dispatch_event(&Event::new("silex-resize").unwrap())
         .expect("window event dispatch should succeed");
@@ -840,12 +842,14 @@ async fn active_host_tasks_execute_and_interval_cancel_is_idempotent() {
         .borrow()
         .as_ref()
         .expect("interval handle is retained")
-        .cancel();
+        .cancel()
+        .expect("interval cancellation should succeed");
     interval_slot
         .borrow()
         .as_ref()
         .expect("interval handle is retained")
-        .cancel();
+        .cancel()
+        .expect("repeated interval cancellation should succeed");
     let interval_calls_after_cancel = interval_calls.get();
     spy.wait(30).await;
     assert_eq!(interval_calls.get(), interval_calls_after_cancel);
@@ -897,7 +901,8 @@ async fn microtask_cancel_and_owner_dispose_only_gate_user_callbacks() {
         .borrow()
         .as_ref()
         .expect("microtask handle is retained")
-        .cancel();
+        .cancel()
+        .expect("microtask cancellation should succeed");
     drop(canceled_slot);
     root.close().expect("root disposal should succeed");
     spy.wait(0).await;
@@ -1074,8 +1079,12 @@ fn timeout_lifecycle_handles_creation_failure_repeated_cancel_reentry_and_stale_
             &error_handler,
         )
         .expect("cancelable timeout should register");
-        canceled.cancel();
-        canceled.cancel();
+        canceled
+            .cancel()
+            .expect("timeout cancellation should succeed");
+        canceled
+            .cancel()
+            .expect("repeated timeout cancellation should succeed");
         spy.fire_timeout(0);
         assert_eq!(canceled_calls.get(), 0);
 

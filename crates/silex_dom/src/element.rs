@@ -1,8 +1,8 @@
 use crate::attribute::{ApplyTarget, AttrOp, AttributeBuilder, IntoStorable};
 use crate::event::{EventDescriptor, EventHandler};
 use crate::view::{
-    AnyView, ApplyAttributes, HostResourceHandle, MountInstance, MountOwner, MountOwnerToken,
-    OwnerMount, View,
+    AnyView, ApplyAttributes, HostResource, MountInstance, MountOwner, MountOwnerToken, OwnerMount,
+    View,
 };
 use std::marker::PhantomData;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -373,14 +373,14 @@ where
     let closure: Closure<dyn FnMut(E)> = Closure::wrap(Box::new(move |event: E| {
         let _ = destination_for_closure.dispatch(event.unchecked_into::<JsValue>());
     }));
-    let resource = HostResourceHandle::from_js_callback(&destination, closure.into_js_value());
+    let resource = HostResource::from_js_callback(&destination, closure.into_js_value());
     let js_fn = resource.js_callback_function();
     if let Err(error) = dom_element
         .add_event_listener_with_callback(&event_name, &js_fn)
         .map_err(SilexError::fatal)
     {
-        destination.cancel();
-        resource.cancel_once();
+        let _ = destination.cancel();
+        let _ = resource.cancel_once();
         return Err(error);
     }
 
