@@ -13,7 +13,7 @@ use crate::{
 };
 use std::{
     any::Any,
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     mem,
     panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
 };
@@ -126,37 +126,51 @@ enum CleanupPlanStep {
 fn collect_final_cleanup_plan<'scope>(
     state: &ScopeState<'scope>,
 ) -> Result<FinalCleanupPlan<'scope>, ReactiveError> {
-    let roots = state.try_borrow()?.roots.to_vec();
+    let roots = state.try_borrow()?.roots_snapshot()?;
     let mut stack = Vec::with_capacity(roots.len());
     stack.extend(roots.into_iter().rev().map(CleanupPlanStep::Enter));
-    let mut node_batches = Vec::new();
+    let mut node_order = Vec::new();
 
     while let Some(step) = stack.pop() {
         match step {
             CleanupPlanStep::Enter(id) => {
                 let children = {
                     let state_ref = state.try_borrow()?;
-                    let Some(node) = state_ref.nodes.get(id).copied() else {
-                        continue;
-                    };
-                    state_ref
-                        .children_of_head(node.first_child)
-                        .collect::<Vec<_>>()
+                    if !state_ref.nodes.contains_key(id) {
+                        return Err(ReactiveError::InvariantViolation);
+                    }
+                    state_ref.children_of(id)?
                 };
                 stack.push(CleanupPlanStep::Exit(id));
                 stack.extend(children.into_iter().rev().map(CleanupPlanStep::Enter));
             }
             CleanupPlanStep::Exit(id) => {
-                let cleanups = state
-                    .try_borrow_mut()?
-                    .data
-                    .get_mut(id)
-                    .map(|data| mem::take(&mut data.cleanups))
-                    .unwrap_or_default();
-                if !cleanups.is_empty() {
-                    node_batches.push(cleanups);
-                }
+                node_order.push(id);
             }
+        }
+    }
+
+    {
+        let state_ref = state.try_borrow()?;
+        if node_order
+            .iter()
+            .any(|id| !state_ref.data.contains_key(*id))
+        {
+            return Err(ReactiveError::InvariantViolation);
+        }
+    }
+    let mut node_batches = Vec::new();
+    for id in node_order {
+        let cleanups = mem::take(
+            &mut state
+                .try_borrow_mut()?
+                .data
+                .get_mut(id)
+                .ok_or(ReactiveError::InvariantViolation)?
+                .cleanups,
+        );
+        if !cleanups.is_empty() {
+            node_batches.push(cleanups);
         }
     }
 
@@ -225,7 +239,14 @@ pub(crate) fn dispose_all<'scope>(state: &ScopeState<'scope>) -> CleanupOutcome<
 
     loop {
         let roots = match state.try_borrow() {
-            Ok(state_ref) => state_ref.roots.to_vec(),
+            Ok(state_ref) => state_ref.disposal_roots(),
+            Err(error) => {
+                outcome.runtime_errors.push(error);
+                return outcome;
+            }
+        };
+        let roots = match roots {
+            Ok(roots) => roots,
             Err(error) => {
                 outcome.runtime_errors.push(error);
                 return outcome;
@@ -256,9 +277,9 @@ pub(crate) fn dispose_all<'scope>(state: &ScopeState<'scope>) -> CleanupOutcome<
     outcome
 }
 
-enum DisposeStep<'scope> {
+enum CollectStep {
     Enter(NodeId),
-    Exit(Option<NodeData<'scope>>),
+    Exit(NodeId),
 }
 
 fn collect_disposal_nodes<'scope>(
@@ -267,18 +288,25 @@ fn collect_disposal_nodes<'scope>(
     scratch: &mut DisposalScratch,
 ) -> Result<(), ReactiveError> {
     let state_ref = state.try_borrow()?;
-    scratch.pending.extend(roots.iter().copied());
-    while let Some(id) = scratch.pending.pop() {
-        if !scratch.visited.insert(id) {
-            continue;
+    state_ref.ownership.validate(&state_ref.nodes)?;
+    scratch.visited.clear();
+    scratch.nodes.clear();
+    scratch.postorder.clear();
+    let mut pending = Vec::with_capacity(roots.len().saturating_mul(2));
+    pending.extend(roots.iter().rev().copied().map(CollectStep::Enter));
+    while let Some(step) = pending.pop() {
+        match step {
+            CollectStep::Enter(id) => {
+                if !state_ref.nodes.contains_key(id) || !scratch.visited.insert(id) {
+                    return Err(ReactiveError::InvariantViolation);
+                }
+                let children = state_ref.children_of(id)?;
+                scratch.nodes.push(id);
+                pending.push(CollectStep::Exit(id));
+                pending.extend(children.into_iter().rev().map(CollectStep::Enter));
+            }
+            CollectStep::Exit(id) => scratch.postorder.push(id),
         }
-        let Some(node) = state_ref.nodes.get(id) else {
-            continue;
-        };
-        scratch.nodes.push(id);
-        scratch
-            .pending
-            .extend(state_ref.children_of_head(node.first_child));
     }
     Ok(())
 }
@@ -291,9 +319,9 @@ fn preflight_node_disposal<'scope>(
     let (owner_id, scheduler) = {
         let state_ref = state.try_borrow()?;
         for id in nodes {
-            let Some(_) = state_ref.nodes.get(*id) else {
-                continue;
-            };
+            if !state_ref.nodes.contains_key(*id) {
+                return Err(ReactiveError::InvariantViolation);
+            }
             for target in state_ref
                 .dependency_edges_of(*id)
                 .chain(state_ref.subscriber_edges_of(*id))
@@ -373,69 +401,74 @@ fn dispose_nodes_collect_with_scratch<'scope>(
 ) -> Result<CleanupOutcome<'scope>, ReactiveError> {
     collect_disposal_nodes(state, &roots, scratch)?;
     preflight_node_disposal(state, &scratch.nodes, &mut scratch.external_owner_ids)?;
+    state
+        .try_borrow_mut()?
+        .detach_nodes(&roots, &scratch.nodes)?;
     let _observer_frame = ObserverFrame::push_untracked(scheduler.clone())?;
     let mut outcome = CleanupOutcome::new();
-    let mut stack = Vec::with_capacity(roots.len());
-    stack.extend(roots.into_iter().rev().map(DisposeStep::Enter));
+    let mut removed_data = HashMap::with_capacity(scratch.nodes.len());
+    for id in scratch.nodes.iter().copied() {
+        let data = {
+            let mut state_ref = state.try_borrow_mut()?;
+            let _node = state_ref
+                .nodes
+                .get(id)
+                .copied()
+                .ok_or(ReactiveError::InvariantViolation)?;
+            let source_target = TargetNode {
+                owner_id: state_ref.owner_id,
+                node: id,
+            };
+            state_ref.take_subscribers_into(id, &mut scratch.removed_targets);
+            let scheduler = state_ref.scheduler.clone();
+            scheduler
+                .try_borrow_mut()
+                .map_err(|_| ReactiveError::BorrowConflict)?
+                .cancel_effect(source_target);
 
-    while let Some(step) = stack.pop() {
-        match step {
-            DisposeStep::Enter(id) => {
-                let (children, data) = {
-                    let mut state_ref = state.try_borrow_mut()?;
-                    let Some(node) = state_ref.nodes.get(id).copied() else {
-                        continue;
-                    };
-                    let source_target = TargetNode {
-                        owner_id: state_ref.owner_id,
-                        node: id,
-                    };
-                    state_ref.take_subscribers_into(id, &mut scratch.removed_targets);
-                    let scheduler = state_ref.scheduler.clone();
-                    scheduler
+            state_ref.clear_dependencies(id)?;
+            for subscriber in scratch.removed_targets.iter().copied() {
+                if subscriber.owner_id == state_ref.owner_id {
+                    state_ref.remove_dependency(subscriber.node, source_target);
+                } else if let Some(observer_state) = scheduler
+                    .try_borrow()
+                    .map_err(|_| ReactiveError::BorrowConflict)?
+                    .get_scope_for_edge_cleanup(subscriber.owner_id)?
+                {
+                    observer_state
                         .try_borrow_mut()
                         .map_err(|_| ReactiveError::BorrowConflict)?
-                        .cancel_effect(source_target);
-
-                    state_ref.clear_dependencies(id)?;
-                    for subscriber in scratch.removed_targets.iter().copied() {
-                        if subscriber.owner_id == state_ref.owner_id {
-                            state_ref.remove_dependency(subscriber.node, source_target);
-                        } else if let Some(observer_state) = scheduler
-                            .try_borrow()
-                            .map_err(|_| ReactiveError::BorrowConflict)?
-                            .get_scope_for_edge_cleanup(subscriber.owner_id)?
-                        {
-                            observer_state
-                                .try_borrow_mut()
-                                .map_err(|_| ReactiveError::BorrowConflict)?
-                                .remove_dependency(subscriber.node, source_target);
-                        }
-                    }
-
-                    state_ref
-                        .dependency_transactions
-                        .retain(|transaction| transaction.observer != id);
-                    let children: Vec<NodeId> =
-                        state_ref.children_of_head(node.first_child).collect();
-                    let data = state_ref.data.remove(id);
-                    if state_ref.current_owner == Some(id) {
-                        state_ref.current_owner = None;
-                    }
-                    state_ref.unlink_child(node.parent, id);
-                    state_ref.adjacency.remove(id);
-                    state_ref.nodes.remove(id);
-                    (children, data)
-                };
-                stack.push(DisposeStep::Exit(data));
-                stack.extend(children.into_iter().rev().map(DisposeStep::Enter));
-            }
-            DisposeStep::Exit(data) => {
-                if let Some(data) = data {
-                    outcome.append(drop_node_data(scheduler.clone(), data));
+                        .remove_dependency(subscriber.node, source_target);
                 }
             }
-        }
+
+            state_ref
+                .dependency_transactions
+                .retain(|transaction| transaction.observer != id);
+            let data = state_ref
+                .data
+                .remove(id)
+                .ok_or(ReactiveError::InvariantViolation)?;
+            if state_ref.current_owner == Some(id) {
+                state_ref.current_owner = None;
+            }
+            if state_ref.adjacency.remove(id).is_none() {
+                return Err(ReactiveError::InvariantViolation);
+            }
+            if state_ref.nodes.remove(id).is_none() {
+                return Err(ReactiveError::InvariantViolation);
+            }
+            state_ref.remove_detached(id)?;
+            data
+        };
+        removed_data.insert(id, data);
+    }
+
+    for id in scratch.postorder.iter() {
+        let data = removed_data
+            .remove(id)
+            .ok_or(ReactiveError::InvariantViolation)?;
+        outcome.append(drop_node_data(scheduler.clone(), data));
     }
     Ok(outcome)
 }

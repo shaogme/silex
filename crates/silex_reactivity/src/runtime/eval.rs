@@ -485,7 +485,7 @@ fn run_node<'scope>(
 ) -> EvaluationResult<'scope, bool> {
     struct RunningNodeContext<'scope> {
         storage: Rc<NodeStorage<'scope>>,
-        first_child: NodeId,
+        children: Vec<NodeId>,
         cleanups: Vec<CleanupThunk<'scope>>,
         previous_owner: Option<NodeId>,
         scheduler: SharedCell<GlobalScheduler>,
@@ -502,7 +502,6 @@ fn run_node<'scope>(
         if !node.is_computation() || node.running {
             return Ok(false);
         }
-        let first_child = node.first_child;
         let Some(data) = state_ref.data.get_mut(id) else {
             return Ok(false);
         };
@@ -514,15 +513,19 @@ fn run_node<'scope>(
         let previous_owner = state_ref.current_owner;
         let scheduler = state_ref.scheduler.clone();
         let owner_id = state_ref.owner_id;
+        let children = state_ref
+            .detach_children(id)
+            .map_err(EvaluationError::Runtime)?;
         state_ref.begin_dependency_transaction(id);
-        if let Some(node) = state_ref.nodes.get_mut(id) {
-            node.running = true;
-            node.first_child = NodeId::DANGLING;
-        }
+        state_ref
+            .nodes
+            .get_mut(id)
+            .ok_or(EvaluationError::Runtime(ReactiveError::InvariantViolation))?
+            .running = true;
         state_ref.current_owner = Some(id);
         RunningNodeContext {
             storage,
-            first_child,
+            children,
             cleanups,
             previous_owner,
             scheduler,
@@ -532,26 +535,20 @@ fn run_node<'scope>(
 
     let RunningNodeContext {
         storage,
-        first_child,
+        children,
         cleanups,
         previous_owner,
         scheduler,
         owner_id,
     } = node_ctx;
 
-    let children_to_dispose: Vec<NodeId> = state
-        .try_borrow()
-        .map_err(|_| EvaluationError::Runtime(ReactiveError::BorrowConflict))?
-        .children_of_head(first_child)
-        .collect();
     let mut execution_started = false;
     let mut observer_frame = None;
     let mut cleanup_errors = Vec::new();
     let outcome = catch_unwind(AssertUnwindSafe(
         || -> EvaluationResult<'scope, ComputationResult> {
-            let child_dispose = catch_unwind(AssertUnwindSafe(|| {
-                dispose_nodes_collect(state, children_to_dispose)
-            }));
+            let child_dispose =
+                catch_unwind(AssertUnwindSafe(|| dispose_nodes_collect(state, children)));
             let mut cleanup_panic = match child_dispose {
                 Ok(Ok(mut child_outcome)) => {
                     cleanup_errors.extend(child_outcome.errors);
@@ -772,10 +769,10 @@ fn run_node<'scope>(
             }
         }
         if failed {
-            if let Some(node) = state_ref.nodes.get_mut(id) {
-                let first_child = node.first_child;
-                node.first_child = NodeId::DANGLING;
-                failed_children = state_ref.children_of_head(first_child).collect();
+            if state_ref.nodes.contains_key(id) {
+                failed_children = state_ref
+                    .detach_children(id)
+                    .map_err(EvaluationError::Runtime)?;
             }
             if let Some(data) = state_ref.data.get_mut(id) {
                 failed_cleanups = mem::take(&mut data.cleanups);

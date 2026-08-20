@@ -411,7 +411,14 @@ mod tests {
                     .expect("valid i18n store");
                 let before = owner.runtime_snapshot().expect("runtime snapshot");
                 let effect = sync_document_metadata(store).expect("metadata effect can be created");
-                assert_eq!(owner.runtime_snapshot().expect("runtime snapshot"), before);
+                let after = owner.runtime_snapshot().expect("runtime snapshot");
+                assert_eq!(after.nodes, before.nodes);
+                assert_eq!(after.data, before.data);
+                assert_eq!(after.edges, before.edges);
+                assert_eq!(after.roots, before.roots);
+                assert_eq!(after.cleanups, before.cleanups);
+                assert_eq!(after.handlers, before.handlers);
+                assert_eq!(after.queue, before.queue);
                 assert!(!effect.stop().expect("inactive effect can stop"));
             })
             .expect("transient owner");

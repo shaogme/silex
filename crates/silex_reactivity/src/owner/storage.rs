@@ -492,3 +492,78 @@ impl ScopeStorage {
         self.children.len()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::expect_used, clippy::indexing_slicing, clippy::panic)]
+
+    use super::*;
+    use std::cell::Cell;
+
+    struct DropProbe(Rc<Cell<usize>>);
+
+    impl Drop for DropProbe {
+        fn drop(&mut self) {
+            self.0.set(self.0.get().saturating_add(1));
+        }
+    }
+
+    #[test]
+    fn corrupted_topology_blocks_release_until_repaired() {
+        let scheduler = GlobalScheduler::new();
+        let storage = ScopeStorage::new(scheduler).expect("test owner setup");
+        let state = storage.owner_token().state();
+        let drops = Rc::new(Cell::new(0));
+        let node = state
+            .try_borrow_mut()
+            .expect("state write")
+            .create_signal(storage.alloc_slot(DropProbe(drops.clone())))
+            .expect("signal registration");
+
+        state
+            .try_borrow_mut()
+            .expect("state write")
+            .ownership
+            .roots
+            .clear();
+        let first = storage.dispose_untracked();
+        assert!(!first.released);
+        assert_eq!(drops.get(), 0);
+        assert!(state.try_borrow().expect("state read").node_exists(node));
+
+        state
+            .try_borrow_mut()
+            .expect("state write")
+            .ownership
+            .roots
+            .push(node);
+        let second = storage.dispose_untracked();
+        assert!(second.released);
+        assert_eq!(drops.get(), 1);
+    }
+
+    #[test]
+    fn failed_topology_link_rolls_back_node_indexes() {
+        let scheduler = GlobalScheduler::new();
+        let storage = ScopeStorage::new(scheduler).expect("test owner setup");
+        let state = storage.owner_token().state();
+        let stale_parent = state
+            .try_borrow_mut()
+            .expect("state write")
+            .create_signal(storage.alloc_slot(1_i32))
+            .expect("initial signal");
+        runtime::dispose_nodes(&state, vec![stale_parent]).expect("initial disposal");
+        state.try_borrow_mut().expect("state write").current_owner = Some(stale_parent);
+
+        let result = state
+            .try_borrow_mut()
+            .expect("state write")
+            .create_signal(storage.alloc_slot(2_i32));
+        assert_eq!(result, Err(ReactiveError::InvariantViolation));
+        let state_ref = state.try_borrow().expect("state read");
+        assert!(state_ref.nodes.is_empty());
+        assert!(state_ref.data.is_empty());
+        assert!(state_ref.adjacency.is_empty());
+        assert!(state_ref.ownership.is_empty());
+    }
+}

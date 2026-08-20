@@ -72,12 +72,9 @@ pub(crate) struct NodeCore {
     pub(crate) updated_epoch: u64,
     pub(crate) last_computed_epoch: u64,
     pub(crate) parent: NodeId,
-    pub(crate) first_child: NodeId,
-    pub(crate) next_sibling: NodeId,
-    pub(crate) prev_sibling: NodeId,
 }
 
-const _: () = assert!(size_of::<NodeCore>() == 56);
+const _: () = assert!(size_of::<NodeCore>() == 32);
 
 impl NodeCore {
     pub(crate) fn new(kind: NodeKindTag, parent: Option<NodeId>, state: NodeState) -> Self {
@@ -90,9 +87,6 @@ impl NodeCore {
             updated_epoch: 0,
             last_computed_epoch: 0,
             parent: NodeId::from_option(parent),
-            first_child: NodeId::DANGLING,
-            next_sibling: NodeId::DANGLING,
-            prev_sibling: NodeId::DANGLING,
         }
     }
 
@@ -357,6 +351,7 @@ pub(crate) struct DisposalScratch {
     pub(crate) pending: Vec<NodeId>,
     pub(crate) visited: HashSet<NodeId>,
     pub(crate) nodes: Vec<NodeId>,
+    pub(crate) postorder: Vec<NodeId>,
     pub(crate) external_owner_ids: HashSet<OwnerId>,
     pub(crate) removed_targets: Vec<TargetNode>,
 }
@@ -378,7 +373,7 @@ pub(crate) struct ScratchStats {
 
 impl DisposalScratch {
     pub(crate) fn reset(&mut self) {
-        for buffer in [&mut self.pending, &mut self.nodes] {
+        for buffer in [&mut self.pending, &mut self.nodes, &mut self.postorder] {
             if buffer.capacity() > BUFFER_RETAIN_LIMIT {
                 *buffer = Vec::new();
             } else {
@@ -411,9 +406,9 @@ pub(crate) struct DependencyTransaction {
 
 /// Direct indexes for the two directions of a node's reactive edges.
 ///
-/// The edge arena remains the owner of stable edge ids, while these maps are
-/// the hot-path adjacency structure. This keeps insertion, duplicate checks,
-/// and removal independent of the number of neighboring edges.
+/// Each node owns both hash sets directly. This keeps insertion, duplicate
+/// checks, and removal independent of the number of neighboring edges without
+/// a second edge arena or a duplicated stable edge record.
 pub(crate) struct NodeAdjacency {
     pub(crate) subscribers: HashSet<TargetNode>,
     pub(crate) dependencies: HashSet<TargetNode>,
@@ -428,121 +423,335 @@ impl NodeAdjacency {
     }
 }
 
-#[derive(Clone, Copy)]
-struct RootLink {
-    previous: NodeId,
-    next: NodeId,
-}
-
-/// Ordered root index with constant-time removal.
+/// Ownership topology for nodes in one reactive scope.
 ///
-/// Roots are not part of a node's child list, so keeping a separate index
-/// avoids shifting or retaining the complete root collection during disposal.
-#[derive(Clone)]
-pub(crate) struct RootSet {
-    links: HashMap<NodeId, RootLink>,
-    first: NodeId,
-    last: NodeId,
+/// `roots` and each child vector preserve insertion order. Callers that need
+/// the historical child-first cleanup order receive those vectors reversed by
+/// [`OwnershipTree::children_of`]. Nodes in `detached` are temporarily outside
+/// the indexed tree while their cleanup and payload destruction finish. The
+/// private membership index keeps link checks local; full validation compares
+/// it with the Vec/SecondaryMap topology.
+pub(crate) struct OwnershipTree {
+    pub(crate) roots: Vec<NodeId>,
+    pub(crate) children: SecondaryMap<NodeId, Vec<NodeId>>,
+    pub(crate) detached: HashSet<NodeId>,
+    indexed: HashSet<NodeId>,
 }
 
-impl RootSet {
+impl OwnershipTree {
     pub(crate) fn new() -> Self {
         Self {
-            links: HashMap::new(),
-            first: NodeId::DANGLING,
-            last: NodeId::DANGLING,
+            roots: Vec::new(),
+            children: SecondaryMap::new(),
+            detached: HashSet::new(),
+            indexed: HashSet::new(),
         }
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    #[cfg(feature = "test-support")]
-    pub(crate) fn len(&self) -> usize {
-        self.links.len()
     }
 
     pub(crate) fn is_empty(&self) -> bool {
-        self.links.is_empty()
+        self.roots.is_empty()
+            && self.children.is_empty()
+            && self.detached.is_empty()
+            && self.indexed.is_empty()
     }
 
-    pub(crate) fn push(&mut self, root: NodeId) {
-        let previous = self.last;
-        self.links.insert(
-            root,
-            RootLink {
-                previous,
-                next: NodeId::DANGLING,
-            },
-        );
-        if previous.is_dangling() {
-            self.first = root;
-        } else if let Some(previous_link) = self.links.get_mut(&previous) {
-            previous_link.next = root;
+    fn validate_with_pending(
+        &self,
+        nodes: &SlotMap<NodeId, NodeCore>,
+        pending: Option<NodeId>,
+    ) -> ReactiveResult<()> {
+        let mut indexed = HashSet::new();
+        for root in &self.roots {
+            if Some(*root) == pending {
+                return Err(ReactiveError::InvariantViolation);
+            }
+            let node = nodes.get(*root).ok_or(ReactiveError::InvariantViolation)?;
+            if !node.parent.is_dangling() || self.detached.contains(root) || !indexed.insert(*root)
+            {
+                return Err(ReactiveError::InvariantViolation);
+            }
         }
-        self.last = root;
+
+        for (parent, children) in &self.children {
+            nodes.get(parent).ok_or(ReactiveError::InvariantViolation)?;
+            if children.is_empty() {
+                return Err(ReactiveError::InvariantViolation);
+            }
+            let mut local = HashSet::new();
+            for child in children {
+                if Some(*child) == pending {
+                    return Err(ReactiveError::InvariantViolation);
+                }
+                let child_node = nodes.get(*child).ok_or(ReactiveError::InvariantViolation)?;
+                if child_node.parent != parent
+                    || self.detached.contains(child)
+                    || !local.insert(*child)
+                    || !indexed.insert(*child)
+                {
+                    return Err(ReactiveError::InvariantViolation);
+                }
+            }
+        }
+
+        for detached in &self.detached {
+            if Some(*detached) == pending {
+                return Err(ReactiveError::InvariantViolation);
+            }
+            nodes
+                .get(*detached)
+                .ok_or(ReactiveError::InvariantViolation)?;
+            if indexed.contains(detached) {
+                return Err(ReactiveError::InvariantViolation);
+            }
+        }
+
+        if indexed != self.indexed {
+            return Err(ReactiveError::InvariantViolation);
+        }
+
+        if nodes
+            .keys()
+            .any(|id| Some(id) != pending && !indexed.contains(&id) && !self.detached.contains(&id))
+        {
+            return Err(ReactiveError::InvariantViolation);
+        }
+        Ok(())
     }
 
-    pub(crate) fn remove(&mut self, root: NodeId) {
-        let Some(link) = self.links.remove(&root) else {
-            return;
+    pub(crate) fn validate(&self, nodes: &SlotMap<NodeId, NodeCore>) -> ReactiveResult<()> {
+        self.validate_with_pending(nodes, None)
+    }
+
+    pub(crate) fn roots_snapshot(
+        &self,
+        nodes: &SlotMap<NodeId, NodeCore>,
+    ) -> ReactiveResult<Vec<NodeId>> {
+        self.validate(nodes)?;
+        Ok(self.roots.clone())
+    }
+
+    pub(crate) fn disposal_roots(
+        &self,
+        nodes: &SlotMap<NodeId, NodeCore>,
+    ) -> ReactiveResult<Vec<NodeId>> {
+        self.validate(nodes)?;
+        let mut roots = self.roots.clone();
+        roots.extend(self.detached.iter().copied());
+        Ok(roots)
+    }
+
+    pub(crate) fn children_of(
+        &self,
+        nodes: &SlotMap<NodeId, NodeCore>,
+        parent: NodeId,
+    ) -> ReactiveResult<Vec<NodeId>> {
+        if !nodes.contains_key(parent) {
+            return Err(ReactiveError::InvariantViolation);
+        }
+        let Some(children) = self.children.get(parent) else {
+            return Ok(Vec::new());
         };
-        if link.previous.is_dangling() {
-            self.first = link.next;
-        } else if let Some(previous) = self.links.get_mut(&link.previous) {
-            previous.next = link.next;
+        if children.is_empty() {
+            return Err(ReactiveError::InvariantViolation);
         }
-        if link.next.is_dangling() {
-            self.last = link.previous;
-        } else if let Some(next) = self.links.get_mut(&link.next) {
-            next.previous = link.previous;
+        let mut seen = HashSet::new();
+        for child in children {
+            let child_node = nodes.get(*child).ok_or(ReactiveError::InvariantViolation)?;
+            if child_node.parent != parent
+                || self.detached.contains(child)
+                || !self.indexed.contains(child)
+                || !seen.insert(*child)
+            {
+                return Err(ReactiveError::InvariantViolation);
+            }
         }
+        let mut result = children.clone();
+        result.reverse();
+        Ok(result)
     }
 
-    pub(crate) fn to_vec(&self) -> Vec<NodeId> {
-        let mut roots = Vec::with_capacity(self.links.len());
-        let mut current = self.first;
-        while current.is_valid() {
-            roots.push(current);
-            current = self
-                .links
-                .get(&current)
-                .map(|link| link.next)
-                .unwrap_or(NodeId::DANGLING);
+    pub(crate) fn link_child(
+        &mut self,
+        nodes: &SlotMap<NodeId, NodeCore>,
+        parent: NodeId,
+        child: NodeId,
+    ) -> ReactiveResult<()> {
+        let child_node = nodes.get(child).ok_or(ReactiveError::InvariantViolation)?;
+        let child_is_indexed = self.indexed.contains(&child);
+        let parent_is_indexed = parent.is_valid() && self.indexed.contains(&parent);
+        if self.detached.contains(&child)
+            || (parent.is_valid() && !nodes.contains_key(parent))
+            || (parent.is_valid() && self.detached.contains(&parent))
+            || (parent.is_valid() && !parent_is_indexed)
+            || child_node.parent != parent
+            || child_is_indexed
+            || self.roots.contains(&child)
+            || (parent.is_valid()
+                && self
+                    .children
+                    .get(parent)
+                    .is_some_and(|children| children.contains(&child)))
+        {
+            return Err(ReactiveError::InvariantViolation);
         }
-        roots
+        if !self.indexed.insert(child) {
+            return Err(ReactiveError::InvariantViolation);
+        }
+        if parent.is_dangling() {
+            self.roots.push(child);
+        } else if let Some(children) = self.children.get_mut(parent) {
+            children.push(child);
+        } else {
+            self.children.insert(parent, vec![child]);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn detach_roots(
+        &mut self,
+        nodes: &SlotMap<NodeId, NodeCore>,
+        roots: &[NodeId],
+    ) -> ReactiveResult<()> {
+        self.validate(nodes)?;
+        let mut requested = HashSet::new();
+        for root in roots {
+            if !requested.insert(*root) || !nodes.contains_key(*root) {
+                return Err(ReactiveError::InvariantViolation);
+            }
+            if self.detached.contains(root) {
+                return Err(ReactiveError::InvariantViolation);
+            }
+            let node = nodes.get(*root).ok_or(ReactiveError::InvariantViolation)?;
+            if node.parent.is_dangling() {
+                if !self.roots.contains(root) {
+                    return Err(ReactiveError::InvariantViolation);
+                }
+            } else if !self
+                .children
+                .get(node.parent)
+                .is_some_and(|children| children.contains(root))
+            {
+                return Err(ReactiveError::InvariantViolation);
+            }
+        }
+        for root in roots {
+            let parent = nodes
+                .get(*root)
+                .ok_or(ReactiveError::InvariantViolation)?
+                .parent;
+            if parent.is_dangling() {
+                remove_once(&mut self.roots, *root)?;
+            } else {
+                let children = self
+                    .children
+                    .get_mut(parent)
+                    .ok_or(ReactiveError::InvariantViolation)?;
+                remove_once(children, *root)?;
+                if children.is_empty() {
+                    self.children.remove(parent);
+                }
+            }
+            self.indexed.remove(root);
+            self.detached.insert(*root);
+        }
+        self.validate(nodes)
+    }
+
+    pub(crate) fn detach_nodes(
+        &mut self,
+        nodes: &SlotMap<NodeId, NodeCore>,
+        roots: &[NodeId],
+        subtree: &[NodeId],
+    ) -> ReactiveResult<()> {
+        self.validate(nodes)?;
+        let mut subtree_ids = HashSet::new();
+        for id in subtree {
+            if !subtree_ids.insert(*id) || !nodes.contains_key(*id) {
+                return Err(ReactiveError::InvariantViolation);
+            }
+        }
+        let mut requested = HashSet::new();
+        for root in roots {
+            if !subtree_ids.contains(root) || !requested.insert(*root) {
+                return Err(ReactiveError::InvariantViolation);
+            }
+        }
+        for id in subtree {
+            let node = nodes.get(*id).ok_or(ReactiveError::InvariantViolation)?;
+            if requested.contains(id) {
+                if !self.detached.contains(id)
+                    && node.parent.is_valid()
+                    && subtree_ids.contains(&node.parent)
+                {
+                    return Err(ReactiveError::InvariantViolation);
+                }
+            } else if node.parent.is_dangling() || !subtree_ids.contains(&node.parent) {
+                return Err(ReactiveError::InvariantViolation);
+            }
+        }
+        for root in roots {
+            if self.detached.contains(root) {
+                continue;
+            }
+            let node = nodes.get(*root).ok_or(ReactiveError::InvariantViolation)?;
+            if node.parent.is_dangling() {
+                if !self.roots.contains(root) {
+                    return Err(ReactiveError::InvariantViolation);
+                }
+            } else if !self
+                .children
+                .get(node.parent)
+                .is_some_and(|children| children.contains(root))
+            {
+                return Err(ReactiveError::InvariantViolation);
+            }
+        }
+        for root in roots {
+            if self.detached.contains(root) {
+                continue;
+            }
+            let parent = nodes
+                .get(*root)
+                .ok_or(ReactiveError::InvariantViolation)?
+                .parent;
+            if parent.is_dangling() {
+                remove_once(&mut self.roots, *root)?;
+            } else {
+                let children = self
+                    .children
+                    .get_mut(parent)
+                    .ok_or(ReactiveError::InvariantViolation)?;
+                remove_once(children, *root)?;
+                if children.is_empty() {
+                    self.children.remove(parent);
+                }
+            }
+        }
+        for id in subtree {
+            self.children.remove(*id);
+            self.indexed.remove(id);
+            self.detached.insert(*id);
+        }
+        self.validate(nodes)
+    }
+
+    pub(crate) fn remove_detached(&mut self, id: NodeId) -> ReactiveResult<()> {
+        if !self.detached.remove(&id) {
+            return Err(ReactiveError::InvariantViolation);
+        }
+        Ok(())
     }
 }
 
-impl IntoIterator for RootSet {
-    type Item = NodeId;
-    type IntoIter = std::vec::IntoIter<NodeId>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.to_vec().into_iter()
+fn remove_once<T: PartialEq>(items: &mut Vec<T>, item: T) -> ReactiveResult<()> {
+    let Some(index) = items.iter().position(|entry| *entry == item) else {
+        return Err(ReactiveError::InvariantViolation);
+    };
+    items.remove(index);
+    if items.contains(&item) {
+        return Err(ReactiveError::InvariantViolation);
     }
-}
-
-/// Iterator over child nodes in an intra-arena sibling chain.
-pub(crate) struct ChildrenIter<'a, 'scope> {
-    state: &'a ScopeStateInner<'scope>,
-    curr: NodeId,
-}
-
-impl Iterator for ChildrenIter<'_, '_> {
-    type Item = NodeId;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.curr.is_dangling() {
-            return None;
-        }
-        let item = self.curr;
-        self.curr = self
-            .state
-            .nodes
-            .get(item)
-            .map(|n| n.next_sibling)
-            .unwrap_or(NodeId::DANGLING);
-        Some(item)
-    }
+    Ok(())
 }
 
 /// Iterator over entries in a node's direct edge index.
@@ -566,7 +775,7 @@ pub(crate) struct ScopeStateInner<'scope> {
     pub(crate) nodes: SlotMap<NodeId, NodeCore>,
     pub(crate) data: SecondaryMap<NodeId, NodeData<'scope>>,
     pub(crate) adjacency: SecondaryMap<NodeId, NodeAdjacency>,
-    pub(crate) roots: RootSet,
+    pub(crate) ownership: OwnershipTree,
     pub(crate) current_owner: Option<NodeId>,
     pub(crate) root_cleanups: Vec<CleanupThunk<'scope>>,
     pub(crate) dependency_transactions: Vec<DependencyTransaction>,
@@ -680,7 +889,7 @@ impl<'scope> ScopeStateInner<'scope> {
             nodes: SlotMap::with_key(),
             data: SecondaryMap::new(),
             adjacency: SecondaryMap::new(),
-            roots: RootSet::new(),
+            ownership: OwnershipTree::new(),
             current_owner: None,
             root_cleanups: Vec::new(),
             dependency_transactions: Vec::new(),
@@ -761,7 +970,7 @@ impl<'scope> ScopeStateInner<'scope> {
                         .saturating_add(adjacency.dependencies.len())
                 })
                 .sum(),
-            roots: self.roots.len(),
+            roots: self.ownership.roots.len(),
             cleanups,
             handlers: self
                 .error_handlers
@@ -807,12 +1016,22 @@ impl<'scope> ScopeStateInner<'scope> {
         self.current_owner
     }
 
-    #[inline]
-    pub(crate) fn children_of_head(&self, head: NodeId) -> ChildrenIter<'_, 'scope> {
-        ChildrenIter {
-            state: self,
-            curr: head,
-        }
+    pub(crate) fn roots_snapshot(&self) -> ReactiveResult<Vec<NodeId>> {
+        self.ownership.roots_snapshot(&self.nodes)
+    }
+
+    pub(crate) fn disposal_roots(&self) -> ReactiveResult<Vec<NodeId>> {
+        self.ownership.disposal_roots(&self.nodes)
+    }
+
+    pub(crate) fn children_of(&self, parent: NodeId) -> ReactiveResult<Vec<NodeId>> {
+        self.ownership.children_of(&self.nodes, parent)
+    }
+
+    pub(crate) fn detach_children(&mut self, parent: NodeId) -> ReactiveResult<Vec<NodeId>> {
+        let children = self.children_of(parent)?;
+        self.ownership.detach_roots(&self.nodes, &children)?;
+        Ok(children)
     }
 
     #[inline]
@@ -835,53 +1054,20 @@ impl<'scope> ScopeStateInner<'scope> {
         }
     }
 
-    pub(crate) fn link_child(&mut self, parent: NodeId, child: NodeId) {
-        if parent.is_dangling() {
-            self.roots.push(child);
-            return;
-        }
-        let old_first = self
-            .nodes
-            .get(parent)
-            .map(|p| p.first_child)
-            .unwrap_or(NodeId::DANGLING);
-        if let Some(child_node) = self.nodes.get_mut(child) {
-            child_node.next_sibling = old_first;
-            child_node.prev_sibling = NodeId::DANGLING;
-        }
-        if old_first.is_valid()
-            && let Some(old_first_node) = self.nodes.get_mut(old_first)
-        {
-            old_first_node.prev_sibling = child;
-        }
-        if let Some(parent_node) = self.nodes.get_mut(parent) {
-            parent_node.first_child = child;
-        }
+    pub(crate) fn link_child(&mut self, parent: NodeId, child: NodeId) -> ReactiveResult<()> {
+        self.ownership.link_child(&self.nodes, parent, child)
     }
 
-    pub(crate) fn unlink_child(&mut self, parent: NodeId, child: NodeId) {
-        if parent.is_dangling() {
-            self.roots.remove(child);
-            return;
-        }
-        if !self.nodes.contains_key(parent) {
-            return;
-        }
-        let Some(child_node) = self.nodes.get(child).copied() else {
-            return;
-        };
-        if child_node.prev_sibling.is_dangling() {
-            if let Some(parent_node) = self.nodes.get_mut(parent) {
-                parent_node.first_child = child_node.next_sibling;
-            }
-        } else if let Some(previous) = self.nodes.get_mut(child_node.prev_sibling) {
-            previous.next_sibling = child_node.next_sibling;
-        }
-        if child_node.next_sibling.is_valid()
-            && let Some(next) = self.nodes.get_mut(child_node.next_sibling)
-        {
-            next.prev_sibling = child_node.prev_sibling;
-        }
+    pub(crate) fn detach_nodes(
+        &mut self,
+        roots: &[NodeId],
+        subtree: &[NodeId],
+    ) -> ReactiveResult<()> {
+        self.ownership.detach_nodes(&self.nodes, roots, subtree)
+    }
+
+    pub(crate) fn remove_detached(&mut self, id: NodeId) -> ReactiveResult<()> {
+        self.ownership.remove_detached(id)
     }
 
     /// Unified node registration kernel for every owner-local node kind.
@@ -896,7 +1082,12 @@ impl<'scope> ScopeStateInner<'scope> {
         let id = self.nodes.insert(node);
         self.data.insert(id, data);
         self.adjacency.insert(id, NodeAdjacency::new());
-        self.link_child(parent, id);
+        if let Err(error) = self.link_child(parent, id) {
+            self.adjacency.remove(id);
+            self.data.remove(id);
+            self.nodes.remove(id);
+            return Err(error);
+        }
         Ok(id)
     }
 
@@ -961,6 +1152,15 @@ impl<'scope> ScopeStateInner<'scope> {
         if self.phase != ScopePhase::Detaching {
             return Err(ReactiveError::Reentrant);
         }
+        if !self.nodes.is_empty()
+            || !self.data.is_empty()
+            || !self.adjacency.is_empty()
+            || !self.ownership.is_empty()
+            || !self.root_cleanups.is_empty()
+            || !self.dependency_transactions.is_empty()
+        {
+            return Err(ReactiveError::InvariantViolation);
+        }
         self.current_owner = None;
         self.phase = ScopePhase::Released;
         Ok(())
@@ -973,7 +1173,7 @@ impl<'scope> ScopeStateInner<'scope> {
             && self.adjacency.values().all(|adjacency| {
                 adjacency.subscribers.is_empty() && adjacency.dependencies.is_empty()
             })
-            && self.roots.is_empty()
+            && self.ownership.is_empty()
             && self.root_cleanups.is_empty()
             && self.dependency_transactions.is_empty()
     }
@@ -1282,5 +1482,96 @@ impl<'scope> ScopeStateInner<'scope> {
     pub(crate) fn validate_callback_endpoint(&self, id: NodeId) -> ReactiveResult<()> {
         let _ = self.callback_storage(id)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::expect_used, clippy::indexing_slicing, clippy::panic)]
+
+    use super::*;
+
+    fn insert_node(nodes: &mut SlotMap<NodeId, NodeCore>, parent: Option<NodeId>) -> NodeId {
+        nodes.insert(NodeCore::new(NodeKindTag::Signal, parent, NodeState::Clean))
+    }
+
+    #[test]
+    fn topology_rejects_missing_root_and_orphan_node() {
+        let mut nodes = SlotMap::with_key();
+        let mut tree = OwnershipTree::new();
+        tree.roots.push(NodeId::DANGLING);
+        assert_eq!(
+            tree.roots_snapshot(&nodes),
+            Err(ReactiveError::InvariantViolation)
+        );
+
+        tree.roots.clear();
+        let _orphan = insert_node(&mut nodes, None);
+        assert_eq!(
+            tree.roots_snapshot(&nodes),
+            Err(ReactiveError::InvariantViolation)
+        );
+    }
+
+    #[test]
+    fn topology_rejects_missing_child_duplicate_link_and_wrong_parent() {
+        let mut nodes = SlotMap::with_key();
+        let mut tree = OwnershipTree::new();
+        let first_parent = insert_node(&mut nodes, None);
+        tree.link_child(&nodes, NodeId::DANGLING, first_parent)
+            .expect("first parent should become a root");
+        let second_parent = insert_node(&mut nodes, None);
+        tree.link_child(&nodes, NodeId::DANGLING, second_parent)
+            .expect("second parent should become a root");
+
+        let child = insert_node(&mut nodes, Some(first_parent));
+        assert_eq!(
+            tree.link_child(&nodes, second_parent, child),
+            Err(ReactiveError::InvariantViolation)
+        );
+        tree.link_child(&nodes, first_parent, child)
+            .expect("child should link to its declared parent");
+        assert_eq!(
+            tree.link_child(&nodes, first_parent, child),
+            Err(ReactiveError::InvariantViolation)
+        );
+
+        tree.children.insert(first_parent, vec![NodeId::DANGLING]);
+        assert_eq!(
+            tree.children_of(&nodes, first_parent),
+            Err(ReactiveError::InvariantViolation)
+        );
+    }
+
+    #[test]
+    fn detached_nodes_cannot_be_relinked_and_children_keep_reverse_order() {
+        let mut nodes = SlotMap::with_key();
+        let mut tree = OwnershipTree::new();
+        let parent = insert_node(&mut nodes, None);
+        tree.link_child(&nodes, NodeId::DANGLING, parent)
+            .expect("parent should become a root");
+        let first = insert_node(&mut nodes, Some(parent));
+        tree.link_child(&nodes, parent, first)
+            .expect("first child should link");
+        let second = insert_node(&mut nodes, Some(parent));
+        tree.link_child(&nodes, parent, second)
+            .expect("second child should link");
+
+        assert_eq!(
+            tree.children_of(&nodes, parent)
+                .expect("children should be readable"),
+            vec![second, first]
+        );
+        tree.detach_roots(&nodes, &[second])
+            .expect("child should become detached");
+        assert_eq!(
+            tree.link_child(&nodes, parent, second),
+            Err(ReactiveError::InvariantViolation)
+        );
+        assert_eq!(
+            tree.children_of(&nodes, parent)
+                .expect("remaining child should be readable"),
+            vec![first]
+        );
     }
 }
