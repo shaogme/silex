@@ -2,6 +2,7 @@
 
 use super::{
     dispose::{dispatch_cleanup_errors, dispose_nodes, dispose_nodes_collect, run_cleanups},
+    graph::propagate_pending_sources,
     model::{NodeState, ScopeState},
     scheduler::{GlobalScheduler, Observer, ObserverFrame, OwnerId, TargetNode},
     storage::{CleanupThunk, NodeStorage},
@@ -242,10 +243,7 @@ fn evaluate<'scope>(
             .try_borrow()
             .map_err(|_| ReactiveError::BorrowConflict)?;
         let node = state_ref.nodes.get(id).ok_or(ReactiveError::NoSuchNode)?;
-        let deps: Vec<TargetNode> = state_ref
-            .dependency_edges_of(id)
-            .map(|(_, edge)| edge.target)
-            .collect();
+        let deps: Vec<TargetNode> = state_ref.dependency_edges_of(id).collect();
         (node.state, node.running, deps)
     };
     if node_state == NodeState::Clean || running {
@@ -308,8 +306,7 @@ fn evaluate<'scope>(
             let scheduler = state_ref.scheduler.clone();
             let dependency_epochs = state_ref
                 .dependency_edges_of(id)
-                .map(|(_, edge)| -> EvaluationResult<'scope, u64> {
-                    let dep = edge.target;
+                .map(|dep| -> EvaluationResult<'scope, u64> {
                     if dep.owner_id == state_ref.owner_id {
                         Ok(state_ref
                             .nodes
@@ -622,6 +619,7 @@ fn run_node<'scope>(
     let mut committed = false;
     let mut stop_after_run = false;
     let mut transaction_finished = false;
+    let mut pending_sources = None;
     let can_commit = if operation_error.is_none() && panic_data.is_none() {
         match state.try_borrow() {
             Ok(state_ref) => {
@@ -641,44 +639,44 @@ fn run_node<'scope>(
     if can_commit && let Some(computation_result) = result.as_mut() {
         notify = computation_result.notify;
         stop_after_run = computation_result.stop_after_run;
-        let commit_dependencies = catch_unwind(AssertUnwindSafe(|| {
-            state
-                .try_borrow_mut()
-                .map_err(|_| ReactiveError::BorrowConflict)?
-                .commit_dependency_transaction(id)?;
-            Ok::<(), ReactiveError>(())
-        }));
-        match commit_dependencies {
-            Ok(Ok(())) => {
-                if computation_result.commit_value {
-                    let commit = catch_unwind(AssertUnwindSafe(|| {
-                        let _observer_frame = ObserverFrame::push_untracked(scheduler.clone())?;
-                        commit_computation_value(&storage, scheduler.clone())
-                    }));
-                    match commit {
-                        Ok(Ok(())) => {}
-                        Ok(Err(error)) => {
-                            operation_error = Some(EvaluationError::Runtime(error));
-                            committed = false;
-                        }
-                        Err(panic) => {
-                            panic_data = Some(panic);
-                            committed = false;
-                        }
-                    }
+        if computation_result.commit_value {
+            let commit = catch_unwind(AssertUnwindSafe(|| {
+                let _observer_frame = ObserverFrame::push_untracked(scheduler.clone())?;
+                commit_computation_value(&storage, scheduler.clone())
+            }));
+            match commit {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => {
+                    operation_error = Some(EvaluationError::Runtime(error));
+                    committed = false;
                 }
-                if operation_error.is_none() && panic_data.is_none() {
+                Err(panic) => {
+                    panic_data = Some(panic);
+                    committed = false;
+                }
+            }
+        }
+        if operation_error.is_none() && panic_data.is_none() {
+            let commit_dependencies = catch_unwind(AssertUnwindSafe(|| {
+                state
+                    .try_borrow_mut()
+                    .map_err(|_| ReactiveError::BorrowConflict)?
+                    .commit_dependency_transaction(id)?;
+                Ok::<(), ReactiveError>(())
+            }));
+            match commit_dependencies {
+                Ok(Ok(())) => {
                     let finish = catch_unwind(AssertUnwindSafe(|| {
                         state
                             .try_borrow_mut()
                             .map_err(|_| ReactiveError::BorrowConflict)?
-                            .finish_dependency_transaction(id);
-                        Ok::<(), ReactiveError>(())
+                            .finish_dependency_transaction(id)
                     }));
                     match finish {
-                        Ok(Ok(())) => {
+                        Ok(Ok(sources)) => {
                             transaction_finished = true;
                             committed = true;
+                            pending_sources = Some(sources);
                         }
                         Ok(Err(error)) => {
                             operation_error = Some(EvaluationError::Runtime(error));
@@ -686,11 +684,40 @@ fn run_node<'scope>(
                         Err(panic) => panic_data = Some(panic),
                     }
                 }
+                Ok(Err(error)) => {
+                    operation_error = Some(EvaluationError::Runtime(error));
+                }
+                Err(panic) => panic_data = Some(panic),
             }
-            Ok(Err(error)) => {
-                operation_error = Some(EvaluationError::Runtime(error));
+        }
+        if transaction_finished
+            && let Some(sources) = pending_sources.take()
+            && !sources.is_empty()
+        {
+            let propagation = catch_unwind(AssertUnwindSafe(|| {
+                propagate_pending_sources(state, sources)
+            }));
+            match propagation {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => {
+                    operation_error = Some(EvaluationError::Runtime(error));
+                    committed = false;
+                }
+                Err(panic) => {
+                    panic_data = Some(panic);
+                    committed = false;
+                }
             }
-            Err(panic) => panic_data = Some(panic),
+            if operation_error.is_none()
+                && panic_data.is_none()
+                && let Some(node) = state
+                    .try_borrow_mut()
+                    .map_err(|_| ReactiveError::BorrowConflict)?
+                    .nodes
+                    .get_mut(id)
+            {
+                node.state = NodeState::Dirty;
+            }
         }
     }
 

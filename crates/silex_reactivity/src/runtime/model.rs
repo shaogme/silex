@@ -16,8 +16,9 @@ use crate::{
     unsafe_boundary::ScopedPtr,
 };
 use slotmap::{SecondaryMap, SlotMap};
+use smallvec::SmallVec;
 use std::{
-    collections::{HashMap, HashSet, hash_map},
+    collections::{HashMap, HashSet, hash_map, hash_set},
     mem::{size_of, take},
     panic::{AssertUnwindSafe, catch_unwind},
     rc::Rc,
@@ -25,15 +26,6 @@ use std::{
 
 #[cfg(feature = "test-support")]
 use super::scheduler::{active_observer_for, observer_recovery_failures};
-
-slotmap::new_key_type! {
-    pub(crate) struct EdgeId;
-}
-
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct ReactiveEdge {
-    pub(crate) target: TargetNode,
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
@@ -123,12 +115,298 @@ impl<'scope> NodeData<'scope> {
     }
 }
 
-#[derive(Clone)]
+const DEPENDENCY_INLINE_LIMIT: usize = 8;
+const BUFFER_RETAIN_LIMIT: usize = 64;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum DependencyOrigin {
+    Existing,
+    New,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ObservedDependency {
+    pub(crate) target: TargetNode,
+    pub(crate) origin: DependencyOrigin,
+}
+
+pub(crate) struct DependencyBuffer {
+    inline: SmallVec<[ObservedDependency; DEPENDENCY_INLINE_LIMIT]>,
+    overflow: Option<HashMap<TargetNode, DependencyOrigin>>,
+}
+
+impl Default for DependencyBuffer {
+    fn default() -> Self {
+        Self {
+            inline: SmallVec::new(),
+            overflow: None,
+        }
+    }
+}
+
+pub(crate) enum DependencyBufferIter<'a> {
+    Inline(std::slice::Iter<'a, ObservedDependency>),
+    Overflow(hash_map::Keys<'a, TargetNode, DependencyOrigin>),
+}
+
+impl Iterator for DependencyBufferIter<'_> {
+    type Item = TargetNode;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Inline(iter) => iter.next().map(|entry| entry.target),
+            Self::Overflow(iter) => iter.next().copied(),
+        }
+    }
+}
+
+impl DependencyBuffer {
+    pub(crate) fn insert(&mut self, target: TargetNode, origin: DependencyOrigin) {
+        if let Some(overflow) = self.overflow.as_mut() {
+            overflow.entry(target).or_insert(origin);
+            return;
+        }
+        if self.inline.iter().any(|entry| entry.target == target) {
+            return;
+        }
+        if self.inline.len() < DEPENDENCY_INLINE_LIMIT {
+            self.inline.push(ObservedDependency { target, origin });
+            return;
+        }
+        self.promote();
+        if let Some(overflow) = self.overflow.as_mut() {
+            overflow.insert(target, origin);
+        }
+    }
+
+    pub(crate) fn contains(&self, target: TargetNode) -> bool {
+        self.overflow.as_ref().map_or_else(
+            || self.inline.iter().any(|entry| entry.target == target),
+            |overflow| overflow.contains_key(&target),
+        )
+    }
+
+    pub(crate) fn is_new(&self, target: TargetNode) -> bool {
+        self.overflow.as_ref().map_or_else(
+            || {
+                self.inline
+                    .iter()
+                    .find(|entry| entry.target == target)
+                    .is_some_and(|entry| entry.origin == DependencyOrigin::New)
+            },
+            |overflow| overflow.get(&target) == Some(&DependencyOrigin::New),
+        )
+    }
+
+    pub(crate) fn iter(&self) -> DependencyBufferIter<'_> {
+        match self.overflow.as_ref() {
+            Some(overflow) => DependencyBufferIter::Overflow(overflow.keys()),
+            None => DependencyBufferIter::Inline(self.inline.iter()),
+        }
+    }
+
+    fn promote(&mut self) {
+        let entries = take(&mut self.inline);
+        let mut overflow = HashMap::new();
+        for entry in entries {
+            overflow.insert(entry.target, entry.origin);
+        }
+        self.overflow = Some(overflow);
+    }
+
+    pub(crate) fn reset(&mut self) {
+        self.inline.clear();
+        if self
+            .overflow
+            .as_ref()
+            .is_some_and(|overflow| overflow.len() > BUFFER_RETAIN_LIMIT)
+        {
+            self.overflow = None;
+        } else if let Some(overflow) = self.overflow.as_mut() {
+            overflow.clear();
+        }
+    }
+}
+
+pub(crate) struct TargetBuffer {
+    inline: SmallVec<[TargetNode; DEPENDENCY_INLINE_LIMIT]>,
+    overflow: Option<HashSet<TargetNode>>,
+}
+
+impl Default for TargetBuffer {
+    fn default() -> Self {
+        Self {
+            inline: SmallVec::new(),
+            overflow: None,
+        }
+    }
+}
+
+impl TargetBuffer {
+    pub(crate) fn insert(&mut self, target: TargetNode) {
+        if let Some(overflow) = self.overflow.as_mut() {
+            overflow.insert(target);
+            return;
+        }
+        if self.inline.contains(&target) {
+            return;
+        }
+        if self.inline.len() < DEPENDENCY_INLINE_LIMIT {
+            self.inline.push(target);
+            return;
+        }
+        let entries = take(&mut self.inline);
+        let mut overflow = HashSet::new();
+        overflow.extend(entries);
+        overflow.insert(target);
+        self.overflow = Some(overflow);
+    }
+
+    pub(crate) fn take_targets(&mut self) -> SmallVec<[TargetNode; DEPENDENCY_INLINE_LIMIT]> {
+        if let Some(overflow) = self.overflow.take() {
+            overflow.into_iter().collect()
+        } else {
+            take(&mut self.inline)
+        }
+    }
+
+    pub(crate) fn reset(&mut self) {
+        self.inline.clear();
+        if self
+            .overflow
+            .as_ref()
+            .is_some_and(|overflow| overflow.len() > BUFFER_RETAIN_LIMIT)
+        {
+            self.overflow = None;
+        } else if let Some(overflow) = self.overflow.as_mut() {
+            overflow.clear();
+        }
+    }
+}
+
+pub(crate) struct PropagationScratch<'scope> {
+    pub(crate) frontier: Vec<TargetNode>,
+    pub(crate) visited: HashSet<TargetNode>,
+    pub(crate) external_owner_ids: SmallVec<[OwnerId; 8]>,
+    external_owner_set: Option<HashSet<OwnerId>>,
+    pub(crate) external_scopes: Vec<ScopeState<'scope>>,
+    #[cfg(feature = "test-support")]
+    external_owner_promotions: usize,
+}
+
+impl<'scope> Default for PropagationScratch<'scope> {
+    fn default() -> Self {
+        Self {
+            frontier: Vec::new(),
+            visited: HashSet::new(),
+            external_owner_ids: SmallVec::new(),
+            external_owner_set: None,
+            external_scopes: Vec::new(),
+            #[cfg(feature = "test-support")]
+            external_owner_promotions: 0,
+        }
+    }
+}
+
+impl<'scope> PropagationScratch<'scope> {
+    pub(crate) fn record_external_owner(&mut self, owner_id: OwnerId) -> bool {
+        if let Some(owner_set) = self.external_owner_set.as_mut() {
+            return owner_set.insert(owner_id);
+        }
+        if self.external_owner_ids.contains(&owner_id) {
+            return false;
+        }
+        if self.external_owner_ids.len() < 8 {
+            self.external_owner_ids.push(owner_id);
+            return true;
+        }
+        let mut owner_set = HashSet::new();
+        owner_set.extend(self.external_owner_ids.iter().copied());
+        owner_set.insert(owner_id);
+        self.external_owner_set = Some(owner_set);
+        #[cfg(feature = "test-support")]
+        {
+            self.external_owner_promotions = self.external_owner_promotions.saturating_add(1);
+        }
+        true
+    }
+
+    pub(crate) fn reset(&mut self) {
+        self.frontier.clear();
+        self.visited.clear();
+        self.external_owner_ids.clear();
+        if self
+            .external_owner_set
+            .as_ref()
+            .is_some_and(|owner_set| owner_set.len() > BUFFER_RETAIN_LIMIT)
+        {
+            self.external_owner_set = None;
+        } else if let Some(owner_set) = self.external_owner_set.as_mut() {
+            owner_set.clear();
+        }
+        self.external_scopes.clear();
+        #[cfg(feature = "test-support")]
+        {
+            self.external_owner_promotions = 0;
+        }
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct DisposalScratch {
+    pub(crate) pending: Vec<NodeId>,
+    pub(crate) visited: HashSet<NodeId>,
+    pub(crate) nodes: Vec<NodeId>,
+    pub(crate) external_owner_ids: HashSet<OwnerId>,
+    pub(crate) removed_targets: Vec<TargetNode>,
+}
+
+#[cfg(feature = "test-support")]
+#[derive(Default)]
+pub(crate) struct ScratchStats {
+    pub(crate) propagation_pool_hits: usize,
+    pub(crate) propagation_pool_misses: usize,
+    pub(crate) propagation_frontier_high_water: usize,
+    pub(crate) propagation_visited_high_water: usize,
+    pub(crate) propagation_external_owner_promotions: usize,
+    pub(crate) disposal_pool_hits: usize,
+    pub(crate) disposal_pool_misses: usize,
+    pub(crate) disposal_nodes_high_water: usize,
+    pub(crate) disposal_visited_high_water: usize,
+    pub(crate) disposal_targets_high_water: usize,
+}
+
+impl DisposalScratch {
+    pub(crate) fn reset(&mut self) {
+        for buffer in [&mut self.pending, &mut self.nodes] {
+            if buffer.capacity() > BUFFER_RETAIN_LIMIT {
+                *buffer = Vec::new();
+            } else {
+                buffer.clear();
+            }
+        }
+        if self.removed_targets.capacity() > BUFFER_RETAIN_LIMIT {
+            self.removed_targets = Vec::new();
+        } else {
+            self.removed_targets.clear();
+        }
+        if self.visited.capacity() > BUFFER_RETAIN_LIMIT {
+            self.visited = HashSet::new();
+        } else {
+            self.visited.clear();
+        }
+        if self.external_owner_ids.capacity() > BUFFER_RETAIN_LIMIT {
+            self.external_owner_ids = HashSet::new();
+        } else {
+            self.external_owner_ids.clear();
+        }
+    }
+}
+
 pub(crate) struct DependencyTransaction {
     pub(crate) observer: NodeId,
-    pub(crate) previous: HashSet<TargetNode>,
-    pub(crate) current: HashSet<TargetNode>,
-    pub(crate) removed: HashSet<TargetNode>,
+    pub(crate) current: DependencyBuffer,
+    pub(crate) pending_sources: TargetBuffer,
 }
 
 /// Direct indexes for the two directions of a node's reactive edges.
@@ -137,15 +415,15 @@ pub(crate) struct DependencyTransaction {
 /// the hot-path adjacency structure. This keeps insertion, duplicate checks,
 /// and removal independent of the number of neighboring edges.
 pub(crate) struct NodeAdjacency {
-    pub(crate) subscribers: HashMap<TargetNode, EdgeId>,
-    pub(crate) dependencies: HashMap<TargetNode, EdgeId>,
+    pub(crate) subscribers: HashSet<TargetNode>,
+    pub(crate) dependencies: HashSet<TargetNode>,
 }
 
 impl NodeAdjacency {
     pub(crate) fn new() -> Self {
         Self {
-            subscribers: HashMap::new(),
-            dependencies: HashMap::new(),
+            subscribers: HashSet::new(),
+            dependencies: HashSet::new(),
         }
     }
 }
@@ -268,16 +546,15 @@ impl Iterator for ChildrenIter<'_, '_> {
 }
 
 /// Iterator over entries in a node's direct edge index.
-pub(crate) struct EdgeIter<'a> {
-    inner: Option<hash_map::Iter<'a, TargetNode, EdgeId>>,
+pub(crate) struct TargetIter<'a> {
+    inner: Option<hash_set::Iter<'a, TargetNode>>,
 }
 
-impl Iterator for EdgeIter<'_> {
-    type Item = (EdgeId, ReactiveEdge);
+impl Iterator for TargetIter<'_> {
+    type Item = TargetNode;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let (target, edge_id) = self.inner.as_mut()?.next()?;
-        Some((*edge_id, ReactiveEdge { target: *target }))
+        Some(*self.inner.as_mut()?.next()?)
     }
 }
 
@@ -288,12 +565,17 @@ pub(crate) struct ScopeStateInner<'scope> {
     pub(crate) phase: ScopePhase,
     pub(crate) nodes: SlotMap<NodeId, NodeCore>,
     pub(crate) data: SecondaryMap<NodeId, NodeData<'scope>>,
-    pub(crate) edges: SlotMap<EdgeId, ReactiveEdge>,
     pub(crate) adjacency: SecondaryMap<NodeId, NodeAdjacency>,
     pub(crate) roots: RootSet,
     pub(crate) current_owner: Option<NodeId>,
     pub(crate) root_cleanups: Vec<CleanupThunk<'scope>>,
     pub(crate) dependency_transactions: Vec<DependencyTransaction>,
+    pub(crate) dependency_buffer_pool: Vec<DependencyBuffer>,
+    pub(crate) target_buffer_pool: Vec<TargetBuffer>,
+    pub(crate) propagation_scratch_pool: Vec<PropagationScratch<'scope>>,
+    pub(crate) disposal_scratch_pool: Vec<DisposalScratch>,
+    #[cfg(feature = "test-support")]
+    pub(crate) scratch_stats: ScratchStats,
     pub(crate) error_handlers: SlotMap<ErrorHandlerKey, ErrorHandlerEntry<'scope>>,
     pub(crate) pending_error_handlers: Vec<(ErrorHandlerKey, ScopedPtr<()>)>,
 }
@@ -368,7 +650,7 @@ pub struct RuntimeSnapshot {
     pub running_queue: bool,
     pub active_owners: usize,
     pub closing_owners: usize,
-    pub owner_generation: u32,
+    pub owner_generation: u64,
     pub active_leases: usize,
     pub queue_recovery: bool,
     pub retained_children: usize,
@@ -377,6 +659,16 @@ pub struct RuntimeSnapshot {
     pub unhandled_close_errors: usize,
     pub dropped_close_reports: usize,
     pub observer_recovery_failures: usize,
+    pub propagation_scratch_pool_hits: usize,
+    pub propagation_scratch_pool_misses: usize,
+    pub propagation_frontier_high_water: usize,
+    pub propagation_visited_high_water: usize,
+    pub propagation_external_owner_promotions: usize,
+    pub disposal_scratch_pool_hits: usize,
+    pub disposal_scratch_pool_misses: usize,
+    pub disposal_nodes_high_water: usize,
+    pub disposal_visited_high_water: usize,
+    pub disposal_targets_high_water: usize,
 }
 
 impl<'scope> ScopeStateInner<'scope> {
@@ -387,15 +679,52 @@ impl<'scope> ScopeStateInner<'scope> {
             phase: ScopePhase::Active,
             nodes: SlotMap::with_key(),
             data: SecondaryMap::new(),
-            edges: SlotMap::with_key(),
             adjacency: SecondaryMap::new(),
             roots: RootSet::new(),
             current_owner: None,
             root_cleanups: Vec::new(),
             dependency_transactions: Vec::new(),
+            dependency_buffer_pool: Vec::new(),
+            target_buffer_pool: Vec::new(),
+            propagation_scratch_pool: Vec::new(),
+            disposal_scratch_pool: Vec::new(),
+            #[cfg(feature = "test-support")]
+            scratch_stats: ScratchStats::default(),
             error_handlers: SlotMap::with_key(),
             pending_error_handlers: Vec::new(),
         }
+    }
+
+    #[cfg(feature = "test-support")]
+    pub(crate) fn record_propagation_scratch(&mut self, scratch: &PropagationScratch<'_>) {
+        self.scratch_stats.propagation_frontier_high_water = self
+            .scratch_stats
+            .propagation_frontier_high_water
+            .max(scratch.frontier.len());
+        self.scratch_stats.propagation_visited_high_water = self
+            .scratch_stats
+            .propagation_visited_high_water
+            .max(scratch.visited.len());
+        self.scratch_stats.propagation_external_owner_promotions = self
+            .scratch_stats
+            .propagation_external_owner_promotions
+            .saturating_add(scratch.external_owner_promotions);
+    }
+
+    #[cfg(feature = "test-support")]
+    pub(crate) fn record_disposal_scratch(&mut self, scratch: &DisposalScratch) {
+        self.scratch_stats.disposal_nodes_high_water = self
+            .scratch_stats
+            .disposal_nodes_high_water
+            .max(scratch.nodes.len());
+        self.scratch_stats.disposal_visited_high_water = self
+            .scratch_stats
+            .disposal_visited_high_water
+            .max(scratch.visited.len());
+        self.scratch_stats.disposal_targets_high_water = self
+            .scratch_stats
+            .disposal_targets_high_water
+            .max(scratch.removed_targets.len());
     }
 
     #[cfg(feature = "test-support")]
@@ -422,7 +751,16 @@ impl<'scope> ScopeStateInner<'scope> {
         Ok(RuntimeSnapshot {
             nodes: self.nodes.len(),
             data: self.data.len(),
-            edges: self.edges.len(),
+            edges: self
+                .adjacency
+                .values()
+                .map(|adjacency| {
+                    adjacency
+                        .subscribers
+                        .len()
+                        .saturating_add(adjacency.dependencies.len())
+                })
+                .sum(),
             roots: self.roots.len(),
             cleanups,
             handlers: self
@@ -450,6 +788,18 @@ impl<'scope> ScopeStateInner<'scope> {
             unhandled_close_errors: scheduler.close_reports.len()?,
             dropped_close_reports: scheduler.dropped_close_reports(),
             observer_recovery_failures: observer_recovery_failures(),
+            propagation_scratch_pool_hits: self.scratch_stats.propagation_pool_hits,
+            propagation_scratch_pool_misses: self.scratch_stats.propagation_pool_misses,
+            propagation_frontier_high_water: self.scratch_stats.propagation_frontier_high_water,
+            propagation_visited_high_water: self.scratch_stats.propagation_visited_high_water,
+            propagation_external_owner_promotions: self
+                .scratch_stats
+                .propagation_external_owner_promotions,
+            disposal_scratch_pool_hits: self.scratch_stats.disposal_pool_hits,
+            disposal_scratch_pool_misses: self.scratch_stats.disposal_pool_misses,
+            disposal_nodes_high_water: self.scratch_stats.disposal_nodes_high_water,
+            disposal_visited_high_water: self.scratch_stats.disposal_visited_high_water,
+            disposal_targets_high_water: self.scratch_stats.disposal_targets_high_water,
         })
     }
 
@@ -466,8 +816,8 @@ impl<'scope> ScopeStateInner<'scope> {
     }
 
     #[inline]
-    pub(crate) fn subscriber_edges_of(&self, node_id: NodeId) -> EdgeIter<'_> {
-        EdgeIter {
+    pub(crate) fn subscriber_edges_of(&self, node_id: NodeId) -> TargetIter<'_> {
+        TargetIter {
             inner: self
                 .adjacency
                 .get(node_id)
@@ -476,8 +826,8 @@ impl<'scope> ScopeStateInner<'scope> {
     }
 
     #[inline]
-    pub(crate) fn dependency_edges_of(&self, node_id: NodeId) -> EdgeIter<'_> {
-        EdgeIter {
+    pub(crate) fn dependency_edges_of(&self, node_id: NodeId) -> TargetIter<'_> {
+        TargetIter {
             inner: self
                 .adjacency
                 .get(node_id)
@@ -620,8 +970,9 @@ impl<'scope> ScopeStateInner<'scope> {
         self.phase == ScopePhase::Released
             && self.nodes.is_empty()
             && self.data.is_empty()
-            && self.edges.is_empty()
-            && self.adjacency.is_empty()
+            && self.adjacency.values().all(|adjacency| {
+                adjacency.subscribers.is_empty() && adjacency.dependencies.is_empty()
+            })
             && self.roots.is_empty()
             && self.root_cleanups.is_empty()
             && self.dependency_transactions.is_empty()

@@ -1,43 +1,56 @@
 //! Dependency tracking and node subscription operations on ScopeState.
 
 use super::{
-    model::{DependencyTransaction, NodeState, ReactiveEdge, ScopeState, ScopeStateInner},
-    scheduler::{ExecutionContext, Observer, ScheduledTask, TargetNode, active_ctx},
+    model::{
+        DependencyOrigin, DependencyTransaction, NodeState, PropagationScratch, ScopeState,
+        ScopeStateInner,
+    },
+    scheduler::{
+        ExecutionContext, Observer, ScheduledTask, TargetNode, active_ctx, active_observer_contexts,
+    },
 };
 use crate::{ReactiveError, ReactiveResult, handle::NodeKindTag, internal::NodeId};
+use smallvec::SmallVec;
 use std::{
-    collections::{HashSet, VecDeque},
+    collections::HashSet,
+    panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
     rc::Rc,
 };
 
 impl<'scope> ScopeStateInner<'scope> {
     pub(crate) fn begin_dependency_transaction(&mut self, observer: NodeId) {
-        let previous = self
-            .dependency_edges_of(observer)
-            .map(|(_, edge)| edge.target)
-            .collect();
+        let current = self.dependency_buffer_pool.pop().unwrap_or_default();
+        let pending_sources = self.target_buffer_pool.pop().unwrap_or_default();
         self.dependency_transactions.push(DependencyTransaction {
             observer,
-            previous,
-            current: HashSet::new(),
-            removed: HashSet::new(),
+            current,
+            pending_sources,
         });
     }
 
     pub(crate) fn observe_dependency(&mut self, observer: NodeId, target: TargetNode) {
+        let origin = if self
+            .adjacency
+            .get(observer)
+            .is_some_and(|adjacency| adjacency.dependencies.contains(&target))
+        {
+            DependencyOrigin::Existing
+        } else {
+            DependencyOrigin::New
+        };
         if let Some(transaction) = self
             .dependency_transactions
             .iter_mut()
             .rev()
             .find(|transaction| transaction.observer == observer)
         {
-            transaction.current.insert(target);
+            transaction.current.insert(target, origin);
         }
     }
 
-    fn ensure_dependency_scopes_available<'a>(
+    fn ensure_dependency_scopes_available(
         &self,
-        dependencies: impl IntoIterator<Item = &'a TargetNode>,
+        dependencies: impl IntoIterator<Item = TargetNode>,
     ) -> ReactiveResult<()> {
         let scheduler = self
             .scheduler
@@ -94,13 +107,13 @@ impl<'scope> ScopeStateInner<'scope> {
         Ok(())
     }
 
-    fn restore_dependency_pair(
+    fn add_dependency_pair(
         &mut self,
         observer: NodeId,
         dependency: TargetNode,
     ) -> ReactiveResult<()> {
         if !self.node_exists(observer) {
-            return Ok(());
+            return Err(ReactiveError::NoSuchNode);
         }
         let observer_target = TargetNode {
             owner_id: self.owner_id,
@@ -108,7 +121,7 @@ impl<'scope> ScopeStateInner<'scope> {
         };
         if dependency.owner_id == self.owner_id {
             if !self.node_exists(dependency.node) {
-                return Ok(());
+                return Err(ReactiveError::NoSuchNode);
             }
             self.add_dependency(observer, dependency);
             self.add_subscriber(dependency.node, observer_target);
@@ -121,13 +134,13 @@ impl<'scope> ScopeStateInner<'scope> {
             .map_err(|_| ReactiveError::BorrowConflict)?
             .get_scope_for_edge_cleanup(dependency.owner_id)?;
         let Some(dependency_scope) = dependency_scope else {
-            return Ok(());
+            return Err(ReactiveError::NoSuchNode);
         };
         let mut dependency_state = dependency_scope
             .try_borrow_mut()
             .map_err(|_| ReactiveError::BorrowConflict)?;
         if !dependency_state.node_exists(dependency.node) {
-            return Ok(());
+            return Err(ReactiveError::NoSuchNode);
         }
         self.add_dependency(observer, dependency);
         dependency_state.add_subscriber(dependency.node, observer_target);
@@ -143,32 +156,46 @@ impl<'scope> ScopeStateInner<'scope> {
             return Ok(());
         };
 
-        let (previous, current) = {
+        let (removed, additions) = {
             let Some(transaction) = self.dependency_transactions.get(index) else {
                 return Err(ReactiveError::InvariantViolation);
             };
-            (transaction.previous.clone(), transaction.current.clone())
+            let removed: SmallVec<[_; 8]> = self
+                .dependency_edges_of(observer)
+                .filter(|target| !transaction.current.contains(*target))
+                .collect();
+            let additions: SmallVec<[_; 8]> = transaction
+                .current
+                .iter()
+                .filter(|target| !self.has_dependency(observer, *target))
+                .collect();
+            (removed, additions)
         };
-        let removed: Vec<TargetNode> = previous.difference(&current).copied().collect();
-        self.ensure_dependency_scopes_available(removed.iter())?;
+        self.ensure_dependency_scopes_available(
+            removed.iter().copied().chain(additions.iter().copied()),
+        )?;
         for dependency in removed {
             self.remove_dependency_pair(observer, dependency)?;
-            let Some(transaction) = self.dependency_transactions.get_mut(index) else {
-                return Err(ReactiveError::InvariantViolation);
-            };
-            transaction.removed.insert(dependency);
+        }
+        for dependency in additions {
+            self.add_dependency_pair(observer, dependency)?;
         }
         Ok(())
     }
 
-    pub(crate) fn finish_dependency_transaction(&mut self, observer: NodeId) {
+    pub(crate) fn finish_dependency_transaction(
+        &mut self,
+        observer: NodeId,
+    ) -> ReactiveResult<SmallVec<[TargetNode; 8]>> {
         if let Some(index) = self
             .dependency_transactions
             .iter()
             .rposition(|transaction| transaction.observer == observer)
         {
-            self.dependency_transactions.remove(index);
+            let transaction = self.dependency_transactions.remove(index);
+            return Ok(self.recycle_dependency_transaction(transaction));
         }
+        Ok(SmallVec::new())
     }
 
     pub(crate) fn rollback_dependency_transaction(
@@ -182,102 +209,68 @@ impl<'scope> ScopeStateInner<'scope> {
         else {
             return Ok(());
         };
-        let Some(transaction) = self.dependency_transactions.get(index).cloned() else {
-            return Err(ReactiveError::InvariantViolation);
-        };
-        let to_remove: Vec<TargetNode> = transaction
-            .current
-            .difference(&transaction.previous)
-            .copied()
-            .collect();
-        self.ensure_dependency_scopes_available(to_remove.iter())?;
-        self.ensure_dependency_scopes_available(transaction.removed.iter())?;
-        for dependency in to_remove {
-            self.remove_dependency_pair(observer, dependency)?;
-        }
-        for dependency in transaction.removed.iter().copied() {
-            self.restore_dependency_pair(observer, dependency)?;
-        }
-        self.dependency_transactions.remove(index);
+        let transaction = self.dependency_transactions.remove(index);
+        self.recycle_dependency_transaction(transaction);
         Ok(())
+    }
+
+    fn recycle_dependency_transaction(
+        &mut self,
+        mut transaction: DependencyTransaction,
+    ) -> SmallVec<[TargetNode; 8]> {
+        let pending_sources = transaction.pending_sources.take_targets();
+        transaction.current.reset();
+        self.dependency_buffer_pool.push(transaction.current);
+        transaction.pending_sources.reset();
+        self.target_buffer_pool.push(transaction.pending_sources);
+        pending_sources
     }
 
     pub(crate) fn add_subscriber(&mut self, target_id: NodeId, sub_target: TargetNode) {
         let Some(adjacency) = self.adjacency.get_mut(target_id) else {
             return;
         };
-        if adjacency.subscribers.contains_key(&sub_target) {
-            return;
-        }
-        let edge_id = self.edges.insert(ReactiveEdge { target: sub_target });
-        adjacency.subscribers.insert(sub_target, edge_id);
+        adjacency.subscribers.insert(sub_target);
+    }
+
+    fn has_dependency(&self, observer_id: NodeId, target: TargetNode) -> bool {
+        self.adjacency
+            .get(observer_id)
+            .is_some_and(|adjacency| adjacency.dependencies.contains(&target))
     }
 
     pub(crate) fn add_dependency(&mut self, observer_id: NodeId, dep_target: TargetNode) {
         let Some(adjacency) = self.adjacency.get_mut(observer_id) else {
             return;
         };
-        if adjacency.dependencies.contains_key(&dep_target) {
-            return;
-        }
-        let edge_id = self.edges.insert(ReactiveEdge { target: dep_target });
-        adjacency.dependencies.insert(dep_target, edge_id);
+        adjacency.dependencies.insert(dep_target);
     }
 
     pub(crate) fn remove_subscriber(&mut self, target_id: NodeId, sub_target: TargetNode) {
-        let edge_id = self
-            .adjacency
-            .get_mut(target_id)
-            .and_then(|adjacency| adjacency.subscribers.remove(&sub_target));
-        if let Some(edge_id) = edge_id {
-            self.edges.remove(edge_id);
+        if let Some(adjacency) = self.adjacency.get_mut(target_id) {
+            adjacency.subscribers.remove(&sub_target);
         }
     }
 
     pub(crate) fn remove_dependency(&mut self, observer_id: NodeId, dep_target: TargetNode) {
-        let edge_id = self
-            .adjacency
-            .get_mut(observer_id)
-            .and_then(|adjacency| adjacency.dependencies.remove(&dep_target));
-        if let Some(edge_id) = edge_id {
-            self.edges.remove(edge_id);
+        if let Some(adjacency) = self.adjacency.get_mut(observer_id) {
+            adjacency.dependencies.remove(&dep_target);
         }
     }
 
-    pub(crate) fn take_subscribers(&mut self, source: NodeId) -> Vec<TargetNode> {
-        let entries: Vec<_> = self
-            .adjacency
-            .get_mut(source)
-            .map(|adjacency| adjacency.subscribers.drain().collect())
-            .unwrap_or_default();
-        let mut targets = Vec::with_capacity(entries.len());
-        for (target, edge_id) in entries {
-            self.edges.remove(edge_id);
-            targets.push(target);
+    pub(crate) fn take_subscribers_into(&mut self, source: NodeId, targets: &mut Vec<TargetNode>) {
+        targets.clear();
+        if let Some(adjacency) = self.adjacency.get_mut(source) {
+            targets.extend(adjacency.subscribers.drain());
         }
-        targets
     }
 
     pub(crate) fn clear_dependencies(&mut self, observer_id: NodeId) -> ReactiveResult<()> {
-        let dependencies: Vec<TargetNode> = self
-            .dependency_edges_of(observer_id)
-            .map(|(_, edge)| edge.target)
-            .collect();
-        self.ensure_dependency_scopes_available(dependencies.iter())?;
+        let dependencies: Vec<TargetNode> = self.dependency_edges_of(observer_id).collect();
+        self.ensure_dependency_scopes_available(dependencies.iter().copied())?;
 
-        let edge_ids: Vec<_> = self
-            .adjacency
-            .get_mut(observer_id)
-            .map(|adjacency| {
-                adjacency
-                    .dependencies
-                    .drain()
-                    .map(|(_, edge_id)| edge_id)
-                    .collect()
-            })
-            .unwrap_or_default();
-        for edge_id in edge_ids {
-            self.edges.remove(edge_id);
+        if let Some(adjacency) = self.adjacency.get_mut(observer_id) {
+            adjacency.dependencies.clear();
         }
 
         let self_sub = TargetNode {
@@ -303,17 +296,11 @@ impl<'scope> ScopeStateInner<'scope> {
     }
 
     fn track_pair(&mut self, observer: Observer, target: NodeId) {
-        let target_sub = TargetNode {
-            owner_id: observer.owner_id,
-            node: observer.node,
-        };
         let observer_dep = TargetNode {
             owner_id: self.owner_id,
             node: target,
         };
         self.observe_dependency(observer.node, observer_dep);
-        self.add_dependency(observer.node, observer_dep);
-        self.add_subscriber(target, target_sub);
     }
 
     fn observer_is_computation(&self, observer: Observer) -> bool {
@@ -391,10 +378,6 @@ impl<'scope> ScopeStateInner<'scope> {
         if !self.try_is_active()? || !self.has_value(target)? {
             return Err(ReactiveError::NoSuchNode);
         }
-        let observer_target = TargetNode {
-            owner_id: observer.owner_id,
-            node: observer.node,
-        };
         if observer.owner_id == self.owner_id {
             if observer.node == target || !self.observer_is_computation(observer) {
                 return Err(ReactiveError::Reentrant);
@@ -415,27 +398,101 @@ impl<'scope> ScopeStateInner<'scope> {
             node: target,
         };
         observer_state.observe_dependency(observer.node, observer_dep);
-        observer_state.add_dependency(observer.node, observer_dep);
-        drop(observer_state);
-        self.add_subscriber(target, observer_target);
         Ok(())
     }
 
-    pub(crate) fn queue_dependents(&mut self, source: NodeId) -> ReactiveResult<()> {
+    fn stage_pending_source(&mut self, source: NodeId) -> ReactiveResult<()> {
+        let source_target = TargetNode {
+            owner_id: self.owner_id,
+            node: source,
+        };
         let scheduler = self.scheduler.clone();
-        let mut walk: VecDeque<TargetNode> = self
-            .subscriber_edges_of(source)
-            .map(|(_, edge)| edge.target)
-            .collect();
-        let mut visited = HashSet::new();
-        let mut external_owner_ids = HashSet::new();
-        let mut external_scopes = Vec::new();
+        let contexts = active_observer_contexts(&scheduler)?;
+        for context in contexts {
+            if context.blocked_scopes.contains(&self.owner_id) {
+                continue;
+            }
+            let Some(observer) = context.observer else {
+                continue;
+            };
+            if observer.owner_id == self.owner_id {
+                self.stage_pending_source_for_observer(observer, source_target);
+                continue;
+            }
+            let observer_scope = scheduler
+                .try_borrow()
+                .map_err(|_| ReactiveError::BorrowConflict)?
+                .get_scope_for_edge_cleanup(observer.owner_id)?;
+            if let Some(observer_scope) = observer_scope {
+                observer_scope
+                    .try_borrow_mut()
+                    .map_err(|_| ReactiveError::BorrowConflict)?
+                    .stage_pending_source_for_observer(observer, source_target);
+            }
+        }
+        Ok(())
+    }
+
+    fn stage_pending_source_for_observer(&mut self, observer: Observer, source: TargetNode) {
+        if let Some(transaction) = self
+            .dependency_transactions
+            .iter_mut()
+            .rev()
+            .find(|transaction| transaction.observer == observer.node)
+            && transaction.current.is_new(source)
+        {
+            transaction.pending_sources.insert(source);
+        }
+    }
+
+    pub(crate) fn queue_dependents(&mut self, source: NodeId) -> ReactiveResult<()> {
+        let mut scratch = if let Some(scratch) = self.propagation_scratch_pool.pop() {
+            #[cfg(feature = "test-support")]
+            {
+                self.scratch_stats.propagation_pool_hits =
+                    self.scratch_stats.propagation_pool_hits.saturating_add(1);
+            }
+            scratch
+        } else {
+            #[cfg(feature = "test-support")]
+            {
+                self.scratch_stats.propagation_pool_misses =
+                    self.scratch_stats.propagation_pool_misses.saturating_add(1);
+            }
+            PropagationScratch::default()
+        };
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            self.queue_dependents_with_scratch(source, &mut scratch)
+        }));
+        #[cfg(feature = "test-support")]
+        self.record_propagation_scratch(&scratch);
+        scratch.reset();
+        self.propagation_scratch_pool.push(scratch);
+        match result {
+            Ok(result) => result,
+            Err(panic) => resume_unwind(panic),
+        }
+    }
+
+    fn queue_dependents_with_scratch(
+        &mut self,
+        source: NodeId,
+        scratch: &mut PropagationScratch<'scope>,
+    ) -> ReactiveResult<()> {
+        self.stage_pending_source(source)?;
+        let scheduler = self.scheduler.clone();
+        scratch.frontier.extend(self.subscriber_edges_of(source));
 
         // Read the complete propagation frontier before changing any node. This
         // is the cross-scope preflight: a borrow conflict cannot leave a half-
         // marked dependency chain behind.
-        while let Some(target) = walk.pop_front() {
-            if !visited.insert(target) {
+        let mut cursor = 0;
+        while cursor < scratch.frontier.len() {
+            let Some(target) = scratch.frontier.get(cursor).copied() else {
+                break;
+            };
+            cursor = cursor.saturating_add(1);
+            if !scratch.visited.insert(target) {
                 continue;
             }
             if target.owner_id == self.owner_id {
@@ -446,10 +503,9 @@ impl<'scope> ScopeStateInner<'scope> {
                     continue;
                 }
                 if node.kind != NodeKindTag::Effect {
-                    walk.extend(
-                        self.subscriber_edges_of(target.node)
-                            .map(|(_, edge)| edge.target),
-                    );
+                    scratch
+                        .frontier
+                        .extend(self.subscriber_edges_of(target.node));
                 }
                 continue;
             }
@@ -474,33 +530,23 @@ impl<'scope> ScopeStateInner<'scope> {
                 continue;
             }
             if node.kind != NodeKindTag::Effect {
-                walk.extend(
-                    state_ref
-                        .subscriber_edges_of(target.node)
-                        .map(|(_, edge)| edge.target),
-                );
+                scratch
+                    .frontier
+                    .extend(state_ref.subscriber_edges_of(target.node));
             }
             drop(state_ref);
-            if external_owner_ids.insert(target.owner_id) {
-                external_scopes.push(target_scope);
+            if scratch.record_external_owner(target.owner_id) {
+                scratch.external_scopes.push(target_scope);
             }
         }
 
-        for scope in &external_scopes {
+        for scope in &scratch.external_scopes {
             scope
                 .try_borrow_mut()
                 .map_err(|_| ReactiveError::BorrowConflict)?;
         }
 
-        let mut walk = self
-            .subscriber_edges_of(source)
-            .map(|(_, edge)| edge.target)
-            .collect::<VecDeque<_>>();
-        let mut visited = HashSet::new();
-        while let Some(target) = walk.pop_front() {
-            if !visited.insert(target) {
-                continue;
-            }
+        for target in scratch.frontier.iter().copied() {
             if target.owner_id == self.owner_id {
                 let Some(node) = self.nodes.get_mut(target.node) else {
                     continue;
@@ -509,22 +555,15 @@ impl<'scope> ScopeStateInner<'scope> {
                     continue;
                 }
                 node.state = NodeState::Check;
-                if node.kind == NodeKindTag::Effect {
-                    if !node.queued {
-                        node.queued = true;
-                        scheduler
-                            .try_borrow_mut()
-                            .map_err(|_| ReactiveError::BorrowConflict)?
-                            .enqueue_effect(ScheduledTask {
-                                owner_id: target.owner_id,
-                                node: target.node,
-                            });
-                    }
-                } else {
-                    walk.extend(
-                        self.subscriber_edges_of(target.node)
-                            .map(|(_, edge)| edge.target),
-                    );
+                if node.kind == NodeKindTag::Effect && !node.queued {
+                    node.queued = true;
+                    scheduler
+                        .try_borrow_mut()
+                        .map_err(|_| ReactiveError::BorrowConflict)?
+                        .enqueue_effect(ScheduledTask {
+                            owner_id: target.owner_id,
+                            node: target.node,
+                        });
                 }
             } else {
                 let target_scope = scheduler
@@ -544,24 +583,16 @@ impl<'scope> ScopeStateInner<'scope> {
                     continue;
                 }
                 node.state = NodeState::Check;
-                if node.kind == NodeKindTag::Effect {
-                    if !node.queued {
-                        node.queued = true;
-                        drop(state_ref);
-                        scheduler
-                            .try_borrow_mut()
-                            .map_err(|_| ReactiveError::BorrowConflict)?
-                            .enqueue_effect(ScheduledTask {
-                                owner_id: target.owner_id,
-                                node: target.node,
-                            });
-                    }
-                } else {
-                    walk.extend(
-                        state_ref
-                            .subscriber_edges_of(target.node)
-                            .map(|(_, edge)| edge.target),
-                    );
+                if node.kind == NodeKindTag::Effect && !node.queued {
+                    node.queued = true;
+                    drop(state_ref);
+                    scheduler
+                        .try_borrow_mut()
+                        .map_err(|_| ReactiveError::BorrowConflict)?
+                        .enqueue_effect(ScheduledTask {
+                            owner_id: target.owner_id,
+                            node: target.node,
+                        });
                 }
             }
         }
@@ -586,6 +617,33 @@ impl<'scope> ScopeStateInner<'scope> {
                 .worklist
                 .is_empty())
     }
+}
+
+pub(crate) fn propagate_pending_sources<'scope>(
+    observer_state: &ScopeState<'scope>,
+    sources: SmallVec<[TargetNode; 8]>,
+) -> ReactiveResult<()> {
+    let (scheduler, observer_owner) = {
+        let state = observer_state.try_borrow()?;
+        (state.scheduler.clone(), state.owner_id)
+    };
+    for source in sources {
+        let source_state = if source.owner_id == observer_owner {
+            Some(observer_state.clone())
+        } else {
+            scheduler
+                .try_borrow()
+                .map_err(|_| ReactiveError::BorrowConflict)?
+                .get_scope_for_edge_cleanup(source.owner_id)?
+        };
+        if let Some(source_state) = source_state {
+            source_state
+                .try_borrow_mut()
+                .map_err(|_| ReactiveError::BorrowConflict)?
+                .queue_dependents(source.node)?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -710,6 +768,141 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_tracking_keeps_bidirectional_hashset_adjacency_unique() {
+        let mut runtime = Runtime::new();
+        transient(&mut runtime, |scope| {
+            let (source, _) = scope.signal(0i32).expect("fallible reactive creation");
+            let source_state = source.handle.state();
+            let source_raw = source.handle.raw();
+            let effect = scope
+                .effect(
+                    move || {
+                        assert_eq!(source.get(), Ok(0));
+                        assert_eq!(source.get(), Ok(0));
+                        Ok(())
+                    },
+                    handler(scope),
+                )
+                .expect("effect should initialize");
+            let effect_state = effect.handle.state();
+            let effect_raw = effect.handle.raw();
+            let (source_target, observer_target) = {
+                let source_ref = source_state.try_borrow().expect("source state read");
+                let effect_ref = effect_state.try_borrow().expect("effect state read");
+                (
+                    TargetNode {
+                        owner_id: source_ref.owner_id,
+                        node: source_raw,
+                    },
+                    TargetNode {
+                        owner_id: effect_ref.owner_id,
+                        node: effect_raw,
+                    },
+                )
+            };
+            let mut effect_ref = effect_state.try_borrow_mut().expect("effect state write");
+            effect_ref.add_dependency(effect_raw, source_target);
+            drop(effect_ref);
+            let mut source_ref = source_state.try_borrow_mut().expect("source state write");
+            source_ref.add_subscriber(source_raw, observer_target);
+            assert_eq!(source_ref.subscriber_edges_of(source_raw).count(), 1);
+            drop(source_ref);
+            assert_eq!(
+                effect_state
+                    .try_borrow()
+                    .expect("effect state read")
+                    .dependency_edges_of(effect_raw)
+                    .count(),
+                1
+            );
+        });
+    }
+
+    #[test]
+    fn propagation_scratch_is_reused_and_reset_after_each_notification() {
+        let mut runtime = Runtime::new();
+        transient(&mut runtime, |scope| {
+            let (source, _) = scope.signal(0i32).expect("source creation");
+            let state = source.handle.state();
+            state
+                .try_borrow_mut()
+                .expect("state write")
+                .queue_dependents(source.handle.raw())
+                .expect("propagation should succeed");
+            let state_ref = state.try_borrow().expect("state read");
+            assert_eq!(state_ref.propagation_scratch_pool.len(), 1);
+            let scratch = state_ref
+                .propagation_scratch_pool
+                .first()
+                .expect("scratch pool entry");
+            assert!(scratch.frontier.is_empty());
+            assert!(scratch.visited.is_empty());
+            assert!(scratch.external_owner_ids.is_empty());
+            assert!(scratch.external_scopes.is_empty());
+        });
+    }
+
+    #[test]
+    fn disposal_scratch_is_reused_and_reset_after_each_batch() {
+        let mut runtime = Runtime::new();
+        transient(&mut runtime, |scope| {
+            let (source, _) = scope.signal(0i32).expect("source creation");
+            let state = source.handle.state();
+            let raw = source.handle.raw();
+            dispose_nodes(&state, vec![raw]).expect("disposal should succeed");
+
+            let state_ref = state.try_borrow().expect("state read");
+            assert_eq!(state_ref.disposal_scratch_pool.len(), 1);
+            let scratch = state_ref
+                .disposal_scratch_pool
+                .first()
+                .expect("disposal scratch pool entry");
+            assert!(scratch.pending.is_empty());
+            assert!(scratch.visited.is_empty());
+            assert!(scratch.nodes.is_empty());
+            assert!(scratch.external_owner_ids.is_empty());
+            assert!(scratch.removed_targets.is_empty());
+        });
+    }
+
+    #[cfg(feature = "test-support")]
+    #[test]
+    fn scratch_statistics_capture_pool_reuse_and_high_water() {
+        let mut runtime = Runtime::new();
+        transient(&mut runtime, |scope| {
+            let (source, _) = scope.signal(0i32).expect("source creation");
+            let state = source.handle.state();
+            state
+                .try_borrow_mut()
+                .expect("state write")
+                .queue_dependents(source.handle.raw())
+                .expect("first propagation should succeed");
+            state
+                .try_borrow_mut()
+                .expect("state write")
+                .queue_dependents(source.handle.raw())
+                .expect("second propagation should succeed");
+
+            let (disposable, _) = scope.signal(1i32).expect("disposable creation");
+            dispose_nodes(&state, vec![disposable.handle.raw()]).expect("disposal should succeed");
+
+            let snapshot = state
+                .try_borrow()
+                .expect("state read")
+                .runtime_snapshot()
+                .expect("runtime snapshot");
+            assert_eq!(snapshot.propagation_scratch_pool_hits, 1);
+            assert_eq!(snapshot.propagation_scratch_pool_misses, 1);
+            assert_eq!(snapshot.propagation_frontier_high_water, 0);
+            assert_eq!(snapshot.disposal_scratch_pool_hits, 0);
+            assert_eq!(snapshot.disposal_scratch_pool_misses, 1);
+            assert_eq!(snapshot.disposal_nodes_high_water, 1);
+            assert_eq!(snapshot.disposal_visited_high_water, 1);
+            assert_eq!(snapshot.disposal_targets_high_water, 0);
+        });
+    }
+
+    #[test]
     fn clear_dependencies_conflict_preserves_both_sides_of_the_edge() {
         let mut runtime = Runtime::new();
         transient(&mut runtime, |scope| {
@@ -744,8 +937,8 @@ mod tests {
                 assert_eq!(
                     source_borrow
                         .subscriber_edges_of(source_raw)
-                        .filter(|(_, edge)| {
-                            edge.target
+                        .filter(|target| {
+                            *target
                                 == TargetNode {
                                     owner_id: child_owner_id,
                                     node: effect_raw,
@@ -757,8 +950,8 @@ mod tests {
                 assert_eq!(
                     child_borrow
                         .dependency_edges_of(effect_raw)
-                        .filter(|(_, edge)| {
-                            edge.target
+                        .filter(|target| {
+                            *target
                                 == TargetNode {
                                     owner_id: source_owner_id,
                                     node: source_raw,
@@ -845,14 +1038,14 @@ mod tests {
         assert_eq!(
             observer_borrow
                 .dependency_edges_of(effect_raw)
-                .filter(|(_, edge)| edge.target == source_target)
+                .filter(|target| *target == source_target)
                 .count(),
             1
         );
         assert_eq!(
             source_borrow
                 .subscriber_edges_of(source_raw)
-                .filter(|(_, edge)| edge.target == observer_target)
+                .filter(|target| *target == observer_target)
                 .count(),
             1
         );

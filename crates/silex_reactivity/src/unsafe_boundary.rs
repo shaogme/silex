@@ -156,7 +156,7 @@ impl<'scope> ActiveOwnerProof<'scope> {
     /// restored only after all registry and state checks have succeeded.
     pub(crate) fn from_registry(
         id: OwnerId,
-        generation: u32,
+        generation: u64,
         expected: &WeakOwnerToken,
         state: Rc<ErasedScopeState>,
     ) -> ReactiveResult<Option<Self>> {
@@ -353,7 +353,7 @@ pub(crate) struct CleanupOwnerProof<'scope> {
 impl<'scope> CleanupOwnerProof<'scope> {
     pub(crate) fn from_registry(
         id: OwnerId,
-        generation: u32,
+        generation: u64,
         expected: &WeakOwnerToken,
         state: Rc<ErasedScopeState>,
     ) -> ReactiveResult<Option<Self>> {

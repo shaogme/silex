@@ -233,6 +233,111 @@ fn dynamic_dependencies_are_replaced_on_each_effect_run() {
 }
 
 #[test]
+fn reading_then_writing_a_new_dependency_replays_after_commit() {
+    let mut runtime = Runtime::new();
+    runtime
+        .with_transient(|scope| {
+            let (trigger, set_trigger) = scope.signal(0i32).expect("trigger creation");
+            let (new_source, set_new_source) = scope.signal(0i32).expect("new source creation");
+            let wrote_new_source = Rc::new(Cell::new(false));
+            let runs = Rc::new(Cell::new(0));
+            let runs_in_effect = runs.clone();
+            let wrote_new_source_in_effect = wrote_new_source.clone();
+            scope
+                .effect(
+                    move || {
+                        runs_in_effect.set(runs_in_effect.get() + 1);
+                        if trigger.get().expect("trigger read") != 0 {
+                            let value = new_source.get().expect("new source read");
+                            if value == 0 && !wrote_new_source_in_effect.replace(true) {
+                                set_new_source.set(1).map_err(|_| ())?;
+                            }
+                        }
+                        Ok(())
+                    },
+                    handler(scope),
+                )
+                .expect("effect should initialize");
+
+            assert_eq!(runs.get(), 1);
+            set_trigger.set(1).expect("trigger update");
+            assert_eq!(runs.get(), 3);
+            assert_eq!(new_source.get(), Ok(1));
+        })
+        .expect("test operation should succeed");
+}
+
+#[test]
+fn failed_callback_discards_new_dependency_and_pending_source() {
+    let mut runtime = Runtime::new();
+    runtime
+        .with_transient(|scope| {
+            let (trigger, set_trigger) = scope.signal(0i32).expect("trigger creation");
+            let (new_source, set_new_source) = scope.signal(0i32).expect("new source creation");
+            let runs = Rc::new(Cell::new(0));
+            let runs_in_effect = runs.clone();
+            scope
+                .effect(
+                    move || {
+                        runs_in_effect.set(runs_in_effect.get() + 1);
+                        if trigger.get().expect("trigger read") != 0 {
+                            let value = new_source.get().expect("new source read");
+                            if value == 0 {
+                                set_new_source.set(1).map_err(|_| ())?;
+                            }
+                            return Err(());
+                        }
+                        Ok(())
+                    },
+                    handler(scope),
+                )
+                .expect("effect should initialize");
+
+            assert_eq!(runs.get(), 1);
+            set_trigger.set(1).expect("trigger update");
+            assert_eq!(runs.get(), 2);
+            set_new_source.set(2).expect("new source update");
+            assert_eq!(runs.get(), 2);
+        })
+        .expect("test operation should succeed");
+}
+
+#[test]
+fn writing_before_first_read_does_not_retroactively_notify() {
+    let mut runtime = Runtime::new();
+    runtime
+        .with_transient(|scope| {
+            let (trigger, set_trigger) = scope.signal(0i32).expect("trigger creation");
+            let (new_source, set_new_source) = scope.signal(0i32).expect("new source creation");
+            let wrote_new_source = Rc::new(Cell::new(false));
+            let runs = Rc::new(Cell::new(0));
+            let runs_in_effect = runs.clone();
+            let wrote_new_source_in_effect = wrote_new_source.clone();
+            scope
+                .effect(
+                    move || {
+                        runs_in_effect.set(runs_in_effect.get() + 1);
+                        if trigger.get().expect("trigger read") != 0 {
+                            if !wrote_new_source_in_effect.replace(true) {
+                                set_new_source.set(1).map_err(|_| ())?;
+                            }
+                            let _ = new_source.get().expect("new source read");
+                        }
+                        Ok(())
+                    },
+                    handler(scope),
+                )
+                .expect("effect should initialize");
+
+            set_trigger.set(1).expect("trigger update");
+            assert_eq!(runs.get(), 2);
+            set_new_source.set(2).expect("new source update");
+            assert_eq!(runs.get(), 3);
+        })
+        .expect("test operation should succeed");
+}
+
+#[test]
 fn cross_scope_explicit_dependencies_are_replaced_on_each_effect_run() {
     let mut runtime = Runtime::new();
     let runs = Rc::new(Cell::new(0));

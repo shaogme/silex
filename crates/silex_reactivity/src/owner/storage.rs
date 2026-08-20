@@ -141,7 +141,7 @@ impl ScopeStorage {
         let owner_id = scheduler
             .try_borrow_mut()
             .map_err(|_| ReactiveError::BorrowConflict)?
-            .alloc_owner(&state, parent, mode);
+            .alloc_owner(&state, parent, mode)?;
         state
             .try_borrow_mut()
             .map_err(|_| ReactiveError::BorrowConflict)?

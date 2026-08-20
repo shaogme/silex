@@ -1,8 +1,8 @@
 //! Node hierarchy disposal and scope cleanup execution.
 
 use super::{
-    model::{NodeData, ScopeState},
-    scheduler::{GlobalScheduler, ObserverFrame, TargetNode},
+    model::{DisposalScratch, NodeData, ScopeState},
+    scheduler::{GlobalScheduler, ObserverFrame, OwnerId, TargetNode},
     storage::CleanupThunk,
 };
 use crate::{
@@ -15,7 +15,7 @@ use std::{
     any::Any,
     collections::HashSet,
     mem,
-    panic::{AssertUnwindSafe, catch_unwind},
+    panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
 };
 
 pub(crate) type PanicData = Box<dyn Any + Send>;
@@ -264,55 +264,52 @@ enum DisposeStep<'scope> {
 fn collect_disposal_nodes<'scope>(
     state: &ScopeState<'scope>,
     roots: &[NodeId],
-) -> Result<Vec<NodeId>, ReactiveError> {
+    scratch: &mut DisposalScratch,
+) -> Result<(), ReactiveError> {
     let state_ref = state.try_borrow()?;
-    let mut pending = roots.to_vec();
-    let mut visited = HashSet::new();
-    let mut nodes = Vec::new();
-    while let Some(id) = pending.pop() {
-        if !visited.insert(id) {
+    scratch.pending.extend(roots.iter().copied());
+    while let Some(id) = scratch.pending.pop() {
+        if !scratch.visited.insert(id) {
             continue;
         }
         let Some(node) = state_ref.nodes.get(id) else {
             continue;
         };
-        nodes.push(id);
-        pending.extend(state_ref.children_of_head(node.first_child));
+        scratch.nodes.push(id);
+        scratch
+            .pending
+            .extend(state_ref.children_of_head(node.first_child));
     }
-    Ok(nodes)
+    Ok(())
 }
 
 fn preflight_node_disposal<'scope>(
     state: &ScopeState<'scope>,
     nodes: &[NodeId],
+    external_owner_ids: &mut HashSet<OwnerId>,
 ) -> Result<(), ReactiveError> {
-    let (owner_id, scheduler, external_owner_ids) = {
+    let (owner_id, scheduler) = {
         let state_ref = state.try_borrow()?;
-        let mut external_owner_ids = HashSet::new();
         for id in nodes {
             let Some(_) = state_ref.nodes.get(*id) else {
                 continue;
             };
-            for (_, edge) in state_ref
+            for target in state_ref
                 .dependency_edges_of(*id)
                 .chain(state_ref.subscriber_edges_of(*id))
             {
-                if edge.target.owner_id != state_ref.owner_id {
-                    external_owner_ids.insert(edge.target.owner_id);
+                if target.owner_id != state_ref.owner_id {
+                    external_owner_ids.insert(target.owner_id);
                 }
             }
         }
-        (
-            state_ref.owner_id,
-            state_ref.scheduler.clone(),
-            external_owner_ids,
-        )
+        (state_ref.owner_id, state_ref.scheduler.clone())
     };
 
     scheduler
         .try_borrow_mut()
         .map_err(|_| ReactiveError::BorrowConflict)?;
-    for external_owner_id in external_owner_ids {
+    for external_owner_id in external_owner_ids.iter().copied() {
         if external_owner_id == owner_id {
             continue;
         }
@@ -335,8 +332,47 @@ pub(crate) fn dispose_nodes_collect<'scope>(
     roots: Vec<NodeId>,
 ) -> Result<CleanupOutcome<'scope>, ReactiveError> {
     let scheduler = state.try_borrow()?.scheduler.clone();
-    let disposal_nodes = collect_disposal_nodes(state, &roots)?;
-    preflight_node_disposal(state, &disposal_nodes)?;
+    let mut scratch = {
+        let mut state_ref = state.try_borrow_mut()?;
+        if let Some(scratch) = state_ref.disposal_scratch_pool.pop() {
+            #[cfg(feature = "test-support")]
+            {
+                state_ref.scratch_stats.disposal_pool_hits =
+                    state_ref.scratch_stats.disposal_pool_hits.saturating_add(1);
+            }
+            scratch
+        } else {
+            #[cfg(feature = "test-support")]
+            {
+                state_ref.scratch_stats.disposal_pool_misses = state_ref
+                    .scratch_stats
+                    .disposal_pool_misses
+                    .saturating_add(1);
+            }
+            DisposalScratch::default()
+        }
+    };
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        dispose_nodes_collect_with_scratch(state, roots, scheduler, &mut scratch)
+    }));
+    #[cfg(feature = "test-support")]
+    state.try_borrow_mut()?.record_disposal_scratch(&scratch);
+    scratch.reset();
+    state.try_borrow_mut()?.disposal_scratch_pool.push(scratch);
+    match result {
+        Ok(result) => result,
+        Err(panic) => resume_unwind(panic),
+    }
+}
+
+fn dispose_nodes_collect_with_scratch<'scope>(
+    state: &ScopeState<'scope>,
+    roots: Vec<NodeId>,
+    scheduler: SharedCell<GlobalScheduler>,
+    scratch: &mut DisposalScratch,
+) -> Result<CleanupOutcome<'scope>, ReactiveError> {
+    collect_disposal_nodes(state, &roots, scratch)?;
+    preflight_node_disposal(state, &scratch.nodes, &mut scratch.external_owner_ids)?;
     let _observer_frame = ObserverFrame::push_untracked(scheduler.clone())?;
     let mut outcome = CleanupOutcome::new();
     let mut stack = Vec::with_capacity(roots.len());
@@ -354,7 +390,7 @@ pub(crate) fn dispose_nodes_collect<'scope>(
                         owner_id: state_ref.owner_id,
                         node: id,
                     };
-                    let subscribers = state_ref.take_subscribers(id);
+                    state_ref.take_subscribers_into(id, &mut scratch.removed_targets);
                     let scheduler = state_ref.scheduler.clone();
                     scheduler
                         .try_borrow_mut()
@@ -362,7 +398,7 @@ pub(crate) fn dispose_nodes_collect<'scope>(
                         .cancel_effect(source_target);
 
                     state_ref.clear_dependencies(id)?;
-                    for subscriber in subscribers {
+                    for subscriber in scratch.removed_targets.iter().copied() {
                         if subscriber.owner_id == state_ref.owner_id {
                             state_ref.remove_dependency(subscriber.node, source_target);
                         } else if let Some(observer_state) = scheduler

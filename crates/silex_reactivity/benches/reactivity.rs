@@ -458,7 +458,7 @@ mod native {
     }
 
     fn bench_graph_effect_fanout(c: &mut Criterion) {
-        let mut group = c.benchmark_group("graph/effect-fanout");
+        let mut group = c.benchmark_group("graph/propagation-frontier/fanout");
 
         for &fanout in GRAPH_SIZES {
             group.throughput(Throughput::Elements(fanout as u64));
@@ -505,7 +505,7 @@ mod native {
     }
 
     fn bench_graph_memo_chain(c: &mut Criterion) {
-        let mut group = c.benchmark_group("graph/memo-chain");
+        let mut group = c.benchmark_group("graph/propagation-frontier/chain");
 
         for &depth in GRAPH_SIZES {
             group.throughput(Throughput::Elements(depth as u64));
@@ -578,7 +578,7 @@ mod native {
     }
 
     fn bench_graph_memo_diamond(c: &mut Criterion) {
-        let mut group = c.benchmark_group("graph/memo-diamond");
+        let mut group = c.benchmark_group("graph/propagation-frontier/diamond");
 
         for &width in GRAPH_SIZES {
             group.throughput(Throughput::Elements(width as u64));
@@ -644,7 +644,7 @@ mod native {
     }
 
     fn bench_graph_effect_fanout_cross_scope(c: &mut Criterion) {
-        let mut group = c.benchmark_group("graph/effect-fanout-cross-scope");
+        let mut group = c.benchmark_group("graph/propagation-frontier/cross-scope-fanout");
 
         for &fanout in GRAPH_SIZES {
             group.throughput(Throughput::Elements(fanout as u64));
@@ -697,7 +697,7 @@ mod native {
     }
 
     fn bench_graph_memo_chain_cross_scope(c: &mut Criterion) {
-        let mut group = c.benchmark_group("graph/memo-chain-cross-scope");
+        let mut group = c.benchmark_group("graph/propagation-frontier/cross-scope-chain");
 
         for &depth in GRAPH_SIZES {
             group.throughput(Throughput::Elements(depth as u64));
@@ -773,7 +773,7 @@ mod native {
     }
 
     fn bench_graph_memo_diamond_cross_scope(c: &mut Criterion) {
-        let mut group = c.benchmark_group("graph/memo-diamond-cross-scope");
+        let mut group = c.benchmark_group("graph/propagation-frontier/cross-scope-diamond");
 
         for &width in GRAPH_SIZES {
             group.throughput(Throughput::Elements(width as u64));
@@ -1012,7 +1012,7 @@ mod native {
     }
 
     fn bench_dependency_switch(c: &mut Criterion) {
-        let mut group = c.benchmark_group("graph/dependency-switch");
+        let mut group = c.benchmark_group("graph/dependency-rebind");
 
         for &size in DEPENDENCY_SIZES {
             group.throughput(Throughput::Elements(size as u64));
@@ -1118,7 +1118,7 @@ mod native {
     }
 
     fn bench_dependency_dispose_cross_scope(c: &mut Criterion) {
-        let mut group = c.benchmark_group("graph/dependency-dispose-cross-scope");
+        let mut group = c.benchmark_group("graph/dispose-cross-scope");
 
         for &size in DEPENDENCY_SIZES {
             group.throughput(Throughput::Elements(size as u64));
@@ -1169,8 +1169,35 @@ mod native {
         group.finish();
     }
 
-    fn bench_owner_churn(c: &mut Criterion) {
-        let mut group = c.benchmark_group("owner/churn");
+    fn bench_owner_slot_churn(c: &mut Criterion) {
+        let mut group = c.benchmark_group("owner/slot-churn");
+
+        for &owners in OWNER_SIZES {
+            group.throughput(Throughput::Elements(owners as u64));
+            group.bench_with_input(
+                BenchmarkId::from_parameter(owners),
+                &owners,
+                |bench, &owners| {
+                    let mut runtime = Runtime::new();
+                    let root = runtime.owner().expect("runtime root creation");
+                    root.with_access(|scope| {
+                        bench.iter(|| {
+                            for _ in 0..owners {
+                                let owner = scope.create_child().expect("benchmark owner creation");
+                                owner.close().expect("benchmark owner disposal");
+                            }
+                        });
+                    });
+                    root.close().expect("runtime root disposal");
+                },
+            );
+        }
+
+        group.finish();
+    }
+
+    fn bench_owner_full_churn(c: &mut Criterion) {
+        let mut group = c.benchmark_group("owner/full-churn");
 
         for &rows in OWNER_SIZES {
             group.throughput(Throughput::Elements(rows as u64));
@@ -1364,7 +1391,8 @@ mod native {
             bench_dependency_switch,
             bench_dependency_dispose,
             bench_dependency_dispose_cross_scope,
-            bench_owner_churn,
+            bench_owner_slot_churn,
+            bench_owner_full_churn,
             bench_signal_create_heap,
             bench_completion_message,
             scoped_signal_round_trip,

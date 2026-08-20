@@ -9,7 +9,7 @@ use crate::{
     unsafe_boundary::{ActiveOwnerProof, CleanupOwnerProof, WeakOwnerToken},
 };
 
-use std::{cell::Cell, collections::VecDeque, rc::Rc};
+use std::{cell::Cell, collections::VecDeque, mem, rc::Rc};
 
 /// Close diagnostics that cannot be returned through the current call stack.
 ///
@@ -68,7 +68,7 @@ impl CloseReportQueue {
 /// releasing it increments the generation so stale handles cannot address the
 /// replacement owner.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct OwnerId(pub(crate) u32, pub(crate) u32);
+pub(crate) struct OwnerId(pub(crate) u32, pub(crate) u64);
 
 impl OwnerId {
     pub(crate) const fn initial(slot: u32) -> Self {
@@ -149,6 +149,22 @@ pub(crate) fn active_ctx(
                     None
                 }
             }))
+    })
+}
+
+pub(crate) fn active_observer_contexts(
+    scheduler: &SharedCell<GlobalScheduler>,
+) -> ReactiveResult<Vec<ExecutionContext>> {
+    ACTIVE_CONTEXT.with(|stack| {
+        Ok(stack
+            .try_read()
+            .map_err(|_| ReactiveError::BorrowConflict)?
+            .iter()
+            .filter(|context| {
+                Rc::ptr_eq(&context.scheduler, scheduler) && context.observer.is_some()
+            })
+            .cloned()
+            .collect())
     })
 }
 
@@ -293,47 +309,8 @@ pub(crate) struct ScheduledTask {
     pub(crate) node: NodeId,
 }
 
-pub(crate) struct BitSet {
-    bits: Vec<u64>,
-}
-
-impl BitSet {
-    pub(crate) fn new() -> Self {
-        Self { bits: Vec::new() }
-    }
-
-    pub(crate) fn is_set(&self, id: u32) -> bool {
-        let index = (id / 64) as usize;
-        if index >= self.bits.len() {
-            return false;
-        }
-        self.bits
-            .get(index)
-            .is_some_and(|bits| (bits & (1u64 << (id % 64))) != 0)
-    }
-
-    pub(crate) fn set(&mut self, id: u32, value: bool) {
-        let index = (id / 64) as usize;
-        if index >= self.bits.len() {
-            if !value {
-                return;
-            }
-            self.bits.resize(index.saturating_add(1), 0);
-        }
-        let bit = 1u64 << (id % 64);
-        if let Some(bits) = self.bits.get_mut(index) {
-            if value {
-                *bits |= bit;
-            } else {
-                *bits &= !bit;
-            }
-        }
-    }
-}
-
 pub(crate) struct ScopeEntry {
     owner: WeakOwnerToken,
-    generation: u32,
     parent: Option<OwnerId>,
     mode: OwnerMode,
 }
@@ -345,12 +322,157 @@ pub(crate) enum OwnerMode {
     Transient,
 }
 
+enum OwnerSlotState {
+    Vacant,
+    Active(ScopeEntry),
+    Inactive(ScopeEntry),
+    Retired,
+}
+
+struct OwnerSlot {
+    generation: u64,
+    state: OwnerSlotState,
+}
+
+struct OwnerSlotTable {
+    slots: Vec<OwnerSlot>,
+    free: Vec<u32>,
+    next_slot: u32,
+}
+
+impl OwnerSlotTable {
+    fn new() -> Self {
+        Self {
+            slots: Vec::new(),
+            free: Vec::new(),
+            next_slot: 0,
+        }
+    }
+
+    fn alloc<'scope>(
+        &mut self,
+        state: &ScopeState<'scope>,
+        parent: Option<OwnerId>,
+        mode: OwnerMode,
+    ) -> ReactiveResult<OwnerId> {
+        let slot_id = if let Some(slot_id) = self.free.pop() {
+            let slot = self
+                .slots
+                .get(slot_id as usize)
+                .ok_or(ReactiveError::InvariantViolation)?;
+            if !matches!(slot.state, OwnerSlotState::Vacant) {
+                return Err(ReactiveError::InvariantViolation);
+            }
+            slot_id
+        } else {
+            let slot_id = self.next_slot;
+            self.next_slot = self
+                .next_slot
+                .checked_add(1)
+                .ok_or(ReactiveError::InvariantViolation)?;
+            self.slots.push(OwnerSlot {
+                generation: 0,
+                state: OwnerSlotState::Vacant,
+            });
+            slot_id
+        };
+
+        let slot = self
+            .slots
+            .get_mut(slot_id as usize)
+            .ok_or(ReactiveError::InvariantViolation)?;
+        let generation = slot.generation;
+        if !matches!(slot.state, OwnerSlotState::Vacant) {
+            return Err(ReactiveError::InvariantViolation);
+        }
+        slot.state = OwnerSlotState::Active(ScopeEntry {
+            owner: WeakOwnerToken::from_typed(state),
+            parent,
+            mode,
+        });
+        Ok(OwnerId(slot_id, generation))
+    }
+
+    fn deactivate(&mut self, id: OwnerId) -> bool {
+        let Some(slot) = self.slots.get_mut(id.0 as usize) else {
+            return false;
+        };
+        if slot.generation != id.1 {
+            return false;
+        }
+        let state = mem::replace(&mut slot.state, OwnerSlotState::Retired);
+        match state {
+            OwnerSlotState::Active(entry) => {
+                slot.state = OwnerSlotState::Inactive(entry);
+                true
+            }
+            other => {
+                slot.state = other;
+                false
+            }
+        }
+    }
+
+    fn release(&mut self, id: OwnerId) {
+        let Some(slot) = self.slots.get_mut(id.0 as usize) else {
+            return;
+        };
+        if slot.generation != id.1 {
+            return;
+        }
+        let state = mem::replace(&mut slot.state, OwnerSlotState::Retired);
+        if !matches!(state, OwnerSlotState::Inactive(_)) {
+            slot.state = state;
+            return;
+        }
+        if id.1 == u64::MAX {
+            return;
+        }
+        slot.generation = id.1.saturating_add(1);
+        slot.state = OwnerSlotState::Vacant;
+        self.free.push(id.0);
+    }
+
+    fn is_active(&self, id: OwnerId) -> bool {
+        self.slots.get(id.0 as usize).is_some_and(|slot| {
+            slot.generation == id.1 && matches!(slot.state, OwnerSlotState::Active(_))
+        })
+    }
+
+    fn entry(&self, id: OwnerId) -> Option<&ScopeEntry> {
+        let slot = self.slots.get(id.0 as usize)?;
+        if slot.generation != id.1 {
+            return None;
+        }
+        match &slot.state {
+            OwnerSlotState::Active(entry) | OwnerSlotState::Inactive(entry) => Some(entry),
+            OwnerSlotState::Vacant | OwnerSlotState::Retired => None,
+        }
+    }
+
+    #[cfg(feature = "test-support")]
+    fn active_ids(&self) -> Vec<OwnerId> {
+        self.slots
+            .iter()
+            .enumerate()
+            .filter_map(|(index, slot)| {
+                if matches!(slot.state, OwnerSlotState::Active(_)) {
+                    Some(OwnerId(index as u32, slot.generation))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    #[cfg(test)]
+    fn free_len(&self) -> usize {
+        self.free.len()
+    }
+}
+
 pub(crate) struct GlobalScheduler {
-    active_mask: BitSet,
-    scopes: Vec<Option<ScopeEntry>>,
-    generations: Vec<u32>,
-    next_owner_id: u32,
-    free_owner_ids: Vec<u32>,
+    owner_slots: OwnerSlotTable,
     epoch: u64,
     pub(crate) global_queue: VecDeque<ScheduledTask>,
     pub(crate) worklist: VecDeque<ScheduledTask>,
@@ -372,11 +494,7 @@ impl GlobalScheduler {
     pub(crate) fn new_with_reporter(reporter: Rc<CloseReportQueue>) -> SharedCell<Self> {
         Rc::new(BorrowCell::new(
             Self {
-                active_mask: BitSet::new(),
-                scopes: Vec::new(),
-                generations: Vec::new(),
-                next_owner_id: 0,
-                free_owner_ids: Vec::new(),
+                owner_slots: OwnerSlotTable::new(),
                 epoch: 1,
                 global_queue: VecDeque::new(),
                 worklist: VecDeque::new(),
@@ -411,85 +529,33 @@ impl GlobalScheduler {
         state: &ScopeState<'scope>,
         parent: Option<OwnerId>,
         mode: OwnerMode,
-    ) -> OwnerId {
-        let id = self.free_owner_ids.pop().unwrap_or_else(|| {
-            let id = self.next_owner_id;
-            self.next_owner_id = self.next_owner_id.wrapping_add(1);
-            id
-        });
-        let generation = self.generations.get(id as usize).copied().unwrap_or(0);
-        let owner_id = OwnerId(id, generation);
-
-        let owner = WeakOwnerToken::from_typed(state);
-
-        self.active_mask.set(id, true);
-        let index = id as usize;
-        if index >= self.scopes.len() {
-            self.scopes.resize_with(index.saturating_add(1), || None);
-        }
-        if index >= self.generations.len() {
-            self.generations.resize(index.saturating_add(1), 0);
-        }
-        if let Some(scope) = self.scopes.get_mut(index) {
-            *scope = Some(ScopeEntry {
-                owner,
-                generation,
-                parent,
-                mode,
-            });
-        }
-        owner_id
+    ) -> ReactiveResult<OwnerId> {
+        self.owner_slots.alloc(state, parent, mode)
     }
 
     pub(crate) fn deactivate_scope(&mut self, id: OwnerId) {
-        if !self.is_scope_active(id) {
+        if !self.owner_slots.deactivate(id) {
             return;
         }
-        self.active_mask.set(id.0, false);
         self.global_queue.retain(|task| task.owner_id != id);
         self.worklist.retain(|task| task.owner_id != id);
     }
 
     pub(crate) fn release_owner_id(&mut self, id: OwnerId) {
-        if self.is_scope_active(id) || self.free_owner_ids.contains(&id.0) {
-            return;
-        }
-        let index = id.0 as usize;
-        let Some(entry) = self.scopes.get(index).and_then(Option::as_ref) else {
-            return;
-        };
-        if entry.generation != id.1 {
-            return;
-        }
-        if let Some(scope) = self.scopes.get_mut(index) {
-            *scope = None;
-        }
-        if index >= self.generations.len() {
-            self.generations.resize(index.saturating_add(1), 0);
-        }
-        if let Some(generation) = self.generations.get_mut(index) {
-            *generation = id.1.wrapping_add(1);
-        }
-        self.free_owner_ids.push(id.0);
+        self.owner_slots.release(id);
     }
 
     pub(crate) fn is_scope_active(&self, id: OwnerId) -> bool {
-        self.active_mask.is_set(id.0)
-            && self
-                .scopes
-                .get(id.0 as usize)
-                .and_then(Option::as_ref)
-                .is_some_and(|entry| entry.generation == id.1)
+        self.owner_slots.is_active(id)
     }
 
     pub(crate) fn is_scope_current(&self, id: OwnerId, expected: &WeakOwnerToken) -> bool {
         if !self.is_scope_active(id) {
             return false;
         }
-        self.scopes
-            .get(id.0 as usize)
-            .and_then(Option::as_ref)
-            .is_some_and(|entry| entry.generation == id.1 && entry.owner.ptr_eq(expected))
+        self.owner_slots
+            .entry(id)
+            .is_some_and(|entry| entry.owner.ptr_eq(expected) && self.is_scope_active(id))
     }
 
     /// Resolve an active owner proof after validating the complete registry
@@ -499,7 +565,7 @@ impl GlobalScheduler {
         id: OwnerId,
         expected: &WeakOwnerToken,
     ) -> ReactiveResult<Option<ActiveOwnerProof<'scope>>> {
-        let Some(entry) = self.scopes.get(id.0 as usize).and_then(Option::as_ref) else {
+        let Some(entry) = self.owner_slots.entry(id) else {
             return Ok(None);
         };
         if !self.is_scope_active(id) || !entry.owner.ptr_eq(expected) {
@@ -508,28 +574,19 @@ impl GlobalScheduler {
         let Some(state) = entry.owner.upgrade_erased() else {
             return Ok(None);
         };
-        ActiveOwnerProof::from_registry(id, entry.generation, expected, state)
+        ActiveOwnerProof::from_registry(id, id.1, expected, state)
     }
 
     #[cfg(feature = "test-support")]
     pub(crate) fn active_owner_ids(&self) -> Vec<OwnerId> {
-        self.scopes
-            .iter()
-            .enumerate()
-            .filter_map(|(index, entry)| {
-                entry
-                    .as_ref()
-                    .map(|entry| OwnerId(index as u32, entry.generation))
-                    .filter(|id| self.is_scope_active(*id))
-            })
-            .collect()
+        self.owner_slots.active_ids()
     }
 
     pub(crate) fn get_scope<'scope>(
         &self,
         id: OwnerId,
     ) -> ReactiveResult<Option<ScopeState<'scope>>> {
-        let Some(entry) = self.scopes.get(id.0 as usize).and_then(Option::as_ref) else {
+        let Some(entry) = self.owner_slots.entry(id) else {
             return Ok(None);
         };
         if !self.is_scope_active(id) {
@@ -538,7 +595,7 @@ impl GlobalScheduler {
         let Some(state) = entry.owner.upgrade_erased() else {
             return Ok(None);
         };
-        ActiveOwnerProof::from_registry(id, entry.generation, &entry.owner, state)
+        ActiveOwnerProof::from_registry(id, id.1, &entry.owner, state)
             .map(|proof| proof.map(|proof| proof.state()))
     }
 
@@ -554,23 +611,18 @@ impl GlobalScheduler {
         &self,
         id: OwnerId,
     ) -> ReactiveResult<Option<CleanupOwnerProof<'scope>>> {
-        let Some(entry) = self.scopes.get(id.0 as usize).and_then(Option::as_ref) else {
+        let Some(entry) = self.owner_slots.entry(id) else {
             return Ok(None);
         };
-        if entry.generation != id.1 {
-            return Ok(None);
-        }
         let Some(state) = entry.owner.upgrade_erased() else {
             return Ok(None);
         };
-        CleanupOwnerProof::from_registry(id, entry.generation, &entry.owner, state)
+        CleanupOwnerProof::from_registry(id, id.1, &entry.owner, state)
     }
 
     pub(crate) fn owner_metadata(&self, id: OwnerId) -> Option<(OwnerMode, Option<OwnerId>)> {
-        self.scopes
-            .get(id.0 as usize)
-            .and_then(Option::as_ref)
-            .filter(|entry| entry.generation == id.1)
+        self.owner_slots
+            .entry(id)
             .map(|entry| (entry.mode, entry.parent))
     }
 
@@ -673,7 +725,8 @@ mod tests {
         let first_id = scheduler
             .try_borrow_mut()
             .expect("scheduler write")
-            .alloc_owner(&first, None, OwnerMode::Transient);
+            .alloc_owner(&first, None, OwnerMode::Transient)
+            .expect("owner allocation");
         first.try_borrow_mut().expect("state write").owner_id = first_id;
         scheduler
             .try_borrow_mut()
@@ -692,7 +745,8 @@ mod tests {
         let second_id = scheduler
             .try_borrow_mut()
             .expect("scheduler write")
-            .alloc_owner(&second, None, OwnerMode::Transient);
+            .alloc_owner(&second, None, OwnerMode::Transient)
+            .expect("owner allocation");
         assert_ne!(first_id, second_id);
 
         scheduler
@@ -712,7 +766,8 @@ mod tests {
         let third_id = scheduler
             .try_borrow_mut()
             .expect("scheduler write")
-            .alloc_owner(&third, None, OwnerMode::Transient);
+            .alloc_owner(&third, None, OwnerMode::Transient)
+            .expect("owner allocation");
 
         assert_eq!(first_id.0, third_id.0);
         assert_ne!(first_id.1, third_id.1);
@@ -733,5 +788,98 @@ mod tests {
             .try_borrow_mut()
             .expect("scheduler write")
             .release_owner_id(third_id);
+    }
+
+    #[test]
+    fn release_is_idempotent_and_rejects_stale_generation() {
+        let scheduler = GlobalScheduler::new();
+        let first = ScopeState::new(OwnerId::initial(0), scheduler.clone());
+        let first_id = scheduler
+            .try_borrow_mut()
+            .expect("scheduler write")
+            .alloc_owner(&first, None, OwnerMode::Transient)
+            .expect("owner allocation");
+        scheduler
+            .try_borrow_mut()
+            .expect("scheduler write")
+            .deactivate_scope(first_id);
+        scheduler
+            .try_borrow_mut()
+            .expect("scheduler write")
+            .release_owner_id(first_id);
+        assert_eq!(
+            scheduler
+                .try_borrow()
+                .expect("scheduler read")
+                .owner_slots
+                .free_len(),
+            1
+        );
+
+        scheduler
+            .try_borrow_mut()
+            .expect("scheduler write")
+            .release_owner_id(first_id);
+        assert_eq!(
+            scheduler
+                .try_borrow()
+                .expect("scheduler read")
+                .owner_slots
+                .free_len(),
+            1
+        );
+
+        let replacement = ScopeState::new(OwnerId::initial(0), scheduler.clone());
+        let replacement_id = scheduler
+            .try_borrow_mut()
+            .expect("scheduler write")
+            .alloc_owner(&replacement, None, OwnerMode::Transient)
+            .expect("owner allocation");
+        scheduler
+            .try_borrow_mut()
+            .expect("scheduler write")
+            .release_owner_id(first_id);
+        assert!(
+            scheduler
+                .try_borrow()
+                .expect("scheduler read")
+                .is_scope_active(replacement_id)
+        );
+        assert_eq!(
+            scheduler
+                .try_borrow()
+                .expect("scheduler read")
+                .owner_slots
+                .free_len(),
+            0
+        );
+    }
+
+    #[test]
+    fn max_generation_retires_slot_instead_of_reusing_it() {
+        let scheduler = GlobalScheduler::new();
+        let state = ScopeState::new(OwnerId::initial(0), scheduler.clone());
+        let entry = ScopeEntry {
+            owner: WeakOwnerToken::from_typed(&state),
+            parent: None,
+            mode: OwnerMode::Transient,
+        };
+        let mut table = OwnerSlotTable {
+            slots: vec![OwnerSlot {
+                generation: u64::MAX,
+                state: OwnerSlotState::Inactive(entry),
+            }],
+            free: Vec::new(),
+            next_slot: 1,
+        };
+        table.release(OwnerId(0, u64::MAX));
+        assert!(table.entry(OwnerId(0, u64::MAX)).is_none());
+        assert_eq!(table.free_len(), 0);
+
+        let replacement = ScopeState::new(OwnerId::initial(0), scheduler);
+        let replacement_id = table
+            .alloc(&replacement, None, OwnerMode::Transient)
+            .expect("owner allocation");
+        assert_eq!(replacement_id.0, 1);
     }
 }
