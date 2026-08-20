@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}{{ section.title }} · {{ config.title }}{% endblock title %}
+{% block description %}{{ section.description | default(value=config.description) }}{% endblock description %}
+
+{% block content %}
+<div class="page-heading">
+  <p class="eyebrow">DOCUMENTATION</p>
+  <h1>{{ section.title }}</h1>
+  {% if section.description %}<p class="lead">{{ section.description }}</p>{% endif %}
+</div>
+
+{% if section.content %}
+<article class="prose section-intro">{{ section.content | safe }}</article>
+{% endif %}
+
+{% if section.subsections %}
+<div class="link-list">
+  {% for subsection_path in section.subsections %}
+    {% set subsection = get_section(path=subsection_path) %}
+    <a class="list-card" href="{{ subsection.permalink | safe }}">
+      <span>
+        <strong>{{ subsection.title }}</strong>
+        {% if subsection.description %}<small>{{ subsection.description }}</small>{% endif %}
+      </span>
+      <span class="arrow">→</span>
+    </a>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if section.pages %}
+<div class="link-list page-list">
+  {% for page in section.pages %}
+    <a class="list-card" href="{{ page.permalink | safe }}">
+      <span>
+        <strong>{{ page.title }}</strong>
+        {% if page.description %}<small>{{ page.description }}</small>{% endif %}
+      </span>
+      <span class="arrow">→</span>
+    </a>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock content %}

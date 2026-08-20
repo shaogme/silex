@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+
+{% block title %}页面不存在 · {{ config.title }}{% endblock title %}
+
+{% block content %}
+<section class="empty-state">
+  <p class="eyebrow">404</p>
+  <h1>这个页面还没有找到</h1>
+  <p class="lead">链接可能已经移动，或者这部分文档还在建设中。</p>
+  <a class="button button-primary" href="{{ get_url(path='@/_index.md') }}">返回首页</a>
+</section>
+{% endblock content %}

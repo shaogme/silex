@@ -1,6 +1,7 @@
 /target
 /**/dist
 /**/node_modules
+/docs/public
 /shadcn-ui
 /tools/geckodriver/
 .env

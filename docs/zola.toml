@@ -1,0 +1,17 @@
+# Zola 站点的公开地址。
+base_url = "https://shaogme.github.io/silex/"
+title = "Silex 文档"
+description = "Silex Rust Web 框架的用户文档、开发者文档与文档规范。"
+default_language = "zh-CN"
+compile_sass = true
+# Zola 0.23.3 的内置搜索索引不支持中文语言代码；站点先关闭该索引，
+# 避免生成阶段失败。后续接入中文搜索方案时再重新启用。
+build_search_index = false
+
+[markdown]
+[markdown.highlighting]
+theme = "catppuccin-mocha"
+
+[extra]
+repository_url = "https://github.com/shaogme/silex"
+project_version = "0.1.0-beta.9"

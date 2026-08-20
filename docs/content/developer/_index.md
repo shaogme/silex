@@ -1,0 +1,10 @@
++++
+title = "开发者文档"
+description = "按 crate 组织的 Silex 源码、API 与设计说明。"
+template = "section.html"
+sort_by = "weight"
++++
+
+开发者文档从仓库源码和测试出发，解释 crate 的职责、公开接口、生命周期边界与验证方法。
+
+当前已完成 [`silex_reactivity`](crates/silex_reactivity/) 的总文档和专题文档；其他 crate 会按相同目录规则逐步加入。

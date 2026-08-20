@@ -40,6 +40,9 @@ jobs:
       - name: Run Reactivity Test-Support Tests
         run: cargo test -p silex_reactivity --features test-support --all-targets
 
+      - name: Run Documentation Examples
+        run: cargo test -p silex_reactivity --test docs_examples
+
       - name: Check Reactivity Benchmarks
         run: cargo bench -p silex_reactivity --bench reactivity --no-run
 

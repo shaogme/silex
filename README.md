@@ -6,20 +6,20 @@ Silex 是一个基于 **细粒度响应式 (Fine-Grained Reactivity)** 和 **无
 
 ---
 
-## 🌟 核心特性 (Key Features)
+## 核心特性 (Key Features)
 
-### 1. 🚀 极致性能 (Blazing Fast)
+### 1. 极致性能 (Blazing Fast)
 Silex 摒弃了传统的虚拟 DOM Diff 算法。通过精确的依赖追踪，应用状态 (Signal) 的变化会直接更新对应的 DOM 节点。
 *   **O(1) 更新复杂度**：无论应用多大，更新成本仅与变化的数据量相关。
 *   **零运行时开销**：构建者模式和宏在编译时优化，运行时极为轻量。
 
-### 2. 🦀 锈式美学 (Rusty & Fluent)
+### 2. 锈式美学 (Rusty & Fluent)
 Silex 提供了一套完全符合 Rust 习惯的流式构建者 API (Builder API)。
 *   **Children-First**：像 SwiftUI 一样编写 UI，结构清晰，层级分明。
 *   **类型安全**：从 HTML 属性到事件处理，一切皆有类型检查，彻底告别运行时拼写错误。
 *   **灵活风格**：支持 **宏风格 (`div![...]`)**、**函数风格 (`div(...)`)** 以及 **混合风格**，满足不同开发偏好。
 
-### 3. 🛠️ 全栈工具链 (Batteries Included)
+### 3. 全栈工具链 (Batteries Included)
 Silex 不仅仅是一个视图库，它提供了构建现代 Web 应用所需的一切：
 *   **路由系统 (`silex_router`)**：类型安全的客户端路由，支持嵌套和参数配置。
 *   **状态管理 (`silex_store`)**：基于宏的细粒度全局状态管理。
@@ -28,7 +28,7 @@ Silex 不仅仅是一个视图库，它提供了构建现代 Web 应用所需的
 
 ---
 
-## 📦 快速开始 (Quick Start)
+## 快速开始 (Quick Start)
 
 ### 1. 添加依赖
 
@@ -87,7 +87,7 @@ fn main() -> Result<(), BootstrapError> {
 
 ---
 
-## 🧩 模块概览 (Modules Overview)
+## 模块概览 (Modules Overview)
 
 Silex 采用模块化设计，核心功能拆分为多个 Crate 以保持架构清晰。
 
@@ -102,7 +102,7 @@ Silex 采用模块化设计，核心功能拆分为多个 Crate 以保持架构�
 
 ---
 
-## 🎨 核心功能展示
+## 核心功能展示
 
 ### 1. 声明式路由 (Router)
 
@@ -193,18 +193,17 @@ span(page);
 
 ---
 
-## 🤝 贡献 (Contributing)
+## 贡献 (Contributing)
 
 Silex 处于快速迭代阶段，欢迎任何形式的贡献！无论是提交 Issue、PR，还是完善文档。
 
-详情请参考 `docs/` 目录下的开发文档：
-- [Silex Reactivity Design](docs/src/general_docs/silex_reactivity/README.md)
-- [Silex Macro Guide](docs/src/general_docs/silex_macros/README.md)
-- [Silex Core API](docs/src/general_docs/silex_core/README.md)
+详情请参考 [Silex 文档站点](https://shaogme.github.io/silex/)：
+- [文档规范](https://shaogme.github.io/silex/doc-standards/)
+- [`silex_reactivity` 开发者文档](https://shaogme.github.io/silex/developer/crates/silex_reactivity/)
 
 ---
 
-## 📄 许可证 (License)
+## 许可证 (License)
 
 [MIT License](LICENSE-MIT)
 

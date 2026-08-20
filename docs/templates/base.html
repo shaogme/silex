@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="{% block description %}{{ config.description }}{% endblock description %}">
+    <title>{% block title %}{{ config.title }}{% endblock title %}</title>
+    <style>
+      :root { color-scheme: dark; background: #0b1020; }
+      html, body { background: #0b1020; color: #ecf2ff; }
+      body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.7; }
+      .site-header { min-height: 72px; }
+      .main-content { min-height: calc(100vh - 145px); }
+      html.styles-pending body { visibility: hidden; }
+      html.styles-error body { visibility: visible; }
+      .style-load-error {
+        background: #3a1720;
+        border: 1px solid #fb7185;
+        border-radius: 10px;
+        color: #ffe4e6;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        line-height: 1.5;
+        margin: 20px auto;
+        max-width: 720px;
+        padding: 14px 18px;
+        width: calc(100% - 40px);
+      }
+    </style>
+    <link rel="preload" href="{{ get_url(path='site.css') }}" as="style">
+    <link rel="stylesheet" data-site-style href="{{ get_url(path='site.css') }}">
+    <script>
+      (() => {
+        const root = document.documentElement;
+        const stylesheet = document.querySelector("link[data-site-style]");
+        let timeoutId;
+
+        const showError = () => {
+          if (root.classList.contains("styles-error")) return;
+          if (timeoutId) window.clearTimeout(timeoutId);
+          root.classList.remove("styles-pending");
+          root.classList.add("styles-error");
+
+          const renderError = () => {
+            if (!document.body || document.getElementById("style-load-error")) return;
+            const notice = document.createElement("div");
+            notice.id = "style-load-error";
+            notice.className = "style-load-error";
+            notice.setAttribute("role", "alert");
+            notice.innerHTML = "<strong>页面样式加载失败</strong><br>请刷新页面，或检查 site.css 是否可访问。";
+            document.body.prepend(notice);
+          };
+
+          if (document.body) {
+            renderError();
+          } else {
+            document.addEventListener("DOMContentLoaded", renderError, { once: true });
+          }
+        };
+
+        const showReady = () => {
+          if (timeoutId) window.clearTimeout(timeoutId);
+          root.classList.remove("styles-pending");
+          root.classList.add("styles-ready");
+        };
+
+        root.classList.add("styles-pending");
+        if (!stylesheet) {
+          showError();
+        } else {
+          stylesheet.addEventListener("load", showReady, { once: true });
+          stylesheet.addEventListener("error", showError, { once: true });
+          timeoutId = window.setTimeout(showError, 8000);
+          if (stylesheet.sheet) showReady();
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="shell header-inner">
+        <a class="brand" href="{{ get_url(path='@/_index.md') }}">
+          <span class="brand-mark">S</span>
+          <span>Silex <small>文档</small></span>
+        </a>
+        <nav class="site-nav" aria-label="主导航">
+          <a href="{{ get_url(path='@/doc-standards/_index.md') }}">文档规范</a>
+          <a href="{{ get_url(path='@/developer/_index.md') }}">开发者文档</a>
+          <a href="{{ get_url(path='@/user/_index.md') }}">用户文档</a>
+          <a href="https://github.com/shaogme/silex">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="shell main-content">
+      {% block content %}{% endblock content %}
+    </main>
+
+    <footer class="site-footer">
+      <div class="shell footer-inner">
+        <span>Silex · 中文文档</span>
+        <span><a href="https://github.com/shaogme/silex">查看源码</a></span>
+      </div>
+    </footer>
+  </body>
+</html>

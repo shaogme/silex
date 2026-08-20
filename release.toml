@@ -16,6 +16,6 @@ search = "silex = \"{{prev_version}}\""
 replace = "silex = \"{{version}}\""
 
 [[pre-release-replacements]]
-file = "docs/src/silex/README.md"
-search = "silex = \\{ path = \"../../silex\", version = \"{{prev_version}}\" \\}"
-replace = "silex = { path = \"../../silex\", version = \"{{version}}\" }"
+file = "docs/zola.toml"
+search = "project_version = \"{{prev_version}}\""
+replace = "project_version = \"{{version}}\""

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}{{ config.title }} · 细粒度 Rust Web 框架{% endblock title %}
+{% block description %}{{ config.description }}{% endblock description %}
+
+{% block content %}
+<section class="hero">
+  <p class="eyebrow">NEXT GENERATION RUST WEB FRAMEWORK</p>
+  <h1>把复杂的响应式系统，<span>写成清晰的 Rust。</span></h1>
+  <p class="lead">Silex 文档从源码、测试和真实使用场景出发，帮助你理解框架、构建应用，并参与项目演进。</p>
+  <div class="hero-actions">
+    <a class="button button-primary" href="{{ get_url(path='@/developer/crates/silex_reactivity/_index.md') }}">阅读响应式引擎</a>
+    <a class="button button-secondary" href="{{ get_url(path='@/doc-standards/_index.md') }}">查看文档规范</a>
+  </div>
+</section>
+
+<section class="card-grid" aria-label="文档类别">
+  <a class="category-card accent-purple" href="{{ get_url(path='@/user/_index.md') }}">
+    <span class="card-kicker">LEARN</span>
+    <h2>用户文档</h2>
+    <p>沿着学习路径，从第一次运行到生产部署掌握 Silex。</p>
+    <span class="card-link">即将开始 →</span>
+  </a>
+  <a class="category-card accent-cyan" href="{{ get_url(path='@/developer/_index.md') }}">
+    <span class="card-kicker">BUILD</span>
+    <h2>开发者文档</h2>
+    <p>按 crate 阅读源码、API、生命周期和设计边界。</p>
+    <span class="card-link">进入开发者文档 →</span>
+  </a>
+  <a class="category-card accent-orange" href="{{ get_url(path='@/doc-standards/_index.md') }}">
+    <span class="card-kicker">CONTRIBUTE</span>
+    <h2>文档规范</h2>
+    <p>统一目录、语言、示例、链接和验证要求，让文档可持续维护。</p>
+    <span class="card-link">阅读规范 →</span>
+  </a>
+</section>
+
+<section class="home-note">
+  <div>
+    <p class="eyebrow">CURRENT FOCUS</p>
+    <h2>先从 `silex_reactivity` 开始</h2>
+  </div>
+  <p>它是 Silex 的显式、单线程细粒度响应式运行时。文档覆盖 signal、computed、effect、watch、owner 生命周期、清理和 completion。</p>
+  <a class="text-link" href="{{ get_url(path='@/developer/crates/silex_reactivity/_index.md') }}">打开 crate 总文档 →</a>
+</section>
+{% endblock content %}
