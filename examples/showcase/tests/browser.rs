@@ -50,7 +50,10 @@ fn flow_route_mounts_with_render_only_for_rows() {
     let text = target.text_content().unwrap_or_default();
     assert!(text.contains("List Rendering with Error Handling"));
     assert!(text.contains("Index For Loop Demo"));
-    assert!(host.is_active());
+    assert!(
+        host.is_active()
+            .expect("showcase should report active state")
+    );
 
     host.unmount().expect("showcase should unmount");
     assert!(target.first_child().is_none());

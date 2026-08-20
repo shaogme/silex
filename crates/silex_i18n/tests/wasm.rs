@@ -82,7 +82,9 @@ fn catalog_resource_rejects_foreign_suspense_before_allocating_nodes() {
     let target_scope = target_root.access();
     let (i18n, _handler) = store(target_scope, "en-US");
     let suspense = SuspenseContext::new(foreign_scope).expect("suspense ctx");
-    let before = target_scope.runtime_snapshot();
+    let before = target_scope
+        .runtime_snapshot()
+        .expect("target runtime snapshot");
     let result = i18n.catalog_resource(
         |_| async { Err::<Catalog, _>("foreign suspense must fail".to_string()) },
         suspense,
@@ -94,7 +96,12 @@ fn catalog_resource_rejects_foreign_suspense_before_allocating_nodes() {
             silex_i18n::I18nErrorKind::Reactivity(ReactiveError::RuntimeMismatch),
         ))
     ));
-    assert_eq!(target_scope.runtime_snapshot(), before);
+    assert_eq!(
+        target_scope
+            .runtime_snapshot()
+            .expect("target runtime snapshot"),
+        before
+    );
     assert_eq!(suspense.count.get_untracked().expect("reactive value"), 0);
     drop(_handler);
     target_root.close().expect("target root cleanup");

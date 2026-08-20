@@ -66,7 +66,10 @@ async fn store_demo_mounts_updates_fields_and_disposes_root() {
     let app = target("store-app");
     let mut host = mount_store_into(app.clone().into()).expect("Store demo should mount");
 
-    assert!(host.is_active());
+    assert!(
+        host.is_active()
+            .expect("store demo should report active state")
+    );
     assert!(app_text(&app).contains("Alice"));
     assert!(app_text(&app).contains("25"));
 
@@ -90,7 +93,11 @@ async fn store_demo_mounts_updates_fields_and_disposes_root() {
     assert!(app_text(&app).contains("Ada"));
 
     host.unmount().expect("Store demo should unmount");
-    assert!(!host.is_active());
+    assert!(
+        !host
+            .is_active()
+            .expect("store demo should report active state")
+    );
     assert_eq!(app.child_nodes().length(), 0);
     host.unmount()
         .expect("repeated unmount should remain idempotent");

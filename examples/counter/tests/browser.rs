@@ -101,7 +101,10 @@ async fn counter_survives_entry_return_and_supports_interaction_and_teardown() {
     let app = target("app");
     let mut host = mount_counter().expect("counter should mount through #app");
 
-    assert!(host.is_active());
+    assert!(
+        host.is_active()
+            .expect("counter should report active state")
+    );
     assert_eq!(host.state(), "active");
     let initial = app_text(&app);
     for expected in [
@@ -147,7 +150,11 @@ async fn counter_survives_entry_return_and_supports_interaction_and_teardown() {
     assert!(app_text(&app).contains("Silex: Next Gen"));
 
     host.unmount().expect("counter should unmount explicitly");
-    assert!(!host.is_active());
+    assert!(
+        !host
+            .is_active()
+            .expect("counter should report active state")
+    );
     assert_eq!(host.state(), "ready");
     assert_eq!(app.child_nodes().length(), 0);
     host.unmount()
@@ -159,7 +166,10 @@ async fn counter_survives_entry_return_and_supports_interaction_and_teardown() {
 fn counter_owner_unmounts_after_target_is_removed() {
     let app = target("counter-detached");
     let mut host = mount_counter_into(app.clone().into()).expect("counter should mount");
-    assert!(host.is_active());
+    assert!(
+        host.is_active()
+            .expect("counter should report active state")
+    );
 
     detach(&app.clone().into());
     host.unmount()
@@ -182,7 +192,11 @@ fn counter_mount_failure_preserves_error_and_ready_state() {
         .expect_err("the rejected builder error should be returned");
     assert!(matches!(error, AppHostError::Mount(_)));
     assert_eq!(host.state(), HostState::Ready);
-    assert!(!host.is_active());
+    assert!(
+        !host
+            .is_active()
+            .expect("counter should report active state")
+    );
     assert_eq!(app.child_nodes().length(), 0);
 
     host.mount(Runtime::new(), mount_text)

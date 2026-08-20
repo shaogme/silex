@@ -153,7 +153,7 @@ async fn ui_showcase_mounts_and_updates_interactive_components() {
     let app = target("ui-app");
     let mut host = mount_ui_into(app.clone().into()).expect("UI showcase should mount");
 
-    assert!(host.is_active());
+    assert!(host.is_active().expect("UI showcase should be active"));
     assert_eq!(host.state(), "active");
     let initial = app_text(&app);
     for expected in [
@@ -286,7 +286,11 @@ async fn ui_showcase_mounts_and_updates_interactive_components() {
     assert!(app_text(&app).contains("Every layout, utility class"));
 
     host.unmount().expect("UI showcase should unmount");
-    assert!(!host.is_active());
+    assert!(
+        !host
+            .is_active()
+            .expect("unmounted UI showcase should be inactive")
+    );
     assert_eq!(host.state(), "ready");
     assert_eq!(app.child_nodes().length(), 0);
     host.unmount()
@@ -300,7 +304,7 @@ fn ui_owner_unmounts_after_target_is_removed() {
     clear_theme_storage();
     let app = target("ui-detached");
     let mut host = mount_ui_into(app.clone().into()).expect("UI showcase should mount");
-    assert!(host.is_active());
+    assert!(host.is_active().expect("UI showcase should be active"));
 
     detach(&app.clone().into());
     host.unmount()

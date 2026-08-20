@@ -67,7 +67,10 @@ async fn recoverable_error_renders_fallback_and_root_unmount_cleans_the_demo() {
     let mut host = mount_error_boundary_demo_into(app.clone().into())
         .expect("error boundary demo should mount");
 
-    assert!(host.is_active());
+    assert!(
+        host.is_active()
+            .expect("error boundary demo should report active state")
+    );
     assert!(app_text(&app).contains("Component is running normally."));
     assert!(app_text(&app).contains("The panic component is currently hidden."));
 
@@ -77,7 +80,11 @@ async fn recoverable_error_renders_fallback_and_root_unmount_cleans_the_demo() {
     assert!(app_text(&app).contains("User clicked the error button!"));
 
     host.unmount().expect("demo should unmount explicitly");
-    assert!(!host.is_active());
+    assert!(
+        !host
+            .is_active()
+            .expect("error boundary demo should report active state")
+    );
     assert_eq!(app.child_nodes().length(), 0);
     host.unmount()
         .expect("repeated unmount should remain idempotent");
@@ -99,7 +106,11 @@ async fn render_panic_reaches_fallback_and_root_unmount_cleans_the_demo() {
     assert!(app_text(&app).contains("KA-BOOM! Panic in render function."));
 
     host.unmount().expect("demo should unmount explicitly");
-    assert!(!host.is_active());
+    assert!(
+        !host
+            .is_active()
+            .expect("error boundary demo should report active state")
+    );
     assert_eq!(app.child_nodes().length(), 0);
     host.unmount()
         .expect("repeated unmount should remain idempotent");

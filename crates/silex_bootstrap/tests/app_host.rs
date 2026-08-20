@@ -54,14 +54,14 @@ fn mount_rejects_active_app_and_unmount_is_idempotent() {
     host.mount(Runtime::new(), |ctx| mount_text(ctx, "first"))
         .expect("initial mount should succeed");
     assert_eq!(host.state(), HostState::Active);
-    assert!(host.is_active());
+    assert!(host.is_active().expect("host should report active state"));
     assert_eq!(target.text_content().as_deref(), Some("first"));
 
     let error = host
         .mount(Runtime::new(), |ctx| mount_text(ctx, "second"))
         .expect_err("active host must reject a second mount");
     assert!(matches!(error, AppHostError::AlreadyMounted));
-    assert!(host.is_active());
+    assert!(host.is_active().expect("host should report active state"));
     assert_eq!(target.text_content().as_deref(), Some("first"));
 
     assert_eq!(
@@ -69,7 +69,7 @@ fn mount_rejects_active_app_and_unmount_is_idempotent() {
         UnmountOutcome::Disposed
     );
     assert_eq!(host.state(), HostState::Ready);
-    assert!(!host.is_active());
+    assert!(!host.is_active().expect("host should report active state"));
     assert_eq!(target.text_content().as_deref(), Some(""));
     assert_eq!(
         host.unmount()
@@ -102,7 +102,7 @@ fn clean_mount_failure_returns_to_ready_and_preserves_primary_error() {
     ));
     assert!(mount_error.rollback().is_clean());
     assert_eq!(host.state(), HostState::Ready);
-    assert!(!host.is_active());
+    assert!(!host.is_active().expect("host should report active state"));
     assert_eq!(target.child_nodes().length(), 0);
 
     host.mount(Runtime::new(), |ctx| mount_text(ctx, "reused"))
@@ -136,7 +136,7 @@ fn non_clean_mount_rollback_poisoned_host() {
         .expect("mount error should be preserved");
     assert!(!mount_error.rollback().is_clean());
     assert_eq!(host.state(), HostState::Poisoned);
-    assert!(!host.is_active());
+    assert!(!host.is_active().expect("host should report active state"));
     assert!(matches!(
         host.mount(Runtime::new(), |ctx| mount_text(ctx, "blocked")),
         Err(AppHostError::Poisoned)
@@ -156,7 +156,7 @@ fn replace_disposes_old_app_before_publishing_new_app() {
         .expect("replacement mount should succeed");
 
     assert_eq!(host.state(), HostState::Active);
-    assert!(host.is_active());
+    assert!(host.is_active().expect("host should report active state"));
     assert_eq!(target.text_content().as_deref(), Some("new"));
 
     host.unmount().expect("replacement should unmount");
@@ -179,7 +179,11 @@ fn separate_hosts_keep_their_apps_and_runtimes_independent() {
 
     first.unmount().expect("first app should unmount");
     assert_eq!(second.state(), HostState::Active);
-    assert!(second.is_active());
+    assert!(
+        second
+            .is_active()
+            .expect("second host should report active state")
+    );
     assert_eq!(second_target.text_content().as_deref(), Some("second"));
 
     second.unmount().expect("second app should unmount");
@@ -230,7 +234,7 @@ fn failed_old_dispose_does_not_restore_or_replace_the_old_app() {
     assert!(error.dispose_error().is_some());
     assert!(!replacement_called.get());
     assert_eq!(host.state(), HostState::Poisoned);
-    assert!(!host.is_active());
+    assert!(!host.is_active().expect("host should report active state"));
     assert_eq!(target.text_content().as_deref(), Some(""));
 
     detach(&target);
@@ -253,7 +257,7 @@ fn failed_new_mount_leaves_replace_host_empty_and_ready() {
 
     assert!(error.mount_error().is_some());
     assert_eq!(host.state(), HostState::Ready);
-    assert!(!host.is_active());
+    assert!(!host.is_active().expect("host should report active state"));
     assert_eq!(target.child_nodes().length(), 0);
 
     detach(&target);
@@ -274,7 +278,7 @@ fn builder_panic_returns_structured_mount_error_and_poisoned_host() {
     assert!(matches!(error, AppHostError::Mount(_)));
     assert!(error.to_string().contains("builder panic"));
     assert_eq!(host.state(), HostState::Poisoned);
-    assert!(!host.is_active());
+    assert!(!host.is_active().expect("host should report active state"));
     detach(&target);
 }
 
@@ -318,7 +322,7 @@ fn unmount_after_external_target_removal_still_disposes_owner() {
     parent
         .remove_child(&target)
         .expect("target can be removed externally");
-    assert!(host.is_active());
+    assert!(host.is_active().expect("host should report active state"));
     assert_eq!(
         host.unmount().expect("detached host should unmount"),
         UnmountOutcome::Disposed

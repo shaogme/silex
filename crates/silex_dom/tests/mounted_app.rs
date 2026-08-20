@@ -193,7 +193,7 @@ fn mounted_app_stages_and_commits_after_the_caller_node() {
     })
     .expect("mount should commit");
 
-    assert!(app.is_active());
+    assert!(app.is_active().expect("app should report active state"));
     assert_eq!(app.host(), host);
     assert_eq!(host.text_content().as_deref(), Some("caller-ownedapp"));
     assert_eq!(host.child_nodes().length(), 4);
@@ -245,12 +245,12 @@ fn dispose_after_external_host_removal_is_clean_and_keeps_caller_nodes() {
     })
     .expect("mount should commit");
 
-    assert!(app.is_active());
+    assert!(app.is_active().expect("app should report active state"));
     host.parent_node()
         .expect("host has a body parent")
         .remove_child(&host)
         .expect("host can be removed externally");
-    assert!(app.is_active());
+    assert!(app.is_active().expect("app should report active state"));
 
     app.dispose()
         .expect("detached host should be cleanup-idempotent");
@@ -288,7 +288,7 @@ fn mount_error_rolls_back_staging_without_touching_caller_nodes() {
         ctx.mount(Element::with_child("section", "retry"), handler)
     })
     .expect("clean rollback should allow retrying the same handle");
-    assert!(app.is_active());
+    assert!(app.is_active().expect("app should report active state"));
     assert_eq!(host.text_content().as_deref(), Some("caller-ownedretry"));
     app.dispose().expect("retry should dispose cleanly");
 
@@ -314,14 +314,14 @@ fn mounted_app_remounts_the_same_handle_and_preserves_caller_nodes() {
     })
     .expect("second mount should commit");
 
-    assert!(app.is_active());
+    assert!(app.is_active().expect("app should report active state"));
     assert!(!app.is_poisoned());
     assert_eq!(app.host(), host);
     assert_eq!(host.text_content().as_deref(), Some("caller-ownedsecond"));
     assert_eq!(host.child_nodes().length(), 4);
 
     app.dispose().expect("remounted app should dispose cleanly");
-    assert!(!app.is_active());
+    assert!(!app.is_active().expect("app should report active state"));
     assert_eq!(host.text_content().as_deref(), Some("caller-owned"));
     assert_eq!(host.child_nodes().length(), 1);
 
