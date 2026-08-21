@@ -535,6 +535,57 @@ async fn popover_keeps_host_and_overlay_stable_across_click_outside() {
         .expect("test host should be detached");
 }
 
+#[wasm_bindgen_test]
+fn popover_host_is_hidden_before_mount_transaction_commit() {
+    let host = host();
+    let mut runtime = Runtime::new();
+    let root = runtime.owner().expect("root runtime should start");
+
+    root.with_access(|owner| {
+        let error_handler = owner
+            .error_handler(|_| {})
+            .expect("test error handler should be registered");
+        let ctx = SilexContext::new(owner, error_handler.view());
+        let view = Popover(ctx, move |context| {
+            PopoverContent(ctx, p("Popover content"))
+                .context(context)
+                .build()
+        })
+        .build()
+        .expect("popover should build");
+        let mount_owner = MountOwnerToken::new(owner);
+        let context =
+            MountContext::for_parent(host.clone().into(), mount_owner, error_handler.view());
+
+        let _ = view
+            .mount(&context, Vec::new())
+            .expect("popover should mount into the open transaction");
+
+        let portal = document()
+            .query_selector("body > div[data-portal-host=popover]")
+            .expect("popover Portal selector should be valid")
+            .expect("popover Portal should be mounted during staging")
+            .dyn_into::<Element>()
+            .expect("popover Portal should be an element");
+        assert_eq!(
+            portal.get_attribute("data-state").as_deref(),
+            Some("closed")
+        );
+        assert!(portal.has_attribute("hidden"));
+
+        context
+            .transaction()
+            .commit()
+            .expect("popover transaction should commit");
+    });
+
+    root.close().expect("root cleanup should succeed");
+    host.parent_node()
+        .expect("test host should be attached")
+        .remove_child(&host)
+        .expect("test host should be detached");
+}
+
 #[wasm_bindgen_test(async)]
 async fn dialog_restores_focus_and_keeps_host_stable_across_overlay_close() {
     let host = host();

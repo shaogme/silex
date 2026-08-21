@@ -68,6 +68,16 @@ fn body_text() -> String {
         .unwrap_or_default()
 }
 
+fn computed_display(element: &DomElement) -> String {
+    web_sys::window()
+        .expect("window is available")
+        .get_computed_style(element)
+        .expect("computed style should be readable")
+        .expect("computed style should exist")
+        .get_property_value("display")
+        .expect("display style should be readable")
+}
+
 fn find_button(target: &DomElement, label: &str) -> HtmlElement {
     let buttons = target
         .query_selector_all("button")
@@ -255,6 +265,26 @@ async fn ui_showcase_mounts_and_updates_interactive_components() {
         .query_selector("[data-portal-host='popover']")
         .expect("popover host query should succeed")
         .expect("popover host should exist before opening");
+    assert!(
+        popover_host.has_attribute("hidden"),
+        "popover content must be hidden before its trigger is clicked"
+    );
+    let popover_content = popover_host
+        .query_selector("[data-slot='popover-content']")
+        .expect("popover content query should succeed")
+        .expect("popover content should exist before opening")
+        .dyn_into::<DomElement>()
+        .expect("popover content should be an element");
+    assert_eq!(
+        computed_display(&popover_host),
+        "none",
+        "hidden Popover host must not remain display: contents"
+    );
+    assert_eq!(
+        popover_content.get_bounding_client_rect().width(),
+        0.0,
+        "closed Popover content must not occupy a layout box"
+    );
     find_button(&app, "Open Popover").click();
     flush_browser_tasks().await;
     assert!(!popover_host.has_attribute("hidden"));
@@ -267,6 +297,7 @@ async fn ui_showcase_mounts_and_updates_interactive_components() {
         .expect("closed popover host should remain mounted");
     assert!(popover_host.is_same_node(Some(closed_popover_host.as_ref())));
     assert!(closed_popover_host.has_attribute("hidden"));
+    assert_eq!(computed_display(&closed_popover_host), "none");
 
     let radio_items = app
         .query_selector_all("[data-slot='radio-group-item']")

@@ -77,6 +77,12 @@ fn update_host_state(host: &HtmlElement, open: bool) -> SilexResult<()> {
             .set_attribute("hidden", "")
             .map_err(SilexError::fatal)?;
     }
+    // Firefox keeps an inline `display: contents` declaration over the UA
+    // stylesheet rule for `[hidden]`; toggle the inline display explicitly so
+    // a closed Portal cannot remain visible.
+    host.style()
+        .set_property("display", if open { "contents" } else { "none" })
+        .map_err(SilexError::fatal)?;
     host.style()
         .set_property("pointer-events", if open { "auto" } else { "none" })
         .map_err(SilexError::fatal)
@@ -108,7 +114,6 @@ impl<'scope> PortalView<'scope> {
         let host_token = host_owner.clone();
 
         let setup_result = catch_unwind(AssertUnwindSafe(|| -> SilexResult<()> {
-            MountTarget::Append(target.clone()).append(&host)?;
             let host_context = context.with_parts(
                 MountTarget::Append(host.clone()),
                 context.ancestry().push(&host_element),
@@ -131,14 +136,8 @@ impl<'scope> PortalView<'scope> {
                 .set_property("display", "contents")
                 .map_err(SilexError::fatal)?;
             if let Some(open) = self.open {
-                let host_html = host_element
-                    .clone()
-                    .dyn_into::<HtmlElement>()
-                    .map_err(|_| {
-                        SilexError::fatal(SilexErrorKind::Dom(
-                            "Portal host must be an HTML element".to_string(),
-                        ))
-                    })?;
+                let visible = open.with(|value| *value)?;
+                update_host_state(&host_html, visible)?;
                 let effect_owner = host_owner.clone();
                 context.on_commit(move || {
                     effect_owner.effect(
@@ -150,6 +149,8 @@ impl<'scope> PortalView<'scope> {
                     )
                 })?;
             }
+
+            MountTarget::Append(target.clone()).append(&host)?;
 
             match self.content_mode {
                 PortalContentMode::KeepAlive => {
