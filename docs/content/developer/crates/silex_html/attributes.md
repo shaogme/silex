@@ -11,6 +11,10 @@ weight = 30
 mount 时才应用到 DOM。属性的生命周期、响应式 effect、事件资源和清理由
 `silex_dom` 的 owner 管理。
 
+这些 trait 不改变 `AttributeBuilder` 的核心接口：需要动态选择目标时仍可
+直接调用 `.attr(name, value)`、`.prop(name, value)` 或 `.apply(value)`。
+命名方法只是固定 HTML attribute 名称的便捷 facade。
+
 ## trait 分组
 
 这些 trait 都对实现 `AttributeBuilder<'scope>` 的类型提供 blanket impl，

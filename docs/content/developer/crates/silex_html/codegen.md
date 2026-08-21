@@ -61,10 +61,10 @@ void 判定不是从 JSON 的内容模型推导的：HTML 使用
 4. non-void 标签的 `macro_rules!`，宏展开为 `$crate::html::...` 或
    `$crate::svg::...` 的函数调用。
 
-HTML 生成后，`main.rs` 会收集 HTML 宏名，并把它传给 SVG 生成器，避免
-`macro_export` 把 HTML 和 SVG 的同名宏同时导出到 crate 根。注意：函数在
-`html`/`svg` 模块内，不共享同一命名空间；宏则是 crate 根导出，碰撞规则
-只针对宏。
+HTML 生成后，`main.rs` 会收集 HTML 宏名，并把它传给 SVG 生成器。SVG
+生成器会给冲突的宏和函数加 `svg_` 前缀，避免 `macro_export` 把 HTML 和
+SVG 的同名宏同时导出到 crate 根。函数在 `html`/`svg` 模块内，不共享同一
+命名空间；宏则是 crate 根导出，碰撞规则只针对宏。
 
 ## 运行生成器
 
@@ -99,14 +99,9 @@ cargo run -p silex_codegen -- --fetch
 产物来“修复”问题。若生成器输出变化是预期行为，应在同一变更中更新文档、
 示例和测试。
 
-## 已发现的生成器风险
+## 生成器测试契约
 
-当前 `is_svg` 分支的宏模板写入 `$crate::view_chain!`，但 `silex_dom` 导出
-的是 `chain!`，`silex_html::lib.rs` 也只重导出 `chain`。这不会在定义宏时
-报错，却会在调用 SVG 宏时失败；应把模板改为 `$crate::chain!`，然后增加
-实际 `svg!(...)` 调用的编译测试。
-
-另外，DOM type mapping 对 `"a"` 的判断发生在 `is_svg` fallback 之前，
-所以 SVG `a` 当前得到 `HtmlAnchorElement`。如果要支持 SVG `<a>` 的类型化
-引用，应增加正确的 SVG web_sys 类型/feature，并让 SVG 分支优先于 HTML
-特判；文档示例当前使用 `svg(path(...))`，不触发这条路径。
+`tags/codegen.rs` 的单元测试固定了 HTML/SVG namespace 对应的 DOM 类型，
+包括 HTML `a` 的 `HtmlAnchorElement` 和 SVG `a` 的 `SvgaElement`，同时
+固定生成宏使用 `$crate::chain!`。修改 namespace、DOM type mapping 或宏模板
+时，应先更新这些测试，再检查生成产物和 `silex_html` 文档示例。

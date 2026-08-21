@@ -53,6 +53,11 @@ SVG 的函数名遵循生成器的 Rust snake case 转换，例如 `linearGradie
 的 SVG 函数使用前缀，例如 SVG `<a>`、`<script>`、`<style>` 和 `<title>`
 对应 `svg_a`、`svg_script`、`svg_style` 和 `svg_title`。
 
+同名 SVG 标签的宏也使用相同的前缀规则。例如 `svg_a!`、`svg_script!`、
+`svg_style!` 和 `svg_title!` 可直接使用；`svg!`、`g!` 等没有冲突的 SVG
+标签则保留原始宏名。宏展开使用 `$crate::chain!`，再调用对应的
+`silex_html::svg` 函数。
+
 ## marker 与 DOM 类型
 
 每个生成标签都有一个公开 marker，例如 `Div`、`Input`、`Svg`。marker
@@ -64,7 +69,7 @@ SVG 的函数名遵循生成器的 Rust snake case 转换，例如 `linearGradie
 | `input`、`textarea`、`select`、`button` | 对应的 HTML 控件类型 |
 | `option`、`optgroup`、`form`、`a` | 对应的 HTML 类型 |
 | `img`、`canvas`、`audio`、`video`、`dialog`、`details`、`iframe` | 对应的 HTML 类型 |
-| SVG 标签 | `web_sys::SvgElement`，但当前 SVG `a` 命中 HTML `a` 特判，详见限制 |
+| SVG 标签 | `web_sys::SvgElement`；SVG `a` 使用 `web_sys::SvgaElement` |
 
 生成标签还会实现 `TextTag`、`FormTag`、`AnchorTag`、`MediaTag`、`OpenTag`、
 `TableCellTag`、`TableHeaderTag` 或 `SvgTag`。这些 trait 是 metadata；当前
@@ -116,9 +121,8 @@ mount 时，标签的 child、属性和事件在一个新的 provisional owner �
 标签函数的返回值误当成已经存在的 `web_sys::Element`，也不要从它推导出
 跨 mount 的 DOM 所有权。
 
-## 生成产物的限制
+## 浏览器类型检查
 
-当前生成的 SVG 宏体使用 `$crate::view_chain!`，但公开 crate 没有这个宏。
-因此调用 SVG 宏会在展开阶段失败；SVG 函数形式不受此问题影响。修改
-`codegen.rs` 时应把 SVG 宏生成逻辑与 HTML 的 `$crate::chain!` 保持一致，
-并增加一次实际宏调用的编译测试。
+`crates/silex_html/tests/browser.rs` 验证 HTML `a` 挂载为
+`HtmlAnchorElement`，SVG `svg_a` 挂载为 `SvgaElement`，并覆盖正确的
+namespace、显式 `NodeRef` 绑定、owner 清理和错误的 `NodeRef` 类型。

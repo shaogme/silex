@@ -159,18 +159,13 @@ owned `String`、基础类型、`Option`、响应式值或 `AttrOp`。全局属�
   `attr`/`prop`、响应式值和 scope 边界。
 - [标签代码生成链](codegen.md)：解释 MDN 输入、内存 patch、生成器和维护
   规则。
-- [测试、验证与已知限制](testing.md)：说明只验证本 crate 文档示例的命令，
+- [测试、验证与当前边界](testing.md)：说明只验证本 crate 文档示例的命令，
   以及当前生成产物的风险点。
 
-## 已知限制
+## 当前限制
 
-- 当前 `src/tags/svg.rs` 的生成宏体引用 `$crate::view_chain!`，而
-  `silex_html` 只重导出了 `chain`；因此调用 `svg!`、`g!` 等 SVG 宏会在
-  宏展开时失败。SVG 标签函数（例如 `svg(path().attr(...))`）不经过该引用，
-  示例使用函数形式。
-- `silex_codegen/src/tags/codegen.rs` 的 DOM 类型匹配先处理 tag name
-  `a`，所以 SVG `a` 当前生成 `HtmlAnchorElement`，而不是 SVG 专用类型。
-  不要依赖该 marker 做 SVG `<a>` 的 typed cast 或 `NodeRef` 约束。
+- `silex_html` 只提供标签和属性 facade，不负责应用 host、runtime 或挂载
+  生命周期；这些行为由 `silex_dom` 提供。
 - `FormAttributes` 等 trait 当前对所有实现 `AttributeBuilder` 的类型做
   blanket impl；`FormTag` 等 marker 不会阻止不适用标签调用这些方法。它们是
   命名便利和文档分类，不是当前实现中的完整 HTML 内容模型校验。
