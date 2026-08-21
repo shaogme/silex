@@ -487,6 +487,11 @@ impl<'owner> OwnerAccess<'owner> {
         self.inner.untrack(f).map_err(SilexError::fatal)
     }
 
+    #[doc(hidden)]
+    pub fn with_runtime<R>(&self, f: impl FnOnce() -> R) -> SilexResult<R> {
+        self.inner.with_runtime(f).map_err(SilexError::fatal)
+    }
+
     pub fn batch<R>(&self, f: impl FnOnce() -> R) -> SilexResult<R> {
         self.inner.batch(f).map_err(SilexError::fatal)
     }

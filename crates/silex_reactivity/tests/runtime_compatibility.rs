@@ -126,6 +126,33 @@ fn foreign_untracked_reads_are_allowed_without_subscription() {
 }
 
 #[test]
+fn runtime_boundary_rejects_foreign_untracked_reads() {
+    let mut foreign_runtime = Runtime::new();
+    let foreign_root = foreign_runtime.owner().expect("foreign root");
+    let mut target_runtime = Runtime::new();
+    let target_root = target_runtime.owner().expect("target root");
+
+    foreign_root.with_access(|foreign_scope| {
+        let (foreign_source, _) = foreign_scope.signal(1_i32).expect("foreign source");
+        let result = target_root.with_access(|target_scope| {
+            target_scope.with_runtime(|| foreign_source.get_untracked())
+        });
+        let nested_result = target_root.with_access(|target_scope| {
+            target_scope.with_runtime(|| target_scope.untrack(|| foreign_source.get_untracked()))
+        });
+
+        assert!(matches!(result, Ok(Err(ReactiveError::RuntimeMismatch))));
+        assert!(matches!(
+            nested_result,
+            Ok(Ok(Err(ReactiveError::RuntimeMismatch)))
+        ));
+    });
+
+    target_root.close().expect("target root disposal");
+    foreign_root.close().expect("foreign root disposal");
+}
+
+#[test]
 fn cleanup_untracked_reentry_can_build_another_runtime_binding() {
     let mut cleanup_runtime = Runtime::new();
     let cleanup_root = cleanup_runtime.owner().expect("cleanup root");

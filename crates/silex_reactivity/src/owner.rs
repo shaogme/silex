@@ -429,6 +429,14 @@ impl<'owner> OwnerAccess<'owner> {
         runtime::with_untracked(&state, f)
     }
 
+    /// Run a callback without collecting dependencies while rejecting reads
+    /// from a different runtime scheduler.
+    #[doc(hidden)]
+    pub fn with_runtime<R>(&self, f: impl FnOnce() -> R) -> ReactiveResult<R> {
+        let state = self.state();
+        runtime::with_runtime(&state, f)
+    }
+
     pub fn batch<R>(&self, f: impl FnOnce() -> R) -> ReactiveResult<R> {
         let state = self.state();
         runtime::with_batch(&state, f)

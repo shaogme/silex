@@ -106,6 +106,7 @@ pub(crate) struct ExecutionContext {
     pub(crate) scheduler: SharedCell<GlobalScheduler>,
     pub(crate) observer: Option<Observer>,
     pub(crate) blocked_scopes: Vec<OwnerId>,
+    pub(crate) runtime_boundary: bool,
 }
 
 thread_local! {
@@ -118,20 +119,35 @@ pub(crate) fn validate_active_scheduler(
     scheduler: &SharedCell<GlobalScheduler>,
 ) -> Result<(), ReactiveError> {
     ACTIVE_CONTEXT.with(|stack| {
-        for context in stack
+        let contexts = stack
             .try_read()
-            .map_err(|_| ReactiveError::BorrowConflict)?
+            .map_err(|_| ReactiveError::BorrowConflict)?;
+        if contexts
             .iter()
             .rev()
+            .any(|context| context.runtime_boundary && !Rc::ptr_eq(&context.scheduler, scheduler))
         {
+            return Err(ReactiveError::RuntimeMismatch);
+        }
+        for context in contexts.iter().rev() {
             if Rc::ptr_eq(&context.scheduler, scheduler) {
                 return Ok(());
             }
-            if context.observer.is_some() {
+            if context.runtime_boundary || context.observer.is_some() {
                 return Err(ReactiveError::RuntimeMismatch);
             }
         }
         Ok(())
+    })
+}
+
+pub(crate) fn has_runtime_boundary() -> ReactiveResult<bool> {
+    ACTIVE_CONTEXT.with(|stack| {
+        Ok(stack
+            .try_read()
+            .map_err(|_| ReactiveError::BorrowConflict)?
+            .iter()
+            .any(|context| context.runtime_boundary))
     })
 }
 
@@ -212,6 +228,7 @@ impl ObserverFrame {
                     scheduler,
                     observer,
                     blocked_scopes: Vec::new(),
+                    runtime_boundary: false,
                 });
             Ok(Self { active: true })
         })
@@ -226,6 +243,7 @@ impl ObserverFrame {
                     scheduler,
                     observer: None,
                     blocked_scopes: Vec::new(),
+                    runtime_boundary: false,
                 });
             Ok(Self { active: true })
         })
@@ -239,13 +257,26 @@ impl ObserverFrame {
             if !Rc::ptr_eq(&ctx.scheduler, &scheduler) {
                 return None;
             }
-            let observer = ctx.observer.take()?;
-            ctx.blocked_scopes.push(owner_id);
-            Some(ExecutionContext {
-                scheduler: scheduler.clone(),
-                observer: Some(observer),
-                blocked_scopes: ctx.blocked_scopes,
-            })
+            let runtime_boundary = ctx.runtime_boundary;
+            let observer = ctx.observer.take();
+            if let Some(observer) = observer {
+                ctx.blocked_scopes.push(owner_id);
+                Some(ExecutionContext {
+                    scheduler: scheduler.clone(),
+                    observer: Some(observer),
+                    blocked_scopes: ctx.blocked_scopes,
+                    runtime_boundary,
+                })
+            } else if runtime_boundary {
+                Some(ExecutionContext {
+                    scheduler: scheduler.clone(),
+                    observer: None,
+                    blocked_scopes: Vec::new(),
+                    runtime_boundary: true,
+                })
+            } else {
+                None
+            }
         });
         ACTIVE_CONTEXT.with(|stack| {
             stack
@@ -255,7 +286,25 @@ impl ObserverFrame {
                     scheduler,
                     observer: None,
                     blocked_scopes: Vec::new(),
+                    runtime_boundary: false,
                 }));
+            Ok(Self { active: true })
+        })
+    }
+
+    pub(crate) fn push_runtime_boundary(
+        scheduler: SharedCell<GlobalScheduler>,
+    ) -> ReactiveResult<Self> {
+        ACTIVE_CONTEXT.with(|stack| {
+            stack
+                .try_write()
+                .map_err(|_| ReactiveError::BorrowConflict)?
+                .push(ExecutionContext {
+                    scheduler,
+                    observer: None,
+                    blocked_scopes: Vec::new(),
+                    runtime_boundary: true,
+                });
             Ok(Self { active: true })
         })
     }

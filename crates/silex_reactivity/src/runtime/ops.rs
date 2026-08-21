@@ -4,7 +4,9 @@ use super::{
     dispose::dispose_nodes,
     eval::{EvaluationError, flush_if_idle, prepare_fallible_read, prepare_read},
     model::{ScopePhase, ScopeState, StoredAccessMode},
-    scheduler::{GlobalScheduler, ObserverFrame, TargetNode, validate_active_scheduler},
+    scheduler::{
+        GlobalScheduler, ObserverFrame, TargetNode, has_runtime_boundary, validate_active_scheduler,
+    },
     storage::{CallbackThunk, CallbackThunkError, NodeStorage, TypedNodeRef, TypedSlot},
 };
 use crate::{
@@ -31,7 +33,7 @@ fn value_scheduler<'scope>(
         .try_borrow()
         .map_err(|_| ReactiveError::BorrowConflict)?;
     let storage = state_ref.value_storage(id, reactive)?;
-    if validate_runtime {
+    if validate_runtime || has_runtime_boundary()? {
         validate_active_scheduler(&state_ref.scheduler)?;
     }
     Ok((storage, state_ref.scheduler.clone()))
@@ -524,6 +526,20 @@ pub(crate) fn with_untracked<'scope, R>(
 ) -> ReactiveResult<R> {
     let scheduler = state.try_borrow()?.scheduler.clone();
     let frame = ObserverFrame::push_untracked(scheduler)?;
+    let result = catch_unwind(AssertUnwindSafe(f));
+    drop(frame);
+    match result {
+        Ok(value) => Ok(value),
+        Err(panic) => resume_unwind(panic),
+    }
+}
+
+pub(crate) fn with_runtime<'scope, R>(
+    state: &ScopeState<'scope>,
+    f: impl FnOnce() -> R,
+) -> ReactiveResult<R> {
+    let scheduler = state.try_borrow()?.scheduler.clone();
+    let frame = ObserverFrame::push_runtime_boundary(scheduler)?;
     let result = catch_unwind(AssertUnwindSafe(f));
     drop(frame);
     match result {

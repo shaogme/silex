@@ -479,7 +479,7 @@ impl<'scope> MountOwnerToken<'scope> {
 
     #[doc(hidden)]
     pub fn with_runtime<R>(&self, f: impl FnOnce() -> R) -> SilexResult<R> {
-        self.context.access().untrack(f)
+        self.context.access().with_runtime(f)
     }
 
     pub(crate) fn cleanup_reporter(&self) -> Option<CleanupReporter> {

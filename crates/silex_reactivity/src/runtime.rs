@@ -27,7 +27,7 @@ pub(crate) use model::{CleanupTarget, ScopePhase, ScopeState, ScopeStateInner};
 pub(crate) use ops::{
     acquire_error_handler_lease, invoke_callback, invoke_error_handler, node_ref_clear,
     node_ref_get, node_ref_set, notify, stop_effect, update_signal, update_stored, with_batch,
-    with_fallible_signal, with_signal, with_stored, with_untracked,
+    with_fallible_signal, with_runtime, with_signal, with_stored, with_untracked,
 };
 pub(crate) use scheduler::{
     CloseReportQueue, GlobalScheduler, ObserverFrame, OwnerId, OwnerMode, TargetNode,
