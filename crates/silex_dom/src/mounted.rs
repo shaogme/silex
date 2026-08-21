@@ -2,7 +2,10 @@
 
 use crate::{
     attribute::AttrOp,
-    view::{CleanupReporter, MountInstance, MountOwnerToken, View},
+    view::{
+        CleanupReporter, MountAncestry, MountContext as ViewMountContext, MountInstance,
+        MountOwnerToken, MountTarget, MountTransaction, View,
+    },
 };
 use silex_core::{
     CloseError, ErrorHandlerInput, OwnerAccess, OwnerHandle, Runtime, SilexError, SilexErrorKind,
@@ -31,6 +34,7 @@ pub struct MountContext<'scope> {
     access: OwnerAccess<'scope>,
     owner: MountOwnerToken<'scope>,
     parent: Node,
+    transaction: MountTransaction<'scope>,
 }
 
 impl<'scope> MountContext<'scope> {
@@ -38,6 +42,7 @@ impl<'scope> MountContext<'scope> {
         access: OwnerAccess<'scope>,
         parent: Node,
         cleanup_failures: Rc<RefCell<Vec<CleanupFailure>>>,
+        transaction: MountTransaction<'scope>,
     ) -> Self {
         let failures_for_reporter = cleanup_failures.clone();
         let cleanup_reporter: CleanupReporter = Rc::new(move |error| {
@@ -50,6 +55,7 @@ impl<'scope> MountContext<'scope> {
             access,
             owner,
             parent,
+            transaction,
         }
     }
 
@@ -117,7 +123,14 @@ impl<'scope> MountContext<'scope> {
         H: ErrorHandlerInput<'scope>,
     {
         let owner = self.owner();
-        view.mount(&owner, &self.parent, attrs, error_handler.handler_ref())
+        let context = ViewMountContext::new(
+            MountTarget::Append(self.parent.clone()),
+            MountAncestry::root(),
+            owner,
+            self.transaction.clone(),
+            error_handler.handler_ref(),
+        );
+        view.mount(&context, attrs)
     }
 }
 
@@ -540,36 +553,47 @@ impl MountAttempt {
             .staging_parent();
         let mount_result = catch_unwind(AssertUnwindSafe(|| {
             root.with_access(|access| {
+                let transaction = MountTransaction::new();
                 let ctx = MountContext::with_cleanup_failures(
                     access,
                     parent,
                     self.provisional_failures.clone(),
+                    transaction.clone(),
                 );
-                builder(&ctx)
+                match builder(&ctx) {
+                    Ok(()) => {
+                        if let Err(error) = self
+                            .boundary
+                            .as_mut()
+                            .expect("mount attempt boundary must exist")
+                            .finish_staging()
+                        {
+                            let _ = transaction.rollback();
+                            return Err(error);
+                        }
+                        if let Err(error) = self
+                            .boundary
+                            .as_mut()
+                            .expect("mount attempt boundary must exist")
+                            .commit()
+                        {
+                            let _ = transaction.rollback();
+                            return Err(error);
+                        }
+                        let _ = transaction.commit();
+                        Ok(())
+                    }
+                    Err(error) => {
+                        let _ = transaction.rollback();
+                        Err(error)
+                    }
+                }
             })
         }));
         let provisional_failures = self.take_provisional_failures();
 
         match mount_result {
-            Ok(Ok(())) => {
-                if let Err(primary) = self
-                    .boundary
-                    .as_mut()
-                    .expect("mount attempt boundary must exist")
-                    .finish_staging()
-                {
-                    return self.fail(primary, provisional_failures);
-                }
-                if let Err(primary) = self
-                    .boundary
-                    .as_mut()
-                    .expect("mount attempt boundary must exist")
-                    .commit()
-                {
-                    return self.fail(primary, provisional_failures);
-                }
-                self.publish()
-            }
+            Ok(Ok(())) => self.publish(),
             Ok(Err(primary)) => self.fail(primary, provisional_failures),
             Err(panic) => {
                 self.fail_panic(panic_error("mount builder", panic), provisional_failures)

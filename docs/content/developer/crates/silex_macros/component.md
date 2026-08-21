@@ -107,8 +107,9 @@ fn __silex_render_Panel<'owner>(props: PanelProps<'owner>) -> impl View<'owner> 
 推导：`PanelProps` 对应 `PanelPropsBuilder`、`PanelComponent`、
 `__silex_render_Panel` 和 `Panel(...)`。需要使用不同名称时，metadata 至少
 要提供 `builder`、`product` 和 `render`，还可以提供 `constructor` 与 `tag`。
-直接 derive 仍必须提供唯一 `#[ctx]` 字段，因为生成的 product `View::mount`
-需要从它取得 owner 和 error reporter。
+直接 derive 仍必须提供唯一 `#[ctx]` 字段，因为生成的 product
+`View::mount(&MountContext, attrs)` 需要从 context 取得 owner、逻辑祖先、
+事务和 error reporter。
 
 ## View、属性与清理
 
@@ -117,7 +118,8 @@ fn __silex_render_Panel<'owner>(props: PanelProps<'owner>) -> impl View<'owner> 
 1. clone product，合并构造阶段和挂载阶段收到的 pending attributes；
 2. 用当前 mount 的 error handler 替换 context 中的 reporter；
 3. 调用隐藏 render 函数产生真实 View；
-4. 将 pending attributes 传给 `silex_dom::view::View::mount`。
+4. 将 pending attributes 和同一个 `MountContext` 传给
+   `silex_dom::view::View::mount`。
 
 builder 和 product 都实现属性 builder，因此组件可以在 build 前或 build 后接收
 class、style、property 和 event 操作。实际 attribute operation 的注册、更新和

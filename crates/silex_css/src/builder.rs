@@ -310,8 +310,10 @@ impl<'scope> ApplyToDom<'scope> for Style<'scope> {
     }
 
     fn into_op(self, _target: ApplyTarget) -> silex_dom::attribute::AttrOp<'scope> {
-        silex_dom::attribute::AttrOp::custom(move |el, owner, error_handler| {
-            self.apply_to_element(el, owner, error_handler).map(|_| ())
+        silex_dom::attribute::AttrOp::on_commit(move |el, context| {
+            let owner = context.owner();
+            self.apply_to_element(el, &owner, context.error_handler())
+                .map(|_| ())
         })
     }
 }

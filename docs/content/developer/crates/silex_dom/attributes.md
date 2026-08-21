@@ -167,9 +167,21 @@ let view = Element::new("div").apply(attrs);
 ```
 
 该片段省略了必要的 `use` 和外层 scope，只展示 instruction 组合方式，不是
-独立 CI 编译示例；`AttrOp::new_listener` 的
-闭包不能表达 owner-bound cleanup，需要事件、timer 或响应式状态时使用
-`new_scoped` 并在传入的 `MountOwnerToken` 上注册资源。
+独立 CI 编译示例。`new_scoped` 和 `custom` 的闭包接收
+`(&Element, &MountContext)`；需要事件、timer 或响应式状态时，应从 context
+取得 owner 和 error handler，并在该 owner 上注册资源。
+
+属性阶段必须显式区分：
+
+- `AttrOp::custom(...)` 是 staging 阶段，不能依赖 `is_connected`、真实
+  `parent_element()` 或已经提交到文档的 DOM 状态；可以通过
+  `context.ancestry()` 查询逻辑祖先。
+- `AttrOp::on_commit(...)` 在 root transaction commit 后执行，适合布局、
+  focus、stylesheet 注入和其它只能在真实 DOM 中完成的操作。
+
+组件关系不要通过 `queue_microtask` 或 Fragment 的 DOM 遍历推断。提交回调
+使用 `context.on_commit(...)` 注册，失败会交给 context 的 error handler，
+而 rollback 会取消尚未执行的 callback。
 
 `AttributeGroup` 通过 `group!` 把异构输入立即擦除为 `Vec<AttrOp>`，避免
 自定义组件透传属性时产生递归泛型。组为空时是 `Noop`，只有一个操作时

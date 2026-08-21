@@ -2,7 +2,7 @@
 
 use gloo_timers::future::TimeoutFuture;
 use silex_core::{ErrorHandlerToken, OwnerAccess, Runtime, SilexContext};
-use silex_dom::view::{MountOwnerToken, View};
+use silex_dom::view::{MountContext, MountOwnerToken, View};
 use silex_i18n::{Catalog, I18nBuilder, Locale, detect_browser_locale, t};
 #[cfg(feature = "intl")]
 use silex_i18n::{DateTimeFormat, format_number};
@@ -279,10 +279,15 @@ async fn translated_memo_updates_the_existing_text_node() {
             .create_element("div")
             .expect("parent element");
         let (owner, error_handler) = test_owner(owner);
+        let context = MountContext::for_parent(parent.clone().into(), owner, error_handler.view());
         let _mount = t!(i18n, "title")
             .expect("translation")
-            .mount(&owner, parent.as_ref(), Vec::new(), error_handler.view())
+            .mount(&context, Vec::new())
             .expect("translation should mount");
+        context
+            .transaction()
+            .commit()
+            .expect("translation should commit");
 
         assert_eq!(parent.text_content(), Some("English".to_string()));
         assert_eq!(parent.child_nodes().length(), 1);
@@ -319,10 +324,15 @@ fn translated_memo_is_removed_when_its_root_is_disposed() {
             .build()
             .expect("valid i18n store");
         let (owner, error_handler) = test_owner(owner);
+        let context = MountContext::for_parent(parent.clone().into(), owner, error_handler.view());
         let _mount = t!(i18n, "title")
             .expect("translation")
-            .mount(&owner, parent.as_ref(), Vec::new(), error_handler.view())
+            .mount(&context, Vec::new())
             .expect("translation should mount");
+        context
+            .transaction()
+            .commit()
+            .expect("translation should commit");
         assert_eq!(parent.text_content(), Some("English".to_string()));
         assert_eq!(parent.child_nodes().length(), 1);
     });
@@ -359,11 +369,8 @@ fn foreign_translation_source_does_not_mount_or_allocate_foreign_owner_nodes() {
         let foreign_scope = foreign_root.access();
         let translation = t!(i18n, "title").expect("translation");
         let (owner, error_handler) = test_owner(foreign_scope);
-        assert!(
-            translation
-                .mount(&owner, parent.as_ref(), Vec::new(), error_handler.view())
-                .is_err()
-        );
+        let context = MountContext::for_parent(parent.clone().into(), owner, error_handler.view());
+        assert!(translation.mount(&context, Vec::new()).is_err());
     }
 
     assert!(parent.first_child().is_none());

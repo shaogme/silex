@@ -6,10 +6,10 @@ weight = 30
 
 # 视图、动态分支与列表
 
-`silex_dom::view` 把“要创建什么 DOM”与“由哪个 owner 管理它”分开。
-`View<'scope>` 只描述一次可重复的 mount；真实 Node、effect、cleanup 和
-宿主资源在传入 `MountOwner` 下创建。这个设计使同一个 view factory 可以
-用于多个独立挂载，也使动态替换时旧子树可以先关闭再移除。
+`silex_dom::view` 把“要创建什么 DOM”与“本次挂载的物理 target、逻辑祖先和
+owner”分开。`View<'scope>` 只描述一次可重复的 mount；真实 Node、effect、
+cleanup 和宿主资源在传入 `MountContext` 下创建。这个设计使同一个 view
+factory 可以用于多个独立挂载，也使动态替换时旧子树可以先关闭再移除。
 
 ## `View` 与 `MountInstance`
 
@@ -18,10 +18,8 @@ weight = 30
 ```rust
 fn mount(
     &self,
-    owner: &dyn MountOwner<'scope>,
-    parent: &web_sys::Node,
+    context: &MountContext<'scope>,
     attrs: Vec<AttrOp<'scope>>,
-    error_handler: MountErrorHandler<'scope>,
 ) -> SilexResult<MountInstance<'scope>>
 ```
 
@@ -29,7 +27,7 @@ fn mount(
 
 1. 失败时返回 `SilexError`，不要把失败写到日志后伪造成功；
 2. 已经追加的节点和已注册的资源必须由本次子 owner cleanup 或失败回滚
-   清除；
+   清除；子 context 应继承逻辑 `MountAncestry` 并使用 child transaction；
 3. 不要保存已经挂载的 DOM 句柄来实现“复用”。`View` 是工厂，复用的是
    描述和闭包；每次 `mount` 应返回新的 `MountInstance`。
 

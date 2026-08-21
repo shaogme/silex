@@ -13,7 +13,8 @@ view、动态 row 和 branch 都可以创建局部 owner；局部 owner 共享�
 
 ## `MountOwner` 的职责
 
-自定义 `View` 实现通过 `&dyn MountOwner<'scope>` 使用以下能力：
+自定义 `View` 实现通过 `&MountContext<'scope>` 取得 owner、错误处理器和
+提交事务；`context.owner()` 返回的 token 使用以下能力：
 
 | 方法 | 用途 |
 | --- | --- |

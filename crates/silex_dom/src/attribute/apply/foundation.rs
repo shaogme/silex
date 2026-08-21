@@ -9,7 +9,7 @@ use crate::attribute::op::{
     apply_attr_with_target_internal, apply_immediate_bool_internal, get_style_decl,
     parse_style_str, set_string_property_internal,
 };
-use crate::view::{MountErrorHandler, MountOwnerToken};
+use crate::view::{MountContext, MountErrorHandler, MountOwnerToken};
 
 // --- Unified Apply Target Enum ---
 
@@ -96,9 +96,9 @@ pub trait ApplyToDom<'scope> {
     where
         Self: Sized + 'scope,
     {
-        AttrOp::Custom(Rc::new(move |el, owner, error_handler| {
+        AttrOp::legacy_scoped(move |el, owner, error_handler| {
             self.apply(el, target.clone(), owner, error_handler)
-        }))
+        })
     }
 }
 
@@ -375,7 +375,9 @@ impl<'scope> ApplyToDom<'scope> for AttrOp<'scope> {
         owner: &MountOwnerToken<'scope>,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
-        self.clone().apply(el, owner, error_handler)
+        let context = MountContext::for_parent(el.clone().into(), owner.clone(), error_handler);
+        self.clone().apply(el, &context)?;
+        context.transaction().commit()
     }
 
     fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope> {
@@ -396,10 +398,10 @@ impl<'scope> ApplyToDom<'scope> for fn(&WebElem) {
     }
 
     fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope> {
-        AttrOp::Custom(Rc::new(move |el, _, _| {
+        AttrOp::custom(move |el, _| {
             self(el);
             Ok(())
-        }))
+        })
     }
 }
 
@@ -416,10 +418,10 @@ impl<'scope> ApplyToDom<'scope> for Rc<dyn Fn(&WebElem)> {
     }
 
     fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope> {
-        AttrOp::Custom(Rc::new(move |el, _, _| {
+        AttrOp::custom(move |el, _| {
             self(el);
             Ok(())
-        }))
+        })
     }
 }
 
@@ -521,9 +523,9 @@ impl<'scope, 'a: 'scope> ApplyToDom<'scope> for &'a str {
             ApplyTarget::Style => {
                 AttrOp::static_styles(parse_style_str(self).into_iter().collect())
             }
-            ApplyTarget::Apply => AttrOp::Custom(Rc::new(move |el, _, _| {
-                apply_immediate_string(el, &ApplyTarget::Apply, self)
-            })),
+            ApplyTarget::Apply => {
+                AttrOp::custom(move |el, _| apply_immediate_string(el, &ApplyTarget::Apply, self))
+            }
         }
     }
 }
@@ -562,9 +564,9 @@ impl<'scope> ApplyToDom<'scope> for String {
             ),
             ApplyTarget::Apply => {
                 let self_clone = self;
-                AttrOp::Custom(Rc::new(move |el, _, _| {
+                AttrOp::custom(move |el, _| {
                     apply_immediate_string(el, &ApplyTarget::Apply, &self_clone)
-                }))
+                })
             }
         }
     }
@@ -629,7 +631,7 @@ impl<'scope> ApplyToDom<'scope> for Attr<'scope> {
             }
             _ => {
                 let attr = self;
-                AttrOp::Custom(Rc::new(move |el, _, _| apply_attr_internal(el, "", &attr)))
+                AttrOp::custom(move |el, _| apply_attr_internal(el, "", &attr))
             }
         }
     }
@@ -657,9 +659,7 @@ impl<'scope> ApplyToDom<'scope> for bool {
             }
             _ => {
                 let val = self;
-                AttrOp::Custom(Rc::new(move |el, _, _| {
-                    apply_immediate_bool(el, &ApplyTarget::Apply, val)
-                }))
+                AttrOp::custom(move |el, _| apply_immediate_bool(el, &ApplyTarget::Apply, val))
             }
         }
     }
@@ -956,10 +956,11 @@ impl<'scope> ApplyToDom<'scope> for AttributeGroup<'scope> {
         owner: &MountOwnerToken<'scope>,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
+        let context = MountContext::for_parent(el.clone().into(), owner.clone(), error_handler);
         for op in &self.0 {
-            op.clone().apply(el, owner, error_handler)?;
+            op.clone().apply(el, &context)?;
         }
-        Ok(())
+        context.transaction().commit()
     }
 
     fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope> {

@@ -752,15 +752,13 @@ impl BuilderContext {
         let mount_body = quote! {
             product.props.#ctx_field = #__silex::core::SilexContextProvider::with_error_reporter(
                 product.props.#ctx_field,
-                error_handler,
+                context.error_handler(),
             );
             let view_instance = #render_fn_name(product.props);
             #__silex::dom::view::View::mount(
                 &view_instance,
-                owner,
-                parent,
+                context,
                 pending_attrs,
-                error_handler,
             )
         };
 
@@ -768,10 +766,8 @@ impl BuilderContext {
             impl #impl_generics #__silex::dom::view::View<#scope> for #product_ty #view_where_clause {
                 fn mount(
                     &self,
-                    owner: &dyn #__silex::dom::view::MountOwner<#scope>,
-                    parent: &#__silex::reexports::web_sys::Node,
+                    context: &#__silex::dom::view::MountContext<#scope>,
                     attrs: ::std::vec::Vec<#pending_attribute_ty>,
-                    error_handler: #__silex::dom::view::MountErrorHandler<#scope>,
                 ) -> #__silex::core::SilexResult<#__silex::dom::view::MountInstance<#scope>> {
                     let mut product = self.clone();
                     product._pending_attrs.extend(attrs);
@@ -807,8 +803,15 @@ impl BuilderContext {
             {
                 let event = event.clone();
                 self._pending_attrs.push(
-                    #__silex::dom::attribute::AttrOp::<#scope>::new_scoped(move |el, owner, error_handler| {
-                        #__silex::dom::element::bind_event(el, event, callback.clone(), owner, error_handler)
+                    #__silex::dom::attribute::AttrOp::<#scope>::new_scoped(move |el, context| {
+                        let owner = context.owner();
+                        #__silex::dom::element::bind_event(
+                            el,
+                            event,
+                            callback.clone(),
+                            &owner,
+                            context.error_handler(),
+                        )
                     })
                 );
                 self

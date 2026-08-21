@@ -9,7 +9,7 @@ use silex_core::{
 };
 use silex_dom::attribute::AttrOp;
 use silex_dom::document;
-use silex_dom::view::{ApplyAttributes, MountInstance, MountOwner, MountOwnerToken, View};
+use silex_dom::view::{ApplyAttributes, MountContext, MountInstance, MountOwnerToken, View};
 use wasm_bindgen_test::*;
 use web_sys::Node;
 
@@ -31,10 +31,8 @@ impl<'scope> ApplyAttributes<'scope> for InitialFailure {}
 impl<'scope> View<'scope> for InitialFailure {
     fn mount(
         &self,
-        _owner: &dyn MountOwner<'scope>,
-        _parent: &Node,
+        _context: &MountContext<'scope>,
         _attrs: Vec<AttrOp<'scope>>,
-        _error_handler: ErrorReporter<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         Err(SilexError::recoverable(SilexErrorKind::Framework(
             "initial child failure".to_string(),
@@ -50,10 +48,8 @@ impl<'scope> ApplyAttributes<'scope> for FallbackFailure {}
 impl<'scope> View<'scope> for FallbackFailure {
     fn mount(
         &self,
-        _owner: &dyn MountOwner<'scope>,
-        _parent: &Node,
+        _context: &MountContext<'scope>,
         _attrs: Vec<AttrOp<'scope>>,
-        _error_handler: ErrorReporter<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         Err(SilexError::recoverable(SilexErrorKind::Framework(
             "fallback mount failure".to_string(),
@@ -74,19 +70,15 @@ impl<'scope> ApplyAttributes<'scope> for DeferredFailure<'scope> {}
 impl<'scope> View<'scope> for DeferredFailure<'scope> {
     fn mount(
         &self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &Node,
+        context: &MountContext<'scope>,
         _attrs: Vec<AttrOp<'scope>>,
-        error_handler: ErrorReporter<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         let node = document().create_text_node("child");
-        parent
-            .append_child(&node)
-            .map_err(|error| SilexError::fatal(SilexErrorKind::from(error)))?;
+        context.target().append(&node)?;
         let node: Node = node.into();
         let node_for_cleanup = node.clone();
         let cleanup_count = self.cleanup_count.clone();
-        owner.on_cleanup(
+        context.owner().on_cleanup(
             Box::new(move || {
                 cleanup_count.set(cleanup_count.get().saturating_add(1));
                 if let Some(parent) = node_for_cleanup.parent_node() {
@@ -94,13 +86,13 @@ impl<'scope> View<'scope> for DeferredFailure<'scope> {
                 }
                 Ok(())
             }),
-            error_handler,
+            context.error_handler(),
         )?;
 
         let source = self.source;
         let effect_runs = self.effect_runs.clone();
         let failure_count = self.failure_count.clone();
-        owner.effect(
+        context.owner().effect(
             Box::new(move || {
                 effect_runs.set(effect_runs.get().saturating_add(1));
                 if source.get()? {
@@ -111,7 +103,7 @@ impl<'scope> View<'scope> for DeferredFailure<'scope> {
                 }
                 Ok(())
             }),
-            error_handler,
+            context.error_handler(),
         )?;
         Ok(MountInstance::from_nodes(vec![node]))
     }
@@ -127,10 +119,8 @@ impl<'scope> ApplyAttributes<'scope> for ConstructedHandlerFailure<'scope> {}
 impl<'scope> View<'scope> for ConstructedHandlerFailure<'scope> {
     fn mount(
         &self,
-        _owner: &dyn MountOwner<'scope>,
-        _parent: &Node,
+        _context: &MountContext<'scope>,
         _attrs: Vec<AttrOp<'scope>>,
-        _error_handler: ErrorReporter<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         let _ = self
             .handler
@@ -151,10 +141,8 @@ impl<'scope> ApplyAttributes<'scope> for RepeatedHandlerFailure<'scope> {}
 impl<'scope> View<'scope> for RepeatedHandlerFailure<'scope> {
     fn mount(
         &self,
-        _owner: &dyn MountOwner<'scope>,
-        _parent: &Node,
+        _context: &MountContext<'scope>,
         _attrs: Vec<AttrOp<'scope>>,
-        _error_handler: ErrorReporter<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         for message in ["first repeated failure", "second repeated failure"] {
             let _ = self
@@ -190,6 +178,18 @@ fn test_owner<'scope>(
     (MountOwnerToken::new(owner), error_handler)
 }
 
+fn mount_view<'scope, V: View<'scope>>(
+    view: &V,
+    owner: &MountOwnerToken<'scope>,
+    parent: &Node,
+    error_handler: ErrorReporter<'scope>,
+) -> SilexResult<MountInstance<'scope>> {
+    let context = MountContext::for_parent(parent.clone(), owner.clone(), error_handler);
+    let instance = view.mount(&context, Vec::new())?;
+    context.transaction().commit()?;
+    Ok(instance)
+}
+
 #[wasm_bindgen_test]
 fn initial_child_error_switches_to_fallback_without_parent_dispatch() {
     let host = host();
@@ -204,13 +204,7 @@ fn initial_child_error_switches_to_fallback_without_parent_dispatch() {
                 .fallback(|error| format!("fallback: {error}"))
                 .build();
 
-            let _ = view
-                .mount(
-                    &mount_owner,
-                    host.as_ref(),
-                    Vec::new(),
-                    error_handler.view(),
-                )
+            let _ = mount_view(&view, &mount_owner, host.as_ref(), error_handler.view())
                 .expect("initial child error should be recovered by the boundary");
             assert_eq!(
                 host.text_content().as_deref(),
@@ -251,13 +245,7 @@ async fn deferred_child_error_reaches_boundary_and_disposes_child() {
             })
             .build();
 
-        let _ = view
-            .mount(
-                &mount_owner,
-                host.as_ref(),
-                Vec::new(),
-                error_handler.view(),
-            )
+        let _ = mount_view(&view, &mount_owner, host.as_ref(), error_handler.view())
             .expect("child should mount before it fails");
         assert_eq!(host.text_content().as_deref(), Some("child"));
         owner
@@ -321,13 +309,7 @@ async fn child_factory_handler_reaches_boundary_fallback() {
         .fallback(|error| format!("boundary: {error}"))
         .build();
 
-        let _ = view
-            .mount(
-                &mount_owner,
-                host.as_ref(),
-                Vec::new(),
-                error_handler.view(),
-            )
+        let _ = mount_view(&view, &mount_owner, host.as_ref(), error_handler.view())
             .expect("child handler failure should be deferred");
     });
 
@@ -363,13 +345,7 @@ async fn repeated_deferred_errors_keep_the_first_generation() {
         })
         .build();
 
-        let _ = view
-            .mount(
-                &mount_owner,
-                host.as_ref(),
-                Vec::new(),
-                error_handler.view(),
-            )
+        let _ = mount_view(&view, &mount_owner, host.as_ref(), error_handler.view())
             .expect("repeated child errors should be deferred");
     });
 
@@ -413,13 +389,7 @@ async fn fallback_mount_error_reaches_parent_handler() {
         })
         .build();
 
-        let _ = view
-            .mount(
-                &mount_owner,
-                host.as_ref(),
-                Vec::new(),
-                error_handler.view(),
-            )
+        let _ = mount_view(&view, &mount_owner, host.as_ref(), error_handler.view())
             .expect("fallback failure should be reported asynchronously");
     });
 
@@ -469,13 +439,7 @@ async fn root_close_during_pending_error_does_not_mount_fallback() {
             })
             .build();
 
-        let _ = view
-            .mount(
-                &mount_owner,
-                host.as_ref(),
-                Vec::new(),
-                error_handler.view(),
-            )
+        let _ = mount_view(&view, &mount_owner, host.as_ref(), error_handler.view())
             .expect("child should mount before root close");
         owner
             .spawn_scoped(

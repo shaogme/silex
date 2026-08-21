@@ -7,13 +7,12 @@ use silex_core::{
 };
 use silex_dom::attribute::AttrOp;
 use silex_dom::view::{
-    AnyView, ApplyAttributes, DynamicRenderer, MountErrorHandler, MountInstance, MountOwner, View,
+    AnyView, ApplyAttributes, DynamicRenderer, MountContext, MountInstance, View,
     mount_dynamic_view_universal,
 };
 use std::collections::HashMap;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
-use web_sys::Node;
 
 /// Router View 工厂包装器，必须实现 PartialEq 以便在响应式节点中使用
 #[derive(Clone)]
@@ -30,21 +29,17 @@ impl<'scope> ApplyAttributes<'scope> for RouterView<'scope> {}
 impl<'scope> View<'scope> for RouterView<'scope> {
     fn mount(
         &self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &Node,
+        context: &MountContext<'scope>,
         attrs: Vec<AttrOp<'scope>>,
-        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         let factory = self.0.clone();
         mount_dynamic_view_universal(
-            owner,
-            parent,
+            context,
             attrs,
-            error_handler,
             DynamicRenderer::new(move |args| {
-                let (parent, attrs, token, error_handler) = args.into_parts();
+                let (context, attrs) = args.into_parts();
                 let view = factory();
-                view.mount(&token, &parent, attrs, error_handler)
+                view.mount(&context, attrs)
             }),
         )
     }

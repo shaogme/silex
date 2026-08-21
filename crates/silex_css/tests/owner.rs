@@ -11,7 +11,7 @@ use silex_css::{
 };
 use silex_dom::{
     attribute::{ApplyTarget, ApplyToDom, AttrOp},
-    view::{MountOwner, MountOwnerToken},
+    view::{MountContext, MountOwner, MountOwnerToken},
 };
 use std::{
     cell::Cell,
@@ -495,14 +495,20 @@ fn foreign_runtime_css_read_is_rejected_during_custom_callback() {
                 let (owner_token, error_handler) = test_owner(owner);
                 let token = owner_token.token();
                 let callback_runs_in_operation = callback_runs.clone();
-                let operation = AttrOp::custom(move |element, _, _| {
+                let operation = AttrOp::on_commit(move |element, _| {
                     callback_runs_in_operation.set(callback_runs_in_operation.get() + 1);
                     foreign.get().map(|_| ())?;
                     let _ = element.set_attribute("data-foreign", "unexpected");
                     Ok(())
                 });
+                let context =
+                    MountContext::for_parent(element.clone().into(), token, error_handler.view());
                 operation
-                    .apply(&element, &token, error_handler.view())
+                    .apply(&element, &context)
+                    .expect("foreign operation should register");
+                context
+                    .transaction()
+                    .commit()
                     .expect_err("foreign runtime read should be rejected");
             })
             .expect("local transient owner should initialize");

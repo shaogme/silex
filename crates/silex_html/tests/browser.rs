@@ -1,11 +1,12 @@
 #![cfg(target_arch = "wasm32")]
 
 use silex_core::{
-    ErrorHandlerToken, OwnerAccess, ReactiveError, Runtime, SilexError, SilexErrorKind,
+    ErrorHandlerToken, ErrorReporter, OwnerAccess, ReactiveError, Runtime, SilexError,
+    SilexErrorKind, SilexResult,
 };
 use silex_dom::{
     attribute::GlobalEventAttributes,
-    view::{MountOwnerToken, View},
+    view::{MountContext, MountInstance, MountOwnerToken, View},
 };
 use silex_html::{a, svg_a};
 use wasm_bindgen::JsCast;
@@ -36,6 +37,18 @@ fn first_node(instance: &silex_dom::view::MountInstance<'_>) -> Node {
         .clone()
 }
 
+fn mount_view<'owner, V: View<'owner>>(
+    view: &V,
+    owner: &MountOwnerToken<'owner>,
+    parent: &Element,
+    error_handler: ErrorReporter<'owner>,
+) -> SilexResult<MountInstance<'owner>> {
+    let context = MountContext::for_parent(parent.clone().into(), owner.clone(), error_handler);
+    let instance = view.mount(&context, Vec::new())?;
+    context.transaction().commit()?;
+    Ok(instance)
+}
+
 #[wasm_bindgen_test]
 fn html_anchor_mounts_as_html_anchor_element() {
     let host = host();
@@ -45,8 +58,8 @@ fn html_anchor_mounts_as_html_anchor_element() {
         .with_transient(|owner| {
             let handler = error_handler(owner);
             let mount_owner = MountOwnerToken::new(owner);
-            let instance = a("Documentation")
-                .mount(&mount_owner, &host, Vec::new(), handler.view())
+            let view = a("Documentation");
+            let instance = mount_view(&view, &mount_owner, &host, handler.view())
                 .expect("HTML anchor should mount");
             let element = first_node(&instance)
                 .dyn_into::<web_sys::HtmlAnchorElement>()
@@ -70,8 +83,8 @@ fn svg_anchor_mounts_as_svg_anchor_element() {
         .with_transient(|owner| {
             let handler = error_handler(owner);
             let mount_owner = MountOwnerToken::new(owner);
-            let instance = svg_a("Documentation")
-                .mount(&mount_owner, &host, Vec::new(), handler.view())
+            let view = svg_a("Documentation");
+            let instance = mount_view(&view, &mount_owner, &host, handler.view())
                 .expect("SVG anchor should mount");
             let element = first_node(&instance)
                 .dyn_into::<web_sys::SvgaElement>()
@@ -100,9 +113,8 @@ fn explicit_svg_anchor_node_ref_binds_and_cleans_up() {
         let owner = root.access();
         let handler = error_handler(owner);
         let mount_owner = MountOwnerToken::new(owner);
-        let instance = svg_a("Documentation")
-            .node_ref(node_ref)
-            .mount(&mount_owner, &host, Vec::new(), handler.view())
+        let view = svg_a("Documentation").node_ref(node_ref);
+        let instance = mount_view(&view, &mount_owner, &host, handler.view())
             .expect("SVG anchor with an explicit NodeRef should mount");
 
         assert!(
@@ -140,12 +152,8 @@ fn wrong_svg_anchor_node_ref_type_is_reported_at_mount() {
                 .expect("wrong-type NodeRef should initialize");
             let handler = error_handler(owner);
             let mount_owner = MountOwnerToken::new(owner);
-            let result = svg_a("Documentation").node_ref(node_ref).mount(
-                &mount_owner,
-                &host,
-                Vec::new(),
-                handler.view(),
-            );
+            let view = svg_a("Documentation").node_ref(node_ref);
+            let result = mount_view(&view, &mount_owner, &host, handler.view());
 
             assert!(matches!(
                 result,

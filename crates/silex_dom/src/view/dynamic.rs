@@ -1,45 +1,24 @@
 use super::any::AnyView;
+use super::context::{MountContext, MountTarget};
 use super::contract::{ApplyAttributes, MountInstance, View};
 use super::owner::{MountErrorHandler, MountOwner, MountOwnerToken};
 use super::row::{NodeRange, RowInstance, RowInstanceConfig, RowRenderContext, RowRenderer};
 use crate::attribute::AttrOp;
-use silex_core::{
-    CloseError, ErrorHandlerInput, OwnerAccess, SilexError, SilexErrorKind, SilexResult,
-};
+use silex_core::{CloseError, OwnerAccess, SilexError, SilexErrorKind, SilexResult};
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use web_sys::Node;
 
 pub struct DynamicRenderArgs<'scope> {
-    pub(crate) parent: Node,
+    pub(crate) context: MountContext<'scope>,
     pub(crate) attrs: Vec<AttrOp<'scope>>,
-    pub(crate) owner: MountOwnerToken<'scope>,
-    pub(crate) error_handler: MountErrorHandler<'scope>,
 }
 
 impl<'scope> DynamicRenderArgs<'scope> {
-    pub fn new(
-        parent: Node,
-        attrs: Vec<AttrOp<'scope>>,
-        owner: MountOwnerToken<'scope>,
-        error_handler: MountErrorHandler<'scope>,
-    ) -> Self {
-        Self {
-            parent,
-            attrs,
-            owner,
-            error_handler,
-        }
+    pub fn new(context: MountContext<'scope>, attrs: Vec<AttrOp<'scope>>) -> Self {
+        Self { context, attrs }
     }
 
-    pub fn into_parts(
-        self,
-    ) -> (
-        Node,
-        Vec<AttrOp<'scope>>,
-        MountOwnerToken<'scope>,
-        MountErrorHandler<'scope>,
-    ) {
-        (self.parent, self.attrs, self.owner, self.error_handler)
+    pub fn into_parts(self) -> (MountContext<'scope>, Vec<AttrOp<'scope>>) {
+        (self.context, self.attrs)
     }
 }
 
@@ -80,26 +59,17 @@ where
 {
     fn mount(
         &self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &Node,
+        context: &MountContext<'scope>,
         attrs: Vec<AttrOp<'scope>>,
-        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         let factory = self.clone();
         mount_dynamic_view_universal(
-            owner,
-            parent,
+            context,
             attrs,
-            error_handler,
             DynamicRenderer::new(move |args| {
-                let DynamicRenderArgs {
-                    parent,
-                    attrs,
-                    owner: token,
-                    error_handler,
-                } = args;
+                let DynamicRenderArgs { context, attrs } = args;
                 let view = factory();
-                view.mount(&token, &parent, attrs, error_handler)
+                view.mount(&context, attrs)
             }),
         )
     }
@@ -107,26 +77,19 @@ where
 
 /// Shared dynamic-view mount kernel.
 pub fn mount_dynamic_view_universal<'scope>(
-    owner: &dyn MountOwner<'scope>,
-    parent: &Node,
+    context: &MountContext<'scope>,
     attrs: Vec<AttrOp<'scope>>,
-    error_handler: MountErrorHandler<'scope>,
     renderer: DynamicRenderer<'scope>,
 ) -> SilexResult<MountInstance<'scope>> {
-    let range = NodeRange::append(parent, "dyn")?;
+    let range = NodeRange::at_target(context.target(), "dyn")?;
     let render = RowRenderer::new(move |args: RowRenderContext<'scope, ()>| {
-        let RowRenderContext {
-            parent,
-            attrs,
-            owner: token,
-            error_handler,
-            ..
-        } = args;
+        let RowRenderContext { context, attrs, .. } = args;
         renderer
-            .call(DynamicRenderArgs::new(parent, attrs, token, error_handler))
+            .call(DynamicRenderArgs::new(context, attrs))
             .map(|_| ())
     });
-    let token = owner.token();
+    let token = context.owner();
+    let row_context = context.with_target(MountTarget::Before(range.end.clone()));
     let range_instance = range.clone();
     let row = match RowInstance::new(
         &token,
@@ -138,7 +101,8 @@ pub fn mount_dynamic_view_universal<'scope>(
             index: 0,
             stateful: false,
             branch_runtime: false,
-            error_handler,
+            error_handler: context.error_handler(),
+            context: row_context,
         },
     ) {
         Ok(row) => row,
@@ -147,9 +111,9 @@ pub fn mount_dynamic_view_universal<'scope>(
             return Err(error);
         }
     };
-    let row_state = owner.token().owner_state(Some(row))?;
+    let row_state = token.owner_state(Some(row))?;
     let cleanup_state = row_state.clone();
-    if let Err(error) = owner.on_cleanup(
+    if let Err(error) = token.on_cleanup(
         Box::new(move || {
             if let Some(mut row) = cleanup_state.take_for_cleanup().flatten() {
                 row.dispose()
@@ -157,7 +121,7 @@ pub fn mount_dynamic_view_universal<'scope>(
             }
             Ok(())
         }),
-        error_handler,
+        context.error_handler(),
     ) {
         if let Some(mut row) = row_state.take_for_cleanup().flatten()
             && let Err(close_error) = row.dispose()
@@ -247,11 +211,9 @@ impl<'scope> BranchRenderContext<'scope> {
 }
 
 /// Mount a stable branch whose evaluation can report a runtime error.
-pub fn mount_branch_stable_cached<'scope, K, S, KeyFn, BranchFn, H>(
-    owner: &dyn MountOwner<'scope>,
-    parent: &Node,
+pub fn mount_branch_stable_cached<'scope, K, S, KeyFn, BranchFn>(
+    context: &MountContext<'scope>,
     attrs: Vec<AttrOp<'scope>>,
-    error_handler: H,
     key_fn: KeyFn,
     branch_fn: BranchFn,
 ) -> SilexResult<MountInstance<'scope>>
@@ -260,17 +222,13 @@ where
     S: Clone + 'scope,
     KeyFn: Fn() -> SilexResult<BranchEvaluation<K, S>> + Clone + 'scope,
     BranchFn: Fn(BranchEvaluation<K, S>, BranchRenderContext<'scope>) -> AnyView<'scope> + 'scope,
-    H: ErrorHandlerInput<'scope>,
 {
-    let error_handler = error_handler.handler_ref();
     let render = RowRenderer::new(
         move |args: RowRenderContext<'scope, BranchEvaluation<K, S>>| {
             let RowRenderContext {
                 item: key,
-                parent,
+                context,
                 attrs,
-                owner: token,
-                error_handler: _,
                 branch_context,
                 ..
             } = args;
@@ -280,15 +238,14 @@ where
                 ))
             })?;
             branch_fn(key, branch_context.clone())
-                .mount(&token, &parent, attrs, branch_context.error_handler())
+                .mount(&context, attrs)
                 .map(|_| ())
         },
     );
     mount_keyed_dynamic_view(KeyedDynamicMountArgs {
-        owner,
-        parent,
+        context: context.clone(),
         attrs,
-        error_handler,
+        error_handler: context.error_handler(),
         key_fn,
         render,
         update_same_key: false,
@@ -304,9 +261,8 @@ struct BranchState<'scope, K> {
     attrs: Vec<AttrOp<'scope>>,
 }
 
-struct KeyedDynamicMountArgs<'owner, 'scope, K, KeyFn> {
-    owner: &'owner dyn MountOwner<'scope>,
-    parent: &'owner Node,
+struct KeyedDynamicMountArgs<'scope, K, KeyFn> {
+    context: MountContext<'scope>,
     attrs: Vec<AttrOp<'scope>>,
     error_handler: MountErrorHandler<'scope>,
     key_fn: KeyFn,
@@ -316,15 +272,14 @@ struct KeyedDynamicMountArgs<'owner, 'scope, K, KeyFn> {
 }
 
 fn mount_keyed_dynamic_view<'scope, K, KeyFn>(
-    args: KeyedDynamicMountArgs<'_, 'scope, K, KeyFn>,
+    args: KeyedDynamicMountArgs<'scope, K, KeyFn>,
 ) -> SilexResult<MountInstance<'scope>>
 where
     K: PartialEq + Clone + 'scope,
     KeyFn: Fn() -> SilexResult<K> + Clone + 'scope,
 {
     let KeyedDynamicMountArgs {
-        owner,
-        parent,
+        context,
         attrs,
         error_handler,
         key_fn,
@@ -332,8 +287,9 @@ where
         update_same_key,
         branch_runtime,
     } = args;
-    let local_owner = owner.child();
-    let range = NodeRange::append(parent, "branch")?;
+    let local_owner = context.owner().child();
+    let range = NodeRange::at_target(context.target(), "branch")?;
+    let row_context = context.with_target(MountTarget::Before(range.end.clone()));
     let state = local_owner.token().owner_state(BranchState {
         range,
         row: None,
@@ -427,6 +383,7 @@ where
                         stateful: false,
                         branch_runtime,
                         error_handler,
+                        context: row_context.clone(),
                     },
                 ) {
                     Ok(row) => row,
@@ -473,7 +430,7 @@ where
         return Err(error);
     }
     let owner_for_cleanup = local_owner.clone();
-    if let Err(error) = owner.on_cleanup(
+    if let Err(error) = context.owner().on_cleanup(
         Box::new(move || {
             owner_for_cleanup
                 .close()

@@ -61,7 +61,7 @@ let classes = tw!(
 
 解析器也接受 `("then", condition, "else")`。条件为字面量 `true`/`false`
 时在宏阶段折叠，不生成 owner effect；其它条件会转成当前 owner 上的
-`IntoCssReactive<bool>`，运行时通过 `AttrOp::custom`：
+`IntoCssReactive<bool>`，运行时通过 `AttrOp::on_commit` 安装初始 CSS：
 
 1. 读取所有条件并选择完整 class 字符串；
 2. 只添加新 token、移除旧 token；

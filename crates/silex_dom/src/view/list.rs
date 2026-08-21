@@ -1,3 +1,4 @@
+use super::context::{MountContext, MountTarget};
 use super::owner::MountOwner;
 use super::row::{
     NodeRange, RowInstance, RowInstanceConfig, RowRenderContext, RowRenderer, RowUpdater,
@@ -74,20 +75,17 @@ where
 {
     fn mount(
         &self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &Node,
+        context: &MountContext<'scope>,
         attrs: Vec<AttrOp<'scope>>,
-        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         mount_keyed_list(KeyedListMountArgs {
-            owner,
-            parent,
+            context: context.clone(),
             source: self.each.clone(),
             key_fn: self.key_fn.clone(),
             factory: RowFactory::RenderOnly(self.view_fn.clone()),
             error_handler: self.error_handler.clone(),
             attrs,
-            parent_error_handler: error_handler,
+            parent_error_handler: context.error_handler(),
             _marker: std::marker::PhantomData,
         })
     }
@@ -104,20 +102,17 @@ where
 {
     fn mount(
         &self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &Node,
+        context: &MountContext<'scope>,
         attrs: Vec<AttrOp<'scope>>,
-        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         mount_keyed_list(KeyedListMountArgs {
-            owner,
-            parent,
+            context: context.clone(),
             source: self.each.clone(),
             key_fn: self.key_fn.clone(),
             factory: RowFactory::Stateful(self.view_fn.clone()),
             error_handler: self.error_handler.clone(),
             attrs,
-            parent_error_handler: error_handler,
+            parent_error_handler: context.error_handler(),
             _marker: std::marker::PhantomData,
         })
     }
@@ -139,37 +134,33 @@ where
 {
     fn mount(
         &self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &Node,
+        context: &MountContext<'scope>,
         attrs: Vec<AttrOp<'scope>>,
-        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         mount_indexed_list(
-            owner,
-            parent,
+            context,
             self.each.clone(),
             RowFactory::RenderOnly(self.view_fn.clone()),
             attrs,
-            error_handler,
         )
     }
 }
 
 fn mount_indexed_list<'scope, IF, IS, T>(
-    owner: &dyn MountOwner<'scope>,
-    parent: &Node,
+    context: &MountContext<'scope>,
     source: IF,
     factory: RowFactory<'scope, T>,
     attrs: Vec<AttrOp<'scope>>,
-    error_handler: MountErrorHandler<'scope>,
 ) -> SilexResult<MountInstance<'scope>>
 where
     IF: RxRead<Value = IS> + ReactiveSource<'scope> + Clone + 'scope,
     IS: ForLoopSource<Item = T> + 'scope,
     T: Clone + 'scope,
 {
-    let local_owner = owner.child();
-    let range = NodeRange::append(parent, "for")?;
+    let local_owner = context.owner().child();
+    let range = NodeRange::at_target(context.target(), "for")?;
+    let error_handler = context.error_handler();
+    let row_context = context.with_target(MountTarget::Before(range.end.clone()));
     let token = local_owner.token();
     let stateful = factory.is_stateful();
     let render_factory = factory.clone();
@@ -177,16 +168,14 @@ where
         let RowRenderContext {
             item,
             index,
-            parent,
+            context,
             attrs,
-            owner: token,
             branch_context: _,
-            error_handler,
             updater,
         } = args;
         render_factory
             .render(item, index, updater)
-            .mount(&token, &parent, attrs, error_handler)
+            .mount(&context, attrs)
             .map(|_| ())
     });
     let rows = local_owner
@@ -204,7 +193,7 @@ where
                 Err(SilexError::fatal(SilexErrorKind::Close(error)))
             })
         }),
-        error_handler,
+        context.error_handler(),
     ) {
         if let Err(close_error) = local_owner.close() {
             local_owner.report_close_error(close_error);
@@ -247,6 +236,7 @@ where
                             stateful,
                             branch_runtime: false,
                             error_handler,
+                            context: row_context.clone(),
                         },
                     )?;
                     pending.push(row);
@@ -300,7 +290,7 @@ where
     }
 
     let owner_for_cleanup = local_owner.clone();
-    if let Err(error) = owner.on_cleanup(
+    if let Err(error) = context.owner().on_cleanup(
         Box::new(move || {
             owner_for_cleanup
                 .close()
@@ -481,9 +471,8 @@ where
     })
 }
 
-struct KeyedListMountArgs<'owner, 'scope, IF, IS, T, K> {
-    owner: &'owner dyn MountOwner<'scope>,
-    parent: &'owner Node,
+struct KeyedListMountArgs<'scope, IF, IS, T, K> {
+    context: MountContext<'scope>,
     source: IF,
     key_fn: Rc<dyn Fn(&T) -> K + 'scope>,
     factory: RowFactory<'scope, T>,
@@ -493,8 +482,8 @@ struct KeyedListMountArgs<'owner, 'scope, IF, IS, T, K> {
     _marker: std::marker::PhantomData<IS>,
 }
 
-fn mount_keyed_list<'owner, 'scope, IF, IS, T, K>(
-    args: KeyedListMountArgs<'owner, 'scope, IF, IS, T, K>,
+fn mount_keyed_list<'scope, IF, IS, T, K>(
+    args: KeyedListMountArgs<'scope, IF, IS, T, K>,
 ) -> SilexResult<MountInstance<'scope>>
 where
     IF: RxRead<Value = IS> + ReactiveSource<'scope> + Clone + 'scope,
@@ -503,8 +492,7 @@ where
     K: std::hash::Hash + Eq + Clone + 'scope,
 {
     let KeyedListMountArgs {
-        owner,
-        parent,
+        context,
         source,
         key_fn,
         factory,
@@ -513,28 +501,27 @@ where
         parent_error_handler,
         ..
     } = args;
-    let local_owner = owner.child();
+    let local_owner = context.owner().child();
     let error_handler = error_handler
         .map(|handler| handler.view())
         .unwrap_or(parent_error_handler);
     let token = local_owner.token();
-    let range = NodeRange::append(parent, "for")?;
+    let range = NodeRange::at_target(context.target(), "for")?;
+    let row_context = context.with_target(MountTarget::Before(range.end.clone()));
     let stateful = factory.is_stateful();
     let render_factory = factory.clone();
     let render = RowRenderer::new(move |args: RowRenderContext<'scope, T>| {
         let RowRenderContext {
             item,
             index,
-            parent,
+            context,
             attrs,
-            owner: token,
             branch_context: _,
-            error_handler,
             updater,
         } = args;
         render_factory
             .render(item, index, updater)
-            .mount(&token, &parent, attrs, error_handler)
+            .mount(&context, attrs)
             .map(|_| ())
     });
     let state = local_owner.token().owner_state(KeyedRows {
@@ -639,6 +626,7 @@ where
                             stateful,
                             branch_runtime: false,
                             error_handler,
+                            context: row_context.clone(),
                         },
                     )?;
                     let keyed_row = KeyedRow::pending(key.clone(), row);
@@ -719,7 +707,7 @@ where
     }
 
     let owner_for_cleanup = local_owner.clone();
-    if let Err(error) = owner.on_cleanup(
+    if let Err(error) = context.owner().on_cleanup(
         Box::new(move || {
             owner_for_cleanup
                 .close()

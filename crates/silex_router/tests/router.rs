@@ -5,7 +5,7 @@ use silex_core::{
     SilexErrorKind, SilexResult,
 };
 use silex_dom::view::{
-    AnyView, ApplyAttributes, MountInstance, MountOwner, MountOwnerToken, View, mount_text_node,
+    AnyView, ApplyAttributes, MountContext, MountInstance, MountOwnerToken, View, mount_text_node,
 };
 use silex_router::macros::router;
 use silex_router::{
@@ -49,6 +49,19 @@ fn test_owner<'owner>(
 ) -> (MountOwnerToken<'owner>, ErrorHandlerToken<'owner>) {
     let error_handler = test_handler(owner);
     (MountOwnerToken::new(owner), error_handler)
+}
+
+fn mount_view<'owner, V: View<'owner>>(
+    view: &V,
+    owner: &MountOwnerToken<'owner>,
+    parent: &web_sys::Node,
+    attrs: Vec<silex_dom::attribute::AttrOp<'owner>>,
+    error_handler: ErrorReporter<'owner>,
+) -> SilexResult<MountInstance<'owner>> {
+    let context = MountContext::for_parent(parent.clone(), owner.clone(), error_handler);
+    let instance = view.mount(&context, attrs)?;
+    context.transaction().commit()?;
+    Ok(instance)
 }
 
 #[wasm_bindgen(inline_js = r#"
@@ -210,8 +223,7 @@ fn router_navigation_uses_required_table_and_updates_outlet() {
             .routes(navigation_table(navigator.clone()))
             .build();
         let (owner, error_handler) = test_owner(owner);
-        let _ = view
-            .mount(&owner, &host, Vec::new(), error_handler.view())
+        let _ = mount_view(&view, &owner, &host, Vec::new(), error_handler.view())
             .expect("router view should mount");
 
         assert_eq!(host.text_content().as_deref(), Some("7"));
@@ -300,8 +312,7 @@ fn router_layout_is_created_once_while_outlet_changes() {
             })
             .build();
         let (owner, error_handler) = test_owner(owner);
-        let _ = view
-            .mount(&owner, &host, Vec::new(), error_handler.view())
+        let _ = mount_view(&view, &owner, &host, Vec::new(), error_handler.view())
             .expect("router view should mount");
         assert_eq!(host.text_content().as_deref(), Some("one"));
         assert_eq!(layouts.get(), 1);
@@ -347,8 +358,7 @@ fn nested_outlet_keeps_parent_layout_while_child_route_changes() {
         let ctx = SilexContext::new(owner, context_error_handler.view());
         let view = Router(ctx).base("/app").routes(table).build();
         let (owner, error_handler) = test_owner(owner);
-        let _ = view
-            .mount(&owner, &host, Vec::new(), error_handler.view())
+        let _ = mount_view(&view, &owner, &host, Vec::new(), error_handler.view())
             .expect("nested router should mount");
         assert_eq!(host.text_content().as_deref(), Some("users:1"));
         let navigator = navigator
@@ -408,8 +418,7 @@ fn link_requires_ctx_and_tracks_active_path() {
         .children("users")
         .active_class("active")
         .build();
-        let _ = link
-            .mount(&owner, &host, Vec::new(), error_handler.view())
+        let _ = mount_view(&link, &owner, &host, Vec::new(), error_handler.view())
             .expect("link should mount");
 
         let element: web_sys::Element = host
@@ -518,20 +527,18 @@ impl<'owner> ApplyAttributes<'owner> for RouterCleanupView {}
 impl<'owner> View<'owner> for RouterCleanupView {
     fn mount(
         &self,
-        owner: &dyn MountOwner<'owner>,
-        parent: &web_sys::Node,
+        context: &MountContext<'owner>,
         _attrs: Vec<silex_dom::attribute::AttrOp<'owner>>,
-        error_handler: ErrorReporter<'owner>,
     ) -> SilexResult<MountInstance<'owner>> {
         let cleanups = self.cleanups.clone();
-        owner.on_cleanup(
+        context.owner().on_cleanup(
             Box::new(move || {
                 cleanups.set(cleanups.get() + 1);
                 Ok(())
             }),
-            error_handler,
+            context.error_handler(),
         )?;
-        mount_text_node(parent, &self.text)
+        mount_text_node(context, &self.text)
     }
 }
 
@@ -560,8 +567,7 @@ fn router_owner_close_removes_listener_and_ignores_late_popstate() {
             let ctx = SilexContext::new(owner, context_error_handler.view());
             let view = Router(ctx).base("/app").routes(table).build();
             let (owner, error_handler) = test_owner(owner);
-            let _ = view
-                .mount(&owner, &host, Vec::new(), error_handler.view())
+            let _ = mount_view(&view, &owner, &host, Vec::new(), error_handler.view())
                 .expect("router view should mount");
 
             assert_eq!(host.text_content().as_deref(), Some("lexical"));
@@ -610,7 +616,7 @@ fn router_does_not_mount_outlet_when_listener_registration_fails() {
         let view = Router(ctx).base("/app").routes(table).build();
         let (owner, error_handler) = test_owner(owner);
         assert!(matches!(
-            view.mount(&owner, &host, Vec::new(), error_handler.view()),
+            mount_view(&view, &owner, &host, Vec::new(), error_handler.view()),
             Err(SilexError::Fatal(SilexErrorKind::Javascript(_)))
         ));
     });
@@ -638,21 +644,19 @@ impl<'owner> ApplyAttributes<'owner> for FactoryTextView<'owner> {}
 impl<'owner> View<'owner> for FactoryTextView<'owner> {
     fn mount(
         &self,
-        owner: &dyn MountOwner<'owner>,
-        parent: &web_sys::Node,
+        context: &MountContext<'owner>,
         _attrs: Vec<silex_dom::attribute::AttrOp<'owner>>,
-        error_handler: ErrorReporter<'owner>,
     ) -> SilexResult<MountInstance<'owner>> {
         let cleanups = self.cleanups.clone();
-        owner.on_cleanup(
+        context.owner().on_cleanup(
             Box::new(move || {
                 cleanups.set(cleanups.get() + 1);
                 Ok(())
             }),
-            error_handler,
+            context.error_handler(),
         )?;
         let text = self.text.get()?;
-        mount_text_node(parent, &text)
+        mount_text_node(context, &text)
     }
 }
 
@@ -679,8 +683,7 @@ fn router_view_factory_keeps_scoped_dynamic_owner_cleanup() {
             })
         }));
         let (owner, error_handler) = test_owner(owner);
-        let _ = factory
-            .mount(&owner, &host, Vec::new(), error_handler.view())
+        let _ = mount_view(&factory, &owner, &host, Vec::new(), error_handler.view())
             .expect("router factory should mount");
 
         assert_eq!(host.text_content().as_deref(), Some("factory-one"));

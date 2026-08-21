@@ -300,8 +300,10 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
             let __slx_conditions: ::std::vec::Vec<#__silex::core::Rx<'_, bool>> =
                 ::std::vec![ #(#condition_sources),* ];
 
-            #__silex::dom::attribute::AttrOp::custom(
-                move |element, owner, error_handler| {
+            #__silex::dom::attribute::AttrOp::on_commit(
+                move |element, context| {
+                    let owner = context.owner();
+                    let error_handler = context.error_handler();
                     #(#inits_tokens)*
                     let __slx_conditions_for_effect = __slx_conditions.clone();
                     let __slx_element = element.clone();

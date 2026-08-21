@@ -7,7 +7,7 @@ use silex::ui::{
     Dialog, Popover, PopoverContent, PopoverTrigger, Tooltip, TooltipContent, TooltipTrigger,
 };
 use silex_dom::document;
-use silex_dom::view::{MountErrorHandler, MountOwner, MountOwnerToken, View};
+use silex_dom::view::{MountContext, MountInstance, MountOwnerToken, View};
 use std::rc::Rc;
 use std::{
     cell::Cell,
@@ -87,6 +87,18 @@ fn host() -> Element {
     host
 }
 
+fn mount_view<'scope, V: View<'scope>>(
+    view: &V,
+    owner: &MountOwnerToken<'scope>,
+    parent: &Element,
+    error_handler: silex_core::ErrorReporter<'scope>,
+) -> SilexResult<MountInstance<'scope>> {
+    let context = MountContext::for_parent(parent.clone().into(), owner.clone(), error_handler);
+    let instance = view.mount(&context, Vec::new())?;
+    context.transaction().commit()?;
+    Ok(instance)
+}
+
 fn text_occurrence_count(selector: &str, expected: &str) -> u32 {
     let nodes = document()
         .query_selector_all(selector)
@@ -127,10 +139,8 @@ struct FailingView;
 impl<'scope> View<'scope> for FailingView {
     fn mount(
         &self,
-        _owner: &dyn MountOwner<'scope>,
-        _parent: &web_sys::Node,
+        _context: &MountContext<'scope>,
         _attrs: Vec<AttrOp<'scope>>,
-        _error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         Err(SilexError::fatal(SilexErrorKind::Dom(
             "intentional Portal mount failure".to_string(),
@@ -143,10 +153,8 @@ struct PanickingView;
 impl<'scope> View<'scope> for PanickingView {
     fn mount(
         &self,
-        _owner: &dyn MountOwner<'scope>,
-        _parent: &web_sys::Node,
+        _context: &MountContext<'scope>,
         _attrs: Vec<AttrOp<'scope>>,
-        _error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         panic!("intentional Portal mount panic")
     }
@@ -183,13 +191,7 @@ async fn portal_modal_does_not_duplicate_content_after_repeated_toggles() {
                 .build(),
         ];
         let mount_owner = MountOwnerToken::new(owner);
-        let _ = view
-            .mount(
-                &mount_owner,
-                host.as_ref(),
-                Vec::new(),
-                error_handler.view(),
-            )
+        let _ = mount_view(&view, &mount_owner, &host, error_handler.view())
             .expect("portal demo should mount");
         let completed_for_task = completed.clone();
         let valid_for_task = valid.clone();
@@ -303,13 +305,7 @@ async fn tooltip_mouse_crossing_keeps_host_wrapper_and_content_identity() {
         .build()
         .expect("tooltip should build");
         let mount_owner = MountOwnerToken::new(owner);
-        let _ = view
-            .mount(
-                &mount_owner,
-                host.as_ref(),
-                Vec::new(),
-                error_handler.view(),
-            )
+        let _ = mount_view(&view, &mount_owner, &host, error_handler.view())
             .expect("tooltip should mount");
     });
 
@@ -433,13 +429,7 @@ async fn popover_keeps_host_and_overlay_stable_across_click_outside() {
         .build()
         .expect("popover should build");
         let mount_owner = MountOwnerToken::new(owner);
-        let _ = view
-            .mount(
-                &mount_owner,
-                host.as_ref(),
-                Vec::new(),
-                error_handler.view(),
-            )
+        let _ = mount_view(&view, &mount_owner, &host, error_handler.view())
             .expect("popover should mount");
     });
 
@@ -580,13 +570,7 @@ async fn dialog_restores_focus_and_keeps_host_stable_across_overlay_close() {
                 .expect("dialog should build")
         ));
         let mount_owner = MountOwnerToken::new(owner);
-        let _ = view
-            .mount(
-                &mount_owner,
-                host.as_ref(),
-                Vec::new(),
-                error_handler.view(),
-            )
+        let _ = mount_view(&view, &mount_owner, &host, error_handler.view())
             .expect("dialog should mount");
     });
 
@@ -721,13 +705,7 @@ async fn portal_unmount_mode_keeps_host_and_unmounts_only_content() {
             .attr("data-portal-host", "")
             .build();
         let mount_owner = MountOwnerToken::new(owner);
-        let _ = view
-            .mount(
-                &mount_owner,
-                host.as_ref(),
-                Vec::new(),
-                error_handler.view(),
-            )
+        let _ = mount_view(&view, &mount_owner, &host, error_handler.view())
             .expect("unmount mode portal should mount");
         assert_eq!(portal_host_count(), 1);
         assert!(
@@ -818,16 +796,7 @@ fn portal_mount_failure_leaves_no_host() {
             .attr("data-portal-host", "")
             .build();
         let mount_owner = MountOwnerToken::new(owner);
-        assert!(
-            failing
-                .mount(
-                    &mount_owner,
-                    host.as_ref(),
-                    Vec::new(),
-                    error_handler.view(),
-                )
-                .is_err()
-        );
+        assert!(mount_view(&failing, &mount_owner, &host, error_handler.view()).is_err());
         assert_eq!(portal_host_count(), 0);
     });
 
@@ -857,12 +826,7 @@ fn portal_mount_panic_leaves_no_host() {
             .build();
         let mount_owner = MountOwnerToken::new(owner);
         let result = catch_unwind(AssertUnwindSafe(|| {
-            let _ = panicking.mount(
-                &mount_owner,
-                host.as_ref(),
-                Vec::new(),
-                error_handler.view(),
-            );
+            let _ = mount_view(&panicking, &mount_owner, &host, error_handler.view());
         }));
         assert!(result.is_err(), "Portal should rethrow child mount panics");
         assert_eq!(portal_host_count(), 0);
@@ -897,13 +861,7 @@ fn portal_host_respects_explicit_target_and_cleanup() {
             .attr("data-portal-host", "")
             .build();
         let mount_owner = MountOwnerToken::new(owner);
-        let _ = view
-            .mount(
-                &mount_owner,
-                host.as_ref(),
-                Vec::new(),
-                error_handler.view(),
-            )
+        let _ = mount_view(&view, &mount_owner, &host, error_handler.view())
             .expect("target PortalHost should mount");
         assert_eq!(portal_host_count(), 0);
         assert_eq!(

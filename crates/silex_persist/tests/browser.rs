@@ -6,7 +6,7 @@ use silex_core::{
 };
 use silex_dom::attribute::AttrOp;
 use silex_dom::view::{
-    AnyView, ApplyAttributes, IndexedListView, MountInstance, MountOwner, MountOwnerToken, View,
+    AnyView, ApplyAttributes, IndexedListView, MountContext, MountInstance, MountOwnerToken, View,
 };
 use silex_persist::{
     PersistExternalSync, PersistWriteMode, PersistenceState, Persistent, WriteDefault,
@@ -35,6 +35,19 @@ fn test_owner<'scope>(
 ) -> (MountOwnerToken<'scope>, ErrorHandlerToken<'scope>) {
     let error_handler = test_handler(owner);
     (MountOwnerToken::new(owner), error_handler)
+}
+
+fn mount_view<'scope, V: View<'scope>>(
+    view: &V,
+    owner: &MountOwnerToken<'scope>,
+    parent: &Node,
+    attrs: Vec<AttrOp<'scope>>,
+    error_handler: ErrorReporter<'scope>,
+) -> SilexResult<MountInstance<'scope>> {
+    let context = MountContext::for_parent(parent.clone(), owner.clone(), error_handler);
+    let instance = view.mount(&context, attrs)?;
+    context.transaction().commit()?;
+    Ok(instance)
 }
 
 const STORAGE_KEY: &str = "silex-persist-runtime-refactor";
@@ -364,12 +377,10 @@ impl<'scope> ApplyAttributes<'scope> for CapturedPersistent<'scope> {}
 impl<'scope> View<'scope> for CapturedPersistent<'scope> {
     fn mount(
         &self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &Node,
+        context: &MountContext<'scope>,
         attrs: Vec<AttrOp<'scope>>,
-        error_handler: ErrorReporter<'scope>,
     ) -> silex_core::SilexResult<MountInstance<'scope>> {
-        let instance = self.binding.mount(owner, parent, attrs, error_handler)?;
+        let instance = self.binding.mount(context, attrs)?;
         *self.node.borrow_mut() = instance.first_node().cloned();
         Ok(instance)
     }
@@ -789,9 +800,14 @@ fn persistent_view_updates_and_stops_with_root() {
             .build()
             .expect("persistent binding should build");
         let (owner, error_handler) = test_owner(scope);
-        let _ = binding
-            .mount(&owner, parent.as_ref(), Vec::new(), error_handler.view())
-            .expect("persistent view should mount");
+        let _ = mount_view(
+            &binding,
+            &owner,
+            parent.as_ref(),
+            Vec::new(),
+            error_handler.view(),
+        )
+        .expect("persistent view should mount");
         assert_eq!(parent.text_content(), Some("one".to_string()));
         binding
             .set("two".to_string())
@@ -832,11 +848,17 @@ fn persistent_view_stops_after_lexical_owner_dispose() {
                 .default("one".to_string())
                 .build().expect("persistent binding should build");
             let (owner, error_handler) = test_owner(child);
-            let _ = CapturedPersistent {
+            let view = CapturedPersistent {
                 binding,
                 node: captured_node_for_child,
-            }
-            .mount(&owner, parent.as_ref(), Vec::new(), error_handler.view())
+            };
+            let _ = mount_view(
+                &view,
+                &owner,
+                parent.as_ref(),
+                Vec::new(),
+                error_handler.view(),
+            )
             .expect("captured persistent view should mount");
             assert_eq!(parent.text_content(), Some("one".to_string()));
             binding.set("two".to_string()).expect("reactive update should succeed");
@@ -907,9 +929,14 @@ fn persistent_view_stops_after_row_owner_dispose() {
             _marker: std::marker::PhantomData,
         };
         let (owner, error_handler) = test_owner(scope);
-        let _ = list
-            .mount(&owner, parent.as_ref(), Vec::new(), error_handler.view())
-            .expect("persistent list should mount");
+        let _ = mount_view(
+            &list,
+            &owner,
+            parent.as_ref(),
+            Vec::new(),
+            error_handler.view(),
+        )
+        .expect("persistent list should mount");
         assert_eq!(parent.text_content(), Some("one".to_string()));
 
         set_items

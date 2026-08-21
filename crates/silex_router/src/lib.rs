@@ -31,8 +31,8 @@ use silex_core::{SilexContext, SilexContextProvider, SilexError, SilexErrorKind,
 use silex_dom::attribute::AttrOp;
 use silex_dom::helpers::window_event_listener_untyped;
 use silex_dom::view::{
-    AnyView, ApplyAttributes, BranchEvaluation, BranchRenderContext, MountErrorHandler,
-    MountInstance, MountOwner, View,
+    AnyView, ApplyAttributes, BranchEvaluation, BranchRenderContext, MountContext, MountInstance,
+    View,
 };
 use silex_macros::component;
 use std::rc::Rc;
@@ -154,24 +154,22 @@ pub struct RouterView<'scope> {
 impl<'scope> RouterView<'scope> {
     fn mount_internal(
         self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &web_sys::Node,
+        context: &MountContext<'scope>,
         attrs: Vec<AttrOp<'scope>>,
-        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         let Self {
             ctx,
             routes,
             layout,
         } = self;
-        let ctx = SilexContextProvider::with_error_reporter(ctx?, error_handler);
-        let token = owner.token();
+        let ctx = SilexContextProvider::with_error_reporter(ctx?, context.error_handler());
+        let token = context.owner();
         let navigator = ctx.navigator;
         let listener = window_event_listener_untyped(
             &token,
             "popstate",
             move |_| navigator.refresh_location(),
-            error_handler,
+            context.error_handler(),
         )
         .map_err(SilexError::fatal)?;
 
@@ -180,7 +178,7 @@ impl<'scope> RouterView<'scope> {
             Some(layout) => layout(ctx, outlet),
             None => outlet,
         };
-        match view.mount(owner, parent, attrs, error_handler) {
+        match view.mount(context, attrs) {
             Ok(instance) => Ok(instance),
             Err(error) => {
                 let _ = listener.cancel();
@@ -195,13 +193,10 @@ impl<'scope> ApplyAttributes<'scope> for RouterView<'scope> {}
 impl<'scope> View<'scope> for RouterView<'scope> {
     fn mount(
         &self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &web_sys::Node,
+        context: &MountContext<'scope>,
         attrs: Vec<AttrOp<'scope>>,
-        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
-        self.clone()
-            .mount_internal(owner, parent, attrs, error_handler)
+        self.clone().mount_internal(context, attrs)
     }
 }
 
@@ -240,10 +235,8 @@ impl<'scope> ApplyAttributes<'scope> for RouteOutlet<'scope> {}
 impl<'scope> View<'scope> for RouteOutlet<'scope> {
     fn mount(
         &self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &web_sys::Node,
+        context: &MountContext<'scope>,
         attrs: Vec<AttrOp<'scope>>,
-        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         let this = self.clone();
         let ctx = this.ctx;
@@ -253,10 +246,8 @@ impl<'scope> View<'scope> for RouteOutlet<'scope> {
         let prefix = this.prefix;
         let prefix_for_key = prefix.clone();
         silex_dom::view::mount_branch_stable_cached(
-            owner,
-            parent,
+            context,
             attrs,
-            error_handler,
             move || {
                 let path = path_signal.get()?;
                 let snapshot = nested_outlet_path(prefix_for_key.as_deref(), &path);

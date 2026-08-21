@@ -16,8 +16,8 @@ use silex_core::{ErrorReporter, Rx, SilexError, SilexErrorKind, SilexResult};
 use silex_dom::{
     attribute::{ApplyTarget, ApplyToDom, AttrOp, IntoStorable},
     view::{
-        ApplyAttributes, MountErrorHandler, MountInstance, MountOwner, MountOwnerToken, MountState,
-        View,
+        ApplyAttributes, MountContext, MountErrorHandler, MountInstance, MountOwner,
+        MountOwnerToken, MountState, View,
     },
 };
 use std::{
@@ -563,8 +563,9 @@ impl<'scope> ApplyToDom<'scope> for DynamicCss<'scope> {
     }
 
     fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope> {
-        AttrOp::custom(move |el, owner, error_handler| {
-            self.apply_to_element(el, owner, error_handler)
+        AttrOp::on_commit(move |el, context| {
+            let owner = context.owner();
+            self.apply_to_element(el, &owner, context.error_handler())
         })
     }
 }
@@ -678,8 +679,9 @@ impl<'scope> StyledVariantBinding<'scope> {
     }
 
     pub fn into_op(self) -> AttrOp<'scope> {
-        AttrOp::custom(move |element, owner, error_handler| {
-            self.mount_to_element(element, owner, error_handler)
+        AttrOp::on_commit(move |element, context| {
+            let owner = context.owner();
+            self.mount_to_element(element, &owner, context.error_handler())
         })
     }
 
@@ -981,33 +983,36 @@ impl<'scope> GlobalStyleView<'scope> {
         }
     }
 
-    fn mount_inner(
-        &self,
-        owner: &dyn MountOwner<'scope>,
-        error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<MountInstance<'scope>> {
-        for (style_id, css) in &self.static_styles {
-            if !style_id.is_empty() && !css.is_empty() {
-                crate::inject_style(style_id, css);
+    fn mount_inner(&self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
+        let owner = context.owner();
+        let static_styles = self.static_styles.clone();
+        let bindings = self.bindings.clone();
+        let error_handler = context.error_handler();
+        context.on_commit(move || {
+            for (style_id, css) in &static_styles {
+                if !style_id.is_empty() && !css.is_empty() {
+                    crate::inject_style(style_id, css);
+                }
             }
-        }
 
-        for binding in &self.bindings {
-            let style_id = unique_dynamic_style_id(binding.style_id);
-            inject_managed_dynamic_style(
-                owner,
-                error_handler,
-                ManagedDynamicStyle {
-                    style_id,
-                    layer: binding.layer,
-                    parts: binding.parts,
-                    positional: binding.positional.clone(),
-                    replacements: binding.replacements.clone(),
-                    static_values: binding.static_values.clone(),
-                    static_replacements: binding.static_replacements.clone(),
-                },
-            )?;
-        }
+            for binding in &bindings {
+                let style_id = unique_dynamic_style_id(binding.style_id);
+                inject_managed_dynamic_style(
+                    &owner,
+                    error_handler,
+                    ManagedDynamicStyle {
+                        style_id,
+                        layer: binding.layer,
+                        parts: binding.parts,
+                        positional: binding.positional.clone(),
+                        replacements: binding.replacements.clone(),
+                        static_values: binding.static_values.clone(),
+                        static_replacements: binding.static_replacements.clone(),
+                    },
+                )?;
+            }
+            Ok(())
+        })?;
         Ok(MountInstance::from_nodes(Vec::new()))
     }
 }
@@ -1017,12 +1022,10 @@ impl<'scope> ApplyAttributes<'scope> for GlobalStyleView<'scope> {}
 impl<'scope> View<'scope> for GlobalStyleView<'scope> {
     fn mount(
         &self,
-        owner: &dyn MountOwner<'scope>,
-        _parent: &web_sys::Node,
+        context: &MountContext<'scope>,
         _attrs: Vec<AttrOp<'scope>>,
-        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
-        self.mount_inner(owner, error_handler)
+        self.mount_inner(context)
     }
 }
 

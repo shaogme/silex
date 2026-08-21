@@ -1,5 +1,5 @@
 use super::any::AnyView;
-use super::owner::{MountErrorHandler, MountOwner};
+use super::context::MountContext;
 use crate::attribute::AttrOp;
 use silex_core::{
     ErrorHandlerInput, OwnerAccess, ReactiveSource, Rx, RxData, RxValue, SilexResult,
@@ -106,14 +106,12 @@ where
 {
     fn mount(
         &self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &Node,
+        context: &MountContext<'scope>,
         attrs: Vec<AttrOp<'scope>>,
-        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         match self {
-            Self::Owned(value) => value.mount(owner, parent, attrs, error_handler),
-            Self::Borrowed(value) => value.mount(owner, parent, attrs, error_handler),
+            Self::Owned(value) => value.mount(context, attrs),
+            Self::Borrowed(value) => value.mount(context, attrs),
         }
     }
 }
@@ -235,9 +233,7 @@ pub trait View<'scope> {
 
     fn mount(
         &self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &Node,
+        context: &MountContext<'scope>,
         attrs: Vec<AttrOp<'scope>>,
-        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>>;
 }

@@ -1,8 +1,8 @@
 use crate::attribute::AttrOp;
 use crate::element::{Element, TypedElement, tags::Tag};
 use crate::view::{
-    AnyView, ApplyAttributes, DynamicRenderArgs, DynamicRenderer, MountErrorHandler, MountInstance,
-    MountOwner, View, ViewCons, mount_dynamic_view_universal,
+    AnyView, ApplyAttributes, DynamicRenderArgs, DynamicRenderer, MountContext, MountInstance,
+    View, ViewCons, mount_dynamic_view_universal,
 };
 use silex_core::reactivity::{Computed, ReadSignal, RwSignal, Signal, StoredValue};
 use silex_core::traits::RxCloneData;
@@ -12,18 +12,16 @@ use std::fmt::Display;
 use web_sys::Node;
 
 pub(crate) fn mount_reactive_text<'scope, T>(
-    owner: &dyn MountOwner<'scope>,
-    parent: &Node,
+    context: &MountContext<'scope>,
     rx: Rx<'scope, T>,
-    error_handler: MountErrorHandler<'scope>,
 ) -> SilexResult<MountInstance<'scope>>
 where
     T: Display + RxCloneData + 'scope,
 {
+    let owner = context.owner();
     let local_owner = owner.child();
-    let parent = parent.clone();
     let node: Node = crate::document().create_text_node("").into();
-    parent.append_child(&node).map_err(SilexError::fatal)?;
+    context.target().append(&node)?;
     let node_for_cleanup = node.clone();
     if let Err(error) = local_owner.on_cleanup(
         Box::new(move || {
@@ -32,7 +30,7 @@ where
             }
             Ok(())
         }),
-        error_handler,
+        context.error_handler(),
     ) {
         if let Some(parent) = node.parent_node() {
             let _ = parent.remove_child(&node);
@@ -50,7 +48,7 @@ where
             node_for_effect.set_node_value(Some(&value));
             Ok(())
         }),
-        error_handler,
+        context.error_handler(),
     ) {
         if let Err(close_error) = local_owner.close() {
             local_owner.report_close_error(close_error);
@@ -64,7 +62,7 @@ where
                 .close()
                 .map_err(|error| SilexError::fatal(SilexErrorKind::Close(error)))
         }),
-        error_handler,
+        context.error_handler(),
     ) {
         if let Err(close_error) = local_owner.close() {
             local_owner.report_close_error(close_error);
@@ -75,28 +73,19 @@ where
 }
 
 pub(crate) fn mount_reactive_view<'scope, V>(
-    owner: &dyn MountOwner<'scope>,
-    parent: &Node,
+    context: &MountContext<'scope>,
     rx: Rx<'scope, V>,
     attrs: Vec<AttrOp<'scope>>,
-    error_handler: MountErrorHandler<'scope>,
 ) -> SilexResult<MountInstance<'scope>>
 where
     V: View<'scope> + 'scope,
 {
     mount_dynamic_view_universal(
-        owner,
-        parent,
+        context,
         attrs,
-        error_handler,
         DynamicRenderer::new(move |args| {
-            let DynamicRenderArgs {
-                parent,
-                attrs,
-                owner: token,
-                error_handler,
-            } = args;
-            rx.with(|view| view.mount(&token, &parent, attrs, error_handler))?
+            let DynamicRenderArgs { context, attrs } = args;
+            rx.with(|view| view.mount(&context, attrs))?
         }),
     )
 }
@@ -104,12 +93,10 @@ where
 pub trait AutoReactiveView<'scope>: View<'scope> + Sized + 'scope {
     fn mount_reactive(
         rx: Rx<'scope, Self>,
-        owner: &dyn MountOwner<'scope>,
-        parent: &Node,
+        context: &MountContext<'scope>,
         attrs: Vec<AttrOp<'scope>>,
-        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
-        mount_reactive_view(owner, parent, rx, attrs, error_handler)
+        mount_reactive_view(context, rx, attrs)
     }
 }
 
@@ -124,12 +111,10 @@ where
 {
     fn mount(
         &self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &Node,
+        context: &MountContext<'scope>,
         attrs: Vec<AttrOp<'scope>>,
-        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
-        V::mount_reactive(*self, owner, parent, attrs, error_handler)
+        V::mount_reactive(*self, context, attrs)
     }
 }
 
@@ -139,12 +124,10 @@ macro_rules! impl_auto_reactive_text {
             impl<'scope> AutoReactiveView<'scope> for $ty {
                 fn mount_reactive(
                     rx: Rx<'scope, Self>,
-                    owner: &dyn MountOwner<'scope>,
-                    parent: &Node,
+                    context: &MountContext<'scope>,
                     _attrs: Vec<AttrOp<'scope>>,
-                    error_handler: MountErrorHandler<'scope>,
                 ) -> SilexResult<MountInstance<'scope>> {
-                    mount_reactive_text(owner, parent, rx, error_handler)
+                    mount_reactive_text(context, rx)
                 }
             }
         )*
@@ -166,24 +149,20 @@ impl_auto_reactive_text!(
 impl<'scope> AutoReactiveView<'scope> for &'scope str {
     fn mount_reactive(
         rx: Rx<'scope, Self>,
-        owner: &dyn MountOwner<'scope>,
-        parent: &Node,
+        context: &MountContext<'scope>,
         _attrs: Vec<AttrOp<'scope>>,
-        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
-        mount_reactive_text(owner, parent, rx, error_handler)
+        mount_reactive_text(context, rx)
     }
 }
 
 impl<'scope> AutoReactiveView<'scope> for Cow<'scope, str> {
     fn mount_reactive(
         rx: Rx<'scope, Self>,
-        owner: &dyn MountOwner<'scope>,
-        parent: &Node,
+        context: &MountContext<'scope>,
         _attrs: Vec<AttrOp<'scope>>,
-        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
-        mount_reactive_text(owner, parent, rx, error_handler)
+        mount_reactive_text(context, rx)
     }
 }
 
@@ -217,14 +196,12 @@ macro_rules! impl_view_forward_to_rx {
             {
                 fn mount(
                     &self,
-                    owner: &dyn MountOwner<'scope>,
-                    parent: &Node,
+                    context: &MountContext<'scope>,
                     attrs: Vec<AttrOp<'scope>>,
-                    error_handler: MountErrorHandler<'scope>,
                 ) -> SilexResult<MountInstance<'scope>> {
                     self.clone()
                         .into_rx()
-                        .mount(owner, parent, attrs, error_handler)
+                        .mount(context, attrs)
                 }
             }
         )*

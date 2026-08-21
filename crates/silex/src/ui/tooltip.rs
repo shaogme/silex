@@ -120,8 +120,8 @@ impl<'scope> TooltipContext<'scope> {
 }
 
 fn owner_binding<'scope>(ctx: TooltipContext<'scope>) -> AttrOp<'scope> {
-    AttrOp::custom(move |_, owner, error_handler| {
-        ctx.set_owner(owner.clone(), error_handler)?;
+    AttrOp::custom(move |_, context| {
+        ctx.set_owner(context.owner(), context.error_handler())?;
         Ok(())
     })
 }

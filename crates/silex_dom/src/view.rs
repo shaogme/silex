@@ -1,4 +1,5 @@
 pub mod any;
+pub mod context;
 pub mod contract;
 pub mod dynamic;
 pub mod list;
@@ -8,6 +9,9 @@ pub mod reactive;
 pub(crate) mod row;
 
 pub use any::AnyView;
+pub use context::{
+    MountAncestry, MountContext, MountTarget, MountTransaction, MountTransactionState,
+};
 pub use contract::{
     ApplyAttributes, MountInstance, Prop, PropFixed, PropInto, PropMissing, View, ViewCons, ViewNil,
 };

@@ -35,9 +35,9 @@ fn dialog_focus_binding<'scope>(
     open: Signal<'scope, bool>,
     previous_focus: StoredValue<'scope, Option<Element>>,
 ) -> AttrOp<'scope> {
-    AttrOp::custom(move |element, owner, error_handler| {
+    AttrOp::on_commit(move |element, context| {
         let dialog = element.clone();
-        owner.effect(
+        context.owner().effect(
             Box::new(move || -> SilexResult<()> {
                 if open.with(|value| *value)? {
                     if previous_focus.with(|value| value.is_none())? {
@@ -57,7 +57,7 @@ fn dialog_focus_binding<'scope>(
                 }
                 Ok(())
             }),
-            error_handler,
+            context.error_handler(),
         )
     })
 }

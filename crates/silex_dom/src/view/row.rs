@@ -1,3 +1,4 @@
+use super::context::{MountContext, MountTarget, MountTransaction};
 use super::dynamic::BranchRenderContext;
 use super::owner::{MountErrorHandler, MountOwner, MountOwnerToken, MountState};
 use crate::attribute::AttrOp;
@@ -104,11 +105,9 @@ impl<'scope, T> RowUpdater<'scope, T> {
 pub(crate) struct RowRenderContext<'scope, T> {
     pub(crate) item: T,
     pub(crate) index: usize,
-    pub(crate) parent: Node,
+    pub(crate) context: MountContext<'scope>,
     pub(crate) attrs: Vec<AttrOp<'scope>>,
-    pub(crate) owner: MountOwnerToken<'scope>,
     pub(crate) branch_context: Option<BranchRenderContext<'scope>>,
-    pub(crate) error_handler: MountErrorHandler<'scope>,
     pub(crate) updater: RowUpdater<'scope, T>,
 }
 
@@ -181,6 +180,13 @@ impl NodeRange {
             return Err(error);
         }
         Ok(Self { start, end })
+    }
+
+    pub(crate) fn at_target(target: &MountTarget, label: &str) -> Result<Self, SilexError> {
+        match target {
+            MountTarget::Append(parent) => Self::append(parent, label),
+            MountTarget::Before(reference) => Self::before(reference, label),
+        }
     }
 
     pub(crate) fn before(reference: &Node, label: &str) -> Result<Self, SilexError> {
@@ -273,6 +279,7 @@ pub(crate) struct RowInstance<'scope, T> {
     render: RowRenderer<'scope, T>,
     attrs: Vec<AttrOp<'scope>>,
     error_handler: MountErrorHandler<'scope>,
+    context: MountContext<'scope>,
     updater: RowUpdater<'scope, T>,
     stateful: bool,
     active: Cell<bool>,
@@ -291,6 +298,7 @@ pub(crate) struct RowInstanceConfig<'scope, T> {
     pub(crate) stateful: bool,
     pub(crate) branch_runtime: bool,
     pub(crate) error_handler: MountErrorHandler<'scope>,
+    pub(crate) context: MountContext<'scope>,
 }
 
 impl<'scope, T: Clone + 'scope> RowInstance<'scope, T> {
@@ -307,6 +315,7 @@ impl<'scope, T: Clone + 'scope> RowInstance<'scope, T> {
             stateful,
             branch_runtime,
             error_handler,
+            context,
         } = config;
         let mut range_guard = RangeGuard::new(range.clone());
         let updater = RowUpdater::new();
@@ -328,6 +337,7 @@ impl<'scope, T: Clone + 'scope> RowInstance<'scope, T> {
             render,
             attrs,
             error_handler,
+            context,
             updater,
             stateful,
             active: Cell::new(true),
@@ -403,6 +413,7 @@ impl<'scope, T: Clone + 'scope> RowInstance<'scope, T> {
         let error_handler = self.error_handler;
         let document = crate::document();
         let render_handler = self.error_handler;
+        let base_context = self.context.clone();
         let registration = catch_unwind(AssertUnwindSafe(|| {
             render_scope.effect(
                 Box::new(move || -> SilexResult<()> {
@@ -415,12 +426,18 @@ impl<'scope, T: Clone + 'scope> RowInstance<'scope, T> {
                     let result = catch_unwind(AssertUnwindSafe(|| -> SilexResult<()> {
                         let fragment = document.create_document_fragment();
                         let fragment_node: Node = fragment.into();
+                        let render_transaction = MountTransaction::new();
+                        let render_context = base_context.with_parts(
+                            MountTarget::Append(fragment_node.clone()),
+                            base_context.ancestry().clone(),
+                            candidate_token,
+                            render_transaction.clone(),
+                        );
                         render.call(RowRenderContext {
                             item: item.clone(),
                             index,
-                            parent: fragment_node.clone(),
+                            context: render_context,
                             attrs: attrs.clone(),
-                            owner: candidate_token,
                             branch_context: content_owner.as_ref().map(|_| {
                                 BranchRenderContext::new(
                                     candidate_scope.clone(),
@@ -428,7 +445,6 @@ impl<'scope, T: Clone + 'scope> RowInstance<'scope, T> {
                                     error_handler,
                                 )
                             }),
-                            error_handler,
                             updater: updater.clone(),
                         })?;
                         let new_nodes = child_nodes(&fragment_node);
@@ -440,6 +456,7 @@ impl<'scope, T: Clone + 'scope> RowInstance<'scope, T> {
                         parent
                             .insert_before(&fragment_node, Some(&range.end))
                             .map_err(SilexError::fatal)?;
+                        render_transaction.commit()?;
                         for node in old_nodes {
                             if node.parent_node().is_some() {
                                 let _ = parent.remove_child(&node);

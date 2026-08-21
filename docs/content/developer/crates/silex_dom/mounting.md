@@ -130,9 +130,18 @@ mount/rollback/dispose，包含：
 
 ## 直接挂载与应用挂载的选择
 
-高级框架或测试可以直接构造 `MountOwnerToken::new(access)`，再调用
-`view.mount(&owner, parent, attrs, handler)`。这种方式适合嵌入已有 owner
-树的 adapter，但调用方必须自己保证 owner close 和物理节点清理。
+高级框架或测试可以直接构造 view 层的 `MountContext`，再调用
+`view.mount(&context, attrs)`。context 同时携带物理 `MountTarget`、逻辑
+`MountAncestry`、owner、`MountTransaction` 和错误处理器；调用方必须自己
+负责 root transaction 的 commit/rollback，以及 owner close 和物理节点清理。
+
+自定义 view 不应再把 parent、owner 和 error handler 作为三个独立参数继续
+向下传递。需要创建子 context 时，使用 `with_target`、`with_element` 或
+`with_parts`，并让子 transaction 在父 transaction 成功后再 commit。
+
+属性操作也区分两个阶段：普通 `AttrOp::custom` 必须只执行 staging-safe
+逻辑；依赖真实 DOM 连接状态的操作使用 `AttrOp::on_commit`。提交回调应通过
+`context.on_commit` 注册，这样 root rollback 会自动取消它们。
 
 应用入口优先使用 `MountedApp`/`MountContext`：它提供 staging boundary、
 host caller-owned 节点保护、rollback report 和可重试状态，避免把应用级

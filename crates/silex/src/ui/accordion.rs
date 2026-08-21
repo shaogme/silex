@@ -1,6 +1,6 @@
 use silex_core::prelude::*;
 use silex_dom::prelude::*;
-use silex_dom::view::mount_branch_stable_cached;
+use silex_dom::view::{MountAncestry, mount_branch_stable_cached};
 use silex_html::{button, div, path, svg};
 use silex_macros::{component, tw};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -14,65 +14,56 @@ enum AccordionRelation {
     Content,
 }
 
-fn accordion_item(element: &web_sys::Element) -> Option<web_sys::Element> {
-    let mut current = element.parent_element();
-    while let Some(parent) = current {
-        if parent.get_attribute("data-slot").as_deref() == Some("accordion-item") {
-            return Some(parent);
-        }
-        current = parent.parent_element();
-    }
-    None
+fn accordion_item(ancestry: &MountAncestry) -> Option<web_sys::Element> {
+    ancestry.find_element(|element| {
+        element.get_attribute("data-slot").as_deref() == Some("accordion-item")
+    })
 }
 
 fn accordion_relation<'scope>(relation: AccordionRelation) -> AttrOp<'scope> {
-    AttrOp::custom(move |element, owner, error_handler| {
+    AttrOp::custom(move |element, context| {
         let element_for_task = element.clone();
-        let _task = queue_microtask(
-            owner,
-            move || {
-                let Some(item) = accordion_item(&element_for_task) else {
-                    return Ok(());
-                };
-                let Some(item_id) = item.get_attribute("data-accordion-item-id") else {
-                    return Ok(());
-                };
+        let ancestry = context.ancestry().clone();
+        context.on_commit(move || {
+            let Some(item) = accordion_item(&ancestry) else {
+                return Ok(());
+            };
+            let Some(item_id) = item.get_attribute("data-accordion-item-id") else {
+                return Ok(());
+            };
 
-                let (id, related_attribute, related_id) = match relation {
-                    AccordionRelation::Trigger => (
-                        format!("{item_id}-trigger"),
-                        "aria-controls",
-                        format!("{item_id}-content"),
-                    ),
-                    AccordionRelation::Content => (
-                        format!("{item_id}-content"),
-                        "aria-labelledby",
-                        format!("{item_id}-trigger"),
-                    ),
-                };
-                element_for_task
-                    .set_attribute("id", &id)
-                    .map_err(SilexError::fatal)?;
-                element_for_task
-                    .set_attribute(related_attribute, &related_id)
-                    .map_err(SilexError::fatal)
-            },
-            error_handler,
-        )
-        .map_err(SilexError::fatal)?;
+            let (id, related_attribute, related_id) = match relation {
+                AccordionRelation::Trigger => (
+                    format!("{item_id}-trigger"),
+                    "aria-controls",
+                    format!("{item_id}-content"),
+                ),
+                AccordionRelation::Content => (
+                    format!("{item_id}-content"),
+                    "aria-labelledby",
+                    format!("{item_id}-trigger"),
+                ),
+            };
+            element_for_task
+                .set_attribute("id", &id)
+                .map_err(SilexError::fatal)?;
+            element_for_task
+                .set_attribute(related_attribute, &related_id)
+                .map_err(SilexError::fatal)
+        })?;
 
         let element_for_cleanup = element.clone();
         let related_attribute = match relation {
             AccordionRelation::Trigger => "aria-controls",
             AccordionRelation::Content => "aria-labelledby",
         };
-        owner.on_cleanup(
+        context.owner().on_cleanup(
             Box::new(move || -> SilexResult<()> {
                 let _ = element_for_cleanup.remove_attribute("id");
                 let _ = element_for_cleanup.remove_attribute(related_attribute);
                 Ok(())
             }),
-            error_handler,
+            context.error_handler(),
         )?;
         Ok(())
     })
@@ -88,8 +79,8 @@ fn focus_event_target(event: &web_sys::MouseEvent) -> SilexResult<()> {
     target.focus().map_err(SilexError::fatal)
 }
 
-fn focus_content_trigger(content: &web_sys::Element) -> SilexResult<()> {
-    if let Some(item) = accordion_item(content)
+fn focus_content_trigger(content: &web_sys::Element, ancestry: &MountAncestry) -> SilexResult<()> {
+    if let Some(item) = accordion_item(ancestry)
         && let Some(trigger) = item
             .query_selector("[data-slot='accordion-trigger']")
             .map_err(SilexError::fatal)?
@@ -108,9 +99,10 @@ fn focus_content_trigger(content: &web_sys::Element) -> SilexResult<()> {
 }
 
 fn content_focus_binding<'scope>(open: Signal<'scope, bool>) -> AttrOp<'scope> {
-    AttrOp::custom(move |element, owner, error_handler| {
+    AttrOp::on_commit(move |element, context| {
         let content = element.clone();
-        owner.effect_with_previous(
+        let ancestry = context.ancestry().clone();
+        context.owner().effect_with_previous(
             move |previous: Option<&bool>| -> SilexResult<bool> {
                 let current = open.with(|value| *value)?;
                 if previous == Some(&true)
@@ -118,11 +110,11 @@ fn content_focus_binding<'scope>(open: Signal<'scope, bool>) -> AttrOp<'scope> {
                     && let Some(active) = document().active_element()
                     && content.contains(Some(active.as_ref()))
                 {
-                    focus_content_trigger(&content)?;
+                    focus_content_trigger(&content, &ancestry)?;
                 }
                 Ok(current)
             },
-            error_handler,
+            context.error_handler(),
         )
     })
 }
@@ -131,7 +123,7 @@ fn unmount_content_slot<'scope>(
     children: AnyView<'scope>,
     open: Signal<'scope, bool>,
 ) -> AttrOp<'scope> {
-    AttrOp::custom(move |element, owner, error_handler| {
+    AttrOp::custom(move |_, context| {
         let branch_children = children.clone();
         let key_fn = move || open.with(|value| BranchEvaluation::new(*value, ()));
         let branch_fn = move |evaluation: BranchEvaluation<bool, ()>, _context| {
@@ -141,15 +133,7 @@ fn unmount_content_slot<'scope>(
                 ().into_any()
             }
         };
-        mount_branch_stable_cached(
-            owner,
-            element.as_ref(),
-            Vec::new(),
-            error_handler,
-            key_fn,
-            branch_fn,
-        )
-        .map(|_| ())
+        mount_branch_stable_cached(context, Vec::new(), key_fn, branch_fn).map(|_| ())
     })
 }
 

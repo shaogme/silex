@@ -179,8 +179,9 @@ where
     }
 
     fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope> {
-        AttrOp::custom(move |el, owner, error_handler| {
-            self.apply(el, ApplyTarget::Apply, owner, error_handler)
+        AttrOp::on_commit(move |el, context| {
+            let owner = context.owner();
+            self.apply(el, ApplyTarget::Apply, &owner, context.error_handler())
         })
     }
 }
@@ -345,8 +346,9 @@ where
     }
 
     fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope> {
-        AttrOp::custom(move |el, owner, error_handler| {
-            self.apply(el, ApplyTarget::Apply, owner, error_handler)
+        AttrOp::on_commit(move |el, context| {
+            let owner = context.owner();
+            self.apply(el, ApplyTarget::Apply, &owner, context.error_handler())
         })
     }
 }

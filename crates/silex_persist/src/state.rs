@@ -13,11 +13,8 @@ use silex_core::{
     traits::{RxCloneData, RxData, RxRead, RxValue, RxWrite},
 };
 use silex_dom::attribute::AttrOp;
-use silex_dom::view::{
-    ApplyAttributes, MountErrorHandler, MountInstance, MountOwner, OwnedTimeout, View,
-};
+use silex_dom::view::{ApplyAttributes, MountContext, MountInstance, OwnedTimeout, View};
 use std::rc::Rc;
-use web_sys::Node;
 
 pub type PersistenceGetFn<'scope> =
     Rc<dyn Fn(&str) -> Result<Option<String>, PersistenceError> + 'scope>;
@@ -298,14 +295,10 @@ where
 {
     fn mount(
         &self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &Node,
+        context: &MountContext<'scope>,
         attrs: Vec<AttrOp<'scope>>,
-        error_handler: MountErrorHandler<'scope>,
     ) -> silex_core::SilexResult<MountInstance<'scope>> {
-        self.value
-            .into_rx()
-            .mount(owner, parent, attrs, error_handler)
+        self.value.into_rx().mount(context, attrs)
     }
 }
 

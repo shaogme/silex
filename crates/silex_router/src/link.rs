@@ -2,7 +2,7 @@ use crate::{ToRoute, context::RouterContext};
 use silex_core::SilexResult;
 use silex_core::traits::RxGet;
 use silex_dom::prelude::*;
-use silex_dom::view::{MountErrorHandler, MountOwner};
+use silex_dom::view::MountContext;
 use silex_html::a;
 use silex_macros::component;
 
@@ -95,13 +95,11 @@ impl<'scope> ApplyAttributes<'scope> for LinkView<'scope> {}
 impl<'scope> View<'scope> for LinkView<'scope> {
     fn mount(
         &self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &web_sys::Node,
+        context: &MountContext<'scope>,
         attrs: Vec<silex_dom::attribute::AttrOp<'scope>>,
-        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<silex_dom::view::MountInstance<'scope>> {
         match &self.view {
-            Ok(view) => view.mount(owner, parent, attrs, error_handler),
+            Ok(view) => view.mount(context, attrs),
             Err(error) => Err(error.clone()),
         }
     }

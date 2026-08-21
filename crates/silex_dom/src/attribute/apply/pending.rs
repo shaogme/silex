@@ -1,11 +1,10 @@
 use silex_core::SilexResult;
 use std::borrow::Cow;
-use std::rc::Rc;
 use web_sys::Element as WebElem;
 
 use super::foundation::{ApplyTarget, ApplyToDom, ReactiveBindingPlan, ReactiveBindingTarget};
 use crate::attribute::op::{AttrOp, CombinedClasses, CombinedStyles};
-use crate::view::{MountErrorHandler, MountOwnerToken};
+use crate::view::MountContext;
 
 #[derive(Default)]
 struct ClassAccumulator<'scope> {
@@ -198,13 +197,12 @@ impl<'scope> AttrOp<'scope> {
     }
 
     pub fn new_listener(f: impl Fn(&WebElem) -> SilexResult<()> + 'scope) -> Self {
-        AttrOp::Custom(Rc::new(move |el, _, _| f(el)))
+        AttrOp::custom(move |el, _| f(el))
     }
 
     pub fn new_scoped(
-        f: impl Fn(&WebElem, &MountOwnerToken<'scope>, MountErrorHandler<'scope>) -> SilexResult<()>
-        + 'scope,
+        f: impl Fn(&WebElem, &MountContext<'scope>) -> SilexResult<()> + 'scope,
     ) -> Self {
-        AttrOp::Custom(Rc::new(f))
+        AttrOp::custom(f)
     }
 }

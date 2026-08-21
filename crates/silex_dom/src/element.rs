@@ -1,8 +1,8 @@
 use crate::attribute::{ApplyTarget, AttrOp, AttributeBuilder, IntoStorable};
 use crate::event::{EventDescriptor, EventHandler};
 use crate::view::{
-    AnyView, ApplyAttributes, HostResource, MountInstance, MountOwner, MountOwnerToken, OwnerMount,
-    View,
+    AnyView, ApplyAttributes, HostResource, MountContext, MountInstance, MountOwner,
+    MountOwnerToken, MountTarget, OwnerMount, View,
 };
 use std::marker::PhantomData;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -81,10 +81,8 @@ impl<'scope> Element<'scope> {
 
     fn mount_inner(
         &self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &web_sys::Node,
+        context: &MountContext<'scope>,
         attrs: Vec<AttrOp<'scope>>,
-        error_handler: crate::view::MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         let document = crate::document();
         let dom_element = match self.namespace.as_deref() {
@@ -95,25 +93,25 @@ impl<'scope> Element<'scope> {
                 .create_element(&self.tag_name)
                 .map_err(SilexError::fatal)?,
         };
+        let owner = context.owner();
         let provisional_owner = OwnerMount::new(owner.child());
         let token = provisional_owner.token();
         let mut appended = false;
         let result = (|| -> SilexResult<MountInstance<'scope>> {
+            let child_context = context.with_parts(
+                MountTarget::Append(dom_element.clone().into()),
+                context.ancestry().push(&dom_element),
+                token.clone(),
+                context.transaction().clone(),
+            );
+            context.target().append(dom_element.as_ref())?;
+            appended = true;
             let attrs = self.all_attrs(attrs);
             for attr in attrs {
-                attr.apply(&dom_element, &token, error_handler)?;
+                attr.apply(&dom_element, &child_context)?;
             }
-            parent
-                .append_child(&dom_element)
-                .map_err(SilexError::fatal)?;
-            appended = true;
             for child in &self.children {
-                let _ = child.mount(
-                    &provisional_owner,
-                    dom_element.as_ref(),
-                    Vec::new(),
-                    error_handler,
-                )?;
+                let _ = child.mount(&child_context, Vec::new())?;
             }
             let owner_for_cleanup = provisional_owner.token();
             let element_for_cleanup = dom_element.clone();
@@ -127,7 +125,7 @@ impl<'scope> Element<'scope> {
                     }
                     Ok(())
                 }),
-                error_handler,
+                context.error_handler(),
             )?;
             Ok(MountInstance::from_nodes(vec![dom_element.clone().into()]))
         })();
@@ -170,8 +168,15 @@ impl<'scope> AttributeBuilder<'scope> for Element<'scope> {
         F: EventHandler<'scope, E::EventType, M> + Clone + 'scope,
     {
         self.pending_attrs
-            .push(AttrOp::new_scoped(move |element, owner, error_handler| {
-                bind_event(element, event, callback.clone(), owner, error_handler)
+            .push(AttrOp::new_scoped(move |element, context| {
+                let owner = context.owner();
+                bind_event(
+                    element,
+                    event,
+                    callback.clone(),
+                    &owner,
+                    context.error_handler(),
+                )
             }));
         self
     }
@@ -190,12 +195,10 @@ impl<'scope> ApplyAttributes<'scope> for Element<'scope> {
 impl<'scope> View<'scope> for Element<'scope> {
     fn mount(
         &self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &web_sys::Node,
+        context: &MountContext<'scope>,
         attrs: Vec<AttrOp<'scope>>,
-        error_handler: crate::view::MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
-        self.mount_inner(owner, parent, attrs, error_handler)
+        self.mount_inner(context, attrs)
     }
 }
 
@@ -294,8 +297,15 @@ impl<'scope, T: Tag> AttributeBuilder<'scope> for TypedElement<'scope, T> {
         F: EventHandler<'scope, E::EventType, M> + Clone + 'scope,
     {
         self.pending_attrs
-            .push(AttrOp::new_scoped(move |element, owner, error_handler| {
-                bind_event(element, event, callback.clone(), owner, error_handler)
+            .push(AttrOp::new_scoped(move |element, context| {
+                let owner = context.owner();
+                bind_event(
+                    element,
+                    event,
+                    callback.clone(),
+                    &owner,
+                    context.error_handler(),
+                )
             }));
         self
     }
@@ -312,13 +322,11 @@ impl<'scope, T: Tag> ApplyAttributes<'scope> for TypedElement<'scope, T> {
 impl<'scope, T: Tag> View<'scope> for TypedElement<'scope, T> {
     fn mount(
         &self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &web_sys::Node,
+        context: &MountContext<'scope>,
         attrs: Vec<AttrOp<'scope>>,
-        error_handler: crate::view::MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         let element = self.clone().into_untyped();
-        element.mount_inner(owner, parent, attrs, error_handler)
+        element.mount_inner(context, attrs)
     }
 }
 

@@ -12,7 +12,10 @@ use silex_dom::{
         debounce, queue_microtask, request_animation_frame, request_idle_callback, set_interval,
         set_timeout, window_event_listener_untyped,
     },
-    view::{AnyView, MountOwner, MountOwnerToken, StatefulKeyedListView, View, mount_text_node},
+    view::{
+        AnyView, MountContext, MountInstance, MountOwner, MountOwnerToken, StatefulKeyedListView,
+        View, mount_text_node,
+    },
 };
 use std::{
     cell::{Cell, RefCell},
@@ -38,6 +41,19 @@ fn test_owner<'owner>(
 ) -> (MountOwnerToken<'owner>, ErrorHandlerToken<'owner>) {
     let error_handler = test_handler(owner);
     (MountOwnerToken::new(owner), error_handler)
+}
+
+fn mount_view<'owner, V: View<'owner>>(
+    view: &V,
+    owner: &MountOwnerToken<'owner>,
+    parent: &Node,
+    attrs: Vec<AttrOp<'owner>>,
+    error_handler: ErrorReporter<'owner>,
+) -> silex_core::SilexResult<MountInstance<'owner>> {
+    let context = MountContext::for_parent(parent.clone(), owner.clone(), error_handler);
+    let instance = view.mount(&context, attrs)?;
+    context.transaction().commit()?;
+    Ok(instance)
 }
 
 #[wasm_bindgen(inline_js = r#"
@@ -254,24 +270,22 @@ impl<'owner> silex_dom::view::ApplyAttributes<'owner> for WindowResourceView {}
 impl<'owner> View<'owner> for WindowResourceView {
     fn mount(
         &self,
-        owner: &dyn MountOwner<'owner>,
-        parent: &Node,
+        context: &MountContext<'owner>,
         _attrs: Vec<silex_dom::attribute::AttrOp<'owner>>,
-        error_handler: ErrorReporter<'owner>,
     ) -> silex_core::SilexResult<silex_dom::view::MountInstance<'owner>> {
         let calls = self.calls.clone();
         let id = self.id;
         window_event_listener_untyped(
-            &owner.token(),
+            &context.owner(),
             "silex-window-resource",
             move |_| {
                 calls.borrow_mut().push(id);
                 Ok(())
             },
-            error_handler,
+            context.error_handler(),
         )
         .map_err(|error| SilexError::fatal(SilexErrorKind::from(error)))?;
-        mount_text_node(parent, &self.id.to_string())
+        mount_text_node(context, &self.id.to_string())
     }
 }
 
@@ -317,22 +331,21 @@ fn dispatch(target: &Node, event: Event) {
 fn fallible_dom_primitives_and_attribute_mount_failures_are_observable() {
     let host = mount_point();
     let text_parent: Node = document().create_text_node("not a parent").into();
-    assert!(mount_text_node(&text_parent, "rejected").is_err());
 
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|owner| {
             let (owner, error_handler) = test_owner(owner);
-            let token = owner.token();
+            let text_context =
+                MountContext::for_parent(text_parent.clone(), owner.clone(), error_handler.view());
+            assert!(mount_text_node(&text_context, "rejected").is_err());
             let element = document()
                 .create_element("div")
                 .expect("test element can be created");
             let invalid_class = AttrOp::static_class("invalid token".into());
-            assert!(
-                invalid_class
-                    .apply(&element, &token, error_handler)
-                    .is_err()
-            );
+            let attr_context =
+                MountContext::for_parent(element.clone().into(), owner, error_handler.view());
+            assert!(invalid_class.apply(&element, &attr_context).is_err());
         })
         .expect("child owner should initialize");
 
@@ -347,11 +360,11 @@ fn fallible_dom_primitives_and_attribute_mount_failures_are_observable() {
                 })
                 .expect("error handler should register");
             let owner = MountOwnerToken::new(owner);
-            let view = Element::new("div").apply(AttrOp::new_scoped(|_, _, _| {
+            let view = Element::new("div").apply(AttrOp::new_scoped(|_, _| {
                 Err(SilexError::recoverable(SilexErrorKind::Framework("attribute rejected".to_string())))
             }));
             assert!(matches!(
-                view.mount(&owner, &host.clone().into(), Vec::new(), error_handler.view()),
+                mount_view(&view, &owner, &host.clone().into(), Vec::new(), error_handler.view()),
                 Err(SilexError::Recoverable(SilexErrorKind::Framework(message))) if message == "attribute rejected"
             ));
         })
@@ -379,14 +392,14 @@ fn element_listener_removes_physically_and_drops_on_root_dispose() {
         let (owner, error_handler) = test_owner(access);
         let token = owner.token();
         let element = Element::new("button");
-        let instance = element
-            .mount(
-                &owner,
-                &host.clone().into(),
-                Vec::new(),
-                error_handler.view(),
-            )
-            .expect("element should mount");
+        let instance = mount_view(
+            &element,
+            &owner,
+            &host.clone().into(),
+            Vec::new(),
+            error_handler.view(),
+        )
+        .expect("element should mount");
         let mounted_element = instance
             .first_node()
             .expect("mount should contain the element")
@@ -511,8 +524,7 @@ fn render_rerun_replaces_old_window_listener() {
             id: value.get().expect("signal should be readable"),
             calls: calls_for_view.clone(),
         };
-        let _ = view
-            .mount(&owner, &host_node, Vec::new(), error_handler.view())
+        let _ = mount_view(&view, &owner, &host_node, Vec::new(), error_handler.view())
             .expect("view should mount");
 
         let window = web_sys::window().expect("window is available");
@@ -600,8 +612,7 @@ fn keyed_reorder_keeps_window_resources_until_row_delete() {
                     _marker: PhantomData,
                 };
                 let (owner, error_handler) = test_owner(child);
-                let _ = list
-                    .mount(&owner, &host_node, Vec::new(), error_handler.view())
+                let _ = mount_view(&list, &owner, &host_node, Vec::new(), error_handler.view())
                     .expect("keyed list should mount");
                 assert_eq!(spy.count("event_add:silex-window-resource"), 2);
 

@@ -10,7 +10,7 @@ use silex_core::{
 };
 use silex_dom::prelude::*;
 use silex_dom::view::{
-    BranchEvaluation, BranchRenderContext, MountOwner, MountState, SharedCell,
+    BranchEvaluation, BranchRenderContext, MountContext, MountState, SharedCell,
     mount_branch_stable_cached,
 };
 use silex_macros::component;
@@ -128,18 +128,14 @@ impl ApplyAttributes<'_> for ErrorBoundaryBranchView<'_> {}
 impl<'scope> View<'scope> for ErrorBoundaryBranchView<'scope> {
     fn mount(
         &self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &web_sys::Node,
+        context: &MountContext<'scope>,
         attrs: Vec<AttrOp<'scope>>,
-        error_handler: ErrorReporter<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         let key = self.key.clone();
         let render = self.render.clone();
         mount_branch_stable_cached(
-            owner,
-            parent,
+            context,
             attrs,
-            error_handler,
             move || key(),
             move |evaluation, context| render(evaluation, context),
         )
@@ -168,13 +164,13 @@ impl<'scope> ApplyAttributes<'scope> for ErrorBoundaryView<'scope> {
 impl<'scope> View<'scope> for ErrorBoundaryView<'scope> {
     fn mount(
         &self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &web_sys::Node,
+        context: &MountContext<'scope>,
         attrs: Vec<AttrOp<'scope>>,
-        error_handler: ErrorReporter<'scope>,
     ) -> silex_core::SilexResult<MountInstance<'scope>> {
         debug_assert!(!self.slot.is_closed());
-        let token = owner.token();
+        let owner = context.owner();
+        let error_handler = context.error_handler();
+        let token = owner.clone();
         let lease = error_handler
             .lease()
             .map_err(|error| SilexError::fatal(ReactiveError::Handler(error)))?;
@@ -191,10 +187,8 @@ impl<'scope> View<'scope> for ErrorBoundaryView<'scope> {
             }),
             error_handler,
         )?;
-        match self
-            .view
-            .mount(owner, parent, attrs.clone(), self.phase_handler)
-        {
+        let phase_context = context.with_error_handler(self.phase_handler);
+        match self.view.mount(&phase_context, attrs.clone()) {
             Ok(instance) => Ok(instance),
             Err(error @ SilexError::Recoverable(_)) => {
                 let generation = slot.generation().saturating_add(1);
@@ -203,7 +197,7 @@ impl<'scope> View<'scope> for ErrorBoundaryView<'scope> {
                     generation,
                 })?;
                 slot.replace_with_fallback(generation);
-                (self.fallback)(error).mount(owner, parent, attrs, error_handler)
+                (self.fallback)(error).mount(context, attrs)
             }
             Err(error) => Err(error),
         }

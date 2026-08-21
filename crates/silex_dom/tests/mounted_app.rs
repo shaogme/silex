@@ -6,7 +6,9 @@ use silex_core::{
 use silex_dom::attribute::AttrOp;
 use silex_dom::element::Element;
 use silex_dom::mounted::{CleanupOrigin, CleanupSink, MountAvailability, MountedApp};
-use silex_dom::view::{AnyView, ApplyAttributes, MountInstance, MountOwner, View, mount_component};
+use silex_dom::view::{
+    AnyView, ApplyAttributes, MountContext, MountInstance, View, mount_component,
+};
 use std::{cell::Cell, rc::Rc};
 use wasm_bindgen_test::*;
 use web_sys::Node;
@@ -36,6 +38,19 @@ fn error_handler<'owner>(owner: silex_core::OwnerAccess<'owner>) -> ErrorHandler
         .expect("error handler should register")
 }
 
+fn mount_view<'owner, V: View<'owner>>(
+    view: &V,
+    owner: &silex_dom::view::MountOwnerToken<'owner>,
+    parent: &Node,
+    attrs: Vec<AttrOp<'owner>>,
+    error_handler: ErrorReporter<'owner>,
+) -> SilexResult<MountInstance<'owner>> {
+    let context = MountContext::for_parent(parent.clone(), owner.clone(), error_handler);
+    let instance = view.mount(&context, attrs)?;
+    context.transaction().commit()?;
+    Ok(instance)
+}
+
 struct CleanupProbe {
     cleanups: Rc<Cell<usize>>,
 }
@@ -47,10 +62,8 @@ struct FactoryText {
 impl<'owner> View<'owner> for FactoryText {
     fn mount(
         &self,
-        owner: &dyn MountOwner<'owner>,
-        parent: &Node,
+        context: &MountContext<'owner>,
         _attrs: Vec<AttrOp<'owner>>,
-        error_handler: ErrorReporter<'owner>,
     ) -> SilexResult<MountInstance<'owner>> {
         let index = self.created.get() + 1;
         self.created.set(index);
@@ -61,11 +74,9 @@ impl<'owner> View<'owner> for FactoryText {
         let node: Node = document
             .create_text_node(&format!("factory-{index}"))
             .into();
-        parent
-            .append_child(&node)
-            .map_err(|error| SilexError::fatal(SilexErrorKind::from(error)))?;
+        context.target().append(&node)?;
         let node_for_cleanup = node.clone();
-        owner.on_cleanup(
+        context.owner().on_cleanup(
             Box::new(move || {
                 if let Some(parent) = node_for_cleanup.parent_node() {
                     parent
@@ -74,7 +85,7 @@ impl<'owner> View<'owner> for FactoryText {
                 }
                 Ok(())
             }),
-            error_handler,
+            context.error_handler(),
         )?;
         Ok(MountInstance::from_nodes(vec![node]))
     }
@@ -93,11 +104,9 @@ fn any_view_factory_creates_independent_mount_instances() {
             created: Rc::new(Cell::new(0)),
         });
 
-        let first = view
-            .mount(&owner, &host, Vec::new(), handler.view())
+        let first = mount_view(&view, &owner, &host, Vec::new(), handler.view())
             .expect("first factory mount should succeed");
-        let second = view
-            .mount(&owner, &host, Vec::new(), handler.view())
+        let second = mount_view(&view, &owner, &host, Vec::new(), handler.view())
             .expect("second factory mount should succeed");
 
         assert_eq!(first.len(), 1);
@@ -129,23 +138,18 @@ impl<'owner> ApplyAttributes<'owner> for PanicRollbackView {}
 impl<'owner> View<'owner> for PanicRollbackView {
     fn mount(
         &self,
-        owner: &dyn MountOwner<'owner>,
-        parent: &Node,
+        context: &MountContext<'owner>,
         attrs: Vec<AttrOp<'owner>>,
-        error_handler: ErrorReporter<'owner>,
     ) -> SilexResult<MountInstance<'owner>> {
-        mount_component(
-            owner,
-            parent,
-            attrs,
-            error_handler,
-            |owner, _, _, handler| {
-                owner.on_cleanup(Box::new(|| panic!("provisional cleanup")), handler)?;
-                Err(SilexError::recoverable(SilexErrorKind::Framework(
-                    "child rejected".to_string(),
-                )))
-            },
-        )
+        mount_component(context, attrs, |context, _| {
+            context.owner().on_cleanup(
+                Box::new(|| panic!("provisional cleanup")),
+                context.error_handler(),
+            )?;
+            Err(SilexError::recoverable(SilexErrorKind::Framework(
+                "child rejected".to_string(),
+            )))
+        })
     }
 }
 
@@ -154,27 +158,23 @@ impl<'owner> ApplyAttributes<'owner> for CleanupProbe {}
 impl<'owner> View<'owner> for CleanupProbe {
     fn mount(
         &self,
-        owner: &dyn MountOwner<'owner>,
-        parent: &Node,
+        context: &MountContext<'owner>,
         _attrs: Vec<AttrOp<'owner>>,
-        error_handler: ErrorReporter<'owner>,
     ) -> SilexResult<MountInstance<'owner>> {
         let cleanups = self.cleanups.clone();
-        owner.on_cleanup(
+        context.owner().on_cleanup(
             Box::new(move || {
                 cleanups.set(cleanups.get() + 1);
                 Ok(())
             }),
-            error_handler,
+            context.error_handler(),
         )?;
         let document = web_sys::window()
             .expect("window is available")
             .document()
             .expect("document is available");
         let text: Node = document.create_text_node("mounted").into();
-        parent
-            .append_child(&text)
-            .map_err(|error| SilexError::fatal(SilexErrorKind::from(error)))?;
+        context.target().append(&text)?;
         Ok(MountInstance::from_nodes(vec![text]))
     }
 }

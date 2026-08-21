@@ -6,12 +6,16 @@ use wasm_bindgen::{JsCast, JsValue};
 use web_sys::{CssStyleDeclaration, Element, HtmlElement, SvgElement};
 
 use crate::attribute::apply::{ApplyTarget, ReactiveBindingPlan, ReactiveBindingTarget};
-use crate::view::{MountErrorHandler, MountOwnerToken};
+use crate::view::{MountContext, MountErrorHandler, MountOwnerToken};
 
-type CustomAttribute<'scope> = Rc<
-    dyn Fn(&Element, &MountOwnerToken<'scope>, MountErrorHandler<'scope>) -> SilexResult<()>
-        + 'scope,
->;
+type CustomAttribute<'scope> =
+    Rc<dyn Fn(&Element, &MountContext<'scope>) -> SilexResult<()> + 'scope>;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AttrPhase {
+    Staging,
+    Commit,
+}
 
 /// 预定义的 DOM 强类型 Property (Fast-Path)
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -221,7 +225,10 @@ pub enum AttrOp<'scope> {
     Sequence(Vec<AttrOp<'scope>>),
 
     /// Custom closure execution
-    Custom(CustomAttribute<'scope>),
+    Custom {
+        phase: AttrPhase,
+        callback: CustomAttribute<'scope>,
+    },
 
     /// No operation
     Noop,
@@ -235,7 +242,7 @@ impl std::fmt::Debug for AttrOp<'_> {
             Self::CombinedStyles(cs) => f.debug_tuple("CombinedStyles").field(cs).finish(),
             Self::Reactive(plan) => f.debug_tuple("Reactive").field(plan).finish(),
             Self::Sequence(seq) => f.debug_tuple("Sequence").field(seq).finish(),
-            Self::Custom(_) => f.write_str("Custom(Rc<Fn>)"),
+            Self::Custom { .. } => f.write_str("Custom(Rc<Fn>)"),
             Self::Noop => f.write_str("Noop"),
         }
     }
@@ -249,7 +256,16 @@ impl PartialEq for AttrOp<'_> {
             (Self::CombinedStyles(a), Self::CombinedStyles(b)) => a == b,
             (Self::Reactive(a), Self::Reactive(b)) => a == b,
             (Self::Sequence(a), Self::Sequence(b)) => a == b,
-            (Self::Custom(a), Self::Custom(b)) => Rc::ptr_eq(a, b),
+            (
+                Self::Custom {
+                    phase: left_phase,
+                    callback: left,
+                },
+                Self::Custom {
+                    phase: right_phase,
+                    callback: right,
+                },
+            ) => left_phase == right_phase && Rc::ptr_eq(left, right),
             (Self::Noop, Self::Noop) => true,
             _ => false,
         }
@@ -298,6 +314,31 @@ impl<'scope> AttrOp<'scope> {
     }
 
     pub fn custom(
+        callback: impl Fn(&Element, &MountContext<'scope>) -> SilexResult<()> + 'scope,
+    ) -> Self {
+        Self::Custom {
+            phase: AttrPhase::Staging,
+            callback: Rc::new(callback),
+        }
+    }
+
+    pub fn custom_phase(
+        phase: AttrPhase,
+        callback: impl Fn(&Element, &MountContext<'scope>) -> SilexResult<()> + 'scope,
+    ) -> Self {
+        Self::Custom {
+            phase,
+            callback: Rc::new(callback),
+        }
+    }
+
+    pub fn on_commit(
+        callback: impl Fn(&Element, &MountContext<'scope>) -> SilexResult<()> + 'scope,
+    ) -> Self {
+        Self::custom_phase(AttrPhase::Commit, callback)
+    }
+
+    pub(crate) fn legacy_scoped(
         callback: impl Fn(
             &Element,
             &MountOwnerToken<'scope>,
@@ -305,30 +346,22 @@ impl<'scope> AttrOp<'scope> {
         ) -> SilexResult<()>
         + 'scope,
     ) -> Self {
-        Self::Custom(Rc::new(callback))
+        Self::custom(move |element, context| {
+            let owner = context.owner();
+            callback(element, &owner, context.error_handler())
+        })
     }
 
-    pub fn apply<H>(
-        self,
-        el: &Element,
-        owner: &MountOwnerToken<'scope>,
-        error_handler: H,
-    ) -> SilexResult<()>
-    where
-        H: ErrorHandlerInput<'scope>,
-    {
-        self.apply_unchecked(el, owner, error_handler.handler_ref())
+    pub fn apply(self, el: &Element, context: &MountContext<'scope>) -> SilexResult<()> {
+        self.apply_unchecked(el, context)
     }
 
-    fn apply_unchecked(
-        self,
-        el: &Element,
-        owner: &MountOwnerToken<'scope>,
-        error_handler: MountErrorHandler<'scope>,
-    ) -> SilexResult<()> {
+    fn apply_unchecked(self, el: &Element, context: &MountContext<'scope>) -> SilexResult<()> {
+        let owner = context.owner();
+        let error_handler = context.error_handler();
         match self {
             AttrOp::Update(AttrUpdate { target, data }) => {
-                apply_update_internal(el, target, data, owner, error_handler)?;
+                apply_update_internal(el, target, data, &owner, error_handler)?;
             }
             AttrOp::CombinedClasses(CombinedClasses {
                 statics,
@@ -340,7 +373,7 @@ impl<'scope> AttrOp<'scope> {
                     statics,
                     toggles,
                     reactives,
-                    owner,
+                    &owner,
                     error_handler,
                 )?;
             }
@@ -354,21 +387,33 @@ impl<'scope> AttrOp<'scope> {
                     statics,
                     properties,
                     sheets,
-                    owner,
+                    &owner,
                     error_handler,
                 )?;
             }
             AttrOp::Reactive(plan) => {
-                plan.install(el, owner, error_handler)?;
+                plan.install(el, &owner, error_handler)?;
             }
             AttrOp::Sequence(ops) => {
                 for op in ops {
-                    op.apply_unchecked(el, owner, error_handler)?;
+                    op.apply_unchecked(el, context)?;
                 }
             }
-            AttrOp::Custom(f) => {
-                owner.with_runtime(|| f(el, owner, error_handler))??;
-            }
+            AttrOp::Custom { phase, callback } => match phase {
+                AttrPhase::Staging => {
+                    owner.with_runtime(|| callback(el, context))??;
+                }
+                AttrPhase::Commit => {
+                    let element = el.clone();
+                    let context_for_commit = context.clone();
+                    let callback = callback.clone();
+                    context.on_commit(move || {
+                        let owner = context_for_commit.owner();
+                        owner.with_runtime(|| callback(&element, &context_for_commit))??;
+                        Ok(())
+                    })?;
+                }
+            },
             AttrOp::Noop => {}
         }
         Ok(())

@@ -5,7 +5,7 @@ use js_sys::Promise;
 use silex::prelude::*;
 use silex::ui::{AccordionContent, AccordionContentMode, AccordionItem, AccordionTrigger};
 use silex_dom::document;
-use silex_dom::view::{MountErrorHandler, MountInstance, MountOwner, MountOwnerToken, View};
+use silex_dom::view::{MountContext, MountInstance, MountOwnerToken, View};
 use std::cell::Cell;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
@@ -34,6 +34,18 @@ fn host() -> Element {
         .append_child(&host)
         .expect("test host should be attached");
     host
+}
+
+fn mount_view<'scope, V: View<'scope>>(
+    view: &V,
+    owner: &MountOwnerToken<'scope>,
+    parent: &Element,
+    error_handler: silex_core::ErrorReporter<'scope>,
+) -> SilexResult<MountInstance<'scope>> {
+    let context = MountContext::for_parent(parent.clone().into(), owner.clone(), error_handler);
+    let instance = view.mount(&context, Vec::new())?;
+    context.transaction().commit()?;
+    Ok(instance)
 }
 
 fn content(host: &Element) -> Element {
@@ -117,13 +129,7 @@ async fn trigger_and_content_keep_accessibility_state_and_focus_in_sync() {
         .build()
         .expect("accordion item should build");
         let mount_owner = MountOwnerToken::new(owner);
-        let _ = view
-            .mount(
-                &mount_owner,
-                host.as_ref(),
-                Vec::new(),
-                error_handler.view(),
-            )
+        let _ = mount_view(&view, &mount_owner, &host, error_handler.view())
             .expect("accordion item should mount");
 
         let completed = Rc::new(Cell::new(false));
@@ -294,13 +300,7 @@ async fn keep_alive_preserves_wrapper_and_child_identity_when_toggled() {
         .build()
         .expect("accordion content should build");
         let mount_owner = MountOwnerToken::new(owner);
-        let _ = view
-            .mount(
-                &mount_owner,
-                host.as_ref(),
-                Vec::new(),
-                error_handler.view(),
-            )
+        let _ = mount_view(&view, &mount_owner, &host, error_handler.view())
             .expect("accordion content should mount");
 
         let initial_content = content(&host);
@@ -450,13 +450,7 @@ async fn unmount_mode_keeps_wrapper_but_recreates_content_slot() {
         .build()
         .expect("content should build");
         let mount_owner = MountOwnerToken::new(owner);
-        let _ = view
-            .mount(
-                &mount_owner,
-                host.as_ref(),
-                Vec::new(),
-                error_handler.view(),
-            )
+        let _ = mount_view(&view, &mount_owner, &host, error_handler.view())
             .expect("unmount mode content should mount");
 
         let initial_content = content(&host);
@@ -567,10 +561,8 @@ struct FailingAccordionView;
 impl<'scope> View<'scope> for FailingAccordionView {
     fn mount(
         &self,
-        _owner: &dyn MountOwner<'scope>,
-        _parent: &web_sys::Node,
+        _context: &MountContext<'scope>,
         _attrs: Vec<AttrOp<'scope>>,
-        _error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         Err(SilexError::fatal(SilexErrorKind::Dom(
             "intentional Accordion slot mount failure".to_string(),
@@ -599,15 +591,7 @@ fn unmount_mode_mount_failure_rolls_back_wrapper_and_slot() {
             .build()
             .expect("content should build");
         let mount_owner = MountOwnerToken::new(owner);
-        assert!(
-            view.mount(
-                &mount_owner,
-                host.as_ref(),
-                Vec::new(),
-                error_handler.view(),
-            )
-            .is_err()
-        );
+        assert!(mount_view(&view, &mount_owner, &host, error_handler.view()).is_err());
         assert!(host.first_child().is_none());
     });
 

@@ -1,12 +1,9 @@
 use super::mount::mount_composite;
 use crate::attribute::AttrOp;
 use crate::element::Element;
-use crate::view::{
-    ApplyAttributes, MountErrorHandler, MountInstance, MountOwner, View, ViewCons, ViewNil,
-};
+use crate::view::{ApplyAttributes, MountContext, MountInstance, View, ViewCons, ViewNil};
 use silex_core::SilexResult;
 use std::rc::Rc;
-use web_sys::Node;
 
 /// Owner-bound type-erased view.
 #[derive(Default)]
@@ -42,32 +39,22 @@ fn merge_attrs<'scope>(
 
 fn mount_list<'scope>(
     list: &[AnyView<'scope>],
-    owner: &dyn MountOwner<'scope>,
-    parent: &Node,
+    context: &MountContext<'scope>,
     attrs: Vec<AttrOp<'scope>>,
-    error_handler: MountErrorHandler<'scope>,
 ) -> SilexResult<MountInstance<'scope>> {
-    mount_composite(
-        owner,
-        parent,
-        attrs,
-        error_handler,
-        move |transaction_owner, fragment, attrs, error_handler| {
-            for (index, child) in list.iter().enumerate() {
-                let _ = child.mount(
-                    transaction_owner,
-                    fragment,
-                    if index == 0 {
-                        attrs.clone()
-                    } else {
-                        Vec::new()
-                    },
-                    error_handler,
-                )?;
-            }
-            Ok(MountInstance::from_nodes(Vec::new()))
-        },
-    )
+    mount_composite(context, attrs, move |child_context, attrs| {
+        for (index, child) in list.iter().enumerate() {
+            let _ = child.mount(
+                child_context,
+                if index == 0 {
+                    attrs.clone()
+                } else {
+                    Vec::new()
+                },
+            )?;
+        }
+        Ok(MountInstance::from_nodes(Vec::new()))
+    })
 }
 
 impl<'scope> ApplyAttributes<'scope> for AnyView<'scope> {
@@ -91,22 +78,17 @@ impl<'scope> ApplyAttributes<'scope> for AnyView<'scope> {
 impl<'scope> View<'scope> for AnyView<'scope> {
     fn mount(
         &self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &Node,
+        context: &MountContext<'scope>,
         attrs: Vec<AttrOp<'scope>>,
-        error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<MountInstance<'scope>> {
         match self {
             Self::Empty => Ok(MountInstance::from_nodes(Vec::new())),
-            Self::Text(text) => text.mount(owner, parent, attrs, error_handler),
-            Self::Element(element) => element.mount(owner, parent, attrs, error_handler),
-            Self::List(list) => mount_list(list, owner, parent, attrs, error_handler),
-            Self::Boxed(view, inner_attrs) => view.mount(
-                owner,
-                parent,
-                merge_attrs(inner_attrs.clone(), attrs),
-                error_handler,
-            ),
+            Self::Text(text) => text.mount(context, attrs),
+            Self::Element(element) => element.mount(context, attrs),
+            Self::List(list) => mount_list(list, context, attrs),
+            Self::Boxed(view, inner_attrs) => {
+                view.mount(context, merge_attrs(inner_attrs.clone(), attrs))
+            }
         }
     }
 }

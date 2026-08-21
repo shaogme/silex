@@ -12,19 +12,19 @@ fn test_conditional_tw_macro() {
     );
     let output = tw_impl(ts).unwrap();
     let code = output.to_string();
-    assert!(code.contains("custom"));
+    assert!(code.contains("on_commit"));
     assert!(!code.contains("rx !"));
     assert!(!code.contains("runtime_inputs"));
     assert!(code.contains("on_cleanup"));
     assert!(code.contains("is_active"));
     assert!(code.contains("is_dark"));
-    let custom_pos = code
-        .find("custom")
-        .expect("conditional tw uses an owner-bound attribute");
+    let commit_pos = code
+        .find("on_commit")
+        .expect("conditional tw uses a commit-phase attribute");
     let inject_pos = code
         .find("inject_style")
         .expect("conditional tw injects CSS");
-    assert!(inject_pos > custom_pos, "{code}");
+    assert!(inject_pos > commit_pos, "{code}");
 }
 
 #[test]
