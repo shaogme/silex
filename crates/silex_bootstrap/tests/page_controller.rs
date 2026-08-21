@@ -77,7 +77,11 @@ fn manual_policy_does_not_install_a_listener() {
         .expect("manual policy should succeed");
     dispatch("pagehide");
 
-    assert!(controller.is_active());
+    assert!(
+        controller
+            .is_active()
+            .expect("controller should report active state")
+    );
     assert_eq!(calls.get(), 0);
     controller.unmount().expect("manual unmount should succeed");
     detach(&target);
@@ -98,7 +102,11 @@ fn pagehide_unmounts_once_and_repeated_events_are_idempotent() {
     dispatch("pagehide");
     dispatch("pagehide");
 
-    assert!(!controller.is_active());
+    assert!(
+        !controller
+            .is_active()
+            .expect("controller should report active state")
+    );
     assert_eq!(controller.state(), HostState::Ready);
     assert_eq!(target.child_nodes().length(), 0);
     assert_eq!(calls.get(), 0);
@@ -126,7 +134,11 @@ fn removing_page_lifecycle_keeps_the_application_mounted() {
 
     dispatch("pagehide");
 
-    assert!(controller.is_active());
+    assert!(
+        controller
+            .is_active()
+            .expect("controller should report active state")
+    );
     assert_eq!(calls.get(), 0);
     controller
         .unmount()
@@ -152,7 +164,11 @@ fn visibility_policy_ignores_events_while_document_is_visible() {
     if !document().hidden() {
         dispatch("visibilitychange");
         dispatch("pagehide");
-        assert!(controller.is_active());
+        assert!(
+            controller
+                .is_active()
+                .expect("controller should report active state")
+        );
         assert_eq!(calls.get(), 0);
     }
 

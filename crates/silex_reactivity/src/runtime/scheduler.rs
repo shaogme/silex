@@ -4,9 +4,10 @@ use super::model::ScopeState;
 use crate::{
     ReactiveError, ReactiveResult,
     borrow::{BorrowCell, BorrowSite, SharedCell},
+    error::ErrorContext,
     internal::NodeId,
     root::CloseError,
-    unsafe_boundary::{ActiveOwnerProof, CleanupOwnerProof, WeakOwnerToken},
+    unsafe_boundary::{ActiveOwnerProof, CleanupOwnerProof, ErasedErrorEvent, WeakOwnerToken},
 };
 
 use std::{
@@ -85,6 +86,13 @@ impl OwnerId {
 pub(crate) struct TargetNode {
     pub(crate) owner_id: OwnerId,
     pub(crate) node: NodeId,
+}
+
+pub(crate) struct DeferredErrorEvent {
+    pub(crate) source_owner: OwnerId,
+    pub(crate) sequence: u64,
+    pub(crate) context: ErrorContext,
+    pub(crate) event: ErasedErrorEvent,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -484,6 +492,8 @@ pub(crate) struct GlobalScheduler {
     pending_endpoints: VecDeque<TargetNode>,
     pending_endpoint_ids: HashSet<TargetNode>,
     initial_flush_depth: usize,
+    deferred_errors: VecDeque<DeferredErrorEvent>,
+    next_error_sequence: u64,
     pub(crate) close_reports: Rc<CloseReportQueue>,
 }
 
@@ -509,6 +519,8 @@ impl GlobalScheduler {
                 pending_endpoints: VecDeque::new(),
                 pending_endpoint_ids: HashSet::new(),
                 initial_flush_depth: 0,
+                deferred_errors: VecDeque::new(),
+                next_error_sequence: 0,
                 close_reports: reporter,
             },
             BorrowSite::Scheduler,
@@ -544,6 +556,8 @@ impl GlobalScheduler {
         }
         self.global_queue.retain(|task| task.owner_id != id);
         self.worklist.retain(|task| task.owner_id != id);
+        self.deferred_errors
+            .retain(|event| event.source_owner != id);
     }
 
     pub(crate) fn release_owner_id(&mut self, id: OwnerId) {
@@ -637,6 +651,35 @@ impl GlobalScheduler {
         }
     }
 
+    pub(crate) fn enqueue_deferred_error(
+        &mut self,
+        source_owner: OwnerId,
+        context: ErrorContext,
+        event: ErasedErrorEvent,
+    ) {
+        if !self.is_scope_active(source_owner) {
+            return;
+        }
+        let sequence = self.next_error_sequence;
+        self.next_error_sequence = self.next_error_sequence.saturating_add(1);
+        self.deferred_errors.push_back(DeferredErrorEvent {
+            source_owner,
+            sequence,
+            context,
+            event,
+        });
+    }
+
+    pub(crate) fn take_deferred_errors(&mut self) -> Vec<DeferredErrorEvent> {
+        let mut events: Vec<_> = self.deferred_errors.drain(..).collect();
+        events.sort_by_key(|event| event.sequence);
+        events
+    }
+
+    pub(crate) fn has_deferred_errors(&self) -> bool {
+        !self.deferred_errors.is_empty()
+    }
+
     pub(crate) fn cancel_effect(&mut self, target: TargetNode) {
         self.global_queue
             .retain(|task| task.owner_id != target.owner_id || task.node != target.node);
@@ -679,7 +722,9 @@ impl GlobalScheduler {
         self.initial_flush_depth == 0
             && self.is_idle()
             && self.active_leases == 0
-            && (!self.global_queue.is_empty() || !self.worklist.is_empty())
+            && (!self.global_queue.is_empty()
+                || !self.worklist.is_empty()
+                || !self.deferred_errors.is_empty())
     }
 }
 
@@ -693,6 +738,7 @@ mod tests {
     )]
 
     use super::*;
+    use crate::error::ErrorEvent;
     use crate::runtime::ScopeState;
 
     #[test]
@@ -764,6 +810,49 @@ mod tests {
                 .expect("scheduler borrow")
                 .is_disposing()
         );
+    }
+
+    #[test]
+    fn deferred_error_events_are_sequenced_and_dropped_on_owner_deactivation() {
+        let scheduler = GlobalScheduler::new();
+        let state = ScopeState::new(OwnerId::initial(0), scheduler.clone());
+        let owner_id = scheduler
+            .try_borrow_mut()
+            .expect("scheduler write")
+            .alloc_owner(&state, None, OwnerMode::Transient)
+            .expect("owner allocation");
+        state.try_borrow_mut().expect("state write").owner_id = owner_id;
+
+        {
+            let mut scheduler_ref = scheduler.try_borrow_mut().expect("scheduler write");
+            scheduler_ref.enqueue_deferred_error(
+                owner_id,
+                ErrorContext::new("first"),
+                ErasedErrorEvent::from_typed(ErrorEvent::invariant("first")),
+            );
+            scheduler_ref.enqueue_deferred_error(
+                owner_id,
+                ErrorContext::new("second"),
+                ErasedErrorEvent::from_typed(ErrorEvent::invariant("second")),
+            );
+        }
+
+        let events = scheduler
+            .try_borrow_mut()
+            .expect("scheduler write")
+            .take_deferred_errors();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].sequence, 0);
+        assert_eq!(events[1].sequence, 1);
+
+        let mut scheduler_ref = scheduler.try_borrow_mut().expect("scheduler write");
+        scheduler_ref.enqueue_deferred_error(
+            owner_id,
+            ErrorContext::new("dropped"),
+            ErasedErrorEvent::from_typed(ErrorEvent::invariant("dropped")),
+        );
+        scheduler_ref.deactivate_scope(owner_id);
+        assert!(scheduler_ref.take_deferred_errors().is_empty());
     }
 
     #[test]

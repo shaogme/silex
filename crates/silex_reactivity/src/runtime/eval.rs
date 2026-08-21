@@ -841,16 +841,21 @@ fn run_node<'scope>(
     if let Some(error) = operation_error {
         match (mode, error) {
             (EvaluationMode::Deferred, EvaluationError::Callback(error)) => {
-                match error.dispatch_with_context(
-                    ErrorPhase::Deferred,
-                    node_error_context(state, id, "deferred"),
-                ) {
-                    Ok(()) => {
-                        flush_if_idle(state).map_err(EvaluationError::Runtime)?;
-                        return Ok(true);
-                    }
-                    Err(error) => return Err(EvaluationError::Handler(error)),
-                }
+                let (scheduler, source_owner) = {
+                    let state_ref = state
+                        .try_borrow()
+                        .map_err(|_| EvaluationError::Runtime(ReactiveError::BorrowConflict))?;
+                    (state_ref.scheduler.clone(), state_ref.owner_id)
+                };
+                scheduler
+                    .try_borrow_mut()
+                    .map_err(|_| EvaluationError::Runtime(ReactiveError::BorrowConflict))?
+                    .enqueue_deferred_error(
+                        source_owner,
+                        node_error_context(state, id, "deferred"),
+                        crate::unsafe_boundary::ErasedErrorEvent::from_typed(error),
+                    );
+                return Ok(true);
             }
             (EvaluationMode::Read, EvaluationError::Callback(error)) => {
                 error
@@ -932,7 +937,34 @@ pub(crate) fn run_global_queue(scheduler: &SharedCell<GlobalScheduler>) -> React
                 }
             };
             let Some(task) = next_task else {
-                break;
+                let events = scheduler
+                    .try_borrow_mut()
+                    .map_err(|_| ReactiveError::BorrowConflict)?
+                    .take_deferred_errors();
+                for event in events {
+                    let Some(scope_state) = scheduler
+                        .try_borrow()
+                        .map_err(|_| ReactiveError::BorrowConflict)?
+                        .get_scope(event.source_owner)?
+                    else {
+                        continue;
+                    };
+                    event
+                        .event
+                        .restore(&scope_state)
+                        .dispatch_with_context(ErrorPhase::Deferred, event.context)
+                        .map_err(ReactiveError::Handler)?;
+                }
+                let scheduler_ref = scheduler
+                    .try_borrow()
+                    .map_err(|_| ReactiveError::BorrowConflict)?;
+                if scheduler_ref.global_queue.is_empty()
+                    && scheduler_ref.worklist.is_empty()
+                    && !scheduler_ref.has_deferred_errors()
+                {
+                    break;
+                }
+                continue;
             };
             guard.failed_owner.set(Some(task.owner_id));
             if !scheduler

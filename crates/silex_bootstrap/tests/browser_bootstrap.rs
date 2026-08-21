@@ -55,7 +55,11 @@ fn from_id_resolves_target_and_delegates_mount() {
     bootstrap
         .mount(Runtime::new(), mount_text)
         .expect("browser bootstrap should mount");
-    assert!(bootstrap.is_active());
+    assert!(
+        bootstrap
+            .is_active()
+            .expect("bootstrap should report active state")
+    );
     assert_eq!(target.text_content().as_deref(), Some("browser-owner"));
 
     bootstrap
@@ -93,7 +97,11 @@ fn removing_page_lifecycle_allows_manual_js_owner_transfer() {
     let mut js_host: JsAppHost = bootstrap
         .into_js_host()
         .expect("manual controller should transfer to JS owner");
-    assert!(js_host.is_active());
+    assert!(
+        js_host
+            .is_active()
+            .expect("JS host should report active state")
+    );
     js_host.unmount().expect("JS owner should unmount");
     detach(&target.into());
 }

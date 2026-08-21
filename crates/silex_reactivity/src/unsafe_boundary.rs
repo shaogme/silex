@@ -9,7 +9,7 @@
 use crate::{
     ReactiveError, ReactiveResult,
     borrow::SharedCell,
-    error::{ErrorHandlerKey, ErrorSlot, HandlerRecord},
+    error::{ErrorEvent, ErrorHandlerKey, ErrorSlot, HandlerRecord},
     handle::NodeKindTag,
     internal::NodeId,
     owner::ScopeStorage,
@@ -23,6 +23,27 @@ use std::{
 };
 
 pub(crate) type ErasedScopeState = crate::borrow::BorrowCell<ScopeStateInner<'static>>;
+
+/// A deferred error event retained by the scheduler across one queue flush.
+pub(crate) struct ErasedErrorEvent {
+    event: ErrorEvent<'static>,
+}
+
+impl ErasedErrorEvent {
+    pub(crate) fn from_typed<'scope>(event: ErrorEvent<'scope>) -> Self {
+        // SAFETY: the scheduler drops or restores this event before the owner
+        // registry can release its source scope.
+        Self {
+            event: unsafe { std::mem::transmute(event) },
+        }
+    }
+
+    pub(crate) fn restore<'scope>(self, _owner: &ScopeState<'scope>) -> ErrorEvent<'scope> {
+        // SAFETY: callers restore only after resolving the matching active
+        // owner and dispatch synchronously before returning.
+        unsafe { std::mem::transmute(self.event) }
+    }
+}
 
 /// A pointer whose provenance is captured from a live Rust reference.
 ///

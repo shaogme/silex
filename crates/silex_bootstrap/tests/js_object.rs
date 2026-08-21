@@ -51,12 +51,20 @@ fn js_wrapper_retains_the_mounted_owner_and_unmount_is_idempotent() {
         .expect("application should mount before JS transfer");
 
     let mut js_host = JsAppHost::from_app_host(host);
-    assert!(js_host.is_active());
+    assert!(
+        js_host
+            .is_active()
+            .expect("JS host should report active state")
+    );
     assert_eq!(js_host.state(), "active");
     assert_eq!(target.text_content().as_deref(), Some("js-owner"));
 
     js_host.unmount().expect("first JS unmount should succeed");
-    assert!(!js_host.is_active());
+    assert!(
+        !js_host
+            .is_active()
+            .expect("JS host should report active state")
+    );
     assert_eq!(js_host.state(), "ready");
     assert_eq!(target.child_nodes().length(), 0);
 

@@ -1,180 +1,162 @@
 use std::{
-    panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
+    cell::Cell,
+    panic::{AssertUnwindSafe, catch_unwind},
     rc::Rc,
 };
 
 use silex_core::{
-    CallbackInvokeError, CompletionSender, ErrorHandlerToken, ErrorReporter, HandlerLease,
-    ReactiveError, SilexContextProvider, SilexError, SilexErrorKind, SilexResult, rx, unwind_safe,
+    ErrorHandlerToken, ErrorReporter, HandlerLease, ReactiveError, SilexContextProvider,
+    SilexError, SilexErrorKind, SilexResult, WriteSignal,
 };
 use silex_dom::prelude::*;
-use silex_dom::view::{MountOwner, MountState, SharedCell};
+use silex_dom::view::{
+    BranchEvaluation, BranchRenderContext, MountOwner, MountState, SharedCell,
+    mount_branch_stable_cached,
+};
 use silex_macros::component;
 
 struct ParentHandler<'scope> {
-    reporter: ErrorReporter<'scope>,
     lease: HandlerLease<'scope>,
 }
 
 type ParentHandlerCell<'scope> = SharedCell<Option<MountState<'scope, ParentHandler<'scope>>>>;
 type ErrorFactory<'scope> = Rc<dyn Fn(SilexError) -> AnyView<'scope> + 'scope>;
-type RecordError<'scope> = Rc<dyn Fn(SilexError) + 'scope>;
 
-fn submit_boundary_error<'scope>(
-    completion: &CompletionSender<SilexError>,
-    error: SilexError,
-    error_handler: ErrorReporter<'scope>,
-) {
-    let result = completion.submit(error);
-    let Err(error) = result else {
-        return;
-    };
-    let (callback, close) = error.into_parts();
-    let mut errors = Vec::new();
-    if let Some(callback) = callback {
-        errors.push(match callback {
-            CallbackInvokeError::Runtime(error) => {
-                SilexError::fatal(SilexErrorKind::Reactivity(error))
-            }
-            CallbackInvokeError::User(error) => error,
-            CallbackInvokeError::Handler(error) => {
-                SilexError::fatal(SilexErrorKind::Reactivity(ReactiveError::Handler(error)))
-            }
-        });
-    }
-    if let Some(close) = close {
-        errors.push(SilexError::fatal(SilexErrorKind::Close(close)));
-    }
-    for error in errors {
-        let handler_result = catch_unwind(AssertUnwindSafe(|| error_handler.handle(error)));
-        if let Err(handler_panic) = handler_result {
-            let _ = catch_unwind(AssertUnwindSafe(|| completion.cancel()));
-            resume_unwind(handler_panic);
-        }
-    }
+#[derive(Clone)]
+enum BoundaryState {
+    Child { generation: u64 },
+    Switching { error: SilexError, generation: u64 },
+    Fallback { error: SilexError, generation: u64 },
+    Closed,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BoundaryBranchKey {
+    Child(u64),
+    Fallback(u64),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BranchSlotPhase {
+    Child,
+    Switching,
+    Fallback,
+    Closed,
 }
 
 #[derive(Clone, Copy)]
-enum BoundaryPhase {
-    Child,
-    Fallback,
+struct BranchSlotSnapshot {
+    phase: BranchSlotPhase,
+    generation: u64,
 }
 
 #[derive(Clone)]
-struct ErrorBoundaryBranch<'scope> {
-    view: AnyView<'scope>,
-    phase: BoundaryPhase,
-    boundary_handler: ErrorReporter<'scope>,
-    parent_handler: ParentHandlerCell<'scope>,
-    fallback: ErrorFactory<'scope>,
-    record_error: RecordError<'scope>,
+struct ErrorBoundarySlot {
+    state: Rc<Cell<BranchSlotSnapshot>>,
 }
 
-impl<'scope> ErrorBoundaryBranch<'scope> {
-    fn child(
-        view: AnyView<'scope>,
-        boundary_handler: ErrorReporter<'scope>,
-        parent_handler: ParentHandlerCell<'scope>,
-        fallback: ErrorFactory<'scope>,
-        record_error: RecordError<'scope>,
-    ) -> Self {
+impl ErrorBoundarySlot {
+    fn new() -> Self {
         Self {
-            view,
-            phase: BoundaryPhase::Child,
-            boundary_handler,
-            parent_handler,
-            fallback,
-            record_error,
+            state: Rc::new(Cell::new(BranchSlotSnapshot {
+                phase: BranchSlotPhase::Child,
+                generation: 0,
+            })),
         }
     }
 
-    fn fallback(
-        view: AnyView<'scope>,
-        boundary_handler: ErrorReporter<'scope>,
-        parent_handler: ParentHandlerCell<'scope>,
-        fallback: ErrorFactory<'scope>,
-        record_error: RecordError<'scope>,
-    ) -> Self {
-        Self {
-            view,
-            phase: BoundaryPhase::Fallback,
-            boundary_handler,
-            parent_handler,
-            fallback,
-            record_error,
-        }
-    }
-
-    fn parent_handler(&self) -> SilexResult<ErrorReporter<'scope>> {
-        let handler = self.parent_handler.with(|state| {
-            state
-                .as_ref()
-                .and_then(|state| state.with(|handler| handler.reporter).ok())
+    fn mount_child(&self, generation: u64) {
+        self.state.set(BranchSlotSnapshot {
+            phase: BranchSlotPhase::Child,
+            generation,
         });
-        handler.ok_or_else(|| {
-            SilexError::fatal(SilexErrorKind::Framework(
-                "ErrorBoundary parent handler must be resolved during mount".to_string(),
-            ))
-        })
     }
 
-    fn mount_inner(
-        self,
-        owner: &dyn MountOwner<'scope>,
-        parent: &web_sys::Node,
-        attrs: Vec<AttrOp<'scope>>,
-        _error_handler: ErrorReporter<'scope>,
-    ) -> silex_core::SilexResult<MountInstance<'scope>> {
-        let phase = self.phase;
-        let child_handler = self.boundary_handler;
-        let parent_handler = self.parent_handler()?;
-        let fallback = self.fallback.clone();
-        let record_error = self.record_error.clone();
-        let fallback_attrs = attrs.clone();
-        match phase {
-            BoundaryPhase::Child => {
-                let result = self.view.mount(owner, parent, attrs, child_handler);
-                match result {
-                    Ok(instance) => Ok(instance),
-                    Err(error @ SilexError::Recoverable(_)) => {
-                        record_error(error.clone());
-                        fallback(error).mount(owner, parent, fallback_attrs, parent_handler)
-                    }
-                    Err(error @ SilexError::Fatal(_)) => Err(error),
-                }
-            }
-            BoundaryPhase::Fallback => self.view.mount(owner, parent, attrs, parent_handler),
-        }
+    fn dispose_current(&self, generation: u64) {
+        self.state.set(BranchSlotSnapshot {
+            phase: BranchSlotPhase::Switching,
+            generation,
+        });
     }
-}
 
-impl<'scope> ApplyAttributes<'scope> for ErrorBoundaryBranch<'scope> {
-    fn apply_attributes(&mut self, attrs: Vec<AttrOp<'scope>>) {
-        self.view.apply_attributes(attrs);
+    fn replace_with_fallback(&self, generation: u64) {
+        self.state.set(BranchSlotSnapshot {
+            phase: BranchSlotPhase::Fallback,
+            generation,
+        });
+    }
+
+    fn close(&self) {
+        let generation = self.state.get().generation;
+        self.state.set(BranchSlotSnapshot {
+            phase: BranchSlotPhase::Closed,
+            generation,
+        });
+    }
+
+    fn generation(&self) -> u64 {
+        self.state.get().generation
+    }
+
+    fn is_closed(&self) -> bool {
+        self.state.get().phase == BranchSlotPhase::Closed
+    }
+
+    fn is_fallback_active(&self) -> bool {
+        self.state.get().phase == BranchSlotPhase::Fallback
     }
 }
 
-impl<'scope> View<'scope> for ErrorBoundaryBranch<'scope> {
+type BranchKeyProvider<'scope> =
+    Rc<dyn Fn() -> SilexResult<BranchEvaluation<BoundaryBranchKey, BoundaryState>> + 'scope>;
+type BranchRenderer<'scope> = Rc<
+    dyn Fn(
+            BranchEvaluation<BoundaryBranchKey, BoundaryState>,
+            BranchRenderContext<'scope>,
+        ) -> AnyView<'scope>
+        + 'scope,
+>;
+
+#[derive(Clone)]
+struct ErrorBoundaryBranchView<'scope> {
+    key: BranchKeyProvider<'scope>,
+    render: BranchRenderer<'scope>,
+}
+
+impl ApplyAttributes<'_> for ErrorBoundaryBranchView<'_> {}
+
+impl<'scope> View<'scope> for ErrorBoundaryBranchView<'scope> {
     fn mount(
         &self,
         owner: &dyn MountOwner<'scope>,
         parent: &web_sys::Node,
         attrs: Vec<AttrOp<'scope>>,
         error_handler: ErrorReporter<'scope>,
-    ) -> silex_core::SilexResult<MountInstance<'scope>> {
-        self.clone()
-            .mount_inner(owner, parent, attrs, error_handler)
+    ) -> SilexResult<MountInstance<'scope>> {
+        let key = self.key.clone();
+        let render = self.render.clone();
+        mount_branch_stable_cached(
+            owner,
+            parent,
+            attrs,
+            error_handler,
+            move || key(),
+            move |evaluation, context| render(evaluation, context),
+        )
     }
 }
 
 #[derive(Clone)]
 struct ErrorBoundaryView<'scope> {
-    view: AnyView<'scope>,
+    view: ErrorBoundaryBranchView<'scope>,
     phase_handler: ErrorReporter<'scope>,
     parent_handler: ParentHandlerCell<'scope>,
+    fallback: ErrorFactory<'scope>,
+    state: WriteSignal<'scope, BoundaryState>,
+    slot: ErrorBoundarySlot,
     _boundary_handler: ErrorHandlerToken<'scope>,
+    _boundary_lease: HandlerLease<'scope>,
     _phase_handler: ErrorHandlerToken<'scope>,
-    _completion_error_handler: ErrorHandlerToken<'scope>,
 }
 
 impl<'scope> ApplyAttributes<'scope> for ErrorBoundaryView<'scope> {
@@ -191,16 +173,40 @@ impl<'scope> View<'scope> for ErrorBoundaryView<'scope> {
         attrs: Vec<AttrOp<'scope>>,
         error_handler: ErrorReporter<'scope>,
     ) -> silex_core::SilexResult<MountInstance<'scope>> {
+        debug_assert!(!self.slot.is_closed());
         let token = owner.token();
         let lease = error_handler
             .lease()
             .map_err(|error| SilexError::fatal(ReactiveError::Handler(error)))?;
-        let parent_state = token.owner_state(ParentHandler {
-            reporter: error_handler,
-            lease,
-        })?;
+        let parent_state = token.owner_state(ParentHandler { lease })?;
         self.parent_handler.set(Some(parent_state));
-        self.view.mount(owner, parent, attrs, self.phase_handler)
+        let slot = self.slot.clone();
+        let cleanup_slot = slot.clone();
+        let closed_state = self.state;
+        owner.on_cleanup(
+            Box::new(move || {
+                cleanup_slot.close();
+                let _ = closed_state.set(BoundaryState::Closed);
+                Ok(())
+            }),
+            error_handler,
+        )?;
+        match self
+            .view
+            .mount(owner, parent, attrs.clone(), self.phase_handler)
+        {
+            Ok(instance) => Ok(instance),
+            Err(error @ SilexError::Recoverable(_)) => {
+                let generation = slot.generation().saturating_add(1);
+                self.state.set(BoundaryState::Fallback {
+                    error: error.clone(),
+                    generation,
+                })?;
+                slot.replace_with_fallback(generation);
+                (self.fallback)(error).mount(owner, parent, attrs, error_handler)
+            }
+            Err(error) => Err(error),
+        }
     }
 }
 
@@ -208,6 +214,17 @@ impl<'scope> View<'scope> for ErrorBoundaryView<'scope> {
 ///
 /// The child factory receives the boundary handler so scope-bound services can
 /// bind their construction-time effects to this boundary before mount.
+/// Recoverable errors from an already-mounted child are dispatched during the
+/// deferred phase at the end of the current runtime flush. The child branch is
+/// disposed before the fallback branch is mounted. Errors while constructing or
+/// mounting the fallback are routed to the parent handler and terminate this
+/// boundary; they are not sent back to the failed child branch.
+///
+/// Callers should observe the resulting DOM or owner cleanup when coordinating
+/// with a boundary. They should not depend on a fixed number of JavaScript
+/// microtasks, and custom views should pass the supplied error reporter to
+/// their owner-bound effects and cleanups rather than forwarding errors through
+/// a completion endpoint.
 #[component]
 pub fn ErrorBoundary<'scope, Ctx, FB, CH, V1, V2>(
     #[ctx] ctx: Ctx,
@@ -221,38 +238,50 @@ where
     V1: View<'scope> + 'scope,
     V2: View<'scope> + 'scope,
 {
-    let (error, set_error) = owner.signal(None::<SilexError>)?;
-    let completion = owner.completion_sender(unwind_safe(move |value| {
-        let _ = set_error.set(Some(value));
-        Ok(())
-    }))?;
-    let completion_error_handler = owner.error_handler(move |error| {
-        let _ = set_error.set(Some(error));
-    })?;
-    let completion_error_handler_for_boundary = completion_error_handler.clone();
-    let reporter_completion = completion.clone();
+    let (state, set_state) = owner.signal(BoundaryState::Child { generation: 0 })?;
+    let state_for_boundary = state;
+    let set_state_for_boundary = set_state;
     let boundary_handler = owner.error_handler(move |error| {
-        let completion = reporter_completion.clone();
-        let error_handler = completion_error_handler_for_boundary.view();
-        let _ = owner.spawn_scoped(
-            async move {
-                submit_boundary_error(&completion, error, error_handler);
-            },
-            error_handler,
-        );
+        let Ok(BoundaryState::Child { generation }) = state_for_boundary.get_untracked() else {
+            return;
+        };
+        let generation = generation.saturating_add(1);
+        set_state_for_boundary
+            .set(BoundaryState::Switching { error, generation })
+            .expect("boundary state should remain active while handling an error");
     })?;
+    let boundary_lease = boundary_handler
+        .view()
+        .lease()
+        .map_err(|error| SilexError::fatal(ReactiveError::Handler(error)))?;
     let boundary_handler_view = boundary_handler.view();
 
     let parent_handler: ParentHandlerCell<'scope> = SharedCell::new(None);
     let fallback = Rc::new(move |error: SilexError| fallback(error).into_any());
-    let record_error = Rc::new(move |error: SilexError| {
-        let _ = set_error.set(Some(error));
-    });
-    let boundary_handler_for_phase = boundary_handler.clone();
+    let slot = ErrorBoundarySlot::new();
+    let boundary_handler_for_phase = boundary_lease.clone();
+    let set_state_for_phase = set_state;
     let phase_handler = {
         let parent_handler = parent_handler.clone();
+        let state = state;
+        let phase_slot = slot.clone();
         owner.error_handler(move |error_value| {
-            if error.get_untracked().ok().flatten().is_some() {
+            let snapshot = state.get_untracked();
+            let child_active = snapshot
+                .as_ref()
+                .is_ok_and(|state| matches!(state, BoundaryState::Child { .. }));
+            if child_active {
+                let _ = boundary_handler_for_phase.handle(error_value);
+            } else {
+                if snapshot.as_ref().is_ok_and(|state| {
+                    matches!(
+                        state,
+                        BoundaryState::Switching { .. } | BoundaryState::Fallback { .. }
+                    )
+                }) {
+                    phase_slot.close();
+                    let _ = set_state_for_phase.set(BoundaryState::Closed);
+                }
                 let parent = parent_handler.with(|state| {
                     state
                         .as_ref()
@@ -263,73 +292,98 @@ where
                 } else {
                     let _ = boundary_handler_for_phase.handle(error_value);
                 }
-            } else {
-                let _ = boundary_handler_for_phase.handle(error_value);
             }
         })?
     };
 
-    let fallback = fallback.clone();
-    let children = children.clone();
-    let child_ctx = SilexContextProvider::with_error_reporter(ctx, boundary_handler_view);
-    let parent_handler_for_view = parent_handler.clone();
-    let phase_handler_view = phase_handler.view();
-    let phase_ctx = SilexContextProvider::with_error_reporter(ctx, phase_handler_view);
-    let completion_error_handler_view = completion_error_handler.view();
-    let view = rx!(phase_ctx; {
-        if let Some(error) = (*$error).clone() {
-            ErrorBoundaryBranch::fallback(
-                fallback(error),
-                boundary_handler_view,
-                parent_handler_for_view.clone(),
-                fallback.clone(),
-                record_error.clone(),
-            )
-            .into_any()
-        } else {
-            let result = catch_unwind(AssertUnwindSafe({
-                let children = children.clone();
-                move || children(child_ctx).into_any()
-            }));
-
-            match result {
-                Ok(view) => ErrorBoundaryBranch::child(
-                    view,
-                    boundary_handler_view,
-                    parent_handler_for_view.clone(),
-                    fallback.clone(),
-                    record_error.clone(),
-                )
-                .into_any(),
-                Err(payload) => {
-                    let message = if let Some(value) = payload.downcast_ref::<&str>() {
-                        format!("Panic: {value}")
-                    } else if let Some(value) = payload.downcast_ref::<String>() {
-                        format!("Panic: {value}")
-                    } else {
-                        "Unknown Panic".to_string()
-                    };
-                    let completion = completion.clone();
-                    let error = SilexError::fatal(SilexErrorKind::Javascript(message));
-                    let error_handler = completion_error_handler_view;
-                    let _ = owner.spawn_scoped(
-                        async move {
-                            submit_boundary_error(&completion, error, error_handler);
-                        },
-                        error_handler,
-                    );
-                    AnyView::Empty
-                }
+    let key_state = state;
+    let key = Rc::new(move || {
+        let snapshot = key_state.get()?;
+        let key = match &snapshot {
+            BoundaryState::Child { generation } => BoundaryBranchKey::Child(*generation),
+            BoundaryState::Switching { generation, .. }
+            | BoundaryState::Fallback { generation, .. } => {
+                BoundaryBranchKey::Fallback(*generation)
             }
-        }
-    })?;
+            BoundaryState::Closed => BoundaryBranchKey::Fallback(u64::MAX),
+        };
+        Ok(BranchEvaluation::new(key, snapshot))
+    });
+
+    let branch_slot = slot.clone();
+    let branch_fallback = fallback.clone();
+    let branch_children = children.clone();
+    let branch_ctx = SilexContextProvider::with_error_reporter(ctx, boundary_handler_view);
+    let branch_set_state = set_state;
+    let render = Rc::new(
+        move |evaluation: BranchEvaluation<BoundaryBranchKey, BoundaryState>,
+              _context: BranchRenderContext<'scope>| {
+            let (key, snapshot) = evaluation.into_parts();
+            match (key, snapshot) {
+                (BoundaryBranchKey::Child(generation), BoundaryState::Child { .. }) => {
+                    branch_slot.mount_child(generation);
+                    let result = catch_unwind(AssertUnwindSafe({
+                        let children = branch_children.clone();
+                        let child_ctx = branch_ctx;
+                        move || children(child_ctx).into_any()
+                    }));
+                    match result {
+                        Ok(view) => view,
+                        Err(payload) => {
+                            let message = if let Some(value) = payload.downcast_ref::<&str>() {
+                                format!("Panic: {value}")
+                            } else if let Some(value) = payload.downcast_ref::<String>() {
+                                format!("Panic: {value}")
+                            } else {
+                                "Unknown Panic".to_string()
+                            };
+                            let error = SilexError::fatal(SilexErrorKind::Javascript(message));
+                            let next_generation = generation.saturating_add(1);
+                            let _ = branch_set_state.set(BoundaryState::Switching {
+                                error,
+                                generation: next_generation,
+                            });
+                            AnyView::Empty
+                        }
+                    }
+                }
+                (
+                    BoundaryBranchKey::Fallback(generation),
+                    BoundaryState::Switching { error, .. },
+                ) => {
+                    branch_slot.dispose_current(generation);
+                    let view = branch_fallback(error.clone());
+                    let _ = branch_set_state.set(BoundaryState::Fallback { error, generation });
+                    branch_slot.replace_with_fallback(generation);
+                    view
+                }
+                (
+                    BoundaryBranchKey::Fallback(generation),
+                    BoundaryState::Fallback { error, .. },
+                ) => {
+                    if branch_slot.is_closed() || branch_slot.is_fallback_active() {
+                        return AnyView::Empty;
+                    }
+                    branch_slot.replace_with_fallback(generation);
+                    branch_fallback(error)
+                }
+                (_, BoundaryState::Closed) => AnyView::Empty,
+                _ => AnyView::Empty,
+            }
+        },
+    );
+
+    let view = ErrorBoundaryBranchView { key, render };
 
     Ok(ErrorBoundaryView {
-        view: view.into_any(),
-        phase_handler: phase_handler_view,
+        view,
+        phase_handler: phase_handler.view(),
         parent_handler,
+        fallback,
+        state: set_state,
+        slot,
         _boundary_handler: boundary_handler,
+        _boundary_lease: boundary_lease,
         _phase_handler: phase_handler,
-        _completion_error_handler: completion_error_handler,
     })
 }
