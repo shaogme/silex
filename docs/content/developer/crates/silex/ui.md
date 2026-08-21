@@ -52,8 +52,8 @@ silex::ui::inject_shadcn_base_styles();
 | `radio_group` | `RadioGroup`、`RadioGroupItem` | orientation、selected value、disabled、select/change callback。 |
 | `tabs` | `Tabs`、`TabsList`、`TabsTrigger`、`TabsContent` | `active_tab` signal 与 trigger/content value。 |
 | `accordion` | `Accordion`、`AccordionItem`、`AccordionTrigger`、`AccordionContent` | item value、trigger open signal 和 click callback。 |
-| `dialog` | `Dialog`、`DialogHeader`、`DialogTitle`、`DialogDescription`、`DialogFooter` | `open` signal、close callback，内容通过 Portal。 |
-| `popover` | `Popover`、`PopoverTrigger`、`PopoverContent`、`PopoverAnchor`、`PopoverClose`、`PopoverPortal`、`PopoverHeader`、`PopoverTitle`、`PopoverDescription` | `PopoverContext` 管理 open 和 anchor/content bounds。 |
+| `dialog` | `Dialog`、`DialogHeader`、`DialogTitle`、`DialogDescription`、`DialogFooter` | `open` signal、close callback，内容通过稳定 Portal；打开时管理焦点，关闭后恢复触发元素焦点。 |
+| `popover` | `Popover`、`PopoverTrigger`、`PopoverContent`、`PopoverAnchor`、`PopoverClose`、`PopoverHeader`、`PopoverTitle`、`PopoverDescription` | `PopoverContext` 管理 open 和 anchor/content bounds；overlay 与 content wrapper 保持稳定。 |
 | `tooltip` | `TooltipProvider`、`Tooltip`、`TooltipTrigger`、`TooltipContent` | `TooltipContext` 管理 hover/focus、anchor 和延迟关闭 timer。 |
 | `separator` / `skeleton` | `Separator`、`Skeleton` | orientation 分隔线和 pulse 占位内容。 |
 

@@ -33,8 +33,11 @@ silex_i18n = { workspace = true, optional = true }
 wasm-bindgen.workspace = true
 web-sys = { workspace = true, features = [
     "History",
+    "HtmlElement",
     "Node",
     "NodeList",
+    "Range",
+    "Selection",
     "UrlSearchParams"
 ] }
 js-sys.workspace = true

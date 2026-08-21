@@ -1,3 +1,4 @@
+use crate::components::Portal;
 use silex_core::prelude::*;
 use silex_dom::prelude::*;
 use silex_html::{div, p};
@@ -116,11 +117,6 @@ pub fn PopoverDescription<'scope, Ctx>(
     Ok(p(children)
         .attr("data-slot", "popover-description")
         .class(desc_cls))
-}
-
-#[component]
-pub fn PopoverPortal<'scope, Ctx>(#[ctx] ctx: Ctx, children: AnyView<'scope>) -> impl View<'scope> {
-    crate::components::Portal(ctx, children).build()
 }
 
 #[component]
@@ -334,35 +330,41 @@ pub fn PopoverContent<'scope, Ctx>(
     let ctx_open = context.open;
     let is_open = rx!(ctx; *$open || *$ctx_open)?;
 
-    Ok(rx!(ctx; {
+    let content_state = rx!(ctx; {
         if *$is_open {
-            crate::components::Portal(ctx, chain!(
-                // Overlay for click-outside
-                div(()).class(tw!("fixed inset-0 z-50 bg-transparent")).on(
-                    event::click,
-                    move |_| -> SilexResult<()> {
-                        context.close()?;
-                        on_close.invoke(())
-                    }
-                ),
-                // Content wrapper
-                div(div(stored.with(|children| children.clone())?
-                    .attr("data-slot", "popover-content")
-                    .attr("data-state", "open")
-                    .attr("data-side", side_val)
-                    .attr("data-align", align_val)
-                    .attr("role", "dialog")
-                    .attr("tabindex", "-1")
-                    .class(content_cls))
-                .attr("data-radix-popper-content-wrapper", "")
-                .class(wrapper_cls)
-                .attr("style", wrapper_style)
-            ))).build()
-            .into_any()
+            "open".to_string()
         } else {
-            ().into_any()
+            "closed".to_string()
         }
-    })?)
+    })?;
+    let content = div(div(stored
+        .with(|children| children.clone())?
+        .attr("data-slot", "popover-content")
+        .attr("data-state", content_state)
+        .attr("data-side", side_val)
+        .attr("data-align", align_val)
+        .attr("role", "dialog")
+        .attr("tabindex", "-1")
+        .class(content_cls)))
+    .attr("data-radix-popper-content-wrapper", "")
+    .class(wrapper_cls)
+    .attr("style", wrapper_style);
+    let portal = chain!(
+        // Overlay for click-outside
+        div(())
+            .attr("data-slot", "popover-overlay")
+            .class(tw!("fixed inset-0 z-50 bg-transparent"))
+            .on(event::click, move |_| -> SilexResult<()> {
+                context.close()?;
+                on_close.invoke(())
+            }),
+        content,
+    );
+
+    Ok(Portal(ctx, is_open)
+        .children(portal)
+        .attr("data-portal-host", "popover")
+        .build())
 }
 
 #[component]

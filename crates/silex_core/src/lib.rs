@@ -193,8 +193,8 @@ impl<'scope, T: 'scope> Rx<'scope, T, RxValueKind> {
         RxRead::with_untracked(self, f)
     }
 
-    pub fn into_signal(self) -> crate::reactivity::Signal<'scope, T> {
-        crate::reactivity::Signal::from_rx(self)
+    pub fn into_signal(self) -> Signal<'scope, T> {
+        Signal::from_rx(self)
     }
 
     pub(crate) fn is_constant(&self) -> bool {

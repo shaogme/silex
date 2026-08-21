@@ -1,3 +1,4 @@
+use crate::components::Portal;
 use silex_core::prelude::*;
 use silex_dom::prelude::*;
 use silex_dom::view::MountOwnerToken;
@@ -78,7 +79,7 @@ impl<'scope> TooltipContext<'scope> {
             &owner,
             move || -> SilexResult<()> {
                 timer.update(|slot| *slot = None)?;
-                open.set(false)?;
+                open.set_if_changed(false)?;
                 Ok(())
             },
             Duration::from_millis(delay_ms.max(0) as u64),
@@ -92,7 +93,7 @@ impl<'scope> TooltipContext<'scope> {
     /// Called on pointer enter (trigger or content): cancels closing and opens tooltip.
     pub fn on_pointer_enter(&self) -> SilexResult<()> {
         self.cancel_close_timer()?;
-        self.open.set(true)?;
+        self.open.set_if_changed(true)?;
         Ok(())
     }
 
@@ -107,7 +108,7 @@ impl<'scope> TooltipContext<'scope> {
 
     pub fn close(&self) -> SilexResult<()> {
         self.cancel_close_timer()?;
-        self.open.set(false)?;
+        self.open.set_if_changed(false)?;
         Ok(())
     }
 
@@ -322,7 +323,7 @@ pub fn TooltipContent<'scope, Ctx>(
         };
 
         let base = tw!(
-            "relative z-50 w-fit rounded-md bg-slate-900 px-3 py-1.5 text-xs text-slate-50 shadow-md animate-in fade-in-0 zoom-in-95 whitespace-nowrap dark:bg-slate-50 dark:text-slate-900 pointer-events-auto"
+            "relative z-50 w-fit rounded-md bg-slate-900 px-3 py-1.5 text-xs text-slate-50 shadow-md animate-in fade-in-0 zoom-in-95 whitespace-nowrap select-text dark:bg-slate-50 dark:text-slate-900 pointer-events-auto"
         );
         let extra = $class;
         if extra.is_empty() {
@@ -342,40 +343,34 @@ pub fn TooltipContent<'scope, Ctx>(
         }
     })?;
 
-    let ctx_open = context.open;
-    Ok(rx!(ctx; {
-        if *$ctx_open {
-            let children_view = stored_children.with(|children| children.clone());
-            let arrow_view = if !*$hide_arrow {
-                div(()).class(arrow_cls).into_any()
-            } else {
-                ().into_any()
-            };
-
-            crate::components::Portal(
-                ctx,
-                div(div(chain!(children_view, arrow_view))
-                    .attr("data-slot", "tooltip-content")
-                    .attr("data-side", side_val)
-                    .attr("data-align", "center")
-                    .attr("data-state", "delayed-open")
-                    .attr("role", "tooltip")
-                    .class(content_cls)
-                    .on(event::mouseenter, move |_| -> SilexResult<()> {
-                        context.on_pointer_enter()
-                    })
-                    .on(event::mouseleave, move |_| -> SilexResult<()> {
-                        context.on_pointer_leave()
-                    }))
-                .attr("data-radix-popper-content-wrapper", "")
-                .class(wrapper_cls)
-                .attr("style", wrapper_style)
-                .apply(owner_binding(context)),
-            )
-            .build()
-            .into_any()
+    let children_view = stored_children.with(|children| children.clone())?;
+    let arrow_view = rx!(ctx; {
+        if !*$hide_arrow {
+            div(()).class(arrow_cls).into_any()
         } else {
             ().into_any()
         }
-    })?)
+    })?;
+    let content = div(div(chain!(children_view, arrow_view))
+        .attr("data-slot", "tooltip-content")
+        .attr("data-side", side_val)
+        .attr("data-align", "center")
+        .attr("data-state", "delayed-open")
+        .attr("role", "tooltip")
+        .class(content_cls)
+        .on(event::mouseenter, move |_| -> SilexResult<()> {
+            context.on_pointer_enter()
+        })
+        .on(event::mouseleave, move |_| -> SilexResult<()> {
+            context.on_pointer_leave()
+        }))
+    .attr("data-radix-popper-content-wrapper", "")
+    .class(wrapper_cls)
+    .attr("style", wrapper_style)
+    .apply(owner_binding(context));
+
+    Ok(Portal(ctx, context.open)
+        .children(content)
+        .attr("data-portal-host", "tooltip")
+        .build())
 }

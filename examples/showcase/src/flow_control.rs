@@ -210,40 +210,36 @@ pub fn PortalDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     Ok(div![
         h3("Portal Demo"),
         button("Toggle Modal").on(event::click, set_show_modal.updater(|v| *v = !*v)),
-        Show(ctx, show_modal)
+        Portal(ctx, show_modal)
             .children(
-                Portal(
-                    ctx,
+                div![
                     div![
-                        div![
-                            h4("I am a Modal!"),
-                            p("I am rendered via Portal directly into the body, but I share ctx!"),
-                            button("Close").on(event::click, set_show_modal.setter(false))
-                        ]
-                        .style(
-                            sty(ctx)
-                                .background(AppTheme::SURFACE)?
-                                .padding(px(20))?
-                                .border_radius(px(8))?
-                                .box_shadow("0 4px 12px rgba(0,0,0,0.2)")?
-                                .min_width(px(300))?
-                        )
+                        h4("I am a Modal!"),
+                        p("I am rendered via Portal directly into the body, but I share ctx!"),
+                        button("Close").on(event::click, set_show_modal.setter(false))
                     ]
                     .style(
                         sty(ctx)
-                            .position(PositionKeyword::Fixed)?
-                            .top(px(0))?
-                            .left(px(0))?
-                            .width(vw(100))?
-                            .height(vh(100))?
-                            .background(rgba(0, 0, 0, 0.5))?
-                            .display(DisplayKeyword::Flex)?
-                            .justify_content(JustifyContentKeyword::Center)?
-                            .align_items(AlignItemsKeyword::Center)?
-                            .z_index(9999)?
+                            .background(AppTheme::SURFACE)?
+                            .padding(px(20))?
+                            .border_radius(px(8))?
+                            .box_shadow("0 4px 12px rgba(0,0,0,0.2)")?
+                            .min_width(px(300))?
                     )
+                ]
+                .style(
+                    sty(ctx)
+                        .position(PositionKeyword::Fixed)?
+                        .top(px(0))?
+                        .left(px(0))?
+                        .width(vw(100))?
+                        .height(vh(100))?
+                        .background(rgba(0, 0, 0, 0.5))?
+                        .display(DisplayKeyword::Flex)?
+                        .justify_content(JustifyContentKeyword::Center)?
+                        .align_items(AlignItemsKeyword::Center)?
+                        .z_index(9999)?
                 )
-                .build()
             )
             .build(),
     ])

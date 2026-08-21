@@ -51,19 +51,36 @@ factory 的 panic 会转换成 fatal JavaScript error，再进入 boundary 的�
 
 ## `Portal`
 
-`Portal(ctx, children)` 把子 view mount 到当前 DOM 树之外的节点，默认目标是
-`document.body`；`.mount_to(web_sys::Node)` 可以指定其它目标：
+Portal 有两个显式入口。`PortalHost` 只负责把子 view mount 到当前 DOM 树之外的
+稳定 host；带 `open` 的 `Portal` 额外管理 host 的可见状态。默认目标都是
+`document.body`，`.mount_to(Some(target_node))` 可以指定其它目标：
 
 ```rust
-let modal = Portal(ctx, dialog_view)
-    .mount_to(target_node)
+let host = PortalHost(ctx)
+    .children(dialog_view)
+    .mount_to(Some(target_node.clone().into()))
+    .build();
+
+let modal = Portal(ctx, open)
+    .children(dialog_view)
+    .content_mode(PortalContentMode::KeepAlive)
     .build();
 ```
 
-Portal 创建一个 `display: contents` 容器，并把容器作为本次 mount 的
-`MountInstance` 节点返回。子 view 仍由同一个 owner、context 和 error reporter
-管理，因此响应式更新、事件和 cleanup 不会因为 DOM 目标改变而脱离组件 scope。
-owner cleanup 会移除容器；子 view mount 失败或 panic 时也会回滚容器。
+带 `open` 的 Portal 始终创建一个稳定的 `display: contents` host，并把 host 作为
+本次 mount 的 `MountInstance` 节点返回。`open` 只更新 host 的
+`data-state`、`aria-hidden`、`hidden` 和 `pointer-events`，不会删除 host。
+Portal 自身的属性只作用于 host，子 view 的属性仍作用于子节点。
+
+`PortalContentMode::KeepAlive`（默认）在关闭时保留内容 owner 和 DOM；
+`PortalContentMode::UnmountWhenClosed` 保留 host 和 slot，但在关闭时卸载内容，
+再次打开时重新挂载。无论哪种模式，子 view 都由同一个 context、error reporter
+和 owner 生命周期管理；owner cleanup 会移除 host，子 view mount 失败或 panic
+时也会回滚已创建的节点。
+
+不要把 Portal 放进 `Show`、`if open` 或其它响应式结构分支；这些分支会销毁
+Portal owner，重新创建 host，并重新触发弹层内容的 mount。需要条件显示时，
+应让带 `open` 的 Portal 始终存在，并通过 signal 控制 host 状态。
 
 默认目标需要浏览器 `document.body`。在 native 或 detached document 测试中，应
 只构造 Portal view，或显式提供有效的 `Node`；不要把 native 构造测试当作真实

@@ -210,6 +210,13 @@ impl<'owner, T: 'owner> WriteSignal<'owner, T> {
         self.inner.set(value).map_err(SilexError::fatal)
     }
 
+    pub fn set_if_changed(&self, value: T) -> SilexResult<bool>
+    where
+        T: PartialEq,
+    {
+        self.inner.set_if_changed(value).map_err(SilexError::fatal)
+    }
+
     pub fn update<U>(&self, f: impl FnOnce(&mut T) -> U) -> SilexResult<U> {
         self.inner.update(f).map_err(SilexError::fatal)
     }
@@ -255,6 +262,13 @@ impl<'owner, T> RwSignal<'owner, T> {
         T: 'owner,
     {
         self.write.set(value)
+    }
+
+    pub fn set_if_changed(&self, value: T) -> SilexResult<bool>
+    where
+        T: PartialEq + 'owner,
+    {
+        self.write.set_if_changed(value)
     }
 
     pub fn update(&self, f: impl FnOnce(&mut T)) -> SilexResult<()>
@@ -332,6 +346,12 @@ impl<'owner, T: 'owner> From<Computed<'owner, T>> for Signal<'owner, T> {
 impl<'owner, T: 'owner> From<StoredValue<'owner, T>> for Signal<'owner, T> {
     fn from(stored: StoredValue<'owner, T>) -> Self {
         Self::from_rx(Rx::from_stored(stored))
+    }
+}
+
+impl<'owner, T: 'owner> From<Rx<'owner, T>> for Signal<'owner, T> {
+    fn from(rx: Rx<'owner, T>) -> Self {
+        Self::from_rx(rx)
     }
 }
 

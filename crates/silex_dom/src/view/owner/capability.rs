@@ -308,7 +308,12 @@ impl<'scope> MountOwnerToken<'scope> {
         Ok((child, Self { context, state }))
     }
 
-    pub(crate) fn close(&self) -> Result<(), CloseError> {
+    /// Close this DOM owner and all child resources exactly once.
+    ///
+    /// This is public so a composite view that creates a provisional child
+    /// owner can roll that owner back when a later mount step fails. Calling
+    /// it again is safe and returns the original close result.
+    pub fn close(&self) -> Result<(), CloseError> {
         self.state.close()
     }
 

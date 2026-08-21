@@ -1,7 +1,11 @@
+use crate::components::Portal;
 use silex_core::prelude::*;
+use silex_dom::document;
 use silex_dom::prelude::*;
 use silex_html::{button, div};
 use silex_macros::{component, styled, tw};
+use wasm_bindgen::JsCast;
+use web_sys::{Element, HtmlElement};
 
 styled! {
     pub DialogHeader<'scope, Ctx><div>(#[ctx] ctx: Ctx, children: AnyView<'scope>) {
@@ -25,6 +29,37 @@ styled! {
     pub DialogFooter<'scope, Ctx><div>(#[ctx] ctx: Ctx, children: AnyView<'scope>) {
         @apply flex flex-col-reverse gap-2 sm:flex-row sm:justify-end;
     }
+}
+
+fn dialog_focus_binding<'scope>(
+    open: Signal<'scope, bool>,
+    previous_focus: StoredValue<'scope, Option<Element>>,
+) -> AttrOp<'scope> {
+    AttrOp::custom(move |element, owner, error_handler| {
+        let dialog = element.clone();
+        owner.effect(
+            Box::new(move || -> SilexResult<()> {
+                if open.with(|value| *value)? {
+                    if previous_focus.with(|value| value.is_none())? {
+                        previous_focus.set(document().active_element())?;
+                    }
+                    let dialog = dialog.dyn_ref::<HtmlElement>().ok_or_else(|| {
+                        SilexError::fatal(SilexErrorKind::Dom(
+                            "Dialog content must be an HTML element".to_string(),
+                        ))
+                    })?;
+                    dialog.focus().map_err(SilexError::fatal)?;
+                } else if let Some(previous) = previous_focus.with(|value| value.clone())? {
+                    if let Some(previous) = previous.dyn_ref::<HtmlElement>() {
+                        previous.focus().map_err(SilexError::fatal)?;
+                    }
+                    previous_focus.set(None)?;
+                }
+                Ok(())
+            }),
+            error_handler,
+        )
+    })
 }
 
 #[component]
@@ -54,24 +89,31 @@ pub fn Dialog<'scope, Ctx>(
     })?;
 
     let stored_children = owner.stored(children)?;
+    let previous_focus = owner.stored(None::<Element>)?;
 
-    Ok(rx!(ctx; {
-        if *$open {
-            crate::components::Portal(ctx, chain!(
-                // Overlay 遮罩
-                div(())
-                    .class(tw!("fixed inset-0 z-50 bg-black/50 backdrop-blur-xs"))
-                    .on_click(move |_| -> SilexResult<()> { on_close.invoke(()) }),
-                // Content 窗口实体
-                div(chain!(
-                    button("✕")
-                        .class(tw!("absolute right-4 top-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none cursor-pointer border-0 bg-transparent text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-50"))
-                    .on_click(move |_| -> SilexResult<()> { on_close.invoke(()) }),
-                     stored_children.with(|children| children.clone())
-                 )).class(content_cls)
-            )).build().into_any()
-        } else {
-            ().into_any()
-        }
-    })?)
+    let portal = chain!(
+        // Overlay 遮罩
+        div(())
+            .attr("data-slot", "dialog-overlay")
+            .class(tw!("fixed inset-0 z-50 bg-black/50 backdrop-blur-xs"))
+            .on_click(move |_| -> SilexResult<()> { on_close.invoke(()) }),
+        // Content 窗口实体
+        div(chain!(
+            button("✕")
+                .class(tw!("absolute right-4 top-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none cursor-pointer border-0 bg-transparent text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-50"))
+                .on_click(move |_| -> SilexResult<()> { on_close.invoke(()) }),
+            stored_children.with(|children| children.clone())?
+        ))
+        .attr("data-slot", "dialog-content")
+        .attr("role", "dialog")
+        .attr("aria-modal", "true")
+        .attr("tabindex", "-1")
+        .apply(dialog_focus_binding(open, previous_focus))
+        .class(content_cls),
+    );
+
+    Ok(Portal(ctx, open)
+        .children(portal)
+        .attr("data-portal-host", "dialog")
+        .build())
 }
