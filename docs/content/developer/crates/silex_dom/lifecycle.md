@@ -108,6 +108,35 @@ microtask；owner gate 只保证任务执行到 destination 后不再调用用�
 timer、interval、animation frame 和 idle callback 则会在 cleanup 时调用
 对应的 clear/cancel API。
 
+## `OwnedTimeout` 与一次性定时器
+
+`view::OwnedTimeout<'scope>` 是 `set_timeout` 的 owner-bound 封装，专门表示一
+个只执行一次的浏览器 timeout。`OwnedTimeout::schedule` 接收
+`&MountOwnerToken<'scope>`、返回 `SilexResult<()>` 的一次性 task、
+`Duration` 和 `ErrorHandlerInput<'scope>`；创建成功后，timeout、JS callback、
+completion destination 和 cleanup lease 都属于该 owner。
+
+它提供三个生命周期操作：
+
+- `cancel()` 取消尚未执行的 timeout，并把 close 失败返回为 `SilexError`；重复
+  cancel 是安全的；
+- `finish()` 把一次性资源标记为已完成，不执行物理 clear；timeout callback
+  会通过 once guard 消费用户 task 并关闭 callback gate，领取 callback 的状态机
+  仍应调用 `finish()` 标记返回的 resource 已完成；
+- `ticket()` 返回 `OwnedTimeoutTicket`，`is_current(ticket)` 同时检查 ticket
+  是否匹配和资源是否仍 active，适合防止旧 timer callback 触碰新 request。
+
+`OwnedTimeout` 不是跨 owner 的调度器，也不提供线程安全。owner close 会通过
+注册表取消它；owner 已 inactive 时不能用新的 token 调度 timeout。回调执行前
+会经过 host callback gate，因此 owner 已关闭时不会再调用用户 task；回调返回的
+业务/运行时错误由传入的 error handler 处理。
+
+`silex_persist` 的 `PersistWriteMode::Debounced` 使用这个类型保存待提交的
+最新 raw：新 mutation 先取消旧 timeout，owner close、`flush`、`reload`、`remove`
+和外部快照也会取消它。维护任何依赖 `OwnedTimeout` 的状态机时，必须同时保证
+“旧 ticket 不能提交新状态”“创建/取消失败可报告”“owner cleanup 不重复物理
+clear”三个条件。
+
 ## detached helpers
 
 `helpers::detached` 是故意不绑定 owner 的另一组 API，适合应用级、页面级

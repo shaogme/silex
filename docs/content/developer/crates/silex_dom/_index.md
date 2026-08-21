@@ -53,6 +53,7 @@ sort_by = "weight"
 | `MountOwner` / `MountOwnerToken` | 为子树注册 effect、cleanup、动态状态和宿主 callback。 |
 | `AutoReactiveView` | 让 `Rx`、signal、computed 或 stored value 作为文本或动态视图挂载。 |
 | `HostResource` | 由 owner 注册表管理的 window listener、timer、animation frame 等宿主资源；通过 `cancel`/`finish` 显式结束。 |
+| `OwnedTimeout` / `OwnedTimeoutTicket` | owner 绑定的一次性 timeout 封装；支持显式 cancel/finish 和当前 ticket 检查。 |
 | `helpers` | window/document 访问、事件 target 读取、owner-bound timer 和 debounce 辅助函数。 |
 
 应用代码通常从 `silex_dom::prelude` 导入上述 DOM 类型；需要保持依赖
