@@ -1,4 +1,4 @@
-use crate::components::Portal;
+use crate::components::{Portal, PortalHostAttrs};
 use silex_core::prelude::*;
 use silex_dom::prelude::*;
 use silex_html::{div, p};
@@ -363,7 +363,7 @@ pub fn PopoverContent<'scope, Ctx>(
 
     Ok(Portal(ctx, is_open)
         .children(portal)
-        .attr("data-portal-host", "popover")
+        .host_attrs(PortalHostAttrs::new().attr("data-portal-host", "popover")?)
         .build())
 }
 

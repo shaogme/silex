@@ -1,4 +1,4 @@
-use crate::components::Portal;
+use crate::components::{Portal, PortalHostAttrs};
 use silex_core::prelude::*;
 use silex_dom::document;
 use silex_dom::prelude::*;
@@ -114,6 +114,6 @@ pub fn Dialog<'scope, Ctx>(
 
     Ok(Portal(ctx, open)
         .children(portal)
-        .attr("data-portal-host", "dialog")
+        .host_attrs(PortalHostAttrs::new().attr("data-portal-host", "dialog")?)
         .build())
 }

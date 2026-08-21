@@ -241,6 +241,7 @@ pub fn PortalDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                         .z_index(9999)?
                 )
             )
+            .host_attrs(PortalHostAttrs::new().attr("data-portal-host", "showcase-modal")?)
             .build(),
     ])
 }

@@ -1,4 +1,4 @@
-use crate::components::Portal;
+use crate::components::{Portal, PortalHostAttrs};
 use silex_core::prelude::*;
 use silex_dom::prelude::*;
 use silex_dom::view::MountOwnerToken;
@@ -371,6 +371,6 @@ pub fn TooltipContent<'scope, Ctx>(
 
     Ok(Portal(ctx, context.open)
         .children(content)
-        .attr("data-portal-host", "tooltip")
+        .host_attrs(PortalHostAttrs::new().attr("data-portal-host", "tooltip")?)
         .build())
 }

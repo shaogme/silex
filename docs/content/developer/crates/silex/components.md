@@ -52,8 +52,8 @@ factory 的 panic 会转换成 fatal JavaScript error，再进入 boundary 的�
 ## `Portal`
 
 Portal 有两个显式入口。`PortalHost` 只负责把子 view mount 到当前 DOM 树之外的
-稳定 host；带 `open` 的 `Portal` 额外管理 host 的可见状态。默认目标都是
-`document.body`，`.mount_to(Some(target_node))` 可以指定其它目标：
+稳定 host；带 `open` 的 `Portal` 通过内部 visibility root 管理可见状态。默认
+目标都是 `document.body`，`.mount_to(Some(target_node))` 可以指定其它目标：
 
 ```rust
 let host = PortalHost(ctx)
@@ -61,16 +61,40 @@ let host = PortalHost(ctx)
     .mount_to(Some(target_node.clone().into()))
     .build();
 
+let diagnostic_attrs = PortalHostAttrs::new()
+    .data("owner", "profile-dialog")?;
 let modal = Portal(ctx, open)
     .children(dialog_view)
     .content_mode(PortalContentMode::KeepAlive)
+    .host_attrs(diagnostic_attrs)
     .build();
 ```
 
-带 `open` 的 Portal 始终创建一个稳定的 `display: contents` host，并把 host 作为
-本次 mount 的 `MountInstance` 节点返回。`open` 只更新 host 的
-`data-state`、`aria-hidden`、`hidden` 和 `pointer-events`，不会删除 host。
-Portal 自身的属性只作用于 host，子 view 的属性仍作用于子节点。
+Portal 的 DOM 结构固定为：
+
+```text
+body / mount_to target
+└── div[data-portal-host]                 host
+    └── div[data-portal-visibility-root]  private visibility root
+        └── Portal children or content slot
+```
+
+host 是稳定的 `MountInstance` 节点，只负责挂载、诊断 marker 和保持
+`display: contents`。visibility root 不接受用户 attrs，是唯一的可见性边界：
+
+| 状态 | root `display` | `aria-hidden` | `pointer-events` | `data-state` |
+| --- | --- | --- | --- | --- |
+| open | `contents` | `false` | `auto` | `open` |
+| closed | `none !important` | `true` | `none` | `closed` |
+
+关闭时依赖 root 的 `display: none !important`，不依赖 host 的 `hidden` 属性或
+UA stylesheet。`PortalHost` 的 root 初始状态固定为 open；带 `open` 的 Portal
+只更新 root，不删除 host、overlay、wrapper 或 KeepAlive content。
+
+普通 Portal attrs 仍写入 host，但 `hidden`、`aria-hidden`、`inert`、`data-state`
+和 `style` 属于框架保留字段，会返回错误。需要写入 host 的诊断信息时，使用
+`PortalHostAttrs` 的 `attr`、`data`、`class`、`id` 或 `title` 方法；该入口同样
+拒绝保留字段。Portal children 的属性仍作用于 content 节点。
 
 `PortalContentMode::KeepAlive`（默认）在关闭时保留内容 owner 和 DOM；
 `PortalContentMode::UnmountWhenClosed` 保留 host 和 slot，但在关闭时卸载内容，
@@ -80,7 +104,7 @@ Portal 自身的属性只作用于 host，子 view 的属性仍作用于子节�
 
 不要把 Portal 放进 `Show`、`if open` 或其它响应式结构分支；这些分支会销毁
 Portal owner，重新创建 host，并重新触发弹层内容的 mount。需要条件显示时，
-应让带 `open` 的 Portal 始终存在，并通过 signal 控制 host 状态。
+应让带 `open` 的 Portal 始终存在，并通过 signal 控制 visibility root 状态。
 
 默认目标需要浏览器 `document.body`。在 native 或 detached document 测试中，应
 只构造 Portal view，或显式提供有效的 `Node`；不要把 native 构造测试当作真实

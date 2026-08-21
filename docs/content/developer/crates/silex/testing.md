@@ -76,13 +76,27 @@ feature-gated API 应同时有“打开”和“关闭”检查：
 
 - ErrorBoundary 初始错误、deferred child 错误、fallback 错误、重复错误和 root
   close 期间的 pending error；
-- Portal 重复 toggle 不会留下重复 modal 或 detached container；
+- Portal 重复 toggle 不会留下重复 modal 或 detached container；测试同时检查
+  private visibility root 的 computed `display`、content 布局矩形、open/closed
+  状态、关闭态 `elementFromPoint` 命中结果以及 host/root/content identity；
 - Tailwind macro 产生非空 class；
 - UI 示例中的 Dialog、Popover、Tooltip、Slider、Tabs 等真实交互。
 
 这类测试应使用 DOM/owner 状态作为完成条件。`error_boundary.rs` 已提供
 `wait_until_dom_text`、`wait_until_owner_closed` 和 `wait_until_condition` 等
 轮询 helper；不要把“等待固定 N 个 microtask”写成组件契约。
+
+Portal 浏览器回归位于 `crates/silex/tests/portal.rs`，应用级 UI 回归位于
+`examples/ui/tests/browser.rs`。测试查询约定是：
+
+```text
+body > div[data-portal-host] > [data-portal-visibility-root]
+```
+
+不要用 host 的 `hidden` 属性或 host computed style 证明关闭态不可见；应读取
+root 的 computed `display`，并检查 content 的布局矩形为零。Firefox 和
+Chromium 都应执行这些测试；如果当前机器缺少某个浏览器，只能在进度记录中
+标记待补充，不能把另一浏览器的结果扩大解释为完整覆盖。
 
 ## 调试顺序
 

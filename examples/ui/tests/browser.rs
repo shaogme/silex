@@ -68,6 +68,15 @@ fn body_text() -> String {
         .unwrap_or_default()
 }
 
+fn portal_visibility_root(kind: &str) -> DomElement {
+    body_element()
+        .query_selector(&format!(
+            "[data-portal-host='{kind}'] > [data-portal-visibility-root]"
+        ))
+        .expect("Portal visibility root query should succeed")
+        .expect("Portal visibility root should exist")
+}
+
 fn computed_display(element: &DomElement) -> String {
     web_sys::window()
         .expect("window is available")
@@ -217,9 +226,15 @@ async fn ui_showcase_mounts_and_updates_interactive_components() {
         .query_selector("[data-portal-host='dialog']")
         .expect("dialog host query should succeed")
         .expect("dialog host should exist before opening");
+    let dialog_root = portal_visibility_root("dialog");
+    assert_eq!(computed_display(&dialog_root), "none");
     find_button(&app, "Open Modal Dialog").click();
     flush_browser_tasks().await;
-    assert!(!dialog_host.has_attribute("hidden"));
+    assert_eq!(computed_display(&dialog_root), "contents");
+    assert_eq!(
+        dialog_root.get_attribute("data-state").as_deref(),
+        Some("open")
+    );
     assert!(body_text().contains("Edit Profile"));
     find_button(&body_element(), "Cancel").click();
     flush_browser_tasks().await;
@@ -227,8 +242,14 @@ async fn ui_showcase_mounts_and_updates_interactive_components() {
         .query_selector("[data-portal-host='dialog']")
         .expect("closed dialog host query should succeed")
         .expect("closed dialog host should remain mounted");
+    let closed_dialog_root = portal_visibility_root("dialog");
     assert!(dialog_host.is_same_node(Some(closed_dialog_host.as_ref())));
-    assert!(closed_dialog_host.has_attribute("hidden"));
+    assert!(dialog_root.is_same_node(Some(closed_dialog_root.as_ref())));
+    assert_eq!(computed_display(&closed_dialog_root), "none");
+    assert_eq!(
+        closed_dialog_root.get_attribute("data-state").as_deref(),
+        Some("closed")
+    );
 
     find_button(&app, "-10%").click();
     flush_browser_tasks().await;
@@ -265,20 +286,21 @@ async fn ui_showcase_mounts_and_updates_interactive_components() {
         .query_selector("[data-portal-host='popover']")
         .expect("popover host query should succeed")
         .expect("popover host should exist before opening");
+    let popover_root = portal_visibility_root("popover");
     assert!(
-        popover_host.has_attribute("hidden"),
+        computed_display(&popover_root) == "none",
         "popover content must be hidden before its trigger is clicked"
     );
-    let popover_content = popover_host
+    let popover_content = popover_root
         .query_selector("[data-slot='popover-content']")
         .expect("popover content query should succeed")
         .expect("popover content should exist before opening")
         .dyn_into::<DomElement>()
         .expect("popover content should be an element");
     assert_eq!(
-        computed_display(&popover_host),
+        computed_display(&popover_root),
         "none",
-        "hidden Popover host must not remain display: contents"
+        "closed Popover root must not remain display: contents"
     );
     assert_eq!(
         popover_content.get_bounding_client_rect().width(),
@@ -287,7 +309,11 @@ async fn ui_showcase_mounts_and_updates_interactive_components() {
     );
     find_button(&app, "Open Popover").click();
     flush_browser_tasks().await;
-    assert!(!popover_host.has_attribute("hidden"));
+    assert_eq!(computed_display(&popover_root), "contents");
+    assert_eq!(
+        popover_root.get_attribute("data-state").as_deref(),
+        Some("open")
+    );
     assert!(body_text().contains("Dimensions"));
     find_button(&body_element(), "Close").click();
     flush_browser_tasks().await;
@@ -295,9 +321,10 @@ async fn ui_showcase_mounts_and_updates_interactive_components() {
         .query_selector("[data-portal-host='popover']")
         .expect("closed popover host query should succeed")
         .expect("closed popover host should remain mounted");
+    let closed_popover_root = portal_visibility_root("popover");
     assert!(popover_host.is_same_node(Some(closed_popover_host.as_ref())));
-    assert!(closed_popover_host.has_attribute("hidden"));
-    assert_eq!(computed_display(&closed_popover_host), "none");
+    assert!(popover_root.is_same_node(Some(closed_popover_root.as_ref())));
+    assert_eq!(computed_display(&closed_popover_root), "none");
 
     let radio_items = app
         .query_selector_all("[data-slot='radio-group-item']")
