@@ -11,7 +11,7 @@ use super::foundation::{
 use crate::attribute::op::{
     Attr, AttrOp, apply_attr_with_target_internal, apply_immediate_bool_internal, get_style_decl,
 };
-use crate::view::{MountErrorHandler, MountOwnerToken};
+use crate::view::MountContext;
 
 fn cleanup_target(el: &WebElem, target: &ApplyTarget) -> SilexResult<()> {
     match target {
@@ -267,14 +267,14 @@ pub(crate) fn apply_rx_internal<'scope, T>(
     rx: Rx<'scope, T>,
     el: &WebElem,
     target: ApplyTarget,
-    owner: &MountOwnerToken<'scope>,
-    error_handler: MountErrorHandler<'scope>,
+    context: &MountContext<'scope>,
 ) -> SilexResult<()>
 where
     T: ReactiveBinding<'scope> + 'scope,
 {
     if let Some(plan) = T::binding_plan(rx, ReactiveBindingContext::Value(target)) {
-        plan.install(el, owner, error_handler)?;
+        let owner = context.owner();
+        plan.install(el, &owner, context.error_handler())?;
     }
     Ok(())
 }
@@ -287,10 +287,9 @@ where
         &self,
         el: &WebElem,
         target: ApplyTarget,
-        owner: &MountOwnerToken<'scope>,
-        error_handler: MountErrorHandler<'scope>,
+        context: &MountContext<'scope>,
     ) -> SilexResult<()> {
-        apply_rx_internal(*self, el, target, owner, error_handler)
+        apply_rx_internal(*self, el, target, context)
     }
 
     fn into_op(self, target: ApplyTarget) -> AttrOp<'scope> {

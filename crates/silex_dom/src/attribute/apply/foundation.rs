@@ -88,17 +88,14 @@ pub trait ApplyToDom<'scope> {
         &self,
         el: &WebElem,
         target: ApplyTarget,
-        owner: &MountOwnerToken<'scope>,
-        error_handler: MountErrorHandler<'scope>,
+        context: &MountContext<'scope>,
     ) -> SilexResult<()>;
 
     fn into_op(self, target: ApplyTarget) -> AttrOp<'scope>
     where
         Self: Sized + 'scope,
     {
-        AttrOp::legacy_scoped(move |el, owner, error_handler| {
-            self.apply(el, target.clone(), owner, error_handler)
-        })
+        AttrOp::custom(move |el, context| self.apply(el, target.clone(), context))
     }
 }
 
@@ -372,12 +369,9 @@ impl<'scope> ApplyToDom<'scope> for AttrOp<'scope> {
         &self,
         el: &WebElem,
         _target: ApplyTarget,
-        owner: &MountOwnerToken<'scope>,
-        error_handler: MountErrorHandler<'scope>,
+        context: &MountContext<'scope>,
     ) -> SilexResult<()> {
-        let context = MountContext::for_parent(el.clone().into(), owner.clone(), error_handler);
-        self.clone().apply(el, &context)?;
-        context.transaction().commit()
+        self.clone().apply(el, context)
     }
 
     fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope> {
@@ -390,8 +384,7 @@ impl<'scope> ApplyToDom<'scope> for fn(&WebElem) {
         &self,
         el: &WebElem,
         _target: ApplyTarget,
-        _owner: &MountOwnerToken<'scope>,
-        _error_handler: MountErrorHandler<'scope>,
+        _context: &MountContext<'scope>,
     ) -> SilexResult<()> {
         (self)(el);
         Ok(())
@@ -410,8 +403,7 @@ impl<'scope> ApplyToDom<'scope> for Rc<dyn Fn(&WebElem)> {
         &self,
         el: &WebElem,
         _target: ApplyTarget,
-        _owner: &MountOwnerToken<'scope>,
-        _error_handler: MountErrorHandler<'scope>,
+        _context: &MountContext<'scope>,
     ) -> SilexResult<()> {
         (self)(el);
         Ok(())
@@ -502,8 +494,7 @@ impl<'scope, 'a: 'scope> ApplyToDom<'scope> for &'a str {
         &self,
         el: &WebElem,
         target: ApplyTarget,
-        _owner: &MountOwnerToken<'scope>,
-        _error_handler: MountErrorHandler<'scope>,
+        _context: &MountContext<'scope>,
     ) -> SilexResult<()> {
         apply_immediate_string(el, &target, self)
     }
@@ -535,8 +526,7 @@ impl<'scope> ApplyToDom<'scope> for String {
         &self,
         el: &WebElem,
         target: ApplyTarget,
-        _owner: &MountOwnerToken<'scope>,
-        _error_handler: MountErrorHandler<'scope>,
+        _context: &MountContext<'scope>,
     ) -> SilexResult<()> {
         apply_immediate_string(el, &target, self)
     }
@@ -577,8 +567,7 @@ impl<'scope> ApplyToDom<'scope> for &String {
         &self,
         el: &WebElem,
         target: ApplyTarget,
-        _owner: &MountOwnerToken<'scope>,
-        _error_handler: MountErrorHandler<'scope>,
+        _context: &MountContext<'scope>,
     ) -> SilexResult<()> {
         apply_immediate_string(el, &target, self)
     }
@@ -593,8 +582,7 @@ impl<'scope, 'a: 'scope> ApplyToDom<'scope> for Cow<'a, str> {
         &self,
         el: &WebElem,
         target: ApplyTarget,
-        _owner: &MountOwnerToken<'scope>,
-        _error_handler: MountErrorHandler<'scope>,
+        _context: &MountContext<'scope>,
     ) -> SilexResult<()> {
         apply_immediate_string(el, &target, self.as_ref())
     }
@@ -612,8 +600,7 @@ impl<'scope> ApplyToDom<'scope> for Attr<'scope> {
         &self,
         el: &WebElem,
         target: ApplyTarget,
-        _owner: &MountOwnerToken<'scope>,
-        _error_handler: MountErrorHandler<'scope>,
+        _context: &MountContext<'scope>,
     ) -> SilexResult<()> {
         if let Some(name) = target.name() {
             apply_attr_with_target_internal(el, &name, target, self)?;
@@ -642,8 +629,7 @@ impl<'scope> ApplyToDom<'scope> for bool {
         &self,
         el: &WebElem,
         target: ApplyTarget,
-        _owner: &MountOwnerToken<'scope>,
-        _error_handler: MountErrorHandler<'scope>,
+        _context: &MountContext<'scope>,
     ) -> SilexResult<()> {
         apply_immediate_bool(el, &target, *self)
     }
@@ -670,11 +656,10 @@ impl<'scope, V: ApplyToDom<'scope> + 'scope> ApplyToDom<'scope> for Option<V> {
         &self,
         el: &WebElem,
         target: ApplyTarget,
-        owner: &MountOwnerToken<'scope>,
-        error_handler: MountErrorHandler<'scope>,
+        context: &MountContext<'scope>,
     ) -> SilexResult<()> {
         if let Some(v) = self {
-            v.apply(el, target, owner, error_handler)?;
+            v.apply(el, target, context)?;
         }
         Ok(())
     }
@@ -693,11 +678,10 @@ impl<'scope, V: ApplyToDom<'scope> + 'scope> ApplyToDom<'scope> for Vec<V> {
         &self,
         el: &WebElem,
         target: ApplyTarget,
-        owner: &MountOwnerToken<'scope>,
-        error_handler: MountErrorHandler<'scope>,
+        context: &MountContext<'scope>,
     ) -> SilexResult<()> {
         for v in self {
-            v.apply(el, target.clone(), owner, error_handler)?;
+            v.apply(el, target.clone(), context)?;
         }
         Ok(())
     }
@@ -716,11 +700,10 @@ impl<'scope, V: ApplyToDom<'scope> + 'scope, const N: usize> ApplyToDom<'scope> 
         &self,
         el: &WebElem,
         target: ApplyTarget,
-        owner: &MountOwnerToken<'scope>,
-        error_handler: MountErrorHandler<'scope>,
+        context: &MountContext<'scope>,
     ) -> SilexResult<()> {
         for v in self {
-            v.apply(el, target.clone(), owner, error_handler)?;
+            v.apply(el, target.clone(), context)?;
         }
         Ok(())
     }
@@ -742,8 +725,7 @@ macro_rules! impl_apply_to_dom_for_primitive {
                     &self,
                     el: &WebElem,
                     target: ApplyTarget,
-                    _owner: &MountOwnerToken<'scope>,
-                    _error_handler: MountErrorHandler<'scope>,
+                    _context: &MountContext<'scope>,
                 ) -> SilexResult<()> {
                     apply_primitive_static_internal(el, target, self.to_string())
                 }
@@ -771,8 +753,7 @@ where
         &self,
         el: &WebElem,
         target: ApplyTarget,
-        owner: &MountOwnerToken<'scope>,
-        error_handler: MountErrorHandler<'scope>,
+        context: &MountContext<'scope>,
     ) -> SilexResult<()> {
         let (key, rx) = self.clone();
         let ctx = ReactiveBindingContext::Pair {
@@ -780,7 +761,8 @@ where
             target,
         };
         if let Some(plan) = T::binding_plan(rx, ctx) {
-            plan.install(el, owner, error_handler)?;
+            let owner = context.owner();
+            plan.install(el, &owner, context.error_handler())?;
         }
         Ok(())
     }
@@ -806,8 +788,7 @@ where
         &self,
         el: &WebElem,
         target: ApplyTarget,
-        _owner: &MountOwnerToken<'scope>,
-        _error_handler: MountErrorHandler<'scope>,
+        _context: &MountContext<'scope>,
     ) -> SilexResult<()> {
         let key_cow: Cow<'static, str> = self.0.clone().into();
         apply_static_pair(el, &target, key_cow.as_ref(), &self.1)
@@ -842,8 +823,7 @@ where
         &self,
         el: &WebElem,
         target: ApplyTarget,
-        _owner: &MountOwnerToken<'scope>,
-        _error_handler: MountErrorHandler<'scope>,
+        _context: &MountContext<'scope>,
     ) -> SilexResult<()> {
         let key_cow: Cow<'static, str> = self.0.clone().into();
         apply_static_pair(el, &target, key_cow.as_ref(), self.1)
@@ -878,8 +858,7 @@ where
         &self,
         el: &WebElem,
         target: ApplyTarget,
-        _owner: &MountOwnerToken<'scope>,
-        _error_handler: MountErrorHandler<'scope>,
+        _context: &MountContext<'scope>,
     ) -> SilexResult<()> {
         let (key, value) = self.clone();
         let key_cow: Cow<'static, str> = key.into();
@@ -953,14 +932,12 @@ impl<'scope> ApplyToDom<'scope> for AttributeGroup<'scope> {
         &self,
         el: &WebElem,
         _target: ApplyTarget,
-        owner: &MountOwnerToken<'scope>,
-        error_handler: MountErrorHandler<'scope>,
+        context: &MountContext<'scope>,
     ) -> SilexResult<()> {
-        let context = MountContext::for_parent(el.clone().into(), owner.clone(), error_handler);
         for op in &self.0 {
-            op.clone().apply(el, &context)?;
+            op.clone().apply(el, context)?;
         }
-        context.transaction().commit()
+        Ok(())
     }
 
     fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope> {

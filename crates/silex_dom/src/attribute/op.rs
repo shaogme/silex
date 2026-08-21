@@ -338,20 +338,6 @@ impl<'scope> AttrOp<'scope> {
         Self::custom_phase(AttrPhase::Commit, callback)
     }
 
-    pub(crate) fn legacy_scoped(
-        callback: impl Fn(
-            &Element,
-            &MountOwnerToken<'scope>,
-            MountErrorHandler<'scope>,
-        ) -> SilexResult<()>
-        + 'scope,
-    ) -> Self {
-        Self::custom(move |element, context| {
-            let owner = context.owner();
-            callback(element, &owner, context.error_handler())
-        })
-    }
-
     pub fn apply(self, el: &Element, context: &MountContext<'scope>) -> SilexResult<()> {
         self.apply_unchecked(el, context)
     }

@@ -73,8 +73,8 @@ Runtime
   `Runtime`，`Rx`、`ReadSignal`、`Computed` 等 source 必须属于当前 owner
   和兼容的 runtime。
 - `Style` 实现 `silex_dom::attribute::ApplyToDom`。应用到元素时，调用方
-  提供的 `MountOwnerToken` 管理 effect 和 cleanup；owner 关闭会移除该样式
-  产生的 class 以及它拥有的 inline 自定义属性。
+  传入的 `MountContext` 提供 owner、事务和错误处理；owner 关闭会移除该
+  样式产生的 class 以及它拥有的 inline 自定义属性。
 - 局部动态声明优先写入 `var(--sb-...)` 引用，再由 effect 更新元素的
   `CssStyleDeclaration`。动态选择器不能挂在元素上，因此由
   `DynamicStyleManager` 生成内容相关的动态 class 并更新样式表。

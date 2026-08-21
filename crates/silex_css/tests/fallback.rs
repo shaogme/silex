@@ -5,7 +5,7 @@ use silex_core::{ErrorHandlerToken, OwnerAccess, Runtime};
 use silex_css::{CssPart, DynamicCss, DynamicStyleManager, IntoCssReactive, prelude::inject_style};
 use silex_dom::{
     attribute::{ApplyTarget, ApplyToDom},
-    view::{MountOwner, MountOwnerToken},
+    view::{MountContext, MountOwner, MountOwnerToken},
 };
 use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
@@ -138,6 +138,8 @@ async fn style_tag_fallback_injects_updates_and_detaches_on_owner_dispose() {
                 .expect("signal should initialize");
             let (owner_token, error_handler) = test_owner(owner);
             let token = owner_token.token();
+            let context =
+                MountContext::for_parent(element.clone().into(), token, error_handler.view());
             let dynamic = DynamicCss::new("slx-fallback-dynamic").with_rule(
                 &[
                     CssPart::Lit("."),
@@ -149,7 +151,7 @@ async fn style_tag_fallback_injects_updates_and_detaches_on_owner_dispose() {
                 vec![value.into_css_reactive()],
             );
             dynamic
-                .apply(&element, ApplyTarget::Class, &token, error_handler.view())
+                .apply(&element, ApplyTarget::Class, &context)
                 .expect("dynamic style can be applied");
             let initial =
                 style_text_containing("slx-fallback-dynamic").expect("fallback style exists");

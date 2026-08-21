@@ -14,7 +14,7 @@ use silex_dom::attribute::{
     ApplyTarget, ApplyToDom, IntoStorable, ReactiveBinding, ReactiveBindingContext,
     ReactiveBindingPlan, ReactiveBindingTarget,
 };
-use silex_dom::view::{MountErrorHandler, MountOwnerToken};
+use silex_dom::view::{MountContext, MountErrorHandler, MountOwnerToken};
 use silex_hash::{
     css::{CssHasher, Normalized, encode_base36},
     css_hasher,
@@ -303,10 +303,11 @@ impl<'scope> ApplyToDom<'scope> for Style<'scope> {
         &self,
         el: &Element,
         _target: ApplyTarget,
-        owner: &MountOwnerToken<'scope>,
-        error_handler: MountErrorHandler<'scope>,
+        context: &MountContext<'scope>,
     ) -> SilexResult<()> {
-        self.apply_to_element(el, owner, error_handler).map(|_| ())
+        let owner = context.owner();
+        self.apply_to_element(el, &owner, context.error_handler())
+            .map(|_| ())
     }
 
     fn into_op(self, _target: ApplyTarget) -> silex_dom::attribute::AttrOp<'scope> {

@@ -211,8 +211,10 @@ fn theme_updates_variables_and_cleans_on_scope_dispose() {
                 .expect("theme signal should initialize");
             let (owner_token, error_handler) = test_owner(owner);
             let token = owner_token.token();
+            let context =
+                MountContext::for_parent(element.clone().into(), token, error_handler.view());
             theme_variables(theme)
-                .apply(&element, ApplyTarget::Apply, &token, error_handler.view())
+                .apply(&element, ApplyTarget::Apply, &context)
                 .expect("theme variables can be applied");
 
             assert!(
@@ -310,6 +312,8 @@ fn dynamic_css_replaces_rule_class_and_cleans_on_scope_dispose() {
                 .expect("signal should initialize");
             let (owner_token, error_handler) = test_owner(owner);
             let token = owner_token.token();
+            let context =
+                MountContext::for_parent(element.clone().into(), token, error_handler.view());
             let dynamic = DynamicCss::new("slx-owner-test").with_rule(
                 &[
                     CssPart::Lit("."),
@@ -322,7 +326,7 @@ fn dynamic_css_replaces_rule_class_and_cleans_on_scope_dispose() {
             );
 
             dynamic
-                .apply(&element, ApplyTarget::Class, &token, error_handler.view())
+                .apply(&element, ApplyTarget::Class, &context)
                 .expect("dynamic style can be applied");
             let first_class = element.class_name();
             assert!(first_class.contains("slx-owner-test"));
@@ -357,6 +361,8 @@ async fn pending_dynamic_sheet_operations_do_not_survive_owner_dispose() {
                 .expect("signal should initialize");
             let (owner_token, error_handler) = test_owner(owner);
             let token = owner_token.token();
+            let context =
+                MountContext::for_parent(element.clone().into(), token, error_handler.view());
             let dynamic = DynamicCss::new("slx-pending-owner").with_rule(
                 &[
                     CssPart::Lit("."),
@@ -368,7 +374,7 @@ async fn pending_dynamic_sheet_operations_do_not_survive_owner_dispose() {
                 vec![value.into_css_reactive()],
             );
             dynamic
-                .apply(&element, ApplyTarget::Class, &token, error_handler.view())
+                .apply(&element, ApplyTarget::Class, &context)
                 .expect("dynamic style can be applied");
             assert!(element.class_name().contains("slx-pending-owner"));
         })
@@ -447,8 +453,10 @@ fn theme_patch_removes_variables_that_disappear_from_the_next_round() {
                 .expect("patch signal should initialize");
             let (owner_token, error_handler) = test_owner(owner);
             let token = owner_token.token();
+            let context =
+                MountContext::for_parent(element.clone().into(), token, error_handler.view());
             theme_patch(patch)
-                .apply(&element, ApplyTarget::Apply, &token, error_handler.view())
+                .apply(&element, ApplyTarget::Apply, &context)
                 .expect("theme patch can be applied");
             let initial = element.get_attribute("style").unwrap_or_default();
             assert!(initial.contains("--patch-old"), "{initial}");

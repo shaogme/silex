@@ -5,7 +5,7 @@ use crate::{
 use silex_core::{SilexError, SilexErrorKind, SilexResult};
 use silex_dom::{
     attribute::{ApplyTarget, ApplyToDom, AttrOp, IntoStorable},
-    view::{MountErrorHandler, MountOwner, MountOwnerToken},
+    view::{MountContext, MountErrorHandler, MountOwner},
 };
 use std::{
     fmt::{Display, Write},
@@ -135,9 +135,10 @@ where
         &self,
         el: &Element,
         _target: ApplyTarget,
-        owner: &MountOwnerToken<'scope>,
-        error_handler: MountErrorHandler<'scope>,
+        context: &MountContext<'scope>,
     ) -> SilexResult<()> {
+        let owner = context.owner();
+        let error_handler = context.error_handler();
         let theme = self.0.clone();
         let el = el.clone();
         let effect_el = el.clone();
@@ -179,10 +180,7 @@ where
     }
 
     fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope> {
-        AttrOp::on_commit(move |el, context| {
-            let owner = context.owner();
-            self.apply(el, ApplyTarget::Apply, &owner, context.error_handler())
-        })
+        AttrOp::on_commit(move |el, context| self.apply(el, ApplyTarget::Apply, context))
     }
 }
 
@@ -288,9 +286,10 @@ where
         &self,
         el: &Element,
         _target: ApplyTarget,
-        owner: &MountOwnerToken<'scope>,
-        error_handler: MountErrorHandler<'scope>,
+        context: &MountContext<'scope>,
     ) -> SilexResult<()> {
+        let owner = context.owner();
+        let error_handler = context.error_handler();
         let patch = self.0.clone();
         let el = el.clone();
         let effect_el = el.clone();
@@ -346,10 +345,7 @@ where
     }
 
     fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope> {
-        AttrOp::on_commit(move |el, context| {
-            let owner = context.owner();
-            self.apply(el, ApplyTarget::Apply, &owner, context.error_handler())
-        })
+        AttrOp::on_commit(move |el, context| self.apply(el, ApplyTarget::Apply, context))
     }
 }
 

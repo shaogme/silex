@@ -6,7 +6,7 @@ error: lifetime may not live long enough
    |                                               |
    |                                               has type `OwnerAccess<'1>`
  9 |           let (value, _) = owner.signal(1_i32).expect("value signal should be created");
-10 | /         AttrOp::new_scoped(move |_, _, _| {
+10 | /         AttrOp::new_scoped(move |_, _| {
 11 | |             let _ = value.get();
 12 | |             Ok(())
 13 | |         })

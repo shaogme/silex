@@ -556,10 +556,10 @@ impl<'scope> ApplyToDom<'scope> for DynamicCss<'scope> {
         &self,
         el: &Element,
         _target: ApplyTarget,
-        owner: &MountOwnerToken<'scope>,
-        error_handler: MountErrorHandler<'scope>,
+        context: &MountContext<'scope>,
     ) -> SilexResult<()> {
-        self.apply_to_element(el, owner, error_handler)
+        let owner = context.owner();
+        self.apply_to_element(el, &owner, context.error_handler())
     }
 
     fn into_op(self, _target: ApplyTarget) -> AttrOp<'scope> {
