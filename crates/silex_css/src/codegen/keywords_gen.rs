@@ -277,7 +277,7 @@ define_css_enum!(CursorKeyword (props::Cursor) {
     Auto => "auto",
     Cell => "cell",
     ColResize => "col-resize",
-    ContextMenu => "ctx-menu",
+    ContextMenu => "context-menu",
     Copy => "copy",
     Crosshair => "crosshair",
     Default_ => "default",
@@ -383,7 +383,7 @@ define_css_enum!(FontVariantKeyword (props::FontVariant) {
     AllPetiteCaps => "all-petite-caps",
     AllSmallCaps => "all-small-caps",
     CommonLigatures => "common-ligatures",
-    Contextual => "ctxual",
+    Contextual => "contextual",
     DiagonalFractions => "diagonal-fractions",
     DiscretionaryLigatures => "discretionary-ligatures",
     FullWidth => "full-width",
@@ -395,7 +395,7 @@ define_css_enum!(FontVariantKeyword (props::FontVariant) {
     Jis90 => "jis90",
     LiningNums => "lining-nums",
     NoCommonLigatures => "no-common-ligatures",
-    NoContextual => "no-ctxual",
+    NoContextual => "no-contextual",
     NoDiscretionaryLigatures => "no-discretionary-ligatures",
     NoHistoricalLigatures => "no-historical-ligatures",
     None => "none",
@@ -1696,11 +1696,11 @@ define_css_enum!(GridAutoFlowKeyword (props::GridAutoFlow) {
 
 define_css_enum!(FontVariantLigaturesKeyword (props::FontVariantLigatures) {
     CommonLigatures => "common-ligatures",
-    Contextual => "ctxual",
+    Contextual => "contextual",
     DiscretionaryLigatures => "discretionary-ligatures",
     HistoricalLigatures => "historical-ligatures",
     NoCommonLigatures => "no-common-ligatures",
-    NoContextual => "no-ctxual",
+    NoContextual => "no-contextual",
     NoDiscretionaryLigatures => "no-discretionary-ligatures",
     NoHistoricalLigatures => "no-historical-ligatures",
     None => "none",
@@ -1748,8 +1748,8 @@ define_css_enum!(ContainKeyword (props::Contain) {
 });
 
 define_css_enum!(FillKeyword (props::Fill, props::Stroke) {
-    ContextFill => "ctx-fill",
-    ContextStroke => "ctx-stroke",
+    ContextFill => "context-fill",
+    ContextStroke => "context-stroke",
     None => "none",
 });
 
