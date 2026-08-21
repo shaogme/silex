@@ -131,7 +131,7 @@ CSSOM 的行为。
 - [类型安全样式与 `Style`](@/developer/crates/silex_css/styling.md)：属性能力、单位、计算、class、嵌套和动态值。
 - [样式表运行时与清理](@/developer/crates/silex_css/runtime.md)：静态 registry、动态 manager、层次和 CSSOM 兜底。
 - [主题与 CSS 变量](@/developer/crates/silex_css/theme.md)：`ThemeToCss`、全局主题、局部 patch 和响应式 diff。
-- [宏、全局样式与 Tailwind](@/developer/crates/silex_css/macros.md)：`css!`、`styled!`、`inject_css!`、`global!`、`theme!` 和 `tw!` 的边界。
+- [CSS 宏](@/developer/crates/silex_css/macros/_index.md)：`css!`、`styled!`、`global!`、`classes!`、`inject_css!`、`theme!`、`tw!` 和 variant 宏的边界。
 - [测试与调试](@/developer/crates/silex_css/testing.md)：native、browser、fallback、UI 编译期契约和文档示例。
 
 ## 源码、示例与测试索引

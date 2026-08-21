@@ -20,7 +20,7 @@ CSS 字符串相等，不能覆盖 owner dispose、动态 rule 替换或样式�
 | `tests/owner.rs` | inline value、theme、dynamic class、global style、owner cleanup | wasm browser |
 | `tests/fallback.rs` | 强制 `<style>` 后端、复用、更新和 dispose | wasm browser + `test-style-fallback` |
 | `tests/docs_examples.rs` | `docs/examples/silex_css/basic.rs` 编译并执行 | native |
-| `crates/tests/silex_macros_test/` | `css!`、`styled!`、`global!`、`theme!`、`tw!` 展开和 UI 契约 | native trybuild/unit |
+| `crates/tests/silex_macros_test/` | `css!`、`styled!`、`global!`、`classes!`、`inject_css!`、`theme!`、`tw!` 和 variant 宏的展开及 UI 契约 | native trybuild/unit |
 
 native fake backend 只验证 registry 状态转换，不验证浏览器解析、布局或
 `adoptedStyleSheets` 的真实实现；修改 `sheet.rs`、DOM 清理或 fallback 时，
