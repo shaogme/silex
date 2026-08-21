@@ -36,4 +36,17 @@ web-sys = { workspace = true, features = [
     "HtmlDetailsElement",
     "HtmlIFrameElement",
     "SvgElement",
+    "SvgaElement",
+] }
+
+[dev-dependencies]
+silex_core.workspace = true
+wasm-bindgen-test.workspace = true
+web-sys = { workspace = true, features = [
+    "Document",
+    "Element",
+    "HtmlAnchorElement",
+    "Node",
+    "SvgaElement",
+    "Window",
 ] }

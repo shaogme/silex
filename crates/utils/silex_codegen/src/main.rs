@@ -11,7 +11,11 @@ use crate::{
         generate_keywords_code, generate_properties_macro, generate_property_caps_code,
         generate_property_keywords_code, generate_property_names_code, parse_css,
     },
-    tags::{apply_memory_only_patches, codegen::generate_module_content, parse_tags},
+    tags::{
+        apply_memory_only_patches,
+        codegen::{TagNamespace, generate_module_content},
+        parse_tags,
+    },
     tw::{
         CodegenBaseline, ReferenceCssJson, TailwindDatasetInputs, check_drift,
         fingerprint_tw_datasets, generate_keyframes_code, generate_macro_tables,
@@ -174,7 +178,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("Generated property_caps.rs");
 
     // Generate HTML module
-    let html_code = generate_module_content(&gen_config.html, false, &[]);
+    let html_code = generate_module_content(&gen_config.html, TagNamespace::Html, &[]);
     write(out_dir.join("html.rs"), html_code)?;
     println!("Generated html.rs");
 
@@ -190,7 +194,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .collect();
 
     // Generate SVG module
-    let svg_code = generate_module_content(&gen_config.svg, true, &html_macros);
+    let svg_code = generate_module_content(&gen_config.svg, TagNamespace::Svg, &html_macros);
     write(out_dir.join("svg.rs"), svg_code)?;
     println!("Generated svg.rs");
 

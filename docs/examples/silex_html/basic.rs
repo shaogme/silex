@@ -2,7 +2,7 @@ use std::error::Error;
 
 use silex_dom::attribute::{AriaAttributes, AttributeBuilder, GlobalAttributes};
 use silex_html::{
-    AnchorAttributes, FormAttributes, MediaAttributes, a, button, div, img, input, path, svg,
+    AnchorAttributes, FormAttributes, MediaAttributes, a, button, div, g, img, input, path, svg,
 };
 
 pub fn run() -> Result<(), Box<dyn Error>> {
@@ -20,7 +20,16 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     let media_view = img().src("/logo.svg").alt("Silex");
     let link_view = a("Documentation").href("/docs");
     let icon_view = svg(path().attr("d", "M0 0"));
+    let macro_icon_view = svg!(path());
+    let macro_group_view = g!(path());
 
-    let _ = (form_view, media_view, link_view, icon_view);
+    let _ = (
+        form_view,
+        media_view,
+        link_view,
+        icon_view,
+        macro_icon_view,
+        macro_group_view,
+    );
     Ok(())
 }
