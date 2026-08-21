@@ -510,6 +510,7 @@ fn NewComponentsShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<
                                 .build(),
                             AccordionContent(ctx, "Yes! Every layout, utility class and reactivity behavior matches shadcn/ui React components.")
                                 .open(accordion_open)?
+                                .mode(AccordionContentMode::KeepAlive)
                                 .build()
                         ), "item-1").build()
                     )).build()

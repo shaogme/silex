@@ -203,12 +203,22 @@ async fn ui_showcase_mounts_and_updates_interactive_components() {
     flush_browser_tasks().await;
     assert!(app_text(&app).contains("Change your password and configure 2FA security."));
 
+    let dialog_host = body_element()
+        .query_selector("[data-portal-host='dialog']")
+        .expect("dialog host query should succeed")
+        .expect("dialog host should exist before opening");
     find_button(&app, "Open Modal Dialog").click();
     flush_browser_tasks().await;
+    assert!(!dialog_host.has_attribute("hidden"));
     assert!(body_text().contains("Edit Profile"));
     find_button(&body_element(), "Cancel").click();
     flush_browser_tasks().await;
-    assert!(!body_text().contains("Edit Profile"));
+    let closed_dialog_host = body_element()
+        .query_selector("[data-portal-host='dialog']")
+        .expect("closed dialog host query should succeed")
+        .expect("closed dialog host should remain mounted");
+    assert!(dialog_host.is_same_node(Some(closed_dialog_host.as_ref())));
+    assert!(closed_dialog_host.has_attribute("hidden"));
 
     find_button(&app, "-10%").click();
     flush_browser_tasks().await;
@@ -241,12 +251,22 @@ async fn ui_showcase_mounts_and_updates_interactive_components() {
         Some("false")
     );
 
+    let popover_host = body_element()
+        .query_selector("[data-portal-host='popover']")
+        .expect("popover host query should succeed")
+        .expect("popover host should exist before opening");
     find_button(&app, "Open Popover").click();
     flush_browser_tasks().await;
+    assert!(!popover_host.has_attribute("hidden"));
     assert!(body_text().contains("Dimensions"));
     find_button(&body_element(), "Close").click();
     flush_browser_tasks().await;
-    assert!(!body_text().contains("Dimensions"));
+    let closed_popover_host = body_element()
+        .query_selector("[data-portal-host='popover']")
+        .expect("closed popover host query should succeed")
+        .expect("closed popover host should remain mounted");
+    assert!(popover_host.is_same_node(Some(closed_popover_host.as_ref())));
+    assert!(closed_popover_host.has_attribute("hidden"));
 
     let radio_items = app
         .query_selector_all("[data-slot='radio-group-item']")
@@ -277,12 +297,48 @@ async fn ui_showcase_mounts_and_updates_interactive_components() {
     );
 
     let accordion_trigger = find_button(&app, "Is Silex 1:1 compatible?");
+    let accordion_content = app
+        .query_selector("[data-slot='accordion-content']")
+        .expect("accordion content query should succeed")
+        .expect("accordion content should exist");
     assert!(app_text(&app).contains("Every layout, utility class"));
+    assert_eq!(
+        accordion_content.get_attribute("data-state").as_deref(),
+        Some("open")
+    );
+    assert_eq!(
+        accordion_content.get_attribute("aria-hidden").as_deref(),
+        Some("false")
+    );
     accordion_trigger.click();
     flush_browser_tasks().await;
-    assert!(!app_text(&app).contains("Every layout, utility class"));
+    let closed_content = app
+        .query_selector("[data-slot='accordion-content']")
+        .expect("closed accordion content query should succeed")
+        .expect("closed accordion content should remain mounted");
+    assert!(accordion_content.is_same_node(Some(closed_content.as_ref())));
+    assert!(app_text(&app).contains("Every layout, utility class"));
+    assert_eq!(
+        closed_content.get_attribute("data-state").as_deref(),
+        Some("closed")
+    );
+    assert_eq!(
+        closed_content.get_attribute("aria-hidden").as_deref(),
+        Some("true")
+    );
+    assert!(closed_content.has_attribute("inert"));
     accordion_trigger.click();
     flush_browser_tasks().await;
+    let reopened_content = app
+        .query_selector("[data-slot='accordion-content']")
+        .expect("reopened accordion content query should succeed")
+        .expect("reopened accordion content should remain mounted");
+    assert!(accordion_content.is_same_node(Some(reopened_content.as_ref())));
+    assert_eq!(
+        reopened_content.get_attribute("data-state").as_deref(),
+        Some("open")
+    );
+    assert!(!reopened_content.has_attribute("inert"));
     assert!(app_text(&app).contains("Every layout, utility class"));
 
     host.unmount().expect("UI showcase should unmount");

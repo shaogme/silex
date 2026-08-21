@@ -9,6 +9,7 @@ readonly WASM_TARGET="wasm32-unknown-unknown"
 # kind|package|target|features|source
 # features 为空表示默认 feature；非空值会作为 --features 的参数传递。
 readonly WASM_TESTS=(
+    "test|silex|accordion||crates/silex/tests/accordion.rs"
     "test|silex|error_boundary||crates/silex/tests/error_boundary.rs"
     "test|silex|portal||crates/silex/tests/portal.rs"
     "test|silex|tw_tests||crates/silex/tests/tw_tests.rs"

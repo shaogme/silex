@@ -57,6 +57,38 @@ silex::ui::inject_shadcn_base_styles();
 | `tooltip` | `TooltipProvider`、`Tooltip`、`TooltipTrigger`、`TooltipContent` | `TooltipContext` 管理 hover/focus、anchor 和延迟关闭 timer。 |
 | `separator` / `skeleton` | `Separator`、`Skeleton` | orientation 分隔线和 pulse 占位内容。 |
 
+### Accordion 内容生命周期
+
+`AccordionContent` 默认使用 `AccordionContentMode::KeepAlive`。wrapper 在首次
+挂载后保持同一个 DOM 节点，关闭时通过 `data-state="closed"`、
+`aria-hidden="true"`、`inert` 和关闭态 class 表达状态；再次打开会复用原有
+children、输入 property、listener 和子 owner。`AccordionTrigger` 会同步
+`aria-expanded`，并与 content 建立稳定的 `id`/`aria-controls`/
+`aria-labelledby` 关系。
+
+```rust
+let content = AccordionContent(ctx, children)
+    .open(open)?
+    .mode(AccordionContentMode::KeepAlive)
+    .build()?;
+```
+
+如果业务明确需要每次打开都重新初始化内容，应显式选择
+`AccordionContentMode::UnmountWhenClosed`：
+
+```rust
+let content = AccordionContent(ctx, children)
+    .open(open)?
+    .mode(AccordionContentMode::UnmountWhenClosed)
+    .build()?;
+```
+
+该模式只卸载稳定 wrapper 内的 content slot，不卸载 wrapper；slot 关闭后会
+清理子 owner 和 listener，重新打开时创建新的节点，因此输入值和子组件状态
+会重置。两种模式都要求 `AccordionContent` 位于稳定的 `AccordionItem` 子树中；
+外层 `Show`、`if`、`Dynamic`、`Switch` 或动态列表仍可能销毁整个 content
+owner，内部 wrapper 无法绕过外层生命周期。
+
 大多数组件的可选 props 都带 `#[chain(default)]` 和 `#[prop(into)]`：普通值会
 在当前 owner 中 promotion 为 `Signal`/`Callback`，已有 owner-bound 句柄也可
 直接传入。builder 的 Result 必须传播：
