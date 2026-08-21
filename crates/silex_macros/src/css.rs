@@ -3,6 +3,7 @@ pub mod classes;
 pub mod compiler;
 pub mod config;
 pub mod error;
+pub(crate) mod html_tag;
 pub mod property_caps;
 pub mod property_keywords;
 pub mod property_names;

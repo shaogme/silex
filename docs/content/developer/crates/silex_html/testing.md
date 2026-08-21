@@ -18,6 +18,8 @@ DOM mount/owner cleanup 是否符合 `silex_dom` 契约。没有浏览器时不�
 | `docs/examples/silex_html/basic.rs` | HTML 宏、void 函数、属性 trait、SVG 函数的最小组合 | native 可编译/运行构造路径 |
 | `crates/silex_html/tests/docs_examples.rs` | 通过 `#[path]` 引入上面的同一份源码 | `cargo test -p silex_html --test docs_examples` |
 | `crates/silex_html/src/tags/*.rs` | 当前生成的函数、marker 和宏产物 | `cargo check -p silex_html` |
+| `crates/silex_html/tests/attribute_facades.rs` | 支持标签的正向 facade、通用 escape hatch 和 `IntoStorable` 编译契约 | native |
+| `crates/silex_html/tests/ui/*.rs` | 错误标签/类型擦除的 compile-fail，以及显式属性和 Popover 通用入口 | trybuild native |
 | `crates/silex_html/tests/browser.rs` | HTML/SVG namespace、anchor DOM 类型、NodeRef 和 owner 清理 | wasm browser |
 | `crates/silex_dom/tests/**` | mount、namespace、attribute、事件、owner cleanup 和失败回滚 | native / wasm 按测试文件划分 |
 | `crates/utils/silex_codegen/src/tags*.rs` | 标签解析、patch、DOM type mapping 和宏文本 | codegen crate 的检查/生成流程 |
@@ -34,6 +36,16 @@ Markdown 中再复制一份会独立演进的 Rust 示例。缺少上下文的 A
 ```text
 RUSTFLAGS='-D warnings' cargo test -p silex_html --test docs_examples
 ```
+
+属性 facade 和 compile-fail 契约使用：
+
+```text
+RUSTFLAGS='-D warnings' cargo test -p silex_html --test attribute_facades
+RUSTFLAGS='-D warnings' cargo test -p silex_html --test ui
+```
+
+UI fixture 的失败基线只锁定缺少 marker 或方法不可用这一 API 契约；更新
+`.stderr` 后必须人工确认失败不是导入、scope 或 feature 错误。
 
 浏览器测试使用仓库配置的 `wasm-bindgen-test-runner`：
 
@@ -60,10 +72,12 @@ cargo run -p silex_codegen
 其中 `cargo run -p silex_codegen` 会写入多个产物，不应作为只读文档变更的
 默认步骤；只有标签生成链本身变更时才运行并审阅完整 diff。
 
-站点页面检查使用：
+站点页面检查和构建使用：
 
 ```text
-zola --root docs check
+cd docs
+zola check
+zola build
 ```
 
 ## 示例测试边界
@@ -81,12 +95,19 @@ zola --root docs check
 
 ## 当前边界
 
-### 属性 trait 不是内容模型校验
+### 属性 trait 的能力边界
 
-`FormAttributes`、`AnchorAttributes` 等使用 blanket impl，`FormTag` 等
-marker 没有参与 trait bound。因此测试应验证“方法映射和运行时 DOM 目标”，
-而不是期待 `div().value(...)` 在编译期被拒绝。若未来收紧约束，必须新增
-compile-fail 测试并评估自定义 view/attribute 转发的兼容性。
+`FormAttributes`、`AnchorAttributes` 等七个分组通过 `HtmlTagCarrier` 的
+associated `Tag` marker bound 提供；`TypedElement` 和带 HTML metadata 的
+styled builder/product 可以使用对应 facade。`div().href(...)`、
+`span().value(...)`、普通 component builder 的错误调用由 compile-fail 测试
+锁定为不可用。类型擦除后的 `Element`、`AnyView` 和通用组件仍可通过显式
+`AttributeBuilder::attr`、`prop`、`apply` 写入原始操作。
+
+`DataAttributes` 和 `PopoverAttributes` 继续是通用 facade。Popover 的
+`popovertarget`/`popovertargetaction` 尚未建立触发器 marker，后续若引入
+`PopoverTargetAttributes` 必须同步修改 marker 定义、codegen、生成产物和
+UI 契约。所有 marker 都只是粗粒度能力分类，不是完整 HTML 内容模型校验。
 
 ### HTML/SVG 类型由 namespace 决定
 

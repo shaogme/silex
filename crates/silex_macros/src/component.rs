@@ -56,7 +56,10 @@ impl<'ast> Visit<'ast> for GenericUsage {
     }
 }
 
-pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
+pub fn generate_component(
+    input_fn: ItemFn,
+    html_tag: Option<syn::Ident>,
+) -> syn::Result<TokenStream2> {
     let __silex = crate::crate_path::silex();
     let fn_name = input_fn.sig.ident.clone();
     let props_name = format_ident!("{}Props", fn_name);
@@ -268,13 +271,15 @@ pub fn generate_component(input_fn: ItemFn) -> syn::Result<TokenStream2> {
     hidden_stmts.extend(hidden_fn.block.stmts);
     hidden_fn.block.stmts = hidden_stmts;
 
+    let tag_metadata = html_tag.map(|tag| quote! { , tag = #tag });
+
     Ok(quote! {
         #[derive(Clone, #__silex::macros::PropsBuilder)]
         #[silex_component(
             builder = #builder_name,
             product = #product_name,
             render = #hidden_name,
-            constructor = #fn_name
+            constructor = #fn_name #tag_metadata
         )]
         #vis struct #props_name #impl_generics #where_clause {
             #(#field_defs,)*

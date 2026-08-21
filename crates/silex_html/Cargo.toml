@@ -41,6 +41,7 @@ web-sys = { workspace = true, features = [
 
 [dev-dependencies]
 silex_core.workspace = true
+trybuild = "1.0"
 wasm-bindgen-test.workspace = true
 web-sys = { workspace = true, features = [
     "Document",

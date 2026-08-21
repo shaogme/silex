@@ -47,6 +47,7 @@ struct ComponentMetadata {
     product_name: Ident,
     render_fn_name: Ident,
     constructor_name: Option<Ident>,
+    html_tag: Option<Ident>,
 }
 
 struct BuilderContext {
@@ -62,6 +63,7 @@ struct BuilderContext {
     required_fields: Vec<FieldSpec>,
     owner_lifetime: syn::Lifetime,
     ctx_field: Option<Ident>,
+    html_tag: Option<Ident>,
 }
 
 impl BuilderContext {
@@ -78,7 +80,7 @@ impl BuilderContext {
         let inferred_component_name = strip_props_suffix(&props_name);
         let metadata = parse_component_metadata(&attrs, &props_name)?;
         // Component metadata is authoritative; only standalone derives use the legacy naming fallback.
-        let (builder_name, product_name, render_fn_name, component_name) =
+        let (builder_name, product_name, render_fn_name, component_name, html_tag) =
             if let Some(metadata) = metadata {
                 (
                     metadata.builder_name,
@@ -87,6 +89,7 @@ impl BuilderContext {
                     metadata
                         .constructor_name
                         .unwrap_or_else(|| inferred_component_name.clone()),
+                    metadata.html_tag,
                 )
             } else {
                 (
@@ -94,6 +97,7 @@ impl BuilderContext {
                     format_ident!("{}Component", inferred_component_name),
                     format_ident!("__silex_render_{}", inferred_component_name),
                     inferred_component_name,
+                    None,
                 )
             };
         let fields = match data {
@@ -160,6 +164,7 @@ impl BuilderContext {
             required_fields,
             owner_lifetime,
             ctx_field,
+            html_tag,
         })
     }
 
@@ -828,6 +833,7 @@ impl BuilderContext {
         let builder_ty_current = self.get_builder_ty(&current_states);
         let product_ty = quote! { #product_name #product_ty_generics };
         let methods = self.generate_attribute_builder_methods();
+        let carrier_impls = self.generate_carrier_impls();
 
         quote! {
             impl #builder_generics_decl #__silex::dom::attribute::AttributeBuilder<#scope> for #builder_ty_current #builder_where_clause {
@@ -842,6 +848,42 @@ impl BuilderContext {
                 fn apply_attributes(&mut self, attrs: ::std::vec::Vec<#__silex::dom::attribute::AttrOp<#scope>>) {
                     self._pending_attrs.extend(attrs);
                 }
+            }
+
+            #carrier_impls
+        }
+    }
+
+    fn generate_carrier_impls(&self) -> TokenStream2 {
+        let Some(html_tag) = &self.html_tag else {
+            return quote! {};
+        };
+
+        let __silex = crate::crate_path::silex();
+        let (builder_generics_decl, _) = self.get_builder_generics();
+        let (product_impl_generics, product_ty_generics, _) = self.generics.split_for_impl();
+        let builder_where_clause = self.ctx_where_clause();
+        let product_where_clause = self.ctx_where_clause();
+        let current_states: Vec<_> = self
+            .prop_generic_idents
+            .iter()
+            .map(|ident| quote! { #ident })
+            .collect();
+        let builder_ty_current = self.get_builder_ty(&current_states);
+        let product_name = &self.product_name;
+        let product_ty = quote! { #product_name #product_ty_generics };
+
+        quote! {
+            impl #builder_generics_decl #__silex::html::HtmlTagCarrier
+                for #builder_ty_current #builder_where_clause
+            {
+                type Tag = #__silex::html::#html_tag;
+            }
+
+            impl #product_impl_generics #__silex::html::HtmlTagCarrier
+                for #product_ty #product_where_clause
+            {
+                type Tag = #__silex::html::#html_tag;
             }
         }
     }
@@ -1001,6 +1043,7 @@ fn parse_component_metadata(
     let mut product_name = None;
     let mut render_fn_name = None;
     let mut constructor_name = None;
+    let mut html_tag = None;
     attr.parse_nested_meta(|meta| {
         if meta.path.is_ident("builder") {
             if builder_name.is_some() {
@@ -1022,8 +1065,15 @@ fn parse_component_metadata(
                 return Err(meta.error("duplicate `constructor` metadata entry"));
             }
             constructor_name = Some(meta.value()?.parse::<Ident>()?);
+        } else if meta.path.is_ident("tag") {
+            if html_tag.is_some() {
+                return Err(meta.error("duplicate `tag` metadata entry"));
+            }
+            html_tag = Some(meta.value()?.parse::<Ident>()?);
         } else {
-            return Err(meta.error("expected `builder`, `product`, `render`, or `constructor`"));
+            return Err(
+                meta.error("expected `builder`, `product`, `render`, `constructor`, or `tag`")
+            );
         }
         Ok(())
     })?;
@@ -1058,6 +1108,7 @@ fn parse_component_metadata(
         product_name,
         render_fn_name,
         constructor_name,
+        html_tag,
     }))
 }
 

@@ -114,6 +114,27 @@ owned `String`、基础类型、`Option`、响应式值或 `AttrOp`。全局属�
 使用 `GlobalEventAttributes::bind_value`；attribute/property 的区别和清理
 语义见 [`silex_dom` 属性文档](@/developer/crates/silex_dom/attributes.md)。
 
+其中七个 HTML 语义分组由标签 marker 约束：`FormAttributes` 要求
+`FormTag`，`LabelAttributes` 要求 `LabelTag`，`AnchorAttributes` 要求
+`AnchorTag`，`MediaAttributes` 要求 `MediaTag`，`OpenAttributes` 要求
+`OpenTag`，`TableCellAttributes` 要求 `TableCellTag`，
+`TableHeaderAttributes` 要求 `TableHeaderTag`。因此这些方法只能在仍保留
+具体 `TypedElement<'scope, T>` 的标签链，或带相同 HTML 根标签 metadata 的
+`styled!` builder/product 上调用。普通 `#[component]` builder 不带该 metadata。
+`DataAttributes` 是应用扩展属性便利方法，`PopoverAttributes` 当前也保持
+通用；它们不代表标签内容模型校验。
+
+类型擦除会丢失上述标签能力。对 `Element`、`AnyView` 或通用组件透传属性时，
+请显式写出 `.attr(name, value)`、`.prop(name, value)` 或 `.apply(value)`：
+
+```rust
+use silex_dom::attribute::AttributeBuilder;
+use silex_html::{FormAttributes, input};
+
+let typed = input().value("before-erasure");
+let erased = typed.into_untyped().attr("value", "after-erasure");
+```
+
 ## 生命周期、平台与所有权
 
 - 标签函数和标签宏只保存 tag name、namespace、child view 与待应用属性，
@@ -142,7 +163,7 @@ owned `String`、基础类型、`Option`、响应式值或 `AttrOp`。全局属�
 | 模块/文件 | 责任 |
 | --- | --- |
 | `src/lib.rs` | 模块声明、标签与公共类型重导出。 |
-| `src/attributes.rs` | `FormAttributes` 等命名属性 trait 的定义和 blanket impl。 |
+| `src/attributes.rs` | marker-gated 命名属性 trait，以及通用数据/Popover facade。 |
 | `src/tags/html.rs` | 由 `silex_codegen` 生成的 HTML 标签函数、marker 和宏。 |
 | `src/tags/svg.rs` | 由 `silex_codegen` 生成的 SVG 标签函数、marker 和宏。 |
 | `crates/utils/silex_codegen/src/tags.rs` | MDN 标签数据解析、内存 patch 和 trait 分类。 |
@@ -166,9 +187,14 @@ owned `String`、基础类型、`Option`、响应式值或 `AttrOp`。全局属�
 
 - `silex_html` 只提供标签和属性 facade，不负责应用 host、runtime 或挂载
   生命周期；这些行为由 `silex_dom` 提供。
-- `FormAttributes` 等 trait 当前对所有实现 `AttributeBuilder` 的类型做
-  blanket impl；`FormTag` 等 marker 不会阻止不适用标签调用这些方法。它们是
-  命名便利和文档分类，不是当前实现中的完整 HTML 内容模型校验。
+- `FormAttributes`、`AnchorAttributes` 等七个语义 trait 只对带对应 marker 的
+  `TypedElement` 提供方法；类型擦除后的 `Element`、`AnyView` 和通用组件应
+  使用显式 `AttributeBuilder` 入口。
+- `DataAttributes` 和当前的 `PopoverAttributes` 仍是通用 facade。Popover
+  的 `popovertarget`/`popovertargetaction` 尚未拆成独立的触发器 marker，不能
+  将其解释成完整的 HTML 内容模型校验。
+- marker 只表达本次 facade 的粗粒度标签分类，不验证每个 attribute 与每个
+  标签的完整 WHATWG 内容模型、值枚举或 attribute/property 自动选择。
 - 标签集合和 void 判定来自仓库内 MDN compatibility JSON 及
   `tags.rs` 的固定列表，生成器不会根据应用使用情况裁剪标签，也不会自动
   验证浏览器对每个标签的内容模型。

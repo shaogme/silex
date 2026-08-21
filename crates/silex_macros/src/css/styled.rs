@@ -1,4 +1,5 @@
 use crate::css::compiler::{CssCompileResult, CssCompiler, DynamicRule};
+use crate::css::html_tag::HtmlTagSpec;
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::parse::{Parse, ParseStream};
@@ -169,6 +170,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
     let __silex = crate::crate_path::silex();
     let parsed: StyledComponent = syn::parse2(input)?;
     let tag = &parsed.tag;
+    let tag_spec = HtmlTagSpec::from_tag(tag)?;
     let name = &parsed.name;
     find_ctx_parameter(&parsed.props).ok_or_else(|| {
         syn::Error::new(
@@ -417,10 +419,8 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
         quote! {}
     };
 
-    let tag_str = tag.to_string();
     let return_type = get_tag_return_type(
-        &tag_str,
-        tag.span(),
+        tag_spec.as_ref(),
         parsed.generics.where_clause.as_ref(),
         &scope,
     );
@@ -463,7 +463,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
         }
     };
 
-    let node_init = if is_void_tag(&tag_str) {
+    let node_init = if tag_spec.as_ref().is_some_and(|spec| spec.is_void) {
         quote! { #__silex::html::#tag() }
     } else {
         quote! { #__silex::html::#tag(#children_binding) }
@@ -528,7 +528,10 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
         block: Box::new(fn_body),
     };
 
-    let component_tokens = crate::component::generate_component(item_fn)?;
+    let component_tokens = crate::component::generate_component(
+        item_fn,
+        tag_spec.as_ref().map(|spec| spec.marker.clone()),
+    )?;
 
     Ok(quote! {
         #component_tokens
@@ -800,26 +803,14 @@ fn normalize_scoped_type(ty: &mut Type, scope: &syn::Lifetime) {
 }
 
 fn get_tag_return_type(
-    tag: &str,
-    span: Span,
+    tag_spec: Option<&HtmlTagSpec>,
     where_clause: Option<&syn::WhereClause>,
     scope: &syn::Lifetime,
 ) -> TokenStream {
     let __silex = crate::crate_path::silex();
-    if tag.chars().next().is_some_and(|c| c.is_ascii_lowercase()) {
-        let name = match tag {
-            "a" => "A".to_string(),
-            "data" => "DataTag".to_string(),
-            "option" => "OptionTag".to_string(),
-            "param" => "ParamTag".to_string(),
-            "time" => "TimeTag".to_string(),
-            _ => {
-                let mut c = tag.chars();
-                c.next().unwrap().to_uppercase().collect::<String>() + c.as_str()
-            }
-        };
-        let ident = Ident::new(&name, span);
-        quote! { #__silex::dom::element::TypedElement<#scope, #__silex::html::#ident> }
+    if let Some(spec) = tag_spec {
+        let marker = &spec.marker;
+        quote! { #__silex::dom::element::TypedElement<#scope, #__silex::html::#marker> }
     } else {
         quote! {
             impl #__silex::dom::attribute::AttributeBuilder<#scope>
@@ -1173,33 +1164,6 @@ fn generate_static_global(input: StaticGlobalExpansion<'_>) -> Result<TokenStrea
             #__silex::dom::view::View::into_any(())
         }
     })
-}
-
-fn is_void_tag(tag: &str) -> bool {
-    matches!(
-        tag,
-        "area"
-            | "base"
-            | "br"
-            | "col"
-            | "embed"
-            | "hr"
-            | "img"
-            | "input"
-            | "link"
-            | "meta"
-            | "param"
-            | "source"
-            | "track"
-            | "wbr"
-            | "circle"
-            | "ellipse"
-            | "line"
-            | "path"
-            | "polygon"
-            | "polyline"
-            | "rect"
-    )
 }
 
 #[cfg(test)]

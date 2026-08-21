@@ -1,4 +1,24 @@
-use silex_dom::attribute::{AttributeBuilder, IntoStorable};
+use silex_dom::{
+    attribute::{AttributeBuilder, IntoStorable},
+    element::{
+        TypedElement,
+        tags::{
+            AnchorTag, FormTag, LabelTag, MediaTag, OpenTag, TableCellTag, TableHeaderTag, Tag,
+        },
+    },
+};
+
+/// Carries the concrete HTML marker needed by tag-restricted attribute facades.
+pub trait HtmlTagCarrier {
+    type Tag: Tag;
+}
+
+impl<'scope, T> HtmlTagCarrier for TypedElement<'scope, T>
+where
+    T: Tag,
+{
+    type Tag = T;
+}
 
 macro_rules! define_attribute_group {
     ($trait_name:ident { $($method:ident => $name:literal),* $(,)? }) => {
@@ -14,7 +34,25 @@ macro_rules! define_attribute_group {
     };
 }
 
-define_attribute_group!(FormAttributes {
+macro_rules! define_restricted_attribute_group {
+    ($trait_name:ident: $tag_trait:ident { $($method:ident => $name:literal),* $(,)? }) => {
+        pub trait $trait_name<'scope>: AttributeBuilder<'scope> {
+            $(
+                fn $method(self, value: impl IntoStorable<'scope>) -> Self {
+                    self.attr($name, value)
+                }
+            )*
+        }
+
+        impl<'scope, T> $trait_name<'scope> for T
+        where
+            T: AttributeBuilder<'scope> + HtmlTagCarrier,
+            <T as HtmlTagCarrier>::Tag: $tag_trait,
+        {}
+    };
+}
+
+define_restricted_attribute_group!(FormAttributes: FormTag {
     type_ => "type",
     value => "value",
     checked => "checked",
@@ -45,16 +83,16 @@ define_attribute_group!(FormAttributes {
     formtarget => "formtarget"
 });
 
-define_attribute_group!(LabelAttributes { for_ => "for" });
+define_restricted_attribute_group!(LabelAttributes: LabelTag { for_ => "for" });
 
-define_attribute_group!(AnchorAttributes {
+define_restricted_attribute_group!(AnchorAttributes: AnchorTag {
     href => "href",
     target => "target",
     rel => "rel",
     download => "download"
 });
 
-define_attribute_group!(MediaAttributes {
+define_restricted_attribute_group!(MediaAttributes: MediaTag {
     src => "src",
     alt => "alt",
     width => "width",
@@ -72,15 +110,15 @@ define_attribute_group!(MediaAttributes {
     crossorigin => "crossorigin"
 });
 
-define_attribute_group!(OpenAttributes { open => "open" });
+define_restricted_attribute_group!(OpenAttributes: OpenTag { open => "open" });
 
-define_attribute_group!(TableCellAttributes {
+define_restricted_attribute_group!(TableCellAttributes: TableCellTag {
     colspan => "colspan",
     rowspan => "rowspan",
     headers => "headers"
 });
 
-define_attribute_group!(TableHeaderAttributes {
+define_restricted_attribute_group!(TableHeaderAttributes: TableHeaderTag {
     scope => "scope",
     abbr => "abbr"
 });
@@ -97,6 +135,8 @@ define_attribute_group!(DataAttributes {
     data_open => "data-open"
 });
 
+// Popover target semantics are intentionally generic until a dedicated marker
+// taxonomy is introduced; callers can use all three names on any builder.
 define_attribute_group!(PopoverAttributes {
     popover => "popover",
     popovertarget => "popovertarget",

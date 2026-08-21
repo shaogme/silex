@@ -189,3 +189,62 @@ fn ensure_trait_in_memory(tag: &mut TagDef, trait_name: &str) {
         tag.traits.push(trait_name.to_string());
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{TagConfig, TagDef, apply_memory_only_patches};
+
+    fn html_tag(tag_name: &str) -> TagDef {
+        TagDef {
+            struct_name: tag_name.to_string(),
+            tag_name: tag_name.to_string(),
+            func_name: None,
+            is_void: false,
+            traits: Vec::new(),
+        }
+    }
+
+    fn has_trait(config: &TagConfig, tag_name: &str, trait_name: &str) -> bool {
+        config
+            .html
+            .iter()
+            .find(|tag| tag.tag_name == tag_name)
+            .is_some_and(|tag| tag.traits.iter().any(|item| item == trait_name))
+    }
+
+    #[test]
+    fn patches_assign_facade_markers_to_expected_html_tags() {
+        let mut config = TagConfig {
+            html: vec![
+                html_tag("input"),
+                html_tag("a"),
+                html_tag("img"),
+                html_tag("div"),
+                html_tag("span"),
+            ],
+            svg: Vec::new(),
+        };
+
+        apply_memory_only_patches(&mut config);
+
+        assert!(has_trait(&config, "input", "FormTag"));
+        assert!(has_trait(&config, "a", "AnchorTag"));
+        assert!(has_trait(&config, "img", "MediaTag"));
+    }
+
+    #[test]
+    fn patches_do_not_assign_unrelated_facade_markers() {
+        let mut config = TagConfig {
+            html: vec![html_tag("div"), html_tag("span")],
+            svg: Vec::new(),
+        };
+
+        apply_memory_only_patches(&mut config);
+
+        for tag_name in ["div", "span"] {
+            for trait_name in ["FormTag", "AnchorTag", "MediaTag"] {
+                assert!(!has_trait(&config, tag_name, trait_name));
+            }
+        }
+    }
+}

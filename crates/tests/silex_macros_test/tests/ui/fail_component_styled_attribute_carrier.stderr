@@ -1,0 +1,56 @@
+error[E0599]: no method named `value` found for struct `InvalidDivBuilder<'owner, Ctx>` in the current scope
+  --> tests/ui/fail_component_styled_attribute_carrier.rs:42:49
+   |
+ 9 | / styled! {
+10 | |     pub InvalidDiv<'owner, Ctx><div>(
+11 | |         #[ctx] ctx: Ctx,
+12 | |         children: AnyView<'owner>,
+...  |
+16 | | }
+   | |_- method `value` not found for this struct
+...
+42 |           let _ = InvalidDiv(ctx, AnyView::Empty).value("invalid");
+   |                                                   ^^^^^
+   |
+   = help: items from traits can only be used if the trait is implemented and in scope
+   = note: the following trait defines an item `value`, perhaps you need to implement it:
+           candidate #1: `FormAttributes`
+help: there is a method `bind_value` with a similar name
+   |
+42 |         let _ = InvalidDiv(ctx, AnyView::Empty).bind_value("invalid");
+   |                                                 +++++
+
+error[E0599]: no method named `href` found for struct `InvalidSpanBuilder<'owner, Ctx>` in the current scope
+  --> tests/ui/fail_component_styled_attribute_carrier.rs:43:50
+   |
+18 | / styled! {
+19 | |     pub InvalidSpan<'owner, Ctx><span>(
+20 | |         #[ctx] ctx: Ctx,
+21 | |         children: AnyView<'owner>,
+...  |
+25 | | }
+   | |_- method `href` not found for this struct
+...
+43 |           let _ = InvalidSpan(ctx, AnyView::Empty).href("invalid");
+   |                                                    ^^^^ method not found in `InvalidSpanBuilder<'_, silex_core::SilexContext<'_>>`
+   |
+   = help: items from traits can only be used if the trait is implemented and in scope
+   = note: the following trait defines an item `href`, perhaps you need to implement it:
+           candidate #1: `AnchorAttributes`
+
+error[E0599]: no method named `value` found for struct `UntypedComponentBuilder<'owner, Ctx>` in the current scope
+  --> tests/ui/fail_component_styled_attribute_carrier.rs:44:55
+   |
+27 | #[component]
+   | ------------ method `value` not found for this struct
+...
+44 |         let _ = UntypedComponent(ctx, AnyView::Empty).value("invalid");
+   |                                                       ^^^^^
+   |
+   = help: items from traits can only be used if the trait is implemented and in scope
+   = note: the following trait defines an item `value`, perhaps you need to implement it:
+           candidate #1: `FormAttributes`
+help: there is a method `bind_value` with a similar name
+   |
+44 |         let _ = UntypedComponent(ctx, AnyView::Empty).bind_value("invalid");
+   |                                                       +++++

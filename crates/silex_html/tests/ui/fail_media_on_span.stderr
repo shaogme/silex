@@ -1,0 +1,27 @@
+error[E0599]: the method `src` exists for struct `silex_dom::element::TypedElement<'_, Span>`, but its trait bounds were not satisfied
+ --> tests/ui/fail_media_on_span.rs:4:22
+  |
+4 |     let _ = span(()).src("/image.svg");
+  |                      ^^^ method cannot be called on `silex_dom::element::TypedElement<'_, Span>` due to unsatisfied trait bounds
+  |
+ ::: $WORKSPACE/crates/silex_dom/src/element/tags.rs
+  |
+  |         pub struct $struct_name;
+  |         ------------------------ doesn't satisfy `Span: silex_dom::element::tags::MediaTag`
+  |
+ ::: $WORKSPACE/crates/silex_dom/src/element.rs
+  |
+  | pub struct TypedElement<'scope, T: Tag> {
+  | --------------------------------------- doesn't satisfy `_: MediaAttributes<'_>`
+  |
+  = note: the following trait bounds were not satisfied:
+          `Span: silex_dom::element::tags::MediaTag`
+          which is required by `silex_dom::element::TypedElement<'_, Span>: MediaAttributes<'_>`
+          `&silex_dom::element::TypedElement<'_, Span>: silex_dom::attribute::AttributeBuilder<'_>`
+          which is required by `&silex_dom::element::TypedElement<'_, Span>: MediaAttributes<'_>`
+          `&silex_dom::element::TypedElement<'_, Span>: HtmlTagCarrier`
+          which is required by `&silex_dom::element::TypedElement<'_, Span>: MediaAttributes<'_>`
+          `&mut silex_dom::element::TypedElement<'_, Span>: silex_dom::attribute::AttributeBuilder<'_>`
+          which is required by `&mut silex_dom::element::TypedElement<'_, Span>: MediaAttributes<'_>`
+          `&mut silex_dom::element::TypedElement<'_, Span>: HtmlTagCarrier`
+          which is required by `&mut silex_dom::element::TypedElement<'_, Span>: MediaAttributes<'_>`

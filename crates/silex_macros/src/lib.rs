@@ -146,7 +146,7 @@ pub fn component(attr: TokenStream, item: TokenStream) -> TokenStream {
     }
 
     let input_fn = parse_macro_input!(item as syn::ItemFn);
-    match component::generate_component(input_fn) {
+    match component::generate_component(input_fn, None) {
         Ok(tokens) => tokens.into(),
         Err(e) => e.to_compile_error().into(),
     }

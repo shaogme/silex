@@ -72,8 +72,11 @@ SVG 的函数名遵循生成器的 Rust snake case 转换，例如 `linearGradie
 | SVG 标签 | `web_sys::SvgElement`；SVG `a` 使用 `web_sys::SvgaElement` |
 
 生成标签还会实现 `TextTag`、`FormTag`、`AnchorTag`、`MediaTag`、`OpenTag`、
-`TableCellTag`、`TableHeaderTag` 或 `SvgTag`。这些 trait 是 metadata；当前
-`silex_html` 属性 trait 的 blanket impl 并没有据此限制方法的调用范围。
+`TableCellTag`、`TableHeaderTag` 或 `SvgTag`。其中七个 HTML 语义 marker 会
+参与 `silex_html` 对应属性 facade 的 trait bound：例如只有 carrier 的
+`Tag` 实现 `FormTag` 的 `TypedElement` 或 styled builder/product 才能调用
+`FormAttributes`。`TextTag` 和 `SvgTag` 仍是标签/命名空间元数据；marker
+组合不等同于完整 HTML 内容模型校验。
 
 ## Rust 关键字和名称冲突
 

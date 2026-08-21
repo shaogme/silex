@@ -1,0 +1,22 @@
+error[E0599]: the method `value` exists for enum `AnyView<'_>`, but its trait bounds were not satisfied
+ --> tests/ui/fail_form_on_any_view.rs:5:35
+  |
+5 |     let _ = AnyView::new(input()).value("wrong");
+  |                                   ^^^^^
+  |
+ ::: $WORKSPACE/crates/silex_dom/src/view/any.rs
+  |
+  | pub enum AnyView<'scope> {
+  | ------------------------ doesn't satisfy `AnyView<'_>: FormAttributes<'_>` or `AnyView<'_>: HtmlTagCarrier`
+  |
+  = note: the following trait bounds were not satisfied:
+          `AnyView<'_>: HtmlTagCarrier`
+          which is required by `AnyView<'_>: FormAttributes<'_>`
+          `&AnyView<'_>: AttributeBuilder<'_>`
+          which is required by `&AnyView<'_>: FormAttributes<'_>`
+          `&AnyView<'_>: HtmlTagCarrier`
+          which is required by `&AnyView<'_>: FormAttributes<'_>`
+          `&mut AnyView<'_>: AttributeBuilder<'_>`
+          which is required by `&mut AnyView<'_>: FormAttributes<'_>`
+          `&mut AnyView<'_>: HtmlTagCarrier`
+          which is required by `&mut AnyView<'_>: FormAttributes<'_>`
