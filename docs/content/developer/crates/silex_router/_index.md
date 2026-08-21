@@ -37,7 +37,7 @@ owner-bound 的 `popstate` listener，因此真正的路由 view 需要浏览器
 
 | 入口 | 作用 |
 | --- | --- |
-| `router!` | 从 route enum 声明生成 enum、`path`、`match_path` 和 `table`。 |
+| `router!` | 从 route enum 声明生成 enum、`path`、`patterns`、typed matcher 和 `table`。 |
 | `RoutePath` | 已验证的本地 pathname；拒绝 query、fragment、空路径段和无效 percent encoding。 |
 | `PathParam` / `PathTail` | 定义单段参数的编解码；`PathTail` 表示最终 wildcard 捕获的多段值。 |
 | `RouteMatcher` | 编译静态、动态和 wildcard 模式，返回按优先级排列的 `RouteMatch`。 |
@@ -84,7 +84,7 @@ SilexContext<'scope>
 
 ## 最小可运行流程
 
-下面的源文件同时验证路径生成、percent 编码、typed match、失败后的
+下面的源文件同时验证路径生成、percent 编码、typed matcher、raw matcher、失败后的
 wildcard fallback 和 route table 构造。它不挂载浏览器 DOM，因此 native
 测试即可覆盖；页面直接读取这一个文件，不在 Markdown 中维护第二份 Rust
 代码。
@@ -153,9 +153,10 @@ chain prop；`base` 默认是 `/`，`layout` 默认直接显示 outlet。这个�
   用户输入或外部数据产生的本地路径，优先先调用 `RoutePath::new`，再传给
   `Navigator`/`Link`；query 应通过 `set_query` 管理。`Link` 只拦截普通同源
   主按钮点击，外部链接、下载、修饰键和非默认 target 保留浏览器语义。
-- `router!` 生成的 `match_path` 每次调用都会重新构造 `RouteMatcher`。没有
-  基准数据时不对延迟或复杂度作数字承诺；高频原始匹配应复用手动创建的
-  `RouteMatcher`，渲染场景则复用 `RouteTable`。
+- `router!` 生成 `RouteEnum::compile()` 和对应的 typed matcher 对象。固定 route
+  配置应在 setup 边界编译一次；typed 高频匹配复用该对象，raw 高频匹配复用
+  由 `RouteEnum::patterns()` 创建的一次性 `RouteMatcher`，渲染场景复用一次
+  创建的 `RouteTable`。没有基准数据时不对延迟或复杂度作数字承诺。
 - `Link` 的 `active_class` 只比较逻辑 pathname，不比较 query；`/users`
   会匹配 `/users/42`，但不会匹配 `/username`。需要 query 级高亮时，应在
   组件中读取 `RouterContext::query_map` 自己组合条件。

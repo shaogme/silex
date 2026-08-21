@@ -9,6 +9,9 @@ weight = 30
 `RouteMatcher` 只负责把 pathname 变成有序的 `RouteMatch`；`RouteTable` 在此
 基础上附加 scope-bound view handler。将匹配与渲染分开，可以在 native 测试
 中验证路径规则，也可以让 `RouteOutlet` 只在 branch 发生变化时替换 view。
+对渲染路径而言，`RouteTable` 是 render-time reuse boundary：在合法
+`RouterContext<'scope>` 的 setup 边界构造一次，随后把同一张 table 交给
+`Router`/`RouteOutlet`。
 
 ## `RouteMatcher` 的数据流
 
@@ -26,6 +29,11 @@ pathname ── split raw segments ──► static ──► param ──► wi
 重复参数和重复 shape。`matches(path)` 会验证 pathname，再返回所有候选；
 `match_path(path)` 只取第一个；`resolve(path, handler)` 按顺序调用 handler，
 直到某个 handler 返回 `Some`。
+
+`RouteTable::matcher()` 只读取 table 已保存的 compiled matcher，不会重新解析
+entry pattern。纯 pathname 代码应显式保存一个 `RouteMatcher`；需要 scope-bound
+handler 和 view 的代码应保存 `RouteTable`，不要在同一次请求或每次导航中另建
+一张 raw matcher。
 
 匹配优先级由 matcher tree 的遍历顺序决定：同一位置先尝试 decoded static
 child，再尝试单段 parameter，最后尝试 wildcard。测试已验证
@@ -68,9 +76,10 @@ RouteEntry::new("/users/:id", |matched, ctx| {
 
 `RouteEntry<'scope>` 保存 pattern 和
 `for<'path> Fn(RouteMatch<'path>, RouterContext<'scope>) -> Option<AnyView<'scope>>`
-handler。`RouteTable::from_entries` 会再次把所有 entry 编译进 matcher，因此
-返回错误必须处理，尤其是重复 shape。table 可以 clone，因为 entry handler
-内部由 `Rc` 保存，但它仍然受 `'scope` 限制。
+handler。`RouteTable::from_entries` 会在 setup 时把所有 entry 编译进 matcher，
+因此返回错误必须在初始化阶段处理，尤其是重复 shape。table 可以 clone，因为
+entry handler 内部由 `Rc` 保存，但它仍然受 `'scope` 限制；clone 不应被当作跨
+runtime 或跨线程的全局缓存。
 
 `RouteTable` 的常用入口：
 
@@ -110,7 +119,7 @@ layout 回调接收 `RouterContext` 和 child `AnyView` outlet，返回任意实
 
 ## router 宏如何构造 table
 
-`router!` 生成的 `Enum::table(render)` 会：
+`router!` 生成的 `Enum::table(render)` 应在 render setup 边界调用一次，会：
 
 1. 为叶子 variant 创建 `RouteEntry`；
 2. 在 handler 中把 `RouteMatch` 解析为 enum variant；typed decode 失败时
@@ -126,6 +135,8 @@ layout 回调接收 `RouterContext` 和 child `AnyView` outlet，返回任意实
 
 `Router` 为根 table 创建 `RouteOutlet`。outlet 读取 context 的 path signal，
 根据当前 pathname 生成 branch key，然后调用 `RouteTable::resolve_branch`。
+path evaluation 和 branch render 都读取已经保存的 table；它们不会在 signal
+变化时重新调用 `Enum::table`、`RouteTable::from_entries` 或 pattern parser。
 每个稳定 branch 会得到独立的 DOM branch owner；当前 branch 失效时，旧 view
 先清理，再挂载新 view。无匹配路径返回空 `AnyView`，因此应用若需要 404，
 应显式添加末尾 wildcard entry。

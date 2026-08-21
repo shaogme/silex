@@ -1,0 +1,9 @@
+error[E0599]: no variant, associated function, or constant named `match_path` found for enum `AppRoute` in the current scope
+  --> tests/ui/fail_router_macro_static_match_path.rs:10:23
+   |
+ 3 | / router! {
+ 4 | |     enum AppRoute {
+   | |_________________- variant, associated function, or constant `match_path` not found for this enum
+...
+10 |       let _ = AppRoute::match_path("/");
+   |                         ^^^^^^^^^^ variant, associated function, or constant not found in `AppRoute`

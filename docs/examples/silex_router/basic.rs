@@ -1,4 +1,4 @@
-use silex_router::{PathTail, RoutePath, dom::view::AnyView, macros::router};
+use silex_router::{PathTail, RouteMatcher, RoutePath, dom::view::AnyView, macros::router};
 use std::error::Error;
 
 router! {
@@ -11,6 +11,8 @@ router! {
 }
 
 pub fn run() -> Result<(), Box<dyn Error>> {
+    let routes = AppRoute::compile()?;
+
     let user_path = AppRoute::User { id: 7 }.path()?;
     assert_eq!(user_path.as_str(), "/users/7");
 
@@ -18,13 +20,16 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     assert_eq!(local_path.as_str(), "/files/a%2Fb");
 
     assert!(matches!(
-        AppRoute::match_path("/users/7")?,
+        routes.match_path("/users/7")?,
         Some(AppRoute::User { id: 7 })
     ));
     assert!(matches!(
-        AppRoute::match_path("/users/not-a-number")?,
+        routes.match_path("/users/not-a-number")?,
         Some(AppRoute::NotFound)
     ));
+
+    let matcher = RouteMatcher::from_patterns(AppRoute::patterns())?;
+    assert!(matcher.match_path("/files/a%2Fb").is_some());
 
     let table = AppRoute::table(|route, _ctx| match route {
         AppRoute::Home => AnyView::from("home"),

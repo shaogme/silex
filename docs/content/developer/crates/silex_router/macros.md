@@ -7,9 +7,9 @@ weight = 50
 # router 宏与类型生成
 
 `router!` 实际实现位于 `crates/silex_macros/src/route.rs`。宏先解析一个
-route tree，再为每个 enum 生成 variant、路径编码、路径解析和 route table
-构造。它的职责是把“路由值”与“URL pattern”绑定，运行时 matcher 仍由
-`silex_router::route_table` 执行。
+route tree，再为每个 enum 生成 variant、路径编码、静态 pattern 描述、已编译
+typed matcher 和 route table 构造。它的职责是把“路由值”与“URL pattern”绑定，
+运行时 matcher 仍由 `silex_router::route_table` 执行。
 
 ## 输入形状
 
@@ -50,17 +50,42 @@ router! {
 
 ## 生成的 API
 
-宏为 enum 生成：
+宏为 enum 生成以下 API。`AppRoute` 对应的 typed matcher 类型名为
+`AppRouteMatcher`，可见性与 `AppRoute` 相同：
 
 | API | 结果 |
 | --- | --- |
 | `route.path()` | `Result<RoutePath, PathParamError>`；将 variant 字段编码成 pathname。 |
-| `Route::match_path(path)` | `Result<Option<Route>, PathError>`；按 matcher 候选解析 enum。 |
+| `Route::patterns()` | `&'static [&'static str]`；只返回当前 enum 层的静态 pattern 描述，不执行编译。 |
+| `Route::compile()` | `Result<RouteMatcherType, RoutePatternError>`；初始化当前层和所有 nested child 的 compiled matcher。 |
+| `RouteMatcherType::match_path(path)` | `Result<Option<Route>, PathError>`；使用已保存 matcher 按候选解析 enum。 |
 | `Route::table(render)` | `Result<RouteTable<'scope>, RoutePatternError>`；生成 exhaustive view handler 表。 |
 
-生成 enum 和三个方法的 visibility 与输入 enum 相同。宏不自动生成
+生成 enum 和上述关联 API 的 visibility 与输入 enum 相同。宏不自动生成
 `Clone`、`Debug` 或 `PartialEq`；如果应用需要这些 trait，应在外围设计中另
 行维护，不能假定宏会提供。
+
+typed matching 应在初始化边界编译一次，并在后续路径循环中借用对象：
+
+```rust
+let routes = AppRoute::compile()?;
+for path in paths {
+    if let Some(route) = routes.match_path(path)? {
+        handle(route);
+    }
+}
+```
+
+只需要原始 `RouteMatch` 时，不要为了类型转换构造 table；使用同一份静态描述
+创建并保存 `RouteMatcher`：
+
+```rust
+let matcher = RouteMatcher::from_patterns(AppRoute::patterns())?;
+let matches = matcher.matches(path)?;
+```
+
+这两个对象都应放在 setup、应用状态或请求处理器上下文中，而不是 signal effect、
+导航 handler 或每次 pathname 变化的闭包中。
 
 `table` 的 render closure 类型是
 `Fn(Route, RouterContext<'scope>) -> AnyView<'scope>`。它不是 `FnOnce`，且闭包
@@ -88,15 +113,15 @@ router! {
 
 ## fallback 与 nested 生成
 
-生成的 table handler 先将 `RouteMatch` 解析为 enum。若 `u32` 等字段无法从
+typed matcher 和生成的 table handler 都先将 `RouteMatch` 解析为 enum。若 `u32` 等字段无法从
 raw segment 解码，该 handler 返回 `None`，`RouteTable` 会继续尝试后面的
 matcher 候选。因此把 `NotFound => "/*"` 放在 enum 中可以承接 typed route
 失败和未命中的路径。
 
 nested variant 的 `path()` 先调用 child `path()`，再通过
-`join_route_paths` 合并静态 prefix；`match_path()` 先匹配合成的 `prefix/*`，
-再用 `strip_route_prefix` 得到 child relative path，并递归调用 child enum
-的 `match_path()`。`table()` 则递归构造 child table，再用 nested layout
+`join_route_paths` 合并静态 prefix；typed matcher 先匹配合成的 `prefix/*`，
+再用 `strip_route_prefix` 得到 child relative path，并调用 compile 阶段已经
+保存的 child matcher。`table()` 则递归构造 child table，再用 nested layout
 调用 `RouteTable::nest`。
 
 ## 维护与性能边界
@@ -105,10 +130,10 @@ nested variant 的 `path()` 先调用 child `path()`，再通过
 两者必须保持规范化、参数名和 wildcard 规则一致。修改其中一份时，应同时
 更新 `tests/routes_macro.rs`、UI pass/fail fixtures 和 path/table 单元测试。
 
-`match_path()` 的生成实现会在每次调用中从固定 pattern 数组构造一个新的
-`RouteMatcher`。当前没有已验证的 benchmark 数字，文档不对它作复杂度或延迟
-承诺；如果路径解析成为高频热点，优先复用 `RouteMatcher`，不要在热路径中
-反复调用生成的 `match_path()`。
+`compile()` 的 `RoutePatternError` 属于初始化错误；对象 `match_path()` 和
+`RouteMatcher::matches()` 只在路径输入阶段报告 `PathError`。对象匹配不会
+重新调用 `RouteMatcher::from_patterns` 或 `add_pattern`。当前没有已验证的
+benchmark 数字，文档不对延迟、吞吐或复杂度作承诺。
 
 ## 相关源码与测试
 

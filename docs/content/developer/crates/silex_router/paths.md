@@ -82,12 +82,25 @@ segment 的前缀，不会匹配 `/a/b`。
 因此调用方应处理 `Result<RoutePath, PathParamError>`，不要用字符串拼接代替
 typed path。
 
-生成的 `match_path()` 返回
+生成的 `RouteEnum::compile()` 返回 typed matcher 和
+`RoutePatternError`；生成 matcher 的 `match_path()` 返回
 `Result<Option<RouteEnum>, PathError>`：
 
 - 非法 pathname 返回 `Err`；
 - 没有候选或所有候选都无法把参数解析为字段类型时返回 `Ok(None)`；
 - typed 参数解析失败只跳过当前候选，后续 wildcard 等候选仍有机会匹配。
+
+应用应在 setup 边界保存编译结果：
+
+```rust
+let routes = RouteEnum::compile()?;
+let route = routes.match_path(path)?;
+```
+
+`RouteEnum::patterns()` 只提供静态 pattern 描述；raw matching 应通过一次性
+创建并保存的 `RouteMatcher::from_patterns(RouteEnum::patterns())` 完成。因而
+pattern 配置错误属于 compile/setup 阶段的 `RoutePatternError`，pathname 验证
+错误仍属于匹配阶段的 `PathError`。
 
 匿名 `/*` 可以被 matcher 匹配，但生成的 enum `path()` 没有可供编码的值，
 会返回 recoverable 的 `PathParamError`。这正是 fallback route 应该只用于

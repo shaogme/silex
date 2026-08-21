@@ -40,6 +40,11 @@ zola --root docs check
 `cargo test -p silex_router` 还会包含 native 单元测试和 trybuild；
 `tests/router.rs` 带有 `wasm32` 条件，只在 browser runner 中实际执行。
 
+matcher 相关示例必须把 `RouteEnum::compile()`、raw `RouteMatcher` 或
+`RouteEnum::table(...)` 放在 setup 区域；循环、signal effect、outlet evaluation
+和导航 handler 只借用已保存对象。这样测试能同时锁定初始化错误边界和 matcher
+不在 pathname 热路径重复编译的契约。
+
 ## browser 测试边界
 
 `tests/router.rs` 使用 `wasm-bindgen-test`，并验证这些资源的实际生命周期：
@@ -77,6 +82,8 @@ compile_fail`。如果 stderr 发生有意变化，应只更新对应的
 `tests/docs_examples.rs` 可以在 native target 中执行。示例遵循以下约束：
 
 - 所有主动返回错误的 path/macro/table 操作用 `?` 传播；
+- typed matching 先保存 `RouteEnum::compile()?` 的结果，raw matching 先保存
+  `RouteMatcher::from_patterns(RouteEnum::patterns())?` 的结果；
 - 不使用 `unwrap`/`expect` 掩盖 `PathError`、`PathParamError` 或
   `RoutePatternError`；
 - 页面通过 Zola `load_data(..., format="plain")` 读取源文件，避免 Markdown

@@ -1,4 +1,9 @@
-use silex_router::{PathTail, dom::view::AnyView, macros::router};
+use silex_router::{
+    PathTail,
+    RouteMatcher,
+    dom::view::AnyView,
+    macros::router,
+};
 
 router! {
     enum AppRoute {
@@ -16,7 +21,8 @@ fn main() {
         rest: PathTail::from("docs/reference"),
     }
     .path();
-    let _ = AppRoute::match_path("/users/42");
+    let _ = AppRoute::compile().map(|routes| routes.match_path("/users/42"));
+    let _ = RouteMatcher::from_patterns(AppRoute::patterns());
     let _ = AppRoute::table(|route, _ctx| match route {
         AppRoute::Home => AnyView::from("home"),
         AppRoute::User { id } => AnyView::from(id.to_string()),
