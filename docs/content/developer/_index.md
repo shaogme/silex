@@ -7,4 +7,4 @@ sort_by = "weight"
 
 开发者文档从仓库源码和测试出发，解释 crate 的职责、公开接口、生命周期边界与验证方法。
 
-当前已完成 [`silex_core`](crates/silex_core/)、[`silex_reactivity`](crates/silex_reactivity/)、[`silex_rx`](crates/silex_rx/)、[`silex_dom`](crates/silex_dom/) 与 [`silex_css`](crates/silex_css/) 的总文档和专题文档；其他 crate 会按相同目录规则逐步加入。
+当前已完成 [`silex_core`](crates/silex_core/)、[`silex_reactivity`](crates/silex_reactivity/)、[`silex_rx`](crates/silex_rx/)、[`silex_dom`](crates/silex_dom/)、[`silex_css`](crates/silex_css/) 与 [`silex_net`](crates/silex_net/) 的总文档和专题文档；其他 crate 会按相同目录规则逐步加入。
