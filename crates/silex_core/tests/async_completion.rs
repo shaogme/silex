@@ -80,7 +80,7 @@ async fn resource_enters_loading_and_reloading_states() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|owner| {
-            let (source, set_source) = owner.signal(1u32).expect("signal should initialize");
+            let source = owner.signal(1u32).expect("signal should initialize");
             let suspense = SuspenseContext::new(owner).expect("suspense should initialize");
             let resource = Resource::builder(owner)
                 .source(source)
@@ -104,7 +104,7 @@ async fn resource_enters_loading_and_reloading_states() {
                 1
             );
             resource.set(1).expect("resource value should be writable");
-            set_source.set(2).expect("source should be writable");
+            source.set(2).expect("source should be writable");
             assert!(matches!(
                 resource
                     .state()
@@ -133,7 +133,7 @@ async fn resource_future_is_cancelled_after_scope_dispose() {
 
     runtime
         .with_transient(|owner| {
-            let (source, set_source) = owner.signal(1u32).expect("signal should initialize");
+            let source = owner.signal(1u32).expect("signal should initialize");
             let dropped_for_fetcher = dropped.clone();
             let calls_for_fetcher = calls.clone();
             let resource = Resource::builder(owner)
@@ -150,7 +150,7 @@ async fn resource_future_is_cancelled_after_scope_dispose() {
                     .loading()
                     .expect("resource state should be readable")
             );
-            set_source.set(2).expect("source should be writable");
+            source.set(2).expect("source should be writable");
             assert!(
                 resource
                     .loading()
@@ -172,7 +172,7 @@ async fn resource_replacement_keeps_only_the_new_suspense_request() {
 
     runtime
         .with_transient(|owner| {
-            let (source, set_source) = owner.signal(1u32).expect("signal should initialize");
+            let source = owner.signal(1u32).expect("signal should initialize");
             let suspense = SuspenseContext::new(owner).expect("suspense should initialize");
             let first_dropped_for_fetcher = first_dropped.clone();
             let second_dropped_for_fetcher = second_dropped.clone();
@@ -200,7 +200,7 @@ async fn resource_replacement_keeps_only_the_new_suspense_request() {
                     .expect("suspense count should be readable"),
                 1
             );
-            set_source.set(2).expect("source should be writable");
+            source.set(2).expect("source should be writable");
             assert!(matches!(
                 resource
                     .state()
@@ -229,7 +229,7 @@ async fn resource_scope_capability_survives_async_replacement() {
     let root = runtime.owner().expect("root should start");
     root.with_access_async(|owner| {
         Box::pin(async move {
-            let (source, set_source) = owner.signal(1_u32).expect("signal should initialize");
+            let source = owner.signal(1_u32).expect("signal should initialize");
             let resource = Resource::builder(owner)
                 .source(source)
                 .fetch(|value| async move { Ok::<_, ()>(value) })
@@ -244,7 +244,7 @@ async fn resource_scope_capability_survives_async_replacement() {
                     .expect("resource state should be readable"),
                 ResourceState::Ready(value) if value == 1
             ));
-            set_source.set(2).expect("source should be writable");
+            source.set(2).expect("source should be writable");
             wait_for_tasks(0).await;
             assert!(matches!(
                 resource
@@ -429,7 +429,7 @@ async fn child_scope_cancels_resource_without_reactivating_parent() {
         .with_transient(|owner| {
             owner
                 .with_transient(|child| {
-                    let (source, _) = child.signal(1u32).expect("signal should initialize");
+                    let source = child.signal(1u32).expect("signal should initialize");
                     let dropped_for_fetcher = dropped.clone();
                     let resource = Resource::builder(child)
                         .source(source)
@@ -458,7 +458,7 @@ async fn resource_copy_handles_do_not_own_the_child_scope() {
     let mut runtime = Runtime::new();
     let root = runtime.owner().expect("root should start");
     let owner = root.access();
-    let (source, _) = owner.signal(1_u32).expect("source should initialize");
+    let source = owner.signal(1_u32).expect("source should initialize");
     let dropped_for_fetcher = dropped.clone();
     let resource = Resource::builder(owner)
         .source(source)

@@ -6,15 +6,15 @@ styled! {
         #[ctx] ctx: Ctx,
         children: AnyView<'scope>,
         #[prop(into)] #[chain(default = FlexDirectionKeyword::Column)]
-        direction: Signal<'scope, FlexDirectionKeyword>,
+        direction: Rx<'scope, FlexDirectionKeyword>,
         #[prop(into)] #[chain(default = AlignItemsKeyword::Stretch)]
-        align: Signal<'scope, AlignItemsKeyword>,
+        align: Rx<'scope, AlignItemsKeyword>,
         #[prop(into)] #[chain(default = JustifyContentKeyword::FlexStart)]
-        justify: Signal<'scope, JustifyContentKeyword>,
+        justify: Rx<'scope, JustifyContentKeyword>,
         #[prop(into)] #[chain(default)]
-        gap: Signal<'scope, i32>,
+        gap: Rx<'scope, i32>,
         #[prop(into)] #[chain(default = sty(ctx))]
-        style: Signal<'scope, Style<'scope>>,
+        style: Rx<'scope, Style<'scope>>,
     ) {
         display: flex;
         flex-direction: $(direction);
@@ -30,7 +30,7 @@ styled! {
         #[ctx] ctx: Ctx,
         children: AnyView<'scope>,
         #[prop(into)] #[chain(default = sty(ctx))]
-        style: Signal<'scope, Style<'scope>>,
+        style: Rx<'scope, Style<'scope>>,
     ) {
         display: flex;
         align-items: center;
@@ -44,11 +44,11 @@ styled! {
         #[ctx] ctx: Ctx,
         children: AnyView<'scope>,
         #[prop(into)] #[chain(default = 1)]
-        columns: Signal<'scope, i32>,
+        columns: Rx<'scope, i32>,
         #[prop(into)] #[chain(default)]
-        gap: Signal<'scope, i32>,
+        gap: Rx<'scope, i32>,
         #[prop(into)] #[chain(default = sty(ctx))]
-        style: Signal<'scope, Style<'scope>>,
+        style: Rx<'scope, Style<'scope>>,
     ) {
         display: grid;
         grid-template-columns: repeat($(columns), minmax(0, 1fr));

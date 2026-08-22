@@ -141,8 +141,8 @@ pub fn I18nPage<'scope>(
         )
         .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
 
-    let name = owner.rw_signal("Ada".to_string())?;
-    let count = owner.rw_signal(1u32)?;
+    let name = owner.signal("Ada".to_string())?;
+    let count = owner.signal(1u32)?;
 
     let reload_store = loader_store;
     let resource_state = move || -> SilexResult<AnyView<'scope>> {

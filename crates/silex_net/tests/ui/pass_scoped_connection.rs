@@ -5,15 +5,15 @@ fn main() {
     let mut runtime = Runtime::new();
     runtime.with_transient(|scope| {
         let url = scope
-            .rw_signal("wss://example.test/socket".to_string())
+            .signal("wss://example.test/socket".to_string())
             .unwrap();
-        let (opened, set_opened) = scope.signal(false).unwrap();
+        let opened = scope.signal(false).unwrap();
         let socket = WebSocket::lazy(
             scope,
             url,
             scope.error_handler(|_| {}).unwrap(),
         )
-        .on_open(move || set_opened.set(true).unwrap())
+        .on_open(move || opened.set(true).unwrap())
         .build()
         .unwrap();
         let stream = EventStream::lazy(

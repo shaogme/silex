@@ -36,7 +36,8 @@ mod native {
                 let root = runtime.owner().expect("runtime root creation");
                 {
                     let scope = root.access();
-                    let (read, write) = scope.signal(0i32).expect("fallible reactive creation");
+                    let signal = scope.signal(0i32).expect("fallible reactive creation");
+                    let (read, write) = signal.into_pair();
                     let _effect = scope
                         .effect(
                             EffectPhase::Normal,
@@ -136,6 +137,7 @@ mod native {
                                 scope
                                     .signal(index as i32)
                                     .expect("benchmark signal creation")
+                                    .into_pair()
                                     .0,
                             );
                         }
@@ -175,8 +177,8 @@ mod native {
                             );
                         }
 
-                        let reads: Vec<_> = signals.iter().map(|(read, _)| *read).collect();
-                        let trigger = signals[0].1;
+                        let reads: Vec<_> = signals.iter().map(|signal| signal.read()).collect();
+                        let trigger = signals[0].write();
                         let runs = Rc::new(Cell::new(0usize));
                         let reads_in_effect = reads.clone();
                         let runs_in_effect = runs.clone();
@@ -229,6 +231,7 @@ mod native {
                                 scope
                                     .signal(index as i32)
                                     .expect("benchmark signal creation")
+                                    .into_pair()
                                     .1,
                             );
                         }
@@ -472,8 +475,8 @@ mod native {
                     let mut runtime = Runtime::new();
                     runtime
                         .with_transient(|scope| {
-                            let (source, set_source) =
-                                scope.signal(0i32).expect("fallible reactive creation");
+                            let signal = scope.signal(0i32).expect("fallible reactive creation");
+                            let (source, set_source) = signal.into_pair();
                             let notifications = Rc::new(Cell::new(0usize));
 
                             for _ in 0..fanout {
@@ -520,8 +523,8 @@ mod native {
                     let mut runtime = Runtime::new();
                     runtime
                         .with_transient(|scope| {
-                            let (source, set_source) =
-                                scope.signal(0i32).expect("fallible reactive creation");
+                            let signal = scope.signal(0i32).expect("fallible reactive creation");
+                            let (source, set_source) = signal.into_pair();
                             let first_source = source;
                             let mut tail = scope
                                 .computed(
@@ -594,8 +597,8 @@ mod native {
                     let mut runtime = Runtime::new();
                     runtime
                         .with_transient(|scope| {
-                            let (source, set_source) =
-                                scope.signal(0i32).expect("fallible reactive creation");
+                            let signal = scope.signal(0i32).expect("fallible reactive creation");
+                            let (source, set_source) = signal.into_pair();
                             let mut memos = Vec::with_capacity(width);
                             for index in 0..width {
                                 memos.push(
@@ -661,8 +664,8 @@ mod native {
                     let mut runtime = Runtime::new();
                     runtime
                         .with_transient(|scope| {
-                            let (source, set_source) =
-                                scope.signal(0i32).expect("fallible reactive creation");
+                            let signal = scope.signal(0i32).expect("fallible reactive creation");
+                            let (source, set_source) = signal.into_pair();
                             scope
                                 .with_transient(|child| {
                                     let notifications = Rc::new(Cell::new(0usize));
@@ -715,8 +718,8 @@ mod native {
                     let mut runtime = Runtime::new();
                     runtime
                         .with_transient(|scope| {
-                            let (source, set_source) =
-                                scope.signal(0i32).expect("fallible reactive creation");
+                            let signal = scope.signal(0i32).expect("fallible reactive creation");
+                            let (source, set_source) = signal.into_pair();
                             scope
                                 .with_transient(|child| {
                                     let mut tail = child
@@ -792,8 +795,8 @@ mod native {
                     let mut runtime = Runtime::new();
                     runtime
                         .with_transient(|scope| {
-                            let (source, set_source) =
-                                scope.signal(0i32).expect("fallible reactive creation");
+                            let signal = scope.signal(0i32).expect("fallible reactive creation");
+                            let (source, set_source) = signal.into_pair();
                             scope
                                 .with_transient(|child| {
                                     let mut memos = Vec::with_capacity(width);
@@ -864,8 +867,8 @@ mod native {
                     let mut runtime = Runtime::new();
                     runtime
                         .with_transient(|scope| {
-                            let (source, set_source) =
-                                scope.signal(0i32).expect("fallible reactive creation");
+                            let signal = scope.signal(0i32).expect("fallible reactive creation");
+                            let (source, set_source) = signal.into_pair();
                             let memo_runs = Rc::new(Cell::new(0usize));
                             let mut memos = Vec::with_capacity(width);
                             for _ in 0..width {
@@ -947,6 +950,7 @@ mod native {
                                     scope
                                         .signal((iteration as i32) ^ (index as i32))
                                         .expect("benchmark signal creation")
+                                        .into_pair()
                                         .0
                                 })
                                 .collect();
@@ -993,8 +997,8 @@ mod native {
                                     .expect("benchmark signal creation"),
                             );
                         }
-                        let reads: Vec<_> = signals.iter().map(|(read, _)| *read).collect();
-                        let trigger = signals[0].1;
+                        let reads: Vec<_> = signals.iter().map(|signal| signal.read()).collect();
+                        let trigger = signals[0].write();
                         scope
                             .effect(
                                 EffectPhase::Normal,
@@ -1032,8 +1036,8 @@ mod native {
                 let mut runtime = Runtime::new();
                 runtime
                     .with_transient(|scope| {
-                        let (switch, set_switch) =
-                            scope.signal(false).expect("benchmark switch creation");
+                        let switch_signal = scope.signal(false).expect("benchmark switch creation");
+                        let (switch, set_switch) = switch_signal.into_pair();
                         let mut left = Vec::with_capacity(size);
                         let mut right = Vec::with_capacity(size);
                         for index in 0..size {
@@ -1041,12 +1045,14 @@ mod native {
                                 scope
                                     .signal(index as i32)
                                     .expect("benchmark left signal creation")
+                                    .into_pair()
                                     .0,
                             );
                             right.push(
                                 scope
                                     .signal((index as i32).wrapping_neg())
                                     .expect("benchmark right signal creation")
+                                    .into_pair()
                                     .0,
                             );
                         }
@@ -1092,10 +1098,10 @@ mod native {
                 let mut runtime = Runtime::new();
                 runtime
                     .with_transient(|scope| {
-                        let (source, set_source) =
-                            scope.signal(0i32).expect("benchmark source creation");
-                        let (marker, set_marker) =
-                            scope.signal(0i32).expect("benchmark marker creation");
+                        let source_signal = scope.signal(0i32).expect("benchmark source creation");
+                        let (source, set_source) = source_signal.into_pair();
+                        let marker_signal = scope.signal(0i32).expect("benchmark marker creation");
+                        let (marker, set_marker) = marker_signal.into_pair();
                         let normal_runs = Rc::new(Cell::new(0usize));
                         let post_runs = Rc::new(Cell::new(0usize));
 
@@ -1206,6 +1212,7 @@ mod native {
                                     scope
                                         .signal(index as i32)
                                         .expect("benchmark signal creation")
+                                        .into_pair()
                                         .0
                                 })
                                 .collect();
@@ -1252,6 +1259,7 @@ mod native {
                             scope
                                 .signal(index as i32)
                                 .expect("benchmark signal creation")
+                                .into_pair()
                                 .0,
                         );
                     }
@@ -1326,7 +1334,8 @@ mod native {
                 let mut runtime = Runtime::new();
                 let root = runtime.owner().expect("runtime root creation");
                 root.with_access(|scope| {
-                    let (source, _) = scope.signal(0i32).expect("fallible reactive creation");
+                    let signal = scope.signal(0i32).expect("fallible reactive creation");
+                    let (source, _) = signal.into_pair();
                     let cleanup_count = Rc::new(Cell::new(0usize));
                     let effect_token = handler(scope);
                     let effect_handler = effect_token.view();
@@ -1426,7 +1435,7 @@ mod native {
             let mut runtime = Runtime::new();
             runtime
                 .with_transient(|scope| {
-                    let value = scope.rw_signal(0u32).expect("fallible reactive creation");
+                    let value = scope.signal(0u32).expect("fallible reactive creation");
                     let setter = value.write();
                     let token = scope
                         .completion_sender(unwind_safe(move |message: u32| {
@@ -1449,7 +1458,7 @@ mod native {
             runtime
                 .with_transient(|scope| {
                     let messages = scope
-                        .rw_signal(Vec::<String>::with_capacity(64))
+                        .signal(Vec::<String>::with_capacity(64))
                         .expect("fallible reactive creation");
                     let setter = messages.write();
                     let token = scope

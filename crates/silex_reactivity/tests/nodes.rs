@@ -8,7 +8,7 @@
 use silex_reactivity::{
     Callback, CallbackInvokeError, ComputationInitError, Computed, EffectHandle, EffectPhase,
     ErrorHandlerRef, ErrorHandlerToken, NodeRef, OwnerAccess, ReactiveError, ReadSignal, Runtime,
-    StoredValue, WriteSignal,
+    Signal, StoredValue, WriteSignal,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -85,7 +85,7 @@ fn all_public_node_capabilities_are_copy() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|scope| {
-            let signal = scope.rw_signal(0i32).expect("fallible reactive creation");
+            let signal = scope.signal(0i32).expect("fallible reactive creation");
             let read = signal.read();
             let write = signal.write();
             let memo = scope
@@ -130,6 +130,38 @@ fn all_public_node_capabilities_are_copy() {
             let _: Option<NodeRef<'_, i32>> = Some(node_ref);
         })
         .expect("test operation should succeed");
+}
+
+#[test]
+fn signal_pair_round_trip_preserves_node_identity() {
+    let mut runtime = Runtime::new();
+    runtime
+        .with_transient(|scope| {
+            let signal = scope.signal(1_i32).expect("signal creation");
+            let rebuilt = Signal::from_pair((signal.read(), signal.write()))
+                .expect("signal pair should be valid");
+
+            assert_eq!(rebuilt.get(), Ok(1));
+            rebuilt.set(2).expect("signal write");
+            assert_eq!(rebuilt.get(), Ok(2));
+        })
+        .expect("scope execution");
+}
+
+#[test]
+fn signal_pair_rejects_capabilities_from_different_nodes() {
+    let mut runtime = Runtime::new();
+    runtime
+        .with_transient(|scope| {
+            let first = scope.signal(1_i32).expect("first signal");
+            let second = scope.signal(2_i32).expect("second signal");
+
+            assert!(matches!(
+                Signal::from_pair((first.read(), second.write())),
+                Err(ReactiveError::InvariantViolation)
+            ));
+        })
+        .expect("scope execution");
 }
 
 #[test]
@@ -179,8 +211,8 @@ fn copy_capabilities_return_no_such_node_after_child_release() {
     let handler = access
         .error_handler(|_: ()| {})
         .expect("handler registration");
-    let (read, write) = access.signal(1_i32).expect("signal creation");
-    let rw = access.rw_signal(2_i32).expect("rw signal creation");
+    let read = access.signal(1_i32).expect("signal creation");
+    let rw = access.signal(2_i32).expect("signal creation");
     let computed = access
         .computed(|| Ok::<i32, ()>(3), handler.view())
         .expect("computed creation");
@@ -193,7 +225,7 @@ fn copy_capabilities_return_no_such_node_after_child_release() {
     child.close().expect("child close");
 
     assert_eq!(read.get(), Err(ReactiveError::NoSuchNode));
-    assert_eq!(write.set(5), Err(ReactiveError::NoSuchNode));
+    assert_eq!(read.set(5), Err(ReactiveError::NoSuchNode));
     assert_eq!(rw.read().get(), Err(ReactiveError::NoSuchNode));
     assert_eq!(rw.write().set(5), Err(ReactiveError::NoSuchNode));
     assert!(matches!(
@@ -296,12 +328,12 @@ fn callback_dispatches_user_error_once_after_releasing_its_lease() {
 
     runtime
         .with_transient(|scope| {
-            let (signal, set_signal) = scope.signal(0_i32).expect("fallible reactive creation");
+            let signal = scope.signal(0_i32).expect("fallible reactive creation");
             let handler_calls_in_handler = handler_calls.clone();
             let handler = scope
                 .error_handler(move |_: &'static str| {
                     handler_calls_in_handler.set(handler_calls_in_handler.get() + 1);
-                    set_signal.set(1).expect("signal update");
+                    signal.set(1).expect("signal update");
                 })
                 .expect("handler registration");
             let callback = scope
@@ -417,17 +449,17 @@ fn updating_one_signal_can_read_another_signal() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(1i32).expect("fallible reactive creation");
-            let (other, set_other) = scope.signal(2i32).expect("fallible reactive creation");
-            set_source
+            let source = scope.signal(1i32).expect("fallible reactive creation");
+            let other = scope.signal(2i32).expect("fallible reactive creation");
+            source
                 .update(|value| {
                     *value += other.get().expect("reactive read");
                 })
                 .expect("updating one signal should release state borrow");
             assert_eq!(source.get(), Ok(3));
 
-            set_other.set(4).expect("test operation should succeed");
-            set_source
+            other.set(4).expect("test operation should succeed");
+            source
                 .update(|value| *value += other.get().expect("reactive read"))
                 .expect("signal update");
             assert_eq!(source.get(), Ok(7));
@@ -442,8 +474,8 @@ fn updating_another_signal_during_read_defers_effect_flush() {
 
     runtime
         .with_transient(|scope| {
-            let (source, _set_source) = scope.signal(0i32).expect("fallible reactive creation");
-            let (other, set_other) = scope.signal(0i32).expect("fallible reactive creation");
+            let source = scope.signal(0i32).expect("fallible reactive creation");
+            let other = scope.signal(0i32).expect("fallible reactive creation");
             let runs_in_effect = runs.clone();
             scope
                 .effect(
@@ -460,7 +492,8 @@ fn updating_another_signal_during_read_defers_effect_flush() {
 
             let result = catch_unwind(AssertUnwindSafe(|| {
                 source
-                    .with(|_| set_other.set(1).expect("signal update"))
+                    .read()
+                    .with(|_| other.set(1).expect("signal update"))
                     .expect("reactive read");
             }));
 
@@ -485,10 +518,9 @@ fn computation_payload_drop_observes_disposed_scope() {
                 .effect(
                     EffectPhase::Normal,
                     move || {
-                        let (_source, set_source) =
-                            scope_copy.signal(0i32).expect("fallible reactive creation");
+                        let source = scope_copy.signal(0i32).expect("fallible reactive creation");
                         let guard = ReenterOnDrop {
-                            setter: set_source,
+                            setter: source.write(),
                             called: called_in_outer.clone(),
                             error: error_in_outer.clone(),
                         };
@@ -518,11 +550,9 @@ fn nested_memo_child_payload_drop_does_not_track_the_outer_observer() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|scope| {
-            let (outer_source, set_outer_source) =
-                scope.signal(0i32).expect("fallible reactive creation");
-            let (inner_source, set_inner_source) =
-                scope.signal(0i32).expect("fallible reactive creation");
-            let (probe, set_probe) = scope.signal(0i32).expect("fallible reactive creation");
+            let outer_source = scope.signal(0i32).expect("fallible reactive creation");
+            let inner_source = scope.signal(0i32).expect("fallible reactive creation");
+            let probe = scope.signal(0i32).expect("fallible reactive creation");
             let drops = Rc::new(Cell::new(0));
             let first_inner_run = Rc::new(Cell::new(true));
             let scope_for_child = scope;
@@ -535,7 +565,7 @@ fn nested_memo_child_payload_drop_does_not_track_the_outer_observer() {
                         if first_inner_run.replace(false) {
                             scope_for_child
                                 .signal(ReadOnDrop {
-                                    probe: probe_for_child,
+                                    probe: probe_for_child.read(),
                                     drops: drops_in_child.clone(),
                                 })
                                 .expect("test operation should succeed");
@@ -550,7 +580,6 @@ fn nested_memo_child_payload_drop_does_not_track_the_outer_observer() {
             let refresh_inner = Rc::new(Cell::new(false));
             let outer_inner = inner;
             let outer_source_in_effect = outer_source;
-            let set_inner_source_in_effect = set_inner_source;
             let outer_runs_in_effect = outer_runs.clone();
             let refresh_inner_in_effect = refresh_inner.clone();
             scope
@@ -562,9 +591,7 @@ fn nested_memo_child_payload_drop_does_not_track_the_outer_observer() {
                             .expect("test operation should succeed");
                         outer_runs_in_effect.set(outer_runs_in_effect.get() + 1);
                         if refresh_inner_in_effect.replace(false) {
-                            set_inner_source_in_effect
-                                .set(1)
-                                .expect("test operation should succeed");
+                            inner_source.set(1).expect("test operation should succeed");
                         }
                         outer_inner
                             .with_untracked(|_| ())
@@ -579,14 +606,12 @@ fn nested_memo_child_payload_drop_does_not_track_the_outer_observer() {
             assert_eq!(drops.get(), 0);
 
             refresh_inner.set(true);
-            set_outer_source
-                .set(1)
-                .expect("test operation should succeed");
+            outer_source.set(1).expect("test operation should succeed");
 
             assert_eq!(outer_runs.get(), 2);
             assert_eq!(drops.get(), 1);
 
-            set_probe.set(1).expect("test operation should succeed");
+            probe.set(1).expect("test operation should succeed");
             assert_eq!(outer_runs.get(), 2);
         })
         .expect("test operation should succeed");
@@ -597,11 +622,9 @@ fn nested_memo_result_drop_does_not_track_the_outer_observer() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|scope| {
-            let (outer_source, set_outer_source) =
-                scope.signal(0i32).expect("fallible reactive creation");
-            let (inner_source, set_inner_source) =
-                scope.signal(0i32).expect("fallible reactive creation");
-            let (probe, set_probe) = scope.signal(0i32).expect("fallible reactive creation");
+            let outer_source = scope.signal(0i32).expect("fallible reactive creation");
+            let inner_source = scope.signal(0i32).expect("fallible reactive creation");
+            let probe = scope.signal(0i32).expect("fallible reactive creation");
             let drops = Rc::new(Cell::new(0));
             let inner = scope
                 .computed(
@@ -610,7 +633,7 @@ fn nested_memo_result_drop_does_not_track_the_outer_observer() {
                         move || {
                             inner_source.get().expect("reactive read");
                             Ok(ReadOnDrop {
-                                probe,
+                                probe: probe.read(),
                                 drops: drops.clone(),
                             })
                         }
@@ -623,7 +646,6 @@ fn nested_memo_result_drop_does_not_track_the_outer_observer() {
             let refresh_inner = Rc::new(Cell::new(false));
             let outer_inner = inner;
             let outer_source_in_effect = outer_source;
-            let set_inner_source_in_effect = set_inner_source;
             let outer_runs_in_effect = outer_runs.clone();
             let refresh_inner_in_effect = refresh_inner.clone();
             scope
@@ -635,9 +657,7 @@ fn nested_memo_result_drop_does_not_track_the_outer_observer() {
                             .expect("test operation should succeed");
                         outer_runs_in_effect.set(outer_runs_in_effect.get() + 1);
                         if refresh_inner_in_effect.replace(false) {
-                            set_inner_source_in_effect
-                                .set(1)
-                                .expect("test operation should succeed");
+                            inner_source.set(1).expect("test operation should succeed");
                         }
                         outer_inner
                             .with_untracked(|_| ())
@@ -652,14 +672,12 @@ fn nested_memo_result_drop_does_not_track_the_outer_observer() {
             assert_eq!(drops.get(), 0);
 
             refresh_inner.set(true);
-            set_outer_source
-                .set(1)
-                .expect("test operation should succeed");
+            outer_source.set(1).expect("test operation should succeed");
 
             assert_eq!(outer_runs.get(), 2);
             assert_eq!(drops.get(), 1);
 
-            set_probe.set(1).expect("test operation should succeed");
+            probe.set(1).expect("test operation should succeed");
             assert_eq!(outer_runs.get(), 2);
         })
         .expect("test operation should succeed");
@@ -750,7 +768,7 @@ fn child_callback_payload_drop_can_schedule_an_active_parent_effect() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0i32).expect("fallible reactive creation");
+            let source = scope.signal(0i32).expect("fallible reactive creation");
             let seen_in_effect = seen.clone();
             scope
                 .effect(
@@ -763,11 +781,11 @@ fn child_callback_payload_drop_can_schedule_an_active_parent_effect() {
                 )
                 .expect("effect should initialize");
 
-            let setter = set_source;
+            let setter = source;
             scope
                 .with_transient(|child| {
                     let drop_probe = ReenterOnDrop {
-                        setter,
+                        setter: setter.write(),
                         called: called.clone(),
                         error: error.clone(),
                     };
@@ -795,7 +813,7 @@ fn stored_value_update_flushes_after_the_write_lease_is_released() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0i32).expect("fallible reactive creation");
+            let source = scope.signal(0i32).expect("fallible reactive creation");
             let stored = scope.stored(0i32).expect("fallible reactive creation");
             let seen_in_effect = seen.clone();
             scope
@@ -812,7 +830,7 @@ fn stored_value_update_flushes_after_the_write_lease_is_released() {
             stored
                 .update(|value| {
                     *value = 1;
-                    set_source.set(1).expect("test operation should succeed");
+                    source.set(1).expect("test operation should succeed");
                 })
                 .expect("test operation should succeed");
 

@@ -1,6 +1,6 @@
 use std::{borrow::Cow, rc::Rc};
 
-use silex_core::{Rx, RxGet, RxValueKind, SilexError, SilexErrorKind, SilexResult};
+use silex_core::{Rx, RxGet, SilexError, SilexErrorKind, SilexResult};
 use wasm_bindgen::JsValue;
 use web_sys::Element as WebElem;
 
@@ -279,7 +279,7 @@ where
     Ok(())
 }
 
-impl<'scope, T> ApplyToDom<'scope> for Rx<'scope, T, RxValueKind>
+impl<'scope, T> ApplyToDom<'scope> for Rx<'scope, T>
 where
     T: ReactiveBinding<'scope> + Clone + 'scope,
 {

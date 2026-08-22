@@ -1,6 +1,6 @@
-use silex_i18n::{EffectHandle, RwSignal};
+use silex_i18n::{EffectHandle, Signal};
 
 fn main() {
-    let _ = RwSignal::new(1_u32);
+    let _ = Signal::new(1_u32);
     let _ = EffectHandle::new(|| {});
 }

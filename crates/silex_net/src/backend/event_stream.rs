@@ -10,8 +10,8 @@ use web_sys::{Event, EventSource as JsEventSource, MessageEvent};
 
 use silex_core::{
     CallbackInvokeError, CompletionSender, ErrorHandlerInput, ErrorReporter, OwnerAccess,
-    ReactiveError, ReadSignal, RwSignal, Rx, RxGet, RxRead, SilexError, SilexErrorKind,
-    SilexResult, StoredValue, WriteSignal, unwind_safe,
+    ReactiveError, ReadSignal, Rx, RxGet, RxRead, Signal, SilexError, SilexErrorKind, SilexResult,
+    StoredValue, unwind_safe,
 };
 
 use crate::{
@@ -68,7 +68,7 @@ pub struct EventStreamConnection<'scope> {
     scope: OwnerAccess<'scope>,
     inner: StoredValue<'scope, EventStreamInner<'scope>>,
     state: ReadSignal<'scope, ConnectionState>,
-    messages: RwSignal<'scope, Vec<EventMessage>>,
+    messages: Signal<'scope, Vec<EventMessage>>,
     error: ReadSignal<'scope, Option<NetError>>,
 }
 
@@ -264,9 +264,9 @@ struct EventStreamInner<'scope> {
     max_messages: Option<usize>,
     on_open: Vec<Rc<dyn Fn() + 'scope>>,
     on_error: Vec<Rc<dyn Fn(NetError) + 'scope>>,
-    set_state: RwSignal<'scope, ConnectionState>,
-    messages: RwSignal<'scope, Vec<EventMessage>>,
-    set_error: WriteSignal<'scope, Option<NetError>>,
+    state: Signal<'scope, ConnectionState>,
+    messages: Signal<'scope, Vec<EventMessage>>,
+    error: Signal<'scope, Option<NetError>>,
     completion: CompletionSender<EventStreamEvent>,
     error_completion: CompletionSender<SilexError>,
     error_handler_owner: silex_core::ErrorHandlerAnchor<'scope>,
@@ -326,7 +326,7 @@ impl<'scope> EventStreamInner<'scope> {
     ) -> SilexResult<(Result<(), NetError>, Option<DeferredCallback<'scope>>)> {
         self.registration.take();
         let operation = self.driver.begin()?;
-        self.set_state.set(ConnectionState::Connecting)?;
+        self.state.set(ConnectionState::Connecting)?;
 
         let source = match source {
             Some(source) => Ok(source),
@@ -339,8 +339,8 @@ impl<'scope> EventStreamInner<'scope> {
         let source = match source {
             Ok(source) => source,
             Err(error) => {
-                self.set_state.set(ConnectionState::Error)?;
-                self.set_error.set(Some(error.clone()))?;
+                self.state.set(ConnectionState::Error)?;
+                self.error.set(Some(error.clone()))?;
                 return Ok((Err(error.clone()), Some(self.defer_error(error))));
             }
         };
@@ -356,8 +356,8 @@ impl<'scope> EventStreamInner<'scope> {
                 Ok((Ok(()), None))
             }
             Err(error) => {
-                self.set_state.set(ConnectionState::Error)?;
-                self.set_error.set(Some(error.clone()))?;
+                self.state.set(ConnectionState::Error)?;
+                self.error.set(Some(error.clone()))?;
                 Ok((Err(error.clone()), Some(self.defer_error(error))))
             }
         }
@@ -371,8 +371,8 @@ impl<'scope> EventStreamInner<'scope> {
         match event {
             EventStreamEvent::Open { operation } if self.driver.is_current(operation) => {
                 self.driver.recovered();
-                self.set_state.set(ConnectionState::Connected)?;
-                self.set_error.set(None)?;
+                self.state.set(ConnectionState::Connected)?;
+                self.error.set(None)?;
                 callback = Some(self.defer_open());
             }
             EventStreamEvent::Message {
@@ -389,13 +389,13 @@ impl<'scope> EventStreamInner<'scope> {
                         }
                     }
                 })?;
-                self.set_state.set(ConnectionState::Connected)?;
+                self.state.set(ConnectionState::Connected)?;
             }
             EventStreamEvent::Error { operation, error }
                 if self.driver.consume_failure(operation) =>
             {
-                self.set_state.set(ConnectionState::Error)?;
-                self.set_error.set(Some(error.clone()))?;
+                self.state.set(ConnectionState::Error)?;
+                self.error.set(Some(error.clone()))?;
                 callback = Some(self.defer_error(error));
             }
             _ => {}
@@ -406,7 +406,7 @@ impl<'scope> EventStreamInner<'scope> {
     fn close(&mut self) -> SilexResult<()> {
         self.registration.take();
         self.driver.invalidate();
-        self.set_state.set(ConnectionState::Closed)?;
+        self.state.set(ConnectionState::Closed)?;
         Ok(())
     }
 }
@@ -663,13 +663,13 @@ impl<'scope, H> EventStreamBuilder<'scope, H> {
             None
         };
 
-        let state = scope.rw_signal(if auto_connect {
+        let state = scope.signal(if auto_connect {
             ConnectionState::Connecting
         } else {
             ConnectionState::Disconnected
         })?;
-        let messages = scope.rw_signal(Vec::<EventMessage>::new())?;
-        let (error, set_error) = scope.signal(None::<NetError>)?;
+        let messages = scope.signal(Vec::<EventMessage>::new())?;
+        let error = scope.signal(None::<NetError>)?;
         let inner_slot = Rc::new(Cell::new(
             None::<StoredValue<'scope, EventStreamInner<'scope>>>,
         ));
@@ -698,9 +698,9 @@ impl<'scope, H> EventStreamBuilder<'scope, H> {
             max_messages,
             on_open,
             on_error,
-            set_state: state,
+            state,
             messages,
-            set_error,
+            error,
             completion,
             error_completion,
             error_handler_owner: handler_anchor.clone(),
@@ -720,7 +720,7 @@ impl<'scope, H> EventStreamBuilder<'scope, H> {
             inner,
             state: state.read_signal(),
             messages,
-            error,
+            error: error.read_signal(),
         };
         if auto_connect {
             let (result, callbacks) = inner

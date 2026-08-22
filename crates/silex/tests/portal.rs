@@ -222,8 +222,7 @@ async fn portal_modal_does_not_duplicate_content_after_repeated_toggles() {
     let root = runtime.owner().expect("root runtime should start");
 
     let (errors, completed, valid) = root.with_access(|owner| {
-        let (show_modal, set_show_modal) =
-            owner.signal(false).expect("modal signal should be created");
+        let show_modal = owner.signal(false).expect("modal signal should be created");
         let errors = Rc::new(Cell::new(0));
         let completed = Rc::new(Cell::new(false));
         let valid = Rc::new(Cell::new(true));
@@ -269,7 +268,7 @@ async fn portal_modal_does_not_duplicate_content_after_repeated_toggles() {
             .spawn_scoped(
                 async move {
                     for _ in 0..3 {
-                        set_show_modal.set(true).expect("modal should open");
+                        show_modal.set(true).expect("modal should open");
                         flush_browser_tasks().await;
                         let current_host = portal_host();
                         let current_root = portal_visibility_root();
@@ -294,7 +293,7 @@ async fn portal_modal_does_not_duplicate_content_after_repeated_toggles() {
                                     "I am rendered via Portal directly into the body, but I share ctx!",
                                 ) == 1,
                         );
-                        set_show_modal.set(false).expect("modal should close");
+                        show_modal.set(false).expect("modal should close");
                         flush_browser_tasks().await;
                         let current_host = portal_host();
                         let current_root = portal_visibility_root();
@@ -769,7 +768,7 @@ fn portal_host_attrs_reject_reserved_fields_and_mount_allowed_fields() {
     let root = runtime.owner().expect("root runtime should start");
 
     root.with_access(|owner| {
-        let (open, _) = owner.signal(false).expect("open signal should be created");
+        let open = owner.signal(false).expect("open signal should be created");
         let error_handler = owner
             .error_handler(|_| {})
             .expect("test error handler should be registered");
@@ -812,7 +811,7 @@ fn portal_host_mutations_cannot_open_closed_visibility_root() {
     let root = runtime.owner().expect("root runtime should start");
 
     root.with_access(|owner| {
-        let (open, _) = owner.signal(false).expect("open signal should be created");
+        let open = owner.signal(false).expect("open signal should be created");
         let error_handler = owner
             .error_handler(|_| {})
             .expect("test error handler should be registered");
@@ -873,12 +872,12 @@ fn dialog_restores_focus_and_keeps_host_stable_across_overlay_close() {
     let root = runtime.owner().expect("root runtime should start");
 
     root.with_access(|owner| {
-        let (open, set_open) = owner
+        let open = owner
             .signal(false)
             .expect("dialog signal should be created");
         let on_close = owner
             .callback(move |_| {
-                set_open.set(false)?;
+                open.set(false)?;
                 Ok(())
             })
             .expect("dialog close callback should be created");
@@ -890,7 +889,7 @@ fn dialog_restores_focus_and_keeps_host_stable_across_overlay_close() {
             button("Open dialog")
                 .attr("data-slot", "dialog-trigger")
                 .on_click(move |_| {
-                    set_open.set(true)?;
+                    open.set(true)?;
                     Ok(())
                 }),
             Dialog(ctx, chain!(p("Dialog content")))
@@ -1052,7 +1051,7 @@ async fn portal_unmount_mode_keeps_host_and_unmounts_only_content() {
     let root = runtime.owner().expect("root runtime should start");
 
     let (completed, valid, errors) = root.with_access(|owner| {
-        let (open, set_open) = owner.signal(false).expect("open signal should be created");
+        let open = owner.signal(false).expect("open signal should be created");
         let errors = Rc::new(Cell::new(0));
         let completed = Rc::new(Cell::new(false));
         let valid = Rc::new(Cell::new(true));
@@ -1087,7 +1086,7 @@ async fn portal_unmount_mode_keeps_host_and_unmounts_only_content() {
         owner
             .spawn_scoped(
                 async move {
-                    set_open.set(true).expect("portal should open");
+                    open.set(true).expect("portal should open");
                     flush_browser_tasks().await;
                     let host_when_open = portal_host();
                     let root_when_open = portal_visibility_root();
@@ -1098,7 +1097,7 @@ async fn portal_unmount_mode_keeps_host_and_unmounts_only_content() {
                                 == Some("open"),
                     );
 
-                    set_open.set(false).expect("portal should close");
+                    open.set(false).expect("portal should close");
                     flush_browser_tasks().await;
                     valid_for_task.set(
                         valid_for_task.get()
@@ -1116,7 +1115,7 @@ async fn portal_unmount_mode_keeps_host_and_unmounts_only_content() {
                                 == Some("closed"),
                     );
 
-                    set_open.set(true).expect("portal should reopen");
+                    open.set(true).expect("portal should reopen");
                     flush_browser_tasks().await;
                     valid_for_task.set(
                         valid_for_task.get()
@@ -1161,7 +1160,7 @@ fn portal_mount_failure_leaves_no_host() {
     let root = runtime.owner().expect("root runtime should start");
 
     root.with_access(|owner| {
-        let (open, _) = owner.signal(false).expect("open signal should be created");
+        let open = owner.signal(false).expect("open signal should be created");
         let error_handler = owner
             .error_handler(|_| {})
             .expect("test error handler should be registered");
@@ -1194,7 +1193,7 @@ fn portal_mount_panic_leaves_no_host() {
     let root = runtime.owner().expect("root runtime should start");
 
     root.with_access(|owner| {
-        let (open, _) = owner.signal(false).expect("open signal should be created");
+        let open = owner.signal(false).expect("open signal should be created");
         let error_handler = owner
             .error_handler(|_| {})
             .expect("test error handler should be registered");

@@ -1,10 +1,12 @@
 use crate::{
-    OwnerAccess, Rx, RxInner, RxValueKind, SilexError, SilexResult,
+    OwnerAccess, Rx, SilexError, SilexResult,
     callback::map_callback_error,
-    reactivity::{Computed, SignalSlice, StoredValue},
+    reactivity::{RxInner, SignalSlice},
     traits::{RuntimeScoped, RxBase, RxRead, RxValue, RxWrite},
 };
-use silex_reactivity::{ReadSignal as RawReadSignal, WriteSignal as RawWriteSignal};
+use silex_reactivity::{
+    ReadSignal as RawReadSignal, Signal as RawSignal, WriteSignal as RawWriteSignal,
+};
 use std::fmt;
 
 /// A plain value that has not yet been promoted into a runtime node.
@@ -58,18 +60,9 @@ pub struct WriteSignal<'owner, T> {
 }
 
 /// A paired read/write signal.
-pub struct RwSignal<'owner, T> {
+pub struct Signal<'owner, T> {
     pub(crate) read: ReadSignal<'owner, T>,
     pub(crate) write: WriteSignal<'owner, T>,
-}
-
-/// A read-only union of the typed high-level node wrappers.
-///
-/// Access keeps the wrapped source kind intact. During final owner disposal,
-/// raw signal-like sources follow their own inactive-node semantics, while a
-/// `StoredValue`-backed instance follows the final-cleanup StoredValue path.
-pub struct Signal<'owner, T> {
-    pub(crate) rx: Rx<'owner, T, RxValueKind>,
 }
 
 impl<'owner, T> Copy for ReadSignal<'owner, T> {}
@@ -83,14 +76,6 @@ impl<'owner, T> Clone for ReadSignal<'owner, T> {
 impl<'owner, T> Copy for WriteSignal<'owner, T> {}
 
 impl<'owner, T> Clone for WriteSignal<'owner, T> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<'owner, T> Copy for RwSignal<'owner, T> {}
-
-impl<'owner, T> Clone for RwSignal<'owner, T> {
     fn clone(&self) -> Self {
         *self
     }
@@ -116,12 +101,6 @@ impl<T> fmt::Debug for WriteSignal<'_, T> {
     }
 }
 
-impl<T> fmt::Debug for RwSignal<'_, T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("RwSignal").finish_non_exhaustive()
-    }
-}
-
 impl<T> fmt::Debug for Signal<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Signal").finish_non_exhaustive()
@@ -144,17 +123,9 @@ impl<'owner, T> PartialEq for WriteSignal<'owner, T> {
 
 impl<'owner, T> Eq for WriteSignal<'owner, T> {}
 
-impl<'owner, T> PartialEq for RwSignal<'owner, T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.read == other.read && self.write == other.write
-    }
-}
-
-impl<'owner, T> Eq for RwSignal<'owner, T> {}
-
 impl<'owner, T> PartialEq for Signal<'owner, T> {
     fn eq(&self, other: &Self) -> bool {
-        self.rx == other.rx
+        self.read == other.read && self.write == other.write
     }
 }
 
@@ -211,9 +182,15 @@ impl<'owner, T: 'owner> WriteSignal<'owner, T> {
     }
 }
 
-impl<'owner, T> RwSignal<'owner, T> {
-    pub(crate) fn from_parts(read: ReadSignal<'owner, T>, write: WriteSignal<'owner, T>) -> Self {
-        Self { read, write }
+impl<'owner, T> Signal<'owner, T> {
+    pub fn from_pair(pair: (ReadSignal<'owner, T>, WriteSignal<'owner, T>)) -> SilexResult<Self> {
+        let (read, write) = pair;
+        RawSignal::from_pair((read.inner, write.inner)).map_err(SilexError::fatal)?;
+        Ok(Self { read, write })
+    }
+
+    pub fn into_pair(self) -> (ReadSignal<'owner, T>, WriteSignal<'owner, T>) {
+        (self.read, self.write)
     }
 
     pub fn read_signal(&self) -> ReadSignal<'owner, T> {
@@ -266,59 +243,25 @@ impl<'owner, T> RwSignal<'owner, T> {
     }
 }
 
-impl<'owner, T: 'owner> Signal<'owner, T> {
-    pub(crate) fn from_rx(rx: Rx<'owner, T, RxValueKind>) -> Self {
-        Self { rx }
-    }
-
-    pub fn is_constant(&self) -> bool {
-        self.rx.is_constant()
-    }
-
-    pub fn into_rx(self) -> Rx<'owner, T> {
-        self.rx
-    }
-
-    pub fn slice<O, F>(self, getter: F) -> SignalSlice<Self, F, O>
-    where
-        O: ?Sized + 'owner,
-        F: Fn(&T) -> &O + 'owner,
-    {
-        SignalSlice::new(self, getter)
+impl<'owner, T> From<Signal<'owner, T>> for ReadSignal<'owner, T> {
+    fn from(signal: Signal<'owner, T>) -> Self {
+        signal.read
     }
 }
 
-impl<'owner, T: 'owner> From<ReadSignal<'owner, T>> for Signal<'owner, T> {
-    fn from(signal: ReadSignal<'owner, T>) -> Self {
-        Self::from_rx(Rx::from_signal(signal))
+impl<'owner, T> From<Signal<'owner, T>> for WriteSignal<'owner, T> {
+    fn from(signal: Signal<'owner, T>) -> Self {
+        signal.write
     }
 }
 
-impl<'owner, T: 'owner> From<RwSignal<'owner, T>> for Signal<'owner, T> {
-    fn from(signal: RwSignal<'owner, T>) -> Self {
-        signal.read.into()
+impl<'owner, T: 'owner> From<Signal<'owner, T>> for Rx<'owner, T> {
+    fn from(signal: Signal<'owner, T>) -> Self {
+        Rx::from_signal(signal.read)
     }
 }
 
-impl<'owner, T: 'owner> From<Computed<'owner, T>> for Signal<'owner, T> {
-    fn from(computed: Computed<'owner, T>) -> Self {
-        Self::from_rx(Rx::from_computed(computed))
-    }
-}
-
-impl<'owner, T: 'owner> From<StoredValue<'owner, T>> for Signal<'owner, T> {
-    fn from(stored: StoredValue<'owner, T>) -> Self {
-        Self::from_rx(Rx::from_stored(stored))
-    }
-}
-
-impl<'owner, T: 'owner> From<Rx<'owner, T>> for Signal<'owner, T> {
-    fn from(rx: Rx<'owner, T>) -> Self {
-        Self::from_rx(rx)
-    }
-}
-
-impl<'owner, T, M> RuntimeScoped for Rx<'owner, T, M> {
+impl<'owner, T> RuntimeScoped for Rx<'owner, T> {
     fn owner_access(&self) -> OwnerAccess<'_> {
         self.owner
     }
@@ -336,15 +279,9 @@ impl<'owner, T> RuntimeScoped for WriteSignal<'owner, T> {
     }
 }
 
-impl<'owner, T> RuntimeScoped for RwSignal<'owner, T> {
-    fn owner_access(&self) -> OwnerAccess<'_> {
-        self.read.owner_access()
-    }
-}
-
 impl<'owner, T> RuntimeScoped for Signal<'owner, T> {
     fn owner_access(&self) -> OwnerAccess<'_> {
-        self.rx.owner_access()
+        self.read.owner_access()
     }
 }
 
@@ -382,17 +319,17 @@ impl<'owner, T> RxWrite for WriteSignal<'owner, T> {
     }
 }
 
-impl<'owner, T> RxValue for RwSignal<'owner, T> {
+impl<'owner, T> RxValue for Signal<'owner, T> {
     type Value = T;
 }
 
-impl<'owner, T> RxBase for RwSignal<'owner, T> {
+impl<'owner, T> RxBase for Signal<'owner, T> {
     fn track(&self) -> SilexResult<()> {
         self.read.track()
     }
 }
 
-impl<'owner, T> RxRead for RwSignal<'owner, T> {
+impl<'owner, T> RxRead for Signal<'owner, T> {
     fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         self.read.with(f)
     }
@@ -402,7 +339,7 @@ impl<'owner, T> RxRead for RwSignal<'owner, T> {
     }
 }
 
-impl<'owner, T> RxWrite for RwSignal<'owner, T> {
+impl<'owner, T> RxWrite for Signal<'owner, T> {
     fn rx_update_untracked<U>(&self, f: impl FnOnce(&mut T) -> U) -> SilexResult<U> {
         self.write.rx_update_untracked(f)
     }
@@ -412,44 +349,24 @@ impl<'owner, T> RxWrite for RwSignal<'owner, T> {
     }
 }
 
-impl<'owner, T> RxValue for Signal<'owner, T> {
+impl<'owner, T> RxValue for Rx<'owner, T> {
     type Value = T;
 }
 
-impl<'owner, T> RxBase for Signal<'owner, T> {
-    fn track(&self) -> SilexResult<()> {
-        self.rx.track()
-    }
-}
-
-impl<'owner, T> RxRead for Signal<'owner, T> {
-    fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.rx.with(f)
-    }
-
-    fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.rx.with_untracked(f)
-    }
-}
-
-impl<'owner, T> RxValue for Rx<'owner, T, RxValueKind> {
-    type Value = T;
-}
-
-impl<'owner, T> RxBase for Rx<'owner, T, RxValueKind> {
+impl<'owner, T> RxBase for Rx<'owner, T> {
     fn track(&self) -> SilexResult<()> {
         match &self.inner {
-            RxInner::Signal(signal) => signal.track().map_err(SilexError::fatal),
+            RxInner::ReadSignal(signal) => signal.track().map_err(SilexError::fatal),
             RxInner::Computed(computed) => computed.track().map_err(map_callback_error),
             RxInner::Stored(stored) => stored.track().map_err(SilexError::fatal),
         }
     }
 }
 
-impl<'owner, T> RxRead for Rx<'owner, T, RxValueKind> {
+impl<'owner, T> RxRead for Rx<'owner, T> {
     fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         match &self.inner {
-            RxInner::Signal(signal) => signal.with(f).map_err(SilexError::fatal),
+            RxInner::ReadSignal(signal) => signal.with(f).map_err(SilexError::fatal),
             RxInner::Computed(computed) => computed.with(f).map_err(map_callback_error),
             RxInner::Stored(stored) => stored.with(f).map_err(SilexError::fatal),
         }
@@ -457,7 +374,7 @@ impl<'owner, T> RxRead for Rx<'owner, T, RxValueKind> {
 
     fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         match &self.inner {
-            RxInner::Signal(signal) => signal.with_untracked(f).map_err(SilexError::fatal),
+            RxInner::ReadSignal(signal) => signal.with_untracked(f).map_err(SilexError::fatal),
             RxInner::Computed(computed) => computed.with_untracked(f).map_err(map_callback_error),
             RxInner::Stored(stored) => stored.with_untracked(f).map_err(SilexError::fatal),
         }
@@ -466,25 +383,36 @@ impl<'owner, T> RxRead for Rx<'owner, T, RxValueKind> {
 
 #[cfg(test)]
 mod tests {
+    use super::Signal;
     use crate::Runtime;
+    use crate::traits::RxGet;
 
     #[test]
     fn test_signal_partial_eq() {
         let mut runtime = Runtime::new();
         runtime
             .with_transient(|owner| {
-                let (read1, write1) = owner.signal(10).expect("signal should initialize");
-                let (read2, _write2) = owner.signal(10).expect("signal should initialize");
+                let read1 = owner.signal(10).expect("signal should initialize");
+                let write1 = read1;
+                let read2 = owner.signal(10).expect("signal should initialize");
 
                 assert_eq!(read1, read1);
                 assert_ne!(read1, read2);
                 assert_eq!(write1, write1);
 
-                let rw1 = owner.rw_signal(20).expect("rw signal should initialize");
-                let rw2 = owner.rw_signal(20).expect("rw signal should initialize");
+                let rw1 = owner.signal(20).expect("signal should initialize");
+                let rw2 = owner.signal(20).expect("signal should initialize");
 
                 assert_eq!(rw1, rw1);
                 assert_ne!(rw1, rw2);
+
+                let rebuilt = Signal::from_pair((rw1.read_signal(), rw1.write_signal()))
+                    .expect("signal pair should initialize");
+                assert_eq!(rebuilt.get().expect("signal should be readable"), 20);
+
+                let first = owner.signal(30).expect("first signal should initialize");
+                let second = owner.signal(40).expect("second signal should initialize");
+                assert!(Signal::from_pair((first.read_signal(), second.write_signal())).is_err());
             })
             .expect("child owner should initialize");
     }

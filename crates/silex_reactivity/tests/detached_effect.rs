@@ -26,10 +26,8 @@ fn detached_effect_survives_parent_reruns_and_stops_explicitly() {
 
     runtime
         .with_transient(|scope| {
-            let (parent_source, set_parent_source) =
-                scope.signal(0_i32).expect("parent source creation");
-            let (detached_source, set_detached_source) =
-                scope.signal(0_i32).expect("detached source creation");
+            let parent_source = scope.signal(0_i32).expect("parent source creation");
+            let detached_source = scope.signal(0_i32).expect("detached source creation");
             let created = Rc::new(Cell::new(false));
             let parent_runs_in_effect = parent_runs.clone();
             let detached_runs_in_effect = detached_runs.clone();
@@ -74,14 +72,14 @@ fn detached_effect_survives_parent_reruns_and_stops_explicitly() {
             assert_eq!(parent_runs.get(), 1);
             assert_eq!(detached_runs.get(), 1);
 
-            set_parent_source
+            parent_source
                 .set(1)
                 .expect("parent source update should succeed");
             assert_eq!(parent_runs.get(), 2);
             assert_eq!(detached_runs.get(), 1);
             assert_eq!(detached_cleanups.get(), 0);
 
-            set_detached_source
+            detached_source
                 .set(1)
                 .expect("detached source update should succeed");
             assert_eq!(detached_runs.get(), 2);
@@ -134,7 +132,7 @@ fn ordinary_nested_effect_remains_a_child_of_the_parent_effect() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0_i32).expect("source creation");
+            let source = scope.signal(0_i32).expect("source creation");
             let child_cleanups_in_effect = child_cleanups.clone();
             let scope_in_effect = scope;
             scope
@@ -166,7 +164,7 @@ fn ordinary_nested_effect_remains_a_child_of_the_parent_effect() {
                 )
                 .expect("parent effect should initialize");
 
-            set_source.set(1).expect("source update should succeed");
+            source.set(1).expect("source update should succeed");
             assert_eq!(child_cleanups.get(), 1);
         })
         .expect("runtime operation should succeed");
@@ -180,7 +178,7 @@ fn failed_detached_effect_does_not_remain_reactive() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0_i32).expect("source creation");
+            let source = scope.signal(0_i32).expect("source creation");
             let runs_in_effect = runs.clone();
             let cleanups_in_effect = cleanups.clone();
             let result = scope.effect_detached(
@@ -206,7 +204,7 @@ fn failed_detached_effect_does_not_remain_reactive() {
             assert_eq!(runs.get(), 1);
             assert_eq!(cleanups.get(), 1);
 
-            set_source.set(1).expect("source update should succeed");
+            source.set(1).expect("source update should succeed");
             assert_eq!(runs.get(), 1);
             assert_eq!(cleanups.get(), 1);
         })

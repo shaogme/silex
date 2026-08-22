@@ -3,7 +3,7 @@ use crate::reactivity::ReactiveSource;
 use crate::{
     ErrorHandlerInput, OwnerAccess, OwnerChild, ReactiveError, Rx, SilexError, SilexErrorKind,
     SilexResult,
-    reactivity::{EffectPhase, ReadSignal, RwSignal, WriteSignal},
+    reactivity::{EffectPhase, ReadSignal, Signal},
     traits::{RuntimeScoped, RxBase, RxCloneData, RxData, RxError, RxGet, RxRead, RxValue},
     unwind_safe,
 };
@@ -58,9 +58,8 @@ struct ResourceCompletion<T, E> {
 }
 
 pub struct Resource<'owner, T, E = SilexError> {
-    state: ReadSignal<'owner, ResourceState<T, E>>,
-    set_state: WriteSignal<'owner, ResourceState<T, E>>,
-    trigger: RwSignal<'owner, usize>,
+    state: Signal<'owner, ResourceState<T, E>>,
+    trigger: Signal<'owner, usize>,
 }
 
 impl<'owner, T, E> Copy for Resource<'owner, T, E> {}
@@ -73,9 +72,7 @@ impl<'owner, T, E> Clone for Resource<'owner, T, E> {
 
 impl<'owner, T, E> PartialEq for Resource<'owner, T, E> {
     fn eq(&self, other: &Self) -> bool {
-        self.state == other.state
-            && self.set_state == other.set_state
-            && self.trigger == other.trigger
+        self.state == other.state && self.trigger == other.trigger
     }
 }
 
@@ -121,11 +118,7 @@ pub struct ResourceFetchBuilder<'owner, S, Fetcher> {
     suspense: Option<SuspenseContext<'owner>>,
 }
 
-type ResourceHandles<'owner, T, E> = (
-    ReadSignal<'owner, ResourceState<T, E>>,
-    WriteSignal<'owner, ResourceState<T, E>>,
-    RwSignal<'owner, usize>,
-);
+type ResourceHandles<'owner, T, E> = (Signal<'owner, ResourceState<T, E>>, Signal<'owner, usize>);
 
 impl<'owner> ResourceBuilder<'owner> {
     pub fn source<S>(self, source: S) -> ResourceSourceBuilder<'owner, S>
@@ -191,7 +184,7 @@ where
         let child_owner = child.access();
         let result = Resource::initialize(child_owner, source, fetcher, suspense, handler_owner);
         match result {
-            Ok((state, set_state, trigger)) => {
+            Ok((state, trigger)) => {
                 match owner.on_owner_cleanup(
                     child,
                     |child| {
@@ -201,11 +194,7 @@ where
                     },
                     error_handler,
                 ) {
-                    Ok(()) => Ok(Resource {
-                        state,
-                        set_state,
-                        trigger,
-                    }),
+                    Ok(()) => Ok(Resource { state, trigger }),
                     Err(error) => {
                         let (error, child) = error.into_parts();
                         close_child_for_rollback(child);
@@ -273,11 +262,10 @@ where
             },
             error_handler,
         )?;
-        let (state, set_state) = owner.signal(ResourceState::Idle)?;
-        let trigger = owner.rw_signal(0usize)?;
+        let state = owner.signal(ResourceState::Idle)?;
+        let trigger = owner.signal(0usize)?;
         let request_id = Rc::new(Cell::new(0usize));
         let request_id_for_callback = request_id.clone();
-        let set_state_for_callback = set_state;
         let suspense_for_callback = suspense;
         let completion =
             owner.completion_sender(unwind_safe(move |message: ResourceCompletion<T, E>| {
@@ -289,7 +277,7 @@ where
                     message.id,
                     message.result,
                 ) {
-                    set_state_for_callback.set(next_state)?;
+                    state.set(next_state)?;
                 }
                 if let Some(ctx) = suspense_for_callback {
                     ctx.decrement()?;
@@ -301,7 +289,6 @@ where
         let trigger_for_effect = trigger.read_signal();
         let request_id_for_effect = request_id.clone();
         let state_for_effect = state;
-        let set_state_for_effect = set_state;
         let suspense_for_effect = suspense;
         let error_handler_for_effect = error_handler;
         let _effect = owner.effect(
@@ -316,7 +303,7 @@ where
                         .map(ResourceState::Reloading)
                         .unwrap_or(ResourceState::Loading)
                 })?;
-                set_state_for_effect.set(next_state)?;
+                state.set(next_state)?;
                 if let Some(ctx) = suspense_for_effect {
                     ctx.increment()?;
                 }
@@ -364,11 +351,11 @@ where
             error_handler_for_effect,
         )?;
 
-        Ok((state, set_state, trigger))
+        Ok((state, trigger))
     }
 
     pub fn state(&self) -> ReadSignal<'owner, ResourceState<T, E>> {
-        self.state
+        self.state.read_signal()
     }
 
     pub fn refetch(&self) -> SilexResult<()> {
@@ -376,14 +363,14 @@ where
     }
 
     pub fn update(&self, f: impl FnOnce(&mut T)) -> SilexResult<()> {
-        self.set_state.update(|state| match state {
+        self.state.update(|state| match state {
             ResourceState::Ready(value) | ResourceState::Reloading(value) => f(value),
             _ => {}
         })
     }
 
     pub fn set(&self, value: T) -> SilexResult<()> {
-        self.set_state.set(ResourceState::Ready(value))
+        self.state.set(ResourceState::Ready(value))
     }
 
     pub fn loading(&self) -> crate::SilexResult<bool> {
@@ -448,13 +435,12 @@ impl<'owner, T: RxCloneData + 'owner, E: RxError + 'owner> RxRead for Resource<'
 
 #[derive(Clone, Copy)]
 pub struct SuspenseContext<'owner> {
-    pub count: ReadSignal<'owner, usize>,
-    set_count: WriteSignal<'owner, usize>,
+    pub count: Signal<'owner, usize>,
 }
 
 impl<'owner> PartialEq for SuspenseContext<'owner> {
     fn eq(&self, other: &Self) -> bool {
-        self.count == other.count && self.set_count == other.set_count
+        self.count == other.count
     }
 }
 
@@ -462,17 +448,17 @@ impl<'owner> Eq for SuspenseContext<'owner> {}
 
 impl<'owner> SuspenseContext<'owner> {
     pub fn new(owner: OwnerAccess<'owner>) -> crate::SilexResult<Self> {
-        let (count, set_count) = owner.signal(0usize)?;
-        Ok(Self { count, set_count })
+        Ok(Self {
+            count: owner.signal(0usize)?,
+        })
     }
 
     pub fn increment(&self) -> SilexResult<()> {
-        self.set_count.update(|count| *count += 1)
+        self.count.update(|count| *count += 1)
     }
 
     pub fn decrement(&self) -> SilexResult<()> {
-        self.set_count
-            .update(|count| *count = count.saturating_sub(1))
+        self.count.update(|count| *count = count.saturating_sub(1))
     }
 }
 

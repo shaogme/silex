@@ -9,7 +9,7 @@ use silex_macros::component;
 #[component]
 fn MissingRxDefaultScope<'owner>(
     children: AnyView<'owner>,
-    #[chain(default)] value: Signal<'owner, i32>,
+    #[chain(default)] value: Rx<'owner, i32>,
 ) -> impl View<'owner> {
     let _ = value;
     children

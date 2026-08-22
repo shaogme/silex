@@ -1,5 +1,5 @@
 use crate::{
-    reactivity::{ReactiveSource, RwSignal},
+    reactivity::{ReactiveSource, Signal},
     traits::{RxRead, RxWrite},
 };
 
@@ -15,7 +15,7 @@ where
 {
 }
 
-impl<'scope, T> StoreField<'scope, T> for RwSignal<'scope, T> where T: 'scope {}
+impl<'scope, T> StoreField<'scope, T> for Signal<'scope, T> where T: 'scope {}
 
 #[cfg(test)]
 mod tests {
@@ -31,12 +31,12 @@ mod tests {
     }
 
     #[test]
-    fn rw_signal_is_a_store_field() {
+    fn signal_is_a_store_field() {
         let mut runtime = Runtime::new();
 
         runtime
             .with_transient(|owner| {
-                let field = owner.rw_signal(42).expect("rw signal should initialize");
+                let field = owner.signal(42).expect("signal should initialize");
                 assert_store_field(field);
                 assert_eq!(field.get().expect("field should be readable"), 42);
             })

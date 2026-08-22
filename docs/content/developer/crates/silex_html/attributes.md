@@ -90,7 +90,7 @@ attribute；`prop("readonly", ...)` 会进入 known property 的
 
 `IntoStorable` 当前支持借用/owned 字符串、`bool`、数字、字符、
 `Option`、`Vec`、数组、`Attr`、`AttrOp`、`AttributeGroup` 和
-`Signal`/`ReadSignal`/`RwSignal`/`Computed`/`StoredValue` 等响应式值。
+`Rx`/`Signal`/`ReadSignal`/`Computed`/`StoredValue` 等响应式值。
 
 对 attribute 目标，底层 `Attr` 有三种状态：
 

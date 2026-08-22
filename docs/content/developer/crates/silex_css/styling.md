@@ -66,14 +66,14 @@ let class_name = style.apply_to_element(
 ## 静态值、动态值和生命周期
 
 `IntoCssSource<'scope>` 的静态实现覆盖内置 CSS 值、数字、字符串和
-`CssVar`。`Rx`、`ReadSignal`、`RwSignal`、`Signal`、`Computed`、
+`CssVar`。`Rx`、`ReadSignal`、`Signal`、`Computed`、
 `StoredValue` 会转换成 `CssSource::Reactive`，其值必须实现 `Display +
 Clone + 'scope`：
 
 ```rust
-let (size, set_size) = owner.signal(px(8))?;
-let style = sty(ctx).width(size)?;
-set_size.set(px(12))?;
+let size = owner.signal(px(8))?;
+let style = sty(ctx).width(size.read_signal().into_rx())?;
+size.set(px(12))?;
 ```
 
 动态值不会在 `sty` 中创建隐式 runtime。它只携带当前 owner 的 `Rx`，并由

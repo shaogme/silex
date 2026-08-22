@@ -39,7 +39,7 @@ struct Fixed<const N: usize> {
 fn persistent_field_store<'owner>(
     owner: OwnerAccess<'owner>,
     theme: Persistent<'owner, String>,
-    notifications: RwSignal<'owner, bool>,
+    notifications: Signal<'owner, bool>,
 ) {
     let _settings: SettingsStore<'owner> =
         SettingsStore::from_handles(owner, theme, notifications).unwrap();
@@ -50,11 +50,11 @@ fn persistent_field_store<'owner>(
 fn typed_persistent_field_store<'owner>(
     owner: OwnerAccess<'owner>,
     theme: Persistent<'owner, String>,
-    notifications: RwSignal<'owner, bool>,
+    notifications: Signal<'owner, bool>,
 ) {
-    let _settings: SettingsStore<'owner, Persistent<'owner, String>, RwSignal<'owner, bool>> =
+    let _settings: SettingsStore<'owner, Persistent<'owner, String>, Signal<'owner, bool>> =
         SettingsStore::from_typed_handles(owner, theme, notifications).unwrap();
-    let _settings: SettingsStore<'owner, Persistent<'owner, String>, RwSignal<'owner, bool>> =
+    let _settings: SettingsStore<'owner, Persistent<'owner, String>, Signal<'owner, bool>> =
         SettingsStore::from_typed_handles(owner, theme, notifications).unwrap();
 }
 
@@ -81,8 +81,8 @@ fn main() {
         let copied = user;
         assert_eq!(copied.snapshot().unwrap().name, "Bob");
 
-        let name = owner.rw_signal("Carol".to_string()).unwrap();
-        let age = owner.rw_signal(30).unwrap();
+        let name = owner.signal("Carol".to_string()).unwrap();
+        let age = owner.signal(30).unwrap();
         let from_handles: UserStore<'_> = UserStore::from_handles(owner, name, age).unwrap();
         assert_eq!(from_handles.snapshot().unwrap().name, "Carol");
 
@@ -100,7 +100,7 @@ fn main() {
         assert_eq!(theme.get()?, "Light");
         assert_eq!(label.get()?, "Theme: Light");
 
-        let value = owner.rw_signal(7u32).unwrap();
+        let value = owner.signal(7u32).unwrap();
         let label = "generic";
         let generic = GenericStore::new(owner, Generic { value: 7, label }).unwrap();
         let _ = (value, generic.snapshot().unwrap());

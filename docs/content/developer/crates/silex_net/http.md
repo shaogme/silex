@@ -44,7 +44,7 @@ builder 的常用配置如下：
 | `on_retry` | 在下一次尝试前收到 request、attempt、delay 和 error。 |
 
 请求字段由 `IntoNetValue<'scope>` 接收。它支持 `&str`、`String`、数字、`bool`、
-浮点数、`ValueResolver` 以及 `Rx`、`ReadSignal`、`RwSignal`、`Signal`、`Computed`；
+浮点数、`ValueResolver` 以及 `Rx`、`ReadSignal`、`Signal`、`Computed`；
 启用 `persist` 后还支持 `Persistent`。`Fn() -> T + 'static` 也可作为动态值，
 但若 closure 直接捕获响应式句柄，应优先把句柄本身传给 builder，使 runtime 能
 验证其归属并在 resource 中建立 tracked 依赖。

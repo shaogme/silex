@@ -27,7 +27,7 @@ fn getter_watch_commits_values_and_gates_equal_updates() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(1_i32).expect("fallible reactive creation");
+            let source = scope.signal(1_i32).expect("fallible reactive creation");
             let getter_runs_in_getter = getter_runs.clone();
             let calls_in_callback = calls.clone();
             scope
@@ -47,10 +47,10 @@ fn getter_watch_commits_values_and_gates_equal_updates() {
 
             assert_eq!(getter_runs.get(), 1);
             assert!(calls.borrow().is_empty());
-            set_source.set(1).expect("test operation should succeed");
+            source.set(1).expect("test operation should succeed");
             assert_eq!(getter_runs.get(), 2);
             assert!(calls.borrow().is_empty());
-            set_source.set(2).expect("test operation should succeed");
+            source.set(2).expect("test operation should succeed");
             assert_eq!(calls.borrow().as_slice(), &[(2, Some(1))]);
         })
         .expect("test operation should succeed");
@@ -63,7 +63,7 @@ fn immediate_once_watch_stops_after_the_initial_callback() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(1_i32).expect("fallible reactive creation");
+            let source = scope.signal(1_i32).expect("fallible reactive creation");
             let calls_in_callback = calls.clone();
             let watcher = scope
                 .watch_getter_with_options(
@@ -82,7 +82,7 @@ fn immediate_once_watch_stops_after_the_initial_callback() {
 
             assert_eq!(calls.get(), 1);
             assert_eq!(watcher.stop(), Ok(false));
-            set_source.set(2).expect("test operation should succeed");
+            source.set(2).expect("test operation should succeed");
             assert_eq!(calls.get(), 1);
         })
         .expect("test operation should succeed");
@@ -95,10 +95,10 @@ fn callback_reads_are_untracked_and_dynamic_getter_dependencies_replace() {
 
     runtime
         .with_transient(|scope| {
-            let (switch, set_switch) = scope.signal(true).expect("fallible reactive creation");
-            let (left, set_left) = scope.signal(1_i32).expect("fallible reactive creation");
-            let (right, set_right) = scope.signal(10_i32).expect("fallible reactive creation");
-            let (probe, set_probe) = scope.signal(0_i32).expect("fallible reactive creation");
+            let switch = scope.signal(true).expect("fallible reactive creation");
+            let left = scope.signal(1_i32).expect("fallible reactive creation");
+            let right = scope.signal(10_i32).expect("fallible reactive creation");
+            let probe = scope.signal(0_i32).expect("fallible reactive creation");
             let calls_in_callback = calls.clone();
             scope
                 .watch_getter(
@@ -119,21 +119,19 @@ fn callback_reads_are_untracked_and_dynamic_getter_dependencies_replace() {
                 )
                 .expect("watch should initialize");
 
-            set_probe.set(1).expect("test operation should succeed");
+            probe.set(1).expect("test operation should succeed");
             assert_eq!(calls.get(), 0);
-            set_right.set(11).expect("test operation should succeed");
+            right.set(11).expect("test operation should succeed");
             assert_eq!(calls.get(), 0);
-            set_left.set(2).expect("test operation should succeed");
+            left.set(2).expect("test operation should succeed");
             assert_eq!(calls.get(), 1);
-            set_probe.set(2).expect("test operation should succeed");
+            probe.set(2).expect("test operation should succeed");
             assert_eq!(calls.get(), 1);
-            set_switch
-                .set(false)
-                .expect("test operation should succeed");
+            switch.set(false).expect("test operation should succeed");
             assert_eq!(calls.get(), 2);
-            set_left.set(3).expect("test operation should succeed");
+            left.set(3).expect("test operation should succeed");
             assert_eq!(calls.get(), 2);
-            set_right.set(12).expect("test operation should succeed");
+            right.set(12).expect("test operation should succeed");
             assert_eq!(calls.get(), 3);
         })
         .expect("test operation should succeed");
@@ -147,7 +145,7 @@ fn stop_cancels_future_runs_and_runs_cleanup_once() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0_i32).expect("fallible reactive creation");
+            let source = scope.signal(0_i32).expect("fallible reactive creation");
             let calls_in_callback = calls.clone();
             let cleanups_in_callback = cleanups.clone();
             let watcher_scope = scope;
@@ -173,14 +171,14 @@ fn stop_cancels_future_runs_and_runs_cleanup_once() {
                 )
                 .expect("watch should initialize");
 
-            set_source.set(1).expect("test operation should succeed");
+            source.set(1).expect("test operation should succeed");
             assert_eq!(calls.get(), 1);
-            set_source.set(2).expect("test operation should succeed");
+            source.set(2).expect("test operation should succeed");
             assert_eq!(cleanups.get(), 1);
             assert_eq!(watcher.stop(), Ok(true));
             assert_eq!(cleanups.get(), 2);
             assert_eq!(watcher.stop(), Ok(false));
-            set_source.set(3).expect("test operation should succeed");
+            source.set(3).expect("test operation should succeed");
             assert_eq!(calls.get(), 2);
         })
         .expect("test operation should succeed");
@@ -196,7 +194,7 @@ fn callback_panic_keeps_the_old_snapshot_for_a_later_retry() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0_i32).expect("fallible reactive creation");
+            let source = scope.signal(0_i32).expect("fallible reactive creation");
             let should_panic_in_callback = should_panic.clone();
             let calls_in_callback = calls.clone();
             scope
@@ -214,9 +212,9 @@ fn callback_panic_keeps_the_old_snapshot_for_a_later_retry() {
                 )
                 .expect("watch should initialize");
 
-            let panic = catch_unwind(AssertUnwindSafe(|| set_source.set(1)));
+            let panic = catch_unwind(AssertUnwindSafe(|| source.set(1)));
             assert!(panic.is_err());
-            set_source.set(2).expect("test operation should succeed");
+            source.set(2).expect("test operation should succeed");
             assert_eq!(calls.borrow().as_slice(), &[(1, Some(0)), (2, Some(0))]);
         })
         .expect("test operation should succeed");
@@ -229,7 +227,7 @@ fn initial_watch_panic_rolls_back_the_registered_node() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0_i32).expect("fallible reactive creation");
+            let source = scope.signal(0_i32).expect("fallible reactive creation");
             let getter_runs_in_getter = getter_runs.clone();
             let panic = catch_unwind(AssertUnwindSafe(|| {
                 scope
@@ -249,7 +247,7 @@ fn initial_watch_panic_rolls_back_the_registered_node() {
                     .expect("test operation should succeed");
             }));
             assert!(panic.is_err());
-            set_source.set(1).expect("test operation should succeed");
+            source.set(1).expect("test operation should succeed");
             assert_eq!(getter_runs.get(), 1);
         })
         .expect("test operation should succeed");
@@ -265,9 +263,10 @@ fn foreign_watch_reads_fail_before_callback_execution() {
     let callback_runs = Rc::new(Cell::new(0));
 
     let result = first_root.with_access(|foreign_scope| {
-        let (foreign_source, _) = foreign_scope
+        let foreign_source = foreign_scope
             .signal(1_i32)
             .expect("foreign signal should initialize");
+        let _ = foreign_source;
         second_root.with_access(|scope| {
             let getter_runs_in_getter = getter_runs.clone();
             let callback_runs_in_callback = callback_runs.clone();
@@ -326,7 +325,7 @@ fn ordinary_effects_can_be_stopped_through_the_same_handle() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0_i32).expect("fallible reactive creation");
+            let source = scope.signal(0_i32).expect("fallible reactive creation");
             let runs_in_effect = runs.clone();
             let effect = scope
                 .effect(
@@ -342,7 +341,7 @@ fn ordinary_effects_can_be_stopped_through_the_same_handle() {
 
             assert_eq!(runs.get(), 1);
             assert_eq!(effect.stop(), Ok(true));
-            set_source.set(1).expect("test operation should succeed");
+            source.set(1).expect("test operation should succeed");
             assert_eq!(runs.get(), 1);
             assert_eq!(effect.stop(), Ok(false));
         })
@@ -356,7 +355,7 @@ fn stopping_the_current_effect_does_not_write_back_deleted_metadata() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0_i32).expect("fallible reactive creation");
+            let source = scope.signal(0_i32).expect("fallible reactive creation");
             let slot: Rc<Cell<Option<EffectHandle<'_>>>> = Rc::new(Cell::new(None));
             let slot_in_effect = slot.clone();
             let runs_in_effect = runs.clone();
@@ -376,9 +375,9 @@ fn stopping_the_current_effect_does_not_write_back_deleted_metadata() {
                 .expect("effect should initialize");
             slot.set(Some(effect));
 
-            set_source.set(1).expect("test operation should succeed");
+            source.set(1).expect("test operation should succeed");
             assert_eq!(runs.get(), 2);
-            set_source.set(2).expect("test operation should succeed");
+            source.set(2).expect("test operation should succeed");
             assert_eq!(runs.get(), 2);
         })
         .expect("test operation should succeed");

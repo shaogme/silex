@@ -10,12 +10,6 @@ pub mod store;
 mod task;
 pub mod traits;
 
-use std::marker::PhantomData;
-
-use silex_reactivity::{
-    Computed as RxComputed, ReadSignal as RxReadSignal, StoredValue as RxStoredValue,
-};
-
 pub use callback::Callback;
 pub use context::{SilexContext, SilexContextProvider};
 pub use error::{
@@ -54,8 +48,7 @@ pub use owner::{OwnerAccess, OwnerChild, OwnerCleanupRegistrationError, OwnerHan
 pub use reactivity::{
     Computed, Constant, EffectHandle, EffectPhase, Mutation, PromotionPlan, ReactiveSource,
     ReadSignal, Resource, ResourceBuilder, ResourceFetchBuilder, ResourceSource,
-    ResourceSourceBuilder, RwSignal, Signal, StoredValue, SuspenseContext, WatchOptions,
-    WriteSignal,
+    ResourceSourceBuilder, Rx, Signal, StoredValue, SuspenseContext, WatchOptions, WriteSignal,
 };
 #[cfg(feature = "test-support")]
 pub use silex_reactivity::RuntimeSnapshot;
@@ -75,112 +68,6 @@ pub use silex_reactivity::{
     CleanupDiagnostic, CleanupPayloadKind, CloseError, CloseFailure, ClosePhase, CloseSource,
     CloseTransaction,
 };
-
-/// Marker for value-producing reactive nodes.
-pub struct RxValueKind;
-
-/// Marker retained for callback-oriented generic code.
-pub struct RxEffectKind;
-
-pub(crate) enum RxInner<'scope, T> {
-    Signal(RxReadSignal<'scope, T>),
-    Computed(RxComputed<'scope, T, SilexError>),
-    Stored(RxStoredValue<'scope, T>),
-}
-
-impl<'scope, T> Copy for RxInner<'scope, T> {}
-
-impl<'scope, T> Clone for RxInner<'scope, T> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<'scope, T> PartialEq for RxInner<'scope, T> {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Signal(a), Self::Signal(b)) => a == b,
-            (Self::Computed(a), Self::Computed(b)) => a == b,
-            (Self::Stored(a), Self::Stored(b)) => a == b,
-            _ => false,
-        }
-    }
-}
-
-impl<'scope, T> Eq for RxInner<'scope, T> {}
-
-/// A typed reactive value that retains the scope used to create derived nodes.
-pub struct Rx<'scope, T, M = RxValueKind> {
-    pub(crate) inner: RxInner<'scope, T>,
-    pub(crate) owner: OwnerAccess<'scope>,
-    pub(crate) marker: PhantomData<M>,
-}
-
-impl<'scope, T, M> Copy for Rx<'scope, T, M> {}
-
-impl<'scope, T, M> Clone for Rx<'scope, T, M> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<'scope, T, M> PartialEq for Rx<'scope, T, M> {
-    fn eq(&self, other: &Self) -> bool {
-        self.inner == other.inner && self.owner == other.owner
-    }
-}
-
-impl<'scope, T, M> Eq for Rx<'scope, T, M> {}
-
-impl<'scope, T: 'scope> Rx<'scope, T, RxValueKind> {
-    pub(crate) fn from_signal(signal: ReadSignal<'scope, T>) -> Self {
-        Self {
-            inner: RxInner::Signal(signal.inner),
-            owner: signal.owner,
-            marker: PhantomData,
-        }
-    }
-
-    pub(crate) fn from_computed(computed: Computed<'scope, T>) -> Self {
-        Self {
-            inner: RxInner::Computed(computed.inner),
-            owner: computed.owner,
-            marker: PhantomData,
-        }
-    }
-
-    pub(crate) fn from_stored(stored: StoredValue<'scope, T>) -> Self {
-        Self {
-            inner: RxInner::Stored(stored.inner),
-            owner: stored.owner,
-            marker: PhantomData,
-        }
-    }
-
-    pub fn owner(&self) -> OwnerAccess<'scope> {
-        self.owner
-    }
-
-    pub fn map<U, F, H>(self, f: F, error_handler: H) -> SilexResult<Rx<'scope, U>>
-    where
-        U: 'scope,
-        F: Fn(&T) -> U + 'scope,
-        H: ErrorHandlerInput<'scope>,
-    {
-        let owner = self.owner;
-        owner
-            .computed_always(move || self.with(|value| f(value)), error_handler)
-            .map(Computed::into_rx)
-    }
-
-    pub fn into_signal(self) -> Signal<'scope, T> {
-        Signal::from_rx(self)
-    }
-
-    pub(crate) fn is_constant(&self) -> bool {
-        matches!(self.inner, RxInner::Stored(_))
-    }
-}
 
 pub use silex_rx::rx as __internal_rx;
 

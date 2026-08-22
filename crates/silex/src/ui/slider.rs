@@ -48,25 +48,25 @@ pub fn Slider<'scope, Ctx>(
     #[ctx] ctx: Ctx,
     #[prop(into)]
     #[chain(default)]
-    value: Signal<'scope, f64>,
+    value: Rx<'scope, f64>,
     #[prop(into)]
     #[chain(default)]
-    min: Signal<'scope, f64>,
+    min: Rx<'scope, f64>,
     #[prop(into)]
     #[chain(default)]
-    max: Signal<'scope, f64>,
+    max: Rx<'scope, f64>,
     #[prop(into)]
     #[chain(default)]
-    step: Signal<'scope, f64>,
+    step: Rx<'scope, f64>,
     #[prop(into)]
     #[chain(default)]
-    orientation: Signal<'scope, String>,
+    orientation: Rx<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    disabled: Signal<'scope, bool>,
+    disabled: Rx<'scope, bool>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<'scope, String>,
+    class: Rx<'scope, String>,
     #[prop(into)]
     #[chain(default)]
     on_change: Callback<'scope, f64>,

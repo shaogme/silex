@@ -1,6 +1,4 @@
-use crate::{
-    ErrorHandlerInput, Rx, RxValueKind, SilexResult, reactivity::ReactiveSource, traits::RxRead,
-};
+use crate::{ErrorHandlerInput, Rx, SilexResult, reactivity::ReactiveSource, traits::RxRead};
 use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Not, Rem, Shl, Shr, Sub};
 
 macro_rules! binary_method {
@@ -114,7 +112,7 @@ where
         .map(crate::Computed::into_rx)
 }
 
-impl<'scope, T> Rx<'scope, T, RxValueKind> {
+impl<'scope, T> Rx<'scope, T> {
     binary_method!(add, Add, add);
     binary_method!(sub, Sub, sub);
     binary_method!(mul, Mul, mul);

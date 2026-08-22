@@ -10,13 +10,13 @@ pub fn Button<'scope, Ctx>(
     #[attrs] attrs: AttributeGroup<'scope>,
     #[prop(into)]
     #[chain(default)]
-    variant: Signal<'scope, String>,
+    variant: Rx<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    size: Signal<'scope, String>,
+    size: Rx<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<'scope, String>,
+    class: Rx<'scope, String>,
 ) -> impl View<'scope> {
     let button_variants = tw_variants! {
         base: "inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 cursor-pointer border-0 [&_svg]:pointer-events-none [&_svg]:shrink-0",

@@ -265,7 +265,7 @@ async fn mock_fetch_user(id: i32) -> Result<UserProfile, String> {
 
 #[component]
 pub fn ResourceDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
-    let (user_id, set_user_id) = owner.signal(1)?;
+    let user_id = owner.signal(1)?;
 
     // Create Resource: triggers when user_id changes
     let user_resource = Resource::builder(owner)
@@ -278,9 +278,9 @@ pub fn ResourceDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
         p("Fetches user data with a 1s delay. You can optimistically update the name before the server responds."),
 
         div![
-            button("User 1").on(event::click, set_user_id.setter(1)),
-            button("User 2").on(event::click, set_user_id.setter(2)),
-            button("Invalid User").on(event::click, set_user_id.setter(-1)),
+            button("User 1").on(event::click, user_id.setter(1)),
+            button("User 2").on(event::click, user_id.setter(2)),
+            button("Invalid User").on(event::click, user_id.setter(-1)),
             button("Refetch").on(event::click, move |_| {
                 user_resource.refetch()?;
                 Ok(())
@@ -360,8 +360,8 @@ pub fn MutationDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
         error_handler,
     )?;
 
-    let username = owner.rw_signal("".to_string())?;
-    let password = owner.rw_signal("".to_string())?;
+    let username = owner.signal("".to_string())?;
+    let password = owner.signal("".to_string())?;
     let login_error_style = sty(ctx).color(ColorName::Red)?;
     let login_success_style = sty(ctx)
         .color(ColorName::Green)?
@@ -441,11 +441,11 @@ pub fn MutationDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
 pub fn SuspenseDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     use silex::components::SuspenseMode;
 
-    let (show_content, set_show_content) = owner.signal(false)?;
-    let (mode, set_mode) = owner.signal(SuspenseMode::KeepAlive)?;
+    let show_content = owner.signal(false)?;
+    let mode = owner.signal(SuspenseMode::KeepAlive)?;
 
     // Trigger for reloading the resource
-    let (trigger, set_trigger) = owner.signal(0)?;
+    let trigger = owner.signal(0)?;
 
     // Mock heavy resource
     async fn heavy_work(id: i32) -> Result<String, String> {
@@ -463,7 +463,7 @@ pub fn SuspenseDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                     .attr("type", "radio")
                     .attr("name", "suspense_mode")
                     .attr("checked", rx!(ctx; *$mode == SuspenseMode::KeepAlive)?)
-                    .on(event::change, set_mode.setter(SuspenseMode::KeepAlive)),
+                    .on(event::change, mode.setter(SuspenseMode::KeepAlive)),
                 " KeepAlive (CSS Hide)"
             ]
             .style(sty(ctx).margin_right(px(15))?),
@@ -472,7 +472,7 @@ pub fn SuspenseDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                     .attr("type", "radio")
                     .attr("name", "suspense_mode")
                     .attr("checked", rx!(ctx; *$mode == SuspenseMode::Unmount)?)
-                    .on(event::change, set_mode.setter(SuspenseMode::Unmount)),
+                    .on(event::change, mode.setter(SuspenseMode::Unmount)),
                 " Unmount (DOM Remove)"
             ]
         ]
@@ -483,9 +483,9 @@ pub fn SuspenseDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
             } else {
                 "Create Component"
             }, error_handler)?)
-            .on(event::click, set_show_content.updater(|s| *s = !*s))
+            .on(event::click, show_content.updater(|s| *s = !*s))
             .style(sty(ctx).margin_right(px(10))?),
-            button("Reload Resource").on(event::click, set_trigger.updater(|n| *n += 1))
+            button("Reload Resource").on(event::click, trigger.updater(|n| *n += 1))
         ]
         .style(sty(ctx).margin_bottom(px(15))?),
         div![rx!(ctx;
@@ -591,11 +591,11 @@ impl std::fmt::Display for QuantumIdentity {
 
 #[component]
 pub fn AdaptiveReadDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
-    let system_name = owner.rw_signal(Cow::Borrowed("Nebula-1"))?;
-    let (stability, set_stability) = owner.signal(0.85)?; // 0.0 to 1.0
+    let system_name = owner.signal(Cow::Borrowed("Nebula-1"))?;
+    let stability = owner.signal(0.85)?; // 0.0 to 1.0
 
     // Create a non-cloneable resource
-    let (identity, _) = owner.signal(QuantumIdentity::new(0xDEADBEEF))?;
+    let identity = owner.signal(QuantumIdentity::new(0xDEADBEEF))?;
     let adaptive_state = (system_name, stability);
 
     owner.effect(
@@ -663,7 +663,7 @@ pub fn AdaptiveReadDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                         .prop("value", stability)
                         .on(event::input, move |e| {
                             if let Ok(val) = event_target_value(&e).parse::<f64>() {
-                                set_stability
+                                stability
                                     .set(val)?;
                             }
                             Ok(())

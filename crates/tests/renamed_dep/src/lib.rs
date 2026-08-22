@@ -12,7 +12,7 @@ router! {
 }
 
 /// `tw!` 条件分支消费调用方已经创建的 scoped source，`css!` 保持静态路径。
-pub fn badge_class<'scope>(wide: Signal<'scope, bool>) -> AttrOp<'scope> {
+pub fn badge_class<'scope>(wide: Rx<'scope, bool>) -> AttrOp<'scope> {
     tw!(
         "inline-flex items-center px-2 py-1 rounded-sm",
         (wide, "w-full", "w-auto")
@@ -125,7 +125,7 @@ styled! {
     pub ScopedPanel<'scope><div> (
         #[ctx] ctx: SilexContext<'scope>,
         children: AnyView<'scope>,
-        color: Signal<'scope, Hex>,
+        color: Rx<'scope, Hex>,
     ) {
         color: $(color);
     }
@@ -135,7 +135,7 @@ styled! {
 fn RenamedReactiveInput<'scope, Ctx>(
     #[ctx] ctx: Ctx,
     children: AnyView<'scope>,
-    #[chain(default)] value: Signal<'scope, String>,
+    #[chain(default)] value: Rx<'scope, String>,
 ) -> impl View<'scope> {
     let _ = (owner, value);
     children

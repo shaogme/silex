@@ -3,6 +3,7 @@ mod memo;
 mod mutation;
 mod promotion;
 mod resource;
+mod rx;
 mod signal;
 mod slice;
 mod stored_value;
@@ -16,7 +17,9 @@ pub use resource::{
     Resource, ResourceBuilder, ResourceFetchBuilder, ResourceFetcher, ResourceSource,
     ResourceSourceBuilder, ResourceState, SuspenseContext,
 };
-pub use signal::{Constant, ReadSignal, RwSignal, Signal, WriteSignal};
+pub use rx::Rx;
+pub(crate) use rx::RxInner;
+pub use signal::{Constant, ReadSignal, Signal, WriteSignal};
 pub use silex_reactivity::{EffectPhase, WatchOptions};
 pub use slice::SignalSlice;
 pub use stored_value::StoredValue;

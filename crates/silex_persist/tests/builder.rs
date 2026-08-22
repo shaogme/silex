@@ -700,7 +700,7 @@ fn local_write_after_external_fallback_before_effect_flush_is_persisted() {
             .default(5)
             .build()
             .expect("persistent binding should build");
-        let (trigger, set_trigger) = scope
+        let trigger = scope
             .signal(false)
             .expect("trigger signal should be created");
         let value_for_effect = value;
@@ -730,9 +730,7 @@ fn local_write_after_external_fallback_before_effect_flush_is_persisted() {
             )
             .expect("persistence test effect can be registered");
 
-        set_trigger
-            .set(true)
-            .expect("reactive update should succeed");
+        trigger.set(true).expect("reactive update should succeed");
         assert_eq!(
             backend.get("same-transaction").unwrap(),
             Some("6".to_string())

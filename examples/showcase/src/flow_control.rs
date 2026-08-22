@@ -5,14 +5,14 @@ use silex::prelude::*;
 
 #[component]
 pub fn ListDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
-    let (list, set_list) = owner.signal(Ok(vec![
+    let list = owner.signal(Ok(vec![
         Cow::Borrowed("Apple"),
         Cow::Borrowed("Banana"),
         Cow::Borrowed("Cherry"),
     ]))?;
-    let (error_msg, set_error_msg) = owner.signal(None::<String>)?;
+    let error_msg = owner.signal(None::<String>)?;
     let list_error_handler = owner.error_handler(move |err: SilexError| {
-        let _ = set_error_msg.set(Some(format!("捕获到错误: {}", err)));
+        let _ = error_msg.set(Some(format!("捕获到错误: {}", err)));
     })?;
 
     Ok(div![
@@ -38,8 +38,8 @@ pub fn ListDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
             .build()),
         div![
             button("Add Item").on(event::click, move |_| {
-                set_error_msg.set(None)?;
-                set_list.update(|l| {
+                error_msg.set(None)?;
+                list.update(|l| {
                     if let Ok(v) = l {
                         v.push(Cow::Owned(format!("New Item {}", v.len())));
                     } else {
@@ -49,8 +49,8 @@ pub fn ListDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                 Ok(())
             }),
             button("Duplicate Key").on(event::click, move |_| {
-                set_error_msg.set(None)?;
-                set_list.update(|l| {
+                error_msg.set(None)?;
+                list.update(|l| {
                     if let Ok(v) = l {
                         v.push("Duplicate".into());
                         v.push("Duplicate".into());
@@ -59,7 +59,7 @@ pub fn ListDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                 Ok(())
             }),
             button("Simulate Error").on(event::click, move |_| {
-                set_list.set(Err(SilexError::fatal(SilexErrorKind::Javascript(
+                list.set(Err(SilexError::fatal(SilexErrorKind::Javascript(
                     "模拟数据加载失败".to_string(),
                 ))))?;
                 Ok(())
@@ -71,12 +71,12 @@ pub fn ListDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
 
 #[component]
 pub fn ShowDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
-    let (visible, set_visible) = owner.signal(true)?;
+    let visible = owner.signal(true)?;
 
     Ok(div![
         h3("Conditional Rendering with Show"),
         p("Demonstrates passing a Signal directly to Show as condition."),
-        button("Toggle Visibility").on(event::click, set_visible.updater(|v| *v = !*v)),
+        button("Toggle Visibility").on(event::click, visible.updater(|v| *v = !*v)),
         Show(ctx, visible)
             .children(
                 div("✅ Content is visible!").style(
@@ -100,15 +100,15 @@ pub fn ShowDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
 
 #[component]
 pub fn DynamicDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
-    let (mode, set_mode) = owner.signal("A")?;
+    let mode = owner.signal("A")?;
 
     Ok(div![
         h3("Dynamic Component Switching"),
         p("Demonstrates Dynamic component with closure accessor."),
         div![
-            button("Show A").on(event::click, set_mode.setter("A")),
-            button("Show B").on(event::click, set_mode.setter("B")),
-            button("Show C").on(event::click, set_mode.setter("C")),
+            button("Show A").on(event::click, mode.setter("A")),
+            button("Show B").on(event::click, mode.setter("B")),
+            button("Show C").on(event::click, mode.setter("C")),
         ]
         .style(
             sty(ctx)
@@ -140,7 +140,7 @@ pub fn DynamicDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
 
 #[component]
 pub fn SwitchDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
-    let (tab, set_tab) = owner.signal(0)?;
+    let tab = owner.signal(0)?;
 
     let switch = Switch(ctx, tab)
         .fallback(div("Fallback (Should not happen)"))
@@ -170,9 +170,9 @@ pub fn SwitchDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     Ok(div![
         h3("Switch (Match) Demo"),
         div![
-            button("Tab 1").on(event::click, set_tab.setter(0)),
-            button("Tab 2").on(event::click, set_tab.setter(1)),
-            button("Tab 3").on(event::click, set_tab.setter(2)),
+            button("Tab 1").on(event::click, tab.setter(0)),
+            button("Tab 2").on(event::click, tab.setter(1)),
+            button("Tab 3").on(event::click, tab.setter(2)),
         ]
         .style(
             sty(ctx)
@@ -186,7 +186,7 @@ pub fn SwitchDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
 
 #[component]
 pub fn IndexDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
-    let (items, set_items) = owner.signal(vec!["Item A", "Item B", "Item C"])?;
+    let items = owner.signal(vec!["Item A", "Item B", "Item C"])?;
 
     Ok(div![
         h3("Index For Loop Demo"),
@@ -196,7 +196,7 @@ pub fn IndexDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
             .build(),
         button("Append Item")
             .on(event::click, move |_| {
-                set_items.update(|list| list.push("New Item"))?;
+                items.update(|list| list.push("New Item"))?;
                 Ok(())
             })
             .style(sty(ctx).margin_top(px(10))?)
@@ -205,18 +205,18 @@ pub fn IndexDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
 
 #[component]
 pub fn PortalDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
-    let (show_modal, set_show_modal) = owner.signal(false)?;
+    let show_modal = owner.signal(false)?;
 
     Ok(div![
         h3("Portal Demo"),
-        button("Toggle Modal").on(event::click, set_show_modal.updater(|v| *v = !*v)),
+        button("Toggle Modal").on(event::click, show_modal.updater(|v| *v = !*v)),
         Portal(ctx, show_modal)
             .children(
                 div![
                     div![
                         h4("I am a Modal!"),
                         p("I am rendered via Portal directly into the body, but I share ctx!"),
-                        button("Close").on(event::click, set_show_modal.setter(false))
+                        button("Close").on(event::click, show_modal.setter(false))
                     ]
                     .style(
                         sty(ctx)

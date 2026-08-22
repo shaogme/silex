@@ -15,6 +15,12 @@ error[E0599]: no associated function or constant named `pair` found for struct `
   |
 4 |     let _ = Signal::pair(1_i32);
   |                     ^^^^ associated function or constant not found in `Signal<'_, _>`
+  |
+note: if you're trying to build a new `Signal<'_, _>`, consider using `Signal::<'owner, T>::from_pair` which returns `Result<Signal<'_, _>, SilexError>`
+ --> $WORKSPACE/crates/silex_core/src/reactivity/signal.rs
+  |
+  |     pub fn from_pair(pair: (ReadSignal<'owner, T>, WriteSignal<'owner, T>)) -> SilexResult<Self> {
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error[E0599]: no associated function or constant named `new` found for struct `StoredValue<'scope, T>` in the current scope
  --> tests/ui/fail_old_router_constructors.rs:6:26

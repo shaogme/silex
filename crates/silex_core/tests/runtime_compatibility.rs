@@ -1,9 +1,10 @@
 #[cfg(feature = "test-support")]
 use silex_core::reactivity::{ReadSignal, Resource, SuspenseContext};
 #[cfg(feature = "test-support")]
-use silex_core::traits::{RxBase, RxGet, RxRead, RxValue};
+use silex_core::traits::{RxBase, RxRead, RxValue};
 use silex_core::{
     EffectPhase, ErrorHandlerToken, OwnerAccess, ReactiveError, Runtime, SilexError, SilexErrorKind,
+    traits::RxGet,
 };
 #[cfg(feature = "test-support")]
 use silex_core::{PromotionPlan, ReactiveSource, RuntimeScoped};
@@ -76,7 +77,7 @@ fn same_runtime_child_scope_reads_are_reactive() {
 
     runtime
         .with_transient(|owner| {
-            let (source, set_source) = owner.signal(1_i32).expect("source signal");
+            let source = owner.signal(1_i32).expect("source signal");
             let child = owner.create_child().expect("owned owner");
             let child_owner = child.access();
             let runs_in_effect = runs.clone();
@@ -92,7 +93,7 @@ fn same_runtime_child_scope_reads_are_reactive() {
                 )
                 .expect("effect should initialize");
 
-            set_source.set(2).expect("source should update");
+            source.set(2).expect("source should update");
             assert_eq!(runs.get(), 2);
         })
         .expect("runtime child should initialize");
@@ -106,7 +107,7 @@ fn foreign_tracked_reads_are_rejected() {
     let target_root = target_runtime.owner().expect("target root");
 
     foreign_root.with_access(|foreign_scope| {
-        let (source, _) = foreign_scope.signal(1_i32).expect("foreign source");
+        let source = foreign_scope.signal(1_i32).expect("foreign source");
         let result = target_root.with_access(|target_scope| {
             target_scope
                 .effect(
@@ -137,7 +138,7 @@ fn foreign_untracked_reads_are_allowed_without_subscription() {
     let runs = Rc::new(Cell::new(0));
 
     foreign_root.with_access(|foreign_scope| {
-        let (source, set_source) = foreign_scope.signal(1_i32).expect("foreign source");
+        let source = foreign_scope.signal(1_i32).expect("foreign source");
         target_root.with_access(|target_scope| {
             let runs_in_effect = runs.clone();
             target_scope
@@ -153,7 +154,7 @@ fn foreign_untracked_reads_are_allowed_without_subscription() {
                 .expect("effect should initialize");
         });
 
-        set_source.set(2).expect("foreign source should update");
+        source.set(2).expect("foreign source should update");
         assert_eq!(runs.get(), 1);
     });
 
@@ -170,7 +171,7 @@ fn foreign_source_is_rejected_before_target_allocation() {
     let target_root = target_runtime.owner().expect("target root");
 
     let foreign_scope = foreign_root.access();
-    let (source, _) = foreign_scope.signal(1_u32).expect("foreign source");
+    let source = foreign_scope.signal(1_u32).expect("foreign source");
     let target_scope = target_root.access();
     let error_handler = handler(target_scope);
     let before = target_scope.runtime_snapshot().expect("target snapshot");
@@ -206,7 +207,7 @@ fn foreign_suspense_is_rejected_before_target_allocation() {
     let foreign_scope = foreign_root.access();
     let suspense = SuspenseContext::new(foreign_scope).expect("foreign suspense");
     let target_scope = target_root.access();
-    let (source, _) = target_scope.signal(1_u32).expect("target source");
+    let source = target_scope.signal(1_u32).expect("target source");
     let error_handler = handler(target_scope);
     let before = target_scope.runtime_snapshot().expect("target snapshot");
     let result = Resource::builder(target_scope)
@@ -238,8 +239,10 @@ fn resource_init_failure_rolls_back_every_allocation() {
     let mut runtime = Runtime::new();
     let root = runtime.owner().expect("root owner");
     let scope = root.access();
-    let (delegate, _) = scope.signal(1_u32).expect("source delegate");
-    let source = FailingSource { delegate };
+    let delegate = scope.signal(1_u32).expect("source delegate");
+    let source = FailingSource {
+        delegate: delegate.read_signal(),
+    };
     let error_handler = handler(scope);
     let before = scope.runtime_snapshot().expect("target snapshot");
     let result = Resource::builder(scope)

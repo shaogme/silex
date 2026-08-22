@@ -28,8 +28,8 @@ fn get_element_anchor(el: &web_sys::Element) -> (f64, f64, f64, f64) {
 /// Explicit Tooltip Context holding reactive state for visibility, anchor positioning, and hover timers.
 #[derive(Clone, Copy)]
 pub struct TooltipContext<'scope> {
-    pub open: RwSignal<'scope, bool>,
-    pub anchor: RwSignal<'scope, (f64, f64, f64, f64)>,
+    pub open: Signal<'scope, bool>,
+    pub anchor: Signal<'scope, (f64, f64, f64, f64)>,
     timer: StoredValue<'scope, Option<HostResource<'scope>>>,
     owner: StoredValue<'scope, Option<MountOwnerToken<'scope>>>,
     error_handler: StoredValue<'scope, Option<ErrorReporter<'scope>>>,
@@ -38,8 +38,8 @@ pub struct TooltipContext<'scope> {
 impl<'scope> TooltipContext<'scope> {
     pub fn new(owner: OwnerAccess<'scope>) -> SilexResult<Self> {
         Ok(Self {
-            open: owner.rw_signal(false)?,
-            anchor: owner.rw_signal((0.0, 0.0, 0.0, 0.0))?,
+            open: owner.signal(false)?,
+            anchor: owner.signal((0.0, 0.0, 0.0, 0.0))?,
             timer: owner.stored(None)?,
             owner: owner.stored(None)?,
             error_handler: owner.stored(None)?,
@@ -132,10 +132,10 @@ pub fn TooltipProvider<'scope, Ctx>(
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
-    delay_duration: Signal<'scope, f64>,
+    delay_duration: Rx<'scope, f64>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<'scope, String>,
+    class: Rx<'scope, String>,
 ) -> impl View<'scope> {
     let provider_cls = rx!(ctx; {
         let base = tw!("relative");
@@ -168,7 +168,7 @@ pub fn Tooltip<'scope, Ctx, C, V>(
     children: C,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<'scope, String>,
+    class: Rx<'scope, String>,
 ) -> impl View<'scope>
 where
     C: Fn(TooltipContext<'scope>) -> V + Clone + 'scope,
@@ -269,16 +269,16 @@ pub fn TooltipContent<'scope, Ctx>(
     #[chain] context: TooltipContext<'scope>,
     #[prop(into)]
     #[chain(default)]
-    side: Signal<'scope, String>, // top | bottom | left | right
+    side: Rx<'scope, String>, // top | bottom | left | right
     #[prop(into)]
     #[chain(default)]
-    side_offset: Signal<'scope, f64>, // offset from trigger element in px
+    side_offset: Rx<'scope, f64>, // offset from trigger element in px
     #[prop(into)]
     #[chain(default)]
-    hide_arrow: Signal<'scope, bool>, // set true to hide the arrow
+    hide_arrow: Rx<'scope, bool>, // set true to hide the arrow
     #[prop(into)]
     #[chain(default)]
-    class: Signal<'scope, String>,
+    class: Rx<'scope, String>,
 ) -> impl View<'scope> {
     let stored_children = owner.stored(children)?;
 

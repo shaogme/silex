@@ -13,7 +13,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
 
     runtime
         .with_transient(|owner| {
-            let (source, set_source) = owner.signal(1_i32)?;
+            let source = owner.signal(1_i32)?;
             let doubled = owner.computed(
                 move || Ok::<_, SilexError>(source.get()? * 2),
                 handler(owner)?,
@@ -29,7 +29,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 handler(owner)?,
             )?;
 
-            set_source.set(2)?;
+            source.set(2)?;
             assert_eq!(seen.get(), 4);
             Ok::<(), SilexError>(())
         })

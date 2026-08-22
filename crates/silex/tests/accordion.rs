@@ -91,7 +91,7 @@ async fn trigger_and_content_keep_accessibility_state_and_focus_in_sync() {
     let task_host = host.clone();
 
     let (completed, valid, errors) = root.with_access(|owner| {
-        let (open, set_open) = owner
+        let open = owner
             .signal(true)
             .expect("accordion open signal should be created");
         let errors = Rc::new(Cell::new(0usize));
@@ -102,10 +102,9 @@ async fn trigger_and_content_keep_accessibility_state_and_focus_in_sync() {
             })
             .expect("test error handler should be registered");
         let ctx = SilexContext::new(owner, error_handler.view());
-        let set_open_for_click = set_open;
         let on_click = owner
             .callback(move |_| {
-                set_open_for_click.update(|value| *value = !*value)?;
+                open.update(|value| *value = !*value)?;
                 Ok(())
             })
             .expect("accordion trigger callback should be created");
@@ -189,7 +188,7 @@ async fn trigger_and_content_keep_accessibility_state_and_focus_in_sync() {
                             && closed_trigger.is_same_node(Some(active_after_click.as_ref())),
                     );
 
-                    set_open.set(true).expect("accordion should reopen");
+                    open.set(true).expect("accordion should reopen");
                     flush_browser_tasks().await;
                     let reopened_content = content(&task_host);
                     let input = child_input(&reopened_content);
@@ -203,7 +202,7 @@ async fn trigger_and_content_keep_accessibility_state_and_focus_in_sync() {
                             && !reopened_content.has_attribute("inert"),
                     );
 
-                    set_open.set(false).expect("external close should succeed");
+                    open.set(false).expect("external close should succeed");
                     flush_browser_tasks().await;
                     let externally_closed_trigger = trigger(&task_host);
                     let externally_closed_content = content(&task_host);
@@ -278,7 +277,7 @@ async fn keep_alive_preserves_wrapper_and_child_identity_when_toggled() {
     let task_host = host.clone();
 
     let (completed, valid, errors) = root.with_access(|owner| {
-        let (open, set_open) = owner
+        let open = owner
             .signal(false)
             .expect("accordion open signal should be created");
         let errors = Rc::new(Cell::new(0usize));
@@ -326,7 +325,7 @@ async fn keep_alive_preserves_wrapper_and_child_identity_when_toggled() {
         owner
             .spawn_scoped(
                 async move {
-                    set_open.set(true).expect("accordion should open");
+                    open.set(true).expect("accordion should open");
                     flush_browser_tasks().await;
                     let open_content = content(&task_host);
                     let open_input = child_input(&open_content);
@@ -346,7 +345,7 @@ async fn keep_alive_preserves_wrapper_and_child_identity_when_toggled() {
                                 == 1,
                     );
 
-                    set_open.set(false).expect("accordion should close");
+                    open.set(false).expect("accordion should close");
                     flush_browser_tasks().await;
                     let closed_content = content(&task_host);
                     valid_for_task.set(
@@ -361,7 +360,7 @@ async fn keep_alive_preserves_wrapper_and_child_identity_when_toggled() {
                             && closed_content.has_attribute("inert"),
                     );
 
-                    set_open.set(true).expect("accordion should reopen");
+                    open.set(true).expect("accordion should reopen");
                     flush_browser_tasks().await;
                     let reopened_content = content(&task_host);
                     let reopened_input = child_input(&reopened_content);
@@ -417,7 +416,7 @@ async fn unmount_mode_keeps_wrapper_but_recreates_content_slot() {
     let task_host = host.clone();
 
     let (completed, valid, errors) = root.with_access(|owner| {
-        let (open, set_open) = owner
+        let open = owner
             .signal(false)
             .expect("accordion open signal should be created");
         let errors = Rc::new(Cell::new(0usize));
@@ -470,7 +469,7 @@ async fn unmount_mode_keeps_wrapper_but_recreates_content_slot() {
         owner
             .spawn_scoped(
                 async move {
-                    set_open.set(true).expect("accordion should open");
+                    open.set(true).expect("accordion should open");
                     flush_browser_tasks().await;
                     let open_content = content(&task_host);
                     let open_input = child_input(&open_content);
@@ -484,7 +483,7 @@ async fn unmount_mode_keeps_wrapper_but_recreates_content_slot() {
                             && clicks_for_task.get() == 1,
                     );
 
-                    set_open.set(false).expect("accordion should close");
+                    open.set(false).expect("accordion should close");
                     flush_browser_tasks().await;
                     let closed_content = content(&task_host);
                     valid_for_task.set(
@@ -503,7 +502,7 @@ async fn unmount_mode_keeps_wrapper_but_recreates_content_slot() {
                     flush_browser_tasks().await;
                     valid_for_task.set(valid_for_task.get() && clicks_for_task.get() == 1);
 
-                    set_open.set(true).expect("accordion should reopen");
+                    open.set(true).expect("accordion should reopen");
                     flush_browser_tasks().await;
                     let reopened_content = content(&task_host);
                     let reopened_input = child_input(&reopened_content);
@@ -520,7 +519,7 @@ async fn unmount_mode_keeps_wrapper_but_recreates_content_slot() {
                             && clicks_for_task.get() == 2,
                     );
 
-                    set_open.set(false).expect("accordion should close again");
+                    open.set(false).expect("accordion should close again");
                     flush_browser_tasks().await;
                     completed_for_task.set(true);
                 },
@@ -573,7 +572,7 @@ fn unmount_mode_mount_failure_rolls_back_wrapper_and_slot() {
     let root = runtime.owner().expect("root runtime should start");
 
     root.with_access(|owner| {
-        let (open, _) = owner
+        let open = owner
             .signal(true)
             .expect("accordion open signal should be created");
         let error_handler = owner

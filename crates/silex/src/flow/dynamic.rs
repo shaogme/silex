@@ -11,7 +11,7 @@ use silex_macros::component;
 /// ```rust, ignore
 /// use silex::prelude::*;
 ///
-/// let (component_name, set_component_name) = owner.signal("A");
+/// let component_name = owner.signal("A");
 ///
 /// Dynamic(ctx, rx!(ctx; {
 ///     let name = component_name.get();

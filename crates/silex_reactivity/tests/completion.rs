@@ -441,10 +441,10 @@ fn repeating_completion_does_not_roll_back_callback_side_effects_on_error() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|scope| {
-            let (signal, set_signal) = scope.signal(0).expect("fallible reactive creation");
+            let signal = scope.signal(0).expect("fallible reactive creation");
             let sender = scope
                 .completion_sender(unwind_safe(move |value: i32| {
-                    set_signal.set(value).expect("signal update");
+                    signal.set(value).expect("signal update");
                     Err::<(), &'static str>("rejected")
                 }))
                 .expect("completion registration");

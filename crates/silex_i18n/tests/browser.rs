@@ -168,8 +168,8 @@ fn query_binding_follows_router_search_signal() {
     let mut runtime = Runtime::new();
     let root = runtime.owner().expect("root owner");
     root.with_access(|owner| {
-        let (path, set_path) = owner.signal("/settings".to_string()).expect("path signals");
-        let (search, set_search) = owner
+        let path = owner.signal("/settings".to_string()).expect("path signals");
+        let search = owner
             .signal("?lang=en-US".to_string())
             .expect("search signals");
         let context_handler = test_handler(owner);
@@ -177,10 +177,10 @@ fn query_binding_follows_router_search_signal() {
             SilexContext::new(owner, context_handler.view()),
             RouterContextProps {
                 base_path: "/".to_string(),
-                path,
-                search,
-                set_path,
-                set_search,
+                path: path.read_signal(),
+                search: search.read_signal(),
+                set_path: path.write_signal(),
+                set_search: search.write_signal(),
             },
         )
         .expect("valid router ctx");
@@ -195,7 +195,7 @@ fn query_binding_follows_router_search_signal() {
             binding.get_untracked().expect("reactive value"),
             Locale::new("en-US").expect("valid locale")
         );
-        set_search
+        search
             .set("?lang=zh-CN".to_string())
             .expect("search update");
         assert_eq!(

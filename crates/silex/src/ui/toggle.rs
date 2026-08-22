@@ -9,16 +9,16 @@ pub fn Toggle<'scope, Ctx>(
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
-    pressed: Signal<'scope, bool>,
+    pressed: Rx<'scope, bool>,
     #[prop(into)]
     #[chain(default)]
-    variant: Signal<'scope, String>,
+    variant: Rx<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    size: Signal<'scope, String>,
+    size: Rx<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<'scope, String>,
+    class: Rx<'scope, String>,
     #[prop(into)]
     #[chain(default)]
     on_change: Callback<'scope, bool>,

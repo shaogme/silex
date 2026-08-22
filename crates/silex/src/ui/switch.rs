@@ -8,13 +8,13 @@ pub fn Switch<'scope, Ctx>(
     #[ctx] ctx: Ctx,
     #[prop(into)]
     #[chain(default)]
-    checked: Signal<'scope, bool>,
+    checked: Rx<'scope, bool>,
     #[prop(into)]
     #[chain(default)]
-    size: Signal<'scope, String>,
+    size: Rx<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<'scope, String>,
+    class: Rx<'scope, String>,
     #[prop(into)]
     #[chain(default)]
     on_change: Callback<'scope, bool>,

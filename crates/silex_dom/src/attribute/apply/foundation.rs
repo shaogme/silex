@@ -1,8 +1,6 @@
 use std::{borrow::Cow, cell::Cell, rc::Rc};
 
-use silex_core::{
-    EffectPhase, ReactiveError, Rx, RxGet, RxValueKind, SilexError, SilexErrorKind, SilexResult,
-};
+use silex_core::{EffectPhase, ReactiveError, Rx, RxGet, SilexError, SilexErrorKind, SilexResult};
 use wasm_bindgen::JsValue;
 use web_sys::Element as WebElem;
 
@@ -358,7 +356,7 @@ impl<'scope> ReactiveBindingPlan<'scope> {
 
 pub trait ReactiveBinding<'scope> {
     fn binding_plan(
-        rx: Rx<'scope, Self, RxValueKind>,
+        rx: Rx<'scope, Self>,
         ctx: ReactiveBindingContext,
     ) -> Option<ReactiveBindingPlan<'scope>>
     where
@@ -746,8 +744,8 @@ impl_apply_to_dom_for_primitive!(
 
 // --- Tuples ---
 
-// 响应式元组归一化终点：(K, Rx<T>)
-impl<'scope, K, T> ApplyToDom<'scope> for (K, Rx<'scope, T, RxValueKind>)
+// 响应式元组归一化终点：(K, Rx<'scope, T>)
+impl<'scope, K, T> ApplyToDom<'scope> for (K, Rx<'scope, T>)
 where
     K: Into<Cow<'static, str>> + Clone + 'scope,
     T: ReactiveBinding<'scope> + Clone + 'scope,

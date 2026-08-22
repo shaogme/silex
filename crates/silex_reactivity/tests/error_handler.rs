@@ -131,15 +131,15 @@ fn handler_callback_can_read_and_update_signals() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0_i32).expect("fallible reactive creation");
-            let (value, set_value) = scope.signal(0_i32).expect("fallible reactive creation");
+            let source = scope.signal(0_i32).expect("fallible reactive creation");
+            let value = scope.signal(0_i32).expect("fallible reactive creation");
             let should_fail = Rc::new(Cell::new(false));
             let should_fail_in_effect = should_fail.clone();
             let observed_in_handler = observed.clone();
             let handler = scope
                 .error_handler(move |_: &'static str| {
                     assert_eq!(value.get(), Ok(0));
-                    set_value.set(1).expect("signal update");
+                    value.set(1).expect("signal update");
                     observed_in_handler.set(value.get().expect("reactive read"));
                 })
                 .expect("handler registration");
@@ -160,7 +160,7 @@ fn handler_callback_can_read_and_update_signals() {
                 .expect("effect should initialize");
 
             should_fail.set(true);
-            set_source.set(1).expect("signal update");
+            source.set(1).expect("signal update");
         })
         .expect("test operation should succeed");
 
@@ -206,7 +206,7 @@ fn computation_lease_survives_token_drop_but_view_becomes_stale() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0_i32).expect("signal registration");
+            let source = scope.signal(0_i32).expect("signal registration");
             let capture = DropCapture(drops.clone());
             let handled_in_callback = handled.clone();
             let should_fail_in_callback = should_fail.clone();
@@ -235,7 +235,7 @@ fn computation_lease_survives_token_drop_but_view_becomes_stale() {
             drop(token);
             assert!(view.handle("stale").is_err());
             should_fail.set(true);
-            set_source.set(1).expect("signal update");
+            source.set(1).expect("signal update");
             assert_eq!(handled.get(), 1);
             effect.stop().expect("effect disposal");
             assert_eq!(drops.get(), 1);

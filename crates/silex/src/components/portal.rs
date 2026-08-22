@@ -1,6 +1,4 @@
-use silex_core::{
-    EffectPhase, RxRead, SilexError, SilexErrorKind, SilexResult, reactivity::Signal,
-};
+use silex_core::{EffectPhase, RxRead, SilexError, SilexErrorKind, SilexResult, reactivity::Rx};
 use silex_dom::view::{
     MountContext, MountErrorHandler, MountOwner, MountOwnerToken, MountTarget, MountTransaction,
 };
@@ -138,7 +136,7 @@ pub enum PortalContentMode {
 #[derive(Clone)]
 struct PortalView<'scope> {
     children: AnyView<'scope>,
-    open: Option<Signal<'scope, bool>>,
+    open: Option<Rx<'scope, bool>>,
     content_mode: PortalContentMode,
     mount_to: Option<Node>,
     host_attrs: PortalHostAttrs<'scope>,
@@ -556,7 +554,7 @@ pub fn PortalHost<'scope, Ctx>(
 #[component]
 pub fn Portal<'scope, Ctx>(
     #[ctx] ctx: Ctx,
-    #[prop(into)] open: Signal<'scope, bool>,
+    #[prop(into)] open: Rx<'scope, bool>,
     #[prop(render)]
     #[chain]
     children: AnyView<'scope>,

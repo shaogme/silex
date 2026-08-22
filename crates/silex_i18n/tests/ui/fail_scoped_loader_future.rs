@@ -4,7 +4,7 @@ use silex_i18n::{Catalog, I18nBuilder, I18nError, Runtime};
 fn main() {
     let mut runtime = Runtime::new();
     runtime.with_transient(|owner| {
-        let (source, _) = owner.signal(1_u32).expect("source signal");
+        let source = owner.signal(1_u32).expect("source signal");
         let handler = owner.error_handler(|_| {}).expect("error handler");
         let store = I18nBuilder::new(owner, handler.view())
             .build()

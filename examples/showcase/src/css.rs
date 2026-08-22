@@ -154,7 +154,7 @@ styled! {
     pub ApplyDemoButton<'scope, Ctx><button>(
         #[ctx] ctx: Ctx,
         children: AnyView<'scope>,
-        #[chain] #[prop(into)] variant: Signal<'scope, String>,
+        #[chain] #[prop(into)] variant: Rx<'scope, String>,
     ) {
         @apply flex items-center justify-center px-5 py-2.5 rounded-xl font-semibold transition-all duration-300 shadow-md cursor-pointer;
 
@@ -176,12 +176,12 @@ styled! {
     pub StyledButton<'scope, Ctx><button>(
         #[ctx] ctx: Ctx,
         children: AnyView<'scope>,
-        #[chain] #[prop(into)] color: Signal<'scope, CssVar<Hex>>,
-        #[chain] #[prop(into)] size: Signal<'scope, String>,
-        #[chain] #[prop(into)] hover_color: Signal<'scope, CssVar<Hex>>,
-        #[chain] #[prop(into)] pseudo_state: Signal<'scope, String>,
-        #[chain] #[prop(into)] border_style: Signal<'scope, BorderValue>,
-        #[chain] #[prop(into)] padding_val: Signal<'scope, PaddingValue>,
+        #[chain] #[prop(into)] color: Rx<'scope, CssVar<Hex>>,
+        #[chain] #[prop(into)] size: Rx<'scope, String>,
+        #[chain] #[prop(into)] hover_color: Rx<'scope, CssVar<Hex>>,
+        #[chain] #[prop(into)] pseudo_state: Rx<'scope, String>,
+        #[chain] #[prop(into)] border_style: Rx<'scope, BorderValue>,
+        #[chain] #[prop(into)] padding_val: Rx<'scope, PaddingValue>,
     ) {
         background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
         color: $(color);
@@ -240,7 +240,7 @@ styled! {
     pub ThemeButton<'scope, Ctx><button>(
         #[ctx] ctx: Ctx,
         children: AnyView<'scope>,
-        #[chain] #[prop(into)] active: Signal<'scope, bool>
+        #[chain] #[prop(into)] active: Rx<'scope, bool>
     ) {
         background-color: $(rx!{ ctx; AppTheme::SECONDARY.alpha(0.9) }?);
         color: white;
@@ -267,8 +267,8 @@ styled! {
     pub DynamicVariantBtn<'scope, Ctx><button>(
         #[ctx] ctx: Ctx,
         children: AnyView<'scope>,
-        #[chain] #[prop(into)] kind: Signal<'scope, String>,
-        #[chain] #[prop(into)] dynamic_width: Signal<'scope, Px>,
+        #[chain] #[prop(into)] kind: Rx<'scope, String>,
+        #[chain] #[prop(into)] dynamic_width: Rx<'scope, Px>,
     ) {
         border-radius: 8px;
         padding: 12px 24px;
@@ -299,16 +299,16 @@ styled! {
 
 #[component]
 pub fn StylingBasics<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
-    let (color, set_color) = owner.signal(AppTheme::TEXT)?;
-    let (size, set_size) = owner.signal("medium".to_string())?;
-    let (hover_color, set_hover_color) = owner.signal(AppTheme::PRIMARY)?;
-    let (pseudo_state, set_pseudo_state) = owner.signal("hover".to_string())?;
-    let (border_state, set_border_state) = owner.signal(border(
+    let color = owner.signal(AppTheme::TEXT)?;
+    let size = owner.signal("medium".to_string())?;
+    let hover_color = owner.signal(AppTheme::PRIMARY)?;
+    let pseudo_state = owner.signal("hover".to_string())?;
+    let border_state = owner.signal(border(
         px(2),
         BorderStyleKeyword::Solid,
         ColorKeyword::Transparent,
     ))?;
-    let (padding_state, set_padding_state) = owner.signal(padding::block_inline(px(12), px(24)))?;
+    let padding_state = owner.signal(padding::block_inline(px(12), px(24)))?;
 
     Ok(div![
         div![
@@ -356,23 +356,23 @@ pub fn StylingBasics<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                 .border_style(border_state)?
                 .padding_val(padding_state)?
                 .on(event::click, move |_| {
-                    set_color.update(|c| {
+                    color.update(|c| {
                         // Toggle between theme text color and warning yellow
                         *c = if *c == AppTheme::TEXT { hex("#fbbf24").into() } else { AppTheme::TEXT };
                     })?;
-                    set_size.update(|s| {
+                    size.update(|s| {
                         *s = if *s == "medium" { "large".to_string() } else { "medium".to_string() }
                     })?;
-                    set_border_state.update(|b| {
+                    border_state.update(|b| {
                         *b = border(px(2), BorderStyleKeyword::Dashed, hex("#f472b6"));
                     })?;
-                    set_padding_state.update(|p| {
+                    padding_state.update(|p| {
                         *p = padding::block_inline(px(16), px(32));
                     })?;
-                    set_hover_color.update(|c| {
+                    hover_color.update(|c| {
                         *c = if c.0 == "var(--slx-theme-primary)" { hex("#ec4899").into() } else { AppTheme::PRIMARY };
                     })?;
-                    set_pseudo_state.update(|s| {
+                    pseudo_state.update(|s| {
                         *s = if *s == "hover" { "active".to_string() } else { "hover".to_string() }
                     })?;
                     Ok(())
@@ -386,8 +386,8 @@ pub fn StylingBasics<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                 "The `styled!` macro now supports dynamic interpolation directly inside variants, and fully preserves the chainable typed attributes of native HTML tags."
             ).style(sty(ctx).margin_bottom(px(24))?.color(hex("#9ca3af"))?),
             {
-                let (btn_kind, set_btn_kind) = owner.signal("primary".to_string())?;
-                let (btn_width, _set_btn_width) = owner.signal(px(160))?;
+                let btn_kind = owner.signal("primary".to_string())?;
+                let btn_width = owner.signal(px(160))?;
 
                 Stack(ctx, chain!(
                     DynamicVariantBtn(ctx, chain!("Toggle Variant"))
@@ -398,11 +398,11 @@ pub fn StylingBasics<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                         .type_("button") 
                         .title("Hover me! I'm a native button")
                         .on_click(move |_| {
-                            set_btn_kind.update(|k| *k = if k.as_str() == "primary" { "secondary".to_string() } else { "primary".to_string() })?;
+                            btn_kind.update(|k| *k = if k.as_str() == "primary" { "secondary".to_string() } else { "primary".to_string() })?;
                             Ok(())
                         })
                         .build(),
-                    div(rx!(ctx; format!("Current Variant: {}, Base Width Signal: {}", $btn_kind, $btn_width))?)
+                    div(rx!(ctx; format!("Current Variant: {}, Base Width Rx: {}", $btn_kind, $btn_width))?)
                         .style(sty(ctx).font_size(em_unit(0.9))?.opacity(0.8)?)
                 )).gap(16)?.build()
             }
@@ -436,24 +436,24 @@ pub fn StylingBasics<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
             ],
             p("Signals are natively supported:").style(sty(ctx).margin("20px 0 10px")?.font_size(em_unit(0.9))?.opacity(0.6)?),
             {
-                let (count, set_count) = owner.signal(0)?;
-                let (show_shadow, set_show_shadow) = owner.signal(true)?;
-                let (active_border, set_active_border) = owner.signal(true)?;
+                let count = owner.signal(0)?;
+                let show_shadow = owner.signal(true)?;
+                let active_border = owner.signal(true)?;
 
                 Stack(ctx, chain!(
                     div![
                         button("Grow").on(event::click, move |_| {
-                            set_count.update(|n| *n += 1)?;
+                            count.update(|n| *n += 1)?;
                             Ok(())
                         })
                             .style(sty(ctx).padding("8px 16px")?.border_radius(px(6))?.border("1px solid #374151")?.background("#111827")?.color(ColorName::White)?.cursor("pointer")?.margin_right(px(8))?),
                         button("Toggle Box Shadow").on(event::click, move |_| {
-                            set_show_shadow.update(|s| *s = !*s)?;
+                            show_shadow.update(|s| *s = !*s)?;
                             Ok(())
                         })
                             .style(sty(ctx).padding("8px 16px")?.border_radius(px(6))?.border("1px solid #374151")?.background("#111827")?.color(ColorName::White)?.cursor("pointer")?.margin_right(px(8))?),
                         button("Toggle Border").on(event::click, move |_| {
-                            set_active_border.update(|b| *b = !*b)?;
+                            active_border.update(|b| *b = !*b)?;
                             Ok(())
                         })
                             .style(sty(ctx).padding("8px 16px")?.border_radius(px(6))?.border("1px solid #374151")?.background("#111827")?.color(ColorName::White)?.cursor("pointer")?),

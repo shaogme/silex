@@ -25,7 +25,9 @@ let mut runtime = Runtime::new();
 let root = runtime.owner()?;
 
 root.with_access(|owner| {
-    let (read, write) = owner.signal(0_i32)?;
+    let signal = owner.signal(0_i32)?;
+    let read = signal.read_signal();
+    let write = signal.write_signal();
     write.set(1)?;
     assert_eq!(read.get()?, 1);
     Ok::<(), SilexError>(())
@@ -52,7 +54,9 @@ root.close()?;
 root.with_access_async(|owner| {
     Box::pin(async move {
         // owner 和它创建的句柄只在这个 future 内有效。
-        let (source, set_source) = owner.signal(1_u32)?;
+        let signal = owner.signal(1_u32)?;
+        let source = signal.read_signal();
+        let set_source = signal.write_signal();
         set_source.set(2)?;
         source.get()
     })

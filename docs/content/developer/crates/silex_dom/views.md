@@ -98,10 +98,10 @@ let view = icon("diagram");
 范围内替换 DOM。
 
 ```rust
-let (label, set_label) = owner.signal("first")?;
+let label = owner.signal("first")?;
 let view = label.into_rx();
 context.mount(view, error_handler)?;
-set_label.set("second")?;
+label.set("second")?;
 ```
 
 片段说明了数据流，但 `owner`、`context` 和 `error_handler` 依赖外层

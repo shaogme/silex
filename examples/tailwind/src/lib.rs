@@ -228,7 +228,7 @@ fn GroupAndPeerDemo<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scop
 
 #[component]
 fn FiltersAndReactivityDemo<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
-    let (count, set_count) = owner.signal(16)?;
+    let count = owner.signal(16)?;
     let pad_val = rx!(ctx; format!("{}px", $count))?;
 
     Ok(div(chain!(
@@ -250,7 +250,7 @@ fn FiltersAndReactivityDemo<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl Vi
                 div(chain!(
                     button("Increase Padding").class(tw!("px-3 py-1.5 bg-indigo-600 text-white text-xs font-bold rounded-lg cursor-pointer transition-all mb-2.5"))
                         .on_click(move |_| {
-                            set_count.update(|n| *n = (*n + 4).min(36))?;
+                            count.update(|n| *n = (*n + 4).min(36))?;
                             Ok(())
                         }),
                     div(rx!(ctx; format!("Padding: {}px", $count))?)
@@ -349,7 +349,7 @@ fn StandardColorPaletteDemo<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl Vi
 
 #[component]
 fn ReactiveConditionalTwDemo<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
-    let (is_active, set_is_active) = owner.signal(false)?;
+    let is_active = owner.signal(false)?;
 
     let card_cls = tw!(
         "p-6 bg-white dark:bg-slate-800 border rounded-3xl shadow-lg hover:shadow-xl transition-all duration-300 flex flex-col h-fit",
@@ -383,7 +383,7 @@ fn ReactiveConditionalTwDemo<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl V
             button(rx!(ctx; if *$is_active { "✓ Active State Enabled" } else { "Click to Toggle State" })?)
                 .class(btn_cls)
                 .on_click(move |_| {
-                    set_is_active.update(|a| *a = !*a)?;
+                    is_active.update(|a| *a = !*a)?;
                     Ok(())
                 }),
             div(chain!(
@@ -491,8 +491,8 @@ fn FractionalAndDirectionalDemo<'scope>(#[ctx] ctx: SilexContext<'scope>) -> imp
 
 #[component]
 fn TailwindVariantsCvaDemo<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
-    let (intent, set_intent) = owner.signal("primary".to_string())?;
-    let (size, set_size) = owner.signal("md".to_string())?;
+    let intent = owner.signal("primary".to_string())?;
+    let size = owner.signal("md".to_string())?;
 
     let button_variants = tw_variants! {
         base: "font-semibold rounded-xl transition-all duration-300 flex items-center justify-center cursor-pointer border-0 outline-none shadow-md hover:scale-105",
@@ -536,30 +536,30 @@ fn TailwindVariantsCvaDemo<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl Vie
                 div(chain!(
                     span("Intent:").class(tw!("text-xs font-bold text-slate-500 dark:text-slate-400 mr-2")),
                     button("Primary").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (rx!(ctx; *$intent == "primary")?, "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| {
-                        set_intent.set("primary".to_string())?;
+                        intent.set("primary".to_string())?;
                         Ok(())
                     }),
                     button("Secondary").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (rx!(ctx; *$intent == "secondary")?, "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| {
-                        set_intent.set("secondary".to_string())?;
+                        intent.set("secondary".to_string())?;
                         Ok(())
                     }),
                     button("Danger").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (rx!(ctx; *$intent == "danger")?, "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| {
-                        set_intent.set("danger".to_string())?;
+                        intent.set("danger".to_string())?;
                         Ok(())
                     })
                 )).class(tw!("flex flex-wrap items-center gap-1.5 mb-3")),
                 div(chain!(
                     span("Size:").class(tw!("text-xs font-bold text-slate-500 dark:text-slate-400 mr-2")),
                     button("Small (sm)").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (rx!(ctx; *$size == "sm")?, "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| {
-                        set_size.set("sm".to_string())?;
+                        size.set("sm".to_string())?;
                         Ok(())
                     }),
                     button("Medium (md)").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (rx!(ctx; *$size == "md")?, "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| {
-                        set_size.set("md".to_string())?;
+                        size.set("md".to_string())?;
                         Ok(())
                     }),
                     button("Large (lg)").class(tw!("px-2.5 py-1 text-xs rounded-lg font-bold transition-all cursor-pointer", (rx!(ctx; *$size == "lg")?, "bg-indigo-600 text-white", "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"))).on_click(move |_| {
-                        set_size.set("lg".to_string())?;
+                        size.set("lg".to_string())?;
                         Ok(())
                     })
                 )).class(tw!("flex flex-wrap items-center gap-1.5"))

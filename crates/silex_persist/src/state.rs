@@ -9,7 +9,7 @@ use ref_str::LocalStaticRefStr;
 use silex_core::{
     ErrorHandlerInput, OwnerAccess, ReactiveError, Rx, RxGet, SilexError, SilexErrorKind,
     SilexResult, StoreField,
-    reactivity::{PromotionPlan, ReactiveSource, ReadSignal, RwSignal, StoredValue},
+    reactivity::{PromotionPlan, ReactiveSource, ReadSignal, Signal, StoredValue},
     traits::{RxBase, RxCloneData, RxData, RxRead, RxValue, RxWrite},
 };
 use silex_dom::view::{MountContext, MountInstance, OwnedTimeout, View};
@@ -69,8 +69,8 @@ pub(crate) struct PersistenceController<'scope, T: 'scope> {
 
 pub struct Persistent<'scope, T> {
     pub(crate) owner: OwnerAccess<'scope>,
-    pub(crate) value: RwSignal<'scope, T>,
-    pub(crate) state: RwSignal<'scope, PersistenceState>,
+    pub(crate) value: Signal<'scope, T>,
+    pub(crate) state: Signal<'scope, PersistenceState>,
     pub(crate) controller: StoredValue<'scope, PersistenceController<'scope, T>>,
 }
 
@@ -99,7 +99,7 @@ impl<'scope, T> Clone for Persistent<'scope, T> {
 impl<'scope, T> Copy for Persistent<'scope, T> {}
 
 impl<'scope, T> Persistent<'scope, T> {
-    pub fn signal(&self) -> RwSignal<'scope, T> {
+    pub fn signal(&self) -> Signal<'scope, T> {
         self.value
     }
 }
@@ -280,7 +280,7 @@ where
     }
 }
 
-impl<'scope, T: 'scope> From<Persistent<'scope, T>> for RwSignal<'scope, T> {
+impl<'scope, T: 'scope> From<Persistent<'scope, T>> for Signal<'scope, T> {
     fn from(value: Persistent<'scope, T>) -> Self {
         value.signal()
     }
@@ -301,8 +301,8 @@ where
 
 pub(crate) fn flush_persistent_value<'scope, T>(
     controller: StoredValue<'scope, PersistenceController<'scope, T>>,
-    value: RwSignal<'scope, T>,
-    state: RwSignal<'scope, PersistenceState>,
+    value: Signal<'scope, T>,
+    state: Signal<'scope, PersistenceState>,
 ) -> Result<(), PersistenceError>
 where
     T: Clone + PartialEq + 'scope,
@@ -312,8 +312,8 @@ where
 
 pub(crate) fn persist_current_value<'scope, T>(
     controller: StoredValue<'scope, PersistenceController<'scope, T>>,
-    value: RwSignal<'scope, T>,
-    state: RwSignal<'scope, PersistenceState>,
+    value: Signal<'scope, T>,
+    state: Signal<'scope, PersistenceState>,
     origin: WriteOrigin,
 ) -> Result<(), PersistenceError>
 where
@@ -363,7 +363,7 @@ where
 
 fn commit_request<'scope, T>(
     controller: StoredValue<'scope, PersistenceController<'scope, T>>,
-    state: RwSignal<'scope, PersistenceState>,
+    state: Signal<'scope, PersistenceState>,
     token: WriteToken,
     raw: Option<String>,
 ) -> Result<(), PersistenceError>
@@ -415,7 +415,7 @@ where
 
 pub(crate) fn commit_persisted_request<'scope, T>(
     controller: StoredValue<'scope, PersistenceController<'scope, T>>,
-    state: RwSignal<'scope, PersistenceState>,
+    state: Signal<'scope, PersistenceState>,
     request: WriteRequest,
 ) -> Result<(), PersistenceError>
 where
@@ -433,8 +433,8 @@ fn cancel_timer<'scope>(timer: Option<OwnedTimeout<'scope>>) -> Result<(), Persi
 
 pub(crate) fn reload_persistent<'scope, T>(
     controller: StoredValue<'scope, PersistenceController<'scope, T>>,
-    value: RwSignal<'scope, T>,
-    state: RwSignal<'scope, PersistenceState>,
+    value: Signal<'scope, T>,
+    state: Signal<'scope, PersistenceState>,
 ) -> Result<(), PersistenceError>
 where
     T: Clone + PartialEq + 'scope,
@@ -448,8 +448,8 @@ where
 
 pub(crate) fn apply_backend_event<'scope, T>(
     controller: StoredValue<'scope, PersistenceController<'scope, T>>,
-    value: RwSignal<'scope, T>,
-    state: RwSignal<'scope, PersistenceState>,
+    value: Signal<'scope, T>,
+    state: Signal<'scope, PersistenceState>,
     event: BackendEvent,
 ) where
     T: Clone + PartialEq + 'scope,
@@ -483,8 +483,8 @@ pub(crate) fn apply_backend_event<'scope, T>(
 
 fn apply_backend_snapshot<'scope, T>(
     controller: StoredValue<'scope, PersistenceController<'scope, T>>,
-    value: RwSignal<'scope, T>,
-    state: RwSignal<'scope, PersistenceState>,
+    value: Signal<'scope, T>,
+    state: Signal<'scope, PersistenceState>,
     raw: Option<String>,
 ) -> Result<(), PersistenceError>
 where
@@ -498,8 +498,8 @@ where
 
 fn apply_raw_value<'scope, T>(
     controller: StoredValue<'scope, PersistenceController<'scope, T>>,
-    value: RwSignal<'scope, T>,
-    state: RwSignal<'scope, PersistenceState>,
+    value: Signal<'scope, T>,
+    state: Signal<'scope, PersistenceState>,
     raw: String,
 ) -> Result<(), PersistenceError>
 where
@@ -564,8 +564,8 @@ where
 
 fn apply_remove_policy<'scope, T>(
     controller: StoredValue<'scope, PersistenceController<'scope, T>>,
-    value: RwSignal<'scope, T>,
-    state: RwSignal<'scope, PersistenceState>,
+    value: Signal<'scope, T>,
+    state: Signal<'scope, PersistenceState>,
 ) -> Result<(), PersistenceError>
 where
     T: Clone + PartialEq + 'scope,
@@ -648,7 +648,7 @@ pub(crate) fn take_local_mutation<'scope, T>(
     })
 }
 
-fn set_error_state(state: RwSignal<'_, PersistenceState>, error: &PersistenceError) {
+fn set_error_state(state: Signal<'_, PersistenceState>, error: &PersistenceError) {
     let next = match error {
         PersistenceError::Recoverable(PersistenceErrorKind::ReadFailed(message))
         | PersistenceError::Fatal(PersistenceErrorKind::ReadFailed(message)) => {

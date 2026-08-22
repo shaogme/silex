@@ -657,10 +657,10 @@ fn query_binding_uses_target_scope_and_updates_only_its_key() {
     let mut runtime = Runtime::new();
     let root = runtime.owner().expect("owner should be created");
     root.with_access(|scope| {
-        let (path, set_path) = scope
+        let path = scope
             .signal("/settings".to_string())
             .expect("path signal should be created");
-        let (search, set_search) = scope
+        let search = scope
             .signal("?page=2&other=keep".to_string())
             .expect("search signal should be created");
         let context_handler = test_handler(scope);
@@ -668,10 +668,10 @@ fn query_binding_uses_target_scope_and_updates_only_its_key() {
             SilexContext::new(scope, context_handler.view()),
             RouterContextProps {
                 base_path: "/".to_string(),
-                path,
-                search,
-                set_path,
-                set_search,
+                path: path.read_signal(),
+                search: search.read_signal(),
+                set_path: path.write_signal(),
+                set_search: search.write_signal(),
             },
         )
         .expect("router ctx should be created");
@@ -681,7 +681,7 @@ fn query_binding_uses_target_scope_and_updates_only_its_key() {
             .default(1)
             .build()
             .expect("persistent binding should build");
-        set_search
+        search
             .set("?page=3&other=keep".to_string())
             .expect("reactive update should succeed");
         assert_eq!(
@@ -706,10 +706,10 @@ fn query_backend_writes_one_push_and_one_url_update_per_change() {
     let mut runtime = Runtime::new();
     let root = runtime.owner().expect("owner should be created");
     root.with_access(|scope| {
-        let (path, set_path) = scope
+        let path = scope
             .signal("/persist-query".to_string())
             .expect("path signal should be created");
-        let (search, set_search) = scope
+        let search = scope
             .signal("?keep=yes".to_string())
             .expect("search signal should be created");
         let context_handler = test_handler(scope);
@@ -717,10 +717,10 @@ fn query_backend_writes_one_push_and_one_url_update_per_change() {
             SilexContext::new(scope, context_handler.view()),
             RouterContextProps {
                 base_path: "/".to_string(),
-                path,
-                search,
-                set_path,
-                set_search,
+                path: path.read_signal(),
+                search: search.read_signal(),
+                set_path: path.write_signal(),
+                set_search: search.write_signal(),
             },
         )
         .expect("router ctx should be created");
@@ -905,7 +905,7 @@ fn persistent_view_stops_after_row_owner_dispose() {
             .expect("persistent binding should build");
         let captured_node = Rc::new(RefCell::new(None::<Node>));
         let captured_node_for_view = captured_node.clone();
-        let (items, set_items) = scope
+        let items = scope
             .signal(vec![0_i32])
             .expect("items signal should be created");
         let list = IndexedListView {
@@ -923,7 +923,7 @@ fn persistent_view_stops_after_row_owner_dispose() {
             .expect("persistent list should mount");
         assert_eq!(parent.text_content(), Some("one".to_string()));
 
-        set_items
+        items
             .set(Vec::new())
             .expect("reactive update should succeed");
         assert_eq!(parent.text_content(), Some(String::new()));

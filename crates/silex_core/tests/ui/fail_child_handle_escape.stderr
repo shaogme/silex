@@ -1,10 +1,14 @@
-error[E0609]: no field `0` on type `Result<(ReadSignal<'_, {integer}>, WriteSignal<'_, {integer}>), SilexError>`
- --> tests/ui/fail_child_handle_escape.rs:5:96
+error: lifetime may not live long enough
+ --> tests/ui/fail_child_handle_escape.rs:8:13
   |
-5 |     let _escaped = runtime.with_transient(|owner| owner.with_transient(|child| child.signal(1).0));
-  |                                                                                                ^ unknown field
+6 |         owner.with_transient(|child| {
+  |                               ------ return type of closure is ReadSignal<'2, i32>
+  |                               |
+  |                               has type `OwnerAccess<'1>`
+7 |             let signal = child.signal(1).expect("signal should initialize");
+8 |             signal.read_signal()
+  |             ^^^^^^^^^^^^^^^^^^^^ returning this value requires that `'1` must outlive `'2`
   |
-help: one of the expressions' fields has a field of the same name
-  |
-5 |     let _escaped = runtime.with_transient(|owner| owner.with_transient(|child| child.signal(1).unwrap().0));
-  |                                                                                                +++++++++
+  = note: requirement occurs because of the type `ReadSignal<'_, i32>`, which makes the generic argument `'_` invariant
+  = note: the struct `ReadSignal<'owner, T>` is invariant over the parameter `'owner`
+  = help: see <https://doc.rust-lang.org/nomicon/subtyping.html> for more information about variance

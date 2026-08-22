@@ -3,3 +3,9 @@ error[E0599]: no associated function or constant named `pair` found for struct `
   |
 4 |     let _ = Signal::pair(1);
   |                     ^^^^ associated function or constant not found in `Signal<'_, _>`
+  |
+note: if you're trying to build a new `Signal<'_, _>`, consider using `Signal::<'owner, T>::from_pair` which returns `Result<Signal<'_, _>, SilexError>`
+ --> src/reactivity/signal.rs
+  |
+  |     pub fn from_pair(pair: (ReadSignal<'owner, T>, WriteSignal<'owner, T>)) -> SilexResult<Self> {
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -4,7 +4,7 @@ extern crate silex_macros_test as silex;
 
 use js_sys::{Array, Reflect};
 use silex::core::{
-    ErrorHandlerToken, ErrorReporter, OwnerAccess, Runtime, SilexContext, SilexResult,
+    ErrorHandlerToken, ErrorReporter, OwnerAccess, Runtime, Rx, SilexContext, SilexResult,
 };
 use silex::css::types::{Hex, hex, px};
 use silex::dom::attribute::{AttributeBuilder, GlobalAttributes};
@@ -52,8 +52,8 @@ where
 global! {
     pub MacroGlobal<'owner>(
         error_handler: ErrorReporter<'owner>,
-        color: silex::core::reactivity::Signal<'owner, Hex>,
-        selector: silex::core::reactivity::Signal<'owner, String>,
+        color: Rx<'owner, Hex>,
+        selector: Rx<'owner, String>,
     ) {
         :root { color: $(color); }
         $selector { border-color: $(color); }
@@ -63,7 +63,7 @@ global! {
 global! {
     pub MacroForeignGlobal<'owner>(
         error_handler: ErrorReporter<'owner>,
-        color: silex::core::reactivity::Signal<'owner, Hex>,
+        color: Rx<'owner, Hex>,
     ) {
         :root { --macro-foreign-global: $(color); }
     }
@@ -72,8 +72,8 @@ global! {
 global! {
     pub MacroMixedForeignGlobal<'owner>(
         error_handler: ErrorReporter<'owner>,
-        color: silex::core::reactivity::Signal<'owner, Hex>,
-        selector: silex::core::reactivity::Signal<'owner, String>,
+        color: Rx<'owner, Hex>,
+        selector: Rx<'owner, String>,
     ) {
         :root { --macro-mixed-foreign-global: $(color); }
         $selector { color: red; }
@@ -84,7 +84,7 @@ styled! {
     pub MacroStyledValue<'owner><div>(
         #[ctx] ctx: SilexContext<'owner>,
         children: AnyView<'owner>,
-        color: silex::core::reactivity::Signal<'owner, Hex>,
+        color: Rx<'owner, Hex>,
     ) {
         color: $(color);
     }
@@ -94,7 +94,7 @@ styled! {
     pub MacroStyledSelector<'owner><div>(
         #[ctx] ctx: SilexContext<'owner>,
         children: AnyView<'owner>,
-        selector: silex::core::reactivity::Signal<'owner, String>,
+        selector: Rx<'owner, String>,
     ) {
         & $selector { color: red; }
     }
@@ -104,7 +104,7 @@ styled! {
     pub MacroStyledVariant<'owner><div>(
         #[ctx] ctx: SilexContext<'owner>,
         children: AnyView<'owner>,
-        selector: silex::core::reactivity::Signal<'owner, String>,
+        selector: Rx<'owner, String>,
     ) {
         variants: {
             mode: {
@@ -193,7 +193,7 @@ fn mount_foreign_css<'owner>(
 ) -> SilexResult<()> {
     let local_scope = local_root.access();
     let foreign_scope = foreign_root.access();
-    let (color, _) = foreign_scope.signal(hex("#123456")).unwrap();
+    let color = foreign_scope.signal(hex("#123456")).unwrap();
     let css: SilexResult<silex::css::DynamicCss<'_>> = css!(test_handler(local_scope); {
         --macro-foreign-css: $(color);
     });
@@ -210,7 +210,7 @@ fn mount_foreign_global<'owner>(
 ) {
     let local_scope = local_root.access();
     let foreign_scope = foreign_root.access();
-    let (color, _) = foreign_scope.signal(hex("#654321")).unwrap();
+    let color = foreign_scope.signal(hex("#654321")).unwrap();
     let (owner, error_handler) = test_owner(local_scope);
     let view = MacroForeignGlobal(error_handler.view(), color.into()).unwrap();
     assert!(mount_view(&view, &owner, host, error_handler.view()).is_err());
@@ -223,8 +223,8 @@ fn mount_mixed_foreign_global<'owner>(
 ) {
     let local_scope = local_root.access();
     let foreign_scope = foreign_root.access();
-    let (color, _) = local_scope.signal(hex("#112233")).unwrap();
-    let (selector, _) = foreign_scope
+    let color = local_scope.signal(hex("#112233")).unwrap();
+    let selector = foreign_scope
         .signal(String::from("macro-mixed-foreign-selector"))
         .unwrap();
     let (owner, error_handler) = test_owner(local_scope);
@@ -292,7 +292,7 @@ fn css_dynamic_value_mounts_updates_and_cleans_with_owner() {
     let element;
     {
         let owner = root.access();
-        let (width, set_width) = owner.signal(px(4)).unwrap();
+        let width = owner.signal(px(4)).unwrap();
         let view = (|| -> SilexResult<_> {
             let css: SilexResult<silex::css::DynamicCss<'_>> =
                 css!(test_handler(owner); width: $(width););
@@ -307,7 +307,7 @@ fn css_dynamic_value_mounts_updates_and_cleans_with_owner() {
             .expect("dynamic css view mounts an element");
         assert!(style_text(&element).contains("4px"));
 
-        set_width.set(px(8)).unwrap();
+        width.set(px(8)).unwrap();
         assert!(style_text(&element).contains("8px"));
     }
 
@@ -334,7 +334,7 @@ async fn css_dynamic_selector_updates_and_detaches_on_owner_dispose() {
     let first_dynamic_class;
     {
         let owner = root.access();
-        let (selector, set_selector) = owner.signal(String::from("macro-css-selector-a")).unwrap();
+        let selector = owner.signal(String::from("macro-css-selector-a")).unwrap();
         let view = (|| -> SilexResult<_> {
             let css: SilexResult<silex::css::DynamicCss<'_>> = css!(test_handler(owner); {
                 & $selector { color: red; }
@@ -361,9 +361,7 @@ async fn css_dynamic_selector_updates_and_detaches_on_owner_dispose() {
             "macro-css-selector-a",
         ]));
 
-        set_selector
-            .set(String::from("macro-css-selector-b"))
-            .unwrap();
+        selector.set(String::from("macro-css-selector-b")).unwrap();
         flush_style_microtasks().await;
         let second_class = element.class_name();
         assert!(!second_class.contains(&first_dynamic_class));
@@ -397,7 +395,7 @@ async fn css_dynamic_selector_dispose_before_pending_style_flush_does_not_readd_
     let element;
     {
         let owner = root.access();
-        let (selector, _) = owner
+        let selector = owner
             .signal(String::from("macro-pending-dispose-selector"))
             .unwrap();
         let view = (|| -> SilexResult<_> {
@@ -447,7 +445,7 @@ async fn css_dynamic_selector_stylesheet_is_leased_across_owners() {
     let second_element;
     {
         let owner = first_root.access();
-        let (selector, _) = owner.signal(String::from("macro-shared-selector")).unwrap();
+        let selector = owner.signal(String::from("macro-shared-selector")).unwrap();
         let view = (|| -> SilexResult<_> {
             let css: SilexResult<silex::css::DynamicCss<'_>> = css!(test_handler(owner); {
                 $selector { color: red; }
@@ -464,7 +462,7 @@ async fn css_dynamic_selector_stylesheet_is_leased_across_owners() {
     }
     {
         let owner = second_root.access();
-        let (selector, _) = owner.signal(String::from("macro-shared-selector")).unwrap();
+        let selector = owner.signal(String::from("macro-shared-selector")).unwrap();
         let view = (|| -> SilexResult<_> {
             let css: SilexResult<silex::css::DynamicCss<'_>> = css!(test_handler(owner); {
                 $selector { color: red; }
@@ -517,7 +515,7 @@ fn conditional_tw_switches_one_owner_bound_class_and_cleans_on_dispose() {
     let first_class;
     {
         let owner = root.access();
-        let (condition, set_condition) = owner.signal(true).unwrap();
+        let condition = owner.signal(true).unwrap();
         let view = silex::html::div(()).apply(tw!(
             "inline-flex",
             (
@@ -535,7 +533,7 @@ fn conditional_tw_switches_one_owner_bound_class_and_cleans_on_dispose() {
         first_class = element.class_name();
         assert!(!first_class.is_empty());
 
-        set_condition.set(false).unwrap();
+        condition.set(false).unwrap();
         let second_class = element.class_name();
         assert_ne!(first_class, second_class);
         assert!(
@@ -567,8 +565,8 @@ fn classes_reactive_toggle_updates_and_cleans_without_removing_static_classes() 
     let element;
     {
         let owner = root.access();
-        let (active, set_active) = owner.signal(true).unwrap();
-        let (dynamic_classes, set_dynamic_classes) = owner
+        let active = owner.signal(true).unwrap();
+        let dynamic_classes = owner
             .signal(String::from("macro-owned macro-reactive"))
             .unwrap();
         let view = silex::html::div(()).apply(classes![
@@ -589,38 +587,34 @@ fn classes_reactive_toggle_updates_and_cleans_without_removing_static_classes() 
         assert!(element.class_list().contains("macro-owned"));
         assert!(element.class_list().contains("macro-reactive"));
 
-        set_active.set(false).unwrap();
+        active.set(false).unwrap();
         assert!(element.class_list().contains("macro-static"));
         assert!(!element.class_list().contains("macro-active"));
         assert!(element.class_list().contains("macro-owned"));
         assert!(element.class_list().contains("macro-reactive"));
 
-        set_dynamic_classes
-            .set(String::from("macro-owned"))
-            .unwrap();
+        dynamic_classes.set(String::from("macro-owned")).unwrap();
         assert!(element.class_list().contains("macro-owned"));
         assert!(!element.class_list().contains("macro-reactive"));
 
-        set_dynamic_classes.set(String::new()).unwrap();
+        dynamic_classes.set(String::new()).unwrap();
         assert!(!element.class_list().contains("macro-owned"));
         assert!(element.class_list().contains("macro-static"));
 
-        set_active.set(true).unwrap();
+        active.set(true).unwrap();
         assert!(element.class_list().contains("macro-static"));
         assert!(element.class_list().contains("macro-active"));
         assert!(element.class_list().contains("macro-owned"));
 
-        set_dynamic_classes
-            .set(String::from("macro-reactive"))
-            .unwrap();
+        dynamic_classes.set(String::from("macro-reactive")).unwrap();
         assert!(element.class_list().contains("macro-owned"));
         assert!(element.class_list().contains("macro-reactive"));
 
-        set_active.set(false).unwrap();
+        active.set(false).unwrap();
         assert!(!element.class_list().contains("macro-owned"));
         assert!(element.class_list().contains("macro-reactive"));
 
-        set_dynamic_classes.set(String::new()).unwrap();
+        dynamic_classes.set(String::new()).unwrap();
         assert!(element.class_list().contains("macro-static"));
         assert!(!element.class_list().contains("macro-reactive"));
     }
@@ -679,7 +673,7 @@ fn styled_dynamic_value_cleans_inline_property_on_owner_dispose() {
     let element;
     {
         let owner = root.access();
-        let (color, set_color) = owner.signal(hex("#123456")).unwrap();
+        let color = owner.signal(hex("#123456")).unwrap();
         let (mount_owner, error_handler) = test_owner(owner);
         let ctx = SilexContext::new(owner, error_handler.view());
         let view = MacroStyledValue(ctx, AnyView::new(()), color).build();
@@ -690,7 +684,7 @@ fn styled_dynamic_value_cleans_inline_property_on_owner_dispose() {
             .expect("styled value view mounts an element");
         assert!(style_text(&element).contains("#123456"));
 
-        set_color.set(hex("#654321")).unwrap();
+        color.set(hex("#654321")).unwrap();
         assert!(style_text(&element).contains("#654321"));
     }
 
@@ -721,7 +715,7 @@ fn styled_static_descriptor_rejects_foreign_inputs_without_outer_mount_aggregati
 
     let local_scope = local_root.access();
     let foreign_scope = foreign_root.access();
-    let (color, _) = foreign_scope.signal(hex("#123456")).unwrap();
+    let color = foreign_scope.signal(hex("#123456")).unwrap();
     let getter = color
         .into_rx()
         .map(|value| value.to_string(), test_handler(local_scope))
@@ -776,7 +770,7 @@ async fn styled_dynamic_selector_updates_and_detaches_on_owner_dispose() {
     let first_class;
     {
         let owner = root.access();
-        let (selector, set_selector) = owner.signal(String::from("macro-selector-a")).unwrap();
+        let selector = owner.signal(String::from("macro-selector-a")).unwrap();
         let (mount_owner, error_handler) = test_owner(owner);
         let ctx = SilexContext::new(owner, error_handler.view());
         let view = MacroStyledSelector(ctx, AnyView::new(()), selector).build();
@@ -792,7 +786,7 @@ async fn styled_dynamic_selector_updates_and_detaches_on_owner_dispose() {
             "macro-selector-a"
         ]));
 
-        set_selector.set(String::from("macro-selector-b")).unwrap();
+        selector.set(String::from("macro-selector-b")).unwrap();
         flush_style_microtasks().await;
         let second_class = element.class_name();
         assert_ne!(first_class, second_class);
@@ -833,8 +827,8 @@ async fn styled_dynamic_variant_switches_rules_and_cleans_on_dispose() {
     let element;
     {
         let owner = root.access();
-        let (mode, set_mode) = owner.signal(String::from("light")).unwrap();
-        let (selector, _) = owner
+        let mode = owner.signal(String::from("light")).unwrap();
+        let selector = owner
             .signal(String::from("macro-variant-selector"))
             .unwrap();
         let (mount_owner, error_handler) = test_owner(owner);
@@ -854,7 +848,7 @@ async fn styled_dynamic_variant_switches_rules_and_cleans_on_dispose() {
             "rgb(17, 34, 51)"
         ]));
 
-        set_mode.set(String::from("dark")).unwrap();
+        mode.set(String::from("dark")).unwrap();
         flush_style_microtasks().await;
         assert!(document_style_contains_all(&[
             "@layer components",
@@ -889,8 +883,8 @@ async fn dynamic_global_mounts_without_a_dom_node_and_cleans_on_dispose() {
         .expect("second runtime root can be created");
     {
         let owner = root.access();
-        let (color, set_color) = owner.signal(hex("#123456")).unwrap();
-        let (selector, _) = owner.signal(String::from(".macro-target")).unwrap();
+        let color = owner.signal(hex("#123456")).unwrap();
+        let selector = owner.signal(String::from(".macro-target")).unwrap();
         let (mount_owner, error_handler) = test_owner(owner);
         let view = MacroGlobal(error_handler.view(), color.into(), selector.into()).unwrap();
         let _ = mount_view(&view, &mount_owner, &host, error_handler.view())
@@ -907,7 +901,7 @@ async fn dynamic_global_mounts_without_a_dom_node_and_cleans_on_dispose() {
             "macro-target"
         ]));
 
-        set_color.set(hex("#654321")).unwrap();
+        color.set(hex("#654321")).unwrap();
         flush_style_microtasks().await;
         assert!(document_style_contains_all(&[
             "@layer base",
@@ -915,8 +909,8 @@ async fn dynamic_global_mounts_without_a_dom_node_and_cleans_on_dispose() {
         ]));
     }
     second_root.with_access(|owner| {
-        let (color, _) = owner.signal(hex("#abcdef")).unwrap();
-        let (selector, _) = owner
+        let color = owner.signal(hex("#abcdef")).unwrap();
+        let selector = owner
             .signal(String::from(".macro-target-secondary"))
             .unwrap();
         let (owner, error_handler) = test_owner(owner);

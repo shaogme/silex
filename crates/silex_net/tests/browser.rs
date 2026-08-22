@@ -451,7 +451,7 @@ async fn http_resource_resolves_owned_request() {
     let root = runtime.owner().expect("runtime setup");
     let scope = root.access();
     async move {
-        let (source, _) = scope.signal(1_u32).unwrap();
+        let source = scope.signal(1_u32).unwrap();
         let resource =
             silex_net::HttpClient::get(scope, "data:text/plain,hello", test_handler(scope))
                 .as_resource(source, None)
@@ -500,7 +500,7 @@ async fn resource_runs_interceptor_once_and_rejects_custom_status() {
     let root = runtime.owner().expect("runtime setup");
     let scope = root.access();
     async move {
-        let (source, _) = scope.signal(1_u32).unwrap();
+        let source = scope.signal(1_u32).unwrap();
         let interceptor_calls = Rc::new(Cell::new(0));
         let transport_calls = Rc::new(Cell::new(0));
         let interceptor_calls_for_hook = interceptor_calls.clone();
@@ -532,7 +532,7 @@ async fn resource_runs_interceptor_once_and_rejects_custom_status() {
     let root = runtime.owner().expect("runtime setup");
     let scope = root.access();
     async move {
-        let (source, _) = scope.signal(1_u32).unwrap();
+        let source = scope.signal(1_u32).unwrap();
         let transport_calls = Rc::new(Cell::new(0));
         let error_calls = Rc::new(Cell::new(0));
         let retry_calls = Rc::new(Cell::new(0));
@@ -585,8 +585,8 @@ async fn resource_replacement_keeps_new_request_result() {
     let root = runtime.owner().expect("runtime setup");
     let scope = root.access();
     async move {
-        let (query, set_query) = scope.signal("first".to_string()).unwrap();
-        let (source, _) = scope.signal(1_u32).unwrap();
+        let query = scope.signal("first".to_string()).unwrap();
+        let source = scope.signal(1_u32).unwrap();
         let calls = Rc::new(Cell::new(0));
         let resource = silex_net::HttpClient::get(
             scope,
@@ -601,7 +601,7 @@ async fn resource_replacement_keeps_new_request_result() {
         .expect("resource setup");
         TimeoutFuture::new(0).await;
         assert_eq!(calls.get(), 1);
-        set_query.set("second".to_string()).unwrap();
+        query.set("second".to_string()).unwrap();
         TimeoutFuture::new(30).await;
         assert!(matches!(
             resource.state().get().unwrap(),
@@ -621,7 +621,7 @@ async fn mutation_preflight_error_does_not_enter_pending() {
     let target_root = target_runtime.owner().expect("target runtime setup");
     let source_scope = source_root.access();
     let target_scope = target_root.access();
-    let (foreign, _) = source_scope.signal("foreign".to_string()).unwrap();
+    let foreign = source_scope.signal("foreign".to_string()).unwrap();
     let mutation = silex_net::HttpClient::post(
         target_scope,
         "https://example.test/mutate",
@@ -693,7 +693,7 @@ async fn cache_first_does_not_treat_default_as_history() {
     let root = runtime.owner().expect("runtime setup");
     let scope = root.access();
     async move {
-        let (source, _) = scope.signal(1_u32).unwrap();
+        let source = scope.signal(1_u32).unwrap();
         let resource =
             silex_net::HttpClient::get(scope, "data:text/plain,cache", test_handler(scope))
                 .credentials(silex_net::CredentialsMode::Omit)
@@ -754,7 +754,7 @@ async fn cache_controller_bounds_dynamic_keys_and_removes_evicted_history() {
     let third_key_for_scope = third_key.clone();
     let scope = root.access();
     async move {
-        let (query, set_query) = scope.signal(String::new()).unwrap();
+        let query = scope.signal(String::new()).unwrap();
         let calls = Rc::new(Cell::new(0));
         let client = silex_net::HttpClient::get(scope, url, test_handler(scope))
             .query("value", query)
@@ -777,7 +777,7 @@ async fn cache_controller_bounds_dynamic_keys_and_removes_evicted_history() {
             });
 
         for value in ["first", "second", "third"] {
-            set_query.set(value.to_string()).unwrap();
+            query.set(value.to_string()).unwrap();
             assert_eq!(
                 client.send().await.expect("bounded cache request"),
                 "network"
@@ -978,8 +978,8 @@ async fn cache_completion_cannot_recreate_an_evicted_key() {
     let second_key_for_scope = second_key.clone();
     let scope = root.access();
     async move {
-        let (query, set_query) = scope.signal("first".to_string()).unwrap();
-        let (source, _) = scope.signal(1_u32).unwrap();
+        let query = scope.signal("first".to_string()).unwrap();
+        let source = scope.signal(1_u32).unwrap();
         let calls = Rc::new(Cell::new(0));
         let resource = silex_net::HttpClient::get(scope, url, test_handler(scope))
             .query("value", query)
@@ -1006,7 +1006,7 @@ async fn cache_completion_cannot_recreate_an_evicted_key() {
         ));
         assert_eq!(calls.get(), 1);
 
-        set_query.set("second".to_string()).unwrap();
+        query.set("second".to_string()).unwrap();
         TimeoutFuture::new(30).await;
         assert_eq!(
             resource.state().get().unwrap(),
@@ -1233,8 +1233,8 @@ async fn cache_first_reloads_history_when_request_key_changes() {
     let root = runtime.owner().expect("runtime setup");
     let scope = root.access();
     async move {
-        let (query, set_query) = scope.signal("first".to_string()).unwrap();
-        let (source, _) = scope.signal(1_u32).unwrap();
+        let query = scope.signal("first".to_string()).unwrap();
+        let source = scope.signal(1_u32).unwrap();
         let calls = Rc::new(Cell::new(0));
         let resource = silex_net::HttpClient::get(scope, url, test_handler(scope))
             .query("value", query)
@@ -1264,7 +1264,7 @@ async fn cache_first_reloads_history_when_request_key_changes() {
         ));
         assert_eq!(calls.get(), 0);
 
-        set_query.set("second".to_string()).unwrap();
+        query.set("second".to_string()).unwrap();
         TimeoutFuture::new(0).await;
         assert!(matches!(
             resource.state().get().unwrap(),
@@ -1272,7 +1272,7 @@ async fn cache_first_reloads_history_when_request_key_changes() {
         ));
         assert_eq!(calls.get(), 1);
 
-        set_query.set("first".to_string()).unwrap();
+        query.set("first".to_string()).unwrap();
         TimeoutFuture::new(0).await;
         assert!(matches!(
             resource.state().get().unwrap(),
@@ -1313,7 +1313,7 @@ async fn swr_rejects_stale_same_key_cache_write() {
     let root = runtime.owner().expect("runtime setup");
     let scope = root.access();
     async move {
-        let (source, set_source) = scope.signal(1_u32).unwrap();
+        let source = scope.signal(1_u32).unwrap();
         let calls = Rc::new(Cell::new(0));
         let resource = silex_net::HttpClient::get(scope, url, test_handler(scope))
             .credentials(silex_net::CredentialsMode::Omit)
@@ -1339,7 +1339,7 @@ async fn swr_rejects_stale_same_key_cache_write() {
         ));
         assert_eq!(calls.get(), 1);
 
-        set_source.set(2).unwrap();
+        source.set(2).unwrap();
         TimeoutFuture::new(30).await;
         let state = resource.state().get().unwrap();
         assert_eq!(
@@ -1390,7 +1390,7 @@ async fn network_first_uses_history_after_retryable_failure() {
     let root = runtime.owner().expect("runtime setup");
     let scope = root.access();
     async move {
-        let (source, _) = scope.signal(1_u32).unwrap();
+        let source = scope.signal(1_u32).unwrap();
         let calls = Rc::new(Cell::new(0));
         let resource = silex_net::HttpClient::get(scope, url, test_handler(scope))
             .credentials(silex_net::CredentialsMode::Omit)
@@ -1721,7 +1721,7 @@ async fn websocket_constructor_failure_reports_error_before_connection_creation(
         assert_eq!(errors.get(), 1);
         assert_eq!(mock_instance_count("__silex_test_socket_instances"), 0);
 
-        let (url, set_url) = scope.signal("ws://mock".to_string()).unwrap();
+        let url = scope.signal("ws://mock".to_string()).unwrap();
         let reconnect_errors = Rc::new(Cell::new(0));
         let socket = WebSocket::lazy(scope, url, test_handler(scope))
             .on_error({
@@ -1736,7 +1736,7 @@ async fn websocket_constructor_failure_reports_error_before_connection_creation(
             })
             .build()
             .expect("websocket setup");
-        set_url.set("mock://failure".to_string()).unwrap();
+        url.set("mock://failure".to_string()).unwrap();
         assert!(matches!(
             socket.reconnect(),
             Err(NetError::Recoverable(NetErrorKind::JsError(_)))
@@ -2017,7 +2017,7 @@ async fn event_stream_constructor_failure_reports_error_before_connection_creati
             0
         );
 
-        let (url, set_url) = scope.signal("http://mock".to_string()).unwrap();
+        let url = scope.signal("http://mock".to_string()).unwrap();
         let reconnect_errors = Rc::new(Cell::new(0));
         let stream = EventStream::lazy(scope, url, test_handler(scope))
             .on_error({
@@ -2032,7 +2032,7 @@ async fn event_stream_constructor_failure_reports_error_before_connection_creati
             })
             .build()
             .expect("event stream setup");
-        set_url.set("mock://failure".to_string()).unwrap();
+        url.set("mock://failure".to_string()).unwrap();
         assert!(matches!(
             stream.reconnect(),
             Err(NetError::Recoverable(NetErrorKind::JsError(_)))

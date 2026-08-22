@@ -2,7 +2,7 @@ use crate::callback::report_completion_error;
 use crate::{
     CompletionSender, ErrorHandlerInput, ErrorReporter, OwnerAccess, SilexError, SilexErrorKind,
     SilexResult,
-    reactivity::{ReadSignal, StoredValue, WriteSignal},
+    reactivity::{Signal, StoredValue},
     traits::{RxBase, RxCloneData, RxData, RxError, RxRead, RxValue},
     unwind_safe,
 };
@@ -67,8 +67,7 @@ struct MutationInner<'owner, Arg, T, E> {
 }
 
 pub struct Mutation<'owner, Arg, T, E = SilexError> {
-    pub state: ReadSignal<'owner, MutationState<T, E>>,
-    set_state: WriteSignal<'owner, MutationState<T, E>>,
+    pub state: Signal<'owner, MutationState<T, E>>,
     inner: StoredValue<'owner, MutationInner<'owner, Arg, T, E>>,
     owner: OwnerAccess<'owner>,
     error_handler: ErrorReporter<'owner>,
@@ -107,16 +106,15 @@ where
             },
             error_handler,
         )?;
-        let (state, set_state) = owner.signal(MutationState::Idle)?;
+        let state = owner.signal(MutationState::Idle)?;
         let last_id = Rc::new(Cell::new(0usize));
         let last_id_for_callback = last_id.clone();
-        let set_state_for_callback = set_state;
         let completion =
             owner.completion_sender(unwind_safe(move |(id, result): (usize, Result<T, E>)| {
                 if let Some(next_state) =
                     resolve_mutation_result(last_id_for_callback.get(), id, result)
                 {
-                    set_state_for_callback.set(next_state)?;
+                    state.set(next_state)?;
                 }
                 Ok(())
             }))?;
@@ -128,7 +126,6 @@ where
 
         Ok(Self {
             state,
-            set_state,
             inner,
             owner,
             error_handler,
@@ -156,16 +153,15 @@ where
             },
             error_handler,
         )?;
-        let (state, set_state) = owner.signal(MutationState::Idle)?;
+        let state = owner.signal(MutationState::Idle)?;
         let last_id = Rc::new(Cell::new(0usize));
         let last_id_for_callback = last_id.clone();
-        let set_state_for_callback = set_state;
         let completion =
             owner.completion_sender(unwind_safe(move |(id, result): (usize, Result<T, E>)| {
                 if let Some(next_state) =
                     resolve_mutation_result(last_id_for_callback.get(), id, result)
                 {
-                    set_state_for_callback.set(next_state)?;
+                    state.set(next_state)?;
                 }
                 Ok(())
             }))?;
@@ -179,7 +175,6 @@ where
 
         Ok(Self {
             state,
-            set_state,
             inner,
             owner,
             error_handler,
@@ -206,7 +201,7 @@ where
                     ))
                 })?;
                 last_id.set(id);
-                self.set_state.set(MutationState::Pending)?;
+                self.state.set(MutationState::Pending)?;
                 (id, action(arg))
             }
             MutationAction::Prepared(prepare) => {
@@ -219,7 +214,7 @@ where
                             ))
                         })?;
                         last_id.set(id);
-                        self.set_state.set(MutationState::Error(error))?;
+                        self.state.set(MutationState::Error(error))?;
                         return Ok(());
                     }
                 };
@@ -229,7 +224,7 @@ where
                     ))
                 })?;
                 last_id.set(id);
-                self.set_state.set(MutationState::Pending)?;
+                self.state.set(MutationState::Pending)?;
                 (id, future)
             }
         };

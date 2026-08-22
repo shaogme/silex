@@ -415,7 +415,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
             let p = &v.prop_name;
             all_fn_args.push(syn::parse_quote! {
                 #[prop(into)] #[chain] #p:
-                    #__silex::core::reactivity::Signal<#scope, ::std::string::String>
+                    #__silex::core::Rx<#scope, ::std::string::String>
             });
         }
     }
@@ -801,7 +801,7 @@ fn normalize_scoped_type(ty: &mut Type, scope: &syn::Lifetime) {
     let name = segment.ident.to_string();
     let needs_lifetime = matches!(
         name.as_str(),
-        "AnyView" | "Rx" | "Signal" | "ReadSignal" | "RwSignal" | "Computed" | "StoredValue"
+        "AnyView" | "Rx" | "Signal" | "ReadSignal" | "Computed" | "StoredValue"
     );
     if !needs_lifetime {
         return;

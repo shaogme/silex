@@ -391,10 +391,10 @@ fn link_requires_ctx_and_tracks_active_path() {
     let root = runtime.owner().expect("root should be created");
 
     root.with_access(|owner| {
-        let (path, set_path) = owner
+        let path = owner
             .signal(String::from("/users"))
             .expect("path signal should be created");
-        let (search, set_search) = owner
+        let search = owner
             .signal(String::new())
             .expect("search signal should be created");
         let context_error_handler = test_handler(owner);
@@ -402,10 +402,10 @@ fn link_requires_ctx_and_tracks_active_path() {
             SilexContext::new(owner, context_error_handler.view()),
             RouterContextProps {
                 base_path: String::from("/app"),
-                path,
-                search,
-                set_path,
-                set_search,
+                path: path.read_signal(),
+                search: search.read_signal(),
+                set_path: path.write_signal(),
+                set_search: search.write_signal(),
             },
         )
         .expect("router ctx should be created");
@@ -427,8 +427,7 @@ fn link_requires_ctx_and_tracks_active_path() {
         assert_eq!(element.get_attribute("href").as_deref(), Some("/app/users"));
         assert_eq!(element.class_name(), "active");
 
-        set_path
-            .set(String::from("/other"))
+        path.set(String::from("/other"))
             .expect("path signal should update");
         assert_eq!(element.class_name(), "");
     });
@@ -448,10 +447,10 @@ fn query_computed_handles_empty_multiple_duplicate_delete_and_reactive_changes()
     let root = runtime.owner().expect("root should be created");
 
     root.with_access(|owner| {
-        let (path, set_path) = owner
+        let path = owner
             .signal(String::from("/query"))
             .expect("path signal should be created");
-        let (search, set_search) = owner
+        let search = owner
             .signal(String::from(
                 "?empty&blank=&first=one&second=two&tag=first&tag=last",
             ))
@@ -461,10 +460,10 @@ fn query_computed_handles_empty_multiple_duplicate_delete_and_reactive_changes()
             SilexContext::new(owner, context_error_handler.view()),
             RouterContextProps {
                 base_path: String::from("/"),
-                path,
-                search,
-                set_path,
-                set_search,
+                path: path.read_signal(),
+                search: search.read_signal(),
+                set_path: path.write_signal(),
+                set_search: search.write_signal(),
             },
         )
         .expect("router ctx should be created");
@@ -498,12 +497,12 @@ fn query_computed_handles_empty_multiple_duplicate_delete_and_reactive_changes()
         assert!(!after_delete.contains_key("tag"));
         assert_eq!(after_delete.get("first"), Some(&String::from("one")));
 
-        set_search
+        search
             .set(String::new())
             .expect("search signal should update");
         assert!(query.get().expect("query should be readable").is_empty());
 
-        set_search
+        search
             .set(String::from("?first=updated&new=value"))
             .expect("search signal should update");
         let updated = query.get().expect("query should be readable");
@@ -657,7 +656,7 @@ fn router_view_factory_keeps_scoped_dynamic_owner_cleanup() {
     let root = runtime.owner().expect("root should be created");
 
     root.with_access(|owner| {
-        let (text, set_text) = owner
+        let text = owner
             .signal(String::from("factory-one"))
             .expect("text signal should be created");
         let cleanups_for_factory = cleanups.clone();
@@ -665,7 +664,7 @@ fn router_view_factory_keeps_scoped_dynamic_owner_cleanup() {
         let factory = RouterView(Rc::new(move || {
             calls_for_factory.set(calls_for_factory.get() + 1);
             AnyView::new(FactoryTextView {
-                text,
+                text: text.read_signal(),
                 cleanups: cleanups_for_factory.clone(),
             })
         }));
@@ -676,8 +675,7 @@ fn router_view_factory_keeps_scoped_dynamic_owner_cleanup() {
         assert_eq!(host.text_content().as_deref(), Some("factory-one"));
         assert_eq!(factory_calls.get(), 1);
 
-        set_text
-            .set(String::from("factory-two"))
+        text.set(String::from("factory-two"))
             .expect("factory text should update");
         assert_eq!(host.text_content().as_deref(), Some("factory-two"));
         assert_eq!(factory_calls.get(), 2);

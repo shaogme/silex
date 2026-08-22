@@ -81,17 +81,17 @@ fn create_router_ctx<'scope>(
     let base_path = context::normalize_base_path(base);
     let initial_path = context::strip_base_path(&base_path, &raw_path);
     let owner = silex.owner();
-    let (path, set_path) = owner.signal(initial_path)?;
-    let (search, set_search) = owner.signal(initial_search)?;
+    let path_signal = owner.signal(initial_path)?;
+    let search_signal = owner.signal(initial_search)?;
 
     RouterContext::new(
         silex,
         RouterContextProps {
             base_path,
-            path,
-            search,
-            set_path,
-            set_search,
+            path: path_signal.read_signal(),
+            search: search_signal.read_signal(),
+            set_path: path_signal.write_signal(),
+            set_search: search_signal.write_signal(),
         },
     )
 }

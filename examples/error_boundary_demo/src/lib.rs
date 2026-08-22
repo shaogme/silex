@@ -69,7 +69,7 @@ fn App<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
 
 #[component]
 fn RecoverableComponent<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> + 'scope {
-    let (should_error, set_should_error) = owner.signal(false)?;
+    let should_error = owner.signal(false)?;
 
     Ok(move || {
         if should_error.get()? {
@@ -80,7 +80,7 @@ fn RecoverableComponent<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'
             Ok(div!(
                 p("Component is running normally."),
                 button("Trigger Result::Err").on_click(move |_| {
-                    set_should_error.set(true)?;
+                    should_error.set(true)?;
                     Ok(())
                 }),
             ))
@@ -90,7 +90,7 @@ fn RecoverableComponent<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'
 
 #[component]
 fn PanicToggleComponent<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> + 'scope {
-    let (show_panic, set_show_panic) = owner.signal(false)?;
+    let show_panic = owner.signal(false)?;
     let immediate_panic = ImmediatePanic(ctx).build();
 
     Ok(move || {
@@ -101,7 +101,7 @@ fn PanicToggleComponent<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'
                 div!(
                     p("The panic component is currently hidden."),
                     button("Show Panic Component").on_click(move |_| {
-                        set_show_panic.set(true)?;
+                        show_panic.set(true)?;
                         Ok(())
                     }),
                 )
@@ -113,12 +113,12 @@ fn PanicToggleComponent<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'
 
 #[component]
 fn ImmediatePanic<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> + 'scope {
-    let (active, set_active) = owner.signal(false)?;
+    let active = owner.signal(false)?;
 
     Ok(div!(
         p("Ready to panic?"),
         button("Click to Panic Immediately").on_click(move |_| {
-            set_active.set(true)?;
+            active.set(true)?;
             Ok(())
         }),
         move || -> SilexResult<String> {

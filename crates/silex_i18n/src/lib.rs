@@ -22,7 +22,7 @@ pub use runtime::{
 pub use silex_core::Rx;
 pub use silex_core::reactivity::{
     Computed, EffectHandle, ReadSignal, Resource, ResourceBuilder, ResourceFetchBuilder,
-    ResourceSource, ResourceSourceBuilder, ResourceState, RwSignal, StoredValue, SuspenseContext,
+    ResourceSource, ResourceSourceBuilder, ResourceState, Signal, StoredValue, SuspenseContext,
 };
 pub use silex_core::traits::{RxGet, RxRead, RxWrite};
 pub use silex_core::{I18nError, I18nErrorKind, OwnerAccess, OwnerHandle, Runtime};
@@ -266,7 +266,7 @@ mod tests {
                     .catalog(zh)
                     .build()
                     .expect("valid i18n store");
-                let name = owner.rw_signal("Alice".to_string()).expect("name signal");
+                let name = owner.signal("Alice".to_string()).expect("name signal");
                 let greeting = t!(store, "welcome.user", name = name.get()).expect("translation");
                 assert_eq!(greeting.get().expect("translation value"), "你好，Alice！");
                 name.set("Bob".to_string()).expect("name update");
@@ -662,7 +662,7 @@ mod tests {
         let target_root = target_runtime.owner().expect("target root owner");
 
         foreign_root.with_access(|foreign_owner| {
-            let (source, _) = foreign_owner
+            let source = foreign_owner
                 .signal(locale("en-US"))
                 .expect("foreign source");
             target_root.with_access(|target_owner| {

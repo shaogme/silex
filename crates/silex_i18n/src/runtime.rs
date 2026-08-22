@@ -7,7 +7,7 @@ use silex_core::EffectHandle;
 use silex_core::{
     EffectPhase, ErrorReporter, OwnerAccess, ReactiveError, Rx, RxGet, RxRead, SilexError,
     SilexResult,
-    reactivity::{ReadSignal, Resource, ResourceState, RwSignal, StoredValue, SuspenseContext},
+    reactivity::{ReadSignal, Resource, ResourceState, Signal, StoredValue, SuspenseContext},
 };
 use std::{
     cell::Cell,
@@ -107,10 +107,10 @@ impl CatalogRegistry {
 pub struct I18nStore<'scope> {
     owner: OwnerAccess<'scope>,
     error_handler: ErrorReporter<'scope>,
-    locale: RwSignal<'scope, Locale>,
-    fallback_locale: RwSignal<'scope, Locale>,
+    locale: Signal<'scope, Locale>,
+    fallback_locale: Signal<'scope, Locale>,
     catalog_cache: StoredValue<'scope, CatalogRegistry>,
-    catalog_revision: RwSignal<'scope, u64>,
+    catalog_revision: Signal<'scope, u64>,
     missing_key: MissingKeyPolicy,
     missing_argument: MissingArgumentPolicy,
 }
@@ -238,10 +238,10 @@ impl<'scope> I18nBuilder<'scope> {
         let store = I18nStore {
             owner,
             error_handler,
-            locale: owner.rw_signal(locale)?,
-            fallback_locale: owner.rw_signal(fallback_locale)?,
+            locale: owner.signal(locale)?,
+            fallback_locale: owner.signal(fallback_locale)?,
             catalog_cache,
-            catalog_revision: owner.rw_signal(0)?,
+            catalog_revision: owner.signal(0)?,
             missing_key,
             missing_argument,
         };

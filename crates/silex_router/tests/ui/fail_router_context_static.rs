@@ -6,10 +6,10 @@ fn require_static<T: 'static>(_: T) {}
 fn main() {
     let mut runtime = Runtime::new();
     runtime.with_transient(|owner| {
-        let (path, set_path) = owner
+        let path = owner
             .signal(String::from("/"))
             .expect("path signal should be created");
-        let (search, set_search) = owner
+        let search = owner
             .signal(String::new())
             .expect("search signal should be created");
         let error_handler = owner
@@ -20,10 +20,10 @@ fn main() {
             silex,
             RouterContextProps {
                 base_path: String::from("/"),
-                path,
-                search,
-                set_path,
-                set_search,
+                path: path.read_signal(),
+                search: search.read_signal(),
+                set_path: path.write_signal(),
+                set_search: search.write_signal(),
             },
         )
         .expect("router ctx should be created");

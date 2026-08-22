@@ -128,7 +128,7 @@ UI 组件把状态输入和状态变更 callback 分开，避免内部偷偷创�
 ### Popover
 
 `PopoverContext::new(owner)` 创建 `open`、`anchor_rect` 和 `content_height`
-三个 `RwSignal`。`PopoverTrigger`/`PopoverAnchor` 更新 anchor bounds，
+三个可读写 `Signal`。`PopoverTrigger`/`PopoverAnchor` 更新 anchor bounds，
 `PopoverContent` 根据 `side`、`align` 和 `side_offset` 计算 fixed Portal 的
 位置；`PopoverClose` 负责关闭并调用可选 callback。没有浏览器 layout 的 native
 测试不能验证 bounds 计算，只能检查类型和 builder。

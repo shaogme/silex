@@ -10,9 +10,9 @@ use silex_macros::component;
 fn ReactiveInputComponent<'owner, Ctx>(
     #[ctx] ctx: Ctx,
     children: AnyView<'owner>,
-    #[chain(default)] signal: Signal<'owner, String>,
+    #[chain(default)] signal: Rx<'owner, String>,
     #[chain(default)] read: ReadSignal<'owner, i32>,
-    #[chain(default)] rw: RwSignal<'owner, bool>,
+    #[chain(default)] rw: Signal<'owner, bool>,
     #[chain(default)] computed: Computed<'owner, f64>,
     #[chain(default)] stored: StoredValue<'owner, char>,
     #[chain(default)] rx: Rx<'owner, usize>,
@@ -25,9 +25,9 @@ fn main() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|owner| -> SilexResult<()> {
-            let (read_string, _) = owner.signal(String::from("source"))?;
-            let (read_int, _) = owner.signal(1_i32)?;
-            let rw_bool = owner.rw_signal(false)?;
+            let read_string = owner.signal(String::from("source"))?;
+            let read_int = owner.signal(1_i32)?;
+            let rw_bool = owner.signal(false)?;
             let error_handler = owner.error_handler(|_| {})?;
             let ctx = SilexContext::new(owner, error_handler.view());
             let memo_float = owner.computed(|| Ok(1.0_f64), error_handler.view())?;

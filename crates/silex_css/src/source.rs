@@ -1,7 +1,6 @@
 use crate::{builder::Style, types::*};
 use silex_core::{
-    Computed, OwnerAccess, ReactiveInput, ReadSignal, RwSignal, Rx, RxFrom, RxValueKind, Signal,
-    SilexResult, StoredValue,
+    Computed, OwnerAccess, ReactiveInput, ReadSignal, Rx, RxFrom, Signal, SilexResult, StoredValue,
 };
 use std::{borrow::Cow, fmt::Display};
 
@@ -247,7 +246,7 @@ where
 
 crate::register_generated_keywords!(impl_static_source);
 
-impl<'scope, T> IntoCssSource<'scope> for Rx<'scope, T, RxValueKind>
+impl<'scope, T> IntoCssSource<'scope> for Rx<'scope, T>
 where
     T: Display + Clone + 'scope,
 {
@@ -258,7 +257,7 @@ where
     }
 }
 
-impl<'scope, T> IntoCssReactive<'scope> for Rx<'scope, T, RxValueKind>
+impl<'scope, T> IntoCssReactive<'scope> for Rx<'scope, T>
 where
     T: Display + Clone + 'scope,
 {
@@ -297,17 +296,17 @@ macro_rules! impl_css_source_for_node {
     };
 }
 
-impl_css_source_for_node!(ReadSignal, RwSignal, Signal, Computed, StoredValue);
+impl_css_source_for_node!(ReadSignal, Signal, Computed, StoredValue);
 
 macro_rules! impl_reactive_input_for_keyword {
     ($($ty:ident),* $(,)?) => {
         $(
-            impl<'scope> ReactiveInput<'scope, Signal<'scope, $ty>> for $ty {
+            impl<'scope> ReactiveInput<'scope, Rx<'scope, $ty>> for $ty {
                 fn into_reactive_input(
                     self,
                     owner: OwnerAccess<'scope>,
-                ) -> SilexResult<Signal<'scope, $ty>> {
-                    <Signal<'scope, $ty> as RxFrom<'scope>>::rx_from(owner, self)
+                ) -> SilexResult<Rx<'scope, $ty>> {
+                    <Rx<'scope, $ty> as RxFrom<'scope>>::rx_from(owner, self)
                 }
             }
         )*
@@ -316,11 +315,11 @@ macro_rules! impl_reactive_input_for_keyword {
 
 crate::register_generated_keywords!(impl_reactive_input_for_keyword);
 
-impl<'scope> ReactiveInput<'scope, Signal<'scope, Style<'scope>>> for Style<'scope> {
+impl<'scope> ReactiveInput<'scope, Rx<'scope, Style<'scope>>> for Style<'scope> {
     fn into_reactive_input(
         self,
         owner: OwnerAccess<'scope>,
-    ) -> SilexResult<Signal<'scope, Style<'scope>>> {
-        <Signal<'scope, Style<'scope>> as RxFrom<'scope>>::rx_from(owner, self)
+    ) -> SilexResult<Rx<'scope, Style<'scope>>> {
+        <Rx<'scope, Style<'scope>> as RxFrom<'scope>>::rx_from(owner, self)
     }
 }

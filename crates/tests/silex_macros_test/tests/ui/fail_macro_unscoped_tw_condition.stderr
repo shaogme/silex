@@ -14,7 +14,6 @@ error[E0277]: CSS 动态插值只能接受带当前生命周期的响应式 sour
    = help: the following other types implement trait `silex_css::IntoCssReactive<'scope>`:
              Computed<'scope, T>
              ReadSignal<'scope, T>
-             RwSignal<'scope, T>
              Signal<'scope, T>
              StoredValue<'scope, T>
              silex_core::Rx<'scope, T>
@@ -34,7 +33,6 @@ error[E0277]: CSS 动态插值只能接受带当前生命周期的响应式 sour
    = help: the following other types implement trait `silex_css::IntoCssReactive<'scope>`:
              Computed<'scope, T>
              ReadSignal<'scope, T>
-             RwSignal<'scope, T>
              Signal<'scope, T>
              StoredValue<'scope, T>
              silex_core::Rx<'scope, T>

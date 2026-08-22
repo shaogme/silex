@@ -1,17 +1,17 @@
 error[E0308]: mismatched types
-  --> tests/ui/fail_macro_reactive_input_without_scope.rs:20:40
+  --> tests/ui/fail_macro_reactive_input_without_scope.rs:20:36
    |
-20 |         let source: Signal<'_, bool> = true.into_reactive_input(owner);
-   |                     ----------------   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Signal<'_, bool>`, found `Result<_, SilexError>`
+20 |         let source: Rx<'_, bool> = true.into_reactive_input(owner);
+   |                     ------------   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Rx<'_, bool>`, found `Result<_, SilexError>`
    |                     |
    |                     expected due to this
    |
-   = note: expected struct `silex_core::Signal<'_, bool>`
+   = note: expected struct `silex_core::Rx<'_, bool>`
                 found enum `Result<_, SilexError>`
 help: consider using `Result::expect` to unwrap the `Result<_, SilexError>` value, panicking if the value is a `Result::Err`
    |
-20 |         let source: Signal<'_, bool> = true.into_reactive_input(owner).expect("REASON");
-   |                                                                       +++++++++++++++++
+20 |         let source: Rx<'_, bool> = true.into_reactive_input(owner).expect("REASON");
+   |                                                                   +++++++++++++++++
 
 error[E0599]: no method named `source` found for enum `Result<T, E>` in the current scope
   --> tests/ui/fail_macro_reactive_input_without_scope.rs:25:14

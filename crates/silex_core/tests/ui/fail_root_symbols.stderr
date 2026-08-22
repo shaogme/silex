@@ -16,7 +16,7 @@ help: a similar name exists in the module
 help: a similar name exists in the module
   |
 1 - use silex_core::{RootCallback, RootReadSignal, RootScope, RootSignal};
-1 + use silex_core::{RootCallback, RxReadSignal, RootScope, RootSignal};
+1 + use silex_core::{RootCallback, ReadSignal, RootScope, RootSignal};
   |
 help: a similar name exists in the module
   |

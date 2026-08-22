@@ -412,7 +412,7 @@ mod tests {
         let mut runtime = Runtime::new();
         runtime
             .with_transient(|owner| {
-                let signal = owner.rw_signal(true).expect("signal should initialize");
+                let signal = owner.signal(true).expect("signal should initialize");
                 let target = ApplyTarget::Known(KnownProp::Disabled);
                 let pending = AttrOp::build(signal.into_storable(), target);
                 match pending {
@@ -459,7 +459,7 @@ mod tests {
         let mut runtime = Runtime::new();
         runtime
             .with_transient(|owner| {
-                let signal = owner.rw_signal(true).expect("signal should initialize");
+                let signal = owner.signal(true).expect("signal should initialize");
                 let rx = signal.into_rx();
                 let op = ("active", rx).into_op(ApplyTarget::Class);
                 assert_eq!(op, AttrOp::class_toggle(Cow::Borrowed("active"), rx));
@@ -473,7 +473,7 @@ mod tests {
         runtime
             .with_transient(|owner| {
                 let signal = owner
-                    .rw_signal("10px".to_string())
+                    .signal("10px".to_string())
                     .expect("signal should initialize");
                 let rx = signal.into_rx();
                 let op = ("margin", rx).into_op(ApplyTarget::Style);
@@ -496,7 +496,7 @@ mod tests {
         let mut runtime = Runtime::new();
         runtime
             .with_transient(|owner| {
-                let signal = owner.rw_signal(true).expect("signal should initialize");
+                let signal = owner.signal(true).expect("signal should initialize");
 
                 let attrs = vec![
                     AttrOp::build("btn", ApplyTarget::Class),

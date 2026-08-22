@@ -8,10 +8,10 @@ pub fn Progress<'scope, Ctx>(
     #[ctx] ctx: Ctx,
     #[prop(into)]
     #[chain(default)]
-    value: Signal<'scope, u32>,
+    value: Rx<'scope, u32>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<'scope, String>,
+    class: Rx<'scope, String>,
 ) -> impl View<'scope> {
     let container_cls = rx!(ctx; {
         let base =

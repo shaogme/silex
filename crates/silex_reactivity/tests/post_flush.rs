@@ -23,7 +23,7 @@ fn normal_effects_run_before_post_flush_effects() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0_i32).expect("source creation");
+            let source = scope.signal(0_i32).expect("source creation");
             let log = Rc::new(RefCell::new(Vec::new()));
             let normal_log = log.clone();
             scope
@@ -51,7 +51,7 @@ fn normal_effects_run_before_post_flush_effects() {
                 .expect("post effect creation");
 
             log.borrow_mut().clear();
-            set_source.set(1).expect("source update");
+            source.set(1).expect("source update");
             assert_eq!(*log.borrow(), ["normal", "post"]);
         })
         .expect("transient scope");
@@ -63,7 +63,7 @@ fn post_flush_effects_preserve_ordered_edge_registration() {
         let mut runtime = Runtime::new();
         runtime
             .with_transient(|scope| {
-                let (source, set_source) = scope.signal(0_i32).expect("source creation");
+                let source = scope.signal(0_i32).expect("source creation");
                 let log = Rc::new(RefCell::new(Vec::new()));
                 let first_log = log.clone();
                 let second_log = log.clone();
@@ -110,7 +110,7 @@ fn post_flush_effects_preserve_ordered_edge_registration() {
                 }
 
                 log.borrow_mut().clear();
-                set_source.set(1).expect("source update");
+                source.set(1).expect("source update");
                 let expected = if reverse {
                     ["second", "first"]
                 } else {
@@ -130,8 +130,8 @@ fn post_flush_write_reenters_normal_queue_before_remaining_post_tasks() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0_i32).expect("source creation");
-            let (marker, set_marker) = scope.signal(0_i32).expect("marker creation");
+            let source = scope.signal(0_i32).expect("source creation");
+            let marker = scope.signal(0_i32).expect("marker creation");
             let log = Rc::new(RefCell::new(Vec::new()));
 
             let normal_log = log.clone();
@@ -154,7 +154,7 @@ fn post_flush_write_reenters_normal_queue_before_remaining_post_tasks() {
                     move || {
                         if source.get()? == 1 {
                             first_log.borrow_mut().push("post-first");
-                            set_marker.set(1)?;
+                            marker.set(1)?;
                         }
                         Ok(())
                     },
@@ -176,7 +176,7 @@ fn post_flush_write_reenters_normal_queue_before_remaining_post_tasks() {
                 .expect("second post effect creation");
 
             log.borrow_mut().clear();
-            set_source.set(1).expect("source update");
+            source.set(1).expect("source update");
             assert_eq!(*log.borrow(), ["post-first", "normal", "post-second"]);
         })
         .expect("transient scope");
@@ -187,7 +187,7 @@ fn computed_chain_is_evaluated_before_a_post_flush_observer() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(1_i32).expect("source creation");
+            let source = scope.signal(1_i32).expect("source creation");
             let log = Rc::new(RefCell::new(Vec::new()));
             let computed_log = log.clone();
             let doubled = scope
@@ -218,7 +218,7 @@ fn computed_chain_is_evaluated_before_a_post_flush_observer() {
                 .expect("post observer creation");
 
             log.borrow_mut().clear();
-            set_source.set(2).expect("source update");
+            source.set(2).expect("source update");
             assert_eq!(*log.borrow(), ["computed", "observer"]);
         })
         .expect("transient scope");
@@ -230,7 +230,7 @@ fn closing_an_owner_removes_pending_post_flush_tasks() {
     let root = runtime.owner().expect("root owner");
     let child = root.access().create_child().expect("child owner creation");
     let child_access = child.access();
-    let (source, set_source) = child_access.signal(0_i32).expect("source creation");
+    let source = child_access.signal(0_i32).expect("source creation");
     let runs = Rc::new(Cell::new(0));
     let runs_in_effect = runs.clone();
     child_access
@@ -247,7 +247,7 @@ fn closing_an_owner_removes_pending_post_flush_tasks() {
 
     root.access()
         .batch(|| {
-            set_source.set(1).expect("source update");
+            source.set(1).expect("source update");
             child.close().expect("child close");
         })
         .expect("batch flush");
@@ -260,7 +260,7 @@ fn post_flush_callback_errors_are_dispatched() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0_i32).expect("source creation");
+            let source = scope.signal(0_i32).expect("source creation");
             let errors = Rc::new(RefCell::new(Vec::new()));
             let errors_in_handler = errors.clone();
             let error_handler = scope
@@ -282,7 +282,7 @@ fn post_flush_callback_errors_are_dispatched() {
                 )
                 .expect("post effect creation");
 
-            set_source.set(1).expect("source update");
+            source.set(1).expect("source update");
             assert_eq!(*errors.borrow(), ["post failure"]);
         })
         .expect("transient scope");
@@ -293,7 +293,7 @@ fn post_flush_panic_recovers_the_queue() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0_i32).expect("source creation");
+            let source = scope.signal(0_i32).expect("source creation");
             let should_panic = Rc::new(Cell::new(false));
             let runs = Rc::new(Cell::new(0));
             let should_panic_in_effect = should_panic.clone();
@@ -315,11 +315,11 @@ fn post_flush_panic_recovers_the_queue() {
 
             should_panic.set(true);
             let panic = catch_unwind(AssertUnwindSafe(|| {
-                set_source.set(1).expect("source update");
+                source.set(1).expect("source update");
             }));
             assert!(panic.is_err());
             should_panic.set(false);
-            set_source.set(2).expect("retry source update");
+            source.set(2).expect("retry source update");
             assert_eq!(runs.get(), 3);
         })
         .expect("transient scope");
@@ -330,8 +330,8 @@ fn post_flush_nonconvergence_reports_its_phase() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0_i32).expect("source creation");
-            let (relay, set_relay) = scope.signal(0_i32).expect("relay creation");
+            let source = scope.signal(0_i32).expect("source creation");
+            let relay = scope.signal(0_i32).expect("relay creation");
             let enabled = Rc::new(Cell::new(false));
             let ticker = Rc::new(Cell::new(0_i32));
             let enabled_in_source = enabled.clone();
@@ -344,7 +344,7 @@ fn post_flush_nonconvergence_reports_its_phase() {
                         if enabled_in_source.get() {
                             let next = ticker_in_source.get().saturating_add(1);
                             ticker_in_source.set(next);
-                            set_relay.set(next)?;
+                            relay.set(next)?;
                         }
                         Ok(())
                     },
@@ -362,7 +362,7 @@ fn post_flush_nonconvergence_reports_its_phase() {
                         if enabled_in_relay.get() {
                             let next = ticker_in_relay.get().saturating_add(1);
                             ticker_in_relay.set(next);
-                            set_source.set(next)?;
+                            source.set(next)?;
                         }
                         Ok(())
                     },
@@ -372,7 +372,7 @@ fn post_flush_nonconvergence_reports_its_phase() {
 
             enabled.set(true);
             let result = scope
-                .batch(|| set_source.set(1))
+                .batch(|| source.set(1))
                 .expect_err("nonconvergent queue");
             assert!(matches!(
                 result,
@@ -391,7 +391,7 @@ fn mixed_phase_snapshot_records_queue_high_water() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0_i32).expect("source creation");
+            let source = scope.signal(0_i32).expect("source creation");
             for phase in [
                 EffectPhase::Normal,
                 EffectPhase::Normal,
@@ -410,7 +410,7 @@ fn mixed_phase_snapshot_records_queue_high_water() {
                     .expect("phase effect creation");
             }
 
-            set_source.set(1).expect("source update");
+            source.set(1).expect("source update");
             let snapshot = scope.runtime_snapshot().expect("runtime snapshot");
             assert!(snapshot.queue_high_water >= 4);
             assert_eq!(snapshot.queue, 0);

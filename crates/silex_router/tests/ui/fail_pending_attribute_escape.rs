@@ -6,7 +6,7 @@ fn require_static<T: 'static>(_: T) {}
 fn main() {
     let mut runtime = Runtime::new();
     let attribute = runtime.with_transient(|owner| {
-        let (value, _) = owner.signal(1_i32).expect("value signal should be created");
+        let value = owner.signal(1_i32).expect("value signal should be created");
         AttrOp::new_scoped(move |_, _| {
             let _ = value.get();
             Ok(())

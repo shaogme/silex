@@ -9,13 +9,13 @@ pub fn RadioGroup<'scope, Ctx>(
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
-    orientation: Signal<'scope, String>,
+    orientation: Rx<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    disabled: Signal<'scope, bool>,
+    disabled: Rx<'scope, bool>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<'scope, String>,
+    class: Rx<'scope, String>,
 ) -> impl View<'scope> {
     let orient = rx!(ctx; {
         if $orientation.as_str() == "horizontal" {
@@ -50,19 +50,19 @@ pub fn RadioGroupItem<'scope, Ctx>(
     value: &'static str,
     #[prop(into)]
     #[chain(default)]
-    selected_value: Signal<'scope, String>,
+    selected_value: Rx<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    name: Signal<'scope, String>,
+    name: Rx<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    disabled: Signal<'scope, bool>,
+    disabled: Rx<'scope, bool>,
     #[prop(into)]
     #[chain(default)]
-    required: Signal<'scope, bool>,
+    required: Rx<'scope, bool>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<'scope, String>,
+    class: Rx<'scope, String>,
     #[prop(into)]
     #[chain(default)]
     on_select: Callback<'scope, &'static str>,

@@ -77,14 +77,14 @@ where
         }
         SuspenseMode::Unmount => {
             let count = context.count;
-            let (is_first, set_is_first) = owner.signal(true)?;
+            let is_first = owner.signal(true)?;
             let initial_view = initial_view.clone();
             let children = children.clone();
             let fallback = fallback.clone();
             let content = silex_core::rx!(ctx; {
                 if *$count == 0 {
                     if *$is_first {
-                        set_is_first.set(false)?;
+                        is_first.set(false)?;
                         initial_view.clone()
                     } else {
                         children(context)

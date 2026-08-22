@@ -16,9 +16,9 @@ weight = 10
 | --- | --- | --- | --- | --- |
 | `ReadSignal<T>` | `get`、`with` | 无 | 是 | 将读能力交给视图或计算。 |
 | `WriteSignal<T>` | 无 | `set`、`update`、`notify` | 写入会通知 | 将写能力限制在事件或控制器。 |
-| `RwSignal<T>` | 读写 | 读写 | 是 | 同时需要两种能力的局部状态。 |
+| `Signal<T>` | 读写 | 读写 | 是 | 同时需要两种能力的局部状态。 |
 | `Computed<T>` | `get`、`with` | 无 | 是 | 需要 `PartialEq` 的缓存派生值。 |
-| `Rx<T>` / `Signal<T>` | 统一只读访问 | 无 | 取决于内部 source | 在组件 API 中统一接收 signal、computed 或 stored value。 |
+| `Rx<T>` | 统一只读访问 | 无 | 取决于内部 source | 在组件 API 中统一接收 signal、computed 或 stored value。 |
 | `StoredValue<T>` | `with` | `update`、`set` | 否 | owner 管理的普通状态、缓存或异步控制器。 |
 | `NodeRef<T>` | `get` | `load`、`clear` | 否 | 宿主对象引用，不是响应式值。 |
 
@@ -27,7 +27,9 @@ weight = 10
 ## Signal 读写
 
 ```rust
-let (read, write) = owner.signal(0_i32)?;
+let signal = owner.signal(0_i32)?;
+let read = signal.read_signal();
+let write = signal.write_signal();
 
 let current = read.get()?;                       // tracked，T: Clone
 let snapshot = read.get_untracked()?;            // untracked
@@ -39,7 +41,7 @@ write.update(|value| *value += 1)?;
 write.notify()?; // 通过内部可变性修改 payload 后显式通知
 ```
 
-`with`/`with_untracked` 不会让内部引用逃出闭包。需要把同一 signal 作为一个可传递值时使用 `RwSignal` 的 `split`, `read_signal` 或 `write_signal`；需要只读统一接口时可以转换为 `Signal` 或 `Rx`。
+`with`/`with_untracked` 不会让内部引用逃出闭包。需要把同一 signal 作为一个可传递值时使用 `Signal` 的 `split`、`read_signal` 或 `write_signal`；需要只读统一接口时调用 `Signal::into_rx()` 或直接使用 `Rx`。
 
 通过 `Cell`、`RefCell` 或其他内部可变容器绕过 `set`/`update` 时，运行时看不到 payload 的变化；修改完成后必须调用 `WriteSignal::notify`。`notify` 不负责比较新旧值，也不替代正确的响应式写入。
 
@@ -100,7 +102,7 @@ let watcher = owner.watch_getter_with_options(
 
 ## 统一值与输入提升
 
-`Rx<'scope, T>` 是 crate 根的统一只读值，内部保留三类来源：raw signal、computed 和 stored value。`Signal<'scope, T>` 是它的读 facade。`is_constant` 只对 StoredValue-backed `Rx` 返回 `true`；它表示当前来源不是依赖图中的 signal，不表示值永远不会被 `StoredValue::set` 修改。
+`Rx<'scope, T>` 是 crate 根的统一只读值，内部保留三类来源：`ReadSignal`、computed 和 stored value。`Signal<'scope, T>` 是同时持有读写句柄的可写 signal，不是 `Rx` 的 facade；通过 `Signal::into_rx()` 可在只读边界取得 `Rx`。`is_constant` 只对 StoredValue-backed `Rx` 返回 `true`；它表示当前来源不是依赖图中的 signal，不表示值永远不会被 `StoredValue::set` 修改。
 
 `ReactiveSource<'scope>` 和 `PromotionPlan<'scope, T>` 用于把输入延迟到 target owner 再物化：
 

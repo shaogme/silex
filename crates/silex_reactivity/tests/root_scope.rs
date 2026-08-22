@@ -28,7 +28,7 @@ fn root_scope_uses_the_same_nodes_as_lexical_scope() {
 
     {
         let scope = root.access();
-        let (value, set_value) = scope.signal(0i32).expect("fallible reactive creation");
+        let value = scope.signal(0i32).expect("fallible reactive creation");
         let seen_for_effect = seen.clone();
         let _effect = scope
             .effect(
@@ -41,7 +41,7 @@ fn root_scope_uses_the_same_nodes_as_lexical_scope() {
             )
             .expect("effect should initialize");
 
-        set_value.set(3).expect("signal update");
+        value.set(3).expect("signal update");
         assert_eq!(seen.get(), 3);
     }
 

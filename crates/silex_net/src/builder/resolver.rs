@@ -1,6 +1,6 @@
 use std::{borrow::Cow, rc::Rc};
 
-use silex_core::{Computed, OwnerAccess, ReadSignal, RwSignal, Rx, RxRead, Signal, SilexResult};
+use silex_core::{Computed, OwnerAccess, ReadSignal, Rx, RxRead, Signal, SilexResult};
 
 #[cfg(feature = "persist")]
 use silex_persist::Persistent;
@@ -144,9 +144,6 @@ impl_into_net_value_for_rx!(Rx<'scope, T>, |value: Rx<'scope, T>| value);
 impl_into_net_value_for_rx!(ReadSignal<'scope, T>, |value: ReadSignal<'scope, T>| {
     value.into_rx()
 });
-impl_into_net_value_for_rx!(RwSignal<'scope, T>, |value: RwSignal<'scope, T>| {
-    value.into_rx()
-});
 impl_into_net_value_for_rx!(Signal<'scope, T>, |value: Signal<'scope, T>| {
     value.into_rx()
 });
@@ -205,11 +202,11 @@ mod tests {
         let mut runtime = Runtime::new();
         runtime
             .with_transient(|scope| {
-                let (value, set_value) = scope.signal(1_i32).unwrap();
+                let value = scope.signal(1_i32).unwrap();
                 let resolver = value.into_net_value();
 
                 assert_eq!(resolver.resolve_tracked().unwrap(), "1");
-                set_value.set(2).unwrap();
+                value.set(2).unwrap();
                 assert_eq!(resolver.resolve().unwrap(), "2");
             })
             .unwrap();
@@ -220,8 +217,8 @@ mod tests {
         let mut runtime = Runtime::new();
         runtime
             .with_transient(|scope| {
-                let (first, _) = scope.signal("a".to_string()).unwrap();
-                let (second, _) = scope.signal("b".to_string()).unwrap();
+                let first = scope.signal("a".to_string()).unwrap();
+                let second = scope.signal("b".to_string()).unwrap();
                 let tracked_first = first;
                 let tracked_second = second;
                 let untracked_first = first;

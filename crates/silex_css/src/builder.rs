@@ -830,7 +830,7 @@ mod tests {
         let mut runtime = silex_core::Runtime::new();
         runtime
             .with_transient(|owner| {
-                let signal = owner.rw_signal(px(1)).expect("signal should initialize");
+                let signal = owner.signal(px(1)).expect("signal should initialize");
                 let error_handler = discard_test_errors(owner);
                 let rendered = Style::new(SilexContext::new(owner, error_handler.view()))
                     .var("--gap", signal)
@@ -862,8 +862,8 @@ mod tests {
         let mut runtime = Runtime::new();
         runtime
             .with_transient(|owner| {
-                let outer = owner.rw_signal(0).expect("outer signal should initialize");
-                let inner_dep = owner.rw_signal(0).expect("inner signal should initialize");
+                let outer = owner.signal(0).expect("outer signal should initialize");
+                let inner_dep = owner.signal(0).expect("inner signal should initialize");
                 let inner_runs = Rc::new(Cell::new(0));
 
                 let counter = inner_runs.clone();
@@ -907,7 +907,7 @@ mod tests {
         let mut runtime = silex_core::Runtime::new();
         runtime
             .with_transient(|owner| {
-                let signal = owner.rw_signal(px(1)).expect("signal should initialize");
+                let signal = owner.signal(px(1)).expect("signal should initialize");
                 let error_handler = discard_test_errors(owner);
                 let rendered = Style::new(SilexContext::new(owner, error_handler.view()))
                     .width(signal)

@@ -117,7 +117,7 @@ fn reactive_static_str_attribute_updates() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|owner| {
-            let (read, write) = owner.signal("initial").expect("signal should initialize");
+            let read = owner.signal("initial").expect("signal should initialize");
             let error_handler = test_handler(owner);
             let owner = MountOwnerToken::new(owner);
             let view = Element::new("button").attr("data-state", read.into_rx());
@@ -130,7 +130,7 @@ fn reactive_static_str_attribute_updates() {
                 Some("initial")
             );
 
-            write.set("updated").expect("signal should be writable");
+            read.set("updated").expect("signal should be writable");
             assert_eq!(
                 element.get_attribute("data-state").as_deref(),
                 Some("updated")
@@ -147,12 +147,12 @@ fn reactive_borrowed_str_attribute_updates() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|owner| {
-            let (read, write) = owner
+            let value = owner
                 .signal(initial.as_str())
                 .expect("signal should initialize");
             let error_handler = test_handler(owner);
             let owner = MountOwnerToken::new(owner);
-            let view = Element::new("div").attr("data-value", read.into_rx());
+            let view = Element::new("div").attr("data-value", value.into_rx());
             let _ = mount_view(&view, &owner, &host, error_handler.view())
                 .expect("reactive view should mount");
 
@@ -162,7 +162,7 @@ fn reactive_borrowed_str_attribute_updates() {
                 Some("initial")
             );
 
-            write
+            value
                 .set(updated.as_str())
                 .expect("signal should be writable");
             assert_eq!(
@@ -179,12 +179,12 @@ fn reactive_cow_attribute_updates() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|owner| {
-            let (read, write) = owner
+            let value = owner
                 .signal(Cow::Borrowed("initial"))
                 .expect("signal should initialize");
             let error_handler = test_handler(owner);
             let owner = MountOwnerToken::new(owner);
-            let view = Element::new("span").attr("data-state", read.into_rx());
+            let view = Element::new("span").attr("data-state", value.into_rx());
             let _ = mount_view(&view, &owner, &host, error_handler.view())
                 .expect("reactive view should mount");
 
@@ -194,7 +194,7 @@ fn reactive_cow_attribute_updates() {
                 Some("initial")
             );
 
-            write
+            value
                 .set(Cow::Owned(String::from("updated")))
                 .expect("signal should be writable");
             assert_eq!(
@@ -213,7 +213,7 @@ fn reactive_string_reference_attribute_updates() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|owner| {
-            let (read, write) = owner.signal(&initial).expect("signal should initialize");
+            let read = owner.signal(&initial).expect("signal should initialize");
             let error_handler = test_handler(owner);
             let owner = MountOwnerToken::new(owner);
             let view = Element::new("p").attr("data-text", read.into_rx());
@@ -226,7 +226,7 @@ fn reactive_string_reference_attribute_updates() {
                 Some("initial")
             );
 
-            write.set(&updated).expect("signal should be writable");
+            read.set(&updated).expect("signal should be writable");
             assert_eq!(
                 element.get_attribute("data-text").as_deref(),
                 Some("updated")
@@ -243,14 +243,14 @@ fn reactive_str_classes_merge_update_and_cleanup() {
     let element;
     {
         let owner = root.access();
-        let (read, write) = owner
+        let value = owner
             .signal("dynamic-one")
             .expect("signal should initialize");
         let error_handler = test_handler(owner);
         let owner = MountOwnerToken::new(owner);
         let view = Element::new("div")
             .attr("class", "static")
-            .attr("class", read.into_rx());
+            .attr("class", value.into_rx());
         let _ = mount_view(&view, &owner, &host, error_handler.view())
             .expect("reactive view should mount");
 
@@ -258,7 +258,7 @@ fn reactive_str_classes_merge_update_and_cleanup() {
         assert!(element.class_list().contains("static"));
         assert!(element.class_list().contains("dynamic-one"));
 
-        write.set("dynamic-two").expect("signal should be writable");
+        value.set("dynamic-two").expect("signal should be writable");
         assert!(element.class_list().contains("static"));
         assert!(!element.class_list().contains("dynamic-one"));
         assert!(element.class_list().contains("dynamic-two"));
@@ -277,14 +277,14 @@ fn reactive_str_stylesheet_merges_update_and_cleanup() {
     let element;
     {
         let owner = root.access();
-        let (read, write) = owner
+        let value = owner
             .signal("color: red;")
             .expect("signal should initialize");
         let error_handler = test_handler(owner);
         let owner = MountOwnerToken::new(owner);
         let view = Element::new("div")
             .attr("style", "display: block;")
-            .attr("style", read.into_rx());
+            .attr("style", value.into_rx());
         let _ = mount_view(&view, &owner, &host, error_handler.view())
             .expect("reactive view should mount");
 
@@ -293,7 +293,7 @@ fn reactive_str_stylesheet_merges_update_and_cleanup() {
         assert!(initial.contains("display: block"), "{initial}");
         assert!(initial.contains("color: red"), "{initial}");
 
-        write
+        value
             .set("color: blue;")
             .expect("signal should be writable");
         let updated = style_text(&element);
@@ -316,13 +316,13 @@ fn reactive_cow_style_property_updates_and_cleans_up() {
     let element;
     {
         let owner = root.access();
-        let (read, write) = owner
+        let value = owner
             .signal(Cow::Borrowed("red"))
             .expect("signal should initialize");
         let error_handler = test_handler(owner);
         let owner = MountOwnerToken::new(owner);
         let view = Element::new("div")
-            .attr("style", ("color", read.into_rx()))
+            .attr("style", ("color", value.into_rx()))
             .attr("style", ("display", "block"));
         let _ = mount_view(&view, &owner, &host, error_handler.view())
             .expect("reactive view should mount");
@@ -332,7 +332,7 @@ fn reactive_cow_style_property_updates_and_cleans_up() {
         assert!(initial.contains("display: block"), "{initial}");
         assert!(initial.contains("color: red"), "{initial}");
 
-        write
+        value
             .set(Cow::Owned(String::from("blue")))
             .expect("signal should be writable");
         let updated = style_text(&element);
@@ -355,7 +355,7 @@ fn reactive_borrowed_str_style_property_updates_and_cleans_up() {
     let element;
     {
         let owner = root.access();
-        let (read, write) = owner.signal("red").expect("signal should initialize");
+        let read = owner.signal("red").expect("signal should initialize");
         let error_handler = test_handler(owner);
         let owner = MountOwnerToken::new(owner);
         let view = Element::new("div")
@@ -366,7 +366,7 @@ fn reactive_borrowed_str_style_property_updates_and_cleans_up() {
 
         element = mounted(&host);
         assert!(style_text(&element).contains("color: red"));
-        write.set("blue").expect("signal should be writable");
+        read.set("blue").expect("signal should be writable");
         assert!(style_text(&element).contains("color: blue"));
     }
 
@@ -386,7 +386,7 @@ fn reactive_string_reference_style_property_updates_and_cleans_up() {
     let element;
     {
         let owner = root.access();
-        let (read, write) = owner.signal(&initial).expect("signal should initialize");
+        let read = owner.signal(&initial).expect("signal should initialize");
         let error_handler = test_handler(owner);
         let owner = MountOwnerToken::new(owner);
         let view = Element::new("div")
@@ -397,7 +397,7 @@ fn reactive_string_reference_style_property_updates_and_cleans_up() {
 
         element = mounted(&host);
         assert!(style_text(&element).contains("color: red"));
-        write.set(&updated).expect("signal should be writable");
+        read.set(&updated).expect("signal should be writable");
         assert!(style_text(&element).contains("color: blue"));
     }
 
@@ -415,20 +415,20 @@ fn reactive_style_property_restores_static_value_after_dispose() {
     let element;
     {
         let owner = root.access();
-        let (read, write) = owner
+        let value = owner
             .signal(String::from("red"))
             .expect("signal should initialize");
         let error_handler = test_handler(owner);
         let owner = MountOwnerToken::new(owner);
         let view = Element::new("div")
-            .attr("style", ("color", read.into_rx()))
+            .attr("style", ("color", value.into_rx()))
             .attr("style", ("color", "green"));
         let _ = mount_view(&view, &owner, &host, error_handler.view())
             .expect("reactive view should mount");
 
         element = mounted(&host);
         assert!(style_text(&element).contains("color: red"));
-        write
+        value
             .set(String::from("blue"))
             .expect("signal should be writable");
         assert!(style_text(&element).contains("color: blue"));
@@ -446,14 +446,14 @@ fn reactive_style_plan_cleans_up_after_failed_mount() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|owner| {
-            let (read, _) = owner
+            let value = owner
                 .signal(String::from("red"))
                 .expect("signal should initialize");
             let error_handler = test_handler(owner);
             let owner = MountOwnerToken::new(owner);
             let view = RejectingView {
                 element: captured.clone(),
-                color: read.into_rx(),
+                color: value.into_rx(),
             };
             assert!(mount_view(&view, &owner, &host, error_handler.view()).is_err());
         })

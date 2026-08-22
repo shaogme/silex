@@ -27,7 +27,7 @@ fn signal_track_supports_non_clone_values_and_reacts() {
     let runs = Rc::new(Cell::new(0));
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(NonClone(1)).expect("source creation");
+            let source = scope.signal(NonClone(1)).expect("source creation");
             let runs_in_effect = runs.clone();
             scope
                 .effect(
@@ -42,22 +42,20 @@ fn signal_track_supports_non_clone_values_and_reacts() {
                 .expect("effect creation");
 
             assert_eq!(runs.get(), 1);
-            set_source
-                .update(|value| value.0 += 1)
-                .expect("source update");
+            source.update(|value| value.0 += 1).expect("source update");
             assert_eq!(runs.get(), 2);
         })
         .expect("runtime scope");
 }
 
 #[test]
-fn rw_signal_track_uses_its_read_capability() {
+fn signal_track_uses_its_read_capability() {
     struct NonClone(i32);
 
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|scope| {
-            let signal = scope.rw_signal(NonClone(1)).expect("signal creation");
+            let signal = scope.signal(NonClone(1)).expect("signal creation");
             signal.track().expect("rw signal track");
             signal.update(|value| value.0 += 1).expect("signal update");
             signal.track().expect("rw signal track after update");
@@ -94,14 +92,16 @@ fn untracked_signal_read_does_not_subscribe_an_effect() {
     let seen = Rc::new(Cell::new(0));
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(1_i32).expect("source creation");
+            let source = scope.signal(1_i32).expect("source creation");
             let runs_in_effect = runs.clone();
             let seen_in_effect = seen.clone();
             scope
                 .effect(
                     EffectPhase::Normal,
                     move || {
-                        source.with_untracked(|value| seen_in_effect.set(*value))?;
+                        source
+                            .read()
+                            .with_untracked(|value| seen_in_effect.set(*value))?;
                         runs_in_effect.set(runs_in_effect.get() + 1);
                         Ok(())
                     },
@@ -111,7 +111,7 @@ fn untracked_signal_read_does_not_subscribe_an_effect() {
 
             assert_eq!(runs.get(), 1);
             assert_eq!(seen.get(), 1);
-            set_source.set(2).expect("source update");
+            source.set(2).expect("source update");
             assert_eq!(runs.get(), 1);
             assert_eq!(seen.get(), 1);
         })
@@ -125,7 +125,7 @@ fn computed_track_evaluates_and_subscribes_once_per_read() {
     let runs = Rc::new(Cell::new(0));
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(1_i32).expect("source creation");
+            let source = scope.signal(1_i32).expect("source creation");
             let evaluations_in_computed = evaluations.clone();
             let computed = scope
                 .computed(
@@ -151,7 +151,7 @@ fn computed_track_evaluates_and_subscribes_once_per_read() {
 
             assert_eq!(evaluations.get(), 1);
             assert_eq!(runs.get(), 1);
-            set_source.set(2).expect("source update");
+            source.set(2).expect("source update");
             assert_eq!(evaluations.get(), 2);
             assert_eq!(runs.get(), 2);
         })
@@ -163,7 +163,7 @@ fn fallible_computed_track_preserves_user_errors() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|scope| {
-            let (should_fail, set_should_fail) = scope.signal(false).expect("source creation");
+            let should_fail = scope.signal(false).expect("source creation");
             let computed = scope
                 .computed_always(
                     move || {
@@ -178,7 +178,7 @@ fn fallible_computed_track_preserves_user_errors() {
                 .expect("computed creation");
 
             assert_eq!(computed.track(), Ok(()));
-            set_should_fail.set(true).expect("source update");
+            should_fail.set(true).expect("source update");
             assert_eq!(
                 computed.track(),
                 Err(CallbackInvokeError::User(TestError::Rejected))

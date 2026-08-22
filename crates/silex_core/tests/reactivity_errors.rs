@@ -15,9 +15,9 @@ fn core_try_operations_preserve_borrow_conflicts() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|owner| {
-            let (read, write) = owner.signal(1_i32).expect("signal should initialize");
+            let read = owner.signal(1_i32).expect("signal should initialize");
 
-            let read_then_write = read.with(|_| write.set(2));
+            let read_then_write = read.with(|_| read.set(2));
             assert!(matches!(
                 read_then_write,
                 Ok(Err(SilexError::Fatal(SilexErrorKind::Reactivity(
@@ -25,7 +25,7 @@ fn core_try_operations_preserve_borrow_conflicts() {
                 ))))
             ));
 
-            let write_then_read = write.update(|_| read.get());
+            let write_then_read = read.write_signal().update(|_| read.get());
             assert!(matches!(
                 write_then_read,
                 Ok(Err(SilexError::Fatal(SilexErrorKind::Reactivity(
@@ -33,7 +33,7 @@ fn core_try_operations_preserve_borrow_conflicts() {
                 ))))
             ));
 
-            let write_then_write = write.update(|_| write.set(2));
+            let write_then_write = read.write_signal().update(|_| read.set(2));
             assert!(matches!(
                 write_then_write,
                 Ok(Err(SilexError::Fatal(SilexErrorKind::Reactivity(
@@ -60,9 +60,9 @@ fn core_try_operations_preserve_stored_and_rx_errors() {
                 ))))
             ));
 
-            let (read, write) = owner.signal(1_i32).expect("signal should initialize");
+            let read = owner.signal(1_i32).expect("signal should initialize");
             let rx = read.into_rx();
-            let rx_conflict = rx.with(|_| write.set(2));
+            let rx_conflict = rx.with(|_| read.set(2));
             assert!(matches!(
                 rx_conflict,
                 Ok(Err(SilexError::Fatal(SilexErrorKind::Reactivity(
@@ -121,7 +121,7 @@ fn stale_core_read_returns_no_such_node_and_track_is_inactive() {
 
     runtime
         .with_transient(|owner| {
-            let (read, write) = owner.signal(1_i32).expect("signal should initialize");
+            let read = owner.signal(1_i32).expect("signal should initialize");
             owner
                 .on_cleanup(
                     move || {
@@ -132,13 +132,13 @@ fn stale_core_read_returns_no_such_node_and_track_is_inactive() {
                             )))
                         ));
                         assert!(matches!(
-                            write.set(2),
+                            read.set(2),
                             Err(SilexError::Fatal(SilexErrorKind::Reactivity(
                                 ReactiveError::NoSuchNode
                             )))
                         ));
                         assert!(matches!(
-                            write.notify(),
+                            read.write_signal().notify(),
                             Err(SilexError::Fatal(SilexErrorKind::Reactivity(
                                 ReactiveError::NoSuchNode
                             )))

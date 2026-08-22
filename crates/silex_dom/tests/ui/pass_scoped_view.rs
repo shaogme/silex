@@ -8,7 +8,7 @@ fn main() {
         .with_transient(|owner| {
             let borrowed_view = String::from("borrowed-view");
             let _direct_view: AnyView<'_> = AnyView::new(borrowed_view.as_str());
-            let (read, _) = owner.signal(borrowed_view.as_str()).expect("signal");
+            let read = owner.signal(borrowed_view.as_str()).expect("signal");
             let _view: AnyView<'_> = AnyView::new(read);
 
             let _token = MountOwnerToken::new(owner);

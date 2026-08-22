@@ -1412,12 +1412,11 @@ fn is_any_view_type(ty: &Type) -> bool {
 fn is_reactive_wrapper_type(ty: &Type) -> bool {
     matches!(
         type_last_segment_name(ty).as_deref(),
-        Some("Signal")
+        Some("Rx")
             | Some("ReadSignal")
-            | Some("RwSignal")
+            | Some("Signal")
             | Some("Computed")
             | Some("StoredValue")
-            | Some("Rx")
             | Some("Callback")
             | Some("NodeRef")
     )
@@ -1438,7 +1437,7 @@ fn reactive_input_value_type(ty: &Type, scope: &syn::Lifetime) -> Option<Type> {
     let segment = type_path.path.segments.last()?;
     if !matches!(
         segment.ident.to_string().as_str(),
-        "Signal" | "ReadSignal" | "RwSignal" | "Computed" | "StoredValue" | "Rx"
+        "Rx" | "ReadSignal" | "Signal" | "Computed" | "StoredValue"
     ) {
         return None;
     }
@@ -1546,9 +1545,9 @@ fn is_auto_into_type(ty: &Type) -> bool {
             | Some("String")
             | Some("PathBuf")
             | Some("Callback")
-            | Some("Signal")
+            | Some("Rx")
             | Some("ReadSignal")
-            | Some("RwSignal")
+            | Some("Signal")
             | Some("Computed")
     )
 }

@@ -127,10 +127,10 @@ codec 的 `encode`/`decode` 返回 `String` 错误；builder 会把它们映射�
   本地 mutation；
 - 通过 `ReactiveSource` 转换成 core promotion plan；
 - 实现 `StoreField<'scope, T>`，可以作为 store field；
-- 通过 `From<Persistent>` 转成 `RwSignal`，也可作为 `View`/attribute source
+- 通过 `From<Persistent>` 转成 `Signal`，也可作为 `View`/attribute source
   交给 `silex_dom`。
 
-转换为 `RwSignal` 只转移响应式读写能力，不会复制 controller，也不会改变
+转换为 `Signal` 只转移响应式读写能力，不会复制 controller，也不会改变
 owner 的清理权。binding 的 `remove`、`reset` 和 `flush` 仍应通过
 `Persistent` API 调用。
 

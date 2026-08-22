@@ -23,7 +23,7 @@ fn same_runtime_child_scope_reads_are_reactive() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(1_i32).expect("source signal");
+            let source = scope.signal(1_i32).expect("source signal");
             let child = scope.create_child().expect("owned scope");
             let runs_in_effect = runs.clone();
             child
@@ -40,7 +40,7 @@ fn same_runtime_child_scope_reads_are_reactive() {
                 .expect("effect should initialize");
 
             assert_eq!(runs.get(), 1);
-            set_source.set(2).expect("source should update");
+            source.set(2).expect("source should update");
             assert_eq!(runs.get(), 2);
             child.close().expect("owned scope disposal");
         })
@@ -57,7 +57,7 @@ fn foreign_tracked_reads_are_rejected_before_source_evaluation() {
     foreign_root.with_access(|foreign_scope| {
         let evaluations = Rc::new(Cell::new(0));
         let evaluations_in_derived = evaluations.clone();
-        let (source, _) = foreign_scope.signal(1_i32).expect("foreign source");
+        let source = foreign_scope.signal(1_i32).expect("foreign source");
         let derived = foreign_scope
             .computed_always(
                 move || {
@@ -103,7 +103,7 @@ fn foreign_untracked_reads_are_allowed_without_subscription() {
     let runs = Rc::new(Cell::new(0));
 
     foreign_root.with_access(|foreign_scope| {
-        let (source, set_source) = foreign_scope.signal(1_i32).expect("foreign source");
+        let source = foreign_scope.signal(1_i32).expect("foreign source");
         target_root.with_access(|target_scope| {
             let runs_in_effect = runs.clone();
             target_scope
@@ -120,7 +120,7 @@ fn foreign_untracked_reads_are_allowed_without_subscription() {
         });
 
         assert_eq!(runs.get(), 1);
-        set_source.set(2).expect("foreign source update");
+        source.set(2).expect("foreign source update");
         assert_eq!(runs.get(), 1);
     });
 
@@ -136,7 +136,8 @@ fn runtime_boundary_rejects_foreign_untracked_reads() {
     let target_root = target_runtime.owner().expect("target root");
 
     foreign_root.with_access(|foreign_scope| {
-        let (foreign_source, _) = foreign_scope.signal(1_i32).expect("foreign source");
+        let foreign_source = foreign_scope.signal(1_i32).expect("foreign source");
+        let _ = foreign_source;
         let result = target_root.with_access(|target_scope| {
             target_scope.with_runtime(|| foreign_source.get_untracked())
         });
@@ -169,7 +170,7 @@ fn cleanup_untracked_reentry_can_build_another_runtime_binding() {
             .on_cleanup(
                 move || {
                     reentrant_root.with_access(|reentrant_scope| {
-                        let (source, _) = reentrant_scope.signal(1_i32)?;
+                        let source = reentrant_scope.signal(1_i32)?;
                         source.get_untracked()?;
                         reentered_in_cleanup.set(true);
                         Ok(())
@@ -194,7 +195,7 @@ fn untrack_only_masks_the_runtime_that_owns_the_scope() {
 
     foreign_root.with_access(|foreign_scope| {
         target_root.with_access(|target_scope| {
-            let (source, set_source) = target_scope.signal(1_i32).expect("target source");
+            let source = target_scope.signal(1_i32).expect("target source");
             let runs_in_effect = runs.clone();
             target_scope
                 .effect(
@@ -209,7 +210,7 @@ fn untrack_only_masks_the_runtime_that_owns_the_scope() {
                 .expect("effect should initialize");
 
             assert_eq!(runs.get(), 1);
-            set_source.set(2).expect("target source update");
+            source.set(2).expect("target source update");
             assert_eq!(runs.get(), 2);
         });
     });

@@ -13,7 +13,6 @@ help: the trait `IntoCssReactive<'_>` is not implemented for `Legacy`
    = help: the following other types implement trait `IntoCssReactive<'scope>`:
              Computed<'scope, T>
              ReadSignal<'scope, T>
-             RwSignal<'scope, T>
              Signal<'scope, T>
              StoredValue<'scope, T>
              silex_core::Rx<'scope, T>

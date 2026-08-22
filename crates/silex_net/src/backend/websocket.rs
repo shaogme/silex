@@ -12,8 +12,8 @@ use web_sys::{Event, MessageEvent, WebSocket as JsWebSocket};
 
 use silex_core::{
     CallbackInvokeError, CompletionSender, ErrorHandlerAnchor, ErrorHandlerInput, ErrorReporter,
-    OwnerAccess, ReactiveError, ReadSignal, Rx, RxGet, RxRead, SilexError, SilexErrorKind,
-    SilexResult, StoredValue, TaskHandle, WriteSignal, unwind_safe,
+    OwnerAccess, ReactiveError, ReadSignal, Rx, RxGet, RxRead, Signal, SilexError, SilexErrorKind,
+    SilexResult, StoredValue, TaskHandle, unwind_safe,
 };
 
 use crate::{
@@ -275,10 +275,9 @@ struct WebSocketInner<'scope> {
     on_open: Vec<Rc<dyn Fn() + 'scope>>,
     on_error: Vec<Rc<dyn Fn(NetError) + 'scope>>,
     on_close: Vec<Rc<dyn Fn(u16, String) + 'scope>>,
-    set_state: WriteSignal<'scope, ConnectionState>,
-    state: ReadSignal<'scope, ConnectionState>,
-    set_message: WriteSignal<'scope, Option<String>>,
-    set_error: WriteSignal<'scope, Option<NetError>>,
+    state: Signal<'scope, ConnectionState>,
+    message: Signal<'scope, Option<String>>,
+    error: Signal<'scope, Option<NetError>>,
     error_handler_owner: ErrorHandlerAnchor<'scope>,
     completion: CompletionSender<WebSocketEvent>,
     error_completion: CompletionSender<SilexError>,
@@ -366,7 +365,7 @@ impl<'scope> WebSocketInner<'scope> {
         self.registration.take();
         self.manual_close = false;
         let operation = self.driver.begin()?;
-        self.set_state.set(ConnectionState::Connecting)?;
+        self.state.set(ConnectionState::Connecting)?;
 
         let socket = match socket {
             Some(socket) => Ok(socket),
@@ -379,8 +378,8 @@ impl<'scope> WebSocketInner<'scope> {
         let socket = match socket {
             Ok(socket) => socket,
             Err(error) => {
-                self.set_error.set(Some(error.clone()))?;
-                self.set_state.set(ConnectionState::Error)?;
+                self.error.set(Some(error.clone()))?;
+                self.state.set(ConnectionState::Error)?;
                 return Ok((Err(error.clone()), Some(self.defer_error(error))));
             }
         };
@@ -430,21 +429,21 @@ impl<'scope> WebSocketInner<'scope> {
             {
                 self.retry_task.take();
                 self.reset_retry_window();
-                self.set_state.set(ConnectionState::Connected)?;
-                self.set_error.set(None)?;
+                self.state.set(ConnectionState::Connected)?;
+                self.error.set(None)?;
                 callback = Some(self.defer_open());
             }
             WebSocketEvent::Message { operation, data }
                 if self.driver.is_current(operation) && !self.manual_close =>
             {
-                self.set_message.set(Some(data))?;
-                self.set_state.set(ConnectionState::Connected)?;
+                self.message.set(Some(data))?;
+                self.state.set(ConnectionState::Connected)?;
             }
             WebSocketEvent::Error { operation, error }
                 if self.driver.is_current(operation) && !self.manual_close =>
             {
-                self.set_error.set(Some(error.clone()))?;
-                self.set_state.set(ConnectionState::Error)?;
+                self.error.set(Some(error.clone()))?;
+                self.state.set(ConnectionState::Error)?;
                 if self.driver.consume_current_failure() {
                     self.schedule_retry(operation)?;
                 }
@@ -456,7 +455,7 @@ impl<'scope> WebSocketInner<'scope> {
                 reason,
             } if self.driver.is_current(operation) => {
                 self.registration.take();
-                self.set_state.set(ConnectionState::Closed)?;
+                self.state.set(ConnectionState::Closed)?;
                 let manual_close = self.manual_close;
                 self.manual_close = false;
                 if !manual_close && self.driver.consume_current_failure() {
@@ -481,10 +480,10 @@ impl<'scope> WebSocketInner<'scope> {
         }
         self.manual_close = true;
         if let Some(registration) = &self.registration {
-            self.set_state.set(ConnectionState::Closing)?;
+            self.state.set(ConnectionState::Closing)?;
             let _ = registration.socket.close();
         } else {
-            self.set_state.set(ConnectionState::Closed)?;
+            self.state.set(ConnectionState::Closed)?;
         }
         Ok(())
     }
@@ -756,13 +755,13 @@ impl<'scope, H> WebSocketBuilder<'scope, H> {
             None
         };
 
-        let (state, set_state) = scope.signal(if auto_connect {
+        let state = scope.signal(if auto_connect {
             ConnectionState::Connecting
         } else {
             ConnectionState::Disconnected
         })?;
-        let (message, set_message) = scope.signal(None::<String>)?;
-        let (error, set_error) = scope.signal(None::<NetError>)?;
+        let message = scope.signal(None::<String>)?;
+        let error = scope.signal(None::<NetError>)?;
         let inner_slot = Rc::new(Cell::new(
             None::<StoredValue<'scope, WebSocketInner<'scope>>>,
         ));
@@ -792,10 +791,9 @@ impl<'scope, H> WebSocketBuilder<'scope, H> {
             on_open,
             on_error,
             on_close,
-            set_state,
             state,
-            set_message,
-            set_error,
+            message,
+            error,
             error_handler_owner: handler_anchor.clone(),
             completion,
             error_completion,
@@ -816,9 +814,9 @@ impl<'scope, H> WebSocketBuilder<'scope, H> {
         let connection = WebSocketConnection {
             scope,
             inner,
-            state,
-            message,
-            error,
+            state: state.read_signal(),
+            message: message.read_signal(),
+            error: error.read_signal(),
             error_handler,
         };
         if auto_connect {

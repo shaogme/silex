@@ -38,7 +38,9 @@ fn initial_error_is_returned_and_provisional_node_is_disposed() {
                 result,
                 Err(ComputationInitError::Initial(TestError::Rejected))
             ));
-            assert_eq!(scope.signal(1_i32).expect("signal creation").0.get(), Ok(1));
+            let read = scope.signal(1_i32).expect("signal creation");
+            let _ = read;
+            assert_eq!(read.get(), Ok(1));
         })
         .expect("test operation should succeed");
 }
@@ -49,7 +51,7 @@ fn read_returns_user_error_without_using_the_previous_value() {
     runtime
         .with_transient(|scope| {
             let errors = Rc::new(RefCell::new(Vec::new()));
-            let (source, set_source) = scope.signal(0_i32).expect("signal creation");
+            let source = scope.signal(0_i32).expect("signal creation");
             let should_fail = Rc::new(RefCell::new(false));
             let should_fail_in_callback = should_fail.clone();
             let derived = scope
@@ -68,7 +70,7 @@ fn read_returns_user_error_without_using_the_previous_value() {
 
             assert_eq!(derived.get(), Ok(7));
             *should_fail.borrow_mut() = true;
-            set_source.set(1).expect("source update");
+            source.set(1).expect("source update");
             let result = derived.get();
             assert!(matches!(
                 result,
@@ -89,7 +91,7 @@ fn deferred_error_is_dispatched_and_next_read_can_retry() {
     runtime
         .with_transient(|scope| {
             let errors = Rc::new(RefCell::new(Vec::new()));
-            let (source, set_source) = scope.signal(1_i32).expect("signal creation");
+            let source = scope.signal(1_i32).expect("signal creation");
             let derived = scope
                 .computed_always(
                     move || {
@@ -121,14 +123,14 @@ fn deferred_error_is_dispatched_and_next_read_can_retry() {
                 .expect("effect creation");
             assert_eq!(derived.get(), Ok(1));
 
-            set_source.set(2).expect("source update");
+            source.set(2).expect("source update");
             assert_eq!(errors.borrow().as_slice(), &[TestError::Rejected]);
             assert!(matches!(
                 derived.get(),
                 Err(CallbackInvokeError::User(TestError::Rejected))
             ));
 
-            set_source.set(1).expect("source recovery");
+            source.set(1).expect("source recovery");
             assert_eq!(derived.get(), Ok(1));
         })
         .expect("test operation should succeed");

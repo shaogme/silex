@@ -102,8 +102,8 @@ let view = Menu(ctx, AnyView::Empty)
 
 ## owner-scoped reactive prop
 
-当字段类型是带相同 owner lifetime 的 `Signal`、`ReadSignal`、`RwSignal`、
-`Computed`、`StoredValue` 或 `Rx` 时，setter 可以接受该值类型本身，也可以
+当字段类型是带相同 owner lifetime 的 `Signal`、`ReadSignal`、`Computed`、
+`StoredValue` 或 `Rx` 时，setter 可以接受该值类型本身，也可以
 接受能实现 `ReactiveInput<'scope, T>` 的普通值。宏通过 `#[ctx]` 取得
 `SilexContextProvider::owner` 来完成转换，因此以下两类调用都属于同一个
 scope：

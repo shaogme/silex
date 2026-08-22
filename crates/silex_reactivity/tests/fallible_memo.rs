@@ -25,7 +25,7 @@ fn initial_error_disposes_the_provisional_memo_and_cleanup() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0_i32).expect("signal creation");
+            let source = scope.signal(0_i32).expect("signal creation");
             let callback_runs_in_memo = callback_runs.clone();
             let cleanup_runs_in_memo = cleanup_runs.clone();
             let result = scope.computed(
@@ -54,7 +54,7 @@ fn initial_error_disposes_the_provisional_memo_and_cleanup() {
             assert_eq!(callback_runs.get(), 1);
             assert_eq!(cleanup_runs.get(), 1);
 
-            set_source.set(1).expect("source update");
+            source.set(1).expect("source update");
             assert_eq!(callback_runs.get(), 1);
         })
         .expect("scope execution");
@@ -68,7 +68,7 @@ fn explicit_reads_return_user_errors_and_retries_keep_the_last_success() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0_i32).expect("signal creation");
+            let source = scope.signal(0_i32).expect("signal creation");
             let should_fail_in_memo = should_fail.clone();
             let previous_values_in_memo = previous_values.clone();
             let memo = scope
@@ -88,7 +88,7 @@ fn explicit_reads_return_user_errors_and_retries_keep_the_last_success() {
 
             assert_eq!(memo.get(), Ok(0));
             should_fail.set(true);
-            set_source.set(1).expect("source update");
+            source.set(1).expect("source update");
             assert!(matches!(
                 memo.get(),
                 Err(CallbackInvokeError::User("rejected"))
@@ -100,7 +100,7 @@ fn explicit_reads_return_user_errors_and_retries_keep_the_last_success() {
             assert_eq!(previous_values.borrow().as_slice(), &[0, 1, 1]);
 
             should_fail.set(false);
-            set_source.set(0).expect("equal recovery");
+            source.set(0).expect("equal recovery");
             assert_eq!(memo.get(), Ok(0));
             assert_eq!(previous_values.borrow().as_slice(), &[0, 1, 1, 0]);
         })
@@ -116,7 +116,7 @@ fn deferred_errors_use_the_handler_without_notifying_dependents() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0_i32).expect("signal creation");
+            let source = scope.signal(0_i32).expect("signal creation");
             let should_fail_in_memo = should_fail.clone();
             let memo_errors = errors.clone();
             let memo_handler = scope
@@ -154,16 +154,16 @@ fn deferred_errors_use_the_handler_without_notifying_dependents() {
 
             assert_eq!(effect_runs.get(), 1);
             should_fail.set(true);
-            set_source.set(1).expect("failing source update");
+            source.set(1).expect("failing source update");
             assert_eq!(errors.borrow().as_slice(), &["rejected"]);
             assert_eq!(effect_runs.get(), 1);
 
             should_fail.set(false);
-            set_source.set(0).expect("equal recovery");
+            source.set(0).expect("equal recovery");
             assert_eq!(errors.borrow().as_slice(), &["rejected"]);
             assert_eq!(effect_runs.get(), 1);
 
-            set_source.set(2).expect("changed recovery");
+            source.set(2).expect("changed recovery");
             assert_eq!(errors.borrow().as_slice(), &["rejected"]);
             assert_eq!(effect_runs.get(), 2);
         })
@@ -178,7 +178,7 @@ fn untracked_reads_do_not_subscribe_the_outer_effect_and_still_propagate_errors(
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0_i32).expect("signal creation");
+            let source = scope.signal(0_i32).expect("signal creation");
             let should_fail_in_memo = should_fail.clone();
             let memo = scope
                 .computed(
@@ -211,11 +211,11 @@ fn untracked_reads_do_not_subscribe_the_outer_effect_and_still_propagate_errors(
                 .expect("effect creation");
 
             assert_eq!(effect_runs.get(), 1);
-            set_source.set(1).expect("source update");
+            source.set(1).expect("source update");
             assert_eq!(effect_runs.get(), 1);
 
             should_fail.set(true);
-            set_source.set(2).expect("failing source update");
+            source.set(2).expect("failing source update");
             assert_eq!(effect_runs.get(), 1);
             assert!(matches!(
                 memo.get_untracked(),
@@ -233,9 +233,9 @@ fn failed_dynamic_dependencies_are_rolled_back_before_retry() {
 
     runtime
         .with_transient(|scope| {
-            let (use_right, set_use_right) = scope.signal(false).expect("selector creation");
-            let (left, set_left) = scope.signal(1_i32).expect("left source creation");
-            let (right, set_right) = scope.signal(10_i32).expect("right source creation");
+            let use_right = scope.signal(false).expect("selector creation");
+            let left = scope.signal(1_i32).expect("left source creation");
+            let right = scope.signal(10_i32).expect("right source creation");
             let should_fail_in_memo = should_fail.clone();
             let callback_runs_in_memo = callback_runs.clone();
             let memo = scope
@@ -259,7 +259,7 @@ fn failed_dynamic_dependencies_are_rolled_back_before_retry() {
 
             assert_eq!(memo.get(), Ok(1));
             should_fail.set(true);
-            set_use_right.set(true).expect("switch to failing branch");
+            use_right.set(true).expect("switch to failing branch");
             assert!(matches!(
                 memo.get(),
                 Err(CallbackInvokeError::User("rejected"))
@@ -267,17 +267,15 @@ fn failed_dynamic_dependencies_are_rolled_back_before_retry() {
             assert_eq!(callback_runs.get(), 2);
 
             should_fail.set(false);
-            set_use_right
-                .set(false)
-                .expect("switch back to left branch");
+            use_right.set(false).expect("switch back to left branch");
             assert_eq!(memo.get(), Ok(1));
             assert_eq!(callback_runs.get(), 3);
 
-            set_right.set(11).expect("right update");
+            right.set(11).expect("right update");
             assert_eq!(memo.get(), Ok(1));
             assert_eq!(callback_runs.get(), 3);
 
-            set_left.set(2).expect("left update");
+            left.set(2).expect("left update");
             assert_eq!(memo.get(), Ok(2));
             assert_eq!(callback_runs.get(), 4);
         })

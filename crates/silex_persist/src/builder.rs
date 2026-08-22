@@ -443,11 +443,11 @@ where
         let initial_default = default();
         let value = self
             .owner
-            .rw_signal(initial_default.clone())
+            .signal(initial_default.clone())
             .map_err(PersistenceError::from)?;
         let state = self
             .owner
-            .rw_signal(PersistenceState::Ready(String::new()))
+            .signal(PersistenceState::Ready(String::new()))
             .map_err(PersistenceError::from)?;
         let backend = self.backend.clone();
         let codec = self.codec.clone();

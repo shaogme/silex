@@ -3,9 +3,9 @@ use crate::view::{
     AnyView, DynamicRenderArgs, DynamicRenderer, MountContext, MountInstance, View, ViewCons,
     mount_dynamic_view_universal,
 };
-use silex_core::reactivity::{Computed, ReadSignal, RwSignal, Signal, StoredValue};
+use silex_core::reactivity::{Computed, ReadSignal, Signal, StoredValue};
 use silex_core::traits::RxCloneData;
-use silex_core::{EffectPhase, Rx, RxRead, RxValueKind, SilexError, SilexErrorKind, SilexResult};
+use silex_core::{EffectPhase, Rx, RxRead, SilexError, SilexErrorKind, SilexResult};
 use std::borrow::Cow;
 use std::fmt::Display;
 use web_sys::Node;
@@ -97,7 +97,7 @@ pub trait AutoReactiveView<'scope>: View<'scope> + Sized + 'scope {
     }
 }
 
-impl<'scope, V> View<'scope> for Rx<'scope, V, RxValueKind>
+impl<'scope, V> View<'scope> for Rx<'scope, V>
 where
     V: AutoReactiveView<'scope>,
 {
@@ -182,4 +182,4 @@ macro_rules! impl_view_forward_to_rx {
     };
 }
 
-impl_view_forward_to_rx!(ReadSignal, RwSignal, Signal, Computed, StoredValue);
+impl_view_forward_to_rx!(ReadSignal, Signal, Computed, StoredValue);

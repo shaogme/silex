@@ -39,14 +39,13 @@ fn foreign_search_is_rejected_before_query_computed_creation() {
         .expect("target root should be created");
 
     with_owner_accesses(&source_root, &target_root, |source, target| {
-        let foreign_search = source
+        let foreign_search_signal = source
             .signal(String::from("?foreign=true"))
-            .expect("foreign search signal should be created")
-            .0;
-        let (path, set_path) = target
+            .expect("foreign search signal should be created");
+        let path_signal = target
             .signal(String::from("/"))
             .expect("path signal should be created");
-        let (_, set_search) = target
+        let search_signal = target
             .signal(String::new())
             .expect("search signal should be created");
         let error_handler = test_handler(target);
@@ -54,10 +53,10 @@ fn foreign_search_is_rejected_before_query_computed_creation() {
             SilexContext::new(target, error_handler.view()),
             RouterContextProps {
                 base_path: String::from("/"),
-                path,
-                search: foreign_search,
-                set_path,
-                set_search,
+                path: path_signal.read_signal(),
+                search: foreign_search_signal.read_signal(),
+                set_path: path_signal.write_signal(),
+                set_search: search_signal.write_signal(),
             },
         );
 
@@ -77,13 +76,14 @@ fn foreign_write_destination_is_rejected_before_ctx_creation() {
         .expect("target root should be created");
 
     with_owner_accesses(&source_root, &target_root, |source, target| {
-        let (_, foreign_set_path) = source
+        let foreign_path_signal = source
             .signal(String::from("/foreign"))
             .expect("foreign path signal should be created");
-        let (path, _) = target
+        let foreign_set_path = foreign_path_signal.write_signal();
+        let path_signal = target
             .signal(String::from("/"))
             .expect("path signal should be created");
-        let (search, set_search) = target
+        let search_signal = target
             .signal(String::new())
             .expect("search signal should be created");
         let error_handler = test_handler(target);
@@ -91,10 +91,10 @@ fn foreign_write_destination_is_rejected_before_ctx_creation() {
             SilexContext::new(target, error_handler.view()),
             RouterContextProps {
                 base_path: String::from("/"),
-                path,
-                search,
+                path: path_signal.read_signal(),
+                search: search_signal.read_signal(),
                 set_path: foreign_set_path,
-                set_search,
+                set_search: search_signal.write_signal(),
             },
         );
 

@@ -1,8 +1,8 @@
 //! Lifetime-aware reactive traits.
 
 use crate::{
-    Callback, ErrorHandlerInput, NodeRef, OwnerAccess, Rx, RxValueKind, SilexError, SilexResult,
-    reactivity::{Computed, ReactiveSource, ReadSignal, RwSignal, Signal, StoredValue},
+    Callback, ErrorHandlerInput, NodeRef, OwnerAccess, Rx, SilexError, SilexResult,
+    reactivity::{Computed, ReactiveSource, ReadSignal, Signal, StoredValue},
 };
 use std::fmt::Debug;
 
@@ -61,17 +61,6 @@ pub trait RxDefault<'owner>: RxFrom<'owner> {
 
 impl<'owner, T> RxDefault<'owner> for T where T: RxFrom<'owner> {}
 
-impl<'owner, T: 'owner> RxFrom<'owner> for Signal<'owner, T> {
-    type Value = T;
-
-    fn rx_from<V>(owner: OwnerAccess<'owner>, value: V) -> SilexResult<Self>
-    where
-        V: Into<Self::Value>,
-    {
-        owner.stored(value.into()).map(Into::into)
-    }
-}
-
 pub trait RxValue {
     type Value: ?Sized;
 }
@@ -101,18 +90,18 @@ impl<'owner, T: 'owner> RxFrom<'owner> for ReadSignal<'owner, T> {
     where
         V: Into<Self::Value>,
     {
-        owner.signal(value.into()).map(|(read, _)| read)
+        owner.signal(value.into()).map(Into::into)
     }
 }
 
-impl<'owner, T: 'owner> RxFrom<'owner> for RwSignal<'owner, T> {
+impl<'owner, T: 'owner> RxFrom<'owner> for Signal<'owner, T> {
     type Value = T;
 
     fn rx_from<V>(owner: OwnerAccess<'owner>, value: V) -> SilexResult<Self>
     where
         V: Into<Self::Value>,
     {
-        owner.rw_signal(value.into())
+        owner.signal(value.into())
     }
 }
 
@@ -142,7 +131,7 @@ impl<'owner, T: 'owner> RxFrom<'owner> for StoredValue<'owner, T> {
     }
 }
 
-impl<'owner, T: 'owner> RxFrom<'owner> for Rx<'owner, T, RxValueKind> {
+impl<'owner, T: 'owner> RxFrom<'owner> for Rx<'owner, T> {
     type Value = T;
 
     fn rx_from<V>(owner: OwnerAccess<'owner>, value: V) -> SilexResult<Self>
@@ -181,36 +170,6 @@ impl<'owner, T: 'owner> ReactiveInput<'owner, Signal<'owner, T>> for Signal<'own
     }
 }
 
-impl<'owner, T: 'owner> ReactiveInput<'owner, Signal<'owner, T>> for ReadSignal<'owner, T> {
-    fn into_reactive_input(self, _scope: OwnerAccess<'owner>) -> SilexResult<Signal<'owner, T>> {
-        Ok(self.into())
-    }
-}
-
-impl<'owner, T: 'owner> ReactiveInput<'owner, Signal<'owner, T>> for RwSignal<'owner, T> {
-    fn into_reactive_input(self, _scope: OwnerAccess<'owner>) -> SilexResult<Signal<'owner, T>> {
-        Ok(self.into())
-    }
-}
-
-impl<'owner, T: 'owner> ReactiveInput<'owner, Signal<'owner, T>> for Computed<'owner, T> {
-    fn into_reactive_input(self, _scope: OwnerAccess<'owner>) -> SilexResult<Signal<'owner, T>> {
-        Ok(self.into())
-    }
-}
-
-impl<'owner, T: 'owner> ReactiveInput<'owner, Signal<'owner, T>> for StoredValue<'owner, T> {
-    fn into_reactive_input(self, _scope: OwnerAccess<'owner>) -> SilexResult<Signal<'owner, T>> {
-        Ok(self.into())
-    }
-}
-
-impl<'owner, T: 'owner> ReactiveInput<'owner, Signal<'owner, T>> for Rx<'owner, T, RxValueKind> {
-    fn into_reactive_input(self, _scope: OwnerAccess<'owner>) -> SilexResult<Signal<'owner, T>> {
-        Ok(self.into_signal())
-    }
-}
-
 impl<'owner, T: 'owner> ReactiveInput<'owner, ReadSignal<'owner, T>> for ReadSignal<'owner, T> {
     fn into_reactive_input(
         self,
@@ -220,18 +179,12 @@ impl<'owner, T: 'owner> ReactiveInput<'owner, ReadSignal<'owner, T>> for ReadSig
     }
 }
 
-impl<'owner, T: 'owner> ReactiveInput<'owner, ReadSignal<'owner, T>> for RwSignal<'owner, T> {
+impl<'owner, T: 'owner> ReactiveInput<'owner, ReadSignal<'owner, T>> for Signal<'owner, T> {
     fn into_reactive_input(
         self,
         _scope: OwnerAccess<'owner>,
     ) -> SilexResult<ReadSignal<'owner, T>> {
-        Ok(self.read_signal())
-    }
-}
-
-impl<'owner, T: 'owner> ReactiveInput<'owner, RwSignal<'owner, T>> for RwSignal<'owner, T> {
-    fn into_reactive_input(self, _scope: OwnerAccess<'owner>) -> SilexResult<RwSignal<'owner, T>> {
-        Ok(self)
+        Ok(self.into())
     }
 }
 
@@ -252,17 +205,11 @@ impl<'owner, T: 'owner> ReactiveInput<'owner, StoredValue<'owner, T>> for Stored
 
 impl<'owner, T: 'owner> ReactiveInput<'owner, Rx<'owner, T>> for Signal<'owner, T> {
     fn into_reactive_input(self, _scope: OwnerAccess<'owner>) -> SilexResult<Rx<'owner, T>> {
-        Ok(self.into_rx())
+        Ok(self.into())
     }
 }
 
 impl<'owner, T: 'owner> ReactiveInput<'owner, Rx<'owner, T>> for ReadSignal<'owner, T> {
-    fn into_reactive_input(self, _scope: OwnerAccess<'owner>) -> SilexResult<Rx<'owner, T>> {
-        Ok(self.into_rx())
-    }
-}
-
-impl<'owner, T: 'owner> ReactiveInput<'owner, Rx<'owner, T>> for RwSignal<'owner, T> {
     fn into_reactive_input(self, _scope: OwnerAccess<'owner>) -> SilexResult<Rx<'owner, T>> {
         Ok(self.into_rx())
     }
@@ -280,7 +227,7 @@ impl<'owner, T: 'owner> ReactiveInput<'owner, Rx<'owner, T>> for StoredValue<'ow
     }
 }
 
-impl<'owner, T: 'owner> ReactiveInput<'owner, Rx<'owner, T>> for Rx<'owner, T, RxValueKind> {
+impl<'owner, T: 'owner> ReactiveInput<'owner, Rx<'owner, T>> for Rx<'owner, T> {
     fn into_reactive_input(self, _scope: OwnerAccess<'owner>) -> SilexResult<Rx<'owner, T>> {
         Ok(self)
     }
@@ -289,15 +236,6 @@ impl<'owner, T: 'owner> ReactiveInput<'owner, Rx<'owner, T>> for Rx<'owner, T, R
 macro_rules! impl_reactive_input_values {
     ($($value:ty),* $(,)?) => {
         $(
-            impl<'owner> ReactiveInput<'owner, Signal<'owner, $value>> for $value {
-                fn into_reactive_input(
-                    self,
-                    owner: OwnerAccess<'owner>,
-                ) -> SilexResult<Signal<'owner, $value>> {
-                    <Signal<'owner, $value> as RxFrom<'owner>>::rx_from(owner, self)
-                }
-            }
-
             impl<'owner> ReactiveInput<'owner, ReadSignal<'owner, $value>> for $value {
                 fn into_reactive_input(
                     self,
@@ -307,12 +245,12 @@ macro_rules! impl_reactive_input_values {
                 }
             }
 
-            impl<'owner> ReactiveInput<'owner, RwSignal<'owner, $value>> for $value {
+            impl<'owner> ReactiveInput<'owner, Signal<'owner, $value>> for $value {
                 fn into_reactive_input(
                     self,
                     owner: OwnerAccess<'owner>,
-                ) -> SilexResult<RwSignal<'owner, $value>> {
-                    <RwSignal<'owner, $value> as RxFrom<'owner>>::rx_from(owner, self)
+                ) -> SilexResult<Signal<'owner, $value>> {
+                    <Signal<'owner, $value> as RxFrom<'owner>>::rx_from(owner, self)
                 }
             }
 
@@ -370,17 +308,6 @@ impl_reactive_input_values!(
 macro_rules! impl_reactive_input_str_values {
     ($($target:ty),* $(,)?) => {
         $(
-            impl<'owner, 'value> ReactiveInput<'owner, Signal<'owner, $target>>
-                for &'value str
-            {
-                fn into_reactive_input(
-                    self,
-                    owner: OwnerAccess<'owner>,
-                ) -> SilexResult<Signal<'owner, $target>> {
-                    <Signal<'owner, $target> as RxFrom<'owner>>::rx_from(owner, self)
-                }
-            }
-
             impl<'owner, 'value> ReactiveInput<'owner, ReadSignal<'owner, $target>>
                 for &'value str
             {
@@ -392,14 +319,14 @@ macro_rules! impl_reactive_input_str_values {
                 }
             }
 
-            impl<'owner, 'value> ReactiveInput<'owner, RwSignal<'owner, $target>>
+            impl<'owner, 'value> ReactiveInput<'owner, Signal<'owner, $target>>
                 for &'value str
             {
                 fn into_reactive_input(
                     self,
                     owner: OwnerAccess<'owner>,
-                ) -> SilexResult<RwSignal<'owner, $target>> {
-                    <RwSignal<'owner, $target> as RxFrom<'owner>>::rx_from(owner, self)
+                ) -> SilexResult<Signal<'owner, $target>> {
+                    <Signal<'owner, $target> as RxFrom<'owner>>::rx_from(owner, self)
                 }
             }
 

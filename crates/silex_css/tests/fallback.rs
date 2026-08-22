@@ -133,7 +133,7 @@ async fn style_tag_fallback_injects_updates_and_detaches_on_owner_dispose() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|owner| {
-            let (value, set_value) = owner
+            let value = owner
                 .signal(String::from("red"))
                 .expect("signal should initialize");
             let (owner_token, error_handler) = test_owner(owner);
@@ -158,7 +158,7 @@ async fn style_tag_fallback_injects_updates_and_detaches_on_owner_dispose() {
             assert!(initial.contains("red"), "{initial}");
             assert!(initial.contains("@layer utilities"), "{initial}");
 
-            set_value
+            value
                 .set(String::from("blue"))
                 .expect("signal should update");
             let updated =

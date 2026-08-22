@@ -48,10 +48,7 @@ fn Card<'scope, Ctx>(
 }
 
 #[component]
-fn CounterDisplay<'scope, Ctx>(
-    #[ctx] ctx: Ctx,
-    count: ReadSignal<'scope, i32>,
-) -> impl View<'scope> {
+fn CounterDisplay<'scope, Ctx>(#[ctx] ctx: Ctx, count: Rx<'scope, i32>) -> impl View<'scope> {
     // Demo: Style Map (Vec) and Dynamic Class (Signal)
     let is_even = owner.computed(move || Ok(count.get()? % 2 == 0), error_handler)?;
 
@@ -94,11 +91,7 @@ fn CounterDisplay<'scope, Ctx>(
 }
 
 #[component]
-fn CounterControls<'scope, Ctx>(
-    #[ctx] ctx: Ctx,
-    count: ReadSignal<'scope, i32>,
-    set_count: WriteSignal<'scope, i32>,
-) -> impl View<'scope> {
+fn CounterControls<'scope, Ctx>(#[ctx] ctx: Ctx, count: Signal<'scope, i32>) -> impl View<'scope> {
     // Demo: Style Array
     let btn_style = sty(ctx)
         .padding("8px 16px")?
@@ -110,7 +103,7 @@ fn CounterControls<'scope, Ctx>(
 
     Ok(div!(
         button("-").style(btn_style.clone()).on_click(move |_| {
-            set_count.update(|n| *n -= 1)?;
+            count.update(|n| *n -= 1)?;
             Ok(())
         }),
         span(count).style(
@@ -121,7 +114,7 @@ fn CounterControls<'scope, Ctx>(
                 .text_align(TextAlignKeyword::Center)?
         ),
         button("+").style(btn_style).on_click(move |_| {
-            set_count.update(|n| *n += 1)?;
+            count.update(|n| *n += 1)?;
             Ok(())
         }),
     )
@@ -171,10 +164,10 @@ fn HomeView<'scope>(#[ctx] ctx: RouterContext<'scope>) -> impl View<'scope> {
     let owner = ctx.owner();
 
     // 页面级状态
-    let (name, set_name) = owner.signal("Rustacean".to_string())?;
+    let name = owner.signal("Rustacean".to_string())?;
 
     // 显式本地信号传递演示
-    let (count, set_count) = owner.signal(0)?;
+    let count = owner.signal(0)?;
     let is_high = rx!(ctx; *$count > 5)?;
     let suspense_source = owner.constant(())?;
     let suspense_data_style = sty(ctx)
@@ -204,7 +197,7 @@ fn HomeView<'scope>(#[ctx] ctx: RouterContext<'scope>) -> impl View<'scope> {
                 Ok(())
             })?)
             .child(chain!(
-                CounterControls(ctx, count, set_count).build(),
+                CounterControls(ctx, count).build(),
                 CounterDisplay(ctx, count).build(),
             ))
             .build(),
@@ -233,7 +226,7 @@ fn HomeView<'scope>(#[ctx] ctx: RouterContext<'scope>) -> impl View<'scope> {
                     )
                     .value(name)
                     .on_input(move |val| {
-                        set_name.set(val)?;
+                        name.set(val)?;
                         Ok(())
                     })
             )))
@@ -358,7 +351,7 @@ where
 #[component]
 fn App<'scope>(
     #[ctx] ctx: SilexContext<'scope>,
-    root_error: ReadSignal<'scope, Option<SilexError>>,
+    root_error: Rx<'scope, Option<SilexError>>,
 ) -> impl View<'scope> {
     let app_style = sty(ctx)
         .font_family("-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif")?
@@ -418,9 +411,9 @@ pub fn mount_counter_into(target: web_sys::Node) -> Result<JsAppHost, BootstrapE
 
 fn mount_counter_view<'scope>(ctx: &MountContext<'scope>) -> SilexResult<()> {
     let owner = ctx.access();
-    let (root_error, set_root_error) = owner.signal(None::<SilexError>)?;
+    let root_error = owner.signal(None::<SilexError>)?;
     let error_handler = owner.error_handler(move |error: SilexError| {
-        let _ = set_root_error.set(Some(error));
+        let _ = root_error.set(Some(error));
     })?;
     let silex_ctx = SilexContext::new(owner, error_handler.view());
     let app = App(silex_ctx, root_error).build();

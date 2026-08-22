@@ -5,8 +5,8 @@ use std::{
 };
 
 use silex_core::{
-    ErrorHandlerToken, ErrorReporter, HandlerLease, ReactiveError, RxGet, SilexContextProvider,
-    SilexError, SilexErrorKind, SilexResult, WriteSignal,
+    ErrorHandlerToken, ErrorReporter, HandlerLease, ReactiveError, RxGet, Signal,
+    SilexContextProvider, SilexError, SilexErrorKind, SilexResult,
 };
 use silex_dom::prelude::*;
 use silex_dom::view::{
@@ -141,7 +141,7 @@ struct ErrorBoundaryView<'scope> {
     phase_handler: ErrorReporter<'scope>,
     parent_handler: ParentHandlerCell<'scope>,
     fallback: ErrorFactory<'scope>,
-    state: WriteSignal<'scope, BoundaryState>,
+    state: Signal<'scope, BoundaryState>,
     slot: ErrorBoundarySlot,
     _boundary_handler: ErrorHandlerToken<'scope>,
     _boundary_lease: HandlerLease<'scope>,
@@ -218,15 +218,14 @@ where
     V1: View<'scope> + 'scope,
     V2: View<'scope> + 'scope,
 {
-    let (state, set_state) = owner.signal(BoundaryState::Child { generation: 0 })?;
+    let state = owner.signal(BoundaryState::Child { generation: 0 })?;
     let state_for_boundary = state;
-    let set_state_for_boundary = set_state;
     let boundary_handler = owner.error_handler(move |error| {
         let Ok(BoundaryState::Child { generation }) = state_for_boundary.get_untracked() else {
             return;
         };
         let generation = generation.saturating_add(1);
-        set_state_for_boundary
+        state
             .set(BoundaryState::Switching { error, generation })
             .expect("boundary state should remain active while handling an error");
     })?;
@@ -240,7 +239,6 @@ where
     let fallback = Rc::new(move |error: SilexError| fallback(error).into_any());
     let slot = ErrorBoundarySlot::new();
     let boundary_handler_for_phase = boundary_lease.clone();
-    let set_state_for_phase = set_state;
     let phase_handler = {
         let parent_handler = parent_handler.clone();
         let phase_slot = slot.clone();
@@ -259,7 +257,7 @@ where
                     )
                 }) {
                     phase_slot.close();
-                    let _ = set_state_for_phase.set(BoundaryState::Closed);
+                    let _ = state.set(BoundaryState::Closed);
                 }
                 let parent = parent_handler.with(|state| {
                     state
@@ -293,7 +291,7 @@ where
     let branch_fallback = fallback.clone();
     let branch_children = children.clone();
     let branch_ctx = SilexContextProvider::with_error_reporter(ctx, boundary_handler_view);
-    let branch_set_state = set_state;
+    let branch_set_state = state;
     let render = Rc::new(
         move |evaluation: BranchEvaluation<BoundaryBranchKey, BoundaryState>,
               _context: BranchRenderContext<'scope>| {
@@ -359,7 +357,7 @@ where
         phase_handler: phase_handler.view(),
         parent_handler,
         fallback,
-        state: set_state,
+        state,
         slot,
         _boundary_handler: boundary_handler,
         _boundary_lease: boundary_lease,

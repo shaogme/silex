@@ -6,7 +6,7 @@ fn main() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|owner| {
-            let (items, _) = owner.signal(vec![1i32]).expect("signal");
+            let items = owner.signal(vec![1i32]).expect("signal");
             let view = StatefulKeyedListView {
                 each: items,
                 key_fn: Rc::new(|item: &i32| *item),

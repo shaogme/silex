@@ -11,7 +11,7 @@ styled! {
     pub ScopedPanel<'owner><div>(
         #[ctx] ctx: silex_core::SilexContext<'owner>,
         children: AnyView<'owner>,
-        color: silex_core::reactivity::Signal<'owner, Hex>,
+        color: silex_core::reactivity::Rx<'owner, Hex>,
     ) {
         color: $(color);
     }

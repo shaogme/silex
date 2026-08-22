@@ -1,5 +1,5 @@
 use crate::{
-    OwnerAccess, Rx, RxValueKind, SilexError, SilexResult,
+    OwnerAccess, Rx, SilexError, SilexResult,
     traits::{RuntimeScoped, RxBase, RxRead, RxValue, RxWrite},
 };
 use std::fmt;
@@ -10,7 +10,7 @@ use std::fmt;
 /// available until this value's payload is dropped. The
 /// owner is still inactive in that window, so raw signals, callbacks, node
 /// refs, node creation, and other scope APIs remain unavailable. A
-/// `Signal` facade created from this value preserves this StoredValue source
+/// `Rx` created from this value preserves this StoredValue source
 /// kind and therefore follows the same exception. This exception only applies
 /// to final scope disposal; it does not apply to effect reruns or single-node
 /// stops, and a handle must not be used asynchronously after the cleanup
@@ -58,7 +58,7 @@ impl<'scope, T: 'scope> StoredValue<'scope, T> {
         self.update(|stored| *stored = value)
     }
 
-    pub fn into_rx(self) -> Rx<'scope, T, RxValueKind> {
+    pub fn into_rx(self) -> Rx<'scope, T> {
         Rx::from_stored(self)
     }
 }

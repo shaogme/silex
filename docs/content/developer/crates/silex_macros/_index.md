@@ -38,7 +38,7 @@ sort_by = "weight"
 | --- | --- | --- |
 | `#[component]` | `component` | Props 结构体、带类型状态的 builder、View product 和组件构造函数。 |
 | `#[derive(PropsBuilder)]` | `component` | 从命名字段结构体生成 builder、product 和 View；声明 `#[attrs]` 时额外生成属性 builder。 |
-| `#[store]` | `store` | 以 `RwSignal` 或兼容的 `StoreField` 句柄承载字段的 scoped Store。 |
+| `#[store]` | `store` | 以 `Signal` 或兼容的 `StoreField` 句柄承载字段的 scoped Store。 |
 | CSS 宏 | `css` / `tw` | 详见 [CSS 宏文档](@/developer/crates/silex_css/macros/_index.md)。 |
 | `router!` | `route` | 详见 [router 宏与类型生成](@/developer/crates/silex_router/macros.md)。 |
 

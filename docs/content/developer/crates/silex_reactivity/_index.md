@@ -33,7 +33,7 @@ Runtime
 | 类型 | 用途 | 是否参与依赖图 |
 | --- | --- | --- |
 | `ReadSignal` / `WriteSignal` | 将可变源拆成读能力和写能力 | signal 的读会追踪，写会通知 |
-| `RwSignal` | 同时持有读写能力的便捷封装 | 同上；可用 `read()`、`write()` 拆分 |
+| `Signal` | 同时持有读写能力的成对句柄 | 同上；可用 `read()`、`write()` 拆分 |
 | `Computed` | 缓存一个由其他节点派生的值 | 是；默认按 `PartialEq` 判断输出变化 |
 | `EffectHandle` | 执行副作用并根据读取重新运行 | 是；创建时先运行一次 |
 | `watch_getter` | 将 getter 和变化回调分离 | 只有 getter 读取追踪 |

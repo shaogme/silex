@@ -20,14 +20,17 @@ weight = 20
 let mut runtime = Runtime::new();
 
 runtime.with_transient(|scope| {
-    let (read, write) = scope.signal(0_i32)?;
+    let signal = scope.signal(0_i32)?;
+    let read = signal.read();
+    let write = signal.write();
     write.set(1)?;
     read.get()
 })??;
 
 let root = runtime.owner()?;
 root.with_access(|scope| {
-    let (_read, write) = scope.signal(0_i32)?;
+    let signal = scope.signal(0_i32)?;
+    let write = signal.write();
     write.set(1)
 })?;
 root.close()?;
@@ -56,7 +59,8 @@ let root = runtime.owner()?;
 let child = root.create_child()?;
 
 child.with_access(|scope| {
-    let (_read, write) = scope.signal(0_i32)?;
+    let signal = scope.signal(0_i32)?;
+    let write = signal.write();
     write.set(1)
 })?;
 

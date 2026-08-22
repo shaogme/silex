@@ -26,7 +26,7 @@ impl ThemeToCss for Theme {
 fn main() {
     let mut runtime = Runtime::new();
     let theme = runtime.with_transient(|owner| {
-        let (value, _) = owner
+        let value = owner
             .signal(Theme)
             .expect("signal should initialize");
         theme_variables(value)

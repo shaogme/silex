@@ -13,7 +13,7 @@ fn supported_tags_keep_their_typed_facades() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|owner| {
-            let (reactive_value, _) = owner
+            let reactive_value = owner
                 .signal(String::from("reactive"))
                 .expect("reactive value should initialize");
 

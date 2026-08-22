@@ -12,10 +12,13 @@ weight = 10
 
 ## Signal：可变源
 
-通过 `OwnerAccess::signal` 可以把同一个节点拆成 `ReadSignal` 和 `WriteSignal`：
+通过 `OwnerAccess::signal` 创建的 `Signal` 同时持有同一个节点的读写能力，
+可以通过 `read()` 和 `write()` 拆分：
 
 ```rust
-let (read, write) = scope.signal(0_i32)?;
+let signal = scope.signal(0_i32)?;
+let read = signal.read();
+let write = signal.write();
 
 let current = read.get()?;
 let snapshot = read.get_untracked()?;
@@ -33,12 +36,14 @@ write.notify()?;
 `set` 和 `update` 总会把本次写入视为变化并通知订阅者。`set_if_changed` 需要 `T: PartialEq`，相等时返回 `Ok(false)` 且不通知，不相等时返回 `Ok(true)`。如果通过 `Cell`、`RefCell` 等内部可变容器绕过了 signal 的写方法，需要在内部修改完成后调用 `notify`，否则响应式图不知道值已经改变：
 
 ```rust
-let (read, write) = scope.signal(std::cell::Cell::new(0_i32))?;
+let signal = scope.signal(std::cell::Cell::new(0_i32))?;
+let read = signal.read();
+let write = signal.write();
 read.with(|value| value.set(1))?;
 write.notify()?;
 ```
 
-`OwnerAccess::rw_signal` 返回 `RwSignal`，适合需要把读写能力作为一个值传递的场景；它提供对应的 `get`、`get_untracked`、`set`、`update`、`set_if_changed`，也可以用 `read()` 和 `write()` 拆分。
+`OwnerAccess::signal` 返回 `Signal`，适合需要把读写能力作为一个值传递的场景；它提供对应的 `get`、`get_untracked`、`set`、`update`、`set_if_changed`，也可以用 `read()` 和 `write()` 拆分。需要把句柄显式拆成 pair 时，可以调用 `into_pair()`；从已有读写句柄组合时使用 `Signal::from_pair()`，它会拒绝属于不同 signal 节点的 pair。
 
 ## Computed：缓存的派生值
 

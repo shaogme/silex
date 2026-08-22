@@ -11,7 +11,7 @@ fn high_level_root_uses_the_borrowed_scope_api() {
 
     {
         let owner = root.access();
-        let (value, set_value) = owner.signal(0i32).expect("signal should initialize");
+        let value = owner.signal(0i32).expect("signal should initialize");
         let seen_for_effect = seen.clone();
         let _effect = owner
             .effect(
@@ -27,7 +27,7 @@ fn high_level_root_uses_the_borrowed_scope_api() {
             )
             .expect("effect should register");
 
-        set_value.set(4).expect("signal should be writable");
+        value.set(4).expect("signal should be writable");
         assert_eq!(seen.get(), 4);
     }
 

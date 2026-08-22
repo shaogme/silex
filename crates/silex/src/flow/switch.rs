@@ -13,7 +13,7 @@ use std::rc::Rc;
 /// # Example
 /// ```rust, ignore
 /// use silex::prelude::*;
-/// let (count, set_count) = owner.signal(0);
+/// let count = owner.signal(0);
 ///
 /// Switch(ctx, count)
 ///     .fallback("Default View")

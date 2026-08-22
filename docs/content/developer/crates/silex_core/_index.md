@@ -39,9 +39,9 @@ sort_by = "weight"
 | `Runtime` | 创建一个显式、单线程的运行时；提供 root owner 或 transient scope。 |
 | `OwnerHandle` | 持有持久 owner 的 close 权限；通过 `access`/`with_access` 借出 `OwnerAccess`。 |
 | `OwnerAccess<'owner>` | 创建和操作 owner 内的所有公开节点、handler、cleanup 与异步任务。 |
-| `ReadSignal` / `WriteSignal` / `RwSignal` | 分离读写能力，或以一个值同时携带两种能力。 |
+| `ReadSignal` / `WriteSignal` / `Signal` | 分离读写能力，或以一个值同时携带两种能力。 |
 | `Computed` / `EffectHandle` / `WatchOptions` | 创建派生值、副作用和 watcher。 |
-| `Rx<'scope, T>` / `Signal<'scope, T>` | 在 signal、computed、stored value 之间统一传递只读值。 |
+| `Rx<'scope, T>` | 在 signal、computed、stored value 之间统一传递只读值。 |
 | `Resource` / `Mutation` | 将异步读取或异步变更表示为可观察状态。 |
 | `StoredValue` / `NodeRef` / `Callback` | 分别保存非响应式状态、宿主对象引用和类型化回调。 |
 | `SilexContext` | 将 owner 与 `ErrorReporter` 一起传给组件或宏。 |
@@ -133,6 +133,6 @@ crate 默认不启用任何 feature。`test-support` 只转发到底层 runtime 
 - `Resource` 和 `Mutation` 使用请求 id 丢弃旧结果。旧请求不会因为结果过期而写入当前状态；`Resource` 是 `Copy + Clone` 能力句柄，句柄数量不管理生命周期，资源请求仍由其 child effect 和创建资源的 owner cleanup 管理。
 - `spawn_scoped` 内部将局部 future 暂时擦除为 `'static` 后交给 `spawn_local`。其安全性依赖 owner cleanup 在作用域释放前同步取消并释放 future；修改这条清理顺序时必须同时检查 `src/task.rs` 的不变量和异步测试。
 - `ReadSignal::with_name` 与 `WriteSignal::with_name` 当前只返回自身，没有保存或暴露名称；它不能提供调试标签或性能诊断。
-- `effect_detached`、`RxEffectKind` 以及部分内部宏是框架适配入口，不应被普通应用代码作为稳定生命周期 API 依赖；owner-bound 子树应使用公开的 `OwnerChild` 能力。
+- `effect_detached` 以及部分内部宏是框架适配入口，不应被普通应用代码作为稳定生命周期 API 依赖；owner-bound 子树应使用公开的 `OwnerChild` 能力。
 
 验证本页或公开 API 变更时，至少运行 `cargo check -p silex_core`、`cargo test -p silex_core`、`cargo test -p silex_core --test docs_examples` 和 `zola check`；涉及 feature 或编译期契约时，追加 `--all-features` 与 `--test compile_fail`。

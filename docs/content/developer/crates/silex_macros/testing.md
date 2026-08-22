@@ -73,7 +73,7 @@ zola --root docs check
   `Into`、`render_fn` 参数约束、reactive input 和 owner scope escape。
 - 修改 `PropsBuilder` codegen 时，确认 builder 的 `PropMissing`/`PropFixed` 状态、
   product 的 `View` 实现、pending attributes 和 error reporter 传递仍然一致。
-- 修改 `#[store]` 时，覆盖 named fields、model generic/lifetime、默认 RwSignal、
+- 修改 `#[store]` 时，覆盖 named fields、model generic/lifetime、默认 `Signal`、
   `from_handles`、`from_typed_handles`、tracked/untracked snapshot 和 persist 拒绝。
 - 修改 `crate_path` 时，覆盖默认 facade、`package = "silex"` 重命名、宏在 facade
   自身内部使用，以及 Store 的 `silex_core` 路径。

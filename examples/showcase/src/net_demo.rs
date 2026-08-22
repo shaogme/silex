@@ -34,11 +34,11 @@ pub struct CreatePostInput {
 
 #[component]
 pub fn HttpClientDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
-    let (post_id, set_post_id) = owner.signal(1)?;
-    let search_query = owner.rw_signal(String::new())?;
+    let post_id = owner.signal(1)?;
+    let search_query = owner.signal(String::new())?;
 
-    let new_title = owner.rw_signal("Silex Net Post".to_string())?;
-    let new_body = owner.rw_signal("Created via Silex Net mutation_with.".to_string())?;
+    let new_title = owner.signal("Silex Net Post".to_string())?;
+    let new_body = owner.signal("Created via Silex Net mutation_with.".to_string())?;
 
     // 1. Declarative HTTP fetching with path parameters, retry policy, and reactive closure query params
     let post_resource = HttpClient::get(
@@ -89,7 +89,7 @@ pub fn HttpClientDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                 .prop("value", post_id)
                 .on(event::input, move |e| {
                     if let Ok(id) = event_target_value(&e).parse::<i32>() {
-                        set_post_id.set(id)?;
+                        post_id.set(id)?;
                     }
                     Ok(())
                 })
@@ -275,11 +275,11 @@ pub fn HttpClientDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
 
 #[component]
 pub fn WebSocketDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> + 'scope {
-    let url = owner.rw_signal("wss://echo.websocket.org".to_string())?;
+    let url = owner.signal("wss://echo.websocket.org".to_string())?;
     let socket = WebSocket::lazy(owner, url.get_untracked()?, error_handler)
         .build()
         .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
-    let input_text = owner.rw_signal(String::new())?;
+    let input_text = owner.signal(String::new())?;
 
     let state_text = socket.state_str()?;
     let is_connected = socket.is_connected()?;
@@ -399,7 +399,7 @@ pub fn WebSocketDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> + 'scope
 
 #[component]
 pub fn EventStreamDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
-    let url = owner.rw_signal("https://stream.wikimedia.org/v2/stream/recentchange".to_string())?;
+    let url = owner.signal("https://stream.wikimedia.org/v2/stream/recentchange".to_string())?;
     let stream = EventStream::lazy(owner, url.get_untracked()?, error_handler)
         .build()
         .map_err(|error| SilexError::recoverable(SilexErrorKind::Framework(error.to_string())))?;
@@ -500,7 +500,7 @@ pub fn EventStreamDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
 
 #[component]
 pub fn NetDemoPage<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
-    let (active_tab, set_active_tab) = owner.signal("http")?;
+    let active_tab = owner.signal("http")?;
 
     inject_css! {
         .tab-nav { display: flex; gap: 10px; margin-bottom: 30px; border-bottom: 1px solid var(--slx-theme-border); padding-bottom: 15px; }
@@ -517,13 +517,13 @@ pub fn NetDemoPage<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
         // Navigation Tabs
         div![
             button("HTTP Client")
-                .on(event::click, set_active_tab.setter("http"))
+                .on(event::click, active_tab.setter("http"))
                 .classes(rx!(ctx; if *$active_tab == "http" { "active" } else { "" })?),
             button("WebSocket")
-                .on(event::click, set_active_tab.setter("ws"))
+                .on(event::click, active_tab.setter("ws"))
                 .classes(rx!(ctx; if *$active_tab == "ws" { "active" } else { "" })?),
             button("EventStream")
-                .on(event::click, set_active_tab.setter("sse"))
+                .on(event::click, active_tab.setter("sse"))
                 .classes(rx!(ctx; if *$active_tab == "sse" { "active" } else { "" })?),
         ].class("tab-nav"),
 

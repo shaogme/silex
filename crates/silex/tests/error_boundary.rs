@@ -198,10 +198,10 @@ async fn deferred_child_error_reaches_boundary_and_disposes_child() {
     let root = runtime.owner().expect("root runtime should start");
 
     root.with_access(|owner| {
-        let (failed, set_failed) = owner.signal(false).expect("test signal should be created");
+        let failed = owner.signal(false).expect("test signal should be created");
         let (mount_owner, error_handler) = test_owner(owner, parent_errors.clone());
         let child = DeferredFailure {
-            source: failed,
+            source: failed.read_signal(),
             cleanup_count: cleanup_count.clone(),
             effect_runs: effect_runs.clone(),
             failure_count: failure_count.clone(),
@@ -224,7 +224,7 @@ async fn deferred_child_error_reaches_boundary_and_disposes_child() {
                     yield_microtask()
                         .await
                         .expect("failure task microtask should resolve");
-                    let _ = set_failed.set(true);
+                    let _ = failed.set(true);
                 },
                 error_handler.view(),
             )
@@ -392,10 +392,10 @@ async fn root_close_during_pending_error_does_not_mount_fallback() {
     let root = runtime.owner().expect("root runtime should start");
 
     root.with_access(|owner| {
-        let (failed, set_failed) = owner.signal(false).expect("test signal should be created");
+        let failed = owner.signal(false).expect("test signal should be created");
         let (mount_owner, error_handler) = test_owner(owner, parent_errors.clone());
         let child = DeferredFailure {
-            source: failed,
+            source: failed.read_signal(),
             cleanup_count: cleanup_count.clone(),
             effect_runs: Rc::new(Cell::new(0usize)),
             failure_count: Rc::new(Cell::new(0usize)),
@@ -420,7 +420,7 @@ async fn root_close_during_pending_error_does_not_mount_fallback() {
                     yield_microtask()
                         .await
                         .expect("second pending microtask should resolve");
-                    let _ = set_failed.set(true);
+                    let _ = failed.set(true);
                 },
                 error_handler.view(),
             )

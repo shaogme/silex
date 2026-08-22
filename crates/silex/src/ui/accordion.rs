@@ -98,7 +98,7 @@ fn focus_content_trigger(content: &web_sys::Element, ancestry: &MountAncestry) -
     Ok(())
 }
 
-fn content_focus_binding<'scope>(open: Signal<'scope, bool>) -> AttrOp<'scope> {
+fn content_focus_binding<'scope>(open: Rx<'scope, bool>) -> AttrOp<'scope> {
     AttrOp::on_commit(move |element, context| {
         let content = element.clone();
         let ancestry = context.ancestry().clone();
@@ -122,7 +122,7 @@ fn content_focus_binding<'scope>(open: Signal<'scope, bool>) -> AttrOp<'scope> {
 
 fn unmount_content_slot<'scope>(
     children: AnyView<'scope>,
-    open: Signal<'scope, bool>,
+    open: Rx<'scope, bool>,
 ) -> AttrOp<'scope> {
     AttrOp::custom(move |_, context| {
         let branch_children = children.clone();
@@ -151,7 +151,7 @@ pub fn Accordion<'scope, Ctx>(
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<'scope, String>,
+    class: Rx<'scope, String>,
 ) -> impl View<'scope> {
     let root_cls = rx!(ctx; {
         let base = tw!("w-full");
@@ -173,7 +173,7 @@ pub fn AccordionItem<'scope, Ctx>(
     value: &'static str,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<'scope, String>,
+    class: Rx<'scope, String>,
 ) -> impl View<'scope> {
     let item_cls = rx!(ctx; {
         let base = tw!("border-b border-slate-200 dark:border-slate-800 last:border-b-0");
@@ -203,10 +203,10 @@ pub fn AccordionTrigger<'scope, Ctx>(
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
-    open: Signal<'scope, bool>,
+    open: Rx<'scope, bool>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<'scope, String>,
+    class: Rx<'scope, String>,
     #[prop(into)]
     #[chain(default)]
     on_click: Callback<'scope, ()>,
@@ -268,10 +268,10 @@ pub fn AccordionContent<'scope, Ctx>(
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
-    open: Signal<'scope, bool>,
+    open: Rx<'scope, bool>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<'scope, String>,
+    class: Rx<'scope, String>,
     #[chain(default)] mode: AccordionContentMode,
 ) -> impl View<'scope> {
     let content_cls = rx!(ctx; {

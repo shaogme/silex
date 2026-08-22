@@ -1,6 +1,4 @@
-use crate::{
-    ErrorHandlerInput, OwnerAccess, Rx, RxValueKind, SilexError, SilexResult, traits::RxRead,
-};
+use crate::{ErrorHandlerInput, OwnerAccess, Rx, SilexError, SilexResult, traits::RxRead};
 use crate::{
     callback::map_callback_error,
     traits::{RuntimeScoped, RxBase, RxValue},
@@ -55,7 +53,7 @@ impl<'owner, T: 'owner> Computed<'owner, T> {
             .map(Computed::into_rx)
     }
 
-    pub fn into_rx(self) -> Rx<'owner, T, RxValueKind> {
+    pub fn into_rx(self) -> Rx<'owner, T> {
         Rx::from_computed(self)
     }
 }

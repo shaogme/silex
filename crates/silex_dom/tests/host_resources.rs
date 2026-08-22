@@ -508,7 +508,7 @@ fn render_rerun_replaces_old_window_listener() {
     let root = runtime.owner().expect("root should start");
     {
         let owner = root.access();
-        let (value, set_value) = owner.signal(0i32).expect("signal should initialize");
+        let value = owner.signal(0i32).expect("signal should initialize");
         let (owner, error_handler) = test_owner(owner);
         let calls_for_view = calls.clone();
         let view = move || WindowResourceView {
@@ -522,7 +522,7 @@ fn render_rerun_replaces_old_window_listener() {
         window
             .dispatch_event(&Event::new("silex-window-resource").unwrap())
             .expect("window event dispatch should succeed");
-        set_value.set(1).expect("signal should be writable");
+        value.set(1).expect("signal should be writable");
         assert_eq!(spy.count("event_add:silex-window-resource"), 2);
         assert_eq!(spy.count("event_remove:silex-window-resource"), 1);
         window
@@ -585,7 +585,7 @@ fn keyed_reorder_keeps_window_resources_until_row_delete() {
         let owner = root.access();
         owner
             .with_transient(|child| {
-                let (items, set_items) = child
+                let items = child
                     .signal(vec![1i32, 2])
                     .expect("signal should initialize");
                 let calls_for_factory = calls.clone();
@@ -607,11 +607,9 @@ fn keyed_reorder_keeps_window_resources_until_row_delete() {
                     .expect("keyed list should mount");
                 assert_eq!(spy.count("event_add:silex-window-resource"), 2);
 
-                set_items
-                    .set(vec![2, 1])
-                    .expect("signal should be writable");
+                items.set(vec![2, 1]).expect("signal should be writable");
                 assert_eq!(spy.count("event_remove:silex-window-resource"), 0);
-                set_items.set(vec![2]).expect("signal should be writable");
+                items.set(vec![2]).expect("signal should be writable");
                 assert_eq!(spy.count("event_remove:silex-window-resource"), 1);
             })
             .expect("child owner should initialize");

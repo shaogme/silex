@@ -37,7 +37,7 @@ fn typed_key_macro_keeps_reactive_arguments_inside_the_memo() {
                 .catalog(catalog)
                 .build()
                 .expect("valid store");
-            let name = owner.rw_signal("Alice".to_string()).expect("name signal");
+            let name = owner.signal("Alice".to_string()).expect("name signal");
             let greeting = t!(
                 store,
                 Text::WelcomeUser {
@@ -83,7 +83,7 @@ fn typed_key_memo_tracks_fallback_and_catalog_revision() {
                 .catalog(german)
                 .build()
                 .expect("valid store");
-            let name = owner.rw_signal("Alice".to_string()).expect("name signal");
+            let name = owner.signal("Alice".to_string()).expect("name signal");
             let greeting = t!(
                 store,
                 Text::WelcomeUser {

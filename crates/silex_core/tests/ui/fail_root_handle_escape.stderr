@@ -1,11 +1,12 @@
 error[E0505]: cannot move out of `root` because it is borrowed
- --> tests/ui/fail_root_handle_escape.rs:7:10
-  |
-5 |     let root = runtime.owner().expect("root should start");
-  |         ---- binding `root` declared here
-6 |     let signal = root.access().signal(0i32).expect("signal should initialize").0;
-  |                  ---- borrow of `root` occurs here
-7 |     drop(root);
-  |          ^^^^ move out of `root` occurs here
-8 |     let _ = signal.get();
-  |             ------ borrow later used here
+  --> tests/ui/fail_root_handle_escape.rs:11:10
+   |
+ 5 |     let root = runtime.owner().expect("root should start");
+   |         ---- binding `root` declared here
+ 6 |     let signal = root
+   |                  ---- borrow of `root` occurs here
+...
+11 |     drop(root);
+   |          ^^^^ move out of `root` occurs here
+12 |     let _ = signal.get();
+   |             ------ borrow later used here

@@ -8,7 +8,7 @@ fn main() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|owner| -> SilexResult<()> {
-            let source = owner.rw_signal(String::from("Light"))?;
+            let source = owner.signal(String::from("Light"))?;
             let error_handler = owner.error_handler(|_| {})?;
             let _ = rx!(owner; error_handler; $(source.clone()));
             Ok(())

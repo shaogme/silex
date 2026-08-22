@@ -202,7 +202,7 @@ fn native_owner_error_handler_separates_initial_deferred_and_cleanup_errors() {
     let root = runtime.owner().expect("root should start");
     {
         let owner = root.access();
-        let (should_fail, set_should_fail) = owner.signal(false).expect("signal should initialize");
+        let should_fail = owner.signal(false).expect("signal should initialize");
         let runs = Rc::new(Cell::new(0));
         let runs_for_effect = runs.clone();
         let deferred_reports_for_owner = deferred_reports.clone();
@@ -248,14 +248,10 @@ fn native_owner_error_handler_separates_initial_deferred_and_cleanup_errors() {
             )
             .expect("cleanup registration should succeed");
 
-        set_should_fail
-            .set(true)
-            .expect("signal should be writable");
+        should_fail.set(true).expect("signal should be writable");
         assert_eq!(deferred_reports.get(), 1);
         assert_eq!(runs.get(), 1);
-        set_should_fail
-            .set(false)
-            .expect("signal should be writable");
+        should_fail.set(false).expect("signal should be writable");
         assert_eq!(runs.get(), 2);
     }
 
@@ -336,7 +332,7 @@ fn indexed_list_failure_restores_previous_rows_and_can_retry() {
     let root = runtime.owner().expect("root should start");
     {
         let owner = root.access();
-        let (items, set_items) = owner
+        let items = owner
             .signal(vec![1_i32, 2])
             .expect("signal should initialize");
         let reports_for_handler = reports.clone();
@@ -361,15 +357,11 @@ fn indexed_list_failure_restores_previous_rows_and_can_retry() {
             .expect("indexed list should mount");
         assert_eq!(host.text_content().as_deref(), Some("1;2;"));
 
-        set_items
-            .set(vec![3, 4])
-            .expect("signal should be writable");
+        items.set(vec![3, 4]).expect("signal should be writable");
         assert_eq!(host.text_content().as_deref(), Some("1;2;"));
         assert_eq!(reports.get(), 1);
 
-        set_items
-            .set(vec![3, 2])
-            .expect("signal should be writable");
+        items.set(vec![3, 2]).expect("signal should be writable");
         assert_eq!(host.text_content().as_deref(), Some("3;2;"));
     }
 
@@ -389,7 +381,7 @@ fn deferred_row_render_failure_keeps_previous_content_and_recovers() {
     let root = runtime.owner().expect("root should start");
     {
         let owner = root.access();
-        let (value, set_value) = owner.signal(1_i32).expect("signal should initialize");
+        let value = owner.signal(1_i32).expect("signal should initialize");
         let reports_for_handler = reports.clone();
         let error_handler = owner
             .error_handler(move |_| {
@@ -410,11 +402,11 @@ fn deferred_row_render_failure_keeps_previous_content_and_recovers() {
             .expect("dynamic view should mount");
         assert_eq!(host.text_content().as_deref(), Some("1;"));
 
-        set_value.set(2).expect("signal should be writable");
+        value.set(2).expect("signal should be writable");
         assert_eq!(host.text_content().as_deref(), Some("1;"));
         assert_eq!(reports.get(), 1);
 
-        set_value.set(3).expect("signal should be writable");
+        value.set(3).expect("signal should be writable");
         assert_eq!(host.text_content().as_deref(), Some("3;"));
     }
 
@@ -436,7 +428,7 @@ fn render_only_keyed_rows_follow_collection_changes() {
         let owner = root.access();
         owner
             .with_transient(|child| {
-                let (items, set_items) = child
+                let items = child
                     .signal(vec![1_i32, 2])
                     .expect("signal should initialize");
                 let list = RenderOnlyKeyedListView {
@@ -451,17 +443,13 @@ fn render_only_keyed_rows_follow_collection_changes() {
                     .expect("render-only keyed list should mount");
                 assert_eq!(host.text_content().as_deref(), Some("1:0;2:1;"));
 
-                set_items
-                    .set(vec![1, 2, 3])
-                    .expect("signal should be writable");
+                items.set(vec![1, 2, 3]).expect("signal should be writable");
                 assert_eq!(host.text_content().as_deref(), Some("1:0;2:1;3:2;"));
 
-                set_items
-                    .set(vec![3, 1])
-                    .expect("signal should be writable");
+                items.set(vec![3, 1]).expect("signal should be writable");
                 assert_eq!(host.text_content().as_deref(), Some("3:0;1:1;"));
 
-                set_items.set(vec![1]).expect("signal should be writable");
+                items.set(vec![1]).expect("signal should be writable");
                 assert_eq!(host.text_content().as_deref(), Some("1:0;"));
             })
             .expect("child owner should initialize");
@@ -484,7 +472,7 @@ fn keyed_list_initial_duplicate_key_is_a_mount_error() {
 
     runtime
         .with_transient(|owner| {
-            let (items, _) = owner
+            let items = owner
                 .signal(vec![1_i32, 1])
                 .expect("signal should initialize");
             let reports_for_handler = reports.clone();
@@ -526,7 +514,7 @@ fn dynamic_render_owner_cleans_children_on_rerun_and_root_dispose() {
     let root = runtime.owner().expect("root should start");
     {
         let owner = root.access();
-        let (value, set_value) = owner.signal(0i32).expect("signal should initialize");
+        let value = owner.signal(0i32).expect("signal should initialize");
         let cleanups_for_view = cleanups.clone();
         let view = move || {
             value.get().map(|value| {
@@ -541,7 +529,7 @@ fn dynamic_render_owner_cleans_children_on_rerun_and_root_dispose() {
             .expect("dynamic view should mount");
         assert_eq!(host.text_content().as_deref(), Some("0"));
 
-        set_value.set(1).expect("signal should be writable");
+        value.set(1).expect("signal should be writable");
         assert_eq!(host.text_content().as_deref(), Some("1"));
         assert_eq!(cleanups.get(), 1);
     }
@@ -570,7 +558,7 @@ fn combined_reactive_styles_clean_up_properties_on_scope_dispose() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|owner| {
-            let (color, set_color) = owner
+            let color = owner
                 .signal(String::from("red"))
                 .expect("signal should initialize");
             let (owner, error_handler) = test_owner(owner);
@@ -603,7 +591,7 @@ fn combined_reactive_styles_clean_up_properties_on_scope_dispose() {
                     .contains("--dom-owner-color: red")
             );
 
-            set_color
+            color
                 .set(String::from("blue"))
                 .expect("signal should be writable");
             assert!(
@@ -639,7 +627,7 @@ fn branch_replaces_row_owner_and_keyed_list_reorders_ranges() {
     let root = runtime.owner().expect("root should start");
     {
         let access = root.access();
-        let (key, set_key) = access.signal(0i32).expect("signal should initialize");
+        let key_signal = access.signal(0i32).expect("signal should initialize");
         let (owner, error_handler) = test_owner(access);
         let branch_cleanups_for_view = branch_cleanups.clone();
         let branch_runtime_cleanups_for_view = branch_runtime_cleanups.clone();
@@ -648,7 +636,7 @@ fn branch_replaces_row_owner_and_keyed_list_reorders_ranges() {
         let _ = mount_branch_stable_cached(
             &context,
             move || {
-                let key = key.get().expect("signal should be readable");
+                let key = key_signal.get().expect("signal should be readable");
                 Ok(BranchEvaluation::new(key, ()))
             },
             move |evaluation, branch_context| {
@@ -656,7 +644,7 @@ fn branch_replaces_row_owner_and_keyed_list_reorders_ranges() {
                 let branch_owner = branch_context.owner();
                 assert!(branch_owner != access);
                 let branch_handler = branch_context.error_handler();
-                let (source, _) = branch_owner
+                let source = branch_owner
                     .signal(key)
                     .expect("branch signal should initialize");
                 let computed = branch_owner
@@ -697,15 +685,15 @@ fn branch_replaces_row_owner_and_keyed_list_reorders_ranges() {
             .expect("branch should commit");
         assert_eq!(host.text_content().as_deref(), Some("b0"));
 
-        set_key.set(0).expect("signal should be writable");
+        key_signal.set(0).expect("signal should be writable");
         assert_eq!(branch_cleanups.get(), 0);
-        set_key.set(1).expect("signal should be writable");
+        key_signal.set(1).expect("signal should be writable");
         assert_eq!(host.text_content().as_deref(), Some("b1"));
         assert_eq!(branch_cleanups.get(), 1);
 
         access
             .with_transient(|child| {
-                let (items, set_items) = child
+                let items = child
                     .signal(vec![1i32, 2, 3])
                     .expect("signal should initialize");
                 let duplicate_errors = Rc::new(Cell::new(0));
@@ -743,16 +731,12 @@ fn branch_replaces_row_owner_and_keyed_list_reorders_ranges() {
                     .expect("keyed list should mount");
                 assert_eq!(host.text_content().as_deref(), Some("b11:0;2:1;3:2;"));
 
-                set_items
-                    .set(vec![1, 1])
-                    .expect("signal should be writable");
+                items.set(vec![1, 1]).expect("signal should be writable");
                 assert_eq!(host.text_content().as_deref(), Some("b11:0;2:1;3:2;"));
                 assert_eq!(duplicate_errors.get(), 1);
-                set_items
-                    .set(vec![3, 1, 2])
-                    .expect("signal should be writable");
+                items.set(vec![3, 1, 2]).expect("signal should be writable");
                 assert_eq!(host.text_content().as_deref(), Some("b13:0;1:1;2:2;"));
-                set_items.set(vec![1]).expect("signal should be writable");
+                items.set(vec![1]).expect("signal should be writable");
                 assert_eq!(host.text_content().as_deref(), Some("b11:0;"));
             })
             .expect("child owner should initialize");
@@ -779,7 +763,7 @@ fn indexed_list_preserves_position_identity_across_diff() {
         let owner = root.access();
         owner
             .with_transient(|child| {
-                let (items, set_items) = child
+                let items = child
                     .signal(vec![1i32, 2])
                     .expect("signal should initialize");
                 let list = IndexedListView {
@@ -792,11 +776,9 @@ fn indexed_list_preserves_position_identity_across_diff() {
                     .expect("indexed list should mount");
                 assert_eq!(host.text_content().as_deref(), Some("1:0;2:1;"));
 
-                set_items
-                    .set(vec![3, 4, 5])
-                    .expect("signal should be writable");
+                items.set(vec![3, 4, 5]).expect("signal should be writable");
                 assert_eq!(host.text_content().as_deref(), Some("3:0;4:1;5:2;"));
-                set_items.set(vec![9]).expect("signal should be writable");
+                items.set(vec![9]).expect("signal should be writable");
                 assert_eq!(host.text_content().as_deref(), Some("9:0;"));
             })
             .expect("child owner should initialize");
@@ -818,14 +800,14 @@ fn repeated_branch_and_list_replacement_keeps_owner_lifecycle_stable() {
     let root = runtime.owner().expect("root should start");
     {
         let access = root.access();
-        let (key, set_key) = access.signal(0i32).expect("signal should initialize");
+        let key_signal = access.signal(0i32).expect("signal should initialize");
         let (owner, error_handler) = test_owner(access);
         let branch_cleanups_for_view = branch_cleanups.clone();
         let context = MountContext::for_parent(host.clone(), owner.clone(), error_handler.view());
         let _ = mount_branch_stable_cached(
             &context,
             move || {
-                let key = key.get().expect("signal should be readable");
+                let key = key_signal.get().expect("signal should be readable");
                 Ok(BranchEvaluation::new(key, ()))
             },
             move |evaluation, _branch_context| {
@@ -843,7 +825,7 @@ fn repeated_branch_and_list_replacement_keeps_owner_lifecycle_stable() {
             .expect("branch should commit");
 
         for key in 1..8 {
-            set_key.set(key).expect("signal should be writable");
+            key_signal.set(key).expect("signal should be writable");
             assert_eq!(
                 host.text_content().as_deref(),
                 Some(format!("b{key}").as_str())
@@ -852,8 +834,7 @@ fn repeated_branch_and_list_replacement_keeps_owner_lifecycle_stable() {
 
         access
             .with_transient(|child| {
-                let (items, set_items) =
-                    child.signal(vec![0i32]).expect("signal should initialize");
+                let items = child.signal(vec![0i32]).expect("signal should initialize");
                 let list = IndexedListView {
                     each: items,
                     view_fn: Rc::new(|item: i32, index| format!("{item}:{index};").into_any()),
@@ -864,7 +845,7 @@ fn repeated_branch_and_list_replacement_keeps_owner_lifecycle_stable() {
                     .expect("indexed list should mount");
 
                 for values in [vec![1, 2, 3], vec![3], vec![4, 5], vec![6, 7, 8, 9]] {
-                    set_items
+                    items
                         .set(values.clone())
                         .expect("signal should be writable");
                     let expected = values
@@ -905,7 +886,7 @@ fn stateful_keyed_rows_preserve_mounts_and_invalidate_old_updaters() {
         let owner = root.access();
         owner
             .with_transient(|child| {
-                let (items, set_items) = child
+                let items = child
                     .signal(vec![1i32, 2])
                     .expect("signal should initialize");
                 let first_updater = Rc::new(RefCell::new(None));
@@ -949,9 +930,7 @@ fn stateful_keyed_rows_preserve_mounts_and_invalidate_old_updaters() {
                 assert_eq!(host.text_content().as_deref(), Some("1:0;2:1;"));
                 assert_eq!(mounts.get(), 2);
 
-                set_items
-                    .set(vec![2, 1])
-                    .expect("signal should be writable");
+                items.set(vec![2, 1]).expect("signal should be writable");
                 assert_eq!(host.text_content().as_deref(), Some("2:0;1:1;"));
                 assert_eq!(mounts.get(), 2);
                 assert!(updates.get() >= 2);
@@ -961,14 +940,12 @@ fn stateful_keyed_rows_preserve_mounts_and_invalidate_old_updaters() {
                     .as_ref()
                     .cloned()
                     .expect("first row updater is captured");
-                set_items.set(vec![2]).expect("signal should be writable");
+                items.set(vec![2]).expect("signal should be writable");
                 assert_eq!(host.text_content().as_deref(), Some("2:0;"));
                 assert_eq!(cleanups.get(), 1);
                 assert!(!stale.update(9, 0));
 
-                set_items
-                    .set(vec![2, 1])
-                    .expect("signal should be writable");
+                items.set(vec![2, 1]).expect("signal should be writable");
                 assert_eq!(host.text_content().as_deref(), Some("2:0;1:1;"));
                 assert_eq!(mounts.get(), 3);
                 assert!(!stale.update(9, 0));
@@ -998,8 +975,7 @@ fn rejected_stateful_factory_cleans_uncommitted_row_range() {
         let owner = root.access();
         owner
             .with_transient(|child| {
-                let (items, set_items) =
-                    child.signal(vec![1i32]).expect("signal should initialize");
+                let items = child.signal(vec![1i32]).expect("signal should initialize");
                 let cleanups_for_factory = cleanups.clone();
                 let errors_for_handler = errors.clone();
                 let list = StatefulKeyedListView {
@@ -1039,13 +1015,13 @@ fn rejected_stateful_factory_cleans_uncommitted_row_range() {
                 assert_eq!(host.text_content().as_deref(), Some("1:0;"));
                 assert_eq!(comment_count(&host), 4);
 
-                set_items.set(vec![2]).expect("signal should be writable");
+                items.set(vec![2]).expect("signal should be writable");
                 assert_eq!(host.text_content().as_deref(), Some("1:0;"));
                 assert_eq!(comment_count(&host), 4);
                 assert_eq!(cleanups.get(), 1);
                 assert_eq!(errors.get(), 1);
 
-                set_items.set(vec![3]).expect("signal should be writable");
+                items.set(vec![3]).expect("signal should be writable");
                 assert_eq!(host.text_content().as_deref(), Some("3:0;"));
                 assert_eq!(comment_count(&host), 4);
                 assert_eq!(cleanups.get(), 2);

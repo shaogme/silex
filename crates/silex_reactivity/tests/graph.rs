@@ -25,7 +25,7 @@ fn computed_always_accepts_non_partial_eq_outputs_and_notifies_each_time() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0_i32).expect("source creation");
+            let source = scope.signal(0_i32).expect("source creation");
             let evaluations = Rc::new(Cell::new(0));
             let evaluations_in_computed = evaluations.clone();
             let computed = scope
@@ -56,7 +56,7 @@ fn computed_always_accepts_non_partial_eq_outputs_and_notifies_each_time() {
 
             assert_eq!(evaluations.get(), 1);
             assert_eq!(effect_runs.get(), 1);
-            set_source.set(1).expect("source update");
+            source.set(1).expect("source update");
             assert_eq!(evaluations.get(), 2);
             assert_eq!(effect_runs.get(), 2);
         })
@@ -68,7 +68,7 @@ fn memo_and_derived_keep_their_notification_rules() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(1i32).expect("fallible reactive creation");
+            let source = scope.signal(1i32).expect("fallible reactive creation");
             let memo_runs = Rc::new(Cell::new(0));
             let memo_runs_in_callback = memo_runs.clone();
             let memo_source = source;
@@ -96,7 +96,7 @@ fn memo_and_derived_keep_their_notification_rules() {
 
             assert_eq!(memo.get(), Ok(0));
             assert_eq!(derived.get(), Ok(0));
-            set_source.set(2).expect("test operation should succeed");
+            source.set(2).expect("test operation should succeed");
             assert_eq!(memo.get(), Ok(0));
             assert_eq!(derived.get(), Ok(0));
             assert_eq!(memo_runs.get(), 2);
@@ -110,7 +110,7 @@ fn dependency_chain_evaluates_upstream_before_effect() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(1i32).expect("fallible reactive creation");
+            let source = scope.signal(1i32).expect("fallible reactive creation");
             let middle_source = source;
             let middle = scope
                 .computed(
@@ -140,7 +140,7 @@ fn dependency_chain_evaluates_upstream_before_effect() {
                 .expect("effect should initialize");
 
             assert_eq!(seen.get(), 3);
-            set_source.set(4).expect("test operation should succeed");
+            source.set(4).expect("test operation should succeed");
             assert_eq!(seen.get(), 6);
         })
         .expect("test operation should succeed");
@@ -153,7 +153,7 @@ fn diamond_dependencies_do_not_observe_intermediate_state() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(1i32).expect("fallible reactive creation");
+            let source = scope.signal(1i32).expect("fallible reactive creation");
             let left = scope
                 .computed(
                     move || Ok(source.get().expect("reactive read") + 1),
@@ -185,7 +185,7 @@ fn diamond_dependencies_do_not_observe_intermediate_state() {
                 .expect("effect should initialize");
 
             assert_eq!(seen.borrow().as_slice(), &[(2, 11, 13)]);
-            set_source.set(2).expect("test operation should succeed");
+            source.set(2).expect("test operation should succeed");
             assert_eq!(seen.borrow().as_slice(), &[(2, 11, 13), (3, 12, 15)]);
         })
         .expect("test operation should succeed");
@@ -196,9 +196,9 @@ fn dynamic_dependencies_are_replaced_on_each_effect_run() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|scope| {
-            let (switch, set_switch) = scope.signal(true).expect("fallible reactive creation");
-            let (left, set_left) = scope.signal(0i32).expect("fallible reactive creation");
-            let (right, set_right) = scope.signal(0i32).expect("fallible reactive creation");
+            let switch = scope.signal(true).expect("fallible reactive creation");
+            let left = scope.signal(0i32).expect("fallible reactive creation");
+            let right = scope.signal(0i32).expect("fallible reactive creation");
             let runs = Rc::new(Cell::new(0));
             let seen = Rc::new(Cell::new(0));
             let runs_in_effect = runs.clone();
@@ -219,19 +219,17 @@ fn dynamic_dependencies_are_replaced_on_each_effect_run() {
                 )
                 .expect("effect should initialize");
 
-            set_right.set(1).expect("test operation should succeed");
+            right.set(1).expect("test operation should succeed");
             assert_eq!(runs.get(), 1);
-            set_left.set(2).expect("test operation should succeed");
+            left.set(2).expect("test operation should succeed");
             assert_eq!(runs.get(), 2);
             assert_eq!(seen.get(), 2);
-            set_switch
-                .set(false)
-                .expect("test operation should succeed");
+            switch.set(false).expect("test operation should succeed");
             assert_eq!(runs.get(), 3);
             assert_eq!(seen.get(), 1);
-            set_left.set(3).expect("test operation should succeed");
+            left.set(3).expect("test operation should succeed");
             assert_eq!(runs.get(), 3);
-            set_right.set(4).expect("test operation should succeed");
+            right.set(4).expect("test operation should succeed");
             assert_eq!(runs.get(), 4);
             assert_eq!(seen.get(), 4);
         })
@@ -243,8 +241,8 @@ fn reading_then_writing_a_new_dependency_replays_after_commit() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|scope| {
-            let (trigger, set_trigger) = scope.signal(0i32).expect("trigger creation");
-            let (new_source, set_new_source) = scope.signal(0i32).expect("new source creation");
+            let trigger = scope.signal(0i32).expect("trigger creation");
+            let new_source = scope.signal(0i32).expect("new source creation");
             let wrote_new_source = Rc::new(Cell::new(false));
             let runs = Rc::new(Cell::new(0));
             let runs_in_effect = runs.clone();
@@ -257,7 +255,7 @@ fn reading_then_writing_a_new_dependency_replays_after_commit() {
                         if trigger.get().expect("trigger read") != 0 {
                             let value = new_source.get().expect("new source read");
                             if value == 0 && !wrote_new_source_in_effect.replace(true) {
-                                set_new_source.set(1).map_err(|_| ())?;
+                                new_source.set(1).map_err(|_| ())?;
                             }
                         }
                         Ok(())
@@ -267,7 +265,7 @@ fn reading_then_writing_a_new_dependency_replays_after_commit() {
                 .expect("effect should initialize");
 
             assert_eq!(runs.get(), 1);
-            set_trigger.set(1).expect("trigger update");
+            trigger.set(1).expect("trigger update");
             assert_eq!(runs.get(), 3);
             assert_eq!(new_source.get(), Ok(1));
         })
@@ -279,8 +277,8 @@ fn failed_callback_discards_new_dependency_and_pending_source() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|scope| {
-            let (trigger, set_trigger) = scope.signal(0i32).expect("trigger creation");
-            let (new_source, set_new_source) = scope.signal(0i32).expect("new source creation");
+            let trigger = scope.signal(0i32).expect("trigger creation");
+            let new_source = scope.signal(0i32).expect("new source creation");
             let runs = Rc::new(Cell::new(0));
             let runs_in_effect = runs.clone();
             scope
@@ -291,7 +289,7 @@ fn failed_callback_discards_new_dependency_and_pending_source() {
                         if trigger.get().expect("trigger read") != 0 {
                             let value = new_source.get().expect("new source read");
                             if value == 0 {
-                                set_new_source.set(1).map_err(|_| ())?;
+                                new_source.set(1).map_err(|_| ())?;
                             }
                             return Err(());
                         }
@@ -302,9 +300,9 @@ fn failed_callback_discards_new_dependency_and_pending_source() {
                 .expect("effect should initialize");
 
             assert_eq!(runs.get(), 1);
-            set_trigger.set(1).expect("trigger update");
+            trigger.set(1).expect("trigger update");
             assert_eq!(runs.get(), 2);
-            set_new_source.set(2).expect("new source update");
+            new_source.set(2).expect("new source update");
             assert_eq!(runs.get(), 2);
         })
         .expect("test operation should succeed");
@@ -315,8 +313,8 @@ fn writing_before_first_read_does_not_retroactively_notify() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|scope| {
-            let (trigger, set_trigger) = scope.signal(0i32).expect("trigger creation");
-            let (new_source, set_new_source) = scope.signal(0i32).expect("new source creation");
+            let trigger = scope.signal(0i32).expect("trigger creation");
+            let new_source = scope.signal(0i32).expect("new source creation");
             let wrote_new_source = Rc::new(Cell::new(false));
             let runs = Rc::new(Cell::new(0));
             let runs_in_effect = runs.clone();
@@ -328,7 +326,7 @@ fn writing_before_first_read_does_not_retroactively_notify() {
                         runs_in_effect.set(runs_in_effect.get() + 1);
                         if trigger.get().expect("trigger read") != 0 {
                             if !wrote_new_source_in_effect.replace(true) {
-                                set_new_source.set(1).map_err(|_| ())?;
+                                new_source.set(1).map_err(|_| ())?;
                             }
                             let _ = new_source.get().expect("new source read");
                         }
@@ -338,9 +336,9 @@ fn writing_before_first_read_does_not_retroactively_notify() {
                 )
                 .expect("effect should initialize");
 
-            set_trigger.set(1).expect("trigger update");
+            trigger.set(1).expect("trigger update");
             assert_eq!(runs.get(), 2);
-            set_new_source.set(2).expect("new source update");
+            new_source.set(2).expect("new source update");
             assert_eq!(runs.get(), 3);
         })
         .expect("test operation should succeed");
@@ -353,9 +351,9 @@ fn cross_scope_explicit_dependencies_are_replaced_on_each_effect_run() {
 
     runtime
         .with_transient(|scope| {
-            let (switch, set_switch) = scope.signal(true).expect("switch creation");
-            let (left, set_left) = scope.signal(0_i32).expect("left creation");
-            let (right, set_right) = scope.signal(0_i32).expect("right creation");
+            let switch = scope.signal(true).expect("switch creation");
+            let left = scope.signal(0_i32).expect("left creation");
+            let right = scope.signal(0_i32).expect("right creation");
             let runs_in_effect = runs.clone();
 
             scope
@@ -377,11 +375,11 @@ fn cross_scope_explicit_dependencies_are_replaced_on_each_effect_run() {
                         .expect("effect should initialize");
 
                     assert_eq!(runs.get(), 1);
-                    set_switch.set(false).expect("switch update");
+                    switch.set(false).expect("switch update");
                     assert_eq!(runs.get(), 2);
-                    set_left.set(1).expect("left update");
+                    left.set(1).expect("left update");
                     assert_eq!(runs.get(), 2);
-                    set_right.set(1).expect("right update");
+                    right.set(1).expect("right update");
                     assert_eq!(runs.get(), 3);
                 })
                 .expect("child should complete");
@@ -394,11 +392,9 @@ fn nested_memo_cleanup_does_not_track_the_outer_observer() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|scope| {
-            let (outer_source, set_outer_source) =
-                scope.signal(0i32).expect("fallible reactive creation");
-            let (inner_source, set_inner_source) =
-                scope.signal(0i32).expect("fallible reactive creation");
-            let (probe, set_probe) = scope.signal(0i32).expect("fallible reactive creation");
+            let outer_source = scope.signal(0i32).expect("fallible reactive creation");
+            let inner_source = scope.signal(0i32).expect("fallible reactive creation");
+            let probe = scope.signal(0i32).expect("fallible reactive creation");
             let cleanup_runs = Rc::new(Cell::new(0));
             let first_inner_run = Rc::new(Cell::new(true));
             let scope_for_cleanup = scope;
@@ -436,7 +432,6 @@ fn nested_memo_cleanup_does_not_track_the_outer_observer() {
             let refresh_inner = Rc::new(Cell::new(false));
             let outer_inner = inner;
             let outer_source_in_effect = outer_source;
-            let set_inner_source_in_effect = set_inner_source;
             let outer_runs_in_effect = outer_runs.clone();
             let refresh_inner_in_effect = refresh_inner.clone();
             scope
@@ -448,9 +443,7 @@ fn nested_memo_cleanup_does_not_track_the_outer_observer() {
                             .expect("test operation should succeed");
                         outer_runs_in_effect.set(outer_runs_in_effect.get() + 1);
                         if refresh_inner_in_effect.replace(false) {
-                            set_inner_source_in_effect
-                                .set(1)
-                                .expect("test operation should succeed");
+                            inner_source.set(1).expect("test operation should succeed");
                         }
                         outer_inner
                             .with_untracked(|_| ())
@@ -465,14 +458,12 @@ fn nested_memo_cleanup_does_not_track_the_outer_observer() {
             assert_eq!(cleanup_runs.get(), 0);
 
             refresh_inner.set(true);
-            set_outer_source
-                .set(1)
-                .expect("test operation should succeed");
+            outer_source.set(1).expect("test operation should succeed");
 
             assert_eq!(outer_runs.get(), 2);
             assert_eq!(cleanup_runs.get(), 1);
 
-            set_probe.set(1).expect("test operation should succeed");
+            probe.set(1).expect("test operation should succeed");
             assert_eq!(outer_runs.get(), 2);
         })
         .expect("test operation should succeed");
@@ -483,8 +474,8 @@ fn batch_delays_effects_and_untrack_preserves_ownership_ctx() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0i32).expect("fallible reactive creation");
-            let (hidden, set_hidden) = scope.signal(0i32).expect("fallible reactive creation");
+            let source = scope.signal(0i32).expect("fallible reactive creation");
+            let hidden = scope.signal(0i32).expect("fallible reactive creation");
             let seen = Rc::new(Cell::new(0));
             let seen_in_effect = seen.clone();
             let effect_source = source;
@@ -505,8 +496,8 @@ fn batch_delays_effects_and_untrack_preserves_ownership_ctx() {
 
             scope
                 .batch(|| {
-                    set_source.set(1).expect("test operation should succeed");
-                    set_hidden.set(2).expect("test operation should succeed");
+                    source.set(1).expect("test operation should succeed");
+                    hidden.set(2).expect("test operation should succeed");
                     assert_eq!(seen.get(), 0);
                 })
                 .expect("batch should flush");
@@ -527,10 +518,10 @@ fn batch_delays_effects_and_untrack_preserves_ownership_ctx() {
                     handler(scope),
                 )
                 .expect("effect should initialize");
-            set_hidden.set(4).expect("test operation should succeed");
+            hidden.set(4).expect("test operation should succeed");
             assert_eq!(tracked.get(), 4);
             assert_eq!(scope.untrack(|| hidden.get()), Ok(Ok(4)));
-            set_source.set(2).expect("test operation should succeed");
+            source.set(2).expect("test operation should succeed");
             assert_eq!(tracked.get(), 4);
         })
         .expect("test operation should succeed");
@@ -541,7 +532,7 @@ fn epoch_memo_fast_path_skips_evaluation_when_upstream_unchanged() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(10i32).expect("fallible reactive creation");
+            let source = scope.signal(10i32).expect("fallible reactive creation");
 
             let m1_runs = Rc::new(Cell::new(0));
             let m1_runs_cb = m1_runs.clone();
@@ -584,13 +575,13 @@ fn epoch_memo_fast_path_skips_evaluation_when_upstream_unchanged() {
             assert_eq!(m2_runs.get(), 1);
             assert_eq!(m3_runs.get(), 1);
 
-            set_source.set(15).expect("test operation should succeed");
+            source.set(15).expect("test operation should succeed");
             assert_eq!(m3.get(), Ok(202));
             assert_eq!(m1_runs.get(), 2);
             assert_eq!(m2_runs.get(), 1);
             assert_eq!(m3_runs.get(), 1);
 
-            set_source.set(20).expect("test operation should succeed");
+            source.set(20).expect("test operation should succeed");
             assert_eq!(m3.get(), Ok(204));
             assert_eq!(m1_runs.get(), 3);
             assert_eq!(m2_runs.get(), 2);
@@ -606,8 +597,8 @@ fn ordinary_reads_track_all_signals_in_one_scope() {
 
     runtime
         .with_transient(|scope| {
-            let (sig1, set_sig1) = scope.signal(10i32).expect("fallible reactive creation");
-            let (sig2, set_sig2) = scope.signal(20i32).expect("fallible reactive creation");
+            let sig1 = scope.signal(10i32).expect("fallible reactive creation");
+            let sig2 = scope.signal(20i32).expect("fallible reactive creation");
             let runs_in_effect = runs.clone();
 
             scope
@@ -624,9 +615,9 @@ fn ordinary_reads_track_all_signals_in_one_scope() {
                 .expect("effect should initialize");
 
             assert_eq!(runs.get(), 1);
-            set_sig1.set(11).expect("test operation should succeed");
+            sig1.set(11).expect("test operation should succeed");
             assert_eq!(runs.get(), 2);
-            set_sig2.set(21).expect("test operation should succeed");
+            sig2.set(21).expect("test operation should succeed");
             assert_eq!(runs.get(), 3);
         })
         .expect("test operation should succeed");
@@ -639,7 +630,7 @@ fn notify_recomputes_after_silent_interior_mutation() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope
+            let source = scope
                 .signal(RefCell::new(0i32))
                 .expect("fallible reactive creation");
             let seen_in_effect = seen.clone();
@@ -647,8 +638,12 @@ fn notify_recomputes_after_silent_interior_mutation() {
                 .effect(
                     EffectPhase::Normal,
                     move || {
-                        seen_in_effect
-                            .set(source.with(|value| *value.borrow()).expect("reactive read"));
+                        seen_in_effect.set(
+                            source
+                                .read()
+                                .with(|value| *value.borrow())
+                                .expect("reactive read"),
+                        );
                         Ok(())
                     },
                     handler(scope),
@@ -656,9 +651,13 @@ fn notify_recomputes_after_silent_interior_mutation() {
                 .expect("effect should initialize");
 
             source
+                .read()
                 .with(|value| {
                     *value.borrow_mut() = 1;
-                    set_source.notify().expect("test operation should succeed");
+                    source
+                        .write()
+                        .notify()
+                        .expect("test operation should succeed");
                     assert_eq!(seen.get(), 0);
                 })
                 .expect("test operation should succeed");
@@ -675,7 +674,7 @@ fn cross_scope_silent_notify_from_callback_waits_for_value_borrow() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope
+            let source = scope
                 .signal(RefCell::new(0i32))
                 .expect("fallible reactive creation");
             scope
@@ -686,6 +685,7 @@ fn cross_scope_silent_notify_from_callback_waits_for_value_borrow() {
                             EffectPhase::Normal,
                             move || {
                                 source
+                                    .read()
                                     .with(|value| {
                                         std::hint::black_box(*value.borrow());
                                         runs_in_effect.set(runs_in_effect.get() + 1);
@@ -702,9 +702,13 @@ fn cross_scope_silent_notify_from_callback_waits_for_value_borrow() {
                         .callback(move |_: ()| {
                             let runs_before = runs_in_callback.get();
                             source
+                                .read()
                                 .with(|value| {
                                     *value.borrow_mut() += 1;
-                                    set_source.notify().expect("test operation should succeed");
+                                    source
+                                        .write()
+                                        .notify()
+                                        .expect("test operation should succeed");
                                     assert_eq!(runs_in_callback.get(), runs_before);
                                 })
                                 .expect("test operation should succeed");
@@ -715,13 +719,13 @@ fn cross_scope_silent_notify_from_callback_waits_for_value_borrow() {
                     assert_eq!(runs.get(), 1);
                     callback.invoke(()).expect("callback should be alive");
                     assert_eq!(runs.get(), 2);
-                    assert_eq!(source.with(|value| *value.borrow()), Ok(1));
+                    assert_eq!(source.read().with(|value| *value.borrow()), Ok(1));
 
                     callback
                         .invoke(())
                         .expect("callback should remain reusable");
                     assert_eq!(runs.get(), 3);
-                    assert_eq!(source.with(|value| *value.borrow()), Ok(2));
+                    assert_eq!(source.read().with(|value| *value.borrow()), Ok(2));
                 })
                 .expect("test operation should succeed");
         })
@@ -733,7 +737,7 @@ fn cross_scope_computation_stack_includes_scope_identity() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(1i32).expect("fallible reactive creation");
+            let source = scope.signal(1i32).expect("fallible reactive creation");
             let parent_memo = scope
                 .computed(
                     move || Ok(source.get().expect("reactive read") + 1),
@@ -764,7 +768,7 @@ fn cross_scope_computation_stack_includes_scope_identity() {
                         .expect("effect should initialize");
 
                     assert_eq!(seen.get(), 3);
-                    set_source.set(2).expect("test operation should succeed");
+                    source.set(2).expect("test operation should succeed");
                     assert_eq!(seen.get(), 4);
                 })
                 .expect("test operation should succeed");
@@ -779,7 +783,7 @@ fn cross_scope_derived_reacts_and_detaches_on_exit() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(1i32).expect("fallible reactive creation");
+            let source = scope.signal(1i32).expect("fallible reactive creation");
             scope
                 .with_transient(|child| {
                     let child_source = source;
@@ -802,12 +806,12 @@ fn cross_scope_derived_reacts_and_detaches_on_exit() {
                         .expect("effect should initialize");
 
                     assert_eq!(seen.get(), 2);
-                    set_source.set(2).expect("test operation should succeed");
+                    source.set(2).expect("test operation should succeed");
                     assert_eq!(seen.get(), 4);
                 })
                 .expect("test operation should succeed");
 
-            set_source.set(3).expect("test operation should succeed");
+            source.set(3).expect("test operation should succeed");
             assert_eq!(seen.get(), 4);
         })
         .expect("test operation should succeed");
@@ -820,7 +824,7 @@ fn disposing_the_cross_scope_observer_detaches_it_from_the_source() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0_i32).expect("source creation");
+            let source = scope.signal(0_i32).expect("source creation");
             scope
                 .with_transient(|child| {
                     let runs_in_effect = runs.clone();
@@ -838,7 +842,7 @@ fn disposing_the_cross_scope_observer_detaches_it_from_the_source() {
 
                     assert_eq!(runs.get(), 1);
                     effect.stop().expect("effect should stop");
-                    set_source.set(1).expect("source update");
+                    source.set(1).expect("source update");
                     assert_eq!(runs.get(), 1);
                 })
                 .expect("child should complete");
@@ -855,7 +859,7 @@ fn cyclic_memo_dependency_panics_without_poisoning_the_scheduler() {
                 Rc::new(RefCell::new(None));
             let second_slot: Rc<RefCell<Option<Computed<'_, i32, ()>>>> =
                 Rc::new(RefCell::new(None));
-            let (source, set_source) = scope.signal(0i32).expect("fallible reactive creation");
+            let source = scope.signal(0i32).expect("fallible reactive creation");
 
             let second_slot_in_first = second_slot.clone();
             let first = scope
@@ -887,13 +891,13 @@ fn cyclic_memo_dependency_panics_without_poisoning_the_scheduler() {
                 .expect("memo creation");
             *second_slot.borrow_mut() = Some(second);
 
-            set_source.set(1).expect("test operation should succeed");
+            source.set(1).expect("test operation should succeed");
             let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 first.get().expect("test operation should succeed");
             }));
             assert!(panic.is_err());
 
-            set_source.set(2).expect("test operation should succeed");
+            source.set(2).expect("test operation should succeed");
             assert_eq!(source.get(), Ok(2));
         })
         .expect("test operation should succeed");
@@ -910,8 +914,8 @@ fn cyclic_effect_queue_failure_does_not_poison_unrelated_effects() {
                 Rc::new(RefCell::new(None));
             let second_slot: Rc<RefCell<Option<Computed<'_, i32, ()>>>> =
                 Rc::new(RefCell::new(None));
-            let (source, set_source) = scope.signal(0i32).expect("fallible reactive creation");
-            let (refresh, set_refresh) = scope.signal(0i32).expect("fallible reactive creation");
+            let source = scope.signal(0i32).expect("fallible reactive creation");
+            let refresh = scope.signal(0i32).expect("fallible reactive creation");
 
             let second_slot_in_first = second_slot.clone();
             let first = scope
@@ -944,7 +948,7 @@ fn cyclic_effect_queue_failure_does_not_poison_unrelated_effects() {
                 .expect("memo creation");
             *second_slot.borrow_mut() = Some(second);
 
-            set_refresh.set(1).expect("test operation should succeed");
+            refresh.set(1).expect("test operation should succeed");
             assert_eq!(first.get(), Ok(0));
 
             let first_in_effect = first;
@@ -964,11 +968,10 @@ fn cyclic_effect_queue_failure_does_not_poison_unrelated_effects() {
                 .expect("effect should initialize");
 
             assert_eq!(runs.get(), 1);
-            assert_eq!(set_source.set(1), Err(ReactiveError::Reentrant));
+            assert_eq!(source.set(1), Err(ReactiveError::Reentrant));
 
             let independent_runs = Rc::new(Cell::new(0));
-            let (independent, set_independent) =
-                scope.signal(0i32).expect("fallible reactive creation");
+            let independent = scope.signal(0i32).expect("fallible reactive creation");
             let independent_runs_in_effect = independent_runs.clone();
             scope
                 .effect(
@@ -983,9 +986,7 @@ fn cyclic_effect_queue_failure_does_not_poison_unrelated_effects() {
                     handler(scope),
                 )
                 .expect("effect should initialize");
-            set_independent
-                .set(1)
-                .expect("test operation should succeed");
+            independent.set(1).expect("test operation should succeed");
             assert_eq!(independent_runs.get(), 1);
             assert_eq!(source.get(), Ok(1));
         })
@@ -1001,9 +1002,9 @@ fn queue_failure_keeps_other_owner_work_and_clears_failed_owner_state() {
             let owner_b = root.create_child().expect("owner B creation");
             let scope_a = owner_a.access();
             let scope_b = owner_b.access();
-            let (signal_a, set_a) = scope_a.signal(0_i32).expect("signal A creation");
-            let (relay_a, set_relay_a) = scope_a.signal(0_i32).expect("relay A creation");
-            let (signal_b, set_b) = scope_b.signal(0_i32).expect("signal B creation");
+            let signal_a = scope_a.signal(0_i32).expect("signal A creation");
+            let relay_a = scope_a.signal(0_i32).expect("relay A creation");
+            let signal_b = scope_b.signal(0_i32).expect("signal B creation");
             let loop_enabled = Rc::new(Cell::new(false));
             let ticker = Rc::new(Cell::new(0_i32));
             let a_runs = Rc::new(Cell::new(0_usize));
@@ -1020,7 +1021,7 @@ fn queue_failure_keeps_other_owner_work_and_clears_failed_owner_state() {
                         a_runs_in_effect.set(a_runs_in_effect.get() + 1);
                         if loop_enabled_in_a.get() {
                             ticker_in_a.set(ticker_in_a.get() + 1);
-                            set_relay_a.set(ticker_in_a.get()).map_err(|_| ())?;
+                            relay_a.set(ticker_in_a.get()).map_err(|_| ())?;
                         }
                         Ok(())
                     },
@@ -1037,7 +1038,7 @@ fn queue_failure_keeps_other_owner_work_and_clears_failed_owner_state() {
                         relay_a.get().map_err(|_| ())?;
                         if loop_enabled_in_relay.get() {
                             ticker_in_relay.set(ticker_in_relay.get() + 1);
-                            set_a.set(ticker_in_relay.get()).map_err(|_| ())?;
+                            signal_a.set(ticker_in_relay.get()).map_err(|_| ())?;
                         }
                         Ok(())
                     },
@@ -1062,8 +1063,8 @@ fn queue_failure_keeps_other_owner_work_and_clears_failed_owner_state() {
             assert_eq!(b_runs.get(), 1);
             loop_enabled.set(true);
             let failure = root.batch(|| {
-                set_a.set(1).expect("signal A update");
-                set_b.set(1).expect("signal B update");
+                signal_a.set(1).expect("signal A update");
+                signal_b.set(1).expect("signal B update");
             });
             assert!(matches!(failure, Err(ReactiveError::NonConvergent { .. })));
             assert_eq!(b_runs.get(), 2);
@@ -1073,7 +1074,7 @@ fn queue_failure_keeps_other_owner_work_and_clears_failed_owner_state() {
             assert_eq!(b_runs.get(), 2);
 
             let runs_before_retry = a_runs.get();
-            set_a
+            signal_a
                 .set(1_000_000)
                 .expect("failed owner should be retryable");
             assert_eq!(a_runs.get(), runs_before_retry + 1);

@@ -1,10 +1,9 @@
 //! Reactive-source promotion.
 
 use crate::{
-    ErrorReporter, OwnerAccess, Rx, RxValueKind,
+    ErrorReporter, OwnerAccess, Rx,
     reactivity::{
-        Computed, Constant, Mutation, ReadSignal, Resource, RwSignal, Signal, SignalSlice,
-        StoredValue,
+        Computed, Constant, Mutation, ReadSignal, Resource, Signal, SignalSlice, StoredValue,
     },
     traits::{RxCloneData, RxData, RxError, RxGet, RxRead, RxValue},
 };
@@ -148,7 +147,7 @@ where
     }
 }
 
-impl<'scope, T: 'scope> ReactiveSource<'scope> for RwSignal<'scope, T>
+impl<'scope, T: 'scope> ReactiveSource<'scope> for Signal<'scope, T>
 where
     T: Sized + RxData,
 {
@@ -161,20 +160,7 @@ where
     }
 }
 
-impl<'scope, T: 'scope> ReactiveSource<'scope> for Signal<'scope, T>
-where
-    T: Sized + RxData,
-{
-    fn into_promotion_plan(self) -> PromotionPlan<'scope, T>
-    where
-        Self: Sized,
-        T: Sized + RxData + 'scope,
-    {
-        self.rx.into_promotion_plan()
-    }
-}
-
-impl<'scope, T: 'scope> ReactiveSource<'scope> for Rx<'scope, T, RxValueKind>
+impl<'scope, T: 'scope> ReactiveSource<'scope> for Rx<'scope, T>
 where
     T: Sized + RxData,
 {

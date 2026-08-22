@@ -8,17 +8,17 @@ use wasm_bindgen::JsCast;
 /// Explicit Popover Context holding reactive state for visibility and anchor bounds.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PopoverContext<'scope> {
-    pub open: RwSignal<'scope, bool>,
-    pub anchor_rect: RwSignal<'scope, (f64, f64, f64, f64)>,
-    pub content_height: RwSignal<'scope, f64>,
+    pub open: Signal<'scope, bool>,
+    pub anchor_rect: Signal<'scope, (f64, f64, f64, f64)>,
+    pub content_height: Signal<'scope, f64>,
 }
 
 impl<'scope> PopoverContext<'scope> {
     pub fn new(owner: OwnerAccess<'scope>) -> SilexResult<Self> {
         Ok(Self {
-            open: owner.rw_signal(false)?,
-            anchor_rect: owner.rw_signal((0.0, 0.0, 0.0, 0.0))?,
-            content_height: owner.rw_signal(0.0)?,
+            open: owner.signal(false)?,
+            anchor_rect: owner.signal((0.0, 0.0, 0.0, 0.0))?,
+            content_height: owner.signal(0.0)?,
         })
     }
 
@@ -56,7 +56,7 @@ pub fn PopoverHeader<'scope, Ctx>(
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<'scope, String>,
+    class: Rx<'scope, String>,
 ) -> impl View<'scope> {
     let header_cls = rx!(ctx; {
         let base = tw!("flex flex-col gap-1 text-sm");
@@ -79,7 +79,7 @@ pub fn PopoverTitle<'scope, Ctx>(
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<'scope, String>,
+    class: Rx<'scope, String>,
 ) -> impl View<'scope> {
     let title_cls = rx!(ctx; {
         let base = tw!("font-medium leading-none");
@@ -102,7 +102,7 @@ pub fn PopoverDescription<'scope, Ctx>(
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<'scope, String>,
+    class: Rx<'scope, String>,
 ) -> impl View<'scope> {
     let desc_cls = rx!(ctx; {
         let base = tw!("text-muted-foreground text-sm m-0");
@@ -126,7 +126,7 @@ pub fn PopoverAnchor<'scope, Ctx>(
     #[chain] context: PopoverContext<'scope>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<'scope, String>,
+    class: Rx<'scope, String>,
 ) -> impl View<'scope> {
     let anchor_cls = rx!(ctx; {
         let base = tw!("inline-block");
@@ -165,7 +165,7 @@ pub fn PopoverClose<'scope, Ctx>(
     on_click: Callback<'scope, ()>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<'scope, String>,
+    class: Rx<'scope, String>,
 ) -> impl View<'scope> {
     let close_cls = rx!(ctx; {
         let base = tw!("inline-flex items-center justify-center cursor-pointer");
@@ -193,19 +193,19 @@ pub fn PopoverContent<'scope, Ctx>(
     #[chain] context: PopoverContext<'scope>,
     #[prop(into)]
     #[chain(default)]
-    open: Signal<'scope, bool>,
+    open: Rx<'scope, bool>,
     #[prop(into)]
     #[chain(default)]
-    side: Signal<'scope, String>,
+    side: Rx<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    align: Signal<'scope, String>,
+    align: Rx<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    side_offset: Signal<'scope, f64>,
+    side_offset: Rx<'scope, f64>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<'scope, String>,
+    class: Rx<'scope, String>,
     #[prop(into)]
     #[chain(default)]
     on_close: Callback<'scope, ()>,
@@ -377,7 +377,7 @@ pub fn PopoverTrigger<'scope, Ctx>(
     on_click: Callback<'scope, ()>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<'scope, String>,
+    class: Rx<'scope, String>,
 ) -> impl View<'scope> {
     let trigger_cls = rx!(ctx; {
         let base = tw!("inline-block cursor-pointer");
@@ -413,7 +413,7 @@ pub fn Popover<'scope, Ctx, C, V>(
     children: C,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<'scope, String>,
+    class: Rx<'scope, String>,
 ) -> impl View<'scope>
 where
     C: Fn(PopoverContext<'scope>) -> V + Clone + 'scope,

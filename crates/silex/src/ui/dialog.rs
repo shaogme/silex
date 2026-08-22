@@ -32,7 +32,7 @@ styled! {
 }
 
 fn dialog_focus_binding<'scope>(
-    open: Signal<'scope, bool>,
+    open: Rx<'scope, bool>,
     previous_focus: StoredValue<'scope, Option<Element>>,
 ) -> AttrOp<'scope> {
     AttrOp::on_commit(move |element, context| {
@@ -69,10 +69,10 @@ pub fn Dialog<'scope, Ctx>(
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
-    open: Signal<'scope, bool>,
+    open: Rx<'scope, bool>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<'scope, String>,
+    class: Rx<'scope, String>,
     #[prop(into)]
     #[chain(default)]
     on_close: Callback<'scope, ()>,

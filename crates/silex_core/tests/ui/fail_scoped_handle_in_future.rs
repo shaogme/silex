@@ -5,7 +5,7 @@ fn main() {
     let mut runtime = Runtime::new();
     runtime.with_transient(|owner| {
         owner.with_transient(|child| {
-            let (value, _) = child.signal(1i32).expect("signal should initialize");
+            let value = child.signal(1i32).expect("signal should initialize");
             spawn_local(async move {
                 let _ = value.get();
             });

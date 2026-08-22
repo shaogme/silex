@@ -12,7 +12,6 @@ fn RxDefaultWithScope<'owner, Ctx>(
     children: AnyView<'owner>,
     #[chain(default)] signal: Signal<'owner, i32>,
     #[chain(default)] read: ReadSignal<'owner, i32>,
-    #[chain(default)] rw: RwSignal<'owner, i32>,
     #[chain(default)] computed: Computed<'owner, i32>,
     #[chain(default)] stored: StoredValue<'owner, i32>,
     #[chain(default)] rx: Rx<'owner, i32>,
@@ -20,7 +19,7 @@ fn RxDefaultWithScope<'owner, Ctx>(
     #[chain(default)] node_ref: NodeRef<'owner, String>,
 ) -> impl View<'owner> {
     let _ = (
-        owner, signal, read, rw, computed, stored, rx, callback, node_ref,
+        owner, signal, read, computed, stored, rx, callback, node_ref,
     );
     children
 }
@@ -31,7 +30,7 @@ fn RxDefaultExplicit<'owner, Ctx>(
     children: AnyView<'owner>,
     #[prop(into)]
     #[chain(default = "column")]
-    direction: Signal<'owner, String>,
+    direction: Rx<'owner, String>,
 ) -> impl View<'owner> {
     let _ = direction;
     let _ = owner;
@@ -42,7 +41,7 @@ fn RxDefaultExplicit<'owner, Ctx>(
 fn OptionalRxDefault<'owner, Ctx>(
     children: AnyView<'owner>,
     #[ctx] ctx: Ctx,
-    #[chain(default)] value: Option<Signal<'owner, i32>>,
+    #[chain(default)] value: Option<Rx<'owner, i32>>,
 ) -> impl View<'owner> {
     let _ = value;
     children

@@ -37,9 +37,9 @@ struct Settings {
 
 | 入口 | 签名/行为 |
 | --- | --- |
-| `SettingsStore<'owner>` | `SettingsStoreFields` 的 type alias；默认每个字段使用 `RwSignal<'owner, 字段类型>`。 |
-| `SettingsStore::new(owner, source)` | 为 source 的每个字段创建 scoped `RwSignal`，返回 `SilexResult<Self>`。 |
-| `SettingsStore::from_handles(owner, ...)` | 接收可转换为默认 `RwSignal` 的 `StoreField` 句柄。 |
+| `SettingsStore<'owner>` | `SettingsStoreFields` 的 type alias；默认每个字段使用 `Signal<'owner, 字段类型>`。 |
+| `SettingsStore::new(owner, source)` | 为 source 的每个字段创建 scoped `Signal`，返回 `SilexResult<Self>`。 |
+| `SettingsStore::from_handles(owner, ...)` | 接收可转换为默认 `Signal` 的 `StoreField` 句柄。 |
 | `SettingsStore::from_typed_handles(owner, ...)` | 显式指定每个字段句柄类型后组装 Store。 |
 | `settings.owner()` | 返回创建该 Store 时使用的 `OwnerAccess<'owner>`。 |
 | `settings.snapshot()` | tracked 读取全部字段并重建 `Settings`，返回 `SilexResult<Settings>`。 |
@@ -55,7 +55,7 @@ struct Settings {
 
 ### 从 model 创建
 
-`new` 对 source 的每个字段调用当前 owner 的 `rw_signal`，因此每个字段拥有
+`new` 对 source 的每个字段调用当前 owner 的 `signal`，因此每个字段拥有
 独立的 reactive source：
 
 ```rust
@@ -75,12 +75,12 @@ let current = settings.snapshot()?;
 ### 从已有句柄创建
 
 `from_handles` 适合使用默认 alias：每个输入必须实现
-`StoreField<'owner, T>`，并能转换为 `RwSignal<'owner, T>`。因此普通
-`RwSignal`、以及实现相同契约的其它 scoped 字段句柄都可以参与组装：
+`StoreField<'owner, T>`，并能转换为 `Signal<'owner, T>`。因此普通
+`Signal`、以及实现相同契约的其它 scoped 字段句柄都可以参与组装：
 
 ```rust
-let theme = owner.rw_signal(String::from("Light"))?;
-let notifications = owner.rw_signal(false)?;
+let theme = owner.signal(String::from("Light"))?;
+let notifications = owner.signal(false)?;
 let settings = SettingsStore::from_handles(owner, theme, notifications)?;
 ```
 
@@ -90,12 +90,12 @@ let settings = SettingsStore::from_handles(owner, theme, notifications)?;
 let settings = SettingsStore::<
     '_,
     Persistent<'_, String>,
-    RwSignal<'_, bool>,
+    Signal<'_, bool>,
 >::from_typed_handles(owner, persistent_theme, notifications)?;
 ```
 
 两段代码都是契约片段；`from_handles` 的输入还必须满足对应的
-`Into<RwSignal>` 约束，而 `from_typed_handles` 只按显式句柄类型检查
+`Into<Signal>` 约束，而 `from_typed_handles` 只按显式句柄类型检查
 `silex_core::StoreField`。Store 宏本身不创建持久化后端，也不解析
 `#[persist(...)]`。
 

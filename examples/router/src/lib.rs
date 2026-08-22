@@ -209,7 +209,7 @@ fn UserDetail<'scope>(#[ctx] ctx: RouterContext<'scope>, id: u32) -> impl View<'
     let path = ctx.path;
     let owner = ctx.owner();
     let error_handler = ctx.error_reporter();
-    let (page_signal, _set_page_signal) = owner.signal(id)?;
+    let page_signal = owner.signal(id)?;
     let page_computed = owner.computed(
         move || page_signal.get().map(|value| value.saturating_mul(2)),
         error_handler,

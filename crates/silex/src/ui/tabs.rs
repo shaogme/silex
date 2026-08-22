@@ -9,10 +9,10 @@ pub fn Tabs<'scope, Ctx>(
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
-    orientation: Signal<'scope, String>,
+    orientation: Rx<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<'scope, String>,
+    class: Rx<'scope, String>,
 ) -> impl View<'scope> {
     let cls = rx!(ctx; {
         let base = tw!("group/tabs flex gap-2 data-[orientation=horizontal]:flex-col");
@@ -46,10 +46,10 @@ pub fn TabsList<'scope, Ctx>(
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
-    variant: Signal<'scope, String>,
+    variant: Rx<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<'scope, String>,
+    class: Rx<'scope, String>,
 ) -> impl View<'scope> {
     let list_variants = tw_variants! {
         base: "group/tabs-list inline-flex w-fit items-center justify-center rounded-lg p-[3px] text-muted-foreground group-data-[orientation=horizontal]/tabs:h-9 group-data-[orientation=vertical]/tabs:h-fit group-data-[orientation=vertical]/tabs:flex-col data-[variant=line]:rounded-none",
@@ -96,10 +96,10 @@ pub fn TabsTrigger<'scope, Ctx>(
     value: &'static str,
     #[prop(into)]
     #[chain(default)]
-    active_tab: Signal<'scope, String>,
+    active_tab: Rx<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<'scope, String>,
+    class: Rx<'scope, String>,
     #[prop(into)]
     #[chain(default)]
     on_select: Callback<'scope, &'static str>,
@@ -141,10 +141,10 @@ pub fn TabsContent<'scope, Ctx>(
     value: &'static str,
     #[prop(into)]
     #[chain(default)]
-    active_tab: Signal<'scope, String>,
+    active_tab: Rx<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<'scope, String>,
+    class: Rx<'scope, String>,
 ) -> impl View<'scope> {
     let cls = rx!(ctx; {
         let base = tw!("flex-1 outline-none");

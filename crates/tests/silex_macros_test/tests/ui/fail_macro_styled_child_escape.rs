@@ -12,7 +12,7 @@ styled! {
     pub ScopedPanel<'owner><div>(
         #[ctx] ctx: silex_core::SilexContext<'owner>,
         children: AnyView<'owner>,
-        color: silex_core::reactivity::Signal<'owner, Hex>,
+        color: silex_core::reactivity::Rx<'owner, Hex>,
     ) {
         color: $(color);
     }
@@ -21,7 +21,7 @@ styled! {
 fn main() {
     let mut runtime = Runtime::new();
     let view = runtime.with_transient(|owner| {
-        let (color, _) = owner.signal(silex_css::types::hex("#fff")).unwrap();
+        let color = owner.signal(silex_css::types::hex("#fff")).unwrap();
         let error_handler = owner.error_handler(|_| {}).unwrap();
         let ctx = silex_core::SilexContext::new(owner, error_handler.view());
         ScopedPanel(ctx, color, color)

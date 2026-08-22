@@ -803,13 +803,13 @@ mod tests {
         let mut runtime = Runtime::new();
         runtime
             .with_transient(|scope| {
-                let (url, _) = scope
+                let url = scope
                     .signal("https://example.test/{id}".to_string())
                     .unwrap();
-                let (header, _) = scope.signal("token".to_string()).unwrap();
-                let (query, _) = scope.signal("search".to_string()).unwrap();
-                let (path, _) = scope.signal("42".to_string()).unwrap();
-                let (body, _) = scope.signal("payload".to_string()).unwrap();
+                let header = scope.signal("token".to_string()).unwrap();
+                let query = scope.signal("search".to_string()).unwrap();
+                let path = scope.signal("42".to_string()).unwrap();
+                let body = scope.signal("payload".to_string()).unwrap();
                 let builder = HttpClient::post(scope, url, test_handler(scope))
                     .header("Authorization", header)
                     .query("q", query)
@@ -863,8 +863,8 @@ mod tests {
         let mut runtime = Runtime::new();
         runtime
             .with_transient(|scope| {
-                let (name, _) = scope.signal("first".to_string()).unwrap();
-                let (value, set_value) = scope.signal("one".to_string()).unwrap();
+                let name = scope.signal("first".to_string()).unwrap();
+                let value = scope.signal("one".to_string()).unwrap();
                 let builder = HttpClient::post(scope, "https://example.test", test_handler(scope))
                     .form_body([
                         (name.into_net_value(), value.into_net_value()),
@@ -881,7 +881,7 @@ mod tests {
                         ("second".to_string(), "two".to_string()),
                     ])
                 );
-                set_value.set("updated".to_string()).unwrap();
+                value.set("updated".to_string()).unwrap();
                 assert_eq!(
                     builder.resolve_spec().unwrap().body,
                     RequestBody::Form(vec![
@@ -940,7 +940,7 @@ mod tests {
         let mut runtime = Runtime::new();
         runtime
             .with_transient(|scope| {
-                let (body, _) = scope.signal("{\"value\":1}".to_string()).unwrap();
+                let body = scope.signal("{\"value\":1}".to_string()).unwrap();
                 let builder = HttpClient::post(scope, "https://example.test", test_handler(scope))
                     .json_body_value(body);
 

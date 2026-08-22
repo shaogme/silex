@@ -4,7 +4,7 @@ use silex_css::{CssPart, DynamicCss, IntoCssReactive};
 fn main() {
     let mut runtime = Runtime::new();
     let css = runtime.with_transient(|owner| {
-        let (value, _) = owner
+        let value = owner
             .signal(String::from("red"))
             .expect("signal should initialize");
         DynamicCss::new("child").with_rule(

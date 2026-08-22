@@ -99,7 +99,7 @@ let view = Element::new("div")
 
 - `&str` 保留借用，要求其 lifetime 不短于 view scope；
 - `&String` clone 为 `String`，避免保存临时引用；
-- `Signal`、`ReadSignal`、`RwSignal`、`Computed` 和 `StoredValue` 转换为
+- `Signal`、`ReadSignal`、`Computed` 和 `StoredValue` 转换为
   `Rx`；
 - tuple、array、`Option`、`Vec` 和 `Prop` 递归转换其成员；
 - `Attr`、`AttrOp`、`AttributeGroup` 可作为已构造的 DOM instruction。

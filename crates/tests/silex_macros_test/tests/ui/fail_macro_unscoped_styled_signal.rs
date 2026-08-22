@@ -7,7 +7,7 @@ use silex_macros::styled;
 styled! {
     pub UnscopedPanel<div>(
         children: silex_dom::prelude::AnyView,
-        color: silex_core::reactivity::Signal<String>,
+        color: silex_core::reactivity::Rx<'owner, String>,
     ) {
         color: $(color);
     }

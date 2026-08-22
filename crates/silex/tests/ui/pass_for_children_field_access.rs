@@ -12,7 +12,7 @@ fn main() {
         let error_handler = owner.error_handler(|_| {}).expect("handler");
         let row_handler = owner.error_handler(|_| {}).expect("row handler");
         let ctx = SilexContext::new(owner, error_handler.view());
-        let (keyed_entries, _) = owner
+        let keyed_entries = owner
             .signal(vec![Entry {
                 id: 1,
                 title: "Keyed entry".to_string(),
@@ -25,7 +25,7 @@ fn main() {
             .row_error_handler(row_handler)
             .build();
 
-        let (indexed_entries, _) = owner
+        let indexed_entries = owner
             .signal(vec![Entry {
                 id: 2,
                 title: "Indexed entry".to_string(),
@@ -35,7 +35,7 @@ fn main() {
             .children(|entry, index| div(format!("{index}: {}", entry.title)))
             .build();
 
-        let (stateful_entries, _) = owner
+        let stateful_entries = owner
             .signal(vec![Entry {
                 id: 3,
                 title: "Stateful entry".to_string(),

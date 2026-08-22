@@ -24,7 +24,7 @@ fn owned_scope_keeps_effects_until_explicit_dispose() {
     let root = runtime.owner().expect("runtime root creation");
     {
         let scope = root.access();
-        let (read, write) = scope.signal(1i32).expect("fallible reactive creation");
+        let read = scope.signal(1i32).expect("fallible reactive creation");
         let runs = Rc::new(Cell::new(0));
         let cleanups = Rc::new(Cell::new(0));
         let owner = scope.create_child().expect("fallible reactive creation");
@@ -35,10 +35,11 @@ fn owned_scope_keeps_effects_until_explicit_dispose() {
             .effect(
                 EffectPhase::Normal,
                 move || {
-                    read.with(|value| {
-                        assert!(*value >= 1);
-                    })
-                    .expect("test operation should succeed");
+                    read.read()
+                        .with(|value| {
+                            assert!(*value >= 1);
+                        })
+                        .expect("test operation should succeed");
                     runs_for_effect.set(runs_for_effect.get() + 1);
                     Ok(())
                 },
@@ -58,13 +59,13 @@ fn owned_scope_keeps_effects_until_explicit_dispose() {
             .expect("cleanup should register");
 
         assert_eq!(runs.get(), 1);
-        write.set(2).expect("signal update");
+        read.set(2).expect("signal update");
         assert_eq!(runs.get(), 2);
 
         owner.close().expect("owner disposal");
         assert!(!owner.is_active().expect("owner active state"));
         assert_eq!(cleanups.get(), 1);
-        write.set(3).expect("signal update");
+        read.set(3).expect("signal update");
         assert_eq!(runs.get(), 2);
         owner.close().expect("owner disposal");
         assert_eq!(cleanups.get(), 1);
@@ -193,7 +194,7 @@ fn lexical_owned_scope_supports_borrowed_callbacks_and_nested_dispose() {
     runtime
         .with_transient(|scope| {
             let text = String::from("borrowed");
-            let (read, write) = scope.signal(1i32).expect("fallible reactive creation");
+            let read = scope.signal(1i32).expect("fallible reactive creation");
             let owner = scope.create_child().expect("fallible reactive creation");
             let runs = Rc::new(Cell::new(0));
             let cleanups = Rc::new(Cell::new(0));
@@ -204,11 +205,12 @@ fn lexical_owned_scope_supports_borrowed_callbacks_and_nested_dispose() {
                 .effect(
                     EffectPhase::Normal,
                     move || {
-                        read.with(|value| {
-                            assert!(*value >= 1);
-                            assert_eq!(text.as_str(), "borrowed");
-                        })
-                        .expect("test operation should succeed");
+                        read.read()
+                            .with(|value| {
+                                assert!(*value >= 1);
+                                assert_eq!(text.as_str(), "borrowed");
+                            })
+                            .expect("test operation should succeed");
                         runs_for_effect.set(runs_for_effect.get() + 1);
                         Ok(())
                     },
@@ -228,7 +230,7 @@ fn lexical_owned_scope_supports_borrowed_callbacks_and_nested_dispose() {
                 )
                 .expect("cleanup should register");
 
-            write.set(2).expect("signal update");
+            read.set(2).expect("signal update");
             assert_eq!(runs.get(), 2);
             child.close().expect("child disposal");
             owner.close().expect("owner disposal");

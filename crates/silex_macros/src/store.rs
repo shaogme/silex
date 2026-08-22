@@ -62,7 +62,7 @@ pub fn store_impl(mut model: ItemStruct) -> Result<TokenStream> {
 
     let default_fields_args = type_arguments(&model_generics, &field_infos, |field| {
         let ty = &field.ty;
-        quote!(#core::RwSignal<'owner, #ty>)
+        quote!(#core::Signal<'owner, #ty>)
     });
     let alias_fields_args = type_arguments(&model_generics, &field_infos, |field| {
         let handle = &field.handle_ident;
@@ -77,7 +77,7 @@ pub fn store_impl(mut model: ItemStruct) -> Result<TokenStream> {
 
     let new_fields = field_infos.iter().map(|field| {
         let ident = &field.ident;
-        quote!(#ident: owner.rw_signal(source.#ident)?)
+        quote!(#ident: owner.signal(source.#ident)?)
     });
 
     let handle_arguments = field_infos
@@ -117,7 +117,7 @@ pub fn store_impl(mut model: ItemStruct) -> Result<TokenStream> {
             let ty = &field.ty;
             quote!(
                 #input: #core::StoreField<'owner, #ty>
-                    + Into<#core::RwSignal<'owner, #ty>>
+                    + Into<#core::Signal<'owner, #ty>>
             )
         })
         .collect::<Vec<_>>();
@@ -298,7 +298,7 @@ fn alias_generics(
             colon_token: None,
             bounds: syn::punctuated::Punctuated::new(),
             eq_token: Some(Default::default()),
-            default: Some(parse_quote!(#core::RwSignal<'owner, #ty>)),
+            default: Some(parse_quote!(#core::Signal<'owner, #ty>)),
         }));
     }
 

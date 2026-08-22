@@ -8,16 +8,16 @@ pub fn Input<'scope, Ctx>(
     #[ctx] ctx: Ctx,
     #[prop(into)]
     #[chain(default)]
-    value: Signal<'scope, String>,
+    value: Rx<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    placeholder: Signal<'scope, String>,
+    placeholder: Rx<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    r#type: Signal<'scope, String>,
+    r#type: Rx<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<'scope, String>,
+    class: Rx<'scope, String>,
     #[prop(into)]
     #[chain(default)]
     on_input: Callback<'scope, String>,

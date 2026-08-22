@@ -4,7 +4,7 @@ fn main() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|owner| {
-            let (value, _) = owner.signal(1i32).expect("signal should initialize");
+            let value = owner.signal(1i32).expect("signal should initialize");
             let error_handler = owner
                 .error_handler(|_: SilexError| {})
                 .expect("error handler should initialize");

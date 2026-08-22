@@ -687,10 +687,9 @@ mod tests {
                     EffectPhase::Normal,
                     move || {
                         let _ = parent_scope.with_transient(|child| {
-                            let (local, _) =
-                                child.signal(0i32).expect("fallible reactive creation");
-                            let local_state = local.handle.state();
-                            let local_raw = local.handle.raw();
+                            let local = child.signal(0i32).expect("fallible reactive creation");
+                            let local_state = local.read().handle.state();
+                            let local_raw = local.read().handle.raw();
 
                             assert_eq!(local.get(), Ok(0));
                             assert_eq!(
@@ -725,9 +724,9 @@ mod tests {
     fn disposing_source_removes_cross_scope_observer_dependency() {
         let mut runtime = Runtime::new();
         transient(&mut runtime, |scope| {
-            let (source, _) = scope.signal(0i32).expect("fallible reactive creation");
-            let source_state = source.handle.state();
-            let source_raw = source.handle.raw();
+            let source = scope.signal(0i32).expect("fallible reactive creation");
+            let source_state = source.read().handle.state();
+            let source_raw = source.read().handle.raw();
 
             let _ = scope.with_transient(|child| {
                 let child_handler = handler(child);
@@ -779,9 +778,9 @@ mod tests {
     fn duplicate_tracking_keeps_bidirectional_indexset_adjacency_unique() {
         let mut runtime = Runtime::new();
         transient(&mut runtime, |scope| {
-            let (source, _) = scope.signal(0i32).expect("fallible reactive creation");
-            let source_state = source.handle.state();
-            let source_raw = source.handle.raw();
+            let source = scope.signal(0i32).expect("fallible reactive creation");
+            let source_state = source.read().handle.state();
+            let source_raw = source.read().handle.raw();
             let effect = scope
                 .effect(
                     EffectPhase::Normal,
@@ -833,7 +832,7 @@ mod tests {
             let mut runtime = Runtime::new();
             let observed = Rc::new(std::cell::RefCell::new(Vec::new()));
             transient(&mut runtime, |scope| {
-                let (source, set_source) = scope.signal(0_i32).expect("source creation");
+                let source = scope.signal(0_i32).expect("source creation");
                 let first_observed = observed.clone();
                 let second_observed = observed.clone();
                 let first = move || {
@@ -862,7 +861,7 @@ mod tests {
                         .expect("second effect should initialize");
                 }
                 observed.borrow_mut().clear();
-                set_source.set(1).expect("source update");
+                source.set(1).expect("source update");
             });
             let expected = if reverse {
                 vec!["second", "first"]
@@ -880,12 +879,12 @@ mod tests {
     fn propagation_scratch_is_reused_and_reset_after_each_notification() {
         let mut runtime = Runtime::new();
         transient(&mut runtime, |scope| {
-            let (source, _) = scope.signal(0i32).expect("source creation");
-            let state = source.handle.state();
+            let source = scope.signal(0i32).expect("source creation");
+            let state = source.read().handle.state();
             state
                 .try_borrow_mut()
                 .expect("state write")
-                .queue_dependents(source.handle.raw())
+                .queue_dependents(source.read().handle.raw())
                 .expect("propagation should succeed");
             let state_ref = state.try_borrow().expect("state read");
             assert_eq!(state_ref.propagation_scratch_pool.len(), 1);
@@ -904,9 +903,9 @@ mod tests {
     fn disposal_scratch_is_reused_and_reset_after_each_batch() {
         let mut runtime = Runtime::new();
         transient(&mut runtime, |scope| {
-            let (source, _) = scope.signal(0i32).expect("source creation");
-            let state = source.handle.state();
-            let raw = source.handle.raw();
+            let source = scope.signal(0i32).expect("source creation");
+            let state = source.read().handle.state();
+            let raw = source.read().handle.raw();
             dispose_nodes(&state, vec![raw]).expect("disposal should succeed");
 
             let state_ref = state.try_borrow().expect("state read");
@@ -928,21 +927,23 @@ mod tests {
     fn scratch_statistics_capture_pool_reuse_and_high_water() {
         let mut runtime = Runtime::new();
         transient(&mut runtime, |scope| {
-            let (source, _) = scope.signal(0i32).expect("source creation");
-            let state = source.handle.state();
+            let source = scope.signal(0i32).expect("source creation");
+            let state = source.read().handle.state();
             state
                 .try_borrow_mut()
                 .expect("state write")
-                .queue_dependents(source.handle.raw())
+                .queue_dependents(source.read().handle.raw())
                 .expect("first propagation should succeed");
             state
                 .try_borrow_mut()
                 .expect("state write")
-                .queue_dependents(source.handle.raw())
+                .queue_dependents(source.read().handle.raw())
                 .expect("second propagation should succeed");
 
-            let (disposable, _) = scope.signal(1i32).expect("disposable creation");
-            dispose_nodes(&state, vec![disposable.handle.raw()]).expect("disposal should succeed");
+            let disposable = scope.signal(1i32).expect("disposable creation");
+            let _ = disposable;
+            dispose_nodes(&state, vec![disposable.read().handle.raw()])
+                .expect("disposal should succeed");
 
             let snapshot = state
                 .try_borrow()
@@ -964,12 +965,13 @@ mod tests {
     fn clear_dependencies_conflict_preserves_both_sides_of_the_edge() {
         let mut runtime = Runtime::new();
         transient(&mut runtime, |scope| {
-            let (source, _) = scope.signal(0i32).expect("fallible reactive creation");
-            let source_state = source.handle.state();
-            let source_raw = source.handle.raw();
+            let source = scope.signal(0i32).expect("fallible reactive creation");
+            let source_state = source.read().handle.state();
+            let source_raw = source.read().handle.raw();
 
             let _ = scope.with_transient(|child| {
-                let (local, _) = child.signal(0i32).expect("fallible reactive creation");
+                let local = child.signal(0i32).expect("fallible reactive creation");
+                let _ = local;
                 let child_handler = handler(child);
                 let effect = child
                     .effect(
@@ -981,7 +983,7 @@ mod tests {
                         child_handler.view(),
                     )
                     .expect("effect should initialize");
-                let child_state = local.handle.state();
+                let child_state = local.read().handle.state();
                 let effect_raw = effect.handle.raw();
                 let (child_owner_id, source_owner_id) = {
                     let child_state_ref = child_state.try_borrow().expect("state read");
@@ -1059,7 +1061,7 @@ mod tests {
             storage: &observer_storage,
             marker: PhantomData,
         };
-        let (source, _) = source_scope
+        let source = source_scope
             .signal(0_i32)
             .expect("fallible reactive creation");
         let effect = observer_scope
@@ -1074,7 +1076,7 @@ mod tests {
             .expect("effect should initialize");
         let source_state = source_storage.owner_token().state();
         let observer_state = observer_storage.owner_token().state();
-        let source_raw = source.handle.raw();
+        let source_raw = source.read().handle.raw();
         let effect_raw = effect.handle.raw();
         let observer_target = TargetNode {
             owner_id: observer_state.try_borrow().expect("state read").owner_id,

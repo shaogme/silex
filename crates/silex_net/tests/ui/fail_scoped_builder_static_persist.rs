@@ -6,7 +6,7 @@ fn require_static<T: 'static>(_: T) {}
 fn main() {
     let mut runtime = Runtime::new();
     runtime.with_transient(|scope| {
-        let (id, _) = scope.signal(1_i32).unwrap();
+        let id = scope.signal(1_i32).unwrap();
         let builder = HttpClient::get(
             scope,
             "https://example.test",

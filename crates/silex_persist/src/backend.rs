@@ -784,19 +784,19 @@ mod tests {
         let base_path = owner
             .stored("/".to_string())
             .expect("base path should be stored");
-        let (path, set_path) = owner
+        let path_signal = owner
             .signal("/".to_string())
             .expect("path signal should be created");
-        let (search, set_search) = owner
+        let search_signal = owner
             .signal(String::new())
             .expect("search signal should be created");
         let query_map = map.into_rx();
         let navigator = Navigator {
             base_path,
-            path,
-            search,
-            set_path,
-            set_search,
+            path: path_signal.read_signal(),
+            search: search_signal.read_signal(),
+            set_path: path_signal.write_signal(),
+            set_search: search_signal.write_signal(),
         };
         QueryBackend {
             navigator: Some(navigator),
@@ -816,7 +816,7 @@ mod tests {
         runtime
             .with_transient(|owner| {
                 let map = owner
-                    .rw_signal(HashMap::<String, String>::new())
+                    .signal(HashMap::<String, String>::new())
                     .expect("query map signal should be created");
                 let backend = test_query_backend(owner, map.read_signal());
                 let events = Rc::new(RefCell::new(Vec::<BackendEvent>::new()));
@@ -904,7 +904,7 @@ mod tests {
         let owner = first_root.access();
         let target_owner = second_root.access();
         let map = owner
-            .rw_signal(HashMap::<String, String>::new())
+            .signal(HashMap::<String, String>::new())
             .expect("query map signal should be created");
         let backend = test_query_backend(owner, map.read_signal());
         let result = backend

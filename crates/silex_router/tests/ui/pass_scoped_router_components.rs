@@ -11,13 +11,13 @@ router! {
 }
 
 fn compile_owner_api<'owner>(owner: OwnerAccess<'owner>) {
-    let (text, _) = owner
+    let text = owner
         .signal(String::from("scoped"))
         .expect("text signal should be created");
-    let (path, set_path) = owner
+    let path = owner
         .signal(String::from("/"))
         .expect("path signal should be created");
-    let (search, set_search) = owner
+    let search = owner
         .signal(String::new())
         .expect("search signal should be created");
     let error_handler = owner
@@ -28,10 +28,10 @@ fn compile_owner_api<'owner>(owner: OwnerAccess<'owner>) {
         silex,
         RouterContextProps {
             base_path: String::from("/app"),
-            path,
-            search,
-            set_path,
-            set_search,
+            path: path.read_signal(),
+            search: search.read_signal(),
+            set_path: path.write_signal(),
+            set_search: search.write_signal(),
         },
     )
     .expect("router ctx should be created");

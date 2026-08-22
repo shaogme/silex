@@ -21,7 +21,7 @@ global! {
 global! {
     pub MixedGlobal<'owner>(
         error_handler: silex_core::ErrorReporter<'owner>,
-        color: silex_core::reactivity::Signal<'owner, Hex>,
+        color: silex_core::reactivity::Rx<'owner, Hex>,
     ) {
         body {
             color: $(static StaticTheme::PRIMARY);
@@ -43,7 +43,7 @@ styled! {
     pub MixedStyled<'owner><div>(
         #[ctx] ctx: silex_core::SilexContext<'owner>,
         children: silex_dom::view::AnyView<'owner>,
-        color: silex_core::reactivity::Signal<'owner, Hex>,
+        color: silex_core::reactivity::Rx<'owner, Hex>,
     ) {
         color: $(static StaticTheme::PRIMARY);
         border-color: $(color);

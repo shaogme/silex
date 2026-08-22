@@ -31,7 +31,7 @@ fn initial_callback_error_returns_without_calling_the_handler() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0_i32).expect("fallible reactive creation");
+            let source = scope.signal(0_i32).expect("fallible reactive creation");
             let cleanup_runs_in_callback = cleanup_runs.clone();
             let callback_runs_in_callback = callback_runs.clone();
             let cleanup_token = collecting_handler(scope, errors.clone());
@@ -63,7 +63,7 @@ fn initial_callback_error_returns_without_calling_the_handler() {
             assert!(errors.borrow().is_empty());
             assert_eq!(cleanup_runs.get(), 1);
 
-            set_source.set(1).expect("test operation should succeed");
+            source.set(1).expect("test operation should succeed");
             assert_eq!(callback_runs.get(), 1);
         })
         .expect("test operation should succeed");
@@ -78,10 +78,10 @@ fn initial_failure_does_not_reenter_from_rollback_cleanup() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0_i32).expect("fallible reactive creation");
+            let source = scope.signal(0_i32).expect("fallible reactive creation");
             let callback_runs_in_callback = callback_runs.clone();
             let register_cleanup_in_callback = register_cleanup.clone();
-            let setter_in_cleanup = set_source;
+            let setter_in_cleanup = source;
             let cleanup_token = collecting_handler(scope, errors.clone());
             let cleanup_handler = cleanup_token.view();
             let result = scope.effect(
@@ -125,7 +125,7 @@ fn nested_node_cleanup_errors_wait_for_outer_run_recovery() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0_i32).expect("fallible reactive creation");
+            let source = scope.signal(0_i32).expect("fallible reactive creation");
             let registered_cleanup_runs_in_handler = registered_cleanup_runs.clone();
             let scope_in_handler = scope;
             let recovered_cleanup_token = scope
@@ -186,8 +186,8 @@ fn nested_node_cleanup_errors_wait_for_outer_run_recovery() {
                 )
                 .expect("outer effect should initialize");
 
-            set_source.set(1).expect("test operation should succeed");
-            set_source.set(2).expect("test operation should succeed");
+            source.set(1).expect("test operation should succeed");
+            source.set(2).expect("test operation should succeed");
             assert_eq!(registered_cleanup_runs.get(), 0);
         })
         .expect("test operation should succeed");
@@ -204,7 +204,7 @@ fn deferred_callback_error_reaches_its_handler_and_can_retry() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0_i32).expect("fallible reactive creation");
+            let source = scope.signal(0_i32).expect("fallible reactive creation");
             let callback_runs_in_callback = callback_runs.clone();
             let should_fail_in_callback = should_fail.clone();
             let effect = scope
@@ -224,12 +224,12 @@ fn deferred_callback_error_reaches_its_handler_and_can_retry() {
                 .expect("effect should initialize");
 
             should_fail.set(true);
-            set_source.set(1).expect("test operation should succeed");
+            source.set(1).expect("test operation should succeed");
             assert_eq!(errors.borrow().as_slice(), &["deferred"]);
             assert_eq!(callback_runs.get(), 2);
 
             should_fail.set(false);
-            set_source.set(2).expect("test operation should succeed");
+            source.set(2).expect("test operation should succeed");
             assert_eq!(errors.borrow().as_slice(), &["deferred"]);
             assert_eq!(callback_runs.get(), 3);
             assert_eq!(effect.stop(), Ok(true));
@@ -246,9 +246,9 @@ fn failed_dynamic_run_rolls_back_new_dependency_edges() {
 
     runtime
         .with_transient(|scope| {
-            let (switch, set_switch) = scope.signal(false).expect("fallible reactive creation");
-            let (left, set_left) = scope.signal(0_i32).expect("fallible reactive creation");
-            let (right, set_right) = scope.signal(0_i32).expect("fallible reactive creation");
+            let switch = scope.signal(false).expect("fallible reactive creation");
+            let left = scope.signal(0_i32).expect("fallible reactive creation");
+            let right = scope.signal(0_i32).expect("fallible reactive creation");
             let runs_in_callback = runs.clone();
             let fail_next_in_callback = fail_next.clone();
             scope
@@ -273,13 +273,13 @@ fn failed_dynamic_run_rolls_back_new_dependency_edges() {
                 .expect("effect should initialize");
 
             fail_next.set(true);
-            set_switch.set(true).expect("test operation should succeed");
+            switch.set(true).expect("test operation should succeed");
             assert_eq!(errors.borrow().as_slice(), &["dynamic"]);
             assert_eq!(runs.get(), 2);
 
-            set_left.set(1).expect("test operation should succeed");
+            left.set(1).expect("test operation should succeed");
             assert_eq!(runs.get(), 3);
-            set_right.set(1).expect("test operation should succeed");
+            right.set(1).expect("test operation should succeed");
             assert_eq!(runs.get(), 4);
         })
         .expect("test operation should succeed");
@@ -294,7 +294,7 @@ fn previous_value_is_kept_when_a_run_returns_an_error() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0_i32).expect("fallible reactive creation");
+            let source = scope.signal(0_i32).expect("fallible reactive creation");
             let previous_values_in_callback = previous_values.clone();
             let fail_next_in_callback = fail_next.clone();
             scope
@@ -316,9 +316,9 @@ fn previous_value_is_kept_when_a_run_returns_an_error() {
                 .expect("previous effect should initialize");
 
             fail_next.set(true);
-            set_source.set(1).expect("test operation should succeed");
+            source.set(1).expect("test operation should succeed");
             assert_eq!(errors.borrow().as_slice(), &["previous"]);
-            set_source.set(2).expect("test operation should succeed");
+            source.set(2).expect("test operation should succeed");
             assert_eq!(
                 previous_values.borrow().as_slice(),
                 &[None, Some(1), Some(1)]
@@ -336,7 +336,7 @@ fn watch_error_keeps_the_previous_snapshot_for_retry() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0_i32).expect("fallible reactive creation");
+            let source = scope.signal(0_i32).expect("fallible reactive creation");
             let calls_in_callback = calls.clone();
             let fail_next_in_callback = fail_next.clone();
             scope
@@ -356,11 +356,11 @@ fn watch_error_keeps_the_previous_snapshot_for_retry() {
                 .expect("watch should initialize");
 
             fail_next.set(true);
-            set_source.set(1).expect("test operation should succeed");
+            source.set(1).expect("test operation should succeed");
             assert_eq!(errors.borrow().as_slice(), &["watch"]);
             assert!(calls.borrow().is_empty());
 
-            set_source.set(2).expect("test operation should succeed");
+            source.set(2).expect("test operation should succeed");
             assert_eq!(calls.borrow().as_slice(), &[(2, Some(0))]);
         })
         .expect("test operation should succeed");

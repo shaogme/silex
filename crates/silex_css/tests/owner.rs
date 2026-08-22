@@ -152,7 +152,7 @@ fn style_updates_inline_values_and_cleans_on_scope_dispose() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|owner| {
-            let (value, set_value) = owner
+            let value = owner
                 .signal(String::from("red"))
                 .expect("signal should initialize");
             let (owner_token, error_handler) = test_owner(owner);
@@ -171,7 +171,7 @@ fn style_updates_inline_values_and_cleans_on_scope_dispose() {
                     .contains("red")
             );
 
-            set_value
+            value
                 .set(String::from("blue"))
                 .expect("signal should update");
             assert!(
@@ -204,7 +204,7 @@ fn theme_updates_variables_and_cleans_on_scope_dispose() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|owner| {
-            let (theme, set_theme) = owner
+            let theme = owner
                 .signal(TestTheme {
                     color: String::from("red"),
                 })
@@ -223,7 +223,7 @@ fn theme_updates_variables_and_cleans_on_scope_dispose() {
                     .unwrap_or_default()
                     .contains("--theme-color: red")
             );
-            set_theme
+            theme
                 .set(TestTheme {
                     color: String::from("blue"),
                 })
@@ -258,7 +258,7 @@ fn svg_style_updates_inline_values_and_cleans_on_scope_dispose() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|owner| {
-            let (value, set_value) = owner
+            let value = owner
                 .signal(String::from("red"))
                 .expect("signal should initialize");
             let (owner_token, error_handler) = test_owner(owner);
@@ -275,7 +275,7 @@ fn svg_style_updates_inline_values_and_cleans_on_scope_dispose() {
                     .contains("red")
             );
 
-            set_value
+            value
                 .set(String::from("blue"))
                 .expect("signal should update");
             assert!(
@@ -307,7 +307,7 @@ fn dynamic_css_replaces_rule_class_and_cleans_on_scope_dispose() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|owner| {
-            let (value, set_value) = owner
+            let value = owner
                 .signal(String::from("red"))
                 .expect("signal should initialize");
             let (owner_token, error_handler) = test_owner(owner);
@@ -332,7 +332,7 @@ fn dynamic_css_replaces_rule_class_and_cleans_on_scope_dispose() {
             assert!(first_class.contains("slx-owner-test"));
             assert!(first_class.contains("-d"));
 
-            set_value
+            value
                 .set(String::from("blue"))
                 .expect("signal should update");
             let second_class = element.class_name();
@@ -356,7 +356,7 @@ async fn pending_dynamic_sheet_operations_do_not_survive_owner_dispose() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|owner| {
-            let (value, _) = owner
+            let value = owner
                 .signal(String::from("red"))
                 .expect("signal should initialize");
             let (owner_token, error_handler) = test_owner(owner);
@@ -448,7 +448,7 @@ fn theme_patch_removes_variables_that_disappear_from_the_next_round() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|owner| {
-            let (patch, set_patch) = owner
+            let patch = owner
                 .signal(TestPatch { alternate: false })
                 .expect("patch signal should initialize");
             let (owner_token, error_handler) = test_owner(owner);
@@ -461,7 +461,7 @@ fn theme_patch_removes_variables_that_disappear_from_the_next_round() {
             let initial = element.get_attribute("style").unwrap_or_default();
             assert!(initial.contains("--patch-old"), "{initial}");
 
-            set_patch
+            patch
                 .set(TestPatch { alternate: true })
                 .expect("patch signal should update");
             let updated = element.get_attribute("style").unwrap_or_default();
@@ -495,7 +495,7 @@ fn foreign_runtime_css_read_is_rejected_during_custom_callback() {
     let callback_runs = Rc::new(Cell::new(0));
 
     foreign_root.with_access(|foreign_owner| {
-        let (foreign, _) = foreign_owner
+        let foreign = foreign_owner
             .signal(1_i32)
             .expect("foreign signal should initialize");
         local_runtime

@@ -25,7 +25,7 @@ fn ordinary_reads_track_across_child_scopes() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0_i32).expect("source creation");
+            let source = scope.signal(0_i32).expect("source creation");
             let runs_in_effect = runs.clone();
             let child = scope.create_child().expect("owned scope creation");
             child
@@ -42,7 +42,7 @@ fn ordinary_reads_track_across_child_scopes() {
                 .expect("effect creation");
 
             assert_eq!(runs.get(), 1);
-            set_source.set(1).expect("source update");
+            source.set(1).expect("source update");
             assert_eq!(runs.get(), 2);
             child.close().expect("child scope disposal");
         })
@@ -63,7 +63,8 @@ fn child_transient_reads_do_not_escape_the_child_callback() {
                     move || {
                         let child_result = scope
                             .with_transient(|child| {
-                                let (local, _) = child.signal(1_i32)?;
+                                let local = child.signal(1_i32)?;
+                                let _ = local;
                                 local.get()?;
                                 Ok::<(), ReactiveError>(())
                             })
@@ -89,7 +90,7 @@ fn foreign_tracked_read_fails_before_dirty_source_evaluation() {
     let target_root = target_runtime.owner().expect("target root");
 
     foreign_root.with_access(|foreign_scope| {
-        let (source, set_source) = foreign_scope.signal(1_i32).expect("source creation");
+        let source = foreign_scope.signal(1_i32).expect("source creation");
         let runs = Rc::new(Cell::new(0));
         let runs_in_derived = runs.clone();
         let derived = foreign_scope
@@ -103,7 +104,7 @@ fn foreign_tracked_read_fails_before_dirty_source_evaluation() {
             .expect("derived creation");
         assert_eq!(derived.get().expect("initial derived value"), 2);
         assert_eq!(runs.get(), 1);
-        set_source.set(2).expect("foreign source update");
+        source.set(2).expect("foreign source update");
 
         let result = target_root.with_access(|target_scope| {
             target_scope
@@ -138,8 +139,7 @@ fn foreign_untracked_read_is_allowed_and_does_not_subscribe() {
     let mut target_runtime = Runtime::new();
     let target_root = target_runtime.owner().expect("target root");
     foreign_root.with_access(|foreign_scope| {
-        let (foreign_source, set_foreign_source) =
-            foreign_scope.signal(1_i32).expect("foreign source");
+        let foreign_source = foreign_scope.signal(1_i32).expect("foreign source");
         target_root.with_access(|scope| {
             let runs_in_effect = runs.clone();
             scope
@@ -156,7 +156,7 @@ fn foreign_untracked_read_is_allowed_and_does_not_subscribe() {
         });
 
         assert_eq!(runs.get(), 1);
-        set_foreign_source.set(2).expect("foreign source update");
+        foreign_source.set(2).expect("foreign source update");
         assert_eq!(runs.get(), 1);
     });
     target_root.close().expect("target root disposal");

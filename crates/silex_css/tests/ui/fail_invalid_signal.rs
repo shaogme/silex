@@ -4,7 +4,7 @@ use silex_css::prelude::*;
 fn main() {
     let mut runtime = Runtime::new();
     runtime.with_transient(|owner| {
-        let (color_sig, _) = owner
+        let color_sig = owner
             .signal(hex("#fff"))
             .expect("signal should initialize");
         // 错误：border_top_width 的 setter 期望接收维度相关的信号（Px/Rem等），

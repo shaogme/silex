@@ -1,13 +1,18 @@
-error[E0599]: no associated function or constant named `new` found for struct `RwSignal<'owner, T>` in the current scope
- --> tests/ui/fail_old_i18n_signal_constructors.rs:4:23
+error[E0599]: no associated function or constant named `new` found for struct `Signal<'owner, T>` in the current scope
+ --> tests/ui/fail_old_i18n_signal_constructors.rs:4:21
   |
-4 |     let _ = RwSignal::new(1_u32);
-  |                       ^^^ associated function or constant not found in `RwSignal<'_, _>`
+4 |     let _ = Signal::new(1_u32);
+  |                     ^^^ associated function or constant not found in `Signal<'_, _>`
   |
+note: if you're trying to build a new `Signal<'_, _>`, consider using `Signal::<'owner, T>::from_pair` which returns `Result<Signal<'_, _>, silex_core::error::SilexError>`
+ --> $WORKSPACE/crates/silex_core/src/reactivity/signal.rs
+  |
+  |     pub fn from_pair(pair: (ReadSignal<'owner, T>, WriteSignal<'owner, T>)) -> SilexResult<Self> {
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 help: there is a method `ne` with a similar name
   |
-4 -     let _ = RwSignal::new(1_u32);
-4 +     let _ = RwSignal::ne(1_u32);
+4 -     let _ = Signal::new(1_u32);
+4 +     let _ = Signal::ne(1_u32);
   |
 
 error[E0599]: no associated function or constant named `new` found for struct `EffectHandle<'scope>` in the current scope

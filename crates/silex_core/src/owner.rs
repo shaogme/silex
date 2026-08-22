@@ -4,7 +4,7 @@ use crate::{
     Callback, CompletionOnce, CompletionSender, ErrorHandlerInput, ErrorHandlerToken, NodeRef, Rx,
     SilexError, SilexResult, TaskHandle,
     reactivity::{
-        Computed, EffectHandle, EffectPhase, ReactiveSource, ReadSignal, RwSignal, StoredValue,
+        Computed, EffectHandle, EffectPhase, ReactiveSource, ReadSignal, Signal, StoredValue,
         WatchOptions, WriteSignal,
     },
     task,
@@ -212,20 +212,13 @@ impl<'owner> OwnerAccess<'owner> {
         }
     }
 
-    pub fn signal<T: 'owner>(
-        &self,
-        value: T,
-    ) -> SilexResult<(ReadSignal<'owner, T>, WriteSignal<'owner, T>)> {
-        let (read, write) = self.inner.signal(value).map_err(SilexError::fatal)?;
-        Ok((
+    pub fn signal<T: 'owner>(&self, value: T) -> SilexResult<Signal<'owner, T>> {
+        let signal = self.inner.signal(value).map_err(SilexError::fatal)?;
+        let (read, write) = signal.into_pair();
+        Signal::from_pair((
             ReadSignal::from_inner(read, *self),
             WriteSignal::from_inner(write, *self),
         ))
-    }
-
-    pub fn rw_signal<T: 'owner>(&self, value: T) -> SilexResult<RwSignal<'owner, T>> {
-        let (read, write) = self.signal(value)?;
-        Ok(RwSignal::from_parts(read, write))
     }
 
     pub fn computed<T, F, H>(&self, f: F, error_handler: H) -> SilexResult<Computed<'owner, T>>

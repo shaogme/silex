@@ -2,9 +2,9 @@ use silex_core::RxGet;
 use silex_net::HttpClient;
 
 fn build<'scope>(scope: silex_core::OwnerAccess<'scope>) {
-        let (post_id, _) = scope.signal(1_i32).unwrap();
-        let query = scope.rw_signal(String::new()).unwrap();
-        let token = scope.rw_signal("token".to_string()).unwrap();
+        let post_id = scope.signal(1_i32).unwrap();
+        let query = scope.signal(String::new()).unwrap();
+        let token = scope.signal("token".to_string()).unwrap();
         let resource = HttpClient::get(
             scope,
             "https://example.test/posts/{id}",

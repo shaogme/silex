@@ -13,7 +13,7 @@ fn foreign_request_source_is_rejected_before_resource_creation() {
     let target_root = target_runtime.owner().expect("target runtime setup");
     let source_scope = source_root.access();
     let target_scope = target_root.access();
-    let (source, _) = source_scope.signal(1_i32).unwrap();
+    let source = source_scope.signal(1_i32).unwrap();
     let builder = HttpClient::get(
         target_scope,
         "https://example.test",
@@ -34,7 +34,7 @@ fn foreign_builder_into_resource_is_transactional_before_target_creation() {
 
     let source_scope = source_root.access();
     let target_scope = target_root.access();
-    let (source, _) = source_scope.signal(1_i32).unwrap();
+    let source = source_scope.signal(1_i32).unwrap();
     let handler = test_handler(target_scope);
     let before = target_scope.runtime_snapshot().expect("runtime snapshot");
     let result = HttpClient::get(target_scope, source, &handler).into_resource(None);

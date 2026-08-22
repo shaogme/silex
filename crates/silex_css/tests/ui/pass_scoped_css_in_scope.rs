@@ -5,7 +5,7 @@ use silex_css::prelude::Style;
 fn main() {
     let mut runtime = Runtime::new();
     runtime.with_transient(|owner| {
-        let (value, _) = owner
+        let value = owner
             .signal(String::from("red"))
             .expect("signal should initialize");
         let error_handler = owner

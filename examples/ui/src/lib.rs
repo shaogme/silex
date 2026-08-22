@@ -75,9 +75,9 @@ fn ButtonShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope>
 
 #[component]
 fn FormControlsShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
-    let (text_val, set_text_val) = owner.signal("Hello Silex UI!".to_string())?;
-    let (checked_val, set_checked_val) = owner.signal(true)?;
-    let (switch_val, set_switch_val) = owner.signal(true)?;
+    let text_val = owner.signal("Hello Silex UI!".to_string())?;
+    let checked_val = owner.signal(true)?;
+    let switch_val = owner.signal(true)?;
 
     Ok(Card(ctx, chain!(
         CardHeader(ctx, chain!(
@@ -92,7 +92,7 @@ fn FormControlsShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'
                     .value(text_val)?
                     .placeholder("Type something...")?
                     .on_input(owner.callback(move |v| {
-                        set_text_val.set(v)
+                        text_val.set(v)
                     })?).build(),
                 p(rx!(ctx; format!("Live Bound Value: '{}'", $text_val))?)
                     .class(tw!("text-xs text-slate-500 mt-1.5 font-mono"))
@@ -113,7 +113,7 @@ fn FormControlsShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'
                 Checkbox(ctx)
                     .checked(checked_val)?
                     .on_change(owner.callback(move |v| {
-                        set_checked_val.set(v)
+                        checked_val.set(v)
                     })?).build(),
                     span("Enable Notifications").class(tw!("text-sm font-medium text-slate-900 dark:text-slate-100"))
                 )).class(tw!("flex items-center gap-2")),
@@ -122,7 +122,7 @@ fn FormControlsShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'
                 Switch(ctx)
                     .checked(switch_val)?
                     .on_change(owner.callback(move |v| {
-                        set_switch_val.set(v)
+                        switch_val.set(v)
                     })?).build(),
                     span("Airplane Mode").class(tw!("text-sm font-medium text-slate-900 dark:text-slate-100"))
                 )).class(tw!("flex items-center gap-2"))
@@ -133,8 +133,8 @@ fn FormControlsShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'
 
 #[component]
 fn TabsAndDialogShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
-    let (active_tab, set_active_tab) = owner.signal("account".to_string())?;
-    let (dialog_open, set_dialog_open) = owner.signal(false)?;
+    let active_tab = owner.signal("account".to_string())?;
+    let dialog_open = owner.signal(false)?;
 
     Ok(Card(ctx, chain!(
         CardHeader(ctx, chain!(
@@ -149,21 +149,21 @@ fn TabsAndDialogShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<
                         TabsTrigger(ctx, "Account", "account")
                             .active_tab(active_tab)?
                             .on_select(owner.callback(move |tab: &'static str| {
-                                set_active_tab.set(tab.to_string())?;
+                                active_tab.set(tab.to_string())?;
                                 Ok(())
                             })?)
                             .build(),
                         TabsTrigger(ctx, "Password", "password")
                             .active_tab(active_tab)?
                             .on_select(owner.callback(move |tab: &'static str| {
-                                set_active_tab.set(tab.to_string())?;
+                                active_tab.set(tab.to_string())?;
                                 Ok(())
                             })?)
                             .build(),
                         TabsTrigger(ctx, "Settings", "settings")
                             .active_tab(active_tab)?
                             .on_select(owner.callback(move |tab: &'static str| {
-                                set_active_tab.set(tab.to_string())?;
+                                active_tab.set(tab.to_string())?;
                                 Ok(())
                             })?)
                             .build()
@@ -216,7 +216,7 @@ fn TabsAndDialogShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<
                 Button(ctx, "Open Modal Dialog")
                     .variant("default")?
                     .on_click(move |_| {
-                        set_dialog_open.set(true)?;
+                        dialog_open.set(true)?;
                         Ok(())
                     })
                     .build(),
@@ -241,14 +241,14 @@ fn TabsAndDialogShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<
                         Button(ctx, "Cancel")
                             .variant("outline")?
                             .on_click(move |_| {
-                                set_dialog_open.set(false)?;
+                                dialog_open.set(false)?;
                                 Ok(())
                             })
                             .build(),
                         Button(ctx, "Save Changes")
                             .variant("default")?
                             .on_click(move |_| {
-                                set_dialog_open.set(false)?;
+                                dialog_open.set(false)?;
                                 Ok(())
                             })
                             .build()
@@ -257,7 +257,7 @@ fn TabsAndDialogShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<
                 ))
                 .open(dialog_open)?
                 .on_close(owner.callback(move |_| {
-                    set_dialog_open.set(false)?;
+                    dialog_open.set(false)?;
                     Ok(())
                 })?)
                 .build()
@@ -271,7 +271,7 @@ fn TabsAndDialogShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<
 
 #[component]
 fn FeedbackAndDataShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
-    let (progress_val, set_progress_val) = owner.signal(45u32)?;
+    let progress_val = owner.signal(45u32)?;
 
     Ok(Card(ctx, chain!(
         CardHeader(ctx, chain!(
@@ -294,11 +294,11 @@ fn FeedbackAndDataShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl Vie
                 Progress(ctx).value(progress_val)?.class(tw!("mb-3"))?.build(),
                 div(chain!(
                     Button(ctx, "-10%").variant("outline")?.size("xs")?.on_click(move |_| {
-                        set_progress_val.update(|v| *v = v.saturating_sub(10))?;
+                        progress_val.update(|v| *v = v.saturating_sub(10))?;
                         Ok(())
                     }).build(),
                     Button(ctx, "+10%").variant("outline")?.size("xs")?.on_click(move |_| {
-                        set_progress_val.update(|v| *v = (*v + 10).min(100))?;
+                        progress_val.update(|v| *v = (*v + 10).min(100))?;
                         Ok(())
                     }).build()
                 )).class(tw!("flex justify-end gap-2"))
@@ -420,11 +420,11 @@ fn build_popover_content<'scope>(
 
 #[component]
 fn NewComponentsShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
-    let (slider_val, set_slider_val) = owner.signal(65.0f64)?;
-    let (toggle_pressed, set_toggle_pressed) = owner.signal(true)?;
-    let (radio_val, set_radio_val) = owner.signal("option-1".to_string())?;
-    let (popover_open, set_popover_open) = owner.signal(false)?;
-    let (accordion_open, set_accordion_open) = owner.signal(true)?;
+    let slider_val = owner.signal(65.0f64)?;
+    let toggle_pressed = owner.signal(true)?;
+    let radio_val = owner.signal("option-1".to_string())?;
+    let popover_open = owner.signal(false)?;
+    let accordion_open = owner.signal(true)?;
 
     Ok(Card(ctx, chain!(
         CardHeader(ctx, chain!(
@@ -444,7 +444,7 @@ fn NewComponentsShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<
                         .min(0.0)?
                         .max(100.0)?
                         .on_change(owner.callback(move |v| {
-                            set_slider_val.set(v)?;
+                            slider_val.set(v)?;
                             Ok(())
                         })?)
                         .build()
@@ -456,7 +456,7 @@ fn NewComponentsShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<
                         .variant("outline")?
                         .pressed(toggle_pressed)?
                         .on_change(owner.callback(move |p| {
-                            set_toggle_pressed.set(p)?;
+                            toggle_pressed.set(p)?;
                             Ok(())
                         })?)
                         .build()
@@ -478,7 +478,7 @@ fn NewComponentsShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<
                             RadioGroupItem(ctx, "option-1")
                                 .selected_value(radio_val)?
                                 .on_select(owner.callback(move |v: &'static str| {
-                                    set_radio_val.set(v.to_string())?;
+                                    radio_val.set(v.to_string())?;
                                     Ok(())
                                 })?)
                                 .build(),
@@ -488,7 +488,7 @@ fn NewComponentsShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<
                             RadioGroupItem(ctx, "option-2")
                                 .selected_value(radio_val)?
                                 .on_select(owner.callback(move |v: &'static str| {
-                                    set_radio_val.set(v.to_string())?;
+                                    radio_val.set(v.to_string())?;
                                     Ok(())
                                 })?)
                                 .build(),
@@ -504,7 +504,7 @@ fn NewComponentsShowcase<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<
                             AccordionTrigger(ctx, "Is Silex 1:1 compatible?")
                                 .open(accordion_open)?
                                 .on_click(owner.callback(move |_| {
-                                    set_accordion_open.update(|v| *v = !*v)?;
+                                    accordion_open.update(|v| *v = !*v)?;
                                     Ok(())
                                 })?)
                                 .build(),

@@ -54,7 +54,7 @@ let text = store.translate_now(
 computed 闭包内读取参数表达式：
 
 ```rust
-let name = owner.rw_signal(String::from("Alice"))?;
+let name = owner.signal(String::from("Alice"))?;
 let greeting = t!(store, "welcome.user", name = name.get())?;
 
 assert_eq!(greeting.get()?, "Hello, Alice!");

@@ -19,8 +19,8 @@ fn tuple_get_tracks_each_member() {
 
     runtime
         .with_transient(|owner| {
-            let (first, set_first) = owner.signal(1_i32).expect("first signal");
-            let (second, set_second) = owner.signal(2_i32).expect("second signal");
+            let first = owner.signal(1_i32).expect("first signal");
+            let second = owner.signal(2_i32).expect("second signal");
             let sources = (first, second);
             let runs_in_effect = runs.clone();
 
@@ -38,9 +38,9 @@ fn tuple_get_tracks_each_member() {
                 .expect("tuple effect should initialize");
 
             assert_eq!(runs.get(), 1);
-            set_first.set(3).expect("first signal should update");
+            first.set(3).expect("first signal should update");
             assert_eq!(runs.get(), 2);
-            set_second.set(4).expect("second signal should update");
+            second.set(4).expect("second signal should update");
             assert_eq!(runs.get(), 3);
         })
         .expect("runtime child should initialize");
@@ -52,8 +52,8 @@ fn tuple_with_reads_a_cloneable_snapshot() {
 
     runtime
         .with_transient(|owner| {
-            let (first, _) = owner.signal(4_i32).expect("first signal");
-            let (second, _) = owner.signal(5_i32).expect("second signal");
+            let first = owner.signal(4_i32).expect("first signal");
+            let second = owner.signal(5_i32).expect("second signal");
             let sources = (first, second);
             let snapshot = sources
                 .with(|(first_value, second_value)| (*first_value, *second_value))
@@ -71,8 +71,8 @@ fn tuple_untracked_get_does_not_subscribe() {
 
     runtime
         .with_transient(|owner| {
-            let (first, set_first) = owner.signal(1_i32).expect("first signal");
-            let (second, _) = owner.signal(2_i32).expect("second signal");
+            let first = owner.signal(1_i32).expect("first signal");
+            let second = owner.signal(2_i32).expect("second signal");
             let sources = (first, second);
             let runs_in_effect = runs.clone();
 
@@ -89,7 +89,7 @@ fn tuple_untracked_get_does_not_subscribe() {
                 .expect("tuple effect should initialize");
 
             assert_eq!(runs.get(), 1);
-            set_first.set(3).expect("first signal should update");
+            first.set(3).expect("first signal should update");
             assert_eq!(runs.get(), 1);
         })
         .expect("runtime child should initialize");
@@ -102,7 +102,7 @@ fn base_track_accepts_non_clone_sources() {
 
     runtime
         .with_transient(|owner| {
-            let (source, set_source) = owner.signal(NonClone(1)).expect("source signal");
+            let source = owner.signal(NonClone(1)).expect("source signal");
             let sources = (source, source);
             sources.track().expect("tuple tracking should succeed");
 
@@ -120,7 +120,7 @@ fn base_track_accepts_non_clone_sources() {
                 .expect("tracking effect should initialize");
 
             assert_eq!(runs.get(), 1);
-            set_source
+            source
                 .update(|value| value.0 += 1)
                 .expect("source should update");
             assert_eq!(runs.get(), 2);

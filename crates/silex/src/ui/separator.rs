@@ -8,10 +8,10 @@ pub fn Separator<'scope, Ctx>(
     #[ctx] ctx: Ctx,
     #[prop(into)]
     #[chain(default)]
-    orientation: Signal<'scope, String>,
+    orientation: Rx<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<'scope, String>,
+    class: Rx<'scope, String>,
 ) -> impl View<'scope> {
     let cls = rx!(ctx; {
         let orient = $orientation;

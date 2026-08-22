@@ -24,9 +24,9 @@ fn panic_in_update_keeps_the_value_and_releases_the_lease() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|scope| {
-            let (signal, set_signal) = scope.signal(1i32).expect("fallible reactive creation");
+            let signal = scope.signal(1i32).expect("fallible reactive creation");
             let panic = catch_unwind(AssertUnwindSafe(|| {
-                set_signal
+                signal
                     .update(|_| panic!("update panic"))
                     .expect("test operation should succeed");
             }));
@@ -37,8 +37,8 @@ fn panic_in_update_keeps_the_value_and_releases_the_lease() {
 
     runtime
         .with_transient(|scope| {
-            let (signal, set_signal) = scope.signal(1i32).expect("fallible reactive creation");
-            set_signal.set(2).expect("test operation should succeed");
+            let signal = scope.signal(1i32).expect("fallible reactive creation");
+            signal.set(2).expect("test operation should succeed");
             assert_eq!(signal.get(), Ok(2));
         })
         .expect("test operation should succeed");
@@ -49,25 +49,27 @@ fn shared_reads_succeed_but_write_conflicts_are_reported() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|scope| {
-            let (signal, set_signal) = scope.signal(1i32).expect("fallible reactive creation");
+            let signal = scope.signal(1i32).expect("fallible reactive creation");
 
             let nested_read = signal
+                .read()
                 .with(|_| signal.get())
                 .expect("shared reads should be nestable");
             assert_eq!(nested_read, Ok(1));
 
             let read_then_write = signal
-                .with(|_| set_signal.set(2))
+                .read()
+                .with(|_| signal.set(2))
                 .expect("read lease should remain observable");
             assert_eq!(read_then_write, Err(ReactiveError::BorrowConflict));
 
-            let write_then_read = set_signal
+            let write_then_read = signal
                 .update(|_| signal.get())
                 .expect("write lease should remain observable");
             assert_eq!(write_then_read, Err(ReactiveError::BorrowConflict));
 
-            let write_then_write = set_signal
-                .update(|_| set_signal.set(2))
+            let write_then_write = signal
+                .update(|_| signal.set(2))
                 .expect("write lease should remain observable");
             assert_eq!(write_then_write, Err(ReactiveError::BorrowConflict));
             assert_eq!(signal.get(), Ok(1));
@@ -82,7 +84,7 @@ fn recursive_memo_read_reports_reentrant_instead_of_borrow_conflict() {
         .with_transient(|scope| {
             let slot: Rc<Cell<Option<Computed<'_, i32, ()>>>> = Rc::new(Cell::new(None));
             let slot_in_memo = slot.clone();
-            let (source, set_source) = scope.signal(1_i32).expect("fallible reactive creation");
+            let source = scope.signal(1_i32).expect("fallible reactive creation");
             let memo = scope
                 .computed(
                     move || {
@@ -100,7 +102,7 @@ fn recursive_memo_read_reports_reentrant_instead_of_borrow_conflict() {
                 .expect("memo creation");
             slot.set(Some(memo));
 
-            set_source.set(2).expect("test operation should succeed");
+            source.set(2).expect("test operation should succeed");
             assert_eq!(memo.get(), Ok(2));
         })
         .expect("test operation should succeed");
@@ -114,7 +116,7 @@ fn panic_in_effect_does_not_block_the_next_notification() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0i32).expect("fallible reactive creation");
+            let source = scope.signal(0i32).expect("fallible reactive creation");
             let runs_in_effect = runs.clone();
             let panic_in_effect = should_panic.clone();
             let _effect = scope
@@ -134,14 +136,14 @@ fn panic_in_effect_does_not_block_the_next_notification() {
 
             should_panic.set(true);
             let panic = catch_unwind(AssertUnwindSafe(|| {
-                set_source
+                source
                     .set(1)
                     .expect("first effect notification should execute");
             }));
             assert!(panic.is_err());
             assert_eq!(runs.get(), 2);
 
-            set_source
+            source
                 .set(2)
                 .expect("effect should be schedulable after a panic");
             assert_eq!(runs.get(), 3);
@@ -156,7 +158,7 @@ fn cleanup_panic_during_effect_rerun_does_not_skip_remaining_cleanups() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0i32).expect("fallible reactive creation");
+            let source = scope.signal(0i32).expect("fallible reactive creation");
             let scope_copy = scope;
             let register_cleanups = Rc::new(Cell::new(true));
             let effect_runs = Rc::new(Cell::new(0));
@@ -189,16 +191,15 @@ fn cleanup_panic_during_effect_rerun_does_not_skip_remaining_cleanups() {
                 )
                 .expect("effect should initialize");
 
-            let panic = catch_unwind(AssertUnwindSafe(|| set_source.set(1)));
+            let panic = catch_unwind(AssertUnwindSafe(|| source.set(1)));
             assert!(panic.is_err());
             assert!(remaining_cleanup_ran.get());
             assert_eq!(effect_runs.get(), 1);
 
-            set_source.set(2).expect("test operation should succeed");
+            source.set(2).expect("test operation should succeed");
             assert_eq!(effect_runs.get(), 2);
 
-            let (independent, set_independent) =
-                scope.signal(0i32).expect("fallible reactive creation");
+            let independent = scope.signal(0i32).expect("fallible reactive creation");
             let seen = Rc::new(Cell::new(0));
             let seen_in_effect = seen.clone();
             scope
@@ -211,9 +212,7 @@ fn cleanup_panic_during_effect_rerun_does_not_skip_remaining_cleanups() {
                     handler(scope),
                 )
                 .expect("effect should initialize");
-            set_independent
-                .set(1)
-                .expect("test operation should succeed");
+            independent.set(1).expect("test operation should succeed");
             assert_eq!(seen.get(), 1);
         })
         .expect("test operation should succeed");
@@ -226,7 +225,7 @@ fn panic_in_memo_keeps_the_previous_value_and_allows_retry() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(1i32).expect("fallible reactive creation");
+            let source = scope.signal(1i32).expect("fallible reactive creation");
             let panic_in_memo = should_panic.clone();
             let memo = scope
                 .computed(
@@ -243,7 +242,7 @@ fn panic_in_memo_keeps_the_previous_value_and_allows_retry() {
 
             assert_eq!(memo.get(), Ok(2));
             should_panic.set(true);
-            set_source.set(2).expect("test operation should succeed");
+            source.set(2).expect("test operation should succeed");
             let panic = catch_unwind(AssertUnwindSafe(|| {
                 memo.get().expect("test operation should succeed");
             }));
@@ -276,7 +275,7 @@ fn panic_in_memo_equality_keeps_the_previous_value_and_allows_retry() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(1i32).expect("fallible reactive creation");
+            let source = scope.signal(1i32).expect("fallible reactive creation");
             let panic_in_eq = should_panic.clone();
             let memo = scope
                 .computed(
@@ -292,7 +291,7 @@ fn panic_in_memo_equality_keeps_the_previous_value_and_allows_retry() {
 
             assert_eq!(memo.get().expect("reactive read").value, 1);
             should_panic.set(true);
-            set_source.set(2).expect("test operation should succeed");
+            source.set(2).expect("test operation should succeed");
 
             let panic = catch_unwind(AssertUnwindSafe(|| {
                 memo.get().expect("test operation should succeed");
@@ -300,7 +299,7 @@ fn panic_in_memo_equality_keeps_the_previous_value_and_allows_retry() {
             assert!(panic.is_err());
             assert_eq!(memo.get().expect("reactive read").value, 2);
 
-            set_source.set(3).expect("test operation should succeed");
+            source.set(3).expect("test operation should succeed");
             assert_eq!(memo.get().expect("reactive read").value, 3);
         })
         .expect("test operation should succeed");
@@ -313,7 +312,7 @@ fn batch_panic_restores_depth_and_flushes_pending_effects() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0i32).expect("fallible reactive creation");
+            let source = scope.signal(0i32).expect("fallible reactive creation");
             let seen_in_effect = seen.clone();
             scope
                 .effect(
@@ -328,14 +327,14 @@ fn batch_panic_restores_depth_and_flushes_pending_effects() {
 
             let panic = catch_unwind(AssertUnwindSafe(|| {
                 let _ = scope.batch(|| {
-                    set_source.set(1).expect("test operation should succeed");
+                    source.set(1).expect("test operation should succeed");
                     panic!("batch panic");
                 });
             }));
             assert!(panic.is_err());
             assert_eq!(seen.get(), 1);
 
-            set_source.set(2).expect("test operation should succeed");
+            source.set(2).expect("test operation should succeed");
             assert_eq!(seen.get(), 2);
         })
         .expect("test operation should succeed");
@@ -349,8 +348,8 @@ fn untrack_panic_restores_the_active_dependency_observer() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0i32).expect("fallible reactive creation");
-            let (tracked, set_tracked) = scope.signal(0i32).expect("fallible reactive creation");
+            let source = scope.signal(0i32).expect("fallible reactive creation");
+            let tracked = scope.signal(0i32).expect("fallible reactive creation");
             let scope_copy = scope;
             let runs_in_effect = runs.clone();
             let first_run_in_effect = first_run.clone();
@@ -374,9 +373,9 @@ fn untrack_panic_restores_the_active_dependency_observer() {
                 .expect("effect should initialize");
 
             assert_eq!(runs.get(), 1);
-            set_tracked.set(1).expect("test operation should succeed");
+            tracked.set(1).expect("test operation should succeed");
             assert_eq!(runs.get(), 2);
-            set_source.set(1).expect("test operation should succeed");
+            source.set(1).expect("test operation should succeed");
             assert_eq!(runs.get(), 3);
         })
         .expect("test operation should succeed");
@@ -390,8 +389,8 @@ fn child_callback_panic_restores_the_outer_observer_frame() {
     runtime
         .with_transient(|scope| {
             let parent_scope = scope;
-            let (source, _) = scope.signal(0i32).expect("fallible reactive creation");
-            let (tail, set_tail) = scope.signal(0i32).expect("fallible reactive creation");
+            let source = scope.signal(0i32).expect("fallible reactive creation");
+            let tail = scope.signal(0i32).expect("fallible reactive creation");
             let runs_in_effect = runs.clone();
             scope
                 .effect(
@@ -413,7 +412,7 @@ fn child_callback_panic_restores_the_outer_observer_frame() {
                 .expect("effect should initialize");
 
             assert_eq!(runs.get(), 1);
-            set_tail.set(1).expect("test operation should succeed");
+            tail.set(1).expect("test operation should succeed");
             assert_eq!(runs.get(), 2);
         })
         .expect("test operation should succeed");

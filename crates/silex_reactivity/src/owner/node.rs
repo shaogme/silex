@@ -248,7 +248,7 @@ pub struct WriteSignal<'scope, T> {
 }
 
 /// A paired read/write signal capability.
-pub struct RwSignal<'scope, T> {
+pub struct Signal<'scope, T> {
     pub(crate) read: ReadSignal<'scope, T>,
     pub(crate) write: WriteSignal<'scope, T>,
 }
@@ -269,9 +269,9 @@ impl<'scope, T> Clone for WriteSignal<'scope, T> {
     }
 }
 
-impl<'scope, T> Copy for RwSignal<'scope, T> {}
+impl<'scope, T> Copy for Signal<'scope, T> {}
 
-impl<'scope, T> Clone for RwSignal<'scope, T> {
+impl<'scope, T> Clone for Signal<'scope, T> {
     fn clone(&self) -> Self {
         *self
     }
@@ -351,7 +351,27 @@ impl<'scope, T: 'scope> WriteSignal<'scope, T> {
     }
 }
 
-impl<'scope, T: 'scope> RwSignal<'scope, T> {
+impl<'scope, T> Signal<'scope, T> {
+    /// Build a paired signal from read and write capabilities.
+    ///
+    /// The capabilities must identify the same runtime signal node. This
+    /// method returns [`ReactiveError::InvariantViolation`] for a mismatched
+    /// pair.
+    pub fn from_pair(
+        pair: (ReadSignal<'scope, T>, WriteSignal<'scope, T>),
+    ) -> ReactiveResult<Self> {
+        let (read, write) = pair;
+        if read.handle != write.handle {
+            return Err(ReactiveError::InvariantViolation);
+        }
+        Ok(Self { read, write })
+    }
+
+    /// Consume the paired signal and return its existing capabilities.
+    pub fn into_pair(self) -> (ReadSignal<'scope, T>, WriteSignal<'scope, T>) {
+        (self.read, self.write)
+    }
+
     pub fn get(&self) -> ReactiveResult<T>
     where
         T: Clone,
@@ -458,12 +478,12 @@ impl<'scope, T> PartialEq for WriteSignal<'scope, T> {
 }
 impl<'scope, T> Eq for WriteSignal<'scope, T> {}
 
-impl<'scope, T> PartialEq for RwSignal<'scope, T> {
+impl<'scope, T> PartialEq for Signal<'scope, T> {
     fn eq(&self, other: &Self) -> bool {
         self.read == other.read && self.write == other.write
     }
 }
-impl<'scope, T> Eq for RwSignal<'scope, T> {}
+impl<'scope, T> Eq for Signal<'scope, T> {}
 
 impl<'scope, T> PartialEq for StoredValue<'scope, T> {
     fn eq(&self, other: &Self) -> bool {

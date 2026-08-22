@@ -29,7 +29,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 .locale(Locale::new("en-US")?)
                 .catalog(catalog)
                 .build()?;
-            let name = owner.rw_signal(String::from("Alice"))?;
+            let name = owner.signal(String::from("Alice"))?;
             let greeting = t!(store, "welcome.user", name = name.get())?;
 
             assert_eq!(greeting.get()?, "Hello, Alice!");

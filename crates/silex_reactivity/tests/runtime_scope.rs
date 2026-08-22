@@ -50,7 +50,7 @@ fn runtime_run_provides_scoped_signal_and_effect() {
 
     runtime
         .with_transient(|scope| {
-            let (count, set_count) = scope.signal(0i32).expect("fallible reactive creation");
+            let count = scope.signal(0i32).expect("fallible reactive creation");
             let doubled = scope
                 .computed(
                     move || Ok(count.get().expect("reactive read") * 2),
@@ -74,7 +74,7 @@ fn runtime_run_provides_scoped_signal_and_effect() {
                 .expect("effect should initialize");
 
             assert_eq!(runs.get(), 1);
-            set_count.set(1).expect("test operation should succeed");
+            count.set(1).expect("test operation should succeed");
             assert_eq!(doubled.get(), Ok(2));
             assert_eq!(runs.get(), 2);
         })
@@ -90,7 +90,7 @@ fn non_static_effect_can_capture_data_and_scoped_signal() {
 
     runtime
         .with_transient(|scope| {
-            let (signal, set_signal) = scope.signal(1i32).expect("fallible reactive creation");
+            let signal = scope.signal(1i32).expect("fallible reactive creation");
             let external_in_effect = external.clone();
             scope
                 .effect(
@@ -103,7 +103,7 @@ fn non_static_effect_can_capture_data_and_scoped_signal() {
                     handler(scope),
                 )
                 .expect("effect should initialize");
-            set_signal.set(2).expect("test operation should succeed");
+            signal.set(2).expect("test operation should succeed");
         })
         .expect("test operation should succeed");
 
@@ -119,8 +119,7 @@ fn child_scope_is_lexical_and_cleans_up_its_nodes() {
         .with_transient(|scope| {
             scope
                 .with_transient(|child| {
-                    let (local, set_local) =
-                        child.signal(0i32).expect("fallible reactive creation");
+                    let local = child.signal(0i32).expect("fallible reactive creation");
                     let runs = cleaned.clone();
                     let _effect = child
                         .effect(
@@ -133,7 +132,7 @@ fn child_scope_is_lexical_and_cleans_up_its_nodes() {
                             handler(child),
                         )
                         .expect("effect should initialize");
-                    set_local.set(1).expect("test operation should succeed");
+                    local.set(1).expect("test operation should succeed");
                     assert_eq!(cleaned.get(), 2);
                 })
                 .expect("test operation should succeed");
@@ -149,7 +148,7 @@ fn child_effect_reacts_to_parent_signal_and_detaches_on_exit() {
 
     runtime
         .with_transient(|scope| {
-            let (parent, set_parent) = scope.signal(0i32).expect("fallible reactive creation");
+            let parent = scope.signal(0i32).expect("fallible reactive creation");
             scope
                 .with_transient(|child| {
                     let runs_in_effect = runs.clone();
@@ -165,12 +164,12 @@ fn child_effect_reacts_to_parent_signal_and_detaches_on_exit() {
                         )
                         .expect("effect should initialize");
                     assert_eq!(runs.get(), 1);
-                    set_parent.set(1).expect("test operation should succeed");
+                    parent.set(1).expect("test operation should succeed");
                     assert_eq!(runs.get(), 2);
                 })
                 .expect("test operation should succeed");
 
-            set_parent.set(2).expect("test operation should succeed");
+            parent.set(2).expect("test operation should succeed");
             assert_eq!(runs.get(), 2);
         })
         .expect("test operation should succeed");
@@ -250,12 +249,12 @@ fn payload_drop_cannot_track_through_either_observer_slot() {
 
     runtime
         .with_transient(|scope| {
-            let (source, _) = scope.signal(0_i32).expect("source creation");
+            let source = scope.signal(0_i32).expect("source creation");
             scope
                 .with_transient(|child| {
                     child
                         .stored(TrackDuringDrop {
-                            source,
+                            source: source.read(),
                             tracked: tracked.clone(),
                         })
                         .expect("stored creation");
@@ -345,7 +344,8 @@ fn final_cleanup_keeps_only_stored_value_access_available() {
 
     runtime
         .with_transient(|scope| {
-            let (signal, setter) = scope.signal(1_i32).expect("fallible reactive creation");
+            let signal = scope.signal(1_i32).expect("fallible reactive creation");
+            let setter = signal;
             let stored = scope.stored(1_i32).expect("fallible reactive creation");
             let node_ref = scope.node_ref::<i32>().expect("node ref creation");
             let callback = scope
@@ -549,7 +549,7 @@ fn parent_effect_tracks_parent_reads_inside_child_callback() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0i32).expect("fallible reactive creation");
+            let source = scope.signal(0i32).expect("fallible reactive creation");
             let parent_scope = scope;
             let runs_in_effect = runs.clone();
             scope
@@ -569,7 +569,7 @@ fn parent_effect_tracks_parent_reads_inside_child_callback() {
                 .expect("effect should initialize");
 
             assert_eq!(runs.get(), 1);
-            set_source.set(1).expect("test operation should succeed");
+            source.set(1).expect("test operation should succeed");
             assert_eq!(runs.get(), 2);
         })
         .expect("test operation should succeed");
@@ -582,7 +582,7 @@ fn parent_effect_tracks_parent_reads_inside_nested_child_callback() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0i32).expect("signal creation");
+            let source = scope.signal(0i32).expect("signal creation");
             let parent_scope = scope;
             let runs_in_effect = runs.clone();
             scope
@@ -602,7 +602,7 @@ fn parent_effect_tracks_parent_reads_inside_nested_child_callback() {
                 .expect("effect should initialize");
 
             assert_eq!(runs.get(), 1);
-            set_source.set(1).expect("signal update");
+            source.set(1).expect("signal update");
             assert_eq!(runs.get(), 2);
         })
         .expect("test operation should succeed");
@@ -615,9 +615,9 @@ fn nested_child_frames_keep_parent_tracking_at_the_outer_boundary() {
 
     runtime
         .with_transient(|scope| {
-            let (outer, set_outer) = scope.signal(0_i32).expect("outer source creation");
-            let (inner, set_inner) = scope.signal(0_i32).expect("inner source creation");
-            let (deep, set_deep) = scope.signal(0_i32).expect("deep source creation");
+            let outer = scope.signal(0_i32).expect("outer source creation");
+            let inner = scope.signal(0_i32).expect("inner source creation");
+            let deep = scope.signal(0_i32).expect("deep source creation");
             let parent_scope = scope;
             let runs_in_effect = runs.clone();
             scope
@@ -647,11 +647,11 @@ fn nested_child_frames_keep_parent_tracking_at_the_outer_boundary() {
                 .expect("effect should initialize");
 
             assert_eq!(runs.get(), 1);
-            set_inner.set(1).expect("inner update");
+            inner.set(1).expect("inner update");
             assert_eq!(runs.get(), 2);
-            set_deep.set(1).expect("deep update");
+            deep.set(1).expect("deep update");
             assert_eq!(runs.get(), 3);
-            set_outer.set(1).expect("outer update");
+            outer.set(1).expect("outer update");
             assert_eq!(runs.get(), 4);
         })
         .expect("test operation should succeed");
@@ -664,7 +664,7 @@ fn nested_child_panic_restores_the_parent_observer_frame() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0_i32).expect("source creation");
+            let source = scope.signal(0_i32).expect("source creation");
             let parent_scope = scope;
             let runs_in_effect = runs.clone();
             scope
@@ -694,7 +694,7 @@ fn nested_child_panic_restores_the_parent_observer_frame() {
                 .expect("effect should initialize");
 
             assert_eq!(runs.get(), 1);
-            set_source.set(1).expect("source update");
+            source.set(1).expect("source update");
             assert_eq!(runs.get(), 2);
         })
         .expect("test operation should succeed");
@@ -708,8 +708,8 @@ fn cleanup_track_is_untracked_and_does_not_add_a_dependency() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0i32).expect("source creation");
-            let (other, set_other) = scope.signal(0i32).expect("other creation");
+            let source = scope.signal(0i32).expect("source creation");
+            let other = scope.signal(0i32).expect("other creation");
             let runs_in_effect = runs.clone();
             let cleanup_track_succeeded_in_effect = cleanup_track_succeeded.clone();
             scope
@@ -735,10 +735,10 @@ fn cleanup_track_is_untracked_and_does_not_add_a_dependency() {
                 )
                 .expect("effect should initialize");
 
-            set_source.set(1).expect("source update");
+            source.set(1).expect("source update");
             assert_eq!(runs.get(), 2);
             assert!(cleanup_track_succeeded.get());
-            set_other.set(1).expect("other update");
+            other.set(1).expect("other update");
             assert_eq!(runs.get(), 2);
         })
         .expect("test operation should succeed");
@@ -751,8 +751,8 @@ fn untrack_blocks_ordinary_reads() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0_i32).expect("source creation");
-            let (other, set_other) = scope.signal(0_i32).expect("other creation");
+            let source = scope.signal(0_i32).expect("source creation");
+            let other = scope.signal(0_i32).expect("other creation");
             let runs_in_effect = runs.clone();
             scope
                 .effect(
@@ -769,9 +769,9 @@ fn untrack_blocks_ordinary_reads() {
                 )
                 .expect("effect should initialize");
 
-            set_other.set(1).expect("other update");
+            other.set(1).expect("other update");
             assert_eq!(runs.get(), 1);
-            set_source.set(1).expect("source update");
+            source.set(1).expect("source update");
             assert_eq!(runs.get(), 2);
         })
         .expect("test operation should succeed");
@@ -794,10 +794,10 @@ fn child_local_signal_does_not_keep_parent_effect_queued_after_exit() {
                             runs_in_effect.set(runs_in_effect.get() + 1);
                             parent_scope
                                 .with_transient(|child| {
-                                    let (local, set_local) =
+                                    let local =
                                         child.signal(0i32).expect("fallible reactive creation");
                                     local.get().expect("test operation should succeed");
-                                    set_local.set(1).expect("test operation should succeed");
+                                    local.set(1).expect("test operation should succeed");
                                 })
                                 .expect("test operation should succeed");
                             Ok(())
@@ -820,7 +820,7 @@ fn cleanup_can_reenter_an_active_parent_scope() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0i32).expect("fallible reactive creation");
+            let source = scope.signal(0i32).expect("fallible reactive creation");
             let seen_in_effect = seen.clone();
             scope
                 .effect(
@@ -838,7 +838,7 @@ fn cleanup_can_reenter_an_active_parent_scope() {
                     child
                         .on_cleanup(
                             move || {
-                                set_source.set(1).expect("test operation should succeed");
+                                source.set(1).expect("test operation should succeed");
                                 Ok(())
                             },
                             handler(child),
@@ -878,8 +878,8 @@ fn panic_in_scoped_run_still_drops_the_scope() {
 
     runtime
         .with_transient(|scope| {
-            let (signal, set_signal) = scope.signal(1i32).expect("fallible reactive creation");
-            set_signal.set(2).expect("test operation should succeed");
+            let signal = scope.signal(1i32).expect("fallible reactive creation");
+            signal.set(2).expect("test operation should succeed");
             assert_eq!(signal.get(), Ok(2));
         })
         .expect("test operation should succeed");
@@ -901,8 +901,8 @@ fn cleanup_panic_does_not_poison_runtime() {
 
     runtime
         .with_transient(|scope| {
-            let (signal, set_signal) = scope.signal(1i32).expect("fallible reactive creation");
-            set_signal.set(2).expect("test operation should succeed");
+            let signal = scope.signal(1i32).expect("fallible reactive creation");
+            signal.set(2).expect("test operation should succeed");
             assert_eq!(signal.get(), Ok(2));
         })
         .expect("test operation should succeed");
@@ -1051,7 +1051,7 @@ fn effect_cleanup_can_register_cleanup_for_the_next_run() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope.signal(0i32).expect("fallible reactive creation");
+            let source = scope.signal(0i32).expect("fallible reactive creation");
             let scope_copy = scope;
             let register_initial_cleanup = Rc::new(Cell::new(true));
             let first_cleanup_ran_in_effect = first_cleanup_ran.clone();
@@ -1090,11 +1090,11 @@ fn effect_cleanup_can_register_cleanup_for_the_next_run() {
                 )
                 .expect("effect should initialize");
 
-            set_source.set(1).expect("test operation should succeed");
+            source.set(1).expect("test operation should succeed");
             assert!(first_cleanup_ran.get());
             assert!(!second_cleanup_ran.get());
 
-            set_source.set(2).expect("test operation should succeed");
+            source.set(2).expect("test operation should succeed");
             assert!(second_cleanup_ran.get());
         })
         .expect("test operation should succeed");
@@ -1107,7 +1107,7 @@ fn child_cleanup_panic_still_flushes_parent_queue() {
 
     runtime
         .with_transient(|scope| {
-            let (source, set_source) = scope
+            let source = scope
                 .signal(RefCell::new(0i32))
                 .expect("fallible reactive creation");
             let runs_in_effect = runs.clone();
@@ -1116,6 +1116,7 @@ fn child_cleanup_panic_still_flushes_parent_queue() {
                     EffectPhase::Normal,
                     move || {
                         source
+                            .read()
                             .with(|value| {
                                 std::hint::black_box(*value.borrow());
                                 runs_in_effect.set(runs_in_effect.get() + 1);
@@ -1132,14 +1133,16 @@ fn child_cleanup_panic_still_flushes_parent_queue() {
                 scope
                     .with_transient(|child| {
                         let source_in_cleanup = source;
-                        let setter_in_cleanup = set_source;
+                        let setter_in_cleanup = source;
                         let runs_in_cleanup = runs.clone();
                         child
                             .on_cleanup(
                                 move || {
                                     source_in_cleanup
+                                        .read()
                                         .with(|_| {
                                             setter_in_cleanup
+                                                .write()
                                                 .notify()
                                                 .expect("test operation should succeed");
                                             assert_eq!(runs_in_cleanup.get(), 1);
@@ -1262,11 +1265,13 @@ fn handles_are_invalid_after_their_scope_and_runtimes_are_isolated() {
     let mut second = Runtime::new();
     first
         .with_transient(|scope| {
-            let (signal, _) = scope.signal(1i32).expect("fallible reactive creation");
+            let signal = scope.signal(1i32).expect("fallible reactive creation");
+            let _ = signal;
             assert_eq!(signal.get(), Ok(1));
             second
                 .with_transient(|other| {
-                    let (other_signal, _) = other.signal(2i32).expect("fallible reactive creation");
+                    let other_signal = other.signal(2i32).expect("fallible reactive creation");
+                    let _ = other_signal;
                     assert_eq!(other_signal.get(), Ok(2));
                     assert_eq!(signal.get(), Ok(1));
                 })
@@ -1280,7 +1285,8 @@ fn handles_are_invalid_after_their_scope_and_runtimes_are_isolated() {
         .with_transient(|scope| {
             scope
                 .with_transient(|child| {
-                    let (signal, _) = child.signal(1i32).expect("fallible reactive creation");
+                    let signal = child.signal(1i32).expect("fallible reactive creation");
+                    let _ = signal;
                     assert_eq!(signal.get(), Ok(1));
                 })
                 .expect("test operation should succeed");

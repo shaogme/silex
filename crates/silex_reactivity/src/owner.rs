@@ -28,7 +28,7 @@ use crate::{
     unsafe_boundary::WeakOwnerToken,
 };
 pub use node::{
-    Callback, Computed, EffectHandle, EffectPhase, NodeRef, ReadSignal, RwSignal, StoredValue,
+    Callback, Computed, EffectHandle, EffectPhase, NodeRef, ReadSignal, Signal, StoredValue,
     WatchOptions, WriteSignal,
 };
 use std::{cell::Cell, future::Future, marker::PhantomData, panic::UnwindSafe, pin::Pin, rc::Rc};
@@ -785,10 +785,7 @@ impl<'owner> OwnerAccess<'owner> {
         })
     }
 
-    pub fn signal<T: 'owner>(
-        &self,
-        value: T,
-    ) -> ReactiveResult<(ReadSignal<'owner, T>, WriteSignal<'owner, T>)> {
+    pub fn signal<T: 'owner>(&self, value: T) -> ReactiveResult<Signal<'owner, T>> {
         let slot = self.storage.alloc_slot(value);
         let state = self.state();
         let raw = state
@@ -800,7 +797,7 @@ impl<'owner> OwnerAccess<'owner> {
             .map_err(|_| ReactiveError::BorrowConflict)?
             .typed_node_ref(raw)?;
         let handle = Handle::new(self.storage, raw);
-        Ok((
+        Signal::from_pair((
             ReadSignal {
                 handle,
                 value: value_ref,
@@ -812,11 +809,6 @@ impl<'owner> OwnerAccess<'owner> {
                 marker: PhantomData,
             },
         ))
-    }
-
-    pub fn rw_signal<T: 'owner>(&self, value: T) -> ReactiveResult<RwSignal<'owner, T>> {
-        let (read, write) = self.signal(value)?;
-        Ok(RwSignal { read, write })
     }
 
     pub fn stored<T: 'owner>(&self, value: T) -> ReactiveResult<StoredValue<'owner, T>> {
@@ -1040,7 +1032,7 @@ mod tests {
         let mut runtime = crate::runtime::Runtime::new();
         let root = runtime.owner().expect("root owner");
         let owner = root.access();
-        let (source, set_source) = owner.signal(false).expect("source signal");
+        let source = owner.signal(false).expect("source signal");
         let registered = Rc::new(Cell::new(false));
         let cleaned = Rc::new(Cell::new(0));
         let effect_handler = owner
@@ -1081,7 +1073,7 @@ mod tests {
             )
             .expect("effect should initialize");
 
-        set_source.set(true).expect("source should rerun effect");
+        source.set(true).expect("source should rerun effect");
         assert_eq!(cleaned.get(), 0);
         root.close().expect("parent close should succeed");
         assert_eq!(cleaned.get(), 1);
@@ -1092,7 +1084,7 @@ mod tests {
         let mut runtime = crate::runtime::Runtime::new();
         let root = runtime.owner().expect("root owner");
         let owner = root.access();
-        let (source, set_source) = owner.signal(false).expect("source signal");
+        let source = owner.signal(false).expect("source signal");
         let child_access = Rc::new(Cell::new(None));
         let child_access_for_effect = child_access.clone();
         let effect_handler = owner
@@ -1135,7 +1127,7 @@ mod tests {
                 .is_active()
                 .expect("child should be active")
         );
-        set_source.set(true).expect("source should rerun effect");
+        source.set(true).expect("source should rerun effect");
         assert!(
             child_access
                 .get()
@@ -1247,7 +1239,7 @@ mod tests {
         let mut runtime = crate::runtime::Runtime::new();
         let root = runtime.owner().expect("root owner");
         let owner = root.access();
-        let (source, set_source) = owner.signal(false).expect("source signal");
+        let source = owner.signal(false).expect("source signal");
         let adopted_owner = Rc::new(Cell::new(None));
         let adopted_owner_for_effect = adopted_owner.clone();
         let effect_handler = owner
@@ -1290,7 +1282,7 @@ mod tests {
                 .expect("child should be active")
         );
 
-        set_source.set(true).expect("source should rerun effect");
+        source.set(true).expect("source should rerun effect");
         assert!(
             adopted_owner
                 .get()

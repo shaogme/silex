@@ -6,7 +6,7 @@ use std::time::Duration;
 #[component]
 pub fn Greeting<'scope, Ctx>(
     #[ctx] ctx: Ctx,
-    name: Signal<'scope, String>,
+    name: Rx<'scope, String>,
     #[chain(default)] punctuation: String,
 ) -> impl View<'scope> {
     let full_punctuation = if punctuation.is_empty() {
@@ -33,14 +33,14 @@ pub fn Greeting<'scope, Ctx>(
 
 #[component]
 pub fn Counter<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
-    let (count, set_count) = owner.signal(0)?;
+    let count = owner.signal(0)?;
     let double_count = rx!(ctx; $count * 2)?;
     let owner_for_timer = MountOwnerToken::new(owner);
 
     // Timer Handle for Auto Increment (StoredValue: doesn't trigger UI updates itself)
     let timer = owner.stored(None::<HostResource<'scope>>)?;
     // UI State for the timer
-    let (is_running, set_is_running) = owner.signal(false)?;
+    let is_running = owner.signal(false)?;
 
     Ok(div![
         h3("Interactive Counter"),
@@ -50,13 +50,13 @@ pub fn Counter<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                     "disabled",
                     count.less_than_or_equals(owner, 0, error_handler)?
                 )
-                .on(event::click, set_count.updater(|n| *n -= 1)),
+                .on(event::click, count.updater(|n| *n -= 1)),
             strong(count).classes(classes![
                 "counter-val",
                 "positive" => count.greater_than(owner, 0, error_handler)?,
                 "negative" => count.less_than(owner, 0, error_handler)?
             ]),
-            button("+").on(event::click, set_count.updater(|n| *n += 1)),
+            button("+").on(event::click, count.updater(|n| *n += 1)),
         ]
         .style(
             sty(ctx)
@@ -76,12 +76,12 @@ pub fn Counter<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                     if let Some(handle) = timer.update(Option::take)? {
                         handle.cancel()?;
                     }
-                    set_is_running.set(false)?;
+                    is_running.set(false)?;
                 } else {
                     let handle = set_interval(
                         &owner_for_timer,
                         move || -> SilexResult<()> {
-                            set_count.update(|n| *n += 1)?;
+                            count.update(|n| *n += 1)?;
                             Ok(())
                         },
                         Duration::from_millis(1000),
@@ -89,7 +89,7 @@ pub fn Counter<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                     )
                     .map_err(|error| SilexError::fatal(SilexErrorKind::from(error)))?;
                     timer.set_untracked(Some(handle))?;
-                    set_is_running.set(true)?;
+                    is_running.set(true)?;
                 }
                 Ok(())
             })
@@ -103,7 +103,7 @@ pub fn Counter<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                 .on(event::input, move |e| {
                     let val_str = event_target_value(&e);
                     if let Ok(n) = val_str.parse::<i32>() {
-                        set_count.set(n)?;
+                        count.set(n)?;
                     }
                     Ok(())
                 })
@@ -212,10 +212,10 @@ pub fn SvgIconDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
 
 #[component]
 pub fn EventDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
-    let (name, set_name) = owner.signal("Silex".to_string())?;
-    let (count, set_count) = owner.signal(0)?;
+    let name = owner.signal("Silex".to_string())?;
+    let count = owner.signal(0)?;
 
-    let (logs, set_logs) = owner.signal(Vec::<String>::new())?;
+    let logs = owner.signal(Vec::<String>::new())?;
     let log_item_style = sty(ctx).font_size(em_unit(0.8))?;
     let payload = "DataPayload".to_string();
 
@@ -226,9 +226,9 @@ pub fn EventDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
             name.get()?,
             count.get()?
         ));
-        set_count.update(|n| *n += 1)?;
+        count.update(|n| *n += 1)?;
         let next_count = count.get()? + 1;
-        set_name.update(|n| *n = format!("Silex {}", next_count))?;
+        name.update(|n| *n = format!("Silex {}", next_count))?;
         Ok(())
     };
 
@@ -236,7 +236,7 @@ pub fn EventDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
         // For non-Copy types like String, we clone them manually if needed multiple times
         let owned_data = payload.clone();
 
-        set_logs.update(|l| {
+        logs.update(|l| {
             if l.len() >= 5 {
                 l.remove(0);
             }
@@ -286,7 +286,7 @@ pub fn EventDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
 
 #[component]
 pub fn BasicsPage<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
-    let name_signal = owner.rw_signal("Developer".to_string())?;
+    let name_signal = owner.signal("Developer".to_string())?;
 
     Ok(div![
         h2("Basics"),
@@ -295,10 +295,7 @@ pub fn BasicsPage<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
             "Reactive Greeting Name: ",
             input().bind_value(name_signal),
             button("Submit")
-                .attr(
-                    "disabled",
-                    name_signal.read_signal().equals(owner, "", error_handler)?,
-                )
+                .attr("disabled", name_signal.equals(owner, "", error_handler)?,)
                 .style(sty(ctx).margin_left(px(10))?)
         ]
         .style(

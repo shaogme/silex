@@ -9,10 +9,10 @@ pub fn Avatar<'scope, Ctx>(
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
-    size: Signal<'scope, String>,
+    size: Rx<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<'scope, String>,
+    class: Rx<'scope, String>,
 ) -> impl View<'scope> {
     let avatar_variants = tw_variants! {
         base: "group/avatar relative flex shrink-0 overflow-hidden rounded-full select-none",
@@ -58,13 +58,13 @@ pub fn AvatarImage<'scope, Ctx>(
     #[ctx] ctx: Ctx,
     #[prop(into)]
     #[chain(default)]
-    src: Signal<'scope, String>,
+    src: Rx<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    alt: Signal<'scope, String>,
+    alt: Rx<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<'scope, String>,
+    class: Rx<'scope, String>,
 ) -> impl View<'scope> {
     let cls = rx!(ctx; {
         let base_cls = tw!("aspect-square size-full object-cover");
@@ -89,10 +89,10 @@ pub fn AvatarFallback<'scope, Ctx>(
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
-    variant: Signal<'scope, String>,
+    variant: Rx<'scope, String>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<'scope, String>,
+    class: Rx<'scope, String>,
 ) -> impl View<'scope> {
     let avatar_fallback_variants = tw_variants! {
         base: "flex size-full items-center justify-center rounded-full text-sm group-data-[size=sm]/avatar:text-xs",
@@ -129,7 +129,7 @@ pub fn AvatarBadge<'scope, Ctx>(
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<'scope, String>,
+    class: Rx<'scope, String>,
 ) -> impl View<'scope> {
     let cls = rx!(ctx; {
         let base_cls = tw!(
@@ -152,7 +152,7 @@ pub fn AvatarGroup<'scope, Ctx>(
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<'scope, String>,
+    class: Rx<'scope, String>,
 ) -> impl View<'scope> {
     let cls = rx!(ctx; {
         let base_cls = tw!(
@@ -175,7 +175,7 @@ pub fn AvatarGroupCount<'scope, Ctx>(
     children: AnyView<'scope>,
     #[prop(into)]
     #[chain(default)]
-    class: Signal<'scope, String>,
+    class: Rx<'scope, String>,
 ) -> impl View<'scope> {
     let cls = rx!(ctx; {
         let base_cls = tw!(

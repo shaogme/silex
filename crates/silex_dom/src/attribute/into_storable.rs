@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use super::{ApplyToDom, Attr, AttrOp, AttributeGroup, ReactiveBinding};
 use crate::view::Prop;
-use silex_core::{Computed, ReadSignal, RwSignal, Rx, RxValueKind, Signal, StoredValue};
+use silex_core::{Computed, ReadSignal, Rx, Signal, StoredValue};
 // --- IntoStorable: 允许非 'static 类型转换为可存储类型 ---
 
 /// 将值转换为可存储的类型。
@@ -70,7 +70,7 @@ impl_into_storable_primitive!(
 );
 
 // --- 2. Rx 支持 ---
-impl<'scope, T> IntoStorable<'scope> for Rx<'scope, T, RxValueKind>
+impl<'scope, T> IntoStorable<'scope> for Rx<'scope, T>
 where
     T: ReactiveBinding<'scope> + Clone + 'scope,
 {
@@ -81,33 +81,22 @@ where
     }
 }
 
-impl<'scope, T> IntoStorable<'scope> for Signal<'scope, T>
-where
-    T: ReactiveBinding<'scope> + Clone + 'scope,
-{
-    type Stored = Rx<'scope, T, RxValueKind>;
-
-    fn into_storable(self) -> Self::Stored {
-        self.into_rx()
-    }
-}
-
 impl<'scope, T> IntoStorable<'scope> for ReadSignal<'scope, T>
 where
     T: ReactiveBinding<'scope> + Clone + 'scope,
 {
-    type Stored = Rx<'scope, T, RxValueKind>;
+    type Stored = Rx<'scope, T>;
 
     fn into_storable(self) -> Self::Stored {
         self.into_rx()
     }
 }
 
-impl<'scope, T> IntoStorable<'scope> for RwSignal<'scope, T>
+impl<'scope, T> IntoStorable<'scope> for Signal<'scope, T>
 where
     T: ReactiveBinding<'scope> + Clone + 'scope,
 {
-    type Stored = Rx<'scope, T, RxValueKind>;
+    type Stored = Rx<'scope, T>;
 
     fn into_storable(self) -> Self::Stored {
         self.into_rx()
@@ -118,7 +107,7 @@ impl<'scope, T> IntoStorable<'scope> for Computed<'scope, T>
 where
     T: ReactiveBinding<'scope> + Clone + 'scope,
 {
-    type Stored = Rx<'scope, T, RxValueKind>;
+    type Stored = Rx<'scope, T>;
 
     fn into_storable(self) -> Self::Stored {
         self.into_rx()
@@ -129,7 +118,7 @@ impl<'scope, T> IntoStorable<'scope> for StoredValue<'scope, T>
 where
     T: ReactiveBinding<'scope> + Clone + 'scope,
 {
-    type Stored = Rx<'scope, T, RxValueKind>;
+    type Stored = Rx<'scope, T>;
 
     fn into_storable(self) -> Self::Stored {
         self.into_rx()

@@ -1,5 +1,5 @@
 use silex_core::{
-    EffectPhase, ErrorHandlerToken, OwnerAccess, ReadSignal, Runtime, SilexError, SilexResult,
+    EffectPhase, ErrorHandlerToken, OwnerAccess, Runtime, Signal, SilexError, SilexResult,
     batch_read, batch_read_untracked, traits::RxGet,
 };
 use std::cell::Cell;
@@ -11,7 +11,7 @@ fn handler<'owner>(owner: OwnerAccess<'owner>) -> ErrorHandlerToken<'owner> {
         .expect("error handler registration")
 }
 
-fn read_pair(first: &ReadSignal<'_, i32>, second: &ReadSignal<'_, i32>) -> SilexResult<i32> {
+fn read_pair(first: &Signal<'_, i32>, second: &Signal<'_, i32>) -> SilexResult<i32> {
     batch_read!(first, second => |left: i32, right: i32| *left + *right).and_then(|result| result)
 }
 
@@ -22,8 +22,8 @@ fn batch_read_tracks_every_source_and_reads_values_in_order() {
 
     runtime
         .with_transient(|owner| {
-            let (first, set_first) = owner.signal(1_i32).expect("first signal");
-            let (second, set_second) = owner.signal(2_i32).expect("second signal");
+            let first = owner.signal(1_i32).expect("first signal");
+            let second = owner.signal(2_i32).expect("second signal");
             let runs_in_effect = runs.clone();
 
             owner
@@ -40,9 +40,9 @@ fn batch_read_tracks_every_source_and_reads_values_in_order() {
                 .expect("effect should initialize");
 
             assert_eq!(runs.get(), 1);
-            set_first.set(4).expect("first signal should update");
+            first.set(4).expect("first signal should update");
             assert_eq!(runs.get(), 2);
-            set_second.set(5).expect("second signal should update");
+            second.set(5).expect("second signal should update");
             assert_eq!(runs.get(), 3);
         })
         .expect("runtime child should initialize");
@@ -55,8 +55,8 @@ fn batch_read_tracks_parent_sources_inside_a_child_callback() {
 
     runtime
         .with_transient(|owner| {
-            let (first, set_first) = owner.signal(1_i32).expect("first signal");
-            let (second, set_second) = owner.signal(2_i32).expect("second signal");
+            let first = owner.signal(1_i32).expect("first signal");
+            let second = owner.signal(2_i32).expect("second signal");
             let runs_in_effect = runs.clone();
 
             owner
@@ -78,9 +78,9 @@ fn batch_read_tracks_parent_sources_inside_a_child_callback() {
                 .expect("effect should initialize");
 
             assert_eq!(runs.get(), 1);
-            set_first.set(4).expect("first signal should update");
+            first.set(4).expect("first signal should update");
             assert_eq!(runs.get(), 2);
-            set_second.set(5).expect("second signal should update");
+            second.set(5).expect("second signal should update");
             assert_eq!(runs.get(), 3);
         })
         .expect("runtime child should initialize");
@@ -93,8 +93,8 @@ fn batch_read_untracked_does_not_subscribe_its_sources() {
 
     runtime
         .with_transient(|owner| {
-            let (first, set_first) = owner.signal(1_i32).expect("first signal");
-            let (second, set_second) = owner.signal(2_i32).expect("second signal");
+            let first = owner.signal(1_i32).expect("first signal");
+            let second = owner.signal(2_i32).expect("second signal");
             let runs_in_effect = runs.clone();
 
             owner
@@ -113,8 +113,8 @@ fn batch_read_untracked_does_not_subscribe_its_sources() {
                 .expect("effect should initialize");
 
             assert_eq!(runs.get(), 1);
-            set_first.set(4).expect("first signal should update");
-            set_second.set(5).expect("second signal should update");
+            first.set(4).expect("first signal should update");
+            second.set(5).expect("second signal should update");
             assert_eq!(runs.get(), 1);
         })
         .expect("runtime child should initialize");
@@ -127,9 +127,8 @@ fn batch_read_untracked_keeps_nested_reads_tracked() {
 
     runtime
         .with_transient(|owner| {
-            let (untracked_source, set_untracked_source) =
-                owner.signal(1_i32).expect("untracked source");
-            let (tracked_source, set_tracked_source) = owner.signal(2_i32).expect("tracked source");
+            let untracked_source = owner.signal(1_i32).expect("untracked source");
+            let tracked_source = owner.signal(2_i32).expect("tracked source");
             let runs_in_effect = runs.clone();
             let seen = Rc::new(Cell::new(0));
             let seen_in_effect = seen.clone();
@@ -153,14 +152,12 @@ fn batch_read_untracked_keeps_nested_reads_tracked() {
 
             assert_eq!(runs.get(), 1);
             assert_eq!(seen.get(), 1);
-            set_untracked_source
+            untracked_source
                 .set(3)
                 .expect("untracked source should update");
             assert_eq!(runs.get(), 1);
             assert_eq!(seen.get(), 1);
-            set_tracked_source
-                .set(4)
-                .expect("tracked source should update");
+            tracked_source.set(4).expect("tracked source should update");
             assert_eq!(runs.get(), 2);
             assert_eq!(seen.get(), 3);
         })
