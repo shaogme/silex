@@ -19,7 +19,6 @@ factory 可以用于多个独立挂载，也使动态替换时旧子树可以先
 fn mount(
     &self,
     context: &MountContext<'scope>,
-    attrs: Vec<AttrOp<'scope>>,
 ) -> SilexResult<MountInstance<'scope>>
 ```
 
@@ -52,10 +51,10 @@ crate 内置以下 `View` 实现：
 | `AnyView` | 将上述形态或自定义 `View` 做 owner-bound 类型擦除。 |
 | `Fn() -> V` | 每次动态 render 时创建一个新的 `V`。 |
 
-复合 view 的顶层 `attrs` 转发给第一个子项（即使它是空视图）；之后的
-sibling 使用空属性列表。需要让一个具体元素承担 class、style 或事件时，应把属性直接
-加在该元素上，或者显式构造一个 wrapper，而不要依赖一个空 sibling 接收
-属性。
+复合 view、`Option`、列表和类型擦除只负责挂载已经构造完成的 child，不猜测
+属性应该属于哪一个 root。需要让一个具体元素承担 class、style 或事件时，应在
+该元素构造阶段直接添加属性，或者显式构造一个 wrapper；组件则可声明
+`#[attrs]`，再由组件函数体把属性应用到明确元素。
 
 `AnyView::new(view)` 用 `Rc<dyn View<'scope> + 'scope>` 保存 view factory，
 因此可以在 `Vec<AnyView>`、动态分支和列表 factory 中统一返回不同元素。

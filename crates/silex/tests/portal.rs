@@ -94,7 +94,7 @@ fn mount_view<'scope, V: View<'scope>>(
     error_handler: silex_core::ErrorReporter<'scope>,
 ) -> SilexResult<MountInstance<'scope>> {
     let context = MountContext::for_parent(parent.clone().into(), owner.clone(), error_handler);
-    let instance = view.mount(&context, Vec::new())?;
+    let instance = view.mount(&context)?;
     context.transaction().commit()?;
     Ok(instance)
 }
@@ -200,11 +200,7 @@ fn assert_not_hit(element: &Element, x: f32, y: f32, label: &str) {
 struct FailingView;
 
 impl<'scope> View<'scope> for FailingView {
-    fn mount(
-        &self,
-        _context: &MountContext<'scope>,
-        _attrs: Vec<AttrOp<'scope>>,
-    ) -> SilexResult<MountInstance<'scope>> {
+    fn mount(&self, _context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
         Err(SilexError::fatal(SilexErrorKind::Dom(
             "intentional Portal mount failure".to_string(),
         )))
@@ -214,11 +210,7 @@ impl<'scope> View<'scope> for FailingView {
 struct PanickingView;
 
 impl<'scope> View<'scope> for PanickingView {
-    fn mount(
-        &self,
-        _context: &MountContext<'scope>,
-        _attrs: Vec<AttrOp<'scope>>,
-    ) -> SilexResult<MountInstance<'scope>> {
+    fn mount(&self, _context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
         panic!("intentional Portal mount panic")
     }
 }
@@ -250,7 +242,11 @@ async fn portal_modal_does_not_duplicate_content_after_repeated_toggles() {
                     ]
                     .attr("data-test", "portal-content"),
                 )
-                .attr("data-portal-host", "")
+                .host_attrs(
+                    PortalHostAttrs::new()
+                        .attr("data-portal-host", "")
+                        .expect("portal host marker should be accepted"),
+                )
                 .build(),
         ];
         let mount_owner = MountOwnerToken::new(owner);
@@ -714,7 +710,7 @@ fn popover_host_is_detached_before_mount_transaction_commit() {
             MountContext::for_parent(host.clone().into(), mount_owner, error_handler.view());
 
         let _ = view
-            .mount(&context, Vec::new())
+            .mount(&context)
             .expect("popover should mount into the open transaction");
 
         assert!(
@@ -747,36 +743,6 @@ fn popover_host_is_detached_before_mount_transaction_commit() {
                 .get_property_priority("display"),
             "important"
         );
-    });
-
-    root.close().expect("root cleanup should succeed");
-    host.parent_node()
-        .expect("test host should be attached")
-        .remove_child(&host)
-        .expect("test host should be detached");
-}
-
-#[wasm_bindgen_test]
-fn portal_rejects_reserved_host_attributes() {
-    let host = host();
-    let mut runtime = Runtime::new();
-    let root = runtime.owner().expect("root runtime should start");
-
-    root.with_access(|owner| {
-        let (open, _) = owner.signal(false).expect("open signal should be created");
-        let error_handler = owner
-            .error_handler(|_| {})
-            .expect("test error handler should be registered");
-        let ctx = SilexContext::new(owner, error_handler.view());
-        let view = Portal(ctx, open)
-            .children(div("reserved host attribute"))
-            .attr("hidden", "")
-            .attr("data-portal-host", "reserved-attribute")
-            .build();
-        let mount_owner = MountOwnerToken::new(owner);
-
-        assert!(mount_view(&view, &mount_owner, &host, error_handler.view()).is_err());
-        assert_eq!(portal_host_count(), 0);
     });
 
     root.close().expect("root cleanup should succeed");
@@ -853,7 +819,11 @@ fn portal_host_mutations_cannot_open_closed_visibility_root() {
         let ctx = SilexContext::new(owner, error_handler.view());
         let view = Portal(ctx, open)
             .children(div("closed content"))
-            .attr("data-portal-host", "host-mutation")
+            .host_attrs(
+                PortalHostAttrs::new()
+                    .attr("data-portal-host", "host-mutation")
+                    .expect("portal host marker should be accepted"),
+            )
             .build();
         let mount_owner = MountOwnerToken::new(owner);
         let _ = mount_view(&view, &mount_owner, &host, error_handler.view())
@@ -1097,7 +1067,11 @@ async fn portal_unmount_mode_keeps_host_and_unmounts_only_content() {
         let view = Portal(ctx, open)
             .children(div("Unmounted content").attr("data-test", "portal-content"))
             .content_mode(PortalContentMode::UnmountWhenClosed)
-            .attr("data-portal-host", "")
+            .host_attrs(
+                PortalHostAttrs::new()
+                    .attr("data-portal-host", "")
+                    .expect("portal host marker should be accepted"),
+            )
             .build();
         let mount_owner = MountOwnerToken::new(owner);
         let _ = mount_view(&view, &mount_owner, &host, error_handler.view())
@@ -1197,7 +1171,11 @@ fn portal_mount_failure_leaves_no_host() {
         let ctx = SilexContext::new(owner, error_handler.view());
         let failing = Portal(ctx, open)
             .children(FailingView)
-            .attr("data-portal-host", "")
+            .host_attrs(
+                PortalHostAttrs::new()
+                    .attr("data-portal-host", "")
+                    .expect("portal host marker should be accepted"),
+            )
             .build();
         let mount_owner = MountOwnerToken::new(owner);
         assert!(mount_view(&failing, &mount_owner, &host, error_handler.view()).is_err());
@@ -1226,7 +1204,11 @@ fn portal_mount_panic_leaves_no_host() {
         let ctx = SilexContext::new(owner, error_handler.view());
         let panicking = Portal(ctx, open)
             .children(PanickingView)
-            .attr("data-portal-host", "")
+            .host_attrs(
+                PortalHostAttrs::new()
+                    .attr("data-portal-host", "")
+                    .expect("portal host marker should be accepted"),
+            )
             .build();
         let mount_owner = MountOwnerToken::new(owner);
         let result = catch_unwind(AssertUnwindSafe(|| {
@@ -1262,7 +1244,11 @@ fn portal_host_respects_explicit_target_and_cleanup() {
         let view = PortalHost(ctx)
             .children(div("target content"))
             .mount_to(Some(target.clone().into()))
-            .attr("data-portal-host", "")
+            .host_attrs(
+                PortalHostAttrs::new()
+                    .attr("data-portal-host", "")
+                    .expect("portal host marker should be accepted"),
+            )
             .build();
         let mount_owner = MountOwnerToken::new(owner);
         let _ = mount_view(&view, &mount_owner, &host, error_handler.view())

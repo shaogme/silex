@@ -1,7 +1,6 @@
 use super::context::{MountContext, MountTarget, MountTransaction};
-use super::contract::{ApplyAttributes, MountInstance, View, ViewCons, ViewNil};
+use super::contract::{MountInstance, View, ViewCons, ViewNil};
 use super::owner::{MountOwner, MountOwnerToken, OwnerMount};
-use crate::attribute::AttrOp;
 use silex_core::{CloseError, SilexError, SilexErrorKind, SilexResult};
 use std::{
     borrow::Cow,
@@ -11,11 +10,10 @@ use web_sys::Node;
 
 pub(crate) fn mount_composite<'scope, F>(
     context: &MountContext<'scope>,
-    attrs: Vec<AttrOp<'scope>>,
     mount: F,
 ) -> SilexResult<MountInstance<'scope>>
 where
-    F: FnOnce(&MountContext<'scope>, Vec<AttrOp<'scope>>) -> SilexResult<MountInstance<'scope>>,
+    F: FnOnce(&MountContext<'scope>) -> SilexResult<MountInstance<'scope>>,
 {
     let owner = context.owner();
     let transaction = context.transaction().child()?;
@@ -28,7 +26,7 @@ where
         transaction.clone(),
     );
 
-    if let Err(error) = mount(&child_context, attrs) {
+    if let Err(error) = mount(&child_context) {
         return rollback_composite_scope_with_primary(
             context,
             &transaction,
@@ -81,13 +79,12 @@ where
 #[doc(hidden)]
 pub fn mount_component<'scope, F>(
     context: &MountContext<'scope>,
-    attrs: Vec<AttrOp<'scope>>,
     mount: F,
 ) -> SilexResult<MountInstance<'scope>>
 where
-    F: FnOnce(&MountContext<'scope>, Vec<AttrOp<'scope>>) -> SilexResult<MountInstance<'scope>>,
+    F: FnOnce(&MountContext<'scope>) -> SilexResult<MountInstance<'scope>>,
 {
-    mount_composite(context, attrs, mount)
+    mount_composite(context, mount)
 }
 
 fn rollback_composite_scope<'scope>(owner: &MountOwnerToken<'scope>) -> Result<(), CloseError> {
@@ -125,14 +122,8 @@ pub fn mount_text_node<'scope>(
 
 macro_rules! impl_text_view {
     ($ty:ty) => {
-        impl<'scope> ApplyAttributes<'scope> for $ty {}
-
         impl<'scope> View<'scope> for $ty {
-            fn mount(
-                &self,
-                context: &MountContext<'scope>,
-                _attrs: Vec<AttrOp<'scope>>,
-            ) -> SilexResult<MountInstance<'scope>> {
+            fn mount(&self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
                 mount_text_node(context, self)
             }
         }
@@ -141,26 +132,14 @@ macro_rules! impl_text_view {
 
 impl_text_view!(String);
 
-impl<'scope> ApplyAttributes<'scope> for &'scope str {}
-
 impl<'scope> View<'scope> for &'scope str {
-    fn mount(
-        &self,
-        context: &MountContext<'scope>,
-        _attrs: Vec<AttrOp<'scope>>,
-    ) -> SilexResult<MountInstance<'scope>> {
+    fn mount(&self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
         mount_text_node(context, self)
     }
 }
 
-impl<'scope> ApplyAttributes<'scope> for Cow<'scope, str> {}
-
 impl<'scope> View<'scope> for Cow<'scope, str> {
-    fn mount(
-        &self,
-        context: &MountContext<'scope>,
-        _attrs: Vec<AttrOp<'scope>>,
-    ) -> SilexResult<MountInstance<'scope>> {
+    fn mount(&self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
         mount_text_node(context, self.as_ref())
     }
 }
@@ -168,14 +147,8 @@ impl<'scope> View<'scope> for Cow<'scope, str> {
 macro_rules! impl_primitive_view {
     ($($ty:ty),*) => {
         $(
-            impl<'scope> ApplyAttributes<'scope> for $ty {}
-
             impl<'scope> View<'scope> for $ty {
-                fn mount(
-                    &self,
-                    context: &MountContext<'scope>,
-                    _attrs: Vec<AttrOp<'scope>>,
-                ) -> SilexResult<MountInstance<'scope>> {
+                fn mount(&self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
                     mount_text_node(context, &self.to_string())
                 }
             }
@@ -187,132 +160,55 @@ impl_primitive_view!(
     i8, u8, i16, u16, i32, u32, i64, u64, i128, u128, isize, usize, f32, f64, bool, char
 );
 
-impl<'scope> ApplyAttributes<'scope> for () {}
-
 impl<'scope> View<'scope> for () {
-    fn mount(
-        &self,
-        _context: &MountContext<'scope>,
-        _attrs: Vec<AttrOp<'scope>>,
-    ) -> SilexResult<MountInstance<'scope>> {
+    fn mount(&self, _context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
         Ok(MountInstance::from_nodes(Vec::new()))
     }
 }
 
-impl<'scope, V: View<'scope> + ApplyAttributes<'scope>> ApplyAttributes<'scope> for Option<V> {
-    fn apply_attributes(&mut self, attrs: Vec<AttrOp<'scope>>) {
-        if let Some(value) = self {
-            value.apply_attributes(attrs);
-        }
-    }
-}
-
 impl<'scope, V: View<'scope>> View<'scope> for Option<V> {
-    fn mount(
-        &self,
-        context: &MountContext<'scope>,
-        attrs: Vec<AttrOp<'scope>>,
-    ) -> SilexResult<MountInstance<'scope>> {
+    fn mount(&self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
         if let Some(value) = self {
-            value.mount(context, attrs)
+            value.mount(context)
         } else {
             Ok(MountInstance::from_nodes(Vec::new()))
         }
     }
 }
 
-impl<'scope, V: View<'scope> + ApplyAttributes<'scope>> ApplyAttributes<'scope> for Vec<V> {
-    fn apply_attributes(&mut self, attrs: Vec<AttrOp<'scope>>) {
-        for value in self {
-            value.apply_attributes(attrs.clone());
-        }
-    }
-}
-
 impl<'scope, V: View<'scope>> View<'scope> for Vec<V> {
-    fn mount(
-        &self,
-        context: &MountContext<'scope>,
-        attrs: Vec<AttrOp<'scope>>,
-    ) -> SilexResult<MountInstance<'scope>> {
-        mount_composite(context, attrs, move |child_context, attrs| {
-            for (index, value) in self.iter().enumerate() {
-                let _ = value.mount(
-                    child_context,
-                    if index == 0 {
-                        attrs.clone()
-                    } else {
-                        Vec::new()
-                    },
-                )?;
+    fn mount(&self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
+        mount_composite(context, move |child_context| {
+            for value in self {
+                let _ = value.mount(child_context)?;
             }
             Ok(MountInstance::from_nodes(Vec::new()))
         })
-    }
-}
-
-impl<'scope, V: View<'scope> + ApplyAttributes<'scope>, const N: usize> ApplyAttributes<'scope>
-    for [V; N]
-{
-    fn apply_attributes(&mut self, attrs: Vec<AttrOp<'scope>>) {
-        for value in self {
-            value.apply_attributes(attrs.clone());
-        }
     }
 }
 
 impl<'scope, V: View<'scope>, const N: usize> View<'scope> for [V; N] {
-    fn mount(
-        &self,
-        context: &MountContext<'scope>,
-        attrs: Vec<AttrOp<'scope>>,
-    ) -> SilexResult<MountInstance<'scope>> {
-        mount_composite(context, attrs, move |child_context, attrs| {
-            for (index, value) in self.iter().enumerate() {
-                let _ = value.mount(
-                    child_context,
-                    if index == 0 {
-                        attrs.clone()
-                    } else {
-                        Vec::new()
-                    },
-                )?;
+    fn mount(&self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
+        mount_composite(context, move |child_context| {
+            for value in self {
+                let _ = value.mount(child_context)?;
             }
             Ok(MountInstance::from_nodes(Vec::new()))
         })
     }
 }
 
-impl<'scope> ApplyAttributes<'scope> for ViewNil {}
-
 impl<'scope> View<'scope> for ViewNil {
-    fn mount(
-        &self,
-        _context: &MountContext<'scope>,
-        _attrs: Vec<AttrOp<'scope>>,
-    ) -> SilexResult<MountInstance<'scope>> {
+    fn mount(&self, _context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
         Ok(MountInstance::from_nodes(Vec::new()))
     }
 }
 
-impl<'scope, H: ApplyAttributes<'scope>, T: ApplyAttributes<'scope>> ApplyAttributes<'scope>
-    for ViewCons<H, T>
-{
-    fn apply_attributes(&mut self, attrs: Vec<AttrOp<'scope>>) {
-        self.0.apply_attributes(attrs.clone());
-        self.1.apply_attributes(attrs);
-    }
-}
-
 impl<'scope, H: View<'scope>, T: View<'scope>> View<'scope> for ViewCons<H, T> {
-    fn mount(
-        &self,
-        context: &MountContext<'scope>,
-        attrs: Vec<AttrOp<'scope>>,
-    ) -> SilexResult<MountInstance<'scope>> {
-        mount_composite(context, attrs, move |child_context, attrs| {
-            let _ = self.0.mount(child_context, attrs)?;
-            let _ = self.1.mount(child_context, Vec::new())?;
+    fn mount(&self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
+        mount_composite(context, move |child_context| {
+            let _ = self.0.mount(child_context)?;
+            let _ = self.1.mount(child_context)?;
             Ok(MountInstance::from_nodes(Vec::new()))
         })
     }
@@ -331,22 +227,10 @@ macro_rules! chain {
     };
 }
 
-impl<'scope, V: View<'scope> + ApplyAttributes<'scope>> ApplyAttributes<'scope> for SilexResult<V> {
-    fn apply_attributes(&mut self, attrs: Vec<AttrOp<'scope>>) {
-        if let Ok(value) = self {
-            value.apply_attributes(attrs);
-        }
-    }
-}
-
 impl<'scope, V: View<'scope>> View<'scope> for SilexResult<V> {
-    fn mount(
-        &self,
-        context: &MountContext<'scope>,
-        attrs: Vec<AttrOp<'scope>>,
-    ) -> SilexResult<MountInstance<'scope>> {
+    fn mount(&self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
         match self {
-            Ok(value) => value.mount(context, attrs),
+            Ok(value) => value.mount(context),
             Err(error) => Err(error.clone()),
         }
     }

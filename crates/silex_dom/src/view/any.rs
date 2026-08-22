@@ -1,7 +1,6 @@
 use super::mount::mount_composite;
-use crate::attribute::AttrOp;
 use crate::element::Element;
-use crate::view::{ApplyAttributes, MountContext, MountInstance, View, ViewCons, ViewNil};
+use crate::view::{MountContext, MountInstance, View, ViewCons, ViewNil};
 use silex_core::SilexResult;
 use std::rc::Rc;
 
@@ -13,7 +12,7 @@ pub enum AnyView<'scope> {
     Text(String),
     Element(Element<'scope>),
     List(Vec<AnyView<'scope>>),
-    Boxed(Rc<dyn View<'scope> + 'scope>, Vec<AttrOp<'scope>>),
+    Boxed(Rc<dyn View<'scope> + 'scope>),
 }
 
 impl<'scope> AnyView<'scope> {
@@ -21,7 +20,7 @@ impl<'scope> AnyView<'scope> {
     where
         V: View<'scope> + 'scope,
     {
-        Self::Boxed(Rc::new(view), Vec::new())
+        Self::Boxed(Rc::new(view))
     }
 
     pub fn into_any(self) -> Self {
@@ -29,66 +28,26 @@ impl<'scope> AnyView<'scope> {
     }
 }
 
-fn merge_attrs<'scope>(
-    mut inner_attrs: Vec<AttrOp<'scope>>,
-    attrs: Vec<AttrOp<'scope>>,
-) -> Vec<AttrOp<'scope>> {
-    inner_attrs.extend(attrs);
-    crate::attribute::consolidate_attributes(inner_attrs)
-}
-
 fn mount_list<'scope>(
     list: &[AnyView<'scope>],
     context: &MountContext<'scope>,
-    attrs: Vec<AttrOp<'scope>>,
 ) -> SilexResult<MountInstance<'scope>> {
-    mount_composite(context, attrs, move |child_context, attrs| {
-        for (index, child) in list.iter().enumerate() {
-            let _ = child.mount(
-                child_context,
-                if index == 0 {
-                    attrs.clone()
-                } else {
-                    Vec::new()
-                },
-            )?;
+    mount_composite(context, move |child_context| {
+        for child in list {
+            let _ = child.mount(child_context)?;
         }
         Ok(MountInstance::from_nodes(Vec::new()))
     })
 }
 
-impl<'scope> ApplyAttributes<'scope> for AnyView<'scope> {
-    fn apply_attributes(&mut self, attrs: Vec<AttrOp<'scope>>) {
-        match self {
-            Self::Empty | Self::Text(_) => {}
-            Self::Element(element) => element.apply_attributes(attrs),
-            Self::List(list) => {
-                for child in list {
-                    child.apply_attributes(attrs.clone());
-                }
-            }
-            Self::Boxed(_, inner_attrs) => {
-                let current = std::mem::take(inner_attrs);
-                *inner_attrs = merge_attrs(current, attrs);
-            }
-        }
-    }
-}
-
 impl<'scope> View<'scope> for AnyView<'scope> {
-    fn mount(
-        &self,
-        context: &MountContext<'scope>,
-        attrs: Vec<AttrOp<'scope>>,
-    ) -> SilexResult<MountInstance<'scope>> {
+    fn mount(&self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
         match self {
             Self::Empty => Ok(MountInstance::from_nodes(Vec::new())),
-            Self::Text(text) => text.mount(context, attrs),
-            Self::Element(element) => element.mount(context, attrs),
-            Self::List(list) => mount_list(list, context, attrs),
-            Self::Boxed(view, inner_attrs) => {
-                view.mount(context, merge_attrs(inner_attrs.clone(), attrs))
-            }
+            Self::Text(text) => text.mount(context),
+            Self::Element(element) => element.mount(context),
+            Self::List(list) => mount_list(list, context),
+            Self::Boxed(view) => view.mount(context),
         }
     }
 }
@@ -100,7 +59,7 @@ impl<'scope> Clone for AnyView<'scope> {
             Self::Text(text) => Self::Text(text.clone()),
             Self::Element(element) => Self::Element(element.clone()),
             Self::List(list) => Self::List(list.clone()),
-            Self::Boxed(view, attrs) => Self::Boxed(view.clone(), attrs.clone()),
+            Self::Boxed(view) => Self::Boxed(view.clone()),
         }
     }
 }
@@ -112,9 +71,7 @@ impl PartialEq for AnyView<'_> {
             (Self::Text(left), Self::Text(right)) => left == right,
             (Self::Element(left), Self::Element(right)) => left == right,
             (Self::List(left), Self::List(right)) => left == right,
-            (Self::Boxed(left, left_attrs), Self::Boxed(right, right_attrs)) => {
-                Rc::ptr_eq(left, right) && left_attrs == right_attrs
-            }
+            (Self::Boxed(left), Self::Boxed(right)) => Rc::ptr_eq(left, right),
             _ => false,
         }
     }
@@ -127,7 +84,7 @@ impl std::fmt::Debug for AnyView<'_> {
             Self::Text(text) => f.debug_tuple("AnyView(Text)").field(text).finish(),
             Self::Element(_) => f.write_str("AnyView(Element)"),
             Self::List(list) => f.debug_tuple("AnyView(List)").field(&list.len()).finish(),
-            Self::Boxed(_, _) => f.write_str("AnyView(Boxed)"),
+            Self::Boxed(_) => f.write_str("AnyView(Boxed)"),
         }
     }
 }

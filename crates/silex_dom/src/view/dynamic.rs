@@ -1,24 +1,22 @@
 use super::any::AnyView;
 use super::context::{MountContext, MountTarget};
-use super::contract::{ApplyAttributes, MountInstance, View};
+use super::contract::{MountInstance, View};
 use super::owner::{MountErrorHandler, MountOwner, MountOwnerToken};
 use super::row::{NodeRange, RowInstance, RowInstanceConfig, RowRenderContext, RowRenderer};
-use crate::attribute::AttrOp;
 use silex_core::{CloseError, OwnerAccess, SilexError, SilexErrorKind, SilexResult};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 pub struct DynamicRenderArgs<'scope> {
     pub(crate) context: MountContext<'scope>,
-    pub(crate) attrs: Vec<AttrOp<'scope>>,
 }
 
 impl<'scope> DynamicRenderArgs<'scope> {
-    pub fn new(context: MountContext<'scope>, attrs: Vec<AttrOp<'scope>>) -> Self {
-        Self { context, attrs }
+    pub fn new(context: MountContext<'scope>) -> Self {
+        Self { context }
     }
 
-    pub fn into_parts(self) -> (MountContext<'scope>, Vec<AttrOp<'scope>>) {
-        (self.context, self.attrs)
+    pub fn into_context(self) -> MountContext<'scope> {
+        self.context
     }
 }
 
@@ -45,31 +43,19 @@ impl<'scope> DynamicRenderer<'scope> {
     }
 }
 
-impl<'scope, F, V> ApplyAttributes<'scope> for F
-where
-    F: Fn() -> V + Clone + 'scope,
-    V: View<'scope> + 'scope,
-{
-}
-
 impl<'scope, F, V> View<'scope> for F
 where
     F: Fn() -> V + Clone + 'scope,
     V: View<'scope> + 'scope,
 {
-    fn mount(
-        &self,
-        context: &MountContext<'scope>,
-        attrs: Vec<AttrOp<'scope>>,
-    ) -> SilexResult<MountInstance<'scope>> {
+    fn mount(&self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
         let factory = self.clone();
         mount_dynamic_view_universal(
             context,
-            attrs,
             DynamicRenderer::new(move |args| {
-                let DynamicRenderArgs { context, attrs } = args;
+                let DynamicRenderArgs { context } = args;
                 let view = factory();
-                view.mount(&context, attrs)
+                view.mount(&context)
             }),
         )
     }
@@ -78,15 +64,12 @@ where
 /// Shared dynamic-view mount kernel.
 pub fn mount_dynamic_view_universal<'scope>(
     context: &MountContext<'scope>,
-    attrs: Vec<AttrOp<'scope>>,
     renderer: DynamicRenderer<'scope>,
 ) -> SilexResult<MountInstance<'scope>> {
     let range = NodeRange::at_target(context.target(), "dyn")?;
     let render = RowRenderer::new(move |args: RowRenderContext<'scope, ()>| {
-        let RowRenderContext { context, attrs, .. } = args;
-        renderer
-            .call(DynamicRenderArgs::new(context, attrs))
-            .map(|_| ())
+        let RowRenderContext { context, .. } = args;
+        renderer.call(DynamicRenderArgs::new(context)).map(|_| ())
     });
     let token = context.owner();
     let row_context = context.with_target(MountTarget::Before(range.end.clone()));
@@ -96,7 +79,6 @@ pub fn mount_dynamic_view_universal<'scope>(
         RowInstanceConfig {
             range,
             render,
-            attrs,
             item: (),
             index: 0,
             stateful: false,
@@ -213,7 +195,6 @@ impl<'scope> BranchRenderContext<'scope> {
 /// Mount a stable branch whose evaluation can report a runtime error.
 pub fn mount_branch_stable_cached<'scope, K, S, KeyFn, BranchFn>(
     context: &MountContext<'scope>,
-    attrs: Vec<AttrOp<'scope>>,
     key_fn: KeyFn,
     branch_fn: BranchFn,
 ) -> SilexResult<MountInstance<'scope>>
@@ -228,7 +209,6 @@ where
             let RowRenderContext {
                 item: key,
                 context,
-                attrs,
                 branch_context,
                 ..
             } = args;
@@ -238,13 +218,12 @@ where
                 ))
             })?;
             branch_fn(key, branch_context.clone())
-                .mount(&context, attrs)
+                .mount(&context)
                 .map(|_| ())
         },
     );
     mount_keyed_dynamic_view(KeyedDynamicMountArgs {
         context: context.clone(),
-        attrs,
         error_handler: context.error_handler(),
         key_fn,
         render,
@@ -258,12 +237,10 @@ struct BranchState<'scope, K> {
     row: Option<RowInstance<'scope, K>>,
     key: Option<K>,
     render: RowRenderer<'scope, K>,
-    attrs: Vec<AttrOp<'scope>>,
 }
 
 struct KeyedDynamicMountArgs<'scope, K, KeyFn> {
     context: MountContext<'scope>,
-    attrs: Vec<AttrOp<'scope>>,
     error_handler: MountErrorHandler<'scope>,
     key_fn: KeyFn,
     render: RowRenderer<'scope, K>,
@@ -280,7 +257,6 @@ where
 {
     let KeyedDynamicMountArgs {
         context,
-        attrs,
         error_handler,
         key_fn,
         render,
@@ -295,7 +271,6 @@ where
         row: None,
         key: None,
         render,
-        attrs,
     })?;
     let cleanup_state = state.clone();
     let cleanup_range = state.with(|state| state.range.clone())?;
@@ -355,11 +330,10 @@ where
                     return Ok(());
                 }
 
-                let (outer_range, render, attrs, old_row, old_key) = {
+                let (outer_range, render, old_row, old_key) = {
                     (
                         state.range.clone(),
                         state.render.clone(),
-                        state.attrs.clone(),
                         state.row.take(),
                         state.key.take(),
                     )
@@ -377,7 +351,6 @@ where
                     RowInstanceConfig {
                         range: row_range,
                         render,
-                        attrs,
                         item: key.clone(),
                         index: 0,
                         stateful: false,

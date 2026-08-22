@@ -4,9 +4,8 @@ use gloo_timers::future::TimeoutFuture;
 use silex_core::{
     ErrorHandlerToken, ErrorReporter, OwnerAccess, OwnerHandle, Runtime, SilexContext, SilexResult,
 };
-use silex_dom::attribute::AttrOp;
 use silex_dom::view::{
-    AnyView, ApplyAttributes, IndexedListView, MountContext, MountInstance, MountOwnerToken, View,
+    AnyView, IndexedListView, MountContext, MountInstance, MountOwnerToken, View,
 };
 use silex_persist::{
     PersistExternalSync, PersistWriteMode, PersistenceState, Persistent, WriteDefault,
@@ -41,11 +40,10 @@ fn mount_view<'scope, V: View<'scope>>(
     view: &V,
     owner: &MountOwnerToken<'scope>,
     parent: &Node,
-    attrs: Vec<AttrOp<'scope>>,
     error_handler: ErrorReporter<'scope>,
 ) -> SilexResult<MountInstance<'scope>> {
     let context = MountContext::for_parent(parent.clone(), owner.clone(), error_handler);
-    let instance = view.mount(&context, attrs)?;
+    let instance = view.mount(&context)?;
     context.transaction().commit()?;
     Ok(instance)
 }
@@ -372,15 +370,12 @@ struct CapturedPersistent<'scope> {
     node: Rc<RefCell<Option<Node>>>,
 }
 
-impl<'scope> ApplyAttributes<'scope> for CapturedPersistent<'scope> {}
-
 impl<'scope> View<'scope> for CapturedPersistent<'scope> {
     fn mount(
         &self,
         context: &MountContext<'scope>,
-        attrs: Vec<AttrOp<'scope>>,
     ) -> silex_core::SilexResult<MountInstance<'scope>> {
-        let instance = self.binding.mount(context, attrs)?;
+        let instance = self.binding.mount(context)?;
         *self.node.borrow_mut() = instance.first_node().cloned();
         Ok(instance)
     }
@@ -800,14 +795,8 @@ fn persistent_view_updates_and_stops_with_root() {
             .build()
             .expect("persistent binding should build");
         let (owner, error_handler) = test_owner(scope);
-        let _ = mount_view(
-            &binding,
-            &owner,
-            parent.as_ref(),
-            Vec::new(),
-            error_handler.view(),
-        )
-        .expect("persistent view should mount");
+        let _ = mount_view(&binding, &owner, parent.as_ref(), error_handler.view())
+            .expect("persistent view should mount");
         assert_eq!(parent.text_content(), Some("one".to_string()));
         binding
             .set("two".to_string())
@@ -856,7 +845,6 @@ fn persistent_view_stops_after_lexical_owner_dispose() {
                 &view,
                 &owner,
                 parent.as_ref(),
-                Vec::new(),
                 error_handler.view(),
             )
             .expect("captured persistent view should mount");
@@ -929,14 +917,8 @@ fn persistent_view_stops_after_row_owner_dispose() {
             _marker: std::marker::PhantomData,
         };
         let (owner, error_handler) = test_owner(scope);
-        let _ = mount_view(
-            &list,
-            &owner,
-            parent.as_ref(),
-            Vec::new(),
-            error_handler.view(),
-        )
-        .expect("persistent list should mount");
+        let _ = mount_view(&list, &owner, parent.as_ref(), error_handler.view())
+            .expect("persistent list should mount");
         assert_eq!(parent.text_content(), Some("one".to_string()));
 
         set_items

@@ -13,7 +13,7 @@ pub use context::{
     MountAncestry, MountContext, MountTarget, MountTransaction, MountTransactionState,
 };
 pub use contract::{
-    ApplyAttributes, MountInstance, Prop, PropFixed, PropInto, PropMissing, View, ViewCons, ViewNil,
+    MountInstance, Prop, PropFixed, PropInto, PropMissing, View, ViewCons, ViewNil,
 };
 pub use dynamic::{
     BranchEvaluation, BranchRenderContext, DynamicRenderArgs, DynamicRenderer,

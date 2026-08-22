@@ -90,16 +90,13 @@ pub struct LinkView<'scope> {
     view: SilexResult<AnyView<'scope>>,
 }
 
-impl<'scope> ApplyAttributes<'scope> for LinkView<'scope> {}
-
 impl<'scope> View<'scope> for LinkView<'scope> {
     fn mount(
         &self,
         context: &MountContext<'scope>,
-        attrs: Vec<silex_dom::attribute::AttrOp<'scope>>,
     ) -> SilexResult<silex_dom::view::MountInstance<'scope>> {
         match &self.view {
-            Ok(view) => view.mount(context, attrs),
+            Ok(view) => view.mount(context),
             Err(error) => Err(error.clone()),
         }
     }
@@ -113,6 +110,7 @@ pub fn Link<'scope, T: ToRoute + Clone + 'scope>(
     #[ctx] router_ctx: RouterContext<'scope>,
     to: T,
     #[chain] children: AnyView<'scope>,
+    #[attrs] attrs: AttributeGroup<'scope>,
     #[prop(into)]
     #[chain(default)]
     active_class: String,
@@ -170,6 +168,7 @@ pub fn Link<'scope, T: ToRoute + Clone + 'scope>(
                 e.prevent_default();
                 navigator.push(href_for_click.as_str())
             })
+            .apply(attrs)
             .into_any())
     })();
     LinkView { view }

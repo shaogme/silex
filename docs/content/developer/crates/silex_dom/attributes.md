@@ -13,8 +13,9 @@ weight = 40
 
 ## builder 的四个基本入口
 
-`AttributeBuilder` 是 `Element`、`TypedElement`、`AnyView` 等 view 的通用
-扩展 trait：
+`AttributeBuilder` 是 `Element`、`TypedElement` 以及声明 `#[attrs]` 的组件
+builder 的属性构造扩展 trait。`AnyView`、fragment、列表和其它通用 View
+wrapper 不实现该 trait：它们没有可推断的唯一 DOM root。
 
 | 方法 | 目标 |
 | --- | --- |

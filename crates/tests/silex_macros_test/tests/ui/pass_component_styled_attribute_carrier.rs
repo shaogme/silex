@@ -64,8 +64,7 @@ fn main() {
             .name("initial")
             .label("button")
             .name("final")
-            .build()
-            .type_("submit");
+            .build();
         let textarea = BridgeTextarea(ctx).value("text").placeholder("hint").build();
         let anchor = BridgeAnchor(ctx, AnyView::Empty).href("/docs").build();
         let image = BridgeImage(ctx).src("/logo.svg").alt("logo").build();

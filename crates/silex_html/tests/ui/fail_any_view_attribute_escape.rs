@@ -1,7 +1,4 @@
-use silex_dom::{
-    attribute::AttributeBuilder,
-    view::AnyView,
-};
+use silex_dom::view::AnyView;
 use silex_html::input;
 
 fn main() {

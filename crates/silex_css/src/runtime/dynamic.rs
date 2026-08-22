@@ -16,8 +16,8 @@ use silex_core::{ErrorReporter, Rx, SilexError, SilexErrorKind, SilexResult};
 use silex_dom::{
     attribute::{ApplyTarget, ApplyToDom, AttrOp, IntoStorable},
     view::{
-        ApplyAttributes, MountContext, MountErrorHandler, MountInstance, MountOwner,
-        MountOwnerToken, MountState, View,
+        MountContext, MountErrorHandler, MountInstance, MountOwner, MountOwnerToken, MountState,
+        View,
     },
 };
 use std::{
@@ -1017,14 +1017,8 @@ impl<'scope> GlobalStyleView<'scope> {
     }
 }
 
-impl<'scope> ApplyAttributes<'scope> for GlobalStyleView<'scope> {}
-
 impl<'scope> View<'scope> for GlobalStyleView<'scope> {
-    fn mount(
-        &self,
-        context: &MountContext<'scope>,
-        _attrs: Vec<AttrOp<'scope>>,
-    ) -> SilexResult<MountInstance<'scope>> {
+    fn mount(&self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
         self.mount_inner(context)
     }
 }

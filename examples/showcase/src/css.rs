@@ -560,7 +560,7 @@ pub fn Theming<'scope, Ctx>(
             ThemeButton(ctx, "Themed Scoped Button")
                 .active(false)?
                 .build()
-        )).build().apply(theme_variables(theme)),
+        )).apply(theme_variables(theme)).build(),
 
         h3("Incremental Patching (New)").style(sty(ctx).margin("40px 0 16px")?),
         p("Only override specific variables (like 'primary') while inheriting the rest from the environment via CSS inheritance.")
@@ -576,8 +576,7 @@ pub fn Theming<'scope, Ctx>(
                         .build(),
                     span(" (Variable inheritance in action!) ").style(sty(ctx).font_size(em_unit(0.8))?.opacity(0.6)?)
                 ]
-            )).build()
-            .apply(theme_patch(rx!(ctx; @fn AppThemePatch::default().primary(hex("#ff69b4")))?)),
+            )).apply(theme_patch(rx!(ctx; @fn AppThemePatch::default().primary(hex("#ff69b4")))?)).build(),
         ].apply(theme_variables(theme)),
 
         h3("Layout Continuity").style(sty(ctx).margin("40px 0 16px")?),
@@ -602,7 +601,7 @@ pub fn Theming<'scope, Ctx>(
                 Stack(ctx, chain!(
                     div("Nested 1").style(sty(ctx).background(AppTheme::SURFACE)?.color(AppTheme::TEXT)?.padding("10px")?.border_radius(px(4))?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::PRIMARY))?),
                     div("Nested 2").style(sty(ctx).background(AppTheme::SURFACE)?.color(AppTheme::TEXT)?.padding("10px")?.border_radius(px(4))?.border(border(px(1), BorderStyleKeyword::Solid, AppTheme::SECONDARY))?),
-                )).gap(4)?.build()?.apply(theme_variables(theme)),
+                )).gap(4)?.apply(theme_variables(theme)).build()?,
                 div("Sibling of Nested Stack").style(sty(ctx).background(AppTheme::SURFACE_ALT)?.color(AppTheme::TEXT)?.padding("10px")?.margin_top(px(4))?.border_radius(px(4))?),
             )).style(sty(ctx).border(border(px(2), BorderStyleKeyword::Solid, hex("#3b82f6")))?.padding(px(8))?)?.build()
         )).build(),
@@ -762,15 +761,15 @@ pub fn AdvancedStyling<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                 h4("1. Local Unsafe Blocks"),
                 p("Use `unsafe { ... }` blocks to inject raw properties or bypass type checks locally.").style(sty(ctx).margin_bottom(px(16))?.font_size(em_unit(0.9))?.opacity(0.7)?),
                 UnsafeBlockDemo(ctx, "I have a raw orange glow")
-                    .build()
                     .style(sty(ctx).margin_bottom(px(16))?)
+                    .build()
         )).build(),
             DemoCard(ctx, chain!(
                 h4("2. Global Unsafe Component"),
                 p("Marking a styled component as `unsafe` disables all validation for its entire CSS block.").style(sty(ctx).margin_bottom(px(16))?.font_size(em_unit(0.9))?.opacity(0.7)?),
                 UnsafeCompDemo(ctx, "Everything here is raw")
-                    .build()
                     .style(sty(ctx).width(pct(100))?)
+                    .build()
             )).build()
         )).gap(24)?.build()
     ])

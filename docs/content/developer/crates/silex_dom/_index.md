@@ -46,10 +46,11 @@ sort_by = "weight"
 | `MountedApp` | 为一个宿主节点管理可重复的应用挂载、提交、回滚和 dispose。 |
 | `MountContext<'scope>` | 在一次挂载事务中提供物理 target、逻辑 ancestry、owner token、transaction 和 `mount` 方法。 |
 | `View<'scope>` | 可重复执行的视图工厂契约；每次 `mount` 都创建新的 `MountInstance`。 |
-| `Element` / `TypedElement<T>` | 构造 HTML 或 SVG 元素、保存子视图和延迟属性。 |
+| `Element` / `TypedElement<T>` | 构造 HTML 或 SVG 元素、保存子视图和自身的延迟属性。 |
 | `MountInstance<'scope>` | 本次挂载产生的 DOM 节点快照，不负责替代 owner 清理。 |
 | `AnyView<'scope>` / `chain!` | 在异构视图、可选视图、列表和动态组件之间做类型擦除或组合。 |
 | `AttributeBuilder` / `ApplyTarget` / `AttrOp` | 构造 attribute、property、class、style、事件和自定义 DOM 操作。 |
+| `#[attrs]` component builder | 收集调用方属性，并由组件函数体应用到明确的元素。 |
 | `MountOwner` / `MountOwnerToken` | 为子树注册 effect、cleanup、动态状态和宿主 callback。 |
 | `AutoReactiveView` | 让 `Rx`、signal、computed 或 stored value 作为文本或动态视图挂载。 |
 | `HostResource` | 由 owner 注册表管理的 window listener、timer、animation frame 等宿主资源；通过 `cancel`/`finish` 显式结束。 |

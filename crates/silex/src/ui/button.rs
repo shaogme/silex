@@ -7,6 +7,7 @@ use silex_macros::{component, tw_variants};
 pub fn Button<'scope, Ctx>(
     #[ctx] ctx: Ctx,
     children: AnyView<'scope>,
+    #[attrs] attrs: AttributeGroup<'scope>,
     #[prop(into)]
     #[chain(default)]
     variant: Signal<'scope, String>,
@@ -55,5 +56,8 @@ pub fn Button<'scope, Ctx>(
         }
     })?;
 
-    Ok(button(children).attr("data-slot", "button").class(cls))
+    Ok(button(children)
+        .attr("data-slot", "button")
+        .class(cls)
+        .apply(attrs))
 }

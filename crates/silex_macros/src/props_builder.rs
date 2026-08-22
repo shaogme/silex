@@ -17,6 +17,7 @@ struct FieldAttrs {
     chain_method: Option<Ident>,
     chain_each: bool,
     ctx: bool,
+    attrs: bool,
 }
 
 #[derive(Clone)]
@@ -34,6 +35,18 @@ impl FieldSpec {
             .clone()
             .expect("named fields must have identifiers");
         let attrs = parse_field_attrs(&field.attrs)?;
+        if attrs.attrs && (attrs.ctx || attrs.chained || attrs.chain_each) {
+            return Err(syn::Error::new_spanned(
+                &field.ty,
+                "`#[attrs]` cannot be combined with `#[ctx]` or `#[chain]`",
+            ));
+        }
+        if attrs.attrs && !is_attribute_group_type(&field.ty) {
+            return Err(syn::Error::new_spanned(
+                &field.ty,
+                "`#[attrs]` requires an `AttributeGroup<'scope>` field",
+            ));
+        }
         if attrs.chain_each && vec_item_type(&field.ty).is_none() {
             return Err(syn::Error::new_spanned(
                 &field.ty,
@@ -164,6 +177,18 @@ impl BuilderContext {
             ));
         }
         let ctx_field = ctx_fields.first().map(|field| field.ident.clone());
+
+        if fields.iter().filter(|field| field.attrs.attrs).count() > 1 {
+            let duplicate = fields
+                .iter()
+                .filter(|field| field.attrs.attrs)
+                .nth(1)
+                .expect("second attrs field must exist");
+            return Err(syn::Error::new_spanned(
+                &duplicate.ident,
+                "PropsBuilder supports at most one `#[attrs]` field",
+            ));
+        }
 
         if let Some(field) = fields.iter().find(|field| is_reactive_default_field(field))
             && ctx_field.is_none()
@@ -362,6 +387,10 @@ impl BuilderContext {
         quote! { #__silex::dom::attribute::AttrOp<#scope> }
     }
 
+    fn has_attrs(&self) -> bool {
+        self.fields.iter().any(|field| field.attrs.attrs)
+    }
+
     fn has_fallible_reactive_defaults(&self) -> bool {
         self.fields.iter().any(is_fallible_reactive_default_field)
     }
@@ -420,19 +449,16 @@ impl BuilderContext {
     }
 
     fn generate_product_struct(&self) -> TokenStream2 {
-        let __silex = crate::crate_path::silex();
         let vis = &self.vis;
         let product_name = &self.product_name;
         let props_name = &self.props_name;
         let (impl_generics, ty_generics, where_clause) = self.generics.split_for_impl();
-        let pending_attribute_ty = self.pending_attribute_ty();
 
         quote! {
             #[derive(Clone)]
             #[allow(non_camel_case_types)]
             #vis struct #product_name #impl_generics #where_clause {
                 props: #props_name #ty_generics,
-                _pending_attrs: ::std::vec::Vec<#pending_attribute_ty>,
             }
         }
     }
@@ -450,7 +476,11 @@ impl BuilderContext {
             .collect();
         let builder_ty_initial = self.get_builder_ty(&initial_states);
 
-        let standalone_fields: Vec<_> = self.fields.iter().filter(|f| !f.attrs.chained).collect();
+        let standalone_fields: Vec<_> = self
+            .fields
+            .iter()
+            .filter(|f| !f.attrs.chained && !f.attrs.attrs)
+            .collect();
         let builder_new_params = standalone_fields.iter().map(|field| {
             let ident = &field.ident;
             let ty = &field.ty;
@@ -459,7 +489,11 @@ impl BuilderContext {
 
         let builder_field_inits = self.fields.iter().map(|field| {
             let ident = &field.ident;
-            if !field.attrs.chained {
+            if field.attrs.attrs {
+                quote! {
+                    #ident: #__silex::dom::attribute::AttributeGroup::default()
+                }
+            } else if !field.attrs.chained {
                 quote! { #ident }
             } else {
                 quote! { #ident: ::core::option::Option::None }
@@ -479,6 +513,7 @@ impl BuilderContext {
             .iter()
             .filter(|field| {
                 !is_internal_marker_field(field)
+                    && !field.attrs.attrs
                     && self
                         .ctx_field
                         .as_ref()
@@ -758,14 +793,22 @@ impl BuilderContext {
         });
         let props_field_inits = self.fields.iter().map(|field| {
             let ident = &field.ident;
-            quote! { #ident }
+            if field.attrs.attrs {
+                quote! {
+                    #ident: {
+                        let _ = #ident;
+                        #__silex::dom::attribute::AttributeGroup(_pending_attrs)
+                    }
+                }
+            } else {
+                quote! { #ident }
+            }
         });
         let product_value = quote! {
             #product_name {
                 props: #props_name {
                     #(#props_field_inits,)*
                 },
-                _pending_attrs,
             }
         };
         let build_return = if fallible_defaults {
@@ -805,7 +848,6 @@ impl BuilderContext {
         let product_ty = quote! { #product_name #product_ty_generics };
         let render_fn_name = &self.render_fn_name;
         let scope = self.owner_lifetime();
-        let pending_attribute_ty = self.pending_attribute_ty();
         let where_clause = self.ctx_where_clause();
         let ctx_field = self
             .ctx_field
@@ -823,23 +865,13 @@ impl BuilderContext {
                 context.error_handler(),
             );
             let view_instance = #render_fn_name(product.props);
-            #__silex::dom::view::View::mount(
-                &view_instance,
-                context,
-                pending_attrs,
-            )
+            #__silex::dom::view::View::mount(&view_instance, context)
         };
 
         quote! {
             impl #impl_generics #__silex::dom::view::View<#scope> for #product_ty #view_where_clause {
-                fn mount(
-                    &self,
-                    context: &#__silex::dom::view::MountContext<#scope>,
-                    attrs: ::std::vec::Vec<#pending_attribute_ty>,
-                ) -> #__silex::core::SilexResult<#__silex::dom::view::MountInstance<#scope>> {
+                fn mount(&self, context: &#__silex::dom::view::MountContext<#scope>) -> #__silex::core::SilexResult<#__silex::dom::view::MountInstance<#scope>> {
                     let mut product = self.clone();
-                    product._pending_attrs.extend(attrs);
-                    let pending_attrs = product._pending_attrs;
                     #mount_body
                 }
             }
@@ -888,12 +920,12 @@ impl BuilderContext {
     }
 
     fn generate_attribute_impl(&self) -> TokenStream2 {
+        if !self.has_attrs() {
+            return quote! {};
+        }
         let __silex = crate::crate_path::silex();
         let (builder_generics_decl, _) = self.get_builder_generics();
-        let (product_impl_generics, product_ty_generics, _) = self.generics.split_for_impl();
-        let product_where_clause = self.ctx_where_clause();
         let builder_where_clause = self.ctx_where_clause();
-        let product_name = &self.product_name;
         let scope = self.owner_lifetime();
 
         let current_states: Vec<_> = self
@@ -902,23 +934,22 @@ impl BuilderContext {
             .map(|ident| quote! { #ident })
             .collect();
         let builder_ty_current = self.get_builder_ty(&current_states);
-        let product_ty = quote! { #product_name #product_ty_generics };
         let methods = self.generate_attribute_builder_methods();
         let carrier_impls = self.generate_carrier_impls();
+        let attrs_method = quote! {
+            pub fn attrs(mut self, group: #__silex::dom::attribute::AttributeGroup<#scope>) -> Self {
+                self._pending_attrs.extend(group.0);
+                self
+            }
+        };
 
         quote! {
+            impl #builder_generics_decl #builder_ty_current #builder_where_clause {
+                #attrs_method
+            }
+
             impl #builder_generics_decl #__silex::dom::attribute::AttributeBuilder<#scope> for #builder_ty_current #builder_where_clause {
                 #methods
-            }
-
-            impl #product_impl_generics #__silex::dom::attribute::AttributeBuilder<#scope> for #product_ty #product_where_clause {
-                #methods
-            }
-
-            impl #product_impl_generics #__silex::dom::view::ApplyAttributes<#scope> for #product_ty #product_where_clause {
-                fn apply_attributes(&mut self, attrs: ::std::vec::Vec<#__silex::dom::attribute::AttrOp<#scope>>) {
-                    self._pending_attrs.extend(attrs);
-                }
             }
 
             #carrier_impls
@@ -974,7 +1005,11 @@ impl BuilderContext {
             .collect();
         let builder_ty_initial = self.get_builder_ty(&initial_states);
 
-        let standalone_fields: Vec<_> = self.fields.iter().filter(|f| !f.attrs.chained).collect();
+        let standalone_fields: Vec<_> = self
+            .fields
+            .iter()
+            .filter(|f| !f.attrs.chained && !f.attrs.attrs)
+            .collect();
 
         let constructor_params = standalone_fields.iter().map(|field| {
             let ident = &field.ident;
@@ -1302,6 +1337,14 @@ fn parse_field_attrs(attrs: &[Attribute]) -> syn::Result<FieldAttrs> {
                 ));
             }
             result.ctx = true;
+        } else if attr.path().is_ident("attrs") {
+            if !matches!(attr.meta, syn::Meta::Path(_)) {
+                return Err(syn::Error::new_spanned(
+                    attr,
+                    "`#[attrs]` does not accept arguments",
+                ));
+            }
+            result.attrs = true;
         }
     }
 
@@ -1313,6 +1356,17 @@ fn parse_field_attrs(attrs: &[Attribute]) -> syn::Result<FieldAttrs> {
     }
 
     Ok(result)
+}
+
+fn is_attribute_group_type(ty: &Type) -> bool {
+    let Type::Path(type_path) = ty else {
+        return false;
+    };
+    type_path
+        .path
+        .segments
+        .last()
+        .is_some_and(|segment| segment.ident == "AttributeGroup")
 }
 
 fn strip_props_suffix(name: &Ident) -> Ident {

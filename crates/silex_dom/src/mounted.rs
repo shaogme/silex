@@ -1,11 +1,8 @@
 //! Application-level DOM mount transaction and ownership contracts.
 
-use crate::{
-    attribute::AttrOp,
-    view::{
-        CleanupReporter, MountAncestry, MountContext as ViewMountContext, MountInstance,
-        MountOwnerToken, MountTarget, MountTransaction, View,
-    },
+use crate::view::{
+    CleanupReporter, MountAncestry, MountContext as ViewMountContext, MountInstance,
+    MountOwnerToken, MountTarget, MountTransaction, View,
 };
 use silex_core::{
     CloseError, ErrorHandlerInput, OwnerAccess, OwnerHandle, Runtime, SilexError, SilexErrorKind,
@@ -80,42 +77,13 @@ impl<'scope> MountContext<'scope> {
         V: View<'scope> + 'scope,
         H: ErrorHandlerInput<'scope>,
     {
-        self.mount_with_attributes(view, Vec::new(), error_handler)
+        self.mount_instance(view, error_handler).map(|_| ())
     }
 
     /// 挂载一个工厂并返回这次挂载产生的物理实例。
     pub fn mount_instance<V, H>(
         &self,
         view: V,
-        error_handler: H,
-    ) -> SilexResult<MountInstance<'scope>>
-    where
-        V: View<'scope> + 'scope,
-        H: ErrorHandlerInput<'scope>,
-    {
-        self.mount_instance_with_attributes(view, Vec::new(), error_handler)
-    }
-
-    /// Mount one owned view with top-level pending attributes.
-    pub fn mount_with_attributes<V, H>(
-        &self,
-        view: V,
-        attrs: Vec<AttrOp<'scope>>,
-        error_handler: H,
-    ) -> SilexResult<()>
-    where
-        V: View<'scope> + 'scope,
-        H: ErrorHandlerInput<'scope>,
-    {
-        self.mount_instance_with_attributes(view, attrs, error_handler)
-            .map(|_| ())
-    }
-
-    /// 带顶层属性地创建一次独立挂载实例。
-    pub fn mount_instance_with_attributes<V, H>(
-        &self,
-        view: V,
-        attrs: Vec<AttrOp<'scope>>,
         error_handler: H,
     ) -> SilexResult<MountInstance<'scope>>
     where
@@ -130,7 +98,7 @@ impl<'scope> MountContext<'scope> {
             self.transaction.clone(),
             error_handler.handler_ref(),
         );
-        view.mount(&context, attrs)
+        view.mount(&context)
     }
 }
 

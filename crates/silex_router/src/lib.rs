@@ -28,11 +28,9 @@ pub use route_table::*;
 use crate::path::strip_route_prefix as strip_route_prefix_impl;
 use crate::route_table::RouteBranchKey;
 use silex_core::{SilexContext, SilexContextProvider, SilexError, SilexErrorKind, SilexResult};
-use silex_dom::attribute::AttrOp;
 use silex_dom::helpers::window_event_listener_untyped;
 use silex_dom::view::{
-    AnyView, ApplyAttributes, BranchEvaluation, BranchRenderContext, MountContext, MountInstance,
-    View,
+    AnyView, BranchEvaluation, BranchRenderContext, MountContext, MountInstance, View,
 };
 use silex_macros::component;
 use std::rc::Rc;
@@ -152,11 +150,7 @@ pub struct RouterView<'scope> {
 }
 
 impl<'scope> RouterView<'scope> {
-    fn mount_internal(
-        self,
-        context: &MountContext<'scope>,
-        attrs: Vec<AttrOp<'scope>>,
-    ) -> SilexResult<MountInstance<'scope>> {
+    fn mount_internal(self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
         let Self {
             ctx,
             routes,
@@ -178,7 +172,7 @@ impl<'scope> RouterView<'scope> {
             Some(layout) => layout(ctx, outlet),
             None => outlet,
         };
-        match view.mount(context, attrs) {
+        match view.mount(context) {
             Ok(instance) => Ok(instance),
             Err(error) => {
                 let _ = listener.cancel();
@@ -188,15 +182,9 @@ impl<'scope> RouterView<'scope> {
     }
 }
 
-impl<'scope> ApplyAttributes<'scope> for RouterView<'scope> {}
-
 impl<'scope> View<'scope> for RouterView<'scope> {
-    fn mount(
-        &self,
-        context: &MountContext<'scope>,
-        attrs: Vec<AttrOp<'scope>>,
-    ) -> SilexResult<MountInstance<'scope>> {
-        self.clone().mount_internal(context, attrs)
+    fn mount(&self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
+        self.clone().mount_internal(context)
     }
 }
 
@@ -230,14 +218,8 @@ impl<'scope> RouteOutlet<'scope> {
     }
 }
 
-impl<'scope> ApplyAttributes<'scope> for RouteOutlet<'scope> {}
-
 impl<'scope> View<'scope> for RouteOutlet<'scope> {
-    fn mount(
-        &self,
-        context: &MountContext<'scope>,
-        attrs: Vec<AttrOp<'scope>>,
-    ) -> SilexResult<MountInstance<'scope>> {
+    fn mount(&self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
         let this = self.clone();
         let ctx = this.ctx;
         let path_signal = ctx.path;
@@ -247,7 +229,6 @@ impl<'scope> View<'scope> for RouteOutlet<'scope> {
         let prefix_for_key = prefix.clone();
         silex_dom::view::mount_branch_stable_cached(
             context,
-            attrs,
             move || {
                 let path = path_signal.get()?;
                 let snapshot = nested_outlet_path(prefix_for_key.as_deref(), &path);

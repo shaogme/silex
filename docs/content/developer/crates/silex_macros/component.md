@@ -8,7 +8,7 @@ weight = 10
 
 `#[component]` 把一个带 `#[ctx]` 参数的 Rust 函数转换为 Props 结构体和
 owner-bound View product。底层实现由 `component.rs` 解析函数签名，再委托
-`PropsBuilder` derive 生成 builder、属性转发和 `View` 实现。这样组件的输入
+`PropsBuilder` derive 生成 builder、显式属性 sink 和 `View` 实现。这样组件的输入
 校验发生在编译期，实际挂载和清理由 `silex_dom` 的 owner 负责。
 
 ## `#[component]` 输入契约
@@ -37,7 +37,7 @@ render 函数的输出提升为 `SilexResult<View>`。
 | 名称 | 作用 |
 | --- | --- |
 | `PanelProps` | 保存 context 和所有 prop 的结构体；字段按函数参数顺序生成。 |
-| `PanelBuilder<...>` | 保存未完成的 props、pending attributes 和类型状态。 |
+| `PanelBuilder<...>` | 保存未完成的 props 和类型状态；声明 `#[attrs]` 时内部收集属性操作。 |
 | `PanelComponent` | 持有最终 Props 的 View product；生成后才实现 `View`。 |
 | `__silex_render_Panel` | 隐藏 render 函数；解构 Props，恢复 owner/error handler，再执行原函数体。 |
 | `Panel(...)` | 构造初始 builder；非 `#[chain]` 参数在这里传入。 |
@@ -59,6 +59,7 @@ View 的 props 被静默替换。
 | `#[chain(each)]` | 仅适用于 `Vec<T>`；setter 改为接收单个 `T`，每次调用追加一个元素。可与 `name`、`default` 组合。 |
 | `#[chain(default)]` | 使用字段类型的 `Default`；响应式 wrapper 则从 context owner 创建默认句柄。 |
 | `#[chain(default = expr)]` | 缺少字段时执行指定表达式；响应式 wrapper 会把表达式转成 owner-scoped 输入。 |
+| `#[attrs]` | 声明唯一的 `AttributeGroup<'scope>` 属性 sink；仅该组件 builder 获得 `.attrs()`、`.class()`、`.attr()` 和事件属性入口。组件函数体必须把它应用到明确元素。 |
 | `#[prop(into)]` | 构造函数/setter 接受 `Into<字段类型>`，再保存转换后的值。 |
 | `#[prop(render)]` | 将字段作为渲染输入处理；与 `AnyView` 或 View 转换结合时，传入值会被擦除为 scoped `AnyView`。 |
 | `#[prop(render_fn(A, B))]` | setter 接受 `Fn(A, B) -> V` 闭包，并用字段类型的 `from_fn` 生成渲染器；至少需要一个参数类型。 |
@@ -141,31 +142,35 @@ fn __silex_render_Panel<'owner>(props: PanelProps<'owner>) -> impl View<'owner> 
 推导：`PanelProps` 对应 `PanelPropsBuilder`、`PanelComponent`、
 `__silex_render_Panel` 和 `Panel(...)`。需要使用不同名称时，metadata 至少
 要提供 `builder`、`product` 和 `render`，还可以提供 `constructor` 与 `tag`。
-直接 derive 仍必须提供唯一 `#[ctx]` 字段，因为生成的 product
-`View::mount(&MountContext, attrs)` 需要从 context 取得 owner、逻辑祖先、
-事务和 error reporter。
+直接 derive 仍必须提供唯一 `#[ctx]` 字段，因为生成的 product 需要从
+`MountContext` 取得 owner、逻辑祖先、事务和 error reporter。若需要属性入口，
+在结构体字段上声明 `#[attrs] attrs: AttributeGroup<'owner>`；没有该字段时，
+builder 不提供通用属性方法。
 
 ## View、属性与清理
 
 `PanelComponent` 实现 `View<'scope>`。挂载时会：
 
-1. clone product，合并构造阶段和挂载阶段收到的 pending attributes；
-2. 用当前 mount 的 error handler 替换 context 中的 reporter；
-3. 调用隐藏 render 函数产生真实 View；
-4. 将 pending attributes 和同一个 `MountContext` 传给
-   `silex_dom::view::View::mount`。
+1. clone product，并用当前 mount 的 error handler 更新 context 字段；
+2. 调用隐藏 render 函数产生已经完成属性选择的真实 View；
+3. 将真实 View 以 `View::mount(&context)` 挂载。
 
-builder 和 product 都实现属性 builder，因此组件可以在 build 前或 build 后接收
-class、style、property 和 event 操作。实际 attribute operation 的注册、更新和
-cleanup 不由过程宏执行，而由 `silex_dom` 的 owner 和 `AttrOp` 负责。组件内部
-创建的 signal、callback、effect 或 DOM 资源必须使用同一个 scope；不要把借用
-当前 context 的闭包存入 `'static` 全局状态。
+只有声明 `#[attrs]` 的 builder 实现属性 builder；普通组件没有隐式属性入口。
+组件调用方可在 `.build()` 前使用 `.attrs(group)`, `.class()`, `.attr()` 和
+事件方法，组件函数体负责把收到的 `attrs` 应用到指定元素，例如
+`div(children).class("panel").apply(attrs)`。实际 attribute operation 的注册、
+更新和 cleanup 不由过程宏执行，而由 `silex_dom` 的 owner 和 `AttrOp` 负责。
+组件内部创建的 signal、callback、effect 或 DOM 资源必须使用同一个 scope；不要
+把借用当前 context 的闭包存入 `'static` 全局状态。
 
 ## 对应测试与失败契约
 
 - `pass_component_build_product.rs`：required/default prop 设置和 product 构造。
 - `pass_component_required_order.rs`：required setter 可乱序，重复设置最后一次生效。
-- `pass_component_build_attributes.rs`：builder/product 的属性转发。
+- `pass_component_build_attributes.rs`：`#[attrs]` builder 的单项、批量和事件属性入口。
+- `fail_component_attrs_no_builder.rs`：普通 component 不暴露通用属性 builder。
+- `fail_component_attrs_duplicate.rs`：同一 Props 不允许多个 `#[attrs]` 字段。
+- `fail_component_attrs_chain_conflict.rs`：`#[attrs]` 不能与 `#[chain(each)]` 组合。
 - `pass_component_chain_naming_and_vec.rs`：显式链式方法名、普通 Vec setter 和
   `#[chain(each)]` 的单元素收集。
 - `component_chain.rs`：native owner scope 下验证两种 Vec setter 的实际结果。

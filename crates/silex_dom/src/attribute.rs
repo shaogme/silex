@@ -16,7 +16,6 @@ use crate::{
         EventDescriptor, EventHandler, click, pointercancel, pointerdown, pointermove, pointerup,
     },
     helpers::event_target_value_result,
-    view::{AnyView, ApplyAttributes},
 };
 
 mod apply;
@@ -401,30 +400,6 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
 
 // 自动实现全局事件属性
 impl<'scope, T: AttributeBuilder<'scope>> GlobalEventAttributes<'scope> for T {}
-
-// --- AttributeBuilder Implementations for Erasure Types ---
-
-impl<'scope> AttributeBuilder<'scope> for AnyView<'scope> {
-    fn build_attribute<V>(mut self, target: ApplyTarget, value: V) -> Self
-    where
-        V: IntoStorable<'scope>,
-    {
-        self.apply_attributes(vec![AttrOp::build(value.into_storable(), target)]);
-        self
-    }
-
-    fn build_event<E, F, M>(mut self, event: E, callback: F) -> Self
-    where
-        E: EventDescriptor + 'static,
-        F: EventHandler<'scope, E::EventType, M> + Clone + 'scope,
-    {
-        self.apply_attributes(vec![AttrOp::new_scoped(move |el, context| {
-            let owner = context.owner();
-            crate::element::bind_event(el, event, callback.clone(), &owner, context.error_handler())
-        })]);
-        self
-    }
-}
 
 #[cfg(test)]
 mod tests {

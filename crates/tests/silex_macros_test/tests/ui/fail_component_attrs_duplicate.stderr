@@ -1,0 +1,5 @@
+error: PropsBuilder supports at most one `#[attrs]` field
+  --> tests/ui/fail_component_attrs_duplicate.rs:13:14
+   |
+13 |     #[attrs] second: AttributeGroup<'owner>,
+   |              ^^^^^^

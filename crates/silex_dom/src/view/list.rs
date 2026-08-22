@@ -3,8 +3,7 @@ use super::owner::MountOwner;
 use super::row::{
     NodeRange, RowInstance, RowInstanceConfig, RowRenderContext, RowRenderer, RowUpdater,
 };
-use crate::attribute::AttrOp;
-use crate::view::{AnyView, ApplyAttributes, MountErrorHandler, MountInstance, View};
+use crate::view::{AnyView, MountErrorHandler, MountInstance, View};
 use silex_core::reactivity::ReactiveSource;
 use silex_core::traits::{ForLoopSource, RxRead};
 use silex_core::{CloseError, ErrorHandlerToken, SilexError, SilexErrorKind, SilexResult};
@@ -61,11 +60,6 @@ impl<'scope, T> RowFactory<'scope, T> {
     }
 }
 
-impl<'scope, IF, IS, T, K> ApplyAttributes<'scope>
-    for RenderOnlyKeyedListView<'scope, IF, IS, T, K>
-{
-}
-
 impl<'scope, IF, IS, T, K> View<'scope> for RenderOnlyKeyedListView<'scope, IF, IS, T, K>
 where
     IF: RxRead<Value = IS> + ReactiveSource<'scope> + Clone + 'scope,
@@ -73,25 +67,18 @@ where
     K: std::hash::Hash + Eq + Clone + 'scope,
     T: Clone + 'scope,
 {
-    fn mount(
-        &self,
-        context: &MountContext<'scope>,
-        attrs: Vec<AttrOp<'scope>>,
-    ) -> SilexResult<MountInstance<'scope>> {
+    fn mount(&self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
         mount_keyed_list(KeyedListMountArgs {
             context: context.clone(),
             source: self.each.clone(),
             key_fn: self.key_fn.clone(),
             factory: RowFactory::RenderOnly(self.view_fn.clone()),
             error_handler: self.error_handler.clone(),
-            attrs,
             parent_error_handler: context.error_handler(),
             _marker: std::marker::PhantomData,
         })
     }
 }
-
-impl<'scope, IF, IS, T, K> ApplyAttributes<'scope> for StatefulKeyedListView<'scope, IF, IS, T, K> {}
 
 impl<'scope, IF, IS, T, K> View<'scope> for StatefulKeyedListView<'scope, IF, IS, T, K>
 where
@@ -100,18 +87,13 @@ where
     K: std::hash::Hash + Eq + Clone + 'scope,
     T: Clone + 'scope,
 {
-    fn mount(
-        &self,
-        context: &MountContext<'scope>,
-        attrs: Vec<AttrOp<'scope>>,
-    ) -> SilexResult<MountInstance<'scope>> {
+    fn mount(&self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
         mount_keyed_list(KeyedListMountArgs {
             context: context.clone(),
             source: self.each.clone(),
             key_fn: self.key_fn.clone(),
             factory: RowFactory::Stateful(self.view_fn.clone()),
             error_handler: self.error_handler.clone(),
-            attrs,
             parent_error_handler: context.error_handler(),
             _marker: std::marker::PhantomData,
         })
@@ -124,24 +106,17 @@ pub struct IndexedListView<'scope, IF, T, IS> {
     pub _marker: std::marker::PhantomData<(T, IS)>,
 }
 
-impl<'scope, IF, T, IS> ApplyAttributes<'scope> for IndexedListView<'scope, IF, T, IS> {}
-
 impl<'scope, IF, T, IS> View<'scope> for IndexedListView<'scope, IF, T, IS>
 where
     IF: RxRead<Value = IS> + ReactiveSource<'scope> + Clone + 'scope,
     IS: ForLoopSource<Item = T> + 'scope,
     T: Clone + 'scope,
 {
-    fn mount(
-        &self,
-        context: &MountContext<'scope>,
-        attrs: Vec<AttrOp<'scope>>,
-    ) -> SilexResult<MountInstance<'scope>> {
+    fn mount(&self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
         mount_indexed_list(
             context,
             self.each.clone(),
             RowFactory::RenderOnly(self.view_fn.clone()),
-            attrs,
         )
     }
 }
@@ -150,7 +125,6 @@ fn mount_indexed_list<'scope, IF, IS, T>(
     context: &MountContext<'scope>,
     source: IF,
     factory: RowFactory<'scope, T>,
-    attrs: Vec<AttrOp<'scope>>,
 ) -> SilexResult<MountInstance<'scope>>
 where
     IF: RxRead<Value = IS> + ReactiveSource<'scope> + Clone + 'scope,
@@ -169,13 +143,12 @@ where
             item,
             index,
             context,
-            attrs,
             branch_context: _,
             updater,
         } = args;
         render_factory
             .render(item, index, updater)
-            .mount(&context, attrs)
+            .mount(&context)
             .map(|_| ())
     });
     let rows = local_owner
@@ -230,7 +203,6 @@ where
                         RowInstanceConfig {
                             range: row_range,
                             render: render.clone(),
-                            attrs: attrs.clone(),
                             item,
                             index,
                             stateful,
@@ -477,7 +449,6 @@ struct KeyedListMountArgs<'scope, IF, IS, T, K> {
     key_fn: Rc<dyn Fn(&T) -> K + 'scope>,
     factory: RowFactory<'scope, T>,
     error_handler: Option<ErrorHandlerToken<'scope>>,
-    attrs: Vec<AttrOp<'scope>>,
     parent_error_handler: MountErrorHandler<'scope>,
     _marker: std::marker::PhantomData<IS>,
 }
@@ -497,7 +468,6 @@ where
         key_fn,
         factory,
         error_handler,
-        attrs,
         parent_error_handler,
         ..
     } = args;
@@ -515,13 +485,12 @@ where
             item,
             index,
             context,
-            attrs,
             branch_context: _,
             updater,
         } = args;
         render_factory
             .render(item, index, updater)
-            .mount(&context, attrs)
+            .mount(&context)
             .map(|_| ())
     });
     let state = local_owner.token().owner_state(KeyedRows {
@@ -620,7 +589,6 @@ where
                         RowInstanceConfig {
                             range: row_range,
                             render: render.clone(),
-                            attrs: attrs.clone(),
                             item: item.clone(),
                             index: *index,
                             stateful,

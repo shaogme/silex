@@ -3,12 +3,9 @@
 use silex_core::{
     ErrorHandlerToken, ErrorReporter, Runtime, SilexError, SilexErrorKind, SilexResult,
 };
-use silex_dom::attribute::AttrOp;
 use silex_dom::element::Element;
 use silex_dom::mounted::{CleanupOrigin, CleanupSink, MountAvailability, MountedApp};
-use silex_dom::view::{
-    AnyView, ApplyAttributes, MountContext, MountInstance, View, mount_component,
-};
+use silex_dom::view::{AnyView, MountContext, MountInstance, View, mount_component};
 use std::{cell::Cell, rc::Rc};
 use wasm_bindgen_test::*;
 use web_sys::Node;
@@ -42,11 +39,10 @@ fn mount_view<'owner, V: View<'owner>>(
     view: &V,
     owner: &silex_dom::view::MountOwnerToken<'owner>,
     parent: &Node,
-    attrs: Vec<AttrOp<'owner>>,
     error_handler: ErrorReporter<'owner>,
 ) -> SilexResult<MountInstance<'owner>> {
     let context = MountContext::for_parent(parent.clone(), owner.clone(), error_handler);
-    let instance = view.mount(&context, attrs)?;
+    let instance = view.mount(&context)?;
     context.transaction().commit()?;
     Ok(instance)
 }
@@ -60,11 +56,7 @@ struct FactoryText {
 }
 
 impl<'owner> View<'owner> for FactoryText {
-    fn mount(
-        &self,
-        context: &MountContext<'owner>,
-        _attrs: Vec<AttrOp<'owner>>,
-    ) -> SilexResult<MountInstance<'owner>> {
+    fn mount(&self, context: &MountContext<'owner>) -> SilexResult<MountInstance<'owner>> {
         let index = self.created.get() + 1;
         self.created.set(index);
         let document = web_sys::window()
@@ -104,9 +96,9 @@ fn any_view_factory_creates_independent_mount_instances() {
             created: Rc::new(Cell::new(0)),
         });
 
-        let first = mount_view(&view, &owner, &host, Vec::new(), handler.view())
+        let first = mount_view(&view, &owner, &host, handler.view())
             .expect("first factory mount should succeed");
-        let second = mount_view(&view, &owner, &host, Vec::new(), handler.view())
+        let second = mount_view(&view, &owner, &host, handler.view())
             .expect("second factory mount should succeed");
 
         assert_eq!(first.len(), 1);
@@ -133,15 +125,9 @@ fn any_view_factory_creates_independent_mount_instances() {
 
 struct PanicRollbackView;
 
-impl<'owner> ApplyAttributes<'owner> for PanicRollbackView {}
-
 impl<'owner> View<'owner> for PanicRollbackView {
-    fn mount(
-        &self,
-        context: &MountContext<'owner>,
-        attrs: Vec<AttrOp<'owner>>,
-    ) -> SilexResult<MountInstance<'owner>> {
-        mount_component(context, attrs, |context, _| {
+    fn mount(&self, context: &MountContext<'owner>) -> SilexResult<MountInstance<'owner>> {
+        mount_component(context, |context| {
             context.owner().on_cleanup(
                 Box::new(|| panic!("provisional cleanup")),
                 context.error_handler(),
@@ -153,14 +139,8 @@ impl<'owner> View<'owner> for PanicRollbackView {
     }
 }
 
-impl<'owner> ApplyAttributes<'owner> for CleanupProbe {}
-
 impl<'owner> View<'owner> for CleanupProbe {
-    fn mount(
-        &self,
-        context: &MountContext<'owner>,
-        _attrs: Vec<AttrOp<'owner>>,
-    ) -> SilexResult<MountInstance<'owner>> {
+    fn mount(&self, context: &MountContext<'owner>) -> SilexResult<MountInstance<'owner>> {
         let cleanups = self.cleanups.clone();
         context.owner().on_cleanup(
             Box::new(move || {

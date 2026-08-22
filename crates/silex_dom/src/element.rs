@@ -1,8 +1,8 @@
 use crate::attribute::{ApplyTarget, AttrOp, AttributeBuilder, IntoStorable};
 use crate::event::{EventDescriptor, EventHandler};
 use crate::view::{
-    AnyView, ApplyAttributes, HostResource, MountContext, MountInstance, MountOwner,
-    MountOwnerToken, MountTarget, OwnerMount, View,
+    AnyView, HostResource, MountContext, MountInstance, MountOwner, MountOwnerToken, MountTarget,
+    OwnerMount, View,
 };
 use std::marker::PhantomData;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -73,17 +73,7 @@ impl<'scope> Element<'scope> {
         element
     }
 
-    fn all_attrs(&self, attrs: Vec<AttrOp<'scope>>) -> Vec<AttrOp<'scope>> {
-        let mut all = self.pending_attrs.clone();
-        all.extend(attrs);
-        crate::attribute::consolidate_attributes(all)
-    }
-
-    fn mount_inner(
-        &self,
-        context: &MountContext<'scope>,
-        attrs: Vec<AttrOp<'scope>>,
-    ) -> SilexResult<MountInstance<'scope>> {
+    fn mount_inner(&self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
         let document = crate::document();
         let dom_element = match self.namespace.as_deref() {
             Some(namespace) => document
@@ -106,12 +96,12 @@ impl<'scope> Element<'scope> {
             );
             context.target().append(dom_element.as_ref())?;
             appended = true;
-            let attrs = self.all_attrs(attrs);
+            let attrs = crate::attribute::consolidate_attributes(self.pending_attrs.clone());
             for attr in attrs {
                 attr.apply(&dom_element, &child_context)?;
             }
             for child in &self.children {
-                let _ = child.mount(&child_context, Vec::new())?;
+                let _ = child.mount(&child_context)?;
             }
             let owner_for_cleanup = provisional_owner.token();
             let element_for_cleanup = dom_element.clone();
@@ -182,23 +172,9 @@ impl<'scope> AttributeBuilder<'scope> for Element<'scope> {
     }
 }
 
-impl<'scope> ApplyAttributes<'scope> for Element<'scope> {
-    fn apply_attributes(&mut self, attrs: Vec<AttrOp<'scope>>) {
-        self.pending_attrs = crate::attribute::consolidate_attributes({
-            let mut current = std::mem::take(&mut self.pending_attrs);
-            current.extend(attrs);
-            current
-        });
-    }
-}
-
 impl<'scope> View<'scope> for Element<'scope> {
-    fn mount(
-        &self,
-        context: &MountContext<'scope>,
-        attrs: Vec<AttrOp<'scope>>,
-    ) -> SilexResult<MountInstance<'scope>> {
-        self.mount_inner(context, attrs)
+    fn mount(&self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
+        self.mount_inner(context)
     }
 }
 
@@ -311,22 +287,10 @@ impl<'scope, T: Tag> AttributeBuilder<'scope> for TypedElement<'scope, T> {
     }
 }
 
-impl<'scope, T: Tag> ApplyAttributes<'scope> for TypedElement<'scope, T> {
-    fn apply_attributes(&mut self, attrs: Vec<AttrOp<'scope>>) {
-        let mut current = std::mem::take(&mut self.pending_attrs);
-        current.extend(attrs);
-        self.pending_attrs = crate::attribute::consolidate_attributes(current);
-    }
-}
-
 impl<'scope, T: Tag> View<'scope> for TypedElement<'scope, T> {
-    fn mount(
-        &self,
-        context: &MountContext<'scope>,
-        attrs: Vec<AttrOp<'scope>>,
-    ) -> SilexResult<MountInstance<'scope>> {
+    fn mount(&self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
         let element = self.clone().into_untyped();
-        element.mount_inner(context, attrs)
+        element.mount_inner(context)
     }
 }
 

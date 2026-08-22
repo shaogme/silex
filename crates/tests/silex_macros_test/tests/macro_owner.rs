@@ -32,7 +32,6 @@ fn mount_view<'owner, V, P>(
     view: &V,
     owner: &MountOwnerToken<'owner>,
     parent: &P,
-    attrs: Vec<silex::dom::attribute::AttrOp<'owner>>,
     error_handler: ErrorReporter<'owner>,
 ) -> SilexResult<MountInstance<'owner>>
 where
@@ -40,7 +39,7 @@ where
     P: Clone + Into<web_sys::Node>,
 {
     let context = MountContext::for_parent(parent.clone().into(), owner.clone(), error_handler);
-    let instance = view.mount(&context, attrs)?;
+    let instance = view.mount(&context)?;
     match context.transaction().commit() {
         Ok(()) => Ok(instance),
         Err(error) => {
@@ -200,7 +199,7 @@ fn mount_foreign_css<'owner>(
     });
     let view = silex::html::div(()).apply(css?);
     let (mount_owner, error_handler) = test_owner(local_scope);
-    assert!(mount_view(&view, &mount_owner, host, Vec::new(), error_handler.view()).is_err());
+    assert!(mount_view(&view, &mount_owner, host, error_handler.view()).is_err());
     Ok(())
 }
 
@@ -214,7 +213,7 @@ fn mount_foreign_global<'owner>(
     let (color, _) = foreign_scope.signal(hex("#654321")).unwrap();
     let (owner, error_handler) = test_owner(local_scope);
     let view = MacroForeignGlobal(error_handler.view(), color.into()).unwrap();
-    assert!(mount_view(&view, &owner, host, Vec::new(), error_handler.view()).is_err());
+    assert!(mount_view(&view, &owner, host, error_handler.view()).is_err());
 }
 
 fn mount_mixed_foreign_global<'owner>(
@@ -231,7 +230,7 @@ fn mount_mixed_foreign_global<'owner>(
     let (owner, error_handler) = test_owner(local_scope);
     let view =
         MacroMixedForeignGlobal(error_handler.view(), color.into(), selector.into()).unwrap();
-    assert!(mount_view(&view, &owner, host, Vec::new(), error_handler.view()).is_err());
+    assert!(mount_view(&view, &owner, host, error_handler.view()).is_err());
 }
 
 #[wasm_bindgen_test]
@@ -301,7 +300,7 @@ fn css_dynamic_value_mounts_updates_and_cleans_with_owner() {
         })()
         .expect("dynamic CSS macro should expand");
         let (owner, error_handler) = test_owner(owner);
-        let _ = mount_view(&view, &owner, &host, Vec::new(), error_handler.view())
+        let _ = mount_view(&view, &owner, &host, error_handler.view())
             .expect("macro view should mount");
         element = host
             .last_element_child()
@@ -344,7 +343,7 @@ async fn css_dynamic_selector_updates_and_detaches_on_owner_dispose() {
         })()
         .expect("dynamic CSS selector macro should expand");
         let (owner, error_handler) = test_owner(owner);
-        let _ = mount_view(&view, &owner, &host, Vec::new(), error_handler.view())
+        let _ = mount_view(&view, &owner, &host, error_handler.view())
             .expect("macro view should mount");
         element = host
             .last_element_child()
@@ -409,7 +408,7 @@ async fn css_dynamic_selector_dispose_before_pending_style_flush_does_not_readd_
         })()
         .expect("dynamic CSS selector macro should expand");
         let (owner, error_handler) = test_owner(owner);
-        let _ = mount_view(&view, &owner, &host, Vec::new(), error_handler.view())
+        let _ = mount_view(&view, &owner, &host, error_handler.view())
             .expect("macro view should mount");
         element = host
             .last_element_child()
@@ -457,7 +456,7 @@ async fn css_dynamic_selector_stylesheet_is_leased_across_owners() {
         })()
         .expect("dynamic CSS selector macro should expand");
         let (owner, error_handler) = test_owner(owner);
-        let _ = mount_view(&view, &owner, &host, Vec::new(), error_handler.view())
+        let _ = mount_view(&view, &owner, &host, error_handler.view())
             .expect("macro view should mount");
         first_element = host
             .last_element_child()
@@ -474,7 +473,7 @@ async fn css_dynamic_selector_stylesheet_is_leased_across_owners() {
         })()
         .expect("dynamic CSS selector macro should expand");
         let (owner, error_handler) = test_owner(owner);
-        let _ = mount_view(&view, &owner, &host, Vec::new(), error_handler.view())
+        let _ = mount_view(&view, &owner, &host, error_handler.view())
             .expect("macro view should mount");
         second_element = host
             .last_element_child()
@@ -528,7 +527,7 @@ fn conditional_tw_switches_one_owner_bound_class_and_cleans_on_dispose() {
             )
         ));
         let (owner, error_handler) = test_owner(owner);
-        let _ = mount_view(&view, &owner, &host, Vec::new(), error_handler.view())
+        let _ = mount_view(&view, &owner, &host, error_handler.view())
             .expect("macro view should mount");
         element = host
             .last_element_child()
@@ -580,7 +579,7 @@ fn classes_reactive_toggle_updates_and_cleans_without_removing_static_classes() 
             dynamic_classes,
         ]);
         let (owner, error_handler) = test_owner(owner);
-        let _ = mount_view(&view, &owner, &host, Vec::new(), error_handler.view())
+        let _ = mount_view(&view, &owner, &host, error_handler.view())
             .expect("macro view should mount");
         element = host
             .last_element_child()
@@ -650,7 +649,7 @@ fn static_class_strings_are_applied_as_separate_dom_tokens() {
         let owner = root.access();
         let view = silex::html::div(()).class("static-first static-second");
         let (owner, error_handler) = test_owner(owner);
-        let _ = mount_view(&view, &owner, &host, Vec::new(), error_handler.view())
+        let _ = mount_view(&view, &owner, &host, error_handler.view())
             .expect("macro view should mount");
 
         let element = host
@@ -684,7 +683,7 @@ fn styled_dynamic_value_cleans_inline_property_on_owner_dispose() {
         let (mount_owner, error_handler) = test_owner(owner);
         let ctx = SilexContext::new(owner, error_handler.view());
         let view = MacroStyledValue(ctx, AnyView::new(()), color).build();
-        let _ = mount_view(&view, &mount_owner, &host, Vec::new(), error_handler.view())
+        let _ = mount_view(&view, &mount_owner, &host, error_handler.view())
             .expect("styled value view should mount");
         element = host
             .last_element_child()
@@ -781,7 +780,7 @@ async fn styled_dynamic_selector_updates_and_detaches_on_owner_dispose() {
         let (mount_owner, error_handler) = test_owner(owner);
         let ctx = SilexContext::new(owner, error_handler.view());
         let view = MacroStyledSelector(ctx, AnyView::new(()), selector).build();
-        let _ = mount_view(&view, &mount_owner, &host, Vec::new(), error_handler.view())
+        let _ = mount_view(&view, &mount_owner, &host, error_handler.view())
             .expect("styled selector view should mount");
         element = host
             .last_element_child()
@@ -844,7 +843,7 @@ async fn styled_dynamic_variant_switches_rules_and_cleans_on_dispose() {
             .mode(mode)
             .expect("styled variant mode should be valid")
             .build();
-        let _ = mount_view(&view, &mount_owner, &host, Vec::new(), error_handler.view())
+        let _ = mount_view(&view, &mount_owner, &host, error_handler.view())
             .expect("styled variant view should mount");
         element = host
             .last_element_child()
@@ -894,7 +893,7 @@ async fn dynamic_global_mounts_without_a_dom_node_and_cleans_on_dispose() {
         let (selector, _) = owner.signal(String::from(".macro-target")).unwrap();
         let (mount_owner, error_handler) = test_owner(owner);
         let view = MacroGlobal(error_handler.view(), color.into(), selector.into()).unwrap();
-        let _ = mount_view(&view, &mount_owner, &host, Vec::new(), error_handler.view())
+        let _ = mount_view(&view, &mount_owner, &host, error_handler.view())
             .expect("global macro view should mount");
         assert_eq!(host.child_element_count(), 0);
         flush_style_microtasks().await;
@@ -922,7 +921,7 @@ async fn dynamic_global_mounts_without_a_dom_node_and_cleans_on_dispose() {
             .unwrap();
         let (owner, error_handler) = test_owner(owner);
         let view = MacroGlobal(error_handler.view(), color.into(), selector.into()).unwrap();
-        let _ = mount_view(&view, &owner, &host, Vec::new(), error_handler.view())
+        let _ = mount_view(&view, &owner, &host, error_handler.view())
             .expect("global macro view should mount");
     });
     flush_style_microtasks().await;

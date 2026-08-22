@@ -12,8 +12,7 @@ use silex_core::{
     reactivity::{PromotionPlan, ReactiveSource, ReadSignal, RwSignal, StoredValue},
     traits::{RxCloneData, RxData, RxRead, RxValue, RxWrite},
 };
-use silex_dom::attribute::AttrOp;
-use silex_dom::view::{ApplyAttributes, MountContext, MountInstance, OwnedTimeout, View};
+use silex_dom::view::{MountContext, MountInstance, OwnedTimeout, View};
 use std::rc::Rc;
 
 pub type PersistenceGetFn<'scope> =
@@ -281,13 +280,6 @@ impl<'scope, T: 'scope> From<Persistent<'scope, T>> for RwSignal<'scope, T> {
     }
 }
 
-impl<'scope, T> ApplyAttributes<'scope> for Persistent<'scope, T>
-where
-    T: RxCloneData + 'scope,
-    Rx<'scope, T>: ApplyAttributes<'scope>,
-{
-}
-
 impl<'scope, T> View<'scope> for Persistent<'scope, T>
 where
     T: RxCloneData + 'scope,
@@ -296,9 +288,8 @@ where
     fn mount(
         &self,
         context: &MountContext<'scope>,
-        attrs: Vec<AttrOp<'scope>>,
     ) -> silex_core::SilexResult<MountInstance<'scope>> {
-        self.value.into_rx().mount(context, attrs)
+        self.value.into_rx().mount(context)
     }
 }
 

@@ -282,7 +282,7 @@ async fn translated_memo_updates_the_existing_text_node() {
         let context = MountContext::for_parent(parent.clone().into(), owner, error_handler.view());
         let _mount = t!(i18n, "title")
             .expect("translation")
-            .mount(&context, Vec::new())
+            .mount(&context)
             .expect("translation should mount");
         context
             .transaction()
@@ -327,7 +327,7 @@ fn translated_memo_is_removed_when_its_root_is_disposed() {
         let context = MountContext::for_parent(parent.clone().into(), owner, error_handler.view());
         let _mount = t!(i18n, "title")
             .expect("translation")
-            .mount(&context, Vec::new())
+            .mount(&context)
             .expect("translation should mount");
         context
             .transaction()
@@ -370,7 +370,7 @@ fn foreign_translation_source_does_not_mount_or_allocate_foreign_owner_nodes() {
         let translation = t!(i18n, "title").expect("translation");
         let (owner, error_handler) = test_owner(foreign_scope);
         let context = MountContext::for_parent(parent.clone().into(), owner, error_handler.view());
-        assert!(translation.mount(&context, Vec::new()).is_err());
+        assert!(translation.mount(&context).is_err());
     }
 
     assert!(parent.first_child().is_none());

@@ -123,19 +123,12 @@ struct ErrorBoundaryBranchView<'scope> {
     render: BranchRenderer<'scope>,
 }
 
-impl ApplyAttributes<'_> for ErrorBoundaryBranchView<'_> {}
-
 impl<'scope> View<'scope> for ErrorBoundaryBranchView<'scope> {
-    fn mount(
-        &self,
-        context: &MountContext<'scope>,
-        attrs: Vec<AttrOp<'scope>>,
-    ) -> SilexResult<MountInstance<'scope>> {
+    fn mount(&self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
         let key = self.key.clone();
         let render = self.render.clone();
         mount_branch_stable_cached(
             context,
-            attrs,
             move || key(),
             move |evaluation, context| render(evaluation, context),
         )
@@ -155,17 +148,10 @@ struct ErrorBoundaryView<'scope> {
     _phase_handler: ErrorHandlerToken<'scope>,
 }
 
-impl<'scope> ApplyAttributes<'scope> for ErrorBoundaryView<'scope> {
-    fn apply_attributes(&mut self, attrs: Vec<AttrOp<'scope>>) {
-        self.view.apply_attributes(attrs);
-    }
-}
-
 impl<'scope> View<'scope> for ErrorBoundaryView<'scope> {
     fn mount(
         &self,
         context: &MountContext<'scope>,
-        attrs: Vec<AttrOp<'scope>>,
     ) -> silex_core::SilexResult<MountInstance<'scope>> {
         debug_assert!(!self.slot.is_closed());
         let owner = context.owner();
@@ -188,7 +174,7 @@ impl<'scope> View<'scope> for ErrorBoundaryView<'scope> {
             error_handler,
         )?;
         let phase_context = context.with_error_handler(self.phase_handler);
-        match self.view.mount(&phase_context, attrs.clone()) {
+        match self.view.mount(&phase_context) {
             Ok(instance) => Ok(instance),
             Err(error @ SilexError::Recoverable(_)) => {
                 let generation = slot.generation().saturating_add(1);
@@ -197,7 +183,7 @@ impl<'scope> View<'scope> for ErrorBoundaryView<'scope> {
                     generation,
                 })?;
                 slot.replace_with_fallback(generation);
-                (self.fallback)(error).mount(context, attrs)
+                (self.fallback)(error).mount(context)
             }
             Err(error) => Err(error),
         }

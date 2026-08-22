@@ -1,7 +1,6 @@
 use super::context::{MountContext, MountTarget, MountTransaction};
 use super::dynamic::BranchRenderContext;
 use super::owner::{MountErrorHandler, MountOwner, MountOwnerToken, MountState};
-use crate::attribute::AttrOp;
 use silex_core::{
     CloseError, ClosePhase, CloseSource, CloseTransaction, OwnerChild, ReactiveError, SilexError,
     SilexErrorKind, SilexResult,
@@ -106,7 +105,6 @@ pub(crate) struct RowRenderContext<'scope, T> {
     pub(crate) item: T,
     pub(crate) index: usize,
     pub(crate) context: MountContext<'scope>,
-    pub(crate) attrs: Vec<AttrOp<'scope>>,
     pub(crate) branch_context: Option<BranchRenderContext<'scope>>,
     pub(crate) updater: RowUpdater<'scope, T>,
 }
@@ -277,7 +275,6 @@ pub(crate) struct RowInstance<'scope, T> {
     render_content_scope: Option<MountState<'scope, Option<MountOwnerToken<'scope>>>>,
     render_nodes: Option<MountState<'scope, Vec<Node>>>,
     render: RowRenderer<'scope, T>,
-    attrs: Vec<AttrOp<'scope>>,
     error_handler: MountErrorHandler<'scope>,
     context: MountContext<'scope>,
     updater: RowUpdater<'scope, T>,
@@ -292,7 +289,6 @@ pub(crate) struct RowInstance<'scope, T> {
 pub(crate) struct RowInstanceConfig<'scope, T> {
     pub(crate) range: NodeRange,
     pub(crate) render: RowRenderer<'scope, T>,
-    pub(crate) attrs: Vec<AttrOp<'scope>>,
     pub(crate) item: T,
     pub(crate) index: usize,
     pub(crate) stateful: bool,
@@ -309,7 +305,6 @@ impl<'scope, T: Clone + 'scope> RowInstance<'scope, T> {
         let RowInstanceConfig {
             range,
             render,
-            attrs,
             item,
             index,
             stateful,
@@ -335,7 +330,6 @@ impl<'scope, T: Clone + 'scope> RowInstance<'scope, T> {
             render_content_scope: None,
             render_nodes: None,
             render,
-            attrs,
             error_handler,
             context,
             updater,
@@ -406,7 +400,6 @@ impl<'scope, T: Clone + 'scope> RowInstance<'scope, T> {
         let content_owner = self.content_owner.clone();
         let range = self.range.clone();
         let render = self.render.clone();
-        let attrs = self.attrs.clone();
         let updater = self.updater.clone();
         let rendered_nodes_for_effect = rendered_nodes.clone();
         let rendered_scope_for_effect = rendered_scope.clone();
@@ -437,7 +430,6 @@ impl<'scope, T: Clone + 'scope> RowInstance<'scope, T> {
                             item: item.clone(),
                             index,
                             context: render_context,
-                            attrs: attrs.clone(),
                             branch_context: content_owner.as_ref().map(|_| {
                                 BranchRenderContext::new(
                                     candidate_scope.clone(),

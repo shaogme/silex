@@ -61,8 +61,9 @@ for<'scope> FnOnce(&MountContext<'scope>) -> SilexResult<()>
 - `parent()`：取得 detached staging parent，适合需要直接插入 Node 的适配器；
 - `mount(view, handler)`：挂载一个 view，并把它的返回节点纳入本次 boundary；
 - `mount_instance(...)`：挂载并保留 `MountInstance` 的节点快照；
-- `mount_with_attributes` / `mount_instance_with_attributes`：向一个顶层
-  view 转发 `AttrOp`。
+
+属性应在元素构造阶段，或声明 `#[attrs]` 的组件 builder 上构造；`MountContext`
+不会再向顶层 View 追加属性。
 
 示例中的 error handler 必须来自同一个 `OwnerAccess`：
 
@@ -131,7 +132,7 @@ mount/rollback/dispose，包含：
 ## 直接挂载与应用挂载的选择
 
 高级框架或测试可以直接构造 view 层的 `MountContext`，再调用
-`view.mount(&context, attrs)`。context 同时携带物理 `MountTarget`、逻辑
+`view.mount(&context)`。context 同时携带物理 `MountTarget`、逻辑
 `MountAncestry`、owner、`MountTransaction` 和错误处理器；调用方必须自己
 负责 root transaction 的 commit/rollback，以及 owner close 和物理节点清理。
 

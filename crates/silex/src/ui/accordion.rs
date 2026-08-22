@@ -133,7 +133,7 @@ fn unmount_content_slot<'scope>(
                 ().into_any()
             }
         };
-        mount_branch_stable_cached(context, Vec::new(), key_fn, branch_fn).map(|_| ())
+        mount_branch_stable_cached(context, key_fn, branch_fn).map(|_| ())
     })
 }
 

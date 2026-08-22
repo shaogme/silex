@@ -43,7 +43,7 @@ fn mount_view<'scope, V: View<'scope>>(
     error_handler: silex_core::ErrorReporter<'scope>,
 ) -> SilexResult<MountInstance<'scope>> {
     let context = MountContext::for_parent(parent.clone().into(), owner.clone(), error_handler);
-    let instance = view.mount(&context, Vec::new())?;
+    let instance = view.mount(&context)?;
     context.transaction().commit()?;
     Ok(instance)
 }
@@ -559,11 +559,7 @@ async fn unmount_mode_keeps_wrapper_but_recreates_content_slot() {
 struct FailingAccordionView;
 
 impl<'scope> View<'scope> for FailingAccordionView {
-    fn mount(
-        &self,
-        _context: &MountContext<'scope>,
-        _attrs: Vec<AttrOp<'scope>>,
-    ) -> SilexResult<MountInstance<'scope>> {
+    fn mount(&self, _context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
         Err(SilexError::fatal(SilexErrorKind::Dom(
             "intentional Accordion slot mount failure".to_string(),
         )))

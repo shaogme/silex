@@ -390,6 +390,26 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
         })
         .collect();
 
+    let attrs_binding = parsed.props.iter().find_map(|arg| {
+        let syn::FnArg::Typed(arg) = arg else {
+            return None;
+        };
+        let syn::Pat::Ident(pattern) = arg.pat.as_ref() else {
+            return None;
+        };
+        arg.attrs
+            .iter()
+            .any(|attr| attr.path().is_ident("attrs"))
+            .then(|| pattern.ident.clone())
+    });
+    let attrs_binding = attrs_binding.unwrap_or_else(|| {
+        let ident = quote::format_ident!("attrs");
+        all_fn_args.push(syn::parse_quote! {
+            #[attrs] #ident: #__silex::dom::attribute::AttributeGroup<#scope>
+        });
+        ident
+    });
+
     for v in &parsed.variants {
         if !existing_props.contains(&v.prop_name) {
             let p = &v.prop_name;
@@ -479,6 +499,7 @@ pub fn styled_impl(input: TokenStream) -> Result<TokenStream> {
                 sheets: ::std::vec![],
             }))
             #styled_variant_binding
+            .apply(#attrs_binding)
     };
 
     let node_return = if needs_result {
@@ -815,7 +836,6 @@ fn get_tag_return_type(
         quote! {
             impl #__silex::dom::attribute::AttributeBuilder<#scope>
                 + #__silex::dom::view::View<#scope>
-                + #__silex::dom::view::ApplyAttributes<#scope>
                 + #scope
                 #where_clause
         }
@@ -1048,9 +1068,7 @@ pub fn global_impl(input: TokenStream) -> Result<TokenStream> {
         #[allow(non_snake_case, unused_variables)]
         #vis fn #c_name #fn_generics(
             #params
-        ) -> #__silex::core::SilexResult<impl #__silex::dom::view::View<#scope>
-            + #__silex::dom::view::ApplyAttributes<#scope>
-            + #scope>
+        ) -> #__silex::core::SilexResult<impl #__silex::dom::view::View<#scope> + #scope>
             #where_clause
         {
             #assertions
@@ -1150,9 +1168,7 @@ fn generate_static_global(input: StaticGlobalExpansion<'_>) -> Result<TokenStrea
         #[allow(non_snake_case, unused_variables)]
         #vis fn #name #fn_generics(
             #params
-        ) -> impl #__silex::dom::view::View<#scope>
-            + #__silex::dom::view::ApplyAttributes<#scope>
-            + #scope
+        ) -> impl #__silex::dom::view::View<#scope> + #scope
             #where_clause
         {
             #assertions

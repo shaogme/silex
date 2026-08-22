@@ -44,7 +44,7 @@ fn mount_view<'owner, V: View<'owner>>(
     error_handler: ErrorReporter<'owner>,
 ) -> SilexResult<MountInstance<'owner>> {
     let context = MountContext::for_parent(parent.clone().into(), owner.clone(), error_handler);
-    let instance = view.mount(&context, Vec::new())?;
+    let instance = view.mount(&context)?;
     context.transaction().commit()?;
     Ok(instance)
 }

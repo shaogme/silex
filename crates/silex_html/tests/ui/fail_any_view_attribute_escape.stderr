@@ -1,0 +1,5 @@
+error[E0599]: no method named `attr` found for enum `AnyView<'scope>` in the current scope
+ --> tests/ui/fail_any_view_attribute_escape.rs:5:35
+  |
+5 |     let _ = AnyView::new(input()).attr("value", "explicit");
+  |                                   ^^^^ method not found in `AnyView<'_>`

@@ -1,0 +1,35 @@
+error[E0599]: the method `popover` exists for enum `AnyView<'_>`, but its trait bounds were not satisfied
+ --> tests/ui/fail_popover_on_any_view.rs:6:10
+  |
+5 |       let _ = AnyView::new(div(()))
+  |  _____________-
+6 | |         .popover("auto")
+  | |         -^^^^^^^ method cannot be called on `AnyView<'_>` due to unsatisfied trait bounds
+  | |_________|
+  |
+  |
+ ::: $WORKSPACE/crates/silex_dom/src/view/any.rs
+  |
+  |   pub enum AnyView<'scope> {
+  |   ------------------------ doesn't satisfy `AnyView<'_>: AttributeBuilder<'_>` or `AnyView<'_>: PopoverAttributes<'_>`
+  |
+  = note: the following trait bounds were not satisfied:
+          `AnyView<'_>: AttributeBuilder<'_>`
+          which is required by `AnyView<'_>: PopoverAttributes<'_>`
+          `&AnyView<'_>: AttributeBuilder<'_>`
+          which is required by `&AnyView<'_>: PopoverAttributes<'_>`
+          `&mut AnyView<'_>: AttributeBuilder<'_>`
+          which is required by `&mut AnyView<'_>: PopoverAttributes<'_>`
+note: the method `popover` exists on the type `silex_dom::element::Element<'_>`
+ --> src/attributes.rs
+  |
+  |                   fn $method(self, value: impl IntoStorable<'scope>) -> Self {
+  |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+  | / define_attribute_group!(PopoverAttributes {
+  | |     popover => "popover",
+  | |     popovertarget => "popovertarget",
+  | |     popovertargetaction => "popovertargetaction"
+  | | });
+  | |__- in this macro invocation
+  = note: this error originates in the macro `define_attribute_group` (in Nightly builds, run with -Z macro-backtrace for more info)

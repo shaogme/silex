@@ -6,8 +6,8 @@ use silex_core::{
 use silex_dom::attribute::{AttrOp, CombinedStyles, ReactiveBindingPlan};
 use silex_dom::element::Element;
 use silex_dom::view::{
-    AnyView, ApplyAttributes, BranchEvaluation, IndexedListView, MountContext, MountInstance,
-    MountOwner, MountOwnerToken, RenderOnlyKeyedListView, RowUpdater, StatefulKeyedListView, View,
+    AnyView, BranchEvaluation, IndexedListView, MountContext, MountInstance, MountOwner,
+    MountOwnerToken, RenderOnlyKeyedListView, RowUpdater, StatefulKeyedListView, View,
     mount_branch_stable_cached, mount_text_node,
 };
 use std::{
@@ -37,11 +37,10 @@ fn mount_view<'owner, V: View<'owner>>(
     view: &V,
     owner: &MountOwnerToken<'owner>,
     parent: &Node,
-    attrs: Vec<AttrOp<'owner>>,
     error_handler: ErrorReporter<'owner>,
 ) -> SilexResult<MountInstance<'owner>> {
     let context = MountContext::for_parent(parent.clone(), owner.clone(), error_handler);
-    let instance = view.mount(&context, attrs)?;
+    let instance = view.mount(&context)?;
     context.transaction().commit()?;
     Ok(instance)
 }
@@ -51,13 +50,10 @@ struct CleanupProbe {
     cleanups: Rc<Cell<usize>>,
 }
 
-impl<'owner> ApplyAttributes<'owner> for CleanupProbe {}
-
 impl<'owner> View<'owner> for CleanupProbe {
     fn mount(
         &self,
         context: &MountContext<'owner>,
-        _attrs: Vec<AttrOp<'owner>>,
     ) -> silex_core::SilexResult<silex_dom::view::MountInstance<'owner>> {
         let cleanups = self.cleanups.clone();
         context.owner().on_cleanup(
@@ -75,13 +71,10 @@ struct FailingChild {
     cleanups: Rc<Cell<usize>>,
 }
 
-impl<'owner> ApplyAttributes<'owner> for FailingChild {}
-
 impl<'owner> View<'owner> for FailingChild {
     fn mount(
         &self,
         context: &MountContext<'owner>,
-        _attrs: Vec<AttrOp<'owner>>,
     ) -> silex_core::SilexResult<silex_dom::view::MountInstance<'owner>> {
         let cleanups = self.cleanups.clone();
         context.owner().on_cleanup(
@@ -102,13 +95,10 @@ struct ConditionalRow {
     fail: Option<i32>,
 }
 
-impl<'owner> ApplyAttributes<'owner> for ConditionalRow {}
-
 impl<'owner> View<'owner> for ConditionalRow {
     fn mount(
         &self,
         context: &MountContext<'owner>,
-        _attrs: Vec<AttrOp<'owner>>,
     ) -> SilexResult<silex_dom::view::MountInstance<'owner>> {
         if self.fail == Some(self.value) {
             return Err(SilexError::recoverable(SilexErrorKind::Framework(format!(
@@ -127,13 +117,10 @@ struct StatefulProbe {
     cleanups: Rc<Cell<usize>>,
 }
 
-impl<'owner> ApplyAttributes<'owner> for StatefulProbe {}
-
 impl<'owner> View<'owner> for StatefulProbe {
     fn mount(
         &self,
         context: &MountContext<'owner>,
-        _attrs: Vec<AttrOp<'owner>>,
     ) -> silex_core::SilexResult<silex_dom::view::MountInstance<'owner>> {
         self.mounts.set(self.mounts.get() + 1);
         let node: Node = web_sys::window()
@@ -292,7 +279,7 @@ fn element_child_failure_rolls_back_provisional_owner_and_dom() {
             );
 
             assert!(matches!(
-                mount_view(&view, &owner, &host, Vec::new(), error_handler.view()),
+                mount_view(&view, &owner, &host, error_handler.view()),
                 Err(SilexError::Recoverable(SilexErrorKind::Framework(message))) if message == "child mount rejected"
             ));
         })
@@ -326,7 +313,7 @@ fn composite_view_failure_rolls_back_only_its_mount_transaction() {
             ];
 
             assert!(matches!(
-            mount_view(&view, &owner, &host.clone(), Vec::new(), error_handler.view()),
+            mount_view(&view, &owner, &host.clone(), error_handler.view()),
                 Err(SilexError::Recoverable(SilexErrorKind::Framework(message))) if message == "child mount rejected"
             ));
         })
@@ -369,14 +356,8 @@ fn indexed_list_failure_restores_previous_rows_and_can_retry() {
             _marker: PhantomData,
         };
 
-        let _ = mount_view(
-            &list,
-            &owner,
-            &host.clone(),
-            Vec::new(),
-            error_handler.view(),
-        )
-        .expect("indexed list should mount");
+        let _ = mount_view(&list, &owner, &host.clone(), error_handler.view())
+            .expect("indexed list should mount");
         assert_eq!(host.text_content().as_deref(), Some("1;2;"));
 
         set_items
@@ -424,14 +405,8 @@ fn deferred_row_render_failure_keeps_previous_content_and_recovers() {
             })
         };
 
-        let _ = mount_view(
-            &view,
-            &owner,
-            &host.clone(),
-            Vec::new(),
-            error_handler.view(),
-        )
-        .expect("dynamic view should mount");
+        let _ = mount_view(&view, &owner, &host.clone(), error_handler.view())
+            .expect("dynamic view should mount");
         assert_eq!(host.text_content().as_deref(), Some("1;"));
 
         set_value.set(2).expect("signal should be writable");
@@ -471,7 +446,7 @@ fn render_only_keyed_rows_follow_collection_changes() {
                     _marker: PhantomData,
                 };
                 let (owner, error_handler) = test_owner(child);
-                let _ = mount_view(&list, &owner, &host, Vec::new(), error_handler.view())
+                let _ = mount_view(&list, &owner, &host, error_handler.view())
                     .expect("render-only keyed list should mount");
                 assert_eq!(host.text_content().as_deref(), Some("1:0;2:1;"));
 
@@ -528,7 +503,7 @@ fn keyed_list_initial_duplicate_key_is_a_mount_error() {
             let (owner, error_handler) = test_owner(owner);
 
             assert!(matches!(
-                mount_view(&list, &owner, &host, Vec::new(), error_handler.view()),
+                mount_view(&list, &owner, &host, error_handler.view()),
                 Err(SilexError::Fatal(SilexErrorKind::Framework(message))) if message == "duplicate key in keyed list"
             ));
         })
@@ -561,7 +536,7 @@ fn dynamic_render_owner_cleans_children_on_rerun_and_root_dispose() {
             })
         };
         let (owner, error_handler) = test_owner(owner);
-        let _ = mount_view(&view, &owner, &host, Vec::new(), error_handler.view())
+        let _ = mount_view(&view, &owner, &host, error_handler.view())
             .expect("dynamic view should mount");
         assert_eq!(host.text_content().as_deref(), Some("0"));
 
@@ -671,7 +646,6 @@ fn branch_replaces_row_owner_and_keyed_list_reorders_ranges() {
         let context = MountContext::for_parent(host.clone(), owner.clone(), error_handler.view());
         let _ = mount_branch_stable_cached(
             &context,
-            Vec::new(),
             move || {
                 let key = key.get().expect("signal should be readable");
                 Ok(BranchEvaluation::new(key, ()))
@@ -763,7 +737,7 @@ fn branch_replaces_row_owner_and_keyed_list_reorders_ranges() {
                     _marker: PhantomData,
                 };
                 let (list_owner, error_handler) = test_owner(child);
-                let _ = mount_view(&list, &list_owner, &host, Vec::new(), error_handler.view())
+                let _ = mount_view(&list, &list_owner, &host, error_handler.view())
                     .expect("keyed list should mount");
                 assert_eq!(host.text_content().as_deref(), Some("b11:0;2:1;3:2;"));
 
@@ -812,7 +786,7 @@ fn indexed_list_preserves_position_identity_across_diff() {
                     _marker: PhantomData,
                 };
                 let (owner, error_handler) = test_owner(child);
-                let _ = mount_view(&list, &owner, &host, Vec::new(), error_handler.view())
+                let _ = mount_view(&list, &owner, &host, error_handler.view())
                     .expect("indexed list should mount");
                 assert_eq!(host.text_content().as_deref(), Some("1:0;2:1;"));
 
@@ -848,7 +822,6 @@ fn repeated_branch_and_list_replacement_keeps_owner_lifecycle_stable() {
         let context = MountContext::for_parent(host.clone(), owner.clone(), error_handler.view());
         let _ = mount_branch_stable_cached(
             &context,
-            Vec::new(),
             move || {
                 let key = key.get().expect("signal should be readable");
                 Ok(BranchEvaluation::new(key, ()))
@@ -885,7 +858,7 @@ fn repeated_branch_and_list_replacement_keeps_owner_lifecycle_stable() {
                     _marker: PhantomData,
                 };
                 let (list_owner, error_handler) = test_owner(child);
-                let _ = mount_view(&list, &list_owner, &host, Vec::new(), error_handler.view())
+                let _ = mount_view(&list, &list_owner, &host, error_handler.view())
                     .expect("indexed list should mount");
 
                 for values in [vec![1, 2, 3], vec![3], vec![4, 5], vec![6, 7, 8, 9]] {
@@ -969,7 +942,7 @@ fn stateful_keyed_rows_preserve_mounts_and_invalidate_old_updaters() {
                     _marker: PhantomData,
                 };
                 let (owner, error_handler) = test_owner(child);
-                let _ = mount_view(&view, &owner, &host, Vec::new(), error_handler.view())
+                let _ = mount_view(&view, &owner, &host, error_handler.view())
                     .expect("branch view should mount");
                 assert_eq!(host.text_content().as_deref(), Some("1:0;2:1;"));
                 assert_eq!(mounts.get(), 2);
@@ -1059,7 +1032,7 @@ fn rejected_stateful_factory_cleans_uncommitted_row_range() {
                     _marker: PhantomData,
                 };
                 let (owner, error_handler) = test_owner(child);
-                let _ = mount_view(&list, &owner, &host, Vec::new(), error_handler.view())
+                let _ = mount_view(&list, &owner, &host, error_handler.view())
                     .expect("keyed list should mount");
                 assert_eq!(host.text_content().as_deref(), Some("1:0;"));
                 assert_eq!(comment_count(&host), 4);

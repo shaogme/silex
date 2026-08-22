@@ -37,18 +37,31 @@ fn dialog_focus_binding<'scope>(
 ) -> AttrOp<'scope> {
     AttrOp::on_commit(move |element, context| {
         let dialog = element.clone();
+        let owner = context.owner();
+        let error_handler = context.error_handler();
         context.owner().effect(
             Box::new(move || -> SilexResult<()> {
                 if open.with(|value| *value)? {
                     if previous_focus.with(|value| value.is_none())? {
                         previous_focus.set(document().active_element())?;
                     }
-                    let dialog = dialog.dyn_ref::<HtmlElement>().ok_or_else(|| {
-                        SilexError::fatal(SilexErrorKind::Dom(
-                            "Dialog content must be an HTML element".to_string(),
-                        ))
-                    })?;
-                    dialog.focus().map_err(SilexError::fatal)?;
+                    let dialog = dialog.clone();
+                    queue_microtask(
+                        &owner,
+                        move || {
+                            if !open.with(|value| *value)? {
+                                return Ok(());
+                            }
+                            let dialog = dialog.dyn_ref::<HtmlElement>().ok_or_else(|| {
+                                SilexError::fatal(SilexErrorKind::Dom(
+                                    "Dialog content must be an HTML element".to_string(),
+                                ))
+                            })?;
+                            dialog.focus().map_err(SilexError::fatal)
+                        },
+                        error_handler,
+                    )
+                    .map_err(SilexError::fatal)?;
                 } else if let Some(previous) = previous_focus.with(|value| value.clone())? {
                     if let Some(previous) = previous.dyn_ref::<HtmlElement>() {
                         previous.focus().map_err(SilexError::fatal)?;

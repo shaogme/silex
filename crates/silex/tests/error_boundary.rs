@@ -7,9 +7,8 @@ use silex_core::{
     ErrorHandlerToken, ErrorReporter, OwnerAccess, ReadSignal, Runtime, SilexContext, SilexError,
     SilexErrorKind, SilexResult,
 };
-use silex_dom::attribute::AttrOp;
 use silex_dom::document;
-use silex_dom::view::{ApplyAttributes, MountContext, MountInstance, MountOwnerToken, View};
+use silex_dom::view::{MountContext, MountInstance, MountOwnerToken, View};
 use wasm_bindgen_test::*;
 use web_sys::Node;
 
@@ -26,14 +25,8 @@ wasm_bindgen_test_configure!(run_in_browser);
 #[derive(Clone)]
 struct InitialFailure;
 
-impl<'scope> ApplyAttributes<'scope> for InitialFailure {}
-
 impl<'scope> View<'scope> for InitialFailure {
-    fn mount(
-        &self,
-        _context: &MountContext<'scope>,
-        _attrs: Vec<AttrOp<'scope>>,
-    ) -> SilexResult<MountInstance<'scope>> {
+    fn mount(&self, _context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
         Err(SilexError::recoverable(SilexErrorKind::Framework(
             "initial child failure".to_string(),
         )))
@@ -43,14 +36,8 @@ impl<'scope> View<'scope> for InitialFailure {
 #[derive(Clone)]
 struct FallbackFailure;
 
-impl<'scope> ApplyAttributes<'scope> for FallbackFailure {}
-
 impl<'scope> View<'scope> for FallbackFailure {
-    fn mount(
-        &self,
-        _context: &MountContext<'scope>,
-        _attrs: Vec<AttrOp<'scope>>,
-    ) -> SilexResult<MountInstance<'scope>> {
+    fn mount(&self, _context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
         Err(SilexError::recoverable(SilexErrorKind::Framework(
             "fallback mount failure".to_string(),
         )))
@@ -65,14 +52,8 @@ struct DeferredFailure<'scope> {
     failure_count: Rc<Cell<usize>>,
 }
 
-impl<'scope> ApplyAttributes<'scope> for DeferredFailure<'scope> {}
-
 impl<'scope> View<'scope> for DeferredFailure<'scope> {
-    fn mount(
-        &self,
-        context: &MountContext<'scope>,
-        _attrs: Vec<AttrOp<'scope>>,
-    ) -> SilexResult<MountInstance<'scope>> {
+    fn mount(&self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
         let node = document().create_text_node("child");
         context.target().append(&node)?;
         let node: Node = node.into();
@@ -114,14 +95,8 @@ struct ConstructedHandlerFailure<'scope> {
     handler: ErrorReporter<'scope>,
 }
 
-impl<'scope> ApplyAttributes<'scope> for ConstructedHandlerFailure<'scope> {}
-
 impl<'scope> View<'scope> for ConstructedHandlerFailure<'scope> {
-    fn mount(
-        &self,
-        _context: &MountContext<'scope>,
-        _attrs: Vec<AttrOp<'scope>>,
-    ) -> SilexResult<MountInstance<'scope>> {
+    fn mount(&self, _context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
         let _ = self
             .handler
             .handle(SilexError::recoverable(SilexErrorKind::Framework(
@@ -136,14 +111,8 @@ struct RepeatedHandlerFailure<'scope> {
     handler: ErrorReporter<'scope>,
 }
 
-impl<'scope> ApplyAttributes<'scope> for RepeatedHandlerFailure<'scope> {}
-
 impl<'scope> View<'scope> for RepeatedHandlerFailure<'scope> {
-    fn mount(
-        &self,
-        _context: &MountContext<'scope>,
-        _attrs: Vec<AttrOp<'scope>>,
-    ) -> SilexResult<MountInstance<'scope>> {
+    fn mount(&self, _context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
         for message in ["first repeated failure", "second repeated failure"] {
             let _ = self
                 .handler
@@ -185,7 +154,7 @@ fn mount_view<'scope, V: View<'scope>>(
     error_handler: ErrorReporter<'scope>,
 ) -> SilexResult<MountInstance<'scope>> {
     let context = MountContext::for_parent(parent.clone(), owner.clone(), error_handler);
-    let instance = view.mount(&context, Vec::new())?;
+    let instance = view.mount(&context)?;
     context.transaction().commit()?;
     Ok(instance)
 }

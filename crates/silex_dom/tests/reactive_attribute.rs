@@ -7,9 +7,7 @@ use silex_core::{
 };
 use silex_dom::attribute::AttributeBuilder;
 use silex_dom::element::Element;
-use silex_dom::view::{
-    AnyView, ApplyAttributes, MountContext, MountInstance, MountOwnerToken, View,
-};
+use silex_dom::view::{MountContext, MountInstance, MountOwnerToken, View};
 use std::cell::RefCell;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
@@ -52,11 +50,10 @@ fn mount_view<'owner, V: View<'owner>>(
     view: &V,
     owner: &MountOwnerToken<'owner>,
     parent: &DomElement,
-    attrs: Vec<silex_dom::attribute::AttrOp<'owner>>,
     error_handler: ErrorReporter<'owner>,
 ) -> SilexResult<MountInstance<'owner>> {
     let context = MountContext::for_parent(parent.clone().into(), owner.clone(), error_handler);
-    let instance = view.mount(&context, attrs)?;
+    let instance = view.mount(&context)?;
     context.transaction().commit()?;
     Ok(instance)
 }
@@ -70,7 +67,7 @@ fn svg_with_children_preserves_svg_namespace_and_case_sensitive_attributes() {
             let error_handler = test_handler(owner);
             let owner = MountOwnerToken::new(owner);
             let view = test_svg("icon").attr("viewBox", "0 0 24 24");
-            let _ = mount_view(&view, &owner, &host, Vec::new(), error_handler.view())
+            let _ = mount_view(&view, &owner, &host, error_handler.view())
                 .expect("svg view should mount");
 
             let element = mounted(&host);
@@ -92,29 +89,21 @@ fn style_text(element: &DomElement) -> String {
     element.get_attribute("style").unwrap_or_default()
 }
 
-struct RejectingView {
+struct RejectingView<'scope> {
     element: Rc<RefCell<Option<DomElement>>>,
+    color: silex_core::Rx<'scope, String>,
 }
 
-impl<'owner> ApplyAttributes<'owner> for RejectingView {}
-
-impl<'owner> View<'owner> for RejectingView {
-    fn mount(
-        &self,
-        context: &MountContext<'owner>,
-        attrs: Vec<silex_dom::attribute::AttrOp<'owner>>,
-    ) -> SilexResult<MountInstance<'owner>> {
-        let document = web_sys::window()
-            .ok_or_else(|| SilexError::fatal(SilexErrorKind::Dom("window is unavailable".into())))?
-            .document()
+impl<'owner> View<'owner> for RejectingView<'owner> {
+    fn mount(&self, context: &MountContext<'owner>) -> SilexResult<MountInstance<'owner>> {
+        let view = Element::new("div").attr("style", ("color", self.color));
+        let instance = view.mount(context)?;
+        let element = instance
+            .first_node()
+            .and_then(|node| node.clone().dyn_into::<DomElement>().ok())
             .ok_or_else(|| {
-                SilexError::fatal(SilexErrorKind::Dom("document is unavailable".into()))
+                SilexError::fatal(SilexErrorKind::Dom("element is unavailable".into()))
             })?;
-        let element = document.create_element("div").map_err(SilexError::fatal)?;
-        context.target().append(&element)?;
-        for attr in attrs {
-            attr.apply(&element, context)?;
-        }
         *self.element.borrow_mut() = Some(element);
         Err(SilexError::recoverable(SilexErrorKind::Framework(
             "intentional mount rejection".to_string(),
@@ -132,7 +121,7 @@ fn reactive_static_str_attribute_updates() {
             let error_handler = test_handler(owner);
             let owner = MountOwnerToken::new(owner);
             let view = Element::new("button").attr("data-state", read.into_rx());
-            let _ = mount_view(&view, &owner, &host, Vec::new(), error_handler.view())
+            let _ = mount_view(&view, &owner, &host, error_handler.view())
                 .expect("reactive view should mount");
 
             let element = mounted(&host);
@@ -164,7 +153,7 @@ fn reactive_borrowed_str_attribute_updates() {
             let error_handler = test_handler(owner);
             let owner = MountOwnerToken::new(owner);
             let view = Element::new("div").attr("data-value", read.into_rx());
-            let _ = mount_view(&view, &owner, &host, Vec::new(), error_handler.view())
+            let _ = mount_view(&view, &owner, &host, error_handler.view())
                 .expect("reactive view should mount");
 
             let element = mounted(&host);
@@ -196,7 +185,7 @@ fn reactive_cow_attribute_updates() {
             let error_handler = test_handler(owner);
             let owner = MountOwnerToken::new(owner);
             let view = Element::new("span").attr("data-state", read.into_rx());
-            let _ = mount_view(&view, &owner, &host, Vec::new(), error_handler.view())
+            let _ = mount_view(&view, &owner, &host, error_handler.view())
                 .expect("reactive view should mount");
 
             let element = mounted(&host);
@@ -228,7 +217,7 @@ fn reactive_string_reference_attribute_updates() {
             let error_handler = test_handler(owner);
             let owner = MountOwnerToken::new(owner);
             let view = Element::new("p").attr("data-text", read.into_rx());
-            let _ = mount_view(&view, &owner, &host, Vec::new(), error_handler.view())
+            let _ = mount_view(&view, &owner, &host, error_handler.view())
                 .expect("reactive view should mount");
 
             let element = mounted(&host);
@@ -262,7 +251,7 @@ fn reactive_str_classes_merge_update_and_cleanup() {
         let view = Element::new("div")
             .attr("class", "static")
             .attr("class", read.into_rx());
-        let _ = mount_view(&view, &owner, &host, Vec::new(), error_handler.view())
+        let _ = mount_view(&view, &owner, &host, error_handler.view())
             .expect("reactive view should mount");
 
         element = mounted(&host);
@@ -296,7 +285,7 @@ fn reactive_str_stylesheet_merges_update_and_cleanup() {
         let view = Element::new("div")
             .attr("style", "display: block;")
             .attr("style", read.into_rx());
-        let _ = mount_view(&view, &owner, &host, Vec::new(), error_handler.view())
+        let _ = mount_view(&view, &owner, &host, error_handler.view())
             .expect("reactive view should mount");
 
         element = mounted(&host);
@@ -335,7 +324,7 @@ fn reactive_cow_style_property_updates_and_cleans_up() {
         let view = Element::new("div")
             .attr("style", ("color", read.into_rx()))
             .attr("style", ("display", "block"));
-        let _ = mount_view(&view, &owner, &host, Vec::new(), error_handler.view())
+        let _ = mount_view(&view, &owner, &host, error_handler.view())
             .expect("reactive view should mount");
 
         element = mounted(&host);
@@ -372,7 +361,7 @@ fn reactive_borrowed_str_style_property_updates_and_cleans_up() {
         let view = Element::new("div")
             .attr("style", ("color", read.into_rx()))
             .attr("style", ("display", "block"));
-        let _ = mount_view(&view, &owner, &host, Vec::new(), error_handler.view())
+        let _ = mount_view(&view, &owner, &host, error_handler.view())
             .expect("reactive view should mount");
 
         element = mounted(&host);
@@ -403,7 +392,7 @@ fn reactive_string_reference_style_property_updates_and_cleans_up() {
         let view = Element::new("div")
             .attr("style", ("color", read.into_rx()))
             .attr("style", ("display", "block"));
-        let _ = mount_view(&view, &owner, &host, Vec::new(), error_handler.view())
+        let _ = mount_view(&view, &owner, &host, error_handler.view())
             .expect("reactive view should mount");
 
         element = mounted(&host);
@@ -434,7 +423,7 @@ fn reactive_style_property_restores_static_value_after_dispose() {
         let view = Element::new("div")
             .attr("style", ("color", read.into_rx()))
             .attr("style", ("color", "green"));
-        let _ = mount_view(&view, &owner, &host, Vec::new(), error_handler.view())
+        let _ = mount_view(&view, &owner, &host, error_handler.view())
             .expect("reactive view should mount");
 
         element = mounted(&host);
@@ -462,11 +451,11 @@ fn reactive_style_plan_cleans_up_after_failed_mount() {
                 .expect("signal should initialize");
             let error_handler = test_handler(owner);
             let owner = MountOwnerToken::new(owner);
-            let view = AnyView::new(RejectingView {
+            let view = RejectingView {
                 element: captured.clone(),
-            })
-            .attr("style", ("color", read.into_rx()));
-            assert!(mount_view(&view, &owner, &host, Vec::new(), error_handler.view()).is_err());
+                color: read.into_rx(),
+            };
+            assert!(mount_view(&view, &owner, &host, error_handler.view()).is_err());
         })
         .expect("child owner should initialize");
 

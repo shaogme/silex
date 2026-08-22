@@ -1,6 +1,5 @@
 use super::any::AnyView;
 use super::context::MountContext;
-use crate::attribute::AttrOp;
 use silex_core::{
     ErrorHandlerInput, OwnerAccess, ReactiveSource, Rx, RxData, RxValue, SilexResult,
 };
@@ -22,11 +21,6 @@ pub struct ViewNil;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ViewCons<H, T>(pub H, pub T);
-
-/// Apply attributes to a view while preserving their scope boundary.
-pub trait ApplyAttributes<'scope> {
-    fn apply_attributes(&mut self, _attrs: Vec<AttrOp<'scope>>) {}
-}
 
 /// Component prop wrapper used by generated builders.
 pub enum Prop<'a, T> {
@@ -84,34 +78,15 @@ impl<'a, T: Clone> PropInto<T> for Prop<'a, T> {
     }
 }
 
-impl<'scope, 'a, T> ApplyAttributes<'scope> for Prop<'a, T>
-where
-    'a: 'scope,
-    T: ApplyAttributes<'scope>,
-{
-    fn apply_attributes(&mut self, attrs: Vec<AttrOp<'scope>>) {
-        match self {
-            Self::Owned(value) => value.apply_attributes(attrs),
-            Self::Borrowed(value) => {
-                let _ = (value, attrs);
-            }
-        }
-    }
-}
-
 impl<'scope, 'a, T> View<'scope> for Prop<'a, T>
 where
     'a: 'scope,
     T: View<'scope>,
 {
-    fn mount(
-        &self,
-        context: &MountContext<'scope>,
-        attrs: Vec<AttrOp<'scope>>,
-    ) -> SilexResult<MountInstance<'scope>> {
+    fn mount(&self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
         match self {
-            Self::Owned(value) => value.mount(context, attrs),
-            Self::Borrowed(value) => value.mount(context, attrs),
+            Self::Owned(value) => value.mount(context),
+            Self::Borrowed(value) => value.mount(context),
         }
     }
 }
@@ -231,9 +206,5 @@ pub trait View<'scope> {
         AnyView::new(self)
     }
 
-    fn mount(
-        &self,
-        context: &MountContext<'scope>,
-        attrs: Vec<AttrOp<'scope>>,
-    ) -> SilexResult<MountInstance<'scope>>;
+    fn mount(&self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>>;
 }

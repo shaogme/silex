@@ -1,0 +1,5 @@
+error: `#[attrs]` cannot be combined with `#[ctx]` or `#[chain]`
+  --> tests/ui/fail_component_attrs_chain_conflict.rs:12:36
+   |
+12 |     #[attrs] #[chain(each)] attrs: Vec<AttributeGroup<'owner>>,
+   |                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^

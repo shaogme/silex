@@ -337,18 +337,18 @@ pub fn PopoverContent<'scope, Ctx>(
             "closed".to_string()
         }
     })?;
-    let content = div(div(stored
-        .with(|children| children.clone())?
+    let content_body = div(stored.with(|children| children.clone())?)
         .attr("data-slot", "popover-content")
         .attr("data-state", content_state)
         .attr("data-side", side_val)
         .attr("data-align", align_val)
         .attr("role", "dialog")
         .attr("tabindex", "-1")
-        .class(content_cls)))
-    .attr("data-radix-popper-content-wrapper", "")
-    .class(wrapper_cls)
-    .attr("style", wrapper_style);
+        .class(content_cls);
+    let content = div(content_body)
+        .attr("data-radix-popper-content-wrapper", "")
+        .class(wrapper_cls)
+        .attr("style", wrapper_style);
     let portal = chain!(
         // Overlay for click-outside
         div(())

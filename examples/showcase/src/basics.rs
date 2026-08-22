@@ -149,7 +149,10 @@ pub fn NodeRefDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
 #[component]
 pub fn SvgIconDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     #[component]
-    fn ShieldCheck<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
+    fn ShieldCheck<'scope, Ctx>(
+        #[ctx] ctx: Ctx,
+        #[attrs] attrs: AttributeGroup<'scope>,
+    ) -> impl View<'scope> {
         svg(path()
             .attr("stroke-linecap", "round")
             .attr("stroke-linejoin", "round")
@@ -160,20 +163,22 @@ pub fn SvgIconDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
         .attr("stroke", "currentColor")
         .attr("width", "24")
         .attr("height", "24")
+        .apply(attrs)
     }
 
     Ok(div![
         h3("SVG Icon forwarding"),
         p("SVG icons with attribute forwarding."),
         div![
-            ShieldCheck(ctx).build().style(
-                sty(ctx)
-                    .width(px(32))?
-                    .height(px(32))?
-                    .color(ColorName::Green)?
-            ),
             ShieldCheck(ctx)
-                .build()
+                .style(
+                    sty(ctx)
+                        .width(px(32))?
+                        .height(px(32))?
+                        .color(ColorName::Green)?
+                )
+                .build(),
+            ShieldCheck(ctx)
                 .style(
                     sty(ctx)
                         .width(px(48))?
@@ -185,12 +190,13 @@ pub fn SvgIconDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
                 .on(event::click, |_| {
                     console_log("Icon Clicked!");
                     Ok(())
-                }),
+                })
+                .build(),
             ShieldCheck(ctx)
-                .build()
                 .attr("width", "50")
                 .attr("height", "50")
-                .style(sty(ctx).color(ColorName::Red)?.margin_left(px(10))?),
+                .style(sty(ctx).color(ColorName::Red)?.margin_left(px(10))?)
+                .build(),
         ]
         .style(
             sty(ctx)

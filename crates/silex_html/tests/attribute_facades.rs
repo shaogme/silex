@@ -1,7 +1,7 @@
 #![deny(warnings)]
 
 use silex_core::Runtime;
-use silex_dom::{attribute::AttributeBuilder, view::AnyView};
+use silex_dom::attribute::AttributeBuilder;
 use silex_html::{
     AnchorAttributes, DataAttributes, FormAttributes, LabelAttributes, MediaAttributes,
     OpenAttributes, TableCellAttributes, TableHeaderAttributes, a, dialog, div, img, input, label,
@@ -47,5 +47,5 @@ fn generic_attribute_escape_hatches_compile() {
         .prop("customProperty", "value")
         .apply("additional-value");
     let _untyped = input().attr("value", "before-erasure").into_untyped();
-    let _any_view = AnyView::new(typed).attr("data-kind", "custom");
+    let _any_view = typed.into_untyped();
 }

@@ -231,13 +231,8 @@ fn update_visibility_state(element: &HtmlElement, open: bool) -> SilexResult<()>
 }
 
 impl<'scope> PortalView<'scope> {
-    fn mount_inner(
-        self,
-        context: &MountContext<'scope>,
-        attrs: Vec<AttrOp<'scope>>,
-    ) -> SilexResult<MountInstance<'scope>> {
-        let mut host_attrs = self.host_attrs.into_attrs();
-        host_attrs.extend(attrs);
+    fn mount_inner(self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
+        let host_attrs = self.host_attrs.into_attrs();
         validate_host_attributes(&host_attrs)?;
         let owner = context.owner();
         let error_handler = context.error_handler();
@@ -342,9 +337,8 @@ impl<'scope> PortalView<'scope> {
                             content_owner.clone(),
                             content_transaction.clone(),
                         );
-                        let result = catch_unwind(AssertUnwindSafe(|| {
-                            children.mount(&content_context, Vec::new())
-                        }));
+                        let result =
+                            catch_unwind(AssertUnwindSafe(|| children.mount(&content_context)));
                         match result {
                             Ok(Ok(_instance)) => match content_transaction.commit() {
                                 Ok(()) => Ok(()),
@@ -445,7 +439,7 @@ impl<'scope> PortalView<'scope> {
                                             content_transaction.clone(),
                                         );
                                         let result = catch_unwind(AssertUnwindSafe(|| {
-                                            children.mount(&content_context, Vec::new())
+                                            children.mount(&content_context)
                                         }));
                                         match result {
                                             Ok(Ok(_instance)) => {
@@ -533,16 +527,10 @@ impl<'scope> PortalView<'scope> {
 }
 
 impl<'scope> View<'scope> for PortalView<'scope> {
-    fn mount(
-        &self,
-        context: &MountContext<'scope>,
-        attrs: Vec<AttrOp<'scope>>,
-    ) -> SilexResult<MountInstance<'scope>> {
-        self.clone().mount_inner(context, attrs)
+    fn mount(&self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
+        self.clone().mount_inner(context)
     }
 }
-
-impl<'scope> ApplyAttributes<'scope> for PortalView<'scope> {}
 
 /// Create a Portal host that is always mounted for the lifetime of its owner.
 #[component]

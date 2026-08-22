@@ -5,10 +5,8 @@ use silex_core::{
     reactivity::{ReadSignal, StoredValue, WriteSignal},
     traits::RxGet,
 };
-use silex_dom::attribute::AttrOp;
 use silex_dom::view::{
-    AnyView, ApplyAttributes, DynamicRenderer, MountContext, MountInstance, View,
-    mount_dynamic_view_universal,
+    AnyView, DynamicRenderer, MountContext, MountInstance, View, mount_dynamic_view_universal,
 };
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -24,22 +22,15 @@ impl PartialEq for RouterView<'_> {
     }
 }
 
-impl<'scope> ApplyAttributes<'scope> for RouterView<'scope> {}
-
 impl<'scope> View<'scope> for RouterView<'scope> {
-    fn mount(
-        &self,
-        context: &MountContext<'scope>,
-        attrs: Vec<AttrOp<'scope>>,
-    ) -> SilexResult<MountInstance<'scope>> {
+    fn mount(&self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {
         let factory = self.0.clone();
         mount_dynamic_view_universal(
             context,
-            attrs,
             DynamicRenderer::new(move |args| {
-                let (context, attrs) = args.into_parts();
+                let context = args.into_context();
                 let view = factory();
-                view.mount(&context, attrs)
+                view.mount(&context)
             }),
         )
     }

@@ -103,7 +103,7 @@ pub mod prelude {
     pub use silex_css::prelude::{Style, linear_gradient, radial_gradient};
     #[cfg(feature = "tw")]
     pub use silex_css::prelude::{VariantSchema, declare_variants};
-    pub use silex_dom::prelude::{ApplyAttributes, View, text};
+    pub use silex_dom::prelude::{View, text};
     pub use silex_html::{Em, em};
     #[cfg(feature = "css")]
     pub use silex_macros::{global, inject_css, styled, theme};
