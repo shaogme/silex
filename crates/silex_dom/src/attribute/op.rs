@@ -425,6 +425,7 @@ fn apply_update_internal<'scope>(
         AttrData::ReactiveAttr(rx) => {
             let el = el.clone();
             owner.effect(
+                EffectPhase::Normal,
                 Box::new(move || -> SilexResult<()> {
                     let name = target.attr_name();
                     let value = rx.get()?;
@@ -436,6 +437,7 @@ fn apply_update_internal<'scope>(
         AttrData::ReactiveString(rx) => {
             let el = el.clone();
             owner.effect(
+                EffectPhase::Normal,
                 Box::new(move || -> SilexResult<()> {
                     let name = target.attr_name();
                     let val = rx.get()?;
@@ -447,6 +449,7 @@ fn apply_update_internal<'scope>(
         AttrData::ReactiveBool(rx) => {
             let el = el.clone();
             owner.effect(
+                EffectPhase::Normal,
                 Box::new(move || -> SilexResult<()> {
                     let name = target.attr_name();
                     let val = rx.get()?;
@@ -458,6 +461,7 @@ fn apply_update_internal<'scope>(
         AttrData::ReactiveOptionString(rx) => {
             let el = el.clone();
             owner.effect(
+                EffectPhase::Normal,
                 Box::new(move || -> SilexResult<()> {
                     let name = target.attr_name();
                     let val = rx.get()?;
@@ -473,6 +477,7 @@ fn apply_update_internal<'scope>(
         AttrData::ReactiveJs(rx) => {
             let el = el.clone();
             owner.effect(
+                EffectPhase::Normal,
                 Box::new(move || -> SilexResult<()> {
                     let value = rx.get()?;
                     js_sys::Reflect::set(&el, &JsValue::from_str(&name), &value)
@@ -523,6 +528,7 @@ fn apply_combined_classes_internal<'scope>(
     let el_clone = el.clone();
     let el_for_cleanup = el.clone();
     owner.effect_with_previous(
+        EffectPhase::Normal,
         Box::new(
             move |previous: Option<&HashSet<String>>| -> SilexResult<HashSet<String>> {
                 let list = el_clone.class_list();
@@ -626,6 +632,7 @@ fn apply_combined_styles_internal<'scope>(
     let static_values_for_cleanup = static_values;
 
     owner.effect_with_previous(
+        EffectPhase::Normal,
         Box::new(
             move |previous: Option<&CombinedStylePrevious>| -> SilexResult<CombinedStylePrevious> {
                 let style = get_style_decl(&el_clone).ok_or_else(|| {

@@ -6,7 +6,7 @@
 )]
 
 use silex_reactivity::{
-    ComputationInitError, ErrorHandlerToken, OwnerAccess, ReactiveError, Runtime,
+    ComputationInitError, EffectPhase, ErrorHandlerToken, OwnerAccess, ReactiveError, Runtime,
 };
 use std::cell::Cell;
 use std::rc::Rc;
@@ -37,6 +37,7 @@ fn detached_effect_survives_parent_reruns_and_stops_explicitly() {
             let scope_in_effect = scope;
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         parent_source.get()?;
                         parent_runs_in_effect.set(parent_runs_in_effect.get() + 1);
@@ -46,6 +47,7 @@ fn detached_effect_survives_parent_reruns_and_stops_explicitly() {
                             let scope_for_detached = scope_in_effect;
                             scope_in_effect
                                 .effect_detached(
+                                    EffectPhase::Normal,
                                     move || {
                                         detached_source.get()?;
                                         detached_runs.set(detached_runs.get() + 1);
@@ -100,6 +102,7 @@ fn detached_effect_stop_runs_cleanup_once_and_invalidates_the_handle() {
             let cleanups_in_effect = cleanups.clone();
             let effect = scope
                 .effect_detached(
+                    EffectPhase::Normal,
                     move || {
                         let cleanups = cleanups_in_effect.clone();
                         scope.on_cleanup(
@@ -136,11 +139,13 @@ fn ordinary_nested_effect_remains_a_child_of_the_parent_effect() {
             let scope_in_effect = scope;
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         source.get()?;
                         let child_cleanups = child_cleanups_in_effect.clone();
                         scope_in_effect
                             .effect(
+                                EffectPhase::Normal,
                                 move || {
                                     let cleanups = child_cleanups.clone();
                                     scope_in_effect.on_cleanup(
@@ -179,6 +184,7 @@ fn failed_detached_effect_does_not_remain_reactive() {
             let runs_in_effect = runs.clone();
             let cleanups_in_effect = cleanups.clone();
             let result = scope.effect_detached(
+                EffectPhase::Normal,
                 move || {
                     source.get()?;
                     runs_in_effect.set(runs_in_effect.get() + 1);

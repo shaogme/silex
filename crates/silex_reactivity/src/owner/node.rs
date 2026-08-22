@@ -19,6 +19,16 @@ pub struct WatchOptions {
     pub once: bool,
 }
 
+/// Selects when an effect-like callback is rerun during a reactive flush.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum EffectPhase {
+    /// Participate in the current synchronous reactive convergence.
+    Normal,
+    /// Run after normal work and deferred errors have converged.
+    PostFlush,
+}
+
 impl WatchOptions {
     pub const fn immediate(self) -> Self {
         Self {

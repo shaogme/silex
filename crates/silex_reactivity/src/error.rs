@@ -2,7 +2,7 @@
 
 use crate::{
     borrow::{BorrowCell, BorrowFailure, BorrowSite},
-    owner::ScopeStorage,
+    owner::{EffectPhase, ScopeStorage},
     root::CloseError,
     runtime::{
         ScopePhase, acquire_error_handler_lease, invoke_error_handler,
@@ -31,6 +31,7 @@ pub enum ReactiveError {
         iterations: usize,
         last_scope: Option<u32>,
         last_node: Option<u64>,
+        last_phase: Option<EffectPhase>,
     },
 }
 

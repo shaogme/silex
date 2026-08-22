@@ -215,6 +215,7 @@ fn UserDetail<'scope>(#[ctx] ctx: RouterContext<'scope>, id: u32) -> impl View<'
         error_handler,
     )?;
     let _page_effect = owner.effect(
+        EffectPhase::Normal,
         move || {
             let _ = page_computed.get()?;
             Ok(())

@@ -1,5 +1,5 @@
 use crate::{I18nStore, Locale};
-use silex_core::{EffectHandle, SilexError, SilexResult};
+use silex_core::{EffectHandle, EffectPhase, SilexError, SilexResult};
 use std::{cell::Cell, rc::Rc};
 use wasm_bindgen::JsValue;
 
@@ -114,7 +114,7 @@ pub(crate) fn sync_document_metadata<'owner>(
     #[cfg(not(target_arch = "wasm32"))]
     let root: Option<web_sys::Element> = None;
     let Some(root) = root else {
-        let effect = owner.effect(|| Ok(()), store.error_handler())?;
+        let effect = owner.effect(EffectPhase::Normal, || Ok(()), store.error_handler())?;
         effect.stop()?;
         return Ok(effect);
     };
@@ -170,6 +170,7 @@ pub(crate) fn sync_document_metadata<'owner>(
     let record_for_effect = record.clone();
     let error_handler = store.error_handler();
     let effect = owner.effect(
+        EffectPhase::Normal,
         move || -> SilexResult<()> {
             if !active_for_effect.get() {
                 return Ok(());

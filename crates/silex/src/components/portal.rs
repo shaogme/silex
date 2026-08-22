@@ -1,4 +1,4 @@
-use silex_core::{SilexError, SilexErrorKind, SilexResult, reactivity::Signal};
+use silex_core::{EffectPhase, SilexError, SilexErrorKind, SilexResult, reactivity::Signal};
 use silex_dom::view::{
     MountContext, MountErrorHandler, MountOwner, MountOwnerToken, MountTarget, MountTransaction,
 };
@@ -300,6 +300,7 @@ impl<'scope> PortalView<'scope> {
                 let effect_owner = host_owner.clone();
                 context.on_commit(move || {
                     effect_owner.effect(
+                        EffectPhase::Normal,
                         Box::new(move || {
                             let visible = open.with(|value| *value)?;
                             root_for_effect.set_open(visible)
@@ -414,6 +415,7 @@ impl<'scope> PortalView<'scope> {
                     let attached_for_effect = attached.clone();
                     context.on_commit(move || {
                         effect_owner.effect(
+                            EffectPhase::Normal,
                             Box::new(move || -> SilexResult<()> {
                                 if !attached_for_effect.get() {
                                     return Err(SilexError::fatal(SilexErrorKind::Dom(
@@ -507,19 +509,16 @@ impl<'scope> PortalView<'scope> {
                     if cleanup_active_for_owner.replace(false) {
                         let owner_result = close_owner(&cleanup_owner);
                         let remove_result = remove_node(&cleanup_host);
-                        if let Err(error) = owner_result {
-                            return Err(error);
-                        }
+                        owner_result?;
                         remove_result?;
                     }
                     Ok(())
                 }),
                 error_handler,
             )
-            .map_err(|error| {
+            .inspect_err(|_| {
                 let _ = close_owner(&host_owner);
                 let _ = remove_node(&host);
-                error
             })?;
 
         Ok(MountInstance::from_nodes(vec![host]))

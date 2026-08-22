@@ -6,7 +6,8 @@
 )]
 
 use silex_reactivity::{
-    ComputationInitError, EffectHandle, ErrorHandlerToken, OwnerAccess, Runtime, WatchOptions,
+    ComputationInitError, EffectHandle, EffectPhase, ErrorHandlerToken, OwnerAccess, Runtime,
+    WatchOptions,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -31,6 +32,7 @@ fn getter_watch_commits_values_and_gates_equal_updates() {
             let calls_in_callback = calls.clone();
             scope
                 .watch_getter(
+                    EffectPhase::Normal,
                     move || {
                         getter_runs_in_getter.set(getter_runs_in_getter.get() + 1);
                         Ok(source.get().expect("reactive read"))
@@ -65,6 +67,7 @@ fn immediate_once_watch_stops_after_the_initial_callback() {
             let calls_in_callback = calls.clone();
             let watcher = scope
                 .watch_getter_with_options(
+                    EffectPhase::Normal,
                     move || Ok(source.get().expect("reactive read")),
                     move |new, old| {
                         assert_eq!(*new, 1);
@@ -99,6 +102,7 @@ fn callback_reads_are_untracked_and_dynamic_getter_dependencies_replace() {
             let calls_in_callback = calls.clone();
             scope
                 .watch_getter(
+                    EffectPhase::Normal,
                     move || {
                         if switch.get().expect("reactive read") {
                             Ok(left.get().expect("reactive read"))
@@ -149,6 +153,7 @@ fn stop_cancels_future_runs_and_runs_cleanup_once() {
             let watcher_scope = scope;
             let watcher = scope
                 .watch_getter(
+                    EffectPhase::Normal,
                     move || Ok(source.get().expect("reactive read")),
                     move |_, _| {
                         calls_in_callback.set(calls_in_callback.get() + 1);
@@ -196,6 +201,7 @@ fn callback_panic_keeps_the_old_snapshot_for_a_later_retry() {
             let calls_in_callback = calls.clone();
             scope
                 .watch_getter(
+                    EffectPhase::Normal,
                     move || Ok(source.get().expect("reactive read")),
                     move |new, old| {
                         calls_in_callback.borrow_mut().push((*new, old.copied()));
@@ -228,6 +234,7 @@ fn initial_watch_panic_rolls_back_the_registered_node() {
             let panic = catch_unwind(AssertUnwindSafe(|| {
                 scope
                     .watch_getter(
+                        EffectPhase::Normal,
                         move || {
                             getter_runs_in_getter.set(getter_runs_in_getter.get() + 1);
                             let value = source.get().expect("reactive read");
@@ -266,6 +273,7 @@ fn foreign_watch_reads_fail_before_callback_execution() {
             let callback_runs_in_callback = callback_runs.clone();
             scope
                 .watch_getter(
+                    EffectPhase::Normal,
                     move || {
                         getter_runs_in_getter.set(getter_runs_in_getter.get() + 1);
                         foreign_source.get().map_err(|_| ())
@@ -297,7 +305,12 @@ fn owner_disposal_makes_a_watcher_handle_stopped() {
         let owner = scope.create_child().expect("fallible reactive creation");
         let watcher = owner
             .access()
-            .watch_getter(|| Ok(1_i32), |_, _| Ok(()), handler(scope))
+            .watch_getter(
+                EffectPhase::Normal,
+                || Ok(1_i32),
+                |_, _| Ok(()),
+                handler(scope),
+            )
             .expect("watch should initialize");
 
         owner.close().expect("owner disposal");
@@ -317,6 +330,7 @@ fn ordinary_effects_can_be_stopped_through_the_same_handle() {
             let runs_in_effect = runs.clone();
             let effect = scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         source.get().expect("reactive read");
                         runs_in_effect.set(runs_in_effect.get() + 1);
@@ -348,6 +362,7 @@ fn stopping_the_current_effect_does_not_write_back_deleted_metadata() {
             let runs_in_effect = runs.clone();
             let effect = scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         source.get().expect("reactive read");
                         runs_in_effect.set(runs_in_effect.get() + 1);

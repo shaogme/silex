@@ -29,6 +29,7 @@ missing_panics_doc = "warn"
 test-support = []
 
 [dependencies]
+indexmap = "2.14"
 slotmap = "1.0"
 smallvec = "1.11"
 

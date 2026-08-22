@@ -5,11 +5,11 @@ use super::{
         DependencyOrigin, DependencyTransaction, NodeState, PropagationScratch, ScopeState,
         ScopeStateInner,
     },
-    scheduler::{
-        ExecutionContext, Observer, ScheduledTask, TargetNode, active_ctx, active_observer_contexts,
-    },
+    scheduler::{ExecutionContext, Observer, TargetNode, active_ctx, active_observer_contexts},
 };
-use crate::{ReactiveError, ReactiveResult, handle::NodeKindTag, internal::NodeId};
+use crate::{
+    ReactiveError, ReactiveResult, handle::NodeKindTag, internal::NodeId, owner::EffectPhase,
+};
 use smallvec::SmallVec;
 use std::{
     collections::HashSet,
@@ -248,20 +248,20 @@ impl<'scope> ScopeStateInner<'scope> {
 
     pub(crate) fn remove_subscriber(&mut self, target_id: NodeId, sub_target: TargetNode) {
         if let Some(adjacency) = self.adjacency.get_mut(target_id) {
-            adjacency.subscribers.remove(&sub_target);
+            adjacency.subscribers.shift_remove(&sub_target);
         }
     }
 
     pub(crate) fn remove_dependency(&mut self, observer_id: NodeId, dep_target: TargetNode) {
         if let Some(adjacency) = self.adjacency.get_mut(observer_id) {
-            adjacency.dependencies.remove(&dep_target);
+            adjacency.dependencies.shift_remove(&dep_target);
         }
     }
 
     pub(crate) fn take_subscribers_into(&mut self, source: NodeId, targets: &mut Vec<TargetNode>) {
         targets.clear();
         if let Some(adjacency) = self.adjacency.get_mut(source) {
-            targets.extend(adjacency.subscribers.drain());
+            targets.extend(adjacency.subscribers.drain(..));
         }
     }
 
@@ -557,13 +557,18 @@ impl<'scope> ScopeStateInner<'scope> {
                 node.state = NodeState::Check;
                 if node.kind == NodeKindTag::Effect && !node.queued {
                     node.queued = true;
-                    scheduler
+                    let phase = node.phase;
+                    let mut scheduler_ref = scheduler
                         .try_borrow_mut()
-                        .map_err(|_| ReactiveError::BorrowConflict)?
-                        .enqueue_effect(ScheduledTask {
-                            owner_id: target.owner_id,
-                            node: target.node,
-                        });
+                        .map_err(|_| ReactiveError::BorrowConflict)?;
+                    match phase {
+                        EffectPhase::Normal => {
+                            scheduler_ref.enqueue_normal_effect(target.owner_id, target.node)
+                        }
+                        EffectPhase::PostFlush => {
+                            scheduler_ref.enqueue_post_flush_effect(target.owner_id, target.node)
+                        }
+                    }
                 }
             } else {
                 let target_scope = scheduler
@@ -585,14 +590,19 @@ impl<'scope> ScopeStateInner<'scope> {
                 node.state = NodeState::Check;
                 if node.kind == NodeKindTag::Effect && !node.queued {
                     node.queued = true;
+                    let phase = node.phase;
                     drop(state_ref);
-                    scheduler
+                    let mut scheduler_ref = scheduler
                         .try_borrow_mut()
-                        .map_err(|_| ReactiveError::BorrowConflict)?
-                        .enqueue_effect(ScheduledTask {
-                            owner_id: target.owner_id,
-                            node: target.node,
-                        });
+                        .map_err(|_| ReactiveError::BorrowConflict)?;
+                    match phase {
+                        EffectPhase::Normal => {
+                            scheduler_ref.enqueue_normal_effect(target.owner_id, target.node)
+                        }
+                        EffectPhase::PostFlush => {
+                            scheduler_ref.enqueue_post_flush_effect(target.owner_id, target.node)
+                        }
+                    }
                 }
             }
         }
@@ -600,22 +610,18 @@ impl<'scope> ScopeStateInner<'scope> {
     }
 
     pub(crate) fn is_settled(&self, id: NodeId) -> ReactiveResult<bool> {
-        Ok(self
+        let node_clean = self
             .nodes
             .get(id)
-            .is_some_and(|node| node.state == NodeState::Clean)
-            && self
-                .scheduler
-                .try_borrow()
-                .map_err(|_| ReactiveError::BorrowConflict)?
-                .global_queue
-                .is_empty()
-            && self
-                .scheduler
-                .try_borrow()
-                .map_err(|_| ReactiveError::BorrowConflict)?
-                .worklist
-                .is_empty())
+            .is_some_and(|node| node.state == NodeState::Clean);
+        let scheduler = self
+            .scheduler
+            .try_borrow()
+            .map_err(|_| ReactiveError::BorrowConflict)?;
+        Ok(node_clean
+            && scheduler.normal_queue.is_empty()
+            && scheduler.post_flush_queue.is_empty()
+            && scheduler.worklist.is_empty())
     }
 }
 
@@ -678,6 +684,7 @@ mod tests {
             let parent_scope = scope;
             let effect = scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         let _ = parent_scope.with_transient(|child| {
                             let (local, _) =
@@ -726,6 +733,7 @@ mod tests {
                 let child_handler = handler(child);
                 let effect = child
                     .effect(
+                        EffectPhase::Normal,
                         move || {
                             let _ = source.get();
                             Ok(())
@@ -768,7 +776,7 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_tracking_keeps_bidirectional_hashset_adjacency_unique() {
+    fn duplicate_tracking_keeps_bidirectional_indexset_adjacency_unique() {
         let mut runtime = Runtime::new();
         transient(&mut runtime, |scope| {
             let (source, _) = scope.signal(0i32).expect("fallible reactive creation");
@@ -776,6 +784,7 @@ mod tests {
             let source_raw = source.handle.raw();
             let effect = scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         assert_eq!(source.get(), Ok(0));
                         assert_eq!(source.get(), Ok(0));
@@ -816,6 +825,55 @@ mod tests {
                 1
             );
         });
+    }
+
+    #[test]
+    fn sibling_effects_follow_edge_registration_order() {
+        fn assert_order(reverse: bool) {
+            let mut runtime = Runtime::new();
+            let observed = Rc::new(std::cell::RefCell::new(Vec::new()));
+            transient(&mut runtime, |scope| {
+                let (source, set_source) = scope.signal(0_i32).expect("source creation");
+                let first_observed = observed.clone();
+                let second_observed = observed.clone();
+                let first = move || {
+                    source.get().map_err(|_| ())?;
+                    first_observed.borrow_mut().push("first");
+                    Ok(())
+                };
+                let second = move || {
+                    source.get().map_err(|_| ())?;
+                    second_observed.borrow_mut().push("second");
+                    Ok(())
+                };
+                if reverse {
+                    scope
+                        .effect(EffectPhase::Normal, second, handler(scope))
+                        .expect("second effect should initialize");
+                    scope
+                        .effect(EffectPhase::Normal, first, handler(scope))
+                        .expect("first effect should initialize");
+                } else {
+                    scope
+                        .effect(EffectPhase::Normal, first, handler(scope))
+                        .expect("first effect should initialize");
+                    scope
+                        .effect(EffectPhase::Normal, second, handler(scope))
+                        .expect("second effect should initialize");
+                }
+                observed.borrow_mut().clear();
+                set_source.set(1).expect("source update");
+            });
+            let expected = if reverse {
+                vec!["second", "first"]
+            } else {
+                vec!["first", "second"]
+            };
+            assert_eq!(*observed.borrow(), expected);
+        }
+
+        assert_order(false);
+        assert_order(true);
     }
 
     #[test]
@@ -915,6 +973,7 @@ mod tests {
                 let child_handler = handler(child);
                 let effect = child
                     .effect(
+                        EffectPhase::Normal,
                         move || {
                             let _ = source.get();
                             Ok(())
@@ -1005,6 +1064,7 @@ mod tests {
             .expect("fallible reactive creation");
         let effect = observer_scope
             .effect(
+                EffectPhase::Normal,
                 move || {
                     let _ = source.get();
                     Ok(())

@@ -6,9 +6,9 @@
 )]
 
 use silex_reactivity::{
-    Callback, CallbackInvokeError, ComputationInitError, Computed, EffectHandle, ErrorHandlerRef,
-    ErrorHandlerToken, NodeRef, OwnerAccess, ReactiveError, ReadSignal, Runtime, StoredValue,
-    WriteSignal,
+    Callback, CallbackInvokeError, ComputationInitError, Computed, EffectHandle, EffectPhase,
+    ErrorHandlerRef, ErrorHandlerToken, NodeRef, OwnerAccess, ReactiveError, ReadSignal, Runtime,
+    StoredValue, WriteSignal,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -98,7 +98,7 @@ fn all_public_node_capabilities_are_copy() {
                 .computed_always(move || Ok(1i32), handler(scope))
                 .expect("derived creation");
             let effect = scope
-                .effect(|| Ok(()), handler(scope))
+                .effect(EffectPhase::Normal, || Ok(()), handler(scope))
                 .expect("effect should initialize");
             let stored = scope.stored(1i32).expect("fallible reactive creation");
             let callback = scope
@@ -447,6 +447,7 @@ fn updating_another_signal_during_read_defers_effect_flush() {
             let runs_in_effect = runs.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         source.get().expect("test operation should succeed");
                         other.get().expect("test operation should succeed");
@@ -482,6 +483,7 @@ fn computation_payload_drop_observes_disposed_scope() {
             let error_in_outer = error.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         let (_source, set_source) =
                             scope_copy.signal(0i32).expect("fallible reactive creation");
@@ -492,6 +494,7 @@ fn computation_payload_drop_observes_disposed_scope() {
                         };
                         scope_copy
                             .effect(
+                                EffectPhase::Normal,
                                 move || {
                                     std::hint::black_box(&guard);
                                     Ok(())
@@ -552,6 +555,7 @@ fn nested_memo_child_payload_drop_does_not_track_the_outer_observer() {
             let refresh_inner_in_effect = refresh_inner.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         outer_source_in_effect
                             .get()
@@ -624,6 +628,7 @@ fn nested_memo_result_drop_does_not_track_the_outer_observer() {
             let refresh_inner_in_effect = refresh_inner.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         outer_source_in_effect
                             .get()
@@ -675,6 +680,7 @@ fn child_payloads_drop_before_parent_computation_payload() {
             let child_events = events.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         std::hint::black_box(&parent_event);
                         let signal_event = DropEvent {
@@ -748,6 +754,7 @@ fn child_callback_payload_drop_can_schedule_an_active_parent_effect() {
             let seen_in_effect = seen.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         seen_in_effect.set(source.get().expect("reactive read"));
                         Ok(())
@@ -793,6 +800,7 @@ fn stored_value_update_flushes_after_the_write_lease_is_released() {
             let seen_in_effect = seen.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         seen_in_effect.set(source.get().expect("reactive read"));
                         Ok(())

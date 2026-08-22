@@ -6,7 +6,9 @@ use super::row::{
 use crate::view::{AnyView, MountErrorHandler, MountInstance, View};
 use silex_core::reactivity::ReactiveSource;
 use silex_core::traits::{ForLoopSource, RxRead};
-use silex_core::{CloseError, ErrorHandlerToken, SilexError, SilexErrorKind, SilexResult};
+use silex_core::{
+    CloseError, EffectPhase, ErrorHandlerToken, SilexError, SilexErrorKind, SilexResult,
+};
 use std::{
     collections::{HashMap, HashSet},
     mem,
@@ -178,6 +180,7 @@ where
     let effect_rows = rows;
     let end = range.end.clone();
     if let Err(error) = local_owner.effect(
+        EffectPhase::Normal,
         Box::new(move || -> SilexResult<()> {
             let values = source
                 .with(|items| items.as_slice().map(|values| values.to_vec()))
@@ -524,6 +527,7 @@ where
     let effect_state = state;
     let end = range.end.clone();
     if let Err(error) = local_owner.effect(
+        EffectPhase::Normal,
         Box::new(move || -> SilexResult<()> {
             let values = source
                 .with(|items| items.as_slice().map(|values| values.to_vec()))

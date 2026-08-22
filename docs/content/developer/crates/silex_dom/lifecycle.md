@@ -18,7 +18,7 @@ view、动态 row 和 branch 都可以创建局部 owner；局部 owner 共享�
 
 | 方法 | 用途 |
 | --- | --- |
-| `effect(callback, handler)` | 注册跟随 owner 的 detached reactive effect；首次注册时立即运行。 |
+| `effect(phase, callback, handler)` | 注册跟随 owner 的 detached reactive effect；首次注册时立即运行，phase 显式选择 Normal 或 PostFlush。 |
 | `on_cleanup(cleanup, handler)` | 注册一次性的局部资源清理；cleanup 失败交给 handler/close report。 |
 | `token()` | 取得可保存到当前 view 资源中的 `MountOwnerToken`。 |
 | `child()` | 创建普通 DOM 子 owner，关闭时先于父 owner。 |
@@ -27,6 +27,12 @@ view、动态 row 和 branch 都可以创建局部 owner；局部 owner 共享�
 `MountOwnerToken` 还提供 `effect_with_previous`、`owner_state` 和若干内部
 host callback/resource 安装能力。公开 `MountState<T>` 是局部 owner-bound
 状态容器，适合保存 row、dynamic render state 或 cleanup 需要取出的资源。
+
+普通属性绑定、列表渲染和 Portal 可见性使用 `EffectPhase::Normal`。只有需要在
+普通 DOM 结果提交后读取或恢复焦点、选区等宿主状态的组件副作用才使用
+`EffectPhase::PostFlush`。PostFlush 仍由 runtime 同步执行，不应通过固定数量的
+`queue_microtask` 推断响应式顺序；`helpers` 中的 `queue_microtask` 仅用于真正的
+异步宿主资源。
 
 ## 关闭顺序与错误
 

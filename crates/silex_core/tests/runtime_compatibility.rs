@@ -3,7 +3,7 @@ use silex_core::reactivity::{ReadSignal, Resource, SuspenseContext};
 #[cfg(feature = "test-support")]
 use silex_core::traits::{RxRead, RxValue};
 use silex_core::{
-    ErrorHandlerToken, OwnerAccess, ReactiveError, Runtime, SilexError, SilexErrorKind,
+    EffectPhase, ErrorHandlerToken, OwnerAccess, ReactiveError, Runtime, SilexError, SilexErrorKind,
 };
 #[cfg(feature = "test-support")]
 use silex_core::{PromotionPlan, ReactiveSource, RuntimeScoped};
@@ -73,6 +73,7 @@ fn same_runtime_child_scope_reads_are_reactive() {
             let runs_in_effect = runs.clone();
             child_owner
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         source.get()?;
                         runs_in_effect.set(runs_in_effect.get() + 1);
@@ -99,7 +100,11 @@ fn foreign_tracked_reads_are_rejected() {
         let (source, _) = foreign_scope.signal(1_i32).expect("foreign source");
         let result = target_root.with_access(|target_scope| {
             target_scope
-                .effect(move || source.get().map(|_| ()), handler(target_scope))
+                .effect(
+                    EffectPhase::Normal,
+                    move || source.get().map(|_| ()),
+                    handler(target_scope),
+                )
                 .map(|_| ())
         });
         assert!(matches!(
@@ -128,6 +133,7 @@ fn foreign_untracked_reads_are_allowed_without_subscription() {
             let runs_in_effect = runs.clone();
             target_scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         source.get_untracked()?;
                         runs_in_effect.set(runs_in_effect.get() + 1);

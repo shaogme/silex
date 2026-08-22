@@ -9,7 +9,7 @@ use crate::{
         },
     },
 };
-use silex_core::{ErrorReporter, Rx, SilexContextProvider, SilexError, SilexResult};
+use silex_core::{EffectPhase, ErrorReporter, Rx, SilexContextProvider, SilexError, SilexResult};
 use silex_dom::attribute::{
     ApplyTarget, ApplyToDom, IntoStorable, ReactiveBinding, ReactiveBindingContext,
     ReactiveBindingPlan, ReactiveBindingTarget,
@@ -390,8 +390,7 @@ impl<'scope> Style<'scope> {
         if !dyn_bindings.is_empty() {
             let el_clone = el.clone();
             let bindings = dyn_bindings;
-            owner.effect_with_previous(
-                Box::new(
+            owner.effect_with_previous(EffectPhase::Normal, Box::new(
                     move |previous: Option<&Vec<Option<String>>>| -> SilexResult<
                         Vec<Option<String>>,
                     > {
@@ -578,6 +577,7 @@ impl<'scope> ReactiveBinding<'scope> for Style<'scope> {
             let owner = owner.clone();
             let owner_for_callback = owner.clone();
             owner.effect_with_previous(
+                EffectPhase::Normal,
                 Box::new(move |previous: Option<&String>| -> SilexResult<String> {
                     let style = rx.get()?;
                     let class_name =
@@ -867,10 +867,12 @@ mod tests {
                 let counter = inner_runs.clone();
                 owner
                     .effect(
+                        EffectPhase::Normal,
                         move || -> SilexResult<()> {
                             outer.get()?;
                             let counter = counter.clone();
                             owner.effect(
+                                EffectPhase::Normal,
                                 move || -> SilexResult<()> {
                                     inner_dep.get()?;
                                     counter.set(counter.get() + 1);

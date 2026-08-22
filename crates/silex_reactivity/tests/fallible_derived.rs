@@ -6,7 +6,7 @@
 )]
 
 use silex_reactivity::{
-    CallbackInvokeError, ComputationInitError, ErrorHandlerToken, OwnerAccess, Runtime,
+    CallbackInvokeError, ComputationInitError, EffectPhase, ErrorHandlerToken, OwnerAccess, Runtime,
 };
 use std::{cell::RefCell, rc::Rc};
 
@@ -105,6 +105,7 @@ fn deferred_error_is_dispatched_and_next_read_can_retry() {
             let effect_derived = derived;
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         effect_derived
                             .get()

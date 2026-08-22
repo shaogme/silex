@@ -1,6 +1,8 @@
 use std::{borrow::Cow, cell::Cell, rc::Rc};
 
-use silex_core::{ReactiveError, Rx, RxValueKind, SilexError, SilexErrorKind, SilexResult};
+use silex_core::{
+    EffectPhase, ReactiveError, Rx, RxValueKind, SilexError, SilexErrorKind, SilexResult,
+};
 use wasm_bindgen::JsValue;
 use web_sys::Element as WebElem;
 
@@ -338,6 +340,7 @@ impl<'scope> ReactiveBindingPlan<'scope> {
         let first_run = Rc::new(Cell::new(true));
         let first_run_for_effect = first_run.clone();
         owner.effect(
+            EffectPhase::Normal,
             Box::new(move || {
                 if first_run_for_effect.replace(false) {
                     initial(&element)

@@ -12,7 +12,7 @@ use crate::{
     source::IntoCssReactive,
     types,
 };
-use silex_core::{ErrorReporter, Rx, SilexError, SilexErrorKind, SilexResult};
+use silex_core::{EffectPhase, ErrorReporter, Rx, SilexError, SilexErrorKind, SilexResult};
 use silex_dom::{
     attribute::{ApplyTarget, ApplyToDom, AttrOp, IntoStorable},
     view::{
@@ -419,8 +419,7 @@ impl<'scope> DynamicCss<'scope> {
             let vars = self.vars.clone();
             let vars_for_effect = vars.clone();
             let el_clone = el.clone();
-            token.effect_with_previous(
-                Box::new(
+            token.effect_with_previous(EffectPhase::Normal, Box::new(
                     move |previous: Option<&Vec<Option<String>>>| -> SilexResult<
                         Vec<Option<String>>,
                     > {
@@ -475,6 +474,7 @@ impl<'scope> DynamicCss<'scope> {
             let layer = self.layer;
             let static_values_for_effect = static_values.clone();
             token.effect_with_previous(
+                EffectPhase::Normal,
                 Box::new(move |previous: Option<&String>| -> SilexResult<String> {
                     let current_vals: Vec<String> = getters
                         .iter()
@@ -730,6 +730,7 @@ impl<'scope> StyledVariantBinding<'scope> {
         let variant_classes_for_effect = variant_classes.clone();
         let element_for_effect = element.clone();
         owner.effect(
+            EffectPhase::Normal,
             Box::new(move || -> SilexResult<()> {
                 let active_variants: Vec<String> = groups
                     .iter()
@@ -1116,6 +1117,7 @@ pub fn inject_managed_dynamic_style<'scope>(
     let manager_for_effect = manager.clone();
     owner
         .effect(
+            EffectPhase::Normal,
             Box::new(move || -> SilexResult<()> {
                 let vals: Vec<String> = positional
                     .iter()

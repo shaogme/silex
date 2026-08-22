@@ -6,8 +6,8 @@
 )]
 
 use silex_reactivity::{
-    CallbackInvokeError, ComputationInitError, ErrorHandlerToken, OwnerAccess, ReactiveError,
-    Runtime,
+    CallbackInvokeError, ComputationInitError, EffectPhase, ErrorHandlerToken, OwnerAccess,
+    ReactiveError, Runtime,
 };
 use std::cell::Cell;
 use std::rc::Rc;
@@ -31,6 +31,7 @@ fn ordinary_reads_track_across_child_scopes() {
             child
                 .access()
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         source.get()?;
                         runs_in_effect.set(runs_in_effect.get() + 1);
@@ -58,6 +59,7 @@ fn child_transient_reads_do_not_escape_the_child_callback() {
             let runs_in_effect = runs.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         let child_result = scope
                             .with_transient(|child| {
@@ -106,6 +108,7 @@ fn foreign_tracked_read_fails_before_dirty_source_evaluation() {
         let result = target_root.with_access(|target_scope| {
             target_scope
                 .effect(
+                    EffectPhase::Normal,
                     move || derived.get().map(|_| ()),
                     handler::<CallbackInvokeError<ReactiveError>>(target_scope),
                 )
@@ -141,6 +144,7 @@ fn foreign_untracked_read_is_allowed_and_does_not_subscribe() {
             let runs_in_effect = runs.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         assert_eq!(foreign_source.get_untracked()?, 1);
                         runs_in_effect.set(runs_in_effect.get() + 1);

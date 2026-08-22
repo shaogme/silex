@@ -11,7 +11,7 @@ fn main() {}
 #[cfg(not(target_arch = "wasm32"))]
 mod native {
     use criterion::{BenchmarkId, Criterion, Throughput, criterion_group};
-    use silex_reactivity::{ErrorHandlerToken, OwnerAccess, Runtime, unwind_safe};
+    use silex_reactivity::{EffectPhase, ErrorHandlerToken, OwnerAccess, Runtime, unwind_safe};
     use std::{
         cell::Cell,
         hint::black_box,
@@ -23,6 +23,7 @@ mod native {
     const GRAPH_SIZES: &[usize] = &[1, 8, 32, 128];
     const DEPENDENCY_SIZES: &[usize] = &[10, 100, 1_000, 10_000];
     const OWNER_SIZES: &[usize] = &[1, 16, 128, 512];
+    const PHASE_SIZES: &[usize] = &[1, 10, 100, 1_000];
 
     fn handler<'scope>(scope: OwnerAccess<'scope>) -> ErrorHandlerToken<'scope, ()> {
         scope.error_handler(|_| {}).expect("handler registration")
@@ -38,6 +39,7 @@ mod native {
                     let (read, write) = scope.signal(0i32).expect("fallible reactive creation");
                     let _effect = scope
                         .effect(
+                            EffectPhase::Normal,
                             move || {
                                 black_box(read.get().expect("benchmark read"));
                                 Ok(())
@@ -180,6 +182,7 @@ mod native {
                         let runs_in_effect = runs.clone();
                         let _effect = scope
                             .effect(
+                                EffectPhase::Normal,
                                 move || {
                                     let mut observed = 0i32;
                                     for signal in &reads_in_effect {
@@ -477,6 +480,7 @@ mod native {
                                 let notifications = notifications.clone();
                                 scope
                                     .effect(
+                                        EffectPhase::Normal,
                                         move || {
                                             black_box(source.get().expect("benchmark read"));
                                             notifications.set(notifications.get().wrapping_add(1));
@@ -551,6 +555,7 @@ mod native {
                             let tail_in_effect = tail;
                             scope
                                 .effect(
+                                    EffectPhase::Normal,
                                     move || {
                                         observed_in_effect
                                             .set(tail_in_effect.get().expect("benchmark read"));
@@ -613,6 +618,7 @@ mod native {
                             let observed_in_effect = observed.clone();
                             scope
                                 .effect(
+                                    EffectPhase::Normal,
                                     move || {
                                         let mut value = 0i32;
                                         for memo in &memos_in_effect {
@@ -664,6 +670,7 @@ mod native {
                                         let notifications = notifications.clone();
                                         child
                                             .effect(
+                                                EffectPhase::Normal,
                                                 move || {
                                                     black_box(
                                                         source.get().expect("benchmark read"),
@@ -743,6 +750,7 @@ mod native {
                                     let tail_in_effect = tail;
                                     child
                                         .effect(
+                                            EffectPhase::Normal,
                                             move || {
                                                 observed_in_effect.set(
                                                     tail_in_effect.get().expect("benchmark read"),
@@ -810,6 +818,7 @@ mod native {
                                     let observed_in_effect = observed.clone();
                                     child
                                         .effect(
+                                            EffectPhase::Normal,
                                             move || {
                                                 let mut value = 0i32;
                                                 for memo in &memos_in_effect {
@@ -879,6 +888,7 @@ mod native {
                             let effect_runs_in_effect = effect_runs.clone();
                             scope
                                 .effect(
+                                    EffectPhase::Normal,
                                     move || {
                                         for memo in &memos_in_effect {
                                             black_box(memo.get().expect("benchmark read"));
@@ -943,6 +953,7 @@ mod native {
                             let reads_in_effect = reads.clone();
                             scope
                                 .effect(
+                                    EffectPhase::Normal,
                                     move || {
                                         for read in &reads_in_effect {
                                             black_box(read.get().expect("benchmark read"));
@@ -986,6 +997,7 @@ mod native {
                         let trigger = signals[0].1;
                         scope
                             .effect(
+                                EffectPhase::Normal,
                                 move || {
                                     for read in &reads {
                                         black_box(read.get().expect("benchmark read"));
@@ -1012,7 +1024,7 @@ mod native {
     }
 
     fn bench_dependency_switch(c: &mut Criterion) {
-        let mut group = c.benchmark_group("graph/dependency-rebind");
+        let mut group = c.benchmark_group("graph/dependency-remove-reinsert");
 
         for &size in DEPENDENCY_SIZES {
             group.throughput(Throughput::Elements(size as u64));
@@ -1040,6 +1052,7 @@ mod native {
                         }
                         scope
                             .effect(
+                                EffectPhase::Normal,
                                 move || {
                                     let reads = if switch.get().expect("benchmark switch read") {
                                         &right
@@ -1062,6 +1075,112 @@ mod native {
                                 .set(black_box(selected))
                                 .expect("benchmark switch update");
                         });
+                    })
+                    .expect("benchmark scope execution");
+            });
+        }
+
+        group.finish();
+    }
+
+    fn bench_mixed_phase_queue(c: &mut Criterion) {
+        let mut group = c.benchmark_group("scheduler/mixed-phase");
+
+        for &size in PHASE_SIZES {
+            group.throughput(Throughput::Elements((size * 2) as u64));
+            group.bench_with_input(BenchmarkId::from_parameter(size), &size, |bench, &size| {
+                let mut runtime = Runtime::new();
+                runtime
+                    .with_transient(|scope| {
+                        let (source, set_source) =
+                            scope.signal(0i32).expect("benchmark source creation");
+                        let (marker, set_marker) =
+                            scope.signal(0i32).expect("benchmark marker creation");
+                        let normal_runs = Rc::new(Cell::new(0usize));
+                        let post_runs = Rc::new(Cell::new(0usize));
+
+                        for _ in 0..size {
+                            let normal_runs = normal_runs.clone();
+                            scope
+                                .effect(
+                                    EffectPhase::Normal,
+                                    move || {
+                                        black_box(source.get().expect("benchmark normal read"));
+                                        normal_runs.set(normal_runs.get().wrapping_add(1));
+                                        Ok(())
+                                    },
+                                    handler(scope),
+                                )
+                                .expect("benchmark normal effect creation");
+                        }
+
+                        let marker_in_effect = marker;
+                        let observer_runs = normal_runs.clone();
+                        scope
+                            .effect(
+                                EffectPhase::Normal,
+                                move || {
+                                    black_box(
+                                        marker_in_effect.get().expect("benchmark marker read"),
+                                    );
+                                    observer_runs.set(observer_runs.get().wrapping_add(1));
+                                    Ok(())
+                                },
+                                handler(scope),
+                            )
+                            .expect("benchmark marker effect creation");
+
+                        for index in 0..size {
+                            let post_runs = post_runs.clone();
+                            if index == 0 {
+                                scope
+                                    .effect(
+                                        EffectPhase::PostFlush,
+                                        move || {
+                                            let value =
+                                                source.get().expect("benchmark post-flush read");
+                                            set_marker
+                                                .set_if_changed(value)
+                                                .expect("benchmark marker update");
+                                            post_runs.set(post_runs.get().wrapping_add(1));
+                                            Ok(())
+                                        },
+                                        handler(scope),
+                                    )
+                                    .expect("benchmark post-flush effect creation");
+                            } else {
+                                scope
+                                    .effect(
+                                        EffectPhase::PostFlush,
+                                        move || {
+                                            black_box(
+                                                source.get().expect("benchmark post-flush read"),
+                                            );
+                                            post_runs.set(post_runs.get().wrapping_add(1));
+                                            Ok(())
+                                        },
+                                        handler(scope),
+                                    )
+                                    .expect("benchmark post-flush effect creation");
+                            }
+                        }
+
+                        let mut value = 0i32;
+                        bench.iter(|| {
+                            value = value.wrapping_add(1);
+                            set_source
+                                .set(black_box(value))
+                                .expect("benchmark source update");
+                            black_box((normal_runs.get(), post_runs.get()));
+                        });
+
+                        #[cfg(feature = "test-support")]
+                        black_box(
+                            scope
+                                .runtime_snapshot()
+                                .expect("benchmark runtime snapshot")
+                                .queue_high_water,
+                        );
                     })
                     .expect("benchmark scope execution");
             });
@@ -1093,6 +1212,7 @@ mod native {
                             let reads_in_effect = reads.clone();
                             scope
                                 .effect(
+                                    EffectPhase::Normal,
                                     move || {
                                         for read in &reads_in_effect {
                                             black_box(read.get().expect("benchmark read"));
@@ -1144,6 +1264,7 @@ mod native {
                             child
                                 .access()
                                 .effect(
+                                    EffectPhase::Normal,
                                     move || {
                                         for read in &reads_in_effect {
                                             black_box(read.get().expect("benchmark read"));
@@ -1220,6 +1341,7 @@ mod native {
                         render_scope
                             .access()
                             .effect(
+                                EffectPhase::Normal,
                                 move || {
                                     black_box(source_in_effect.get().expect("benchmark read"));
                                     Ok(())
@@ -1257,6 +1379,7 @@ mod native {
                             render_scope
                                 .access()
                                 .effect(
+                                    EffectPhase::Normal,
                                     move || {
                                         black_box(source_in_effect.get().expect("benchmark read"));
                                         Ok(())
@@ -1389,6 +1512,7 @@ mod native {
             bench_dependency_create,
             bench_dependency_rerun,
             bench_dependency_switch,
+            bench_mixed_phase_queue,
             bench_dependency_dispose,
             bench_dependency_dispose_cross_scope,
             bench_owner_slot_churn,

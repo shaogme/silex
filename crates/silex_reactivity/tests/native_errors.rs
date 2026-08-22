@@ -5,7 +5,9 @@
     clippy::panic
 )]
 
-use silex_reactivity::{ComputationInitError, ErrorHandlerToken, OwnerAccess, Runtime};
+use silex_reactivity::{
+    ComputationInitError, EffectPhase, ErrorHandlerToken, OwnerAccess, Runtime,
+};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -35,6 +37,7 @@ fn initial_callback_error_returns_without_calling_the_handler() {
             let cleanup_token = collecting_handler(scope, errors.clone());
             let cleanup_handler = cleanup_token.view();
             let result = scope.effect(
+                EffectPhase::Normal,
                 move || {
                     callback_runs_in_callback.set(callback_runs_in_callback.get() + 1);
                     source.get().expect("test operation should succeed");
@@ -82,6 +85,7 @@ fn initial_failure_does_not_reenter_from_rollback_cleanup() {
             let cleanup_token = collecting_handler(scope, errors.clone());
             let cleanup_handler = cleanup_token.view();
             let result = scope.effect(
+                EffectPhase::Normal,
                 move || {
                     callback_runs_in_callback.set(callback_runs_in_callback.get() + 1);
                     source.get().expect("test operation should succeed");
@@ -155,12 +159,14 @@ fn nested_node_cleanup_errors_wait_for_outer_run_recovery() {
             let cleanup_error_handler_in_effect = cleanup_error_handler;
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         source.get().expect("test operation should succeed");
                         if first_run_in_effect.replace(false) {
                             let nested_cleanup_handler = cleanup_error_handler_in_effect;
                             scope
                                 .effect(
+                                    EffectPhase::Normal,
                                     move || {
                                         scope
                                             .on_cleanup(
@@ -203,6 +209,7 @@ fn deferred_callback_error_reaches_its_handler_and_can_retry() {
             let should_fail_in_callback = should_fail.clone();
             let effect = scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         source.get().expect("test operation should succeed");
                         callback_runs_in_callback.set(callback_runs_in_callback.get() + 1);
@@ -246,6 +253,7 @@ fn failed_dynamic_run_rolls_back_new_dependency_edges() {
             let fail_next_in_callback = fail_next.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         let value = if switch.get().expect("reactive read") {
                             right.get().expect("reactive read")
@@ -291,6 +299,7 @@ fn previous_value_is_kept_when_a_run_returns_an_error() {
             let fail_next_in_callback = fail_next.clone();
             scope
                 .effect_with_previous(
+                    EffectPhase::Normal,
                     move |previous| {
                         source.get().expect("test operation should succeed");
                         previous_values_in_callback
@@ -332,6 +341,7 @@ fn watch_error_keeps_the_previous_snapshot_for_retry() {
             let fail_next_in_callback = fail_next.clone();
             scope
                 .watch_getter(
+                    EffectPhase::Normal,
                     move || Ok(source.get().expect("reactive read")),
                     move |new, old| {
                         if fail_next_in_callback.replace(false) {

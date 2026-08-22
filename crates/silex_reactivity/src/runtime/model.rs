@@ -7,6 +7,7 @@ use super::{
         TypedNodeRef, TypedSlotAllocation,
     },
 };
+use crate::owner::EffectPhase;
 use crate::{
     ReactiveError, ReactiveResult,
     borrow::{BorrowCell, BorrowRef, BorrowRefMut, BorrowSite, SharedCell},
@@ -15,10 +16,11 @@ use crate::{
     internal::NodeId,
     unsafe_boundary::ScopedPtr,
 };
+use indexmap::{IndexSet, set::Iter as IndexSetIter};
 use slotmap::{SecondaryMap, SlotMap};
 use smallvec::SmallVec;
 use std::{
-    collections::{HashMap, HashSet, hash_map, hash_set},
+    collections::{HashMap, HashSet, hash_map},
     mem::{size_of, take},
     panic::{AssertUnwindSafe, catch_unwind},
     rc::Rc,
@@ -71,6 +73,7 @@ pub(crate) enum StoredAccessMode {
 #[repr(C)]
 pub(crate) struct NodeCore {
     pub(crate) kind: NodeKindTag,
+    pub(crate) phase: EffectPhase,
     pub(crate) state: NodeState,
     pub(crate) running: bool,
     pub(crate) queued: bool,
@@ -80,12 +83,22 @@ pub(crate) struct NodeCore {
     pub(crate) parent: NodeId,
 }
 
-const _: () = assert!(size_of::<NodeCore>() == 32);
+const _: () = assert!(size_of::<NodeCore>() == 40);
 
 impl NodeCore {
     pub(crate) fn new(kind: NodeKindTag, parent: Option<NodeId>, state: NodeState) -> Self {
+        Self::new_with_phase(kind, EffectPhase::Normal, parent, state)
+    }
+
+    pub(crate) fn new_with_phase(
+        kind: NodeKindTag,
+        phase: EffectPhase,
+        parent: Option<NodeId>,
+        state: NodeState,
+    ) -> Self {
         Self {
             kind,
+            phase,
             state,
             running: false,
             queued: false,
@@ -410,21 +423,22 @@ pub(crate) struct DependencyTransaction {
     pub(crate) pending_sources: TargetBuffer,
 }
 
-/// Direct indexes for the two directions of a node's reactive edges.
+/// Direct ordered indexes for the two directions of a node's reactive edges.
 ///
-/// Each node owns both hash sets directly. This keeps insertion, duplicate
-/// checks, and removal independent of the number of neighboring edges without
-/// a second edge arena or a duplicated stable edge record.
+/// Each node owns both indexes directly. `IndexSet` keeps O(1)-average
+/// membership checks while making the first insertion order available to graph
+/// propagation and dependency evaluation. Callers that remove an edge must use
+/// `shift_remove` so later edge positions remain stable.
 pub(crate) struct NodeAdjacency {
-    pub(crate) subscribers: HashSet<TargetNode>,
-    pub(crate) dependencies: HashSet<TargetNode>,
+    pub(crate) subscribers: IndexSet<TargetNode>,
+    pub(crate) dependencies: IndexSet<TargetNode>,
 }
 
 impl NodeAdjacency {
     pub(crate) fn new() -> Self {
         Self {
-            subscribers: HashSet::new(),
-            dependencies: HashSet::new(),
+            subscribers: IndexSet::new(),
+            dependencies: IndexSet::new(),
         }
     }
 }
@@ -762,7 +776,7 @@ fn remove_once<T: PartialEq>(items: &mut Vec<T>, item: T) -> ReactiveResult<()> 
 
 /// Iterator over entries in a node's direct edge index.
 pub(crate) struct TargetIter<'a> {
-    inner: Option<hash_set::Iter<'a, TargetNode>>,
+    inner: Option<IndexSetIter<'a, TargetNode>>,
 }
 
 impl Iterator for TargetIter<'_> {
@@ -860,6 +874,7 @@ pub struct RuntimeSnapshot {
     pub cleanups: usize,
     pub handlers: usize,
     pub queue: usize,
+    pub queue_high_water: usize,
     pub epoch: u64,
     pub observer: bool,
     pub running_queue: bool,
@@ -984,9 +999,11 @@ impl<'scope> ScopeStateInner<'scope> {
                 .filter(|entry| entry.owner.is_active())
                 .count(),
             queue: scheduler
-                .global_queue
+                .normal_queue
                 .len()
+                .saturating_add(scheduler.post_flush_queue.len())
                 .saturating_add(scheduler.worklist.len()),
+            queue_high_water: scheduler.queue_high_water,
             epoch: scheduler.current_epoch(),
             observer: active_observer_for(&self.scheduler)?.is_some(),
             running_queue: scheduler.running_queue,
@@ -995,7 +1012,8 @@ impl<'scope> ScopeStateInner<'scope> {
             owner_generation: self.owner_id.1,
             active_leases: scheduler.active_leases,
             queue_recovery: !scheduler.running_queue
-                && scheduler.global_queue.is_empty()
+                && scheduler.normal_queue.is_empty()
+                && scheduler.post_flush_queue.is_empty()
                 && scheduler.worklist.is_empty(),
             retained_children: 0,
             live_typed_slots: 0,
@@ -1250,6 +1268,7 @@ impl<'scope> ScopeStateInner<'scope> {
     pub(super) fn register_computation(
         &mut self,
         kind: NodeKindTag,
+        phase: EffectPhase,
         callback: Box<dyn ComputationBehavior<'scope> + 'scope>,
         parent_strategy: ComputationParent,
     ) -> ReactiveResult<NodeId> {
@@ -1257,11 +1276,14 @@ impl<'scope> ScopeStateInner<'scope> {
             ComputationParent::Current => self.parent_for_new_node(),
             ComputationParent::Detached => None,
         };
-        self.register_node(NodeCore::new(kind, parent, NodeState::Dirty), move || {
-            Ok(NodeData::new(Rc::new(NodeStorage::Computation(
-                ComputationStorage::new(callback)?,
-            ))))
-        })
+        self.register_node(
+            NodeCore::new_with_phase(kind, phase, parent, NodeState::Dirty),
+            move || {
+                Ok(NodeData::new(Rc::new(NodeStorage::Computation(
+                    ComputationStorage::new(callback)?,
+                ))))
+            },
+        )
     }
 
     pub(crate) fn create_stored<T: 'scope>(
@@ -1582,6 +1604,54 @@ mod tests {
             tree.children_of(&nodes, parent)
                 .expect("remaining child should be readable"),
             vec![first]
+        );
+    }
+
+    #[test]
+    fn ordered_adjacency_preserves_reinsert_order() {
+        let first = TargetNode {
+            owner_id: OwnerId::initial(0),
+            node: NodeId::DANGLING,
+        };
+        let second = TargetNode {
+            owner_id: OwnerId::initial(1),
+            node: NodeId::DANGLING,
+        };
+        let third = TargetNode {
+            owner_id: OwnerId::initial(2),
+            node: NodeId::DANGLING,
+        };
+        let mut adjacency = NodeAdjacency::new();
+
+        adjacency.subscribers.insert(first);
+        adjacency.subscribers.insert(second);
+        adjacency.subscribers.insert(third);
+        adjacency.subscribers.insert(first);
+        adjacency.dependencies.insert(first);
+        adjacency.dependencies.insert(second);
+        adjacency.dependencies.insert(third);
+
+        assert_eq!(
+            adjacency.subscribers.iter().copied().collect::<Vec<_>>(),
+            vec![first, second, third]
+        );
+        assert_eq!(
+            adjacency.dependencies.iter().copied().collect::<Vec<_>>(),
+            vec![first, second, third]
+        );
+
+        assert!(adjacency.subscribers.shift_remove(&second));
+        assert!(adjacency.dependencies.shift_remove(&second));
+        adjacency.subscribers.insert(second);
+        adjacency.dependencies.insert(second);
+
+        assert_eq!(
+            adjacency.subscribers.iter().copied().collect::<Vec<_>>(),
+            vec![first, third, second]
+        );
+        assert_eq!(
+            adjacency.dependencies.iter().copied().collect::<Vec<_>>(),
+            vec![first, third, second]
         );
     }
 }

@@ -72,6 +72,8 @@ code 中，并明确说明“不是 CI 编译示例”。尤其不要在页面�
   快照不订阅。
 - batch 正常返回和 panic 后的 scheduler 恢复；反馈写入环触发
   `NonConvergent` 后，其他 owner 的工作仍能继续。
+- Normal/PostFlush 的执行顺序、PostFlush 写入重新进入 Normal、同阶段注册顺序和
+  双队列错误恢复；涉及 DOM 的 focus/Portal 回归还要运行实际浏览器测试。
 - owner child-first 关闭、cleanup 注册顺序、cleanup 错误聚合、stored value 的
   最终 cleanup 访问和 payload drop。
 - completion 的重复 submit、cancel、最后一个 sender drop、callback 错误、close
@@ -103,6 +105,8 @@ let snapshot = scope.runtime_snapshot()?;
 - `nodes`、`data`、`edges`、`roots`：节点、payload、依赖边和图根数量。
 - `cleanups`、`handlers`、`active_leases`：仍存活的清理、handler 和 lease。
 - `queue`、`running_queue`、`queue_recovery`：调度队列是否为空且可继续运行。
+- `queue_high_water`：当前 runtime 生命周期内 normal、post-flush 和 worklist
+  合计排队量的高水位，仅用于基准和回归诊断。
 - `active_owners`、`closing_owners`、`retained_children`：owner registry 的状态。
 - `live_typed_slots`、`live_error_slots`：关闭后类型化 payload 和错误槽是否归还。
 - `unhandled_close_errors`、`dropped_close_reports`：Drop/panic 路径的关闭诊断。
@@ -135,8 +139,14 @@ UI 测试是这个 crate 的重要安全边界，不能只把失败测试当作�
 ## 基准与性能说明
 
 `benches/reactivity.rs` 覆盖 signal 创建、tracked/untracked 读取、写入、stored
-value、依赖图和 owner churn 等场景。没有在固定硬件、编译 profile 和样本配置下
+value、依赖图、动态依赖 remove/reinsert、Normal/PostFlush 混合队列和 owner churn 等场景。没有在固定硬件、编译 profile 和样本配置下
 运行 Criterion 之前，不要在文档或提交信息中写具体延迟、吞吐或复杂度数字。
+
+阶段调度基准使用 `scheduler/mixed-phase` 与
+`scheduler/mixed-phase/reentry` 名称；它们同时记录每轮工作量和
+`RuntimeSnapshot::queue` 的稳定边界，便于比较最大排队量与吞吐趋势。Wasm
+release 体积属于构建产物指标，应使用相同 target/profile 通过 `stat` 或
+`wasm-size` 记录，不应混入 native Criterion 数字。
 
 基准只用于比较可重复的实现变化，不能替代生命周期和错误测试。新增优化时应同时
 确认：

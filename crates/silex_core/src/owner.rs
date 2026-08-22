@@ -4,8 +4,8 @@ use crate::{
     Callback, CompletionOnce, CompletionSender, ErrorHandlerInput, ErrorHandlerToken, NodeRef, Rx,
     SilexError, SilexResult, TaskHandle,
     reactivity::{
-        Computed, EffectHandle, ReactiveSource, ReadSignal, RwSignal, StoredValue, WatchOptions,
-        WriteSignal,
+        Computed, EffectHandle, EffectPhase, ReactiveSource, ReadSignal, RwSignal, StoredValue,
+        WatchOptions, WriteSignal,
     },
     task,
     traits::{RuntimeScoped, RxData},
@@ -258,13 +258,18 @@ impl<'owner> OwnerAccess<'owner> {
             .map_err(map_computation_error)
     }
 
-    pub fn effect<F, H>(&self, f: F, error_handler: H) -> SilexResult<EffectHandle<'owner>>
+    pub fn effect<F, H>(
+        &self,
+        phase: EffectPhase,
+        f: F,
+        error_handler: H,
+    ) -> SilexResult<EffectHandle<'owner>>
     where
         F: FnMut() -> SilexResult<()> + 'owner,
         H: ErrorHandlerInput<'owner>,
     {
         self.inner
-            .effect(f, error_handler.handler_ref())
+            .effect(phase, f, error_handler.handler_ref())
             .map(EffectHandle::from_inner)
             .map_err(map_computation_error)
     }
@@ -273,19 +278,25 @@ impl<'owner> OwnerAccess<'owner> {
     /// computation tree. The callback's own children and cleanups remain
     /// owned by the detached effect and are stopped with its handle.
     #[doc(hidden)]
-    pub fn effect_detached<F, H>(&self, f: F, error_handler: H) -> SilexResult<EffectHandle<'owner>>
+    pub fn effect_detached<F, H>(
+        &self,
+        phase: EffectPhase,
+        f: F,
+        error_handler: H,
+    ) -> SilexResult<EffectHandle<'owner>>
     where
         F: FnMut() -> SilexResult<()> + 'owner,
         H: ErrorHandlerInput<'owner>,
     {
         self.inner
-            .effect_detached(f, error_handler.handler_ref())
+            .effect_detached(phase, f, error_handler.handler_ref())
             .map(EffectHandle::from_inner)
             .map_err(map_computation_error)
     }
 
     pub fn effect_with_previous<T, F, H>(
         &self,
+        phase: EffectPhase,
         f: F,
         error_handler: H,
     ) -> SilexResult<EffectHandle<'owner>>
@@ -295,13 +306,14 @@ impl<'owner> OwnerAccess<'owner> {
         H: ErrorHandlerInput<'owner>,
     {
         self.inner
-            .effect_with_previous(f, error_handler.handler_ref())
+            .effect_with_previous(phase, f, error_handler.handler_ref())
             .map(EffectHandle::from_inner)
             .map_err(map_computation_error)
     }
 
     pub fn watch<S, C, H>(
         &self,
+        phase: EffectPhase,
         source: S,
         callback: C,
         error_handler: H,
@@ -312,11 +324,18 @@ impl<'owner> OwnerAccess<'owner> {
         C: FnMut(&S::Value, Option<&S::Value>) -> SilexResult<()> + 'owner,
         H: ErrorHandlerInput<'owner>,
     {
-        self.watch_with_options(source, callback, error_handler, WatchOptions::default())
+        self.watch_with_options(
+            phase,
+            source,
+            callback,
+            error_handler,
+            WatchOptions::default(),
+        )
     }
 
     pub fn watch_with_options<S, C, H>(
         &self,
+        phase: EffectPhase,
         source: S,
         callback: C,
         error_handler: H,
@@ -332,11 +351,18 @@ impl<'owner> OwnerAccess<'owner> {
         let source = source
             .into_promotion_plan()
             .materialize(*self, error_handler)?;
-        self.watch_getter_with_options(move || source.get(), callback, error_handler, options)
+        self.watch_getter_with_options(
+            phase,
+            move || source.get(),
+            callback,
+            error_handler,
+            options,
+        )
     }
 
     pub fn watch_getter<T, G, C, H>(
         &self,
+        phase: EffectPhase,
         getter: G,
         callback: C,
         error_handler: H,
@@ -347,11 +373,18 @@ impl<'owner> OwnerAccess<'owner> {
         C: FnMut(&T, Option<&T>) -> SilexResult<()> + 'owner,
         H: ErrorHandlerInput<'owner>,
     {
-        self.watch_getter_with_options(getter, callback, error_handler, WatchOptions::default())
+        self.watch_getter_with_options(
+            phase,
+            getter,
+            callback,
+            error_handler,
+            WatchOptions::default(),
+        )
     }
 
     pub fn watch_getter_with_options<T, G, C, H>(
         &self,
+        phase: EffectPhase,
         getter: G,
         callback: C,
         error_handler: H,
@@ -364,7 +397,13 @@ impl<'owner> OwnerAccess<'owner> {
         H: ErrorHandlerInput<'owner>,
     {
         self.inner
-            .watch_getter_with_options(getter, callback, error_handler.handler_ref(), options)
+            .watch_getter_with_options(
+                phase,
+                getter,
+                callback,
+                error_handler.handler_ref(),
+                options,
+            )
             .map(EffectHandle::from_inner)
             .map_err(map_computation_error)
     }

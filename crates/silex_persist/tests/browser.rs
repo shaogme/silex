@@ -2,7 +2,8 @@
 
 use gloo_timers::future::TimeoutFuture;
 use silex_core::{
-    ErrorHandlerToken, ErrorReporter, OwnerAccess, OwnerHandle, Runtime, SilexContext, SilexResult,
+    EffectPhase, ErrorHandlerToken, ErrorReporter, OwnerAccess, OwnerHandle, Runtime, SilexContext,
+    SilexResult,
 };
 use silex_dom::view::{
     AnyView, IndexedListView, MountContext, MountInstance, MountOwnerToken, View,
@@ -727,6 +728,7 @@ fn query_backend_writes_one_push_and_one_url_update_per_change() {
         let search_updates_for_effect = search_updates.clone();
         scope
             .effect(
+                EffectPhase::Normal,
                 move || -> SilexResult<()> {
                     search.get()?;
                     search_updates_for_effect.set(search_updates_for_effect.get() + 1);
@@ -1069,6 +1071,7 @@ fn debounce_timer_failure_reentry_and_late_callbacks_are_gated() {
         let dispose_for_effect = dispose_slot.clone();
         scope
             .effect(
+                EffectPhase::Normal,
                 move || -> SilexResult<()> {
                     if binding_for_dispose.state().get()?
                         == PersistenceState::Ready("second".to_string())

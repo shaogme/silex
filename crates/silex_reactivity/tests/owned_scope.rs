@@ -6,7 +6,8 @@
 )]
 
 use silex_reactivity::{
-    CompletionSender, ErrorHandlerToken, OwnerAccess, ReactiveError, Runtime, unwind_safe,
+    CompletionSender, EffectPhase, ErrorHandlerToken, OwnerAccess, ReactiveError, Runtime,
+    unwind_safe,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -32,6 +33,7 @@ fn owned_scope_keeps_effects_until_explicit_dispose() {
         let _effect = owner
             .access()
             .effect(
+                EffectPhase::Normal,
                 move || {
                     read.with(|value| {
                         assert!(*value >= 1);
@@ -86,6 +88,7 @@ fn detached_completion_survives_effect_disposal() {
         .expect("handler registration");
     let effect = access
         .effect(
+            EffectPhase::Normal,
             move || {
                 let hits = hits_for_effect.clone();
                 let sender = effect_access.completion_sender_detached(unwind_safe(move |()| {
@@ -199,6 +202,7 @@ fn lexical_owned_scope_supports_borrowed_callbacks_and_nested_dispose() {
             owner
                 .access()
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         read.with(|value| {
                             assert!(*value >= 1);
@@ -523,11 +527,12 @@ fn owner_churn_reclaims_all_node_slot_allocations() {
         let child = root.create_child().expect("child creation");
         let access = child.access();
         let effect = access
-            .effect(|| Ok::<(), ()>(()), handler.view())
+            .effect(EffectPhase::Normal, || Ok::<(), ()>(()), handler.view())
             .expect("effect creation");
         effect.stop().expect("effect stop");
         let previous = access
             .effect_with_previous(
+                EffectPhase::Normal,
                 |previous: Option<&i32>| Ok::<i32, ()>(previous.copied().unwrap_or(0)),
                 handler.view(),
             )
@@ -535,6 +540,7 @@ fn owner_churn_reclaims_all_node_slot_allocations() {
         previous.stop().expect("previous effect stop");
         let watch = access
             .watch_getter_with_options(
+                EffectPhase::Normal,
                 || Ok::<i32, ()>(0),
                 |_: &i32, _: Option<&i32>| Ok::<(), ()>(()),
                 handler.view(),

@@ -43,6 +43,18 @@ Runtime
 
 `computed` 要求输出实现 `PartialEq`，只有输出改变时才通知下游；`computed_always` 不比较输出，每次成功求值都通知。`watch` 的 getter 初始时总会求值，回调是否在初始阶段执行由 `WatchOptions::immediate` 决定；watch 回调本身使用 untracked 上下文。
 
+## 调度阶段
+
+所有 effect-like API 都要求显式传入 `EffectPhase`：
+`EffectPhase::Normal` 用于普通响应式更新，`EffectPhase::PostFlush` 用于必须观察
+本轮普通 DOM 更新之后状态的副作用。初始回调仍在注册期间同步执行；phase 只影响
+依赖变化后的调度。
+
+runtime 会先清空 Normal 队列，再执行 PostFlush 队列。PostFlush 回调写入 signal
+时，新增的 Normal 工作会在下一个 PostFlush 回调前收敛。该阶段是 runtime 的同步
+顺序保证，不依赖浏览器 microtask、timeout 或 animation frame；`computed` 仍然
+是同步拓扑计算，不接收 effect phase。
+
 ## 最小可运行流程
 
 下面示例创建一个临时作用域，建立 signal、computed 和 effect，再写入 signal 触发 effect。示例中的错误类型和错误分层都来自实际公开 API；不要把这些 `Result` 在业务代码中用 `unwrap` 隐藏掉。

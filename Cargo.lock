@@ -1940,6 +1940,7 @@ name = "silex_reactivity"
 version = "0.1.0-beta.9"
 dependencies = [
  "criterion",
+ "indexmap",
  "slotmap",
  "smallvec",
  "trybuild",

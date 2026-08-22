@@ -2,8 +2,8 @@ use super::context::{MountContext, MountTarget, MountTransaction};
 use super::dynamic::BranchRenderContext;
 use super::owner::{MountErrorHandler, MountOwner, MountOwnerToken, MountState};
 use silex_core::{
-    CloseError, ClosePhase, CloseSource, CloseTransaction, OwnerChild, ReactiveError, SilexError,
-    SilexErrorKind, SilexResult,
+    CloseError, ClosePhase, CloseSource, CloseTransaction, EffectPhase, OwnerChild, ReactiveError,
+    SilexError, SilexErrorKind, SilexResult,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -409,6 +409,7 @@ impl<'scope, T: Clone + 'scope> RowInstance<'scope, T> {
         let base_context = self.context.clone();
         let registration = catch_unwind(AssertUnwindSafe(|| {
             render_scope.effect(
+                EffectPhase::Normal,
                 Box::new(move || -> SilexResult<()> {
                     let old_nodes = rendered_nodes_for_effect.with(Clone::clone)?;
                     let candidate_scope = content_owner

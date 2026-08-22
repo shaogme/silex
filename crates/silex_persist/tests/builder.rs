@@ -1,6 +1,6 @@
 use ref_str::LocalStaticRefStr;
 use silex_core::{
-    ErrorHandlerToken, ErrorReporter, OwnerAccess, ReactiveError, Runtime, SilexResult,
+    EffectPhase, ErrorHandlerToken, ErrorReporter, OwnerAccess, ReactiveError, Runtime, SilexResult,
 };
 use silex_persist::{
     BackendEvent, BackendEventSink, BackendSubscribeError, BackendSubscription, DecodePolicy,
@@ -706,6 +706,7 @@ fn local_write_after_external_fallback_before_effect_flush_is_persisted() {
         let backend_for_effect = backend.clone();
         scope
             .effect(
+                EffectPhase::Normal,
                 move || -> SilexResult<()> {
                     if trigger.get()? {
                         backend_for_effect

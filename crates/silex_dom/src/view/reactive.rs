@@ -5,7 +5,7 @@ use crate::view::{
 };
 use silex_core::reactivity::{Computed, ReadSignal, RwSignal, Signal, StoredValue};
 use silex_core::traits::RxCloneData;
-use silex_core::{Rx, RxValueKind, SilexError, SilexErrorKind, SilexResult};
+use silex_core::{EffectPhase, Rx, RxValueKind, SilexError, SilexErrorKind, SilexResult};
 use std::borrow::Cow;
 use std::fmt::Display;
 use web_sys::Node;
@@ -42,6 +42,7 @@ where
 
     let node_for_effect = node.clone();
     if let Err(error) = local_owner.effect(
+        EffectPhase::Normal,
         Box::new(move || -> SilexResult<()> {
             let value = rx.with(|value| value.to_string())?;
             node_for_effect.set_node_value(Some(&value));

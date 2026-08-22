@@ -34,14 +34,14 @@ impl ErasedErrorEvent {
         // SAFETY: the scheduler drops or restores this event before the owner
         // registry can release its source scope.
         Self {
-            event: unsafe { std::mem::transmute(event) },
+            event: unsafe { std::mem::transmute::<ErrorEvent<'scope>, ErrorEvent<'static>>(event) },
         }
     }
 
     pub(crate) fn restore<'scope>(self, _owner: &ScopeState<'scope>) -> ErrorEvent<'scope> {
         // SAFETY: callers restore only after resolving the matching active
         // owner and dispatch synchronously before returning.
-        unsafe { std::mem::transmute(self.event) }
+        unsafe { std::mem::transmute::<ErrorEvent<'static>, ErrorEvent<'scope>>(self.event) }
     }
 }
 

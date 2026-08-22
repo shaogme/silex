@@ -1,4 +1,4 @@
-use silex_core::{Runtime, SilexError};
+use silex_core::{EffectPhase, Runtime, SilexError};
 
 fn main() {
     let mut runtime = Runtime::new();
@@ -8,7 +8,7 @@ fn main() {
             let _ = (&local, error);
         }).expect("handler should register");
         owner
-            .effect(|| Ok::<(), SilexError>(()), handler)
+            .effect(EffectPhase::Normal, || Ok::<(), SilexError>(()), handler)
             .expect("effect should initialize");
     }).expect("child owner should initialize");
 }

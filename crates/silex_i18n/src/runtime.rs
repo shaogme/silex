@@ -5,7 +5,7 @@ use crate::{
 #[cfg(feature = "browser")]
 use silex_core::EffectHandle;
 use silex_core::{
-    ErrorReporter, OwnerAccess, ReactiveError, Rx, SilexError, SilexResult,
+    EffectPhase, ErrorReporter, OwnerAccess, ReactiveError, Rx, SilexError, SilexResult,
     reactivity::{ReadSignal, Resource, ResourceState, RwSignal, StoredValue, SuspenseContext},
 };
 use std::{
@@ -253,6 +253,7 @@ impl<'scope> I18nBuilder<'scope> {
             let store_for_binding = store;
             owner
                 .effect(
+                    EffectPhase::Normal,
                     move || -> SilexResult<()> {
                         let locale = binding.signal().get()?;
                         if store_for_binding.locale.get_untracked()? != locale {
@@ -267,6 +268,7 @@ impl<'scope> I18nBuilder<'scope> {
             let store_for_locale = store;
             owner
                 .effect(
+                    EffectPhase::Normal,
                     move || -> SilexResult<()> {
                         let locale = store_for_locale.locale.get()?;
                         if binding.get_untracked().map_err(SilexError::from)? != locale {
@@ -403,6 +405,7 @@ impl<'scope> I18nStore<'scope> {
         let store_for_effect = store;
         self.owner
             .effect(
+                EffectPhase::Normal,
                 move || -> SilexResult<()> {
                     if let ResourceState::Ready(catalog) = state.get()? {
                         store_for_effect.insert_catalog(catalog)?;

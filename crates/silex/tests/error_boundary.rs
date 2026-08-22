@@ -4,8 +4,8 @@ use std::{cell::Cell, rc::Rc};
 
 use silex::components::ErrorBoundary;
 use silex_core::{
-    ErrorHandlerToken, ErrorReporter, OwnerAccess, ReadSignal, Runtime, SilexContext, SilexError,
-    SilexErrorKind, SilexResult,
+    EffectPhase, ErrorHandlerToken, ErrorReporter, OwnerAccess, ReadSignal, Runtime, SilexContext,
+    SilexError, SilexErrorKind, SilexResult,
 };
 use silex_dom::document;
 use silex_dom::view::{MountContext, MountInstance, MountOwnerToken, View};
@@ -74,6 +74,7 @@ impl<'scope> View<'scope> for DeferredFailure<'scope> {
         let effect_runs = self.effect_runs.clone();
         let failure_count = self.failure_count.clone();
         context.owner().effect(
+            EffectPhase::Normal,
             Box::new(move || {
                 effect_runs.set(effect_runs.get().saturating_add(1));
                 if source.get()? {

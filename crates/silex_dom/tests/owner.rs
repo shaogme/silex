@@ -1,7 +1,8 @@
 #![cfg(target_arch = "wasm32")]
 
 use silex_core::{
-    ErrorHandlerToken, ErrorReporter, OwnerAccess, Runtime, SilexError, SilexErrorKind, SilexResult,
+    EffectPhase, ErrorHandlerToken, ErrorReporter, OwnerAccess, Runtime, SilexError,
+    SilexErrorKind, SilexResult,
 };
 use silex_dom::attribute::{AttrOp, CombinedStyles, ReactiveBindingPlan};
 use silex_dom::element::Element;
@@ -184,8 +185,7 @@ fn native_owner_error_handler_separates_initial_deferred_and_cleanup_errors() {
                 })
                 .expect("error handler should register");
             let owner = MountOwnerToken::new(owner);
-            let result = owner.effect(
-                Box::new(|| Err(SilexError::recoverable(SilexErrorKind::Framework("initial effect failure".to_string())))),
+            let result = owner.effect(EffectPhase::Normal, Box::new(|| Err(SilexError::recoverable(SilexErrorKind::Framework("initial effect failure".to_string())))),
                 error_handler.view(),
             );
             assert!(matches!(
@@ -222,6 +222,7 @@ fn native_owner_error_handler_separates_initial_deferred_and_cleanup_errors() {
         let owner = MountOwnerToken::new(owner);
         owner
             .effect(
+                EffectPhase::Normal,
                 Box::new(move || -> SilexResult<()> {
                     if should_fail.get()? {
                         return Err(SilexError::recoverable(SilexErrorKind::Framework(
@@ -664,6 +665,7 @@ fn branch_replaces_row_owner_and_keyed_list_reorders_ranges() {
                 let effect_runs = branch_effect_runs_for_view.clone();
                 branch_owner
                     .effect(
+                        EffectPhase::Normal,
                         move || {
                             let _ = computed.get()?;
                             effect_runs.set(effect_runs.get() + 1);

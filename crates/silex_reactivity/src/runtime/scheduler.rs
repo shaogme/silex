@@ -6,6 +6,7 @@ use crate::{
     borrow::{BorrowCell, BorrowSite, SharedCell},
     error::ErrorContext,
     internal::NodeId,
+    owner::EffectPhase,
     root::CloseError,
     unsafe_boundary::{ActiveOwnerProof, CleanupOwnerProof, ErasedErrorEvent, WeakOwnerToken},
 };
@@ -363,6 +364,8 @@ impl Drop for InitialFlushGuard {
 pub(crate) struct ScheduledTask {
     pub(crate) owner_id: OwnerId,
     pub(crate) node: NodeId,
+    pub(crate) phase: EffectPhase,
+    pub(crate) sequence: u64,
 }
 
 pub(crate) struct ScopeEntry {
@@ -530,8 +533,13 @@ impl OwnerSlotTable {
 pub(crate) struct GlobalScheduler {
     owner_slots: OwnerSlotTable,
     epoch: u64,
-    pub(crate) global_queue: VecDeque<ScheduledTask>,
+    pub(crate) normal_queue: VecDeque<ScheduledTask>,
+    pub(crate) post_flush_queue: VecDeque<ScheduledTask>,
     pub(crate) worklist: VecDeque<ScheduledTask>,
+    pub(crate) flush_generation: u64,
+    pub(crate) next_task_sequence: u64,
+    #[cfg(feature = "test-support")]
+    pub(crate) queue_high_water: usize,
     pub(crate) running_queue: bool,
     pub(crate) batch_depth: usize,
     pub(crate) evaluating: usize,
@@ -557,8 +565,13 @@ impl GlobalScheduler {
             Self {
                 owner_slots: OwnerSlotTable::new(),
                 epoch: 1,
-                global_queue: VecDeque::new(),
+                normal_queue: VecDeque::new(),
+                post_flush_queue: VecDeque::new(),
                 worklist: VecDeque::new(),
+                flush_generation: 0,
+                next_task_sequence: 0,
+                #[cfg(feature = "test-support")]
+                queue_high_water: 0,
                 running_queue: false,
                 batch_depth: 0,
                 evaluating: 0,
@@ -603,7 +616,8 @@ impl GlobalScheduler {
         if !self.owner_slots.deactivate(id) {
             return;
         }
-        self.global_queue.retain(|task| task.owner_id != id);
+        self.normal_queue.retain(|task| task.owner_id != id);
+        self.post_flush_queue.retain(|task| task.owner_id != id);
         self.worklist.retain(|task| task.owner_id != id);
         self.deferred_errors
             .retain(|event| event.source_owner != id);
@@ -694,11 +708,50 @@ impl GlobalScheduler {
             .map(|entry| (entry.mode, entry.parent))
     }
 
-    pub(crate) fn enqueue_effect(&mut self, task: ScheduledTask) {
-        if self.is_scope_active(task.owner_id) {
-            self.global_queue.push_back(task);
+    fn next_task_sequence(&mut self) -> u64 {
+        let sequence = self.next_task_sequence;
+        self.next_task_sequence = self.next_task_sequence.saturating_add(1);
+        sequence
+    }
+
+    pub(crate) fn enqueue_normal_effect(&mut self, owner_id: OwnerId, node: NodeId) {
+        if self.is_scope_active(owner_id) {
+            let task = ScheduledTask {
+                owner_id,
+                node,
+                phase: EffectPhase::Normal,
+                sequence: self.next_task_sequence(),
+            };
+            self.normal_queue.push_back(task);
+            self.record_queue_high_water();
         }
     }
+
+    pub(crate) fn enqueue_post_flush_effect(&mut self, owner_id: OwnerId, node: NodeId) {
+        if self.is_scope_active(owner_id) {
+            let task = ScheduledTask {
+                owner_id,
+                node,
+                phase: EffectPhase::PostFlush,
+                sequence: self.next_task_sequence(),
+            };
+            self.post_flush_queue.push_back(task);
+            self.record_queue_high_water();
+        }
+    }
+
+    #[cfg(feature = "test-support")]
+    fn record_queue_high_water(&mut self) {
+        let queue_len = self
+            .normal_queue
+            .len()
+            .saturating_add(self.post_flush_queue.len())
+            .saturating_add(self.worklist.len());
+        self.queue_high_water = self.queue_high_water.max(queue_len);
+    }
+
+    #[cfg(not(feature = "test-support"))]
+    fn record_queue_high_water(&mut self) {}
 
     pub(crate) fn enqueue_deferred_error(
         &mut self,
@@ -730,7 +783,9 @@ impl GlobalScheduler {
     }
 
     pub(crate) fn cancel_effect(&mut self, target: TargetNode) {
-        self.global_queue
+        self.normal_queue
+            .retain(|task| task.owner_id != target.owner_id || task.node != target.node);
+        self.post_flush_queue
             .retain(|task| task.owner_id != target.owner_id || task.node != target.node);
         self.worklist
             .retain(|task| task.owner_id != target.owner_id || task.node != target.node);
@@ -771,7 +826,8 @@ impl GlobalScheduler {
         self.initial_flush_depth == 0
             && self.is_idle()
             && self.active_leases == 0
-            && (!self.global_queue.is_empty()
+            && (!self.normal_queue.is_empty()
+                || !self.post_flush_queue.is_empty()
                 || !self.worklist.is_empty()
                 || !self.deferred_errors.is_empty())
     }

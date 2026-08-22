@@ -115,6 +115,7 @@ let handler = scope.error_handler(|error: MyError| {
 })?;
 
 let effect = scope.effect(
+    EffectPhase::Normal,
     move || do_work().map_err(MyError::from),
     &handler,
 )?;

@@ -3,7 +3,7 @@ use super::context::{MountContext, MountTarget};
 use super::contract::{MountInstance, View};
 use super::owner::{MountErrorHandler, MountOwner, MountOwnerToken};
 use super::row::{NodeRange, RowInstance, RowInstanceConfig, RowRenderContext, RowRenderer};
-use silex_core::{CloseError, OwnerAccess, SilexError, SilexErrorKind, SilexResult};
+use silex_core::{CloseError, EffectPhase, OwnerAccess, SilexError, SilexErrorKind, SilexResult};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 pub struct DynamicRenderArgs<'scope> {
@@ -306,6 +306,7 @@ where
     let token = local_owner.token();
     let effect_state = state.clone();
     if let Err(error) = local_owner.effect(
+        EffectPhase::Normal,
         Box::new(move || -> SilexResult<()> {
             let mut state = effect_state.take()?;
             let result = catch_unwind(AssertUnwindSafe(|| -> SilexResult<()> {

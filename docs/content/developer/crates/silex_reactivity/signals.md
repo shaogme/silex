@@ -73,6 +73,7 @@ let borrowed = total.with(|value| *value)?;
 
 ```rust
 let effect = scope.effect(
+    EffectPhase::Normal,
     move || {
         let value = source.get()?;
         record(value);
@@ -98,6 +99,7 @@ let stopped = effect.stop()?;
 
 ```rust
 let effect = scope.effect_with_previous(
+    EffectPhase::Normal,
     |previous: Option<&String>| {
         let next = source.get()?.to_string();
         if let Some(previous) = previous {
@@ -120,6 +122,7 @@ let effect = scope.effect_with_previous(
 
 ```rust
 let watcher = scope.watch_getter_with_options(
+    EffectPhase::Normal,
     move || source.get(),
     move |current, previous| {
         println!("{previous:?} -> {current}");

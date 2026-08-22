@@ -67,6 +67,12 @@ let formatted = owner.computed_always(
 
 `OwnerAccess::effect` 注册 `FnMut() -> SilexResult<()>`，创建时先运行一次。闭包中普通 `get`/`with` 读取的 source 成为依赖，依赖变化时 effect 再运行。`EffectHandle::stop` 返回 `true` 表示本次停止了活动 effect，返回 `false` 表示它已经停止或 scope 已失效。
 
+所有 effect-like API 都必须显式选择 `EffectPhase::Normal` 或
+`EffectPhase::PostFlush`。初始执行仍然同步发生；phase 只决定依赖变化后的重跑
+顺序。`Normal` 工作会先完全收敛，`PostFlush` 回调中的 signal 写入会在下一个
+PostFlush 回调前重新进入 Normal 队列。PostFlush 是 runtime 内的同步阶段，不等同
+于浏览器的 microtask 或 animation frame。
+
 `effect_with_previous` 的闭包接收 `Option<&T>`，只有上一次成功返回的值才会作为下一次的 previous；失败运行不会覆盖 previous。`effect_detached` 是隐藏的框架入口，普通应用应使用 `effect`。
 
 ### Watch
@@ -75,6 +81,7 @@ let formatted = owner.computed_always(
 
 ```rust
 let watcher = owner.watch_getter_with_options(
+    EffectPhase::Normal,
     move || source.get(),
     move |current, previous| {
         record_change(current, previous);

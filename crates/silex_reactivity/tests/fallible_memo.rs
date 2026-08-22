@@ -6,7 +6,7 @@
 )]
 
 use silex_reactivity::{
-    CallbackInvokeError, ComputationInitError, ErrorHandlerToken, OwnerAccess, Runtime,
+    CallbackInvokeError, ComputationInitError, EffectPhase, ErrorHandlerToken, OwnerAccess, Runtime,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -138,6 +138,7 @@ fn deferred_errors_use_the_handler_without_notifying_dependents() {
             let effect_runs_in_effect = effect_runs.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         memo.get().map(|_| ()).map_err(|error| match error {
                             CallbackInvokeError::User(error) => error,
@@ -195,6 +196,7 @@ fn untracked_reads_do_not_subscribe_the_outer_effect_and_still_propagate_errors(
             let effect_runs_in_effect = effect_runs.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         memo.with_untracked(|_| ()).map_err(|error| match error {
                             CallbackInvokeError::Runtime(_) => "runtime",

@@ -163,6 +163,10 @@ silex::ui::inject_shadcn_base_styles();
 
 ## 生命周期、可访问性和限制
 
+- `Portal` 的 visibility effect 使用 `EffectPhase::Normal`；`Dialog` 打开时的
+  focus 和关闭后的 focus restore 使用 `EffectPhase::PostFlush`，以便在普通 DOM
+  更新收敛后读取宿主状态。该 phase 是 runtime 的同步调度阶段，不需要依赖固定
+  数量的浏览器 microtask。
 - UI 组件通过 `data-slot`、`data-state`、`data-value`、`data-orientation` 等
   attribute 暴露结构和状态；这些标记是样式/测试钩子，不是独立状态存储。
 - `Dialog`、`Popover`、`Tooltip` 的 overlay/content 可能通过 Portal 挂到

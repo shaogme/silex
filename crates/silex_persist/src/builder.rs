@@ -17,8 +17,8 @@ use crate::{
 };
 use ref_str::LocalStaticRefStr;
 use silex_core::{
-    CallbackInvokeError, CompletionSender, ErrorHandlerInput, ErrorHandlerToken, OwnerAccess,
-    ReactiveError, RxRead, SilexError, SilexErrorKind, SilexResult,
+    CallbackInvokeError, CompletionSender, EffectPhase, ErrorHandlerInput, ErrorHandlerToken,
+    OwnerAccess, ReactiveError, RxRead, SilexError, SilexErrorKind, SilexResult,
     traits::{RxGet, RxWrite},
     unwind_safe,
 };
@@ -644,6 +644,7 @@ where
                 let _effect = self
                     .owner
                     .effect(
+                        EffectPhase::Normal,
                         {
                             let owner_access = self.owner;
                             move || -> SilexResult<()> {
@@ -760,6 +761,7 @@ where
                 let _effect = self
                     .owner
                     .effect(
+                        EffectPhase::Normal,
                         move || -> SilexResult<()> {
                             value.get()?;
                             if !take_local_mutation(controller)? {
@@ -787,6 +789,7 @@ where
                 let _effect = self
                     .owner
                     .effect(
+                        EffectPhase::Normal,
                         move || -> SilexResult<()> {
                             let current = value.get()?;
                             if !take_local_mutation(controller)? {

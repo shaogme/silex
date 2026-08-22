@@ -2,7 +2,7 @@ use crate::{
     runtime::{DynamicStyleManager, dynamic::unique_dynamic_style_id},
     source::{CssSource, IntoCssSource},
 };
-use silex_core::{SilexError, SilexErrorKind, SilexResult};
+use silex_core::{EffectPhase, SilexError, SilexErrorKind, SilexResult};
 use silex_dom::{
     attribute::{ApplyTarget, ApplyToDom, AttrOp, IntoStorable},
     view::{MountContext, MountErrorHandler, MountOwner},
@@ -142,8 +142,7 @@ where
         let theme = self.0.clone();
         let el = el.clone();
         let effect_el = el.clone();
-        owner.effect_with_previous(
-            Box::new(
+        owner.effect_with_previous(EffectPhase::Normal, Box::new(
                 move |previous: Option<&Vec<(&'static str, Option<String>)>>| -> SilexResult<
                     Vec<(&'static str, Option<String>)>,
                 > {
@@ -212,6 +211,7 @@ where
     let style_id = unique_dynamic_style_id("slx-global-theme");
     token
         .effect_with_previous(
+            EffectPhase::Normal,
             Box::new(move |previous: Option<&String>| -> SilexResult<String> {
                 let theme = match &source {
                     CssSource::Static(theme) => theme.clone(),
@@ -295,8 +295,7 @@ where
         let effect_el = el.clone();
         let names = owner.owner_state(Vec::<&'static str>::new())?;
         let names_for_effect = names.clone();
-        owner.effect_with_previous(
-            Box::new(
+        owner.effect_with_previous(EffectPhase::Normal, Box::new(
                 move |previous: Option<&Vec<(&'static str, Option<String>)>>| -> SilexResult<
                     Vec<(&'static str, Option<String>)>,
                 > {

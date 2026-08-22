@@ -102,6 +102,11 @@ UA stylesheet。`PortalHost` 的 root 初始状态固定为 open；带 `open` �
 和 owner 生命周期管理；owner cleanup 会移除 host，子 view mount 失败或 panic
 时也会回滚已创建的节点。
 
+Portal visibility 是普通 `EffectPhase::Normal` 更新；Dialog 在 Portal 内容稳定
+后管理打开焦点，并在关闭时恢复触发元素焦点，这些副作用使用
+`EffectPhase::PostFlush`。PostFlush 由 runtime 同步调度，不应通过额外的
+`queue_microtask` 次数推断内容或焦点已经更新。
+
 不要把 Portal 放进 `Show`、`if open` 或其它响应式结构分支；这些分支会销毁
 Portal owner，重新创建 host，并重新触发弹层内容的 mount。需要条件显示时，
 应让带 `open` 的 Portal 始终存在，并通过 signal 控制 visibility root 状态。

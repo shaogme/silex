@@ -6,7 +6,8 @@
 )]
 
 use silex_reactivity::{
-    CallbackInvokeError, Computed, ErrorHandlerToken, OwnerAccess, ReactiveError, Runtime,
+    CallbackInvokeError, Computed, EffectPhase, ErrorHandlerToken, OwnerAccess, ReactiveError,
+    Runtime,
 };
 use std::{
     cell::Cell,
@@ -118,6 +119,7 @@ fn panic_in_effect_does_not_block_the_next_notification() {
             let panic_in_effect = should_panic.clone();
             let _effect = scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         source.get().expect("test operation should succeed");
                         runs_in_effect.set(runs_in_effect.get() + 1);
@@ -162,6 +164,7 @@ fn cleanup_panic_during_effect_rerun_does_not_skip_remaining_cleanups() {
             let remaining_cleanup_ran_in_effect = remaining_cleanup_ran.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         source.get().expect("test operation should succeed");
                         effect_runs_in_effect.set(effect_runs_in_effect.get() + 1);
@@ -200,6 +203,7 @@ fn cleanup_panic_during_effect_rerun_does_not_skip_remaining_cleanups() {
             let seen_in_effect = seen.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         seen_in_effect.set(independent.get().expect("reactive read"));
                         Ok(())
@@ -313,6 +317,7 @@ fn batch_panic_restores_depth_and_flushes_pending_effects() {
             let seen_in_effect = seen.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         seen_in_effect.set(source.get().expect("reactive read"));
                         Ok(())
@@ -351,6 +356,7 @@ fn untrack_panic_restores_the_active_dependency_observer() {
             let first_run_in_effect = first_run.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         source.get().expect("test operation should succeed");
                         if first_run_in_effect.replace(false) {
@@ -389,6 +395,7 @@ fn child_callback_panic_restores_the_outer_observer_frame() {
             let runs_in_effect = runs.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         source.get().expect("test operation should succeed");
                         let panic = catch_unwind(AssertUnwindSafe(|| {

@@ -5,7 +5,7 @@
     clippy::panic
 )]
 
-use silex_reactivity::{ErrorHandlerToken, OwnerAccess, Runtime};
+use silex_reactivity::{EffectPhase, ErrorHandlerToken, OwnerAccess, Runtime};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -129,6 +129,7 @@ fn test_any_value_memo_skip_equal_update() {
             let memo_for_effect = memo;
             let _effect = scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         memo_for_effect.get().expect("reactive read");
                         effect_eval_count_cloned.set(effect_eval_count_cloned.get() + 1);

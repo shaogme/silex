@@ -1,6 +1,6 @@
 use silex_core::{
-    ErrorHandlerToken, OwnerAccess, ReadSignal, Runtime, SilexError, SilexResult, batch_read,
-    batch_read_untracked,
+    EffectPhase, ErrorHandlerToken, OwnerAccess, ReadSignal, Runtime, SilexError, SilexResult,
+    batch_read, batch_read_untracked,
 };
 use std::cell::Cell;
 use std::rc::Rc;
@@ -28,6 +28,7 @@ fn batch_read_tracks_every_source_and_reads_values_in_order() {
 
             owner
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         let expected = 3 * (runs_in_effect.get() + 1);
                         assert_eq!(read_pair(&first, &second)?, expected);
@@ -60,6 +61,7 @@ fn batch_read_tracks_parent_sources_inside_a_child_callback() {
 
             owner
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         owner
                             .with_transient(|_| {
@@ -97,6 +99,7 @@ fn batch_read_untracked_does_not_subscribe_its_sources() {
 
             owner
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         let sum = batch_read_untracked!(first, second =>
                             |left: i32, right: i32| *left + *right)
@@ -133,6 +136,7 @@ fn batch_read_untracked_keeps_nested_reads_tracked() {
 
             owner
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         batch_read_untracked!(untracked_source => |value: i32| {
                             seen_in_effect.set(*value);

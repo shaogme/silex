@@ -1,4 +1,6 @@
-use silex_core::{ErrorHandlerToken, OwnerAccess, Runtime, RxGet, RxRead, SilexResult};
+use silex_core::{
+    EffectPhase, ErrorHandlerToken, OwnerAccess, Runtime, RxGet, RxRead, SilexResult,
+};
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -22,6 +24,7 @@ fn tuple_get_tracks_each_member() {
 
             owner
                 .effect(
+                    EffectPhase::Normal,
                     move || -> SilexResult<()> {
                         let (first_value, second_value) = sources.get()?;
                         assert_eq!(first_value + second_value, 3 + runs_in_effect.get() * 2);
@@ -73,6 +76,7 @@ fn tuple_untracked_get_does_not_subscribe() {
 
             owner
                 .effect(
+                    EffectPhase::Normal,
                     move || -> SilexResult<()> {
                         assert_eq!(sources.get_untracked()?, (1, 2));
                         runs_in_effect.set(runs_in_effect.get() + 1);

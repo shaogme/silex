@@ -1,6 +1,6 @@
 use std::{cell::Cell, rc::Rc};
 
-use silex_core::{Runtime, SilexContext, SilexError, SilexResult, rx};
+use silex_core::{EffectPhase, Runtime, SilexContext, SilexError, SilexResult, rx};
 use silex_macros::store;
 
 #[derive(Clone)]
@@ -32,6 +32,7 @@ fn explicit_store_field_source_tracks_only_selected_field() {
 
             let _effect = owner
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         let _ = theme.get()?;
                         runs_for_effect.set(runs_for_effect.get() + 1);

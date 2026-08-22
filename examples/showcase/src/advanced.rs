@@ -599,6 +599,7 @@ pub fn AdaptiveReadDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     let adaptive_state = (system_name, stability);
 
     owner.effect(
+        EffectPhase::Normal,
         move || -> SilexResult<()> {
             let (name, current_stability) = adaptive_state.get()?;
             identity.with(|_| ())?;

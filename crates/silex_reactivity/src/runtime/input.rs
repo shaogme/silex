@@ -15,7 +15,7 @@ use crate::{
     error::{ErrorEvent, ErrorPhase, ErrorSlotOwner, ErrorSlotRef},
     handle::NodeKindTag,
     internal::NodeId,
-    owner::{ScopeStorage, WatchOptions},
+    owner::{EffectPhase, ScopeStorage, WatchOptions},
 };
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 
@@ -38,6 +38,7 @@ impl ComputationKind {
 
 pub(crate) struct ComputationSpec<'scope> {
     pub(crate) kind: ComputationKind,
+    pub(crate) phase: EffectPhase,
     pub(crate) parent: ComputationParent,
     pub(crate) computation: Box<dyn ComputationBehavior<'scope> + 'scope>,
 }
@@ -74,7 +75,7 @@ pub(crate) fn create_computation<'scope>(
             .try_borrow_mut()
             .map_err(|_| EvaluationError::Runtime(ReactiveError::BorrowConflict))?;
         state
-            .register_computation(spec.kind.tag(), spec.computation, spec.parent)
+            .register_computation(spec.kind.tag(), spec.phase, spec.computation, spec.parent)
             .map_err(EvaluationError::Runtime)?
     };
 
@@ -148,6 +149,7 @@ fn finish_creation<'scope, E>(
 pub(crate) fn create_effect<'scope, E, F>(
     storage: &'scope ScopeStorage,
     state: &ScopeState<'scope>,
+    phase: EffectPhase,
     callback: F,
     handler: ErrorHandlerRef<'scope, E>,
 ) -> ComputationInitResult<NodeId, E>
@@ -158,6 +160,7 @@ where
     create_effect_with_parent(
         storage,
         state,
+        phase,
         callback,
         handler,
         ComputationParent::Current,
@@ -167,6 +170,7 @@ where
 pub(crate) fn create_effect_detached<'scope, E, F>(
     storage: &'scope ScopeStorage,
     state: &ScopeState<'scope>,
+    phase: EffectPhase,
     callback: F,
     handler: ErrorHandlerRef<'scope, E>,
 ) -> ComputationInitResult<NodeId, E>
@@ -177,6 +181,7 @@ where
     create_effect_with_parent(
         storage,
         state,
+        phase,
         callback,
         handler,
         ComputationParent::Detached,
@@ -186,6 +191,7 @@ where
 fn create_effect_with_parent<'scope, E, F>(
     storage: &'scope ScopeStorage,
     state: &ScopeState<'scope>,
+    phase: EffectPhase,
     mut callback: F,
     handler: ErrorHandlerRef<'scope, E>,
     parent: ComputationParent,
@@ -230,6 +236,7 @@ where
         state,
         ComputationSpec {
             kind: ComputationKind::Effect,
+            phase,
             parent,
             computation: Box::new(computation),
         },
@@ -240,6 +247,7 @@ where
 pub(crate) fn create_previous<'scope, T, E, F>(
     storage: &'scope ScopeStorage,
     state: &ScopeState<'scope>,
+    phase: EffectPhase,
     mut callback: F,
     handler: ErrorHandlerRef<'scope, E>,
 ) -> ComputationInitResult<NodeId, E>
@@ -285,6 +293,7 @@ where
         state,
         ComputationSpec {
             kind: ComputationKind::Previous,
+            phase,
             parent: ComputationParent::Current,
             computation: Box::new(computation),
         },
@@ -295,6 +304,7 @@ where
 pub(crate) fn create_watch<'scope, T, E, G, C>(
     storage: &'scope ScopeStorage,
     state: &ScopeState<'scope>,
+    phase: EffectPhase,
     mut getter: G,
     mut callback: C,
     handler: ErrorHandlerRef<'scope, E>,
@@ -363,6 +373,7 @@ where
         state,
         ComputationSpec {
             kind: ComputationKind::Watch,
+            phase,
             parent: ComputationParent::Current,
             computation: Box::new(computation),
         },
@@ -449,6 +460,7 @@ where
         state,
         ComputationSpec {
             kind: ComputationKind::Computed,
+            phase: EffectPhase::Normal,
             parent: ComputationParent::Current,
             computation: Box::new(computation),
         },

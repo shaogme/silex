@@ -5,7 +5,7 @@
     clippy::panic
 )]
 
-use silex_reactivity::Runtime;
+use silex_reactivity::{EffectPhase, Runtime};
 use std::{cell::Cell, rc::Rc};
 
 struct NonCopyError(String);
@@ -25,7 +25,7 @@ fn error_handler_clone_keeps_scoped_callback_contract() {
 
             cloned.handle("scoped").expect("handler dispatch");
             scope
-                .effect(|| Ok::<(), &'static str>(()), &handler)
+                .effect(EffectPhase::Normal, || Ok::<(), &'static str>(()), &handler)
                 .expect("effect should initialize");
         })
         .expect("test operation should succeed");
@@ -109,7 +109,11 @@ fn parent_handler_can_be_passed_to_a_child_scope() {
             scope
                 .with_transient(|child| {
                     child
-                        .effect(|| Err::<(), &'static str>("child"), handler)
+                        .effect(
+                            EffectPhase::Normal,
+                            || Err::<(), &'static str>("child"),
+                            handler,
+                        )
                         .expect_err("the child effect should return its initial error");
                     handler.handle("parent").expect("handler dispatch");
                 })
@@ -142,6 +146,7 @@ fn handler_callback_can_read_and_update_signals() {
 
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         source.get().expect("test operation should succeed");
                         if should_fail_in_effect.get() {
@@ -214,6 +219,7 @@ fn computation_lease_survives_token_drop_but_view_becomes_stale() {
             let view = token.view();
             let effect = scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         source.get().expect("signal read");
                         if should_fail_in_callback.get() {

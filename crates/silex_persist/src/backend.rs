@@ -1,7 +1,7 @@
 use crate::{PersistenceError, PersistenceErrorKind};
 use js_sys::Object;
 use ref_str::LocalStaticRefStr;
-use silex_core::{ErrorReporter, OwnerAccess, Rx, SilexResult};
+use silex_core::{EffectPhase, ErrorReporter, OwnerAccess, Rx, SilexResult};
 use silex_router::{Navigator, RouterContext};
 use std::{
     cell::{Cell, RefCell},
@@ -288,6 +288,7 @@ impl<'scope> PersistenceBackend<'scope> for QueryBackend<'scope> {
         let key_for_effect = key.clone();
         owner
             .effect_with_previous(
+                EffectPhase::Normal,
                 move |previous: Option<&Option<String>>| -> SilexResult<Option<String>> {
                     let current = query_map.get()?.get(key_for_effect.as_ref()).cloned();
                     if active_for_effect.get()

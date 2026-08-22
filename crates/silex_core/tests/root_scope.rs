@@ -1,4 +1,4 @@
-use silex_core::{OwnerAccess, ReactiveError, Runtime, SilexError, SilexErrorKind};
+use silex_core::{EffectPhase, OwnerAccess, ReactiveError, Runtime, SilexError, SilexErrorKind};
 use std::{cell::Cell, rc::Rc};
 
 #[test]
@@ -13,6 +13,7 @@ fn high_level_root_uses_the_borrowed_scope_api() {
         let seen_for_effect = seen.clone();
         let _effect = owner
             .effect(
+                EffectPhase::Normal,
                 move || {
                     seen_for_effect.set(value.get()?);
                     Ok(())

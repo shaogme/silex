@@ -1,18 +1,44 @@
-error[E0631]: type mismatch in closure arguments
- --> tests/ui/fail_previous_owned_argument.rs:6:23
-  |
-6 |         let _ = owner.effect_with_previous(
-  |                       ^^^^^^^^^^^^^^^^^^^^ expected due to this
-7 |             |previous: Option<i32>| Ok::<i32, SilexError>(previous.unwrap_or_default()),
-  |             ----------------------- found signature defined here
-  |
-  = note: expected closure signature `for<'a> fn(Option<&'a _>) -> _`
-             found closure signature `fn(Option<i32>) -> _`
+error[E0277]: expected a `FnMut(Option<&_>)` closure, found `silex_reactivity::error::ErrorHandlerToken<'_, SilexError>`
+  --> tests/ui/fail_previous_owned_argument.rs:8:13
+   |
+ 6 |           let _ = owner.effect_with_previous(
+   |                         -------------------- required by a bound introduced by this call
+ 7 |               |previous: Option<i32>| Ok::<i32, SilexError>(previous.unwrap_or_default()),
+ 8 | /             owner
+ 9 | |                 .error_handler(|_: SilexError| {})
+10 | |                 .expect("handler should register"),
+   | |__________________________________________________^ expected an `FnMut(Option<&_>)` closure, found `silex_reactivity::error::ErrorHandlerToken<'_, SilexError>`
+   |
+   = help: the trait `for<'a> FnMut(Option<&'a _>)` is not implemented for `silex_reactivity::error::ErrorHandlerToken<'_, SilexError>`
 note: required by a bound in `OwnerAccess::<'owner>::effect_with_previous`
- --> src/owner.rs
-  |
-  |     pub fn effect_with_previous<T, F, H>(
-  |            -------------------- required by a bound in this associated function
+  --> src/owner.rs
+   |
+   |     pub fn effect_with_previous<T, F, H>(
+   |            -------------------- required by a bound in this associated function
 ...
-  |         F: FnMut(Option<&T>) -> SilexResult<T> + 'owner,
-  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `OwnerAccess::<'owner>::effect_with_previous`
+   |         F: FnMut(Option<&T>) -> SilexResult<T> + 'owner,
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `OwnerAccess::<'owner>::effect_with_previous`
+
+error[E0061]: this method takes 3 arguments but 2 arguments were supplied
+  --> tests/ui/fail_previous_owned_argument.rs:6:23
+   |
+ 6 |         let _ = owner.effect_with_previous(
+   |                       ^^^^^^^^^^^^^^^^^^^^
+ 7 |             |previous: Option<i32>| Ok::<i32, SilexError>(previous.unwrap_or_default()),
+   |             --------------------------------------------------------------------------- argument #1 of type `EffectPhase` is missing
+   |
+note: method defined here
+  --> src/owner.rs
+   |
+   |     pub fn effect_with_previous<T, F, H>(
+   |            ^^^^^^^^^^^^^^^^^^^^
+help: provide the argument
+   |
+ 6 ~         let _ = owner.effect_with_previous(
+ 7 +             /* EffectPhase */,
+ 8 +             owner
+ 9 +                 .error_handler(|_: SilexError| {})
+10 +                 .expect("handler should register"),
+11 +             |previous: Option<i32>| Ok::<i32, SilexError>(previous.unwrap_or_default()),
+12 ~         );
+   |

@@ -10,14 +10,8 @@ error[E0599]: no method named `try_watch_getter_from` found for struct `OwnerAcc
 6 |         let _ = scope.try_watch_getter_from(
   |                 ------^^^^^^^^^^^^^^^^^^^^^
   |
-help: there is a method `watch_getter` with a similar name, but with different arguments
- --> src/owner.rs
+help: there is a method `watch_getter` with a similar name
   |
-  | /     pub fn watch_getter<T, E, G, C, H>(
-  | |         &self,
-  | |         getter: G,
-  | |         callback: C,
-... |
-  | |         C: FnMut(&T, Option<&T>) -> Result<(), E> + 'owner,
-  | |         H: ErrorHandlerInput<'owner, E>,
-  | |________________________________________^
+6 -         let _ = scope.try_watch_getter_from(
+6 +         let _ = scope.watch_getter(
+  |

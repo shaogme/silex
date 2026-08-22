@@ -243,7 +243,6 @@ where
     let set_state_for_phase = set_state;
     let phase_handler = {
         let parent_handler = parent_handler.clone();
-        let state = state;
         let phase_slot = slot.clone();
         owner.error_handler(move |error_value| {
             let snapshot = state.get_untracked();

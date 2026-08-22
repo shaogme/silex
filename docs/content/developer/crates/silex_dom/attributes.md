@@ -184,6 +184,11 @@ let view = Element::new("div").apply(attrs);
 使用 `context.on_commit(...)` 注册，失败会交给 context 的 error handler，
 而 rollback 会取消尚未执行的 callback。
 
+属性响应式绑定默认使用 `EffectPhase::Normal`；需要在提交后的真实 DOM 上读取
+focus、selection 或 layout 的组件逻辑，应在对应的 owner effect 中显式选择
+`EffectPhase::PostFlush`。这一区分属于 runtime 调度契约，不改变
+`queue_microtask` 作为异步宿主资源 helper 的独立语义。
+
 `AttributeGroup` 通过 `group!` 把异构输入立即擦除为 `Vec<AttrOp>`，避免
 自定义组件透传属性时产生递归泛型。组为空时是 `Noop`，只有一个操作时
 会直接复用该操作，多个操作时形成 `Sequence`。

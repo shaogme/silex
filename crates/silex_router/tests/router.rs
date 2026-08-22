@@ -1,8 +1,8 @@
 #![cfg(target_arch = "wasm32")]
 
 use silex_core::{
-    ErrorHandlerToken, ErrorReporter, OwnerAccess, ReadSignal, Runtime, SilexContext, SilexError,
-    SilexErrorKind, SilexResult,
+    EffectPhase, ErrorHandlerToken, ErrorReporter, OwnerAccess, ReadSignal, Runtime, SilexContext,
+    SilexError, SilexErrorKind, SilexResult,
 };
 use silex_dom::view::{
     AnyView, MountContext, MountInstance, MountOwnerToken, View, mount_text_node,
@@ -474,6 +474,7 @@ fn query_computed_handles_empty_multiple_duplicate_delete_and_reactive_changes()
         let effect_error_handler = test_handler(owner);
         owner
             .effect(
+                EffectPhase::Normal,
                 move || -> SilexResult<()> {
                     snapshots_for_effect.borrow_mut().push(query.get()?);
                     Ok(())

@@ -531,6 +531,7 @@ fn App<'scope>(#[ctx] ctx: SilexContext<'scope>) -> impl View<'scope> {
         .build()?;
 
     let _effect = owner.effect(
+        EffectPhase::Normal,
         move || -> SilexResult<()> {
             let dark = is_dark.get()?;
             if let Some(doc) = window().document()

@@ -36,8 +36,8 @@ pub use crate::{
         HandlerReason, ReactiveError, ReactiveResult,
     },
     owner::{
-        Callback, Computed, EffectHandle, NodeRef, ReadSignal, RwSignal, StoredValue, WatchOptions,
-        WriteSignal,
+        Callback, Computed, EffectHandle, EffectPhase, NodeRef, ReadSignal, RwSignal, StoredValue,
+        WatchOptions, WriteSignal,
     },
     owner::{OwnerAccess, OwnerChild, OwnerCleanupRegistrationError, OwnerHandle},
     root::*,

@@ -7,8 +7,8 @@
 
 use silex_reactivity::{
     CleanupFailure, CleanupPayloadKind, CloseError, ClosePhase, CloseSource, CloseTransaction,
-    CompletionOnce, ErrorHandlerToken, OwnerAccess, ReactiveError, Runtime, TransientScopeError,
-    unwind_safe,
+    CompletionOnce, EffectPhase, ErrorHandlerToken, OwnerAccess, ReactiveError, Runtime,
+    TransientScopeError, unwind_safe,
 };
 use std::{
     cell::Cell,
@@ -32,6 +32,7 @@ fn root_scope_uses_the_same_nodes_as_lexical_scope() {
         let seen_for_effect = seen.clone();
         let _effect = scope
             .effect(
+                EffectPhase::Normal,
                 move || {
                     seen_for_effect.set(value.get().expect("reactive read"));
                     Ok(())

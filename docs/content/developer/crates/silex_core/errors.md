@@ -60,6 +60,7 @@ let token = owner.error_handler(|error| record(error))?;
 let reporter = token.view();
 
 let _effect = owner.effect(
+    EffectPhase::Normal,
     move || {
         update_view()?
     },

@@ -904,7 +904,8 @@ pub(crate) fn run_global_queue(scheduler: &SharedCell<GlobalScheduler>) -> React
             false
         } else {
             sched.running_queue = true;
-            let incoming = mem::take(&mut sched.global_queue);
+            sched.flush_generation = sched.flush_generation.saturating_add(1);
+            let incoming = mem::take(&mut sched.normal_queue);
             sched.worklist.extend(incoming);
             true
         }
@@ -916,32 +917,28 @@ pub(crate) fn run_global_queue(scheduler: &SharedCell<GlobalScheduler>) -> React
     let outcome = catch_unwind(AssertUnwindSafe(|| -> ReactiveResult<()> {
         let mut iterations: usize = 0;
         loop {
-            let next_task = scheduler
-                .try_borrow_mut()
-                .map_err(|_| ReactiveError::BorrowConflict)?
-                .worklist
-                .pop_front();
-            let next_task = match next_task {
-                Some(task) => Some(task),
-                None => {
-                    let mut scheduler_ref = scheduler
-                        .try_borrow_mut()
-                        .map_err(|_| ReactiveError::BorrowConflict)?;
-                    if scheduler_ref.global_queue.is_empty() {
-                        None
-                    } else {
-                        let incoming = mem::take(&mut scheduler_ref.global_queue);
-                        scheduler_ref.worklist.extend(incoming);
-                        scheduler_ref.worklist.pop_front()
-                    }
+            let normal_task = {
+                let mut scheduler_ref = scheduler
+                    .try_borrow_mut()
+                    .map_err(|_| ReactiveError::BorrowConflict)?;
+                if scheduler_ref.worklist.is_empty() {
+                    let incoming = mem::take(&mut scheduler_ref.normal_queue);
+                    scheduler_ref.worklist.extend(incoming);
                 }
+                scheduler_ref.worklist.pop_front()
             };
-            let Some(task) = next_task else {
+            if let Some(task) = normal_task {
+                run_scheduled_task(scheduler, &mut guard, task, &mut iterations)?;
+                continue;
+            }
+
+            {
                 let events = scheduler
                     .try_borrow_mut()
                     .map_err(|_| ReactiveError::BorrowConflict)?
                     .take_deferred_errors();
                 for event in events {
+                    guard.failed_owner.set(Some(event.source_owner));
                     let Some(scope_state) = scheduler
                         .try_borrow()
                         .map_err(|_| ReactiveError::BorrowConflict)?
@@ -954,59 +951,31 @@ pub(crate) fn run_global_queue(scheduler: &SharedCell<GlobalScheduler>) -> React
                         .restore(&scope_state)
                         .dispatch_with_context(ErrorPhase::Deferred, event.context)
                         .map_err(ReactiveError::Handler)?;
+                    guard.failed_owner.set(None);
                 }
+            }
+
+            let has_normal_work = {
                 let scheduler_ref = scheduler
                     .try_borrow()
                     .map_err(|_| ReactiveError::BorrowConflict)?;
-                if scheduler_ref.global_queue.is_empty()
-                    && scheduler_ref.worklist.is_empty()
-                    && !scheduler_ref.has_deferred_errors()
-                {
-                    break;
-                }
-                continue;
+                !scheduler_ref.normal_queue.is_empty()
+                    || !scheduler_ref.worklist.is_empty()
+                    || scheduler_ref.has_deferred_errors()
             };
-            guard.failed_owner.set(Some(task.owner_id));
-            if !scheduler
-                .try_borrow()
-                .map_err(|_| ReactiveError::BorrowConflict)?
-                .is_scope_active(task.owner_id)
-            {
-                guard.failed_owner.set(None);
+            if has_normal_work {
                 continue;
             }
-            iterations = iterations.saturating_add(1);
-            if iterations > MAX_QUEUE_ITERATIONS {
-                return Err(ReactiveError::NonConvergent {
-                    iterations,
-                    last_scope: Some(task.owner_id.0),
-                    last_node: Some(task.node.data().as_ffi()),
-                });
-            }
-            let scope_state = scheduler
-                .try_borrow()
+
+            let post_task = scheduler
+                .try_borrow_mut()
                 .map_err(|_| ReactiveError::BorrowConflict)?
-                .get_scope(task.owner_id)?;
-            if let Some(scope_state) = scope_state {
-                {
-                    let mut state_ref = scope_state
-                        .try_borrow_mut()
-                        .map_err(|_| ReactiveError::BorrowConflict)?;
-                    if let Some(node) = state_ref.nodes.get_mut(task.node) {
-                        node.queued = false;
-                    }
-                }
-                evaluate_root(&scope_state, task.node, EvaluationMode::Deferred).map_err(
-                    |error| match error {
-                        EvaluationError::Runtime(error) => error,
-                        EvaluationError::Handler(error) => ReactiveError::Handler(error),
-                        EvaluationError::Callback(_) | EvaluationError::User => {
-                            ReactiveError::InvariantViolation
-                        }
-                    },
-                )?;
-            }
-            guard.failed_owner.set(None);
+                .post_flush_queue
+                .pop_front();
+            let Some(task) = post_task else {
+                break;
+            };
+            run_scheduled_task(scheduler, &mut guard, task, &mut iterations)?;
         }
         Ok(())
     }));
@@ -1022,6 +991,57 @@ pub(crate) fn run_global_queue(scheduler: &SharedCell<GlobalScheduler>) -> React
             resume_unwind(panic)
         }
     }
+}
+
+fn run_scheduled_task(
+    scheduler: &SharedCell<GlobalScheduler>,
+    guard: &mut QueueRunGuard,
+    task: super::scheduler::ScheduledTask,
+    iterations: &mut usize,
+) -> ReactiveResult<()> {
+    guard.failed_owner.set(Some(task.owner_id));
+    if !scheduler
+        .try_borrow()
+        .map_err(|_| ReactiveError::BorrowConflict)?
+        .is_scope_active(task.owner_id)
+    {
+        guard.failed_owner.set(None);
+        return Ok(());
+    }
+    *iterations = iterations.saturating_add(1);
+    if *iterations > MAX_QUEUE_ITERATIONS {
+        return Err(ReactiveError::NonConvergent {
+            iterations: *iterations,
+            last_scope: Some(task.owner_id.0),
+            last_node: Some(task.node.data().as_ffi()),
+            last_phase: Some(task.phase),
+        });
+    }
+    let scope_state = scheduler
+        .try_borrow()
+        .map_err(|_| ReactiveError::BorrowConflict)?
+        .get_scope(task.owner_id)?;
+    if let Some(scope_state) = scope_state {
+        {
+            let mut state_ref = scope_state
+                .try_borrow_mut()
+                .map_err(|_| ReactiveError::BorrowConflict)?;
+            if let Some(node) = state_ref.nodes.get_mut(task.node) {
+                node.queued = false;
+            }
+        }
+        evaluate_root(&scope_state, task.node, EvaluationMode::Deferred).map_err(|error| {
+            match error {
+                EvaluationError::Runtime(error) => error,
+                EvaluationError::Handler(error) => ReactiveError::Handler(error),
+                EvaluationError::Callback(_) | EvaluationError::User => {
+                    ReactiveError::InvariantViolation
+                }
+            }
+        })?;
+    }
+    guard.failed_owner.set(None);
+    Ok(())
 }
 
 struct QueueRunGuard {
@@ -1074,7 +1094,10 @@ fn recover_after_queue_error(
             .worklist
             .retain(|task| task.owner_id != owner_id);
         scheduler_ref
-            .global_queue
+            .normal_queue
+            .retain(|task| task.owner_id != owner_id);
+        scheduler_ref
+            .post_flush_queue
             .retain(|task| task.owner_id != owner_id);
     }
 
@@ -1112,9 +1135,8 @@ mod tests {
     use super::*;
     use crate::{
         ErrorHandlerToken,
-        owner::{OwnerAccess, ScopeStorage},
+        owner::{EffectPhase, OwnerAccess, ScopeStorage},
         runtime::model::NodeState,
-        runtime::scheduler::ScheduledTask,
     };
     use std::{cell::Cell, marker::PhantomData};
 
@@ -1140,6 +1162,7 @@ mod tests {
         let followup_runs_in_effect = followup_runs.clone();
         let followup = retained_scope
             .effect(
+                EffectPhase::Normal,
                 move || {
                     followup_runs_in_effect.set(followup_runs_in_effect.get() + 1);
                     Ok(())
@@ -1164,17 +1187,17 @@ mod tests {
         let scheduler_in_effect = scheduler.clone();
         let first = retained_scope
             .effect(
+                EffectPhase::Normal,
                 move || {
                     first_runs_in_effect.set(first_runs_in_effect.get() + 1);
                     if enqueue_followup_in_effect.get() {
                         scheduler_in_effect
                             .try_borrow_mut()
                             .expect("scheduler write")
-                            .global_queue
-                            .push_back(ScheduledTask {
-                                owner_id: retained_owner_id,
-                                node: followup_id_in_effect.get().expect("follow-up node id"),
-                            });
+                            .enqueue_normal_effect(
+                                retained_owner_id,
+                                followup_id_in_effect.get().expect("follow-up node id"),
+                            );
                     }
                     Ok(())
                 },
@@ -1194,14 +1217,8 @@ mod tests {
 
         {
             let mut scheduler_ref = scheduler.try_borrow_mut().expect("scheduler write");
-            scheduler_ref.global_queue.push_back(ScheduledTask {
-                owner_id: retained_owner_id,
-                node: first_node,
-            });
-            scheduler_ref.global_queue.push_back(ScheduledTask {
-                owner_id: failed_storage.owner_id,
-                node: NodeId::DANGLING,
-            });
+            scheduler_ref.enqueue_normal_effect(retained_owner_id, first_node);
+            scheduler_ref.enqueue_normal_effect(failed_storage.owner_id, NodeId::DANGLING);
         }
 
         assert_eq!(run_global_queue(&scheduler), Err(ReactiveError::NoSuchNode));
@@ -1211,7 +1228,7 @@ mod tests {
             scheduler
                 .try_borrow()
                 .expect("scheduler read")
-                .global_queue
+                .normal_queue
                 .len(),
             1
         );
@@ -1229,7 +1246,7 @@ mod tests {
             scheduler
                 .try_borrow()
                 .expect("scheduler read")
-                .global_queue
+                .normal_queue
                 .is_empty()
         );
         assert!(

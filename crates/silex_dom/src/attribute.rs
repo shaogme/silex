@@ -5,7 +5,7 @@ use wasm_bindgen::convert::FromWasmAbi;
 use web_sys::{Element, Event, InputEvent, MouseEvent, PointerEvent};
 
 use silex_core::{
-    ReactiveError, SilexError, SilexErrorKind, SilexResult,
+    EffectPhase, ReactiveError, SilexError, SilexErrorKind, SilexResult,
     node_ref::NodeRef,
     traits::{RxGet, RxWrite},
 };
@@ -362,6 +362,7 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
             let dom_element = el.clone();
             let signal = signal.clone();
             owner.effect(
+                EffectPhase::Normal,
                 Box::new(move || -> SilexResult<()> {
                     let value = signal.get()?;
                     let str_val = value.as_ref();

@@ -16,6 +16,6 @@ pub use resource::{
     ResourceSourceBuilder, ResourceState, SuspenseContext,
 };
 pub use signal::{Constant, ReadSignal, RwSignal, Signal, WriteSignal};
-pub use silex_reactivity::WatchOptions;
+pub use silex_reactivity::{EffectPhase, WatchOptions};
 pub use slice::SignalSlice;
 pub use stored_value::StoredValue;

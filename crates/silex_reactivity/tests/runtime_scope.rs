@@ -6,8 +6,8 @@
 )]
 
 use silex_reactivity::{
-    CallbackInvokeError, ErrorHandlerToken, OwnerAccess, ReactiveError, ReadSignal, Runtime,
-    unwind_safe,
+    CallbackInvokeError, EffectPhase, ErrorHandlerToken, OwnerAccess, ReactiveError, ReadSignal,
+    Runtime, unwind_safe,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -61,6 +61,7 @@ fn runtime_run_provides_scoped_signal_and_effect() {
             let doubled_in_effect = doubled;
             let _effect = scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         doubled_in_effect
                             .get()
@@ -93,6 +94,7 @@ fn non_static_effect_can_capture_data_and_scoped_signal() {
             let external_in_effect = external.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         external_in_effect
                             .set(external_in_effect.get() + signal.get().expect("reactive read"));
@@ -122,6 +124,7 @@ fn child_scope_is_lexical_and_cleans_up_its_nodes() {
                     let runs = cleaned.clone();
                     let _effect = child
                         .effect(
+                            EffectPhase::Normal,
                             move || {
                                 local.get().expect("test operation should succeed");
                                 runs.set(runs.get() + 1);
@@ -152,6 +155,7 @@ fn child_effect_reacts_to_parent_signal_and_detaches_on_exit() {
                     let runs_in_effect = runs.clone();
                     child
                         .effect(
+                            EffectPhase::Normal,
                             move || {
                                 parent.get().expect("test operation should succeed");
                                 runs_in_effect.set(runs_in_effect.get() + 1);
@@ -280,6 +284,7 @@ fn computation_cleanup_can_access_its_child_stored_value_before_root_cleanup() {
             let dropped_value_in_effect = dropped_value.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         let value = Rc::new(Cell::new(3));
                         let stored = scope_in_effect
@@ -549,6 +554,7 @@ fn parent_effect_tracks_parent_reads_inside_child_callback() {
             let runs_in_effect = runs.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         parent_scope
                             .with_transient(|_| {
@@ -581,6 +587,7 @@ fn parent_effect_tracks_parent_reads_inside_nested_child_callback() {
             let runs_in_effect = runs.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         parent_scope
                             .with_transient(|_| {
@@ -615,6 +622,7 @@ fn nested_child_frames_keep_parent_tracking_at_the_outer_boundary() {
             let runs_in_effect = runs.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         parent_scope
                             .with_transient(|level1| {
@@ -661,6 +669,7 @@ fn nested_child_panic_restores_the_parent_observer_frame() {
             let runs_in_effect = runs.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         let panic = catch_unwind(AssertUnwindSafe(|| {
                             parent_scope
@@ -705,6 +714,7 @@ fn cleanup_track_is_untracked_and_does_not_add_a_dependency() {
             let cleanup_track_succeeded_in_effect = cleanup_track_succeeded.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         source.get().expect("source read");
                         let cleanup_track_succeeded_in_cleanup =
@@ -746,6 +756,7 @@ fn untrack_blocks_ordinary_reads() {
             let runs_in_effect = runs.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         let _ = scope.untrack(|| {
                             other.get().expect("untracked read");
@@ -778,6 +789,7 @@ fn child_local_signal_does_not_keep_parent_effect_queued_after_exit() {
             let result = catch_unwind(AssertUnwindSafe(|| {
                 scope
                     .effect(
+                        EffectPhase::Normal,
                         move || {
                             runs_in_effect.set(runs_in_effect.get() + 1);
                             parent_scope
@@ -812,6 +824,7 @@ fn cleanup_can_reenter_an_active_parent_scope() {
             let seen_in_effect = seen.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         seen_in_effect.set(source.get().expect("reactive read"));
                         Ok(())
@@ -938,6 +951,7 @@ fn cleanup_panic_does_not_skip_other_nodes_or_root_cleanup() {
                 let scope_copy = scope;
                 scope
                     .effect(
+                        EffectPhase::Normal,
                         move || {
                             scope_copy
                                 .on_cleanup(
@@ -954,6 +968,7 @@ fn cleanup_panic_does_not_skip_other_nodes_or_root_cleanup() {
                 let scope_copy = scope;
                 scope
                     .effect(
+                        EffectPhase::Normal,
                         move || {
                             let cleaned = other_node_cleaned_in_scope.clone();
                             scope_copy
@@ -1043,6 +1058,7 @@ fn effect_cleanup_can_register_cleanup_for_the_next_run() {
             let second_cleanup_ran_in_effect = second_cleanup_ran.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         source.get().expect("test operation should succeed");
                         if register_initial_cleanup.replace(false) {
@@ -1097,6 +1113,7 @@ fn child_cleanup_panic_still_flushes_parent_queue() {
             let runs_in_effect = runs.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         source
                             .with(|value| {
@@ -1187,6 +1204,7 @@ fn completion_token_rejects_submission_after_scope_deactivation() {
                     let child_scope = child;
                     child
                         .effect(
+                            EffectPhase::Normal,
                             move || {
                                 let token_in_cleanup = token.clone();
                                 child_scope

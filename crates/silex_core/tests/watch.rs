@@ -1,4 +1,4 @@
-use silex_core::{ErrorHandlerToken, OwnerAccess, Runtime, WatchOptions};
+use silex_core::{EffectPhase, ErrorHandlerToken, OwnerAccess, Runtime, WatchOptions};
 use std::{cell::RefCell, rc::Rc};
 
 fn handler<'owner>(owner: OwnerAccess<'owner>) -> ErrorHandlerToken<'owner> {
@@ -18,6 +18,7 @@ fn source_watch_uses_promotion_and_typed_callback_values() {
             let calls_in_callback = calls.clone();
             owner
                 .watch(
+                    EffectPhase::Normal,
                     source,
                     move |new, old| {
                         calls_in_callback.borrow_mut().push((*new, old.copied()));
@@ -45,6 +46,7 @@ fn getter_watch_supports_immediate_once_and_explicit_stop() {
             let calls_in_callback = calls.clone();
             let watcher = owner
                 .watch_getter_with_options(
+                    EffectPhase::Normal,
                     move || source.get(),
                     move |new, old| {
                         calls_in_callback.borrow_mut().push((*new, old.copied()));
@@ -75,6 +77,7 @@ fn tuple_source_watch_tracks_promoted_values_inside_a_batch() {
             let calls_in_callback = calls.clone();
             owner
                 .watch(
+                    EffectPhase::Normal,
                     (first, second),
                     move |new, old| {
                         calls_in_callback.borrow_mut().push((*new, old.copied()));

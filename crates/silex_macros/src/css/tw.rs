@@ -311,8 +311,7 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
                         owner.owner_state(None::<::std::string::String>)?;
                     let __slx_current_class_for_effect = __slx_current_class.clone();
 
-                    owner.effect_with_previous(
-                        ::std::boxed::Box::new(move |
+                    owner.effect_with_previous(#__silex::core::reactivity::EffectPhase::Normal, ::std::boxed::Box::new(move |
                             __slx_previous_class: ::std::option::Option<
                                 &::std::string::String,
                             >| -> #__silex::core::SilexResult<::std::string::String> {

@@ -866,8 +866,8 @@ fn portal_host_mutations_cannot_open_closed_visibility_root() {
         .expect("test host should be detached");
 }
 
-#[wasm_bindgen_test(async)]
-async fn dialog_restores_focus_and_keeps_host_stable_across_overlay_close() {
+#[wasm_bindgen_test]
+fn dialog_restores_focus_and_keeps_host_stable_across_overlay_close() {
     let host = host();
     let mut runtime = Runtime::new();
     let root = runtime.owner().expect("root runtime should start");
@@ -955,7 +955,6 @@ async fn dialog_restores_focus_and_keeps_host_stable_across_overlay_close() {
     assert_zero_layout(&overlay, "dialog overlay while closed");
 
     dispatch_mouse_event(&trigger, "click");
-    flush_browser_tasks().await;
     let active = document()
         .active_element()
         .expect("dialog should focus its content when opened");
@@ -986,7 +985,6 @@ async fn dialog_restores_focus_and_keeps_host_stable_across_overlay_close() {
     );
 
     dispatch_mouse_event(&overlay, "click");
-    flush_browser_tasks().await;
     let closed_portal = document()
         .query_selector("body > div[data-portal-host=dialog]")
         .expect("dialog Portal selector should be valid")
@@ -1015,7 +1013,6 @@ async fn dialog_restores_focus_and_keeps_host_stable_across_overlay_close() {
     assert_not_hit(&overlay, open_x, open_y, "closed dialog overlay");
 
     dispatch_mouse_event(&trigger, "click");
-    flush_browser_tasks().await;
     let reopened_content = portal
         .query_selector("[data-slot=dialog-content]")
         .expect("dialog content selector should be valid")

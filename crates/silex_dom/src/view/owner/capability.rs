@@ -1,7 +1,7 @@
 use super::host::{HostCallback, HostDestination, HostResource, HostResourceLease};
 use super::state::{ActiveRegistrar, MountState};
 use silex_core::{
-    CloseError, ClosePhase, CloseSource, CloseTransaction, EffectHandle, ErrorHandler,
+    CloseError, ClosePhase, CloseSource, CloseTransaction, EffectHandle, EffectPhase, ErrorHandler,
     ErrorHandlerAnchor, ErrorHandlerInput, HandlerLease, OwnerAccess, OwnerChild, ReactiveError,
     SilexError, SilexErrorKind, SilexResult, unwind_safe,
 };
@@ -321,7 +321,12 @@ impl<'scope> MountOwnerToken<'scope> {
         self.context.access()
     }
 
-    pub fn effect<H>(&self, callback: MountEffect<'scope>, error_handler: H) -> SilexResult<()>
+    pub fn effect<H>(
+        &self,
+        phase: EffectPhase,
+        callback: MountEffect<'scope>,
+        error_handler: H,
+    ) -> SilexResult<()>
     where
         H: ErrorHandlerInput<'scope>,
     {
@@ -329,7 +334,10 @@ impl<'scope> MountOwnerToken<'scope> {
         let error_handler = error_handler.handler_ref();
         let handler = self.context.handler(error_handler)?;
         let close_handler = self.close_handler(handler)?;
-        let handle = self.context.access().effect_detached(callback, handler)?;
+        let handle = self
+            .context
+            .access()
+            .effect_detached(phase, callback, handler)?;
         self.state.effects.borrow_mut().push(EffectEntry {
             handle,
             close_handler,
@@ -337,7 +345,12 @@ impl<'scope> MountOwnerToken<'scope> {
         Ok(())
     }
 
-    pub fn effect_with_previous<T, F, H>(&self, callback: F, error_handler: H) -> SilexResult<()>
+    pub fn effect_with_previous<T, F, H>(
+        &self,
+        phase: EffectPhase,
+        callback: F,
+        error_handler: H,
+    ) -> SilexResult<()>
     where
         T: 'scope,
         F: FnMut(Option<&T>) -> SilexResult<T> + 'scope,
@@ -350,7 +363,7 @@ impl<'scope> MountOwnerToken<'scope> {
         let handle = self
             .context
             .access()
-            .effect_with_previous(callback, handler)?;
+            .effect_with_previous(phase, callback, handler)?;
         self.state.effects.borrow_mut().push(EffectEntry {
             handle,
             close_handler,
@@ -575,6 +588,7 @@ impl<'scope> MountOwnerToken<'scope> {
 pub trait MountOwner<'scope> {
     fn effect(
         &self,
+        phase: EffectPhase,
         callback: MountEffect<'scope>,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()>;
@@ -591,10 +605,11 @@ pub trait MountOwner<'scope> {
 impl<'scope> MountOwner<'scope> for MountOwnerToken<'scope> {
     fn effect(
         &self,
+        phase: EffectPhase,
         callback: MountEffect<'scope>,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
-        MountOwnerToken::effect(self, callback, error_handler)
+        MountOwnerToken::effect(self, phase, callback, error_handler)
     }
 
     fn on_cleanup(
@@ -631,10 +646,11 @@ impl<'scope> OwnerMount<'scope> {
 impl<'scope> MountOwner<'scope> for OwnerMount<'scope> {
     fn effect(
         &self,
+        phase: EffectPhase,
         callback: MountEffect<'scope>,
         error_handler: MountErrorHandler<'scope>,
     ) -> SilexResult<()> {
-        self.token.effect(callback, error_handler)
+        self.token.effect(phase, callback, error_handler)
     }
 
     fn on_cleanup(

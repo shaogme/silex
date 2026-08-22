@@ -3,7 +3,7 @@ use crate::reactivity::ReactiveSource;
 use crate::{
     ErrorHandlerInput, OwnerAccess, OwnerChild, ReactiveError, Rx, SilexError, SilexErrorKind,
     SilexResult,
-    reactivity::{ReadSignal, RwSignal, WriteSignal},
+    reactivity::{EffectPhase, ReadSignal, RwSignal, WriteSignal},
     traits::{RuntimeScoped, RxCloneData, RxData, RxError, RxGet, RxRead, RxValue},
     unwind_safe,
 };
@@ -305,6 +305,7 @@ where
         let suspense_for_effect = suspense;
         let error_handler_for_effect = error_handler;
         let _effect = owner.effect(
+            EffectPhase::Normal,
             move || -> SilexResult<()> {
                 let input = source_for_effect.get()?;
                 let _ = trigger_for_effect.get()?;

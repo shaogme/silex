@@ -103,6 +103,7 @@ fn content_focus_binding<'scope>(open: Signal<'scope, bool>) -> AttrOp<'scope> {
         let content = element.clone();
         let ancestry = context.ancestry().clone();
         context.owner().effect_with_previous(
+            EffectPhase::Normal,
             move |previous: Option<&bool>| -> SilexResult<bool> {
                 let current = open.with(|value| *value)?;
                 if previous == Some(&true)

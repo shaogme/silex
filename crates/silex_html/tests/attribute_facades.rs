@@ -36,7 +36,7 @@ fn supported_tags_keep_their_typed_facades() {
 fn generic_attribute_escape_hatches_remain_available() {
     // Property construction crosses the wasm-bindgen boundary and is therefore
     // compile-tested below rather than executed on a native target.
-    assert!(true);
+    let _compile_only: fn() = generic_attribute_escape_hatches_compile;
 }
 
 #[allow(dead_code)]

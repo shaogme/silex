@@ -180,6 +180,7 @@ let errors = scope.error_handler(|error: ReactiveError| {
 })?;
 
 scope.effect(
+    EffectPhase::Normal,
     move || source.get().map(|_| ()),
     &errors,
 )?;

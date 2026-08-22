@@ -1,6 +1,6 @@
 use silex_reactivity::{
-    CallbackInvokeError, ComputationInitError, ErrorHandlerToken, OwnerAccess, ReactiveError,
-    Runtime,
+    CallbackInvokeError, ComputationInitError, EffectPhase, ErrorHandlerToken, OwnerAccess,
+    ReactiveError, Runtime,
 };
 
 fn handler<'scope, E: 'scope>(
@@ -38,6 +38,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
 
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         println!("{}", doubled.get().map_err(invoke_error)?);
                         Ok::<(), ReactiveError>(())

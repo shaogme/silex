@@ -1,4 +1,4 @@
-use silex_reactivity::Runtime;
+use silex_reactivity::{EffectPhase, Runtime};
 
 fn main() {
     let mut runtime = Runtime::new();
@@ -11,7 +11,7 @@ fn main() {
             })
             .expect("handler should initialize");
         scope
-            .effect(|| Ok::<(), &str>(()), handler)
+            .effect(EffectPhase::Normal, || Ok::<(), &str>(()), handler)
             .expect("effect should initialize");
         })
         .expect("child scope should complete");

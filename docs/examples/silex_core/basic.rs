@@ -1,4 +1,4 @@
-use silex_core::{ErrorHandlerToken, OwnerAccess, Runtime, SilexError, SilexResult};
+use silex_core::{EffectPhase, ErrorHandlerToken, OwnerAccess, Runtime, SilexError, SilexResult};
 use std::{cell::Cell, error::Error, rc::Rc};
 
 fn handler<'owner>(owner: OwnerAccess<'owner>) -> SilexResult<ErrorHandlerToken<'owner>> {
@@ -19,6 +19,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             let seen_for_effect = seen.clone();
 
             owner.effect(
+                EffectPhase::Normal,
                 move || {
                     seen_for_effect.set(doubled.get()?);
                     Ok::<(), SilexError>(())

@@ -28,8 +28,8 @@ use crate::{
     unsafe_boundary::WeakOwnerToken,
 };
 pub use node::{
-    Callback, Computed, EffectHandle, NodeRef, ReadSignal, RwSignal, StoredValue, WatchOptions,
-    WriteSignal,
+    Callback, Computed, EffectHandle, EffectPhase, NodeRef, ReadSignal, RwSignal, StoredValue,
+    WatchOptions, WriteSignal,
 };
 use std::{cell::Cell, future::Future, marker::PhantomData, panic::UnwindSafe, pin::Pin, rc::Rc};
 
@@ -584,6 +584,7 @@ impl<'owner> OwnerAccess<'owner> {
 
     pub fn effect<E, F, H>(
         &self,
+        phase: EffectPhase,
         f: F,
         error_handler: H,
     ) -> ComputationInitResult<EffectHandle<'owner>, E>
@@ -593,11 +594,11 @@ impl<'owner> OwnerAccess<'owner> {
         H: ErrorHandlerInput<'owner, E>,
     {
         let state = self.state();
-        runtime::create_effect(self.storage, &state, f, error_handler.handler_ref()).map(|raw| {
-            EffectHandle {
+        runtime::create_effect(self.storage, &state, phase, f, error_handler.handler_ref()).map(
+            |raw| EffectHandle {
                 handle: Handle::new(self.storage, raw),
-            }
-        })
+            },
+        )
     }
 
     /// Register a framework-owned effect as a root of this reactive owner.
@@ -609,6 +610,7 @@ impl<'owner> OwnerAccess<'owner> {
     #[doc(hidden)]
     pub fn effect_detached<E, F, H>(
         &self,
+        phase: EffectPhase,
         f: F,
         error_handler: H,
     ) -> ComputationInitResult<EffectHandle<'owner>, E>
@@ -618,15 +620,15 @@ impl<'owner> OwnerAccess<'owner> {
         H: ErrorHandlerInput<'owner, E>,
     {
         let state = self.state();
-        runtime::create_effect_detached(self.storage, &state, f, error_handler.handler_ref()).map(
-            |raw| EffectHandle {
+        runtime::create_effect_detached(self.storage, &state, phase, f, error_handler.handler_ref())
+            .map(|raw| EffectHandle {
                 handle: Handle::new(self.storage, raw),
-            },
-        )
+            })
     }
 
     pub fn effect_with_previous<T, E, F, H>(
         &self,
+        phase: EffectPhase,
         f: F,
         error_handler: H,
     ) -> ComputationInitResult<EffectHandle<'owner>, E>
@@ -637,15 +639,16 @@ impl<'owner> OwnerAccess<'owner> {
         H: ErrorHandlerInput<'owner, E>,
     {
         let state = self.state();
-        runtime::create_previous(self.storage, &state, f, error_handler.handler_ref()).map(|raw| {
-            EffectHandle {
+        runtime::create_previous(self.storage, &state, phase, f, error_handler.handler_ref()).map(
+            |raw| EffectHandle {
                 handle: Handle::new(self.storage, raw),
-            }
-        })
+            },
+        )
     }
 
     pub fn watch_getter<T, E, G, C, H>(
         &self,
+        phase: EffectPhase,
         getter: G,
         callback: C,
         error_handler: H,
@@ -657,11 +660,18 @@ impl<'owner> OwnerAccess<'owner> {
         C: FnMut(&T, Option<&T>) -> Result<(), E> + 'owner,
         H: ErrorHandlerInput<'owner, E>,
     {
-        self.watch_getter_with_options(getter, callback, error_handler, WatchOptions::default())
+        self.watch_getter_with_options(
+            phase,
+            getter,
+            callback,
+            error_handler,
+            WatchOptions::default(),
+        )
     }
 
     pub fn watch_getter_with_options<T, E, G, C, H>(
         &self,
+        phase: EffectPhase,
         getter: G,
         callback: C,
         error_handler: H,
@@ -678,6 +688,7 @@ impl<'owner> OwnerAccess<'owner> {
         runtime::create_watch(
             self.storage,
             &state,
+            phase,
             getter,
             callback,
             error_handler.handler_ref(),
@@ -690,6 +701,7 @@ impl<'owner> OwnerAccess<'owner> {
 
     pub fn watch<T, E, G, C, H>(
         &self,
+        phase: EffectPhase,
         getter: G,
         callback: C,
         error_handler: H,
@@ -702,7 +714,7 @@ impl<'owner> OwnerAccess<'owner> {
         C: FnMut(&T, Option<&T>) -> Result<(), E> + 'owner,
         H: ErrorHandlerInput<'owner, E>,
     {
-        self.watch_getter_with_options(getter, callback, error_handler, options)
+        self.watch_getter_with_options(phase, getter, callback, error_handler, options)
     }
 
     /// Create a computed value that notifies dependents only when its output
@@ -1042,6 +1054,7 @@ mod tests {
 
         owner
             .effect(
+                EffectPhase::Normal,
                 move || {
                     let _ = source.get()?;
                     if !registered_for_effect.replace(true) {
@@ -1091,6 +1104,7 @@ mod tests {
 
         owner
             .effect(
+                EffectPhase::Normal,
                 move || {
                     let _ = source.get()?;
                     if child_access_for_effect.get().is_none() {
@@ -1245,6 +1259,7 @@ mod tests {
 
         owner
             .effect(
+                EffectPhase::Normal,
                 move || {
                     let _ = source.get()?;
                     if adopted_owner_for_effect.get().is_none() {

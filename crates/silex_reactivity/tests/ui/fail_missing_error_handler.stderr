@@ -1,15 +1,19 @@
-error[E0061]: this method takes 2 arguments but 1 argument was supplied
+error[E0061]: this method takes 3 arguments but 1 argument was supplied
  --> tests/ui/fail_missing_error_handler.rs:6:23
   |
 6 |         let _ = scope.effect(|| Ok::<(), ()>(()));
-  |                       ^^^^^^--------------------- argument #2 is missing
+  |                       ^^^^^^---------------------
+  |                             ||
+  |                             |argument #1 of type `EffectPhase` is missing
+  |                             argument #3 is missing
   |
 note: method defined here
  --> src/owner.rs
   |
   |     pub fn effect<E, F, H>(
   |            ^^^^^^
-help: provide the argument
+help: provide the arguments
   |
-6 |         let _ = scope.effect(|| Ok::<(), ()>(()), /* error_handler */);
-  |                                                 +++++++++++++++++++++
+6 -         let _ = scope.effect(|| Ok::<(), ()>(()));
+6 +         let _ = scope.effect(/* EffectPhase */, || Ok::<(), ()>(()), /* error_handler */);
+  |

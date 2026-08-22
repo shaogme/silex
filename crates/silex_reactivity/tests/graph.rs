@@ -5,7 +5,9 @@
     clippy::panic
 )]
 
-use silex_reactivity::{Computed, ErrorHandlerToken, OwnerAccess, ReactiveError, Runtime};
+use silex_reactivity::{
+    Computed, EffectPhase, ErrorHandlerToken, OwnerAccess, ReactiveError, Runtime,
+};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -39,6 +41,7 @@ fn computed_always_accepts_non_partial_eq_outputs_and_notifies_each_time() {
             let effect_runs_in_effect = effect_runs.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         computed
                             .with(|value| {
@@ -127,6 +130,7 @@ fn dependency_chain_evaluates_upstream_before_effect() {
             let tail_in_effect = tail;
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         seen_in_effect.set(tail_in_effect.get().expect("reactive read"));
                         Ok(())
@@ -165,6 +169,7 @@ fn diamond_dependencies_do_not_observe_intermediate_state() {
             let seen_in_effect = seen.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         let left_value = left.get().expect("reactive read");
                         let right_value = right.get().expect("reactive read");
@@ -200,6 +205,7 @@ fn dynamic_dependencies_are_replaced_on_each_effect_run() {
             let seen_in_effect = seen.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         runs_in_effect.set(runs_in_effect.get() + 1);
                         seen_in_effect.set(if switch.get().expect("reactive read") {
@@ -245,6 +251,7 @@ fn reading_then_writing_a_new_dependency_replays_after_commit() {
             let wrote_new_source_in_effect = wrote_new_source.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         runs_in_effect.set(runs_in_effect.get() + 1);
                         if trigger.get().expect("trigger read") != 0 {
@@ -278,6 +285,7 @@ fn failed_callback_discards_new_dependency_and_pending_source() {
             let runs_in_effect = runs.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         runs_in_effect.set(runs_in_effect.get() + 1);
                         if trigger.get().expect("trigger read") != 0 {
@@ -315,6 +323,7 @@ fn writing_before_first_read_does_not_retroactively_notify() {
             let wrote_new_source_in_effect = wrote_new_source.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         runs_in_effect.set(runs_in_effect.get() + 1);
                         if trigger.get().expect("trigger read") != 0 {
@@ -353,6 +362,7 @@ fn cross_scope_explicit_dependencies_are_replaced_on_each_effect_run() {
                 .with_transient(|child| {
                     child
                         .effect(
+                            EffectPhase::Normal,
                             move || {
                                 if switch.get().expect("switch read") {
                                     left.get().expect("left read");
@@ -431,6 +441,7 @@ fn nested_memo_cleanup_does_not_track_the_outer_observer() {
             let refresh_inner_in_effect = refresh_inner.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         outer_source_in_effect
                             .get()
@@ -480,6 +491,7 @@ fn batch_delays_effects_and_untrack_preserves_ownership_ctx() {
             let effect_hidden = hidden;
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         seen_in_effect.set(
                             effect_source.get().expect("reactive read")
@@ -506,6 +518,7 @@ fn batch_delays_effects_and_untrack_preserves_ownership_ctx() {
             let second_hidden = hidden;
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         tracked_in_effect.set(second_hidden.get().expect("reactive read"));
                         second_source.get().expect("test operation should succeed");
@@ -599,6 +612,7 @@ fn ordinary_reads_track_all_signals_in_one_scope() {
 
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         sig1.get().expect("first signal read");
                         sig2.get().expect("second signal read");
@@ -631,6 +645,7 @@ fn notify_recomputes_after_silent_interior_mutation() {
             let seen_in_effect = seen.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         seen_in_effect
                             .set(source.with(|value| *value.borrow()).expect("reactive read"));
@@ -668,6 +683,7 @@ fn cross_scope_silent_notify_from_callback_waits_for_value_borrow() {
                     let runs_in_effect = runs.clone();
                     child
                         .effect(
+                            EffectPhase::Normal,
                             move || {
                                 source
                                     .with(|value| {
@@ -738,6 +754,7 @@ fn cross_scope_computation_stack_includes_scope_identity() {
                     let seen_in_effect = seen.clone();
                     child
                         .effect(
+                            EffectPhase::Normal,
                             move || {
                                 seen_in_effect.set(child_memo.get().expect("reactive read"));
                                 Ok(())
@@ -775,6 +792,7 @@ fn cross_scope_derived_reacts_and_detaches_on_exit() {
                     let seen_in_effect = seen.clone();
                     child
                         .effect(
+                            EffectPhase::Normal,
                             move || {
                                 seen_in_effect.set(derived.get().expect("reactive read"));
                                 Ok(())
@@ -808,6 +826,7 @@ fn disposing_the_cross_scope_observer_detaches_it_from_the_source() {
                     let runs_in_effect = runs.clone();
                     let effect = child
                         .effect(
+                            EffectPhase::Normal,
                             move || {
                                 let _ = source.get();
                                 runs_in_effect.set(runs_in_effect.get() + 1);
@@ -932,6 +951,7 @@ fn cyclic_effect_queue_failure_does_not_poison_unrelated_effects() {
             let runs_in_effect = runs.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         first_in_effect
                             .get()
@@ -952,6 +972,7 @@ fn cyclic_effect_queue_failure_does_not_poison_unrelated_effects() {
             let independent_runs_in_effect = independent_runs.clone();
             scope
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         independent_runs_in_effect.set(
                             independent_runs_in_effect.get()
@@ -993,6 +1014,7 @@ fn queue_failure_keeps_other_owner_work_and_clears_failed_owner_state() {
             let a_runs_in_effect = a_runs.clone();
             scope_a
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         signal_a.get().map_err(|_| ())?;
                         a_runs_in_effect.set(a_runs_in_effect.get() + 1);
@@ -1010,6 +1032,7 @@ fn queue_failure_keeps_other_owner_work_and_clears_failed_owner_state() {
             let ticker_in_relay = ticker.clone();
             scope_a
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         relay_a.get().map_err(|_| ())?;
                         if loop_enabled_in_relay.get() {
@@ -1025,6 +1048,7 @@ fn queue_failure_keeps_other_owner_work_and_clears_failed_owner_state() {
             let b_runs_in_effect = b_runs.clone();
             scope_b
                 .effect(
+                    EffectPhase::Normal,
                     move || {
                         signal_b.get().map_err(|_| ())?;
                         b_runs_in_effect.set(b_runs_in_effect.get() + 1);
