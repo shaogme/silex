@@ -55,6 +55,8 @@ View 的 props 被静默替换。
 | 无属性 | 字段是构造函数参数，直接存入 Props；不会生成链式 setter。 |
 | `#[ctx]` | 标记唯一的 context 字段；构造函数接收它，builder 不为它生成 setter。 |
 | `#[chain]` | 字段延迟到 builder 设置；没有默认值时是 required prop。 |
+| `#[chain(name = method)]` | 延迟字段仍由 builder 设置，但 setter 使用显式的 `method` 名称；也接受字符串形式 `name = "method"`。 |
+| `#[chain(each)]` | 仅适用于 `Vec<T>`；setter 改为接收单个 `T`，每次调用追加一个元素。可与 `name`、`default` 组合。 |
 | `#[chain(default)]` | 使用字段类型的 `Default`；响应式 wrapper 则从 context owner 创建默认句柄。 |
 | `#[chain(default = expr)]` | 缺少字段时执行指定表达式；响应式 wrapper 会把表达式转成 owner-scoped 输入。 |
 | `#[prop(into)]` | 构造函数/setter 接受 `Into<字段类型>`，再保存转换后的值。 |
@@ -64,6 +66,38 @@ View 的 props 被静默替换。
 `#[prop(render_fn(...))]` 不能和 `#[prop(into)]` 或 `#[prop(render)]` 组合。
 `#[prop(default)]` 已删除，默认值必须改写为 `#[chain(default)]` 或
 `#[chain(default = ...)]`。
+
+链式方法默认使用字段名。需要把存储字段名和调用 API 解耦时，可以显式命名：
+
+```rust
+#[component]
+fn Menu<'owner, Ctx>(
+    #[ctx] ctx: Ctx,
+    children: AnyView<'owner>,
+    #[chain(name = add_item, each)] items: Vec<String>,
+) -> impl View<'owner> {
+    let _ = (ctx, items);
+    children
+}
+
+let view = Menu(ctx, AnyView::Empty)
+    .add_item("first")
+    .add_item("second")
+    .build();
+```
+
+`name` 只影响生成的 setter 名称，不改变 Props 字段或 render 函数中的绑定名。
+同一个 Props 中的链式方法名必须唯一，也不能覆盖生成的 `new` 或 `build` 方法。
+组件宏会把参数上的 `#[chain(...)]` 原样传递给生成的 Props，因此该规则同样适用于
+`styled!` 复用的组件 Props。
+
+链式字段类型为 `Vec<T>` 时默认仍接收完整的 `Vec<T>`，并保持一次调用替换该字段的
+语义。只有显式添加 `#[chain(each)]` 后，setter 才改为接收单个 `T` 并在每次调用时
+追加一个元素；`T` 的 `Into` 和 `AnyView` 转换规则仍然适用。例如
+`#[chain(name = add_item, each)] items: Vec<String>` 生成的调用形状是
+`.add_item("first").add_item("second")`。没有默认值的收集式 Vec 第一次调用仍会把
+`PropMissing` 变成 `PropFixed`，之后可以继续调用同一个 setter；有默认值的收集式 Vec
+可以完全省略调用。未添加 `each` 时，传入完整 `Vec<T>` 的调用方式保持不变。
 
 ## owner-scoped reactive prop
 
@@ -132,6 +166,9 @@ cleanup 不由过程宏执行，而由 `silex_dom` 的 owner 和 `AttrOp` 负责
 - `pass_component_build_product.rs`：required/default prop 设置和 product 构造。
 - `pass_component_required_order.rs`：required setter 可乱序，重复设置最后一次生效。
 - `pass_component_build_attributes.rs`：builder/product 的属性转发。
+- `pass_component_chain_naming_and_vec.rs`：显式链式方法名、普通 Vec setter 和
+  `#[chain(each)]` 的单元素收集。
+- `component_chain.rs`：native owner scope 下验证两种 Vec setter 的实际结果。
 - `pass_component_fallible_builder.rs`：响应式默认值和 `?` 错误传播。
 - `pass_component_standalone_fallback.rs`、`pass_component_explicit_metadata.rs`：
   直接 derive 的命名 fallback 和显式 metadata。

@@ -1,5 +1,6 @@
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
+use std::collections::HashSet;
 use syn::{
     Attribute, Data, DeriveInput, Fields, GenericArgument, Ident, PathArguments, Type, Visibility,
     parse::Parse, visit::Visit,
@@ -13,6 +14,8 @@ struct FieldAttrs {
     render: bool,
     render_fn_args: Option<Vec<Type>>,
     chained: bool,
+    chain_method: Option<Ident>,
+    chain_each: bool,
     ctx: bool,
 }
 
@@ -31,6 +34,18 @@ impl FieldSpec {
             .clone()
             .expect("named fields must have identifiers");
         let attrs = parse_field_attrs(&field.attrs)?;
+        if attrs.chain_each && vec_item_type(&field.ty).is_none() {
+            return Err(syn::Error::new_spanned(
+                &field.ty,
+                "`#[chain(each)]` requires a `Vec<T>` field",
+            ));
+        }
+        if attrs.chain_each && attrs.render_fn_args.is_some() {
+            return Err(syn::Error::new_spanned(
+                &field.ty,
+                "`#[prop(render_fn(...))]` cannot be combined with `#[chain(each)]`",
+            ));
+        }
         let required = attrs.chained && !attrs.default && attrs.default_value.is_none();
         Ok(FieldSpec {
             ident,
@@ -121,6 +136,23 @@ impl BuilderContext {
                 ));
             }
         };
+
+        let mut chain_methods = HashSet::new();
+        for field in fields.iter().filter(|field| field.attrs.chained) {
+            let method = field.attrs.chain_method.as_ref().unwrap_or(&field.ident);
+            if !chain_methods.insert(method.to_string()) {
+                return Err(syn::Error::new_spanned(
+                    method,
+                    format!("duplicate chain method `{method}`"),
+                ));
+            }
+            if method == "new" || method == "build" {
+                return Err(syn::Error::new_spanned(
+                    method,
+                    format!("chain method `{method}` conflicts with a generated builder method"),
+                ));
+            }
+        }
 
         let owner_lifetime = owner_lifetime(&generics, &fields);
 
@@ -471,6 +503,8 @@ impl BuilderContext {
         let builder_name = &self.builder_name;
         let ident = &field.ident;
         let ty = &field.ty;
+        let method = field.attrs.chain_method.as_ref().unwrap_or(ident);
+        let vec_item_ty = chained_vec_item_type(field);
         let scope = self.owner_lifetime();
         let reactive_input = self.ctx_field.is_some() && is_reactive_input_type(ty, &scope);
         let ctx_field = self.ctx_field.as_ref();
@@ -492,9 +526,25 @@ impl BuilderContext {
 
         let fields_destructure: Vec<_> = self.fields.iter().map(|f| &f.ident).collect();
 
-        let (setter_param, setter_value, generic, where_clause) = if let Some(render_fn_args) =
-            field.attrs.render_fn_args.as_deref()
+        let (setter_param, setter_value, generic, where_clause) = if let Some(item_ty) =
+            vec_item_ty.as_ref()
         {
+            let setter_param = if field.attrs.render && is_any_view_type(item_ty) {
+                quote! { impl #__silex::dom::view::View<#scope> + #scope }
+            } else if field.attrs.into_trait || is_auto_into_type(item_ty) {
+                quote! { impl ::core::convert::Into<#item_ty> }
+            } else {
+                quote! { #item_ty }
+            };
+            let setter_value = if field.attrs.render && is_any_view_type(item_ty) {
+                quote! { #__silex::dom::view::View::into_any(val) }
+            } else if field.attrs.into_trait || is_auto_into_type(item_ty) {
+                quote! { val.into() }
+            } else {
+                quote! { val }
+            };
+            (setter_param, setter_value, quote! {}, quote! {})
+        } else if let Some(render_fn_args) = field.attrs.render_fn_args.as_deref() {
             let render_fn = self.fresh_generic_ident("__SilexRenderFn", &[]);
             let render_view = self.fresh_generic_ident("__SilexRenderView", &[&render_fn]);
             (
@@ -582,6 +632,15 @@ impl BuilderContext {
                     _markers: ::core::marker::PhantomData,
                 }
             };
+            let setter_value = if vec_item_ty.is_some() {
+                quote! {
+                    let mut #ident = #ident.unwrap_or_default();
+                    #ident.push(#setter_value);
+                    let #ident = ::core::option::Option::Some(#ident);
+                }
+            } else {
+                quote! { let #ident = #final_value; }
+            };
             let return_value = if reactive_input {
                 quote! { ::core::result::Result::Ok(#builder_value) }
             } else {
@@ -590,19 +649,28 @@ impl BuilderContext {
 
             quote! {
                 #[allow(non_camel_case_types, unused_variables)]
-                pub fn #ident #generic(self, val: #setter_param) -> #setter_return_ty #where_clause {
+                pub fn #method #generic(self, val: #setter_param) -> #setter_return_ty #where_clause {
                     let Self {
                         #(#fields_destructure,)*
                         _pending_attrs,
                         ..
                     } = self;
 
-                    let #ident = #final_value;
+                    #setter_value
 
                     #return_value
                 }
             }
         } else {
+            let setter_value = if vec_item_ty.is_some() {
+                quote! {
+                    self.#ident
+                        .get_or_insert_with(::std::vec::Vec::new)
+                        .push(#setter_value);
+                }
+            } else {
+                quote! { self.#ident = #final_value; }
+            };
             let return_value = if reactive_input {
                 quote! { ::core::result::Result::Ok(self) }
             } else {
@@ -614,8 +682,8 @@ impl BuilderContext {
                 quote! { Self }
             };
             quote! {
-                pub fn #ident #generic(mut self, val: #setter_param) -> #setter_return_ty #where_clause {
-                    self.#ident = #final_value;
+                pub fn #method #generic(mut self, val: #setter_param) -> #setter_return_ty #where_clause {
+                    #setter_value
                     #return_value
                 }
             }
@@ -975,6 +1043,34 @@ fn field_value_transform(field: &FieldSpec, input: TokenStream2) -> TokenStream2
     }
 }
 
+fn chained_vec_item_type(field: &FieldSpec) -> Option<Type> {
+    if !field.attrs.chain_each {
+        return None;
+    }
+
+    vec_item_type(&field.ty)
+}
+
+fn vec_item_type(ty: &Type) -> Option<Type> {
+    let Type::Path(type_path) = ty else {
+        return None;
+    };
+    let segment = type_path.path.segments.last()?;
+    if segment.ident != "Vec" {
+        return None;
+    }
+    let PathArguments::AngleBracketed(arguments) = &segment.arguments else {
+        return None;
+    };
+    if arguments.args.len() != 1 {
+        return None;
+    }
+    match arguments.args.first()? {
+        GenericArgument::Type(item_ty) => Some(item_ty.clone()),
+        _ => None,
+    }
+}
+
 fn reactive_default_transform(
     field: &FieldSpec,
     scope: &syn::Lifetime,
@@ -1157,8 +1253,44 @@ fn parse_field_attrs(attrs: &[Attribute]) -> syn::Result<FieldAttrs> {
                             result.default_value = Some(quote! { #expr });
                         }
                         Ok(())
+                    } else if meta.path.is_ident("name") {
+                        if result.chain_method.is_some() {
+                            return Err(meta.error("duplicate chain method name"));
+                        }
+                        let value = meta.value()?.parse::<syn::Expr>()?;
+                        let method = match value {
+                            syn::Expr::Path(path)
+                                if path.qself.is_none() && path.path.segments.len() == 1 =>
+                            {
+                                path.path.segments.first().unwrap().ident.clone()
+                            }
+                            syn::Expr::Lit(expr) => match expr.lit {
+                                syn::Lit::Str(value) => syn::parse_str::<Ident>(&value.value())
+                                    .map_err(|_| {
+                                        meta.error("chain method name must be a valid identifier")
+                                    })?,
+                                _ => {
+                                    return Err(meta.error(
+                                        "chain method name must be an identifier or string literal",
+                                    ));
+                                }
+                            },
+                            _ => {
+                                return Err(meta.error(
+                                    "chain method name must be an identifier or string literal",
+                                ));
+                            }
+                        };
+                        result.chain_method = Some(method);
+                        Ok(())
+                    } else if meta.path.is_ident("each") {
+                        if result.chain_each {
+                            return Err(meta.error("duplicate `each` chain option"));
+                        }
+                        result.chain_each = true;
+                        Ok(())
                     } else {
-                        Err(meta.error("expected `default`"))
+                        Err(meta.error("expected `default`, `name`, or `each`"))
                     }
                 })?;
             }

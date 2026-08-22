@@ -138,6 +138,8 @@ pub fn generate_component(
             ));
         }
 
+        // PropsBuilder owns field-level chain parsing; preserve nested options such as
+        // `#[chain(name = ...)]` and `#[chain(each)]` on the generated Props field.
         field_defs.push(quote! {
             #(#attrs)*
             pub #param_name: #ty

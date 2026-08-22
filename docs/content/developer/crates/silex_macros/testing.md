@@ -69,6 +69,7 @@ zola --root docs check
 - 修改 `#[component]` 签名规则时，覆盖缺少/重复 `#[ctx]`、receiver、保留参数名、
   旧 injection、generic 和 fallible builder。
 - 修改 Props 字段属性时，覆盖 required setter 顺序、重复 setter、默认表达式、
+  显式链式方法名、`#[chain(each)]` 的 Vec 单元素收集、普通 Vec 完整值 setter、
   `Into`、`render_fn` 参数约束、reactive input 和 owner scope escape。
 - 修改 `PropsBuilder` codegen 时，确认 builder 的 `PropMissing`/`PropFixed` 状态、
   product 的 `View` 实现、pending attributes 和 error reporter 传递仍然一致。
@@ -99,6 +100,11 @@ zola --root docs check
 
 - trybuild 固定的是编译期 API 和诊断；它不能证明 browser DOM、stylesheet 注入或
   owner cleanup 的运行时顺序。
+- `pass_component_chain_naming_and_vec.rs` 固定链式 API 的三个边界：显式命名必须
+  生成对应 setter，普通 Vec 接受完整值，`#[chain(each)]` Vec 接受单个元素并允许
+  重复调用。
+- `component_chain.rs` 在 native owner scope 中读取生成 product 的 Props，验证普通
+  Vec 的整体替换和 `#[chain(each)]` Vec 的调用顺序。
 - native Store 测试能验证响应式依赖选择，但不能替代跨 runtime 句柄拒绝和 DOM
   资源清理测试。
 - `crate_path` 的 `OnceLock` 只缓存当前 rustc 进程内的路径解析结果；这属于宏
