@@ -1,7 +1,8 @@
 #![cfg(target_arch = "wasm32")]
 
 use silex_core::{
-    ErrorHandlerToken, ErrorReporter, OwnerAccess, OwnerHandle, Runtime, SilexError, SilexErrorKind,
+    ErrorHandlerToken, ErrorReporter, OwnerAccess, OwnerHandle, Runtime, RxGet, SilexError,
+    SilexErrorKind,
 };
 use silex_dom::{
     attribute::{AttrOp, AttributeBuilder},

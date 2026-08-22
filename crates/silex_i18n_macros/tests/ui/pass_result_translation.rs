@@ -1,4 +1,4 @@
-use silex_i18n::{Catalog, I18nBuilder, Locale, Runtime, t};
+use silex_i18n::{Catalog, I18nBuilder, Locale, Runtime, RxGet, t};
 use silex_i18n_macros::I18nKeys;
 
 #[derive(I18nKeys)]

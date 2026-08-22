@@ -1,4 +1,4 @@
-use silex_core::Runtime;
+use silex_core::{Runtime, RxGet};
 use wasm_bindgen_futures::spawn_local;
 
 fn main() {

@@ -1,6 +1,6 @@
 use std::{borrow::Cow, rc::Rc};
 
-use silex_core::{Rx, RxValueKind, SilexError, SilexErrorKind, SilexResult};
+use silex_core::{Rx, RxGet, RxValueKind, SilexError, SilexErrorKind, SilexResult};
 use wasm_bindgen::JsValue;
 use web_sys::Element as WebElem;
 

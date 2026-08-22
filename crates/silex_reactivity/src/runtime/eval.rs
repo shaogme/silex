@@ -95,20 +95,25 @@ enum EvaluationMode {
     Deferred,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum ReadTracking {
+    Tracked,
+    Untracked,
+}
+
 pub(crate) fn prepare_read<'scope>(
     state: &ScopeState<'scope>,
     id: NodeId,
-    track: bool,
+    tracking: ReadTracking,
 ) -> ReactiveResult<()> {
-    let tracking = if track {
-        Some(
+    let tracking = match tracking {
+        ReadTracking::Tracked => Some(
             state
                 .try_borrow()
                 .map_err(|_| ReactiveError::BorrowConflict)?
                 .preflight_track_read(id)?,
-        )
-    } else {
-        None
+        ),
+        ReadTracking::Untracked => None,
     };
     let (settled, running) = {
         let state_ref = state
@@ -137,25 +142,23 @@ pub(crate) fn prepare_read<'scope>(
             .map_err(|_| ReactiveError::BorrowConflict)?
             .track_read(id, &ctx)?;
     }
-    flush_if_idle(state)?;
     Ok(())
 }
 
 pub(crate) fn prepare_fallible_read<'scope>(
     state: &ScopeState<'scope>,
     id: NodeId,
-    track: bool,
+    tracking: ReadTracking,
 ) -> EvaluationResult<'scope, ()> {
-    let tracking = if track {
-        Some(
+    let tracking = match tracking {
+        ReadTracking::Tracked => Some(
             state
                 .try_borrow()
                 .map_err(|_| EvaluationError::Runtime(ReactiveError::BorrowConflict))?
                 .preflight_track_read(id)
                 .map_err(EvaluationError::Runtime)?,
-        )
-    } else {
-        None
+        ),
+        ReadTracking::Untracked => None,
     };
     let (settled, running) = {
         let state_ref = state
@@ -186,7 +189,6 @@ pub(crate) fn prepare_fallible_read<'scope>(
             .track_read(id, &ctx)
             .map_err(EvaluationError::Runtime)?;
     }
-    flush_if_idle(state).map_err(EvaluationError::Runtime)?;
     Ok(())
 }
 

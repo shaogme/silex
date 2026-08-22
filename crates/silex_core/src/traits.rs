@@ -1,13 +1,8 @@
 //! Lifetime-aware reactive traits.
 
 use crate::{
-    Callback, ErrorHandlerInput, NodeRef, OwnerAccess, Rx, RxInner, RxValueKind, SilexError,
-    SilexResult,
-    callback::map_callback_error,
-    reactivity::{
-        Computed, ReactiveSource, ReadSignal, RwSignal, Signal, SignalSlice, StoredValue,
-        WriteSignal,
-    },
+    Callback, ErrorHandlerInput, NodeRef, OwnerAccess, Rx, RxValueKind, SilexError, SilexResult,
+    reactivity::{Computed, ReactiveSource, ReadSignal, RwSignal, Signal, StoredValue},
 };
 use std::fmt::Debug;
 
@@ -81,9 +76,14 @@ pub trait RxValue {
     type Value: ?Sized;
 }
 
+/// Establish a dependency without borrowing or cloning the source payload.
+pub trait RxBase: RxValue {
+    fn track(&self) -> SilexResult<()>;
+}
+
 /// Closure-based tracked and untracked access. No reference can outlive the
 /// callback supplied to these methods.
-pub trait RxRead: RxValue {
+pub trait RxRead: RxBase {
     fn with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> SilexResult<U>;
 
     fn with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> SilexResult<U>;
@@ -92,57 +92,6 @@ pub trait RxRead: RxValue {
 /// Exposes the runtime provenance retained by a scoped reactive source.
 pub trait RuntimeScoped {
     fn owner_access(&self) -> OwnerAccess<'_>;
-}
-
-impl<'owner, T, M> RuntimeScoped for Rx<'owner, T, M> {
-    fn owner_access(&self) -> OwnerAccess<'_> {
-        self.owner
-    }
-}
-
-impl<'owner, T> RuntimeScoped for ReadSignal<'owner, T> {
-    fn owner_access(&self) -> OwnerAccess<'_> {
-        self.owner
-    }
-}
-
-impl<'owner, T> RuntimeScoped for WriteSignal<'owner, T> {
-    fn owner_access(&self) -> OwnerAccess<'_> {
-        self.owner
-    }
-}
-
-impl<'owner, T> RuntimeScoped for RwSignal<'owner, T> {
-    fn owner_access(&self) -> OwnerAccess<'_> {
-        self.read.owner_access()
-    }
-}
-
-impl<'owner, T> RuntimeScoped for Computed<'owner, T> {
-    fn owner_access(&self) -> OwnerAccess<'_> {
-        self.owner
-    }
-}
-
-impl<'owner, T> RuntimeScoped for StoredValue<'owner, T> {
-    fn owner_access(&self) -> OwnerAccess<'_> {
-        self.owner
-    }
-}
-
-impl<'owner, T> RuntimeScoped for Signal<'owner, T> {
-    fn owner_access(&self) -> OwnerAccess<'_> {
-        self.rx.owner_access()
-    }
-}
-
-impl<S, F, O: ?Sized> RuntimeScoped for SignalSlice<S, F, O>
-where
-    S: RuntimeScoped,
-{
-    fn owner_access(&self) -> OwnerAccess<'_> {
-        self.source.owner_access()
-    }
 }
 
 impl<'owner, T: 'owner> RxFrom<'owner> for ReadSignal<'owner, T> {
@@ -562,229 +511,6 @@ pub trait RxWrite: RxValue {
         move || self.update(f.clone())
     }
 }
-
-impl<'owner, T: 'owner> RxValue for ReadSignal<'owner, T> {
-    type Value = T;
-}
-
-impl<'owner, T: 'owner> RxRead for ReadSignal<'owner, T> {
-    fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.inner.with(f).map_err(SilexError::fatal)
-    }
-
-    fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.inner.with_untracked(f).map_err(SilexError::fatal)
-    }
-}
-
-impl<'owner, T: 'owner> RxValue for WriteSignal<'owner, T> {
-    type Value = T;
-}
-
-impl<'owner, T: 'owner> RxWrite for WriteSignal<'owner, T> {
-    fn rx_update_untracked<U>(&self, f: impl FnOnce(&mut T) -> U) -> SilexResult<U> {
-        self.inner.update(f).map_err(SilexError::fatal)
-    }
-
-    fn rx_notify(&self) -> SilexResult<()> {
-        self.inner.notify().map_err(SilexError::fatal)
-    }
-}
-
-impl<'owner, T: 'owner> RxValue for RwSignal<'owner, T> {
-    type Value = T;
-}
-
-impl<'owner, T: 'owner> RxRead for RwSignal<'owner, T> {
-    fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.read.with(f)
-    }
-
-    fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.read.with_untracked(f)
-    }
-}
-
-impl<'owner, T: 'owner> RxWrite for RwSignal<'owner, T> {
-    fn rx_update_untracked<U>(&self, f: impl FnOnce(&mut T) -> U) -> SilexResult<U> {
-        self.write.rx_update_untracked(f)
-    }
-
-    fn rx_notify(&self) -> SilexResult<()> {
-        self.write.rx_notify()
-    }
-}
-
-impl<'owner, T: 'owner> RxValue for Signal<'owner, T> {
-    type Value = T;
-}
-
-impl<'owner, T: 'owner> RxRead for Signal<'owner, T> {
-    fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.rx.with(f)
-    }
-
-    fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.rx.with_untracked(f)
-    }
-}
-
-impl<'owner, T: 'owner> RxValue for Rx<'owner, T, RxValueKind> {
-    type Value = T;
-}
-
-impl<'owner, T: 'owner> RxRead for Rx<'owner, T, RxValueKind> {
-    fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        match &self.inner {
-            RxInner::Signal(signal) => signal.with(f).map_err(SilexError::fatal),
-            RxInner::Computed(computed) => computed.with(f).map_err(map_callback_error),
-            RxInner::Stored(stored) => stored.with(f).map_err(SilexError::fatal),
-        }
-    }
-
-    fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        match &self.inner {
-            RxInner::Signal(signal) => signal.with_untracked(f).map_err(SilexError::fatal),
-            RxInner::Computed(computed) => computed.with_untracked(f).map_err(map_callback_error),
-            RxInner::Stored(stored) => stored.with(f).map_err(SilexError::fatal),
-        }
-    }
-}
-
-impl<'owner, T: 'owner> RxValue for StoredValue<'owner, T> {
-    type Value = T;
-}
-
-impl<'owner, T: 'owner> RxRead for StoredValue<'owner, T> {
-    fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.inner.with(f).map_err(SilexError::fatal)
-    }
-
-    fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.inner.with(f).map_err(SilexError::fatal)
-    }
-}
-
-impl<'owner, T: 'owner> RxWrite for StoredValue<'owner, T> {
-    fn rx_update_untracked<U>(&self, f: impl FnOnce(&mut T) -> U) -> SilexResult<U> {
-        self.inner.update(f).map_err(SilexError::fatal)
-    }
-
-    fn rx_notify(&self) -> SilexResult<()> {
-        Ok(())
-    }
-}
-
-impl<'owner, T: 'owner> RxValue for Computed<'owner, T> {
-    type Value = T;
-}
-
-macro_rules! impl_primitive_rx_value {
-    ($($ty:ty),* $(,)?) => {
-        $(
-            impl RxValue for $ty {
-                type Value = Self;
-            }
-        )*
-    };
-}
-
-impl_primitive_rx_value!(
-    (),
-    bool,
-    char,
-    u8,
-    u16,
-    u32,
-    u64,
-    u128,
-    usize,
-    i8,
-    i16,
-    i32,
-    i64,
-    i128,
-    isize,
-    f32,
-    f64,
-    String,
-);
-
-impl RxValue for &str {
-    type Value = String;
-}
-
-impl<'owner, T: 'owner> RxRead for Computed<'owner, T> {
-    fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.inner.with(f).map_err(map_callback_error)
-    }
-
-    fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.inner.with_untracked(f).map_err(map_callback_error)
-    }
-}
-
-impl<T> RxValue for (T,)
-where
-    T: RxValue,
-    T::Value: Sized + RxData,
-{
-    type Value = (T::Value,);
-}
-
-macro_rules! impl_tuple_rx_value {
-    ($($name:ident),+ $(,)?) => {
-        impl<$($name),+> RxValue for ($($name,)+)
-        where
-            $($name: RxValue, $name::Value: Sized + RxData),+
-        {
-            type Value = ($($name::Value,)+);
-        }
-    };
-}
-
-impl_tuple_rx_value!(A, B);
-impl_tuple_rx_value!(A, B, C);
-impl_tuple_rx_value!(A, B, C, D);
-impl_tuple_rx_value!(A, B, C, D, E);
-impl_tuple_rx_value!(A, B, C, D, E, F);
-
-/// Aggregate dependency tracking and clone-backed reads for reactive tuples.
-///
-/// Tracking only borrows each member briefly and therefore does not require the
-/// member values to implement [`Clone`]. Aggregate reads materialize an owned
-/// tuple before invoking the callback, so those implementations intentionally
-/// require cloneable member values. [`RxGet`] is provided automatically by its
-/// blanket implementation; tuples are not [`RxWrite`] values because updating
-/// multiple independent sources cannot provide a transactional mutation.
-macro_rules! impl_tuple_rx_traits {
-    ($($name:ident : $index:tt),+ $(,)?) => {
-        impl<$($name),+> RxRead for ($($name,)+)
-        where
-            $($name: RxRead, $name::Value: Sized + Clone + RxData),+
-        {
-            fn with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> SilexResult<U> {
-                let value = ($(self.$index.with(|value| (*value).clone())?,)+);
-                Ok(f(&value))
-            }
-
-            fn with_untracked<U>(
-                &self,
-                f: impl FnOnce(&Self::Value) -> U,
-            ) -> SilexResult<U> {
-                let value = ($(self.$index.with_untracked(|value| (*value).clone())?,)+);
-                Ok(f(&value))
-            }
-        }
-    };
-}
-
-impl_tuple_rx_traits!(A: 0);
-impl_tuple_rx_traits!(A: 0, B: 1);
-impl_tuple_rx_traits!(A: 0, B: 1, C: 2);
-impl_tuple_rx_traits!(A: 0, B: 1, C: 2, D: 3);
-impl_tuple_rx_traits!(A: 0, B: 1, C: 2, D: 3, E: 4);
-impl_tuple_rx_traits!(A: 0, B: 1, C: 2, D: 3, E: 4, F: 5);
 
 /// Reactive helpers for `Option<T>` values.
 pub trait RxOptionExt<T>: RxRead<Value = Option<T>> + Clone {

@@ -10,8 +10,8 @@ use web_sys::{Event, EventSource as JsEventSource, MessageEvent};
 
 use silex_core::{
     CallbackInvokeError, CompletionSender, ErrorHandlerInput, ErrorReporter, OwnerAccess,
-    ReactiveError, ReadSignal, RwSignal, Rx, SilexError, SilexErrorKind, SilexResult, StoredValue,
-    WriteSignal, unwind_safe,
+    ReactiveError, ReadSignal, RwSignal, Rx, RxGet, RxRead, SilexError, SilexErrorKind,
+    SilexResult, StoredValue, WriteSignal, unwind_safe,
 };
 
 use crate::{

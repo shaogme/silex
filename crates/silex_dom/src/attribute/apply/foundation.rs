@@ -1,7 +1,7 @@
 use std::{borrow::Cow, cell::Cell, rc::Rc};
 
 use silex_core::{
-    EffectPhase, ReactiveError, Rx, RxValueKind, SilexError, SilexErrorKind, SilexResult,
+    EffectPhase, ReactiveError, Rx, RxGet, RxValueKind, SilexError, SilexErrorKind, SilexResult,
 };
 use wasm_bindgen::JsValue;
 use web_sys::Element as WebElem;

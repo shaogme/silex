@@ -1,8 +1,9 @@
 use crate::callback::report_completion_error;
 use crate::{
     CompletionSender, ErrorHandlerInput, ErrorReporter, OwnerAccess, SilexError, SilexErrorKind,
+    SilexResult,
     reactivity::{ReadSignal, StoredValue, WriteSignal},
-    traits::{RxCloneData, RxData, RxError, RxRead, RxValue},
+    traits::{RxBase, RxCloneData, RxData, RxError, RxRead, RxValue},
     unwind_safe,
 };
 use std::{cell::Cell, future::Future, pin::Pin, rc::Rc};
@@ -284,6 +285,17 @@ where
     E: RxError + 'owner,
 {
     type Value = Option<T>;
+}
+
+impl<'owner, Arg, T, E> RxBase for Mutation<'owner, Arg, T, E>
+where
+    Arg: RxData + 'owner,
+    T: RxData + 'owner,
+    E: RxError + 'owner,
+{
+    fn track(&self) -> SilexResult<()> {
+        self.state.track()
+    }
 }
 
 impl<'owner, Arg, T, E> RxRead for Mutation<'owner, Arg, T, E>

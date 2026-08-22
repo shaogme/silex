@@ -5,7 +5,7 @@ use std::{
 };
 
 use silex_core::{
-    ErrorHandlerToken, ErrorReporter, HandlerLease, ReactiveError, SilexContextProvider,
+    ErrorHandlerToken, ErrorReporter, HandlerLease, ReactiveError, RxGet, SilexContextProvider,
     SilexError, SilexErrorKind, SilexResult, WriteSignal,
 };
 use silex_dom::prelude::*;

@@ -1,6 +1,6 @@
 use silex_core::{
     EffectPhase, ErrorHandlerToken, OwnerAccess, ReadSignal, Runtime, SilexError, SilexResult,
-    batch_read, batch_read_untracked,
+    batch_read, batch_read_untracked, traits::RxGet,
 };
 use std::cell::Cell;
 use std::rc::Rc;

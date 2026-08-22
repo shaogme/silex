@@ -1,6 +1,7 @@
 use ref_str::LocalStaticRefStr;
 use silex_core::{
-    EffectPhase, ErrorHandlerToken, ErrorReporter, OwnerAccess, ReactiveError, Runtime, SilexResult,
+    EffectPhase, ErrorHandlerToken, ErrorReporter, OwnerAccess, ReactiveError, Runtime, RxGet,
+    SilexResult,
 };
 use silex_persist::{
     BackendEvent, BackendEventSink, BackendSubscribeError, BackendSubscription, DecodePolicy,

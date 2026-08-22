@@ -4,7 +4,7 @@ use crate::{
     ErrorHandlerInput, OwnerAccess, OwnerChild, ReactiveError, Rx, SilexError, SilexErrorKind,
     SilexResult,
     reactivity::{EffectPhase, ReadSignal, RwSignal, WriteSignal},
-    traits::{RuntimeScoped, RxCloneData, RxData, RxError, RxGet, RxRead, RxValue},
+    traits::{RuntimeScoped, RxBase, RxCloneData, RxData, RxError, RxGet, RxRead, RxValue},
     unwind_safe,
 };
 use std::{cell::Cell, future::Future, rc::Rc};
@@ -308,7 +308,7 @@ where
             EffectPhase::Normal,
             move || -> SilexResult<()> {
                 let input = source_for_effect.get()?;
-                let _ = trigger_for_effect.get()?;
+                trigger_for_effect.track()?;
                 let next_state = state_for_effect.with_untracked(|state| {
                     state
                         .as_option()
@@ -427,6 +427,12 @@ impl<'owner> Resource<'owner, (), SilexError> {
 
 impl<'owner, T: RxData + 'owner, E: RxError + 'owner> RxValue for Resource<'owner, T, E> {
     type Value = Option<T>;
+}
+
+impl<'owner, T: RxData + 'owner, E: RxError + 'owner> RxBase for Resource<'owner, T, E> {
+    fn track(&self) -> SilexResult<()> {
+        self.state.track()
+    }
 }
 
 impl<'owner, T: RxCloneData + 'owner, E: RxError + 'owner> RxRead for Resource<'owner, T, E> {

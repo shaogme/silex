@@ -2,8 +2,8 @@
 
 use gloo_timers::future::TimeoutFuture;
 use silex_core::{
-    EffectPhase, ErrorHandlerToken, ErrorReporter, OwnerAccess, OwnerHandle, Runtime, SilexContext,
-    SilexResult,
+    EffectPhase, ErrorHandlerToken, ErrorReporter, OwnerAccess, OwnerHandle, Runtime, RxGet,
+    SilexContext, SilexResult,
 };
 use silex_dom::view::{
     AnyView, IndexedListView, MountContext, MountInstance, MountOwnerToken, View,

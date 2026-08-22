@@ -1,5 +1,5 @@
 use silex_core::{
-    ErrorReporter, ReadSignal, SilexError, SilexResult, WriteSignal,
+    ErrorReporter, ReadSignal, RxGet, SilexError, SilexResult, WriteSignal,
 };
 use silex_dom::{
     attribute::GlobalEventAttributes,

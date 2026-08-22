@@ -1,6 +1,9 @@
 use crate::{
-    ErrorHandlerInput, OwnerAccess, Rx, RxValueKind, SilexError, SilexResult,
+    ErrorHandlerInput, OwnerAccess, Rx, RxValueKind, SilexError, SilexResult, traits::RxRead,
+};
+use crate::{
     callback::map_callback_error,
+    traits::{RuntimeScoped, RxBase, RxValue},
 };
 use std::fmt;
 
@@ -40,28 +43,6 @@ impl<'owner, T: 'owner> Computed<'owner, T> {
         Self { inner, owner }
     }
 
-    pub fn get(&self) -> SilexResult<T>
-    where
-        T: Clone,
-    {
-        self.inner.get().map_err(map_callback_error)
-    }
-
-    pub fn get_untracked(&self) -> SilexResult<T>
-    where
-        T: Clone,
-    {
-        self.inner.get_untracked().map_err(map_callback_error)
-    }
-
-    pub fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.inner.with(f).map_err(map_callback_error)
-    }
-
-    pub fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.inner.with_untracked(f).map_err(map_callback_error)
-    }
-
     pub fn map<U, F, H>(self, f: F, error_handler: H) -> SilexResult<Rx<'owner, U>>
     where
         U: 'owner,
@@ -76,5 +57,31 @@ impl<'owner, T: 'owner> Computed<'owner, T> {
 
     pub fn into_rx(self) -> Rx<'owner, T, RxValueKind> {
         Rx::from_computed(self)
+    }
+}
+
+impl<'owner, T> RuntimeScoped for Computed<'owner, T> {
+    fn owner_access(&self) -> OwnerAccess<'_> {
+        self.owner
+    }
+}
+
+impl<'owner, T> RxValue for Computed<'owner, T> {
+    type Value = T;
+}
+
+impl<'owner, T> RxBase for Computed<'owner, T> {
+    fn track(&self) -> SilexResult<()> {
+        self.inner.track().map_err(map_callback_error)
+    }
+}
+
+impl<'owner, T> RxRead for Computed<'owner, T> {
+    fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+        self.inner.with(f).map_err(map_callback_error)
+    }
+
+    fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+        self.inner.with_untracked(f).map_err(map_callback_error)
     }
 }

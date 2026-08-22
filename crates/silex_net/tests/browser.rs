@@ -11,7 +11,7 @@ use std::{
 use gloo_timers::future::TimeoutFuture;
 use js_sys::{Array, Function, Reflect};
 use silex_core::reactivity::{MutationState, ResourceState};
-use silex_core::{ErrorHandlerToken, OwnerAccess, Runtime, TaskHandle};
+use silex_core::{ErrorHandlerToken, OwnerAccess, Runtime, RxGet, TaskHandle};
 use silex_net::{
     BrowserTransport, EventStream, EventStreamConnection, HttpMethod, HttpResponse, NetError,
     NetErrorKind, RequestBody, RequestSpec, RetryPolicy, Transport, TransportFuture, WebSocket,

@@ -4,6 +4,7 @@ use gloo_timers::future::TimeoutFuture;
 use silex_core::{
     ErrorHandlerToken, OwnerAccess, Runtime,
     reactivity::{Mutation, MutationState, Resource, ResourceState, SuspenseContext},
+    traits::RxGet,
 };
 use std::{
     cell::Cell,

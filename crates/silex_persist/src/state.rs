@@ -10,7 +10,7 @@ use silex_core::{
     ErrorHandlerInput, OwnerAccess, ReactiveError, Rx, RxGet, SilexError, SilexErrorKind,
     SilexResult, StoreField,
     reactivity::{PromotionPlan, ReactiveSource, ReadSignal, RwSignal, StoredValue},
-    traits::{RxCloneData, RxData, RxRead, RxValue, RxWrite},
+    traits::{RxBase, RxCloneData, RxData, RxRead, RxValue, RxWrite},
 };
 use silex_dom::view::{MountContext, MountInstance, OwnedTimeout, View};
 use std::rc::Rc;
@@ -238,6 +238,12 @@ where
 
 impl<'scope, T: RxData> RxValue for Persistent<'scope, T> {
     type Value = T;
+}
+
+impl<'scope, T: RxData> RxBase for Persistent<'scope, T> {
+    fn track(&self) -> SilexResult<()> {
+        self.value.track()
+    }
 }
 
 impl<'scope, T: RxData> RxRead for Persistent<'scope, T> {

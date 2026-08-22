@@ -1,4 +1,6 @@
-use silex_core::{EffectPhase, OwnerAccess, ReactiveError, Runtime, SilexError, SilexErrorKind};
+use silex_core::{
+    EffectPhase, OwnerAccess, ReactiveError, Runtime, SilexError, SilexErrorKind, traits::RxGet,
+};
 use std::{cell::Cell, rc::Rc};
 
 #[test]

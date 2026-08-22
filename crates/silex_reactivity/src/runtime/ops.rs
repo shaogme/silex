@@ -2,7 +2,7 @@
 
 use super::{
     dispose::dispose_nodes,
-    eval::{EvaluationError, flush_if_idle, prepare_fallible_read, prepare_read},
+    eval::{EvaluationError, ReadTracking, flush_if_idle, prepare_fallible_read, prepare_read},
     model::{ScopePhase, ScopeState, StoredAccessMode},
     scheduler::{
         GlobalScheduler, ObserverFrame, TargetNode, has_runtime_boundary, validate_active_scheduler,
@@ -37,6 +37,48 @@ fn value_scheduler<'scope>(
         validate_active_scheduler(&state_ref.scheduler)?;
     }
     Ok((storage, state_ref.scheduler.clone()))
+}
+
+pub(crate) struct PreparedSignalRead {
+    scheduler: SharedCell<GlobalScheduler>,
+}
+
+fn prepare_value_access<'scope, T>(
+    state: &ScopeState<'scope>,
+    id: NodeId,
+    value: TypedNodeRef<'scope, T>,
+    kind: Option<NodeKindTag>,
+    validate_runtime: bool,
+) -> ReactiveResult<SharedCell<GlobalScheduler>> {
+    let (_storage, scheduler) = value_scheduler(state, id, true, validate_runtime)?;
+    let proof = ActiveOwnerProof::from_state(state)?;
+    match kind {
+        Some(kind) => {
+            proof.restore_typed_slot(state, id, kind, value.pointer())?;
+        }
+        None => {
+            proof.restore_value_slot(state, id, value.pointer())?;
+        }
+    }
+    Ok(scheduler)
+}
+
+fn prepare_signal_read<'scope, T>(
+    state: &ScopeState<'scope>,
+    id: NodeId,
+    value: TypedNodeRef<'scope, T>,
+    tracking: ReadTracking,
+    kind: Option<NodeKindTag>,
+) -> ReactiveResult<PreparedSignalRead> {
+    prepare_read(state, id, tracking)?;
+    let scheduler = prepare_value_access(
+        state,
+        id,
+        value,
+        kind,
+        matches!(tracking, ReadTracking::Tracked),
+    )?;
+    Ok(PreparedSignalRead { scheduler })
 }
 
 fn stored_scheduler<'scope>(
@@ -169,14 +211,101 @@ pub(crate) fn with_signal<'scope, T, R>(
     state: &ScopeState<'scope>,
     id: NodeId,
     value: TypedNodeRef<'scope, T>,
-    track: bool,
     f: impl FnOnce(&T) -> R,
 ) -> ReactiveResult<R> {
-    prepare_read(state, id, track)?;
-    let (_storage, scheduler) = value_scheduler(state, id, true, track)?;
-    let result = read_typed(state, id, value, scheduler, None, false, f)?;
+    let prepared = prepare_signal_read(state, id, value, ReadTracking::Tracked, None)?;
+    let result = read_typed(state, id, value, prepared.scheduler, None, false, f)?;
     flush_if_idle(state)?;
     Ok(result)
+}
+
+pub(crate) fn with_signal_untracked<'scope, T, R>(
+    state: &ScopeState<'scope>,
+    id: NodeId,
+    value: TypedNodeRef<'scope, T>,
+    f: impl FnOnce(&T) -> R,
+) -> ReactiveResult<R> {
+    let prepared = prepare_signal_read(state, id, value, ReadTracking::Untracked, None)?;
+    let result = read_typed(state, id, value, prepared.scheduler, None, false, f)?;
+    flush_if_idle(state)?;
+    Ok(result)
+}
+
+pub(crate) fn track_signal<'scope, T>(
+    state: &ScopeState<'scope>,
+    id: NodeId,
+    value: TypedNodeRef<'scope, T>,
+) -> ReactiveResult<()> {
+    let _prepared = prepare_signal_read(state, id, value, ReadTracking::Tracked, None)?;
+    flush_if_idle(state)
+}
+
+fn map_evaluation_error<'scope, E>(
+    state: &ScopeState<'scope>,
+    id: NodeId,
+    errors: ErrorSlotRef<'scope, E>,
+    error: EvaluationError<'scope>,
+) -> CallbackInvokeError<E>
+where
+    E: 'scope,
+{
+    match error {
+        EvaluationError::Runtime(error) => CallbackInvokeError::Runtime(error),
+        EvaluationError::User => {
+            let proof = match ActiveOwnerProof::from_state(state) {
+                Ok(proof) => proof,
+                Err(error) => return CallbackInvokeError::Runtime(error),
+            };
+            let slot = match proof.restore_error_slot(state, id, errors.pointer()) {
+                Ok(slot) => slot,
+                Err(error) => return CallbackInvokeError::Runtime(error),
+            };
+            CallbackInvokeError::User(match slot.take() {
+                Ok(error) => error,
+                Err(error) => return CallbackInvokeError::Runtime(error),
+            })
+        }
+        EvaluationError::Callback(_) => {
+            CallbackInvokeError::Runtime(ReactiveError::InvariantViolation)
+        }
+        EvaluationError::Handler(error) => CallbackInvokeError::Handler(error),
+    }
+}
+
+fn prepare_fallible_signal<'scope, T, E>(
+    state: &ScopeState<'scope>,
+    id: NodeId,
+    value: TypedNodeRef<'scope, T>,
+    errors: ErrorSlotRef<'scope, E>,
+    tracking: ReadTracking,
+) -> CallbackInvokeResult<PreparedSignalRead, E>
+where
+    E: 'scope,
+{
+    prepare_fallible_read(state, id, tracking)
+        .map_err(|error| map_evaluation_error(state, id, errors, error))?;
+    let scheduler = prepare_value_access(
+        state,
+        id,
+        value,
+        Some(NodeKindTag::Computed),
+        matches!(tracking, ReadTracking::Tracked),
+    )
+    .map_err(CallbackInvokeError::Runtime)?;
+    Ok(PreparedSignalRead { scheduler })
+}
+
+pub(crate) fn track_fallible_signal<'scope, T, E>(
+    state: &ScopeState<'scope>,
+    id: NodeId,
+    value: TypedNodeRef<'scope, T>,
+    errors: ErrorSlotRef<'scope, E>,
+) -> CallbackInvokeResult<(), E>
+where
+    E: 'scope,
+{
+    let _prepared = prepare_fallible_signal(state, id, value, errors, ReadTracking::Tracked)?;
+    flush_if_idle(state).map_err(CallbackInvokeError::Runtime)
 }
 
 pub(crate) fn with_fallible_signal<'scope, T, E, R>(
@@ -184,38 +313,44 @@ pub(crate) fn with_fallible_signal<'scope, T, E, R>(
     id: NodeId,
     value: TypedNodeRef<'scope, T>,
     errors: ErrorSlotRef<'scope, E>,
-    track: bool,
     f: impl FnOnce(&T) -> Result<R, ReactiveError>,
 ) -> CallbackInvokeResult<R, E>
 where
     E: 'scope,
 {
-    if let Err(error) = prepare_fallible_read(state, id, track) {
-        return Err(match error {
-            EvaluationError::Runtime(error) => CallbackInvokeError::Runtime(error),
-            EvaluationError::User => {
-                let proof =
-                    ActiveOwnerProof::from_state(state).map_err(CallbackInvokeError::Runtime)?;
-                let slot = proof
-                    .restore_error_slot(state, id, errors.pointer())
-                    .map_err(CallbackInvokeError::Runtime)?;
-                CallbackInvokeError::User(slot.take().map_err(CallbackInvokeError::Runtime)?)
-            }
-            EvaluationError::Callback(_) => {
-                CallbackInvokeError::Runtime(ReactiveError::InvariantViolation)
-            }
-            EvaluationError::Handler(error) => CallbackInvokeError::Handler(error),
-        });
-    }
-    let (_storage, scheduler) = match value_scheduler(state, id, true, track) {
-        Ok(scheduler) => scheduler,
-        Err(error) => return Err(CallbackInvokeError::Runtime(error)),
-    };
+    let prepared = prepare_fallible_signal(state, id, value, errors, ReadTracking::Tracked)?;
     let result = match read_typed(
         state,
         id,
         value,
-        scheduler,
+        prepared.scheduler,
+        Some(NodeKindTag::Computed),
+        false,
+        f,
+    ) {
+        Ok(result) => result,
+        Err(error) => return Err(CallbackInvokeError::Runtime(error)),
+    };
+    flush_if_idle(state).map_err(CallbackInvokeError::Runtime)?;
+    result.map_err(CallbackInvokeError::Runtime)
+}
+
+pub(crate) fn with_fallible_signal_untracked<'scope, T, E, R>(
+    state: &ScopeState<'scope>,
+    id: NodeId,
+    value: TypedNodeRef<'scope, T>,
+    errors: ErrorSlotRef<'scope, E>,
+    f: impl FnOnce(&T) -> Result<R, ReactiveError>,
+) -> CallbackInvokeResult<R, E>
+where
+    E: 'scope,
+{
+    let prepared = prepare_fallible_signal(state, id, value, errors, ReadTracking::Untracked)?;
+    let result = match read_typed(
+        state,
+        id,
+        value,
+        prepared.scheduler,
         Some(NodeKindTag::Computed),
         false,
         f,
@@ -321,6 +456,24 @@ pub(crate) fn with_stored<'scope, T, R>(
         flush_if_idle(state)?;
     }
     Ok(result)
+}
+
+pub(crate) fn track_stored<'scope, T>(
+    state: &ScopeState<'scope>,
+    id: NodeId,
+    value: TypedNodeRef<'scope, T>,
+) -> ReactiveResult<()> {
+    let (_storage, _scheduler, mode) = stored_scheduler(state, id)?;
+    if mode == StoredAccessMode::RunningCleanup {
+        restore_cleanup_stored_slot(state, id, value.pointer())?;
+    } else {
+        let proof = ActiveOwnerProof::from_state(state)?;
+        proof.restore_typed_slot(state, id, NodeKindTag::Stored, value.pointer())?;
+    }
+    if mode == StoredAccessMode::Active {
+        flush_if_idle(state)?;
+    }
+    Ok(())
 }
 
 pub(crate) fn update_stored<'scope, T, R>(

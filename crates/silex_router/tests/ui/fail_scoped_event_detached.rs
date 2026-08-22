@@ -1,4 +1,4 @@
-use silex_core::Runtime;
+use silex_core::{Runtime, RxGet};
 use silex_dom::helpers::detached::window_event_listener_untyped;
 
 fn main() {

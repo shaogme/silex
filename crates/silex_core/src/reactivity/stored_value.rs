@@ -1,4 +1,7 @@
-use crate::{OwnerAccess, Rx, RxValueKind, SilexError, SilexResult};
+use crate::{
+    OwnerAccess, Rx, RxValueKind, SilexError, SilexResult,
+    traits::{RuntimeScoped, RxBase, RxRead, RxValue, RxWrite},
+};
 use std::fmt;
 
 /// A non-reactive value owned by a scope.
@@ -47,10 +50,6 @@ impl<'scope, T: 'scope> StoredValue<'scope, T> {
         Self { inner, owner }
     }
 
-    pub fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.inner.with(f).map_err(SilexError::fatal)
-    }
-
     pub fn update<U>(&self, f: impl FnOnce(&mut T) -> U) -> SilexResult<U> {
         self.inner.update(f).map_err(SilexError::fatal)
     }
@@ -61,5 +60,41 @@ impl<'scope, T: 'scope> StoredValue<'scope, T> {
 
     pub fn into_rx(self) -> Rx<'scope, T, RxValueKind> {
         Rx::from_stored(self)
+    }
+}
+
+impl<'scope, T> RuntimeScoped for StoredValue<'scope, T> {
+    fn owner_access(&self) -> OwnerAccess<'_> {
+        self.owner
+    }
+}
+
+impl<'scope, T> RxValue for StoredValue<'scope, T> {
+    type Value = T;
+}
+
+impl<'scope, T> RxBase for StoredValue<'scope, T> {
+    fn track(&self) -> SilexResult<()> {
+        self.inner.track().map_err(SilexError::fatal)
+    }
+}
+
+impl<'scope, T> RxRead for StoredValue<'scope, T> {
+    fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+        self.inner.with(f).map_err(SilexError::fatal)
+    }
+
+    fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+        self.inner.with_untracked(f).map_err(SilexError::fatal)
+    }
+}
+
+impl<'scope, T> RxWrite for StoredValue<'scope, T> {
+    fn rx_update_untracked<U>(&self, f: impl FnOnce(&mut T) -> U) -> SilexResult<U> {
+        self.inner.update(f).map_err(SilexError::fatal)
+    }
+
+    fn rx_notify(&self) -> SilexResult<()> {
+        Ok(())
     }
 }

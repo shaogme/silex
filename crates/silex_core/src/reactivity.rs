@@ -6,6 +6,7 @@ mod resource;
 mod signal;
 mod slice;
 mod stored_value;
+mod trait_impls;
 
 pub use effect::EffectHandle;
 pub use memo::Computed;

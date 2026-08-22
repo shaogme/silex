@@ -8,7 +8,7 @@ use crate::{
         WatchOptions, WriteSignal,
     },
     task,
-    traits::{RuntimeScoped, RxData},
+    traits::{RuntimeScoped, RxData, RxGet},
 };
 #[cfg(feature = "test-support")]
 use silex_reactivity::RuntimeSnapshot;

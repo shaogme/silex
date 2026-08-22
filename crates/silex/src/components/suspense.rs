@@ -1,4 +1,4 @@
-use silex_core::reactivity::SuspenseContext;
+use silex_core::{RxRead, reactivity::SuspenseContext};
 use silex_dom::prelude::*;
 use silex_html::div;
 use silex_macros::component;

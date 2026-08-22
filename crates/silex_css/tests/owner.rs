@@ -1,7 +1,7 @@
 #![cfg(target_arch = "wasm32")]
 
 use js_sys::{Array, Reflect};
-use silex_core::{ErrorHandlerToken, OwnerAccess, Runtime, SilexContext};
+use silex_core::{ErrorHandlerToken, OwnerAccess, Runtime, RxGet, SilexContext};
 use silex_css::{
     CssPart, DynamicCss, IntoCssReactive,
     prelude::{

@@ -5,7 +5,8 @@ use crate::{
 #[cfg(feature = "browser")]
 use silex_core::EffectHandle;
 use silex_core::{
-    EffectPhase, ErrorReporter, OwnerAccess, ReactiveError, Rx, SilexError, SilexResult,
+    EffectPhase, ErrorReporter, OwnerAccess, ReactiveError, Rx, RxGet, RxRead, SilexError,
+    SilexResult,
     reactivity::{ReadSignal, Resource, ResourceState, RwSignal, StoredValue, SuspenseContext},
 };
 use std::{
@@ -18,9 +19,6 @@ use std::{
 
 #[cfg(feature = "persist")]
 use silex_persist::Persistent;
-
-#[cfg(feature = "persist")]
-use silex_core::traits::RxGet;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum MissingKeyPolicy {

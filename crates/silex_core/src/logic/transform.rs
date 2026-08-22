@@ -1,5 +1,7 @@
 use crate::{
-    ErrorHandlerInput, OwnerAccess, Rx, SilexResult, reactivity::ReactiveSource, traits::RxRead,
+    ErrorHandlerInput, OwnerAccess, Rx, SilexResult,
+    reactivity::ReactiveSource,
+    traits::{RxGet, RxRead},
 };
 
 /// Create a typed computed node in an explicit owner.

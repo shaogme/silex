@@ -1,4 +1,4 @@
-use silex_core::Runtime;
+use silex_core::{Runtime, RxGet};
 use silex_net::{EventStream, WebSocket};
 
 fn main() {

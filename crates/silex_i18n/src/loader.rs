@@ -1,6 +1,6 @@
 use crate::{Catalog, I18nError, Locale};
 use silex_core::{
-    SilexResult,
+    RxRead, SilexResult,
     reactivity::{ReadSignal, Resource, ResourceState, StoredValue},
 };
 use std::{cell::Cell, fmt::Debug};

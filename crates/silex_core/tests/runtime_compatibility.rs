@@ -1,7 +1,7 @@
 #[cfg(feature = "test-support")]
 use silex_core::reactivity::{ReadSignal, Resource, SuspenseContext};
 #[cfg(feature = "test-support")]
-use silex_core::traits::{RxRead, RxValue};
+use silex_core::traits::{RxBase, RxGet, RxRead, RxValue};
 use silex_core::{
     EffectPhase, ErrorHandlerToken, OwnerAccess, ReactiveError, Runtime, SilexError, SilexErrorKind,
 };
@@ -19,6 +19,15 @@ struct FailingSource<'owner> {
 #[cfg(feature = "test-support")]
 impl<'owner> RxValue for FailingSource<'owner> {
     type Value = u32;
+}
+
+#[cfg(feature = "test-support")]
+impl RxBase for FailingSource<'_> {
+    fn track(&self) -> silex_core::SilexResult<()> {
+        Err(SilexError::fatal(SilexErrorKind::Framework(
+            "test source failure".to_string(),
+        )))
+    }
 }
 
 #[cfg(feature = "test-support")]

@@ -1,4 +1,6 @@
-use silex_core::{EffectPhase, ErrorHandlerToken, OwnerAccess, Runtime, WatchOptions};
+use silex_core::{
+    EffectPhase, ErrorHandlerToken, OwnerAccess, Runtime, WatchOptions, traits::RxGet,
+};
 use std::{cell::RefCell, rc::Rc};
 
 fn handler<'owner>(owner: OwnerAccess<'owner>) -> ErrorHandlerToken<'owner> {

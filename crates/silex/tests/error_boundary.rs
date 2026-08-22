@@ -4,8 +4,8 @@ use std::{cell::Cell, rc::Rc};
 
 use silex::components::ErrorBoundary;
 use silex_core::{
-    EffectPhase, ErrorHandlerToken, ErrorReporter, OwnerAccess, ReadSignal, Runtime, SilexContext,
-    SilexError, SilexErrorKind, SilexResult,
+    EffectPhase, ErrorHandlerToken, ErrorReporter, OwnerAccess, ReadSignal, Runtime, RxGet,
+    SilexContext, SilexError, SilexErrorKind, SilexResult,
 };
 use silex_dom::document;
 use silex_dom::view::{MountContext, MountInstance, MountOwnerToken, View};

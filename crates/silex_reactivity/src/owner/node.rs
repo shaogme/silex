@@ -170,19 +170,26 @@ impl<'scope, T: 'scope, E: 'scope> Computed<'scope, T, E> {
             self.handle.raw(),
             self.value,
             self.errors,
-            true,
             |value| Ok(f(value)),
         )
     }
 
     pub fn with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> CallbackInvokeResult<R, E> {
-        runtime::with_fallible_signal(
+        runtime::with_fallible_signal_untracked(
             &self.handle.state(),
             self.handle.raw(),
             self.value,
             self.errors,
-            false,
             |value| Ok(f(value)),
+        )
+    }
+
+    pub fn track(&self) -> CallbackInvokeResult<(), E> {
+        runtime::track_fallible_signal(
+            &self.handle.state(),
+            self.handle.raw(),
+            self.value,
+            self.errors,
         )
     }
 }
@@ -275,40 +282,26 @@ impl<'scope, T: 'scope> ReadSignal<'scope, T> {
     where
         T: Clone,
     {
-        runtime::with_signal(
-            &self.handle.state(),
-            self.handle.raw(),
-            self.value,
-            true,
-            Clone::clone,
-        )
+        self.with(Clone::clone)
     }
 
     pub fn get_untracked(&self) -> ReactiveResult<T>
     where
         T: Clone,
     {
-        runtime::with_signal(
-            &self.handle.state(),
-            self.handle.raw(),
-            self.value,
-            false,
-            Clone::clone,
-        )
+        self.with_untracked(Clone::clone)
     }
 
     pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
-        runtime::with_signal(&self.handle.state(), self.handle.raw(), self.value, true, f)
+        runtime::with_signal(&self.handle.state(), self.handle.raw(), self.value, f)
     }
 
     pub fn with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
-        runtime::with_signal(
-            &self.handle.state(),
-            self.handle.raw(),
-            self.value,
-            false,
-            f,
-        )
+        runtime::with_signal_untracked(&self.handle.state(), self.handle.raw(), self.value, f)
+    }
+
+    pub fn track(&self) -> ReactiveResult<()> {
+        runtime::track_signal(&self.handle.state(), self.handle.raw(), self.value)
     }
 }
 
@@ -373,6 +366,10 @@ impl<'scope, T: 'scope> RwSignal<'scope, T> {
         self.read.get_untracked()
     }
 
+    pub fn track(&self) -> ReactiveResult<()> {
+        self.read.track()
+    }
+
     pub fn set(&self, value: T) -> ReactiveResult<()> {
         self.write.set(value)
     }
@@ -425,6 +422,14 @@ impl<'scope, T> Clone for StoredValue<'scope, T> {
 impl<'scope, T: 'scope> StoredValue<'scope, T> {
     pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
         runtime::with_stored(&self.handle.state(), self.handle.raw(), self.value, f)
+    }
+
+    pub fn with_untracked<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
+        self.with(f)
+    }
+
+    pub fn track(&self) -> ReactiveResult<()> {
+        runtime::track_stored(&self.handle.state(), self.handle.raw(), self.value)
     }
 
     pub fn update<R>(&self, f: impl FnOnce(&mut T) -> R) -> ReactiveResult<R> {

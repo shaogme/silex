@@ -21,6 +21,7 @@ impl<'scope, T> StoreField<'scope, T> for RwSignal<'scope, T> where T: 'scope {}
 mod tests {
     use super::*;
     use crate::Runtime;
+    use crate::traits::RxGet;
 
     fn assert_store_field<'scope, T, F>(_: F)
     where

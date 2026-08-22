@@ -9,7 +9,9 @@ use crate::{
         },
     },
 };
-use silex_core::{EffectPhase, ErrorReporter, Rx, SilexContextProvider, SilexError, SilexResult};
+use silex_core::{
+    EffectPhase, ErrorReporter, Rx, RxGet, SilexContextProvider, SilexError, SilexResult,
+};
 use silex_dom::attribute::{
     ApplyTarget, ApplyToDom, IntoStorable, ReactiveBinding, ReactiveBindingContext,
     ReactiveBindingPlan, ReactiveBindingTarget,
@@ -615,7 +617,7 @@ mod tests {
     use super::*;
     use crate::layers;
     use crate::types::{hex, px};
-    use silex_core::{ErrorHandlerToken, OwnerAccess, Runtime, SilexContext};
+    use silex_core::{ErrorHandlerToken, OwnerAccess, Runtime, RxGet, SilexContext};
 
     fn discard_test_errors<'scope>(owner: OwnerAccess<'scope>) -> ErrorHandlerToken<'scope> {
         owner

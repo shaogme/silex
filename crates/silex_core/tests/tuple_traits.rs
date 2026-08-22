@@ -1,8 +1,10 @@
 use silex_core::{
-    EffectPhase, ErrorHandlerToken, OwnerAccess, Runtime, RxGet, RxRead, SilexResult,
+    EffectPhase, ErrorHandlerToken, OwnerAccess, Runtime, RxBase, RxGet, RxRead, SilexResult,
 };
 use std::cell::Cell;
 use std::rc::Rc;
+
+struct NonClone(u32);
 
 fn handler<'owner>(owner: OwnerAccess<'owner>) -> ErrorHandlerToken<'owner> {
     owner
@@ -89,6 +91,39 @@ fn tuple_untracked_get_does_not_subscribe() {
             assert_eq!(runs.get(), 1);
             set_first.set(3).expect("first signal should update");
             assert_eq!(runs.get(), 1);
+        })
+        .expect("runtime child should initialize");
+}
+
+#[test]
+fn base_track_accepts_non_clone_sources() {
+    let mut runtime = Runtime::new();
+    let runs = Rc::new(Cell::new(0));
+
+    runtime
+        .with_transient(|owner| {
+            let (source, set_source) = owner.signal(NonClone(1)).expect("source signal");
+            let sources = (source, source);
+            sources.track().expect("tuple tracking should succeed");
+
+            let runs_in_effect = runs.clone();
+            owner
+                .effect(
+                    EffectPhase::Normal,
+                    move || {
+                        source.track()?;
+                        runs_in_effect.set(runs_in_effect.get() + 1);
+                        Ok(())
+                    },
+                    handler(owner),
+                )
+                .expect("tracking effect should initialize");
+
+            assert_eq!(runs.get(), 1);
+            set_source
+                .update(|value| value.0 += 1)
+                .expect("source should update");
+            assert_eq!(runs.get(), 2);
         })
         .expect("runtime child should initialize");
 }

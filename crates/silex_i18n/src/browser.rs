@@ -1,5 +1,5 @@
 use crate::{I18nStore, Locale};
-use silex_core::{EffectHandle, EffectPhase, SilexError, SilexResult};
+use silex_core::{EffectHandle, EffectPhase, RxGet, SilexError, SilexResult};
 use std::{cell::Cell, rc::Rc};
 use wasm_bindgen::JsValue;
 

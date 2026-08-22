@@ -1,3 +1,4 @@
+use silex_core::RxGet;
 use silex_i18n::{Catalog, I18nBuilder, I18nError, Runtime};
 
 fn main() {

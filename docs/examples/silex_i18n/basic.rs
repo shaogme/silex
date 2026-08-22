@@ -1,4 +1,4 @@
-use silex_core::{ErrorHandlerToken, OwnerAccess, Runtime, SilexResult};
+use silex_core::{ErrorHandlerToken, OwnerAccess, Runtime, RxGet, SilexResult};
 use silex_i18n::{Argument, Catalog, CatalogValue, I18nBuilder, Locale, t};
 use std::error::Error;
 

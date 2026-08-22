@@ -1,3 +1,4 @@
+use silex_core::RxGet;
 use silex_i18n::{I18nBuilder, Runtime, t};
 
 fn main() {

@@ -1,3 +1,4 @@
+use silex_core::RxGet;
 use silex_net::HttpClient;
 
 fn build<'scope>(scope: silex_core::OwnerAccess<'scope>) {

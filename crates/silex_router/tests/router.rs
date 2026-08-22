@@ -1,8 +1,8 @@
 #![cfg(target_arch = "wasm32")]
 
 use silex_core::{
-    EffectPhase, ErrorHandlerToken, ErrorReporter, OwnerAccess, ReadSignal, Runtime, SilexContext,
-    SilexError, SilexErrorKind, SilexResult,
+    EffectPhase, ErrorHandlerToken, ErrorReporter, OwnerAccess, ReadSignal, Runtime, RxGet,
+    SilexContext, SilexError, SilexErrorKind, SilexResult,
 };
 use silex_dom::view::{
     AnyView, MountContext, MountInstance, MountOwnerToken, View, mount_text_node,

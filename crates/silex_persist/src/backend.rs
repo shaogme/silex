@@ -1,7 +1,7 @@
 use crate::{PersistenceError, PersistenceErrorKind};
 use js_sys::Object;
 use ref_str::LocalStaticRefStr;
-use silex_core::{EffectPhase, ErrorReporter, OwnerAccess, Rx, SilexResult};
+use silex_core::{EffectPhase, ErrorReporter, OwnerAccess, Rx, RxGet, SilexResult};
 use silex_router::{Navigator, RouterContext};
 use std::{
     cell::{Cell, RefCell},

@@ -26,8 +26,10 @@ pub use model::RuntimeSnapshot;
 pub(crate) use model::{CleanupTarget, ScopePhase, ScopeState, ScopeStateInner};
 pub(crate) use ops::{
     acquire_error_handler_lease, invoke_callback, invoke_error_handler, node_ref_clear,
-    node_ref_get, node_ref_set, notify, stop_effect, update_signal, update_stored, with_batch,
-    with_fallible_signal, with_runtime, with_signal, with_stored, with_untracked,
+    node_ref_get, node_ref_set, notify, stop_effect, track_fallible_signal, track_signal,
+    track_stored, update_signal, update_stored, with_batch, with_fallible_signal,
+    with_fallible_signal_untracked, with_runtime, with_signal, with_signal_untracked, with_stored,
+    with_untracked,
 };
 pub(crate) use scheduler::{
     CloseReportQueue, GlobalScheduler, ObserverFrame, OwnerId, OwnerMode, TargetNode,

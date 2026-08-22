@@ -1,4 +1,4 @@
-use silex_core::reactivity::ReactiveSource;
+use silex_core::{RxRead, reactivity::ReactiveSource};
 use silex_dom::prelude::*;
 use silex_macros::component;
 

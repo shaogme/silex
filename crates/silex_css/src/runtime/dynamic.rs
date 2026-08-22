@@ -12,7 +12,7 @@ use crate::{
     source::IntoCssReactive,
     types,
 };
-use silex_core::{EffectPhase, ErrorReporter, Rx, SilexError, SilexErrorKind, SilexResult};
+use silex_core::{EffectPhase, ErrorReporter, Rx, RxGet, SilexError, SilexErrorKind, SilexResult};
 use silex_dom::{
     attribute::{ApplyTarget, ApplyToDom, AttrOp, IntoStorable},
     view::{

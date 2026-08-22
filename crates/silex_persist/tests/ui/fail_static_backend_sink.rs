@@ -1,4 +1,4 @@
-use silex_core::ReadSignal;
+use silex_core::{ReadSignal, RxGet};
 use silex_persist::{BackendEvent, BackendEventSink};
 use std::rc::Rc;
 

@@ -6,7 +6,7 @@ use crate::{
         Computed, Constant, Mutation, ReadSignal, Resource, RwSignal, Signal, SignalSlice,
         StoredValue,
     },
-    traits::{RxCloneData, RxData, RxError, RxRead, RxValue},
+    traits::{RxCloneData, RxData, RxError, RxGet, RxRead, RxValue},
 };
 
 /// A source description that can be materialized in a target scope after one

@@ -27,7 +27,9 @@ pub use route_table::*;
 
 use crate::path::strip_route_prefix as strip_route_prefix_impl;
 use crate::route_table::RouteBranchKey;
-use silex_core::{SilexContext, SilexContextProvider, SilexError, SilexErrorKind, SilexResult};
+use silex_core::{
+    RxGet, SilexContext, SilexContextProvider, SilexError, SilexErrorKind, SilexResult,
+};
 use silex_dom::helpers::window_event_listener_untyped;
 use silex_dom::view::{
     AnyView, BranchEvaluation, BranchRenderContext, MountContext, MountInstance, View,

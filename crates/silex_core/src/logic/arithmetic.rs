@@ -1,4 +1,6 @@
-use crate::{ErrorHandlerInput, Rx, RxValueKind, SilexResult, reactivity::ReactiveSource};
+use crate::{
+    ErrorHandlerInput, Rx, RxValueKind, SilexResult, reactivity::ReactiveSource, traits::RxRead,
+};
 use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Not, Rem, Shl, Shr, Sub};
 
 macro_rules! binary_method {

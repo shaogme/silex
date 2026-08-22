@@ -1,6 +1,6 @@
 use crate::{
-    SilexResult,
-    traits::{RxData, RxRead, RxValue},
+    OwnerAccess, SilexResult,
+    traits::{RuntimeScoped, RxBase, RxData, RxRead, RxValue},
 };
 use std::marker::PhantomData;
 
@@ -26,6 +26,25 @@ where
     O: ?Sized + RxData,
 {
     type Value = O;
+}
+
+impl<S, F, O: ?Sized> RuntimeScoped for SignalSlice<S, F, O>
+where
+    S: RuntimeScoped,
+{
+    fn owner_access(&self) -> OwnerAccess<'_> {
+        self.source.owner_access()
+    }
+}
+
+impl<S, F, O> RxBase for SignalSlice<S, F, O>
+where
+    S: RxBase,
+    O: ?Sized + RxData,
+{
+    fn track(&self) -> SilexResult<()> {
+        self.source.track()
+    }
 }
 
 impl<S, F, O> RxRead for SignalSlice<S, F, O>

@@ -1,7 +1,8 @@
 use crate::{
-    OwnerAccess, Rx, RxValueKind, SilexError, SilexResult,
+    OwnerAccess, Rx, RxInner, RxValueKind, SilexError, SilexResult,
+    callback::map_callback_error,
     reactivity::{Computed, SignalSlice, StoredValue},
-    traits::{RxRead, RxValue},
+    traits::{RuntimeScoped, RxBase, RxRead, RxValue, RxWrite},
 };
 use silex_reactivity::{ReadSignal as RawReadSignal, WriteSignal as RawWriteSignal};
 use std::fmt;
@@ -26,6 +27,12 @@ impl<T> Constant<T> {
 
 impl<T> RxValue for Constant<T> {
     type Value = T;
+}
+
+impl<T> RxBase for Constant<T> {
+    fn track(&self) -> SilexResult<()> {
+        Ok(())
+    }
 }
 
 impl<T> RxRead for Constant<T> {
@@ -162,28 +169,6 @@ impl<'owner, T: 'owner> ReadSignal<'owner, T> {
         self
     }
 
-    pub fn get(&self) -> SilexResult<T>
-    where
-        T: Clone,
-    {
-        self.inner.get().map_err(SilexError::fatal)
-    }
-
-    pub fn get_untracked(&self) -> SilexResult<T>
-    where
-        T: Clone,
-    {
-        self.inner.get_untracked().map_err(SilexError::fatal)
-    }
-
-    pub fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.inner.with(f).map_err(SilexError::fatal)
-    }
-
-    pub fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.inner.with_untracked(f).map_err(SilexError::fatal)
-    }
-
     pub fn into_rx(self) -> Rx<'owner, T> {
         Rx::from_signal(self)
     }
@@ -250,13 +235,6 @@ impl<'owner, T> RwSignal<'owner, T> {
         (self.read, self.write)
     }
 
-    pub fn get(&self) -> SilexResult<T>
-    where
-        T: Clone + 'owner,
-    {
-        self.read.get()
-    }
-
     pub fn set(&self, value: T) -> SilexResult<()>
     where
         T: 'owner,
@@ -291,21 +269,6 @@ impl<'owner, T> RwSignal<'owner, T> {
 impl<'owner, T: 'owner> Signal<'owner, T> {
     pub(crate) fn from_rx(rx: Rx<'owner, T, RxValueKind>) -> Self {
         Self { rx }
-    }
-
-    pub fn get(&self) -> SilexResult<T>
-    where
-        T: Clone,
-    {
-        self.rx.get()
-    }
-
-    pub fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.rx.with(f)
-    }
-
-    pub fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.rx.with_untracked(f)
     }
 
     pub fn is_constant(&self) -> bool {
@@ -352,6 +315,152 @@ impl<'owner, T: 'owner> From<StoredValue<'owner, T>> for Signal<'owner, T> {
 impl<'owner, T: 'owner> From<Rx<'owner, T>> for Signal<'owner, T> {
     fn from(rx: Rx<'owner, T>) -> Self {
         Self::from_rx(rx)
+    }
+}
+
+impl<'owner, T, M> RuntimeScoped for Rx<'owner, T, M> {
+    fn owner_access(&self) -> OwnerAccess<'_> {
+        self.owner
+    }
+}
+
+impl<'owner, T> RuntimeScoped for ReadSignal<'owner, T> {
+    fn owner_access(&self) -> OwnerAccess<'_> {
+        self.owner
+    }
+}
+
+impl<'owner, T> RuntimeScoped for WriteSignal<'owner, T> {
+    fn owner_access(&self) -> OwnerAccess<'_> {
+        self.owner
+    }
+}
+
+impl<'owner, T> RuntimeScoped for RwSignal<'owner, T> {
+    fn owner_access(&self) -> OwnerAccess<'_> {
+        self.read.owner_access()
+    }
+}
+
+impl<'owner, T> RuntimeScoped for Signal<'owner, T> {
+    fn owner_access(&self) -> OwnerAccess<'_> {
+        self.rx.owner_access()
+    }
+}
+
+impl<'owner, T> RxValue for ReadSignal<'owner, T> {
+    type Value = T;
+}
+
+impl<'owner, T> RxBase for ReadSignal<'owner, T> {
+    fn track(&self) -> SilexResult<()> {
+        self.inner.track().map_err(SilexError::fatal)
+    }
+}
+
+impl<'owner, T> RxRead for ReadSignal<'owner, T> {
+    fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+        self.inner.with(f).map_err(SilexError::fatal)
+    }
+
+    fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+        self.inner.with_untracked(f).map_err(SilexError::fatal)
+    }
+}
+
+impl<'owner, T> RxValue for WriteSignal<'owner, T> {
+    type Value = T;
+}
+
+impl<'owner, T> RxWrite for WriteSignal<'owner, T> {
+    fn rx_update_untracked<U>(&self, f: impl FnOnce(&mut T) -> U) -> SilexResult<U> {
+        self.inner.update(f).map_err(SilexError::fatal)
+    }
+
+    fn rx_notify(&self) -> SilexResult<()> {
+        self.inner.notify().map_err(SilexError::fatal)
+    }
+}
+
+impl<'owner, T> RxValue for RwSignal<'owner, T> {
+    type Value = T;
+}
+
+impl<'owner, T> RxBase for RwSignal<'owner, T> {
+    fn track(&self) -> SilexResult<()> {
+        self.read.track()
+    }
+}
+
+impl<'owner, T> RxRead for RwSignal<'owner, T> {
+    fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+        self.read.with(f)
+    }
+
+    fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+        self.read.with_untracked(f)
+    }
+}
+
+impl<'owner, T> RxWrite for RwSignal<'owner, T> {
+    fn rx_update_untracked<U>(&self, f: impl FnOnce(&mut T) -> U) -> SilexResult<U> {
+        self.write.rx_update_untracked(f)
+    }
+
+    fn rx_notify(&self) -> SilexResult<()> {
+        self.write.rx_notify()
+    }
+}
+
+impl<'owner, T> RxValue for Signal<'owner, T> {
+    type Value = T;
+}
+
+impl<'owner, T> RxBase for Signal<'owner, T> {
+    fn track(&self) -> SilexResult<()> {
+        self.rx.track()
+    }
+}
+
+impl<'owner, T> RxRead for Signal<'owner, T> {
+    fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+        self.rx.with(f)
+    }
+
+    fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+        self.rx.with_untracked(f)
+    }
+}
+
+impl<'owner, T> RxValue for Rx<'owner, T, RxValueKind> {
+    type Value = T;
+}
+
+impl<'owner, T> RxBase for Rx<'owner, T, RxValueKind> {
+    fn track(&self) -> SilexResult<()> {
+        match &self.inner {
+            RxInner::Signal(signal) => signal.track().map_err(SilexError::fatal),
+            RxInner::Computed(computed) => computed.track().map_err(map_callback_error),
+            RxInner::Stored(stored) => stored.track().map_err(SilexError::fatal),
+        }
+    }
+}
+
+impl<'owner, T> RxRead for Rx<'owner, T, RxValueKind> {
+    fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+        match &self.inner {
+            RxInner::Signal(signal) => signal.with(f).map_err(SilexError::fatal),
+            RxInner::Computed(computed) => computed.with(f).map_err(map_callback_error),
+            RxInner::Stored(stored) => stored.with(f).map_err(SilexError::fatal),
+        }
+    }
+
+    fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
+        match &self.inner {
+            RxInner::Signal(signal) => signal.with_untracked(f).map_err(SilexError::fatal),
+            RxInner::Computed(computed) => computed.with_untracked(f).map_err(map_callback_error),
+            RxInner::Stored(stored) => stored.with_untracked(f).map_err(SilexError::fatal),
+        }
     }
 }
 

@@ -290,8 +290,7 @@ fn tw_impl_internal(ts: TokenStream, verbose: bool) -> Result<TokenStream> {
     let condition_reads = condition_exprs.iter().enumerate().map(|(index, _)| {
         let name = quote::format_ident!("__slx_cond_value_{}", index);
         quote! {
-            let #name = __slx_conditions_for_effect[#index]
-                .get()?;
+            let #name = #__silex::core::RxGet::get(&__slx_conditions_for_effect[#index])?;
         }
     });
 

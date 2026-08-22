@@ -1,20 +1,20 @@
 error[E0521]: borrowed data escapes outside of closure
-  --> tests/ui/fail_scoped_loader_future.rs:11:25
+  --> tests/ui/fail_scoped_loader_future.rs:12:25
    |
- 5 |       runtime.with_transient(|owner| {
+ 6 |       runtime.with_transient(|owner| {
    |                               -----
    |                               |
    |                               `owner` is a reference that is only valid in the closure body
    |                               has type `OwnerAccess<'1>`
 ...
-11 |           let _resource = store.catalog_resource(
+12 |           let _resource = store.catalog_resource(
    |  _________________________^
-12 | |             move |_locale| async move {
-13 | |                 let _ = source.get();
-14 | |                 Err::<Catalog, I18nError>(I18nError::recoverable(
+13 | |             move |_locale| async move {
+14 | |                 let _ = source.get();
+15 | |                 Err::<Catalog, I18nError>(I18nError::recoverable(
 ...  |
-18 | |             silex_i18n::CatalogResourceOptions::new(),
-19 | |         );
+19 | |             silex_i18n::CatalogResourceOptions::new(),
+20 | |         );
    | |         ^
    | |         |
    | |_________`owner` escapes the closure body here

@@ -5,7 +5,7 @@ use crate::view::{
 };
 use silex_core::reactivity::{Computed, ReadSignal, RwSignal, Signal, StoredValue};
 use silex_core::traits::RxCloneData;
-use silex_core::{EffectPhase, Rx, RxValueKind, SilexError, SilexErrorKind, SilexResult};
+use silex_core::{EffectPhase, Rx, RxRead, RxValueKind, SilexError, SilexErrorKind, SilexResult};
 use std::borrow::Cow;
 use std::fmt::Display;
 use web_sys::Node;

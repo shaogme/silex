@@ -2,7 +2,7 @@
 
 use gloo_timers::future::TimeoutFuture;
 use silex_core::{
-    EffectPhase, ErrorHandlerToken, OwnerAccess, ReactiveError, Runtime, SilexResult,
+    EffectPhase, ErrorHandlerToken, OwnerAccess, ReactiveError, Runtime, RxGet, SilexResult,
 };
 use silex_i18n::{
     Catalog, CatalogLoadError, CatalogResourceOptions, I18nBuilder, I18nStore, Locale, Message,

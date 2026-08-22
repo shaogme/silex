@@ -1,6 +1,6 @@
 use std::{borrow::Cow, rc::Rc};
 
-use silex_core::{Computed, OwnerAccess, ReadSignal, RwSignal, Rx, Signal, SilexResult};
+use silex_core::{Computed, OwnerAccess, ReadSignal, RwSignal, Rx, RxRead, Signal, SilexResult};
 
 #[cfg(feature = "persist")]
 use silex_persist::Persistent;
@@ -189,7 +189,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::{IntoNetValue, ValueResolver};
-    use silex_core::Runtime;
+    use silex_core::{Runtime, RxGet};
 
     #[test]
     fn static_and_owned_closure_resolvers_resolve_values() {

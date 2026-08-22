@@ -1,4 +1,4 @@
-use silex_core::Runtime;
+use silex_core::{Runtime, RxGet};
 
 fn main() {
     let mut runtime = Runtime::new();

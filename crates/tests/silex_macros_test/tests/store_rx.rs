@@ -1,6 +1,6 @@
 use std::{cell::Cell, rc::Rc};
 
-use silex_core::{EffectPhase, Runtime, SilexContext, SilexError, SilexResult, rx};
+use silex_core::{EffectPhase, Runtime, RxGet, RxRead, SilexContext, SilexError, SilexResult, rx};
 use silex_macros::store;
 
 #[derive(Clone)]

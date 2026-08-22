@@ -1,7 +1,7 @@
 #![cfg(all(target_arch = "wasm32", feature = "browser-tests"))]
 
 use gloo_timers::future::TimeoutFuture;
-use silex_core::{ErrorHandlerToken, OwnerAccess, Runtime, SilexContext};
+use silex_core::{ErrorHandlerToken, OwnerAccess, Runtime, RxGet, SilexContext};
 use silex_dom::view::{MountContext, MountOwnerToken, View};
 use silex_i18n::{Catalog, I18nBuilder, Locale, detect_browser_locale, t};
 #[cfg(feature = "intl")]

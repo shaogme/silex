@@ -66,7 +66,8 @@ pub use silex_reactivity::unwind_safe;
 pub use store::StoreField;
 pub use task::TaskHandle;
 pub use traits::{
-    ReactiveInput, RuntimeScoped, RxData, RxDefault, RxFrom, RxGet, RxRead, RxValue, RxWrite,
+    ReactiveInput, RuntimeScoped, RxBase, RxData, RxDefault, RxFrom, RxGet, RxRead, RxValue,
+    RxWrite,
 };
 
 pub use silex_reactivity::ReactiveError;
@@ -170,28 +171,6 @@ impl<'scope, T: 'scope> Rx<'scope, T, RxValueKind> {
         owner
             .computed_always(move || self.with(|value| f(value)), error_handler)
             .map(Computed::into_rx)
-    }
-
-    pub fn get(&self) -> SilexResult<T>
-    where
-        T: Clone,
-    {
-        RxGet::get(self)
-    }
-
-    pub fn get_untracked(&self) -> SilexResult<T>
-    where
-        T: Clone,
-    {
-        RxGet::get_untracked(self)
-    }
-
-    pub fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        RxRead::with(self, f)
-    }
-
-    pub fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        RxRead::with_untracked(self, f)
     }
 
     pub fn into_signal(self) -> Signal<'scope, T> {

@@ -2,7 +2,7 @@ use crate::{
     runtime::{DynamicStyleManager, dynamic::unique_dynamic_style_id},
     source::{CssSource, IntoCssSource},
 };
-use silex_core::{EffectPhase, SilexError, SilexErrorKind, SilexResult};
+use silex_core::{EffectPhase, RxGet, SilexError, SilexErrorKind, SilexResult};
 use silex_dom::{
     attribute::{ApplyTarget, ApplyToDom, AttrOp, IntoStorable},
     view::{MountContext, MountErrorHandler, MountOwner},

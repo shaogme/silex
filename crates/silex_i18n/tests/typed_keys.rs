@@ -1,6 +1,6 @@
 #![cfg(feature = "macros")]
 
-use silex_core::Runtime;
+use silex_core::{Runtime, RxGet};
 use silex_i18n::{Catalog, CatalogValue, I18nBuilder, I18nKeys, Locale, t};
 
 #[derive(I18nKeys)]
