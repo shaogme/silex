@@ -21,7 +21,7 @@ pub(crate) trait NodeKind: sealed::Sealed + 'static {
 }
 
 #[doc(hidden)]
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum NodeKindTag {
     Signal,
     Computed,

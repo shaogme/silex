@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used)]
+
 use silex_reactivity::{EffectPhase, ErrorHandlerToken, OwnerAccess, ReactiveError, Runtime};
 use std::{cell::Cell, rc::Rc};
 

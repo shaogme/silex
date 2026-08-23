@@ -16,6 +16,7 @@ mod scheduler;
 pub(crate) mod storage;
 
 pub(crate) use dispose::{dispose_all, dispose_nodes};
+pub(crate) use eval::flush_if_idle;
 pub(crate) use eval::run_global_queue;
 pub(crate) use input::{
     create_computed, create_computed_always, create_effect, create_effect_detached,
@@ -26,15 +27,16 @@ pub use model::RuntimeSnapshot;
 pub(crate) use model::{CleanupTarget, ScopePhase, ScopeState, ScopeStateInner};
 pub(crate) use ops::{
     acquire_error_handler_lease, commit_signal, invoke_callback, invoke_error_handler,
-    node_ref_clear, node_ref_get, node_ref_set, notify, read_fallible_signal_lease,
-    read_fallible_signal_lease_untracked, read_signal_lease, read_signal_lease_untracked,
-    read_stored_lease, stop_effect, track_fallible_signal, track_signal, track_stored,
-    update_signal, update_stored, with_batch, with_fallible_signal, with_fallible_signal_untracked,
-    with_runtime, with_signal, with_signal_untracked, with_stored, with_untracked,
-    write_signal_lease, write_stored_lease,
+    node_ref_clear, node_ref_get, node_ref_set, notify, preflight_signal_publications,
+    read_fallible_signal_lease, read_fallible_signal_lease_untracked, read_signal_lease,
+    read_signal_lease_untracked, read_stored_lease, stop_effect, track_fallible_signal,
+    track_signal, track_stored, update_signal, update_stored, with_batch, with_fallible_signal,
+    with_fallible_signal_untracked, with_runtime, with_signal, with_signal_untracked, with_stored,
+    with_untracked, write_signal_lease, write_stored_lease,
 };
 pub(crate) use scheduler::{
     CloseReportQueue, GlobalScheduler, ObserverFrame, OwnerId, OwnerMode, TargetNode,
+    validate_active_scheduler,
 };
 
 use crate::error::{ReactiveError, ReactiveResult};

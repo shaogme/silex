@@ -428,23 +428,20 @@ pub(crate) fn dispose_nodes_collect<'scope>(
     let scheduler = state.try_borrow()?.scheduler.clone();
     let mut scratch = {
         let mut state_ref = state.try_borrow_mut()?;
-        if let Some(scratch) = state_ref.disposal_scratch_pool.pop() {
-            #[cfg(feature = "test-support")]
-            {
-                state_ref.scratch_stats.disposal_pool_hits =
-                    state_ref.scratch_stats.disposal_pool_hits.saturating_add(1);
-            }
-            scratch
-        } else {
-            #[cfg(feature = "test-support")]
-            {
-                state_ref.scratch_stats.disposal_pool_misses = state_ref
-                    .scratch_stats
-                    .disposal_pool_misses
-                    .saturating_add(1);
-            }
-            DisposalScratch::default()
+        let pooled = state_ref.disposal_scratch_pool.pop();
+        #[cfg(feature = "test-support")]
+        if pooled.is_some() {
+            state_ref.scratch_stats.disposal_pool_hits =
+                state_ref.scratch_stats.disposal_pool_hits.saturating_add(1);
         }
+        #[cfg(feature = "test-support")]
+        if pooled.is_none() {
+            state_ref.scratch_stats.disposal_pool_misses = state_ref
+                .scratch_stats
+                .disposal_pool_misses
+                .saturating_add(1);
+        }
+        pooled.unwrap_or_default()
     };
     let result = catch_unwind(AssertUnwindSafe(|| {
         dispose_nodes_collect_with_scratch(state, roots, scheduler, &mut scratch)

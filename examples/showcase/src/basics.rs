@@ -125,6 +125,8 @@ pub fn SignalGuardDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     let item = owner.signal("Silex T-Shirt".to_string())?;
     let quantity = owner.signal(1_i32)?;
     let stock = owner.signal(5_i32)?;
+    let balance = owner.signal(100_i32)?;
+    let order_count = owner.signal(0_u32)?;
     let status = owner.signal("请填写商品并检查库存".to_string())?;
 
     let quantity_summary = owner.computed(
@@ -186,41 +188,64 @@ pub fn SignalGuardDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     };
 
     let on_submit = move |_| {
-        let item_guard = item.read()?;
-        let item_name = item_guard.trim().to_string();
-        item_guard.finish()?;
+        let result = owner.transaction(move |transaction| {
+            let item_name = transaction.snapshot(item)?;
+            let requested = transaction.snapshot(quantity)?;
+            let total = requested.saturating_mul(10);
 
-        let quantity_guard = quantity.read()?;
-        let requested = *quantity_guard;
-        quantity_guard.finish()?;
+            let remaining = transaction.update(stock, |available| {
+                if item_name.trim().is_empty() {
+                    return Err(SilexError::recoverable(SilexErrorKind::Framework(
+                        "商品名称不能为空".to_string(),
+                    )));
+                }
+                if *available < requested {
+                    return Err(SilexError::recoverable(SilexErrorKind::Framework(
+                        "库存不足".to_string(),
+                    )));
+                }
+                *available -= requested;
+                Ok(*available)
+            })?;
 
-        if item_name.is_empty() {
-            status.set("提交失败：商品名称不能为空".to_string())?;
-        } else {
-            let mut stock_guard = stock.write()?;
-            if requested > *stock_guard {
-                let available = *stock_guard;
-                stock_guard.abort()?;
-                status.set(format!("提交失败：当前库存仅剩 {available} 件"))?;
-            } else {
-                *stock_guard -= requested;
-                let remaining = *stock_guard;
-                stock_guard.commit()?;
+            let balance_remaining = transaction.update(balance, |available| {
+                if *available < total {
+                    return Err(SilexError::recoverable(SilexErrorKind::Framework(
+                        "余额不足".to_string(),
+                    )));
+                }
+                *available -= total;
+                Ok(*available)
+            })?;
+
+            let orders = transaction.update(order_count, |count| {
+                *count = count.saturating_add(1);
+                Ok(*count)
+            })?;
+
+            Ok((item_name, requested, remaining, balance_remaining, orders))
+        });
+
+        match result {
+            Ok((item_name, requested, remaining, balance_remaining, orders)) => {
                 status.set(format!(
-                    "订单已提交：{item_name} × {requested}，库存剩余 {remaining} 件"
+                    "订单已提交：{item_name} × {requested}，库存剩余 {remaining} 件，余额 {balance_remaining} 元，订单数 {orders}"
                 ))?;
             }
+            Err(error) => status.set(format!("提交失败：{error}"))?,
         }
         Ok(())
     };
 
     Ok(div![
         h3("购物车草稿"),
-        p("用 guard 读取订单快照、检查库存，并安全提交数量变更。"),
+        p("用 guard 读取订单快照，用 transaction 原子提交库存、余额和订单数。"),
         label("商品："),
         input().bind_value(item),
         p(quantity_summary),
         p![strong("剩余库存："), strong(stock)],
+        p![strong("账户余额："), strong(balance)],
+        p![strong("已提交订单："), strong(order_count)],
         div![
             button("减少").on(event::click, on_decrease),
             strong(quantity),

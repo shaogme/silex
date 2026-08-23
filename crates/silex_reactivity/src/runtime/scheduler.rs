@@ -542,6 +542,7 @@ pub(crate) struct GlobalScheduler {
     pub(crate) queue_high_water: usize,
     pub(crate) running_queue: bool,
     pub(crate) batch_depth: usize,
+    pub(crate) transaction_depth: usize,
     pub(crate) evaluating: usize,
     pub(crate) executing: usize,
     pub(crate) active_leases: usize,
@@ -574,6 +575,7 @@ impl GlobalScheduler {
                 queue_high_water: 0,
                 running_queue: false,
                 batch_depth: 0,
+                transaction_depth: 0,
                 evaluating: 0,
                 executing: 0,
                 active_leases: 0,
@@ -819,7 +821,11 @@ impl GlobalScheduler {
     }
 
     pub(crate) fn is_idle(&self) -> bool {
-        self.batch_depth == 0 && self.evaluating == 0 && self.executing == 0 && !self.running_queue
+        self.batch_depth == 0
+            && self.transaction_depth == 0
+            && self.evaluating == 0
+            && self.executing == 0
+            && !self.running_queue
     }
 
     pub(crate) fn should_flush(&self) -> bool {

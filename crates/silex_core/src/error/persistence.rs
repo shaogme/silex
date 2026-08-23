@@ -83,6 +83,9 @@ impl From<SilexError> for PersistenceError {
         let kind = match error.into_kind() {
             SilexErrorKind::Persistence(error) => error.into_kind(),
             SilexErrorKind::Reactivity(error) => PersistenceErrorKind::Reactivity(error),
+            SilexErrorKind::Transaction(error) => {
+                PersistenceErrorKind::Core(Box::new(SilexErrorKind::Transaction(error)))
+            }
             kind => PersistenceErrorKind::Core(Box::new(kind)),
         };
         match severity {

@@ -2,10 +2,10 @@
 
 use crate::{
     Callback, CompletionOnce, CompletionSender, ErrorHandlerInput, ErrorHandlerToken, NodeRef, Rx,
-    SilexError, SilexResult, TaskHandle,
+    SilexError, SilexErrorKind, SilexResult, TaskHandle,
     reactivity::{
         Computed, EffectHandle, EffectPhase, ReactiveSource, ReadSignal, Signal, StoredValue,
-        WatchOptions, WriteSignal,
+        Transaction, WatchOptions, WriteSignal,
     },
     task,
     traits::{RuntimeScoped, RxData, RxGet},
@@ -191,6 +191,25 @@ impl<'owner> OwnerAccess<'owner> {
 
     pub fn is_active(&self) -> SilexResult<bool> {
         self.inner.is_active().map_err(SilexError::fatal)
+    }
+
+    /// Run a staged multi-signal transaction bound to this owner.
+    pub fn transaction<R, F>(&self, f: F) -> SilexResult<R>
+    where
+        F: FnOnce(&mut Transaction<'owner>) -> SilexResult<R> + 'owner,
+    {
+        let inner = self
+            .inner
+            .reactive_transaction()
+            .map_err(map_transaction_error)?;
+        let mut transaction = Transaction::from_inner(inner);
+        match f(&mut transaction) {
+            Ok(value) => transaction.commit().map(|()| value),
+            Err(error) => {
+                drop(transaction);
+                Err(error)
+            }
+        }
     }
 
     /// Validate a reactive source before creating target-side nodes.
@@ -567,4 +586,8 @@ fn map_computation_error(error: ComputationInitError<SilexError>) -> SilexError 
         ComputationInitError::Registration(error) => SilexError::fatal(error),
         ComputationInitError::Initial(error) => error,
     }
+}
+
+fn map_transaction_error(error: silex_reactivity::TransactionError) -> SilexError {
+    SilexError::fatal(SilexErrorKind::Transaction(Box::new(error)))
 }

@@ -49,7 +49,7 @@ pub use reactivity::{
     BorrowedReadGuard, Computed, Constant, EffectHandle, EffectPhase, MappedReadGuard, Mutation,
     OwnedReadGuard, PromotionPlan, ReactiveSource, ReadGuard, ReadSignal, Resource,
     ResourceBuilder, ResourceFetchBuilder, ResourceSource, ResourceSourceBuilder, Rx, RxReadGuard,
-    Signal, StoredValue, SuspenseContext, WatchOptions, WriteGuard, WriteSignal,
+    Signal, StoredValue, SuspenseContext, Transaction, WatchOptions, WriteGuard, WriteSignal,
 };
 #[cfg(feature = "test-support")]
 pub use silex_reactivity::RuntimeSnapshot;
@@ -144,7 +144,7 @@ pub mod prelude {
         Callback, CompletionOnce, CompletionSender, ErrorHandler, ErrorHandlerInput,
         ErrorHandlerToken, ErrorReporter, NodeRef, OwnerAccess, OwnerHandle, ReactiveError,
         Runtime, Rx, SilexContext, SilexContextProvider, SilexError, SilexErrorKind, SilexResult,
-        StoreField, batch_read, batch_read_untracked, logic::*, reactivity::*, rx, traits::*,
-        unwind_safe,
+        StoreField, Transaction, batch_read, batch_read_untracked, logic::*, reactivity::*, rx,
+        traits::*, unwind_safe,
     };
 }

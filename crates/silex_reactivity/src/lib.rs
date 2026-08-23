@@ -25,6 +25,7 @@ mod internal;
 mod owner;
 mod root;
 mod runtime;
+mod transaction;
 mod unsafe_boundary;
 
 pub use crate::{
@@ -42,6 +43,9 @@ pub use crate::{
     owner::{OwnerAccess, OwnerChild, OwnerCleanupRegistrationError, OwnerHandle},
     root::*,
     runtime::Runtime,
+    transaction::{
+        ReactiveTransaction, TransactionError, TransactionOperationError, TransactionPhase,
+    },
 };
 
 #[cfg(feature = "test-support")]

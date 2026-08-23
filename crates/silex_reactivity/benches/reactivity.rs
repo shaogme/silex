@@ -24,6 +24,7 @@ mod native {
     const DEPENDENCY_SIZES: &[usize] = &[10, 100, 1_000, 10_000];
     const OWNER_SIZES: &[usize] = &[1, 16, 128, 512];
     const PHASE_SIZES: &[usize] = &[1, 10, 100, 1_000];
+    const TRANSACTION_SIZES: &[usize] = &[1, 4, 16];
 
     fn handler<'scope>(scope: OwnerAccess<'scope>) -> ErrorHandlerToken<'scope, ()> {
         scope.error_handler(|_| {}).expect("handler registration")
@@ -83,6 +84,62 @@ mod native {
 
                     total
                 });
+            });
+        }
+
+        group.finish();
+    }
+
+    fn bench_transaction_commit(c: &mut Criterion) {
+        let mut group = c.benchmark_group("transaction/commit");
+
+        for &size in TRANSACTION_SIZES {
+            group.throughput(Throughput::Elements(size as u64));
+            group.bench_with_input(BenchmarkId::from_parameter(size), &size, |bench, &size| {
+                let mut runtime = Runtime::new();
+                runtime
+                    .with_transient(|scope| {
+                        let signals: Vec<_> = (0..size)
+                            .map(|index| {
+                                scope
+                                    .signal(index as i32)
+                                    .expect("benchmark signal creation")
+                            })
+                            .collect();
+                        let reads = signals.clone();
+                        let runs = Rc::new(Cell::new(0usize));
+                        let runs_in_effect = runs.clone();
+                        scope
+                            .effect(
+                                EffectPhase::Normal,
+                                move || {
+                                    for signal in &reads {
+                                        black_box(signal.get().expect("benchmark read"));
+                                    }
+                                    runs_in_effect.set(runs_in_effect.get().wrapping_add(1));
+                                    Ok(())
+                                },
+                                handler(scope),
+                            )
+                            .expect("benchmark effect should initialize");
+
+                        bench.iter(|| {
+                            let mut transaction = scope
+                                .reactive_transaction()
+                                .expect("benchmark transaction creation");
+                            for signal in &signals {
+                                transaction
+                                    .update(*signal, |value| {
+                                        *value = value.wrapping_add(1);
+                                        Ok::<_, ()>(())
+                                    })
+                                    .expect("benchmark transaction update");
+                            }
+                            transaction.commit().expect("benchmark transaction commit");
+                            black_box(runs.get());
+                        });
+                    })
+                    .expect("benchmark scope execution");
             });
         }
 
@@ -1504,6 +1561,7 @@ mod native {
         config = criterion_config();
         targets =
             bench_signal_create,
+            bench_transaction_commit,
             bench_signal_read_untracked,
             bench_signal_read_tracked,
             bench_signal_write,

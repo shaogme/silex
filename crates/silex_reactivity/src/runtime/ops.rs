@@ -511,6 +511,20 @@ pub(crate) fn commit_signal<'scope>(state: &ScopeState<'scope>, id: NodeId) -> R
     Ok(())
 }
 
+pub(crate) fn preflight_signal_publications<'scope>(
+    state: &ScopeState<'scope>,
+    ids: &[NodeId],
+) -> ReactiveResult<()> {
+    let mut state_ref = state
+        .try_borrow_mut()
+        .map_err(|_| ReactiveError::BorrowConflict)?;
+    for id in ids {
+        state_ref.validate_node_kind(*id, NodeKindTag::Signal)?;
+        state_ref.preflight_dependents(*id)?;
+    }
+    Ok(())
+}
+
 pub(crate) fn update_signal<'scope, T, R>(
     state: &ScopeState<'scope>,
     id: NodeId,

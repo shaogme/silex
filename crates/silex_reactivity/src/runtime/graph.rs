@@ -445,22 +445,110 @@ impl<'scope> ScopeStateInner<'scope> {
         }
     }
 
+    /// Preflight one source's propagation without changing node state or
+    /// queueing any work. Transaction publication uses this pass for every
+    /// source before the first version is advanced.
+    pub(crate) fn preflight_dependents(&mut self, source: NodeId) -> ReactiveResult<()> {
+        let pooled = self.propagation_scratch_pool.pop();
+        #[cfg(feature = "test-support")]
+        if pooled.is_some() {
+            self.scratch_stats.propagation_pool_hits =
+                self.scratch_stats.propagation_pool_hits.saturating_add(1);
+        }
+        #[cfg(feature = "test-support")]
+        if pooled.is_none() {
+            self.scratch_stats.propagation_pool_misses =
+                self.scratch_stats.propagation_pool_misses.saturating_add(1);
+        }
+        let mut scratch = pooled.unwrap_or_default();
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            let scheduler = self.scheduler.clone();
+            scratch.frontier.extend(self.subscriber_edges_of(source));
+
+            let mut cursor = 0;
+            while cursor < scratch.frontier.len() {
+                let Some(target) = scratch.frontier.get(cursor).copied() else {
+                    break;
+                };
+                cursor = cursor.saturating_add(1);
+                if !scratch.visited.insert(target) {
+                    continue;
+                }
+                if target.owner_id == self.owner_id {
+                    let Some(node) = self.nodes.get(target.node) else {
+                        continue;
+                    };
+                    if !matches!(node.state, NodeState::Clean | NodeState::Dirty) {
+                        continue;
+                    }
+                    if node.kind != NodeKindTag::Effect {
+                        scratch
+                            .frontier
+                            .extend(self.subscriber_edges_of(target.node));
+                    }
+                    continue;
+                }
+
+                let target_scope = scheduler
+                    .try_borrow()
+                    .map_err(|_| ReactiveError::BorrowConflict)?
+                    .get_scope(target.owner_id)?;
+                let Some(target_scope) = target_scope else {
+                    continue;
+                };
+                let state_ref = target_scope
+                    .try_borrow()
+                    .map_err(|_| ReactiveError::BorrowConflict)?;
+                if !state_ref.is_active()? {
+                    continue;
+                }
+                let Some(node) = state_ref.nodes.get(target.node) else {
+                    continue;
+                };
+                if !matches!(node.state, NodeState::Clean | NodeState::Dirty) {
+                    continue;
+                }
+                if node.kind != NodeKindTag::Effect {
+                    scratch
+                        .frontier
+                        .extend(state_ref.subscriber_edges_of(target.node));
+                }
+                drop(state_ref);
+                if scratch.record_external_owner(target.owner_id) {
+                    scratch.external_scopes.push(target_scope);
+                }
+            }
+
+            for scope in &scratch.external_scopes {
+                scope
+                    .try_borrow_mut()
+                    .map_err(|_| ReactiveError::BorrowConflict)?;
+            }
+            Ok(())
+        }));
+        #[cfg(feature = "test-support")]
+        self.record_propagation_scratch(&scratch);
+        scratch.reset();
+        self.propagation_scratch_pool.push(scratch);
+        match result {
+            Ok(result) => result,
+            Err(panic) => resume_unwind(panic),
+        }
+    }
+
     pub(crate) fn queue_dependents(&mut self, source: NodeId) -> ReactiveResult<()> {
-        let mut scratch = if let Some(scratch) = self.propagation_scratch_pool.pop() {
-            #[cfg(feature = "test-support")]
-            {
-                self.scratch_stats.propagation_pool_hits =
-                    self.scratch_stats.propagation_pool_hits.saturating_add(1);
-            }
-            scratch
-        } else {
-            #[cfg(feature = "test-support")]
-            {
-                self.scratch_stats.propagation_pool_misses =
-                    self.scratch_stats.propagation_pool_misses.saturating_add(1);
-            }
-            PropagationScratch::default()
-        };
+        let pooled = self.propagation_scratch_pool.pop();
+        #[cfg(feature = "test-support")]
+        if pooled.is_some() {
+            self.scratch_stats.propagation_pool_hits =
+                self.scratch_stats.propagation_pool_hits.saturating_add(1);
+        }
+        #[cfg(feature = "test-support")]
+        if pooled.is_none() {
+            self.scratch_stats.propagation_pool_misses =
+                self.scratch_stats.propagation_pool_misses.saturating_add(1);
+        }
+        let mut scratch = pooled.unwrap_or_default();
         let result = catch_unwind(AssertUnwindSafe(|| {
             self.queue_dependents_with_scratch(source, &mut scratch)
         }));

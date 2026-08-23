@@ -85,6 +85,9 @@ impl From<SilexError> for I18nError {
         let kind = match error.into_kind() {
             SilexErrorKind::I18n(error) => error.into_kind(),
             SilexErrorKind::Reactivity(error) => I18nErrorKind::Reactivity(error),
+            SilexErrorKind::Transaction(error) => {
+                I18nErrorKind::Core(Box::new(SilexErrorKind::Transaction(error)))
+            }
             #[cfg(feature = "error-i18n-persistence")]
             SilexErrorKind::Persistence(error) => I18nErrorKind::Persistence(error),
             kind => I18nErrorKind::Core(Box::new(kind)),

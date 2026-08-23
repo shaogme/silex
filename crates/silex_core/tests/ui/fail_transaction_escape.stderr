@@ -1,0 +1,22 @@
+error: lifetime may not live long enough
+ --> tests/ui/fail_transaction_escape.rs:6:65
+  |
+6 |         .with_transient(|owner| owner.transaction(|transaction| Ok(transaction)))
+  |                                                    ------------ ^^^^^^^^^^^^^^^ returning this value requires that `'1` must outlive `'2`
+  |                                                    |          |
+  |                                                    |          return type of closure is Result<&'2 mut silex_core::Transaction<'_>, SilexError>
+  |                                                    has type `&'1 mut silex_core::Transaction<'_>`
+
+error: lifetime may not live long enough
+ --> tests/ui/fail_transaction_escape.rs:6:33
+  |
+6 |         .with_transient(|owner| owner.transaction(|transaction| Ok(transaction)))
+  |                          ------ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ returning this value requires that `'1` must outlive `'2`
+  |                          |    |
+  |                          |    return type of closure is Result<&'2 mut silex_core::Transaction<'_>, SilexError>
+  |                          has type `OwnerAccess<'1>`
+  |
+help: consider adding 'move' keyword before the nested closure
+  |
+6 |         .with_transient(|owner| owner.transaction(move |transaction| Ok(transaction)))
+  |                                                   ++++

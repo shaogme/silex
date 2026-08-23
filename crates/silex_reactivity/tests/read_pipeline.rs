@@ -1,3 +1,5 @@
+#![allow(clippy::expect_used)]
+
 use silex_reactivity::{
     CallbackInvokeError, EffectPhase, ErrorHandlerToken, OwnerAccess, ReactiveError, Runtime,
 };

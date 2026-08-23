@@ -26,6 +26,7 @@ pub enum ReactiveError {
     RuntimeAlreadyRunning,
     RuntimeMismatch,
     InvariantViolation,
+    DuplicateTarget,
     Handler(HandlerError),
     NonConvergent {
         iterations: usize,
@@ -55,6 +56,7 @@ impl fmt::Display for ReactiveError {
             Self::RuntimeAlreadyRunning => "响应式 Runtime 已经在运行中",
             Self::RuntimeMismatch => "响应式节点属于不同的 Runtime scheduler family",
             Self::InvariantViolation => "响应式运行时内部状态不一致",
+            Self::DuplicateTarget => "同一个响应式目标不能在同一事务中重复注册",
             Self::Handler(error) => return error.fmt(f),
             Self::NonConvergent { .. } => "响应式 effect 队列在预算内未收敛",
         };

@@ -9,6 +9,7 @@ mod signal;
 mod slice;
 mod stored_value;
 mod trait_impls;
+mod transaction;
 
 pub use effect::EffectHandle;
 pub use guard::{
@@ -27,3 +28,4 @@ pub use signal::{Constant, ReadSignal, Signal, WriteSignal};
 pub use silex_reactivity::{EffectPhase, WatchOptions};
 pub use slice::SignalSlice;
 pub use stored_value::StoredValue;
+pub use transaction::Transaction;

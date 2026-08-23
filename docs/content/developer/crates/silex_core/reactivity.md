@@ -65,6 +65,69 @@ Drop 会执行 best-effort commit。
 
 通过 `Cell`、`RefCell` 或其他内部可变容器绕过 `set`/`update` 时，运行时看不到 payload 的变化；修改完成后必须调用 `WriteSignal::notify`。`notify` 不负责比较新旧值，也不替代正确的响应式写入。
 
+## 多 signal transaction
+
+当库存、余额和订单计数必须共同成功时，使用 `OwnerAccess::transaction`。事务
+中的 `snapshot` 会读取不建立依赖的 clone，`update` 和 `set` 只修改暂存值；
+闭包返回 `Ok` 后才会统一发布，任一用户错误、运行时错误或 `?` 提前返回都会
+丢弃全部暂存写入。
+
+```rust
+let result = owner.transaction(|transaction| {
+    let item_name = transaction.snapshot(item)?;
+    let requested = transaction.snapshot(quantity)?;
+    let price = requested.saturating_mul(10);
+
+    let remaining = transaction.update(stock, |available| {
+        if item_name.trim().is_empty() {
+            return Err(SilexError::recoverable(SilexErrorKind::Framework(
+                "商品名称不能为空".to_string(),
+            )));
+        }
+        if *available < requested {
+            return Err(SilexError::recoverable(SilexErrorKind::Framework(
+                "库存不足".to_string(),
+            )));
+        }
+        *available -= requested;
+        Ok(*available)
+    })?;
+
+    let balance_left = transaction.update(balance, |available| {
+        if *available < price {
+            return Err(SilexError::recoverable(SilexErrorKind::Framework(
+                "余额不足".to_string(),
+            )));
+        }
+        *available -= price;
+        Ok(*available)
+    })?;
+
+    let orders = transaction.update(order_count, |count| {
+        *count = count.saturating_add(1);
+        Ok(*count)
+    })?;
+
+    Ok((item_name, requested, remaining, balance_left, orders))
+});
+
+match result {
+    Ok((item_name, requested, remaining, balance_left, orders)) => {
+        status.set(format!(
+            "订单已提交：{item_name} × {requested}，库存 {remaining}，余额 {balance_left}，订单数 {orders}"
+        ))?;
+    }
+    Err(error) => status.set(format!("提交失败：{error}"))?,
+}
+```
+
+`status.set` 位于事务成功之后，因此它是 UI 状态副作用，不会成为库存提交的
+一部分。不要把网络请求、日志或 DOM 操作放进 transaction closure；这些操作
+无法由 runtime 回滚。事务只接受 owner 作用域内的 signal，不能逃出该作用域，
+也不能保存到 future 后跨越 `await`。普通 `WriteGuard` 继续保持原有的
+best-effort Drop/commit 语义；它不是 transaction 的暂存写入，也不能通过
+`abort` 恢复已经发布的 live payload。
+
 ## Computed、effect 与 watch
 
 ### Computed

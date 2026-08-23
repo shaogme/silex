@@ -3,7 +3,9 @@ use std::fmt;
 #[cfg(any(feature = "error-dom", feature = "error-bootstrap"))]
 use std::rc::Rc;
 
-use silex_reactivity::{CloseError, ErrorHandlerRef, ReactiveError, TransientScopeError};
+use silex_reactivity::{
+    CloseError, ErrorHandlerRef, ReactiveError, TransactionError, TransientScopeError,
+};
 use wasm_bindgen::JsValue;
 
 #[cfg(feature = "error-bootstrap")]
@@ -67,6 +69,7 @@ pub enum SilexErrorKind {
     Dom(String),
     Reactivity(ReactiveError),
     Close(CloseError),
+    Transaction(Box<TransactionError>),
     Framework(String),
     Javascript(String),
     #[cfg(feature = "error-persistence")]
@@ -100,6 +103,7 @@ impl SilexErrorKind {
             Self::Dom(_) => "dom",
             Self::Reactivity(_) => "reactivity",
             Self::Close(_) => "reactivity-close",
+            Self::Transaction(_) => "reactivity-transaction",
             Self::Framework(_) => "framework",
             Self::Javascript(_) => "javascript",
             #[cfg(feature = "error-persistence")]
@@ -134,6 +138,7 @@ impl fmt::Display for SilexErrorKind {
             Self::Dom(msg) => write!(f, "DOM Error: {msg}"),
             Self::Reactivity(error) => write!(f, "Reactivity Error: {error}"),
             Self::Close(error) => write!(f, "Reactivity close error: {error:?}"),
+            Self::Transaction(error) => write!(f, "Reactivity transaction error: {error}"),
             Self::Framework(msg) => write!(f, "Framework Error: {msg}"),
             Self::Javascript(msg) => write!(f, "JavaScript Error: {msg}"),
             #[cfg(feature = "error-persistence")]
@@ -166,6 +171,7 @@ impl std::error::Error for SilexErrorKind {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Reactivity(error) => Some(error),
+            Self::Transaction(error) => Some(error.as_ref()),
             Self::Dom(_) | Self::Close(_) | Self::Framework(_) | Self::Javascript(_) => None,
             #[cfg(feature = "error-persistence")]
             Self::Persistence(error) => Some(error),
@@ -201,6 +207,7 @@ impl PartialEq for SilexErrorKind {
             | (Self::Javascript(left), Self::Javascript(right)) => left == right,
             (Self::Reactivity(left), Self::Reactivity(right)) => left == right,
             (Self::Close(left), Self::Close(right)) => left == right,
+            (Self::Transaction(left), Self::Transaction(right)) => left == right,
             #[cfg(feature = "error-persistence")]
             (Self::Persistence(left), Self::Persistence(right)) => left == right,
             #[cfg(feature = "error-i18n")]

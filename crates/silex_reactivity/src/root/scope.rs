@@ -1,6 +1,6 @@
 //! Long-lived root owner and close error handling.
 
-use crate::{HandlerError, ReactiveError};
+use crate::{HandlerError, ReactiveError, TransactionError};
 use std::{
     any::Any,
     fmt,
@@ -64,6 +64,7 @@ fn diagnostic_for(panic: &(dyn Any + Send)) -> CleanupDiagnostic {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CleanupFailure {
     Runtime(ReactiveError),
+    Transaction(TransactionError),
     Handler(HandlerError),
     Panic(CleanupDiagnostic),
 }
@@ -201,7 +202,9 @@ impl CloseError {
             .iter()
             .find_map(|failure| match failure {
                 CleanupFailure::Panic(diagnostic) => Some(diagnostic.clone()),
-                CleanupFailure::Runtime(_) | CleanupFailure::Handler(_) => None,
+                CleanupFailure::Runtime(_)
+                | CleanupFailure::Transaction(_)
+                | CleanupFailure::Handler(_) => None,
             })
             .unwrap_or(CleanupDiagnostic {
                 message: "runtime cleanup failure".to_string(),

@@ -1,0 +1,32 @@
+error: lifetime may not live long enough
+  --> tests/ui/fail_transaction_across_await.rs:7:13
+   |
+ 6 |           owner.transaction(|transaction| {
+   |                              ------------ return type of closure `Result<{async block@$DIR/tests/ui/fail_transaction_across_await.rs:7:16: 7:26}, SilexError>` contains a lifetime `'2`
+   |                              |
+   |                              has type `&'1 mut silex_core::Transaction<'_>`
+ 7 | /             Ok(async move {
+ 8 | |                 core::future::pending::<()>().await;
+ 9 | |                 let _ = transaction.phase();
+10 | |             })
+   | |______________^ returning this value requires that `'1` must outlive `'2`
+
+error: lifetime may not live long enough
+  --> tests/ui/fail_transaction_across_await.rs:6:9
+   |
+ 5 |       let _future = runtime.with_transient(|owner| {
+   |                                             ------ return type of closure `Result<{async block@$DIR/tests/ui/fail_transaction_across_await.rs:7:16: 7:26}, SilexError>` contains a lifetime `'2`
+   |                                             |
+   |                                             has type `OwnerAccess<'1>`
+ 6 | /         owner.transaction(|transaction| {
+ 7 | |             Ok(async move {
+ 8 | |                 core::future::pending::<()>().await;
+ 9 | |                 let _ = transaction.phase();
+10 | |             })
+11 | |         })
+   | |__________^ returning this value requires that `'1` must outlive `'2`
+   |
+help: consider adding 'move' keyword before the nested closure
+   |
+ 6 |         owner.transaction(move |transaction| {
+   |                           ++++
