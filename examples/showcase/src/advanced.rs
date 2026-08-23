@@ -603,8 +603,9 @@ pub fn AdaptiveReadDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
         move || -> SilexResult<()> {
             let (name, current_stability) = adaptive_state.get()?;
             identity.track()?;
+            let stability_percentage = current_stability * 100.0;
             console_log(format!(
-                "Quantum Core Vitals updated: {name} at {current_stability:.0}%"
+                "Quantum Core Vitals updated: {name} at {stability_percentage:.0}%"
             ));
             Ok(())
         },
@@ -616,8 +617,9 @@ pub fn AdaptiveReadDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
         move || {
             let (name, current_stability) = adaptive_state.get()?;
             let identity_label = identity.with(ToString::to_string)?;
+            let stability_percentage = current_stability * 100.0;
             Ok(format!(
-                "System: {name} | Stability: {current_stability:.0}% | {identity_label}"
+                "System: {name} | Stability: {stability_percentage:.0}% | {identity_label}"
             ))
         },
         error_handler,

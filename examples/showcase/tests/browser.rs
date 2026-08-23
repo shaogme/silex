@@ -1,7 +1,8 @@
 #![cfg(target_arch = "wasm32")]
 
-use silex::reexports::wasm_bindgen::JsValue;
-use silex::reexports::web_sys::{self, Document, Element as DomElement, Node};
+use gloo_timers::future::TimeoutFuture;
+use silex::reexports::wasm_bindgen::{JsCast, JsValue};
+use silex::reexports::web_sys::{self, Document, Element as DomElement, HtmlInputElement, Node};
 use silex_showcase::mount_showcase_into;
 use wasm_bindgen_test::*;
 
@@ -41,6 +42,38 @@ fn detach(target: &Node) {
     }
 }
 
+async fn flush_browser_tasks() {
+    for _ in 0..4 {
+        TimeoutFuture::new(0).await;
+    }
+}
+
+fn stability_slider(target: &DomElement) -> HtmlInputElement {
+    target
+        .query_selector("input[type='range']")
+        .expect("stability slider query should succeed")
+        .expect("stability slider should exist")
+        .dyn_into::<HtmlInputElement>()
+        .expect("stability slider should be an HTML input")
+}
+
+fn adaptive_status(target: &DomElement) -> String {
+    let divs = target
+        .query_selector_all("div")
+        .expect("status bar query should succeed");
+    for index in 0..divs.length() {
+        let text = divs
+            .item(index)
+            .expect("status bar candidate should exist")
+            .text_content()
+            .unwrap_or_default();
+        if text.starts_with("System: ") {
+            return text;
+        }
+    }
+    panic!("adaptive status bar was not found");
+}
+
 #[wasm_bindgen_test]
 fn flow_route_mounts_with_render_only_for_rows() {
     set_path("/flow");
@@ -54,6 +87,33 @@ fn flow_route_mounts_with_render_only_for_rows() {
         host.is_active()
             .expect("showcase should report active state")
     );
+
+    host.unmount().expect("showcase should unmount");
+    assert!(target.first_child().is_none());
+    detach(&target.into());
+    set_path("/");
+}
+
+#[wasm_bindgen_test]
+async fn adaptive_read_formats_normalized_stability_as_percentage() {
+    set_path("/advanced/adaptive");
+    let target = target();
+    let mut host = mount_showcase_into(target.clone().into()).expect("showcase should mount");
+    let slider = stability_slider(&target);
+
+    for (value, expected) in [("0.50", "Stability: 50%"), ("0.51", "Stability: 51%")] {
+        slider.set_value(value);
+        slider
+            .dispatch_event(&web_sys::Event::new("input").expect("input event can be created"))
+            .expect("input event should dispatch");
+        flush_browser_tasks().await;
+
+        let text = adaptive_status(&target);
+        assert!(
+            text.contains(expected),
+            "adaptive status should contain {expected:?}, got {text:?}"
+        );
+    }
 
     host.unmount().expect("showcase should unmount");
     assert!(target.first_child().is_none());
