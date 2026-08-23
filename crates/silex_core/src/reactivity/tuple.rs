@@ -1,6 +1,8 @@
+//! Trait implementations for reactive tuples.
+
 use crate::{
     SilexResult,
-    reactivity::guard::{
+    reactivity::{
         TupleReadGuard1, TupleReadGuard2, TupleReadGuard3, TupleReadGuard4, TupleReadGuard5,
         TupleReadGuard6,
     },
@@ -10,41 +12,6 @@ use crate::{
         RxReadTupleSource3, RxReadTupleSource4, RxReadTupleSource5, RxReadTupleSource6, RxValue,
     },
 };
-
-macro_rules! impl_primitive_rx_value {
-    ($($ty:ty),* $(,)?) => {
-        $(
-            impl RxValue for $ty {
-                type Owned = Self;
-            }
-        )*
-    };
-}
-
-impl_primitive_rx_value!(
-    (),
-    bool,
-    char,
-    u8,
-    u16,
-    u32,
-    u64,
-    u128,
-    usize,
-    i8,
-    i16,
-    i32,
-    i64,
-    i128,
-    isize,
-    f32,
-    f64,
-    String,
-);
-
-impl RxValue for &str {
-    type Owned = String;
-}
 
 impl<T> RxValue for (T,)
 where
@@ -125,6 +92,11 @@ macro_rules! impl_tuple_rx_traits {
                 self.read_untracked()
             }
         }
+
+        impl<S, $($name),+> $read_trait<$($name),+> for S
+        where
+            S: RxRead<Owned = ($($name,)+)> + $source_trait<$($name),+>,
+        {}
 
         impl<$($name),+> RxGet for ($($name,)+)
         where

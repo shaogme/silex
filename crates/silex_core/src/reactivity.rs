@@ -2,14 +2,15 @@ mod effect;
 mod guard;
 mod memo;
 mod mutation;
+mod primitive;
 mod promotion;
 mod resource;
 mod rx;
 mod signal;
 mod slice;
 mod stored_value;
-mod trait_impls;
 mod transaction;
+mod tuple;
 
 pub use effect::EffectHandle;
 pub use guard::{

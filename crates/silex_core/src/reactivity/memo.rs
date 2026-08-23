@@ -1,7 +1,10 @@
 use crate::{ErrorHandlerInput, OwnerAccess, ReadGuard, Rx, SilexError, SilexResult};
 use crate::{
     callback::map_callback_error,
-    traits::{RuntimeScoped, RxBase, RxGet, RxRead, RxReadRef, RxReadRefSource, RxValue},
+    traits::{
+        ReactiveInput, RuntimeScoped, RxBase, RxFrom, RxGet, RxRead, RxReadRef, RxReadRefSource,
+        RxValue,
+    },
 };
 use std::fmt;
 
@@ -55,6 +58,33 @@ impl<'owner, T: 'owner> Computed<'owner, T> {
 
     pub fn into_rx(self) -> Rx<'owner, T> {
         Rx::from_computed(self)
+    }
+}
+
+impl<'owner, T: Clone + PartialEq + 'owner> RxFrom<'owner> for Computed<'owner, T> {
+    type Owned = T;
+
+    fn rx_from<V>(owner: OwnerAccess<'owner>, value: V) -> SilexResult<Self>
+    where
+        V: Into<Self::Owned>,
+    {
+        let value = value.into();
+        let handler = owner.error_handler(|_: SilexError| {
+            unreachable!("constant computed cannot report a user error")
+        })?;
+        owner.computed(move || Ok::<T, SilexError>(value.clone()), handler)
+    }
+}
+
+impl<'owner, T: 'owner> ReactiveInput<'owner, Computed<'owner, T>> for Computed<'owner, T> {
+    fn into_reactive_input(self, _scope: OwnerAccess<'owner>) -> SilexResult<Computed<'owner, T>> {
+        Ok(self)
+    }
+}
+
+impl<'owner, T: 'owner> ReactiveInput<'owner, Rx<'owner, T>> for Computed<'owner, T> {
+    fn into_reactive_input(self, _scope: OwnerAccess<'owner>) -> SilexResult<Rx<'owner, T>> {
+        Ok(self.into_rx())
     }
 }
 

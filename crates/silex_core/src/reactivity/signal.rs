@@ -2,7 +2,10 @@ use crate::{
     OwnerAccess, Rx, SilexError, SilexResult,
     callback::map_callback_error,
     reactivity::{BorrowedReadGuard, ReadGuard, RxInner, RxReadGuard, SignalSlice, WriteGuard},
-    traits::{RuntimeScoped, RxBase, RxGet, RxRead, RxReadRef, RxReadRefSource, RxValue, RxWrite},
+    traits::{
+        ReactiveInput, RuntimeScoped, RxBase, RxFrom, RxGet, RxRead, RxReadRef, RxReadRefSource,
+        RxValue, RxWrite,
+    },
 };
 use silex_reactivity::{
     ReadSignal as RawReadSignal, Signal as RawSignal, WriteSignal as RawWriteSignal,
@@ -294,6 +297,64 @@ impl<'owner, T: 'owner> From<Signal<'owner, T>> for Rx<'owner, T> {
 impl<'owner, T> RuntimeScoped for Rx<'owner, T> {
     fn owner_access(&self) -> OwnerAccess<'_> {
         self.owner
+    }
+}
+
+impl<'owner, T: 'owner> RxFrom<'owner> for ReadSignal<'owner, T> {
+    type Owned = T;
+
+    fn rx_from<V>(owner: OwnerAccess<'owner>, value: V) -> SilexResult<Self>
+    where
+        V: Into<Self::Owned>,
+    {
+        owner.signal(value.into()).map(Into::into)
+    }
+}
+
+impl<'owner, T: 'owner> RxFrom<'owner> for Signal<'owner, T> {
+    type Owned = T;
+
+    fn rx_from<V>(owner: OwnerAccess<'owner>, value: V) -> SilexResult<Self>
+    where
+        V: Into<Self::Owned>,
+    {
+        owner.signal(value.into())
+    }
+}
+
+impl<'owner, T: 'owner> ReactiveInput<'owner, Signal<'owner, T>> for Signal<'owner, T> {
+    fn into_reactive_input(self, _scope: OwnerAccess<'owner>) -> SilexResult<Signal<'owner, T>> {
+        Ok(self)
+    }
+}
+
+impl<'owner, T: 'owner> ReactiveInput<'owner, ReadSignal<'owner, T>> for ReadSignal<'owner, T> {
+    fn into_reactive_input(
+        self,
+        _scope: OwnerAccess<'owner>,
+    ) -> SilexResult<ReadSignal<'owner, T>> {
+        Ok(self)
+    }
+}
+
+impl<'owner, T: 'owner> ReactiveInput<'owner, ReadSignal<'owner, T>> for Signal<'owner, T> {
+    fn into_reactive_input(
+        self,
+        _scope: OwnerAccess<'owner>,
+    ) -> SilexResult<ReadSignal<'owner, T>> {
+        Ok(self.into())
+    }
+}
+
+impl<'owner, T: 'owner> ReactiveInput<'owner, Rx<'owner, T>> for Signal<'owner, T> {
+    fn into_reactive_input(self, _scope: OwnerAccess<'owner>) -> SilexResult<Rx<'owner, T>> {
+        Ok(self.into())
+    }
+}
+
+impl<'owner, T: 'owner> ReactiveInput<'owner, Rx<'owner, T>> for ReadSignal<'owner, T> {
+    fn into_reactive_input(self, _scope: OwnerAccess<'owner>) -> SilexResult<Rx<'owner, T>> {
+        Ok(self.into_rx())
     }
 }
 

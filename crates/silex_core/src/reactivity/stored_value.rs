@@ -1,6 +1,9 @@
 use crate::{
     OwnerAccess, ReadGuard, Rx, SilexError, SilexResult, WriteGuard,
-    traits::{RuntimeScoped, RxBase, RxGet, RxRead, RxReadRef, RxReadRefSource, RxValue, RxWrite},
+    traits::{
+        ReactiveInput, RuntimeScoped, RxBase, RxFrom, RxGet, RxRead, RxReadRef, RxReadRefSource,
+        RxValue, RxWrite,
+    },
 };
 use std::fmt;
 
@@ -60,6 +63,32 @@ impl<'scope, T: 'scope> StoredValue<'scope, T> {
 
     pub fn into_rx(self) -> Rx<'scope, T> {
         Rx::from_stored(self)
+    }
+}
+
+impl<'owner, T: 'owner> RxFrom<'owner> for StoredValue<'owner, T> {
+    type Owned = T;
+
+    fn rx_from<V>(owner: OwnerAccess<'owner>, value: V) -> SilexResult<Self>
+    where
+        V: Into<Self::Owned>,
+    {
+        owner.stored(value.into())
+    }
+}
+
+impl<'owner, T: 'owner> ReactiveInput<'owner, StoredValue<'owner, T>> for StoredValue<'owner, T> {
+    fn into_reactive_input(
+        self,
+        _scope: OwnerAccess<'owner>,
+    ) -> SilexResult<StoredValue<'owner, T>> {
+        Ok(self)
+    }
+}
+
+impl<'owner, T: 'owner> ReactiveInput<'owner, Rx<'owner, T>> for StoredValue<'owner, T> {
+    fn into_reactive_input(self, _scope: OwnerAccess<'owner>) -> SilexResult<Rx<'owner, T>> {
+        Ok(self.into_rx())
     }
 }
 

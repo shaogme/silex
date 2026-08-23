@@ -1,7 +1,7 @@
 use crate::{
     ErrorHandlerInput, OwnerAccess, ReadSignal, SilexError, SilexResult,
     reactivity::{Computed, StoredValue},
-    traits::RxReadRef,
+    traits::{ReactiveInput, RxFrom, RxReadRef},
 };
 use silex_reactivity::{
     Computed as RxComputed, ReadSignal as RxReadSignal, StoredValue as RxStoredValue,
@@ -100,5 +100,22 @@ impl<'scope, T: 'scope> Rx<'scope, T> {
 
     pub fn is_constant(&self) -> bool {
         matches!(self.inner, RxInner::Stored(_))
+    }
+}
+
+impl<'owner, T: 'owner> RxFrom<'owner> for Rx<'owner, T> {
+    type Owned = T;
+
+    fn rx_from<V>(owner: OwnerAccess<'owner>, value: V) -> SilexResult<Self>
+    where
+        V: Into<Self::Owned>,
+    {
+        owner.constant(value.into())
+    }
+}
+
+impl<'owner, T: 'owner> ReactiveInput<'owner, Rx<'owner, T>> for Rx<'owner, T> {
+    fn into_reactive_input(self, _scope: OwnerAccess<'owner>) -> SilexResult<Rx<'owner, T>> {
+        Ok(self)
     }
 }
