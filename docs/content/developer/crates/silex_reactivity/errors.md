@@ -19,7 +19,9 @@ weight = 30
 | 计算注册 | `computed`、`effect`、`watch`、`effect_with_previous` | `ComputationInitResult<T, E>` | 分开处理注册失败和第一次执行的用户错误 |
 | 可失败计算读取 | `Computed::get`、`with` | `CallbackInvokeResult<T, E>` | 区分运行时错误、用户错误和 handler 错误 |
 | 类型化 callback | `Callback::invoke` / `dispatch` | `CallbackInvokeResult` / `Result<(), HandlerError>` | `invoke` 返回用户错误，`dispatch` 将其交给 handler |
-| completion 提交 | `CompletionOnce::submit`、`CompletionSender::submit` | `CompletionSubmitResult<E>` | 同时检查 callback 错误和 endpoint close 错误 |
+| completion 提交 | `CompletionOnce::submit` | `CompletionSubmitResult<E>` | 同时检查 callback 错误和 endpoint close 错误 |
+| completion 取消 | `CompletionOnce::cancel`、`CompletionSender::cancel` | `Result<(), CloseError>` | 处理 endpoint 关闭阶段的聚合错误 |
+| repeating completion 提交 | `CompletionSender::submit` | `CompletionSubmitResult<E>` | 常规返回主要是 callback 错误；关闭错误由 `cancel` 或 Drop 路径报告 |
 | owner 关闭 | `OwnerHandle::close` | `Result<(), CloseError>` | 保留聚合条目，必要时在释放借用后重试 |
 
 不要用一个统一的字符串错误替换这些类型。错误变体携带了恢复所需的状态，尤其
@@ -29,23 +31,27 @@ weight = 30
 
 公开的 `ReactiveError` 变体及常见含义如下：
 
-- `NoSuchNode`：节点、owner 或 handler 所属作用域已经结束，或句柄代数不再匹配。
+- `NoSuchNode`：节点或 owner 所属作用域已经结束，或节点句柄的身份/代数不再匹配。handler 的代数不匹配则通过 `HandlerError::reason() == HandlerReason::GenerationMismatch` 报告。
 - `WrongKind`：句柄指向的节点种类与操作不匹配；这通常说明调用方保存了错误的
   capability，是应优先定位的实现错误。
 - `BorrowConflict`：同一节点、scope 或 scheduler 上已有互斥的动态借用。释放外层
   `with`/`update` 借用后，操作通常可以重试。
-- `Reentrant`：计算或 callback 仍在运行时递归读取同一运行中的节点。应改写依赖
-  图或把递归状态移到普通 Rust 数据结构中。
-- `RuntimeAlreadyRunning`：同一个 `Runtime` 已有活动 root owner，或者正在执行
-  transient scope。
+- `Reentrant`：计算正在运行时又递归读取同一个运行中的计算，或 scope 正在不允许
+  重入的关闭阶段。类型化 callback 的递归调用通常表现为 `BorrowConflict`；应改写
+  依赖图或把递归状态移到普通 Rust 数据结构中。
+- `RuntimeAlreadyRunning`：同一个 `Runtime` 已有活动的 root owner；root 成功释放
+  后才能创建下一个 root。
 - `RuntimeMismatch`：tracked 读取或依赖边跨越了不同 scheduler family。跨 runtime
   的只读快照使用 `get_untracked` 或 `with_untracked`。
 - `InvariantViolation`：运行时内部不变量被破坏，通常应记录完整上下文并停止继续
   操作，而不是重试同一个调用。
 - `Handler(HandlerError)`：用户错误无法交付给注册的 handler，应同时检查嵌套借用、
   handler 是否退休以及 scope 是否已释放。
-- `NonConvergent { iterations, last_scope, last_node }`：effect 队列在内部预算内
-  没有收敛。应检查 effect 是否形成反馈写入环；该错误不是网络或临时借用错误。
+- `DuplicateTarget`：同一个事务在发布前重复登记了同一个 signal。事务会进入
+  poisoned 状态，不应继续提交该事务。
+- `NonConvergent { iterations, last_scope, last_node, last_phase }`：effect 队列在
+  内部预算内没有收敛；`last_phase` 可指出最后处理的是 `Normal` 还是 `PostFlush`。
+  应检查 effect 是否形成反馈写入环；该错误不是网络或临时借用错误。
 
 `ReactiveError::is_bug()` 将 `WrongKind`、`Reentrant` 和 `InvariantViolation` 标记
 为更可能是实现缺陷的类别，但这只是诊断提示，不是安全边界。所有错误仍应在应用
@@ -127,6 +133,10 @@ let effect = scope.effect(
 包含 owner、node kind 和 node id。node id 只用于关联同一次运行中的日志，不应被当成
 跨关闭或跨 runtime 稳定的业务标识。
 
+`HandlerReason` 的公开分类包括 `BorrowConflict`、`NoSuchNode`、`Inactive`、
+`GenerationMismatch`、`ScopeReleased` 和 `Internal`。其中前两类通常应结合当前
+借用或节点状态处理，后四类主要用于识别 handler 生命周期、注册代数或内部状态问题。
+
 ## Completion 的双重结果
 
 `CompletionOnce::submit` 既会调用用户 callback，也会关闭一次性 endpoint，因此可能
@@ -174,8 +184,9 @@ if let Err(error) = owner.close() {
 }
 ```
 
-`CleanupFailure` 有三类：`Runtime(ReactiveError)`、`Handler(HandlerError)` 和
-`Panic(CleanupDiagnostic)`。关闭流程会继续尝试其他 child、节点和 cleanup；如果
+`CleanupFailure` 有四类：`Runtime(ReactiveError)`、`Transaction(TransactionError)`、
+`Handler(HandlerError)` 和 `Panic(CleanupDiagnostic)`。关闭流程会继续尝试其他 child、
+节点和 cleanup；如果
 失败属于可重试的动态借用冲突，owner 保持可重试状态，释放借用后重新调用
 `close`。已经进入 released 状态的 owner 再次关闭是幂等成功。
 
@@ -193,6 +204,8 @@ if let Err(error) = owner.close() {
   `Registration(ReactiveError)`，保留 runtime 错误类别。
 - 对 `HandlerError`，记录 `reason` 和 `context`，并检查是否在 cleanup 或 close
   阶段发生。
+- 对 `TransactionError`，保留 `phase`、`primary()` 和 `rollback_failures()`；
+  rollback 失败可能已经另外进入 runtime 的关闭诊断队列。
 - 对 `CloseError`，保存所有 `entries()`；只保留 `diagnostic()` 可能丢失阶段和
   handler 信息。
 

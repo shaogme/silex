@@ -7,7 +7,7 @@ sort_by = "weight"
 
 # `silex_reactivity`
 
-`silex_reactivity` 是 Silex 的底层响应式引擎。它把 signal、computed、effect、watch、callback 和清理任务注册到显式的 owner 作用域中，并通过运行时图谱维护依赖和调度。
+`silex_reactivity` 是 Silex 的底层响应式引擎。它把 signal、computed、effect、watch、callback 和清理任务注册到显式的 owner 作用域中，并通过运行时图谱维护依赖和调度；底层框架还可以使用事务一次性提交多个 signal 的更新。
 
 它解决的是两个相互关联的问题：一方面，状态读取需要能够精确地订阅真正使用到的源；另一方面，节点、回调和异步结果不能在所属作用域结束后继续访问已经释放的状态。公开句柄因此同时携带节点身份和创建作用域的 Rust 生命周期，运行时还会在操作时检查 owner、节点代数和 scheduler 身份。
 
@@ -55,6 +55,12 @@ runtime 会先清空 Normal 队列，再执行 PostFlush 队列。PostFlush 回�
 顺序保证，不依赖浏览器 microtask、timeout 或 animation frame；`computed` 仍然
 是同步拓扑计算，不接收 effect phase。
 
+需要一次性更新多个 signal 时，框架内部可以通过 `OwnerAccess::reactive_transaction`
+创建受当前 owner 约束的 `ReactiveTransaction`。事务只接受同一 runtime、同一 owner
+的 signal，会先暂存并验证全部更新，再统一发布；重复目标会得到
+`ReactiveError::DuplicateTarget`。该入口标记为 `doc(hidden)`，普通应用通常优先使用
+`batch` 或直接的 signal API。
+
 ## 最小可运行流程
 
 下面示例创建一个临时作用域，建立 signal、computed 和 effect，再写入 signal 触发 effect。示例中的错误类型和错误分层都来自实际公开 API；不要把这些 `Result` 在业务代码中用 `unwrap` 隐藏掉。
@@ -71,6 +77,7 @@ runtime 会先清空 Normal 队列，再执行 PostFlush 队列。PostFlush 回�
 - 直接的节点读写返回 `ReactiveResult<T>`，例如节点失效、动态借用冲突或跨 runtime 追踪读取失败。
 - `computed`、`effect` 和 `watch` 的创建返回 `ComputationInitResult<T, E>`。`Registration` 表示注册或运行时失败，`Initial` 表示初始执行返回了用户错误；初始失败的计算节点会被释放。
 - `Computed`、`Callback` 和 completion 的回调执行结果使用 `CallbackInvokeError<E>` 或 `CompletionSubmitError<E>`，可以分别区分运行时错误、用户错误、handler 错误和 close 错误。
+- `ReactiveTransaction` 的准备、暂存和提交使用 `TransactionError`；带用户闭包的 `update` 还会用 `TransactionOperationError<E>` 区分用户错误和事务运行时错误。
 - owner 的显式关闭返回 `CloseError`。它可能包含多个清理阶段的失败；只要关闭失败是可重试的，owner 会保持活动状态，调用方应在释放动态借用后重试。
 
 错误处理器也是作用域对象。通过 `OwnerAccess::error_handler` 注册的 token、view 和 handler lease 都不能脱离对应的 owner 生命周期；处理器分发失败应记录其 `HandlerReason` 和 `ErrorContext`，不要依赖内部节点编号拼接诊断。
@@ -99,6 +106,8 @@ runtime 会先清空 Normal 队列，再执行 PostFlush 队列。PostFlush 回�
 - 文档示例：`docs/examples/silex_reactivity/basic.rs`
 - 作用域与清理测试：`crates/silex_reactivity/tests/runtime_scope.rs`、`tests/owned_scope.rs`
 - 图谱与追踪测试：`crates/silex_reactivity/tests/graph.rs`、`tests/automatic_tracking.rs`
+- 阶段调度与读取管线：`crates/silex_reactivity/tests/post_flush.rs`、`tests/read_pipeline.rs`
+- 事务与 guard：`crates/silex_reactivity/src/transaction.rs`、`tests/signal_guards.rs`
 - completion 测试：`crates/silex_reactivity/tests/completion.rs`
 - 编译期契约：`crates/silex_reactivity/tests/compile_fail.rs` 和 `tests/ui/`
 - 基准入口：`crates/silex_reactivity/benches/reactivity.rs`

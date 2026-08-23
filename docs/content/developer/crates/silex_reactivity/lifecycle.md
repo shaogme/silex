@@ -38,7 +38,7 @@ root.close()?;
 
 `Runtime::with_transient` 使用高阶 trait bound：回调获得的 `OwnerAccess<'scope>` 只能在本次回调中使用。回调正常返回后，运行时自动以 child-first 顺序关闭 transient owner；回调 panic 会在清理完成后继续向调用方传播。
 
-`Runtime::owner` 返回拥有显式 close 权限的 root `OwnerHandle`。同一个 `Runtime` 只有一个活动 root；root 关闭或 drop 后，runtime 才能创建下一个 root。`OwnerHandle::access`、`with_access` 和 `with_access_async` 借出 `OwnerAccess`，但不把 close 权限交给借用视图：
+`Runtime::owner` 返回拥有显式 close 权限的 root `OwnerHandle`。同一个 `Runtime` 只有一个活动 root；root 成功释放后，runtime 才能创建下一个 root。`OwnerHandle::drop` 会尽力关闭，但如果关闭因动态借用等可重试错误而未释放，runtime 仍会保留活动状态。`OwnerHandle::access`、`with_access` 和 `with_access_async` 借出 `OwnerAccess`，但不把 close 权限交给借用视图：
 
 - `OwnerHandle` 可以跨多个调用保存，负责 `close` 和 `is_active`。
 - `OwnerAccess<'owner>` 是 `Copy` 的借用能力，负责创建节点、注册 cleanup、建立 handler 和执行 runtime 操作。
@@ -152,7 +152,7 @@ if let Err(error) = owner.on_owner_cleanup(payload, cleanup, handler) {
 `OwnerHandle::close`、completion 的 `cancel` 以及 owner close 产生的 `CloseError` 都使用结构化失败，而不是只返回第一条字符串：
 
 - `CloseError::entries()` 暴露每条失败的 `ClosePhase`、`CloseSource` 和 `CleanupFailure`。
-- `CleanupFailure` 可以是 runtime 错误、handler 错误或带稳定诊断的 cleanup panic。
+- `CleanupFailure` 可以是 runtime 错误、事务错误、handler 错误或带稳定诊断的 cleanup panic。
 - 关闭流程会尽量继续后续 child、effect 和 cleanup 阶段，因此调用方应保留并记录完整的 `CloseError`。
 - 如果动态借用冲突使某个阶段可重试，owner 不会标记为已释放；释放借用后可以重试 `close`。已经释放的 owner 再次 close 是成功的幂等操作。
 
@@ -225,6 +225,11 @@ completion callback 可能捕获 `Rc<RefCell<_>>` 等不满足 unwind-safety 的
 - 显式 `cancel` 会关闭 endpoint 并释放 callback，重复 cancel 是幂等的。
 - 最后一个 active clone drop 时会取消 endpoint；如果长期 owner 被替换但 sender clone 仍被异步任务持有，必须在替换流程中显式 cancel。
 - callback panic 会先关闭 callback 节点，再恢复 panic；后续提交返回 `Ok(false)`。
+
+`CompletionSender::submit` 的常规错误只来自 callback 的运行时错误或用户错误；关闭
+阶段的 `CloseError` 由显式 `cancel` 返回，或在 Drop/恢复路径放入 runtime 的关闭诊断
+队列。`CompletionOnce::submit` 才可能直接返回 callback 错误、close 错误，或两者同时
+出现的 `CallbackAndClose`。
 
 普通 `completion_once`/`completion_sender` 的 callback 节点默认挂在创建时的
 当前计算或 owner 子树中。框架适配器可使用隐藏的

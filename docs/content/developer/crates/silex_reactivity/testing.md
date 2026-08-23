@@ -74,6 +74,8 @@ code 中，并明确说明“不是 CI 编译示例”。尤其不要在页面�
   `NonConvergent` 后，其他 owner 的工作仍能继续。
 - Normal/PostFlush 的执行顺序、PostFlush 写入重新进入 Normal、同阶段注册顺序和
   双队列错误恢复；涉及 DOM 的 focus/Portal 回归还要运行实际浏览器测试。
+- `ReactiveTransaction` 的多 signal 暂存、重复目标、提交/回滚和事务深度恢复；
+  事务错误还要检查 rollback failures 是否进入关闭诊断队列。
 - owner child-first 关闭、cleanup 注册顺序、cleanup 错误聚合、stored value 的
   最终 cleanup 访问和 payload drop。
 - completion 的重复 submit、cancel、最后一个 sender drop、callback 错误、close
@@ -83,9 +85,10 @@ code 中，并明确说明“不是 CI 编译示例”。尤其不要在页面�
 
 这些契约当前分布在 `tests/automatic_tracking.rs`、`tests/graph.rs`、
 `tests/runtime_compatibility.rs`、`tests/runtime_scope.rs`、
-`tests/root_scope.rs`、`tests/watch.rs`、
-`tests/panic_reentry.rs`、`tests/completion.rs` 和
-`tests/owned_scope.rs`；对应回归用例包括
+`tests/root_scope.rs`、`tests/watch.rs`、`tests/post_flush.rs`、
+`tests/panic_reentry.rs`、`tests/completion.rs`、`tests/owned_scope.rs`、
+`tests/native_errors.rs` 和 `tests/read_pipeline.rs`；事务与 guard 的契约还在
+`src/transaction.rs` 的单元测试和 `tests/signal_guards.rs` 中。对应回归用例包括
 `completion_drop_during_scope_cleanup_uses_the_pending_endpoint_drain` 与
 `detached_completion_survives_effect_disposal`。
 
@@ -139,12 +142,14 @@ UI 测试是这个 crate 的重要安全边界，不能只把失败测试当作�
 ## 基准与性能说明
 
 `benches/reactivity.rs` 覆盖 signal 创建、tracked/untracked 读取、写入、stored
-value、依赖图、动态依赖 remove/reinsert、Normal/PostFlush 混合队列和 owner churn 等场景。没有在固定硬件、编译 profile 和样本配置下
+value、node ref、事务提交、completion 消息、依赖图、动态依赖 remove/reinsert、
+Normal/PostFlush 混合队列和 owner churn 等场景。没有在固定硬件、编译 profile 和样本配置下
 运行 Criterion 之前，不要在文档或提交信息中写具体延迟、吞吐或复杂度数字。
 
-阶段调度基准使用 `scheduler/mixed-phase` 与
-`scheduler/mixed-phase/reentry` 名称；它们同时记录每轮工作量和
-`RuntimeSnapshot::queue` 的稳定边界，便于比较最大排队量与吞吐趋势。Wasm
+阶段调度基准使用 `scheduler/mixed-phase` 名称；该基准同时记录每轮工作量和
+`RuntimeSnapshot::queue_high_water` 的稳定边界，便于比较最大排队量与吞吐趋势。
+事务基准使用 `transaction/commit`，completion 基准使用
+`proxy/completion-message`。Wasm
 release 体积属于构建产物指标，应使用相同 target/profile 通过 `stat` 或
 `wasm-size` 记录，不应混入 native Criterion 数字。
 

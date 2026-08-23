@@ -8,7 +8,7 @@ weight = 10
 
 `silex_reactivity` 把 signal、computed、effect、watch、callback 等对象注册为 owner 作用域内的节点。计算闭包执行期间，追踪读取会记录依赖；源节点变化后，scheduler 将受影响的计算放入队列。计算成功后才会提交新的值和依赖边，计算失败则保留旧图谱并进入错误处理路径。
 
-下面的 API 片段省略了外层函数和错误传播，只用于说明调用关系；需要可编译的完整流程时，请参考总览页引用的 `docs/examples/silex_reactivity/basic.rs`。
+下面的 API 片段省略了外层函数、错误传播和 handler 注册等样板代码，只用于说明调用关系。示例中的 `handler::<E>(scope)` 是文档占位写法，表示已经通过 `scope.error_handler(...)` 注册的 `ErrorHandlerToken`；实际代码需要保留注册结果，并处理计算创建返回的 `ComputationInitResult`。需要可编译的完整流程时，请参考总览页引用的 `docs/examples/silex_reactivity/basic.rs`。
 
 ## Signal：可变源
 
@@ -37,6 +37,12 @@ write.notify()?;
 ```
 
 `get` 和 `with` 会在当前 scheduler 的 observer 上建立依赖；`get_untracked` 和 `with_untracked` 只读取值，不建立订阅。`get` 需要 `T: Clone`，而 `with` 允许在借用期间只提取需要的结果。
+
+`read()` 返回的 `ReadGuard` 可以显式调用 `finish()` 提前释放借用并立即报告待处理
+的 scheduler 错误；不调用时，guard 在 drop 时也会释放借用。`write()` 返回的
+`WriteGuard` 默认在 drop 时提交修改，也可以显式调用 `commit()` 发布，或调用
+`abort()` 释放借用而不发布 signal 通知。`abort()` 不会回滚已经通过 `DerefMut`
+写入的 payload；如果需要回滚，调用方必须在普通 Rust 数据结构中自行保留并恢复旧值。
 
 `set` 和 `update` 总会把本次写入视为变化并通知订阅者。`set_if_changed` 需要 `T: PartialEq`，相等时返回 `Ok(false)` 且不通知，不相等时返回 `Ok(true)`。如果通过 `Cell`、`RefCell` 等内部可变容器绕过了 signal 的写方法，需要在内部修改完成后调用 `notify`，否则响应式图不知道值已经改变：
 
@@ -220,6 +226,16 @@ scope.batch(|| {
 
 batch 只延迟队列刷新，不改变写入值，也不会让依赖追踪变成 untracked。闭包结束时运行时会尝试刷新队列；如果闭包 panic，panic 会继续传播，但 batch 深度和 scheduler 状态仍会恢复。
 
+### 多 signal 的底层事务
+
+框架内部可以通过 `OwnerAccess::reactive_transaction` 创建绑定当前 owner 的
+`ReactiveTransaction`。事务会复制并暂存每个 signal 的值，在 `commit()` 前验证目标、
+owner 和 runtime，然后一次性应用和发布；`abort()` 或直接 drop 会丢弃尚未发布的值。
+带用户闭包的 `update` 用 `TransactionOperationError<E>` 区分用户错误和
+`TransactionError`，同一个 signal 重复登记会返回 `DuplicateTarget` 并使事务进入
+`Poisoned` 状态。该创建入口标记为 `doc(hidden)`，普通应用通常使用 `batch`；事务的
+公开类型主要服务于框架级批量更新和一致性测试。
+
 ## 运行时隔离与调度错误
 
 同一个 `Runtime` 的不同 owner 可以建立跨 scope 的追踪边，前提是依赖节点和 observer 都仍然有效。不同 `Runtime` scheduler family 之间：
@@ -242,3 +258,4 @@ effect 时必须确保最终稳定。`NonConvergent` 是运行时拒绝无限刷
 - computed/watch 的用户错误：`crates/silex_reactivity/tests/fallible_derived.rs`、`tests/fallible_memo.rs`、`tests/watch.rs`
 - panic、re-entry 和批处理恢复：`crates/silex_reactivity/tests/panic_reentry.rs`
 - 不同 runtime 的兼容性：`crates/silex_reactivity/tests/runtime_compatibility.rs`
+- 事务与 guard：`crates/silex_reactivity/src/transaction.rs`、`crates/silex_reactivity/tests/signal_guards.rs`
