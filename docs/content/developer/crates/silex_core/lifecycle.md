@@ -8,6 +8,10 @@ weight = 20
 
 `silex_core` 把所有响应式节点和异步资源绑定到 `OwnerAccess<'owner>`。这个绑定同时由 Rust 生命周期和底层 runtime registry 维护：生命周期防止能力值逃逸，registry 在运行时拒绝 stale handle、动态借用冲突和已关闭节点。
 
+`get`/`get_untracked` 来自 `RxGet`，`with`/`with_untracked`/`read` 来自
+`RxRead`，`write`/`commit`/`abort` 来自 `RxWrite`；实际代码需要从
+`silex_core::traits` 导入相应 trait，或直接使用 `silex_core::prelude`。
+
 本文的短代码片段用于展示 API 关系；它们省略了外层函数和部分错误传播，不是 `docs/examples/` 中的 CI 编译示例。完整的可运行流程请参考总览页的 `docs/examples/silex_core/basic.rs`。
 
 ## 三种 owner 形态
@@ -46,7 +50,7 @@ root.close()?;
 - transient 回调可以返回普通数据，但不能返回捕获 child lifetime 的 `ReadSignal`、`Callback`、`TaskHandle` 或 `OwnerAccess`；
 - `spawn_scoped` 接受的 future 必须是 `Future<Output = ()> + 'owner`，因此 future 可以借用 owner 数据，但不能比 owner 活得更久；
 - error handler token/view、completion endpoint 和 `SilexContext` 都携带 scope lifetime，不能独立保存为全局状态；
-- 跨 runtime 的句柄即使 Rust 生命周期没有问题，tracked 读取也会由 `RuntimeMismatch` 拒绝。
+- 跨 runtime 的句柄即使 Rust 生命周期没有问题，tracked 读取也会由 `RuntimeMismatch` 拒绝。在普通未追踪作用域中，`get_untracked`/`with_untracked` 可以取得 foreign source 的快照而不建立订阅；框架显式设置 runtime boundary 时，这类读取也会被拒绝。
 
 如果需要让异步工作继续存在，应创建持久 root/child，并使用 `OwnerHandle::with_access_async` 借出 access：
 

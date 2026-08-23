@@ -9,11 +9,12 @@ sort_by = "weight"
 
 `silex_core` 是 Silex 应用层与 `silex_reactivity` 运行时之间的高层 facade。它不重新实现响应式图，而是把底层的 owner、节点、计算和调度包装成带有 `SilexError`、组件上下文、异步任务、资源状态和便捷 trait 的 API。DOM、路由、网络、国际化等上层 crate 可以共享这套生命周期和错误边界。
 
-它主要解决三类问题：
+它主要解决四类问题：
 
 - 让组件通过显式的 `OwnerAccess<'owner>` 创建 signal、computed、effect、watch、callback 和 cleanup；
 - 让异步工作（`TaskHandle`、`Resource`、`Mutation`）跟随 owner 关闭，而不是由全局 runtime 或线程局部状态管理；
 - 把底层 `ReactiveError`、用户错误、JavaScript 错误和可选领域错误归一到 `SilexError`，同时保留可恢复/致命级别。
+- 通过 `OwnerAccess::transaction` 将多个 signal 的暂存更新一次性发布，并在用户错误或运行时错误时丢弃未发布的值。
 
 ## 在 Silex 架构中的位置
 
@@ -30,7 +31,7 @@ sort_by = "weight"
   owner tree · dependency graph · scheduler · cleanup
 ```
 
-`silex_core` 的公开句柄仍然携带 owner 的 Rust 生命周期。句柄是 `Copy` 的能力值，但它们不是脱离作用域的资源所有者；owner 关闭后，继续调用句柄会返回 `SilexError::Fatal(SilexErrorKind::Reactivity(...))`，通常具体为 `ReactiveError::NoSuchNode`。
+`silex_core` 的公开句柄仍然携带 owner 的 Rust 生命周期。句柄是 `Copy` 的能力值，但它们不是脱离作用域的资源所有者；owner 关闭后，访问底层节点的操作通常会返回 `SilexError::Fatal(SilexErrorKind::Reactivity(...))`，具体常见为 `ReactiveError::NoSuchNode`。少数 API 明确定义了关闭后的幂等行为，例如 `Mutation::mutate` 对 inactive owner 返回 `Ok(())` 且不启动新任务，`EffectHandle::stop` 则可能返回 `false`。
 
 ## 稳定入口与核心类型
 
@@ -40,7 +41,9 @@ sort_by = "weight"
 | `OwnerHandle` | 持有持久 owner 的 close 权限；通过 `access`/`with_access` 借出 `OwnerAccess`。 |
 | `OwnerAccess<'owner>` | 创建和操作 owner 内的所有公开节点、handler、cleanup 与异步任务。 |
 | `ReadSignal` / `WriteSignal` / `Signal` | 分离读写能力，或以一个值同时携带两种能力。 |
+| `ReadGuard` / `WriteGuard` | 在保持 runtime 动态借用期间直接访问 signal payload；分别通过 `finish`、`commit` 或 `abort` 结束。 |
 | `Computed` / `EffectHandle` / `WatchOptions` | 创建派生值、副作用和 watcher。 |
+| `Transaction` | 在一个 owner 内暂存多个 signal 更新，并以原子方式提交。 |
 | `Rx<'scope, T>` | 在 signal、computed、stored value 之间统一传递只读值。 |
 | `Resource` / `Mutation` | 将异步读取或异步变更表示为可观察状态。 |
 | `StoredValue` / `NodeRef` / `Callback` | 分别保存非响应式状态、宿主对象引用和类型化回调。 |
@@ -66,7 +69,7 @@ Runtime
 - `Runtime::with_transient` 和 `OwnerAccess::with_transient` 用高阶生命周期限制句柄逃逸；异步任务、回调和节点不能把 transient 的借用带到回调之外。
 - `OwnerHandle::create_child` 创建可显式关闭的子树。关闭 owner 会清理其子节点、handler、cleanup、completion 和 owner 绑定的任务。
 - runtime 使用 `Rc`、`Cell`、`RefCell` 和 `spawn_local`，因此是单线程模型，不应把这些句柄当作 `Send + Sync` 的共享状态。
-- 同一 runtime 内的 owner 可以建立 tracked 依赖；不同 runtime 之间的 tracked 读取会返回 `ReactiveError::RuntimeMismatch`。跨 runtime 只读快照只能使用 `get_untracked`/`with_untracked`，且不会建立订阅。
+- 同一 runtime 内的 owner 可以建立 tracked 依赖；不同 runtime 之间的 tracked 读取会返回 `ReactiveError::RuntimeMismatch`。在普通、未设置 runtime boundary 的作用域中，`get_untracked`/`with_untracked` 可以读取 foreign source 的快照但不会建立订阅；框架显式建立 runtime boundary 时，foreign untracked read 同样会返回 `RuntimeMismatch`。
 
 ## 最小可运行流程
 
@@ -123,14 +126,18 @@ crate 默认不启用任何 feature。`test-support` 只转发到底层 runtime 
 - 文档示例：`docs/examples/silex_core/basic.rs`
 - 文档示例测试：`crates/silex_core/tests/docs_examples.rs`
 - 生命周期、runtime 兼容性和错误：`tests/root_scope.rs`、`tests/runtime_compatibility.rs`、`tests/reactivity_errors.rs`
-- signal 读取与聚合：`tests/batch_read.rs`、`tests/tuple_traits.rs`、`tests/watch.rs`
+- signal 读取与聚合：`tests/signal_guards.rs`、`tests/batch_read.rs`、`tests/tuple_traits.rs`、`tests/watch.rs`
+- 原子更新与事务错误：`tests/transaction.rs`
 - 异步资源、变更和 task：`tests/async_completion.rs`
+- handler/reporter 和列表输入：`tests/error_reporter.rs`、`tests/for_loop_source.rs`
 - 编译期契约：`tests/compile_fail.rs` 与 `tests/ui/`
 
 ## 已知限制与维护注意
 
 - `silex_core` 不提供全局 runtime、线程安全句柄或跨 runtime 的 tracked 依赖；上层框架必须把 `OwnerAccess` 显式传入创建 API。
 - `Resource` 和 `Mutation` 使用请求 id 丢弃旧结果。旧请求不会因为结果过期而写入当前状态；`Resource` 是 `Copy + Clone` 能力句柄，句柄数量不管理生命周期，资源请求仍由其 child effect 和创建资源的 owner cleanup 管理。
+- `Mutation` 也只是 `Copy + Clone` 能力句柄；其 action future 仍由创建它的 owner 管理，丢弃句柄不会取消已启动的操作。
+- `OwnerAccess::transaction` 是同步、owner-scoped 的暂存事务；只能操作同一 owner 的 `Signal`，不能把事务保存到 future 或跨越 `await`，网络请求和 DOM 等外部副作用也不在回滚范围内。
 - `spawn_scoped` 内部将局部 future 暂时擦除为 `'static` 后交给 `spawn_local`。其安全性依赖 owner cleanup 在作用域释放前同步取消并释放 future；修改这条清理顺序时必须同时检查 `src/task.rs` 的不变量和异步测试。
 - `ReadSignal::with_name` 与 `WriteSignal::with_name` 当前只返回自身，没有保存或暴露名称；它不能提供调试标签或性能诊断。
 - `effect_detached` 以及部分内部宏是框架适配入口，不应被普通应用代码作为稳定生命周期 API 依赖；owner-bound 子树应使用公开的 `OwnerChild` 能力。

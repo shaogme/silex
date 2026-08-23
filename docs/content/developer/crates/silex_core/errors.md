@@ -6,7 +6,7 @@ weight = 30
 
 # 错误处理与 feature 边界
 
-`silex_core` 将错误的“类别”和“处理策略”分开保存。`SilexErrorKind` 说明错误来自响应式运行时、框架、JavaScript 或可选领域；`SilexError` 外层的 `Recoverable`/`Fatal` 说明调用方是否可以继续当前生命周期。绝大多数公开操作返回 `SilexResult<T> = Result<T, SilexError>`。
+`silex_core` 将错误的“类别”和“处理策略”分开保存。`SilexErrorKind` 说明错误来自响应式运行时、事务、框架、JavaScript 或可选领域；`SilexError` 外层的 `Recoverable`/`Fatal` 说明调用方是否可以继续当前生命周期。绝大多数公开操作返回 `SilexResult<T> = Result<T, SilexError>`。
 
 ## SilexError 的两层结构
 
@@ -16,6 +16,7 @@ SilexError
 └── Fatal(SilexErrorKind)
     ├── Reactivity(ReactiveError)
     ├── Close(CloseError)
+    ├── Transaction(TransactionError)
     ├── Framework(String)
     ├── Javascript(String)
     └── feature-gated domain / mount / bootstrap kinds
@@ -47,9 +48,17 @@ match operation() {
 | 动态借用重叠 | `Fatal(Reactivity(BorrowConflict))` |
 | 计算递归或图不收敛 | `Fatal(Reactivity(Reentrant/NonConvergent))` |
 | owner 注册、节点创建或 handler 失效 | `Fatal(Reactivity(...))` |
+| transaction 创建、校验、提交或回滚失败 | `Fatal(Transaction(TransactionError))`，其中 `primary`、`rollback_failures` 和 `phase` 保留结构化诊断 |
 | 用户闭包返回的 `SilexError` | 保留闭包返回的 recoverable/fatal 级别 |
 
 这意味着计算 API 的 `Ok(Computed)` 只表示节点已注册且初始运行成功；未来重算或显式读取仍可能返回错误。计算、effect、watch、cleanup 和 completion 都要保留自己的错误路径。
+
+`OwnerAccess::transaction` 会把 runtime 事务错误包装成 fatal 的
+`SilexErrorKind::Transaction`；`Transaction::update` 中用户闭包返回的
+`SilexError` 不会被改成 transaction kind，而是保留原有 severity 和 kind。
+匹配 `SilexErrorKind::Transaction(error)` 后，可通过
+`error.primary()`、`error.rollback_failures()` 和 `error.phase()` 分析事务的
+runtime 错误。
 
 ## Error handler 的作用域
 
@@ -89,7 +98,7 @@ match root.close() {
 
 ## JavaScript 与领域错误
 
-`SilexErrorKind` 的基础变体是 `Dom(String)`、`Framework(String)`、`Javascript(String)`、`Reactivity(ReactiveError)` 和 `Close(CloseError)`。`JsValue` 转换为 `Javascript` kind：优先使用字符串值，否则使用 debug 表示。
+`SilexErrorKind` 的基础变体是 `Dom(String)`、`Framework(String)`、`Javascript(String)`、`Reactivity(ReactiveError)`、`Close(CloseError)` 和 `Transaction(TransactionError)`。`JsValue` 转换为 `Javascript` kind：优先使用字符串值，否则使用 debug 表示。
 
 可选错误类型遵循同一模式：每个 `XxxError` 都有 `Recoverable`/`Fatal`、`kind`、`severity` 和 `into_kind`，转换为 `SilexError` 时保留原 severity。已验证的 feature 与导出如下：
 
@@ -113,6 +122,7 @@ match root.close() {
 - 在 handler 中重新调用可能触发同一动态借用的 API，导致 `BorrowConflict` 或递归分发；
 - 只匹配 `SilexErrorKind::Framework`，忽略 feature-gated domain 和 `ReactiveError`；
 - 通过 `get_untracked` 规避 `RuntimeMismatch` 后，却误以为 target effect 已经订阅了 foreign source。
+- 只处理 transaction 的 primary error，忽略 `rollback_failures` 和失败 phase；这会丢失提交阶段的回滚诊断。
 
 ## 对应测试
 
@@ -120,4 +130,5 @@ match root.close() {
 - reporter 分发与 scope 捕获：`crates/silex_core/tests/error_reporter.rs`；
 - borrow、stale node、runtime mismatch 和 handler 失效：`crates/silex_core/tests/reactivity_errors.rs`、`tests/runtime_compatibility.rs`；
 - completion、close 与 callback 失败：`crates/silex_core/tests/async_completion.rs`；
+- transaction 的原子发布、重复 target、foreign runtime 和用户错误回滚：`crates/silex_core/tests/transaction.rs`；
 - feature-gated 错误的完整编译组合：`cargo check -p silex_core --all-features`。

@@ -8,6 +8,11 @@ weight = 10
 
 `silex_core` 的响应式 API 通过 `OwnerAccess` 创建节点，通过 `SilexResult` 暴露底层运行时错误。tracked 读取在当前计算中建立依赖；untracked 读取只取快照。派生节点的闭包每次成功运行后才提交新值和本次读取的依赖，失败运行不会把临时依赖留在图中。
 
+读取和写入主要由 trait 提供：`RxBase` 用于只建立依赖，`RxGet` 提供
+`get`/`get_untracked`，`RxRead` 提供 guard 和闭包读取，`RxWrite` 提供
+写 guard 与写入操作。示例假定已导入
+`silex_core::traits::{RxBase, RxGet, RxRead, RxWrite}`；使用 `prelude` 也可以一次导入这些 trait。
+
 本文的代码片段省略外层函数和错误处理辅助函数，只用于说明真实 API 的调用关系；完整可编译示例在 `docs/examples/silex_core/basic.rs`。
 
 ## 节点选型
@@ -203,6 +208,7 @@ let watcher = owner.watch_getter_with_options(
 | Trait | 作用 |
 | --- | --- |
 | `RxValue` | 暴露关联的 `Value` 类型。 |
+| `RxBase` | 只建立依赖而不借用或 clone payload；适用于非 `Clone` source。 |
 | `RxRead` / `RxGet` | `RxRead` 提供 `ReadGuard` 关联类型、`read`、`read_untracked` 和闭包访问；`RxGet` 提供 clone-based `get`/`get_untracked`。 |
 | `RxWrite` | 提供 `WriteGuard` 关联类型、`write`，以及 `set`、`update`、`notify` 和 setter/updater 闭包。 |
 | `RuntimeScoped` | 暴露 source 保存的 `OwnerAccess`，供 runtime provenance 校验。 |
@@ -246,7 +252,7 @@ let value = rx!(ctx; source.field)?;
 
 ## 依赖与批处理语义
 
-- tracked 读取只在当前 runtime observer 存在时建立边；untracked 读取不会建立边，但仍检查句柄和 dynamic borrow；
+- `track` 和 tracked 读取会在当前 runtime observer 存在时建立边；untracked 读取不会建立边，但仍检查句柄和 dynamic borrow；
 - 每次 computed/effect/watch getter 成功运行后，依赖集合按本次实际读取替换，条件分支切换会移除旧 source；
 - `OwnerAccess::batch` 延迟队列刷新，把多个写入合并为一次逻辑刷新，但不改变 tracked/untracked 规则；
 - 普通 signal 写入可能同步刷新受影响的 effect，因此写入 API 返回的 `SilexResult` 也必须处理；
@@ -258,4 +264,6 @@ let value = rx!(ctx; source.field)?;
 - tuple source、clone snapshot 和 tuple `get`：`crates/silex_core/tests/tuple_traits.rs`
 - watch 的 promotion、`immediate`、`once` 和 batch：`crates/silex_core/tests/watch.rs`
 - 借用冲突、stale node、`NodeRef` 和内部可变性：`crates/silex_core/tests/reactivity_errors.rs`
+- scoped guard、owned snapshot 和 projection 借用：`crates/silex_core/tests/signal_guards.rs`
+- transaction 的快照、原子提交和回滚：`crates/silex_core/tests/transaction.rs`
 - runtime provenance：`crates/silex_core/tests/runtime_compatibility.rs`

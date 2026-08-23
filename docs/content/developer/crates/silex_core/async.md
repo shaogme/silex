@@ -6,7 +6,7 @@ weight = 25
 
 # Resource、Mutation 与异步状态
 
-`Resource` 和 `Mutation` 把 owner 绑定的本地 future 转换成响应式状态。它们不提供跨线程执行器，也不把 future 直接暴露给组件；调用方观察 `ReadSignal`，通过方法触发 fetch/mutate，并让 owner cleanup 负责取消未完成工作。
+`Resource` 和 `Mutation` 把 owner 绑定的本地 future 转换成响应式状态。它们不提供跨线程执行器，也不把 future 直接暴露给组件；`Resource::state()` 返回 `ReadSignal`，`Mutation::state` 保留成对的 `Signal`。调用方观察这些状态，并通过 `fetch`/`refetch` 或 `mutate` 触发操作；owner cleanup 负责取消未完成工作。
 
 ## Resource 状态机
 
@@ -38,7 +38,7 @@ resource.update(|data| data.refresh_local_cache())?;
 resource.set(local_value)?;
 ```
 
-`source` 必须同时实现 `RxRead<Value = S>`、`ReactiveSource`、`Clone`，且 source 读取会成为内部 effect 的依赖。source 初始求值和每次变化都会启动 fetch；`refetch` 通过内部 trigger 重新执行 effect，即使 source 值没有变化。
+`source` 必须实现 `RxGet<Value = S>`、`ReactiveSource`、`RuntimeScoped` 和 `Clone`；其中 `RxGet` 已包含 `RxRead`，`RuntimeScoped` 用于在分配目标节点前校验 runtime provenance。source 读取会成为内部 effect 的依赖。source 初始求值和每次变化都会启动 fetch；`refetch` 通过内部 trigger 重新执行 effect，即使 source 值没有变化。
 
 `ResourceFetcher` 是 fetcher 抽象：可以直接传入 `Fn(S) -> Future<Output = Result<T, E>>`，也可以实现 trait 以复用更复杂的 fetcher。`T` 必须可 clone，`E` 必须 `Clone + Debug`，因为状态既要放入 signal，也要通过 `SilexError` handler 边界诊断。
 
@@ -53,7 +53,7 @@ resource.set(local_value)?;
 独立 child owner 并关闭该 owner。`id` 校验是状态一致性保护，cleanup 是资源释放
 机制，两者不能互相替代。
 
-Resource builder 使用通用的 `OwnerChild` 事务：child 初始化成功后，父 owner 通过
+Resource builder 使用 `OwnerChild` 和 owner-root cleanup registration：child 初始化成功后，父 owner 通过
 `on_owner_cleanup` 持有 child close payload；初始化或 registration 失败时，错误的
 `into_parts()` 会恢复 child，调用方立即执行 rollback。该 registration 不依赖当前
 Resource effect 的 cleanup，也不通过 `untrack` 改变 cleanup 归属。
@@ -70,7 +70,7 @@ Resource effect 的 cleanup，也不通过 `untrack` 改变 cleanup 归属。
 
 ## Mutation 状态机
 
-`Mutation<'owner, Arg, T, E>` 的 `state` 类型是 `ReadSignal<MutationState<T, E>>`：
+`Mutation<'owner, Arg, T, E>` 的公开 `state` 字段类型是成对读写的 `Signal<MutationState<T, E>>`。通常使用 `loading`、`value` 和 `error` 读取它；需要将 mutation 作为 `ReactiveSource` 时，它对外暴露的是最近一次成功值的 `Option<T>`，而不是完整状态枚举：
 
 | 状态 | 含义 |
 | --- | --- |

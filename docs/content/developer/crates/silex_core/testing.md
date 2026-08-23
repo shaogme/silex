@@ -13,7 +13,7 @@ weight = 40
 | 位置 | 覆盖内容 | 维护重点 |
 | --- | --- | --- |
 | `src/**` 单元测试 | 错误转换、状态 id 过滤、局部 trait 行为 | 内部不变量和纯函数语义。 |
-| `tests/*.rs` | runtime、signal、watch、错误、异步集成行为 | 可观察 API 契约，不依赖 node id。 |
+| `tests/*.rs` | runtime、signal guard、watch、transaction、错误、异步集成行为 | 可观察 API 契约，不依赖 node id。 |
 | `tests/ui/*.rs` | `trybuild` pass/fail 编译测试 | lifetime escape、`Send`、handler 和已删除 API。 |
 | `tests/docs_examples.rs` | `docs/examples/silex_core/basic.rs` 编译/执行 | 页面代码与当前 facade API 同步。 |
 | `tests/async_completion.rs` | wasm-bindgen 浏览器异步测试 | future drop、completion、Resource/Mutation 和 task cancellation。 |
@@ -63,13 +63,14 @@ fn basic_documentation_example_runs() {
 修改 owner 或响应式 API 时，至少覆盖：
 
 - `Runtime::owner` 的单 root 限制、root/child close 和 transient 自动 close；
-- tracked/untracked signal 读取、`notify`、`StoredValue` 和 `NodeRef` 的 stale 行为；
+- tracked/untracked signal 读取、`ReadGuard`/`WriteGuard` 的 finish/commit/abort、`notify`、`StoredValue` 和 `NodeRef` 的 stale 行为；
 - same-runtime child tracked 依赖、foreign tracked `RuntimeMismatch` 和 foreign untracked 无订阅；
 - computed equality gate、`computed_always`、effect 初始运行、stop 幂等性和 watch `immediate`/`once`；
 - tuple source、`batch_read!`、`batch_read_untracked!` 和 projection 的依赖边；
 - borrow conflict、handler 分发、用户错误与 runtime fatal error 的分层；
 - Resource 的 Loading/Reloading、suspense count、source 替换、旧 request completion；
 - Mutation 的 Pending/Success/Error、prepare 失败、请求顺序逆转和 stale completion；
+- transaction 的多 signal 原子发布、snapshot 不追踪、duplicate target、foreign runtime 和用户错误回滚；
 - scoped task 的 cancel、future drop、owner close 和 callback panic 后的 endpoint 状态；
 - cleanup 错误聚合、`take_unhandled_close_errors` 和 `test-support` 快照（若修改底层 runtime 契约）。
 
@@ -80,6 +81,7 @@ fn basic_documentation_example_runs() {
 - `fail_*_escape.rs` 保证 transient handle、callback、handler 和 scoped task 不能逃逸；
 - `fail_send_handler.rs`、`fail_scoped_handle_in_future.rs` 等保证单线程 owner capability 不被误送到不兼容边界；
 - `fail_missing_error_handler.rs`、`fail_resource_without_handler.rs` 和 mutation 相关用例保证延迟错误有明确交付路径；
+- `fail_transaction_escape.rs`、`fail_transaction_across_await.rs` 保证 transaction 不能逃逸 owner 或跨越 `await`；
 - `fail_root_symbols.rs`、`fail_old_*.rs`、`fail_removed_*.rs` 防止旧 API 或内部 root symbol 重新成为公共用法；
 - `pass_*.rs` 验证 scoped handler、copyable mutation 和合法 future 使用仍然可编译。
 
@@ -112,7 +114,9 @@ fn basic_documentation_example_runs() {
 - `tests/root_scope.rs`：root、transient 和 owner access。
 - `tests/runtime_compatibility.rs`：same-runtime 与 foreign-runtime source。
 - `tests/reactivity_errors.rs`：borrow conflict、stale node、NodeRef 和 error mapping。
+- `tests/signal_guards.rs`：scoped guard、owned snapshot、projection 和 guard 生命周期。
 - `tests/batch_read.rs`、`tests/tuple_traits.rs`、`tests/watch.rs`：聚合读取和 watcher。
+- `tests/transaction.rs`：原子提交、snapshot、用户错误和 runtime transaction error。
 - `tests/error_reporter.rs`：handler/reporter 行为。
 - `tests/async_completion.rs`：Resource、Mutation、completion 和 scoped task。
 - `tests/for_loop_source.rs`：`ForLoopSource` 的 Vec/Option/Result 输入。
