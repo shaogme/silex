@@ -1,4 +1,6 @@
-use crate::{ErrorHandlerInput, OwnerAccess, Rx, SilexError, SilexResult, traits::RxRead};
+use crate::{
+    ErrorHandlerInput, OwnerAccess, ReadGuard, Rx, SilexError, SilexResult, traits::RxRead,
+};
 use crate::{
     callback::map_callback_error,
     traits::{RuntimeScoped, RxBase, RxValue},
@@ -75,6 +77,25 @@ impl<'owner, T> RxBase for Computed<'owner, T> {
 }
 
 impl<'owner, T> RxRead for Computed<'owner, T> {
+    type ReadGuard<'a>
+        = ReadGuard<'owner, T>
+    where
+        Self: 'a;
+
+    fn read(&self) -> SilexResult<Self::ReadGuard<'_>> {
+        self.inner
+            .read()
+            .map(ReadGuard::new)
+            .map_err(map_callback_error)
+    }
+
+    fn read_untracked(&self) -> SilexResult<Self::ReadGuard<'_>> {
+        self.inner
+            .read_untracked()
+            .map(ReadGuard::new)
+            .map_err(map_callback_error)
+    }
+
     fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         self.inner.with(f).map_err(map_callback_error)
     }

@@ -688,8 +688,8 @@ mod tests {
                     move || {
                         let _ = parent_scope.with_transient(|child| {
                             let local = child.signal(0i32).expect("fallible reactive creation");
-                            let local_state = local.read().handle.state();
-                            let local_raw = local.read().handle.raw();
+                            let local_state = local.read_signal().handle.state();
+                            let local_raw = local.read_signal().handle.raw();
 
                             assert_eq!(local.get(), Ok(0));
                             assert_eq!(
@@ -725,8 +725,8 @@ mod tests {
         let mut runtime = Runtime::new();
         transient(&mut runtime, |scope| {
             let source = scope.signal(0i32).expect("fallible reactive creation");
-            let source_state = source.read().handle.state();
-            let source_raw = source.read().handle.raw();
+            let source_state = source.read_signal().handle.state();
+            let source_raw = source.read_signal().handle.raw();
 
             let _ = scope.with_transient(|child| {
                 let child_handler = handler(child);
@@ -779,8 +779,8 @@ mod tests {
         let mut runtime = Runtime::new();
         transient(&mut runtime, |scope| {
             let source = scope.signal(0i32).expect("fallible reactive creation");
-            let source_state = source.read().handle.state();
-            let source_raw = source.read().handle.raw();
+            let source_state = source.read_signal().handle.state();
+            let source_raw = source.read_signal().handle.raw();
             let effect = scope
                 .effect(
                     EffectPhase::Normal,
@@ -880,11 +880,11 @@ mod tests {
         let mut runtime = Runtime::new();
         transient(&mut runtime, |scope| {
             let source = scope.signal(0i32).expect("source creation");
-            let state = source.read().handle.state();
+            let state = source.read_signal().handle.state();
             state
                 .try_borrow_mut()
                 .expect("state write")
-                .queue_dependents(source.read().handle.raw())
+                .queue_dependents(source.read_signal().handle.raw())
                 .expect("propagation should succeed");
             let state_ref = state.try_borrow().expect("state read");
             assert_eq!(state_ref.propagation_scratch_pool.len(), 1);
@@ -904,8 +904,8 @@ mod tests {
         let mut runtime = Runtime::new();
         transient(&mut runtime, |scope| {
             let source = scope.signal(0i32).expect("source creation");
-            let state = source.read().handle.state();
-            let raw = source.read().handle.raw();
+            let state = source.read_signal().handle.state();
+            let raw = source.read_signal().handle.raw();
             dispose_nodes(&state, vec![raw]).expect("disposal should succeed");
 
             let state_ref = state.try_borrow().expect("state read");
@@ -928,21 +928,21 @@ mod tests {
         let mut runtime = Runtime::new();
         transient(&mut runtime, |scope| {
             let source = scope.signal(0i32).expect("source creation");
-            let state = source.read().handle.state();
+            let state = source.read_signal().handle.state();
             state
                 .try_borrow_mut()
                 .expect("state write")
-                .queue_dependents(source.read().handle.raw())
+                .queue_dependents(source.read_signal().handle.raw())
                 .expect("first propagation should succeed");
             state
                 .try_borrow_mut()
                 .expect("state write")
-                .queue_dependents(source.read().handle.raw())
+                .queue_dependents(source.read_signal().handle.raw())
                 .expect("second propagation should succeed");
 
             let disposable = scope.signal(1i32).expect("disposable creation");
             let _ = disposable;
-            dispose_nodes(&state, vec![disposable.read().handle.raw()])
+            dispose_nodes(&state, vec![disposable.read_signal().handle.raw()])
                 .expect("disposal should succeed");
 
             let snapshot = state
@@ -966,8 +966,8 @@ mod tests {
         let mut runtime = Runtime::new();
         transient(&mut runtime, |scope| {
             let source = scope.signal(0i32).expect("fallible reactive creation");
-            let source_state = source.read().handle.state();
-            let source_raw = source.read().handle.raw();
+            let source_state = source.read_signal().handle.state();
+            let source_raw = source.read_signal().handle.raw();
 
             let _ = scope.with_transient(|child| {
                 let local = child.signal(0i32).expect("fallible reactive creation");
@@ -983,7 +983,7 @@ mod tests {
                         child_handler.view(),
                     )
                     .expect("effect should initialize");
-                let child_state = local.read().handle.state();
+                let child_state = local.read_signal().handle.state();
                 let effect_raw = effect.handle.raw();
                 let (child_owner_id, source_owner_id) = {
                     let child_state_ref = child_state.try_borrow().expect("state read");
@@ -1076,7 +1076,7 @@ mod tests {
             .expect("effect should initialize");
         let source_state = source_storage.owner_token().state();
         let observer_state = observer_storage.owner_token().state();
-        let source_raw = source.read().handle.raw();
+        let source_raw = source.read_signal().handle.raw();
         let effect_raw = effect.handle.raw();
         let observer_target = TargetNode {
             owner_id: observer_state.try_borrow().expect("state read").owner_id,

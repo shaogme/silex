@@ -1,5 +1,5 @@
 use crate::{
-    SilexResult,
+    OwnedReadGuard, SilexResult,
     traits::{RxBase, RxData, RxRead, RxValue},
 };
 
@@ -80,6 +80,18 @@ macro_rules! impl_tuple_rx_traits {
         where
             $($name: RxRead, $name::Value: Sized + Clone + RxData),+
         {
+            type ReadGuard<'a> = OwnedReadGuard<Self::Value> where Self: 'a;
+
+            fn read(&self) -> SilexResult<Self::ReadGuard<'_>> {
+                let value = ($(self.$index.with(|value| (*value).clone())?,)+);
+                Ok(OwnedReadGuard::new(value))
+            }
+
+            fn read_untracked(&self) -> SilexResult<Self::ReadGuard<'_>> {
+                let value = ($(self.$index.with_untracked(|value| (*value).clone())?,)+);
+                Ok(OwnedReadGuard::new(value))
+            }
+
             fn with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> SilexResult<U> {
                 let value = ($(self.$index.with(|value| (*value).clone())?,)+);
                 Ok(f(&value))

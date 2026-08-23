@@ -25,11 +25,13 @@ pub(crate) use input::{
 pub use model::RuntimeSnapshot;
 pub(crate) use model::{CleanupTarget, ScopePhase, ScopeState, ScopeStateInner};
 pub(crate) use ops::{
-    acquire_error_handler_lease, invoke_callback, invoke_error_handler, node_ref_clear,
-    node_ref_get, node_ref_set, notify, stop_effect, track_fallible_signal, track_signal,
-    track_stored, update_signal, update_stored, with_batch, with_fallible_signal,
-    with_fallible_signal_untracked, with_runtime, with_signal, with_signal_untracked, with_stored,
-    with_untracked,
+    acquire_error_handler_lease, commit_signal, invoke_callback, invoke_error_handler,
+    node_ref_clear, node_ref_get, node_ref_set, notify, read_fallible_signal_lease,
+    read_fallible_signal_lease_untracked, read_signal_lease, read_signal_lease_untracked,
+    read_stored_lease, stop_effect, track_fallible_signal, track_signal, track_stored,
+    update_signal, update_stored, with_batch, with_fallible_signal, with_fallible_signal_untracked,
+    with_runtime, with_signal, with_signal_untracked, with_stored, with_untracked,
+    write_signal_lease, write_stored_lease,
 };
 pub(crate) use scheduler::{
     CloseReportQueue, GlobalScheduler, ObserverFrame, OwnerId, OwnerMode, TargetNode,
@@ -37,7 +39,7 @@ pub(crate) use scheduler::{
 
 use crate::error::{ReactiveError, ReactiveResult};
 use crate::owner::{self, OwnerHandle};
-use crate::root::{CloseError, TransientScopeError, TransientScopeResult};
+use crate::root::{CleanupFailure, CloseError, TransientScopeError, TransientScopeResult};
 
 use std::{cell::Cell, marker::PhantomData, rc::Rc};
 
@@ -46,6 +48,32 @@ pub struct Runtime {
     root_active: Rc<Cell<bool>>,
     close_reports: Rc<CloseReportQueue>,
     marker: PhantomData<Rc<()>>,
+}
+
+pub(crate) fn finish_guard<'scope>(
+    state: &ScopeState<'scope>,
+    should_flush: bool,
+) -> ReactiveResult<()> {
+    if should_flush {
+        eval::flush_if_idle(state)
+    } else {
+        Ok(())
+    }
+}
+
+pub(crate) fn report_guard_failure<'scope>(state: &ScopeState<'scope>, error: ReactiveError) {
+    let reporter = state.try_borrow().ok().and_then(|state_ref| {
+        state_ref
+            .scheduler
+            .try_borrow()
+            .ok()
+            .map(|scheduler| scheduler.close_reports.clone())
+    });
+    if let Some(reporter) = reporter
+        && let Some(error) = CloseError::from_failures(vec![CleanupFailure::Runtime(error)])
+    {
+        reporter.push(error);
+    }
 }
 
 impl Runtime {

@@ -423,6 +423,21 @@ impl<'owner, T: RxData + 'owner, E: RxError + 'owner> RxBase for Resource<'owner
 }
 
 impl<'owner, T: RxCloneData + 'owner, E: RxError + 'owner> RxRead for Resource<'owner, T, E> {
+    type ReadGuard<'a>
+        = crate::OwnedReadGuard<Self::Value>
+    where
+        Self: 'a;
+
+    fn read(&self) -> crate::SilexResult<Self::ReadGuard<'_>> {
+        self.state
+            .with(|state| crate::OwnedReadGuard::new(state.as_option().cloned()))
+    }
+
+    fn read_untracked(&self) -> crate::SilexResult<Self::ReadGuard<'_>> {
+        self.state
+            .with_untracked(|state| crate::OwnedReadGuard::new(state.as_option().cloned()))
+    }
+
     fn with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> crate::SilexResult<U> {
         self.state.with(|state| f(&state.as_option().cloned()))
     }

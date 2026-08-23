@@ -161,12 +161,12 @@ impl Drop for LeaseTicket {
     }
 }
 
-pub(crate) struct ReadLease<'cell, T> {
+pub(crate) struct ReadLease<'cell, T: ?Sized> {
     value: BorrowRef<'cell, T>,
     _ticket: LeaseTicket,
 }
 
-impl<T> Deref for ReadLease<'_, T> {
+impl<T: ?Sized> Deref for ReadLease<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -174,12 +174,25 @@ impl<T> Deref for ReadLease<'_, T> {
     }
 }
 
-pub(crate) struct WriteLease<'cell, T> {
+impl<'cell, T: ?Sized> ReadLease<'cell, T> {
+    pub(crate) fn try_map<U: ?Sized>(
+        self,
+        f: impl FnOnce(&T) -> Option<&U>,
+    ) -> Result<ReadLease<'cell, U>, Self> {
+        let ReadLease { value, _ticket } = self;
+        match value.try_map(f) {
+            Ok(value) => Ok(ReadLease { value, _ticket }),
+            Err(value) => Err(ReadLease { value, _ticket }),
+        }
+    }
+}
+
+pub(crate) struct WriteLease<'cell, T: ?Sized> {
     value: BorrowRefMut<'cell, T>,
     _ticket: LeaseTicket,
 }
 
-impl<T> Deref for WriteLease<'_, T> {
+impl<T: ?Sized> Deref for WriteLease<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -187,9 +200,40 @@ impl<T> Deref for WriteLease<'_, T> {
     }
 }
 
-impl<T> DerefMut for WriteLease<'_, T> {
+impl<T: ?Sized> DerefMut for WriteLease<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.value
+    }
+}
+
+impl<'cell, T: ?Sized> WriteLease<'cell, T> {
+    pub(crate) fn try_map<U: ?Sized>(
+        self,
+        f: impl FnOnce(&mut T) -> Option<&mut U>,
+    ) -> Result<WriteLease<'cell, U>, Self> {
+        let WriteLease { value, _ticket } = self;
+        match value.try_map(f) {
+            Ok(value) => Ok(WriteLease { value, _ticket }),
+            Err(value) => Err(WriteLease { value, _ticket }),
+        }
+    }
+}
+
+impl<'cell, T> ReadLease<'cell, Option<T>> {
+    pub(crate) fn into_initialized(self) -> ReactiveResult<ReadLease<'cell, T>> {
+        match self.try_map(Option::as_ref) {
+            Ok(lease) => Ok(lease),
+            Err(_lease) => Err(ReactiveError::NoSuchNode),
+        }
+    }
+}
+
+impl<'cell, T> WriteLease<'cell, Option<T>> {
+    pub(crate) fn into_initialized(self) -> ReactiveResult<WriteLease<'cell, T>> {
+        match self.try_map(Option::as_mut) {
+            Ok(lease) => Ok(lease),
+            Err(_lease) => Err(ReactiveError::NoSuchNode),
+        }
     }
 }
 

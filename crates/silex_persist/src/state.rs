@@ -247,6 +247,19 @@ impl<'scope, T: RxData> RxBase for Persistent<'scope, T> {
 }
 
 impl<'scope, T: RxData> RxRead for Persistent<'scope, T> {
+    type ReadGuard<'a>
+        = <Signal<'scope, T> as RxRead>::ReadGuard<'a>
+    where
+        Self: 'a;
+
+    fn read(&self) -> SilexResult<Self::ReadGuard<'_>> {
+        self.value.read()
+    }
+
+    fn read_untracked(&self) -> SilexResult<Self::ReadGuard<'_>> {
+        self.value.read_untracked()
+    }
+
     fn with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> SilexResult<U> {
         self.value.with(f)
     }
@@ -257,6 +270,16 @@ impl<'scope, T: RxData> RxRead for Persistent<'scope, T> {
 }
 
 impl<'scope, T: RxData> RxWrite for Persistent<'scope, T> {
+    type WriteGuard<'a>
+        = <Signal<'scope, T> as RxWrite>::WriteGuard<'a>
+    where
+        Self: 'a;
+
+    fn write(&self) -> SilexResult<Self::WriteGuard<'_>> {
+        mark_local_value_write(self.controller)?;
+        self.value.write()
+    }
+
     fn rx_update_untracked<U>(&self, f: impl FnOnce(&mut Self::Value) -> U) -> SilexResult<U> {
         mark_local_value_write(self.controller)?;
         self.value.write_signal().update(f)

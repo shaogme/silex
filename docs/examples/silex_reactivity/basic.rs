@@ -29,10 +29,9 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     runtime
         .with_transient(|scope| {
             let signal = scope.signal(1_i32)?;
-            let source = signal;
             let doubled = scope
                 .computed(
-                    move || source.get().map(|value| value * 2),
+                    move || signal.get().map(|value| value * 2),
                     handler::<ReactiveError>(scope)?,
                 )
                 .map_err(computation_error)?;
@@ -48,7 +47,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
                 )
                 .map_err(computation_error)?;
 
-            source.set(2)?;
+            signal.set(2)?;
             Ok::<(), ReactiveError>(())
         })
         .map_err(|error| Box::new(error) as Box<dyn std::error::Error>)??;

@@ -1,6 +1,10 @@
 //! Reactive node primitives owned by an execution scope.
 
-use std::{fmt, marker::PhantomData};
+use std::{
+    fmt,
+    marker::PhantomData,
+    ops::{Deref, DerefMut},
+};
 
 use crate::{
     CallbackInvokeResult, ErrorContext, ErrorHandlerInput, HandlerError, ReactiveError,
@@ -8,8 +12,9 @@ use crate::{
     error::ErrorSlotRef,
     error::map_callback_error,
     handle::{CallbackId, ComputedId, EffectId, NodeRefId, SignalId, StoredId},
+    internal::NodeId,
     runtime,
-    runtime::storage::{CallbackThunk, CallbackThunkError, TypedNodeRef},
+    runtime::storage::{CallbackThunk, CallbackThunkError, ReadLease, TypedNodeRef, WriteLease},
 };
 
 /// Options controlling the initial callback and one-shot behavior of a watcher.
@@ -150,6 +155,23 @@ impl<'scope, T, E> Clone for Computed<'scope, T, E> {
 }
 
 impl<'scope, T: 'scope, E: 'scope> Computed<'scope, T, E> {
+    pub fn read(&self) -> CallbackInvokeResult<ReadGuard<'scope, T>, E> {
+        let state = self.handle.state();
+        runtime::read_fallible_signal_lease(&state, self.handle.raw(), self.value, self.errors)
+            .map(|lease| ReadGuard::new(state, lease, true))
+    }
+
+    pub fn read_untracked(&self) -> CallbackInvokeResult<ReadGuard<'scope, T>, E> {
+        let state = self.handle.state();
+        runtime::read_fallible_signal_lease_untracked(
+            &state,
+            self.handle.raw(),
+            self.value,
+            self.errors,
+        )
+        .map(|lease| ReadGuard::new(state, lease, true))
+    }
+
     pub fn get(&self) -> CallbackInvokeResult<T, E>
     where
         T: Clone,
@@ -233,6 +255,165 @@ impl<'scope, T: 'scope> NodeRef<'scope, T> {
 // Signal
 // =============================================================================
 
+/// A scoped immutable borrow of a reactive payload.
+pub struct ReadGuard<'scope, T: ?Sized> {
+    lease: Option<ReadLease<'scope, T>>,
+    state: runtime::ScopeState<'scope>,
+    should_flush: bool,
+}
+
+impl<'scope, T: ?Sized> ReadGuard<'scope, T> {
+    pub(crate) fn new(
+        state: runtime::ScopeState<'scope>,
+        lease: ReadLease<'scope, T>,
+        should_flush: bool,
+    ) -> Self {
+        Self {
+            lease: Some(lease),
+            state,
+            should_flush,
+        }
+    }
+
+    /// Release the borrow and report any pending scheduler error immediately.
+    pub fn finish(mut self) -> ReactiveResult<()> {
+        let lease = self.lease.take();
+        drop(lease);
+        runtime::finish_guard(&self.state, self.should_flush)
+    }
+}
+
+#[expect(
+    clippy::unreachable,
+    reason = "finish consumes the guard and takes its lease; reaching this branch is an internal invariant violation"
+)]
+impl<T: ?Sized> Deref for ReadGuard<'_, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        match self.lease.as_ref() {
+            Some(lease) => lease,
+            None => unreachable!("read guard was accessed after finish"),
+        }
+    }
+}
+
+impl<T: ?Sized> Drop for ReadGuard<'_, T> {
+    fn drop(&mut self) {
+        let lease = self.lease.take();
+        if lease.is_none() {
+            return;
+        }
+        drop(lease);
+        if let Err(error) = runtime::finish_guard(&self.state, self.should_flush) {
+            runtime::report_guard_failure(&self.state, error);
+        }
+    }
+}
+
+enum WriteCommit {
+    Signal(NodeId),
+    Stored,
+}
+
+/// A scoped mutable borrow of a reactive payload.
+pub struct WriteGuard<'scope, T: ?Sized> {
+    lease: Option<WriteLease<'scope, T>>,
+    state: runtime::ScopeState<'scope>,
+    commit: Option<WriteCommit>,
+    should_flush: bool,
+}
+
+impl<'scope, T: ?Sized> WriteGuard<'scope, T> {
+    pub(crate) fn new_signal(
+        state: runtime::ScopeState<'scope>,
+        lease: WriteLease<'scope, T>,
+        id: NodeId,
+    ) -> Self {
+        Self {
+            lease: Some(lease),
+            state,
+            commit: Some(WriteCommit::Signal(id)),
+            should_flush: true,
+        }
+    }
+
+    pub(crate) fn new_stored(
+        state: runtime::ScopeState<'scope>,
+        lease: WriteLease<'scope, T>,
+        should_flush: bool,
+    ) -> Self {
+        Self {
+            lease: Some(lease),
+            state,
+            commit: Some(WriteCommit::Stored),
+            should_flush,
+        }
+    }
+
+    fn commit_inner(&mut self) -> ReactiveResult<()> {
+        let lease = self.lease.take();
+        drop(lease);
+        match self.commit.take() {
+            Some(WriteCommit::Signal(id)) => runtime::commit_signal(&self.state, id)?,
+            Some(WriteCommit::Stored) | None => {}
+        }
+        runtime::finish_guard(&self.state, self.should_flush)
+    }
+
+    /// Release the borrow, publish the change, and flush pending work.
+    pub fn commit(mut self) -> ReactiveResult<()> {
+        self.commit_inner()
+    }
+
+    /// Release the borrow without publishing a change.
+    pub fn abort(mut self) -> ReactiveResult<()> {
+        let lease = self.lease.take();
+        drop(lease);
+        self.commit.take();
+        runtime::finish_guard(&self.state, self.should_flush)
+    }
+}
+
+#[expect(
+    clippy::unreachable,
+    reason = "commit or abort consumes the guard and takes its lease; reaching this branch is an internal invariant violation"
+)]
+impl<T: ?Sized> Deref for WriteGuard<'_, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        match self.lease.as_ref() {
+            Some(lease) => lease,
+            None => unreachable!("write guard was accessed after finish"),
+        }
+    }
+}
+
+#[expect(
+    clippy::unreachable,
+    reason = "commit or abort consumes the guard and takes its lease; reaching this branch is an internal invariant violation"
+)]
+impl<T: ?Sized> DerefMut for WriteGuard<'_, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self.lease.as_mut() {
+            Some(lease) => lease,
+            None => unreachable!("write guard was accessed after finish"),
+        }
+    }
+}
+
+impl<T: ?Sized> Drop for WriteGuard<'_, T> {
+    fn drop(&mut self) {
+        if self.lease.is_none() {
+            return;
+        }
+        if let Err(error) = self.commit_inner() {
+            runtime::report_guard_failure(&self.state, error);
+        }
+    }
+}
+
 /// Read capability for a signal or memo-like node.
 pub struct ReadSignal<'scope, T> {
     pub(crate) handle: SignalId<'scope>,
@@ -278,6 +459,18 @@ impl<'scope, T> Clone for Signal<'scope, T> {
 }
 
 impl<'scope, T: 'scope> ReadSignal<'scope, T> {
+    pub fn read(&self) -> ReactiveResult<ReadGuard<'scope, T>> {
+        let state = self.handle.state();
+        let lease = runtime::read_signal_lease(&state, self.handle.raw(), self.value)?;
+        Ok(ReadGuard::new(state, lease, true))
+    }
+
+    pub fn read_untracked(&self) -> ReactiveResult<ReadGuard<'scope, T>> {
+        let state = self.handle.state();
+        let lease = runtime::read_signal_lease_untracked(&state, self.handle.raw(), self.value)?;
+        Ok(ReadGuard::new(state, lease, true))
+    }
+
     pub fn get(&self) -> ReactiveResult<T>
     where
         T: Clone,
@@ -306,6 +499,12 @@ impl<'scope, T: 'scope> ReadSignal<'scope, T> {
 }
 
 impl<'scope, T: 'scope> WriteSignal<'scope, T> {
+    pub fn write(&self) -> ReactiveResult<WriteGuard<'scope, T>> {
+        let state = self.handle.state();
+        let lease = runtime::write_signal_lease(&state, self.handle.raw(), self.value)?;
+        Ok(WriteGuard::new_signal(state, lease, self.handle.raw()))
+    }
+
     pub fn notify(&self) -> ReactiveResult<()> {
         runtime::notify(&self.handle.state(), self.handle.raw())
     }
@@ -405,11 +604,11 @@ impl<'scope, T> Signal<'scope, T> {
         self.write.set_if_changed(value)
     }
 
-    pub fn read(&self) -> ReadSignal<'scope, T> {
+    pub fn read_signal(&self) -> ReadSignal<'scope, T> {
         self.read
     }
 
-    pub fn write(&self) -> WriteSignal<'scope, T> {
+    pub fn write_signal(&self) -> WriteSignal<'scope, T> {
         self.write
     }
 }
@@ -440,6 +639,24 @@ impl<'scope, T> Clone for StoredValue<'scope, T> {
 }
 
 impl<'scope, T: 'scope> StoredValue<'scope, T> {
+    pub fn read(&self) -> ReactiveResult<ReadGuard<'scope, T>> {
+        let state = self.handle.state();
+        let (lease, should_flush) =
+            runtime::read_stored_lease(&state, self.handle.raw(), self.value)?;
+        Ok(ReadGuard::new(state, lease, should_flush))
+    }
+
+    pub fn read_untracked(&self) -> ReactiveResult<ReadGuard<'scope, T>> {
+        self.read()
+    }
+
+    pub fn write(&self) -> ReactiveResult<WriteGuard<'scope, T>> {
+        let state = self.handle.state();
+        let (lease, should_flush) =
+            runtime::write_stored_lease(&state, self.handle.raw(), self.value)?;
+        Ok(WriteGuard::new_stored(state, lease, should_flush))
+    }
+
     pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> ReactiveResult<R> {
         runtime::with_stored(&self.handle.state(), self.handle.raw(), self.value, f)
     }

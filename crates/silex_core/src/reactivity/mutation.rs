@@ -299,6 +299,21 @@ where
     T: RxCloneData + 'owner,
     E: RxError + 'owner,
 {
+    type ReadGuard<'a>
+        = crate::OwnedReadGuard<Self::Value>
+    where
+        Self: 'a;
+
+    fn read(&self) -> crate::SilexResult<Self::ReadGuard<'_>> {
+        self.state
+            .with(|state| crate::OwnedReadGuard::new(state.value().cloned()))
+    }
+
+    fn read_untracked(&self) -> crate::SilexResult<Self::ReadGuard<'_>> {
+        self.state
+            .with_untracked(|state| crate::OwnedReadGuard::new(state.value().cloned()))
+    }
+
     fn with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> crate::SilexResult<U> {
         self.state.with(|state| f(&state.value().cloned()))
     }

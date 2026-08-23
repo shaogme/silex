@@ -1,5 +1,5 @@
 use crate::{
-    OwnerAccess, Rx, SilexError, SilexResult,
+    OwnerAccess, ReadGuard, Rx, SilexError, SilexResult, WriteGuard,
     traits::{RuntimeScoped, RxBase, RxRead, RxValue, RxWrite},
 };
 use std::fmt;
@@ -80,6 +80,25 @@ impl<'scope, T> RxBase for StoredValue<'scope, T> {
 }
 
 impl<'scope, T> RxRead for StoredValue<'scope, T> {
+    type ReadGuard<'a>
+        = ReadGuard<'scope, T>
+    where
+        Self: 'a;
+
+    fn read(&self) -> SilexResult<Self::ReadGuard<'_>> {
+        self.inner
+            .read()
+            .map(ReadGuard::new)
+            .map_err(SilexError::fatal)
+    }
+
+    fn read_untracked(&self) -> SilexResult<Self::ReadGuard<'_>> {
+        self.inner
+            .read_untracked()
+            .map(ReadGuard::new)
+            .map_err(SilexError::fatal)
+    }
+
     fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
         self.inner.with(f).map_err(SilexError::fatal)
     }
@@ -90,6 +109,18 @@ impl<'scope, T> RxRead for StoredValue<'scope, T> {
 }
 
 impl<'scope, T> RxWrite for StoredValue<'scope, T> {
+    type WriteGuard<'a>
+        = WriteGuard<'scope, T>
+    where
+        Self: 'a;
+
+    fn write(&self) -> SilexResult<Self::WriteGuard<'_>> {
+        self.inner
+            .write()
+            .map(WriteGuard::new)
+            .map_err(SilexError::fatal)
+    }
+
     fn rx_update_untracked<U>(&self, f: impl FnOnce(&mut T) -> U) -> SilexResult<U> {
         self.inner.update(f).map_err(SilexError::fatal)
     }

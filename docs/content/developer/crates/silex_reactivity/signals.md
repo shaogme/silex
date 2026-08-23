@@ -13,18 +13,23 @@ weight = 10
 ## Signal：可变源
 
 通过 `OwnerAccess::signal` 创建的 `Signal` 同时持有同一个节点的读写能力，
-可以通过 `read()` 和 `write()` 拆分：
+可以通过 `read_signal()` 和 `write_signal()` 拆分：
 
 ```rust
 let signal = scope.signal(0_i32)?;
-let read = signal.read();
-let write = signal.write();
+let read = signal.read_signal();
+let write = signal.write_signal();
 
-let current = read.get()?;
-let snapshot = read.get_untracked()?;
+let current = *read.read()?;
+let snapshot = *read.read_untracked()?;
 let copied = read.with(|value| *value)?;
 let copied_untracked = read.with_untracked(|value| *value)?;
 
+{
+    let mut guard = write.write()?;
+    *guard = 1;
+    guard.commit()?;
+}
 write.set(1)?;
 write.update(|value| *value += 1)?;
 let changed = write.set_if_changed(3)?;
@@ -37,13 +42,13 @@ write.notify()?;
 
 ```rust
 let signal = scope.signal(std::cell::Cell::new(0_i32))?;
-let read = signal.read();
-let write = signal.write();
+let read = signal.read_signal();
+let write = signal.write_signal();
 read.with(|value| value.set(1))?;
 write.notify()?;
 ```
 
-`OwnerAccess::signal` 返回 `Signal`，适合需要把读写能力作为一个值传递的场景；它提供对应的 `get`、`get_untracked`、`set`、`update`、`set_if_changed`，也可以用 `read()` 和 `write()` 拆分。需要把句柄显式拆成 pair 时，可以调用 `into_pair()`；从已有读写句柄组合时使用 `Signal::from_pair()`，它会拒绝属于不同 signal 节点的 pair。
+`OwnerAccess::signal` 返回 `Signal`，适合需要把读写能力作为一个值传递的场景；它提供对应的 `get`、`get_untracked`、`set`、`update`、`set_if_changed`，也可以用 `read_signal()` 和 `write_signal()` 拆分。需要把句柄显式拆成 pair 时，可以调用 `into_pair()`；从已有读写句柄组合时使用 `Signal::from_pair()`，它会拒绝属于不同 signal 节点的 pair。
 
 ## Computed：缓存的派生值
 

@@ -5,6 +5,7 @@ use crate::{
     reactivity::{Computed, ReactiveSource, ReadSignal, Signal, StoredValue},
 };
 use std::fmt::Debug;
+use std::ops::{Deref, DerefMut};
 
 /// Values accepted by the scoped runtime.
 pub trait RxData {}
@@ -73,6 +74,14 @@ pub trait RxBase: RxValue {
 /// Closure-based tracked and untracked access. No reference can outlive the
 /// callback supplied to these methods.
 pub trait RxRead: RxBase {
+    type ReadGuard<'a>: Deref<Target = Self::Value>
+    where
+        Self: 'a;
+
+    fn read(&self) -> SilexResult<Self::ReadGuard<'_>>;
+
+    fn read_untracked(&self) -> SilexResult<Self::ReadGuard<'_>>;
+
     fn with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> SilexResult<U>;
 
     fn with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> SilexResult<U>;
@@ -391,6 +400,12 @@ where
 
 /// Unified scoped writes.
 pub trait RxWrite: RxValue {
+    type WriteGuard<'a>: DerefMut<Target = Self::Value>
+    where
+        Self: 'a;
+
+    fn write(&self) -> SilexResult<Self::WriteGuard<'_>>;
+
     fn rx_update_untracked<U>(&self, f: impl FnOnce(&mut Self::Value) -> U) -> SilexResult<U>;
 
     fn rx_notify(&self) -> SilexResult<()>;

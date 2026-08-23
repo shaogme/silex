@@ -3,8 +3,8 @@ use silex_core::reactivity::{ReadSignal, Resource, SuspenseContext};
 #[cfg(feature = "test-support")]
 use silex_core::traits::{RxBase, RxRead, RxValue};
 use silex_core::{
-    EffectPhase, ErrorHandlerToken, OwnerAccess, ReactiveError, Runtime, SilexError, SilexErrorKind,
-    traits::RxGet,
+    EffectPhase, ErrorHandlerToken, OwnerAccess, ReactiveError, Runtime, SilexError,
+    SilexErrorKind, traits::RxGet,
 };
 #[cfg(feature = "test-support")]
 use silex_core::{PromotionPlan, ReactiveSource, RuntimeScoped};
@@ -33,6 +33,21 @@ impl RxBase for FailingSource<'_> {
 
 #[cfg(feature = "test-support")]
 impl RxRead for FailingSource<'_> {
+    type ReadGuard<'a>
+        = silex_core::BorrowedReadGuard<'a, u32>
+    where
+        Self: 'a;
+
+    fn read(&self) -> silex_core::SilexResult<Self::ReadGuard<'_>> {
+        Err(SilexError::fatal(SilexErrorKind::Framework(
+            "test source failure".to_string(),
+        )))
+    }
+
+    fn read_untracked(&self) -> silex_core::SilexResult<Self::ReadGuard<'_>> {
+        self.read()
+    }
+
     fn with<U>(&self, _f: impl FnOnce(&Self::Value) -> U) -> silex_core::SilexResult<U> {
         Err(SilexError::fatal(SilexErrorKind::Framework(
             "test source failure".to_string(),

@@ -121,6 +121,128 @@ pub fn Counter<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
 }
 
 #[component]
+pub fn SignalGuardDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
+    let item = owner.signal("Silex T-Shirt".to_string())?;
+    let quantity = owner.signal(1_i32)?;
+    let stock = owner.signal(5_i32)?;
+    let status = owner.signal("请填写商品并检查库存".to_string())?;
+
+    let quantity_summary = owner.computed(
+        move || {
+            let guard = quantity.read()?;
+            let current = *guard;
+            guard.finish()?;
+            Ok(format!("当前购买数量：{current}"))
+        },
+        error_handler,
+    )?;
+
+    let on_increase = move |_| {
+        let stock_guard = stock.read_untracked()?;
+        let available = *stock_guard;
+        stock_guard.finish()?;
+
+        let mut guard = quantity.write()?;
+        if *guard < available {
+            *guard += 1;
+        }
+        guard.commit()?;
+        Ok(())
+    };
+
+    let on_decrease = move |_| {
+        let mut guard = quantity.write()?;
+        if *guard > 1 {
+            *guard -= 1;
+        }
+        guard.commit()?;
+        Ok(())
+    };
+
+    let on_stock_check = move |_| {
+        let item_guard = item.read_untracked()?;
+        let item_name = item_guard.trim().to_string();
+        item_guard.finish()?;
+
+        let quantity_guard = quantity.read_untracked()?;
+        let requested = *quantity_guard;
+        quantity_guard.finish()?;
+
+        let stock_guard = stock.read_untracked()?;
+        let available = *stock_guard;
+        stock_guard.finish()?;
+
+        if item_name.is_empty() {
+            status.set("请先填写商品名称".to_string())?;
+        } else if requested <= available {
+            status.set(format!(
+                "库存充足：{item_name} × {requested}，提交后剩余 {} 件",
+                available - requested
+            ))?;
+        } else {
+            status.set(format!("库存不足：当前仅剩 {available} 件"))?;
+        }
+        Ok(())
+    };
+
+    let on_submit = move |_| {
+        let item_guard = item.read()?;
+        let item_name = item_guard.trim().to_string();
+        item_guard.finish()?;
+
+        let quantity_guard = quantity.read()?;
+        let requested = *quantity_guard;
+        quantity_guard.finish()?;
+
+        if item_name.is_empty() {
+            status.set("提交失败：商品名称不能为空".to_string())?;
+        } else {
+            let mut stock_guard = stock.write()?;
+            if requested > *stock_guard {
+                let available = *stock_guard;
+                stock_guard.abort()?;
+                status.set(format!("提交失败：当前库存仅剩 {available} 件"))?;
+            } else {
+                *stock_guard -= requested;
+                let remaining = *stock_guard;
+                stock_guard.commit()?;
+                status.set(format!(
+                    "订单已提交：{item_name} × {requested}，库存剩余 {remaining} 件"
+                ))?;
+            }
+        }
+        Ok(())
+    };
+
+    Ok(div![
+        h3("购物车草稿"),
+        p("用 guard 读取订单快照、检查库存，并安全提交数量变更。"),
+        label("商品："),
+        input().bind_value(item),
+        p(quantity_summary),
+        p![strong("剩余库存："), strong(stock)],
+        div![
+            button("减少").on(event::click, on_decrease),
+            strong(quantity),
+            button("增加").on(event::click, on_increase),
+        ]
+        .style(sty(ctx).display("flex")?.gap(px(10))?),
+        p(status),
+        div![
+            button("检查库存").on(event::click, on_stock_check),
+            button("提交订单").on(event::click, on_submit),
+        ]
+        .style(sty(ctx).display("flex")?.gap(px(10))?),
+    ]
+    .style(
+        sty(ctx)
+            .padding(px(20))?
+            .border(border(px(1), BorderStyleKeyword::Dashed, AppTheme::BORDER))?
+            .margin_top(px(20))?,
+    ))
+}
+
+#[component]
 pub fn NodeRefDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
     use silex::reexports::web_sys::HtmlInputElement;
     let input_ref = owner.node_ref::<HtmlInputElement>()?;
@@ -308,6 +430,7 @@ pub fn BasicsPage<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
         ),
         Greeting(ctx, name_signal).build(),
         Counter(ctx).build(),
+        SignalGuardDemo(ctx).build(),
         EventDemo(ctx).build(),
         NodeRefDemo(ctx).build(),
         SvgIconDemo(ctx).build(),

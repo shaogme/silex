@@ -86,8 +86,8 @@ fn all_public_node_capabilities_are_copy() {
     runtime
         .with_transient(|scope| {
             let signal = scope.signal(0i32).expect("fallible reactive creation");
-            let read = signal.read();
-            let write = signal.write();
+            let read = signal.read_signal();
+            let write = signal.write_signal();
             let memo = scope
                 .computed(
                     move || Ok(read.get().expect("reactive read")),
@@ -138,7 +138,7 @@ fn signal_pair_round_trip_preserves_node_identity() {
     runtime
         .with_transient(|scope| {
             let signal = scope.signal(1_i32).expect("signal creation");
-            let rebuilt = Signal::from_pair((signal.read(), signal.write()))
+            let rebuilt = Signal::from_pair((signal.read_signal(), signal.write_signal()))
                 .expect("signal pair should be valid");
 
             assert_eq!(rebuilt.get(), Ok(1));
@@ -157,7 +157,7 @@ fn signal_pair_rejects_capabilities_from_different_nodes() {
             let second = scope.signal(2_i32).expect("second signal");
 
             assert!(matches!(
-                Signal::from_pair((first.read(), second.write())),
+                Signal::from_pair((first.read_signal(), second.write_signal())),
                 Err(ReactiveError::InvariantViolation)
             ));
         })
@@ -226,8 +226,8 @@ fn copy_capabilities_return_no_such_node_after_child_release() {
 
     assert_eq!(read.get(), Err(ReactiveError::NoSuchNode));
     assert_eq!(read.set(5), Err(ReactiveError::NoSuchNode));
-    assert_eq!(rw.read().get(), Err(ReactiveError::NoSuchNode));
-    assert_eq!(rw.write().set(5), Err(ReactiveError::NoSuchNode));
+    assert_eq!(rw.read_signal().get(), Err(ReactiveError::NoSuchNode));
+    assert_eq!(rw.write_signal().set(5), Err(ReactiveError::NoSuchNode));
     assert!(matches!(
         computed.get(),
         Err(CallbackInvokeError::Runtime(ReactiveError::NoSuchNode))
@@ -492,7 +492,7 @@ fn updating_another_signal_during_read_defers_effect_flush() {
 
             let result = catch_unwind(AssertUnwindSafe(|| {
                 source
-                    .read()
+                    .read_signal()
                     .with(|_| other.set(1).expect("signal update"))
                     .expect("reactive read");
             }));
@@ -520,7 +520,7 @@ fn computation_payload_drop_observes_disposed_scope() {
                     move || {
                         let source = scope_copy.signal(0i32).expect("fallible reactive creation");
                         let guard = ReenterOnDrop {
-                            setter: source.write(),
+                            setter: source.write_signal(),
                             called: called_in_outer.clone(),
                             error: error_in_outer.clone(),
                         };
@@ -565,7 +565,7 @@ fn nested_memo_child_payload_drop_does_not_track_the_outer_observer() {
                         if first_inner_run.replace(false) {
                             scope_for_child
                                 .signal(ReadOnDrop {
-                                    probe: probe_for_child.read(),
+                                    probe: probe_for_child.read_signal(),
                                     drops: drops_in_child.clone(),
                                 })
                                 .expect("test operation should succeed");
@@ -633,7 +633,7 @@ fn nested_memo_result_drop_does_not_track_the_outer_observer() {
                         move || {
                             inner_source.get().expect("reactive read");
                             Ok(ReadOnDrop {
-                                probe: probe.read(),
+                                probe: probe.read_signal(),
                                 drops: drops.clone(),
                             })
                         }
@@ -785,7 +785,7 @@ fn child_callback_payload_drop_can_schedule_an_active_parent_effect() {
             scope
                 .with_transient(|child| {
                     let drop_probe = ReenterOnDrop {
-                        setter: setter.write(),
+                        setter: setter.write_signal(),
                         called: called.clone(),
                         error: error.clone(),
                     };

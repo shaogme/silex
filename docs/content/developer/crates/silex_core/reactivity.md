@@ -26,22 +26,42 @@ weight = 10
 
 ## Signal 读写
 
+`Signal` 同时实现 `RxRead` 和 `RxWrite`，可以直接获取具名的读写 guard。
+读取 guard 实现 `Deref`，写入 guard 实现 `DerefMut`；guard 存活期间会保持
+runtime 的动态借用。
+
+`silex_core::ReadGuard` 和 `silex_core::WriteGuard` 在底层 runtime guard 外再封装
+了一层，统一把释放、提交和回滚操作转换为 `SilexResult<()>`。因此调用方只需使用
+`finish()?`、`commit()?` 或 `abort()?`，不需要重复写
+`.map_err(SilexError::fatal)`；guard 的 Drop 仍保留底层的 best-effort 清理行为。
+
 ```rust
 let signal = owner.signal(0_i32)?;
-let read = signal.read_signal();
-let write = signal.write_signal();
+let read_guard = signal.read()?;                 // tracked
+let current = *read_guard;
+read_guard.finish()?;
 
-let current = read.get()?;                       // tracked，T: Clone
-let snapshot = read.get_untracked()?;            // untracked
-let selected = read.with(|value| value + 1)?;    // tracked，借用只在闭包内有效
-let raw = read.with_untracked(|value| *value)?;  // untracked
+let snapshot_guard = signal.read_untracked()?;   // 不建立依赖
+let snapshot = *snapshot_guard;
+snapshot_guard.finish()?;
 
-write.set(1)?;
-write.update(|value| *value += 1)?;
-write.notify()?; // 通过内部可变性修改 payload 后显式通知
+let mut write_guard = signal.write()?;
+*write_guard += 1;
+write_guard.commit()?;
 ```
 
-`with`/`with_untracked` 不会让内部引用逃出闭包。需要把同一 signal 作为一个可传递值时使用 `Signal` 的 `split`、`read_signal` 或 `write_signal`；需要只读统一接口时调用 `Signal::into_rx()` 或直接使用 `Rx`。
+`read()` 会在当前 observer 存在时建立依赖，`read_untracked()` 只校验句柄并
+读取当前值，不建立依赖。`finish()` 会显式结束读 guard；如果直接丢弃 guard，
+其 Drop 实现仍会执行 best-effort 清理。`write()` 获取独占写 guard，修改完成
+后应显式调用 `commit()`，让写入和队列刷新返回可处理的错误；未显式结束时，
+Drop 会执行 best-effort commit。
+
+`with`/`with_untracked` 适合引用只在闭包内有效的短访问；guard 适合需要在一段
+连续逻辑中直接访问 payload 的场景。持有读 guard 时获取同一 signal 的写 guard
+会返回借用冲突，而不是绕过 owner 校验。
+
+`Signal` 的 `get`、`get_untracked`、`set` 和 `update` 仍可用于 clone-based 或
+闭包式的便利访问；它们不会改变 guard 的生命周期和动态借用规则。
 
 通过 `Cell`、`RefCell` 或其他内部可变容器绕过 `set`/`update` 时，运行时看不到 payload 的变化；修改完成后必须调用 `WriteSignal::notify`。`notify` 不负责比较新旧值，也不替代正确的响应式写入。
 
@@ -120,8 +140,8 @@ let watcher = owner.watch_getter_with_options(
 | Trait | 作用 |
 | --- | --- |
 | `RxValue` | 暴露关联的 `Value` 类型。 |
-| `RxRead` / `RxGet` | 提供闭包借用读和 clone-based `with`/`get`；`get` 要求值可 clone。 |
-| `RxWrite` | 提供 `set`、`update`、`notify` 及 setter/updater 闭包。 |
+| `RxRead` / `RxGet` | `RxRead` 提供 `ReadGuard` 关联类型、`read`、`read_untracked` 和闭包访问；`RxGet` 提供 clone-based `get`/`get_untracked`。 |
+| `RxWrite` | 提供 `WriteGuard` 关联类型、`write`，以及 `set`、`update`、`notify` 和 setter/updater 闭包。 |
 | `RuntimeScoped` | 暴露 source 保存的 `OwnerAccess`，供 runtime provenance 校验。 |
 | `RxFrom` / `RxDefault` | 在显式 owner 中从值或 `Default` 创建 owner-owned wrapper。 |
 | `ReactiveInput` | 将既有 scoped source 或支持的常量转换到目标 wrapper；不会隐式创建 runtime。 |
@@ -132,7 +152,12 @@ tuple 的 `RxRead` 会逐个短暂借用成员并创建 owned tuple，因此聚�
 
 ## projection、map 与逻辑运算
 
-`SignalSlice` 通过 `signal.slice(|value| &value.field)` 进行安全 projection；读取时只在 source 借用有效期间暴露字段引用，作为 `ReactiveSource` 使用时会 clone 字段建立 derived computed。
+`SignalSlice` 通过 `signal.slice(|value| &value.field)` 进行安全 projection；它的
+`read()` 返回 `MappedReadGuard`，同时持有 source guard，因此字段引用只在 source
+借用有效期间暴露。作为 `ReactiveSource` 使用时会 clone 字段建立 derived
+computed。tuple、`Resource` 和 `Mutation` 的读取结果则是 `OwnedReadGuard` 快照，
+不会把底层 payload 借用暴露给调用方；`Rx` 会用 `RxReadGuard` 保留具体 source
+变体的 guard。
 
 `logic::*` 中的 trait 都会在显式 owner 中创建派生节点：
 

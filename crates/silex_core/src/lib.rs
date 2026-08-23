@@ -46,9 +46,10 @@ pub use error::{AppHostError, BootstrapError, HostState, UnmountOutcome};
 pub use node_ref::NodeRef;
 pub use owner::{OwnerAccess, OwnerChild, OwnerCleanupRegistrationError, OwnerHandle, Runtime};
 pub use reactivity::{
-    Computed, Constant, EffectHandle, EffectPhase, Mutation, PromotionPlan, ReactiveSource,
-    ReadSignal, Resource, ResourceBuilder, ResourceFetchBuilder, ResourceSource,
-    ResourceSourceBuilder, Rx, Signal, StoredValue, SuspenseContext, WatchOptions, WriteSignal,
+    BorrowedReadGuard, Computed, Constant, EffectHandle, EffectPhase, MappedReadGuard, Mutation,
+    OwnedReadGuard, PromotionPlan, ReactiveSource, ReadGuard, ReadSignal, Resource,
+    ResourceBuilder, ResourceFetchBuilder, ResourceSource, ResourceSourceBuilder, Rx, RxReadGuard,
+    Signal, StoredValue, SuspenseContext, WatchOptions, WriteGuard, WriteSignal,
 };
 #[cfg(feature = "test-support")]
 pub use silex_reactivity::RuntimeSnapshot;

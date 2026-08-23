@@ -12,10 +12,10 @@ error[E0277]: CSS 动态插值只能接受带当前生命周期的响应式 sour
    = help: the trait `silex_css::IntoCssReactive<'_>` is not implemented for `bool`
    = note: 动态 `$(...)` 不会为静态值创建隐式 Runtime
    = help: the following other types implement trait `silex_css::IntoCssReactive<'scope>`:
-             Computed<'scope, T>
-             ReadSignal<'scope, T>
              Signal<'scope, T>
              StoredValue<'scope, T>
+             silex_core::Computed<'scope, T>
+             silex_core::ReadSignal<'scope, T>
              silex_core::Rx<'scope, T>
 
 error[E0277]: CSS 动态插值只能接受带当前生命周期的响应式 source (`IntoCssReactive<'scope>`)；普通静态值请直接写入 CSS 或使用 var(--name)
@@ -31,9 +31,9 @@ error[E0277]: CSS 动态插值只能接受带当前生命周期的响应式 sour
    = help: the trait `silex_css::IntoCssReactive<'_>` is not implemented for `bool`
    = note: 动态 `$(...)` 不会为静态值创建隐式 Runtime
    = help: the following other types implement trait `silex_css::IntoCssReactive<'scope>`:
-             Computed<'scope, T>
-             ReadSignal<'scope, T>
              Signal<'scope, T>
              StoredValue<'scope, T>
+             silex_core::Computed<'scope, T>
+             silex_core::ReadSignal<'scope, T>
              silex_core::Rx<'scope, T>
    = note: this error originates in the macro `tw` (in Nightly builds, run with -Z macro-backtrace for more info)

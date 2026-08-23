@@ -1,14 +1,5 @@
-error: lifetime may not live long enough
-  --> tests/ui/fail_child_handle_escape.rs:10:13
+error[E0599]: no method named `read` found for struct `Signal<'scope, T>` in the current scope
+  --> tests/ui/fail_child_handle_escape.rs:10:20
    |
- 6 |         scope.with_transient(|child| {
-   |                               ------ return type of closure is ReadSignal<'2, i32>
-   |                               |
-   |                               has type `OwnerAccess<'1>`
-...
 10 |             signal.read()
-   |             ^^^^^^^^^^^^^ returning this value requires that `'1` must outlive `'2`
-   |
-   = note: requirement occurs because of the type `ReadSignal<'_, i32>`, which makes the generic argument `'_` invariant
-   = note: the struct `ReadSignal<'scope, T>` is invariant over the parameter `'scope`
-   = help: see <https://doc.rust-lang.org/nomicon/subtyping.html> for more information about variance
+   |                    ^^^^ private field, not a method

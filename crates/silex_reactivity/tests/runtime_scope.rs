@@ -254,7 +254,7 @@ fn payload_drop_cannot_track_through_either_observer_slot() {
                 .with_transient(|child| {
                     child
                         .stored(TrackDuringDrop {
-                            source: source.read(),
+                            source: source.read_signal(),
                             tracked: tracked.clone(),
                         })
                         .expect("stored creation");
@@ -1116,7 +1116,7 @@ fn child_cleanup_panic_still_flushes_parent_queue() {
                     EffectPhase::Normal,
                     move || {
                         source
-                            .read()
+                            .read_signal()
                             .with(|value| {
                                 std::hint::black_box(*value.borrow());
                                 runs_in_effect.set(runs_in_effect.get() + 1);
@@ -1139,10 +1139,10 @@ fn child_cleanup_panic_still_flushes_parent_queue() {
                             .on_cleanup(
                                 move || {
                                     source_in_cleanup
-                                        .read()
+                                        .read_signal()
                                         .with(|_| {
                                             setter_in_cleanup
-                                                .write()
+                                                .write_signal()
                                                 .notify()
                                                 .expect("test operation should succeed");
                                             assert_eq!(runs_in_cleanup.get(), 1);

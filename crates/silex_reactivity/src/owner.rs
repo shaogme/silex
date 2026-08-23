@@ -28,8 +28,8 @@ use crate::{
     unsafe_boundary::WeakOwnerToken,
 };
 pub use node::{
-    Callback, Computed, EffectHandle, EffectPhase, NodeRef, ReadSignal, Signal, StoredValue,
-    WatchOptions, WriteSignal,
+    Callback, Computed, EffectHandle, EffectPhase, NodeRef, ReadGuard, ReadSignal, Signal,
+    StoredValue, WatchOptions, WriteGuard, WriteSignal,
 };
 use std::{cell::Cell, future::Future, marker::PhantomData, panic::UnwindSafe, pin::Pin, rc::Rc};
 

@@ -1,4 +1,5 @@
 mod effect;
+mod guard;
 mod memo;
 mod mutation;
 mod promotion;
@@ -10,6 +11,9 @@ mod stored_value;
 mod trait_impls;
 
 pub use effect::EffectHandle;
+pub use guard::{
+    BorrowedReadGuard, MappedReadGuard, OwnedReadGuard, ReadGuard, RxReadGuard, WriteGuard,
+};
 pub use memo::Computed;
 pub use mutation::{Mutation, MutationState};
 pub use promotion::{PromotionPlan, ReactiveSource};

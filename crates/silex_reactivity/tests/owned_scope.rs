@@ -35,7 +35,7 @@ fn owned_scope_keeps_effects_until_explicit_dispose() {
             .effect(
                 EffectPhase::Normal,
                 move || {
-                    read.read()
+                    read.read_signal()
                         .with(|value| {
                             assert!(*value >= 1);
                         })
@@ -205,7 +205,7 @@ fn lexical_owned_scope_supports_borrowed_callbacks_and_nested_dispose() {
                 .effect(
                     EffectPhase::Normal,
                     move || {
-                        read.read()
+                        read.read_signal()
                             .with(|value| {
                                 assert!(*value >= 1);
                                 assert_eq!(text.as_str(), "borrowed");

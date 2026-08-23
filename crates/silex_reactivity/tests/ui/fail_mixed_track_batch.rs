@@ -10,7 +10,10 @@ fn main() {
             let local_signal = child
                 .signal(0i32)
                 .expect("local signal creation should succeed");
-            track_batch(&[parent_signal.read(), local_signal.read()]);
+            track_batch(&[
+                parent_signal.read_signal(),
+                local_signal.read_signal(),
+            ]);
         });
     });
 }

@@ -93,16 +93,16 @@ fn test_any_value_interior_mutability_inline() {
                 .expect("fallible reactive creation");
             let _ = s_refcell;
             s_refcell
-                .read()
+                .read_signal()
                 .with(|v| v.borrow_mut().push(10))
                 .expect("test operation should succeed");
             s_refcell
-                .read()
+                .read_signal()
                 .with(|v| v.borrow_mut().push(20))
                 .expect("test operation should succeed");
 
             assert_eq!(
-                s_refcell.read().with(|v| v.borrow().clone()),
+                s_refcell.read_signal().with(|v| v.borrow().clone()),
                 Ok(vec![10, 20])
             );
         })

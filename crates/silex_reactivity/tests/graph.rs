@@ -640,7 +640,7 @@ fn notify_recomputes_after_silent_interior_mutation() {
                     move || {
                         seen_in_effect.set(
                             source
-                                .read()
+                                .read_signal()
                                 .with(|value| *value.borrow())
                                 .expect("reactive read"),
                         );
@@ -651,11 +651,11 @@ fn notify_recomputes_after_silent_interior_mutation() {
                 .expect("effect should initialize");
 
             source
-                .read()
+                .read_signal()
                 .with(|value| {
                     *value.borrow_mut() = 1;
                     source
-                        .write()
+                        .write_signal()
                         .notify()
                         .expect("test operation should succeed");
                     assert_eq!(seen.get(), 0);
@@ -685,7 +685,7 @@ fn cross_scope_silent_notify_from_callback_waits_for_value_borrow() {
                             EffectPhase::Normal,
                             move || {
                                 source
-                                    .read()
+                                    .read_signal()
                                     .with(|value| {
                                         std::hint::black_box(*value.borrow());
                                         runs_in_effect.set(runs_in_effect.get() + 1);
@@ -702,11 +702,11 @@ fn cross_scope_silent_notify_from_callback_waits_for_value_borrow() {
                         .callback(move |_: ()| {
                             let runs_before = runs_in_callback.get();
                             source
-                                .read()
+                                .read_signal()
                                 .with(|value| {
                                     *value.borrow_mut() += 1;
                                     source
-                                        .write()
+                                        .write_signal()
                                         .notify()
                                         .expect("test operation should succeed");
                                     assert_eq!(runs_in_callback.get(), runs_before);
@@ -719,13 +719,13 @@ fn cross_scope_silent_notify_from_callback_waits_for_value_borrow() {
                     assert_eq!(runs.get(), 1);
                     callback.invoke(()).expect("callback should be alive");
                     assert_eq!(runs.get(), 2);
-                    assert_eq!(source.read().with(|value| *value.borrow()), Ok(1));
+                    assert_eq!(source.read_signal().with(|value| *value.borrow()), Ok(1));
 
                     callback
                         .invoke(())
                         .expect("callback should remain reusable");
                     assert_eq!(runs.get(), 3);
-                    assert_eq!(source.read().with(|value| *value.borrow()), Ok(2));
+                    assert_eq!(source.read_signal().with(|value| *value.borrow()), Ok(2));
                 })
                 .expect("test operation should succeed");
         })

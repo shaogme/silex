@@ -7,7 +7,10 @@ use super::{
     scheduler::{
         GlobalScheduler, ObserverFrame, TargetNode, has_runtime_boundary, validate_active_scheduler,
     },
-    storage::{CallbackThunk, CallbackThunkError, NodeStorage, TypedNodeRef, TypedSlot},
+    storage::{
+        CallbackThunk, CallbackThunkError, NodeStorage, ReadLease, TypedNodeRef, TypedSlot,
+        WriteLease,
+    },
 };
 use crate::{
     CallbackInvokeError, CallbackInvokeResult, ReactiveError, ReactiveResult,
@@ -182,15 +185,14 @@ where
     Ok(record.lease(owner, record.clone()))
 }
 
-fn read_typed<'scope, T, R>(
+fn restore_read_slot<'scope, T>(
     state: &ScopeState<'scope>,
     id: NodeId,
     slot: TypedNodeRef<'scope, T>,
-    scheduler: SharedCell<GlobalScheduler>,
     kind: Option<NodeKindTag>,
     cleanup: bool,
-    f: impl FnOnce(&T) -> R,
-) -> ReactiveResult<R> {
+    scheduler: SharedCell<GlobalScheduler>,
+) -> ReactiveResult<ReadLease<'scope, T>> {
     let slot = if cleanup {
         restore_cleanup_stored_slot(state, id, slot.pointer())?
     } else {
@@ -200,11 +202,136 @@ fn read_typed<'scope, T, R>(
             None => proof.restore_value_slot(state, id, slot.pointer())?,
         }
     };
-    let lease = slot.try_read(scheduler)?;
-    let value = lease.as_ref().ok_or(ReactiveError::NoSuchNode)?;
-    let result = f(value);
+    slot.try_read(scheduler)?.into_initialized()
+}
+
+fn read_typed<'scope, T, R>(
+    state: &ScopeState<'scope>,
+    id: NodeId,
+    slot: TypedNodeRef<'scope, T>,
+    scheduler: SharedCell<GlobalScheduler>,
+    kind: Option<NodeKindTag>,
+    cleanup: bool,
+    f: impl FnOnce(&T) -> R,
+) -> ReactiveResult<R> {
+    let lease = restore_read_slot(state, id, slot, kind, cleanup, scheduler)?;
+    let result = f(&lease);
     drop(lease);
     Ok(result)
+}
+
+fn read_signal_lease_with_tracking<'scope, T>(
+    state: &ScopeState<'scope>,
+    id: NodeId,
+    value: TypedNodeRef<'scope, T>,
+    tracking: ReadTracking,
+) -> ReactiveResult<ReadLease<'scope, T>> {
+    let prepared = prepare_signal_read(state, id, value, tracking, None)?;
+    restore_read_slot(state, id, value, None, false, prepared.scheduler)
+}
+
+pub(crate) fn read_signal_lease<'scope, T>(
+    state: &ScopeState<'scope>,
+    id: NodeId,
+    value: TypedNodeRef<'scope, T>,
+) -> ReactiveResult<ReadLease<'scope, T>> {
+    read_signal_lease_with_tracking(state, id, value, ReadTracking::Tracked)
+}
+
+pub(crate) fn read_signal_lease_untracked<'scope, T>(
+    state: &ScopeState<'scope>,
+    id: NodeId,
+    value: TypedNodeRef<'scope, T>,
+) -> ReactiveResult<ReadLease<'scope, T>> {
+    read_signal_lease_with_tracking(state, id, value, ReadTracking::Untracked)
+}
+
+pub(crate) fn read_fallible_signal_lease<'scope, T, E>(
+    state: &ScopeState<'scope>,
+    id: NodeId,
+    value: TypedNodeRef<'scope, T>,
+    errors: ErrorSlotRef<'scope, E>,
+) -> CallbackInvokeResult<ReadLease<'scope, T>, E>
+where
+    E: 'scope,
+{
+    let prepared = prepare_fallible_signal(state, id, value, errors, ReadTracking::Tracked)?;
+    restore_read_slot(
+        state,
+        id,
+        value,
+        Some(NodeKindTag::Computed),
+        false,
+        prepared.scheduler,
+    )
+    .map_err(CallbackInvokeError::Runtime)
+}
+
+pub(crate) fn read_fallible_signal_lease_untracked<'scope, T, E>(
+    state: &ScopeState<'scope>,
+    id: NodeId,
+    value: TypedNodeRef<'scope, T>,
+    errors: ErrorSlotRef<'scope, E>,
+) -> CallbackInvokeResult<ReadLease<'scope, T>, E>
+where
+    E: 'scope,
+{
+    let prepared = prepare_fallible_signal(state, id, value, errors, ReadTracking::Untracked)?;
+    restore_read_slot(
+        state,
+        id,
+        value,
+        Some(NodeKindTag::Computed),
+        false,
+        prepared.scheduler,
+    )
+    .map_err(CallbackInvokeError::Runtime)
+}
+
+pub(crate) fn write_signal_lease<'scope, T>(
+    state: &ScopeState<'scope>,
+    id: NodeId,
+    value: TypedNodeRef<'scope, T>,
+) -> ReactiveResult<WriteLease<'scope, T>> {
+    let (_storage, scheduler) = value_scheduler(state, id, false, true)?;
+    let proof = ActiveOwnerProof::from_state(state)?;
+    proof
+        .restore_typed_slot(state, id, NodeKindTag::Signal, value.pointer())?
+        .try_write(scheduler)?
+        .into_initialized()
+}
+
+pub(crate) fn read_stored_lease<'scope, T>(
+    state: &ScopeState<'scope>,
+    id: NodeId,
+    value: TypedNodeRef<'scope, T>,
+) -> ReactiveResult<(ReadLease<'scope, T>, bool)> {
+    let (_storage, scheduler, mode) = stored_scheduler(state, id)?;
+    let lease = restore_read_slot(
+        state,
+        id,
+        value,
+        Some(NodeKindTag::Stored),
+        mode == StoredAccessMode::RunningCleanup,
+        scheduler,
+    )?;
+    Ok((lease, mode == StoredAccessMode::Active))
+}
+
+pub(crate) fn write_stored_lease<'scope, T>(
+    state: &ScopeState<'scope>,
+    id: NodeId,
+    value: TypedNodeRef<'scope, T>,
+) -> ReactiveResult<(WriteLease<'scope, T>, bool)> {
+    let (_storage, scheduler, mode) = stored_scheduler(state, id)?;
+    let slot = if mode == StoredAccessMode::RunningCleanup {
+        restore_cleanup_stored_slot(state, id, value.pointer())?
+    } else {
+        let proof = ActiveOwnerProof::from_state(state)?;
+        proof.restore_typed_slot(state, id, NodeKindTag::Stored, value.pointer())?
+    };
+    let lease = slot.try_write(scheduler)?.into_initialized()?;
+    Ok((lease, mode == StoredAccessMode::Active))
 }
 
 pub(crate) fn with_signal<'scope, T, R>(
@@ -362,7 +489,7 @@ where
     result.map_err(CallbackInvokeError::Runtime)
 }
 
-fn commit_signal<'scope>(state: &ScopeState<'scope>, id: NodeId) -> ReactiveResult<()> {
+pub(crate) fn commit_signal<'scope>(state: &ScopeState<'scope>, id: NodeId) -> ReactiveResult<()> {
     let mut state_ref = state
         .try_borrow_mut()
         .map_err(|_| ReactiveError::BorrowConflict)?;

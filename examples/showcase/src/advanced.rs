@@ -602,7 +602,7 @@ pub fn AdaptiveReadDemo<'scope, Ctx>(#[ctx] ctx: Ctx) -> impl View<'scope> {
         EffectPhase::Normal,
         move || -> SilexResult<()> {
             let (name, current_stability) = adaptive_state.get()?;
-            identity.with(|_| ())?;
+            identity.track()?;
             console_log(format!(
                 "Quantum Core Vitals updated: {name} at {current_stability:.0}%"
             ));

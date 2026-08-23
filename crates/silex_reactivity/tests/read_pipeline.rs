@@ -100,7 +100,7 @@ fn untracked_signal_read_does_not_subscribe_an_effect() {
                     EffectPhase::Normal,
                     move || {
                         source
-                            .read()
+                            .read_signal()
                             .with_untracked(|value| seen_in_effect.set(*value))?;
                         runs_in_effect.set(runs_in_effect.get() + 1);
                         Ok(())

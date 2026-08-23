@@ -1,5 +1,5 @@
 use crate::{
-    OwnerAccess, SilexResult,
+    MappedReadGuard, OwnerAccess, SilexResult,
     traits::{RuntimeScoped, RxBase, RxData, RxRead, RxValue},
 };
 use std::marker::PhantomData;
@@ -53,6 +53,22 @@ where
     F: Fn(&S::Value) -> &O,
     O: ?Sized + RxData,
 {
+    type ReadGuard<'a>
+        = MappedReadGuard<S::ReadGuard<'a>, &'a F, O>
+    where
+        Self: 'a;
+
+    fn read(&self) -> SilexResult<Self::ReadGuard<'_>> {
+        Ok(MappedReadGuard::new(self.source.read()?, &self.getter))
+    }
+
+    fn read_untracked(&self) -> SilexResult<Self::ReadGuard<'_>> {
+        Ok(MappedReadGuard::new(
+            self.source.read_untracked()?,
+            &self.getter,
+        ))
+    }
+
     fn with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> SilexResult<U> {
         self.source.with(|value| f((self.getter)(value)))
     }

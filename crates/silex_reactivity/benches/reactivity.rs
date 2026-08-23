@@ -177,8 +177,9 @@ mod native {
                             );
                         }
 
-                        let reads: Vec<_> = signals.iter().map(|signal| signal.read()).collect();
-                        let trigger = signals[0].write();
+                        let reads: Vec<_> =
+                            signals.iter().map(|signal| signal.read_signal()).collect();
+                        let trigger = signals[0].write_signal();
                         let runs = Rc::new(Cell::new(0usize));
                         let reads_in_effect = reads.clone();
                         let runs_in_effect = runs.clone();
@@ -997,8 +998,9 @@ mod native {
                                     .expect("benchmark signal creation"),
                             );
                         }
-                        let reads: Vec<_> = signals.iter().map(|signal| signal.read()).collect();
-                        let trigger = signals[0].write();
+                        let reads: Vec<_> =
+                            signals.iter().map(|signal| signal.read_signal()).collect();
+                        let trigger = signals[0].write_signal();
                         scope
                             .effect(
                                 EffectPhase::Normal,
@@ -1436,7 +1438,7 @@ mod native {
             runtime
                 .with_transient(|scope| {
                     let value = scope.signal(0u32).expect("fallible reactive creation");
-                    let setter = value.write();
+                    let setter = value.write_signal();
                     let token = scope
                         .completion_sender(unwind_safe(move |message: u32| {
                             setter.set(message).expect("benchmark signal update");
@@ -1460,7 +1462,7 @@ mod native {
                     let messages = scope
                         .signal(Vec::<String>::with_capacity(64))
                         .expect("fallible reactive creation");
-                    let setter = messages.write();
+                    let setter = messages.write_signal();
                     let token = scope
                         .completion_sender(unwind_safe(move |message: String| {
                             setter

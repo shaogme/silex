@@ -77,25 +77,37 @@ impl<T> BorrowCell<T> {
 pub(crate) type SharedCell<T> = Rc<BorrowCell<T>>;
 
 /// Read guard returned by [`BorrowCell::try_read`].
-pub(crate) struct BorrowRef<'a, T> {
+pub(crate) struct BorrowRef<'a, T: ?Sized> {
     value: Ref<'a, T>,
 }
 
-impl<T> Deref for BorrowRef<'_, T> {
+impl<T: ?Sized> Deref for BorrowRef<'_, T> {
     type Target = T;
 
     #[inline]
     fn deref(&self) -> &Self::Target {
         &self.value
+    }
+}
+
+impl<'a, T: ?Sized> BorrowRef<'a, T> {
+    pub(crate) fn try_map<U: ?Sized>(
+        self,
+        f: impl FnOnce(&T) -> Option<&U>,
+    ) -> Result<BorrowRef<'a, U>, Self> {
+        match Ref::filter_map(self.value, f) {
+            Ok(value) => Ok(BorrowRef { value }),
+            Err(value) => Err(BorrowRef { value }),
+        }
     }
 }
 
 /// Write guard returned by [`BorrowCell::try_write`].
-pub(crate) struct BorrowRefMut<'a, T> {
+pub(crate) struct BorrowRefMut<'a, T: ?Sized> {
     value: RefMut<'a, T>,
 }
 
-impl<T> Deref for BorrowRefMut<'_, T> {
+impl<T: ?Sized> Deref for BorrowRefMut<'_, T> {
     type Target = T;
 
     #[inline]
@@ -104,10 +116,22 @@ impl<T> Deref for BorrowRefMut<'_, T> {
     }
 }
 
-impl<T> DerefMut for BorrowRefMut<'_, T> {
+impl<T: ?Sized> DerefMut for BorrowRefMut<'_, T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.value
+    }
+}
+
+impl<'a, T: ?Sized> BorrowRefMut<'a, T> {
+    pub(crate) fn try_map<U: ?Sized>(
+        self,
+        f: impl FnOnce(&mut T) -> Option<&mut U>,
+    ) -> Result<BorrowRefMut<'a, U>, Self> {
+        match RefMut::filter_map(self.value, f) {
+            Ok(value) => Ok(BorrowRefMut { value }),
+            Err(value) => Err(BorrowRefMut { value }),
+        }
     }
 }
 

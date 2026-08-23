@@ -52,13 +52,13 @@ fn shared_reads_succeed_but_write_conflicts_are_reported() {
             let signal = scope.signal(1i32).expect("fallible reactive creation");
 
             let nested_read = signal
-                .read()
+                .read_signal()
                 .with(|_| signal.get())
                 .expect("shared reads should be nestable");
             assert_eq!(nested_read, Ok(1));
 
             let read_then_write = signal
-                .read()
+                .read_signal()
                 .with(|_| signal.set(2))
                 .expect("read lease should remain observable");
             assert_eq!(read_then_write, Err(ReactiveError::BorrowConflict));

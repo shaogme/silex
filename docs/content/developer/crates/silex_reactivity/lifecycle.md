@@ -21,8 +21,8 @@ let mut runtime = Runtime::new();
 
 runtime.with_transient(|scope| {
     let signal = scope.signal(0_i32)?;
-    let read = signal.read();
-    let write = signal.write();
+    let read = signal.read_signal();
+    let write = signal.write_signal();
     write.set(1)?;
     read.get()
 })??;
@@ -30,7 +30,7 @@ runtime.with_transient(|scope| {
 let root = runtime.owner()?;
 root.with_access(|scope| {
     let signal = scope.signal(0_i32)?;
-    let write = signal.write();
+    let write = signal.write_signal();
     write.set(1)
 })?;
 root.close()?;
@@ -60,7 +60,7 @@ let child = root.create_child()?;
 
 child.with_access(|scope| {
     let signal = scope.signal(0_i32)?;
-    let write = signal.write();
+    let write = signal.write_signal();
     write.set(1)
 })?;
 

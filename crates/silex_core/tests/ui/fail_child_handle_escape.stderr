@@ -2,13 +2,13 @@ error: lifetime may not live long enough
  --> tests/ui/fail_child_handle_escape.rs:8:13
   |
 6 |         owner.with_transient(|child| {
-  |                               ------ return type of closure is ReadSignal<'2, i32>
+  |                               ------ return type of closure is silex_core::ReadSignal<'2, i32>
   |                               |
   |                               has type `OwnerAccess<'1>`
 7 |             let signal = child.signal(1).expect("signal should initialize");
 8 |             signal.read_signal()
   |             ^^^^^^^^^^^^^^^^^^^^ returning this value requires that `'1` must outlive `'2`
   |
-  = note: requirement occurs because of the type `ReadSignal<'_, i32>`, which makes the generic argument `'_` invariant
-  = note: the struct `ReadSignal<'owner, T>` is invariant over the parameter `'owner`
+  = note: requirement occurs because of the type `silex_core::ReadSignal<'_, i32>`, which makes the generic argument `'_` invariant
+  = note: the struct `silex_core::ReadSignal<'owner, T>` is invariant over the parameter `'owner`
   = help: see <https://doc.rust-lang.org/nomicon/subtyping.html> for more information about variance
