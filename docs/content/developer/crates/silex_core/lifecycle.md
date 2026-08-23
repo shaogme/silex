@@ -20,6 +20,7 @@ weight = 20
 | --- | --- | --- | --- |
 | root owner | `runtime.owner()` | `OwnerHandle::close()` | 应用或框架持有明确的根生命周期。 |
 | 持久 child | `owner.create_child()` 或 `root.create_child()` | 返回的 `OwnerHandle::close()` | 路由分支、页面或组件子树需要被替换时。 |
+| owner-bound child | `owner.create_owned_child()` | `OwnerChild::close()` 或注册到 `on_owner_cleanup` | Resource、DOM branch 等需要把 child close authority 交给父 owner 的资源。 |
 | transient scope | `runtime.with_transient(...)` 或 `owner.with_transient(...)` | 回调返回后自动关闭 | 同步计算、一次性局部节点和测试。 |
 
 `Runtime::owner` 需要 `&mut self`，并且一个 runtime 同时只允许一个活动 root。`OwnerHandle` 只提供关闭权和借出 access 的能力；真正创建节点时使用 `access()` 或 `with_access()`：
@@ -41,7 +42,11 @@ root.close()?;
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-这里的 `root.close()` 不能省略。它可能返回底层 `CloseError`，与节点操作使用的 `SilexError` 不是同一种错误类型；调用方要保留关闭错误中的清理阶段和诊断信息。
+这里应显式调用 `root.close()` 并处理其返回值。`OwnerHandle` 的 `Drop` 也会尝试
+关闭尚未关闭的 owner，但 Drop 路径无法把 `CloseError` 返回给调用方，只能放入
+`Runtime::take_unhandled_close_errors()` 的诊断队列。显式 close 可能返回底层
+`CloseError`，它与节点操作使用的 `SilexError` 不是同一种错误类型；调用方要保留
+关闭错误中的清理阶段和诊断信息。
 
 ## 借用与逃逸规则
 
@@ -72,7 +77,10 @@ root.with_access_async(|owner| {
 
 ## cleanup 与关闭顺序
 
-`OwnerAccess::on_cleanup` 注册一个 `FnOnce() -> SilexResult<()>`。cleanup 属于注册时的 owner，并由 owner 关闭路径执行。清理代码应满足以下不变量：
+`OwnerAccess::on_cleanup` 注册一个 `FnOnce() -> SilexResult<()>`。如果注册时正处于
+effect/computed 的执行中，cleanup 属于当前 computation，并会在该 computation
+重跑或停止时执行；没有活动 computation 时，它属于当前 owner，并在 owner 关闭
+时执行。清理代码应满足以下不变量：
 
 - 不要把异步工作遗留到 cleanup 返回之后；cleanup 返回前应取消任务、释放外部句柄或把结果交给仍活动的上层 owner；
 - 子 owner 必须先于父 owner 清理，依赖子树的父 cleanup 不应假设子节点仍然活动；
@@ -131,6 +139,11 @@ let child_ctx = ctx.with_error_reporter(other_reporter.view());
 
 `SilexContextProvider` 只要求实现者提供这两个能力和替换 reporter 的方法。`rx!` 宏通过这个契约取得 owner 与错误目的地，并返回 `SilexResult`；调用方可以用 `?`、`match` 或其它方式处理宏创建阶段的错误。
 
+token/view 的生命周期都受 owner 约束。token 被丢弃或显式 `close()` 后不再拥有
+注册；`ErrorHandlerAnchor` 则是框架可保留的 owning view，即使创建它的 token 已
+释放，仍会保持 callback 直到 anchor/owner 结束。仅复制 `ErrorReporter` 不会延长
+owner 或 handler 的生命周期。
+
 ## `spawn_scoped` 与取消
 
 `OwnerAccess::spawn_scoped` 在本地执行器上启动 `Future<Output = ()>`，并把取消 cleanup 注册到当前 owner。它返回 `TaskHandle`：
@@ -155,12 +168,16 @@ assert!(task.is_cancelled());
 
 ## completion endpoint
 
-`OwnerAccess::completion_once` 与 `completion_sender` 把外部 future 的结果交回 owner。`CompletionOnce<T>` 适合单次终点，`CompletionSender<T>` 适合多个任务共享的终点；二者的回调都要求 `UnwindSafe`，提交返回值必须处理：
+`OwnerAccess::completion_once` 与 `completion_sender` 把外部 future 的结果交回 owner。`CompletionOnce<T>` 适合单次终点，clone 共享同一个 terminal state；`CompletionSender<T>` 适合多个任务共享的重复终点。二者的回调都要求 `UnwindSafe`，提交返回值必须处理：
 
 - callback 自身失败时，错误仍是用户的 `SilexError`；
 - owner 已关闭或 endpoint 已关闭时，结果不会调用失效 callback；
 - callback 错误与 close 错误可以同时出现，`CompletionSubmitError` 保留两部分，不能只取一个字符串；
 - callback panic 后，运行时仍需恢复 endpoint 的终态，业务代码不应依赖 panic 传递错误。
+
+两类 endpoint 都提供 `cancel() -> Result<(), CloseError>`。`CompletionOnce` 第一次
+提交后自动关闭；`CompletionSender` 在最后一个 clone 被丢弃时关闭，关闭后提交
+返回 `Ok(false)`。显式 cancel 适合长生命周期 owner 在替换资源前主动释放 endpoint。
 
 框架内部还可使用 detached completion，把 callback 节点从当前 effect 的 ownership
 子树移出，使 effect rerun/stop 不会提前关闭宿主 callback。它仍绑定创建它的 owner，
@@ -185,5 +202,5 @@ cleanup 不会递归执行同一 endpoint 的 disposal，相关失败仍保留�
 - root、transient、child 和关闭：`crates/silex_core/tests/root_scope.rs`、`tests/runtime_compatibility.rs`
 - stale handle、cleanup 和借用冲突：`crates/silex_core/tests/reactivity_errors.rs`
 - handler view 与作用域捕获：`crates/silex_core/tests/error_reporter.rs`
-- task、resource、mutation 和 future drop：`crates/silex_core/tests/async_completion.rs`
+- task、resource、mutation、completion 和 future drop：`crates/silex_core/tests/async_completion.rs`
 - lifetime、handler escape、`Send` 和旧 API：`crates/silex_core/tests/compile_fail.rs`、`tests/ui/`

@@ -221,7 +221,12 @@ fn split_at_semicolon(tokens: &mut impl Iterator<Item = TokenTree>) -> Option<To
     None
 }
 
-fn nested_reads(bindings: &[&SourceBinding], body: &TokenStream2, promoted: bool) -> TokenStream2 {
+fn nested_reads(
+    bindings: &[&SourceBinding],
+    body: &TokenStream2,
+    promoted: bool,
+    core: &TokenStream2,
+) -> TokenStream2 {
     let Some(binding) = bindings.first() else {
         return quote! { Ok(#body) };
     };
@@ -233,10 +238,10 @@ fn nested_reads(bindings: &[&SourceBinding], body: &TokenStream2, promoted: bool
         quote!(#source)
     };
     let reference = &binding.reference;
-    let rest = nested_reads(&bindings[1..], body, promoted);
+    let rest = nested_reads(&bindings[1..], body, promoted, core);
     quote! {
         {
-            (#source).with(|#reference| #rest)?
+            #core::RxReadRef::with(&(#source), |#reference| #rest)?
         }
     }
 }
@@ -356,7 +361,7 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
     if let Expr::Closure(mut closure) = expression {
         let closure_body = *closure.body;
         let closure_body = quote! { #closure_body };
-        let reads = nested_reads(&bindings, &closure_body, false);
+        let reads = nested_reads(&bindings, &closure_body, false, &prefix);
         closure.capture = Some(Move::default());
         *closure.body = parse2(quote! { #reads })?;
         let constructor = if closure.inputs.is_empty() {
@@ -396,7 +401,7 @@ fn expand(input: TokenStream2) -> Result<TokenStream2> {
     }
 
     let expression = quote! { #expression };
-    let reads = nested_reads(&bindings, &expression, true);
+    let reads = nested_reads(&bindings, &expression, true, &prefix);
 
     if !force_computed
         && bindings.is_empty()

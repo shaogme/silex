@@ -1,6 +1,4 @@
-use silex_core::{
-    RxRead, SilexContextProvider, SilexError, SilexErrorKind, reactivity::ReactiveSource,
-};
+use silex_core::{SilexContextProvider, SilexError, SilexErrorKind, reactivity::ReactiveSource};
 use silex_dom::prelude::*;
 use silex_macros::component;
 use std::collections::HashMap;
@@ -31,7 +29,7 @@ pub fn Switch<'scope, Ctx, Source, T>(
     fallback: AnyView<'scope>,
 ) -> impl View<'scope>
 where
-    Source: ReactiveSource<'scope, Value = T> + Clone + 'scope,
+    Source: ReactiveSource<'scope, Owned = T> + Clone + 'scope,
     T: Eq + Hash + Clone + 'scope,
 {
     let source = owner.promote(source, error_handler)?;
@@ -49,7 +47,7 @@ where
 impl<'scope, Ctx, Source, T> SwitchComponent<'scope, Ctx, Source, T>
 where
     Ctx: SilexContextProvider<'scope>,
-    Source: ReactiveSource<'scope, Value = T> + Clone + 'scope,
+    Source: ReactiveSource<'scope, Owned = T> + Clone + 'scope,
     T: Eq + Hash + Clone + 'scope,
 {
     /// 添加一个匹配分支，并在重复 key 时返回配置错误。

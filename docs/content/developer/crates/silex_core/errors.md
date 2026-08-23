@@ -35,7 +35,7 @@ match operation() {
 }
 ```
 
-不要只把错误格式化成字符串再决定恢复策略；`SilexErrorKind::as_str()` 为宿主适配器提供稳定类别名，`source()` 还保留底层错误链。
+不要只把错误格式化成字符串再决定恢复策略；`SilexErrorKind::as_str()` 为宿主适配器提供稳定类别名，但 domain 变体共享 `domain` 这一类别名，并不标识具体领域。对实现了错误源的 kind，`source()` 还保留底层错误链；`Dom`、`Framework`、`Javascript` 和 `Close` 等字符串或聚合 kind 不提供额外 source。
 
 ## 运行时错误与用户错误
 
@@ -51,7 +51,10 @@ match operation() {
 | transaction 创建、校验、提交或回滚失败 | `Fatal(Transaction(TransactionError))`，其中 `primary`、`rollback_failures` 和 `phase` 保留结构化诊断 |
 | 用户闭包返回的 `SilexError` | 保留闭包返回的 recoverable/fatal 级别 |
 
-这意味着计算 API 的 `Ok(Computed)` 只表示节点已注册且初始运行成功；未来重算或显式读取仍可能返回错误。计算、effect、watch、cleanup 和 completion 都要保留自己的错误路径。
+这意味着计算 API 的 `Ok(Computed)` 只表示节点已注册且初始运行成功；注册失败会
+映射为 fatal 的 `Reactivity`，初始用户错误则保留用户返回的 `SilexError`。未来重算
+或显式读取仍可能返回错误。计算、effect、watch、cleanup 和 completion 都要保留
+自己的错误路径。
 
 `OwnerAccess::transaction` 会把 runtime 事务错误包装成 fatal 的
 `SilexErrorKind::Transaction`；`Transaction::update` 中用户闭包返回的
@@ -77,7 +80,7 @@ let _effect = owner.effect(
 )?;
 ```
 
-公开可用的 handler 输入包括 token、`ErrorHandler`/`ErrorReporter` view 和 `ErrorHandlerAnchor`。它们都受 owner lifetime 约束；token/view 不能保存到 owner 关闭之后，也不能跨 runtime 复用。`ErrorHandlerInput` 本身标记为隐藏 trait，应用通常只需要传入上述类型。
+公开可用的 handler 输入包括 token、`ErrorHandler`/`ErrorReporter` view 和 `ErrorHandlerAnchor`。它们都受 owner lifetime 约束；token/view 不能保存到 owner 关闭之后，也不能跨 runtime 复用。token 是 RAII 注册所有者，丢弃或调用 `close()` 会释放它的注册；如果框架需要在 token 释放后继续投递错误，应保留 `ErrorHandlerAnchor`。运行时为 cleanup、completion 等延迟路径建立 `HandlerLease`，确保 handler 在回调完成前保持有效。`ErrorHandlerInput` 本身标记为隐藏 trait，应用通常只需要传入上述类型。
 
 `Callback::invoke` 会将底层 `CallbackInvokeError<SilexError>` 映射为 `SilexResult<()>`：runtime 错误变为 fatal Reactivity，用户返回的 `SilexError` 原样保留，handler 分发错误再包装为 fatal Reactivity。`Callback::call` 只是 legacy method spelling，返回类型和错误语义与 `invoke` 相同。
 

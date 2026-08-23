@@ -1,6 +1,6 @@
 use crate::{
     OwnerAccess, ReadGuard, Rx, SilexError, SilexResult, WriteGuard,
-    traits::{RuntimeScoped, RxBase, RxRead, RxValue, RxWrite},
+    traits::{RuntimeScoped, RxBase, RxGet, RxRead, RxReadRef, RxReadRefSource, RxValue, RxWrite},
 };
 use std::fmt;
 
@@ -70,7 +70,7 @@ impl<'scope, T> RuntimeScoped for StoredValue<'scope, T> {
 }
 
 impl<'scope, T> RxValue for StoredValue<'scope, T> {
-    type Value = T;
+    type Owned = T;
 }
 
 impl<'scope, T> RxBase for StoredValue<'scope, T> {
@@ -98,13 +98,30 @@ impl<'scope, T> RxRead for StoredValue<'scope, T> {
             .map(ReadGuard::new)
             .map_err(SilexError::fatal)
     }
+}
 
-    fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.inner.with(f).map_err(SilexError::fatal)
+impl<'scope, T> RxReadRefSource for StoredValue<'scope, T> {
+    type ViewGuard<'a>
+        = ReadGuard<'scope, T>
+    where
+        Self: 'a;
+
+    fn read_ref<'a>(&'a self) -> SilexResult<Self::ViewGuard<'a>> {
+        self.read()
     }
 
-    fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.inner.with_untracked(f).map_err(SilexError::fatal)
+    fn read_ref_untracked<'a>(&'a self) -> SilexResult<Self::ViewGuard<'a>> {
+        self.read_untracked()
+    }
+}
+
+impl<'scope, T: Clone> RxGet for StoredValue<'scope, T> {
+    fn get_untracked(&self) -> SilexResult<Self::Owned> {
+        self.with_untracked(Clone::clone)
+    }
+
+    fn get(&self) -> SilexResult<Self::Owned> {
+        self.with(Clone::clone)
     }
 }
 

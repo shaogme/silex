@@ -22,22 +22,22 @@ weight = 40
 
 ## 常用验证命令
 
-在仓库根目录运行：
+在仓库根目录运行（CI 约束警告为错误）：
 
 ```text
 cargo fmt --all -- --check
-cargo check -p silex_core
-cargo test -p silex_core
-cargo test -p silex_core --test docs_examples
-cargo test -p silex_core --test compile_fail
-cargo check -p silex_core --all-features
+RUSTFLAGS='-D warnings' cargo check -p silex_core
+RUSTFLAGS='-D warnings' cargo test -p silex_core
+RUSTFLAGS='-D warnings' cargo test -p silex_core --test docs_examples
+RUSTFLAGS='-D warnings' cargo test -p silex_core --test compile_fail
+RUSTFLAGS='-D warnings' cargo check -p silex_core --all-features
 cargo clippy -p silex_core --all-targets --all-features -- -D warnings
 ```
 
-站点检查在 `docs/` 目录运行：
+站点检查使用 CI 的根目录调用方式：
 
 ```text
-zola check
+zola --root docs check
 ```
 
 仓库 CI 额外使用 `RUSTFLAGS=-D warnings`、workspace test 和全 workspace clippy；文档改动至少应确认 core crate、文档示例与 Zola 检查通过。
@@ -79,17 +79,28 @@ fn basic_documentation_example_runs() {
 `tests/compile_fail.rs` 运行 `trybuild`：
 
 - `fail_*_escape.rs` 保证 transient handle、callback、handler 和 scoped task 不能逃逸；
+- `fail_borrowed_view_escape.rs`、`fail_borrowed_option_escape.rs` 和
+  `fail_borrowed_tuple_escape.rs` 保证 borrowed view 不能逃出读取闭包；
 - `fail_send_handler.rs`、`fail_scoped_handle_in_future.rs` 等保证单线程 owner capability 不被误送到不兼容边界；
 - `fail_missing_error_handler.rs`、`fail_resource_without_handler.rs` 和 mutation 相关用例保证延迟错误有明确交付路径；
 - `fail_transaction_escape.rs`、`fail_transaction_across_await.rs` 保证 transaction 不能逃逸 owner 或跨越 `await`；
 - `fail_root_symbols.rs`、`fail_old_*.rs`、`fail_removed_*.rs` 防止旧 API 或内部 root symbol 重新成为公共用法；
-- `pass_*.rs` 验证 scoped handler、copyable mutation 和合法 future 使用仍然可编译。
+- `pass_borrowed_view_traits.rs`、`pass_non_clone_borrowed_views.rs` 验证借用视图和
+  non-`Clone` source 的合法用法；其他 `pass_*.rs` 验证 scoped handler、copyable
+  mutation 和合法 future 使用仍然可编译。
 
 修改 lifetime、`UnwindSafe`、`Send`、handler 输入或公开签名时，先增加最小 UI 用例，再更新实现和对应 `.stderr`。只有诊断确实因预期 API 变化而改变时才更新 stderr。
 
 ## 异步测试边界
 
-`tests/async_completion.rs` 使用 `wasm-bindgen-test` 和 `gloo-timers`，并通过 `#[cfg(target_arch = "wasm32")]` 隔离浏览器执行器。native `cargo test -p silex_core` 不会运行这些 browser tests；涉及 `spawn_local`、JavaScript console 或 timer 的变更必须在仓库既有 wasm 测试流程中复核。
+`tests/async_completion.rs` 使用 `wasm-bindgen-test` 和 `gloo-timers`，并通过 `#[cfg(target_arch = "wasm32")]` 隔离浏览器执行器。native `cargo test -p silex_core` 不会运行这些 browser tests；涉及 `spawn_local`、JavaScript console 或 timer 的变更至少先执行 Wasm 编译检查：
+
+```text
+RUSTFLAGS='-D warnings' cargo test -p silex_core \
+  --target wasm32-unknown-unknown --test async_completion --no-run
+```
+
+有 Firefox、geckodriver 和 `wasm-bindgen-test-runner` 时，再按[Wasm 测试指南](@/developer/wasm-testing.md)去掉 `--no-run`，在浏览器中执行同一 test target。
 
 测试异步代码时，除了最终状态，还要用 drop 计数或等价观察确认：
 
@@ -114,7 +125,7 @@ fn basic_documentation_example_runs() {
 - `tests/root_scope.rs`：root、transient 和 owner access。
 - `tests/runtime_compatibility.rs`：same-runtime 与 foreign-runtime source。
 - `tests/reactivity_errors.rs`：borrow conflict、stale node、NodeRef 和 error mapping。
-- `tests/signal_guards.rs`：scoped guard、owned snapshot、projection 和 guard 生命周期。
+- `tests/signal_guards.rs`：scoped guard、borrowed view、projection 和 guard 生命周期。
 - `tests/batch_read.rs`、`tests/tuple_traits.rs`、`tests/watch.rs`：聚合读取和 watcher。
 - `tests/transaction.rs`：原子提交、snapshot、用户错误和 runtime transaction error。
 - `tests/error_reporter.rs`：handler/reporter 行为。

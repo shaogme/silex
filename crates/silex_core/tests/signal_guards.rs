@@ -1,7 +1,7 @@
 #[cfg(target_arch = "wasm32")]
 use silex_core::Resource;
 use silex_core::reactivity::MutationState;
-use silex_core::traits::{RxRead, RxWrite};
+use silex_core::traits::{RxOptionGuard, RxRead, RxReadLease, RxTupleGuard2, RxWrite};
 use silex_core::{
     Constant, ErrorHandlerToken, Mutation, OwnerAccess, ReactiveError, Runtime, RxGet,
 };
@@ -86,7 +86,7 @@ fn core_guard_reads_preserve_tracking_and_slice_mapping() {
 }
 
 #[test]
-fn owned_guards_snapshot_resource_mutation_and_tuple_values() {
+fn borrowed_guards_keep_resource_mutation_and_tuple_leases() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|scope| {
@@ -97,26 +97,29 @@ fn owned_guards_snapshot_resource_mutation_and_tuple_values() {
                 .set(MutationState::Success(9))
                 .expect("mutation value");
             let mutation_guard = mutation.read().expect("mutation guard");
-            assert_eq!(*mutation_guard, Some(9));
+            mutation_guard.with_option(|value| assert_eq!(value.copied(), Some(9)));
+            assert!(mutation.state.set(MutationState::Success(10)).is_err());
+            mutation_guard.finish().expect("mutation finish");
             mutation
                 .state
                 .set(MutationState::Success(10))
-                .expect("mutation update");
-            assert_eq!(*mutation_guard, Some(9));
+                .expect("mutation update after finish");
 
             let left = scope.signal(1_i32).expect("left signal");
             let right = scope.signal(2_i32).expect("right signal");
             let tuple = (left, right);
             let tuple_guard = tuple.read().expect("tuple guard");
-            left.set(3).expect("left update");
-            assert_eq!(*tuple_guard, (1, 2));
+            tuple_guard.with_tuple(|(left, right)| assert_eq!((*left, *right), (1, 2)));
+            assert!(left.set(3).is_err());
+            tuple_guard.finish().expect("tuple finish");
+            left.set(3).expect("left update after finish");
         })
         .expect("runtime scope");
 }
 
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen_test(async)]
-async fn resource_read_guards_snapshot_values() {
+async fn resource_read_guards_hold_state_leases() {
     let mut runtime = Runtime::new();
     runtime
         .with_transient(|scope| {
@@ -128,9 +131,10 @@ async fn resource_read_guards_snapshot_values() {
                 .expect("resource creation");
             resource.set(7).expect("resource value");
             let resource_guard = resource.read().expect("resource guard");
-            assert_eq!(*resource_guard, Some(7));
-            resource.set(8).expect("resource update");
-            assert_eq!(*resource_guard, Some(7));
+            resource_guard.with_option(|value| assert_eq!(value.map(|item| *item), Some(7)));
+            assert!(resource.set(8).is_err());
+            resource_guard.finish().expect("resource finish");
+            resource.set(8).expect("resource update after finish");
         })
         .expect("runtime scope");
 }

@@ -1,5 +1,5 @@
 use silex_core::{
-    EffectPhase, ErrorHandlerToken, OwnerAccess, Runtime, RxBase, RxGet, RxRead, SilexResult,
+    EffectPhase, ErrorHandlerToken, OwnerAccess, Runtime, RxBase, RxGet, RxReadTuple2, SilexResult,
 };
 use std::cell::Cell;
 use std::rc::Rc;
@@ -47,7 +47,7 @@ fn tuple_get_tracks_each_member() {
 }
 
 #[test]
-fn tuple_with_reads_a_cloneable_snapshot() {
+fn tuple_with_reads_returns_an_owned_value() {
     let mut runtime = Runtime::new();
 
     runtime
@@ -55,11 +55,11 @@ fn tuple_with_reads_a_cloneable_snapshot() {
             let first = owner.signal(4_i32).expect("first signal");
             let second = owner.signal(5_i32).expect("second signal");
             let sources = (first, second);
-            let snapshot = sources
+            let value = sources
                 .with(|(first_value, second_value)| (*first_value, *second_value))
                 .expect("tuple read should succeed");
 
-            assert_eq!(snapshot, (4, 5));
+            assert_eq!(value, (4, 5));
         })
         .expect("runtime child should initialize");
 }

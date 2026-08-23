@@ -348,7 +348,7 @@ pub trait GlobalEventAttributes<'scope>: AttributeBuilder<'scope> {
     fn bind_value<T, S>(self, signal: S) -> Self
     where
         T: AsRef<str> + From<String> + Clone + PartialEq + 'scope,
-        S: RxGet<Value = T> + RxWrite + Clone + 'scope,
+        S: RxGet<Owned = T> + RxWrite<Owned = T> + Clone + 'scope,
     {
         let s = signal.clone();
         let this = self.on_input(move |value| {

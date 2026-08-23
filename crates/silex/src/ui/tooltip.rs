@@ -67,10 +67,11 @@ impl<'scope> TooltipContext<'scope> {
     /// Schedules a close timeout after `delay_ms` milliseconds (default 150ms grace period).
     pub fn schedule_close_timer(&self, delay_ms: i32) -> SilexResult<()> {
         self.cancel_close_timer()?;
-        let Some(owner) = self.owner.with(Clone::clone)? else {
+        let Some(owner) = silex_core::RxReadRef::with(&self.owner, Clone::clone)? else {
             return Ok(());
         };
-        let Some(error_handler) = self.error_handler.with(Clone::clone)? else {
+        let Some(error_handler) = silex_core::RxReadRef::with(&self.error_handler, Clone::clone)?
+        else {
             return Ok(());
         };
         let open = self.open;

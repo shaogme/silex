@@ -1,6 +1,6 @@
 use silex_core::ErrorHandlerToken;
 use silex_core::reactivity::ReactiveSource;
-use silex_core::traits::{ForLoopSource, RxRead};
+use silex_core::traits::{ForLoopSource, RxRead, RxReadRef};
 use silex_dom::prelude::*;
 use silex_dom::view::{AnyView, RenderOnlyKeyedListView, RowUpdater, StatefulKeyedListView};
 use silex_macros::component;
@@ -81,7 +81,7 @@ pub fn For<'scope, Ctx, ItemsFn, IS, Item, Key, KF>(
     #[chain(default)] _scope: PhantomData<&'scope ()>,
 ) -> RenderOnlyKeyedListView<'scope, ItemsFn, IS, Item, Key>
 where
-    ItemsFn: RxRead<Value = IS> + ReactiveSource<'scope> + Clone + 'scope,
+    ItemsFn: RxRead<Owned = IS> + RxReadRef<IS> + ReactiveSource<'scope> + Clone + 'scope,
     IS: ForLoopSource<Item = Item> + Sized + 'scope,
     Item: Clone + 'scope,
     Key: Hash + Eq + Clone + 'scope,
@@ -125,7 +125,7 @@ pub fn ForStateful<'scope, Ctx, ItemsFn, IS, Item, Key, KF>(
     #[chain(default)] _scope: PhantomData<&'scope ()>,
 ) -> StatefulKeyedListView<'scope, ItemsFn, IS, Item, Key>
 where
-    ItemsFn: RxRead<Value = IS> + ReactiveSource<'scope> + Clone + 'scope,
+    ItemsFn: RxRead<Owned = IS> + RxReadRef<IS> + ReactiveSource<'scope> + Clone + 'scope,
     IS: ForLoopSource<Item = Item> + Sized + 'scope,
     Item: Clone + 'scope,
     Key: Hash + Eq + Clone + 'scope,

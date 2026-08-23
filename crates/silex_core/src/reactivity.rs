@@ -13,7 +13,9 @@ mod transaction;
 
 pub use effect::EffectHandle;
 pub use guard::{
-    BorrowedReadGuard, MappedReadGuard, OwnedReadGuard, ReadGuard, RxReadGuard, WriteGuard,
+    BorrowedReadGuard, MappedOptionReadGuard, MappedReadGuard, ReadGuard, RxReadGuard,
+    TupleReadGuard1, TupleReadGuard2, TupleReadGuard3, TupleReadGuard4, TupleReadGuard5,
+    TupleReadGuard6, WriteGuard,
 };
 pub use memo::Computed;
 pub use mutation::{Mutation, MutationState};

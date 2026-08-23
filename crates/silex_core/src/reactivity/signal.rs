@@ -2,7 +2,7 @@ use crate::{
     OwnerAccess, Rx, SilexError, SilexResult,
     callback::map_callback_error,
     reactivity::{BorrowedReadGuard, ReadGuard, RxInner, RxReadGuard, SignalSlice, WriteGuard},
-    traits::{RuntimeScoped, RxBase, RxRead, RxValue, RxWrite},
+    traits::{RuntimeScoped, RxBase, RxGet, RxRead, RxReadRef, RxReadRefSource, RxValue, RxWrite},
 };
 use silex_reactivity::{
     ReadSignal as RawReadSignal, Signal as RawSignal, WriteSignal as RawWriteSignal,
@@ -28,7 +28,7 @@ impl<T> Constant<T> {
 }
 
 impl<T> RxValue for Constant<T> {
-    type Value = T;
+    type Owned = T;
 }
 
 impl<T> RxBase for Constant<T> {
@@ -50,13 +50,30 @@ impl<T> RxRead for Constant<T> {
     fn read_untracked(&self) -> SilexResult<Self::ReadGuard<'_>> {
         self.read()
     }
+}
 
-    fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        Ok(f(&self.0))
+impl<T> RxReadRefSource for Constant<T> {
+    type ViewGuard<'a>
+        = BorrowedReadGuard<'a, T>
+    where
+        Self: 'a;
+
+    fn read_ref<'a>(&'a self) -> SilexResult<Self::ViewGuard<'a>> {
+        self.read()
     }
 
-    fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        Ok(f(&self.0))
+    fn read_ref_untracked<'a>(&'a self) -> SilexResult<Self::ViewGuard<'a>> {
+        self.read_untracked()
+    }
+}
+
+impl<T: Clone> RxGet for Constant<T> {
+    fn get_untracked(&self) -> SilexResult<Self::Owned> {
+        self.with_untracked(Clone::clone)
+    }
+
+    fn get(&self) -> SilexResult<Self::Owned> {
+        self.with(Clone::clone)
     }
 }
 
@@ -299,7 +316,7 @@ impl<'owner, T> RuntimeScoped for Signal<'owner, T> {
 }
 
 impl<'owner, T> RxValue for ReadSignal<'owner, T> {
-    type Value = T;
+    type Owned = T;
 }
 
 impl<'owner, T> RxBase for ReadSignal<'owner, T> {
@@ -327,18 +344,35 @@ impl<'owner, T> RxRead for ReadSignal<'owner, T> {
             .map(ReadGuard::new)
             .map_err(SilexError::fatal)
     }
+}
 
-    fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.inner.with(f).map_err(SilexError::fatal)
+impl<'owner, T> RxReadRefSource for ReadSignal<'owner, T> {
+    type ViewGuard<'a>
+        = ReadGuard<'owner, T>
+    where
+        Self: 'a;
+
+    fn read_ref<'a>(&'a self) -> SilexResult<Self::ViewGuard<'a>> {
+        self.read()
     }
 
-    fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.inner.with_untracked(f).map_err(SilexError::fatal)
+    fn read_ref_untracked<'a>(&'a self) -> SilexResult<Self::ViewGuard<'a>> {
+        self.read_untracked()
+    }
+}
+
+impl<'owner, T: Clone> RxGet for ReadSignal<'owner, T> {
+    fn get_untracked(&self) -> SilexResult<Self::Owned> {
+        self.with_untracked(Clone::clone)
+    }
+
+    fn get(&self) -> SilexResult<Self::Owned> {
+        self.with(Clone::clone)
     }
 }
 
 impl<'owner, T> RxValue for WriteSignal<'owner, T> {
-    type Value = T;
+    type Owned = T;
 }
 
 impl<'owner, T> RxWrite for WriteSignal<'owner, T> {
@@ -364,7 +398,7 @@ impl<'owner, T> RxWrite for WriteSignal<'owner, T> {
 }
 
 impl<'owner, T> RxValue for Signal<'owner, T> {
-    type Value = T;
+    type Owned = T;
 }
 
 impl<'owner, T> RxBase for Signal<'owner, T> {
@@ -386,13 +420,30 @@ impl<'owner, T> RxRead for Signal<'owner, T> {
     fn read_untracked(&self) -> SilexResult<Self::ReadGuard<'_>> {
         self.read.read_untracked()
     }
+}
 
-    fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.read.with(f)
+impl<'owner, T> RxReadRefSource for Signal<'owner, T> {
+    type ViewGuard<'a>
+        = ReadGuard<'owner, T>
+    where
+        Self: 'a;
+
+    fn read_ref<'a>(&'a self) -> SilexResult<Self::ViewGuard<'a>> {
+        self.read()
     }
 
-    fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.read.with_untracked(f)
+    fn read_ref_untracked<'a>(&'a self) -> SilexResult<Self::ViewGuard<'a>> {
+        self.read_untracked()
+    }
+}
+
+impl<'owner, T: Clone> RxGet for Signal<'owner, T> {
+    fn get_untracked(&self) -> SilexResult<Self::Owned> {
+        self.with_untracked(Clone::clone)
+    }
+
+    fn get(&self) -> SilexResult<Self::Owned> {
+        self.with(Clone::clone)
     }
 }
 
@@ -416,7 +467,7 @@ impl<'owner, T> RxWrite for Signal<'owner, T> {
 }
 
 impl<'owner, T> RxValue for Rx<'owner, T> {
-    type Value = T;
+    type Owned = T;
 }
 
 impl<'owner, T> RxBase for Rx<'owner, T> {
@@ -474,21 +525,30 @@ impl<'owner, T> RxRead for Rx<'owner, T> {
                 .map(RxReadGuard::Stored),
         }
     }
+}
 
-    fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        match &self.inner {
-            RxInner::ReadSignal(signal) => signal.with(f).map_err(SilexError::fatal),
-            RxInner::Computed(computed) => computed.with(f).map_err(map_callback_error),
-            RxInner::Stored(stored) => stored.with(f).map_err(SilexError::fatal),
-        }
+impl<'owner, T> RxReadRefSource for Rx<'owner, T> {
+    type ViewGuard<'a>
+        = RxReadGuard<'owner, T>
+    where
+        Self: 'a;
+
+    fn read_ref<'a>(&'a self) -> SilexResult<Self::ViewGuard<'a>> {
+        self.read()
     }
 
-    fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        match &self.inner {
-            RxInner::ReadSignal(signal) => signal.with_untracked(f).map_err(SilexError::fatal),
-            RxInner::Computed(computed) => computed.with_untracked(f).map_err(map_callback_error),
-            RxInner::Stored(stored) => stored.with_untracked(f).map_err(SilexError::fatal),
-        }
+    fn read_ref_untracked<'a>(&'a self) -> SilexResult<Self::ViewGuard<'a>> {
+        self.read_untracked()
+    }
+}
+
+impl<'owner, T: Clone> RxGet for Rx<'owner, T> {
+    fn get_untracked(&self) -> SilexResult<Self::Owned> {
+        self.with_untracked(Clone::clone)
+    }
+
+    fn get(&self) -> SilexResult<Self::Owned> {
+        self.with(Clone::clone)
     }
 }
 

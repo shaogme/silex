@@ -1,5 +1,5 @@
 use silex_core::reactivity::ReactiveSource;
-use silex_core::traits::{ForLoopSource, RxRead};
+use silex_core::traits::{ForLoopSource, RxRead, RxReadRef};
 use silex_dom::prelude::*;
 use silex_dom::view::AnyView;
 use silex_macros::component;
@@ -48,7 +48,7 @@ pub fn Index<'scope, Ctx, IF, I, IS>(
     #[chain(default)] _scope: PhantomData<&'scope ()>,
 ) -> silex_dom::view::list::IndexedListView<'scope, IF, I, IS>
 where
-    IF: RxRead<Value = IS> + ReactiveSource<'scope> + Clone + 'scope,
+    IF: RxRead<Owned = IS> + RxReadRef<IS> + ReactiveSource<'scope> + Clone + 'scope,
     IS: ForLoopSource<Item = I> + 'scope,
     I: Clone + 'scope,
 {

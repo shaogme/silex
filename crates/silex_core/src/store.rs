@@ -1,6 +1,6 @@
 use crate::{
     reactivity::{ReactiveSource, Signal},
-    traits::{RxRead, RxWrite},
+    traits::{RxGet, RxReadRef, RxWrite},
 };
 
 /// A writable reactive handle that can be used as a Store field.
@@ -9,13 +9,18 @@ use crate::{
 /// The bound also keeps enough runtime provenance available for validating a
 /// Store assembled from existing handles.
 pub trait StoreField<'scope, T>:
-    ReactiveSource<'scope, Value = T> + RxRead<Value = T> + RxWrite<Value = T> + Copy + 'scope
+    ReactiveSource<'scope, Owned = T>
+    + RxGet<Owned = T>
+    + RxReadRef<T>
+    + RxWrite<Owned = T>
+    + Copy
+    + 'scope
 where
     T: 'scope,
 {
 }
 
-impl<'scope, T> StoreField<'scope, T> for Signal<'scope, T> where T: 'scope {}
+impl<'scope, T> StoreField<'scope, T> for Signal<'scope, T> where T: Clone + 'scope {}
 
 #[cfg(test)]
 mod tests {

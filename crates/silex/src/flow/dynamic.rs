@@ -1,4 +1,4 @@
-use silex_core::{RxRead, reactivity::ReactiveSource};
+use silex_core::reactivity::ReactiveSource;
 use silex_dom::prelude::*;
 use silex_macros::component;
 
@@ -26,7 +26,7 @@ use silex_macros::component;
 pub fn Dynamic<'scope, Ctx, V, FView>(#[ctx] ctx: Ctx, view_fn: FView) -> impl View<'scope>
 where
     V: View<'scope> + Clone + 'scope,
-    FView: ReactiveSource<'scope, Value = V> + Clone + 'scope,
+    FView: ReactiveSource<'scope, Owned = V> + Clone + 'scope,
 {
     let view_fn = owner.promote(view_fn, error_handler)?;
     Ok(silex_core::rx!(ctx; (*$view_fn).clone().into_any())?)

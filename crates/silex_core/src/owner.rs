@@ -332,8 +332,8 @@ impl<'owner> OwnerAccess<'owner> {
     ) -> SilexResult<EffectHandle<'owner>>
     where
         S: ReactiveSource<'owner>,
-        S::Value: Sized + Clone + PartialEq + RxData + 'owner,
-        C: FnMut(&S::Value, Option<&S::Value>) -> SilexResult<()> + 'owner,
+        S::Owned: Sized + Clone + PartialEq + RxData + 'owner,
+        C: FnMut(&S::Owned, Option<&S::Owned>) -> SilexResult<()> + 'owner,
         H: ErrorHandlerInput<'owner>,
     {
         self.watch_with_options(
@@ -355,8 +355,8 @@ impl<'owner> OwnerAccess<'owner> {
     ) -> SilexResult<EffectHandle<'owner>>
     where
         S: ReactiveSource<'owner>,
-        S::Value: Sized + Clone + PartialEq + RxData + 'owner,
-        C: FnMut(&S::Value, Option<&S::Value>) -> SilexResult<()> + 'owner,
+        S::Owned: Sized + Clone + PartialEq + RxData + 'owner,
+        C: FnMut(&S::Owned, Option<&S::Owned>) -> SilexResult<()> + 'owner,
         H: ErrorHandlerInput<'owner>,
     {
         let error_handler = error_handler.handler_ref();
@@ -512,10 +512,10 @@ impl<'owner> OwnerAccess<'owner> {
         }
     }
 
-    pub fn promote<T, H>(&self, value: T, error_handler: H) -> SilexResult<Rx<'owner, T::Value>>
+    pub fn promote<T, H>(&self, value: T, error_handler: H) -> SilexResult<Rx<'owner, T::Owned>>
     where
         T: ReactiveSource<'owner>,
-        T::Value: Sized + RxData + 'owner,
+        T::Owned: Sized + RxData + 'owner,
         H: ErrorHandlerInput<'owner>,
     {
         value

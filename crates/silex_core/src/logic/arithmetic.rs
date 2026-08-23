@@ -1,4 +1,4 @@
-use crate::{ErrorHandlerInput, Rx, SilexResult, reactivity::ReactiveSource, traits::RxRead};
+use crate::{ErrorHandlerInput, Rx, SilexResult, reactivity::ReactiveSource, traits::RxReadRef};
 use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Not, Rem, Shl, Shr, Sub};
 
 macro_rules! binary_method {
@@ -7,7 +7,7 @@ macro_rules! binary_method {
         where
             T: PartialEq + 'scope,
             for<'a> &'a T: $trait<&'a T, Output = T>,
-            R: ReactiveSource<'scope, Value = T>,
+            R: ReactiveSource<'scope, Owned = T>,
             H: ErrorHandlerInput<'scope>,
         {
             binary_op(self, right, ops_impl::$op::<T>, error_handler)
@@ -81,7 +81,7 @@ fn binary_op<'scope, T, R, H>(
 ) -> SilexResult<Rx<'scope, T>>
 where
     T: PartialEq + 'scope,
-    R: ReactiveSource<'scope, Value = T>,
+    R: ReactiveSource<'scope, Owned = T>,
     H: ErrorHandlerInput<'scope>,
 {
     let error_handler = error_handler.handler_ref();

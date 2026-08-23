@@ -18,7 +18,7 @@ use crate::{
 use ref_str::LocalStaticRefStr;
 use silex_core::{
     CallbackInvokeError, CompletionSender, EffectPhase, ErrorHandlerInput, ErrorHandlerToken,
-    OwnerAccess, ReactiveError, RxRead, SilexError, SilexErrorKind, SilexResult,
+    OwnerAccess, ReactiveError, RxReadRef, SilexError, SilexErrorKind, SilexResult,
     traits::{RxGet, RxWrite},
     unwind_safe,
 };

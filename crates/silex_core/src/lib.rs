@@ -46,8 +46,8 @@ pub use error::{AppHostError, BootstrapError, HostState, UnmountOutcome};
 pub use node_ref::NodeRef;
 pub use owner::{OwnerAccess, OwnerChild, OwnerCleanupRegistrationError, OwnerHandle, Runtime};
 pub use reactivity::{
-    BorrowedReadGuard, Computed, Constant, EffectHandle, EffectPhase, MappedReadGuard, Mutation,
-    OwnedReadGuard, PromotionPlan, ReactiveSource, ReadGuard, ReadSignal, Resource,
+    BorrowedReadGuard, Computed, Constant, EffectHandle, EffectPhase, MappedOptionReadGuard,
+    MappedReadGuard, Mutation, PromotionPlan, ReactiveSource, ReadGuard, ReadSignal, Resource,
     ResourceBuilder, ResourceFetchBuilder, ResourceSource, ResourceSourceBuilder, Rx, RxReadGuard,
     Signal, StoredValue, SuspenseContext, Transaction, WatchOptions, WriteGuard, WriteSignal,
 };
@@ -60,8 +60,12 @@ pub use silex_reactivity::unwind_safe;
 pub use store::StoreField;
 pub use task::TaskHandle;
 pub use traits::{
-    ReactiveInput, RuntimeScoped, RxBase, RxData, RxDefault, RxFrom, RxGet, RxRead, RxValue,
-    RxWrite,
+    ReactiveInput, RuntimeScoped, RxBase, RxData, RxDefault, RxFrom, RxGet, RxOptionGuard, RxRead,
+    RxReadLease, RxReadOption, RxReadOptionSource, RxReadRef, RxReadRefSource, RxReadTuple1,
+    RxReadTuple2, RxReadTuple3, RxReadTuple4, RxReadTuple5, RxReadTuple6, RxReadTupleSource1,
+    RxReadTupleSource2, RxReadTupleSource3, RxReadTupleSource4, RxReadTupleSource5,
+    RxReadTupleSource6, RxRefGuard, RxTupleGuard1, RxTupleGuard2, RxTupleGuard3, RxTupleGuard4,
+    RxTupleGuard5, RxTupleGuard6, RxValue, RxWrite,
 };
 
 pub use silex_reactivity::ReactiveError;
@@ -104,12 +108,12 @@ macro_rules! batch_read {
 #[doc(hidden)]
 macro_rules! batch_read_recurse {
     ([$source:expr] => [$param:ident : $ty:ty] => $body:expr) => {{
-        use $crate::traits::RxRead;
+        use $crate::traits::RxReadRef;
         let __silex_batch_source = $source;
         __silex_batch_source.with(|$param: &$ty| $body)
     }};
     ([$source:expr, $($rest:expr),+] => [$param:ident : $ty:ty, $($params:ident : $tys:ty),+] => $body:expr) => {{
-        use $crate::traits::RxRead;
+        use $crate::traits::RxReadRef;
         let __silex_batch_source = $source;
         __silex_batch_source.with(|$param: &$ty| {
             $crate::batch_read_recurse!([$($rest),+] => [$($params : $tys),+] => $body)
@@ -128,11 +132,11 @@ macro_rules! batch_read_untracked {
 #[doc(hidden)]
 macro_rules! batch_read_untracked_recurse {
     ([$source:expr] => [$param:ident : $ty:ty] => $body:expr) => {{
-        use $crate::traits::RxRead;
+        use $crate::traits::RxReadRef;
         ($source).with_untracked(|$param: &$ty| $body)
     }};
     ([$source:expr, $($rest:expr),+] => [$param:ident : $ty:ty, $($params:ident : $tys:ty),+] => $body:expr) => {{
-        use $crate::traits::RxRead;
+        use $crate::traits::RxReadRef;
         ($source).with_untracked(|$param: &$ty| {
             $crate::batch_read_untracked_recurse!([$($rest),+] => [$($params : $tys),+] => $body)
         })

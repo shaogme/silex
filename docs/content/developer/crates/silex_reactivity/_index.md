@@ -26,7 +26,7 @@ Runtime
 - owner 是生命周期和清理树的边界。`OwnerHandle` 持有关闭权限，`OwnerAccess` 是借用的节点创建和操作视图。
 - 节点读取和写入通过 scheduler 进入响应式图。普通读取可以建立依赖，untracked 读取只取得当前值而不建立边。
 
-`Runtime` 使用 `Rc`、`Cell` 等单线程类型，不应当作为 `Send + Sync` 的全局状态容器。一个 `Runtime` 同时只允许一个活动的 root owner；没有 root owner 时，可以使用 `Runtime::with_transient` 运行一次自动关闭的临时作用域。
+`Runtime` 使用 `Rc`、`Cell` 等单线程类型，不应当作为 `Send + Sync` 的全局状态容器。一个 `Runtime` 同时只允许一个活动的 root owner；没有 root owner 时，可以使用 `Runtime::with_transient` 运行一次自动关闭的临时作用域。已经拥有 owner access 时，也可以使用 `OwnerAccess::with_transient` 创建挂在当前 owner 下的临时子作用域。
 
 ## 节点选型
 
@@ -57,9 +57,10 @@ runtime 会先清空 Normal 队列，再执行 PostFlush 队列。PostFlush 回�
 
 需要一次性更新多个 signal 时，框架内部可以通过 `OwnerAccess::reactive_transaction`
 创建受当前 owner 约束的 `ReactiveTransaction`。事务只接受同一 runtime、同一 owner
-的 signal，会先暂存并验证全部更新，再统一发布；重复目标会得到
-`ReactiveError::DuplicateTarget`。该入口标记为 `doc(hidden)`，普通应用通常优先使用
-`batch` 或直接的 signal API。
+的 signal，会先暂存并验证全部更新，再统一发布；重复目标会返回
+`TransactionError`，其 `primary()` 为 `ReactiveError::DuplicateTarget`，并使事务进入
+`Poisoned` 阶段。该入口标记为 `doc(hidden)`，普通应用通常优先使用 `batch` 或直接的
+signal API。
 
 ## 最小可运行流程
 
@@ -112,4 +113,6 @@ runtime 会先清空 Normal 队列，再执行 PostFlush 队列。PostFlush 回�
 - 编译期契约：`crates/silex_reactivity/tests/compile_fail.rs` 和 `tests/ui/`
 - 基准入口：`crates/silex_reactivity/benches/reactivity.rs`
 
-验证本页或公开 API 变更时，至少运行 `cargo check -p silex_reactivity`、`cargo test -p silex_reactivity` 和 `zola check`。涉及文档示例时，优先确认 `docs_examples` 测试仍然通过。
+验证本页或公开 API 变更时，至少运行 `cargo check -p silex_reactivity`、
+`cargo test -p silex_reactivity` 和 `zola --root docs check`。涉及文档示例时，优先确认
+`cargo test -p silex_reactivity --test docs_examples` 仍然通过。

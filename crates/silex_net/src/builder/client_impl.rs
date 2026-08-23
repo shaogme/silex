@@ -11,7 +11,7 @@ use std::{
 use gloo_timers::future::sleep;
 use silex_core::{
     CallbackInvokeError, CompletionOnce, CompletionSubmitError, ErrorHandlerInput, ErrorReporter,
-    Mutation, ReactiveError, ReactiveSource, Resource, RxGet, RxRead, SilexError, SilexErrorKind,
+    Mutation, ReactiveError, ReactiveSource, Resource, RxGet, SilexError, SilexErrorKind,
     SuspenseContext, unwind_safe,
 };
 
@@ -273,8 +273,8 @@ macro_rules! impl_net_methods {
             suspense: Option<SuspenseContext<'scope>>,
         ) -> Result<Resource<'scope, T, NetError>, NetError>
         where
-            S: RxRead + ReactiveSource<'scope> + Clone + 'scope,
-            S::Value: Clone + PartialEq + 'static,
+            S: RxGet + ReactiveSource<'scope> + Clone + 'scope,
+            S::Owned: Clone + PartialEq + 'static,
         {
             self.validate_runtime().map_err(NetError::from)?;
             let scope = self.scope;
@@ -312,7 +312,7 @@ macro_rules! impl_net_methods {
                 .map(|memo| memo.into_rx())
                 .map_err(NetError::from)?;
             let resource_builder = Resource::builder(scope).source(combined_source).fetch(
-                move |(_, spec): (S::Value, RequestSpec)| {
+                move |(_, spec): (S::Owned, RequestSpec)| {
                     let mut spec = spec;
                     fetch_client.apply_interceptors(&mut spec);
                     let operation = match operation_controller_for_fetcher.begin() {

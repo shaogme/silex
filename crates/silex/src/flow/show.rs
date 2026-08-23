@@ -1,4 +1,4 @@
-use silex_core::{RxRead, SilexContextProvider, reactivity::ReactiveSource};
+use silex_core::{SilexContextProvider, reactivity::ReactiveSource};
 use silex_dom::prelude::*;
 use silex_macros::component;
 
@@ -23,7 +23,7 @@ pub fn Show<'scope, Ctx, C>(
     fallback: AnyView<'scope>,
 ) -> impl View<'scope>
 where
-    C: ReactiveSource<'scope, Value = bool> + Clone + 'scope,
+    C: ReactiveSource<'scope, Owned = bool> + Clone + 'scope,
 {
     let condition = owner.promote(when, error_handler)?;
     Ok(silex_core::rx!(ctx; if *$condition {
@@ -36,7 +36,7 @@ where
 // --- Signal 扩展 ---
 
 /// Signal 扩展特质，提供 .when() 语法糖
-pub trait SignalShowExt<'scope>: ReactiveSource<'scope, Value = bool> + Clone + Sized {
+pub trait SignalShowExt<'scope>: ReactiveSource<'scope, Owned = bool> + Clone + Sized {
     fn when<Ctx, V>(self, ctx: Ctx, view: V) -> ShowBuilder<'scope, PropFixed, Ctx, Self>
     where
         Ctx: SilexContextProvider<'scope>,
@@ -45,7 +45,7 @@ pub trait SignalShowExt<'scope>: ReactiveSource<'scope, Value = bool> + Clone + 
 
 impl<'scope, S> SignalShowExt<'scope> for S
 where
-    S: ReactiveSource<'scope, Value = bool> + Clone,
+    S: ReactiveSource<'scope, Owned = bool> + Clone,
 {
     fn when<Ctx, V>(self, ctx: Ctx, view: V) -> ShowBuilder<'scope, PropFixed, Ctx, Self>
     where

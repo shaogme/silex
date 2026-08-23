@@ -5,7 +5,7 @@ use crate::{
     reactivity::{
         Computed, Constant, Mutation, ReadSignal, Resource, Signal, SignalSlice, StoredValue,
     },
-    traits::{RxCloneData, RxData, RxError, RxGet, RxRead, RxValue},
+    traits::{RxCloneData, RxData, RxError, RxGet, RxRead, RxReadRef, RxValue},
 };
 
 /// A source description that can be materialized in a target scope after one
@@ -32,10 +32,10 @@ enum Materializer<'scope, T: 'scope> {
 /// must not register nodes while building the plan. Ordinary reads inside the
 /// materialized computation establish dependencies automatically.
 pub trait ReactiveSource<'scope>: RxValue {
-    fn into_promotion_plan(self) -> PromotionPlan<'scope, Self::Value>
+    fn into_promotion_plan(self) -> PromotionPlan<'scope, Self::Owned>
     where
         Self: Sized,
-        Self::Value: Sized + RxData + 'scope;
+        Self::Owned: Sized + RxData + 'scope;
 }
 
 impl<'scope, T: 'scope> PromotionPlan<'scope, T> {
@@ -91,10 +91,10 @@ macro_rules! impl_primitive_sources {
     ($($ty:ty),* $(,)?) => {
         $(
             impl<'scope> ReactiveSource<'scope> for $ty {
-                fn into_promotion_plan(self) -> PromotionPlan<'scope, Self::Value>
+                fn into_promotion_plan(self) -> PromotionPlan<'scope, Self::Owned>
                 where
                     Self: Sized,
-                    Self::Value: Sized + RxData + 'scope,
+                    Self::Owned: Sized + RxData + 'scope,
                 {
                     PromotionPlan::constant(self)
                 }
@@ -205,12 +205,12 @@ macro_rules! impl_tuple_sources {
         impl<'scope, $($name),+> ReactiveSource<'scope> for ($($name,)+)
         where
             $($name: ReactiveSource<'scope> + 'scope,)+
-            $($name::Value: Sized + RxData + Clone + 'scope,)+
+            $($name::Owned: Sized + RxData + Clone + 'scope,)+
         {
-            fn into_promotion_plan(self) -> PromotionPlan<'scope, Self::Value>
+            fn into_promotion_plan(self) -> PromotionPlan<'scope, Self::Owned>
             where
                 Self: Sized,
-                Self::Value: Sized + RxData + 'scope,
+                Self::Owned: Sized + RxData + 'scope,
             {
                 $(let $name = self.$index.into_promotion_plan();)+
                 PromotionPlan::derived(move |owner, error_handler| {
@@ -236,8 +236,8 @@ impl_tuple_sources!(A: 0, B: 1, C: 2, D: 3, E: 4, F: 5);
 impl<'scope, S, F, O> ReactiveSource<'scope> for SignalSlice<S, F, O>
 where
     S: ReactiveSource<'scope> + RxRead + 'scope,
-    S::Value: Sized + RxData + 'scope,
-    F: Fn(&S::Value) -> &O + 'scope,
+    S::Owned: Sized + RxData + 'scope,
+    F: Fn(&S::Owned) -> &O + 'scope,
     O: RxCloneData + 'scope,
 {
     fn into_promotion_plan(self) -> PromotionPlan<'scope, O>

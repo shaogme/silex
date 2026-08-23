@@ -2,8 +2,11 @@ use crate::callback::report_completion_error;
 use crate::{
     CompletionSender, ErrorHandlerInput, ErrorReporter, OwnerAccess, SilexError, SilexErrorKind,
     SilexResult,
-    reactivity::{Signal, StoredValue},
-    traits::{RxBase, RxCloneData, RxData, RxError, RxRead, RxValue},
+    reactivity::{MappedOptionReadGuard, Signal, StoredValue},
+    traits::{
+        RxBase, RxData, RxError, RxGet, RxRead, RxReadOption, RxReadOptionSource, RxReadRef,
+        RxReadRefSource, RxValue,
+    },
     unwind_safe,
 };
 use std::{cell::Cell, future::Future, pin::Pin, rc::Rc};
@@ -245,7 +248,7 @@ where
 
     pub fn mutate_with<S>(&self, source: S) -> crate::SilexResult<()>
     where
-        S: RxRead<Value = Arg>,
+        S: RxReadRef<Arg>,
         Arg: Clone,
     {
         self.mutate(source.with(Clone::clone)?)
@@ -279,7 +282,7 @@ where
     T: RxData + 'owner,
     E: RxError + 'owner,
 {
-    type Value = Option<T>;
+    type Owned = Option<T>;
 }
 
 impl<'owner, Arg, T, E> RxBase for Mutation<'owner, Arg, T, E>
@@ -293,34 +296,72 @@ where
     }
 }
 
+fn mutation_state_option<T, E>(state: &MutationState<T, E>) -> Option<&T> {
+    state.value()
+}
+
 impl<'owner, Arg, T, E> RxRead for Mutation<'owner, Arg, T, E>
 where
     Arg: RxData + 'owner,
-    T: RxCloneData + 'owner,
+    T: RxData + 'owner,
     E: RxError + 'owner,
 {
     type ReadGuard<'a>
-        = crate::OwnedReadGuard<Self::Value>
+        = MappedOptionReadGuard<
+        crate::ReadGuard<'owner, MutationState<T, E>>,
+        fn(&MutationState<T, E>) -> Option<&T>,
+        MutationState<T, E>,
+        T,
+    >
     where
         Self: 'a;
 
-    fn read(&self) -> crate::SilexResult<Self::ReadGuard<'_>> {
-        self.state
-            .with(|state| crate::OwnedReadGuard::new(state.value().cloned()))
+    fn read<'a>(&'a self) -> crate::SilexResult<Self::ReadGuard<'a>> {
+        Ok(MappedOptionReadGuard::new(
+            self.state.read_ref()?,
+            mutation_state_option::<T, E>,
+        ))
     }
 
-    fn read_untracked(&self) -> crate::SilexResult<Self::ReadGuard<'_>> {
-        self.state
-            .with_untracked(|state| crate::OwnedReadGuard::new(state.value().cloned()))
+    fn read_untracked<'a>(&'a self) -> crate::SilexResult<Self::ReadGuard<'a>> {
+        Ok(MappedOptionReadGuard::new(
+            self.state.read_ref_untracked()?,
+            mutation_state_option::<T, E>,
+        ))
+    }
+}
+
+impl<'owner, Arg, T, E> RxReadOptionSource<T> for Mutation<'owner, Arg, T, E>
+where
+    Arg: RxData + 'owner,
+    T: RxData + 'owner,
+    E: RxError + 'owner,
+{
+    type ViewGuard<'a>
+        = <Self as RxRead>::ReadGuard<'a>
+    where
+        Self: 'a;
+
+    fn read_option<'a>(&'a self) -> crate::SilexResult<Self::ViewGuard<'a>> {
+        self.read()
     }
 
-    fn with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> crate::SilexResult<U> {
-        self.state.with(|state| f(&state.value().cloned()))
+    fn read_option_untracked<'a>(&'a self) -> crate::SilexResult<Self::ViewGuard<'a>> {
+        self.read_untracked()
+    }
+}
+
+impl<'owner, Arg, T: Clone, E> RxGet for Mutation<'owner, Arg, T, E>
+where
+    Arg: RxData + 'owner,
+    E: RxError + 'owner,
+{
+    fn get_untracked(&self) -> crate::SilexResult<Self::Owned> {
+        RxReadOption::with_untracked(self, |value| value.cloned())
     }
 
-    fn with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> crate::SilexResult<U> {
-        self.state
-            .with_untracked(|state| f(&state.value().cloned()))
+    fn get(&self) -> crate::SilexResult<Self::Owned> {
+        RxReadOption::with(self, |value| value.cloned())
     }
 }
 

@@ -3,8 +3,11 @@ use crate::reactivity::ReactiveSource;
 use crate::{
     ErrorHandlerInput, OwnerAccess, OwnerChild, ReactiveError, Rx, SilexError, SilexErrorKind,
     SilexResult,
-    reactivity::{EffectPhase, ReadSignal, Signal},
-    traits::{RuntimeScoped, RxBase, RxCloneData, RxData, RxError, RxGet, RxRead, RxValue},
+    reactivity::{EffectPhase, MappedOptionReadGuard, ReadSignal, Signal},
+    traits::{
+        RuntimeScoped, RxBase, RxCloneData, RxData, RxError, RxGet, RxRead, RxReadOption,
+        RxReadOptionSource, RxReadRef, RxReadRefSource, RxValue,
+    },
     unwind_safe,
 };
 use std::{cell::Cell, future::Future, rc::Rc};
@@ -91,14 +94,14 @@ pub trait ResourceFetcher<'owner, S> {
 pub trait ResourceSource<'owner>:
     RxGet + ReactiveSource<'owner> + RuntimeScoped + Clone + 'owner
 where
-    Self::Value: Sized + Clone,
+    Self::Owned: Sized,
 {
 }
 
 impl<'owner, S> ResourceSource<'owner> for S
 where
     S: RxGet + ReactiveSource<'owner> + RuntimeScoped + Clone + 'owner,
-    S::Value: Sized + Clone,
+    S::Owned: Sized,
 {
 }
 
@@ -124,7 +127,7 @@ impl<'owner> ResourceBuilder<'owner> {
     pub fn source<S>(self, source: S) -> ResourceSourceBuilder<'owner, S>
     where
         S: ResourceSource<'owner>,
-        S::Value: Sized + Clone,
+        S::Owned: Sized,
     {
         ResourceSourceBuilder {
             owner: self.owner,
@@ -136,7 +139,7 @@ impl<'owner> ResourceBuilder<'owner> {
 impl<'owner, S> ResourceSourceBuilder<'owner, S>
 where
     S: ResourceSource<'owner>,
-    S::Value: Sized + Clone,
+    S::Owned: Sized,
 {
     pub fn fetch<Fetcher>(self, fetcher: Fetcher) -> ResourceFetchBuilder<'owner, S, Fetcher> {
         ResourceFetchBuilder {
@@ -151,7 +154,7 @@ where
 impl<'owner, S, Fetcher> ResourceFetchBuilder<'owner, S, Fetcher>
 where
     S: ResourceSource<'owner>,
-    S::Value: Sized + Clone,
+    S::Owned: Sized,
 {
     pub fn suspense(mut self, suspense: SuspenseContext<'owner>) -> Self {
         self.suspense = Some(suspense);
@@ -162,7 +165,7 @@ where
     where
         T: RxCloneData + 'static,
         E: RxError + 'static,
-        Fetcher: ResourceFetcher<'owner, S::Value, Data = T, Error = E> + 'owner,
+        Fetcher: ResourceFetcher<'owner, S::Owned, Data = T, Error = E> + 'owner,
         H: Clone + ErrorHandlerInput<'owner>,
     {
         let Self {
@@ -249,8 +252,8 @@ where
     ) -> crate::SilexResult<ResourceHandles<'owner, T, E>>
     where
         S: ResourceSource<'owner>,
-        S::Value: Sized + Clone,
-        Fetcher: ResourceFetcher<'owner, S::Value, Data = T, Error = E> + 'owner,
+        S::Owned: Sized,
+        Fetcher: ResourceFetcher<'owner, S::Owned, Data = T, Error = E> + 'owner,
         H: Clone + ErrorHandlerInput<'owner>,
     {
         let handler_owner = error_handler.clone();
@@ -353,7 +356,13 @@ where
 
         Ok((state, trigger))
     }
+}
 
+impl<'owner, T, E> Resource<'owner, T, E>
+where
+    T: 'owner,
+    E: RxError + 'owner,
+{
     pub fn state(&self) -> ReadSignal<'owner, ResourceState<T, E>> {
         self.state.read_signal()
     }
@@ -377,11 +386,17 @@ where
         self.state.with(ResourceState::is_loading)
     }
 
-    pub fn value(&self) -> crate::SilexResult<Option<T>> {
+    pub fn value(&self) -> crate::SilexResult<Option<T>>
+    where
+        T: Clone,
+    {
         self.state.with(|state| state.as_option().cloned())
     }
 
-    pub fn get_data(&self) -> crate::SilexResult<Option<T>> {
+    pub fn get_data(&self) -> crate::SilexResult<Option<T>>
+    where
+        T: Clone,
+    {
         self.value()
     }
 
@@ -413,7 +428,7 @@ impl<'owner> Resource<'owner, (), SilexError> {
 }
 
 impl<'owner, T: RxData + 'owner, E: RxError + 'owner> RxValue for Resource<'owner, T, E> {
-    type Value = Option<T>;
+    type Owned = Option<T>;
 }
 
 impl<'owner, T: RxData + 'owner, E: RxError + 'owner> RxBase for Resource<'owner, T, E> {
@@ -422,29 +437,60 @@ impl<'owner, T: RxData + 'owner, E: RxError + 'owner> RxBase for Resource<'owner
     }
 }
 
-impl<'owner, T: RxCloneData + 'owner, E: RxError + 'owner> RxRead for Resource<'owner, T, E> {
+fn resource_state_option<T, E>(state: &ResourceState<T, E>) -> Option<&T> {
+    state.as_option()
+}
+
+impl<'owner, T: RxData + 'owner, E: RxError + 'owner> RxRead for Resource<'owner, T, E> {
     type ReadGuard<'a>
-        = crate::OwnedReadGuard<Self::Value>
+        = MappedOptionReadGuard<
+        crate::ReadGuard<'owner, ResourceState<T, E>>,
+        fn(&ResourceState<T, E>) -> Option<&T>,
+        ResourceState<T, E>,
+        T,
+    >
     where
         Self: 'a;
 
-    fn read(&self) -> crate::SilexResult<Self::ReadGuard<'_>> {
-        self.state
-            .with(|state| crate::OwnedReadGuard::new(state.as_option().cloned()))
+    fn read<'a>(&'a self) -> crate::SilexResult<Self::ReadGuard<'a>> {
+        Ok(MappedOptionReadGuard::new(
+            self.state.read_ref()?,
+            resource_state_option::<T, E>,
+        ))
     }
 
-    fn read_untracked(&self) -> crate::SilexResult<Self::ReadGuard<'_>> {
-        self.state
-            .with_untracked(|state| crate::OwnedReadGuard::new(state.as_option().cloned()))
+    fn read_untracked<'a>(&'a self) -> crate::SilexResult<Self::ReadGuard<'a>> {
+        Ok(MappedOptionReadGuard::new(
+            self.state.read_ref_untracked()?,
+            resource_state_option::<T, E>,
+        ))
+    }
+}
+
+impl<'owner, T: RxData + 'owner, E: RxError + 'owner> RxReadOptionSource<T>
+    for Resource<'owner, T, E>
+{
+    type ViewGuard<'a>
+        = <Self as RxRead>::ReadGuard<'a>
+    where
+        Self: 'a;
+
+    fn read_option<'a>(&'a self) -> crate::SilexResult<Self::ViewGuard<'a>> {
+        self.read()
     }
 
-    fn with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> crate::SilexResult<U> {
-        self.state.with(|state| f(&state.as_option().cloned()))
+    fn read_option_untracked<'a>(&'a self) -> crate::SilexResult<Self::ViewGuard<'a>> {
+        self.read_untracked()
+    }
+}
+
+impl<'owner, T: Clone + 'owner, E: RxError + 'owner> RxGet for Resource<'owner, T, E> {
+    fn get_untracked(&self) -> crate::SilexResult<Self::Owned> {
+        RxReadOption::with_untracked(self, |value| value.cloned())
     }
 
-    fn with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> crate::SilexResult<U> {
-        self.state
-            .with_untracked(|state| f(&state.as_option().cloned()))
+    fn get(&self) -> crate::SilexResult<Self::Owned> {
+        RxReadOption::with(self, |value| value.cloned())
     }
 }
 

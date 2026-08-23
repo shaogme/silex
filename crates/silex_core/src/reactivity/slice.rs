@@ -1,6 +1,6 @@
 use crate::{
     MappedReadGuard, OwnerAccess, SilexResult,
-    traits::{RuntimeScoped, RxBase, RxData, RxRead, RxValue},
+    traits::{RuntimeScoped, RxBase, RxData, RxGet, RxRead, RxReadRef, RxReadRefSource, RxValue},
 };
 use std::marker::PhantomData;
 
@@ -25,7 +25,7 @@ impl<S, F, O> RxValue for SignalSlice<S, F, O>
 where
     O: ?Sized + RxData,
 {
-    type Value = O;
+    type Owned = O;
 }
 
 impl<S, F, O: ?Sized> RuntimeScoped for SignalSlice<S, F, O>
@@ -49,31 +49,58 @@ where
 
 impl<S, F, O> RxRead for SignalSlice<S, F, O>
 where
-    S: RxRead,
-    F: Fn(&S::Value) -> &O,
+    S: RxReadRefSource,
+    F: Fn(&S::Owned) -> &O,
     O: ?Sized + RxData,
 {
     type ReadGuard<'a>
-        = MappedReadGuard<S::ReadGuard<'a>, &'a F, O>
+        = MappedReadGuard<S::ViewGuard<'a>, &'a F, S::Owned, O>
     where
         Self: 'a;
 
-    fn read(&self) -> SilexResult<Self::ReadGuard<'_>> {
-        Ok(MappedReadGuard::new(self.source.read()?, &self.getter))
+    fn read<'a>(&'a self) -> SilexResult<Self::ReadGuard<'a>> {
+        Ok(MappedReadGuard::new(self.source.read_ref()?, &self.getter))
     }
 
-    fn read_untracked(&self) -> SilexResult<Self::ReadGuard<'_>> {
+    fn read_untracked<'a>(&'a self) -> SilexResult<Self::ReadGuard<'a>> {
         Ok(MappedReadGuard::new(
-            self.source.read_untracked()?,
+            self.source.read_ref_untracked()?,
             &self.getter,
         ))
     }
+}
 
-    fn with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> SilexResult<U> {
-        self.source.with(|value| f((self.getter)(value)))
+impl<S, F, O> RxReadRefSource for SignalSlice<S, F, O>
+where
+    S: RxReadRefSource,
+    F: Fn(&S::Owned) -> &O,
+    O: ?Sized + RxData,
+{
+    type ViewGuard<'a>
+        = MappedReadGuard<S::ViewGuard<'a>, &'a F, S::Owned, O>
+    where
+        Self: 'a;
+
+    fn read_ref<'a>(&'a self) -> SilexResult<Self::ViewGuard<'a>> {
+        self.read()
     }
 
-    fn with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> SilexResult<U> {
-        self.source.with_untracked(|value| f((self.getter)(value)))
+    fn read_ref_untracked<'a>(&'a self) -> SilexResult<Self::ViewGuard<'a>> {
+        self.read_untracked()
+    }
+}
+
+impl<S, F, O> RxGet for SignalSlice<S, F, O>
+where
+    S: RxReadRefSource,
+    F: Fn(&S::Owned) -> &O,
+    O: Clone + RxData,
+{
+    fn get_untracked(&self) -> SilexResult<Self::Owned> {
+        self.with_untracked(Clone::clone)
+    }
+
+    fn get(&self) -> SilexResult<Self::Owned> {
+        self.with(Clone::clone)
     }
 }

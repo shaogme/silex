@@ -1,7 +1,7 @@
 use crate::{
     ErrorHandlerInput, OwnerAccess, Rx, SilexResult,
     reactivity::ReactiveSource,
-    traits::{RxGet, RxRead},
+    traits::{RxGet, RxRead, RxReadRef},
 };
 
 /// Create a typed computed node in an explicit owner.
@@ -14,20 +14,20 @@ pub trait Map: RxRead + Clone {
     ) -> SilexResult<Rx<'scope, U>>
     where
         Self: ReactiveSource<'scope> + 'scope,
-        Self::Value: Sized + 'scope,
+        Self::Owned: Sized + 'scope,
         U: 'scope,
-        F: Fn(&Self::Value) -> U + 'scope,
+        F: Fn(&Self::Owned) -> U + 'scope,
         H: ErrorHandlerInput<'scope>;
 
     fn map_fn<'scope, U, H>(
         self,
         owner: OwnerAccess<'scope>,
-        f: fn(&Self::Value) -> U,
+        f: fn(&Self::Owned) -> U,
         error_handler: H,
     ) -> SilexResult<Rx<'scope, U>>
     where
         Self: ReactiveSource<'scope> + 'scope,
-        Self::Value: Sized + 'scope,
+        Self::Owned: Sized + 'scope,
         U: 'scope,
         H: ErrorHandlerInput<'scope>;
 }
@@ -44,9 +44,9 @@ where
     ) -> SilexResult<Rx<'scope, U>>
     where
         Self: ReactiveSource<'scope> + 'scope,
-        Self::Value: Sized + 'scope,
+        Self::Owned: Sized + 'scope,
         U: 'scope,
-        F: Fn(&Self::Value) -> U + 'scope,
+        F: Fn(&Self::Owned) -> U + 'scope,
         H: ErrorHandlerInput<'scope>,
     {
         let error_handler = error_handler.handler_ref();
@@ -59,12 +59,12 @@ where
     fn map_fn<'scope, U, H>(
         self,
         owner: OwnerAccess<'scope>,
-        f: fn(&Self::Value) -> U,
+        f: fn(&Self::Owned) -> U,
         error_handler: H,
     ) -> SilexResult<Rx<'scope, U>>
     where
         Self: ReactiveSource<'scope> + 'scope,
-        Self::Value: Sized + 'scope,
+        Self::Owned: Sized + 'scope,
         U: 'scope,
         H: ErrorHandlerInput<'scope>,
     {
@@ -81,10 +81,10 @@ pub trait ComputedSource: RxRead + Clone {
         self,
         owner: OwnerAccess<'scope>,
         error_handler: H,
-    ) -> SilexResult<Rx<'scope, Self::Value>>
+    ) -> SilexResult<Rx<'scope, Self::Owned>>
     where
         Self: ReactiveSource<'scope> + 'scope,
-        Self::Value: PartialEq + Clone + Sized + 'scope,
+        Self::Owned: PartialEq + Clone + Sized + 'scope,
         H: ErrorHandlerInput<'scope>;
 }
 
@@ -96,10 +96,10 @@ where
         self,
         owner: OwnerAccess<'scope>,
         error_handler: H,
-    ) -> SilexResult<Rx<'scope, Self::Value>>
+    ) -> SilexResult<Rx<'scope, Self::Owned>>
     where
         Self: ReactiveSource<'scope> + 'scope,
-        Self::Value: PartialEq + Clone + Sized + 'scope,
+        Self::Owned: PartialEq + Clone + Sized + 'scope,
         H: ErrorHandlerInput<'scope>,
     {
         let error_handler = error_handler.handler_ref();

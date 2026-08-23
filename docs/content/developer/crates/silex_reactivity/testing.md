@@ -36,12 +36,13 @@ cargo test -p silex_reactivity
 cargo test -p silex_reactivity --features test-support
 cargo test -p silex_reactivity --test docs_examples
 cargo test -p silex_reactivity --test compile_fail
+cargo clippy -p silex_reactivity --all-targets --all-features -- -D warnings
 ```
 
 站点检查在 `docs/` 目录运行：
 
 ```text
-zola check
+zola --root docs check
 ```
 
 `compile_fail` 测试使用 `trybuild` 扫描 `tests/ui/fail_*.rs`，同时编译
@@ -52,8 +53,8 @@ zola check
 
 可执行示例只保留在 `docs/examples/`，页面通过 `load_data` 读取同一个源文件。
 `crates/silex_reactivity/tests/docs_examples.rs` 使用 `#[path]` 引入
-`docs/examples/silex_reactivity/basic.rs`，因此 `cargo test --test docs_examples`
-会同时验证示例的编译和运行。
+`docs/examples/silex_reactivity/basic.rs`，因此
+`cargo test -p silex_reactivity --test docs_examples` 会同时验证示例的编译和运行。
 
 如果片段省略外层函数、错误类型或业务函数，就把它放在 Markdown 普通 fenced
 code 中，并明确说明“不是 CI 编译示例”。尤其不要在页面中复制一份与

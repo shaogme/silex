@@ -31,9 +31,13 @@ weight = 10
 
 ## Signal 读写
 
-`Signal` 同时实现 `RxRead` 和 `RxWrite`，可以直接获取具名的读写 guard。
+`Signal` 同时实现 `RxRead` 和 `RxWrite`，可以直接获取类型化的读写 guard。
 读取 guard 实现 `Deref`，写入 guard 实现 `DerefMut`；guard 存活期间会保持
 runtime 的动态借用。
+
+`set` 和 `update` 会发布一次写入；如果 `T: PartialEq`，`set_if_changed` 只有在
+新旧值不相等时才发布，并返回是否实际写入。需要在值相等时也通知依赖时，应使用
+`set` 或 `notify`。
 
 `silex_core::ReadGuard` 和 `silex_core::WriteGuard` 在底层 runtime guard 外再封装
 了一层，统一把释放、提交和回滚操作转换为 `SilexResult<()>`。因此调用方只需使用
@@ -197,7 +201,7 @@ let watcher = owner.watch_getter_with_options(
 - 已存在的 scoped source 直接保留原句柄，不重复创建节点；
 - primitive、`String`、`&str` 和 `Constant<T>` 作为 constant，在目标 owner 中创建 owner-owned 值；
 - tuple source（最多六个元素）、`SignalSlice`、`Resource` 和 `Mutation` 会生成 derived computed，并追踪其成员；
-- `OwnerAccess::promote` 在创建 target-side 节点前接收 `ErrorReporter`，并检查 target owner 是否与 source 属于同一个 runtime。
+- `OwnerAccess::promote` 在 materialize 时接收 `ErrorReporter`；已有 scoped source 会原样保留，不会在这里自动验证 runtime。需要在创建目标节点前拒绝 foreign source 时，应先调用 `validate_runtime`；`Resource::build` 就采用了这一策略。
 
 实现自定义 source 时，`into_promotion_plan` 阶段不能注册节点；只有 `PromotionPlan::derived` 的 materializer 才能使用传入的 `OwnerAccess` 创建节点。materializer 不能创建新的 `Runtime`、detached owner 或线程局部 runtime。
 
@@ -207,9 +211,9 @@ let watcher = owner.watch_getter_with_options(
 
 | Trait | 作用 |
 | --- | --- |
-| `RxValue` | 暴露关联的 `Value` 类型。 |
+| `RxValue` | 暴露要读取或物化的关联 `Owned` 类型。 |
 | `RxBase` | 只建立依赖而不借用或 clone payload；适用于非 `Clone` source。 |
-| `RxRead` / `RxGet` | `RxRead` 提供 `ReadGuard` 关联类型、`read`、`read_untracked` 和闭包访问；`RxGet` 提供 clone-based `get`/`get_untracked`。 |
+| `RxRead` / `RxReadRef` / `RxGet` | `RxRead` 提供 `ReadGuard` 关联类型、`read` 和 `read_untracked`；`RxReadRef` 提供闭包内的 borrowed view；`RxGet` 提供 owned-value 的 `get`/`get_untracked`。 |
 | `RxWrite` | 提供 `WriteGuard` 关联类型、`write`，以及 `set`、`update`、`notify` 和 setter/updater 闭包。 |
 | `RuntimeScoped` | 暴露 source 保存的 `OwnerAccess`，供 runtime provenance 校验。 |
 | `RxFrom` / `RxDefault` | 在显式 owner 中从值或 `Default` 创建 owner-owned wrapper。 |
@@ -217,16 +221,18 @@ let watcher = owner.watch_getter_with_options(
 | `RxOptionExt` | 对 `Option<T>` source 提供 `map_or`、`unwrap_or`、`and_then`、`is_some_and` 等派生。 |
 | `ForLoopSource` | 将 `Vec<T>`、`Option<Vec<T>>` 或 `SilexResult<Vec<T>>` 统一暴露为 slice。 |
 
-tuple 的 `RxRead` 会逐个短暂借用成员并创建 owned tuple，因此聚合 `get`/`with` 要求成员 `Clone`；tuple 不实现 `RxWrite`，因为多个独立 source 没有统一的事务写入语义。
+tuple 的 `RxRead` 会逐个持有成员的读取 guard，并通过 `with_tuple` 在闭包内暴露借用；只有 `RxGet::get`/`get_untracked` 为了返回 owned tuple 才要求每个成员 `Clone`。tuple 不实现 `RxWrite`，因为多个独立 source 没有统一的事务写入语义。
 
 ## projection、map 与逻辑运算
 
 `SignalSlice` 通过 `signal.slice(|value| &value.field)` 进行安全 projection；它的
 `read()` 返回 `MappedReadGuard`，同时持有 source guard，因此字段引用只在 source
 借用有效期间暴露。作为 `ReactiveSource` 使用时会 clone 字段建立 derived
-computed。tuple、`Resource` 和 `Mutation` 的读取结果则是 `OwnedReadGuard` 快照，
-不会把底层 payload 借用暴露给调用方；`Rx` 会用 `RxReadGuard` 保留具体 source
-变体的 guard。
+computed。tuple 的 `TupleReadGuard` 会同时持有各成员 guard，并通过
+`with_tuple` 暴露短生命周期借用；`Resource`/`Mutation` 的
+`MappedOptionReadGuard` 也会持有状态 guard，只暴露 `Option<&T>`。只有
+`get`/`get_untracked` 才会 clone 成 owned 值；`Rx` 会用 `RxReadGuard` 保留具体
+source 变体的 runtime guard。
 
 `logic::*` 中的 trait 都会在显式 owner 中创建派生节点：
 
@@ -264,6 +270,6 @@ let value = rx!(ctx; source.field)?;
 - tuple source、clone snapshot 和 tuple `get`：`crates/silex_core/tests/tuple_traits.rs`
 - watch 的 promotion、`immediate`、`once` 和 batch：`crates/silex_core/tests/watch.rs`
 - 借用冲突、stale node、`NodeRef` 和内部可变性：`crates/silex_core/tests/reactivity_errors.rs`
-- scoped guard、owned snapshot 和 projection 借用：`crates/silex_core/tests/signal_guards.rs`
+- scoped guard、tuple/optional borrowed view 和 projection 借用：`crates/silex_core/tests/signal_guards.rs`
 - transaction 的快照、原子提交和回滚：`crates/silex_core/tests/transaction.rs`
 - runtime provenance：`crates/silex_core/tests/runtime_compatibility.rs`

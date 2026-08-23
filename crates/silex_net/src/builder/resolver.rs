@@ -1,6 +1,6 @@
 use std::{borrow::Cow, rc::Rc};
 
-use silex_core::{Computed, OwnerAccess, ReadSignal, Rx, RxRead, Signal, SilexResult};
+use silex_core::{Computed, OwnerAccess, ReadSignal, Rx, RxReadRef, Signal, SilexResult};
 
 #[cfg(feature = "persist")]
 use silex_persist::Persistent;

@@ -8,7 +8,7 @@ weight = 10
 
 `silex_reactivity` 把 signal、computed、effect、watch、callback 等对象注册为 owner 作用域内的节点。计算闭包执行期间，追踪读取会记录依赖；源节点变化后，scheduler 将受影响的计算放入队列。计算成功后才会提交新的值和依赖边，计算失败则保留旧图谱并进入错误处理路径。
 
-下面的 API 片段省略了外层函数、错误传播和 handler 注册等样板代码，只用于说明调用关系。示例中的 `handler::<E>(scope)` 是文档占位写法，表示已经通过 `scope.error_handler(...)` 注册的 `ErrorHandlerToken`；实际代码需要保留注册结果，并处理计算创建返回的 `ComputationInitResult`。需要可编译的完整流程时，请参考总览页引用的 `docs/examples/silex_reactivity/basic.rs`。
+下面的 API 片段省略了外层函数、错误传播和 handler 注册等样板代码，只用于说明调用关系。示例中的 `error_handler` 是文档占位写法，表示已经通过 `scope.error_handler(...)` 注册并仍在作用域内的 `ErrorHandlerToken` 或其 view；实际代码需要保留注册结果，并处理计算创建返回的 `ComputationInitResult`。需要可编译的完整流程时，请参考总览页引用的 `docs/examples/silex_reactivity/basic.rs`。
 
 ## Signal：可变源
 
@@ -37,6 +37,11 @@ write.notify()?;
 ```
 
 `get` 和 `with` 会在当前 scheduler 的 observer 上建立依赖；`get_untracked` 和 `with_untracked` 只读取值，不建立订阅。`get` 需要 `T: Clone`，而 `with` 允许在借用期间只提取需要的结果。
+
+当只需要建立依赖而不需要复制或借用值时，可以调用读能力的 `track()`；它同样会
+先确保 signal 有效，并在 scheduler 空闲时刷新待处理工作。`read()` 和
+`read_untracked()` 则把借用延长到 `ReadGuard` 生命周期，适合处理不实现 `Clone` 的
+payload。
 
 `read()` 返回的 `ReadGuard` 可以显式调用 `finish()` 提前释放借用并立即报告待处理
 的 scheduler 错误；不调用时，guard 在 drop 时也会释放借用。`write()` 返回的
@@ -67,7 +72,7 @@ let total = scope.computed(
         let right = right.get()?;
         Ok::<_, ReactiveError>(left + right)
     },
-    handler::<ReactiveError>(scope),
+    error_handler,
 )?;
 
 let value = total.get()?;
@@ -75,6 +80,10 @@ let borrowed = total.with(|value| *value)?;
 ```
 
 当新输出与旧输出相等时，`computed` 不会因为该输出变化而额外通知下游；如果输出不可比较，或每次成功求值都必须传播，则使用 `computed_always`。两者都提供 `get`、`with`、`get_untracked` 和 `with_untracked`。
+
+如果输出不实现 `Clone`，可以使用 `read()` 或 `read_untracked()` 获取
+`ReadGuard`；只需要让当前计算订阅 computed 时使用 `track()`。这些操作仍会在
+computed 尚未稳定时先求值，并分别保留 tracked 与 untracked 的调用者依赖语义。
 
 计算的错误分两个阶段：
 
@@ -95,7 +104,7 @@ let effect = scope.effect(
         record(value);
         Ok::<(), ReactiveError>(())
     },
-    handler::<ReactiveError>(scope),
+    error_handler,
 )?;
 
 let stopped = effect.stop()?;
@@ -123,7 +132,7 @@ let effect = scope.effect_with_previous(
         }
         Ok::<_, ReactiveError>(next)
     },
-    handler::<ReactiveError>(scope)?,
+    error_handler,
 )?;
 ```
 
@@ -144,7 +153,7 @@ let watcher = scope.watch_getter_with_options(
         println!("{previous:?} -> {current}");
         Ok::<(), ReactiveError>(())
     },
-    handler::<ReactiveError>(scope),
+    error_handler,
     WatchOptions::default(),
 )?;
 ```
@@ -152,7 +161,7 @@ let watcher = scope.watch_getter_with_options(
 `WatchOptions` 有两个独立开关：
 
 - `immediate()` 让初始化阶段也调用一次回调；没有该选项时，getter 仍会初始化并建立依赖，但回调不会在第一次求值时执行。
-- `once()` 让 watcher 在第一次实际调用回调后停止。`immediate().once()` 会在初始化回调后立即停止；单独使用 `once()` 则会等待第一次变化。
+- `once()` 让 watcher 在第一次成功执行回调后停止。`immediate().once()` 会在初始化回调成功后立即停止；单独使用 `once()` 则会等待第一次变化。getter 或回调返回错误时本次求值失败，旧快照会保留，watcher 不会因 `once` 提前停止。
 
 watcher 返回 `EffectHandle`，可以显式调用 `stop`。getter 的依赖在每次成功运行后替换，回调在 untracked 上下文中执行，所以回调内部读取的 signal 不会成为 watcher 的依赖。getter 或回调返回的用户错误分别走初始化错误、后续 handler/error result 路径，不能把回调中的读取当作 getter 结果变化。
 
@@ -177,15 +186,17 @@ let callback = scope.callback(|value: i32| {
 callback.invoke(1)?;
 ```
 
-`Callback::invoke` 返回 `CallbackInvokeResult`，其中 `CallbackInvokeError::User(E)` 是用户回调返回的错误，`Runtime` 是节点或动态借用错误；`CallbackInvokeError::Handler` 是其他可失败回调路径共享的错误变体。需要把用户错误交给指定 handler 时使用 `Callback::dispatch`，它统一返回 `HandlerError`。
+`Callback::invoke` 返回 `CallbackInvokeResult`，其中 `CallbackInvokeError::User(E)` 是用户回调返回的错误，`Runtime` 是节点或动态借用错误；`CallbackInvokeError::Handler` 是 computed 等可失败计算读取路径共享的错误变体，普通 `Callback::invoke` 本身不会产生该变体。需要把用户错误交给指定 handler 时使用 `Callback::dispatch`，它统一返回 `HandlerError`。
 
 回调节点只在 owner 活动期间有效。递归调用同一个正在运行的回调会得到 `ReactiveError::BorrowConflict`；回调 panic 会在恢复回调节点后继续向调用方传播，不应依赖 panic 作为业务错误通道。
 
 ### `StoredValue`
 
-`OwnerAccess::stored` 创建一个不参与依赖图的作用域值。`with` 和 `update` 不会触发 effect，也不会通过读取建立订阅，适合放置缓存、框架状态或 cleanup 需要释放的资源。
+`OwnerAccess::stored` 创建一个不参与依赖图的作用域值。`read`、`with`、`write` 和
+`update` 不会触发 effect，也不会通过读取建立订阅，适合放置缓存、框架状态或 cleanup
+需要释放的资源。它的 `track()` 只执行节点有效性检查，不会把 stored value 加入依赖图。
 
-普通作用域关闭后，`StoredValue` 和其他节点一样不可用。但在最终 owner cleanup 正在运行的短窗口内，`StoredValue::with`/`update` 仍可访问它；此时 scope 已经被标记为 inactive，只有 stored value 享有这个清理例外，异步代码或 effect rerun 不能利用它。
+普通作用域关闭后，`StoredValue` 和其他节点一样不可用。但在最终 owner cleanup 正在运行的短窗口内，`StoredValue` 的同步读写方法仍可访问它；此时 scope 已经被标记为 inactive，只有 stored value 享有这个清理例外，异步代码或 effect rerun 不能利用它。
 
 ### `NodeRef`
 

@@ -41,7 +41,7 @@ fn dialog_focus_binding<'scope>(
             EffectPhase::PostFlush,
             Box::new(move || -> SilexResult<()> {
                 if open.with(|value| *value)? {
-                    if previous_focus.with(|value| value.is_none())? {
+                    if silex_core::RxReadRef::with(&previous_focus, |value| value.is_none())? {
                         previous_focus.set(document().active_element())?;
                     }
                     let dialog = dialog.dyn_ref::<HtmlElement>().ok_or_else(|| {
@@ -50,7 +50,9 @@ fn dialog_focus_binding<'scope>(
                         ))
                     })?;
                     dialog.focus().map_err(SilexError::fatal)?;
-                } else if let Some(previous) = previous_focus.with(|value| value.clone())? {
+                } else if let Some(previous) =
+                    silex_core::RxReadRef::with(&previous_focus, |value| value.clone())?
+                {
                     if let Some(previous) = previous.dyn_ref::<HtmlElement>() {
                         previous.focus().map_err(SilexError::fatal)?;
                     }

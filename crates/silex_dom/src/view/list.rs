@@ -5,7 +5,7 @@ use super::row::{
 };
 use crate::view::{AnyView, MountErrorHandler, MountInstance, View};
 use silex_core::reactivity::ReactiveSource;
-use silex_core::traits::{ForLoopSource, RxRead};
+use silex_core::traits::{ForLoopSource, RxRead, RxReadRef};
 use silex_core::{
     CloseError, EffectPhase, ErrorHandlerToken, SilexError, SilexErrorKind, SilexResult,
 };
@@ -64,7 +64,7 @@ impl<'scope, T> RowFactory<'scope, T> {
 
 impl<'scope, IF, IS, T, K> View<'scope> for RenderOnlyKeyedListView<'scope, IF, IS, T, K>
 where
-    IF: RxRead<Value = IS> + ReactiveSource<'scope> + Clone + 'scope,
+    IF: RxRead<Owned = IS> + RxReadRef<IS> + ReactiveSource<'scope> + Clone + 'scope,
     IS: ForLoopSource<Item = T> + Sized + 'scope,
     K: std::hash::Hash + Eq + Clone + 'scope,
     T: Clone + 'scope,
@@ -84,7 +84,7 @@ where
 
 impl<'scope, IF, IS, T, K> View<'scope> for StatefulKeyedListView<'scope, IF, IS, T, K>
 where
-    IF: RxRead<Value = IS> + ReactiveSource<'scope> + Clone + 'scope,
+    IF: RxRead<Owned = IS> + RxReadRef<IS> + ReactiveSource<'scope> + Clone + 'scope,
     IS: ForLoopSource<Item = T> + Sized + 'scope,
     K: std::hash::Hash + Eq + Clone + 'scope,
     T: Clone + 'scope,
@@ -110,7 +110,7 @@ pub struct IndexedListView<'scope, IF, T, IS> {
 
 impl<'scope, IF, T, IS> View<'scope> for IndexedListView<'scope, IF, T, IS>
 where
-    IF: RxRead<Value = IS> + ReactiveSource<'scope> + Clone + 'scope,
+    IF: RxRead<Owned = IS> + RxReadRef<IS> + ReactiveSource<'scope> + Clone + 'scope,
     IS: ForLoopSource<Item = T> + 'scope,
     T: Clone + 'scope,
 {
@@ -129,7 +129,7 @@ fn mount_indexed_list<'scope, IF, IS, T>(
     factory: RowFactory<'scope, T>,
 ) -> SilexResult<MountInstance<'scope>>
 where
-    IF: RxRead<Value = IS> + ReactiveSource<'scope> + Clone + 'scope,
+    IF: RxRead<Owned = IS> + RxReadRef<IS> + ReactiveSource<'scope> + Clone + 'scope,
     IS: ForLoopSource<Item = T> + 'scope,
     T: Clone + 'scope,
 {
@@ -460,7 +460,7 @@ fn mount_keyed_list<'scope, IF, IS, T, K>(
     args: KeyedListMountArgs<'scope, IF, IS, T, K>,
 ) -> SilexResult<MountInstance<'scope>>
 where
-    IF: RxRead<Value = IS> + ReactiveSource<'scope> + Clone + 'scope,
+    IF: RxRead<Owned = IS> + RxReadRef<IS> + ReactiveSource<'scope> + Clone + 'scope,
     IS: ForLoopSource<Item = T> + 'scope,
     T: Clone + 'scope,
     K: std::hash::Hash + Eq + Clone + 'scope,

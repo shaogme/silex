@@ -106,7 +106,7 @@ scope.on_cleanup(
 
 计算重新运行时，顺序是“子节点 cleanup → 当前计算已有 cleanup → 新计算闭包”；owner 关闭时，顺序是“子 owner → owner 节点/计算 → owner cleanup”。同一层的 cleanup 需要按注册的生命周期顺序理解，不能依赖内部 node id 或容器索引。
 
-最终 owner cleanup 开始时，scope 已经被标记为 inactive，普通 signal、computed、callback 和 node ref 操作都会失败。唯一的访问例外是 `StoredValue::with` 和 `StoredValue::update`：它们可以在 pending cleanup 释放 stored payload 前同步访问一次。该例外不适用于 effect rerun、异步回调或 cleanup 返回之后的代码。
+最终 owner cleanup 开始时，scope 已经被标记为 inactive，普通 signal、computed、callback 和 node ref 操作都会失败。唯一的节点访问例外是 `StoredValue` 的同步操作：`read`、`with`、`write` 和 `update` 可以在 pending cleanup 释放 stored payload 前访问它；`track` 也可以完成有效性检查，但不会建立响应式依赖。该例外不适用于 effect rerun、异步回调或 cleanup 返回之后的代码。
 
 ## OwnerChild 与 owner-root cleanup
 
@@ -114,16 +114,22 @@ scope.on_cleanup(
 `OwnerChild<'owner>` 能力：
 
 ```rust
-let child = owner.create_owned_child()?;
-let child_owner = child.access();
-// 在 child_owner 中创建 signal、effect 或 task。
+let scope = owner.access();
+let child = scope.create_owned_child()?;
+let _child_access = child.access();
+// 在 _child_access 中创建 signal、effect 或 task。
 
-owner.on_owner_cleanup(
+scope.on_owner_cleanup(
     child,
     |child| child.close(),
     error_handler,
 )?;
 ```
+
+上例中的 `_child_access` 代表实际创建子树节点时使用的
+`OwnerAccess<'owner>`；注册 owner-root cleanup 时应继续使用父作用域的
+`OwnerAccess`。`on_owner_cleanup` 会接管 `OwnerChild`，注册失败时则通过
+`OwnerCleanupRegistrationError::into_parts()` 把 payload 原样交还调用方。
 
 `OwnerChild::access()` 只携带 parent owner lifetime，不授予父 owner 的关闭权；
 `OwnerChild::close()` 是显式、幂等且可重试的 child 关闭边界。父 owner recursive
@@ -136,7 +142,7 @@ cleanup 归属。它会先完成 active、handler lease、动态借用和二次 
 `into_parts()` 恢复原始 payload，调用方必须显式回滚：
 
 ```rust
-if let Err(error) = owner.on_owner_cleanup(payload, cleanup, handler) {
+if let Err(error) = scope.on_owner_cleanup(payload, cleanup, handler) {
     let (registration_error, payload) = error.into_parts();
     rollback(payload)?;
     return Err(registration_error);

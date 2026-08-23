@@ -2,10 +2,12 @@
 
 use crate::{
     Callback, ErrorHandlerInput, NodeRef, OwnerAccess, Rx, SilexError, SilexResult,
-    reactivity::{Computed, ReactiveSource, ReadSignal, Signal, StoredValue},
+    reactivity::{
+        Computed, MappedOptionReadGuard, ReactiveSource, ReadSignal, Signal, StoredValue,
+    },
 };
 use std::fmt::Debug;
-use std::ops::{Deref, DerefMut};
+use std::ops::DerefMut;
 
 /// Values accepted by the scoped runtime.
 pub trait RxData {}
@@ -24,11 +26,11 @@ impl<T: Clone + Debug> RxError for T {}
 /// that owner. They must not create a [`crate::Runtime`], a detached owner, or use
 /// thread-local runtime state.
 pub trait RxFrom<'owner>: Sized {
-    type Value: 'owner;
+    type Owned: 'owner;
 
     fn rx_from<V>(owner: OwnerAccess<'owner>, value: V) -> SilexResult<Self>
     where
-        V: Into<Self::Value>;
+        V: Into<Self::Owned>;
 }
 
 /// Convert an existing scoped reactive source or an explicitly supported
@@ -54,16 +56,16 @@ pub trait ReactiveInput<'owner, Target>: Sized {
 pub trait RxDefault<'owner>: RxFrom<'owner> {
     fn rx_default(owner: OwnerAccess<'owner>) -> SilexResult<Self>
     where
-        Self::Value: Default,
+        Self::Owned: Default,
     {
-        Self::rx_from(owner, Self::Value::default())
+        Self::rx_from(owner, Self::Owned::default())
     }
 }
 
 impl<'owner, T> RxDefault<'owner> for T where T: RxFrom<'owner> {}
 
 pub trait RxValue {
-    type Value: ?Sized;
+    type Owned: ?Sized;
 }
 
 /// Establish a dependency without borrowing or cloning the source payload.
@@ -71,21 +73,195 @@ pub trait RxBase: RxValue {
     fn track(&self) -> SilexResult<()>;
 }
 
-/// Closure-based tracked and untracked access. No reference can outlive the
-/// callback supplied to these methods.
-pub trait RxRead: RxBase {
-    type ReadGuard<'a>: Deref<Target = Self::Value>
+/// A live lease held by a borrowed reactive view.
+pub trait RxReadLease {
+    fn finish(self) -> SilexResult<()>;
+}
+
+/// A guard shape that exposes one borrowed payload.
+pub trait RxRefGuard<T: ?Sized>: RxReadLease {
+    fn with_ref<U>(&self, f: impl for<'view> FnOnce(&'view T) -> U) -> U;
+}
+
+/// A guard shape that exposes an optional borrowed payload.
+pub trait RxOptionGuard<T>: RxReadLease {
+    fn with_option<U>(&self, f: impl for<'view> FnOnce(Option<&'view T>) -> U) -> U;
+}
+
+/// The source-side adapter needed to avoid stable Rust's GAT higher-ranked
+/// bound limitation for non-`'static` sources.
+pub trait RxReadRefSource: RxRead {
+    type ViewGuard<'a>: RxRefGuard<Self::Owned>
     where
         Self: 'a;
 
-    fn read(&self) -> SilexResult<Self::ReadGuard<'_>>;
-
-    fn read_untracked(&self) -> SilexResult<Self::ReadGuard<'_>>;
-
-    fn with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> SilexResult<U>;
-
-    fn with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> SilexResult<U>;
+    fn read_ref<'a>(&'a self) -> SilexResult<Self::ViewGuard<'a>>;
+    fn read_ref_untracked<'a>(&'a self) -> SilexResult<Self::ViewGuard<'a>>;
 }
+
+/// Closure-based access for sources whose callback view is `&T`.
+pub trait RxRead: RxBase {
+    type ReadGuard<'a>: RxReadLease
+    where
+        Self: 'a;
+
+    fn read<'a>(&'a self) -> SilexResult<Self::ReadGuard<'a>>;
+
+    fn read_untracked<'a>(&'a self) -> SilexResult<Self::ReadGuard<'a>>;
+}
+
+pub trait RxReadRef<T: ?Sized>: RxRead<Owned = T> + RxReadRefSource {
+    fn with<U>(&self, f: impl for<'view> FnOnce(&'view T) -> U) -> SilexResult<U> {
+        let guard = self.read_ref()?;
+        let value = guard.with_ref(f);
+        guard.finish()?;
+        Ok(value)
+    }
+
+    fn with_untracked<U>(&self, f: impl for<'view> FnOnce(&'view T) -> U) -> SilexResult<U> {
+        let guard = self.read_ref_untracked()?;
+        let value = guard.with_ref(f);
+        guard.finish()?;
+        Ok(value)
+    }
+}
+
+impl<S, T: ?Sized> RxReadRef<T> for S where S: RxRead<Owned = T> + RxReadRefSource {}
+
+/// The source-side adapter needed by the optional borrowed view.
+pub trait RxReadOptionSource<T>: RxRead<Owned = Option<T>> {
+    type ViewGuard<'a>: RxOptionGuard<T>
+    where
+        Self: 'a;
+
+    fn read_option<'a>(&'a self) -> SilexResult<Self::ViewGuard<'a>>;
+    fn read_option_untracked<'a>(&'a self) -> SilexResult<Self::ViewGuard<'a>>;
+}
+
+fn option_view<T>(value: &Option<T>) -> Option<&T> {
+    value.as_ref()
+}
+
+impl<S, T> RxReadOptionSource<T> for S
+where
+    S: RxRead<Owned = Option<T>> + RxReadRefSource,
+{
+    type ViewGuard<'a>
+        = MappedOptionReadGuard<S::ViewGuard<'a>, fn(&Option<T>) -> Option<&T>, Option<T>, T>
+    where
+        Self: 'a;
+
+    fn read_option<'a>(&'a self) -> SilexResult<Self::ViewGuard<'a>> {
+        Ok(MappedOptionReadGuard::new(
+            self.read_ref()?,
+            option_view::<T>,
+        ))
+    }
+
+    fn read_option_untracked<'a>(&'a self) -> SilexResult<Self::ViewGuard<'a>> {
+        Ok(MappedOptionReadGuard::new(
+            self.read_ref_untracked()?,
+            option_view::<T>,
+        ))
+    }
+}
+
+/// Closure-based access for sources whose callback view is `Option<&T>`.
+pub trait RxReadOption<T>: RxRead<Owned = Option<T>> + RxReadOptionSource<T> {
+    fn with<U>(&self, f: impl for<'view> FnOnce(Option<&'view T>) -> U) -> SilexResult<U> {
+        let guard = self.read_option()?;
+        let value = guard.with_option(f);
+        guard.finish()?;
+        Ok(value)
+    }
+
+    fn with_untracked<U>(
+        &self,
+        f: impl for<'view> FnOnce(Option<&'view T>) -> U,
+    ) -> SilexResult<U> {
+        let guard = self.read_option_untracked()?;
+        let value = guard.with_option(f);
+        guard.finish()?;
+        Ok(value)
+    }
+}
+
+impl<S, T> RxReadOption<T> for S where S: RxRead<Owned = Option<T>> + RxReadOptionSource<T> {}
+
+macro_rules! define_tuple_read_traits {
+    ($source:ident, $read:ident, $guard:ident, $($name:ident),+) => {
+        pub trait $guard<$($name),+>: RxReadLease {
+            fn with_tuple<U>(
+                &self,
+                f: impl for<'view> FnOnce(($(&'view $name,)+)) -> U,
+            ) -> U;
+        }
+
+        pub trait $source<$($name),+>: RxRead<Owned = ($($name,)+)> {
+            type ViewGuard<'a>: $guard<$($name),+>
+            where
+                Self: 'a;
+
+            fn read_tuple<'a>(&'a self) -> SilexResult<Self::ViewGuard<'a>>;
+            fn read_tuple_untracked<'a>(&'a self) -> SilexResult<Self::ViewGuard<'a>>;
+        }
+
+        pub trait $read<$($name),+>:
+            RxRead<Owned = ($($name,)+)> + $source<$($name),+>
+        {
+            fn with<U>(
+                &self,
+                f: impl for<'view> FnOnce(($(&'view $name,)+)) -> U,
+            ) -> SilexResult<U> {
+                let guard = self.read_tuple()?;
+                let value = guard.with_tuple(f);
+                guard.finish()?;
+                Ok(value)
+            }
+
+            fn with_untracked<U>(
+                &self,
+                f: impl for<'view> FnOnce(($(&'view $name,)+)) -> U,
+            ) -> SilexResult<U> {
+                let guard = self.read_tuple_untracked()?;
+                let value = guard.with_tuple(f);
+                guard.finish()?;
+                Ok(value)
+            }
+        }
+
+        impl<S, $($name),+> $read<$($name),+> for S
+        where
+            S: RxRead<Owned = ($($name,)+)> + $source<$($name),+>,
+        {}
+    };
+}
+
+define_tuple_read_traits!(RxReadTupleSource1, RxReadTuple1, RxTupleGuard1, A);
+define_tuple_read_traits!(RxReadTupleSource2, RxReadTuple2, RxTupleGuard2, A, B);
+define_tuple_read_traits!(RxReadTupleSource3, RxReadTuple3, RxTupleGuard3, A, B, C);
+define_tuple_read_traits!(RxReadTupleSource4, RxReadTuple4, RxTupleGuard4, A, B, C, D);
+define_tuple_read_traits!(
+    RxReadTupleSource5,
+    RxReadTuple5,
+    RxTupleGuard5,
+    A,
+    B,
+    C,
+    D,
+    E
+);
+define_tuple_read_traits!(
+    RxReadTupleSource6,
+    RxReadTuple6,
+    RxTupleGuard6,
+    A,
+    B,
+    C,
+    D,
+    E,
+    F
+);
 
 /// Exposes the runtime provenance retained by a scoped reactive source.
 pub trait RuntimeScoped {
@@ -93,33 +269,33 @@ pub trait RuntimeScoped {
 }
 
 impl<'owner, T: 'owner> RxFrom<'owner> for ReadSignal<'owner, T> {
-    type Value = T;
+    type Owned = T;
 
     fn rx_from<V>(owner: OwnerAccess<'owner>, value: V) -> SilexResult<Self>
     where
-        V: Into<Self::Value>,
+        V: Into<Self::Owned>,
     {
         owner.signal(value.into()).map(Into::into)
     }
 }
 
 impl<'owner, T: 'owner> RxFrom<'owner> for Signal<'owner, T> {
-    type Value = T;
+    type Owned = T;
 
     fn rx_from<V>(owner: OwnerAccess<'owner>, value: V) -> SilexResult<Self>
     where
-        V: Into<Self::Value>,
+        V: Into<Self::Owned>,
     {
         owner.signal(value.into())
     }
 }
 
 impl<'owner, T: Clone + PartialEq + 'owner> RxFrom<'owner> for Computed<'owner, T> {
-    type Value = T;
+    type Owned = T;
 
     fn rx_from<V>(owner: OwnerAccess<'owner>, value: V) -> SilexResult<Self>
     where
-        V: Into<Self::Value>,
+        V: Into<Self::Owned>,
     {
         let value = value.into();
         let handler = owner.error_handler(|_: SilexError| {
@@ -130,44 +306,44 @@ impl<'owner, T: Clone + PartialEq + 'owner> RxFrom<'owner> for Computed<'owner, 
 }
 
 impl<'owner, T: 'owner> RxFrom<'owner> for StoredValue<'owner, T> {
-    type Value = T;
+    type Owned = T;
 
     fn rx_from<V>(owner: OwnerAccess<'owner>, value: V) -> SilexResult<Self>
     where
-        V: Into<Self::Value>,
+        V: Into<Self::Owned>,
     {
         owner.stored(value.into())
     }
 }
 
 impl<'owner, T: 'owner> RxFrom<'owner> for Rx<'owner, T> {
-    type Value = T;
+    type Owned = T;
 
     fn rx_from<V>(owner: OwnerAccess<'owner>, value: V) -> SilexResult<Self>
     where
-        V: Into<Self::Value>,
+        V: Into<Self::Owned>,
     {
         owner.constant(value.into())
     }
 }
 
 impl<'owner, T: 'owner> RxFrom<'owner> for Callback<'owner, T> {
-    type Value = ();
+    type Owned = ();
 
     fn rx_from<V>(owner: OwnerAccess<'owner>, _value: V) -> SilexResult<Self>
     where
-        V: Into<Self::Value>,
+        V: Into<Self::Owned>,
     {
         owner.callback(|_: T| Ok::<(), SilexError>(()))
     }
 }
 
 impl<'owner, T: 'owner> RxFrom<'owner> for NodeRef<'owner, T> {
-    type Value = ();
+    type Owned = ();
 
     fn rx_from<V>(owner: OwnerAccess<'owner>, _value: V) -> SilexResult<Self>
     where
-        V: Into<Self::Value>,
+        V: Into<Self::Owned>,
     {
         owner.node_ref()
     }
@@ -377,57 +553,46 @@ macro_rules! impl_reactive_input_str_values {
 
 impl_reactive_input_str_values!(String);
 
-/// Clone-based convenience access built on top of [`RxRead`].
+/// Explicit owned-value reads.
 pub trait RxGet: RxRead
 where
-    Self::Value: Sized + Clone,
+    Self::Owned: Sized,
 {
-    fn get_untracked(&self) -> SilexResult<Self::Value> {
-        self.with_untracked(Clone::clone)
-    }
+    fn get_untracked(&self) -> SilexResult<Self::Owned>;
 
-    fn get(&self) -> SilexResult<Self::Value> {
-        self.with(Clone::clone)
-    }
-}
-
-impl<T> RxGet for T
-where
-    T: RxRead + ?Sized,
-    T::Value: Sized + Clone,
-{
+    fn get(&self) -> SilexResult<Self::Owned>;
 }
 
 /// Unified scoped writes.
 pub trait RxWrite: RxValue {
-    type WriteGuard<'a>: DerefMut<Target = Self::Value>
+    type WriteGuard<'a>: DerefMut<Target = Self::Owned>
     where
         Self: 'a;
 
     fn write(&self) -> SilexResult<Self::WriteGuard<'_>>;
 
-    fn rx_update_untracked<U>(&self, f: impl FnOnce(&mut Self::Value) -> U) -> SilexResult<U>;
+    fn rx_update_untracked<U>(&self, f: impl FnOnce(&mut Self::Owned) -> U) -> SilexResult<U>;
 
     fn rx_notify(&self) -> SilexResult<()>;
 
-    fn update<U>(&self, f: impl FnOnce(&mut Self::Value) -> U) -> SilexResult<U> {
+    fn update<U>(&self, f: impl FnOnce(&mut Self::Owned) -> U) -> SilexResult<U> {
         self.rx_update_untracked(f)
     }
 
-    fn set(&self, value: Self::Value) -> SilexResult<()>
+    fn set(&self, value: Self::Owned) -> SilexResult<()>
     where
-        Self::Value: Sized,
+        Self::Owned: Sized,
     {
         self.update(|current| *current = value)
     }
 
-    fn update_untracked<U>(&self, f: impl FnOnce(&mut Self::Value) -> U) -> SilexResult<U> {
+    fn update_untracked<U>(&self, f: impl FnOnce(&mut Self::Owned) -> U) -> SilexResult<U> {
         self.rx_update_untracked(f)
     }
 
-    fn set_untracked(&self, value: Self::Value) -> SilexResult<()>
+    fn set_untracked(&self, value: Self::Owned) -> SilexResult<()>
     where
-        Self::Value: Sized,
+        Self::Owned: Sized,
     {
         self.update_untracked(|current| *current = value)
     }
@@ -436,10 +601,10 @@ pub trait RxWrite: RxValue {
         self.rx_notify()
     }
 
-    fn setter(self, value: Self::Value) -> impl Fn() -> SilexResult<()> + Clone
+    fn setter(self, value: Self::Owned) -> impl Fn() -> SilexResult<()> + Clone
     where
         Self: Sized + Clone,
-        Self::Value: Sized + Clone,
+        Self::Owned: Sized + Clone,
     {
         move || self.set(value.clone())
     }
@@ -447,15 +612,15 @@ pub trait RxWrite: RxValue {
     fn updater<F>(self, f: F) -> impl Fn() -> SilexResult<()> + Clone
     where
         Self: Sized + Clone,
-        Self::Value: Sized,
-        F: Fn(&mut Self::Value) + Clone,
+        Self::Owned: Sized,
+        F: Fn(&mut Self::Owned) + Clone,
     {
         move || self.update(f.clone())
     }
 }
 
 /// Reactive helpers for `Option<T>` values.
-pub trait RxOptionExt<T>: RxRead<Value = Option<T>> + Clone {
+pub trait RxOptionExt<T>: RxReadOption<T> + Clone {
     fn map_or<'owner, U, H>(
         &self,
         owner: OwnerAccess<'owner>,
@@ -474,7 +639,9 @@ pub trait RxOptionExt<T>: RxRead<Value = Option<T>> + Clone {
         owner
             .computed_always(
                 move || {
-                    source.with(|value| value.as_ref().map(&f).unwrap_or_else(|| default.clone()))
+                    RxReadOption::with(&source, |value| {
+                        value.map(&f).unwrap_or_else(|| default.clone())
+                    })
                 },
                 error_handler,
             )
@@ -497,7 +664,9 @@ pub trait RxOptionExt<T>: RxRead<Value = Option<T>> + Clone {
         owner
             .computed(
                 move || {
-                    source.with(|value| value.as_ref().cloned().unwrap_or_else(|| default.clone()))
+                    RxReadOption::with(&source, |value| {
+                        value.cloned().unwrap_or_else(|| default.clone())
+                    })
                 },
                 error_handler,
             )
@@ -521,7 +690,7 @@ pub trait RxOptionExt<T>: RxRead<Value = Option<T>> + Clone {
         let source = owner.promote(self.clone(), error_handler)?;
         owner
             .computed_always(
-                move || source.with(|value| value.as_ref().map(&f).unwrap_or_else(&default)),
+                move || RxReadOption::with(&source, |value| value.map(&f).unwrap_or_else(&default)),
                 error_handler,
             )
             .map(Computed::into_rx)
@@ -543,7 +712,7 @@ pub trait RxOptionExt<T>: RxRead<Value = Option<T>> + Clone {
         let source = owner.promote(self.clone(), error_handler)?;
         owner
             .computed_always(
-                move || source.with(|value| value.as_ref().and_then(&f)),
+                move || RxReadOption::with(&source, |value| value.and_then(&f)),
                 error_handler,
             )
             .map(Computed::into_rx)
@@ -564,18 +733,18 @@ pub trait RxOptionExt<T>: RxRead<Value = Option<T>> + Clone {
         let source = owner.promote(self.clone(), error_handler)?;
         owner
             .computed(
-                move || source.with(|value| value.as_ref().is_some_and(&f)),
+                move || RxReadOption::with(&source, |value| value.is_some_and(&f)),
                 error_handler,
             )
             .map(|computed| computed.into_rx())
     }
 
     fn if_some_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<Option<U>> {
-        self.with_untracked(|value| value.as_ref().map(f))
+        RxReadOption::with_untracked(self, |value| value.map(f))
     }
 }
 
-impl<S, T> RxOptionExt<T> for S where S: RxRead<Value = Option<T>> + Clone {}
+impl<S, T> RxOptionExt<T> for S where S: RxReadOption<T> + Clone {}
 
 /// Sources used by list rendering helpers.
 pub trait ForLoopSource {

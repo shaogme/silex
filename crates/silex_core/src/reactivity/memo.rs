@@ -1,9 +1,7 @@
-use crate::{
-    ErrorHandlerInput, OwnerAccess, ReadGuard, Rx, SilexError, SilexResult, traits::RxRead,
-};
+use crate::{ErrorHandlerInput, OwnerAccess, ReadGuard, Rx, SilexError, SilexResult};
 use crate::{
     callback::map_callback_error,
-    traits::{RuntimeScoped, RxBase, RxValue},
+    traits::{RuntimeScoped, RxBase, RxGet, RxRead, RxReadRef, RxReadRefSource, RxValue},
 };
 use std::fmt;
 
@@ -67,7 +65,7 @@ impl<'owner, T> RuntimeScoped for Computed<'owner, T> {
 }
 
 impl<'owner, T> RxValue for Computed<'owner, T> {
-    type Value = T;
+    type Owned = T;
 }
 
 impl<'owner, T> RxBase for Computed<'owner, T> {
@@ -95,12 +93,29 @@ impl<'owner, T> RxRead for Computed<'owner, T> {
             .map(ReadGuard::new)
             .map_err(map_callback_error)
     }
+}
 
-    fn with<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.inner.with(f).map_err(map_callback_error)
+impl<'owner, T> RxReadRefSource for Computed<'owner, T> {
+    type ViewGuard<'a>
+        = ReadGuard<'owner, T>
+    where
+        Self: 'a;
+
+    fn read_ref<'a>(&'a self) -> SilexResult<Self::ViewGuard<'a>> {
+        self.read()
     }
 
-    fn with_untracked<U>(&self, f: impl FnOnce(&T) -> U) -> SilexResult<U> {
-        self.inner.with_untracked(f).map_err(map_callback_error)
+    fn read_ref_untracked<'a>(&'a self) -> SilexResult<Self::ViewGuard<'a>> {
+        self.read_untracked()
+    }
+}
+
+impl<'owner, T: Clone> RxGet for Computed<'owner, T> {
+    fn get_untracked(&self) -> SilexResult<Self::Owned> {
+        self.with_untracked(Clone::clone)
+    }
+
+    fn get(&self) -> SilexResult<Self::Owned> {
+        self.with(Clone::clone)
     }
 }

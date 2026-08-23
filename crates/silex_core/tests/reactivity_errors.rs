@@ -1,6 +1,6 @@
 use silex_core::{
     ErrorHandlerToken, OwnerAccess, ReactiveError, Runtime, SilexError, SilexErrorKind,
-    traits::{RxGet, RxRead},
+    traits::{RxGet, RxReadRef},
 };
 use std::{cell::Cell, rc::Rc};
 

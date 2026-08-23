@@ -27,6 +27,12 @@ weight = 30
 不要用一个统一的字符串错误替换这些类型。错误变体携带了恢复所需的状态，尤其
 是 `CompletionSubmitError::CallbackAndClose` 不能被简化为“提交失败”。
 
+`Runtime::with_transient` 和 `OwnerAccess::with_transient` 的外层结果是
+`TransientScopeResult<T>`。`TransientScopeError::Runtime` 表示临时作用域尚未成功
+建立或运行时操作失败；`TransientScopeError::Close` 表示回调已经返回，但自动关闭
+阶段产生了 `CloseError`。回调本身发生 panic 时，runtime 会先尝试完成关闭，然后继续
+传播原 panic，而不是把 panic 改写成普通 `Result`。
+
 ## `ReactiveError`：运行时结构错误
 
 公开的 `ReactiveError` 变体及常见含义如下：
@@ -36,9 +42,9 @@ weight = 30
   capability，是应优先定位的实现错误。
 - `BorrowConflict`：同一节点、scope 或 scheduler 上已有互斥的动态借用。释放外层
   `with`/`update` 借用后，操作通常可以重试。
-- `Reentrant`：计算正在运行时又递归读取同一个运行中的计算，或 scope 正在不允许
-  重入的关闭阶段。类型化 callback 的递归调用通常表现为 `BorrowConflict`；应改写
-  依赖图或把递归状态移到普通 Rust 数据结构中。
+- `Reentrant`：计算正在运行时又递归读取同一个运行中的计算，或 runtime 当前阶段
+  不允许再次进入同一作用域。类型化 callback 的递归调用通常表现为
+  `BorrowConflict`；应改写依赖图或把递归状态移到普通 Rust 数据结构中。
 - `RuntimeAlreadyRunning`：同一个 `Runtime` 已有活动的 root owner；root 成功释放
   后才能创建下一个 root。
 - `RuntimeMismatch`：tracked 读取或依赖边跨越了不同 scheduler family。跨 runtime
@@ -94,7 +100,8 @@ match created {
 该计算，因此 handler 不能被当作“永久吞错”开关。
 
 读取 `Computed` 时，返回值不是 `ReactiveResult<T>`，而是
-`CallbackInvokeResult<T, E>`：
+`CallbackInvokeResult<T, E>`；`read`、`get`、`with` 和 `track` 都可能沿用这一错误
+分层：
 
 ```rust
 match computed.get() {
@@ -162,6 +169,12 @@ match completion.submit(value) {
 用户 callback 的失败。`CompletionSender` 可多次提交，但 callback 返回用户错误时
 sender 不会自动结束，调用方应根据业务决定重试或显式 `cancel`。callback panic 会
 先尝试关闭 endpoint，再继续传播 panic；之后的提交会被拒绝。
+
+`CompletionSender::submit` 的常规错误只来自 callback 的运行时错误或用户错误，并以
+`CompletionSubmitError::Callback` 包装；关闭阶段的 `CloseError` 由显式 `cancel` 返回，
+或在 Drop/恢复路径放入 runtime 的关闭诊断队列。`CompletionOnce::submit` 才可能直接
+返回 callback 错误、close 错误，或两者同时出现的 `CallbackAndClose`。需要诊断提交
+失败时，可以使用 `callback()`、`close()` 或 `into_parts()` 读取结构化内容。
 
 框架使用的 detached completion 与普通 completion 共享上述提交和错误模型，只是
 callback 节点不挂在创建它的当前计算子树中。runtime 正在 disposal transaction

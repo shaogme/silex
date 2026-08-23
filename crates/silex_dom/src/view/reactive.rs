@@ -4,8 +4,7 @@ use crate::view::{
     mount_dynamic_view_universal,
 };
 use silex_core::reactivity::{Computed, ReadSignal, Signal, StoredValue};
-use silex_core::traits::RxCloneData;
-use silex_core::{EffectPhase, Rx, RxRead, SilexError, SilexErrorKind, SilexResult};
+use silex_core::{EffectPhase, Rx, RxReadRef, SilexError, SilexErrorKind, SilexResult};
 use std::borrow::Cow;
 use std::fmt::Display;
 use web_sys::Node;
@@ -15,7 +14,7 @@ pub(crate) fn mount_reactive_text<'scope, T>(
     rx: Rx<'scope, T>,
 ) -> SilexResult<MountInstance<'scope>>
 where
-    T: Display + RxCloneData + 'scope,
+    T: Display + 'scope,
 {
     let owner = context.owner();
     let local_owner = owner.child();
@@ -169,7 +168,6 @@ macro_rules! impl_view_forward_to_rx {
         $(
             impl<'scope, T: 'scope> View<'scope> for $ty<'scope, T>
             where
-                T: RxCloneData + 'scope,
                 Rx<'scope, T>: View<'scope>,
             {
                 fn mount(&self, context: &MountContext<'scope>) -> SilexResult<MountInstance<'scope>> {

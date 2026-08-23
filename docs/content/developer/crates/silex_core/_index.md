@@ -39,6 +39,7 @@ sort_by = "weight"
 | --- | --- |
 | `Runtime` | 创建一个显式、单线程的运行时；提供 root owner 或 transient scope。 |
 | `OwnerHandle` | 持有持久 owner 的 close 权限；通过 `access`/`with_access` 借出 `OwnerAccess`。 |
+| `OwnerChild` | 携带父 owner lifetime 的 child close capability；可直接关闭或交给 `on_owner_cleanup`。 |
 | `OwnerAccess<'owner>` | 创建和操作 owner 内的所有公开节点、handler、cleanup 与异步任务。 |
 | `ReadSignal` / `WriteSignal` / `Signal` | 分离读写能力，或以一个值同时携带两种能力。 |
 | `ReadGuard` / `WriteGuard` | 在保持 runtime 动态借用期间直接访问 signal payload；分别通过 `finish`、`commit` 或 `abort` 结束。 |
@@ -46,6 +47,7 @@ sort_by = "weight"
 | `Transaction` | 在一个 owner 内暂存多个 signal 更新，并以原子方式提交。 |
 | `Rx<'scope, T>` | 在 signal、computed、stored value 之间统一传递只读值。 |
 | `Resource` / `Mutation` | 将异步读取或异步变更表示为可观察状态。 |
+| `CompletionOnce` / `CompletionSender` / `TaskHandle` | 将异步结果回送 owner，或取消 owner-scoped future。 |
 | `StoredValue` / `NodeRef` / `Callback` | 分别保存非响应式状态、宿主对象引用和类型化回调。 |
 | `SilexContext` | 将 owner 与 `ErrorReporter` 一起传给组件或宏。 |
 | `SilexError` / `SilexResult` | 统一错误模型和 `Result<T, SilexError>` 别名。 |
@@ -65,7 +67,7 @@ Runtime
 └── with_transient(...)（回调结束时自动关闭）
 ```
 
-- 一个 `Runtime` 同时只能有一个活动的 root owner。重复调用 `Runtime::owner()` 会得到 `RuntimeAlreadyRunning`，关闭 root 后才可以重新创建。
+- 一个 `Runtime` 同时只能有一个活动的 root owner。重复调用 `Runtime::owner()` 会得到 `RuntimeAlreadyRunning`；只有 root 成功释放后才可以重新创建，仍处于可重试 close 失败状态时不能创建新 root。
 - `Runtime::with_transient` 和 `OwnerAccess::with_transient` 用高阶生命周期限制句柄逃逸；异步任务、回调和节点不能把 transient 的借用带到回调之外。
 - `OwnerHandle::create_child` 创建可显式关闭的子树。关闭 owner 会清理其子节点、handler、cleanup、completion 和 owner 绑定的任务。
 - runtime 使用 `Rc`、`Cell`、`RefCell` 和 `spawn_local`，因此是单线程模型，不应把这些句柄当作 `Send + Sync` 的共享状态。
@@ -142,4 +144,4 @@ crate 默认不启用任何 feature。`test-support` 只转发到底层 runtime 
 - `ReadSignal::with_name` 与 `WriteSignal::with_name` 当前只返回自身，没有保存或暴露名称；它不能提供调试标签或性能诊断。
 - `effect_detached` 以及部分内部宏是框架适配入口，不应被普通应用代码作为稳定生命周期 API 依赖；owner-bound 子树应使用公开的 `OwnerChild` 能力。
 
-验证本页或公开 API 变更时，至少运行 `cargo check -p silex_core`、`cargo test -p silex_core`、`cargo test -p silex_core --test docs_examples` 和 `zola check`；涉及 feature 或编译期契约时，追加 `--all-features` 与 `--test compile_fail`。
+验证本页或公开 API 变更时，至少运行 `cargo check -p silex_core`、`cargo test -p silex_core`、`cargo test -p silex_core --test docs_examples` 和 `zola --root docs check`；涉及 feature 或编译期契约时，追加 `--all-features` 与 `--test compile_fail`。

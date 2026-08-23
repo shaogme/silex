@@ -12,8 +12,8 @@ use web_sys::{Event, MessageEvent, WebSocket as JsWebSocket};
 
 use silex_core::{
     CallbackInvokeError, CompletionSender, ErrorHandlerAnchor, ErrorHandlerInput, ErrorReporter,
-    OwnerAccess, ReactiveError, ReadSignal, Rx, RxGet, RxRead, Signal, SilexError, SilexErrorKind,
-    SilexResult, StoredValue, TaskHandle, unwind_safe,
+    OwnerAccess, ReactiveError, ReadSignal, Rx, RxGet, RxReadRef, Signal, SilexError,
+    SilexErrorKind, SilexResult, StoredValue, TaskHandle, unwind_safe,
 };
 
 use crate::{

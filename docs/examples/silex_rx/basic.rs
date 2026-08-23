@@ -1,4 +1,4 @@
-use silex_core::{Runtime, RxGet, RxRead, SilexContext, SilexResult};
+use silex_core::{Runtime, RxGet, SilexContext, SilexResult};
 use std::error::Error;
 
 #[derive(Clone, Copy)]

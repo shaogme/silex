@@ -92,7 +92,7 @@ where
 }
 
 impl<'a, T: RxValue> RxValue for Prop<'a, T> {
-    type Value = T::Value;
+    type Owned = T::Owned;
 }
 
 impl<'a, T> Prop<'a, T> {
@@ -100,11 +100,11 @@ impl<'a, T> Prop<'a, T> {
         self,
         owner: OwnerAccess<'scope>,
         error_handler: H,
-    ) -> SilexResult<Rx<'scope, T::Value>>
+    ) -> SilexResult<Rx<'scope, T::Owned>>
     where
         'a: 'scope,
         T: ReactiveSource<'scope> + Clone,
-        T::Value: Sized + RxData + 'scope,
+        T::Owned: Sized + RxData + 'scope,
         H: ErrorHandlerInput<'scope>,
     {
         owner.promote(self.into_owned(), error_handler)

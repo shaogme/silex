@@ -6,7 +6,11 @@ weight = 25
 
 # Resource、Mutation 与异步状态
 
-`Resource` 和 `Mutation` 把 owner 绑定的本地 future 转换成响应式状态。它们不提供跨线程执行器，也不把 future 直接暴露给组件；`Resource::state()` 返回 `ReadSignal`，`Mutation::state` 保留成对的 `Signal`。调用方观察这些状态，并通过 `fetch`/`refetch` 或 `mutate` 触发操作；owner cleanup 负责取消未完成工作。
+`Resource` 和 `Mutation` 把 owner 绑定的本地 future 转换成响应式状态。它们不提供跨线程执行器，也不把 future 直接暴露给组件；`Resource::state()` 返回 `ReadSignal`，`Mutation::state` 保留成对的 `Signal`。调用方观察这些状态，通过 Resource builder 的 `fetch` 配置加载动作，再用 `refetch` 触发加载；Mutation 则用 `mutate` 触发变更。owner cleanup 负责取消未完成工作。
+
+本文的代码片段只展示真实 API 的调用关系，`fetch_data`、`save_data` 和
+`prepare_save` 等业务函数需要由调用方提供；它们不是 `docs/examples/` 中由 CI
+编译的完整示例。
 
 ## Resource 状态机
 
@@ -38,7 +42,7 @@ resource.update(|data| data.refresh_local_cache())?;
 resource.set(local_value)?;
 ```
 
-`source` 必须实现 `RxGet<Value = S>`、`ReactiveSource`、`RuntimeScoped` 和 `Clone`；其中 `RxGet` 已包含 `RxRead`，`RuntimeScoped` 用于在分配目标节点前校验 runtime provenance。source 读取会成为内部 effect 的依赖。source 初始求值和每次变化都会启动 fetch；`refetch` 通过内部 trigger 重新执行 effect，即使 source 值没有变化。
+`source` 必须实现 `RxGet<Owned = S>`、`ReactiveSource`、`RuntimeScoped` 和 `Clone`；其中 `RxGet` 已包含 `RxRead`。`Resource::build` 会在分配 child、signal 和 effect 之前调用 `validate_runtime`，因此 source 与可选的 `SuspenseContext` 必须属于同一 runtime。source 读取会成为内部 effect 的依赖。source 初始求值和每次变化都会启动 fetch；`refetch` 通过内部 trigger 重新执行 effect，即使 source 值没有变化。
 
 `ResourceFetcher` 是 fetcher 抽象：可以直接传入 `Fn(S) -> Future<Output = Result<T, E>>`，也可以实现 trait 以复用更复杂的 fetcher。`T` 必须可 clone，`E` 必须 `Clone + Debug`，因为状态既要放入 signal，也要通过 `SilexError` handler 边界诊断。
 
@@ -65,6 +69,7 @@ Resource effect 的 cleanup，也不通过 `untrack` 改变 cleanup 归属。
 - `value` 与 `get_data` 返回 `SilexResult<Option<T>>`，在 `Ready`/`Reloading` 中 clone 当前数据；
 - `loading` 返回当前是否处于加载中；
 - `update` 只修改 `Ready`/`Reloading` 中已有的数据，`Idle`/`Loading`/`Error` 下不执行闭包；
+- `set` 直接发布 `Ready(value)`，但不会取消当前 future 或递增 request id；若仍有请求在途，当前有效 completion 后续仍可能覆盖手动设置的值；
 - `map(owner, f, handler)` 把 `Option<&T>` 转为新的 always-notifying `Rx`；
 - 作为 `ReactiveSource` 使用时，Resource 暴露的是 `Option<T>`，并在目标 owner 中创建 derived computed。
 
@@ -119,7 +124,15 @@ Mutation 与 Resource 一样使用 request id。连续调用 `mutate` 时，只�
 
 资源和变更最终通过 `OwnerAccess::spawn_scoped` 运行 future，再通过 `CompletionSender` 将结果送回 owner。若 `submit` 同时产生 callback 错误和 close 错误，`report_completion_error` 会分别交给 handler；不能只记录 callback 那一部分。
 
-普通任务的 `TaskHandle::cancel` 会立即释放尚未完成的 future，重复调用没有副作用。任务 handle 被丢弃时不会自动 detach；owner close 仍是最终取消边界。
+普通任务的 `TaskHandle::cancel` 会立即释放尚未完成的 future，重复调用没有副作用；
+`is_cancelled` 可区分是否已经请求取消。任务完成后其 future 会被释放，但不会因此把
+handle 标记为 cancelled。任务 handle 被丢弃时不会自动 detach；owner close 仍是最终
+取消边界。
+
+`CompletionOnce::cancel` 和 `CompletionSender::cancel` 用于显式关闭 completion
+endpoint，并返回 `Result<(), CloseError>`。`CompletionSender` 可由多个任务 clone；
+最后一个活跃 clone 被丢弃时也会关闭 endpoint。关闭后的提交返回 `Ok(false)`，不会
+调用 callback；提交时同时发生的 callback/close 错误则见[错误专题](errors.md)。
 
 ## 失败路径清单
 

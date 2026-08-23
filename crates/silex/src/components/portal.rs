@@ -1,4 +1,4 @@
-use silex_core::{EffectPhase, RxRead, SilexError, SilexErrorKind, SilexResult, reactivity::Rx};
+use silex_core::{EffectPhase, RxReadRef, SilexError, SilexErrorKind, SilexResult, reactivity::Rx};
 use silex_dom::view::{
     MountContext, MountErrorHandler, MountOwner, MountOwnerToken, MountTarget, MountTransaction,
 };

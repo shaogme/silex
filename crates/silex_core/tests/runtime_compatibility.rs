@@ -1,7 +1,7 @@
 #[cfg(feature = "test-support")]
 use silex_core::reactivity::{ReadSignal, Resource, SuspenseContext};
 #[cfg(feature = "test-support")]
-use silex_core::traits::{RxBase, RxRead, RxValue};
+use silex_core::traits::{RxBase, RxRead, RxReadRefSource, RxValue};
 use silex_core::{
     EffectPhase, ErrorHandlerToken, OwnerAccess, ReactiveError, Runtime, SilexError,
     SilexErrorKind, traits::RxGet,
@@ -19,7 +19,7 @@ struct FailingSource<'owner> {
 
 #[cfg(feature = "test-support")]
 impl<'owner> RxValue for FailingSource<'owner> {
-    type Value = u32;
+    type Owned = u32;
 }
 
 #[cfg(feature = "test-support")]
@@ -47,17 +47,38 @@ impl RxRead for FailingSource<'_> {
     fn read_untracked(&self) -> silex_core::SilexResult<Self::ReadGuard<'_>> {
         self.read()
     }
+}
 
-    fn with<U>(&self, _f: impl FnOnce(&Self::Value) -> U) -> silex_core::SilexResult<U> {
+#[cfg(feature = "test-support")]
+impl RxReadRefSource for FailingSource<'_> {
+    type ViewGuard<'a>
+        = silex_core::BorrowedReadGuard<'a, u32>
+    where
+        Self: 'a;
+
+    fn read_ref(&self) -> silex_core::SilexResult<Self::ViewGuard<'_>> {
         Err(SilexError::fatal(SilexErrorKind::Framework(
             "test source failure".to_string(),
         )))
     }
 
-    fn with_untracked<U>(&self, _f: impl FnOnce(&Self::Value) -> U) -> silex_core::SilexResult<U> {
+    fn read_ref_untracked(&self) -> silex_core::SilexResult<Self::ViewGuard<'_>> {
         Err(SilexError::fatal(SilexErrorKind::Framework(
             "test source failure".to_string(),
         )))
+    }
+}
+
+#[cfg(feature = "test-support")]
+impl RxGet for FailingSource<'_> {
+    fn get(&self) -> silex_core::SilexResult<Self::Owned> {
+        Err(SilexError::fatal(SilexErrorKind::Framework(
+            "test source failure".to_string(),
+        )))
+    }
+
+    fn get_untracked(&self) -> silex_core::SilexResult<Self::Owned> {
+        self.get()
     }
 }
 
@@ -70,10 +91,10 @@ impl RuntimeScoped for FailingSource<'_> {
 
 #[cfg(feature = "test-support")]
 impl<'owner> ReactiveSource<'owner> for FailingSource<'owner> {
-    fn into_promotion_plan(self) -> PromotionPlan<'owner, Self::Value>
+    fn into_promotion_plan(self) -> PromotionPlan<'owner, Self::Owned>
     where
         Self: Sized,
-        Self::Value: Sized + silex_core::traits::RxData + 'owner,
+        Self::Owned: Sized + silex_core::traits::RxData + 'owner,
     {
         self.delegate.into_promotion_plan()
     }

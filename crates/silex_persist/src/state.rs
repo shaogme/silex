@@ -10,7 +10,7 @@ use silex_core::{
     ErrorHandlerInput, OwnerAccess, ReactiveError, Rx, RxGet, SilexError, SilexErrorKind,
     SilexResult, StoreField,
     reactivity::{PromotionPlan, ReactiveSource, ReadSignal, Signal, StoredValue},
-    traits::{RxBase, RxCloneData, RxData, RxRead, RxValue, RxWrite},
+    traits::{RxBase, RxData, RxRead, RxReadRef, RxReadRefSource, RxValue, RxWrite},
 };
 use silex_dom::view::{MountContext, MountInstance, OwnedTimeout, View};
 use std::rc::Rc;
@@ -74,7 +74,7 @@ pub struct Persistent<'scope, T> {
     pub(crate) controller: StoredValue<'scope, PersistenceController<'scope, T>>,
 }
 
-impl<'scope, T: 'scope> StoreField<'scope, T> for Persistent<'scope, T> {}
+impl<'scope, T: Clone + 'scope> StoreField<'scope, T> for Persistent<'scope, T> {}
 
 impl<'scope> Persistent<'scope, ()> {
     /// Starts a new persistent binding builder for the given backend key.
@@ -237,7 +237,7 @@ where
 }
 
 impl<'scope, T: RxData> RxValue for Persistent<'scope, T> {
-    type Value = T;
+    type Owned = T;
 }
 
 impl<'scope, T: RxData> RxBase for Persistent<'scope, T> {
@@ -259,13 +259,30 @@ impl<'scope, T: RxData> RxRead for Persistent<'scope, T> {
     fn read_untracked(&self) -> SilexResult<Self::ReadGuard<'_>> {
         self.value.read_untracked()
     }
+}
 
-    fn with<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> SilexResult<U> {
-        self.value.with(f)
+impl<'scope, T: RxData> RxReadRefSource for Persistent<'scope, T> {
+    type ViewGuard<'a>
+        = <Signal<'scope, T> as RxReadRefSource>::ViewGuard<'a>
+    where
+        Self: 'a;
+
+    fn read_ref<'a>(&'a self) -> SilexResult<Self::ViewGuard<'a>> {
+        self.value.read_ref()
     }
 
-    fn with_untracked<U>(&self, f: impl FnOnce(&Self::Value) -> U) -> SilexResult<U> {
-        self.value.with_untracked(f)
+    fn read_ref_untracked<'a>(&'a self) -> SilexResult<Self::ViewGuard<'a>> {
+        self.value.read_ref_untracked()
+    }
+}
+
+impl<'scope, T: Clone + RxData> RxGet for Persistent<'scope, T> {
+    fn get(&self) -> SilexResult<Self::Owned> {
+        self.value.get()
+    }
+
+    fn get_untracked(&self) -> SilexResult<Self::Owned> {
+        self.value.get_untracked()
     }
 }
 
@@ -280,7 +297,7 @@ impl<'scope, T: RxData> RxWrite for Persistent<'scope, T> {
         self.value.write()
     }
 
-    fn rx_update_untracked<U>(&self, f: impl FnOnce(&mut Self::Value) -> U) -> SilexResult<U> {
+    fn rx_update_untracked<U>(&self, f: impl FnOnce(&mut Self::Owned) -> U) -> SilexResult<U> {
         mark_local_value_write(self.controller)?;
         self.value.write_signal().update(f)
     }
@@ -294,10 +311,10 @@ impl<'scope, T> ReactiveSource<'scope> for Persistent<'scope, T>
 where
     T: Sized + RxData + 'scope,
 {
-    fn into_promotion_plan(self) -> PromotionPlan<'scope, Self::Value>
+    fn into_promotion_plan(self) -> PromotionPlan<'scope, Self::Owned>
     where
         Self: Sized,
-        Self::Value: Sized + RxData + 'scope,
+        Self::Owned: Sized + RxData + 'scope,
     {
         self.value.into_promotion_plan()
     }
@@ -311,7 +328,7 @@ impl<'scope, T: 'scope> From<Persistent<'scope, T>> for Signal<'scope, T> {
 
 impl<'scope, T> View<'scope> for Persistent<'scope, T>
 where
-    T: RxCloneData + 'scope,
+    T: 'scope,
     Rx<'scope, T>: View<'scope>,
 {
     fn mount(

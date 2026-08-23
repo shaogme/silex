@@ -5,7 +5,7 @@ use crate::{
 #[cfg(feature = "browser")]
 use silex_core::EffectHandle;
 use silex_core::{
-    EffectPhase, ErrorReporter, OwnerAccess, ReactiveError, Rx, RxGet, RxRead, SilexError,
+    EffectPhase, ErrorReporter, OwnerAccess, ReactiveError, Rx, RxGet, RxReadRef, SilexError,
     SilexResult,
     reactivity::{ReadSignal, Resource, ResourceState, Signal, StoredValue, SuspenseContext},
 };

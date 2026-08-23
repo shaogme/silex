@@ -1,7 +1,7 @@
 use crate::{
     ErrorHandlerInput, OwnerAccess, ReadSignal, SilexError, SilexResult,
     reactivity::{Computed, StoredValue},
-    traits::RxRead,
+    traits::RxReadRef,
 };
 use silex_reactivity::{
     Computed as RxComputed, ReadSignal as RxReadSignal, StoredValue as RxStoredValue,
